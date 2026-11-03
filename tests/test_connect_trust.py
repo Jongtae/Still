@@ -440,7 +440,7 @@ class ContinuationTests(ConversationTests):
                 'connector_reads': [{'tool': LIST, 'status': 'succeeded'}], 'stream_tail': ['turn.completed']}
         self.assertFalse(self.service.connector_turn_read_only(job['id'], 'codex', meta))
         self.assertTrue(self.service.record_connector_calls(job['id'], meta['connector_reads'], engine='codex'))
-        self.assertFalse(self.service.settings_resume_safe(job['id']))
+        self.assertFalse(self.service.may_continue(job['id'], 'resume')[0])
 
     def test_each_reported_invocation_needs_its_own_current_decision(self):
         job, draft = self.blocked()

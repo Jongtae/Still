@@ -49,11 +49,41 @@ CORPUS = {
     'outcome unknown': (_pair('api_request', {'declared_effect': 'read', 'effect': 'unknown'}, 'failed'),
                         EFFECT_UNKNOWN),
     'web search': (_pair('web_search', {}, 'succeeded'), EFFECT_NONE),
-    # #103: a press that reached the page with no click on its target: unknown whatever was declared,
-    # even with no form post observed (which makes a confirmed ``read`` click a no-change).
+    # #103: a press that reached the page with no click on its target is unknown ...
+    'mutate click the page covered during the press': (_pair('browser_click', {
+        'declared_effect': 'mutate', 'effect': 'unknown', 'code': 'effect_unknown',
+        'observed_step': {'posted': False, 'approved': False}}, 'failed'), EFFECT_UNKNOWN),
+    'navigation click covered during the press after a form post': (_pair('browser_click', {
+        'declared_effect': 'navigate', 'effect': 'unknown', 'code': 'effect_unknown',
+        'observed_step': {'posted': True, 'approved': False}}, 'failed'), EFFECT_UNKNOWN),
+    'navigation click covered during the press, unobserved': (_pair('browser_click', {
+        'declared_effect': 'navigate', 'effect': 'unknown', 'code': 'effect_unknown'}, 'failed'), EFFECT_UNKNOWN),
+    # ... #618 E1: except a read/navigate press Still observed starting no submission and spending no
+    # approval: it changed nothing Still could observe, like the same step that timed out (#1496).
     'click the page covered during the press': (_pair('browser_click', {
         'declared_effect': 'read', 'effect': 'unknown', 'code': 'effect_unknown',
-        'observed_step': {'posted': False, 'approved': False}}, 'failed'), EFFECT_UNKNOWN),
+        'observed_step': {'posted': False, 'approved': False}}, 'failed'), EFFECT_NONE),
+    # #618 E1: a refusal Still made before any hand-off is none, even one naming an earlier unknown effect.
+    'api request held for an earlier unknown effect, before hand-off': (_pair('api_request', {
+        'declared_effect': 'mutate', 'code': 'effect_unknown', 'effect': 'unknown', 'ran': False}, 'failed'), EFFECT_NONE),
+    'click held for an approval before the press': (_pair('browser_click', {
+        'declared_effect': 'mutate', 'code': 'approval_required', 'effect': 'none', 'ran': False}, 'failed'), EFFECT_NONE),
+    # #618 E1: handed off, and the service answered it did not execute it (a 4xx settled as rejected).
+    'api change the service refused before executing it': (_pair('api_request', {
+        'declared_effect': 'mutate', 'code': 'api_error', 'effect': 'none', 'executed': False}, 'failed'), EFFECT_NONE),
+    'api change the service refused as unauthorized': (_pair('api_request', {
+        'declared_effect': 'mutate', 'code': 'api_unauthorized', 'effect': 'none', 'executed': False}, 'failed'), EFFECT_NONE),
+    # Negative: a sent change with no definite answer stays unknown; a 5xx is not a refusal.
+    'api change with no answer': (_pair('api_request', {
+        'declared_effect': 'mutate', 'code': 'effect_unknown', 'effect': 'unknown'}, 'failed'), EFFECT_UNKNOWN),
+    'api change answered 500': (_pair('api_request', {
+        'declared_effect': 'mutate', 'code': 'api_error', 'effect': 'unknown'}, 'failed'), EFFECT_UNKNOWN),
+    # #618 E1: owner-local writes are no external effect, whatever their outcome.
+    'interim message to the owner': (_pair('tell_owner', {}, 'succeeded'), EFFECT_NONE),
+    'interim message to the owner failed': (_pair('tell_owner', {'code': 'tool_failed', 'effect': 'unknown'}, 'failed'),
+                                           EFFECT_NONE),
+    'memory save': (_pair('save_memory', {'evidence': {'state': 'current'}}, 'succeeded'), EFFECT_NONE),
+    'result saved': (_pair('save_result', {'evidence': {'saved': True}}, 'succeeded'), EFFECT_NONE),
     # #103: a press the early guard stopped before any page press handler ran is refused like an
     # unrun target: nothing for a ``read`` step; a ``mutate`` one keeps the conservative class.
     'click stopped before any handler': (_pair('browser_click', {'declared_effect': 'read', 'effect': 'none',
@@ -103,7 +133,8 @@ def _events(rows):
 
 
 def _names(rows):
-    owner = SimpleNamespace(LOCAL_NON_TOOL_EVENTS=AgentService.LOCAL_NON_TOOL_EVENTS)
+    owner = SimpleNamespace(LOCAL_NON_TOOL_EVENTS=AgentService.LOCAL_NON_TOOL_EVENTS,
+                            CONTINUATION_EVENTS=AgentService.CONTINUATION_EVENTS)
     return AgentService.effect_call_names(owner, _events(rows))
 
 
@@ -124,7 +155,8 @@ class OneClassifier(unittest.TestCase):
         for name, (rows, expected) in CORPUS.items():
             with self.subTest(name):
                 action = rows[-1][2].get('host_action') or rows[-1][0]
-                changed = expected != EFFECT_NONE
+                # #618: a settings draft waits for the owner; like any owner-local write it holds nothing.
+                changed = expected not in (EFFECT_NONE, EFFECT_DRAFT)
                 self.assertEqual(action in _names(rows), changed)
                 self.assertEqual(bool(AgentService.effect_calls(_events(rows)[-1])), changed)
 
@@ -163,8 +195,21 @@ class NotRunMark(unittest.TestCase):
         self.assertEqual({key: seen[key] for key in ('code', 'retry', 'effect', 'observed_step')},
                          {'code': 'effect_unknown', 'retry': 'never', 'effect': 'unknown',
                           'observed_step': {'posted': False, 'approved': False}})
+        # #618 E1: the record of a ``mutate`` press stays unknown; the same press declared ``read``
+        # is settled by Still's observation that it posted nothing and spent no approval.
+        self.assertEqual(record_effect('browser_click', {**seen, 'declared_effect': 'mutate'}, 'failed'), EFFECT_UNKNOWN)
+        self.assertEqual(record_effect('browser_click', {**seen, 'declared_effect': 'read'}, 'failed'), EFFECT_NONE)
         self.assertNotIn('effect', _error_payload(ToolError('x', 'target_unavailable')))
         self.assertIsNone(getattr(relay_exception(_error_payload(ToolError('x', 'target_unavailable'))), 'effect', None))
+
+    def test_the_relay_carries_the_not_executed_mark_and_never_invents_it(self):
+        # #618 (#624 review): a relayed request the service refused before executing it stays ``none``.
+        from personal_agent.agent_runtime import not_executed
+        from personal_agent.cli_browser_relay import _error_payload, relay_exception
+        back = relay_exception(_error_payload(not_executed(ToolError('refused', 'api_error'))))
+        self.assertEqual((back.code, back.executed), ('api_error', False))
+        self.assertNotIn('executed', _error_payload(ToolError('x', 'api_error')))
+        self.assertIsNone(getattr(relay_exception(_error_payload(ToolError('x', 'api_error'))), 'executed', None))
 
     def test_the_relay_carries_a_timed_out_steps_observation(self):
         # #1496: what the browser worker saw of a step that timed out reaches the bridge's record.

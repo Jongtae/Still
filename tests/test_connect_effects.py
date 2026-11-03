@@ -426,7 +426,7 @@ class EffectBoundary(unittest.TestCase):
             db.execute("INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,'subscription_engine','running','{}',0)",(self.job['id'],))
         self.assertEqual(self.call()['behavior'],'allow')
         self.assertTrue(self.service._work_has_unknown_effect(self.job['id']))
-        self.assertFalse(self.service.settings_resume_safe(self.job['id']))
+        self.assertFalse(self.service.may_continue(self.job['id'], 'resume')[0])
         stream='\n'.join(json.dumps(row) for row in (
             {'type':'item.completed','item':{'id':'one','type':'mcp_tool_call','server':'synthetic',
                 'tool':'apply_change','arguments':INPUT,'status':'completed'}}, {'type':'turn.completed'}))
@@ -440,7 +440,7 @@ class EffectBoundary(unittest.TestCase):
             db.execute("INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,'subscription_engine','succeeded',?,0)",
                        (self.job['id'],json.dumps({'continuation_read_only':False,'continuation_accounted':True})))
             db.execute("INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,'settings_continuation','queued','{}',0)",(self.job['id'],))
-        self.assertTrue(self.service.settings_resume_safe(self.job['id']))
+        self.assertTrue(self.service.may_continue(self.job['id'], 'resume')[0])
         self.assertIn('apply_change',self.service.action_continuation_note(self.job))
         # An extra built-in action or repeated invocation is not covered by this proof.
         extra={**meta,'tool_calls':meta['tool_calls']+[{'type':'command_execution','name':'shell'}]}

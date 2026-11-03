@@ -27,7 +27,7 @@ from .agent_runtime import (Capabilities, ToolError, cut_to_fit, run_agent, AGEN
                             history_provenance, WorkBudget, PresentationBudget, WORK_TOOL_ATTEMPTS, WORK_DEADLINE_SECONDS, EFFECT_FREE_READS, explicit_search_query, outcome_from_events,
                             WORK_STOP_KEY, WORK_STOPPED, work_stop_requested, WorkLedger, WORK_LEDGER_KEY, goal_summary, work_source_records,
                             backfill_work_sources, recorded_private_sources, NOTES_SUMMARY_COMMANDS, WORK_SOURCES_BACKFILL_KEY, WORK_SOURCES_BACKFILL_VERSION,
-                            progress_step)
+                            progress_step, OWNER_LOCAL_ACTIONS)
 from .plugins import PluginRegistry
 from .quickstart_store import INTERIM_PROJECTIONS, PREVIEW_PROJECTION, UPDATE_PROJECTION, QuickStore, owner_words_work
 from .providers import NOT_REPORTED, ModelAdapter, ProviderError, request_json, validate_model
@@ -47,7 +47,7 @@ from .subscription_engines import SubscriptionEngines
 from .bounded_execution import reported_usage, BRIDGE_UNAVAILABLE, CLI_TOOL_CALLS_KEPT, TOOL_INCOMPLETE, TOOL_INCOMPLETE_TEXT, bridge_sdk_problem, incomplete_bridge_calls, MAX_NATIVE_EXCERPT
 from .bounded_execution import AgentOSMcpTools, ReadOnlyAgentOSMcpTools, StrictIsolatedAgentOSMcpTools, BoundedExecutionAdapter, ExecutionError, ExecutionResult, MAX_PROMPT_BYTES, BOUNDED_PROFILE, HOST_CLI_PROFILES, STRICT_PROFILE, profile_actions, profile_status, route_unavailable
 from .orchestrator import DEFAULT_MODEL_LABEL, MIN_ATTEMPT_SECONDS, model_refused, observations_with_pages, preview_text, remember_model_refusal
-from .orchestrator import (EVENT_TOOL as ORCHESTRATION_EVENT, PURPOSE as ORCHESTRATION_PURPOSE, NOT_JUDGED, NOT_REACHED, REACHED, UNJUDGED, WORKER_FAILED,
+from .orchestrator import (EVENT_TOOL as ORCHESTRATION_EVENT, PURPOSE as ORCHESTRATION_PURPOSE, NOT_JUDGED, NOT_REACHED, OWNER_NEEDED, REACHED, UNJUDGED, WORKER_FAILED,
                            Orchestration, worker_catalogue)
 from .isolated_engine_gateway import EngineGatewayError
 from .service_control import build_identity
@@ -354,6 +354,13 @@ RETRY_REFUSED_RAN_CURRENT='retry-refused-ran-current'
 #: #1519: how far back an answer may reach a question asked before an interleaved request.
 OPEN_QUESTION_SECONDS=900
 EFFECT_RETRY_REFUSAL=msg('service.the_previous_request_attempted_an_action')
+#: #618 E2: the reasons the one continuation rule gives (``continuation_reasons``), strongest first.
+CONTINUE_REASONS=('unknown','unaccounted','owner','effect')
+#: #618 E2: the one text of each reason, what the owner is told when a resume is withheld (a
+#: resume is never withheld for ``owner``: the owner's own act is what resumes it).
+CONTINUE_TEXT={'unknown':'quickstart_service.previous_effect_unknown',
+               'unaccounted':'quickstart_service.previous_effect_unknown',
+               'effect':'service.the_previous_request_attempted_an_action'}
 #: #1445: the time a final outcome judgment of a complete-looking reply needs before it is started.
 FINAL_JUDGMENT_SECONDS=30
 #: #795 review: the record each CLI writes last when its turn ended (Codex
@@ -1100,7 +1107,7 @@ class AgentService:
                     and not draft.get('trust_revoked') and draft.get('digest')==self.settings_orchestrator._digest(draft)
                     and self.mcp_setup_guard(draft)==draft.get('setup_guard')
                     and self.mcp_setup_before(draft['after'])==draft['before']
-                    and self.settings_resume_safe(draft['work_id'])
+                    and self.may_continue(draft['work_id'],'resume')[0]
                     and self.mcp_setup_attempts(draft['work_id'])<3)
         except (ValueError,KeyError,TypeError):
             return False
@@ -1216,67 +1223,115 @@ class AgentService:
                         'trust_epoch':before[2] if len(before)==3 else ''}
         return None
 
-    def settings_resume_safe(self, work_id):
-        """Resume only when every prior action has an observed disposition."""
-        if self.connector_effect_progress(work_id)[1]:return False
+    # -- the one continuation rule (#618 E2) ------------------------------------------------
+    #: What a continuation is asked for.  ``redelegate``: another attempt of this request by a
+    #: worker (``orchestration_step``).  ``steer``: one more pass with the owner's later words.
+    #: ``retry``: the original request again as a new Work (``safe_retry``).  ``resume``: this same
+    #: Work goes on after an owner prerequisite - a parked connection or folder, a settings draft,
+    #: an approval or a sign-in, a budget-continue - carrying what it already did.
+    CONTINUE_PURPOSES=frozenset({'redelegate','steer','retry','resume'})
+    #: Records of Still's own continuation bookkeeping, not tool calls.
+    CONTINUATION_EVENTS=frozenset({'settings_continuation','action_continuation'})
+
+    def continuation_reasons(self, work_id, purpose, *, since=None, owner_waits=False, unaccounted=False):
+        """Every reason this Work may not continue for ``purpose``, strongest first (#618 E2).
+
+        The one continuation rule.  Re-delegation, resume, retry, parking, steer and budget-continue
+        all ask it, so they agree, and each tells the owner and the model the same reason.  Adopted
+        from RFC 9110 §9.2.2 (repeat only what is known not applied) and the OpenAI Agents SDK's
+        human-in-the-loop rule ("retry only after authoritative reconciliation establishes that no
+        earlier attempt performed the action"), on the per-call classes of ``record_effect``:
+
+        - ``unknown``: a call of this Work has no definite answer (an unknown effect, a dispatch
+          claim never settled, a call cut off before its terminal record, an unreadable record);
+        - ``unaccounted``: an action Still could not observe ran - a trusted-local CLI's own host
+          actions (``unaccounted``), or, when resuming, a CLI turn whose actions were not accounted;
+        - ``owner``: the attempt waits for the owner's own decision or connection - a recorded
+          prerequisite (``owner_waits``: an open approval, an observed sign-in page; or a recorded
+          draft or proposal, or a missing connection a call named);
+        - ``effect``: a call changed something outside the owner (``changed``).  A ``resume``
+          carries the Work's own progress forward, so a change Still's own replay key already
+          guards is accounted, not repeated (``api_effect_replayed``, the connector input-digest
+          claim): an API dispatch observed for this Work, a connector change its permission claimed.
+
+        ``none`` and ``draft`` calls never block, nor does an owner-local write (``OWNER_LOCAL_ACTIONS``).
+        Unknown and observed external changes are read over the whole Work (and its request chain);
+        ``since`` (an event id) limits the calls and owner waits to one attempt.  The reasons come in
+        ``CONTINUE_REASONS`` order and read as ``CONTINUE_TEXT``; an empty tuple means the Work may continue.
+        """
+        from .agent_runtime import (EFFECT_CHANGED, EFFECT_FREE_READS, EFFECT_LEDGER_TOOLS, EFFECT_UNKNOWN, INTERNAL_STATE_ACTIONS,
+                                    call_effects, keyed_change)
+        if purpose not in self.CONTINUE_PURPOSES:raise ValueError(purpose)
+        reasons=[]
+        def add(reason):
+            if reason not in reasons:reasons.append(reason)
+        carry=purpose=='resume'
+        observed,claims=self.connector_effect_progress(work_id)
+        observed_api=set()
         with self.store.db() as db:
             rows=db.execute('SELECT id,tool,status,detail FROM tool_events WHERE job_id=? ORDER BY id',(work_id,)).fetchall()
-            try:root=WorkLedger.request_chain(db,work_id)[-1]['id']
-            except ValueError:return False
-            # Retry/input continuation dispatches are stored on the canonical
-            # original Work; correlate only this worker's host-attributed claims.
-            observed_api=set()
-            for row in db.execute(
-                    "SELECT id,detail FROM tool_events WHERE job_id=? AND tool='api_dispatch' AND status='observed'",(root,)):
-                try:detail=json.loads(row['detail'])
-                except (TypeError,ValueError):return False
-                if not isinstance(detail,dict) or not isinstance(detail.get('evidence'),dict):return False
-                if detail['evidence'].get('work_id')==work_id:observed_api.add(row['id'])
-        from .agent_runtime import EFFECT_DRAFT, EFFECT_NONE, call_effects
-        engine_running=False
-        pending_api=set()
-        # #1445 part 2: every other tool call is judged by the one effect classifier; resumption
-        # accepts calls that changed nothing and settings drafts waiting for the owner.
-        generic=[]
+            if carry:
+                # Retry/input continuation dispatches are stored on the canonical original Work;
+                # only this Work's host-attributed observed dispatches are accounted.
+                try:root=WorkLedger.request_chain(db,work_id)[-1]['id']
+                except ValueError:root=None;add('unknown')
+                for row in db.execute("SELECT id,detail FROM tool_events WHERE job_id=? AND tool='api_dispatch' AND status='observed'",
+                                      (root,)) if root else ():
+                    try:evidence=json.loads(row['detail']).get('evidence')
+                    except (TypeError,ValueError,AttributeError):evidence=None
+                    if not isinstance(evidence,dict):add('unknown');continue
+                    if evidence.get('work_id')==work_id:observed_api.add(row['id'])
+        if claims:add('unknown')
+        calls,scoped,engine_running=[],[],False
         for row in rows:
             try:detail=json.loads(row['detail'] or '{}')
-            except (TypeError,ValueError):return False
-            if not isinstance(detail,dict) or self._unknown_effect(detail):return False
-            action=detail.get('host_action') or row['tool']
-            if action=='subscription_engine':
-                if row['status']=='running':
-                    if engine_running:return False
-                    engine_running=True
-                else:
-                    if detail.get('continuation_read_only') is not True and detail.get('continuation_accounted') is not True:return False
-                    engine_running=False
-            elif action=='api_dispatch':
-                if row['status'] not in ('observed','rejected'):return False
-            elif action=='api_request':
-                # Its own rule: an observed dispatch is accounted (the continuation note says so).
-                call=(detail.get('scope'),detail.get('call_id'),detail.get('attempt'))
-                if row['status']=='running':
-                    if not isinstance(call[1],str) or not call[1] or call in pending_api:return False
-                    pending_api.add(call);continue
-                pending_api.discard(call)
-                evidence=detail.get('evidence') or {}
-                if row['status']=='succeeded':
-                    if evidence.get('effect') not in ('read','navigate') and evidence.get('dispatch_event') not in observed_api:return False
-                elif row['status']=='failed':
-                    from .api_requests import PRE_DISPATCH_CODES
-                    # #1484: a call Still refused before it ran (``ran: false``) sent nothing either.
-                    if detail.get('ran') is not False and detail.get('code') not in PRE_DISPATCH_CODES|{'api_unauthorized','needs_setup'}:return False
-                else:return False
-            elif action=='connector_read':
-                if detail.get('effect')!='none' and not (row['status']=='succeeded' and detail.get('effect') in ('mutate','payment') and detail.get('permission_event')):return False
-            elif action in self.LOCAL_NON_TOOL_EVENTS|{'connector_permission','settings_continuation','action_continuation'}:continue
-            else:
-                generic.append((row['tool'],row['status'],detail))
-        for action,effect_class,status in call_effects(generic):
-            if effect_class not in (EFFECT_NONE,EFFECT_DRAFT):return False
-            # A call with no terminal record was cut off; only a pure read is safe to leave behind.
-            if status=='running' and action not in self.LOCAL_PARK_READ_ONLY-{'browser_open'}:return False
-        return not engine_running and not pending_api
+            except (TypeError,ValueError):detail=None
+            if not isinstance(detail,dict):
+                add('unknown');continue
+            tool=row['tool']
+            if tool in EFFECT_LEDGER_TOOLS|self.CONTINUATION_EVENTS:continue
+            if tool in self.LOCAL_NON_TOOL_EVENTS or tool=='subscription_engine':
+                # Still's own records are no calls; an unknown outcome one of them carries still counts.
+                if self._unknown_effect(detail):add('unknown')
+                if tool=='subscription_engine' and carry:
+                    # A CLI turn's own actions are accounted only when its record says so.
+                    if row['status']=='running':
+                        if engine_running:add('unaccounted')
+                        engine_running=True
+                    else:
+                        if detail.get('continuation_read_only') is not True and detail.get('continuation_accounted') is not True:
+                            add('unaccounted')
+                        engine_running=False
+                continue
+            if row['status'] not in ('running','succeeded','failed'):
+                # A record with no call outcome (a preflight's ``unavailable``): only an unknown it carries counts.
+                if self._unknown_effect(detail):add('unknown')
+                continue
+            calls.append((tool,row['status'],detail))
+            if since is None or row['id']>since:scoped.append((tool,row['status'],detail))
+        if engine_running or unaccounted:add('unaccounted')
+        def cut_off(action,status,detail):
+            # A call (paired by its id) with no terminal record got no definite answer, unless it only
+            # reads or stays with the owner; a navigation or input step may have acted on the page.
+            return (status=='running' and bool(detail.get('call_id'))
+                    and action not in (EFFECT_FREE_READS-{'browser_open'})|OWNER_LOCAL_ACTIONS|INTERNAL_STATE_ACTIONS)
+        for action,effect,status,detail in call_effects(calls,with_detail=True):
+            # E1: unknown is that call's own.
+            if effect==EFFECT_UNKNOWN or cut_off(action,status,detail):add('unknown')
+        # #170: a recorded draft or proposal; #366: a connection only the owner can make.
+        if (owner_waits or (purpose in ('redelegate','steer') and awaiting_owner_rows(scoped))
+                or (purpose=='redelegate' and self.missing_connection_rows(scoped))):
+            add('owner')
+        if observed and not carry:add('effect')
+        for action,effect,status,detail in call_effects(scoped,with_detail=True):
+            if (effect==EFFECT_CHANGED and not cut_off(action,status,detail)
+                    and not (carry and keyed_change(action,detail,status,observed_api))):add('effect')
+        return tuple(sorted(reasons,key=CONTINUE_REASONS.index))
+
+    def may_continue(self, work_id, purpose, **kwargs):
+        """``(ok, reason)`` of the one continuation rule (#618 E2): ``reason`` is the strongest, or None."""
+        reasons=self.continuation_reasons(work_id,purpose,**kwargs)
+        return (not reasons,reasons[0] if reasons else None)
 
     def settings_review_ready(self, draft):
         """Current readiness for the exact prerequisite, never just a setter receipt."""
@@ -1417,7 +1472,7 @@ class AgentService:
                             or row['continuation'].get('kind')=='api-setting'
                             and row['state'] in ('unknown','applied') and api_published(self,row)
                             and not self.settings_review_ready(row) for row in drafts)
-                safe=self.settings_resume_safe(work_id)
+                safe=self.may_continue(work_id,'resume')[0]
                 if valid and not stopped and waiting and safe:
                     with self.store.db() as db:
                         db.execute("UPDATE jobs SET status='awaiting_connection' WHERE id=? AND status=?",(work_id,job['status']))
@@ -3977,8 +4032,20 @@ class AgentService:
         return unknown_effect(value)
 
     def _work_has_unknown_effect(self, work_id):
-        """True when this Work's own Evidence records an unobserved external effect."""
-        return bool(self.connector_effect_progress(work_id)[1]) or any(self._unknown_effect(event.get('trace') or {}) for event in self.store.task_events(work_id))
+        """True when a call of this Work has no definite answer (#618 E1), as the one rule reads it.
+
+        The Work's outcome is ``unknown`` exactly when its continuation is held for ``unknown``
+        (``continuation_reasons``): an unresolved dispatch claim, or a call ``record_effect``
+        classifies ``unknown``.  A call Still refused before hand-off, one the service did not
+        execute and a navigate step Still observed changing nothing are not unknown.
+        """
+        return 'unknown' in self.continuation_reasons(work_id,'retry')
+
+    def _unknown_effect_holds(self, work_id, target):
+        """Whether an unknown effect holds a change to this connection (#618 E1: scoped to its target)."""
+        from .agent_runtime import TARGET_CONNECTION, effect_target, unknown_effect_holds, unknown_effect_targets
+        return unknown_effect_holds(unknown_effect_targets(self.store,work_id),
+                                    effect_target(TARGET_CONNECTION,target['kind']+':'+target['identity']))
 
     def _already_retried(self, work_id, current_work_id=None):
         """True when another Work already replayed this failed Work.
@@ -4037,7 +4104,7 @@ class AgentService:
         for event in events:
             trace=event.get('trace') if isinstance(event.get('trace'),dict) else {}
             name=trace.get('host_action') or event.get('tool')
-            if name in ignore:continue
+            if name in ignore or name in OWNER_LOCAL_ACTIONS:continue
             unknown=self._unknown_effect(trace)
             if name not in changed and not unknown:continue
             key=(str(name),self._event_host(trace))
@@ -4094,11 +4161,11 @@ class AgentService:
 
     def safe_retry(self, previous, current_work_id=None):
         """Whether replaying this Work's original request is demonstrably safe."""
-        events=self.store.task_events(previous['id'])
-        # Unknown external effect is the strongest reason to refuse, and the
-        # one the owner must act on (check the real result), so it is named
-        # before any weaker reason such as the Work's status (#598 I1).
-        if any(self._unknown_effect(event.get('trace') or {}) for event in events):
+        # #618 E2: the one continuation rule decides the effects.  Unknown external effect is the
+        # strongest reason to refuse, and the one the owner must act on (check the real result), so
+        # it is named before any weaker reason such as the Work's status (#598 I1).
+        _ok,blocker=self.may_continue(previous['id'],'retry')
+        if blocker in ('unknown','unaccounted'):
             return False,UNKNOWN_EFFECT_RETRY_REFUSAL
         if previous.get('status') not in ('failed','interrupted'):
             return False,msg('quickstart_service.retry_not_failed')
@@ -4124,10 +4191,9 @@ class AgentService:
         sources=work_source_records(self.store).get(previous['id'])
         if isinstance(sources,list) and ({'owner-settings',ENGINE_UNMEDIATED}&set(sources)):
             return False,msg('quickstart_service.retry_unmediated_action')
-        # AgentPackage tool ids may alias an Still write through
-        # trace.host_action, so checking only the public tool id can
-        # accidentally replay a completed mutation (``effect_calls``).
-        if self.effect_call_names(events):
+        # AgentPackage tool ids may alias an Still write through trace.host_action; the one rule
+        # classifies each call by its host action (``record_effect``), never the public tool id.
+        if blocker=='effect':
             return False,EFFECT_RETRY_REFUSAL
         return True,None
 
@@ -4164,14 +4230,16 @@ class AgentService:
     def effect_call_names(self, events):
         """Names of the tool calls in recorded ``events`` that were not ``none`` (#1445 part 2).
 
-        The one effect classifier over each call (running and terminal records paired), so a
-        retry, a re-delegation and a resumption agree on what a call did.  An action the
-        classifier does not know (an AgentPackage tool included) counts as a change.
+        The one effect classifier over each call (running and terminal records paired), so the
+        names a refused retry lists are the calls the one continuation rule held.  An action the
+        classifier does not know (an AgentPackage tool included) counts as a change; Still's own
+        effect-ledger records are no calls (#618).
         """
-        from .agent_runtime import EFFECT_NONE, call_effects
+        from .agent_runtime import EFFECT_DRAFT, EFFECT_LEDGER_TOOLS, EFFECT_NONE, call_effects
         rows=[(event.get('tool'),event.get('status'),event.get('trace') if isinstance(event.get('trace'),dict) else {})
-              for event in events if event.get('tool') not in self.LOCAL_NON_TOOL_EVENTS|{'subscription_engine'}]
-        return {action for action,effect_class,_status in call_effects(rows) if effect_class!=EFFECT_NONE}
+              for event in events
+              if event.get('tool') not in self.LOCAL_NON_TOOL_EVENTS|self.CONTINUATION_EVENTS|EFFECT_LEDGER_TOOLS|{'subscription_engine'}]
+        return {action for action,effect_class,_status in call_effects(rows) if effect_class not in (EFFECT_NONE,EFFECT_DRAFT)}
 
     @staticmethod
     def effect_calls(event):
@@ -4180,10 +4248,10 @@ class AgentService:
         #1445 part 2: the one effect classifier (``agent_runtime.record_effect``) for a single
         event; ``effect_call_names`` pairs a call's running and terminal records.
         """
-        from .agent_runtime import EFFECT_NONE, record_effect
+        from .agent_runtime import EFFECT_DRAFT, EFFECT_NONE, record_effect
         trace=event.get('trace') if isinstance(event.get('trace'),dict) else {}
         action=trace.get('host_action') or event.get('tool')
-        return set() if record_effect(action,trace,event.get('status'))==EFFECT_NONE else {action}
+        return set() if record_effect(action,trace,event.get('status')) in (EFFECT_NONE,EFFECT_DRAFT) else {action}
 
     @staticmethod
     def cli_host_actions(meta):
@@ -5906,7 +5974,7 @@ class AgentService:
         guarded like ``connector_read_need``: only a Work whose every attempt changed nothing parks.
         """
         from .agent_runtime import EFFECT_NONE, record_effect
-        if not self.connector_handoff or not self.changed_nothing(job_id):return None
+        if not self.connector_handoff or not self.may_continue(job_id,'resume')[0]:return None
         with self.store.db() as db:
             rows=db.execute("SELECT tool,status,detail FROM tool_events WHERE job_id=? AND status='failed' AND id>? ORDER BY id",
                             (job_id,since or 0)).fetchall()
@@ -5919,15 +5987,6 @@ class AgentService:
                     and record_effect(detail.get('host_action') or row['tool'],detail,row['status'])==EFFECT_NONE):
                 return need
         return None
-
-    def changed_nothing(self, job_id):
-        """Whether a Work may park for an owner connection: nothing it did changed anything (#366).
-
-        ``attempted_only_reads`` alone never holds on the CLI route, whose own ``subscription_engine``
-        records it counts; ``settings_resume_safe`` accounts for them and fails closed on unaccounted
-        CLI actions.  The same pair ``recorded_local_authority_need`` uses.
-        """
-        return self.attempted_only_reads(job_id) or self.settings_resume_safe(job_id)
 
     def missing_connection_rows(self, rows):
         """Whether an attempt's failed call named a declared connector that is not connected (#366).
@@ -5952,7 +6011,7 @@ class AgentService:
         guarded exactly like ``local_authority_need``: only a Work whose every
         attempt was a read may be parked and resumed.
         """
-        if not self.connector_handoff or not self.changed_nothing(job_id):return None
+        if not self.connector_handoff or not self.may_continue(job_id,'resume')[0]:return None
         for result in capabilities.memo.values():
             if (isinstance(result,dict) and result.get('needs_setup') is True
                     and result.get('requires') in self.PARKABLE_READ_CONNECTORS
@@ -6529,34 +6588,25 @@ class AgentService:
         # #466: what this attempt already told the owner, so a further attempt does not say it again.
         told=getattr(orchestration,'owner_told',None)
         if callable(told):told(self.store.sent_updates(job_id))
-        from .agent_runtime import EFFECT_NONE, failed_steps_text, read_state_text, trail_steps
+        from .agent_runtime import failed_steps_text, read_state_text, trail_steps
         with self.store.db() as db:
             rows=db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=? AND id>? ORDER BY id',(job_id,since or 0)).fetchall()
-        unknown=outcome=='unknown' or self._work_has_unknown_effect(job_id)
-        unobserved=unmediated and self.cli_host_actions(engine_meta)!=()
-        changed=bool(self.connector_effect_progress(job_id)[0])
+        # #618 E2: the one continuation rule.  #795: a trusted-local CLI attempt whose own report shows
+        # host actions ran something Still could not observe (``unaccounted``).  #170/#366: an attempt
+        # that left a draft, a proposal or a missing connection waiting for the owner stops for the owner.
+        reasons=self.continuation_reasons(job_id,'redelegate',since=since,
+                                          unaccounted=bool(unmediated and self.cli_host_actions(engine_meta)!=()))
+        unknown=outcome=='unknown' or bool({'unknown','unaccounted'}&set(reasons))
+        if 'owner' in reasons:owner_needed=True
         from .memory_service import conversation_block, recalled_tool_exchanges
         recalled=conversation_block(recalled_tool_exchanges(self.store,job_id),budget=9000)
         observed=[]
         # #729: the factual summary the next plan call reads (names and codes only).
         called,failed_codes,incomplete,sourceless=[],[],[],0
-        # #1445 part 2: one effect classifier (``agent_runtime.record_effect``) over each call; any
-        # call that is not ``none`` (a settings draft included) ends re-delegation, as before.
-        # #466: except an interim message to the owner, which changed nothing outside the owner's chat.
         tool_rows=self.attempt_tool_rows(rows)
-        from .agent_runtime import EFFECT_UNKNOWN, redelegation_effects
-        classes=redelegation_effects(tool_rows)
-        if classes-{EFFECT_NONE,EFFECT_UNKNOWN}:changed=True
-        if EFFECT_UNKNOWN in classes:unknown=True
-        # The owner is told "executed" only for an observed change; otherwise that it could not be confirmed.
+        # The owner is told an action ran only for a recorded change; an unknown one is said as such.
         from .orchestrator import EFFECT_UNKNOWN_STOP
-        effect='changed' if changed else EFFECT_UNKNOWN_STOP if (unknown or unobserved) else False
-        # #170: an attempt that left something waiting for the owner's own decision (a calendar or
-        # settings draft, a proposal) stops for the owner, as a pending step approval does (#1468):
-        # no outcome judgment reads that by-design wait as a shortfall, and nothing is re-delegated.
-        if awaiting_owner_rows(tool_rows):owner_needed=True
-        # #366: an attempt blocked by a connection only the owner can make is not re-delegated.
-        if self.missing_connection_rows(tool_rows):owner_needed=True
+        effect=EFFECT_UNKNOWN_STOP if unknown else 'changed' if 'effect' in reasons else False
         for row in rows:
             if row['tool'] in self.LOCAL_NON_TOOL_EVENTS|{'subscription_engine'} or row['status'] not in ('running','succeeded','failed'):
                 continue
@@ -6599,12 +6649,17 @@ class AgentService:
             # does (#820 review).  Only a verdict that the reply did not serve changes the run's own
             # outcome; an unavailable one keeps it.
             evaluation=orchestration.evaluate_run(result,owner_needed=owner_needed)
-            if evaluation==REACHED and getattr(result,'judgment',None) is None and not effect \
+            # #618 E2: a question the worker asked is no owner prerequisite by itself; the one outcome
+            # judgment decides whether the question serves the message (as on the CLI route).
+            asked=bool((getattr(result,'report',None) or {}).get('question')) and evaluation!=OWNER_NEEDED
+            if (evaluation==REACHED or asked) and getattr(result,'judgment',None) is None and not effect \
                     and orchestration.budget_allows(reserve=True):
-                if orchestration.evaluate_answer(answer,observations,failed_steps)==NOT_REACHED:
-                    evaluation=NOT_REACHED
+                judged=orchestration.evaluate_answer(answer,observations,failed_steps)
+                if evaluation==REACHED:
+                    if judged==NOT_REACHED:evaluation=NOT_REACHED
+                else:evaluation=judged
         elif owner_needed:
-            evaluation='owner_needed'
+            evaluation=OWNER_NEEDED
         elif effect or not orchestration.budget_allows(reserve=True):
             # Nothing may follow an effect, or the Work's time is short (#1418: the
             # judgment's own held turn counts here; a re-plan is checked in ``next``).  #752: the goal
@@ -6617,12 +6672,18 @@ class AgentService:
             try:time_left=budget.remaining() if budget is not None else FINAL_JUDGMENT_SECONDS
             except Exception:time_left=0
             evaluation=(orchestration.evaluate_answer(answer,observations,failed_steps,final=True)
-                        if not (unknown or unobserved) and orchestration.may_judge()
+                        if not unknown and orchestration.may_judge()
                         and (effect or outcome in ('partial','failed') or time_left>=FINAL_JUDGMENT_SECONDS)
                         else NOT_JUDGED)
         else:
             evaluation=orchestration.evaluate_answer(answer,observations,failed_steps)
-        return orchestration.next(attempt,evaluation,answer=str(answer or '')[:600],failed=summary,effect=effect)
+        # #618 E2: an attempt that stops for a recorded owner prerequisite is still judged once (the
+        # one outcome judgment always runs); the judgment is recorded, the stop stays the owner's.
+        judged=None
+        if (evaluation==OWNER_NEEDED and not unknown and orchestration.may_judge()
+                and (result is None or getattr(result,'judgment',None) is None)):
+            judged=orchestration.evaluate_answer(answer,observations,failed_steps,final=True)
+        return orchestration.next(attempt,evaluation,answer=str(answer or '')[:600],failed=summary,effect=effect,judged=judged)
 
     def cancel_superseded_work(self, work_ids, notify=True):
         """Cancel parked Work whose resume path a newer request replaced.
@@ -6806,9 +6867,11 @@ class AgentService:
             terminal='failed'
             try:
                 if handoff.prerequisite(owner,key) is not None:continue
-                if self._work_has_unknown_effect(job['id']):
-                    refusal=UNKNOWN_EFFECT_RETRY_REFUSAL;terminal='unknown'
-                elif not self.attempted_only_reads(job['id']):
+                # #618 E2: the same rule that let the Work park decides its resume.
+                _ok,blocker=self.may_continue(job['id'],'resume')
+                if blocker in ('unknown','unaccounted'):
+                    refusal=UNKNOWN_EFFECT_RETRY_REFUSAL;terminal='unknown' if blocker=='unknown' else 'failed'
+                elif blocker:
                     refusal=EFFECT_RETRY_REFUSAL
                 elif self.work_stopped(job['id']):
                     refusal=WORK_STOPPED
@@ -6863,9 +6926,6 @@ class AgentService:
     # index, status and compare-and-set as a connector handoff, so cancel,
     # correction, supersession and exactly-once resume behave identically.
 
-    #: Host actions that only read.  A turn that ran anything else is never
-    #: parked, because resuming it would repeat that effect.
-    LOCAL_PARK_READ_ONLY=EFFECT_FREE_READS
     LOCAL_PICKER_PROMPTS={LOCAL_FOLDER_READ:msg('quickstart_service.pick_read_folder'),
                           LOCAL_REFERENCE_READ:msg('quickstart_service.pick_reference_folder'),
                           LOCAL_RESULT_WRITE:msg('quickstart_service.pick_result_folder')}
@@ -6884,7 +6944,7 @@ class AgentService:
         """
         # Eligibility is decided from every *attempted* call, including one that
         # raised, so a failed effect (a delegation, a note) is never re-run.
-        if not self.attempted_only_reads(job_id):return None
+        if not self.may_continue(job_id,'resume')[0]:return None
         need=None
         for result in capabilities.memo.values():
             if isinstance(result,dict) and result.get('needs_setup') is True and result.get('requires') in LOCAL_AUTHORITY_SCOPES:
@@ -6896,10 +6956,10 @@ class AgentService:
 
         A trusted-local CLI's folder reads and result saves run in the bridge, so their results never
         reach this process's ``memo``; their durable events carry the typed ``requires``.  Guarded
-        like a settings continuation (``settings_resume_safe``): only a Work whose every prior action,
+        by the one continuation rule (``may_continue``, #618): only a Work whose every prior action,
         the CLI turn included, has an observed disposition that changed nothing parks and resumes.
         """
-        if not (self.attempted_only_reads(job_id) or self.settings_resume_safe(job_id)):return None
+        if not self.may_continue(job_id,'resume')[0]:return None
         with self.store.db() as db:
             # ``since``: the attempt's first event id (``last_event_id``), so an earlier attempt's need is not reused.
             rows=db.execute("SELECT detail FROM tool_events WHERE job_id=? AND status='succeeded' AND id>? ORDER BY id",
@@ -6918,26 +6978,6 @@ class AgentService:
     LOCAL_NON_TOOL_EVENTS=frozenset({'model','local_authority','conversation_continuity',ORCHESTRATION_EVENT,om.EVENT_TOOL,
                                      om.REVIEW_EVENT_TOOL,MEMORY_UNDO_TOOL,STEER_EVENT,REACTION_EVENT,
                                      'response_timing','connection_setup','preparation'})  # host slot receipt, not schedule_preparation
-
-    def attempted_only_reads(self, job_id):
-        """True only when every tool this Work attempted is a declared read.
-
-        Fails closed: an event whose action cannot be read, or any action not
-        in the read-only set (including a call that raised), makes the Work
-        ineligible for parking or continuation.
-        """
-        from .agent_runtime import EFFECT_NONE, call_effects
-        with self.store.db() as db:
-            rows=db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=? ORDER BY id',(job_id,)).fetchall()
-        calls=[]
-        for row in rows:
-            if row['tool'] in self.LOCAL_NON_TOOL_EVENTS:continue
-            try:detail=json.loads(row['detail'] or '{}')
-            except (TypeError,ValueError):return False
-            if not isinstance(detail,dict):return False
-            calls.append((row['tool'],row['status'],detail))
-        # #1445 part 2: the one effect classifier; a browser_open is a read only by its declaration.
-        return all(effect_class==EFFECT_NONE for _action,effect_class,_status in call_effects(calls))
 
     def workspace_authority_need(self):
         """Which folder a save-a-result request still lacks: the read first, then the write."""
@@ -7131,7 +7171,7 @@ class AgentService:
         it after the owner approves sharing cannot repeat an effect.
         """
         if job['id'] not in set(self.store.config(LOCAL_RESUMED_KEY,[])):return False
-        if not self.attempted_only_reads(job['id']):return False
+        if not self.may_continue(job['id'],'resume')[0]:return False
         with self.lock:
             rows=self._document_resume_rows()
             rows[job['id']]={'owner':_owner_key(self.issuer_owner_id(job)),
@@ -8763,15 +8803,15 @@ class AgentService:
         if any(item.get('offer_digest')==row.get('offer_digest') and item.get('resumed') for item in receipts):return False
         from .quickstart_store import REQUEST_APPROVAL_ACTIONS
         guarded=REQUEST_APPROVAL_ACTIONS|{'browser_sign_in','budget_continue'}
-        reason=('unknown-effect' if row.get('action') in guarded and self._work_has_unknown_effect(job['id'])
-                else 'unaccounted-action' if row.get('action') in guarded and not self.settings_resume_safe(job['id'])
+        # #618 E2: the one continuation rule, and its one reason text for the owner.
+        blocker=self.may_continue(job['id'],'resume')[1] if row.get('action') in guarded else None
+        reason=('unknown-effect' if blocker=='unknown' else 'unaccounted-action' if blocker
                 else 'continuation-budget' if sum(item.get('resumed') is True for item in receipts)>=8 else None)
         if reason:
             if not any(item.get('action_digest')==row['digest'] and item.get('reason')==reason for item in receipts):
                 db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                            (job['id'],'action_continuation','withheld',json.dumps({'action_digest':row['digest'],'offer_digest':row.get('offer_digest'),'resumed':False,'reason':reason}),time.time()))
-            cause=(msg('quickstart_service.previous_effect_unknown') if reason in ('unknown-effect','unaccounted-action')
-                   else msg('quickstart_service.resume_limit'))
+            cause=msg(CONTINUE_TEXT[blocker]) if blocker else msg('quickstart_service.resume_limit')
             db.execute("UPDATE jobs SET status='partial',owner_cause=? WHERE id=?",(cause,job['id']))
             return False
         if row.get('action')=='budget_continue':
@@ -9624,13 +9664,14 @@ class AgentService:
         tools=self.attempt_tool_rows(rows)
         failed=self._attempt_stop_codes(rows)
         # A completed read does not turn an owner/effect wait into a budget boundary.
-        if (not self._budget_boundary(failed) or receipts>=8
-                or any(code in {'needs_setup','input_required','approval_required','login_required','awaiting_connection'} for code in failed)
-                or run.approval_needed[0] or run.context_approval_needed[0] or run.waits_for_sign_in
-                or (run.agency_report or {}).get('question')
-                or self.work_waits_for_owner(job) or awaiting_owner_rows(tools) or self.missing_connection_rows(tools)
-                or (self._browser_login(job['id']) or {}).get('state') in ('requested','opening','offered','closing')
-                or self._work_has_unknown_effect(job['id']) or not self.settings_resume_safe(job['id'])):return False
+        if not self._budget_boundary(failed) or receipts>=8:return False
+        # #618 E2: the one continuation rule; this attempt's owner prerequisites are its named inputs.
+        owner_waits=bool(any(code in {'needs_setup','input_required','approval_required','login_required','awaiting_connection'} for code in failed)
+                         or run.approval_needed[0] or run.context_approval_needed[0] or run.waits_for_sign_in
+                         or (run.agency_report or {}).get('question')
+                         or self.work_waits_for_owner(job) or awaiting_owner_rows(tools) or self.missing_connection_rows(tools)
+                         or (self._browser_login(job['id']) or {}).get('state') in ('requested','opening','offered','closing'))
+        if not self.may_continue(job['id'],'resume',owner_waits=owner_waits)[0]:return False
         observed=[(tool,data.get('evidence') or {}) for tool,status,data in tools if status=='succeeded' and data.get('ran') is not False]
         if not observed:return False
         done=msg('budget_continue.done',count=len(observed))
@@ -9658,7 +9699,7 @@ class AgentService:
             db.execute('BEGIN IMMEDIATE')
             current=dict(db.execute('SELECT * FROM jobs WHERE id=?',(job['id'],)).fetchone())
             if (current['status']!=job['status'] or self.work_stopped(job['id'])
-                    or self._work_has_unknown_effect(job['id']) or not self.settings_resume_safe(job['id'])):return False
+                    or not self.may_continue(job['id'],'resume')[0]):return False
             try:
                 root=WorkLedger.request_chain(db,job['id'])[-1]['id']
                 key=WORK_LEDGER_KEY+':'+root
@@ -9787,7 +9828,7 @@ class AgentService:
         """
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
-            if self._work_has_unknown_effect(job['id']):return None
+            if self._unknown_effect_holds(job['id'],target):return None
             if not self._connector_authority_current(job,target,binding,detail['evidence']['effect'],detail['evidence']['operation']):return None
             for row in db.execute("SELECT status,detail FROM tool_events WHERE job_id=? AND tool='connector_permission'",
                                   (job['id'],)):
@@ -9840,7 +9881,8 @@ class AgentService:
         binding=None
         input_digest=None
         if effect in ('mutate','payment') and record['state']=='active':
-            if self._work_has_unknown_effect(job['id']):
+            # #618 E1: only an unknown effect on this same connection holds this change.
+            if self._unknown_effect_holds(job['id'],target):
                 return {'behavior':'deny','message':'이 요청의 앞선 동작이 실제로 반영됐는지 아직 확인되지 않았습니다. 결과를 확인하기 전에는 다른 변경이나 반복 실행을 하지 않습니다.'}
             if not isinstance(values,dict):
                 return {'behavior':'deny','message':'실행할 정확한 입력을 확인할 수 없어 실행하지 않았습니다.'}
@@ -12526,17 +12568,13 @@ class AgentService:
         if run.steer_note:return 'continued'
         if run.outcome=='unknown':return 'unknown'
         if not isinstance((run.base_history or [{}])[-1].get('content'),str):return 'route'
-        # A browser step asked for or approved and unspent: the steer may change what it covers.
-        if run.approval_needed[0] or run.context_approval_needed[0] or run.waits_for_sign_in or self._browser_request(job_id):return 'owner'
-        if self._work_has_unknown_effect(job_id):return 'unknown'
-        if self.connector_effect_progress(job_id)[0]:return 'effect'
-        if run.unmediated_turn and self.cli_host_actions(run.engine_meta)!=():return 'effect'
-        from .agent_runtime import EFFECT_NONE, call_effects
-        with self.store.db() as db:
-            rows=db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=? ORDER BY id',(job_id,)).fetchall()
-        tool_rows=self.attempt_tool_rows(rows)
-        if awaiting_owner_rows(tool_rows):return 'owner'
-        if any(effect!=EFFECT_NONE for _action,effect,_status in call_effects(tool_rows)):return 'effect'
+        # #618 E2: the one continuation rule.  A browser step asked for or approved and unspent is a
+        # recorded owner prerequisite: the steer may change what it covers.
+        _ok,blocker=self.may_continue(job_id,'steer',unaccounted=bool(run.unmediated_turn and self.cli_host_actions(run.engine_meta)!=()),
+                                      owner_waits=bool(run.approval_needed[0] or run.context_approval_needed[0]
+                                                       or run.waits_for_sign_in or self._browser_request(job_id)))
+        # The owner reads an action Still could not observe as one whose outcome is not confirmed.
+        if blocker:return 'unknown' if blocker=='unaccounted' else blocker
         budget=run.work_budget
         if budget is None:return None
         try:
@@ -12557,13 +12595,10 @@ class AgentService:
         if not run.steer_note or saved is None:return False
         fields,terminal,started=saved
         job_id=run.job['id']
-        if self._work_has_unknown_effect(job_id) or self.connector_effect_progress(job_id)[0]:return False
-        if run.unmediated_turn and self.cli_host_actions(run.engine_meta)!=():return False
-        from .agent_runtime import EFFECT_NONE, call_effects
-        with self.store.db() as db:
-            rows=db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=? AND id>? ORDER BY id',
-                            (job_id,run.attempt_start or 0)).fetchall()
-        if any(effect!=EFFECT_NONE for _action,effect,_status in call_effects(self.attempt_tool_rows(rows))):return False
+        # #618 E2: the one continuation rule over the continuation's own calls; any unknown in the Work holds it.
+        reasons=self.continuation_reasons(job_id,'steer',since=run.attempt_start or 0,
+                                          unaccounted=bool(run.unmediated_turn and self.cli_host_actions(run.engine_meta)!=()))
+        if {'unknown','unaccounted','effect'}&set(reasons):return False
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
             self.store.release_steers(job_id,started,db)

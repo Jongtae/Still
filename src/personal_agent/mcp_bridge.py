@@ -15,7 +15,7 @@ from mcp_types.version import HANDSHAKE_PROTOCOL_VERSIONS, LATEST_HANDSHAKE_VERS
 
 from .agent_runtime import (ENGINE_UNMEDIATED, OWNER_STATE_ACTIONS, TRANSIENT_FAILURE_TEXT,
                             Capabilities, ToolError, WorkBudget, WorkLedger, attempted_outbound, classify_failure, declared_effect,
-                            claim_owner_steers, evidence_summary, lookup_sources, outbound_evidence, observed_field, progress_step, ran_field, worker_result,
+                            call_target_field, claim_owner_steers, evidence_summary, lookup_sources, outbound_evidence, executed_field, observed_field, progress_step, ran_field, worker_result,
                             recorded_private_sources, split_status, work_source_records,
                             work_stop_requested)
 from .current_context import redact_known_secrets
@@ -381,7 +381,7 @@ def tool_error_result(exc, action):
         text = TRANSIENT_FAILURE_TEXT
     else:
         text = TOOL_FAILED_TEXT
-    typed = {'code': code, 'retry': retry, 'effect': effect, **ran_field(exc), **observed_field(exc)}
+    typed = {'code': code, 'retry': retry, 'effect': effect, **ran_field(exc), **executed_field(exc), **observed_field(exc)}
     if getattr(exc, 'requires', None):
         typed['requires'] = exc.requires
     return {'content': [{'type': 'text', 'text': text}], 'structuredContent': typed, 'isError': True}, typed
@@ -562,7 +562,7 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
                     # #718: with the call's bounded, redacted display step.
                     record(listed, 'running', json.dumps({'scope':'subscription-mcp-bridge','call_id':call_id,'host_action':action,
                                                           'step':progress_step(action, arguments, status, capabilities.judgment_text),
-                                                          **declared}, ensure_ascii=False))
+                                                          **declared, **call_target_field(action, arguments)}, ensure_ascii=False))
                 value = tools.call(name, arguments)
             except ExecutionError as exc:
                 # Invalid arguments stay a protocol error (MCP: invalid
@@ -577,7 +577,7 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
                 # #167: a call that failed after it was handed to a transport may still have carried a held value out.
                 record(listed, 'failed',
                        json.dumps({'scope':'subscription-mcp-bridge','call_id':call_id, **({'host_action':action} if action else {}), **typed,
-                                   'error':redact_reason(str(exc)), **declared,
+                                   'error':redact_reason(str(exc)), **declared, **call_target_field(action, arguments),
                                    **attempted_outbound(capabilities, action, arguments, exc)}, ensure_ascii=False))
                 if not session_steers:_with_steer(result, store, job_id, record)
                 _with_remaining(result, capabilities.budget)
@@ -591,7 +591,7 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
                 result, typed = unexpected_error_result(exc, action)
                 record(listed, 'failed',
                        json.dumps({'scope':'subscription-mcp-bridge','call_id':call_id, **({'host_action':action} if action else {}), **typed,
-                                   'error':redact_reason(TOOL_FAILED_TEXT), **declared,
+                                   'error':redact_reason(TOOL_FAILED_TEXT), **declared, **call_target_field(action, arguments),
                                    **attempted_outbound(capabilities, action, arguments, exc)}, ensure_ascii=False))
                 if not session_steers:_with_steer(result, store, job_id, record)
                 _with_remaining(result, capabilities.budget)

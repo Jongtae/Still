@@ -280,7 +280,7 @@ class ExposedToolWireBoundary(unittest.TestCase):
     def test_a_bridge_save_without_folders_parks_a_resumable_work_for_the_folder(self):
         """#182 review: save_result runs in the bridge; its setup-required event parks the Work (#505).
 
-        Only a Work safe to resume parks (``settings_resume_safe``: every action of the CLI turn
+        Only a Work safe to resume parks (``may_continue``: every action of the CLI turn
         observed and changing nothing).  This scripted CLI reports no tool observations, so the
         test states that disposition; without it the Work ends and the worker relays the tool's
         own next step.
@@ -292,7 +292,7 @@ class ExposedToolWireBoundary(unittest.TestCase):
         self.assertEqual((result["saved"], result["requires"]), (False, "local-reference-read"))
         [unsafe] = self.store.jobs()
         self.assertEqual(unsafe["status"], "succeeded", "an unobserved CLI turn is never resumed")
-        self.service.settings_resume_safe = lambda work_id: True
+        self.service.may_continue = lambda work_id, purpose, **_: (True, None)
         self._wire(call)
         parked = next(job for job in self.store.jobs() if job["id"] != unsafe["id"])
         self.assertEqual(parked["status"], "awaiting_connection")
