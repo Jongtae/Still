@@ -1851,7 +1851,9 @@ class ServiceTests(unittest.TestCase):
         # #1478 (live): the approved step runs with a fresh allowance, not the turns spent reaching it.
         from personal_agent.agent_runtime import WORK_LEDGER_KEY
         ledger = self.store.config(f'{WORK_LEDGER_KEY}:{job_id}', {})
-        self.assertEqual((ledger.get('renewals'), ledger.get('turns')), (1, 0))
+        from personal_agent.agent_runtime import continuation_count
+        with self.store.db() as db:
+            self.assertEqual((continuation_count(db, job_id), ledger.get('turns')), (1, 0))
         pending = self.service._browser_request(job_id)
         self.assertEqual(pending['state'], 'issued')
         self.assertNotIn(pending['token'], flat(self.service.browser_status()), 'the token never reaches a read model')

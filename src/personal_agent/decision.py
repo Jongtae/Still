@@ -81,7 +81,7 @@ class DecisionContext:
     """
 
     __slots__ = ('purpose', 'facts', 'work_id', 'cancelled', 'max_chars', 'admission', 'reserve', 'context_messages',
-                 'strongest', 'timeout')
+                 'strongest', 'timeout', 'refused')
 
     def __init__(self, purpose, facts=None, *, work_id=None, cancelled=None, max_chars=MAX_CONTEXT_CHARS,
                  reserve=False, context_messages=None, strongest=False, timeout=None):
@@ -96,6 +96,9 @@ class DecisionContext:
         self.work_id = work_id
         self.cancelled = cancelled
         self.admission = None
+        #: #627: why the Work refused this call's turn - the budget code (#617) its admission or Stop/deadline
+        #: check gave - so a refusal is never read as an unavailable engine; None when not refused.
+        self.refused = None
         # #1418: the outcome judgment may spend the turn the Work holds for it.
         self.reserve = bool(reserve)
         # The size bound adapters enforce before any provider call.  A caller
@@ -123,7 +126,11 @@ class DecisionContext:
             if self.is_cancelled():return False
             if self.admission is not None:self.admission()
             return True
-        except Exception:return False
+        except Exception as exc:
+            # #627: the Work budget's refusal keeps its code (``ToolError.code``) for the caller.
+            code = getattr(exc, 'code', None)
+            if isinstance(code, str) and code:self.refused = code
+            return False
 
 
 class DecisionConfidence:
@@ -310,7 +317,16 @@ class RoutedDecisionEngine(DecisionEngine):
         if budget is not None:
             context.admission = (lambda: budget.spend_turn(reserve=True)) if context.reserve else budget.spend_turn
             cancelled = context.cancelled
-            context.cancelled = lambda: bool((cancelled and cancelled()) or budget.interrupted())
+
+            def stopped():
+                if cancelled and cancelled():
+                    return True
+                # #627: a Stop, deadline or lapsed budget keeps its code for the caller.
+                reason = budget.interrupted()
+                if reason:
+                    context.refused = str(reason)
+                return bool(reason)
+            context.cancelled = stopped
         return self.resolve()
 
     def judge(self, context, proposition):
@@ -705,7 +721,8 @@ class ModelDecisionEngine(SchemaDecisionEngine):
         tools = [{'type': 'function', 'function': {'name': _DECIDE_TOOL, 'description': 'Record the judgment.',
                                                    'parameters': schema}}]
         if not context.admit():
-            return self._done(context, kind, OUTCOME_CANCELLED, {}, DecisionConfidence(**identity), started, sent=False)
+            return self._done(context, kind, OUTCOME_CANCELLED, {}, DecisionConfidence(**identity), started,
+                              context.refused or '', sent=False)
         try:
             message, observed = self.adapter.tool_turn(config, key, messages, tools, tool_choice='required',
                                                        timeout=self.timeout, report_observed=True)

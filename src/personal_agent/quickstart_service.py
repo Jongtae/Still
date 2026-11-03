@@ -355,12 +355,17 @@ RETRY_REFUSED_RAN_CURRENT='retry-refused-ran-current'
 OPEN_QUESTION_SECONDS=900
 EFFECT_RETRY_REFUSAL=msg('service.the_previous_request_attempted_an_action')
 #: #618 E2: the reasons the one continuation rule gives (``continuation_reasons``), strongest first.
-CONTINUE_REASONS=('unknown','unaccounted','owner','effect')
+#: #627: ``limit`` - the request reached its one continuation count (``MAX_CONTINUATIONS``).
+CONTINUE_REASONS=('unknown','unaccounted','owner','effect','limit')
 #: #618 E2: the one text of each reason, what the owner is told when a resume is withheld (a
 #: resume is never withheld for ``owner``: the owner's own act is what resumes it).
 CONTINUE_TEXT={'unknown':'quickstart_service.previous_effect_unknown',
                'unaccounted':'quickstart_service.previous_effect_unknown',
-               'effect':'service.the_previous_request_attempted_an_action'}
+               'effect':'service.the_previous_request_attempted_an_action',
+               'limit':'quickstart_service.resume_limit'}
+#: #627: the receipt reason of each withheld continuation (``settings_continuation``/``action_continuation``).
+CONTINUE_RECEIPT_REASON={'unknown':'unknown-effect','unaccounted':'unaccounted-action','effect':'unaccounted-action',
+                         'limit':'continuation-budget'}
 #: #1445: the time a final outcome judgment of a complete-looking reply needs before it is started.
 FINAL_JUDGMENT_SECONDS=30
 #: #795 review: the record each CLI writes last when its turn ended (Codex
@@ -1253,6 +1258,8 @@ class AgentService:
           carries the Work's own progress forward, so a change Still's own replay key already
           guards is accounted, not repeated (``api_effect_replayed``, the connector input-digest
           claim): an API dispatch observed for this Work, a connector change its permission claimed.
+        - ``limit`` (``resume`` only, #627): the request already queued its one continuation count
+          (``MAX_CONTINUATIONS``) - every owner-act continuation counts, a renewed allowance included.
 
         ``none`` and ``draft`` calls never block, nor does an owner-local write (``OWNER_LOCAL_ACTIONS``).
         Unknown and observed external changes are read over the whole Work (and its request chain);
@@ -1260,7 +1267,7 @@ class AgentService:
         ``CONTINUE_REASONS`` order and read as ``CONTINUE_TEXT``; an empty tuple means the Work may continue.
         """
         from .agent_runtime import (EFFECT_CHANGED, EFFECT_FREE_READS, EFFECT_LEDGER_TOOLS, EFFECT_UNKNOWN, INTERNAL_STATE_ACTIONS,
-                                    call_effects, keyed_change)
+                                    MAX_CONTINUATIONS, call_effects, continuation_count, keyed_change)
         if purpose not in self.CONTINUE_PURPOSES:raise ValueError(purpose)
         reasons=[]
         def add(reason):
@@ -1270,6 +1277,7 @@ class AgentService:
         observed_api=set()
         with self.store.db() as db:
             rows=db.execute('SELECT id,tool,status,detail FROM tool_events WHERE job_id=? ORDER BY id',(work_id,)).fetchall()
+            if carry and continuation_count(db,work_id)>=MAX_CONTINUATIONS:add('limit')
             if carry:
                 # Retry/input continuation dispatches are stored on the canonical original Work;
                 # only this Work's host-attributed observed dispatches are accounted.
@@ -1472,7 +1480,8 @@ class AgentService:
                             or row['continuation'].get('kind')=='api-setting'
                             and row['state'] in ('unknown','applied') and api_published(self,row)
                             and not self.settings_review_ready(row) for row in drafts)
-                safe=self.may_continue(work_id,'resume')[0]
+                # #627: the continuation count withholds the resume itself (below), never the wait.
+                safe=not [blocker for blocker in self.continuation_reasons(work_id,'resume') if blocker!='limit']
                 if valid and not stopped and waiting and safe:
                     with self.store.db() as db:
                         db.execute("UPDATE jobs SET status='awaiting_connection' WHERE id=? AND status=?",(work_id,job['status']))
@@ -1519,7 +1528,9 @@ class AgentService:
                     # an actually queued continuation still consumes the wait.
                     if any(row.get('resumed') is True and set(permissions)&set(row.get('permission_events',[]))
                            for row in receipts):ready,reason=False,'wait-already-consumed'
-                    if sum(row.get('resumed') is True for row in receipts)>=8:ready,reason=False,'continuation-budget'
+                    # #627: the one continuation count, read through the one continuation rule.
+                    if ready and 'limit' in self.continuation_reasons(work_id,'resume'):
+                        ready,reason=False,CONTINUE_RECEIPT_REASON['limit']
                     refusal=self.preparations.run_refusal(db,work_id,self.preparations.clock())
                     if refusal and not completed:
                         ready,reason=False,refusal
@@ -1530,7 +1541,8 @@ class AgentService:
                         if not changed:continue
                         if reason=='prerequisite-ready':
                             # #1445: the owner completed the setup this Work proposed; its remaining work
-                            # starts with a fresh allowance (bounded per Work), not the turns spent finding it.
+                            # starts with a fresh allowance, not the turns spent finding it (#627: bounded by
+                            # the one continuation count this resume is counted in).
                             from .agent_runtime import renew_for_owner_prerequisite
                             renew_for_owner_prerequisite(db,work_id)
                     elif job['status']=='awaiting_connection':
@@ -6484,7 +6496,14 @@ class AgentService:
         finally:
             if own_budget and budget.ledger is not None:budget.ledger.pause()
 
-    def cli_shortfall(self, job_id, since, request, evaluation, gap='', note=None):
+    def record_budget_stop(self, run, scope, code, reason):
+        """Record one budget stop of this Work with its #617 code and reason (#627), as ``run_agent`` does.
+
+        The owner's task view and the budget Continue offer (``_attempt_stop_codes``) read it.
+        """
+        run.record('model','stopped',json.dumps({'scope':scope,'code':code,'reason':reason},ensure_ascii=False))
+
+    def cli_shortfall(self, job_id, since, request, evaluation, gap='', note=None, code=None):
         """``(outcome, report)`` of an attempt the one outcome judgment found short or could not judge (#710 review, #820).
 
         Not reached: ``partial`` when the attempt observed a successful tool
@@ -6495,7 +6514,9 @@ class AgentService:
         unknown and closes the answer.  #1459: the owner reads the judgment's ``note``
         instead - written to the owner in the shared voice - and nothing
         when the note is empty (the reply already said it); ``gap`` stays internal.  Only
-        an engine that gave no note falls back to the gap.
+        an engine that gave no note falls back to the gap.  #627: an attempt not judged because the
+        Work's budget stopped it (``code``, a #617 budget code) says that reason, never that the
+        completion check was unavailable.
         """
         from .agent_runtime import GOAL_NOT_SHOWN, GOAL_UNJUDGED, agency_report
         with self.store.db() as db:
@@ -6504,7 +6525,8 @@ class AgentService:
         rows=[row for row in rows if row['tool'] not in self.LOCAL_NON_TOOL_EVENTS|{'subscription_engine'}]
         observed=any(row['status']=='succeeded' for row in rows)
         if evaluation in (UNJUDGED,NOT_JUDGED):
-            return 'partial',agency_report(request,[],[],[GOAL_UNJUDGED],None)
+            from .orchestrator import budget_stop_text
+            return 'partial',agency_report(request,[],[],[budget_stop_text(code) if code else GOAL_UNJUDGED],None)
         report=agency_report(request,[],[],[] if isinstance(note,str) else [gap or GOAL_NOT_SHOWN],None)
         if isinstance(note,str):report['note']=note
         elif gap:report['gap']=gap
@@ -6871,6 +6893,8 @@ class AgentService:
                 _ok,blocker=self.may_continue(job['id'],'resume')
                 if blocker in ('unknown','unaccounted'):
                     refusal=UNKNOWN_EFFECT_RETRY_REFUSAL;terminal='unknown' if blocker=='unknown' else 'failed'
+                elif blocker=='limit':
+                    refusal=msg(CONTINUE_TEXT['limit'])
                 elif blocker:
                     refusal=EFFECT_RETRY_REFUSAL
                 elif self.work_stopped(job['id']):
@@ -8803,15 +8827,16 @@ class AgentService:
         if any(item.get('offer_digest')==row.get('offer_digest') and item.get('resumed') for item in receipts):return False
         from .quickstart_store import REQUEST_APPROVAL_ACTIONS
         guarded=REQUEST_APPROVAL_ACTIONS|{'browser_sign_in','budget_continue'}
-        # #618 E2: the one continuation rule, and its one reason text for the owner.
-        blocker=self.may_continue(job['id'],'resume')[1] if row.get('action') in guarded else None
-        reason=('unknown-effect' if blocker=='unknown' else 'unaccounted-action' if blocker
-                else 'continuation-budget' if sum(item.get('resumed') is True for item in receipts)>=8 else None)
+        # #618 E2: the one continuation rule, and its one reason text for the owner.  #627: its one
+        # continuation count holds every continuation; the effect reasons only a guarded action.
+        reasons=self.continuation_reasons(job['id'],'resume')
+        blocker=next((reason for reason in reasons if row.get('action') in guarded or reason=='limit'),None)
+        reason=CONTINUE_RECEIPT_REASON.get(blocker)
         if reason:
             if not any(item.get('action_digest')==row['digest'] and item.get('reason')==reason for item in receipts):
                 db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                            (job['id'],'action_continuation','withheld',json.dumps({'action_digest':row['digest'],'offer_digest':row.get('offer_digest'),'resumed':False,'reason':reason}),time.time()))
-            cause=msg(CONTINUE_TEXT[blocker]) if blocker else msg('quickstart_service.resume_limit')
+            cause=msg(CONTINUE_TEXT[blocker])
             db.execute("UPDATE jobs SET status='partial',owner_cause=? WHERE id=?",(cause,job['id']))
             return False
         if row.get('action')=='budget_continue':
@@ -9660,11 +9685,11 @@ class AgentService:
         with self.store.db() as db:
             rows=db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=? AND created>=? ORDER BY id',
                             (job['id'],run.claimed_at)).fetchall()
-            receipts=db.execute("SELECT count(*) FROM tool_events WHERE job_id=? AND tool IN ('action_continuation','settings_continuation') AND status='queued'",(job['id'],)).fetchone()[0]
         tools=self.attempt_tool_rows(rows)
         failed=self._attempt_stop_codes(rows)
-        # A completed read does not turn an owner/effect wait into a budget boundary.
-        if not self._budget_boundary(failed) or receipts>=8:return False
+        # A completed read does not turn an owner/effect wait into a budget boundary.  #627: the one
+        # continuation count is read through the continuation rule below.
+        if not self._budget_boundary(failed):return False
         # #618 E2: the one continuation rule; this attempt's owner prerequisites are its named inputs.
         owner_waits=bool(any(code in {'needs_setup','input_required','approval_required','login_required','awaiting_connection'} for code in failed)
                          or run.approval_needed[0] or run.context_approval_needed[0] or run.waits_for_sign_in
@@ -12762,7 +12787,11 @@ class AgentService:
         offered=listing.definitions()
         # One host-visible CLI invocation, not its opaque
         # internal model calls. Refuse before recording sent.
-        run.work_budget.spend_turn()
+        try:run.work_budget.spend_turn()
+        except ToolError as exc:
+            # #627: the refused turn is recorded with its #617 code and reason, as the direct route's is.
+            self.record_budget_stop(run,'subscription',exc.code,str(exc))
+            raise
         # #211: the cloud profile's daily cap is admitted here, before the turn is recorded as
         # sent, so a refused launch leaves no sent envelope or egress record behind.
         if cloud is not None:
@@ -13159,7 +13188,8 @@ class AgentService:
         # #820: its reply is still delivered, under the truthful header.
         if run.outcome=='succeeded' and run.orchestration is not None and run.orchestration.terminal in (NOT_REACHED,UNJUDGED,NOT_JUDGED):
             run.outcome,run.agency_report=self.cli_shortfall(job['id'],run.attempt_start,run.prompt,run.orchestration.terminal,
-                                                     run.orchestration.terminal_gap,run.orchestration.terminal_note)
+                                                     run.orchestration.terminal_gap,run.orchestration.terminal_note,
+                                                     run.orchestration.terminal_code)
             run.resolved_blocker=False
         # #14: a CLI attempt its steps left unfinished that the outcome judgment also found short says why
         # in the judgment's words, as the direct route does; a failed step a later call made up for is
@@ -13167,7 +13197,17 @@ class AgentService:
         if run.subscription.get('id') and run.outcome in ('partial','failed') and run.agency_report is None and run.orchestration is not None \
                 and run.orchestration.terminal in (NOT_REACHED,UNJUDGED,NOT_JUDGED):
             run.agency_report=self.cli_shortfall(job['id'],run.attempt_start,run.prompt,run.orchestration.terminal,
-                                             run.orchestration.terminal_gap,run.orchestration.terminal_note)[1]
+                                             run.orchestration.terminal_gap,run.orchestration.terminal_note,
+                                             run.orchestration.terminal_code)[1]
+        # #627: the orchestrator's budget stop, on either route, is recorded with its code and reason,
+        # once: a stop the attempt's own loop already recorded (``run_agent``) is not said twice.
+        if run.orchestration is not None and getattr(run.orchestration,'terminal_code',None):
+            from .orchestrator import budget_stop_text
+            code=run.orchestration.terminal_code
+            with self.store.db() as db:
+                seen=db.execute("SELECT 1 FROM tool_events WHERE job_id=? AND id>? AND tool='model' AND status='stopped' LIMIT 1",
+                                (job['id'],run.attempt_start or 0)).fetchone()
+            if not seen:self.record_budget_stop(run,'orchestration',code,budget_stop_text(code))
         # Said once when working orchestration fell back to the default Main AI.
         if run.orchestration is not None and run.orchestration.notice:
             run.response=run.response.rstrip()+'\n\n'+run.orchestration.notice

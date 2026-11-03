@@ -488,7 +488,10 @@ class LoginBudgetRenewal(LoginHarness):
         self.owner_closes(job_id)
         self.assertEqual(self.state(job_id), 'resumed')
         row = self.store.config(old.key)
-        self.assertEqual((row['turns'], row['attempts'], row['renewals']), (0, 0, 1))
+        self.assertEqual((row['turns'], row['attempts']), (0, 0))
+        from personal_agent.agent_runtime import continuation_count
+        with self.store.db() as db:
+            self.assertEqual(continuation_count(db, job_id), 1, '#627: the renewal is one counted continuation')
         self.assertFalse(old.spend(9, 'turns'), 'the pre-login run cannot spend the renewed allowance')
         self.scripts = [Script({'tool_calls': [call('read', 'browser_open', url=ORIGIN + '/product', effect='read')]},
                                finish('done', 'read', summary='세탁세제 3L의 표시 가격은 12,900원입니다.'))]
@@ -529,15 +532,21 @@ class LoginBudgetRenewal(LoginHarness):
     def test_expiry_does_not_renew(self):
         self.unresumed_login('expire')
 
-    def test_login_shares_the_existing_owner_prerequisite_renewal_cap(self):
-        from personal_agent.agent_runtime import MAX_OWNER_RENEWALS
+    def test_login_shares_the_one_continuation_count(self):
+        # #627: the sign-in continuation is counted with every other one; at the count it neither
+        # renews nor queues the Work.
+        from personal_agent.agent_runtime import MAX_CONTINUATIONS
         job_id, _prompt, _buttons, _notification = self.login_work()
         old = self.exhaust_and_pause(job_id)
         row = self.store.config(old.key)
-        row['renewals'] = MAX_OWNER_RENEWALS
-        self.store.put(old.key, row)
+        with self.store.db() as db:
+            for index in range(MAX_CONTINUATIONS):
+                db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                           (job_id, 'settings_continuation', 'queued', json.dumps({'resumed': True, 'offer_digest': str(index)}),
+                            time.time()))
         self.owner_closes(job_id)
-        self.assertEqual(self.store.config(old.key), row, 'sign-in cannot exceed the shared renewal cap')
+        self.assertEqual(self.store.config(old.key), row, 'sign-in cannot exceed the one continuation count')
+        self.assertNotEqual(self.store.job(job_id)['status'], 'queued')
 
 
 class AccountProviderTextTests(unittest.TestCase):

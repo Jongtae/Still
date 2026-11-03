@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from personal_agent.quickstart_store import QuickStore
 from personal_agent.quickstart_service import AgentService, BROWSER_OWNER_SIGNINS_KEY
-from personal_agent.agent_runtime import WORK_STOP_KEY, WorkLedger
+from personal_agent.agent_runtime import WORK_STOP_KEY, WorkLedger, continuation_count
 from personal_agent import preparations as prep
 from test_flow_login import LoginHarness, ORIGIN, GENERATION, CHAT
 from test_browser_session import Script, call
@@ -38,6 +38,9 @@ class BrowserSettlement(unittest.TestCase):
         with self.store.db() as db:
             return [json.loads(r[0]) for r in db.execute("SELECT detail FROM tool_events WHERE job_id=? AND tool='action_continuation'",(self.work,))]
 
+    def counted(self):
+        with self.store.db() as db:return continuation_count(db,self.work)
+
     def event(self,tool,status,detail):
         with self.store.db() as db:
             db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
@@ -63,7 +66,8 @@ class BrowserSettlement(unittest.TestCase):
         self.assertIsNone(self.store.config(BROWSER_OWNER_SIGNINS_KEY))
         self.assertEqual(self.store.config(key),before,'renewal rolls back with the continuation')
         self.assertEqual(self.settle(),'resumed')
-        self.assertEqual(self.store.config(key)['renewals'],1)
+        self.assertEqual(self.store.config(key)['turns'],0)
+        self.assertEqual(self.counted(),1)
 
     def test_postcommit_notification_loss_survives_restart_without_requeue(self):
         with patch.object(self.service,'_finish_login_notification',side_effect=RuntimeError('after commit')):
@@ -89,7 +93,8 @@ class BrowserSettlement(unittest.TestCase):
                 outcomes=[first.result(),second.result()]
         self.assertEqual(outcomes.count('resumed'),1)
         self.assertEqual(len(self.receipts()),1)
-        self.assertEqual(self.store.config(key)['renewals'],1)
+        self.assertEqual(self.store.config(key)['turns'],0)
+        self.assertEqual(self.counted(),1)
 
     def test_stale_nonce_and_missing_readiness_do_not_queue(self):
         key,before=self.paused_budget()
@@ -233,7 +238,7 @@ class BrowserSettlement(unittest.TestCase):
         now[0]+=601;ledger.pause()
         self.assertEqual(self.settle(),'resumed')
         renewed=self.store.config(ledger.key)
-        self.assertEqual((renewed['attempts'],renewed['turns'],renewed['renewals']),(0,0,1))
+        self.assertEqual((renewed['attempts'],renewed['turns'],self.counted()),(0,0,1))
         self.assertGreater(renewed['remaining_seconds'],0)
         self.assertFalse(ledger.spend(40),'the old epoch cannot use the fresh allowance')
         self.assertTrue(WorkLedger(self.store,self.work,fresh=True).spend(40))
