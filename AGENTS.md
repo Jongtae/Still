@@ -99,17 +99,17 @@ This process borrows the Constitution/Specify/Plan/Tasks/Implement/Converge disc
 
 The Development Constitution's **Reuse first: Adopt → Adapt → Build** principle applies to every contributor, including Claude Code, Codex, GitHub Copilot, Gemini, Cursor, Windsurf, other coding assistants, future tools, and humans. Tool-specific instruction files are compatibility entrypoints only. If a tool does not recognize one, that does not relax this repository contract.
 
-Before writing non-trivial implementation code that introduces or replaces a component, abstraction, integration, dependency, framework, or commodity infrastructure, perform an **Existing Solutions Review**. The review starts inside this repository: search for an existing Still component, adapter, utility, seam, fixture, or pattern that can be reused or extended without violating its contract. Then check standard-library/platform facilities, relevant standards and official SDK/reference implementations, and mature maintained open-source frameworks/libraries. This applies especially to protocols, SDK/client behavior, OAuth/auth flows, provider adapters, MCP/A2A or other protocol plumbing, HTTP/transports, parsers, schema validators, schedulers, storage/migration utilities, connector mechanics, sandbox helpers, and other general-purpose infrastructure.
+Before writing non-trivial implementation code that introduces or replaces a component, abstraction, integration, dependency, framework, or commodity infrastructure, perform an **Existing Solutions Review**. The review looks outside first (owner direction 2026-11-03, #612): relevant standards and protocols, standard-library/platform facilities, official SDK/reference implementations, and mature maintained open-source frameworks/libraries. If a good external source covers the need, use it. Then search this repository for an existing Still component, adapter, utility, seam, fixture, or pattern; it counts as reuse only when it already follows the external solution found, or when no suitable external candidate exists. This applies especially to protocols, SDK/client behavior, OAuth/auth flows, provider adapters, MCP/A2A or other protocol plumbing, HTTP/transports, parsers, schema validators, schedulers, storage/migration utilities, connector mechanics, sandbox helpers, and other general-purpose infrastructure.
 
-**The review also applies at proposal time.** Before proposing, recommending or recording a new design, contract, architecture element or loop, or a new component, integration or framework adoption, run the same review first. This covers recommendations made in conversation, design documents, contracts, issues and plans. Search the repository's existing contracts and implementations, then standards and installed or official tools (their own `--help` or documentation is authoritative), then maintained external options. Present the proposal as **Adopt**, **Adapt** or **Build** with that evidence. A proposal made without this review is incomplete and must not be offered as the recommended next step. For a behavior-only specification, the review asks whether an existing contract, standard or concept already covers the behavior (**Adopt** or **Adapt** it) or a new specification is needed (**Build**); it does not select an implementation, which remains a Plan decision.
+**The review also applies at proposal time.** Before proposing, recommending or recording a new design, contract, architecture element or loop, or a new component, integration or framework adoption, run the same review first. This covers recommendations made in conversation, design documents, contracts, issues and plans. Search standards and installed or official tools (their own `--help` or documentation is authoritative) and maintained external options first, then the repository's existing contracts and implementations. Present the proposal as **Adopt**, **Adapt** or **Build** with that evidence. A proposal made without this review is incomplete and must not be offered as the recommended next step. For a behavior-only specification, the review asks whether an existing contract, standard or concept already covers the behavior (**Adopt** or **Adapt** it) or a new specification is needed (**Build**); it does not select an implementation, which remains a Plan decision.
 
 The issue or implementation plan must record:
 
 - the exact problem/boundary that needs implementation;
-- existing internal repository components/adapters/utilities/patterns considered, with search evidence;
 - standard-library/platform facilities considered;
 - official SDKs/reference implementations/standards considered;
 - mature maintained open-source/framework candidates considered;
+- existing internal repository components/adapters/utilities/patterns considered, with search evidence and whether each follows the external solution;
 - maintenance status and release activity relevant to the required path;
 - security and supply-chain implications;
 - licence compatibility;
@@ -119,17 +119,19 @@ The issue or implementation plan must record:
 
 Decision order:
 
-1. **Adopt** an existing Still component, standard-library/platform facility, official SDK/reference implementation, or established implementation when it fits.
+1. **Adopt** a standard, standard-library/platform facility, official SDK/reference implementation, or established implementation when it fits, or an existing Still component that already follows one.
 2. **Adapt** a mature maintained external implementation behind a narrow Still adapter when direct adoption would couple external semantics to kernel policy.
-3. **Build** only when the issue documents a concrete unsatisfied requirement after the internal and external search above.
+3. **Build** only when the issue documents a concrete requirement no good external candidate satisfies.
 
-A pure bug fix or data/content change that introduces no new component, abstraction, integration, dependency, or framework may record the review as `N/A`, but it must state that concrete reason. Do not use `N/A` merely to skip the search.
+Adding a case, exception, error code, branch or list entry to an existing Still mechanism (a gate, classifier, guard, budget or approval path) is **Build**, not Adopt or `N/A`: compare the mechanism with the external solution first, and when it was already patched for an earlier case of the same kind, fix the structural cause rather than adding the next case alone.
+
+A pure bug fix or data/content change that introduces no new component, abstraction, integration, dependency, or framework, and adds no case to existing machinery, may record the review as `N/A`, but it must state that concrete reason. Do not use `N/A` merely to skip the search.
 
 "Fewer dependencies", "simpler to write ourselves", implementation familiarity, or a coding agent's preference are not sufficient Build reasons. Conversely, reuse-first is not permission to add dependencies casually: every new dependency still needs licence/provenance/security/maintenance/compatibility review, and must not silently expand runtime authority, egress, secrets, or durable-state ownership.
 
 Keep custom Still code concentrated on owner sovereignty: canonical Owner/Context/Memory state, Grants/approvals, Capability/Runtime mediation, data/egress policy, Work/Event/Evidence semantics, Artifact provenance, recovery/revocation, and the adapters that enforce those boundaries. External implementations remain replaceable and subordinate.
 
-Do not opportunistically rewrite already-stable custom code merely because an OSS alternative exists. Replacement of existing code needs a bounded issue with migration, regression, security and evidence criteria; classify candidates through the repository reuse audit rather than mixing unrelated refactors into feature work.
+Do not opportunistically rewrite already-stable custom code merely because an OSS alternative exists. When a change touches custom code that a good external source covers, it moves toward that source within its bounded issue instead of extending the custom code. Replacement of existing code needs a bounded issue with migration, regression, security and evidence criteria; classify candidates through the repository reuse audit rather than mixing unrelated refactors into feature work.
 
 ## Product and package invariants
 
