@@ -20,6 +20,12 @@ CALENDAR_READ_SCOPE = "https://www.googleapis.com/auth/calendar.events.readonly"
 CALENDAR_LIST_SCOPE = "https://www.googleapis.com/auth/calendar.calendarlist.readonly"
 #: Most calendars read per query (the owner's shown ones, primary first).
 MAX_CALENDARS = 25
+#: #617: the most events one query returns (Google's own default page size). A
+#: window with more is read page by page (``pageToken``) up to this many and is
+#: reported as truncated, never as complete.
+MAX_EVENTS = 250
+#: Pages followed per calendar; a provider that keeps paging is cut here, as truncated.
+MAX_PAGES = 10
 CALENDAR_WRITE_SCOPE = "https://www.googleapis.com/auth/calendar.events"
 
 
@@ -131,18 +137,21 @@ class GoogleCalendar:
         A non-primary calendar that fails is skipped (named in ``skipped``
         by the caller's evidence); the primary calendar failing fails the read.
         """
-        if isinstance(max_results, bool) or not isinstance(max_results, int) or not 1 <= max_results <= 100:
+        if isinstance(max_results, bool) or not isinstance(max_results, int) or not 1 <= max_results <= MAX_EVENTS:
             raise GoogleCalendarError("malformed-response")
         events, self.skipped_calendars, self.read_calendars = [], [], []
+        #: #617: whether the window held more events than this read returns.
+        self.truncated = False
         for calendar in self.calendars():
             try:
-                rows = self._query_calendar(calendar["id"], time_min, time_max, timezone, max_results)
+                rows, cut = self._query_calendar(calendar["id"], time_min, time_max, timezone, max_results)
             except GoogleCalendarError as error:
                 if calendar["primary"] or error.reason == "scope-expired":
                     raise
                 self.skipped_calendars.append(calendar["name"] or calendar["id"])
                 continue
             self.read_calendars.append(calendar["name"] or ("primary" if calendar["primary"] else calendar["id"]))
+            self.truncated = self.truncated or cut
             for row in rows:
                 row["calendar"] = calendar["name"]
                 row["calendar_primary"] = calendar["primary"]
@@ -151,21 +160,44 @@ class GoogleCalendar:
                     row["etag"] = ""
                 events.append(row)
         events.sort(key=lambda row: _instant(row["start"], timezone))
+        self.truncated = self.truncated or len(events) > max_results
         return events[:max_results]
 
-    def _query_calendar(self, calendar_id: str, time_min: str, time_max: str, timezone: str, max_results: int) -> list[dict]:
-        query = urlencode(
-            {
+    def _query_calendar(self, calendar_id: str, time_min: str, time_max: str, timezone: str,
+                        max_results: int) -> tuple[list[dict], bool]:
+        """One calendar's events in the window, earliest first, and whether more exist than were read.
+
+        #617: follows ``nextPageToken`` (Google Calendar API v3 ``events.list``)
+        until the window is read or ``max_results`` events (or ``MAX_PAGES``
+        pages) are in hand; what lies past that is reported, never dropped silently.
+        """
+        events, token = [], None
+        for _page in range(MAX_PAGES):
+            params = {
                 "timeMin": time_min,
                 "timeMax": time_max,
                 "timeZone": timezone,
                 "singleEvents": "true",
                 "orderBy": "startTime",
                 "maxResults": max_results,
-                "fields": "items(id,etag,summary,start,end,location,status)",
+                "fields": "items(id,etag,summary,start,end,location,status),nextPageToken",
             }
-        )
-        response = self._get(f"{CALENDAR_API}/calendars/{quote(calendar_id, safe='')}/events?{query}")
+            if token:
+                params["pageToken"] = token
+            response = self._get(f"{CALENDAR_API}/calendars/{quote(calendar_id, safe='')}/events?{urlencode(params)}")
+            events.extend(self._page_events(response, max_results))
+            token = response.get("nextPageToken")
+            if token is not None and (not isinstance(token, str) or not token or len(token) > 4096):
+                raise GoogleCalendarError("malformed-response")
+            if not token:
+                return events[:max_results], len(events) > max_results
+            if len(events) >= max_results:
+                return events[:max_results], True
+        return events[:max_results], True
+
+    @staticmethod
+    def _page_events(response, max_results: int) -> list[dict]:
+        """The validated events of one ``events.list`` page."""
         if not isinstance(response, dict) or not isinstance(response.get("items"), list):
             raise GoogleCalendarError("malformed-response")
         if len(response["items"]) > max_results:

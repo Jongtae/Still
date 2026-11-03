@@ -14,6 +14,7 @@ from urllib.parse import urlencode, urlsplit
 
 from .api_requests import http_request
 from .context_inbox import SENSITIVE
+from .messages import msg
 
 REGISTRY = 'https://registry.modelcontextprotocol.io/v0.1/servers'
 MAX_BYTES = 256 * 1024
@@ -64,6 +65,15 @@ def _entry(row):
             'scope': 'unknown', 'authority': 'none', 'untrusted': True}
 
 
+class QueryRefused(ValueError):
+    """A registry query refused before anything was sent, with a stable ``code`` (#617)."""
+
+    def __init__(self, text, code):
+        super().__init__(text)
+        self.code = code
+        self.ran = False
+
+
 class CapabilitySearch:
     """A bounded in-memory metadata cache; canonical owner state stays outside."""
     def __init__(self, transport=http_request, now=time.time):
@@ -74,8 +84,11 @@ class CapabilitySearch:
     def registry(self, query, redact=lambda text: text):
         # A short public server-name token, never the request, document, URL,
         # email, credentials or a free-form semantic query.
-        if not isinstance(query, str) or not NAME_QUERY.fullmatch(query) or SENSITIVE.search(query) or redact(query) != query:
-            raise ValueError('공개 서버 이름만 검색하세요. 요청 본문이나 개인 정보는 넣지 마세요.')
+        # #617: each refusal says what was wrong - a secret, or the token's shape - and nothing was sent.
+        if isinstance(query, str) and (SENSITIVE.search(query) or redact(query) != query):
+            raise QueryRefused(msg('agent_runtime.public_server_query'), 'private_capability_query')
+        if not isinstance(query, str) or not NAME_QUERY.fullmatch(query):
+            raise QueryRefused(msg('agent_runtime.registry_query_shape'), 'registry_query_shape')
         with self._lock:
             now = self.now()
             cached = self._cache.get(query)

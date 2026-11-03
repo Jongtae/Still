@@ -775,8 +775,9 @@ class SecretTests(_Case):
         running = [e['trace'] for e in self.store.task_events(job) if e['status'] == 'running']
         self.assertEqual(running[0]['arguments']['goal'], '치과 예약 10시')
 
-    def test_saved_private_values_leave_the_goal_and_the_prepared_answer(self):
-        """The Work's own private-store writes (#605 exclusion set) are removed before storage."""
+    def test_the_goal_keeps_the_owners_values_and_saved_values_leave_the_prepared_answer(self):
+        """#617: the goal is the owner's own reservation, so the owner's saved values stay in it (#826
+        removed that guard); only secrets are removed.  The prepared answer keeps its own scrub."""
         self.script = [{'content': None, 'tool_calls': [
                            call('1', 'save_note', content='여권번호 ' + self.PASSPORT),
                            call('2', 'schedule_preparation', kind='reminder', goal=f'여권 {self.PASSPORT} 챙기기',
@@ -784,7 +785,7 @@ class SecretTests(_Case):
                        finish('f', '1', '2', summary='저장하고 예약했습니다.')]
         self.web_turn(f'여권번호는 {self.PASSPORT}야. 10분 뒤에 여권 챙기라고 알려줘')
         [reminder] = self.rows()
-        self.assertNotIn(self.PASSPORT, reminder['goal_text'])
+        self.assertEqual(reminder['goal_text'], f'여권 {self.PASSPORT} 챙기기')
 
         row = self.scheduled(goal='여행 준비물 정리', seconds=900)
         self.now += 1000

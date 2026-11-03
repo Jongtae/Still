@@ -11,9 +11,10 @@ tools and no roles.  It is never a tool, a permission or an executor:
   revisions (content digests) it may load, so a revision never changes
   under a running Work;
 * a skill this Work loaded that is no longer current (switch off, package
-  disabled, removed or updated) refuses every later tool call of the Work
-  (``SkillBinding.check_current``), not only the next load; content changed
-  on disk is refused at its next read (``SkillLibrary.read``);
+  disabled, removed or updated) refuses the calls that use it - a reload, a
+  header or a resource read - with ``skill_revoked`` (#617: a skill grants no
+  authority, so the Work's other tools are unaffected); content changed on
+  disk is refused at its next read (``SkillLibrary.read``);
 * acquisition fetches one exact GitHub commit, stages and inspects the bytes,
   and installs only instruction/resource skills with a recognised licence.
   Scripts, hooks and executables are never run, and a skill that needs them
@@ -664,9 +665,6 @@ class SkillBinding:
         self.library = library
         self.entries = {entry['skill']: entry for entry in entries}
         self.loaded = {}
-        #: The withdrawn skill that stopped this Work (#977 review): once set it stays set, so a
-        #: later rollback to the same content never revives the Work.
-        self.revoked = None
         self.loads = 0
         self.resource_reads = 0
         #: #32: skills whose usage header this Work read (and not their full body).  Their
@@ -700,9 +698,11 @@ class SkillBinding:
         entry = self.entries.get(skill if isinstance(skill, str) else '')
         if entry is None:
             raise SkillError(UNAVAILABLE_TEXT, 'skill_unavailable')
-        if self.revoked:
-            raise SkillError(REVOKED_TEXT.format(skill=self.revoked), 'skill_revoked')
         if not self.library.current(entry):
+            if entry['skill'] in self.loaded or entry['skill'] in self.screened:
+                # #617: a skill this Work read was withdrawn: only calls that use it are refused.
+                # Skills grant no authority (#974), so the Work's other tools are unaffected.
+                raise SkillError(REVOKED_TEXT.format(skill=entry['skill']), 'skill_revoked')
             # Not loaded yet: this Work simply cannot use that revision; its other tools are unaffected.
             raise SkillError(OUTDATED_TEXT.format(skill=entry['skill']), 'skill_unavailable')
         return entry
@@ -721,16 +721,8 @@ class SkillBinding:
                                   (job_id,)).fetchall()
                 gaps = db.execute("SELECT COUNT(*) FROM tool_events WHERE job_id=? AND tool='method_gap' AND status='succeeded'",
                                   (job_id,)).fetchone()[0]
-                stopped = db.execute("SELECT detail FROM tool_events WHERE job_id=? AND status='failed' AND detail LIKE ?",
-                                     (job_id, '%skill_revoked%')).fetchall()
         except Exception:
             return
-        for (detail,) in stopped:
-            try:
-                if json.loads(detail).get('code') == 'skill_revoked':
-                    self.revoked = self.revoked or msg('skills.used_skill')
-            except (TypeError, ValueError, AttributeError):
-                continue
         headers, loads = 0, set()
         for (detail,) in rows:
             try:
@@ -754,15 +746,6 @@ class SkillBinding:
         self.loads = max(self.loads, len(loads))
         self.header_reads = max(self.header_reads, headers)
         self.gap_notes = max(self.gap_notes, int(gaps or 0))
-
-    def check_current(self):
-        """Refuse when a skill this Work loaded or screened is no longer current (every later tool call), and from then on."""
-        if self.revoked:
-            raise SkillError(REVOKED_TEXT.format(skill=self.revoked), 'skill_revoked')
-        for skill, entry in sorted({**self.screened, **self.loaded}.items()):
-            if not self.library.current(entry):
-                self.revoked = skill
-                raise SkillError(REVOKED_TEXT.format(skill=skill), 'skill_revoked')
 
     def identity(self, entry):
         return {'skill': entry['skill'], 'digest': entry['digest'], 'revision': entry['revision'],

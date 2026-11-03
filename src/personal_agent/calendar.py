@@ -14,6 +14,7 @@ import json
 import re
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from .messages import msg
 from .connector_contract import ConnectorContractError, ConnectorRegistry, ConnectorSpec, ConnectorState
 from .google_calendar import (
     CALENDAR_LIST_SCOPE,
@@ -21,6 +22,7 @@ from .google_calendar import (
     CALENDAR_WRITE_SCOPE,
     GoogleCalendar,
     GoogleCalendarError,
+    MAX_EVENTS,
 )
 
 
@@ -43,14 +45,25 @@ _RFC3339_LOCAL = re.compile(
 )
 
 
+#: #617: an argument the worker can fix is refused with what is wrong and nothing read,
+#: under one stable code, instead of the opaque failure text.
+ARGUMENT_REASONS = ("invalid-start", "invalid-end", "invalid-window", "invalid-timezone")
+INVALID_QUERY_CODE = "invalid_calendar_query"
+
+
 class CalendarError(ValueError):
     """A redacted policy failure safe to pass through a conversation surface."""
 
     def __init__(self, reason: str = "rejected", *, effect: str = "none", recovery: str = "review-request"):
-        super().__init__("Calendar request could not be completed.")
+        argument = reason in ARGUMENT_REASONS
+        super().__init__(msg("calendar." + reason.replace("-", "_")) if argument
+                         else "Calendar request could not be completed.")
         self.reason = reason
         self.effect = effect
         self.recovery = recovery
+        if argument:
+            self.code = INVALID_QUERY_CODE
+            self.ran = False
 
 
 def _owner_key(owner: object) -> str:
@@ -171,7 +184,7 @@ class CalendarConnector:
         )
         return CalendarError(error.reason, effect=error.effect, recovery=recovery)
 
-    def query(self, owner: str, start: str, end: str, timezone: str, *, max_results: int = 50) -> dict:
+    def query(self, owner: str, start: str, end: str, timezone: str, *, max_results: int = MAX_EVENTS) -> dict:
         # Google events.list requires RFC3339 bounds with an explicit offset.
         start_at = _timestamp(start, "start", require_offset=True)
         end_at = _timestamp(end, "end", require_offset=True)
@@ -182,7 +195,7 @@ class CalendarConnector:
         if invalid_window:
             raise CalendarError("invalid-window")
         timezone = _timezone(timezone)
-        if isinstance(max_results, bool) or not isinstance(max_results, int) or not 1 <= max_results <= 100:
+        if isinstance(max_results, bool) or not isinstance(max_results, int) or not 1 <= max_results <= MAX_EVENTS:
             raise CalendarError("invalid-limit")
         self._prepare_provider()
         if self.registry is not None:
@@ -216,6 +229,11 @@ class CalendarConnector:
         skipped = list(getattr(self.provider, "skipped_calendars", ()) or ())
         incomplete = ("캘린더 목록을 읽지 못해 기본 캘린더만 확인했습니다." if getattr(self.provider, "calendar_list_failed", False)
                       else f"다음 캘린더는 읽지 못했습니다: {', '.join(skipped)}." if skipped else "")
+        # #617: a window with more events than one read returns is cut, and says so; never complete.
+        truncated = bool(getattr(self.provider, "truncated", False)) or len(events) > max_results
+        events = list(events)[:max_results]
+        if truncated:
+            incomplete = " ".join(part for part in (incomplete, msg("calendar.truncated", count=max_results)) if part)
         return {
             "events": events,
             "window": {"start": start, "end": end, "timezone": timezone},
@@ -227,6 +245,7 @@ class CalendarConnector:
                 "calendars": list(getattr(self.provider, "read_calendars", ()) or ()),
                 "skipped_calendars": skipped,
                 "complete": not incomplete,
+                "truncated": truncated,
                 "window_hash": _canonical({"start": start, "end": end, "timezone": timezone}),
                 "result_count": len(events),
                 "effect": "none",

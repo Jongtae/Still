@@ -37,8 +37,8 @@ import socketserver
 import tempfile
 import threading
 
-from .agent_runtime import (BROWSER_ACTIONS, CODE_ACTIONS, EFFECT_FREE_READS, HOST_RELAYED_ACTIONS, REPEAT_PATH_TEXT, ToolError, concurrent_read, not_run,
-                            observed_field, observed_value, path_key, ran_field, result_page_digest)
+from .agent_runtime import (BROWSER_ACTIONS, CODE_ACTIONS, EFFECT_FREE_READS, HOST_RELAYED_ACTIONS, ToolError, concurrent_read, not_run,
+                            observed_field, observed_value, path_key, ran_field, repeat_path_error, result_page_digest)
 
 SOCKET_NAME = 's'
 KEY_NAME = 'key'
@@ -214,7 +214,7 @@ class BrowserRelay:
             path = (path_key(action, arguments, self._page)
                     if action in BROWSER_ACTIONS and isinstance(arguments, dict) else None)
             if path is not None and path in self._paths:
-                return {'error': _error_payload(ToolError(REPEAT_PATH_TEXT, 'repeat_path', ran=False))}
+                return {'error': _error_payload(repeat_path_error(action))}
             if path is not None:
                 self._paths.add(path)
             try:

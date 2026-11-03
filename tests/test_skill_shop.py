@@ -227,7 +227,9 @@ class BrowserPortIsPreserved(_Shop):
         self.assertEqual(sorted(self.library.binding().entries),
                          ['agentos/agentos-management', 'agentos/agentos-skills', f'{SHOPPING}/{SHOPPING}'])
 
-    def test_withdrawing_the_method_mid_flow_stops_the_next_click_before_it_reaches_the_shop(self):
+    def test_withdrawing_the_method_mid_flow_refuses_the_method_not_the_page(self):
+        """#617: a skill grants no authority; withdrawing it refuses reading it again, and the page is
+        governed by the browser's own mediation alone."""
         binding = self.install(f'skills/{SHOPPING}')
         driver = FakeDriver()
         caps = self.caps(Script(), driver, skills=binding)
@@ -235,9 +237,9 @@ class BrowserPortIsPreserved(_Shop):
         caps.execute('browser_open', {'url': ORIGIN + '/product', 'effect': 'navigate'})
         self.library.remove(SHOPPING)
         with self.assertRaises(ToolError) as raised:
-            caps.execute('browser_click', {'target': '장바구니', 'effect': 'mutate'})
+            caps.execute('skill_load', {'skill': f'{SHOPPING}/{SHOPPING}'})
         self.assertEqual(raised.exception.code, 'skill_revoked')
-        self.assertEqual(driver.posts, [], 'no change reached the shop')
+        self.assertEqual(caps.execute('browser_read', {})['state'], 'page')
         caps.close_browser()
 
     def test_skill_text_never_carries_session_material(self):

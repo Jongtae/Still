@@ -169,13 +169,15 @@ class HeaderReads(_Methods):
         with self.assertRaises(ToolError) as raised:
             caps.execute('skill_load', {'skill': SKILL['claim-analysis'], 'part': 'header'})
         self.assertEqual(raised.exception.code, 'skill_unavailable')
-        # A method removed after this Work screened it stops the Work's later calls, like a loaded one.
+        # A method removed after this Work screened it refuses its own calls, like a loaded one;
+        # #617: the Work's other tools are unaffected.
         caps.execute('skill_load', {'skill': SKILL['source-cross-check'], 'part': 'header'})
         self.library.remove('source-cross-check')
         self.assertNotIn(SKILL['source-cross-check'], self.library.binding().entries)
         with self.assertRaises(ToolError) as raised:
-            caps.execute('list_notes', {})
+            caps.execute('skill_load', {'skill': SKILL['source-cross-check'], 'part': 'header'})
         self.assertEqual(raised.exception.code, 'skill_revoked')
+        caps.execute('list_notes', {})
 
     def test_switching_skills_off_offers_no_method_header_or_gap_tool(self):
         self.library.set_enabled(False)
@@ -299,10 +301,10 @@ class BridgeBoundary(_Methods):
             bridge.resource(SKILL['claim-analysis'], 'SKILL.md')
         self.assertEqual(bridge.resource(SKILL['summary-or-analysis'], 'SKILL.md')['path'], 'SKILL.md')
         self.assertEqual((bridge.loads, bridge.header_reads), (1, 1), 'the per-Work counts come back with the events')
-        # A screened method withdrawn later stops the bridge's calls too.
+        # A screened method withdrawn later refuses the bridge's calls that use it too.
         self.library.remove('claim-analysis')
         with self.assertRaises(SkillError) as raised:
-            bridge.check_current()
+            bridge.header(SKILL['claim-analysis'])
         self.assertEqual(raised.exception.code, 'skill_revoked')
 
 

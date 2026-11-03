@@ -1000,6 +1000,8 @@ PAGE_NOT_IN_SCOPE_TEXT=msg('agent_runtime.page_outside_scope')
 PAGE_REDIRECT_LEFT_SCOPE_TEXT=msg('agent_runtime.page_redirect_left_scope')
 #: A lookup whose query (or weather place) is empty once stored secrets are removed (#826).
 PUBLIC_TASK_UNRESOLVED=msg('agent_runtime.public_query_empty')
+#: #617: the stored-secret redactor failed, so nothing was sent or kept.
+REDACTION_UNAVAILABLE_TEXT=msg('agent_runtime.redaction_unavailable')
 #: #605 D1: the explicit owner command whose typed query is sent as typed
 #: (a convenience since #654; an ordinary request needs no command).
 EXPLICIT_SEARCH_PREFIX='/search '
@@ -1625,6 +1627,8 @@ SETTINGS_ACTIONS=frozenset({'settings_read','settings_change','capability_search
 INFORMATION_USE_ACTIONS=frozenset({'information_use'})
 #: #961: offered only when this Work has a skill binding (skills on and at least one loadable skill).
 SKILL_ACTIONS=frozenset({'skill_load','skill_resource','method_gap'})
+#: #617: calls that only leave an advisory note; their failure is recorded but is no failed step of the Work.
+ADVISORY_ACTIONS=frozenset({'method_gap'})
 #: What a skill call records as its Work evidence: the exact revision read (never its text), and #32's part and gap note.
 SKILL_EVIDENCE_KEYS=('skill','digest','revision','licence','source','path','part','method_gap')
 
@@ -1708,9 +1712,13 @@ WORK_STOPPED=msg('agent_runtime.work_stopped')
 WORK_DEADLINE=msg('agent_runtime.work_deadline')
 WORK_TURNS_EXHAUSTED=msg('agent_runtime.model_turns_exhausted', count=WORK_MODEL_TURNS)
 WORK_ATTEMPTS_EXHAUSTED=msg('agent_runtime.tool_attempts_exhausted', count=WORK_TOOL_ATTEMPTS)
+PRESENTATION_TURNS_EXHAUSTED=msg('agent_runtime.presentation_turns_exhausted', count=WORK_PRESENTATION_TURNS)
+#: #617: the text of each reason a run may take no further step (``WorkBudget.check``).
+BUDGET_LAPSE_TEXTS={'deadline_exceeded':WORK_DEADLINE,'run_superseded':msg('agent_runtime.run_superseded'),
+                    'budget_unavailable':msg('agent_runtime.budget_unavailable')}
 #: Codes that end the Work's remaining steps; never a recoverable read failure.
 #: ``deadline`` is the pre-#607 spelling kept for older events.
-BUDGET_CODES=frozenset({'stopped','deadline','deadline_exceeded','turn_budget','attempt_budget'})
+BUDGET_CODES=frozenset({'stopped','deadline','deadline_exceeded','turn_budget','attempt_budget','run_superseded','budget_unavailable'})
 #: SEC-LOOP-01 (#657): "try a different path" system turns one Work may get
 #: after a failed path; spent on the Work's own ``WorkBudget``.
 WORK_ALTERNATIVE_NUDGES=2
@@ -1838,6 +1846,13 @@ def renew_for_owner_prerequisite(db,job_id,*,budget_continue=False):
  db.execute('UPDATE config SET value=? WHERE key=?',(json.dumps(row),key))
  return True
 
+class LedgerSuperseded(ValueError):
+ """This run no longer holds its request's budget: another run resumed or continued it (#617)."""
+
+#: #617: why a ledger refuses a step (``WorkLedger.lapse``/``refusal``), as the code and text a
+#: refused step reports; a fault reading the record is not the deadline, a newer run is not either.
+BUDGET_LAPSES={'deadline':'deadline_exceeded','superseded':'run_superseded','unavailable':'budget_unavailable'}
+
 class WorkLedger:
  """Cumulative counters and remaining active time in the existing Work row.
 
@@ -1850,12 +1865,14 @@ class WorkLedger:
  def __init__(self,store,job_id,*,seconds=WORK_DEADLINE_SECONDS,wall=time.time,fresh=False,existing_only=False):
   self.store,self.job_id,self.wall=store,job_id,wall
   self.key=f'{WORK_LEDGER_KEY}:{job_id}'
-  self.epoch=None
+  self.epoch=None;self.opened=None
   try:
    row=self._change(lambda row:None,open_seconds=seconds,fresh=fresh,existing_only=existing_only)
    self.deadline,self.epoch=row['deadline'],row['epoch']
-  except Exception:
+  except Exception as exc:
    self.deadline=wall();self.epoch=-1  # corrupt/unavailable storage fails closed
+   # #617: why it failed, so a refused step says so rather than "time limit".
+   self.opened='superseded' if isinstance(exc,LedgerSuperseded) else 'unavailable'
 
  @staticmethod
  def request_chain(db,job_id):
@@ -1929,7 +1946,7 @@ class WorkLedger:
    db.execute('BEGIN IMMEDIATE')
    chain=self.request_chain(db,self.job_id)
    root=chain[-1]['id'];key=f'{WORK_LEDGER_KEY}:{root}'
-   if self.epoch is not None and self.key!=key:raise ValueError('request binding changed')
+   if self.epoch is not None and self.key!=key:raise LedgerSuperseded('request binding changed')
    self.key=key
    found=db.execute('SELECT value FROM config WHERE key=?',(self.key,)).fetchone()
    row=json.loads(found[0]) if found else None
@@ -1945,11 +1962,11 @@ class WorkLedger:
    self._validate(row)
    row.setdefault('active_work_id',root)
    if fresh:self._migrate_request(db,row,root)
-   if self.epoch is not None and row['epoch']!=self.epoch:raise ValueError('stale work run')
+   if self.epoch is not None and row['epoch']!=self.epoch:raise LedgerSuperseded('stale work run')
    if row['active_work_id']!=self.job_id:
     if (not fresh or row['active_work_id'] not in {work['id'] for work in chain[1:]}
         or any(work['status'] in ('queued','running') for work in chain[1:])):
-     raise ValueError('request is owned by another run')
+     raise LedgerSuperseded('request is owned by another run')
     row.update(active_work_id=self.job_id,epoch=row['epoch']+1)
    if fresh and not row['active']:
     row.update(deadline=self.wall()+row['remaining_seconds'],active=True,epoch=row['epoch']+1)
@@ -1967,6 +1984,20 @@ class WorkLedger:
    return min(self.deadline,row['deadline'])-self.wall()
   except Exception:return 0
 
+ def lapse(self):
+  """Why this run may take no further step, or None (#617).
+
+  ``deadline`` (its active time is used up), ``superseded`` (a newer run of
+  the request holds the record, or this run released it) or ``unavailable``
+  (the record could not be read).  ``remaining`` stays 0 in every case.
+  """
+  if self.opened:return self.opened
+  try:
+   row=self._validate(self.store.config(self.key))
+   if row['epoch']!=self.epoch or row.get('active_work_id')!=self.job_id or not row['active']:return 'superseded'
+   return 'deadline' if min(self.deadline,row['deadline'])-self.wall()<=0 else None
+  except Exception:return 'unavailable'
+
  def expired(self):
   return self.remaining()<=0
 
@@ -1978,14 +2009,27 @@ class WorkLedger:
   try:self._change(change)
   except Exception:pass  # failing to pause cannot extend an active deadline
 
+ def refusal(self,limit,counter='attempts'):
+  """Atomically spend one request-level allowance in the current active run; None when spent.
+
+  #617: otherwise why not - ``limit`` (the counter reached ``limit``),
+  ``deadline``, ``superseded`` or ``unavailable`` (``lapse``) - so a refused
+  step reports the true reason instead of the counter's limit.
+  """
+  if counter not in ('attempts','turns','nudges','presentation'):return 'unavailable'
+  if self.opened:return self.opened
+  def change(row):
+   if not row['active']:return 'superseded'
+   if self.wall()>=row['deadline']:return 'deadline'
+   if row[counter]>=limit:return 'limit'
+   row[counter]+=1;return None
+  try:return self._change(change)['result']
+  except LedgerSuperseded:return 'superseded'
+  except Exception:return 'unavailable'
+
  def spend(self,limit,counter='attempts'):
   """Atomically spend one request-level allowance in the current active run."""
-  if counter not in ('attempts','turns','nudges','presentation'):return False
-  def change(row):
-   if not row['active'] or self.wall()>=row['deadline'] or row[counter]>=limit:return False
-   row[counter]+=1;return True
-  try:return bool(self._change(change)['result'])
-  except Exception:return False
+  return self.refusal(limit,counter) is None
 
  def used(self,counter='attempts'):
   try:return self._change(lambda row:None)[counter]
@@ -2019,7 +2063,11 @@ class WorkBudget:
    try:stopped=bool(self.stop())
    except Exception:stopped=False
    if stopped:return 'stopped'
-  if self.clock()>=self.deadline or (self.ledger is not None and self.ledger.expired()):return 'deadline_exceeded'
+  if self.clock()>=self.deadline:return 'deadline_exceeded'
+  if self.ledger is not None:
+   # #617: a newer run or an unreadable record is not the deadline.
+   lapse=self.ledger.lapse() if callable(getattr(self.ledger,'lapse',None)) else ('deadline' if self.ledger.expired() else None)
+   if lapse:return BUDGET_LAPSES.get(lapse,'budget_unavailable')
   return None
  def remaining(self):
   """Seconds left before the Work's (shared) deadline."""
@@ -2029,7 +2077,16 @@ class WorkBudget:
  def check(self):
   reason=self.interrupted()
   if reason=='stopped':raise ToolError(WORK_STOPPED,'stopped')
-  if reason:raise ToolError(WORK_DEADLINE,'deadline_exceeded')
+  if reason:raise ToolError(BUDGET_LAPSE_TEXTS.get(reason,WORK_DEADLINE),reason)
+ def _refused(self,limit,counter,text,code):
+  """Spend one ``counter`` allowance on the ledger, or raise the true reason it was refused (#617)."""
+  if self.ledger is None:return
+  refused=self.ledger.refusal(limit,counter) if callable(getattr(self.ledger,'refusal',None)) else (
+   None if self.ledger.spend(limit,counter) else 'limit')
+  if refused=='limit':raise ToolError(text,code)
+  if refused:
+   reason=BUDGET_LAPSES.get(refused,'budget_unavailable')
+   raise ToolError(BUDGET_LAPSE_TEXTS[reason],reason)
  def turn_limit(self,reserve=False):
   """The turns a call may reach: all of them for the outcome judgment, one fewer otherwise (#1418).
 
@@ -2041,15 +2098,14 @@ class WorkBudget:
   self.check()
   with self._spending:
    limit=self.turn_limit(reserve)
-   if self.turns_used>=limit or self.ledger is not None and not self.ledger.spend(limit,'turns'):
-    raise ToolError(WORK_TURNS_EXHAUSTED,'turn_budget')
+   if self.turns_used>=limit:raise ToolError(WORK_TURNS_EXHAUSTED,'turn_budget')
+   self._refused(limit,'turns',WORK_TURNS_EXHAUSTED,'turn_budget')
    self.turns_used+=1
  def spend_attempt(self):
   self.check()
   with self._spending:
    if self.attempts_used>=self.attempts:raise ToolError(WORK_ATTEMPTS_EXHAUSTED,'attempt_budget')
-   if self.ledger is not None and not self.ledger.spend(self.attempts):
-    raise ToolError(WORK_ATTEMPTS_EXHAUSTED,'attempt_budget')
+   self._refused(self.attempts,'attempts',WORK_ATTEMPTS_EXHAUSTED,'attempt_budget')
    self.attempts_used+=1
  def spend_nudge(self):
   """Whether one more "try a different path" turn is allowed (#657); never raises."""
@@ -2066,8 +2122,9 @@ class PresentationBudget(WorkBudget):
  """
  def spend_turn(self,reserve=False):
   self.check()
-  if self.ledger is None or not self.ledger.spend(WORK_PRESENTATION_TURNS,'presentation'):
-   raise ToolError(WORK_TURNS_EXHAUSTED,'presentation_budget')
+  # #617: its own allowance and its own words, not the request's model-call limit.
+  if self.ledger is None:raise ToolError(PRESENTATION_TURNS_EXHAUSTED,'presentation_budget')
+  self._refused(WORK_PRESENTATION_TURNS,'presentation',PRESENTATION_TURNS_EXHAUSTED,'presentation_budget')
 
 def unknown_effect(value):
  """Shared projection of recorded unresolved effects, including nested traces."""
@@ -2428,6 +2485,7 @@ def trail_steps(rows, tools=None):
   key=(data.get('scope'),data.get('call_id'))
   if 'arguments' not in data and data.get('call_id') and key in arguments:data={**data,'arguments':arguments[key]}
   action=data.get('host_action') or (tools or {}).get(tool,{}).get('host_action') or tool
+  if status=='failed' and action in ADVISORY_ACTIONS:continue  # #617: advisory; never a failed step
   if status=='failed':
    reason=data.get('error') if isinstance(data.get('error'),str) else None
    # A read-declared API call Still could not make as written missed like an unrun page step (#1276);
@@ -2789,22 +2847,6 @@ class Capabilities:
    self._code_runner=CodeRunner(self.store,self.job_id,interrupted=getattr(self,'interrupted',None),
                                 approvals=getattr(self,'browser_approvals',None))
   return self._code_runner
- def check_skills(self):
-  """Refuse this call when a skill the Work loaded is no longer current (#961).
-
-  Loaded text already reached the model and cannot be recalled, so refusing
-  only the next load would let the Work keep acting on withdrawn know-how
-  through untagged tools.  Every later call of the Work is refused instead
-  (``skill_revoked``); a new request starts from the current settings.
-  """
-  if self.skills is None:return
-  # A load recorded by another process of this Work (a restarted bridge, an earlier attempt) counts too.
-  if hasattr(self.store,'db'):self.skills.recall(self.store,self.job_id)
-  # #32: a usage header that reached the model counts like a load.
-  if not self.skills.loaded and not getattr(self.skills,'screened',None) and not self.skills.revoked:return
-  from .skills import SkillError
-  try:self.skills.check_current()
-  except SkillError as exc:raise ToolError(str(exc),exc.code) from None
  def offered_tools(self):
   """Allowed tool ids minus the browser tools when no profile is registered (#656)
   and minus ``propose_current_state`` while current context is off (#627)
@@ -2837,12 +2879,22 @@ class Capabilities:
  def withdrawn_context(self):
   """Exact location strings this Work was shown whose source is no longer valid (#627).
 
-  Deterministic: `CurrentContext.withdrawn_strings`.  An unreadable record
-  refuses the lookup rather than letting withdrawn text through.
+  Deterministic: `CurrentContext.withdrawn_strings`.  #617: a Work shown no
+  location text has nothing to withdraw, so the context tables are never a
+  reason to refuse its lookups; when the sources of what it was shown cannot
+  be checked, every string it was shown is withheld instead.  Only a Work
+  whose exposure record itself is unreadable is refused (``context_unverified``).
   """
   if not hasattr(self.store,'db'):return []
-  try:return self.current_context().withdrawn_strings(self.job_id)
-  except Exception:raise ToolError(msg('agent_runtime.context_unverified'),'context_unverified') from None
+  from .current_context import exposed_strings, exposure_rows
+  unverified=lambda:ToolError(msg('agent_runtime.context_unverified'),'context_unverified',ran=False)
+  try:rows=exposure_rows(self.store,self.job_id)
+  except Exception:raise unverified() from None
+  if not rows:return []
+  try:return self.current_context().withdrawn_strings(self.job_id,rows=rows)
+  except Exception:pass
+  try:return exposed_strings(rows)
+  except Exception:raise unverified() from None
  def source_revision(self,action,args):
   """The resolved source revision a ``weather(location_ref)`` call is keyed on, or None (#627)."""
   if action!='weather' or not isinstance(args,dict) or 'location_ref' not in args:return None
@@ -2968,6 +3020,21 @@ class Capabilities:
    if self.secret_redactor is not None:text=self.secret_redactor(text)
   except Exception:return '[redacted]'
   return SECRET_PATTERN.sub('[redacted]',str(text))
+ def secret_masked(self,text):
+  """``text`` with the stored secrets' literal values and credential shapes replaced (pilot invariant a).
+
+  For text that reaches the owner's own surfaces and Still's own records
+  (#617): the owner's saved private values are the owner's and stay (#826);
+  only secrets are removed.  A failing redactor refuses the call with
+  ``redaction_unavailable`` (nothing sent or kept) rather than passing the
+  text through or reporting a misleading reason.
+  """
+  from .bounded_execution import SECRET_PATTERN
+  text=str(text or '')
+  if callable(self.secret_redactor):
+   try:text=str(self.secret_redactor(text))
+   except Exception:raise ToolError(REDACTION_UNAVAILABLE_TEXT,'redaction_unavailable',ran=False) from None
+  return SECRET_PATTERN.sub('[redacted]',text)
  def default_search_provider(self):
   """The owner's current default search option id, or '' (#657 path keys)."""
   registry=getattr(self.network,'providers',None)
@@ -3317,13 +3384,14 @@ class Capabilities:
 
   The replaced spans are dropped, not replaced by a placeholder, so nothing
   of a secret - not even that one stood there - is sent in a public lookup.
-  A failing redactor withholds the whole text.
+  A failing redactor refuses the lookup (``redaction_unavailable``, #617):
+  nothing is sent, and the worker is not told its words were empty.
   """
   from .bounded_execution import SECRET_PATTERN
   text=str(text or '')
   if self.secret_redactor is not None:
    try:text=str(self.secret_redactor(text)).replace('[redacted]',' ')
-   except Exception:return ''
+   except Exception:raise ToolError(REDACTION_UNAVAILABLE_TEXT,'redaction_unavailable',ran=False) from None
   return ' '.join(SECRET_PATTERN.sub(' ',text).split())
  def _public_task(self,tool_id,action,args):
   """Serve one public lookup: Still composes what leaves (#605, #654, #826).
@@ -3475,8 +3543,6 @@ class Capabilities:
    if refused is not None:raise refused
    # #606 T1: every route's attempt, Stop and deadline check happens here.
    self.budget.spend_attempt()
-   # #961: a skill this Work loaded that was since switched off, removed or changed stops the Work's calls.
-   self.check_skills()
    if self.current_packages is not None and BUILTIN_TOOLS.get(name)!=tool['host_action']:
     # Built-in tools cannot be disabled, so only package tools are rechecked;
     # an unreadable/invalid registry refuses package tools, never built-ins.
@@ -3579,7 +3645,7 @@ class Capabilities:
     if exc.reason in ('connection_required','reauth_required'):return unconnected
     if exc.reason=='invalid_query':raise ToolError(msg('agent_runtime.mail_invalid_query'),'mail_invalid_query') from None
     if exc.reason=='invalid_message_id':raise ToolError(msg('agent_runtime.mail_invalid_id'),'mail_invalid_id') from None
-    if exc.reason=='provider_rejected':raise ToolError(msg('agent_runtime.mail_not_found'),'mail_not_found') from None
+    if exc.reason=='provider_rejected':raise mail_rejection(getattr(exc,'status',None)) from None
     raise ToolError(msg('agent_runtime.mail_unavailable'),'mail_unavailable') from None
    return self._from_private('owner-mail',result)
   if name=='calendar_query':
@@ -3620,25 +3686,22 @@ class Capabilities:
    return result
   if name=='propose_current_state':
    # #627: a revisable hypothesis in the owner's current-context store,
-   # validated by the host; never canonical Memory, never profile.*.  The
-   # Work's saved private values are removed from the value first (the store
-   # also removes stored secrets), as for a lookup (#670 review).
+   # validated by the host; never canonical Memory, never profile.*.  #617:
+   # the owner's own store keeps the owner's own words; only secrets are
+   # removed (the store removes stored secrets again).
    if isinstance(args.get('value'),str) and args['value']:
-    from .browser_session import redact_private_values
-    args={**args,'value':redact_private_values(args['value'],self._browser_excluded())[0]}
+    args={**args,'value':self.secret_masked(args['value'])}
    return self.current_context().propose(self.job_id,args)
   if name=='schedule_preparation':
    # #659: a proposal the owner accepts; the service decides whether the
    # owner's own message already is that acceptance (DecisionEngine).
    if self.preparations is None or self.delegated:
     raise ToolError(msg('agent_runtime.preparations_unavailable'),'needs_setup',requires='owner-preparations')
-   # The Work's saved private values leave the goal before it is stored (the
-   # service also removes stored secrets), as for a current-state value.
-   # #393: so do the title and offer the owner reads.
-   from .browser_session import redact_private_values
+   # #617: the goal, title and offer (#393) are the owner's own reservation;
+   # only secrets leave them (the service removes stored secrets again).
    for field in ('goal','title','offer'):
     if isinstance(args.get(field),str) and args[field]:
-     args={**args,field:redact_private_values(args[field],self._browser_excluded())[0]}
+     args={**args,field:self.secret_masked(args[field])}
    return self.preparations(args)
   if name=='ask_location':
    # #774: one Telegram prompt to the owner; the reply continues this request once.
@@ -3647,14 +3710,15 @@ class Capabilities:
    reason=args.get('reason')
    if not isinstance(reason,str) or not 0<len(reason.strip())<=300:
     raise ToolError(msg('agent_runtime.location_reason_length'),'invalid_reason')
-   from .browser_session import redact_private_values
+   # #617: a prompt to the owner's own chat; only secrets are removed from it.
    label=args.get('button_label')
-   label=redact_private_values(label.strip(),self._browser_excluded())[0] if isinstance(label,str) and 0<len(label.strip())<=40 else None
+   label=self.secret_masked(label.strip()) if isinstance(label,str) and 0<len(label.strip())<=40 else None
+   reason=self.secret_masked(reason.strip())
    # #1582: mode with_answer offers the share button on this Work's answer instead of a separate question.
    if args.get('mode')=='with_answer':
-    self.location_request(redact_private_values(reason.strip(),self._browser_excluded())[0],label,with_answer=True)
+    self.location_request(reason,label,with_answer=True)
     return {'requested':True,'channel':'telegram','with_answer':True}
-   self.location_request(redact_private_values(reason.strip(),self._browser_excluded())[0],*([label] if label else []))
+   self.location_request(reason,*([label] if label else []))
    return {'requested':True,'channel':'telegram'}
   if name=='tell_owner':
    # #407: one interim message in the owner's chat; the Work goes on and its answer still comes at the end.
@@ -3663,21 +3727,21 @@ class Capabilities:
    text=args.get('text')
    if not isinstance(text,str) or not 0<len(text.strip())<=500:
     raise ToolError(msg('agent_runtime.owner_update_length'),'invalid_text')
-   from .browser_session import redact_private_values
-   self.owner_update(redact_private_values(text.strip(),self._browser_excluded())[0])
+   # #617: a message to the owner's own chat; only secrets are removed from it.
+   self.owner_update(self.secret_masked(text.strip()))
    return {'sent':True,'channel':'telegram'}
   if name in SKILL_ACTIONS:
    from .skills import SkillError
    if self.skills is None:raise ToolError(msg('agent_runtime.skill_unavailable'),'skill_unavailable')
+   # What this Work read in any process (a restarted bridge, an earlier attempt) and its per-Work counts.
+   # #617: a withdrawn skill refuses only the skill calls that use it (``SkillBinding._entry``), never
+   # the Work's other tools: a skill grants no authority (#974).
+   if hasattr(self.store,'db'):self.skills.recall(self.store,self.job_id)
    try:
     if name=='method_gap':
      # #32 review: the note is model text; secrets and credential shapes are masked before it is kept.
-     from .bounded_execution import SECRET_PATTERN
-     note=SECRET_PATTERN.sub('[redacted]',str(args.get('note') or ''))
-     if callable(self.secret_redactor):
-      try:note=str(self.secret_redactor(note))
-      except Exception:note=''
-     result=self.skills.gap(note)
+     # #617: a redactor that fails refuses as such, not as an empty note.
+     result=self.skills.gap(self.secret_masked(args.get('note')))
     elif name=='skill_resource':result=self.skills.resource(args['skill'],args['path'])
     elif args.get('part')=='header':result=self.skills.header(args['skill'])
     else:result=self.skills.load(args['skill'])
@@ -3692,11 +3756,15 @@ class Capabilities:
    # #814: a redacted read, or a draft the owner confirms in this conversation; never applied here.
    if self.settings is None or self.delegated:
     raise ToolError(msg('agent_runtime.settings_unavailable'),'settings_unavailable')
-   if name=='capability_search' and self.judgment_text(args.get('query',''))!=args.get('query',''):
-    raise ToolError(msg('agent_runtime.public_server_query'),'private_capability_query')
+   # #617: only a secret blocks the query (#826 removed the saved-private-value guard).
+   if name=='capability_search' and self.secret_masked(args.get('query',''))!=str(args.get('query') or ''):
+    raise ToolError(msg('agent_runtime.public_server_query'),'private_capability_query',ran=False)
    try:return self.settings(name,args)
    except ToolError:raise
-   except ValueError as exc:raise ToolError(str(exc) or msg('agent_runtime.settings_request_failed'),'settings_refused') from None
+   except ValueError as exc:
+    # #617: a refusal that carries its own stable code (a registry query's shape) keeps it.
+    raise ToolError(str(exc) or msg('agent_runtime.settings_request_failed'),getattr(exc,'code',None) or 'settings_refused',
+                    ran=False if getattr(exc,'ran',None) is False else None) from None
   # Folder basenames are owner-private: `이혼소송_2026` is a fact about the
   # owner's life, not a public string, and independent review put one
   # straight into a web_search query from an otherwise clean context. Less
@@ -4189,6 +4257,14 @@ CALENDAR_UNCONFIGURED=msg('agent_runtime.calendar_unconfigured')
 DRIVE_UNCONNECTED=msg('agent_runtime.drive_unconnected')
 #: #150: a mail read with no current Gmail connection read nothing.
 MAIL_UNCONNECTED=msg('agent_runtime.mail_unconnected')
+
+def mail_rejection(status):
+ """The refusal for a Gmail answer outside 2xx, by its HTTP status (#617): only a 404 is a missing message."""
+ if status==404:return ToolError(msg('agent_runtime.mail_not_found'),'mail_not_found')
+ if status==403:return ToolError(msg('agent_runtime.mail_forbidden'),'mail_forbidden')
+ if status==429:return ToolError(msg('agent_runtime.mail_rate_limited'),'mail_rate_limited')
+ if isinstance(status,int) and status>=500:return ToolError(msg('agent_runtime.mail_unavailable'),'mail_unavailable')
+ return ToolError(msg('agent_runtime.mail_rejected'),'mail_rejected')
 
 #: An effect a tool declined or deferred, and whether the call still advanced
 #: this Work.  See ``withheld_effect``.
@@ -4695,6 +4771,12 @@ FINISH_DEFINITION={'type':'function','function':{'name':FINISH_ACTION,
 PAGE_STEP_ACTIONS=frozenset({'browser_click','browser_type'})
 
 REPEAT_PATH_TEXT=(msg('agent_runtime.repeat_path'))
+#: #617: a repeated page step is refused with a page step's own next steps, not a search's.
+REPEAT_PAGE_STEP_TEXT=msg('agent_runtime.repeat_page_step')
+
+def repeat_path_error(action):
+ """The ``repeat_path`` refusal of one repeated path (#657), worded for its kind of action (#617)."""
+ return ToolError(REPEAT_PAGE_STEP_TEXT if action in PAGE_STEP_ACTIONS else REPEAT_PATH_TEXT,'repeat_path',ran=False)
 ALTERNATIVE_NUDGE=('Path check: the last path did not yield the goal. Choose a different path (another provider, a rewritten '
                    'query, the site\'s own search, another result or another route) or ask the owner one specific question. '
                    'Do not repeat the same call.')
@@ -5326,7 +5408,7 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
     # #16: the consecutive public reads that begin here are sent together; each is still
     # admitted, recorded and judged below, in this order.
     overlap.start(calls,index,attempts,paths)
-    name='unknown';validated=False;attempt=0;args={};action=None;ran=False;dispatched=False;failed_before=len(failures)
+    name='unknown';validated=False;attempt=0;args={};action=None;ran=False;dispatched=False;failed_before=len(failures);advisory=False
     try:
      name=function.get('name')
      if not isinstance(name,str):
@@ -5352,7 +5434,7 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
      keyed=canonical_search_args(args,capabilities.default_search_provider()) if action in SEARCH_BACKED_ACTIONS else args
      path=path_key(action,keyed,page)
      if path is not None:
-      if path in paths:raise ToolError(REPEAT_PATH_TEXT,'repeat_path')
+      if path in paths:raise repeat_path_error(action)
       paths.add(path)
      # #656: a browser call reads or changes page state, so the same call may run again.
      stateful=action in BROWSER_ACTIONS
@@ -5420,7 +5502,11 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
      if not dispatched:not_run(exc)
      action=(capabilities.tools.get(name) or {}).get('host_action',name) if validated else None
      result=_error_observation(exc,validated,action)
-     if validated:
+     # #617: an advisory call (a method_gap note) that fails is recorded and answered, but is no
+     # failed step of the Work: it neither lowers the outcome nor asks for a different path.
+     advisory=validated and action in ADVISORY_ACTIONS
+     if advisory:pass
+     elif validated:
       failed=True
       # Failed attempts stay in the durable tool events and the trail (#606 T2).
       trail.append((action,'exhausted' if result['code'] in BUDGET_CODES else 'failed'))
@@ -5433,7 +5519,7 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
      record(name,'failed',json.dumps({'scope':scope,'call_id':call['id'],'attempt':attempt,**result,
                                       **(declared_effect(action,args) if validated else {}),
                                       **(attempted_outbound(capabilities,action,args,exc) if dispatched and validated else {})},ensure_ascii=False))
-    if validated:
+    if validated and not advisory:
      observations[call['id']]=(name,action,trail[-1][1],result)
      steps.append((name,action,trail[-1][1],
                    {**(result if isinstance(result,dict) else {}),**declared_effect(action,args),'scope':scope,'call_id':call['id'],

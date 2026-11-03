@@ -115,7 +115,8 @@ LOAD_MORE_RESERVE_SECONDS = 3.0
 #: #244: how often a waiting load-more request asks whether the owner stopped the Work.
 STOP_POLL_SECONDS = 0.25
 LOAD_MORE_ARGUMENT_TEXT = 'load_more는 1부터 5까지의 횟수입니다.'
-LOAD_MORE_UNAVAILABLE_TEXT = '이 브라우저에서는 페이지를 더 불러올 수 없어 지금 보이는 페이지만 읽었습니다.'
+#: #617: said with the page it is true of: a driver without load-more still returns the current page.
+LOAD_MORE_UNAVAILABLE_TEXT = msg('browser_session.load_more_unavailable')
 LOGIN_WINDOW_SECONDS = 1800
 REDACTED = '[가림]'
 
@@ -1293,7 +1294,7 @@ class BrowserSession:
             self._require_page()
         self._spend_step()
         loaded = self._load_more(rounds) if rounds else None
-        if loaded is None:
+        if loaded is None or loaded.get('stopped') == 'unavailable':
             self._settle()
         page = self._page_state()
         if loaded is not None:
@@ -1309,7 +1310,9 @@ class BrowserSession:
         """
         load = getattr(self._driver(), 'load_more', None)
         if not callable(load):
-            raise ToolError(LOAD_MORE_UNAVAILABLE_TEXT, 'load_more_unavailable')
+            # #617: the step is spent on a read, so the read returns the page as shown, and says why no more came.
+            return {'rounds': 0, 'stopped': 'unavailable', 'new_content': False, 'text': '',
+                    'note': LOAD_MORE_UNAVAILABLE_TEXT}
         seconds = LOAD_MORE_SECONDS
         if self.budget is not None:
             try:

@@ -168,7 +168,8 @@ REFUSALS = {
     'declined_before': ('소유자가 최근에 같은 준비 제안을 거절했습니다. 다시 제안하지 말고, 지금 요청에 대한 답만 하세요. '
                         '소유자가 직접 요청하면 그때 예약할 수 있습니다.'),
     'invalid_kind': 'kind는 reminder(정해진 때에 이 문장을 알려 주기) 또는 prepare(정해진 때에 이 목표를 미리 처리해 두기)입니다.',
-    'invalid_goal': 'goal은 한 가지 목표로 적어 주세요.',
+    # #617: the detail (empty, or over the kind's limit) is the whole reason; no contradictory prefix.
+    'invalid_goal': '',
     'invalid_offer': (f'title은 {TITLE_MAX_CHARS}자 이내의 짧은 이름, offer는 {OFFER_MAX_LINES}줄·'
                       f'{OFFER_MAX_CHARS}자 이내로 적어 주세요.'),
     'invalid_due': 'due는 RFC3339 시각입니다(예: 2026-09-28T09:00:00+09:00). 오프셋이 없으면 timezone이 필요합니다.',
@@ -197,7 +198,7 @@ class PreparationRefusal(ValueError):
     """A typed refusal the broker turns into a ``ToolError``."""
 
     def __init__(self, code, detail=''):
-        super().__init__(REFUSALS[code] + (' ' + detail if detail else ''))
+        super().__init__(' '.join(part for part in (REFUSALS[code], detail) if part))
         self.code = code
 
 

@@ -87,6 +87,25 @@ def _known_secret_names():
 KNOWN_SECRET_NAMES = _known_secret_names()
 
 
+def exposure_rows(store, job_id):
+    """The location text a Work's snapshots showed it, by source (``_record_exposures``); a plain read.
+
+    #617: read without building ``CurrentContext`` (whose setup writes), so a
+    Work shown no location is never refused over the context tables.  A store
+    that never created the table has shown no Work any location.
+    """
+    with store.db() as db:
+        if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='current_context_exposures'").fetchone() is None:
+            return []
+        return db.execute('SELECT source_ref, revision, strings_json FROM current_context_exposures WHERE job_id=?',
+                          (job_id,)).fetchall()
+
+
+def exposed_strings(rows):
+    """Every location string in ``rows`` (``exposure_rows``)."""
+    return sorted({value for row in rows for value in json.loads(row['strings_json']) if isinstance(value, str)})
+
+
 def redact_known_secrets(store, text):
     """The stored secrets' literal values and credential shapes, replaced.
 
@@ -849,7 +868,7 @@ class CurrentContext:
                            (job_id, ref, revision, json.dumps(sorted({s for s in strings if s.strip()}),
                                                               ensure_ascii=False), now))
 
-    def withdrawn_strings(self, job_id, now=None):
+    def withdrawn_strings(self, job_id, now=None, rows=None):
         """Exposed location strings of this Work whose source is no longer valid.
 
         Deterministic, no judgment: a context source (observation or
@@ -857,12 +876,12 @@ class CurrentContext:
         expired or was re-paired away, or its revision changed; a saved-place
         anchor when its Memory row was deleted or corrected (canonical Memory
         is not paused with current context).  A string a still-valid source
-        also carries stays usable.
+        also carries stays usable.  ``rows`` are this Work's ``exposure_rows``
+        when the caller already read them.
         """
         now = self.now() if now is None else now
-        with self.store.db() as db:
-            rows = db.execute('SELECT source_ref, revision, strings_json FROM current_context_exposures WHERE job_id=?',
-                              (job_id,)).fetchall()
+        if rows is None:
+            rows = exposure_rows(self.store, job_id)
         if not rows:
             return []
         usable = {'obs:' + e['id']: str(e['revision']) for e in self.observations.usable(now=now, job_id=job_id)}
