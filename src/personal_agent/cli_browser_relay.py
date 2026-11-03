@@ -37,8 +37,9 @@ import socketserver
 import tempfile
 import threading
 
-from .agent_runtime import (BROWSER_ACTIONS, CODE_ACTIONS, EFFECT_FREE_READS, HOST_RELAYED_ACTIONS, ToolError, concurrent_read, not_run,
-                            observed_field, observed_value, path_key, ran_field, repeat_path_error, result_page_digest)
+from .agent_runtime import (BROWSER_ACTIONS, CODE_ACTIONS, EFFECT_FREE_READS, HOST_RELAYED_ACTIONS, LoopGuard, ToolError,
+                            classify_failure, concurrent_read, loop_outcome, not_run, observed_field, observed_value, path_key,
+                            ran_field, repeat_path_error, result_page_digest)
 
 SOCKET_NAME = 's'
 KEY_NAME = 'key'
@@ -127,8 +128,8 @@ class BrowserRelay:
         self._reading = threading.Condition()
         self._reads = 0
         self._closed = False
-        # The page the next step acts on and the page steps already taken (#657).
-        self._page, self._paths = None, set()
+        # The page the next step acts on and the loop guard of the page steps taken (#657, #620).
+        self._page, self._guard = None, LoopGuard()
         self.directory = Path(tempfile.mkdtemp(prefix='agentos-br-'))
         os.chmod(self.directory, 0o700)
         self._key = secrets.token_hex(32)
@@ -207,20 +208,23 @@ class BrowserRelay:
         with self._lock:
             if self._closed:
                 return {'error': {'kind': 'tool', 'message': RELAY_UNAVAILABLE_TEXT, 'code': 'stopped', 'ran': False}}
-            # #657's repeat key, as the direct route's loop applies it: the same
-            # page step (action, target and input digests) on the same page is
-            # refused, not re-run (``agent_runtime.path_key``, reused).
+            # #657/#620: the direct route's loop guard (``agent_runtime.LoopGuard``, reused): the same
+            # page step (action, target, input digests and declared effect) on the same page is
+            # refused once it met its observation or failed on its own terms; after a transient
+            # failure it may run once more.
             action = tools[name]['host_action']
             path = (path_key(action, arguments, self._page)
                     if action in BROWSER_ACTIONS and isinstance(arguments, dict) else None)
-            if path is not None and path in self._paths:
+            if self._guard.refused(path):
                 return {'error': _error_payload(repeat_path_error(action))}
-            if path is not None:
-                self._paths.add(path)
+            self._guard.admit(path)
             try:
                 value = self.tools.call(name, arguments)
             except Exception as exc:   # every failure becomes a typed reply
+                code, _retry, effect = classify_failure(exc, action)
+                self._guard.settle(loop_outcome(action, arguments, {'code': code, 'effect': effect, **ran_field(exc)}), path)
                 return {'error': _error_payload(exc)}
+            self._guard.settle('seen', path)
             if action in BROWSER_ACTIONS:
                 self._page = result_page_digest(value) or self._page
             else:

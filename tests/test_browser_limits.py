@@ -38,10 +38,9 @@ FAKE_WORKER = Path(__file__).resolve().with_name('browser_fake_worker.py')
 
 
 class Budgets(unittest.TestCase):
-    def test_a_work_gets_two_hundred_tool_attempts_and_browser_steps(self):
-        self.assertEqual((WORK_TOOL_ATTEMPTS, bs.STEPS_PER_WORK), (200, 200))
+    def test_a_work_gets_two_hundred_tool_attempts(self):
+        self.assertEqual(WORK_TOOL_ATTEMPTS, 200)
         self.assertIn('200회', WORK_ATTEMPTS_EXHAUSTED)
-        self.assertIn('200회', bs.STEP_BUDGET_TEXT)
         budget = WorkBudget()
         for _ in range(200):
             budget.spend_attempt()
@@ -49,14 +48,18 @@ class Budgets(unittest.TestCase):
             budget.spend_attempt()
         self.assertEqual(caught.exception.code, 'attempt_budget')
 
-    def test_the_step_after_the_browser_cap_is_refused(self):
-        session = bs.BrowserSession(lambda: FakeDriver(), work_id='w')
+    def test_browser_steps_spend_the_works_one_attempt_budget(self):
+        # #620: no browser counter of its own: the step after the Work's attempts is refused.
+        self.assertFalse(hasattr(bs, 'STEPS_PER_WORK'))
+        budget = WorkBudget(attempts=5)
+        for _ in range(3):
+            budget.spend_attempt()   # other tools of the same Work
+        session = bs.BrowserSession(lambda: FakeDriver(), work_id='w', budget=budget)
         session.open({'url': ORIGIN + '/product', 'effect': 'read'})
-        for _ in range(bs.STEPS_PER_WORK - 1):
-            session.read()
+        session.read()
         with self.assertRaises(ToolError) as caught:
             session.read()
-        self.assertEqual(caught.exception.code, 'browser_step_budget')
+        self.assertEqual(caught.exception.code, 'attempt_budget')
 
 
 def stream(tool_records, answer):

@@ -10050,10 +10050,10 @@
   "zh": "工具名称必须是字符串。"
  },
  "agent_runtime.duplicate_tool_call": {
-  "ko": "같은 도구 요청은 현재 작업에서 한 번만 실행합니다. 결과를 사용하거나 새 요청을 보내 주세요.",
-  "en": "The same tool request runs only once per Work. Use its result or send a new request.",
-  "ja": "同じツールの依頼は1つの作業で1回だけ実行します。結果を使うか、新しい依頼を送ってください。",
-  "zh": "每项工作中相同工具请求仅执行一次。请使用其结果或发送新请求。"
+  "ko": "같은 입력으로 이미 실행한 요청이고 그 뒤 바뀐 것이 없어 다시 실행하지 않았습니다. 받은 결과를 사용하거나 입력을 바꿔 주세요.",
+  "en": "This request already ran with the same input and nothing has changed since, so it was not run again. Use its result or change the input.",
+  "ja": "同じ入力ですでに実行した依頼で、その後変化がないため再実行しませんでした。得た結果を使うか、入力を変えてください。",
+  "zh": "此请求已用相同输入执行过，且此后没有变化，因此未再次执行。请使用其结果或更改输入。"
  },
  "agent_runtime.page_source": {
   "ko": "출처: {url}",

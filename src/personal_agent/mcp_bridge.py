@@ -409,6 +409,23 @@ def _with_steer(result, store, job_id, record):
     return result
 
 
+def _with_remaining(result, budget):
+    """#620 (LangGraph ``RemainingSteps``): what the Work may still spend rides on every tool result.
+
+    Steps (tool calls) and seconds of the Work's one shared budget, with a
+    wind-down note when little is left, so the CLI finishes with its own answer
+    instead of being cut at the limit.  The CLI's own model turns are not
+    Still's, so they are not shown.
+    """
+    from .agent_runtime import remaining_budget
+    left = remaining_budget(budget, turns=False)
+    if left and isinstance(result, dict) and isinstance(result.get('content'), list):
+        result['content'].append({'type': 'text', 'text': json.dumps({'remaining': left}, ensure_ascii=False)})
+        if isinstance(result.get('structuredContent'), dict):
+            result['structuredContent'] = {**result['structuredContent'], 'remaining': left}
+    return result
+
+
 #: #1197: Claude Code's permission prompt for the owner's AI connector tools.
 #: Listed only with ``--ai-connections``; never pre-approved, so a model call
 #: to it is itself a permission prompt, which this tool refuses.
@@ -563,6 +580,7 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
                                    'error':redact_reason(str(exc)), **declared,
                                    **attempted_outbound(capabilities, action, arguments, exc)}, ensure_ascii=False))
                 if not session_steers:_with_steer(result, store, job_id, record)
+                _with_remaining(result, capabilities.budget)
                 return result
             except Exception as exc:
                 # #735: any other exception inside one call (an EOFError from a
@@ -576,6 +594,7 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
                                    'error':redact_reason(TOOL_FAILED_TEXT), **declared,
                                    **attempted_outbound(capabilities, action, arguments, exc)}, ensure_ascii=False))
                 if not session_steers:_with_steer(result, store, job_id, record)
+                _with_remaining(result, capabilities.budget)
                 return result
             # The same redacted Evidence the direct route records
             # (sources, attempted/failed URLs, counts), never the payload.
@@ -589,6 +608,7 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
             # #836: the worker reads a held memory write as the owner's one-tap ask, nothing more.
             result = {'content':[{'type':'text','text':json.dumps(worker_result(host_action, value), ensure_ascii=False)}]}
             if not session_steers:_with_steer(result, store, job_id, record)
+            _with_remaining(result, capabilities.budget)
         elif method == 'notifications/initialized': return {}
         else: raise _Rejected(-32601, 'Method not found.')
         return result

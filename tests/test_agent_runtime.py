@@ -203,7 +203,7 @@ class ProviderToolProtocolTests(unittest.TestCase):
   calls=[];events=[];turn=[0]
   def transport(url,body,headers):
    turn[0]+=1
-   if turn[0]<3:return {'choices':[{'message':{'tool_calls':[{'id':str(turn[0]),'function':{'name':'web_search','arguments':'{"query":"same query"}'}}]}}]}
+   if turn[0]<4:return {'choices':[{'message':{'tool_calls':[{'id':str(turn[0]),'function':{'name':'web_search','arguments':'{"query":"same query"}'}}]}}]}
    return {'choices':[{'message':{'content':'search failed'}}]}
   class BrokenNetwork:
    def execute(self,plan):calls.append(plan);raise ProviderError('offline')
@@ -212,12 +212,13 @@ class ProviderToolProtocolTests(unittest.TestCase):
    caps=Capabilities(store,adapter,CFG,'','job',lambda *a:None,network=BrokenNetwork())
    result=run_agent(adapter,CFG,'',[{'role':'user','content':'search'}],'',caps,lambda *a:events.append(a))
   self.assertEqual(result.outcome,'failed')
-  # #607: one bounded transient retry inside the first call; the identical
-  # second call is still refused before the network (#657: as a repeated path).
-  self.assertEqual(len(calls),2)
+  # #607: one bounded transient retry inside each call.  #620 (OpenHands' stuck detector): a
+  # transient failure says nothing about the input, so the identical second call runs once more;
+  # the third is refused before the network (#657: as a repeated path).
+  self.assertEqual(len(calls),4)
   failed=[json.loads(e[2]) for e in events if e[0]=='web_search' and e[1]=='failed' and 'attempt' in json.loads(e[2])]
-  self.assertEqual([e['attempt'] for e in failed],[1,2])
-  self.assertEqual(failed[-1]['code'],'repeat_path')
+  self.assertEqual([e['attempt'] for e in failed],[1,2,3])
+  self.assertEqual([e['code'] for e in failed],['transient_failure','transient_failure','repeat_path'])
  def test_trace_evidence_keeps_file_content_out_of_event_store(self):
   events=[];count=[0]
   def transport(url,body,headers):

@@ -163,6 +163,9 @@ class RenderSettle(unittest.TestCase):
             def check(self):
                 pass
 
+            def spend_attempt(self):
+                pass
+
             def remaining(self):
                 return 1.5
         driver = SettlingDriver()

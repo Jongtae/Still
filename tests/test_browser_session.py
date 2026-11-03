@@ -620,7 +620,7 @@ class MediationTests(unittest.TestCase):
 class PaymentGuardTests(unittest.TestCase):
     def setUp(self):
         self.approvals = Approvals()
-        self.sess, self.driver = session(approvals=self.approvals, steps=40)
+        self.sess, self.driver = session(approvals=self.approvals)
         self.sess.open({'url': ORIGIN + '/checkout', 'effect': 'navigate'})
 
     def refused(self, fn, *args):
@@ -702,7 +702,7 @@ class PaymentGuardTests(unittest.TestCase):
         # A changed field value of the form (quantity, recipient) changes the state of the button too.
         click = self.refused_binding(PAGES, 'click', {'target': '결제하기', 'effect': 'navigate'})
         approvals = Approvals(click)
-        sess, driver = session(approvals=approvals, steps=40)
+        sess, driver = session(approvals=approvals)
         sess.open({'url': ORIGIN + '/checkout', 'effect': 'navigate'})
         sess.type({'target': '받는 사람', 'text': '다른 사람', 'effect': 'mutate'})
         with self.assertRaises(ToolError):
@@ -722,7 +722,7 @@ class PaymentGuardTests(unittest.TestCase):
         self.assertEqual(bs.autocomplete_field('  Section-A HOME tel  '), 'tel')
         self.assertEqual(bs.autocomplete_field(''), '')
         approvals = Approvals()
-        sess, driver = session(approvals=approvals, steps=40)
+        sess, driver = session(approvals=approvals)
         page = sess.open({'url': ORIGIN + '/checkout-compound', 'effect': 'navigate'})
         for secret in ('4242424242424242', '987', '246810'):
             self.assertNotIn(secret, flat(page))
@@ -754,7 +754,7 @@ class ForwardedSubmitTests(unittest.TestCase):
 
     def setUp(self):
         self.approvals = Approvals()
-        self.sess, self.driver = session(approvals=self.approvals, steps=40)
+        self.sess, self.driver = session(approvals=self.approvals)
         self.page = self.sess.open({'url': ORIGIN + '/checkout-forwarded', 'effect': 'navigate'})
 
     def refused(self, target):
@@ -828,7 +828,7 @@ class ForwardedSubmitTests(unittest.TestCase):
     def test_an_approved_step_lets_only_its_own_payment_form_through(self):
         # #700 P2-1: the approved pay button of one form cannot carry a submit of another.
         approvals = Approvals()
-        sess, driver = session(approvals=approvals, steps=40)
+        sess, driver = session(approvals=approvals)
         sess.open({'url': ORIGIN + '/checkout-cross', 'effect': 'navigate'})
         with self.assertRaises(ToolError):
             sess.click({'target': '결제하기', 'effect': 'mutate'})
@@ -847,7 +847,7 @@ class ForwardedSubmitTests(unittest.TestCase):
     def approved_binding(self, target, pages=PAGES, path='/checkout-forwarded'):
         """The binding a fresh session is refused on for ``target`` (what the owner then approves)."""
         probe = Approvals()
-        sess, _ = session(FakeDriver(pages), approvals=probe, steps=40)
+        sess, _ = session(FakeDriver(pages), approvals=probe)
         sess.open({'url': ORIGIN + path, 'effect': 'navigate'})
         with self.assertRaises(ToolError):
             sess.click({'target': target, 'effect': 'mutate'})
@@ -857,7 +857,7 @@ class ForwardedSubmitTests(unittest.TestCase):
         # Review P1-2: the label's span and the scripted div sit outside the form.
         for target in ('빠른 구매', '바로 진행'):
             approvals = Approvals(self.approved_binding(target))
-            sess, driver = session(approvals=approvals, steps=40)
+            sess, driver = session(approvals=approvals)
             sess.open({'url': ORIGIN + '/checkout-forwarded', 'effect': 'navigate'})
             sess.type({'target': '받는 사람', 'text': '다른 사람', 'effect': 'mutate'})
             with self.assertRaises(ToolError) as caught:
@@ -923,7 +923,7 @@ class ForwardedSubmitTests(unittest.TestCase):
         self.approvals.issued.append(bs.binding_digest(self.approvals.requests[-1][0]))
         asked = len(self.approvals.requests)
         # The resumed run repeats the step; its deferred submit is cancelled again and reported.
-        sess, driver = session(self.driver, approvals=self.approvals, steps=40)
+        sess, driver = session(self.driver, approvals=self.approvals)
         sess.open({'url': ORIGIN + '/checkout-forwarded', 'effect': 'navigate'})
         driver.hold(1)
         page = sess.read()
@@ -954,7 +954,7 @@ class ForwardedSubmitTests(unittest.TestCase):
         self.assertEqual((self.approvals.issued, self.driver.posts), ([], [('post', '/pay')]))
         # A resumed run that opens the page again matches too.
         approvals = Approvals(binding)
-        sess, driver = session(approvals=approvals, steps=40)
+        sess, driver = session(approvals=approvals)
         sess.open({'url': ORIGIN + '/checkout-forwarded', 'effect': 'navigate'})
         self.assertEqual(sess.click({'target': '메모 후 진행', 'effect': 'mutate'})['title'], '결제 완료')
         self.assertEqual((approvals.issued, driver.posts), ([], [('post', '/pay')]))
@@ -962,7 +962,7 @@ class ForwardedSubmitTests(unittest.TestCase):
     def test_a_hidden_amount_is_part_of_the_submitted_state(self):
         # #700 item 5: a hidden input the owner never sees (the amount) is bound too.
         approvals = Approvals()
-        sess, driver = session(approvals=approvals, steps=40)
+        sess, driver = session(approvals=approvals)
         sess.open({'url': ORIGIN + '/checkout-cross', 'effect': 'navigate'})
         driver.hold(2)
         with self.assertRaises(ToolError):
@@ -1022,7 +1022,7 @@ class CoveredTargetTests(unittest.TestCase):
         self.assertIn('browser_read', unnamed, 'with no control to name, reading again stays the way on')
 
     def test_a_covered_press_names_the_cover_by_model_number_and_is_still_refused(self):
-        sess, driver = session(steps=40)
+        sess, driver = session()
         sess.open({'url': ORIGIN + '/checkout', 'effect': 'navigate'})
         rows = sess.last['_elements']
         target = next(row for row in rows if row['name'] == '쿠폰 적용')   # an ordinary button: no approval
@@ -1047,7 +1047,7 @@ class CoveredTargetTests(unittest.TestCase):
 
     def test_a_press_that_reached_the_page_without_a_click_is_of_unknown_effect(self):
         """#103: the cover is named in model numbers; the unknown effect and the observation survive it."""
-        sess, driver = session(steps=40)
+        sess, driver = session()
         sess.open({'url': ORIGIN + '/checkout', 'effect': 'navigate'})
         rows = sess.last['_elements']
         target = next(row for row in rows if row['name'] == '쿠폰 적용')
@@ -1094,7 +1094,7 @@ class InputTargetTests(unittest.TestCase):
             self.assertTrue(bs.target_text(code), code)
 
     def test_a_moved_focus_names_the_field_scrubbed_and_types_nothing(self):
-        sess, driver = session(steps=40, excluded=lambda: [PASSPORT])
+        sess, driver = session(excluded=lambda: [PASSPORT])
         sess.open({'url': ORIGIN + '/checkout', 'effect': 'navigate'})
         field = next(row for row in sess.last['_elements'] if row['name'] == '받는 사람')
         typed = []
@@ -1118,7 +1118,7 @@ class LoadMoreTests(unittest.TestCase):
     """#11: a read may first load rows a list adds only when scrolled, within explicit bounds."""
 
     def loading(self, answer=None, **kwargs):
-        sess, driver = session(steps=40, excluded=lambda: [PASSPORT], **kwargs)
+        sess, driver = session(excluded=lambda: [PASSPORT], **kwargs)
         calls = []
 
         def load_more(rounds, seconds, timeout, stop=None):
@@ -1136,16 +1136,16 @@ class LoadMoreTests(unittest.TestCase):
             with self.assertRaises(ValueError, msg=value):
                 bs.load_more_rounds(value)
         sess, driver, calls = self.loading()
-        used = sess.steps_used
+        used = sess.budget.attempts_used
         with self.assertRaises(ValueError):
             sess.run('browser_read', {'load_more': '9'})
-        self.assertEqual((calls, sess.steps_used), ([], used), 'a refused count runs nothing and spends no step')
+        self.assertEqual((calls, sess.budget.attempts_used), ([], used), 'a refused count runs nothing and spends no step')
 
     def test_a_read_loads_more_and_reports_only_the_mediated_new_text(self):
         sess, driver, calls = self.loading()
-        used = sess.steps_used
+        used = sess.budget.attempts_used
         page = sess.run('browser_read', {'load_more': '3'})
-        self.assertEqual(sess.steps_used, used + 1, 'one step, however many rounds')
+        self.assertEqual(sess.budget.attempts_used, used + 1, 'one step, however many rounds')
         (rounds, seconds, timeout), = calls
         self.assertEqual(rounds, 3)
         self.assertLessEqual(seconds, bs.LOAD_MORE_SECONDS)
@@ -1180,6 +1180,9 @@ class LoadMoreTests(unittest.TestCase):
                 self.left = left
 
             def check(self):
+                pass
+
+            def spend_attempt(self):
                 pass
 
             def remaining(self):
@@ -1225,7 +1228,7 @@ class LoadMoreTests(unittest.TestCase):
 
     def test_a_driver_that_cannot_load_more_says_so_and_returns_the_page(self):
         """#617: the step is spent on a read, so the page as shown comes back with the reason no more did."""
-        sess, driver = session(steps=40)
+        sess, driver = session()
         sess.open({'url': ORIGIN + '/checkout', 'effect': 'navigate'})
         result = sess.run('browser_read', {'load_more': '1'})
         self.assertEqual(result['state'], 'page')
@@ -1317,7 +1320,7 @@ class CommitControlTests(unittest.TestCase):
 
     def test_one_click_controls_need_approval_before_the_page_and_ordinary_ones_run(self):
         approvals = Approvals()
-        sess, driver = session(approvals=approvals, steps=40)
+        sess, driver = session(approvals=approvals)
         sess.open({'url': ORIGIN + '/one-click', 'effect': 'navigate'})
         for target in ('Buy now', '바로구매', 'Pay ₩12,900', '빠른 진행'):
             with self.assertRaises(ToolError) as caught:
@@ -1441,7 +1444,7 @@ class LoginAndBudgetTests(unittest.TestCase):
                          'the login row gets the site reference, no query or fragment, marked explicit (#978)')
         self.assertEqual(driver.log, [], 'nothing was loaded, typed or read')
         self.assertIsNone(sess.driver, 'no page driver was even created')
-        self.assertEqual(sess.steps_used, 1, 'a browser step for the budget')
+        self.assertEqual(sess.budget.attempts_used, 1, 'a browser step for the budget')
         self.assertEqual(withheld_effect('browser_sign_in', result).advanced, False)
         # Without an in-flow login surface the result still points the owner at Settings.
         sess, _ = session()
@@ -1457,16 +1460,17 @@ class LoginAndBudgetTests(unittest.TestCase):
             with self.assertRaises(ToolError, msg=url) as caught:
                 sess.run('browser_sign_in', {'url': url})
             self.assertEqual(caught.exception.code, 'blocked_destination')
-        self.assertEqual(sess.steps_used, 0)
+        self.assertEqual(sess.budget.attempts_used, 0)
         self.assertEqual(driver.log, [])
 
     def test_step_cap_and_deadline_are_typed_failures(self):
-        sess, _ = session(steps=2)
+        # #620: a browser step spends the Work's one attempt budget; there is no browser counter of its own.
+        sess, _ = session(budget=WorkBudget(attempts=2))
         sess.open({'url': ORIGIN + '/product', 'effect': 'read'})
         sess.read()
         with self.assertRaises(ToolError) as caught:
             sess.read()
-        self.assertEqual(caught.exception.code, 'browser_step_budget')
+        self.assertEqual(caught.exception.code, 'attempt_budget')
         now = [100.0]
         budget = WorkBudget(seconds=30, clock=lambda: now[0])
         sess, driver = session(budget=budget)
@@ -1605,8 +1609,8 @@ class LoopTests(unittest.TestCase):
         """#657: a browser repeat is keyed on (action, target, input, page digest), not on the memo."""
         script = Script({'tool_calls': [call('1', 'browser_open', url=ORIGIN + '/account', effect='navigate')]},
                         {'tool_calls': [call('2', 'browser_click', target='저장', effect='mutate')]},
-                        # Nothing on the page changed: the same click is the same path.
-                        {'tool_calls': [call('3', 'browser_click', target='저장', effect='read')]},
+                        # Nothing on the page changed: the same click met its observation already.
+                        {'tool_calls': [call('3', 'browser_click', target='저장', effect='mutate')]},
                         {'tool_calls': [call('4', 'browser_type', target='이름', text='김철수', effect='mutate')]},
                         # The page now differs (the field's value): the same target is a new step.
                         {'tool_calls': [call('5', 'browser_click', target='저장', effect='mutate')]},
