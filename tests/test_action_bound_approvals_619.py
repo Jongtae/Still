@@ -451,6 +451,28 @@ class UnattendedRuns(_Case):
         self.assertEqual(self.service.browser_approvals_for(self.run).refuse('shop.test'), UNATTENDED_APPROVAL_TEXT)
         self.assertIsNone(self.service.browser_approvals_for(self.owned).refuse('shop.test'))
 
+    def test_its_refusals_are_classified_none_under_the_one_effect_rule(self):
+        """#618: what Still refused or drafted nothing for changed nothing outside, so it never blocks continuing."""
+        from personal_agent.agent_runtime import EFFECT_NONE, _evidence_detail, record_effect
+        result = self.service.settings_tools(self.run)('settings_change', {
+            'category': 'preparations', 'setting': 'cancel', 'value': self.preparation['id']})
+        self.assertEqual(record_effect('settings_change', {'evidence': _evidence_detail('settings_change', result)},
+                                       'succeeded'), EFFECT_NONE)
+        with self.assertRaises(ToolError) as caught:
+            self.service.preparation_scheduler(self.run, self.run['message'])({'kind': 'prepare', 'goal': 'x', 'due': '2030-01-01T09:00'})
+        self.assertIs(caught.exception.ran, False)
+        binding = bs.step_binding(self.run['id'], 'api_request', 'https://pay.test/', 'x', argument='', state='s')
+        with self.assertRaises(ToolError) as caught:
+            self.service._request_browser_step(self.run, binding, 'pay')
+        self.assertIs(caught.exception.ran, False)
+        self.assertEqual(record_effect('schedule_preparation', {'code': 'unattended_run', 'ran': False}, 'failed'),
+                         EFFECT_NONE)
+
+    def test_a_withdrawal_receipt_does_not_block_continuing(self):
+        self.settings.propose('owner', 'http', 'current_context', 'timezone', 'Asia/Seoul', work_id=self.run['id'])
+        self.assertEqual(self.service.retire_unattended_waits(), 1)
+        self.assertEqual(self.service.may_continue(self.run['id'], 'resume'), (True, None))
+
     def test_what_earlier_scheduled_runs_left_waiting_is_withdrawn_with_a_receipt(self):
         draft = self.settings.propose('owner', 'http', 'current_context', 'timezone', 'Asia/Seoul', work_id=self.run['id'])
         kept = self.settings.propose('owner', 'http', 'current_context', 'enabled', 'on', work_id=self.owned['id'])

@@ -22,7 +22,7 @@ from .prompt_files import prompt
 from .local_tools import LocalTools, normalize_public_url
 from functools import cached_property
 from .work_execution import PROCEED, REDELEGATED, WorkRun
-from .agent_runtime import (Capabilities, ToolError, cut_to_fit, run_agent, AGENTS, STEER_EVENT, steer_note, evidence_summary, turn_context, render_turn_prompt, attachment_facts,
+from .agent_runtime import (Capabilities, ToolError, not_run, cut_to_fit, run_agent, AGENTS, STEER_EVENT, steer_note, evidence_summary, turn_context, render_turn_prompt, attachment_facts,
                             MEMORY_OWNER, context_sections, ENGINE_UNMEDIATED, OWNER_CONVERSATION, lookup_sources, work_written_values, WORK_SOURCES_KEY, WORK_SOURCES_LIMIT, base_label,
                             history_provenance, WorkBudget, PresentationBudget, WORK_TOOL_ATTEMPTS, WORK_DEADLINE_SECONDS, EFFECT_FREE_READS, explicit_search_query, outcome_from_events,
                             WORK_STOP_KEY, WORK_STOPPED, work_stop_requested, WorkLedger, WORK_LEDGER_KEY, goal_summary, work_source_records,
@@ -1871,7 +1871,7 @@ class AgentService:
         def schedule(args):
             if self.unattended_work(job):
                 # #619: a scheduled run leaves no proposal waiting; it says what it would schedule.
-                raise ToolError(UNATTENDED_APPROVAL_TEXT,'unattended_run')
+                raise not_run(ToolError(UNATTENDED_APPROVAL_TEXT,'unattended_run'))  # #618: Still refused it, ran: false
             now=self.preparations.clock()
             try:
                 fields=self.preparation_fields(args,now,lambda goal:self.repeats_refused_watch(job['id'],goal))
@@ -8686,7 +8686,7 @@ class AgentService:
         #619: a scheduled run (no owner present) records nothing and raises ``unattended_run``.
         """
         if self.unattended_work(job):
-            raise ToolError(UNATTENDED_APPROVAL_TEXT,'unattended_run')
+            raise not_run(ToolError(UNATTENDED_APPROVAL_TEXT,'unattended_run'))  # #618: Still refused it, ran: false
         # #1456: a code run's request is approved as written (method, path, body), so its label is shown whole.
         from .quickstart_store import REQUEST_APPROVAL_ACTIONS
         label=(str(description or '') if binding.get('action') in REQUEST_APPROVAL_ACTIONS
