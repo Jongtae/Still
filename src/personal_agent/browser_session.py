@@ -1855,8 +1855,11 @@ def http_refresh(url, rows, *, allowed_origins=(), opener=None, refusal=destinat
         return 'failed', None
     jar = http.cookiejar.CookieJar()
     before = {}
+    # A partitioned cookie (#34, Codex review on #640) belongs to one top-level site's embedded use; this
+    # top-level request never sends it, and it is kept as it was.
+    partitioned = [row for row in rows or () if isinstance(row, dict) and row.get('partition_key')]
     for row in rows or ():
-        if isinstance(row, dict) and row.get('name'):
+        if isinstance(row, dict) and row.get('name') and not row.get('partition_key'):
             before[(str(row['name']), str(row.get('domain') or ''), str(row.get('path') or '/'))] = row
             jar.set_cookie(_cookie_from_row(row))
 
@@ -1880,7 +1883,7 @@ def http_refresh(url, rows, *, allowed_origins=(), opener=None, refusal=destinat
         return 'failed', None
     if status in KEEPALIVE_HTTP_BLOCKED:
         return 'blocked', None
-    return 'refreshed', [_row_from_cookie(cookie, before) for cookie in jar]
+    return 'refreshed', [_row_from_cookie(cookie, before) for cookie in jar] + partitioned
 
 
 def webkit_unavailable_reason(platform=None, find_spec=None):

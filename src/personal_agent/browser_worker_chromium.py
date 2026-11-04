@@ -210,11 +210,16 @@ def user_agent_for(layout, version):
 
 def cookie_row(cookie):
     expires = cookie.get('expires', -1)
-    return {'name': str(cookie['name']), 'value': str(cookie['value']), 'domain': str(cookie['domain']),
-            'path': str(cookie.get('path') or '/'),
-            'expires': float(expires) if isinstance(expires, (int, float)) and expires > 0 else None,
-            'secure': bool(cookie.get('secure')), 'http_only': bool(cookie.get('httpOnly')),
-            'same_site': cookie.get('sameSite') or None}
+    row = {'name': str(cookie['name']), 'value': str(cookie['value']), 'domain': str(cookie['domain']),
+           'path': str(cookie.get('path') or '/'),
+           'expires': float(expires) if isinstance(expires, (int, float)) and expires > 0 else None,
+           'secure': bool(cookie.get('secure')), 'http_only': bool(cookie.get('httpOnly')),
+           'same_site': cookie.get('sameSite') or None}
+    # A partitioned (CHIPS) cookie keeps its top-level-site partition through the jar (Codex review on #640):
+    # replayed without it, it would be sent outside the partition it was set in.
+    if cookie.get('partitionKey'):
+        row['partition_key'] = str(cookie['partitionKey'])
+    return row
 
 
 def cookie_object(row, now=None):
@@ -233,6 +238,8 @@ def cookie_object(row, now=None):
         same_site = str(row.get('same_site') or '').lower()
         if same_site in ('strict', 'lax', 'none'):
             cookie['sameSite'] = same_site.capitalize()
+        if row.get('partition_key'):
+            cookie['partitionKey'] = str(row['partition_key'])
         return cookie
     except (KeyError, TypeError, ValueError):
         return None

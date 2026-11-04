@@ -380,6 +380,33 @@ class EngineChoice(unittest.TestCase):
         with mock.patch.object(sys, 'platform', 'linux'):
             self.assertIn('install-deps', profile.status()['setup_command'])
 
+    def test_the_keep_alive_never_sends_a_partitioned_cookie(self):
+        """Codex review on #640: a top-level refresh request leaves CHIPS cookies out, and keeps them."""
+        sent = []
+
+        class Response(io.BytesIO):
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        def build(cookies, redirects):
+            class Client:
+                def open(self, request, timeout=None):
+                    cookies.cookiejar.add_cookie_header(request)
+                    sent.append(request.get_header('Cookie'))
+                    return Response(b'')
+            return Client()
+        rows = [{'name': 'sid', 'value': 'top', 'domain': 'shop.test', 'path': '/'},
+                {'name': 'chips', 'value': 'embedded', 'domain': 'shop.test', 'path': '/', 'partition_key': 'https://other.test'}]
+        state, after = bs.http_refresh('https://shop.test/', rows, opener=build, refusal=lambda url, allowed: None)
+        self.assertEqual(state, 'refreshed')
+        self.assertEqual(sent, ['sid=top'])
+        self.assertIn(rows[1], after, 'kept unchanged')
+
     def test_the_worker_receives_the_desktop_session_and_nothing_else(self):
         env = bs.worker_environment({'DISPLAY': ':0', 'XAUTHORITY': '/run/x', 'DBUS_SESSION_BUS_ADDRESS': 'unix:path=/b',
                                      'XDG_RUNTIME_DIR': '/run/user/1000', 'OPENAI_API_KEY': 'sk-x', 'HOME': '/h'})

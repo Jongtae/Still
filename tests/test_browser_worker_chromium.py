@@ -1545,3 +1545,13 @@ def test_focus_release_is_best_effort(monkeypatch):
 
 def test_the_worker_windows_carry_stills_window_class():
     assert '--class=' + chromium.WINDOW_CLASS in chromium.LAUNCH_ARGS
+
+
+def test_a_partitioned_cookie_keeps_its_partition_through_the_jar():
+    """Codex review on #640: CHIPS cookies are never replayed outside their partition."""
+    row = chromium.cookie_row({'name': 'sid', 'value': 'v', 'domain': 'widget.test', 'path': '/', 'expires': -1,
+                               'secure': True, 'httpOnly': True, 'sameSite': 'None', 'partitionKey': 'https://shop.test'})
+    assert row['partition_key'] == 'https://shop.test'
+    assert chromium.cookie_object(row)['partitionKey'] == 'https://shop.test'
+    plain = chromium.cookie_row({'name': 'a', 'value': 'b', 'domain': 'shop.test'})
+    assert 'partition_key' not in plain and 'partitionKey' not in chromium.cookie_object(plain)
