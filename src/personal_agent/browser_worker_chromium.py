@@ -78,9 +78,9 @@ VETTED_SHIM = r"""(() => { const s = window.__agentos; if (!s) return;
     action: String(entry.action || ''), payment: !!entry.payment}})); } catch (error) { /* the page check decides */ } };
   Object.defineProperty(s, 'vetted', {configurable: true, get: () => list, set: (value) => {
     const next = Array.isArray(value) ? value : [];
+    // Withdraw first so replacing an entry with the same destination keeps the new pass.
+    for (const entry of list) if (!next.includes(entry)) tell('unvetted', entry);
     for (const entry of next) if (!list.includes(entry)) tell('vetted', entry);
-    // A payment pass the page withdrew (its submit was prevented) vouches for nothing any more.
-    if (next.length < list.length) for (const entry of list) if (entry.payment && !next.includes(entry)) tell('unvetted', entry);
     list = next; }}); })();"""
 
 
@@ -265,15 +265,19 @@ class _Target:
             if context.get('name') == WORLD:
                 self.contexts[context['auxData']['frameId']] = context['id']
         elif method == 'Runtime.executionContextDestroyed':
+            if self is self.worker.main_target and params.get('executionContextId') == self.contexts.get(self.main_frame):
+                self.worker.clear_vetted()
             self.contexts = {k: v for k, v in self.contexts.items() if v != params.get('executionContextId')}
         elif method == 'Runtime.executionContextsCleared':
+            if self is self.worker.main_target:
+                self.worker.clear_vetted()
             self.contexts.clear()
         elif method == 'Runtime.bindingCalled':
             self.worker.binding_called(self, params)
         elif method == 'Fetch.requestPaused':
             self.worker.fetch_paused(self, params)
         elif method == 'Page.frameRequestedNavigation':
-            self.worker.frame_requests[(self.ident, params['frameId'])] = params
+            self.worker.frame_requested(self, params)
         elif method == 'Page.frameNavigated':
             self.worker.frame_navigated(self, params['frame'])
         elif method == 'Page.frameDetached':
@@ -328,6 +332,7 @@ class Worker(shared.Worker):
         self.hosts, self.origins, self.loading, self.stopping = set(), set(), set(), set()
         self.main_requests = set()
         self.reading = False
+        self.document_generation, self.vetted = 0, []
         self.resolved, self.frame_requests, self.frame_origins = {}, {}, {}
         self.intranet = frozenset()
         self.popups, self.reported = [], []
@@ -514,6 +519,11 @@ class Worker(shared.Worker):
         else:
             self.receive_cancelled(record)
 
+    def clear_vetted(self):
+        # Invalidate both cached passes and form decisions still waiting on this document.
+        self.document_generation += 1
+        self.vetted = []
+
     def note_vetted(self, record):
         """Keep (or withdraw) the guard's record of a submit it let through, for the paused request (#34)."""
         withdrawn = 'unvetted' in record
@@ -521,18 +531,19 @@ class Worker(shared.Worker):
         key = (str(entry.get('method') or '').lower(), bare_url(entry.get('action')), bool(entry.get('payment')))
         now = time.monotonic()
         keep = shared.VETTED_SECONDS if key[2] else ORDINARY_VETTED_SECONDS
-        self.vetted = [(k, t) for k, t in getattr(self, 'vetted', []) if now - t <= shared.VETTED_SECONDS and
+        self.vetted = [(k, t, doc) for k, t, doc in self.vetted if doc == self.document_generation and
+                       now - t <= shared.VETTED_SECONDS and
                        not (withdrawn and k == key)]
         if not withdrawn and key[1]:
-            self.vetted = (self.vetted + [(key, now)])[-8:]
+            self.vetted = (self.vetted + [(key, now, self.document_generation)])[-8:]
         self.vetted_keep = keep
 
     def take_vetted(self, method, url):
         """Whether the guard let this submission through just before; a payment pass is used once."""
         verb, place, now = str(method or 'get').lower(), bare_url(url), time.monotonic()
-        for index, ((entry_verb, entry_place, payment), at) in enumerate(getattr(self, 'vetted', [])):
+        for index, ((entry_verb, entry_place, payment), at, doc) in enumerate(self.vetted):
             limit = shared.VETTED_SECONDS if payment else ORDINARY_VETTED_SECONDS
-            if entry_verb == verb and entry_place == place and place and now - at <= limit:
+            if doc == self.document_generation and entry_verb == verb and entry_place == place and place and now - at <= limit:
                 if payment:
                     del self.vetted[index]
                 return True
@@ -549,9 +560,13 @@ class Worker(shared.Worker):
         could not see (a native submit from another realm) is refused here, where macOS lets it through.
         """
         began = time.monotonic()
+        document = self.document_generation
         self.deciding += 1   # a click waits for this decision (#736)
 
         def look():
+            if document != self.document_generation:
+                self.deciding -= 1
+                return then(False)
             if self.take_vetted(method, url):
                 self.deciding -= 1
                 return then(True)
@@ -681,18 +696,23 @@ class Worker(shared.Worker):
         primary = target is self.main_target
         popup = target.kind == 'page' and not primary
         counted = primary and main or popup and not self.owner_visible
+        # Recovery returns to the held history entry; the read must not cancel its own recovery.
+        restoring = primary and main and method.upper() == 'GET' and url == getattr(target, 'restoring_history', None)
         answered = []
+        document, vetted_form = self.document_generation, False
 
         def decision(allowed, reason=None):
             if answered:
                 return
             answered.append(True)
+            if allowed and vetted_form and document != self.document_generation:
+                allowed = False
             self.AppHelper.callAfter(self.popup_decided, target)
-            if allowed and counted and self.reading:
+            if allowed and counted and self.reading and not restoring:
                 self.read_navigations += 1
                 allowed = False
             def continue_navigation():
-                if counted:
+                if counted and not restoring:
                     self.main_navigations += 1
                     self.phone_navigated(committed=False)
                 self.origins.add(self.origin(url))
@@ -717,7 +737,7 @@ class Worker(shared.Worker):
             else:
                 continue_navigation()
 
-        if counted and self.reading:
+        if counted and self.reading and not restoring:
             self.read_navigations += 1
             return decision(False)
         info = self.frame_requests.pop((target.ident, frame_id), {})
@@ -729,6 +749,7 @@ class Worker(shared.Worker):
             if info.get('reason') == 'reload' and method.upper() != 'GET':
                 self.refused_submits += 1
                 return decision(False)
+            vetted_form = True
             return self.check_form_navigation(url, method, lambda allowed: self.decide(url, counted, decision)
                                               if allowed else decision(False), into_frame=not main)
         self.decide(url, counted, decision)
@@ -864,6 +885,7 @@ class Worker(shared.Worker):
             self.AppHelper.callLater(.01, self.promote_popup, target, then, began)
             return
         old_page = self.page
+        self.clear_vetted()
         self.page, self.main_target = page, target
         self.page.set_viewport_size(self.viewport_size)
         self.emulate(target)
@@ -879,6 +901,29 @@ class Worker(shared.Worker):
         host = '[' + parts.hostname + ']' if ':' in parts.hostname else parts.hostname
         return f'{parts.scheme}://{host}' + (f':{parts.port}' if parts.port else '')
 
+    @staticmethod
+    def supported_document(url):
+        # Chromium's own error page is what a failed navigation commits (host_not_found and the like are
+        # reported by that navigation itself); it is not a page navigating somewhere unsupported.
+        return url in ('about:blank', 'chrome-error://chromewebdata/') or \
+            str(url).lower().startswith(('http://', 'https://'))
+
+    def frame_requested(self, target, event):
+        self.frame_requests[(target.ident, event['frameId'])] = event
+        if target is not self.main_target or event['frameId'] != target.main_frame:
+            return
+        target.refused_navigation = None
+        url = event.get('url', '')
+        unsupported = not self.supported_document(url)
+        if unsupported or (self.reading and url == 'about:blank' and
+                           url != getattr(target, 'restoring_history', None)):
+            target.refused_navigation = url
+            if self.reading:
+                self.read_navigations += 1
+            if unsupported:
+                self.navigation_refused(True, 'unsupported_navigation')
+            target.post('Page.stopLoading')
+
     def frame_navigated(self, target, frame):
         origin = self.origin(frame.get('url', ''))
         if origin:
@@ -890,6 +935,35 @@ class Worker(shared.Worker):
                 target.initial_request = None
                 target.popup_navigation = False
         if target is self.main_target and frame['id'] == target.main_frame:
+            # frameNavigated is a new document; same-document URL changes have their own CDP event.
+            self.clear_vetted()
+            target.committed_frame = frame
+            target.contexts.pop(target.main_frame, None)
+            url = frame.get('url', '')
+            restoring = url == getattr(target, 'restoring_history', None)
+            target.restoring_history = None
+            unsupported = not self.supported_document(url)
+            if unsupported or self.reading and url == 'about:blank' and not restoring:
+                if getattr(target, 'refused_navigation', None) != url:
+                    if self.reading:
+                        self.read_navigations += 1
+                    if unsupported:
+                        self.navigation_refused(True, 'unsupported_navigation')
+                target.refused_navigation = None
+                target.post('Page.stopLoading')
+
+                def restore(history, error):
+                    if error or target is not self.main_target or target.committed_frame is not frame:
+                        return
+                    index = history.get('currentIndex', 0) - 1
+                    entries = history.get('entries', [])
+                    if 0 <= index < len(entries):
+                        entry = entries[index]
+                        target.restoring_history = entry['url']
+                        target.post('Page.navigateToHistoryEntry', {'entryId': entry['id']})
+                target.post('Page.getNavigationHistory', done=restore)
+                return
+            target.refused_navigation = None
             self.landed += 1
             host = shared._host(frame.get('url'))
             if host:

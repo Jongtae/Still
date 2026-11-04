@@ -48,6 +48,8 @@ class FakeCDP:
                 result = {'frameTree': {'frame': {'id': 'frame-' + params['sessionId']}}}
             elif command == 'Page.addScriptToEvaluateOnNewDocument':
                 result = {'identifier': str(packet['id'])}
+            elif command == 'Page.getNavigationHistory':
+                result = getattr(self.browser, 'navigation_history', {})
             elif command == 'Page.createIsolatedWorld':
                 result = {'executionContextId': 101}
             elif command == 'Runtime.callFunctionOn':
@@ -966,3 +968,200 @@ def test_cancelled_initial_navigation_does_not_authorize_a_replacement(worker):
     decide.assert_called_once()
     assert packets(worker, 'Fetch.failRequest')[-1]['requestId'] == 'replacement'
     assert popup.is_closed()
+
+
+@pytest.mark.parametrize('replacement', ['commit', 'context_destroyed', 'contexts_cleared', 'popup'])
+def test_document_replacement_discards_all_form_passes(worker, replacement):
+    target = worker.main_target
+    target.contexts[target.main_frame] = 101
+    for payment in (False, True):
+        worker.note_vetted({'vetted': {'method': 'post', 'action': 'https://shop.test/pay', 'payment': payment}})
+    if replacement == 'commit':
+        target.receive({'method': 'Page.frameNavigated', 'params': {
+            'frame': {'id': target.main_frame, 'url': 'https://shop.test/pay', 'loaderId': 'document-b'}}})
+    elif replacement == 'context_destroyed':
+        target.receive({'method': 'Runtime.executionContextDestroyed', 'params': {'executionContextId': 101}})
+    elif replacement == 'contexts_cleared':
+        target.receive({'method': 'Runtime.executionContextsCleared'})
+    else:
+        popup = worker.context.new_page()
+        worker.register_page(popup)
+        worker.promote_popup(worker.target_for(popup), lambda: None)
+    assert worker.vetted == []
+    assert not worker.take_vetted('POST', 'https://shop.test/pay')
+    # A queued notification from the destroyed document cannot replenish the cache.
+    worker.binding_called(target, {'name': chromium.BINDING, 'executionContextId': 101,
+                                  'payload': json.dumps({'vetted': {'method': 'post',
+                                      'action': 'https://shop.test/pay', 'payment': False}})})
+    assert not worker.take_vetted('POST', 'https://shop.test/pay')
+
+
+def test_document_a_pass_cannot_release_document_b_payment_from_a_fresh_iframe(worker, monkeypatch):
+    monkeypatch.setattr(chromium, 'VETTED_WAIT_SECONDS', 0)
+    target = worker.main_target
+    worker.note_vetted({'vetted': {'method': 'post', 'action': 'https://shop.test/pay', 'payment': False}})
+    with mock.patch.object(worker, 'decide', side_effect=lambda url, main, done: done(True)):
+        worker.fetch_paused(target, {'requestId': 'a-post', 'frameId': target.main_frame,
+                                    'request': {'url': 'https://shop.test/pay', 'method': 'POST'}})
+        target.receive({'method': 'Page.frameNavigated', 'params': {
+            'frame': {'id': target.main_frame, 'url': 'https://shop.test/pay', 'loaderId': 'b'}}})
+        worker.engine.browser.script_results.append({'cancelled': {'payment': True}})
+        # Native submit borrowed from a new iframe bypasses the main document's wrappers/events.
+        worker.fetch_paused(target, {'requestId': 'b-payment', 'frameId': target.main_frame,
+                                    'request': {'url': 'https://shop.test/pay', 'method': 'POST'}})
+    assert packets(worker, 'Fetch.continueRequest') == [{'requestId': 'a-post'}]
+    assert packets(worker, 'Fetch.failRequest') == [{'requestId': 'b-payment', 'errorReason': 'Aborted'}]
+
+
+def test_ordinary_pass_reusable_only_within_its_document_and_time_window(worker):
+    with mock.patch.object(chromium.time, 'monotonic', return_value=100) as now:
+        worker.note_vetted({'vetted': {'method': 'post', 'action': 'https://shop.test/pay', 'payment': False}})
+        assert worker.take_vetted('POST', 'https://shop.test/pay')
+        now.return_value = 100 + chromium.ORDINARY_VETTED_SECONDS
+        assert worker.take_vetted('POST', 'https://shop.test/pay?again=1')
+        now.return_value += .001
+        assert not worker.take_vetted('POST', 'https://shop.test/pay')
+
+
+def test_an_ordinary_pass_withdrawal_mirrors_a_shim_list_reset(worker):
+    entry = {'method': 'post', 'action': 'https://shop.test/pay', 'payment': False}
+    worker.note_vetted({'vetted': entry})
+    worker.note_vetted({'unvetted': entry})
+    assert not worker.take_vetted('POST', entry['action'])
+
+
+def test_waiting_form_cannot_take_a_pass_from_a_replacement_document(worker):
+    callbacks, answers = [], []
+    with mock.patch.object(worker.AppHelper, 'callLater', side_effect=lambda delay, fn: callbacks.append(fn)):
+        worker.check_form_navigation('https://shop.test/pay', 'POST', answers.append)
+    worker.clear_vetted()
+    worker.note_vetted({'vetted': {'method': 'post', 'action': 'https://shop.test/pay', 'payment': True}})
+    callbacks[0]()
+    assert answers == [False] and worker.deciding == 0
+    assert worker.take_vetted('POST', 'https://shop.test/pay')
+
+
+def test_form_policy_result_cannot_outlive_its_document(worker):
+    target = worker.main_target
+    worker.note_vetted({'vetted': {'method': 'post', 'action': 'https://shop.test/pay', 'payment': False}})
+    decisions = []
+    with mock.patch.object(worker, 'decide', side_effect=lambda url, main, done: decisions.append(done)):
+        worker.request_paused(target, {'requestId': 'late', 'frameId': target.main_frame,
+                                      'request': {'url': 'https://shop.test/pay', 'method': 'POST'}})
+    worker.clear_vetted()
+    decisions[0](True)
+    assert not packets(worker, 'Fetch.continueRequest')
+    assert packets(worker, 'Fetch.failRequest') == [{'requestId': 'late', 'errorReason': 'Aborted'}]
+
+
+@pytest.mark.parametrize('reading', [False, True])
+@pytest.mark.parametrize('url', ['blob:https://public.test/id', 'data:text/html,hello', 'file:///tmp/page.html'])
+def test_non_network_main_frame_navigation_is_stopped_and_reported(worker, reading, url):
+    target = worker.main_target
+    worker.reading = reading
+    old_url = worker.page.url
+    with mock.patch.object(worker, 'decide') as decide:
+        target.receive({'method': 'Page.frameRequestedNavigation', 'params': {
+            'frameId': target.main_frame, 'url': url, 'reason': 'scriptInitiated'}})
+    assert packets(worker, 'Page.stopLoading') == [{}]
+    assert worker.blocked == 1 and worker.blocked_reason == 'unsupported_navigation'
+    assert worker.read_navigations == int(reading)
+    assert worker.page.url == old_url
+    assert not packets(worker, 'Page.navigateToHistoryEntry')
+    assert not decide.called
+
+
+@pytest.mark.parametrize('reading', [False, True])
+@pytest.mark.parametrize('requested', [False, True])
+def test_unsupported_commit_restores_history_even_during_a_read(worker, reading, requested):
+    target = worker.main_target
+    worker.reading = reading
+    url = 'blob:https://public.test/id'
+    worker.engine.browser.navigation_history = {'currentIndex': 1, 'entries': [
+        {'id': 10, 'url': 'https://public.test/previous'}, {'id': 11, 'url': url}]}
+    if requested:
+        target.receive({'method': 'Page.frameRequestedNavigation', 'params': {
+            'frameId': target.main_frame, 'url': url, 'reason': 'scriptInitiated'}})
+    target.receive({'method': 'Page.frameNavigated', 'params': {
+        'frame': {'id': target.main_frame, 'url': url, 'loaderId': 'blob-document'}}})
+    assert worker.blocked == 1 and worker.blocked_reason == 'unsupported_navigation'
+    assert worker.read_navigations == int(reading)
+    assert packets(worker, 'Page.navigateToHistoryEntry') == [{'entryId': 10}]
+    # Returning to the held page must not itself be blocked by the read hold.
+    with mock.patch.object(worker, 'decide', side_effect=lambda url, main, done: done(True)):
+        worker.fetch_paused(target, {'requestId': 'restore', 'frameId': target.main_frame,
+                                    'request': {'url': 'https://public.test/previous', 'method': 'GET'}})
+    assert packets(worker, 'Fetch.continueRequest') == [{'requestId': 'restore'}]
+    assert worker.read_navigations == int(reading) and worker.main_navigations == 0
+    target.receive({'method': 'Page.frameNavigated', 'params': {
+        'frame': {'id': target.main_frame, 'url': 'https://public.test/previous'}}})
+    assert target.restoring_history is None
+
+
+@pytest.mark.parametrize('reading', [False, True])
+def test_subframe_blob_navigation_does_not_change_policy_or_main_document_passes(worker, reading):
+    target = worker.main_target
+    worker.reading = reading
+    worker.note_vetted({'vetted': {'method': 'post', 'action': 'https://shop.test/pay', 'payment': False}})
+    target.contexts['child'] = 202
+    target.receive({'method': 'Runtime.executionContextDestroyed', 'params': {'executionContextId': 202}})
+    target.receive({'method': 'Page.frameRequestedNavigation', 'params': {
+        'frameId': 'child', 'url': 'blob:https://public.test/id', 'reason': 'scriptInitiated'}})
+    target.receive({'method': 'Page.frameNavigated', 'params': {
+        'frame': {'id': 'child', 'parentId': target.main_frame, 'url': 'blob:https://public.test/id'}}})
+    assert worker.take_vetted('POST', 'https://shop.test/pay')
+    assert not packets(worker, 'Page.stopLoading') and not packets(worker, 'Page.getNavigationHistory')
+    assert worker.blocked == worker.read_navigations == 0
+
+
+@pytest.mark.parametrize('url', ['https://public.test/', 'http://public.test/', 'about:blank'])
+def test_supported_main_frame_requests_keep_existing_navigation_path(worker, url):
+    target = worker.main_target
+    target.receive({'method': 'Page.frameRequestedNavigation', 'params': {
+        'frameId': target.main_frame, 'url': url, 'reason': 'scriptInitiated'}})
+    assert not packets(worker, 'Page.stopLoading') and worker.blocked == 0
+    assert worker.frame_requests[(target.ident, target.main_frame)]['url'] == url
+
+
+
+def test_vetted_shim_mirrors_ordinary_resets_and_same_destination_replacements(worker):
+    import shutil
+    import subprocess
+
+    node = shutil.which('node')
+    if not node:
+        pytest.skip('Node is needed to execute the isolated-world shim')
+    source = (
+        'const notices = []; const window = {__agentos: {vetted: []}};'
+        'const notice = text => notices.push(JSON.parse(text));'
+        + chromium.VETTED_SHIM % {'binding': 'notice'} +
+        "const first = {method: 'post', action: 'https://shop.test/pay', payment: false};"
+        'window.__agentos.vetted = [first];'
+        'window.__agentos.vetted = [{...first}];'
+        'window.__agentos.vetted = [];'
+        'console.log(JSON.stringify(notices));'
+    )
+    notices = json.loads(subprocess.run([node, '-e', source], check=True, capture_output=True,
+                                        text=True, timeout=10).stdout)
+    assert [next(iter(record)) for record in notices] == ['vetted', 'unvetted', 'vetted', 'unvetted']
+    for record in notices[:3]:
+        worker.note_vetted(record)
+    assert worker.take_vetted('POST', 'https://shop.test/pay')
+    worker.note_vetted(notices[3])
+    assert not worker.take_vetted('POST', 'https://shop.test/pay')
+
+
+
+def test_blank_navigation_is_also_held_during_a_read(worker):
+    worker.reading = True
+    target = worker.main_target
+    target.receive({'method': 'Page.frameRequestedNavigation', 'params': {
+        'frameId': target.main_frame, 'url': 'about:blank', 'reason': 'scriptInitiated'}})
+    assert packets(worker, 'Page.stopLoading') == [{}]
+    assert worker.read_navigations == 1 and worker.blocked == 0
+
+
+def test_chromiums_own_error_page_is_not_an_unsupported_navigation():
+    assert chromium.Worker.supported_document('chrome-error://chromewebdata/')
+    for url in ('blob:https://public.test/1', 'data:text/html,x', 'file:///etc/passwd', 'javascript:1'):
+        assert not chromium.Worker.supported_document(url), url
