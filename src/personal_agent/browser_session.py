@@ -1072,11 +1072,12 @@ class BrowserSession:
             # with an account the owner is already signed in to where the page
             # offers one; it never types a password.
             page = {**public_view(snapshot), 'state': 'login_required', 'needs_setup': True, 'requires': 'browser-login'}
-            if resign and self._on_provider(snapshot['_page']):
+            hop = self._provider_of(snapshot['_page']) if resign else None
+            if hop:
                 # #636: the provider asks for a sign-in (a password field): the re-sign-in stops and
                 # the owner signs in (C14); nothing is typed there.
                 resign['seen'] = True
-                return {**page, 'next_step': msg('browser.provider_asks', provider=resign['provider']) + ' ' + self._hand_off()}
+                return {**page, 'next_step': msg('browser.provider_asks', provider=hop) + ' ' + self._hand_off()}
             if resign and registrable_domain(landed_host(snapshot['_page'])) == resign['site'] and self._through_provider():
                 # #636: the sign-in went through the provider and the site still asks: the owner signs in.
                 return {**page, 'next_step': msg('browser.provider_not_returned', provider=resign['provider']) + ' '
@@ -1085,7 +1086,7 @@ class BrowserSession:
             resign = self._provider_hint(snapshot)
             if resign:
                 return {**page, 'next_step': msg('browser.provider_sign_in_hint', provider=resign['provider']),
-                        'provider_sign_in': {'site': resign['site'], 'provider': resign['provider'], 'state': 'available'}}
+                        'provider_sign_in': self._receipt('available')}
             return {**page, 'next_step': offered or LOGIN_REQUIRED_TEXT}
         page = {'state': 'page', **public_view(snapshot)}
         if resign and not resign.get('ended'):
@@ -1098,8 +1099,7 @@ class BrowserSession:
                 # (RFC 6749 §4.1.2.1), make it a sign-in.  Otherwise it is unconfirmed: no success receipt,
                 # and the owner is asked to sign in.
                 signed = self._sign_in_evidence(snapshot)
-                page['provider_sign_in'] = {'site': resign['site'], 'provider': resign['provider'],
-                                            'state': 'signed_in' if signed else 'unconfirmed'}
+                page['provider_sign_in'] = self._receipt('signed_in' if signed else 'unconfirmed')
                 if signed:
                     # Codex P2 on #637: the login this Work asked the owner for is no longer needed.
                     if self._login_resolved(resign['reference']):
@@ -1128,12 +1128,16 @@ class BrowserSession:
             return None
         if not isinstance(found, dict) or not found.get('provider') or not found.get('site'):
             return None
-        provider, site = ascii_host(found['provider']), registrable_domain(found['site'])
-        if not provider or not site or registrable_domain(provider) == site \
+        site = registrable_domain(found['site'])
+        # Codex P1 on #637: every host of the chain the owner's sign-in went through (a federated sign-in:
+        # the site's broker, then the broker's upstream); the first is where the site's control leads.
+        chain = found.get('chain') if isinstance(found.get('chain'), (list, tuple)) and found.get('chain') else [found['provider']]
+        chain = tuple(ascii_host(host) if isinstance(host, str) else '' for host in chain)
+        if not site or not all(chain) or any(registrable_domain(host) == site for host in chain) \
                 or registrable_domain(landed_host(snapshot['_page'])) != site:
             return None
         current = self._resign if self._resign and self._resign['site'] == site else None
-        self._resign = {'site': site, 'provider': provider, 'reference': snapshot['url'],
+        self._resign = {'site': site, 'provider': chain[0], 'chain': chain, 'reference': snapshot['url'],
                         'window_url': snapshot['_window_url'],
                         'mark': current['mark'] if current else self._authorization_mark(),
                         'cookies': current['cookies'] if current else self._site_cookies(site),
@@ -1182,12 +1186,25 @@ class BrowserSession:
         answer = _authorizations(self.driver) if self.driver is not None else None
         return answer[0] if answer else None
 
-    def _on_provider(self, page):
-        """Whether ``page`` is on the re-sign-in's provider host or its registrable domain."""
+    def _receipt(self, state):
+        """#636: what a step's result (and its Evidence) says of this re-sign-in: hosts only."""
+        resign = self._resign
+        receipt = {'site': resign['site'], 'provider': resign['provider'], 'state': state}
+        if len(resign['chain']) > 1:
+            receipt['chain'] = list(resign['chain'])
+        return receipt
+
+    def _provider_of(self, page):
+        """The host of the re-sign-in's chain ``page`` is on (that host or its registrable domain), or None."""
         host = landed_host(page)
-        provider = (self._resign or {}).get('provider')
-        return bool(host and provider) and (ascii_host(host) == provider
-                                            or registrable_domain(host) == registrable_domain(provider))
+        if not host or not self._resign:
+            return None
+        host, domain = ascii_host(host), registrable_domain(host)
+        return next((hop for hop in self._resign['chain'] if host == hop or domain == registrable_domain(hop)), None)
+
+    def _on_provider(self, page):
+        """Whether ``page`` is on any host of the re-sign-in's provider chain or its registrable domain."""
+        return self._provider_of(page) is not None
 
     def _through_provider(self):
         """Whether this re-sign-in reached the provider: one of its pages was seen, or the browser
@@ -1200,8 +1217,8 @@ class BrowserSession:
         if not answer or answer[0] <= mark:
             return False
         recent = answer[1][-min(answer[0] - mark, len(answer[1])):] if answer[1] else ()
-        target = registrable_domain(resign['provider'])
-        return any(registrable_domain(host) == target for host in recent)
+        targets = {registrable_domain(hop) for hop in resign['chain']}
+        return any(registrable_domain(host) in targets for host in recent)
 
     def _hand_off(self):
         """The re-sign-in stops; the owner signs in to the site (the in-flow login, asked however the Work ends)."""
@@ -1212,10 +1229,11 @@ class BrowserSession:
         """#636: during a re-sign-in, a press or typing step on the provider's pages is refused before
         anything reaches the page (``ran: false``), and the owner is asked to sign in instead."""
         resign = self._resign
-        if not resign or not self._on_provider(snapshot.get('_page')):
+        hop = self._provider_of(snapshot.get('_page')) if resign else None
+        if not hop:
             return
         resign['seen'] = True
-        text = msg('browser.provider_interaction_refused', provider=resign['provider']) + ' ' + self._hand_off()
+        text = msg('browser.provider_interaction_refused', provider=hop) + ' ' + self._hand_off()
         raise ToolError(text, PROVIDER_INTERACTION_CODE, ran=False)
 
     def _offer_login(self, url, explicit=False, *, window_url=None):
@@ -3011,7 +3029,7 @@ class BrowserProfile:
                     record['navigated'] = after is not None and before is not None and after > before
                     # #636: the hosts of the OAuth 2.0 authorization requests this window's navigations
                     # carried while the owner signed in by hand (hosts only, never a query value).
-                    record['authorization_hosts'] = _authorization_hosts(driver)
+                    record['authorization_hosts'], record['authorization_complete'] = _authorization_hosts(driver)
                     try:
                         driver.close()
                     except Exception:
@@ -3065,10 +3083,16 @@ class BrowserProfile:
     def login_window_providers(self, window):
         """#636: the hosts the owner's own login ``window`` sent an OAuth 2.0 authorization request to,
         in the order seen, once it closed; () when none was observed or the window is unknown."""
+        return self.login_window_authorizations(window)[0]
+
+    def login_window_authorizations(self, window):
+        """#636 (Codex P1 on #637): ``(hosts, complete)`` of the owner's login ``window`` once it closed:
+        every authorization-request host in order, and whether the worker kept every hop (its list
+        is bounded).  ``((), False)`` while open or unknown."""
         record = self._login_windows.get(window) if window else None
         if record is None or not record['done'].is_set():
-            return ()
-        return tuple(record.get('authorization_hosts') or ())
+            return (), False
+        return tuple(record.get('authorization_hosts') or ()), bool(record.get('authorization_complete'))
 
     def login_window_outcome(self, window):
         """``(reason, saved)`` once ``window`` has closed, saved and released; None while it is open or unknown."""
@@ -3168,11 +3192,16 @@ def _navigations(driver):
 
 
 def _authorization_hosts(driver):
-    """#636: the distinct hosts of the driver's OAuth 2.0 authorization requests, in order; () when it cannot say."""
+    """#636: ``(hosts, complete)``: the distinct hosts of the driver's OAuth 2.0 authorization requests, in
+    order, and whether every request is among them (the worker keeps the latest ``AUTHORIZATIONS_KEPT``).
+    ``((), False)`` when it cannot say."""
     if not _alive(driver):
-        return ()
-    hosts = _authorizations(driver)
-    return tuple(dict.fromkeys(ascii_host(host) for host in hosts[1] if host)) if hosts else ()
+        return (), False
+    answer = _authorizations(driver)
+    if not answer:
+        return (), False
+    count, hosts = answer
+    return tuple(dict.fromkeys(ascii_host(host) for host in hosts if host)), count == len(hosts)
 
 
 def _authorizations(driver):

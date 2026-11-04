@@ -49,6 +49,10 @@ NONCE = 'nonce-value-6363'
 AUTHORIZE = (f'https://{PROVIDER}/authorize?response_type=code&client_id={CLIENT}'
              f'&redirect_uri={quote("https://site.test/callback", safe="")}&scope=openid&state={STATE}&nonce={NONCE}')
 QUERY_VALUES = (CLIENT, STATE, NONCE, 'callback')
+#: A federated sign-in: the site's provider (a broker) asks an upstream provider in turn.
+UPSTREAM = 'login.upstream.test'
+UPSTREAM_AUTHORIZE = (f'https://{UPSTREAM}/authorize?response_type=code&client_id=broker-client-6364'
+                      f'&redirect_uri={quote(f"https://{PROVIDER}/upstream-callback", safe="")}&state=up-state-6365')
 CFG = {'provider': 'compatible', 'endpoint': 'https://example.test/v1', 'model': 'test-model'}
 
 PAGES = {
@@ -67,6 +71,8 @@ PAGES = {
       <form action="/consent" method="post"><button type="submit">계속</button></form>
       <label>메모 <input type="text" name="note"></label></body></html>''',
     # A provider page that asks for a password.
+    f'{UPSTREAM}/choose': '''<html><head><title>계정 선택</title></head><body><h1>업스트림 계정</h1>
+      <button type="button">이 계정으로 계속</button></body></html>''',
     f'{PROVIDER}/signin': '''<html><head><title>로그인</title></head><body><form action="/pw" method="post">
       <label>아이디 <input type="email" name="id"></label>
       <label>비밀번호 <input type="password" name="pw"></label>
@@ -78,7 +84,7 @@ PAGES = {
 #: site sets no session.
 PROVIDER_ANSWERS = {'silent': 'https://site.test/callback?code=abc', 'chooser': f'https://{PROVIDER}/choose',
                     'password': f'https://{PROVIDER}/signin', 'refused': 'https://site.test/?error=access_denied&state=s',
-                    'silent_no_session': 'https://site.test/home'}
+                    'silent_no_session': 'https://site.test/home', 'federated': UPSTREAM_AUTHORIZE}
 
 
 class TwoHostDriver(FakeDriver):
@@ -104,6 +110,9 @@ class TwoHostDriver(FakeDriver):
         browser_worker.Worker.note_authorization(self.worker, url)
         if self._path(url) == f'{PROVIDER}/authorize':
             url = PROVIDER_ANSWERS[self.answer]   # the provider's redirect: navigation only
+        if self._path(url) == f'{UPSTREAM}/authorize':
+            browser_worker.Worker.note_authorization(self.worker, url)   # the broker's own authorization request
+            url = f'https://{UPSTREAM}/choose'
         if self._path(url) == f'{SITE}/callback':
             # The site exchanges the code and sets its session cookie, then shows the signed-in page.
             self.cookies[SITE] = [{'name': 'sid', 'value': 'session-' + str(time.time_ns()), 'domain': SITE,
@@ -135,6 +144,8 @@ class ProviderApprovals(Approvals):
     def provider_sign_in(self, url):
         site = bs.registrable_domain(urlsplit(url).hostname)
         provider = self.providers.get(site)
+        if isinstance(provider, list):
+            return {'site': site, 'provider': provider[0], 'chain': provider}
         return {'site': site, 'provider': provider} if provider else None
 
     def login_resolved(self, url):
@@ -288,6 +299,29 @@ class ResignInSessionTests(unittest.TestCase):
         page = sess.run('browser_click', {'target': '다른 계정으로 로그인', 'effect': 'navigate'})
         self.assert_unconfirmed(page, approvals)
 
+    def test_a_federated_chain_refuses_interaction_on_the_broker_and_the_upstream(self):
+        sess, driver, approvals = resign_session('federated', providers={SITE: [PROVIDER, UPSTREAM]})
+        page = open_login(sess)
+        self.assertEqual(page['next_step'], msg('browser.provider_sign_in_hint', provider=PROVIDER), 'names the first hop')
+        self.assertEqual(page['provider_sign_in']['chain'], [PROVIDER, UPSTREAM])
+        landed = sess.run('browser_click', {'target': '다른 계정으로 로그인', 'effect': 'navigate'})
+        self.assertEqual(urlsplit(landed['url']).hostname, UPSTREAM, 'redirects through both are allowed')
+        for url, target, host in ((None, '이 계정으로 계속', UPSTREAM), (f'https://{PROVIDER}/choose', '계속', PROVIDER)):
+            if url:
+                sess.run('browser_open', {'url': url, 'effect': 'navigate'})
+            with self.assertRaises(ToolError) as caught:
+                sess.run('browser_click', {'target': target, 'effect': 'navigate'})
+            self.assertEqual(caught.exception.code, bs.PROVIDER_INTERACTION_CODE)
+            self.assertIn(host, str(caught.exception))
+        self.assertEqual(len([entry for entry in driver.log if entry[0] == 'click']), 1, 'only the site control was pressed')
+        self.assertEqual(approvals.offers[-1], (f'https://{SITE}/login', True))
+
+    def test_a_chain_with_a_hop_that_is_no_host_gets_no_hint(self):
+        sess, _driver, _approvals = resign_session('chooser', providers={SITE: [PROVIDER, '']})
+        page = open_login(sess)
+        self.assertEqual(page['next_step'], 'OFFER')
+        self.assertNotIn('provider_sign_in', page)
+
     def test_an_unrecorded_provider_gets_no_hint_and_no_special_path(self):
         for approvals_providers in ({}, None):
             sess, driver, approvals = resign_session('chooser', providers={})
@@ -423,7 +457,7 @@ class ProviderRecordTests(LoginHarness):
     def provider_session(self, expires=None):
         self.profile.jar.save_export({'provider.test': [{'name': 'idp', 'value': 'v-' + str(time.time_ns()), 'domain': '.provider.test',
                                                          'path': '/', 'expires': expires, 'secure': True, 'http_only': True,
-                                                         'same_site': None}]})
+                                                         'same_site': None}]}, imported=())
 
     def settings_window_sign_in(self, through=AUTHORIZE):
         shown = len(self.drivers)
@@ -480,9 +514,9 @@ class ProviderRecordTests(LoginHarness):
         self.provider_session(expires=time.time() - 10)
         self.assertIsNone(self.service.browser_signin_provider(url), 'an expired provider session is no session')
         self.provider_session()
-        self.assertEqual(self.service.browser_signin_provider(url), {'site': 'fixture.test', 'provider': PROVIDER})
-        self.assertEqual(self.service.browser_approvals_for({'id': 'w', 'channel': 'web-636'}).provider_sign_in(url),
-                         {'site': 'fixture.test', 'provider': PROVIDER})
+        found = {'site': 'fixture.test', 'provider': PROVIDER, 'chain': [PROVIDER]}
+        self.assertEqual(self.service.browser_signin_provider(url), found)
+        self.assertEqual(self.service.browser_approvals_for({'id': 'w', 'channel': 'web-636'}).provider_sign_in(url), found)
         self.service.set_provider_signin('off')
         self.assertIsNone(self.service.browser_signin_provider(url), 'off for every site')
         self.service.set_provider_signin('on')
@@ -493,6 +527,64 @@ class ProviderRecordTests(LoginHarness):
         # Forgetting the site's session forgets its provider record too.
         self.service.delete_browser_sessions({'site': 'fixture.test'})
         self.assertNotIn('fixture.test', self.providers())
+
+    def session_for(self, site):
+        self.profile.jar.save_export({site: [{'name': 'idp', 'value': 'v-' + str(time.time_ns()), 'domain': '.' + site,
+                                              'path': '/', 'expires': None, 'secure': True, 'http_only': True,
+                                              'same_site': None}]}, imported=())   # added beside the stored sites
+
+    def test_a_federated_sign_in_records_every_hop_and_the_hint_needs_each_session(self):
+        self.settings_window_sign_in(through=AUTHORIZE)
+        window = self.drivers[-1]
+        self.assertEqual(window.authorizations()[0], 1)
+        # Again, through the broker and its upstream (each hop's authorization request).
+        shown = len(self.drivers)
+        self.assertEqual(self.service.open_browser_for_login({'url': ORIGIN + '/login'})['state'], 'opening')
+        self.assertTrue(wait_until(lambda: len(self.drivers) > shown and self.drivers[-1].url is not None))
+        self.assertTrue(wait_until(lambda: self.service.browser_status()['settings_login']['state'] == 'opened'))
+        window = self.drivers[-1]
+        for url in (AUTHORIZE, UPSTREAM_AUTHORIZE, 'https://fixture.test/callback'):
+            window.navigate(url)
+        window.login()
+        window.closed = True
+        self.assertTrue(wait_until(lambda: self.providers().get('fixture.test', {}).get('chain') == [PROVIDER, UPSTREAM]))
+        record = self.providers()['fixture.test']
+        self.assertEqual((record['provider'], record['complete']), (PROVIDER, True))
+        self.assertFalse(any(value in json.dumps(record) for value in QUERY_VALUES + ('broker-client-6364', 'up-state-6365')))
+        url = ORIGIN + '/login'
+        self.provider_session()
+        self.assertIsNone(self.service.browser_signin_provider(url), "the upstream's session is not held: no hint")
+        self.session_for('upstream.test')
+        self.assertEqual(self.service.browser_signin_provider(url),
+                         {'site': 'fixture.test', 'provider': PROVIDER, 'chain': [PROVIDER, UPSTREAM]})
+        self.assertIn(f'{PROVIDER} → {UPSTREAM}', self.service.provider_signin_settings()['sites']['fixture.test'])
+
+    def test_an_old_single_provider_record_is_a_one_host_chain(self):
+        self.store.put(BROWSER_PROVIDERS_KEY, {'fixture.test': {'provider': PROVIDER, 'observed_at': time.time(),
+                                                                'observed_in': 'owner_login_window'}})
+        self.provider_session()
+        self.assertEqual(self.service.browser_signin_provider(ORIGIN + '/login'),
+                         {'site': 'fixture.test', 'provider': PROVIDER, 'chain': [PROVIDER]})
+
+    def test_a_chain_the_window_could_not_keep_whole_gets_no_hint(self):
+        # More authorization requests than the worker keeps: an early hop may be missing.
+        shown = len(self.drivers)
+        self.assertEqual(self.service.open_browser_for_login({'url': ORIGIN + '/login'})['state'], 'opening')
+        self.assertTrue(wait_until(lambda: len(self.drivers) > shown and self.drivers[-1].url is not None))
+        self.assertTrue(wait_until(lambda: self.service.browser_status()['settings_login']['state'] == 'opened'))
+        window = self.drivers[-1]
+        for _ in range(browser_worker.AUTHORIZATIONS_KEPT + 1):
+            window.navigate(AUTHORIZE)
+        window.login()
+        window.closed = True
+        self.assertTrue(wait_until(lambda: 'fixture.test' in self.providers()))
+        self.assertIs(self.providers()['fixture.test']['complete'], False)
+        self.provider_session()
+        self.assertIsNone(self.service.browser_signin_provider(ORIGIN + '/login'), 'unsure which hosts to protect: no hint')
+        # A stored chain with a hop that is no host is no more reliable.
+        self.store.put(BROWSER_PROVIDERS_KEY, {'fixture.test': {'provider': PROVIDER, 'chain': [PROVIDER, None],
+                                                                'complete': True}})
+        self.assertIsNone(self.service.browser_signin_provider(ORIGIN + '/login'))
 
     def test_the_switch_is_on_by_default_and_the_owner_turns_it_off_in_the_conversation(self):
         self.assertTrue(self.service.provider_signin_settings()['enabled'])

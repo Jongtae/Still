@@ -8574,7 +8574,7 @@ class AgentService:
             failed=reason=='failed' and (self._settings_login or {}).get('state')=='opening'
             signed=self._signed_in_sites({**row,'window':window}) if saved else []
             started=time.time()
-            if signed:self._record_owner_signins(signed,providers=self.browser_profile.login_window_providers(window))
+            if signed:self._record_owner_signins(signed,authorizations=self.browser_profile.login_window_authorizations(window))
             # #488: Settings tells the owner what the close saved: the site(s) whose sign-in was just recorded.
             signins=self.store.config(BROWSER_OWNER_SIGNINS_KEY,{}) if signed else {}
             sites=sorted(site for site,record in (signins.items() if isinstance(signins,dict) else ())
@@ -9332,32 +9332,49 @@ class AgentService:
             return site
         return None
 
-    def _record_owner_signins(self, signed, *, db=None, providers=()):
+    def _record_owner_signins(self, signed, *, db=None, authorizations=((),False)):
         """Record each ``(host, before)`` of ``_signed_in_sites`` as a site the owner signed in to.
 
-        #636: ``providers`` are the hosts the same owner login window sent an OAuth 2.0
-        authorization request to (``BrowserProfile.login_window_providers``); each signed-in
-        site records the last one that is not the site itself as the provider the owner used
-        there.  A sign-in with none observed (the owner used another way this time) forgets
-        the site's earlier provider.  The AI's own browsing never reaches here.
+        #636: ``authorizations`` is ``(hosts, complete)`` of the same owner login window
+        (``BrowserProfile.login_window_authorizations``): every host it sent an OAuth 2.0
+        authorization request to, in order.  Each signed-in site records that whole chain
+        but the site's own hosts (Codex P1 on #637: a federated sign-in goes site -> broker
+        -> upstream; every hop is protected), first hop first.  A sign-in with none observed
+        (the owner used another way this time) forgets the site's earlier provider.  The AI's
+        own browsing never reaches here.
         """
         for host,before in signed or ():
             self._record_owner_signin(host,before,db=db)
-        self._record_signin_providers([host for host,_before in signed or ()],providers,db=db)
+        hosts,complete=authorizations if isinstance(authorizations,tuple) and len(authorizations)==2 else ((),False)
+        self._record_signin_providers([host for host,_before in signed or ()],hosts,complete,db=db)
 
-    def _record_signin_providers(self, hosts, providers, *, db=None):
+    def _record_signin_providers(self, hosts, providers, complete=True, *, db=None):
         sites=[site for site in dict.fromkeys(registrable_domain(host) for host in hosts or () if host) if site]
         if not sites:return
-        observed=[ascii_host(host) for host in providers or () if isinstance(host,str) and host]
+        observed=[ascii_host(host) if isinstance(host,str) else '' for host in providers or ()]
         with self.lock:
             records=self.store.config(BROWSER_PROVIDERS_KEY,{},db=db)
             records=records if isinstance(records,dict) else {}
             now=time.time()
             for site in sites:
-                used=[host for host in observed if registrable_domain(host)!=site]
-                if used:records[site]={'provider':used[-1],'observed_at':now,'observed_in':'owner_login_window'}
+                chain=list(dict.fromkeys(host for host in observed if registrable_domain(host)!=site))
+                if chain:
+                    # A hop that is no host, or a chain the worker could not keep whole, protects nothing for
+                    # certain: recorded as incomplete, which gives no re-sign-in (the owner signs in).
+                    whole=bool(complete) and all(chain)
+                    records[site]={'provider':chain[0],'chain':chain,'complete':whole,'observed_at':now,
+                                   'observed_in':'owner_login_window'}
                 else:records.pop(site,None)
             self.store.put(BROWSER_PROVIDERS_KEY,records,db=db)
+
+    @staticmethod
+    def _provider_chain(record):
+        """#636: a provider record's protected hosts, first hop first; a record from before the chain
+        (``{'provider': host}``) is a one-host chain.  () when it cannot be relied on."""
+        if not isinstance(record,dict) or record.get('complete') is False:return ()
+        chain=record.get('chain') if isinstance(record.get('chain'),list) else [record.get('provider')]
+        chain=[str(host) for host in chain if isinstance(host,str) and host]
+        return tuple(chain) if chain and len(chain)==len(record.get('chain') or [record.get('provider')]) else ()
 
     def provider_signin_settings(self):
         """#636: the owner's switch (on unless turned off), the sites it is off for, and each recorded
@@ -9368,7 +9385,7 @@ class AgentService:
         records=records if isinstance(records,dict) else {}
         return {'enabled':switch.get('enabled') is not False,
                 'off_sites':sorted(str(site) for site in switch.get('off_sites') or () if isinstance(site,str)),
-                'sites':{site:str(row.get('provider')) for site,row in sorted(records.items())
+                'sites':{site:' → '.join(self._provider_chain(row)) or str(row.get('provider')) for site,row in sorted(records.items())
                          if isinstance(row,dict) and isinstance(row.get('provider'),str)}}
 
     def set_provider_signin(self, value):
@@ -9405,11 +9422,14 @@ class AgentService:
         site=registrable_domain(host) if host else None
         if not site:return None
         settings=self.provider_signin_settings()
-        provider=settings['sites'].get(site)
-        if not provider or not settings['enabled'] or site in settings['off_sites'] or self.login_refusal(host):return None
-        read=self.browser_profile.site_cookie_marks(provider)
-        if not read or not unexpired(read[0],read[1]):return None
-        return {'site':site,'provider':provider}
+        records=self.store.config(BROWSER_PROVIDERS_KEY,{})
+        chain=self._provider_chain(records.get(site) if isinstance(records,dict) else None)
+        if not chain or not settings['enabled'] or site in settings['off_sites'] or self.login_refusal(host):return None
+        # Which hop holds the session that lets the provider answer silently is not known, so every hop's is required.
+        for hop in chain:
+            read=self.browser_profile.site_cookie_marks(hop)
+            if not read or not unexpired(read[0],read[1]):return None
+        return {'site':site,'provider':chain[0],'chain':list(chain)}
 
     def _login_cookie_marks(self, row):
         """``{'at': jar time, 'marks': [[keyed digest, expires], ...], 'ids': [[keyed identity, expires], ...]}``
@@ -9650,7 +9670,7 @@ class AgentService:
                             db.execute("UPDATE jobs SET status='unknown',error=?,owner_cause=? WHERE id=?",
                                        (UNKNOWN_EFFECT_RETRY_REFUSAL,UNKNOWN_EFFECT_RETRY_REFUSAL,work_id))
                     final=shown='resumed' if resumed else 'not_resumed'
-                    if resumed:self._record_owner_signins(signed,db=db,providers=self.browser_profile.login_window_providers(row.get('window')))
+                    if resumed:self._record_owner_signins(signed,db=db,authorizations=self.browser_profile.login_window_authorizations(row.get('window')))
             elif intent=='skip':
                 final=shown='skipped'
             else:
