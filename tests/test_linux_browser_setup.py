@@ -250,6 +250,25 @@ class DesktopKeyring(unittest.TestCase):
         self.assertEqual(str(caught.exception), 'keyring_locked')
         self.assertEqual(refused.collection.items, [], 'nothing is written while locked')
 
+    def test_an_unanswered_item_prompt_ends_and_the_connection_closes(self):
+        """Codex review on #640: an item create/delete prompt waits without a timeout inside SecretStorage;
+        the whole operation is bounded and its connection closed."""
+        import threading
+        import personal_agent.browser_jar as jar_module
+        released = threading.Event()
+
+        class Prompting(Collection):
+            def create_item(self, *args, **kwargs):
+                released.wait(5)   # the prompt nobody answers, until the connection closes
+
+        service = SecretService(Prompting())
+        with mock.patch.object(jar_module, 'KEYRING_OPERATION_SECONDS', 0.2):
+            with self.assertRaises(JarError) as caught:
+                SecretServiceKey('store-abc', backend=service).create()
+        released.set()
+        self.assertEqual(str(caught.exception), 'keyring_locked')
+        self.assertEqual(service.closed, service.opened)
+
     def test_a_desktop_without_a_default_keyring_is_a_typed_failure(self):
         """Codex review on #640: no default collection is created (that prompt has no timeout)."""
         service = SecretService(missing=True)

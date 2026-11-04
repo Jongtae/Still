@@ -171,7 +171,12 @@ class SecretServiceKey:
         return {'service': self.service, 'account': self.account}
 
     def _collection(self, use):
-        """Run ``use(collection)`` on the unlocked default collection; ``JarError`` when that is impossible."""
+        """Run ``use(collection)`` on the unlocked default collection; ``JarError`` when that is impossible.
+
+        The whole operation is bounded (Codex review on #640): an item create or delete may also ask for a
+        prompt, and SecretStorage waits for those without a timeout.  Past ``KEYRING_OPERATION_SECONDS`` the
+        D-Bus connection is closed, which ends the wait, and the operation fails typed.
+        """
         try:
             backend = self._backend
             if backend is None:
@@ -179,31 +184,45 @@ class SecretServiceKey:
             connection = backend.dbus_init()
         except Exception:
             raise JarError('keyring_unavailable') from None
-        try:
-            # The default collection (the login keyring), never created here: creating one runs a prompt with no
-            # timeout (Codex review on #640).  A desktop with no default keyring is a typed failure.
+        outcome = {}
+
+        def work():
             try:
-                collection = backend.Collection(connection)
-            except Exception:
-                raise JarError('keyring_unavailable') from None
-            if collection.is_locked():
-                # Bounded (Codex review on #640): an unanswered unlock prompt must not hold the browser.
-                try:
-                    collection.unlock(timeout=KEYRING_PROMPT_SECONDS)
-                except TimeoutError:
-                    raise JarError('keyring_locked') from None
-            if collection.is_locked():
-                raise JarError('keyring_locked')
-            return use(collection)
-        except JarError:
-            raise
+                outcome['value'] = self._in_collection(backend, connection, use)
+            except BaseException as exc:   # carried back to the caller's thread
+                outcome['error'] = exc
+        worker = threading.Thread(target=work, name='agentos-keyring', daemon=True)
+        worker.start()
+        worker.join(KEYRING_OPERATION_SECONDS)
+        try:
+            connection.close()
+        except Exception:
+            pass
+        if worker.is_alive():
+            raise JarError('keyring_locked')
+        error = outcome.get('error')
+        if isinstance(error, JarError):
+            raise error
+        if error is not None:
+            raise JarError('keyring_unavailable') from None
+        return outcome.get('value')
+
+    @staticmethod
+    def _in_collection(backend, connection, use):
+        # The default collection (the login keyring), never created here: creating one runs a prompt with no
+        # timeout (Codex review on #640).  A desktop with no default keyring is a typed failure.
+        try:
+            collection = backend.Collection(connection)
         except Exception:
             raise JarError('keyring_unavailable') from None
-        finally:
+        if collection.is_locked():
             try:
-                connection.close()
-            except Exception:
-                pass
+                collection.unlock(timeout=KEYRING_PROMPT_SECONDS)
+            except TimeoutError:
+                raise JarError('keyring_locked') from None
+        if collection.is_locked():
+            raise JarError('keyring_locked')
+        return use(collection)
 
     def get(self):
         """The key, or None when this item does not exist."""
@@ -238,6 +257,8 @@ class SecretServiceKey:
 
 #: How long the desktop's keyring unlock prompt may wait for the owner.
 KEYRING_PROMPT_SECONDS = 120
+#: The bound of one whole keyring operation (lookup, unlock prompt, item create/delete prompts).
+KEYRING_OPERATION_SECONDS = 150
 
 
 def platform_key(account, service=SERVICE, platform=None):
