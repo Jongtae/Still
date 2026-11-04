@@ -1171,7 +1171,7 @@ def _host(url):
 
 #: #636: the parameters that make a navigation an OAuth 2.0 authorization request (RFC 6749 §4.1.1;
 #: OIDC Core §3.1.2.1 adds ``scope=openid`` to the same request).  Only their names are compared.
-AUTHORIZATION_PARAMETERS = frozenset({'response_type', 'client_id', 'redirect_uri'})
+AUTHORIZATION_PARAMETERS = frozenset({'response_type', 'client_id'})
 #: #636: how many authorization-request hosts one worker keeps (in order; hosts only).
 AUTHORIZATIONS_KEPT = 16
 
@@ -1180,7 +1180,8 @@ def authorization_host(url):
     """The host of ``url`` when it carries an OAuth 2.0 authorization request, else None (#636).
 
     The query's parameter names are compared with ``AUTHORIZATION_PARAMETERS``;
-    no value is returned or kept, and no provider is named.
+    no value is returned or kept, and no provider is named. RFC 6749 permits
+    redirect_uri to be omitted; such requests still need a policy decision.
     """
     try:
         parts = urlsplit(str(url or ''))
@@ -1191,6 +1192,38 @@ def authorization_host(url):
         return None
     names = {name for name, _value in parse_qsl(parts.query, keep_blank_values=True)}
     return host if AUTHORIZATION_PARAMETERS <= names else None
+
+
+def authorization_blocked(url, policy):
+    """Apply Work switches to the request's client endpoint (RFC 6749 §§3.1.2, 4.1.1).
+
+    Query values are parsed only in memory, never retained in policy or evidence.
+    Missing, ambiguous or unusable endpoints fail closed whenever any switch is off.
+    """
+    if authorization_host(url) not in policy.get('protected_hosts', ()):
+        return False
+    enabled = policy.get('enabled', True)
+    off_sites = policy.get('off_sites', ())
+    if not enabled:
+        return True
+    if not off_sites:
+        return False
+    from .browser_session import registrable_domain
+    try:
+        redirects = [value for name, value in parse_qsl(urlsplit(url).query, keep_blank_values=True)
+                     if name == 'redirect_uri']
+        if len(redirects) != 1:
+            return True
+        endpoint = urlsplit(redirects[0])
+        host = endpoint.hostname
+        # urlsplit is intentionally permissive; require an absolute usable client endpoint.
+        if not endpoint.scheme or not host or endpoint.username is not None or endpoint.fragment \
+                or any(char.isspace() or char in '%\\' for char in host):
+            return True
+        endpoint.port  # Validate a supplied port without retaining it.
+        return registrable_domain(host) in off_sites
+    except ValueError:
+        return True
 
 
 def origin_key(url):
@@ -1376,6 +1409,7 @@ class Worker:
         self.AppKit, self.Foundation, self.WebKit, self.AppHelper = AppKit, Foundation, WebKit, AppHelper
         self.profile, self.emit = profile, emit
         self.allowed_origins = frozenset(allowed_origins)
+        self.provider_sign_in_policy = {}
         self.pending = {}          # op id -> True while the op has not answered
         self.navigation = None     # (id, WKNavigation) the navigate op waits for
         self.blocked = 0           # main-frame navigation failures (app-link cancellations excluded)
@@ -1877,6 +1911,8 @@ class Worker:
             return decision(True)
         if scheme not in ('http', 'https'):
             return decision(False, 'unsupported_navigation')
+        if main_frame and authorization_blocked(url, getattr(self, 'provider_sign_in_policy', {})):
+            return decision(False, 'provider_sign_in_off')
         key = origin_key(url)
         if key in self.resolved:
             return decision(self.resolved[key] is None, self.resolved[key])
@@ -1990,6 +2026,8 @@ class Worker:
         op = command.get('op')
         timeout = command.get('timeout') or 20
         try:
+            if 'provider_sign_in_policy' in command:
+                self.provider_sign_in_policy = command['provider_sign_in_policy']
             if 'intranet' in command:
                 self.set_intranet(command['intranet'])
             method = getattr(self, 'op_' + str(op), None)

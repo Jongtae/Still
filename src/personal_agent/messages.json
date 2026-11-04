@@ -6779,6 +6779,12 @@
   "ja": "このページはログインが必要です。オーナーは以前このサイトに {provider} のアカウントでログインしており、Still には {provider} のログインセッションがあります。サイトにある {provider} でログインするボタンを押して再ログインできます。そのボタンがアプリに渡って止まったら（unsupported_navigation）、このサイトのログインページを browser_open の layout: desktop で開き直してそのボタンを押してください。{provider} のページでは Still が押す操作と入力をすべて拒否するため、{provider} が何も尋ねずにサイトへ戻したときだけログインが完了します。{provider} がパスワード・追加認証・アカウント選択・同意を求めたり、この方法がうまくいかなければ、browser_sign_in でオーナーにログインを任せてください。パスワードは入力しないでください。",
   "zh": "此页面需要登录。所有者以前通过 {provider} 账号登录过此网站，Still 保存着 {provider} 的登录会话。可以按网站上用 {provider} 账号登录的按钮重新登录。如果该按钮转到应用而停止（unsupported_navigation），请用 browser_open 并设置 layout: desktop 重新打开此网站的登录页面再按。Still 会拒绝在 {provider} 页面上的所有点击和输入，因此只有 {provider} 不询问任何内容就返回网站时登录才会完成。如果 {provider} 要求密码、额外验证、选择账号或同意，或者此方法不行，请用 browser_sign_in 交给所有者登录。不要输入密码。"
  },
+ "browser.provider_sign_in_off": {
+  "ko": "이 사이트의 AI 제공자 재로그인이 꺼져 있어 인증 페이지를 열지 않았습니다. browser_sign_in으로 주인에게 로그인을 요청하세요.",
+  "en": "AI provider re-sign-in is off for this site, so the authorization page was not opened. Use browser_sign_in to ask the owner to sign in.",
+  "ja": "このサイトのAIによるプロバイダー再ログインは無効のため、認証ページを開きませんでした。browser_sign_inでオーナーにログインを依頼してください。",
+  "zh": "此网站的 AI 提供方重新登录已关闭，因此未打开授权页面。请使用 browser_sign_in 请求所有者登录。"
+ },
  "browser.provider_interaction_refused": {
   "ko": "{provider}는 소유자가 로그인할 때 쓰는 계정 제공자라서, Still은 그 페이지와 거기서 이어진 페이지에서 누르기와 입력을 하지 않습니다. 이 단계는 실행하지 않았고 아무것도 보내지 않았습니다. 계정 선택·동의·비밀번호처럼 그곳에서 묻는 것은 소유자가 직접 합니다.",
   "en": "{provider} is an identity provider the owner signs in with, so Still does not press or type on its pages or on pages reached from it. This step did not run and nothing was sent. Whatever it asks there (an account choice, consent, a password) is for the owner.",

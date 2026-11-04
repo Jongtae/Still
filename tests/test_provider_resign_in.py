@@ -3,8 +3,8 @@
 Evidence classes, named separately:
 
 * unit (model-free): ``browser_worker.authorization_host`` recognises an OAuth 2.0
-  authorization request (RFC 6749 §4.1.1: ``response_type``, ``client_id`` and
-  ``redirect_uri``; OIDC Core §3.1.2.1 adds ``scope=openid`` to the same request)
+  authorization request (RFC 6749 §4.1.1: ``response_type`` and ``client_id``;
+  ``redirect_uri`` names the client endpoint, RFC 6749 §3.1.2; OIDC Core §3.1.2.1 adds ``scope=openid`` to the same request)
   by its parameter names and keeps the host only; the worker's
   ``note_authorization`` keeps hosts only, bounded;
 * unit (model-free, a fake two-host page driver and a scripted approvals
@@ -23,6 +23,7 @@ the test's own (``.test``); ``src`` names no provider or site.
 """
 import html
 import json
+import sys
 import tempfile
 import time
 import types
@@ -46,9 +47,10 @@ PROVIDER = 'id.provider.test'
 CLIENT = 'client-id-value-6361'
 STATE = 'state-value-6362'
 NONCE = 'nonce-value-6363'
+REDIRECT = 'https://site.test/callback?return=redirect-value-6366'
 AUTHORIZE = (f'https://{PROVIDER}/authorize?response_type=code&client_id={CLIENT}'
-             f'&redirect_uri={quote("https://site.test/callback", safe="")}&scope=openid&state={STATE}&nonce={NONCE}')
-QUERY_VALUES = (CLIENT, STATE, NONCE, 'callback')
+             f'&redirect_uri={quote(REDIRECT, safe="")}&scope=openid&state={STATE}&nonce={NONCE}')
+QUERY_VALUES = (CLIENT, STATE, NONCE, 'callback', 'redirect-value-6366', REDIRECT, quote(REDIRECT, safe=''))
 #: A federated sign-in: the site's provider (a broker) asks an upstream provider in turn.
 UPSTREAM = 'login.upstream.test'
 UPSTREAM_AUTHORIZE = (f'https://{UPSTREAM}/authorize?response_type=code&client_id=broker-client-6364'
@@ -106,7 +108,9 @@ class TwoHostDriver(FakeDriver):
     def __init__(self, answer='silent', log=None):
         super().__init__(pages=PAGES, origin='https://' + SITE, log=log)
         self.answer = answer
-        self.worker = types.SimpleNamespace(authorizations=[], authorization_count=0)
+        self.worker = types.SimpleNamespace(authorizations=[], authorization_count=0, resolved={},
+                                            provider_sign_in_policy={})
+        self.provider_sign_in_policy = dict
         #: The browser's cookies by site; the signed-out site already holds an anonymous one.
         self.cookies = {SITE: [{'name': 'anon', 'value': 'a1', 'domain': SITE, 'path': '/', 'expires': None}]}
 
@@ -114,12 +118,29 @@ class TwoHostDriver(FakeDriver):
         parts = urlsplit(url)
         return (parts.hostname or '') + (parts.path or '/')
 
+    def set_provider_sign_in_policy(self, policy):
+        self.provider_sign_in_policy = policy
+
+    def navigate(self, url):
+        # Exercise the production navigation decision before a fake provider can redirect or set a cookie.
+        self.worker.provider_sign_in_policy = self.provider_sign_in_policy()
+        self.worker.resolved[browser_worker.origin_key(url)] = None
+        decisions = []
+        browser_worker.Worker.decide(self.worker, url, True, lambda ok, reason=None: decisions.append((ok, reason)))
+        allowed, reason = decisions[0]
+        if not allowed:
+            exc = ToolError(bs.NAVIGATION_REFUSALS[reason], reason)
+            exc.posted = False
+            raise exc
+        self.log.append(('navigation', url))
+        browser_worker.Worker.note_authorization(self.worker, url)
+
     def goto(self, url, timeout):
         self.log.append(('goto', url, timeout))
-        browser_worker.Worker.note_authorization(self.worker, url)
+        self.navigate(url)
         if self._path(url) == f'{SITE}/signin-redirect':
             url = AUTHORIZE   # the site's own sign-in address redirects to the provider at once
-            browser_worker.Worker.note_authorization(self.worker, url)
+            self.navigate(url)
         if self._path(url) == f'{PROVIDER}/authorize':
             url = PROVIDER_ANSWERS[self.answer]   # the provider's redirect: navigation only
         if self._path(url) == f'{UPSTREAM}/authorize':
@@ -148,6 +169,14 @@ class ProviderApprovals(Approvals):
         super().__init__()
         self.providers = dict(providers or {})
         self.offers = []
+        self.enabled = True
+        self.off_sites = set()
+
+    def provider_signin_settings(self):
+        return {'enabled': self.enabled, 'off_sites': sorted(self.off_sites)}
+
+    def provider_sign_in_enabled(self, url):
+        return self.enabled and bs.registrable_domain(urlsplit(url or '').hostname) not in self.off_sites
 
     def login_required(self, url, explicit=False, *, window_url=None):
         self.offers.append((url, explicit))
@@ -155,6 +184,8 @@ class ProviderApprovals(Approvals):
 
     def provider_sign_in(self, url):
         site = bs.registrable_domain(urlsplit(url).hostname)
+        if not self.provider_sign_in_enabled(url):
+            return None
         provider = self.providers.get(site)
         if isinstance(provider, list):
             return {'site': site, 'provider': provider[0], 'chain': provider}
@@ -183,12 +214,33 @@ def open_login(sess):
 class AuthorizationRequestTests(unittest.TestCase):
     def test_an_authorization_request_is_known_by_its_parameter_names_and_only_its_host_is_kept(self):
         self.assertEqual(browser_worker.authorization_host(AUTHORIZE), PROVIDER)
-        for missing in ('response_type', 'client_id', 'redirect_uri'):
+        for missing in ('response_type', 'client_id'):
             url = '&'.join(part for part in AUTHORIZE.split('&') if not part.split('?')[-1].startswith(missing + '='))
             self.assertIsNone(browser_worker.authorization_host(url), missing)
         self.assertIsNone(browser_worker.authorization_host(f'https://{SITE}/login?next=/home'))
         self.assertIsNone(browser_worker.authorization_host('intent://x?response_type=code&client_id=a&redirect_uri=b'))
         self.assertIsNone(browser_worker.authorization_host('not a url'))
+
+    def test_worker_decides_each_main_frame_url_from_the_client_endpoint(self):
+        base = f'https://{PROVIDER}/authorize?response_type=code&client_id={CLIENT}'
+        policy = {'protected_hosts': [PROVIDER], 'enabled': True, 'off_sites': [SITE]}
+        state = types.SimpleNamespace(provider_sign_in_policy=policy,
+                                      resolved={browser_worker.origin_key(AUTHORIZE): None})
+        for enabled, off_sites in ((False, []), (True, [SITE]), (True, [])):
+            policy.update(enabled=enabled, off_sites=off_sites)
+            for url, site_off in ((AUTHORIZE, SITE in off_sites),
+                                  (base + '&redirect_uri=https%3A%2F%2Fsub.other.test%2Fcallback', False),
+                                  (base, bool(off_sites)),
+                                  (base + '&redirect_uri=invalid', bool(off_sites)),
+                                  (base + '&redirect_uri=https%3A%2F%2Fsub.site.test%2Fcallback', SITE in off_sites)):
+                for main_frame in (True, False):
+                    with self.subTest(url=url.split('?')[0], enabled=enabled, off_sites=off_sites, main_frame=main_frame):
+                        decisions = []
+                        browser_worker.Worker.decide(state, url, main_frame,
+                                                     lambda ok, reason=None: decisions.append((ok, reason)))
+                        blocked = main_frame and (not enabled or site_off)
+                        self.assertEqual(decisions, [(False, 'provider_sign_in_off') if blocked else (True, None)])
+        self.assertFalse(any(value in flat(state.__dict__) for value in QUERY_VALUES))
 
     def test_the_worker_keeps_hosts_only_and_a_bounded_list(self):
         state = types.SimpleNamespace(authorizations=[], authorization_count=0)
@@ -201,7 +253,157 @@ class AuthorizationRequestTests(unittest.TestCase):
         self.assertFalse(any(value in flat(state.__dict__) for value in QUERY_VALUES))
 
 
+class ProviderPolicyProtocolTests(unittest.TestCase):
+    def test_policy_and_typed_refusal_cross_the_worker_process_boundary(self):
+        # Substitute only Cocoa and the page; keep the production command handling, policy decision,
+        # navigation-refusal record and parent protocol decoder.
+        with tempfile.TemporaryDirectory() as folder:
+            script = Path(folder) / 'worker.py'
+            script.write_text("""
+import json
+import sys
+from personal_agent.browser_worker import Worker, origin_key
+class PageWorker(Worker):
+    def __init__(self):
+        self.emit = lambda row: print(json.dumps(row), flush=True)
+        self.pending = {}
+        self.resolved = {}
+        self.intranet = frozenset()
+        self.provider_sign_in_policy = {}
+        self.blocked = 0
+        self.navigation = None
+    def op_navigate(self, ident, command, timeout):
+        self.resolved[origin_key(command['url'])] = None
+        def decided(allowed, reason=None):
+            if allowed:
+                self.reply(ident)
+            else:
+                self.navigation_refused(True, reason)
+                self.fail(ident, self.blocked_reason, posted=command.get('posted', False))
+        self.decide(command['url'], True, decided)
+    def op_quit(self, ident, command, timeout):
+        self.reply(ident)
+worker = PageWorker()
+worker.emit({'event': 'ready'})
+for line in sys.stdin:
+    command = json.loads(line)
+    worker.handle(command)
+    if command['op'] == 'quit':
+        break
+""")
+            driver = bs.WebKitWorkerDriver(command=[sys.executable, str(script)], cwd=folder)
+            try:
+                driver.goto(AUTHORIZE, 3)  # An owner window has no Work policy.
+                policy = {'protected_hosts': [PROVIDER], 'enabled': True, 'off_sites': [SITE]}
+                driver.set_provider_sign_in_policy(lambda: policy)
+                with self.assertRaises(ToolError) as caught:
+                    driver._request('navigate', 3, url=AUTHORIZE, posted=True)
+                self.assertEqual(caught.exception.code, 'provider_sign_in_off')
+                self.assertEqual(str(caught.exception), msg('browser.provider_sign_in_off'))
+                self.assertIs(caught.exception.posted, True)
+                driver.goto(f'https://{PROVIDER}/ordinary', 3)  # Not an authorization request.
+                driver.goto(AUTHORIZE.replace(quote(REDIRECT, safe=''),
+                                              quote('https://other.test/callback', safe='')), 3)
+                missing = f'https://{PROVIDER}/authorize?response_type=code&client_id={CLIENT}'
+                with self.assertRaises(ToolError) as caught:
+                    driver.goto(missing, 3)
+                self.assertEqual(caught.exception.code, 'provider_sign_in_off')
+                policy['off_sites'].clear()
+                driver.goto(missing, 3)
+                driver.goto(AUTHORIZE, 3)  # Policy changes take effect on the next command.
+            finally:
+                driver.close()
+
+
 class ResignInSessionTests(unittest.TestCase):
+    def assert_switch_refusal(self, sess, driver, approvals, url):
+        sess.run('browser_open', {'url': url, 'effect': 'navigate'})
+        before = (driver.url, driver.cookies_export(), driver.authorizations())
+        navigation_count = len([row for row in driver.log if row[0] == 'navigation'])
+        with self.assertRaises(ToolError) as caught:
+            sess.run('browser_click', {'target': '다른 계정으로 계속', 'effect': 'navigate'})
+        self.assertEqual(caught.exception.code, 'provider_sign_in_off')
+        self.assertEqual(caught.exception.observed_step, {'posted': False, 'approved': False})
+        self.assertIn('OFFER-EXPLICIT', str(caught.exception))
+        self.assertEqual((driver.url, driver.cookies_export(), driver.authorizations()), before)
+        self.assertEqual(len([row for row in driver.log if row[0] == 'navigation']), navigation_count)
+        self.assertEqual(approvals.offers[-1], (url, True))
+
+    def test_switch_off_globally_blocks_before_provider_navigation(self):
+        sess, driver, approvals = resign_session()
+        approvals.enabled = False
+        self.assert_switch_refusal(sess, driver, approvals, f'https://{SITE}/start')
+
+    def test_switch_off_for_one_site_leaves_another_site_enabled(self):
+        sess, driver, approvals = resign_session()
+        approvals.off_sites.add(SITE)
+        self.assert_switch_refusal(sess, driver, approvals, f'https://{SITE}/start')
+        # The same provider remains usable for another client endpoint.
+        other_authorize = AUTHORIZE.replace(quote(REDIRECT, safe=""), quote("https://other.test/callback", safe=""))
+        driver.pages['other.test/start'] = PAGES[f'{SITE}/start'].replace(html.escape(AUTHORIZE), html.escape(other_authorize))
+        sess.run('browser_open', {'url': 'https://other.test/start', 'effect': 'navigate'})
+        page = sess.run('browser_click', {'target': '다른 계정으로 계속', 'effect': 'navigate'})
+        self.assertEqual(page['url'], f'https://{SITE}/home')
+        self.assertEqual(driver.authorizations(), (1, (PROVIDER,)))
+
+    def test_open_authorization_with_switch_off_is_not_run(self):
+        sess, driver, approvals = resign_session()
+        approvals.off_sites.add(SITE)
+        sess.run('browser_open', {'url': f'https://{SITE}/start', 'effect': 'navigate'})
+        before = (list(driver.log), driver.cookies_export())
+        with self.assertRaises(ToolError) as caught:
+            sess.run('browser_open', {'url': AUTHORIZE, 'effect': 'navigate'})
+        self.assertEqual(caught.exception.code, 'provider_sign_in_off')
+        self.assertIs(caught.exception.ran, False)
+        self.assertEqual((driver.log, driver.cookies_export()), before)
+        self.assertEqual(approvals.offers[-1], (f'https://{SITE}/start', True))
+
+    def test_direct_authorization_applies_the_client_switch_without_an_origin_or_from_an_unrelated_site(self):
+        other = AUTHORIZE.replace(quote(REDIRECT, safe=''), quote('https://other.test/callback', safe=''))
+        for prior in (None, 'https://public.test/'):
+            for url, blocked in ((AUTHORIZE, True), (other, False)):
+                with self.subTest(prior=prior, blocked=blocked):
+                    sess, driver, approvals = resign_session()
+                    approvals.off_sites.add(SITE)
+                    if prior:
+                        sess.run('browser_open', {'url': prior, 'effect': 'navigate'})
+                    before = list(driver.log)
+                    if blocked:
+                        with self.assertRaises(ToolError) as caught:
+                            sess.run('browser_open', {'url': url, 'effect': 'navigate'})
+                        self.assertEqual(caught.exception.code, 'provider_sign_in_off')
+                        self.assertIs(caught.exception.ran, False)
+                        self.assertEqual(driver.log, before)
+                    else:
+                        sess.run('browser_open', {'url': url, 'effect': 'navigate'})
+                        self.assertEqual(driver.authorizations(), (1, (PROVIDER,)))
+
+    def test_missing_or_unparseable_client_endpoint_fails_closed_if_any_switch_is_off(self):
+        base = f'https://{PROVIDER}/authorize?response_type=code&client_id={CLIENT}'
+        for suffix in ('', '&redirect_uri=', '&redirect_uri=not-a-url', '&redirect_uri=https%3A%2F%2F%5B',
+                       '&redirect_uri=https%3A%2F%2Fsite.test%3Abad%2Fcallback',
+                       '&redirect_uri=https%3A%2F%2Fother.test&redirect_uri=https%3A%2F%2Fsite.test'):
+            for enabled, off_sites in ((False, []), (True, [SITE]), (True, [])):
+                with self.subTest(suffix=suffix, enabled=enabled, off_sites=off_sites):
+                    sess, driver, approvals = resign_session()
+                    approvals.enabled, approvals.off_sites = enabled, set(off_sites)
+                    url = base + suffix
+                    if not enabled or off_sites:
+                        with self.assertRaises(ToolError) as caught:
+                            sess.run('browser_open', {'url': url, 'effect': 'navigate'})
+                        self.assertEqual(caught.exception.code, 'provider_sign_in_off')
+                        self.assertIs(caught.exception.ran, False)
+                    else:
+                        sess.run('browser_open', {'url': url, 'effect': 'navigate'})
+                        self.assertEqual(driver.authorizations(), (1, (PROVIDER,)))
+
+    def test_marks_set_before_the_provider_window_do_not_confirm_its_return(self):
+        sess, driver, _ = resign_session('silent_no_session')
+        open_login(sess)
+        driver.cookies[SITE][0]['value'] = 'renewed-before-provider-navigation'
+        page = sess.run('browser_click', {'target': '다른 계정으로 로그인', 'effect': 'navigate'})
+        self.assertEqual(page['provider_sign_in']['state'], 'unconfirmed')
+
     def test_a_login_page_of_a_site_with_a_recorded_provider_tells_the_ai_how_to_sign_back_in(self):
         sess, _driver, approvals = resign_session()
         page = open_login(sess)
@@ -480,6 +682,27 @@ class ResignInLoopTests(unittest.TestCase):
         return [(status, json.loads(detail)) for name, status, detail in self.events if name == tool
                 and status in ('succeeded', 'failed')]
 
+    def test_provider_only_page_records_signed_in_and_information_use(self):
+        self.run_work('silent',
+                      {'tool_calls': [call('1', 'browser_open', url=f'https://{SITE}/start', effect='navigate')]},
+                      {'tool_calls': [call('2', 'browser_click', target='다른 계정으로 계속', effect='navigate')]},
+                      {'content': '확인했습니다.'})
+        [(_status, detail)] = self.details('browser_click')
+        self.assertEqual(detail['evidence']['provider_sign_in']['state'], 'signed_in')
+        audit = information_use.work_information_use(self.store, self.job)
+        self.assertEqual(audit['sent_to']['browser_provider_sign_ins'], [{'site': SITE, 'provider': PROVIDER}])
+        self.assertIn(msg('information_use.browser_provider_sign_in', site=SITE, provider=PROVIDER),
+                      information_use.render_korean(audit))
+
+    def test_provider_only_page_without_new_marks_is_unconfirmed(self):
+        self.run_work('silent_no_session',
+                      {'tool_calls': [call('1', 'browser_open', url=f'https://{SITE}/start', effect='navigate')]},
+                      {'tool_calls': [call('2', 'browser_click', target='다른 계정으로 계속', effect='navigate')]},
+                      {'content': '로그인이 필요합니다.'})
+        [(_status, detail)] = self.details('browser_click')
+        self.assertEqual(detail['evidence']['provider_sign_in']['state'], 'unconfirmed')
+        self.assertNotIn('browser_provider_sign_ins', information_use.work_information_use(self.store, self.job)['sent_to'])
+
     def test_the_re_sign_in_is_in_the_receipt_and_the_information_use_audit(self):
         self.run_work('silent',
                       {'tool_calls': [call('1', 'browser_open', url=f'https://{SITE}/login', effect='navigate')]},
@@ -579,13 +802,31 @@ class ProviderRecordTests(LoginHarness):
         window.closed = True
         self.assertTrue(wait_until(lambda: self.service.browser_status()['settings_login']['state'] == 'closed'))
 
+    def test_owner_login_window_is_unaffected_by_switch_off(self):
+        self.service.set_provider_signin('off')
+        approvals = self.service.browser_approvals_for({'id': 'w', 'channel': 'web-636'})
+        sess, driver, _ = resign_session()
+        self.store.put(BROWSER_PROVIDERS_KEY, {SITE: {'provider': PROVIDER}})
+        sess.approvals = approvals
+        sess.run('browser_open', {'url': f'https://{SITE}/start', 'effect': 'navigate'})
+        before = driver.cookies_export()
+        with self.assertRaises(ToolError) as caught:
+            sess.run('browser_click', {'target': '다른 계정으로 계속', 'effect': 'navigate'})
+        self.assertEqual(caught.exception.code, 'provider_sign_in_off')
+        self.assertEqual(driver.cookies_export(), before)
+        self.settings_window_sign_in()
+        self.assertEqual(self.providers()['fixture.test']['provider'], PROVIDER)
+        self.assertEqual(self.drivers[-1].authorizations(), (1, (PROVIDER,)))
+
     def test_the_owners_settings_login_window_records_the_provider_host_and_no_query_value(self):
         self.settings_window_sign_in()
         record = self.providers()['fixture.test']
         self.assertEqual((record['provider'], record['observed_in']), (PROVIDER, 'owner_login_window'))
         self.assertLessEqual(abs(record['observed_at'] - time.time()), 60)
-        stored = json.dumps(self.providers(), ensure_ascii=False)
-        self.assertFalse(any(value in stored for value in QUERY_VALUES), 'hosts only, never a query value')
+        with self.store.db() as db:
+            stored = '\n'.join(db.iterdump())
+        self.assertFalse(any(value in stored for value in QUERY_VALUES),
+                         'no query value, decoded redirect endpoint or nested query value in any stored record')
         # The owner's own window is the owner, not the AI: nothing was refused or asked there.
         self.assertEqual(self.drivers[-1].posts, [])
 

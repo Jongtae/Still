@@ -82,7 +82,7 @@ from .agent_runtime import BROWSER_ACTIONS, ToolError, WorkBudget, lookup_norm, 
 from .bounded_execution import SECRET_PATTERN
 from .browser_jar import (JAR_NAME, SERVICE as JAR_SERVICE, CookieJar, JarError, KeychainKey, latest_token_expiry,
                           site_marks, store_account, unexpired)
-from .browser_worker import (LAYOUTS, PAYMENT_TOKENS, SECRET_TOKENS, authorization_host, destination_refusal, qr_links,
+from .browser_worker import (LAYOUTS, PAYMENT_TOKENS, SECRET_TOKENS, authorization_blocked, authorization_host, destination_refusal, qr_links,
                              remote_fields)
 
 #: The model's declared effect class of one action.
@@ -160,6 +160,7 @@ NAVIGATION_REFUSALS = {
     'destination_check_timeout': DESTINATION_CHECK_TIMEOUT_TEXT,
     'destination_check_failed': DESTINATION_CHECK_FAILED_TEXT,
     'blocked_destination': BLOCKED_TEXT,
+    'provider_sign_in_off': msg('browser.provider_sign_in_off'),
 }
 #: #619: said only of a non-GET form post (a GET form is a page load and goes through
 #: on an unknown answer); it no longer tells the AI to ask for a payment approval.
@@ -903,6 +904,7 @@ class BrowserSession:
         #: (``_observe``); ``_outside`` is the last page outside it.
         self._window = None
         self._outside = None
+        self._requested_origin = None
         self._auth_seen = 0   # the driver's authorization-request count already looked at
         self.judgments = judgments
 
@@ -917,6 +919,9 @@ class BrowserSession:
                 raise ToolError(FAILED_TEXT, 'browser_failed') from exc
             if self.driver is None:
                 raise ToolError(UNAVAILABLE_TEXT, 'needs_setup', requires='browser-profile')
+        policy = getattr(self.driver, 'set_provider_sign_in_policy', None)
+        if callable(policy):
+            policy(self._provider_sign_in_policy)
         return self.driver
 
     def _timeout(self):
@@ -1072,9 +1077,9 @@ class BrowserSession:
         if self._navigation_error:
             snapshot['load_state'] = ('navigation_timeout' if self._navigation_error == 'browser_timeout'
                                       else 'navigation_interrupted')
-        resign = self._resign
         # #636: the provider window, from where the main frame is and how it got there (never the hint).
         inside = self._observe(snapshot, requested_url)
+        resign = self._resign
         if snapshot['login_required']:
             # Generic (`login_form_present`): the profile holds no session for
             # this page.  #1269: the mediated page comes with the login request
@@ -1212,6 +1217,20 @@ class BrowserSession:
         except Exception:
             return frozenset()
 
+    def _provider_sign_in_policy(self):
+        """Work-only policy data; the worker evaluates each URL, including redirects."""
+        settings = getattr(self.approvals, 'provider_signin_settings', None)
+        settings = settings() if callable(settings) else {}
+        return {'protected_hosts': sorted(self._protected_hosts()),
+                'enabled': settings.get('enabled', True),
+                'off_sites': sorted(settings.get('off_sites', ()))}
+
+    def _origin(self, url):
+        """The origin reference and in-memory session baseline before entering a provider window."""
+        site = registrable_domain(landed_host(url))
+        return {'site': site, 'url': page_reference(url), 'window_url': login_window_url(url),
+                'cookies': self._site_cookies(site), 'mark': self._authorization_mark()}
+
     def _new_authorizations(self):
         """#636: the hosts of the authorization requests the browser sent since last looked at (its main frame)."""
         answer = _authorizations(self.driver) if self.driver is not None else None
@@ -1243,7 +1262,8 @@ class BrowserSession:
         """
         host = ascii_host(landed_host(snapshot.get('_page')) or '')
         protected = self._protected_hosts()
-        passed = any(ascii_host(hop) in protected for hop in self._new_authorizations())
+        hops = tuple(ascii_host(hop) for hop in self._new_authorizations() if ascii_host(hop) in protected)
+        passed = bool(hops)
         if not host:
             return bool(self._window)
         domain = registrable_domain(host)
@@ -1258,11 +1278,16 @@ class BrowserSession:
             inside = host in protected or host in window['hosts'] or not (origin_site and domain == origin_site)
         else:
             if asked is not None:
-                origin = None if asked in protected else {
-                    'site': registrable_domain(asked), 'url': page_reference(requested_url),
-                    'window_url': login_window_url(requested_url)}
+                origin = None if asked in protected else self._requested_origin
             else:
                 origin = self._outside
+            # A silent redirect can open and close the provider window between snapshots.
+            if origin and (host in protected or passed):
+                current = self._resign if self._resign and self._resign['site'] == origin['site'] else None
+                chain = current['chain'] if current else tuple(dict.fromkeys(hops or (host,)))
+                self._resign = {'site': origin['site'], 'provider': chain[0], 'chain': chain,
+                                'reference': origin['url'], 'window_url': origin['window_url'],
+                                'cookies': origin.get('cookies'), 'mark': origin.get('mark'), 'seen': passed}
             inside = host in protected or (passed and domain != (origin or {}).get('site'))
             if inside:
                 window = self._window = {'origin': origin, 'hosts': set()}
@@ -1273,7 +1298,8 @@ class BrowserSession:
                 self._resign['seen'] = True
         else:
             self._window = None
-            self._outside = {'site': domain, 'url': snapshot.get('url'), 'window_url': snapshot.get('_window_url')}
+            self._outside = self._origin(snapshot.get('_window_url') or snapshot.get('_page'))
+        self._requested_origin = None
         return inside
 
     def _through_provider(self):
@@ -1299,7 +1325,7 @@ class BrowserSession:
         elif origin and origin.get('url'):
             url, window_url = origin['url'], origin.get('window_url')
         else:
-            url, window_url = (snapshot or {}).get('url'), (snapshot or {}).get('_window_url')
+            url, window_url = (snapshot or {}).get('url'), (snapshot or {}).get('_window_url') or (snapshot or {}).get('window_url')
         return (self._offer_login(url, explicit=True, window_url=window_url) if url else None) or LOGIN_REQUIRED_TEXT
 
     def _refuse_on_provider(self, snapshot):
@@ -1429,7 +1455,14 @@ class BrowserSession:
 
     # -- the tools --
     def run(self, action, args):
-        result = self._run(action, args)
+        try:
+            result = self._run(action, args)
+        except ToolError as exc:
+            if exc.code == 'provider_sign_in_off':
+                origin = self._requested_origin or self._outside or {'url': page_reference(args.get('url')),
+                                                                   'window_url': login_window_url(args.get('url'))}
+                exc.args = (str(exc) + ' ' + self._hand_off(origin),)
+            raise
         if self._refused_pending and isinstance(result, dict):
             self._refused_pending = False
             result = {**result, 'submit_refused': SUBMIT_REFUSED_TEXT}
@@ -1494,6 +1527,9 @@ class BrowserSession:
         # navigation again after DNS resolution (redirects, forms, new windows).
         if local_destination(url, self._allowed_origins, self._intranet()):
             raise ToolError(BLOCKED_TEXT, 'blocked_destination')
+        if authorization_blocked(url, self._provider_sign_in_policy()):
+            from .agent_runtime import not_run
+            raise not_run(ToolError(msg('browser.provider_sign_in_off'), 'provider_sign_in_off'))
         self._check()
         # #934: the requested destination counts before the page is opened: a shared site's payment
         # deep link is refused here (no approval consumed), and any open of one makes the Work's
@@ -1508,6 +1544,7 @@ class BrowserSession:
         # #233: a browser that could not be started (the factory raised or gave none) received nothing,
         # so the driver is obtained before the address is handed to it.
         driver = self._driver()
+        self._requested_origin = self._outside if authorization_host(url) and self._outside else self._origin(url)
         self._spend_step()   # #620: after the approval and a busy browser, which spend nothing
         from .agent_runtime import handed_off
         handed_off()   # the address goes to the browser from here
@@ -2261,7 +2298,9 @@ class WebKitWorkerDriver:
         timeout = max(1.0, float(timeout))
         try:
             intranet = sorted(getattr(self, '_intranet', frozenset)())
-            proc.stdin.write(json.dumps({'id': ident, 'op': op, 'timeout': timeout, 'intranet': intranet, **arguments},
+            policy = getattr(self, '_provider_sign_in_policy', dict)()
+            proc.stdin.write(json.dumps({'id': ident, 'op': op, 'timeout': timeout, 'intranet': intranet,
+                                         'provider_sign_in_policy': policy, **arguments},
                                         ensure_ascii=False) + '\n')
             proc.stdin.flush()
         except (OSError, ValueError, AttributeError):
@@ -2352,6 +2391,10 @@ class WebKitWorkerDriver:
     # -- PageDriver ------------------------------------------------------------
     #: #572: ``goto``/``show`` take the site's ``layout``; a driver without this attribute is sent none.
     takes_layout = True
+
+    def set_provider_sign_in_policy(self, policy):
+        """Work-only policy data, refreshed with each command; owner windows keep the empty default."""
+        self._provider_sign_in_policy = policy
 
     def goto(self, url, timeout, layout=None):
         self._request('navigate', timeout, url=url, **({'layout': layout} if layout else {}))

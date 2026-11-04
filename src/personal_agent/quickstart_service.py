@@ -8645,6 +8645,8 @@ class AgentService:
             def login_required(self,url,explicit=False,*,window_url=None):return service._request_browser_login(job,url,explicit,window_url=window_url)
             # #636: the provider the owner's own login window recorded for this site, while Still holds its session.
             def provider_sign_in(self,url):return service.browser_signin_provider(url)
+            def provider_sign_in_enabled(self,url):return service.browser_provider_signin_enabled(url)
+            def provider_signin_settings(self):return service.provider_signin_settings()
             # #636 (Codex P2 on #637): a confirmed re-sign-in settles this Work's own login request for that site.
             def login_resolved(self,url):return service.resolve_browser_login(job,url)
             # #636 (Codex P1 on #637): the hosts whose pages no AI step may press or type on.
@@ -9420,6 +9422,11 @@ class AgentService:
             hosts.update(ascii_host(host) for host in [*chain,record.get('provider')] if isinstance(host,str) and host)
         return frozenset(hosts)
 
+    def browser_provider_signin_enabled(self, url):
+        settings=self.provider_signin_settings()
+        site=registrable_domain(urlsplit(str(url or '')).hostname)
+        return settings['enabled'] and site not in settings['off_sites']
+
     def browser_signin_provider(self, url):
         """#636: ``{site, provider}`` when a Work may sign back in to ``url``'s site through the provider the
         owner used there, else None.
@@ -9435,10 +9442,9 @@ class AgentService:
             return None
         site=registrable_domain(host) if host else None
         if not site:return None
-        settings=self.provider_signin_settings()
         records=self.store.config(BROWSER_PROVIDERS_KEY,{})
         chain=self._provider_chain(records.get(site) if isinstance(records,dict) else None)
-        if not chain or not settings['enabled'] or site in settings['off_sites'] or self.login_refusal(host):return None
+        if not chain or not self.browser_provider_signin_enabled(url) or self.login_refusal(host):return None
         # Which hop holds the session that lets the provider answer silently is not known, so every hop's is required.
         for hop in chain:
             read=self.browser_profile.site_cookie_marks(hop)
