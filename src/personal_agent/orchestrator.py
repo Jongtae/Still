@@ -1545,6 +1545,8 @@ class Orchestration:
         if verdict == 'no':
             # #1451: the judgment's own statement of what is missing (already owner-facing text).
             self.gap = self._redact(getattr(judged, 'value', None) or '', private=False)[:GAP_CHARS]
+        # #631: either verdict owns the closing line, including explicit silence.
+        if verdict in ('yes', 'no'):
             note = getattr(judged, 'note', None)
             self.note = self._redact(note, private=False)[:GAP_CHARS] if isinstance(note, str) else None
         return REACHED if verdict == 'yes' else NOT_REACHED if verdict == 'no' else UNJUDGED
@@ -1587,7 +1589,8 @@ class Orchestration:
         self.history.append((attempt, evaluation, answer, failed))
         short = NOT_REACHED in (evaluation, judged)
         gap, self.gap = (self.gap if short else ''), ''
-        note, self.note = (self.note if short else None), None
+        # #631: owner-needed stops carry their attempt's judgment too.
+        note, self.note = (self.note if (judged or evaluation) in (REACHED, NOT_REACHED) else None), None
         if gap:
             self.gaps[attempt.number] = gap
         worker = self.catalogue.worker(attempt.worker)

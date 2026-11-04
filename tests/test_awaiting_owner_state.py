@@ -255,6 +255,11 @@ class TelegramClosingLine(RefusedWriteTestCase):
     def test_the_closing_line_follows_the_typed_waiting_state(self):
         self.assertNotIn(TERMINAL_UNCONFIRMED_NOTE, self.deliver(('preparation-proposal',)))
 
+    def test_a_wait_with_an_unrelated_shortfall_delivers_the_judgments_line(self):
+        # #631: the wait does not suppress a line about another unfinished part.
+        note = 'The example attachment could not be checked.'
+        self.assertEqual(self.deliver(('settings-drafts',), note=note), '초안을 만들었어요.\n\n' + note)
+
     def test_a_work_with_nothing_waiting_keeps_its_closing_line(self):
         self.assertTrue(self.deliver(()).endswith(TERMINAL_UNCONFIRMED_NOTE))
 
@@ -298,6 +303,16 @@ console.log(JSON.stringify({waiting:ui.statusText(waiting),short:ui.statusText(s
         self.assertEqual(ko['shortOutcome'], '일부 결과')
         self.assertEqual((ko['notice'], ko['shortNotice']), (None, True))
         self.assertEqual(ko['errors'], [None, 'e'], 'a waiting Work is not in the failed list')
+
+
+class JudgedSilence631(unittest.TestCase):
+    def test_silence_does_not_mean_the_wait_explains_the_outcome(self):
+        # #631: a judged empty line is distinct from no recorded note.
+        from personal_agent.quickstart_service import AgentService
+        waits = ('settings-drafts',)
+        self.assertTrue(AgentService.wait_explains_outcome({'owner_note': None}, waits))
+        self.assertFalse(AgentService.wait_explains_outcome({'owner_note': ''}, waits))
+        self.assertFalse(AgentService.wait_explains_outcome({'owner_note': 'Example shortfall.'}, waits))
 
 
 if __name__ == '__main__':

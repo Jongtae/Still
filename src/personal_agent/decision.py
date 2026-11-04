@@ -48,7 +48,9 @@ GAP_INSTRUCTION = ('gap: when the proposition is false, one short sentence, in t
                    'instruction; the owner message and conversation take precedence. No tool names and no instructions. When it is '
                    'true, an empty string.\n'
                    # #1459: the owner reads only this one; the gap stays internal.
-                   'note: when the proposition is false, what the owner is told after the reply about what is still '
+                   # #631: the same judgment owns the closing line on either verdict.
+                   'note: when the proposition is false or the failed steps are not none, what the owner is told after the reply '
+                   'about what did not get done or is still '
                    'open, in one or two sentences addressed to the owner following the shared Voice instructions, '
                    'with no internal terms such as '
                    'observation, evidence, judgment, attempt or proposition. '
@@ -56,7 +58,8 @@ GAP_INSTRUCTION = ('gap: when the proposition is false, one short sentence, in t
                    'Never ask the owner again for a step their request already took (an approval, an answer, a value '
                    'they gave); when they did their part and it still did not happen, say plainly that it did not go '
                    'through and what happens next, without putting it on the owner. An empty string when the reply already '
-                   'tells the owner this, and when the proposition is true.')
+                   'tells the owner this, or when nothing that failed matters to the owner, including steps the worker corrected or bypassed, '
+                   'and when the proposition is true and no step failed.')
 
 #: ``DecisionConfidence.engine`` of a route that cannot answer ``choose_many``
 #: (the Jev API has no multi-selection type), so callers can say so truthfully.
@@ -191,7 +194,8 @@ class BinaryDecision(_Decision):
         self.gap = str(gap or '') if outcome == OUTCOME_DECIDED and answer is False else ''
         #: #1459: from ``judge_explained`` only: the line the owner reads about what stays open ('' when the
         #: reply already says it); None when the engine did not answer it.
-        self.note = (str(note or '') if note is not None else None) if outcome == OUTCOME_DECIDED and answer is False else None
+        # #631: the owner line survives either decided verdict.
+        self.note = (str(note or '') if note is not None else None) if outcome == OUTCOME_DECIDED and isinstance(answer, bool) else None
 
 
 class SelectionDecision(_Decision):

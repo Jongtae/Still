@@ -187,7 +187,8 @@ def answer_note(steps, outcome, kept=(), report=None, lang=None):
         elif (tool, text) not in counted:
             counted.append((tool, text))
     report = report if isinstance(report, dict) else {}
-    judged = any(' '.join(str(report.get(key) or '').split()) for key in ('note', 'gap'))
+    # #631: an empty judged note is silence, not an unavailable judgment.
+    judged = isinstance(report.get('note'), str) or ('note' not in report and bool(str(report.get('gap') or '').strip()))
     parts = []
     if not judged and outcome == 'failed':
         parts.append(translate(TERMINAL_FAILED_NOTE, lang))
@@ -201,7 +202,7 @@ def answer_note(steps, outcome, kept=(), report=None, lang=None):
         text = ' '.join(str(report.get(key) or '').split())
         if text and text not in parts:
             parts.append(text)
-    return clip_keeping_links(' '.join(parts), ANSWER_NOTE_CHARS) if parts else None
+    return clip_keeping_links(' '.join(parts), ANSWER_NOTE_CHARS) if parts else '' if judged else None
 
 
 #: SEC-LOOP-01 (#657): the report lines after the failed steps.
@@ -388,8 +389,9 @@ def terminal_text(response, error=None, outcome=None, next_action=None, verified
         elif outcome == 'interrupted':
             closing = TERMINAL_INTERRUPTED_NOTE
         else:
-            closing = ai_text((note or '').strip()) or (TERMINAL_FAILED_NOTE if outcome == 'failed'
-                                               else TERMINAL_UNCONFIRMED_NOTE)
+            # #631: only NULL falls back; an empty note deliberately adds nothing.
+            closing = ai_text(note.strip()) if note is not None else (TERMINAL_FAILED_NOTE if outcome == 'failed'
+                                                                    else TERMINAL_UNCONFIRMED_NOTE)
         text = answer + '\n\n' + closing if closing else answer
     elif outcome == 'failed':
         body = [TERMINAL_FAILED_HEADER]

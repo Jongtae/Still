@@ -39,6 +39,22 @@ class ClosingLineTests(unittest.TestCase):
         for fixed in (TERMINAL_PARTIAL_NOTE, TERMINAL_UNCONFIRMED_NOTE, TERMINAL_FAILED_NOTE, '단계는 끝내지 못했어요'):
             self.assertNotIn(fixed, text)
 
+    def test_judged_silence_is_distinct_from_an_absent_note(self):
+        # #631: silence suppresses only the floor, never a kept owner step.
+        for outcome in ('partial', 'failed'):
+            with self.subTest(outcome=outcome):
+                self.assertEqual(answer_note(STEPS, outcome, report={'note': '', 'gap': 'Internal gap.'}), '')
+                self.assertEqual(terminal_text('Example answer.', outcome=outcome, note=''), 'Example answer.')
+                floor = TERMINAL_FAILED_NOTE if outcome == 'failed' else TERMINAL_PARTIAL_NOTE
+                self.assertEqual(answer_note(STEPS, outcome, report={}), floor)
+                fallback = TERMINAL_FAILED_NOTE if outcome == 'failed' else TERMINAL_UNCONFIRMED_NOTE
+                self.assertEqual(terminal_text('Example answer.', outcome=outcome, note=None),
+                                 'Example answer.\n\n' + fallback)
+        kept = 'Please confirm the draft.'
+        self.assertEqual(answer_note([*STEPS, ('example_write', kept)], 'partial', kept={kept}, report={'note': ''}), kept)
+        for key in ('question', 'next'):
+            self.assertEqual(answer_note(STEPS, 'partial', report={'note': '', key: kept}), kept)
+
     def test_a_judgment_gap_without_a_note_also_replaces_the_fixed_line(self):
         gap = '금요일 좌석이 남았는지는 확인하지 못했어요.'
         self.assertEqual(answer_note(STEPS, 'partial', report={'gap': gap}), gap)

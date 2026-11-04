@@ -1132,7 +1132,8 @@ class ConversationJudgments:
         decision = (method or self.engine.judge)(context, GOAL_REACHED_PROPOSITION)
         verdict = self.policy.binary(decision)
         gap = ' '.join(str(getattr(decision, 'gap', '') or '').split())[:GOAL_GAP_CHARS] if verdict == 'no' else ''
-        note = getattr(decision, 'note', None) if verdict == 'no' else None
+        # #631: either decided verdict may close an unfinished run.
+        note = getattr(decision, 'note', None) if verdict in ('yes', 'no') else None
         note = ' '.join(str(note).split())[:GOAL_GAP_CHARS] if isinstance(note, str) else None
         return Judgment(JUDGMENT_UNAVAILABLE if verdict == 'unknown' else verdict, gap or None,
                         source=decision.confidence.provider or decision.outcome, note=note,
