@@ -1503,7 +1503,7 @@ def _main(args, emit):
     except ImportError:
         emit({'event': 'unavailable', 'error': 'missing_dependency'})
         return 2
-    if not (os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY')):
+    if not os.environ.get('DISPLAY'):   # X11 (or XWayland): the window is parked with --ozone-platform=x11
         emit({'event': 'unavailable', 'error': 'no_display'})
         return 2
     worker = None

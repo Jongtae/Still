@@ -249,7 +249,9 @@ class EngineChoice(unittest.TestCase):
     def test_linux_needs_its_packages_and_a_desktop_session(self):
         present = lambda name: object()
         self.assertIsNone(bs.engine_unavailable_reason('linux', present, {'DISPLAY': ':0'}))
-        self.assertIsNone(bs.engine_unavailable_reason('linux', present, {'WAYLAND_DISPLAY': 'wayland-0'}))
+        # Codex review on #640: the worker needs X11 (XWayland on a Wayland desktop), not a bare Wayland socket.
+        self.assertEqual(bs.engine_unavailable_reason('linux', present, {'WAYLAND_DISPLAY': 'wayland-0'}), 'display')
+        self.assertIsNone(bs.engine_unavailable_reason('linux', present, {'WAYLAND_DISPLAY': 'wayland-0', 'DISPLAY': ':0'}))
         self.assertEqual(bs.engine_unavailable_reason('linux', present, {}), 'display')
         for missing in ('playwright', 'secretstorage'):
             self.assertEqual(bs.engine_unavailable_reason('linux', lambda name, m=missing: None if name == m else object(),

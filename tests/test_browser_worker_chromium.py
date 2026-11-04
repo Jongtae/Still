@@ -221,7 +221,7 @@ def test_launch_failures_never_emit_library_text(error, expected):
     factory.return_value.__enter__.side_effect = RuntimeError(error)
     with mock.patch.object(chromium.sys, 'platform', 'linux'), \
          mock.patch.object(chromium.sys, 'stdout', output), \
-         mock.patch.dict(chromium.os.environ, {'WAYLAND_DISPLAY': 'wayland-0'}, clear=True), \
+         mock.patch.dict(chromium.os.environ, {'DISPLAY': ':0'}, clear=True), \
          mock.patch.object(chromium, '_playwright_factory', return_value=factory):
         assert chromium.main(['--chromium', '/pinned/chrome']) == 2
     assert json.loads(output.getvalue()) == {'event': 'unavailable', 'error': expected}
@@ -1329,3 +1329,14 @@ def test_a_same_document_navigation_answers_without_a_load_event(worker):
     worker.handle({'id': 41, 'op': 'navigate', 'timeout': 10, 'url': 'https://public.test/page#part'})
     answer = next((m for m in worker.messages if m.get('id') == 41), None)
     assert answer is not None and answer.get('ok') is True, worker.messages
+
+
+def test_a_bare_wayland_session_is_no_display_for_the_x11_worker():
+    """Codex review on #640: the worker parks its window with --ozone-platform=x11."""
+    output = io.StringIO()
+    with mock.patch.object(chromium.sys, 'platform', 'linux'), \
+         mock.patch.object(chromium.sys, 'stdout', output), \
+         mock.patch.dict(chromium.os.environ, {'WAYLAND_DISPLAY': 'wayland-0'}, clear=True), \
+         mock.patch.object(chromium, '_playwright_factory', return_value=mock.MagicMock()):
+        assert chromium.main(['--chromium', '/pinned/chrome']) == 2
+    assert json.loads(output.getvalue()) == {'event': 'unavailable', 'error': 'no_display'}

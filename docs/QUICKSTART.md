@@ -131,7 +131,7 @@ On macOS the browser tool uses the system WebKit. On a Linux desktop (Ubuntu wit
 - **The sandbox, once.** Chromium always starts with its sandbox; Still has no switch to turn it off. Ubuntu 23.10 and later allow the user namespaces the sandbox needs only to programs with an AppArmor profile. When the sandbox cannot start, Settings › 외부 연결 › 브라우저 shows one command to run in a terminal (it asks for your password). The command installs a profile for Still's Chromium binary only, at `/etc/apparmor.d/still-chromium`. A later Chromium version asks again. Ubuntu 22.04 needs nothing.
 - **Where sign-ins are kept.** As on macOS: an encrypted file under `~/.local/share/agentos/private`, with its key in your desktop keyring (GNOME Keyring or KWallet through the Secret Service). If the keyring is locked, the desktop asks you to unlock it. If no keyring answers, sign-ins are not saved, never written in the clear. API connection keys and the Google token key use the same keyring on Linux.
 - **What differs.**
-  - The window is shown only while you sign in. Without a desktop session (`DISPLAY` or `WAYLAND_DISPLAY`), the browser is unavailable.
+  - The window is shown only while you sign in. Without an X11 display (`DISPLAY`; a Wayland desktop provides one through XWayland, as Ubuntu's does), the browser is unavailable.
   - Sites see Chrome on an Android phone, where macOS shows Safari on an iPhone.
   - QR codes on a sign-in page are not read for phone sign-in, and Google sign-in is not supported in the embedded browser.
   - As on macOS, a page that opens a new window during the AI's work loads it in the same page; only your own sign-in window keeps sign-in popups.

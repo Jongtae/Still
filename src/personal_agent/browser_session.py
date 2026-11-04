@@ -1918,7 +1918,9 @@ def chromium_unavailable_reason(find_spec=None, environ=None, machine=None):
         except (ImportError, ValueError):
             return 'dependency'
     environ = os.environ if environ is None else environ
-    if not (environ.get('DISPLAY') or environ.get('WAYLAND_DISPLAY')):
+    # The worker runs Chromium on X11 (``--ozone-platform=x11``, so its window can be parked); a Wayland
+    # desktop provides that through XWayland's DISPLAY (Codex review on #640).
+    if not environ.get('DISPLAY'):
         return 'display'
     return None
 
