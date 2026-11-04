@@ -57,6 +57,8 @@ class FakeCDP:
                                                         if self.browser.script_results else {})}}
             elif command == 'Page.captureScreenshot':
                 result = {'data': '/9j/fakejpeg'}
+            elif command == 'Page.navigate':
+                result = getattr(self.browser, 'navigate_result', {'frameId': 'f', 'loaderId': 'loader'})
             response = {'sessionId': params['sessionId'],
                         'message': json.dumps({'id': packet['id'], 'result': result})}
             if command == getattr(self.browser, 'hold_method', None):
@@ -1319,3 +1321,11 @@ def test_popup_child_request_after_guard_is_armed_is_never_continued(worker):
         'type': 'iframe', 'targetId': 'popup-child'}})
     assert popup.is_closed()
     assert not any(session == 'popup-child' for session, _ in worker.engine.browser.packets)
+
+
+def test_a_same_document_navigation_answers_without_a_load_event(worker):
+    """Codex review on #640: a fragment-only navigation has no loaderId and fires no load event."""
+    worker.engine.browser.navigate_result = {'frameId': 'f'}
+    worker.handle({'id': 41, 'op': 'navigate', 'timeout': 10, 'url': 'https://public.test/page#part'})
+    answer = next((m for m in worker.messages if m.get('id') == 41), None)
+    assert answer is not None and answer.get('ok') is True, worker.messages

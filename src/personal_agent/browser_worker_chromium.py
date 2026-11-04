@@ -1088,6 +1088,11 @@ class Worker(shared.Worker):
             if error or result.get('errorText'):
                 self.navigation = None
                 self.fail(ident, navigation_error_code(result.get('errorText', '')))
+            elif not result.get('loaderId') and self.navigation is not None and self.navigation[0] == ident:
+                # A same-document navigation (only the fragment changed) loads nothing and fires no load
+                # event; CDP answers it without a loaderId (Codex review on #640).
+                self.navigation = None
+                self.reply(ident, url=url, layout=self.layout)
         self.main_target.post('Page.navigate', {'url': url}, navigated)
 
     def press(self, x, y, view=None):

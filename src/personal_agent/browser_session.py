@@ -1734,6 +1734,8 @@ TARGET_ERRORS = frozenset({'target_missing', 'target_changed', 'target_hidden', 
                            'not_focusable', 'focus_moved', 'target_moved', 'press_missed', 'bad_target',
                            'submit_changed'})
 WORKER_START_SECONDS = 30
+#: #34: how long a failed Chromium download or a refused sandbox keeps the browser shown as unavailable.
+START_RETRY_SECONDS = 60
 WORKER_GRACE_SECONDS = 5
 WORKER_QUIT_SECONDS = 5
 LOGIN_OPEN_SECONDS = 45
@@ -2515,7 +2517,7 @@ class BrowserProfile:
             try:
                 chrome = chromium_runtime.ensure(self.tools_dir)
             except (OSError, RuntimeError):
-                self._start_blocked = 'download'
+                self._start_blocked, self._blocked_at = 'download', time.monotonic()
                 raise ToolError(DOWNLOAD_TEXT, UNAVAILABLE_CODE) from None
             command = chromium_worker_command(self.profile_dir.name, chrome, self._allowed_origins)
         before_start = None
@@ -2529,6 +2531,7 @@ class BrowserProfile:
         except WorkerError as exc:
             if exc.detail == 'sandbox_unavailable':
                 self._start_blocked, self._blocked_chrome = 'sandbox', chrome
+                self._blocked_at = time.monotonic()
                 raise ToolError(sandbox_text(chrome), UNAVAILABLE_CODE) from None
             raise
         self._start_blocked = None
@@ -2568,6 +2571,18 @@ class BrowserProfile:
         """None, or ``platform`` / ``dependency`` (the typed refusal ``browser_unavailable_platform``)."""
         if not self.available():
             return engine_unavailable_reason() or 'platform'
+        return self._still_blocked()
+
+    def _still_blocked(self):
+        """The last start failure while it may still hold (#34, Codex review on #640): a refused sandbox until
+        its profile names this Chromium, a failed download for ``START_RETRY_SECONDS``.  Afterwards the
+        browser shows as available again, so Settings offers the sign-in window that retries the start."""
+        if not self._start_blocked:
+            return None
+        from . import chromium_runtime
+        if (self._start_blocked == 'sandbox' and chromium_runtime.apparmor_installed(self._chrome_path())) or \
+                time.monotonic() - getattr(self, '_blocked_at', 0.0) > START_RETRY_SECONDS:
+            self._start_blocked = None
         return self._start_blocked
 
     def unavailable_message(self):

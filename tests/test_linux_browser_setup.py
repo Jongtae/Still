@@ -16,6 +16,7 @@ import os
 import stat
 import sys
 import tempfile
+import time
 import unittest
 import zipfile
 from pathlib import Path
@@ -312,6 +313,26 @@ class EngineChoice(unittest.TestCase):
              mock.patch.object(bs, 'WebKitWorkerDriver', return_value=object()):
             profile._launch_engine(profile.profile_dir, True)
         self.assertIsNone(profile.unavailable_reason())
+
+    def test_a_start_failure_clears_so_settings_can_retry(self):
+        """Codex review on #640: the remembered failure lifts once the profile names this Chromium, or in time."""
+        profile = self.profile()
+        chrome = '/home/o/tools/chromium/1/chrome-linux64/chrome'
+        profile._start_blocked, profile._blocked_chrome, profile._blocked_at = 'sandbox', chrome, time.monotonic()
+        self.assertEqual(profile.unavailable_reason(), 'sandbox')
+        with mock.patch.object(cr, 'apparmor_installed', lambda path: path == chrome):
+            self.assertIsNone(profile.unavailable_reason())
+        profile._start_blocked, profile._blocked_at = 'download', time.monotonic() - bs.START_RETRY_SECONDS - 1
+        self.assertIsNone(profile.unavailable_reason())
+        profile._start_blocked, profile._blocked_at = 'download', time.monotonic()
+        self.assertEqual(profile.unavailable_reason(), 'download')
+
+    def test_the_apparmor_profile_is_recognised_only_for_this_binary(self):
+        path = self.root / 'still-chromium'
+        path.write_text(cr.apparmor_profile('/opt/a/chrome'))
+        self.assertTrue(cr.apparmor_installed('/opt/a/chrome', path))
+        self.assertFalse(cr.apparmor_installed('/opt/b/chrome', path))
+        self.assertFalse(cr.apparmor_installed('/opt/a/chrome', self.root / 'missing'))
 
     def test_the_worker_receives_the_desktop_session_and_nothing_else(self):
         env = bs.worker_environment({'DISPLAY': ':0', 'XAUTHORITY': '/run/x', 'DBUS_SESSION_BUS_ADDRESS': 'unix:path=/b',

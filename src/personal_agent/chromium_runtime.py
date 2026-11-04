@@ -219,6 +219,14 @@ def apparmor_profile(chrome):
             '}\n')
 
 
+def apparmor_installed(chrome, path=APPARMOR_FILE):
+    """Whether the profile file names exactly this ``chrome`` (readable without privileges)."""
+    try:
+        return Path(path).read_text() == apparmor_profile(chrome)
+    except (OSError, ValueError):
+        return False
+
+
 def apparmor_setup(chrome):
     """The one shell command (run by the owner, with sudo) that installs and loads ``apparmor_profile``."""
     profile = apparmor_profile(chrome)
