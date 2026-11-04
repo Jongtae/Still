@@ -722,6 +722,7 @@ class Worker(shared.Worker):
                 return route.continue_()
             frame = request.frame
             page = frame.page
+            _trace('route_popup', request.url[:100], page is self.page, frame.parent_frame is not None)
             if page is self.page or frame.parent_frame is not None or self.closing:
                 return route.continue_()   # this worker's own Fetch decides (each hop)
         except Exception:
@@ -730,6 +731,8 @@ class Worker(shared.Worker):
 
         def ready():
             target = self.popup_target(page)
+            _trace('route_ready', target is not None and target.ident, target is not None and target.ready,
+                   [(t.kind, t.ident in self.pages, t is self.main_target) for t in self.targets.values()])
             if target is None or not target.ready:
                 if time.monotonic() - began < shared.WARM_SECONDS:
                     return self.AppHelper.callLater(.02, ready)
