@@ -2638,6 +2638,8 @@ def record_effect(action,detail,status):
   # The direct route records a draft that stops for the owner as a failed step; the CLI route as succeeded.
   evidence=detail.get('evidence') if isinstance(detail.get('evidence'),dict) else {}
   if evidence.get('applied') is False and evidence.get('requires_owner_confirmation'):return EFFECT_DRAFT
+  # #619: a scheduled run's change was checked and nothing was drafted or applied.
+  if evidence.get('applied') is False and evidence.get('unattended') is True:return EFFECT_NONE
  if action=='connector_read' and detail.get('effect')=='none':return EFFECT_NONE
  return EFFECT_CHANGED
 
@@ -4748,7 +4750,9 @@ def _evidence_detail(name,result):
           'categories':[str(row.get('category'))[:40] for row in audit.get('used') or () if isinstance(row,dict)][:12],
           'lookup_count':len(lookups) if isinstance(lookups,list) else 0}
  if name=='settings_change':
-  return {key:result.get(key) for key in ('draft_id','category','setting','before','after','requires_owner_confirmation','applied')}
+  # #619: ``unattended``: a scheduled run checked the change and drafted nothing.
+  return {key:result.get(key) for key in ('draft_id','category','setting','before','after','requires_owner_confirmation','applied',
+                                           'unattended') if key!='unattended' or result.get(key) is True}
  # #961: which exact skill revision (and file) this Work read; never its text.  #32: whether only its
  # usage header was read, and an advisory method-gap note.
  if name in SKILL_ACTIONS:return {key:result.get(key) for key in SKILL_EVIDENCE_KEYS if result.get(key)}

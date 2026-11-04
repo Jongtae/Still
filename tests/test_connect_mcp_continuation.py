@@ -27,6 +27,8 @@ class McpContinuation(_Case):
         self.on_observe = lambda: None
         self.service.mcp_setup_factory = lambda draft, interrupted: self.client(interrupted)
         self.job = self.store.job(self.store.enqueue('Summarize my requested record', 'original'))
+        # #619: these cases cover a draft made before #619, which carries its own 10-minute expiry.
+        self.settings.TTL_SECONDS = 600
 
     def client(self, interrupted):
         case = self

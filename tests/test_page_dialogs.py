@@ -23,14 +23,25 @@ class PageDialogRule(unittest.TestCase):
         self.assertIsNone(answer(state, 'alert', '장바구니 상품이 삭제되었습니다'))
         self.assertEqual([row['outcome'] for row in state.dialog_step['dialogs']], ['accepted', 'shown'])
 
-    def test_a_confirmation_after_a_step_declared_to_read_or_navigate_is_declined_and_recorded(self):
-        """#174: the step's own declared effect answers the question; the AI reads it in its result."""
+    def test_a_non_payment_confirmation_is_accepted_whatever_effect_the_step_declared(self):
+        """#619 (owner decision 2026-11-03): the declared effect no longer declines a confirmation.
+
+        A non-payment question follows the pilot posture (no per-action approval); only a payment
+        question, or any question on a page that shows a payment field, waits for an approved press.
+        """
         for effect in ('read', 'navigate', None, 'MUTATE', 'anything'):
             for message in ('정말 탈퇴하시겠습니까?', '예약을 취소하시겠습니까?', 'Are you sure?'):
                 state = worker({'approved': False, 'confirm_ok': True, 'effect': effect, 'dialogs': []})
-                self.assertIs(answer(state, 'confirm', message), False, (effect, message))
+                self.assertIs(answer(state, 'confirm', message), True, (effect, message))
                 self.assertEqual(state.dialog_step['dialogs'], [{'kind': 'confirm', 'message': message,
-                                                                 'outcome': 'declined_effect'}])
+                                                                 'outcome': 'accepted'}])
+        self.assertNotIn('declined_effect', bs.DIALOG_OUTCOMES)
+
+    def test_a_payment_question_is_still_declined_on_a_read_step(self):
+        for message in ('결제하시겠습니까?', '주문하시겠습니까?', 'Confirm your order?', '₩12,000을 보낼까요?'):
+            state = worker({'approved': False, 'confirm_ok': True, 'effect': 'read', 'dialogs': []})
+            self.assertIs(answer(state, 'confirm', message), False, message)
+            self.assertEqual(state.dialog_step['dialogs'][0]['outcome'], 'declined_payment')
 
     def test_an_approved_payment_step_confirms_a_plain_question(self):
         """A step declared payment runs only with the owner's approval; its non-payment question is confirmed."""
@@ -53,7 +64,8 @@ class PageDialogRule(unittest.TestCase):
         self.assertIs(answer(state, 'confirm', 'Are you sure?'), False)
         self.assertEqual(state.dialog_step['dialogs'][0]['outcome'], 'declined_payment')
 
-    def test_a_step_without_the_new_fields_confirms_nothing(self):
+    def test_a_step_without_the_payment_page_field_confirms_nothing(self):
+        # No ``confirm_ok``: the page's payment state is unknown, so nothing is confirmed.
         self.assertIs(answer(worker({'approved': False, 'dialogs': []}), 'confirm', '삭제할까요?'), False)
 
     def test_nothing_is_confirmed_outside_a_step(self):
@@ -85,9 +97,9 @@ class StepDialogsMediation(unittest.TestCase):
         self.assertEqual(bs.step_dialogs(None), [])
 
     def test_a_declined_question_reaches_the_step_result_with_what_to_do(self):
-        """#174: the worker AI reads the page's question and that its step's declaration declined it."""
+        """#174: the worker AI reads the page's question and why it was declined."""
         from test_browser_session import ORIGIN, session, FakeDriver
-        row = {'kind': 'confirm', 'message': '정말 탈퇴하시겠습니까?', 'outcome': 'declined_effect'}
+        row = {'kind': 'confirm', 'message': '결제하시겠습니까?', 'outcome': 'declined_payment'}
         self.assertEqual(bs.step_dialogs({'dialogs': [row]}), [row])
         seen = []
 
@@ -100,13 +112,20 @@ class StepDialogsMediation(unittest.TestCase):
         browser.open({'url': ORIGIN + '/product', 'effect': 'read'})
         result = browser.click({'target': '내 계정', 'effect': 'navigate'})
         self.assertEqual(seen, ['navigate'], 'the declared effect crosses to the worker')
-        self.assertEqual(result['dialogs'], [{'kind': 'confirm', 'message': '정말 탈퇴하시겠습니까?',
-                                              'answer': bs.DIALOG_OUTCOMES['declined_effect']}])
-        self.assertIn('mutate', result['dialogs'][0]['answer'])
+        self.assertEqual(result['dialogs'], [{'kind': 'confirm', 'message': '결제하시겠습니까?',
+                                              'answer': bs.DIALOG_OUTCOMES['declined_payment']}])
 
     def test_commit_question(self):
         self.assertTrue(bs.commit_question('결제하시겠습니까?'))
         self.assertFalse(bs.commit_question('해당 상품을 삭제하시겠습니까?'))
+        # #619: every order or purchase question, a cancellation included, and any amount of money.
+        for text in ('Cancel the order?', '주문을 취소하시겠습니까?', 'Do you want to cancel this order?'):
+            self.assertTrue(bs.commit_question(text), text)
+        for text in ('Would you like to order this item?', '注文してもよろしいですか?', 'Place order?'):
+            self.assertTrue(bs.commit_question(text), text)
+        for text in ('주문을 진행할까요?', '주문하시겠습니까?', 'Confirm your order?', '₩12,000 주문하시겠습니까?',
+                     'Proceed to checkout?', '12,000원을 송금합니다. 계속할까요?'):
+            self.assertTrue(bs.commit_question(text), text)
 
 
 if __name__ == '__main__':

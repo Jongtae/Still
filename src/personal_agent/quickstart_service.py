@@ -22,7 +22,7 @@ from .prompt_files import prompt
 from .local_tools import LocalTools, normalize_public_url
 from functools import cached_property
 from .work_execution import PROCEED, REDELEGATED, WorkRun
-from .agent_runtime import (Capabilities, ToolError, cut_to_fit, run_agent, AGENTS, STEER_EVENT, steer_note, evidence_summary, turn_context, render_turn_prompt, attachment_facts,
+from .agent_runtime import (Capabilities, ToolError, not_run, cut_to_fit, run_agent, AGENTS, STEER_EVENT, steer_note, evidence_summary, turn_context, render_turn_prompt, attachment_facts,
                             MEMORY_OWNER, context_sections, ENGINE_UNMEDIATED, OWNER_CONVERSATION, lookup_sources, work_written_values, WORK_SOURCES_KEY, WORK_SOURCES_LIMIT, base_label,
                             history_provenance, WorkBudget, PresentationBudget, WORK_TOOL_ATTEMPTS, WORK_DEADLINE_SECONDS, EFFECT_FREE_READS, explicit_search_query, outcome_from_events,
                             WORK_STOP_KEY, WORK_STOPPED, work_stop_requested, WorkLedger, WORK_LEDGER_KEY, goal_summary, work_source_records,
@@ -346,6 +346,16 @@ UNKNOWN_EFFECT_RETRY_REFUSAL=(msg('quickstart_service.retry_unknown_result'))
 
 #: #656: owner-private config row of refused/approved browser steps, by Work id.
 BROWSER_REQUESTS_KEY='browser_step_requests'
+#: #619 (owner decision 2026-11-03): every step approval this key holds is a payment authorization
+#: (a payment-form or purchase press, card or one-time-code typing, a money ``api_request`` /
+#: ``code_run`` request, a payment connector call); it keeps this bounded expiry.  A non-payment
+#: change never asks here, and settings drafts stay open until settled or their Work is cancelled.
+PAYMENT_APPROVAL_SECONDS=600
+#: #619 (owner decision 2026-11-03): a scheduled run has no owner present, so it never leaves an
+#: approval waiting; a step that needs one is not run and the worker says what it would do.
+UNATTENDED_APPROVAL_TEXT=('No owner is present in this scheduled run, so Still asked nothing and this step was not run; '
+                          'nothing waits for the owner. Say in your answer what you found and what you would do; the '
+                          'owner can ask for it in the conversation.')
 #: #680: when the legacy plaintext Playwright profile was deleted (Settings shows it).
 BROWSER_LEGACY_KEY='browser_legacy_profile_removed_at'
 #: #730: the continuity relation of a Work judged a retry whose old request was
@@ -880,7 +890,31 @@ class AgentService:
         here (the 적용 button or a plain yes, #855), never the model.
         """
         return self.settings_orchestrator.work_tools(self.settings_owner(job),job['channel'],job['id'],
-                                                     telegram=answerable_work(job))
+                                                     telegram=answerable_work(job),unattended=self.unattended_work(job),
+                                                     owner_request=self.owner_settings_request(job))
+
+    @staticmethod
+    def unattended_work(job):
+        """#619: a Work no owner is present for: a scheduled preparation run (or its continuation)."""
+        return prep.preparation_of((job or {}).get('request_key')) is not None
+
+    def owner_settings_request(self, job):
+        """``summary -> bool``: does the owner's own typed message that started ``job`` ask for exactly this change (#619)?
+
+        Owner decision 2026-11-03: an owner's direct request is its own approval, except payment.  Asked
+        only for a Work the owner's own typed message started: not a scheduled run, a continuation, a
+        retry or a replayed turn (the same own-request test as a preparation, #659).  The judgment
+        reads that message and Still's exact preview; None when it cannot apply.
+        """
+        if (job.get('owner_typed')!=1 or self.unattended_work(job)
+                or continuation_request(job.get('request_key')) is not None
+                or not isinstance(job.get('message'),str) or not job['message'].strip()):
+            return None
+        def asked(summary):
+            judged=self.decision_judge.explicit_settings_request(job['message'],summary,self.preparation_conversation(job),
+                                                                 work_id=job['id'])
+            return getattr(judged,'outcome',None)==JUDGMENT_YES
+        return asked
 
     # -- EGRESS-OPEN-01 (#826): the per-Work information-use audit -------------
     def work_information_use(self, job_id):
@@ -1447,7 +1481,7 @@ class AgentService:
                 for row in drafts:
                     if valid and not stopped and row['state']=='awaiting-confirmation':
                         if row['continuation'].get('kind') in ('skill-setting','mcp-setting','api-setting'):
-                            if orchestrator.now()>row['expires_at']:
+                            if orchestrator.expired(row):
                                 row.update(orchestrator._settle(row['id'],'expired','expired'))
                             elif row['continuation'].get('kind')=='mcp-setting':
                                 data=json.loads(row['after'])
@@ -1471,7 +1505,7 @@ class AgentService:
                         target=trust_record.connection(*parts[:3])
                         if trust_record.hand(self.store,target)['epoch']!=row['continuation'].get('trust_epoch',''):
                             row.update(orchestrator._settle(row['id'],'cancelled','cancelled',trust_revoked=True))
-                        elif orchestrator.now()>row['expires_at']:
+                        elif orchestrator.expired(row):
                             row.update(orchestrator._settle(row['id'],'expired','expired'))
                         elif self.settings_review_ready(row):
                             row.update(orchestrator._settle(row['id'],'satisfied','satisfied'))
@@ -1835,6 +1869,9 @@ class AgentService:
         owner accepts it with the Telegram button or in Settings.
         """
         def schedule(args):
+            if self.unattended_work(job):
+                # #619: a scheduled run leaves no proposal waiting; it says what it would schedule.
+                raise not_run(ToolError(UNATTENDED_APPROVAL_TEXT,'unattended_run'))  # #618: Still refused it, ran: false
             now=self.preparations.clock()
             try:
                 fields=self.preparation_fields(args,now,lambda goal:self.repeats_refused_watch(job['id'],goal))
@@ -8552,7 +8589,9 @@ class AgentService:
             # #709: a login page during this Work asks the owner in-flow.
             def login_required(self,url,explicit=False,*,window_url=None):return service._request_browser_login(job,url,explicit,window_url=window_url)
             # #934: on a site received from the owner, a payment step is refused outright (no request, no approval).
+            # #619: so is every guarded step of a scheduled run: no owner is present to approve it.
             def refuse(self,host):
+                if service.unattended_work(job):return UNATTENDED_APPROVAL_TEXT
                 from .family_share import payment_refusal
                 return payment_refusal(service.store,host)
         return Approvals()
@@ -8642,7 +8681,12 @@ class AgentService:
         return True
 
     def _request_browser_step(self, job, binding, description):
-        """Record the refused step for the owner's approval surfaces (web Settings, Telegram)."""
+        """Record the refused step for the owner's approval surfaces (web Settings, Telegram).
+
+        #619: a scheduled run (no owner present) records nothing and raises ``unattended_run``.
+        """
+        if self.unattended_work(job):
+            raise not_run(ToolError(UNATTENDED_APPROVAL_TEXT,'unattended_run'))  # #618: Still refused it, ran: false
         # #1456: a code run's request is approved as written (method, path, body), so its label is shown whole.
         from .quickstart_store import REQUEST_APPROVAL_ACTIONS
         label=(str(description or '') if binding.get('action') in REQUEST_APPROVAL_ACTIONS
@@ -8654,7 +8698,7 @@ class AgentService:
         current=self._browser_request(job['id'])
         if (current and current.get('state')=='requested' and current.get('digest')==row['digest']
                 and current.get('generation')==row['generation'] and current.get('offer_digest')
-                and time.time()<=float(current.get('requested_at',0))+600):return
+                and time.time()<=float(current.get('requested_at',0))+PAYMENT_APPROVAL_SECONDS):return
         if self._put_browser_request(job['id'],row,expected=current):
             # #1468: a request that replaced an earlier one in this Work rebinds the Work's one prompt.
             if not self.store.rebind_notification(job['id'],'browser_approval_needed',row['offer_digest']):
@@ -8695,7 +8739,7 @@ class AgentService:
     def step_approval_pending(self, job_id):
         """Whether this Work waits for the owner's decision on a step it asked to approve (#1468)."""
         row=self._browser_request(job_id) or {}
-        return row.get('state')=='requested' and time.time()<=float(row.get('requested_at',0))+600
+        return row.get('state')=='requested' and time.time()<=float(row.get('requested_at',0))+PAYMENT_APPROVAL_SECONDS
 
     def browser_step_prompt(self, work_id):
         row=self._browser_request(work_id) or {}
@@ -8748,7 +8792,7 @@ class AgentService:
         notification=dict(notification)
         request=self._browser_request(notification['job_id']) or {}
         if (request.get('state')!='requested' or request.get('offer_digest')!=notification.get('fingerprint')
-                or time.time()>float(request.get('requested_at',0))+600):return None
+                or time.time()>float(request.get('requested_at',0))+PAYMENT_APPROVAL_SECONDS):return None
         return notification,request
 
     def answer_step_approval(self, notification, approve):
@@ -8780,7 +8824,7 @@ class AgentService:
             result={'approved':False,'resumed':False,'work_id':work_id}
             if not job or not row or row.get('state')!='requested':return result
             if expected_digest is not None and not hmac.compare_digest(expected_digest,str(row.get('offer_digest',''))):return result
-            current=(not self.work_stopped(work_id) and time.time()<=float(row.get('requested_at',0))+600
+            current=(not self.work_stopped(work_id) and time.time()<=float(row.get('requested_at',0))+PAYMENT_APPROVAL_SECONDS
                      and row.get('generation',self._owner_generation(self.issuer_owner_id(job)))==self._owner_generation(self.issuer_owner_id(job)))
             if not approve or not current:
                 with self.store.db() as db:
@@ -8796,7 +8840,7 @@ class AgentService:
                 requests=json.loads(config['value']) if config else {}
                 actual=requests.get(work_id) or {}
                 if actual.get('state')!='requested' or actual.get('offer_digest')!=row.get('offer_digest'):return False
-                if (self.work_stopped(work_id) or time.time()>float(actual.get('requested_at',0))+600 or
+                if (self.work_stopped(work_id) or time.time()>float(actual.get('requested_at',0))+PAYMENT_APPROVAL_SECONDS or
                         actual.get('generation')!=self._owner_generation(self.issuer_owner_id(job))):return False
                 current_job=db.execute('SELECT status FROM jobs WHERE id=?',(work_id,)).fetchone()
                 if not current_job or current_job['status'] not in ('running','failed','partial','interrupted','succeeded'):return False
@@ -8854,13 +8898,54 @@ class AgentService:
                 renew_for_owner_prerequisite(db,job['id'])
         return changed
 
+    def retire_unattended_waits(self):
+        """Withdraw what scheduled runs left waiting for the owner before #619; returns how many.
+
+        Owner decision 2026-11-03: a run with no owner present notifies only and leaves nothing
+        pending.  Settings drafts, step approval requests and preparation proposals such a run
+        created before are withdrawn, never deleted: a settings draft is settled ``canceled`` with an
+        audit entry naming ``unattended-run``, a proposal becomes ``expired`` (the owner never said no, so it is
+        not counted as declined), a step request is removed, and each gets an ``action_continuation``
+        ``withheld`` receipt with reason ``unattended-run`` on the Work that left it.
+        """
+        retired=[]
+        orchestrator=self.settings_orchestrator
+        with orchestrator._confirming:
+            for row in list(orchestrator._drafts().values()):
+                if (not isinstance(row,dict) or row.get('state') not in ('awaiting-confirmation','awaiting-input')
+                        or not self.unattended_work(self.store.job(row.get('work_id')) if row.get('work_id') else None)):
+                    continue
+                try:
+                    orchestrator._settle(row['id'],'canceled','canceled','unattended-run',
+                                         expected={'state':row['state'],'digest':row.get('digest')})
+                except SettingsError:
+                    continue
+                retired.append((row['work_id'],'settings-draft',row['id']))
+        for row in self.browser_step_requests():
+            job=self.store.job(row.get('work_id')) if row.get('work_id') else None
+            if row.get('state')=='requested' and self.unattended_work(job) and self._put_browser_request(job['id'],None,expected=row):
+                retired.append((job['id'],'step-approval',row.get('offer_digest')))
+        with self.store.db() as db:
+            for proposal in db.execute("SELECT p.id,p.created_from,j.request_key FROM preparations p JOIN jobs j ON j.id=p.created_from "
+                                       "WHERE p.state='proposed'").fetchall():
+                if prep.preparation_of(proposal['request_key']) is None:continue
+                if db.execute("UPDATE preparations SET state='expired',updated_at=? WHERE id=? AND state='proposed'",
+                              (time.time(),proposal['id'])).rowcount:
+                    retired.append((proposal['created_from'],'preparation-proposal',proposal['id']))
+            for work_id,kind,ref in retired:
+                db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                           (work_id,'action_continuation','withheld',
+                            json.dumps({'resumed':False,'reason':'unattended-run','withdrawn':kind,'ref':ref}),time.time()))
+        if retired:LOG.info('unattended waits withdrawn count=%s',len(retired))
+        return len(retired)
+
     def resume_action_work(self):
         """Recover an approval issued while its worker was still returning."""
         for row in self.browser_step_requests():
             if row.get('state') not in ('requested','issued'):continue
             job=self.store.job(row['work_id'])
             if not job:continue
-            expires=float(row.get('issued_at') if row.get('state')=='issued' else row.get('requested_at') or 0)+600
+            expires=float(row.get('issued_at') if row.get('state')=='issued' else row.get('requested_at') or 0)+PAYMENT_APPROVAL_SECONDS
             reason=('work-stopped' if self.work_stopped(job['id']) else 'expired' if time.time()>expires else
                     'owner-revoked' if row.get('generation')!=self._owner_generation(self.issuer_owner_id(job)) else None)
             if reason:
@@ -9822,14 +9907,22 @@ class AgentService:
         self.store.put_turn_provenance(job['id'],{**current,'connector_configurations':configurations})
 
     def _connector_authority_state(self, job, target, effect):
+        """What one connector action's approval is bound to besides its tool and input (#619).
+
+        Only the connection used: its trust record, whether it is still one the owner confirmed
+        and that server's own confirmation revision (a reconnect of it voids), and its configuration.  Owner decision 2026-11-03: never unrelated state (the whole
+        AI-connections switch record, the other servers the owner confirmed), so a change elsewhere
+        no longer voids a pending approval.  Whether connections are on is checked again when the
+        action runs (``_connector_authority_current``).
+        """
         record=trust_record.hand(self.store,target)
         state={'trust_revision':record['revision'],'trust_epoch':record['epoch'],
                'engine':target['engine'],'connection':target['identity'],'kind':target['kind'],
                'owner_generation':self._owner_generation(self.issuer_owner_id(job)),
-               'connection_state':self.store.config(self.AI_CONNECTIONS_KEY,{}),
-               'confirmed':owner_mcp.confirmed(self.store,target['engine']),
+               'confirmed':target['identity'] in owner_mcp.confirmed(self.store,target['engine']),
+               'confirmation_revision':owner_mcp.server_revision(self.store,target['engine'],target['identity']),
                'configuration_digest':((self.store.turn_provenance(job['id']) or {}).get('connector_configurations') or {}).get(target['engine'],{}).get(target['identity']),
-               'confirmation_revision':owner_mcp.revision(self.store,target['engine']), 'effect':effect}
+               'effect':effect}
         return json.dumps(state,sort_keys=True,separators=(',',':'))
 
     def _connector_action_binding(self, job, tool, values, target, effect):
@@ -9931,6 +10024,7 @@ class AgentService:
                     label=f'{service_name} / {operation}: '+json.dumps(values,ensure_ascii=False,sort_keys=True)
                     if len(label)>8000 or self._redact_known_secrets(label)!=label:
                         return {'behavior':'deny','message':'실행 내용을 비밀값 없이 온전히 확인할 수 없어 승인을 요청하지 않았습니다.'}
+                    if self.unattended_work(job):return {'behavior':'deny','message':UNATTENDED_APPROVAL_TEXT}  # #619
                     self._request_browser_step(job,binding,label)
         else:
             allow=allow and effect=='read'
@@ -12177,8 +12271,10 @@ class AgentService:
         elif answer['rest']:
             if settled['text']:run.reply_notice+=settled['text']+'\n\n'
             run.act_note=OWNER_ACT_SETTLED_NOTE.format(settled=settled['text'] or '-')
-        elif settled['text']:
-            run.act_reply=settled['text']
+        else:
+            # #619: an answer to an item settled meanwhile (another surface, a button) is still only that
+            # answer; it never becomes a new Work that could ask for the same thing again.
+            run.act_reply=settled['text'] or msg('notice.owner_act_already_settled')
 
     def _load_work_photos(self, run):
         """Phase 2: the Telegram photos this Work carries, read within the album size limits."""
@@ -13510,6 +13606,11 @@ class AgentService:
         self.decision_routes.recover_qualification()
         # #814 review: a settings draft a restart cut off mid-apply is settled unknown (never re-applied).
         self.settings_orchestrator.reconcile()
+        # #619: approvals earlier scheduled runs left waiting are withdrawn, with a receipt.
+        try:
+            self.retire_unattended_waits()
+        except Exception as exc:
+            LOG.warning('unattended waits not retired (%s)',type(exc).__name__)
         # #934: every share is re-pushed at start (a family instance that was down, a session refreshed
         # while it was); off this thread, since the jar read may wait on the Keychain.
         from . import family_share

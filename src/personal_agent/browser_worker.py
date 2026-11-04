@@ -1441,12 +1441,11 @@ class Worker:
         "삭제하시겠습니까?" silently undid the AI's click.  While the owner's login
         window shows, the owner answers.  During a click/type the AI made, a
         confirmation is accepted when the owner approved this very press, or when
-        the step itself was declared to change state (``mutate``; a ``payment``
-        step only runs with the owner's approval) and the question is not a
-        purchase or payment question on a page without a payment field (#174).
-        Any other confirmation is declined and recorded on the step: the AI reads
-        the question in its step result and may issue the step again declared
-        with the effect it really has.  Outside a step nothing is confirmed.
+        the question is not a purchase or payment question on a page without a
+        payment field.  #619 (owner decision 2026-11-03): a step's declared effect
+        no longer decides it; a non-payment confirmation follows the pilot posture
+        (no per-action approval).  A declined one is recorded on the step.
+        Outside a step nothing is confirmed.
         """
         text = ' '.join(str(message or '').split())[:DIALOG_TEXT_LIMIT]
         if self.owner_visible:
@@ -1463,9 +1462,6 @@ class Worker:
             elif commit_question(text) or not step.get('confirm_ok'):
                 # #937 review: a payment question, or any question on a page that shows a payment field.
                 answer, outcome = False, 'declined_payment'
-            elif step.get('effect') not in CONFIRMING_EFFECTS:
-                # #174: a step declared to only read or move between pages confirms nothing it did not declare.
-                answer, outcome = False, 'declined_effect'
             else:
                 answer, outcome = True, 'accepted'
         else:
@@ -1731,8 +1727,16 @@ class Worker:
         The page answers which of its payment forms that navigation submits
         (``FORM_NAVIGATION_SCRIPT``); a refused one is held and reported as a
         cancelled submit.  No answer in ``FORM_CHECK_SECONDS`` (or a script
-        error) is a refusal with nothing held, answered ``submit_refused``.
+        error) refuses a non-GET submission with nothing held, answered
+        ``submit_refused``.  #619: the same unknown lets a GET submission (a
+        search form) through to the destination check, but only during an AI
+        step on a page the step saw with no payment field (``confirm_ok``):
+        there the page's answer could only have been "no payment form", so the
+        unknown changes nothing.  Outside a step, or on a page that shows a
+        payment field, it is refused as before (Codex P1 on #626: fail-closed).
         """
+        step = self.dialog_step if isinstance(getattr(self, 'dialog_step', None), dict) else {}
+        get = str(method or 'GET').upper() == 'GET' and step.get('confirm_ok') is True
         answered = []
         self.deciding += 1   # a click waits for this decision (#736)
 
@@ -1749,12 +1753,14 @@ class Worker:
             then(allowed)
 
         def done(value, error):
-            if error is None and isinstance(value, dict) and value.get('allow') is True:
+            page_answered = error is None and isinstance(value, dict)
+            if page_answered and value.get('allow') is True:
                 return answer(True)
-            answer(False, value.get('cancelled') if error is None and isinstance(value, dict) else None)
+            # A page that answered with a held form refuses it; no answer refuses only a non-GET post.
+            answer(get and not page_answered, value.get('cancelled') if page_answered else None)
         try:
             self.run(FORM_NAVIGATION_SCRIPT, {'url': url, 'method': str(method or 'GET'), 'frame': into_frame is True}, done)
-            self.AppHelper.callLater(FORM_CHECK_SECONDS, lambda: answered or answer(False))
+            self.AppHelper.callLater(FORM_CHECK_SECONDS, lambda: answered or answer(get))
         except Exception:
             # #1579 review: a check that could not start is a refusal; the pending count goes back down.
             if not answered:

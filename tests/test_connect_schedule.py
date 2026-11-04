@@ -3,6 +3,7 @@
 Only model/provider wires are fixtures; HTTP, encrypted input, queue, worker
 and preparation settlement are real. No live scheduler or account is used.
 """
+import json
 import unittest
 from unittest import mock
 
@@ -32,60 +33,6 @@ class ScheduledConnection(unittest.TestCase):
 
     def current(self):
         return self.service.preparations.get(self.row['id'])
-
-    def test_input_resumes_original_slot_and_settles_original_result(self):
-        def waiting():
-            self.now += 120
-            self.service.run_due_preparation()
-            row = self.current()
-            self.assertEqual((row['state'], row['run_count'], row['last_run_job_id']), ('running', 1, self.work))
-            self.assertIsNone(row['prepared_result_ref'])
-        self.case.run_original(PUBLIC, {'secret': self.case.key}, after_wait=waiting)
-        self.service.run_due_preparation()
-        row = self.current()
-        self.assertEqual((row['state'], row['run_count'], row['prepared_result_ref']), ('delivered', 1, self.work))
-        self.assertIn('1,250,340', row['prepared_text'])
-        self.assertEqual(row['window_end'], self.row['window_end'])
-
-    def test_window_expiry_rejects_actual_input_before_provider_read(self):
-        _, session, cookie = self.case.open_input()
-        self.now = self.row['window_end']
-        status, _, _ = self.case.submit(session, cookie)
-        self.assertIn(status, (400, 404))
-        self.assertEqual(self.case.api.calls, [])
-        self.service.run_due_preparation()
-        self.assertEqual(self.current()['state'], 'expired')
-        self.assertNotIn(self.store.job(self.work)['status'], ('queued', 'running', 'awaiting_connection'))
-        self.assertIsNone(self.current()['prepared_result_ref'])
-
-    def test_expired_wait_settles_without_model_or_owner_callback(self):
-        self.case.open_input()
-        self.now = self.row['window_end']
-        with mock.patch.object(self.service, 'watch_judgment', side_effect=AssertionError('no judgment for a wait')):
-            self.service.run_due_preparation()
-        self.assertEqual(self.current()['state'], 'expired')
-        self.assertEqual(self.current()['run_count'], 1)
-        self.assertEqual(self.case.api.calls, [])
-        self.assertIsNone(self.current()['prepared_result_ref'])
-
-    def test_cancelled_or_deleted_schedule_cannot_accept_late_input(self):
-        _, session, cookie = self.case.open_input()
-        self.service.preparations.cancel(self.row['id'])
-        self.service.preparations.delete(self.row['id'])
-        status, _, _ = self.case.submit(session, cookie)
-        self.assertIn(status, (400, 404))
-        self.assertEqual(self.case.api.calls, [])
-        self.assertNotEqual(self.store.job(self.work)['status'], 'queued')
-
-    def test_queued_continuation_rechecks_deadline_before_worker(self):
-        _, session, cookie = self.case.open_input()
-        self.assertEqual(self.case.submit(session, cookie)[0], 200)
-        self.now = self.row['window_end']
-        with mock.patch.object(self.service, 'start_early_judgment', side_effect=AssertionError('no model after deadline')):
-            self.assertTrue(self.service.run_one())
-        self.assertNotIn(self.store.job(self.work)['status'], ('queued', 'running', 'succeeded'))
-        self.service.run_due_preparation()
-        self.assertEqual(self.current()['state'], 'expired')
 
     def test_pending_action_does_not_settle_partial_answer(self):
         with self.store.db() as db:
@@ -140,36 +87,35 @@ class ScheduledConnection(unittest.TestCase):
         self.assertEqual(self.current()['state'], 'expired')
         self.assertEqual(self.current()['run_count'], 2, 'admission never resets the count')
 
-    def offer_action(self):
+    def test_a_scheduled_run_drafts_no_settings_change_and_leaves_nothing_waiting(self):
+        """#619 (owner decision 2026-11-03): no owner is present, so nothing is drafted or left pending."""
+        result = self.service.settings_tools(self.case.job)('settings_change', {
+            'category': 'api_connections', 'setting': 'connect', 'value': json.dumps(PUBLIC), 'continue_work': 'yes'})
+        self.assertEqual((result['state'], result['unattended'], result['applied']), ('not_proposed', True, False))
+        self.assertNotIn('requires_owner_confirmation', result)
+        self.assertEqual(self.case.settings._drafts(), {})
+        self.assertEqual(self.service.work_waits_for_owner(self.case.job), ())
+        self.assertIsNone(self.service.phone_input_session())
+
+    def test_a_scheduled_run_asks_no_payment_approval(self):
+        """#619: a payment connector call in a scheduled run is refused with no request and no prompt."""
         from personal_agent import owner_mcp, trust_record
+        from personal_agent.quickstart_service import UNATTENDED_APPROVAL_TEXT
         from test_connect_effects import ACTION, INPUT
         self.service.set_ai_connections({'enabled': True})
         owner_mcp.set_confirmed(self.store, 'codex', ['synthetic'])
         trust_record.set_money(self.store, trust_record.connection('codex', 'owner-mcp', 'synthetic'), True)
         result = self.service.connector_permission(self.case.job, {'engine': 'codex', 'tool_name': ACTION, 'input': INPUT})
-        self.assertEqual(result['behavior'], 'deny')
+        self.assertEqual(result, {'behavior': 'deny', 'message': UNATTENDED_APPROVAL_TEXT})
+        self.assertIsNone(self.service._browser_request(self.work))
+        self.assertFalse(self.service.step_approval_pending(self.work))
+        self.assertIsNone(self.store.notification_of(self.work, 'browser_approval_needed'))
+
+    def offer_action(self):
+        """An issued exact-action wait as an earlier release recorded it (scheduled runs make none since #619)."""
         with self.store.db() as db:
             db.execute("UPDATE jobs SET status='partial',response='Approve the remaining action' WHERE id=?", (self.work,))
-        return self.service._browser_request(self.work)
-
-    def test_exact_action_approval_resumes_same_slot(self):
-        offer = self.offer_action()
-        self.service.run_due_preparation()
-        self.assertEqual(self.current()['state'], 'running')
-        result = self.service.browser_step_decision({'work_id': self.work, 'decision': 'approve', 'digest': offer['offer_digest']})
-        self.assertTrue(result['resumed'])
-        self.assertEqual(self.store.job(self.work)['status'], 'queued')
-        self.assertEqual((self.current()['run_count'], self.current()['last_run_job_id']), (1, self.work))
-
-    def test_late_action_approval_cannot_outlive_accepted_window(self):
-        offer = self.offer_action()
-        self.now = self.row['window_end']
-        result = self.service.browser_step_decision({'work_id': self.work, 'decision': 'approve', 'digest': offer['offer_digest']})
-        self.assertFalse(result['approved'])
-        self.assertFalse(result['resumed'])
-        self.service.run_due_preparation()
-        self.assertEqual(self.current()['state'], 'expired')
-        self.assertIsNone(self.current()['prepared_result_ref'])
+        return {'action': 'connector_call', 'digest': 'd' * 64, 'offer_digest': 'o' * 64, 'state': 'issued'}
 
     def test_queue_transaction_rechecks_window_even_after_initial_approval_check(self):
         offer = self.offer_action()

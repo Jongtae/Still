@@ -203,6 +203,11 @@ class ConversationTests(unittest.TestCase):
 
 
 class ContinuationTests(ConversationTests):
+    def setUp(self):
+        super().setUp()
+        # #619: these cases cover a draft made before #619, which carries its own 10-minute expiry.
+        self.orchestrator.TTL_SECONDS = 600
+
     """Actual draft / permission / jobs boundary, no model or remote service."""
     def blocked(self, key='original', operation='list_notes'):
         work = self.store.enqueue('Compare the notes and give me a summary', key)

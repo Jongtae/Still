@@ -118,8 +118,8 @@ MIGRATED_MODULES = {
     'settings_orchestrator.py': {
         r'(?:confirm|확인)\s+([A-Za-z0-9_-]+)',  # Matches owner input; never emitted.
         r'(?:cancel|취소)\s+([A-Za-z0-9_-]+)',  # Matches owner input; never emitted.
-        '소유자에게 이 대화에서 확인을 요청합니다: 적용 버튼을 누르거나 그렇게 하라고 답하면 적용되고, 아니라고 답하면 취소됩니다(',  # Model-only next_step instruction.
-        '분 안에).',  # Tail of the model-only confirmation deadline instruction.
+        # Model-only next_step instruction (#619: no deadline; it waits until answered or the Work is cancelled).
+        '소유자에게 이 대화에서 확인을 요청합니다: 적용 버튼을 누르거나 그렇게 하라고 답하면 적용되고, 아니라고 답하면 취소됩니다. 소유자가 답하거나 이 작업이 취소될 때까지 기다립니다.',
         ' 변경은 소유자 확인을 기다립니다. ',  # Model-only next_step instruction.
         ' 확인 전에는 아무것도 바뀌지 않았습니다.',  # Model-only next_step instruction.
     },

@@ -12,9 +12,10 @@ Runs only read: GET/HEAD to the hosts the AI declared, plus the non-GET
 requests the owner reviewed as reads for a code-run secret set (a token
 exchange, for example).  A secret set's values reach the run masked (substituted
 on egress to its hosts) or, when the owner saw they are used inside the code,
-as real values with egress limited to those hosts.  Orders, transfers and
-other state changes are refused; enabling them needs the existing
-``api_requests`` effect guard and approval, not this module.
+as real values with egress limited to those hosts.  A state change to a secret
+set's host is claimed once through the existing ``api_requests`` effect guard;
+on a set the owner marked as moving money it also needs the owner's exact
+approval (#1456, #619).  A non-GET request to any other host is refused.
 
 Design: ``docs/connect-code-run-design.en.md``.
 """
@@ -62,8 +63,10 @@ NODE_CANDIDATES = ('/opt/homebrew/bin/node', '/usr/local/bin/node', '/usr/bin/no
 UNAVAILABLE_TEXT = '이 Mac에 Node.js 18 이상이 없어 코드를 실행할 수 없어요.'
 #: #593: the pinned Node.js could not be downloaded or did not match; nothing ran.
 NODE_DOWNLOAD_FAILED_TEXT = '코드 실행에 필요한 Node.js를 받지 못해 코드를 실행하지 않았어요.'
-#: #1456: what the run's code is told when a state-changing request waits for the owner's approval.
-APPROVAL_REQUESTED_TEXT = ('this request changes state, so Still asked the owner to approve exactly this request '
+#: #1456: what the run's code is told when a payment request waits for the owner's approval (#619: only
+#: a set the owner marked as moving money asks; another state change is sent without an approval).
+APPROVAL_REQUESTED_TEXT = ('this request changes state on a connection the owner marked as able to move money, so '
+                           'Still asked the owner to approve exactly this request '
                            '(method, path, query and body). First check it is the change the owner asked for: if it is a '
                            'lookup or a helper sent with the wrong method (the API documents it as GET), it was a mistake, '
                            'so do not stop here; fix the code and run again, and tell the owner to ignore that approval '
@@ -445,7 +448,8 @@ class CodeRunner:
         #: #1456: the Work's per-action approval surface (``consume``/``request``), as ``api_request`` uses.
         #: Without one, every state-changing request is refused as before.
         self.approvals = approvals
-        #: Per run: host -> (set name, slot) of the named secret sets, approval requests, dispatch claims.
+        #: Per run: host -> [(set name, slot), ...] of every named secret set on it (#619: all of them, so a
+        #: money set is never hidden behind another set on the same host), approval requests, dispatch claims.
         self._owners, self._asked, self._claims = {}, [], []
         #: #1489: the sets this Work's runs were already told how to keep their steps for.
         self._hinted = set()
@@ -521,7 +525,7 @@ class CodeRunner:
                                    'injectHosts': sorted({_hostname(host) for host in slot['hosts']})})
             for host in slot['hosts']:
                 set_hosts.setdefault(_host(host), set()).update(slot['reads'])
-                self._owners.setdefault(_host(host), (name, slot))
+                self._owners.setdefault(_host(host), []).append((name, slot))
         if plain and set(hosts) - set(set_hosts):
             raise CodeRunError('코드 안에서 직접 쓰는 비밀값이 있는 실행은 그 묶음의 호스트에만 접속할 수 있어요.',
                                'code_run_argument_invalid')
@@ -869,23 +873,33 @@ class CodeRunner:
                        'Check the exact path, or propose the read in the secret set.')
 
     def _state_change(self, message, method, host):
-        """#1456: a state-changing request to a secret set's host, sent once with the owner's exact approval.
+        """#1456: a state-changing request to a secret set's host, sent once.
 
-        Reuses ``api_request``'s machinery: the per-action approval binding (``step_binding`` over the set,
-        method, URL with its query and the body with masked values as ``{{NAME}}``), the replay and
-        currentness guard and the dispatch claim (``ApiRequests._effect_guard``).  Without a consumed
-        approval the request is refused and the owner is asked to approve exactly it.
+        Reuses ``api_request``'s machinery: the replay and currentness guard and the dispatch claim
+        (``ApiRequests._effect_guard``), and for a payment the per-action approval binding
+        (``step_binding`` over the set, method, URL with its query and the body with masked values as
+        ``{{NAME}}``).  #619 (owner decision 2026-11-03): only a set the owner marked as moving money
+        makes a request a payment, as for ``api_request``; a payment without a consumed approval is
+        refused and the owner is asked to approve exactly it.  Any other state change follows the
+        pilot posture: no per-action approval, still claimed once and never replayed.
         """
         from .api_requests import ApiError, ApiRequests
         from .browser_session import step_binding
         from .current_context import redact_known_secrets
-        name, slot = self._owners[host]
+        # #619 (Codex P1 on #626): every loaded set's credentials reach the sandbox, and a request does not
+        # say which one it used, so a host is money when any set loaded for it is (fail-closed). The
+        # binding and the dispatch claim use that money set; a host only non-money sets cover is not.
+        owners = self._owners[host]
+        money = [owner for owner in owners if owner[1].get('money') is True]
+        name, slot = (money or owners)[0]
         body = message.get('bodyText')
         if body is None or len(body) > APPROVAL_BODY_CHARS:
             return False, 'this request body cannot be shown to the owner for approval (not text, or too long)'
         path, query = str(message.get('path') or '/'), str(message.get('query') or '')
         url = f'https://{host}{path}' + (f'?{query}' if query else '')
-        effect = 'payment' if slot.get('money', True) else 'mutate'
+        # #619: ``slots`` already reads a legacy set with no money mark as money; only a host whose every
+        # loaded set is marked ``money: false`` has changes that are not labelled a payment.
+        effect = 'payment' if money else 'mutate'
         api = ApiRequests(self.store, self.work_id, approvals=self.approvals)
         try:
             identity = api._effect_identity(slot, method, url, body)
@@ -894,7 +908,7 @@ class CodeRunner:
             return False, str(exc)
         binding = step_binding(self.work_id, 'code_run', url, f'{name}|{method}|{url}', argument=body,
                                state=f"code-effect-v1|{name}@{slot['revision']}|{effect}")
-        if not self.approvals.consume(binding):
+        if effect == 'payment' and not self.approvals.consume(binding):
             shown = redact_known_secrets(self.store, ' '.join(part for part in (f'?{query}' if query else '', body) if part))
             # #1470: the AI's description comes first for the owner to read; the exact request below is
             # what is approved, so the description can never widen it.  Live 2026-10-14 (owner): plain
@@ -910,7 +924,11 @@ class CodeRunner:
             exact = f"{APPROVAL_EXACT_LABEL} {method} {host}{redact_known_secrets(self.store, path)}"
             lines.append(exact + (f"\n{APPROVAL_CONTENT_LABEL} {shown}" if shown else ''))
             label = '\n\n'.join(lines)
-            self.approvals.request(binding, label)
+            try:
+                self.approvals.request(binding, label)
+            except ValueError as exc:
+                # #619: a run with no owner present (a scheduled run) asks nothing and says why.
+                return False, str(exc)
             self._asked.append({'method': method, 'host': host, 'path': redact_known_secrets(self.store, path)})
             return False, APPROVAL_REQUESTED_TEXT
         try:

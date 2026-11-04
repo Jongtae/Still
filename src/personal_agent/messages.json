@@ -1529,6 +1529,12 @@
   "ja": "この承認依頼は期限切れか処理済みのため、何も送っていません。もう一度依頼してください。",
   "zh": "这个批准请求已过期或已处理，所以什么都没有发送。请重新提出请求。"
  },
+ "notice.owner_act_already_settled": {
+  "ko": "그 요청은 이미 처리돼 더 한 일은 없어요.",
+  "en": "That was already handled, so nothing more was done.",
+  "ja": "それはすでに処理済みのため、これ以上は何もしていません。",
+  "zh": "那件事已经处理过了，所以没有再做任何事。"
+ },
  "notice.preparation_accepted": {
   "ko": "예약했어요. 취소하려면 아래 버튼을 누르거나 대화로 말해 주세요.",
   "en": "Scheduled. To cancel, tap the button below or just tell me.",
