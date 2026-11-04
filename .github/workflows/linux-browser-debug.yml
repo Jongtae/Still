@@ -8,7 +8,7 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -23,19 +23,39 @@ jobs:
         run: |
           tools="$RUNNER_TEMP/still-tools"; echo "AGENTOS_TEST_TOOLS_DIR=$tools" >> "$GITHUB_ENV"
           chrome=$(PYTHONPATH=src .venv/bin/python -c "import sys; from personal_agent import chromium_runtime as c; print(c.ensure(sys.argv[1]))" "$tools")
-          echo "CHROME=$chrome" >> "$GITHUB_ENV"
-          cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns || true
           if PYTHONPATH=src .venv/bin/python -c "import sys; from personal_agent import chromium_runtime as c; sys.exit(0 if c.userns_restricted() else 1)"; then
             sh -c "$(PYTHONPATH=src .venv/bin/python -c "import sys; from personal_agent import chromium_runtime as c; print(c.apparmor_setup(sys.argv[1]))" "$chrome")"
           fi
-      - name: Worker probe (stderr visible)
-        timeout-minutes: 5
-        run: PYTHONPATH=src xvfb-run -a .venv/bin/python scripts/dev/linux_browser_probe.py "$CHROME"
-      - name: Conformance, one test at a time with a time limit
+          mkdir -p "$RUNNER_TEMP/site"
+          cat > "$RUNNER_TEMP/site/sitecustomize.py" <<'PY'
+          import subprocess
+          _Popen = subprocess.Popen
+          class Popen(_Popen):
+              def __init__(self, args, *a, **k):
+                  if any('browser_worker_chromium' in str(x) for x in (args if isinstance(args, (list, tuple)) else [args])):
+                      k['stderr'] = None
+                      k.setdefault('env', None)
+                      if k.get('env') is not None:
+                          k['env'] = dict(k['env'], STILL_CHROMIUM_TRACE='1')
+                  _Popen.__init__(self, args, *a, **k)
+          subprocess.Popen = Popen
+          PY
+          sed -i 's/^          //' "$RUNNER_TEMP/site/sitecustomize.py"
+      - name: Failing conformance tests with the worker's stderr
         if: ${{ !cancelled() }}
         env:
           AGENTOS_REAL_BROWSER_TESTS: '1'
         run: |
-          for t in $(PYTHONPATH=src .venv/bin/python -m pytest -q --collect-only tests/test_browser_webkit.py::WebKitIntegrationTests | grep '::'); do
-            echo "=== $t"; PYTHONPATH=src timeout 120 xvfb-run -a .venv/bin/python -m pytest -q -x "$t" 2>&1 | tail -25 || echo "!!! TIMEOUT/FAIL $t"
+          for t in test_a_desktop_only_page_is_zoomed_out_in_the_phone_window_and_its_far_right_controls_work \
+                   test_a_native_submit_from_another_realm_is_refused_as_a_navigation \
+                   test_label_and_script_forwarded_payment_submits_need_an_approval \
+                   test_loading_more_never_follows_a_navigation_the_page_starts \
+                   test_a_lazy_list_loads_its_later_rows_and_stops_when_nothing_more_appears \
+                   test_a_layer_put_up_by_the_locate_scroll_is_a_cover_found_before_pressing \
+                   test_sessions_survive_a_restart_only_through_the_encrypted_jar \
+                   test_the_production_policy_refuses_the_agentos_port_by_redirect_and_window_open \
+                   test_every_page_is_loaded_as_its_mobile_version; do
+            echo "=== $t"
+            PYTHONPATH="$RUNNER_TEMP/site:src" timeout 150 xvfb-run -a .venv/bin/python -m pytest -q -x -p no:cacheprovider \
+              "tests/test_browser_webkit.py::WebKitIntegrationTests::$t" 2>&1 | grep -vE '^\s*$' | tail -60 || echo "!!! TIMEOUT/FAIL $t"
           done

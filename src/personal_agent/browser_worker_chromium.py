@@ -47,6 +47,12 @@ from . import browser_worker as shared
 from .browser_session import registrable_domain
 
 WORLD = 'still'
+
+
+def _trace(*parts):
+    """TEMPORARY #34 diagnostics: stderr only (the parent discards it), and only when asked for."""
+    if os.environ.get('STILL_CHROMIUM_TRACE') == '1':
+        print('[trace]', *(str(part)[:400] for part in parts), file=sys.stderr, flush=True)
 BINDING = '__still_guard_message'
 PAGE_FILTER = [{'type': 'page'}, {'exclude': True}]
 FRAME_FILTER = [{'type': 'iframe'}, {'exclude': True}]
@@ -430,6 +436,7 @@ class Worker(shared.Worker):
         def evaluated(result, error):
             try:
                 if error or result.get('exceptionDetails'):
+                    _trace('script_failed', error or result.get('exceptionDetails'))
                     return done(None, 'script_failed')
                 value = result.get('result', {}).get('value')
                 decoded = json.loads(value) if value is not None else None
@@ -499,6 +506,8 @@ class Worker(shared.Worker):
     def request_paused(self, target, event):
         """Check *each* Document request, including redirectedRequestId hops."""
         request = event['request']
+        _trace('request_paused', target.kind, request.get('method'), request.get('url', '')[:120],
+               self.frame_requests.get((target.ident, event.get('frameId')), {}).get('reason'))
         url, method = request['url'], request.get('method', 'GET')
         frame_id = event.get('frameId')
         main = target.kind == 'page' and frame_id == target.main_frame
@@ -529,7 +538,9 @@ class Worker(shared.Worker):
             if not allowed:
                 if reason:
                     self.navigation_refused(counted, reason)
-                target.post('Fetch.failRequest', {'requestId': event['requestId'], 'errorReason': 'BlockedByClient'})
+                # 'Aborted' (net::ERR_ABORTED) leaves the current document in place, as WebKit's cancelled
+                # policy decision does; 'BlockedByClient' would commit Chromium's error page instead.
+                target.post('Fetch.failRequest', {'requestId': event['requestId'], 'errorReason': 'Aborted'})
                 if popup and not self.owner_visible:
                     self.root_cdp.send('Target.closeTarget', {'targetId': target.ident})
             else:

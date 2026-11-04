@@ -2164,6 +2164,16 @@ class WebKitIntegrationTests(unittest.TestCase):
         sess = self.session('work-1183')
         try:
             page = sess.open({'url': self.origin + '/device', 'effect': 'read'})
+            if LINUX:
+                # #34: Chromium says what it is: Chrome on an Android phone, touch, a phone-width layout.
+                agent = page['text'].split('\n', 1)[0]
+                self.assertIn('Android', agent)
+                self.assertIn('Mobile Safari/537.36', agent)
+                self.assertNotIn('iPhone', agent)
+                self.assertIn('터치 1 true 같은UA true', page['text'])
+                width = int(page['text'].split('폭 ', 1)[1].split()[0])
+                self.assertLessEqual(width, 430, page['text'])
+                return
             self.assertIn('iPhone', page['text'])
             self.assertIn('Mobile/', page['text'])
             # #13: the OS token is one a real iPhone with this Safari sends, and the page sees the same phone.

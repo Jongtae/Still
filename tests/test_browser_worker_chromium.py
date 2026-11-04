@@ -345,7 +345,7 @@ def test_redirect_hop_is_checked_before_network_continues(worker):
             time.sleep(.001)
     check.assert_called_once_with(event['request']['url'], worker.allowed_origins, intranet=worker.intranet)
     assert packets(worker, 'Fetch.failRequest')[-1] == {
-        'requestId': 'redirect-request', 'errorReason': 'BlockedByClient'}
+        'requestId': 'redirect-request', 'errorReason': 'Aborted'}
     assert not packets(worker, 'Fetch.continueRequest')
     assert worker.blocked == 1 and worker.blocked_reason == 'blocked_destination'
 
