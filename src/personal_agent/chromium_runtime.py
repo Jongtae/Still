@@ -133,23 +133,6 @@ def _extract(archive_path, staging):
             os.chmod(destination, (mode & 0o755) or 0o644)
 
 
-def _read_only(root):
-    """Drop write permission from the checked build (a guard against accidental change, not a same-user
-    attacker, who can change permissions back; such a change is caught by the digest check before each start)."""
-    for folder, folders, files in os.walk(root):
-        for name in files:
-            path = os.path.join(folder, name)
-            if not os.path.islink(path):
-                os.chmod(path, os.stat(path).st_mode & ~0o222)
-    for folder, folders, files in os.walk(root, topdown=False):
-        os.chmod(folder, 0o555)
-
-
-def _writable(root):
-    for folder, folders, files in os.walk(root):
-        os.chmod(folder, 0o755)
-
-
 def ensure(directory, *, fetch=None, chosen=None):
     """The pinned ``chrome`` in ``directory``, downloaded and checked first when needed.
 
@@ -182,13 +165,9 @@ def ensure(directory, *, fetch=None, chosen=None):
             # An earlier, damaged copy (its digest did not match above), or one a concurrent start just finished.
             if installed(directory, chosen=chosen):
                 return str(target / 'chrome')
-            _writable(target)
             shutil.rmtree(target)
         unpacked.rename(target)
-        _read_only(target)
     finally:
-        if staging.exists():
-            _writable(staging)
         shutil.rmtree(staging, ignore_errors=True)
     return str(target / 'chrome')
 

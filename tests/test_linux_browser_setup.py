@@ -13,6 +13,7 @@ The real-engine conformance run is ``tests/test_browser_webkit.py``
 import hashlib
 import io
 import os
+import shutil
 import stat
 import sys
 import tempfile
@@ -78,6 +79,9 @@ class ChromiumRuntime(unittest.TestCase):
         self.assertFalse(sandbox.stat().st_mode & (stat.S_ISUID | stat.S_ISGID), 'never setuid from an archive')
         self.assertFalse(list(Path(chrome).parent.glob('*.zip')), 'the archive is not kept')
         self.assertEqual(cr.ensure(self.directory, fetch=Fetch(b'unused'), chosen=pin_for(data)), chrome)
+        # Codex review on #640: deleting the data folder (uninstall) removes it as the owner.
+        shutil.rmtree(self.directory / 'chromium')
+        self.assertFalse((self.directory / 'chromium').exists())
 
     def test_a_download_that_does_not_match_its_pin_is_never_kept(self):
         data = release()
@@ -99,10 +103,7 @@ class ChromiumRuntime(unittest.TestCase):
     def test_a_changed_binary_is_not_used_again(self):
         data = release()
         chrome = cr.ensure(self.directory, fetch=Fetch(data), chosen=pin_for(data))
-        self.assertFalse(os.stat(chrome).st_mode & 0o222, 'the checked build is kept read-only')
-        os.chmod(Path(chrome).parent, 0o755)
-        os.chmod(chrome, 0o755)   # a same-user change; the digest check before each start catches it
-        Path(chrome).write_bytes(b'tampered')
+        Path(chrome).write_bytes(b'tampered')   # a same-user change; the digest check before each start catches it
         self.assertIsNone(cr.installed(self.directory, chosen=pin_for(data)))
         self.assertEqual(Path(cr.ensure(self.directory, fetch=Fetch(data), chosen=pin_for(data))).read_bytes(), CHROME)
 
