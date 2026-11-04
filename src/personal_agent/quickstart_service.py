@@ -8712,7 +8712,8 @@ class AgentService:
         no note of something else left (``owner_note``) was recorded (#173 slice C).
         """
         from .owner_acts import KIND_STEP
-        return KIND_STEP in waits or (bool(waits) and not job.get('owner_note'))
+        # #631: silence from a judgment does not say the wait explains every failure.
+        return KIND_STEP in waits or (bool(waits) and job.get('owner_note') is None)
 
     def work_waits_for_owner(self, job):
         """#240: the one typed "waiting for the owner" state of a Work, read by every surface.
@@ -13295,6 +13296,12 @@ class AgentService:
             run.agency_report=self.cli_shortfall(job['id'],run.attempt_start,run.prompt,run.orchestration.terminal,
                                              run.orchestration.terminal_gap,run.orchestration.terminal_note,
                                              run.orchestration.terminal_code)[1]
+        # #631: a judged CLI stop can leave the Work partial on either verdict.
+        if run.subscription.get('id') and run.outcome in ('partial','failed') and run.agency_report is None and run.orchestration is not None \
+                and run.orchestration.terminal in (REACHED,OWNER_NEEDED) and isinstance(run.orchestration.terminal_note,str):
+            from .agent_runtime import agency_report
+            run.agency_report=agency_report(run.prompt,[],[],[],None)
+            run.agency_report['note']=run.orchestration.terminal_note
         # #627: the orchestrator's budget stop, on either route, is recorded with its code and reason,
         # once: a stop the attempt's own loop already recorded (``run_agent``) is not said twice.
         if run.orchestration is not None and getattr(run.orchestration,'terminal_code',None):
@@ -13383,7 +13390,7 @@ class AgentService:
             if run.outcome=='unknown':
                 cause=spoken=run.unknown_statement or None
             observed=verified_portion(run.verified_parts) if run.outcome=='partial' else None
-            cause,spoken,observed,note=scrub(cause),scrub(spoken),scrub(observed),scrub(self._redact_reason(note) if note else None)
+            cause,spoken,observed,note=scrub(cause),scrub(spoken),scrub(observed),scrub(self._redact_reason(note) if note is not None else None) # #631: preserve judged silence.
             # #471: a budget stop holds the Work's photos (the status trigger reads this) until _after_work
             # turns it into a Continue offer or releases it.
             if run.outcome in ('failed','partial') and self._budget_boundary(self._attempt_stop_codes(db.execute(
