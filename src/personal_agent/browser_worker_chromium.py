@@ -10,8 +10,16 @@ Reuse review (Adapt): Playwright's official Python sync API (requested version
 1.64.1, Apache-2.0) owns launch, context and page lifetimes. CDP Page, Runtime,
 Input, Fetch and Target supply isolated worlds, trusted input and redirect-hop
 interception, including out-of-process frames. Context routing holds a popup's
-first request while Target discovery installs its CDP guard. This adapts the
-existing pinned Playwright dependency; no dependency or authority is added.
+first request in owner-login mode while Target discovery installs its CDP guard.
+AI new windows instead adapt the macOS main-view policy using CDP windowOpen,
+Target.closeTarget and Page.navigate; no popup is initialized or promoted. CDP
+Page.pdl and Chromium FormSubmission::NotifyInspector / Frame::ScheduleFormSubmission
+are the reference for event/method ordering. Playwright routing alone cannot
+prevent initial blank-document execution or recover POST bodies. The adapter's
+policy enforcement and bounded recovery are Still-owned glue (Build); no external
+SDK can choose Still's authority policy. Existing Playwright/CDP APIs suffice,
+with unchanged Apache-2.0/BSD provenance, platform fit, egress and dependency set.
+No dependency or authority is added.
 The stdlib queue/heapq provide the main-thread handoff and timer queue. Selenium
 would still need the same CDP boundary; a second automation framework adds no
 required API. Still's browser_worker.Worker supplies the existing protocol,
@@ -65,8 +73,6 @@ SANDBOX_FAILURE_MARKERS = ('sandboxing failed', 'no usable sandbox', 'sandbox_ho
 #: How long a paused form submission waits for the guard's own record of it (#34): the guard's message
 #: is sent at the submit event, before the navigation, but may reach the worker after the paused request.
 VETTED_WAIT_SECONDS = 0.5
-#: How long a step waits for a page it opened to ask for its first navigation (#34).
-POPUP_DECISION_SECONDS = 3.0
 #: The shared guard keeps an ordinary form's pass this long (``ORDINARY_MS`` in ``PRELUDE``).
 ORDINARY_VETTED_SECONDS = 2.0
 #: Chromium-only, in the isolated world after the shared guard: every submit the guard lets through
@@ -276,6 +282,8 @@ class _Target:
             self.worker.binding_called(self, params)
         elif method == 'Fetch.requestPaused':
             self.worker.fetch_paused(self, params)
+        elif method == 'Page.windowOpen':
+            self.worker.window_open(self, params)
         elif method == 'Page.frameRequestedNavigation':
             self.worker.frame_requested(self, params)
         elif method == 'Page.frameNavigated':
@@ -394,16 +402,19 @@ class Worker(shared.Worker):
     def register_page(self, page):
         _trace('register_page', page.url[:80])
         if not page.is_closed():
-            target = self.target_for(page)
-            if getattr(target, 'adopt_when_reported', False) and not self.owner_visible:
-                target.adopt_when_reported = False
-                self.promote_popup(target, lambda: None)
-            if self.page is not None and page is not self.page and self.owner_visible and page not in self.popups:
+            if page is not self.page and self.page is not None and not self.owner_popups():
+                page.close(run_before_unload=False)
+                return
+            self.target_for(page)
+            if self.page is not None and page is not self.page and self.owner_popups() and page not in self.popups:
                 self.popups.append(page)
 
     def target_created(self, event):
         info = event['targetInfo']
         if info['type'] != 'page' or info['targetId'] in self.targets:
+            return
+        if self.main_target is not None and not getattr(self, 'creating_page', False) and not self.owner_popups():
+            self.root_cdp.send('Target.closeTarget', {'targetId': info['targetId']})
             return
         session_id = self.root_cdp.send('Target.attachToTarget', {
             'targetId': info['targetId'], 'flatten': False})['sessionId']
@@ -415,15 +426,17 @@ class Worker(shared.Worker):
                event.get('targetInfo', {}).get('openerId'))
         target = _Target(self, parent, event['sessionId'], event['targetInfo'])
         self.sessions[target.session_id] = self.targets[target.ident] = target
-        # #34: a page the step opened (window.open, a target=_blank link) is created asynchronously in
-        # Chromium; the step waits for its first navigation decision as WebKit's synchronous popup delegate
-        # does, bounded so a popup that never navigates cannot hold the step.
-        if target.kind == 'page' and self.main_target is not None:
+        page_target = target
+        while page_target.kind == 'iframe' and isinstance(page_target.parent, _Target):
+            page_target = page_target.parent
+        if page_target is not target and page_target is not self.main_target and not self.owner_popups():
+            self.root_cdp.send('Target.closeTarget', {'targetId': page_target.ident})
+            return
+        if target.kind == 'page' and self.main_target is not None and not getattr(self, 'creating_page', False):
+            if not self.owner_popups():
+                self.root_cdp.send('Target.closeTarget', {'targetId': target.ident})
+                return
             target.popup_navigation = True
-            if not self.owner_visible:
-                target.awaiting_first = True
-                self.deciding += 1
-                self.AppHelper.callLater(POPUP_DECISION_SECONDS, self.popup_decided, target)
         target.post('Runtime.enable')
         target.post('Page.enable')
         target.post('Network.enable')
@@ -452,16 +465,9 @@ class Worker(shared.Worker):
                 self.delegate_failed('cdp_event', exc, False)
                 self.target_fault(target)
 
-    def popup_decided(self, target):
-        """The step no longer waits for this popup's first navigation (#34); idempotent."""
-        if getattr(target, 'awaiting_first', False):
-            target.awaiting_first = False
-            self.deciding -= 1
-
     def detached(self, event):
         target = self.sessions.pop(event.get('sessionId'), None)
         if target is not None:
-            self.popup_decided(target)
             self.targets.pop(target.ident, None)
             self.loading = {key for key in self.loading if key[0] != target.ident}
             self.frame_origins = {key: value for key, value in self.frame_origins.items() if key[0] != target.ident}
@@ -691,11 +697,24 @@ class Worker(shared.Worker):
         _trace('request_paused', target.kind, request.get('method'), request.get('url', '')[:120],
                self.frame_requests.get((target.ident, event.get('frameId')), {}).get('reason'))
         url, method = request['url'], request.get('method', 'GET')
+        page_target = target
+        while page_target.kind == 'iframe' and isinstance(page_target.parent, _Target):
+            page_target = page_target.parent
+        if page_target.kind == 'page' and page_target is not self.main_target and not self.owner_popups():
+            refuse()
+            self.root_cdp.send('Target.closeTarget', {'targetId': page_target.ident})
+            if method.upper() != 'GET':
+                self.refuse_popup_submit()
+            return
         frame_id = event.get('frameId')
         main = target.kind == 'page' and frame_id == target.main_frame
         primary = target is self.main_target
         popup = target.kind == 'page' and not primary
-        counted = primary and main or popup and not self.owner_visible
+        counted = primary and main
+        if popup and main and not self.popup_document(url):
+            refuse()
+            self.root_cdp.send('Target.closeTarget', {'targetId': target.ident})
+            return
         # Recovery returns to the held history entry; the read must not cancel its own recovery.
         restoring = primary and main and method.upper() == 'GET' and url == getattr(target, 'restoring_history', None)
         answered = []
@@ -705,9 +724,8 @@ class Worker(shared.Worker):
             if answered:
                 return
             answered.append(True)
-            if allowed and vetted_form and document != self.document_generation:
+            if allowed and (vetted_form and document != self.document_generation or popup and not self.owner_popups()):
                 allowed = False
-            self.AppHelper.callAfter(self.popup_decided, target)
             if allowed and counted and self.reading and not restoring:
                 self.read_navigations += 1
                 allowed = False
@@ -718,17 +736,7 @@ class Worker(shared.Worker):
                 self.origins.add(self.origin(url))
                 release()
 
-            if allowed and popup and not self.owner_visible:
-                # Playwright may report Page only AFTER this navigation commits.
-                # Release the guarded original request first; never wait for Page
-                # while holding the request that creates it, or replay its POST.
-                target.adopt_when_reported = True
-                page = self.pages.get(target.ident)
-                if page is not None:
-                    target.adopt_when_reported = False
-                    self.promote_popup(target, lambda: None)
             if not allowed:
-                target.adopt_when_reported = False
                 if reason:
                     self.navigation_refused(counted, reason)
                 refuse()
@@ -755,6 +763,8 @@ class Worker(shared.Worker):
         self.decide(url, counted, decision)
 
     def fetch_paused(self, target, event):
+        if target.kind == 'page' and target is not self.main_target and not self.owner_popups():
+            return self.request_paused(target, event)
         # Context routing and our Fetch can both hold the initial request, in
         # either order. Share its decision, not a URL-based bypass for a later
         # request. Redirects ALWAYS get their own decision.
@@ -766,6 +776,10 @@ class Worker(shared.Worker):
         self.request_paused(target, event, release, refuse)
 
     def initial_popup_request(self, target, event, source, release, refuse):
+        if not self.owner_popups():
+            refuse()
+            self.root_cdp.send('Target.closeTarget', {'targetId': target.ident})
+            return
         request = event['request']
         key = (request['url'], request.get('method', 'GET'))
         first = getattr(target, 'initial_request', None)
@@ -780,6 +794,7 @@ class Worker(shared.Worker):
         target.initial_request = first
 
         def settle(allowed):
+            allowed = allowed and self.owner_popups()
             first['allowed'] = allowed
             for yes, no in first['waiters']:
                 (yes if allowed else no)()
@@ -794,8 +809,6 @@ class Worker(shared.Worker):
         that cannot be identified is refused (fail closed)."""
         page = None
         try:
-            if not request.is_navigation_request():
-                return route.continue_()
             try:
                 frame = request.frame
                 page = frame.page
@@ -805,10 +818,20 @@ class Worker(shared.Worker):
                 frame = None
             _trace('route_popup', request.url[:100], page is self.page,
                    frame is not None and frame.parent_frame is not None)
-            if page is self.page or frame is not None and frame.parent_frame is not None:
+            if not request.is_navigation_request():
+                if page is not self.page and not self.owner_popups():
+                    return self._settle_route(route, False)
+                return route.continue_()
+            if page is self.page or self.owner_popups() and frame is not None and frame.parent_frame is not None:
                 return route.continue_()   # this worker's own Fetch decides (each hop)
         except Exception:
             self.navigation_refused(not self.owner_visible, 'navigation_failed')
+            if page is not None and not page.is_closed():
+                page.close(run_before_unload=False)
+            return self._settle_route(route, False)
+        if not self.owner_popups():
+            if request.method.upper() != 'GET':
+                self.refuse_popup_submit()
             if page is not None and not page.is_closed():
                 page.close(run_before_unload=False)
             return self._settle_route(route, False)
@@ -840,7 +863,6 @@ class Worker(shared.Worker):
                 # popup candidates rather than guessing an opener/URL match.
                 for candidate in list(self.targets.values()):
                     if getattr(candidate, 'popup_navigation', False) and candidate.ident not in self.pages:
-                        candidate.adopt_when_reported = False
                         self.root_cdp.send('Target.closeTarget', {'targetId': candidate.ident})
                 if page is not None and not page.is_closed():
                     page.close(run_before_unload=False)
@@ -872,26 +894,50 @@ class Worker(shared.Worker):
         except Exception:
             pass
 
-    def promote_popup(self, target, then, began=None):
-        began = time.monotonic() if began is None else began
-        page = self.pages.get(target.ident)
-        if page is None:
-            # Playwright reports popup pages independently of the CDP target event.
-            # Fetch keeps the original navigation held throughout this handoff.
-            if time.monotonic() - began >= shared.WARM_SECONDS:
-                self.navigation_refused(True, 'navigation_failed')
-                self.root_cdp.send('Target.closeTarget', {'targetId': target.ident})
-                return
-            self.AppHelper.callLater(.01, self.promote_popup, target, then, began)
+    def owner_popups(self):
+        return self.owner_visible and self.guard_off
+
+    def refuse_popup_submit(self):
+        # Page.windowOpen has neither a method nor a body. Never recreate a POST as GET.
+        self.refused_submits += 1
+
+    def window_open(self, target, event):
+        if target is not self.main_target or self.owner_popups():
             return
-        old_page = self.page
-        self.clear_vetted()
-        self.page, self.main_target = page, target
-        self.page.set_viewport_size(self.viewport_size)
-        self.emulate(target)
-        self.park()
-        old_page.close(run_before_unload=False)
-        then()
+        url = event.get('url', '')
+        if not self.origin(url):
+            return
+        pending = {'url': url, 'form': None, 'token': object()}
+        opens = getattr(target, 'window_opens', [])
+        target.window_opens = opens
+        opens.append(pending)
+        document = self.document_generation
+        self.deciding += 1
+
+        def replay(result, error):
+            if pending not in opens:
+                return
+            opens.remove(pending)
+            self.deciding -= 1
+            if error or target is not self.main_target or document != self.document_generation:
+                self.navigation_refused(True, 'navigation_failed')
+                return
+            form = pending['form']
+            if form is not None:
+                if form.get('reason') == 'formSubmissionPost' or form.get('url') != url:
+                    self.refuse_popup_submit()
+                    return
+                self.frame_requests[(target.ident, target.main_frame)] = form
+            # Use the opener's event, never the popup's URL or document authority.
+            # Fetch handles destination policy, read holds and navigation accounting.
+            target.post('Page.navigate', {'url': url, 'transitionType': 'link' if event.get('userGesture') else 'other'})
+
+        # Chromium creates a form's window before NotifyInspector reports its
+        # method (FormSubmission::Create / Frame::ScheduleFormSubmission). Wait
+        # for an opener-renderer round trip, after that synchronous task, so a
+        # POST is identified before any GET can be issued. No popup is resumed.
+        self.AppHelper.callLater(shared.WARM_SECONDS, replay, {}, {'code': -1})
+        target.post('Runtime.evaluate', {'expression': 'void 0'}, replay)
 
     @staticmethod
     def origin(url):
@@ -908,8 +954,22 @@ class Worker(shared.Worker):
         return url in ('about:blank', 'chrome-error://chromewebdata/') or \
             str(url).lower().startswith(('http://', 'https://'))
 
+    @staticmethod
+    def popup_document(url):
+        return url == 'about:blank' or bool(Worker.origin(url))
+
     def frame_requested(self, target, event):
+        if event.get('reason') in ('formSubmissionGet', 'formSubmissionPost'):
+            for pending in getattr(target, 'window_opens', []):
+                # Ambiguous concurrent forms fail closed rather than guessing.
+                pending['form'] = event if pending['form'] is None else {'reason': 'formSubmissionPost'}
+        if event.get('disposition') in ('newWindow', 'newTab'):
+            return
         self.frame_requests[(target.ident, event['frameId'])] = event
+        if target.kind == 'page' and target is not self.main_target and event['frameId'] == target.main_frame:
+            if not self.owner_popups() or not self.popup_document(event.get('url', '')):
+                self.root_cdp.send('Target.closeTarget', {'targetId': target.ident})
+            return
         if target is not self.main_target or event['frameId'] != target.main_frame:
             return
         target.refused_navigation = None
@@ -925,6 +985,10 @@ class Worker(shared.Worker):
             target.post('Page.stopLoading')
 
     def frame_navigated(self, target, frame):
+        if target.kind == 'page' and target is not self.main_target and not frame.get('parentId'):
+            if not self.owner_popups() or not self.popup_document(frame.get('url', '')):
+                self.root_cdp.send('Target.closeTarget', {'targetId': target.ident})
+                return
         origin = self.origin(frame.get('url', ''))
         if origin:
             self.origins.add(origin)
@@ -952,15 +1016,29 @@ class Worker(shared.Worker):
                 target.refused_navigation = None
                 target.post('Page.stopLoading')
 
+                if getattr(target, 'history_recovered', False):
+                    target.restoring_history = 'about:blank'
+                    target.post('Page.navigate', {'url': 'about:blank'})
+                    return
+                target.history_recovered = True
+
                 def restore(history, error):
-                    if error or target is not self.main_target or target.committed_frame is not frame:
+                    if target is not self.main_target or target.committed_frame is not frame:
+                        return
+                    if error:
+                        target.restoring_history = 'about:blank'
+                        target.post('Page.navigate', {'url': 'about:blank'})
                         return
                     index = history.get('currentIndex', 0) - 1
                     entries = history.get('entries', [])
                     if 0 <= index < len(entries):
                         entry = entries[index]
                         target.restoring_history = entry['url']
-                        target.post('Page.navigateToHistoryEntry', {'entryId': entry['id']})
+                        if self.origin(entry['url']):
+                            target.post('Page.navigateToHistoryEntry', {'entryId': entry['id']})
+                            return
+                    target.restoring_history = 'about:blank'
+                    target.post('Page.navigate', {'url': 'about:blank'})
                 target.post('Page.getNavigationHistory', done=restore)
                 return
             target.refused_navigation = None
@@ -975,7 +1053,6 @@ class Worker(shared.Worker):
             # A cancelled/replaced navigation cannot lend its first-request
             # decision (or a consumed form pass) to the replacement.
             target.initial_request = None
-            target.adopt_when_reported = False
         if target is not self.main_target or event.get('requestId') not in self.main_requests:
             return
         self.main_requests.discard(event['requestId'])
@@ -1024,6 +1101,7 @@ class Worker(shared.Worker):
             self.emulate(self.main_target)
             self._install_guard_scripts()
         self.deadline(ident, timeout, self.view.stopLoading)
+        self.main_target.history_recovered = False
         self.navigation = (ident, None)
 
         def navigated(result, error):
@@ -1102,8 +1180,12 @@ class Worker(shared.Worker):
     def replace_closed_page(self):
         if self.closing or not self.browser.is_connected():
             return
-        self.page = self.context.new_page()
-        self.main_target = self.target_for(self.page)
+        self.creating_page = True
+        try:
+            self.page = self.context.new_page()
+            self.main_target = self.target_for(self.page)
+        finally:
+            self.creating_page = False
         self.set_guard_off(False)
         self.park()
 
@@ -1117,8 +1199,10 @@ class Worker(shared.Worker):
         for ident, page in list(self.pages.items()):
             if page is self.page or page.is_closed() or page in self.popups:
                 continue
-            if self.owner_visible:
+            if self.owner_popups():
                 self.popups.append(page)
+            else:
+                page.close(run_before_unload=False)
 
     def window_closed_by_owner(self):
         self.end_remote()
@@ -1231,10 +1315,25 @@ class Worker(shared.Worker):
                 self.run(shared.REMOTE_FOCUS_SCRIPT, {}, focused, view=view)
         # Capture at up to the CSS layout width, preserving the phone aspect ratio.
         pixel_width = min(shared.FRAME_MAX_WIDTH, width / zoom)
-        target.post('Page.captureScreenshot', {'format': 'jpeg', 'quality': int(shared.FRAME_JPEG_QUALITY * 100),
-                                              'captureBeyondViewport': False,
-                                              'clip': {'x': 0, 'y': 0, 'width': width / zoom, 'height': height / zoom,
-                                                       'scale': pixel_width / (width / zoom)}}, captured)
+
+        # A load event (or a recreated isolated world after commit) does not
+        # mean the compositor has a surface. Give the document a painted frame
+        # before asking for pixels, including after remote_begin resizes/zooms.
+        def paint_ready(value, error):
+            if ident not in self.pending:
+                return
+            if error:
+                return self.fail(ident, 'frame_failed')
+            capture()
+
+        def capture():
+            target.post('Page.captureScreenshot', {'format': 'jpeg', 'quality': int(shared.FRAME_JPEG_QUALITY * 100),
+                                                 'captureBeyondViewport': False,
+                                                 'clip': {'x': 0, 'y': 0, 'width': width / zoom, 'height': height / zoom,
+                                                          'scale': pixel_width / (width / zoom)}}, captured)
+
+        self.run('await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));'
+                 + 'return JSON.stringify(null);', {}, paint_ready, view=view)
 
     def op_remote_tap(self, ident, command, timeout):
         if not self._remote_allowed(ident):

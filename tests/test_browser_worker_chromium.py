@@ -52,7 +52,7 @@ class FakeCDP:
                 result = getattr(self.browser, 'navigation_history', {})
             elif command == 'Page.createIsolatedWorld':
                 result = {'executionContextId': 101}
-            elif command == 'Runtime.callFunctionOn':
+            elif command == 'Runtime.callFunctionOn' and not args['functionDeclaration'].startswith('async function() {\nawait new Promise(resolve => requestAnimationFrame('):
                 result = {'result': {'value': json.dumps(self.browser.script_results.popleft()
                                                         if self.browser.script_results else {})}}
             elif command == 'Page.captureScreenshot':
@@ -86,7 +86,8 @@ class FakePage:
 
     def close(self, **kwargs):
         self.closed = True
-        self.handlers['close']()
+        if 'close' in self.handlers:
+            self.handlers['close']()
 
 
 class FakeContext:
@@ -586,22 +587,6 @@ def test_subframe_network_failure_does_not_fail_main_navigation(worker):
     assert worker.messages[-1]['error'] == 'host_not_found'
 
 
-def test_ai_popup_post_is_adopted_without_replaying_the_request(worker):
-    old_page = worker.page
-    popup = worker.context.new_page()
-    worker.register_page(popup)
-    target = worker.target_for(popup)
-    # #34: the guard let this submit through (its own record), so the paused request proceeds.
-    worker.note_vetted({'vetted': {'method': 'post', 'action': 'https://public.test/submit', 'payment': False}})
-    with mock.patch.object(worker, 'decide', side_effect=lambda url, main, done: done(True)):
-        worker.request_paused(target, {'requestId': 'original-post', 'frameId': target.main_frame,
-                                      'request': {'url': 'https://public.test/submit', 'method': 'POST'}})
-    assert worker.page is popup and old_page.is_closed()
-    assert worker.posted_submits == 1
-    assert packets(worker, 'Fetch.continueRequest')[-1] == {'requestId': 'original-post'}
-    assert not packets(worker, 'Page.navigate'), 'never recreate a native request or its body'
-
-
 @pytest.mark.parametrize('layout', ['', False, 0, 'unknown'])
 def test_invalid_layout_is_rejected_without_navigation(worker, layout):
     assert command(worker, 'navigate', url='https://public.test/', layout=layout)['error'] == 'bad_layout'
@@ -758,6 +743,7 @@ def test_every_request_of_the_context_passes_the_popup_gate(worker):
 
 
 def test_a_popups_first_request_to_a_refused_destination_is_aborted(worker):
+    worker.owner_visible = worker.guard_off = True
     popup = worker.context.new_page()
     worker.register_page(popup)
     target = worker.target_for(popup)
@@ -766,12 +752,12 @@ def test_a_popups_first_request_to_a_refused_destination_is_aborted(worker):
     with mock.patch.object(worker, 'decide', side_effect=lambda url, main, done: done(False, 'blocked_destination')):
         worker.route_popup(route, FakeRequest(popup, 'http://127.0.0.1:8787/'))
     assert route.outcome == 'abort:aborted'
-    assert worker.blocked_reason == 'blocked_destination'
-    assert worker.blocked == 1 and popup.is_closed()
+    assert popup.is_closed()
+    assert worker.blocked == 0
 
 
 def test_the_main_page_and_sub_resources_are_left_to_the_worker_own_fetch(worker):
-    for request in (FakeRequest(worker.page, 'https://public.test/'), FakeRequest(object(), 'https://cdn.test/x.js',
+    for request in (FakeRequest(worker.page, 'https://public.test/'), FakeRequest(worker.page, 'https://cdn.test/x.js',
                                                                                      navigation=False)):
         route = FakeRoute()
         worker.route_popup(route, request)
@@ -779,16 +765,18 @@ def test_the_main_page_and_sub_resources_are_left_to_the_worker_own_fetch(worker
 
 
 def test_a_popup_that_cannot_be_identified_is_refused(worker, monkeypatch):
+    worker.owner_visible = worker.guard_off = True
     monkeypatch.setattr(shared, 'WARM_SECONDS', 0)
     route = FakeRoute()
     stranger = mock.Mock(url='about:blank')
     with mock.patch.object(worker, 'popup_target', return_value=None):
         worker.route_popup(route, FakeRequest(stranger, 'https://public.test/'))
     assert route.outcome == 'abort:aborted'
-    assert worker.blocked_reason == 'navigation_failed', 'the step is told its navigation was refused'
+    assert worker.blocked == 0
 
 
 def test_a_reported_popup_uses_its_public_cdp_identity(worker):
+    worker.owner_visible = worker.guard_off = True
     popup = worker.context.new_page()
     assert worker.popup_target(popup) is worker.targets[popup.ident]
     assert worker.pages[popup.ident] is popup
@@ -805,6 +793,7 @@ class UnreportedPopupRequest(FakeRequest):
 
 
 def unreported_popup(worker):
+    worker.owner_visible = worker.guard_off = True
     page = worker.context.new_page(reported=False)
     target = worker.targets[page.ident]
     assert target.ready
@@ -823,52 +812,25 @@ def test_unreported_popup_refusal_aborts_reports_and_closes(worker):
     with mock.patch.object(worker, 'decide', side_effect=lambda url, main, done: done(False, 'blocked_destination')), \
          mock.patch.object(worker, 'navigation_refused', wraps=worker.navigation_refused) as refused:
         worker.route_popup(route, UnreportedPopupRequest(popup, 'http://127.0.0.1:8787/'))
-    refused.assert_called_once_with(True, 'blocked_destination')
+    refused.assert_called_once_with(False, 'blocked_destination')
     assert route.outcome == 'abort:aborted'
-    assert popup.is_closed() and worker.blocked_reason == 'blocked_destination'
+    assert popup.is_closed() and worker.blocked == 0
     assert worker.page is not popup
     worker.AppHelper.pump()
     assert worker.deciding == 0
 
 
-def test_unreported_allowed_popup_is_released_then_adopted_when_page_is_reported(worker):
+def test_owner_popup_is_released_without_replacing_main_page(worker):
     old = worker.page
     popup, target = unreported_popup(worker)
     route = FakeRoute()
-    with mock.patch.object(worker, 'decide', side_effect=lambda url, main, done: done(True)):
+    with mock.patch.object(worker, 'decide', side_effect=lambda url, counted, done: done(True)):
         worker.route_popup(route, UnreportedPopupRequest(popup, 'https://public.test/'))
-    assert route.outcome == 'continue', 'do not wait for the Page whose navigation the route is holding'
-    assert worker.page is old and not old.is_closed()
-    methods = [p['method'] for session, p in worker.engine.browser.packets if session == target.session_id]
-    assert 'Fetch.enable' in methods and 'Runtime.addBinding' in methods
-    assert 'Page.addScriptToEvaluateOnNewDocument' in methods
+    assert route.outcome == 'continue'
     worker.context.handlers['page'](popup)
     worker.AppHelper.pump()
-    assert worker.page is popup and worker.main_target is target and old.is_closed()
-    assert not packets(worker, 'Page.navigate'), 'the original request/body must never be replayed'
-
-
-@pytest.mark.parametrize('adopted', [False, True])
-def test_popup_redirect_refusal_is_reported_and_closes_the_popup(worker, adopted):
-    popup, target = unreported_popup(worker)
-    route = FakeRoute()
-    decisions = []
-
-    def decide(url, counted, done):
-        decisions.append(url)
-        done(url == 'https://public.test/', 'blocked_destination')
-
-    with mock.patch.object(worker, 'decide', side_effect=decide):
-        worker.route_popup(route, UnreportedPopupRequest(popup, 'https://public.test/'))
-        if adopted:
-            worker.context.handlers['page'](popup)
-            worker.AppHelper.pump()
-        worker.fetch_paused(target, popup_fetch(target, 'http://127.0.0.1:8787/',
-                                                requestId='redirect', redirectedRequestId='first-fetch'))
-    assert decisions == ['https://public.test/', 'http://127.0.0.1:8787/']
-    assert packets(worker, 'Fetch.failRequest')[-1]['requestId'] == 'redirect'
-    assert not packets(worker, 'Fetch.continueRequest')
-    assert worker.blocked_reason == 'blocked_destination' and popup.is_closed()
+    assert worker.page is old and not old.is_closed() and popup in worker.popups
+    assert not packets(worker, 'Page.navigate')
 
 
 @pytest.mark.parametrize('fetch_first', [False, True])
@@ -905,6 +867,7 @@ def test_a_later_same_url_navigation_and_same_url_redirect_are_not_initial_reque
 
 
 def test_initial_route_waits_for_the_fetch_acknowledgement_only(worker):
+    worker.owner_visible = worker.guard_off = True
     """#34 (observed): while the popup's first request is held its renderer answers nothing, so the barrier is
     the browser-side Fetch interception (later hops checked), not the renderer's script acknowledgements."""
     worker.engine.browser.hold_method = 'Fetch.enable'
@@ -934,11 +897,11 @@ def test_ambiguous_unreported_popups_fail_closed(worker, monkeypatch):
         worker.route_popup(route, UnreportedPopupRequest(first, 'https://public.test/'))
     assert route.outcome == 'abort:aborted' and not decide.called
     assert first.is_closed() and second.is_closed()
-    assert worker.blocked_reason == 'navigation_failed'
+    assert worker.blocked == 0
 
 
 @pytest.mark.parametrize('fetch_first', [False, True])
-def test_popup_post_both_interceptors_spend_one_payment_pass_without_replay(worker, fetch_first):
+def test_owner_popup_post_both_interceptors_do_not_replay(worker, fetch_first):
     popup, target = unreported_popup(worker)
     route = FakeRoute()
     request = UnreportedPopupRequest(popup, 'https://public.test/pay')
@@ -950,10 +913,10 @@ def test_popup_post_both_interceptors_spend_one_payment_pass_without_replay(work
         actions = [lambda: worker.route_popup(route, request), lambda: worker.fetch_paused(target, event)]
         for action in reversed(actions) if fetch_first else actions:
             action()
-    assert decide.call_count == 1 and worker.posted_submits == 1
+    assert decide.call_count == 1 and worker.posted_submits == 0
     assert route.outcome == 'continue'
     assert packets(worker, 'Fetch.continueRequest')[-1]['requestId'] == 'first-fetch'
-    assert not worker.take_vetted('POST', request.url)
+    assert worker.take_vetted('POST', request.url)
     assert not packets(worker, 'Page.navigate')
 
 
@@ -970,7 +933,7 @@ def test_cancelled_initial_navigation_does_not_authorize_a_replacement(worker):
     assert popup.is_closed()
 
 
-@pytest.mark.parametrize('replacement', ['commit', 'context_destroyed', 'contexts_cleared', 'popup'])
+@pytest.mark.parametrize('replacement', ['commit', 'context_destroyed', 'contexts_cleared'])
 def test_document_replacement_discards_all_form_passes(worker, replacement):
     target = worker.main_target
     target.contexts[target.main_frame] = 101
@@ -983,10 +946,6 @@ def test_document_replacement_discards_all_form_passes(worker, replacement):
         target.receive({'method': 'Runtime.executionContextDestroyed', 'params': {'executionContextId': 101}})
     elif replacement == 'contexts_cleared':
         target.receive({'method': 'Runtime.executionContextsCleared'})
-    else:
-        popup = worker.context.new_page()
-        worker.register_page(popup)
-        worker.promote_popup(worker.target_for(popup), lambda: None)
     assert worker.vetted == []
     assert not worker.take_vetted('POST', 'https://shop.test/pay')
     # A queued notification from the destroyed document cannot replenish the cache.
@@ -1165,3 +1124,198 @@ def test_chromiums_own_error_page_is_not_an_unsupported_navigation():
     assert chromium.Worker.supported_document('chrome-error://chromewebdata/')
     for url in ('blob:https://public.test/1', 'data:text/html,x', 'file:///etc/passwd', 'javascript:1'):
         assert not chromium.Worker.supported_document(url), url
+
+
+def window_open(worker, url, gesture=False):
+    worker.main_target.receive({'method': 'Page.windowOpen', 'params': {
+        'url': url, 'userGesture': gesture, 'windowName': '', 'windowFeatures': []}})
+
+
+@pytest.mark.parametrize('allowed', [True, False])
+@pytest.mark.parametrize('gesture', [True, False])
+def test_ai_window_open_closes_target_and_uses_main_fetch_policy(worker, allowed, gesture):
+    main, page = worker.main_target, worker.page
+    url = 'https://public.test/' if allowed else 'http://127.0.0.1/'
+    window_open(worker, url, gesture=gesture)
+    popup = worker.context.new_page()
+    worker.AppHelper.pump()
+    assert popup.is_closed() and worker.page is page and not page.is_closed()
+    assert popup.ident not in worker.targets
+    assert not any(params.get('targetId') == popup.ident for method, params in worker.root_cdp.calls
+                   if method == 'Target.attachToTarget')
+    assert packets(worker, 'Page.navigate') == [{'url': url, 'transitionType': 'link' if gesture else 'other'}]
+    with mock.patch.object(worker, 'decide', side_effect=lambda url, main, done:
+                           done(allowed, None if allowed else 'blocked_destination')) as decide:
+        worker.fetch_paused(main, popup_fetch(main, url))
+    decide.assert_called_once_with(url, True, mock.ANY)
+    assert worker.main_navigations == int(allowed)
+    assert worker.blocked == int(not allowed)
+    assert worker.deciding == 0
+    assert packets(worker, 'Fetch.continueRequest' if allowed else 'Fetch.failRequest')[-1]['requestId'] == 'first-fetch'
+    if allowed:
+        worker.frame_navigated(main, {'id': main.main_frame, 'url': url})
+        assert worker.landed == 1
+    else:
+        assert worker.blocked_reason == 'blocked_destination'
+        worker.pending[8] = True
+        worker.finish_input(8, blocked_before=0)
+        assert worker.messages[-1]['error'] == 'blocked_destination'
+
+
+@pytest.mark.parametrize('url', ['about:blank', 'blob:https://public.test/id', 'data:text/html,hello'])
+@pytest.mark.parametrize('visible,guard_off', [(False, False), (True, False), (False, True)])
+def test_ai_non_http_window_open_leaves_no_popup_or_navigation(worker, url, visible, guard_off):
+    worker.owner_visible, worker.guard_off = visible, guard_off
+    window_open(worker, url)
+    popup = worker.context.new_page(reported=False)
+    assert popup.is_closed()
+    assert not packets(worker, 'Page.navigate')
+    assert not packets(worker, 'Fetch.continueRequest')
+
+
+@pytest.mark.parametrize('method', ['POST', 'GET'])
+def test_ai_popup_first_route_never_continues_even_with_opener_pass(worker, method):
+    popup = worker.context.new_page(reported=False)
+    route = FakeRoute()
+    request = UnreportedPopupRequest(popup, 'https://public.test/pay')
+    request.method = method
+    worker.note_vetted({'vetted': {'method': 'post', 'action': request.url, 'payment': False}})
+    with mock.patch.object(worker, 'decide') as decide:
+        worker.route_popup(route, request)
+    assert route.outcome == 'abort:aborted' and popup.is_closed()
+    assert not decide.called and not packets(worker, 'Fetch.continueRequest')
+    assert worker.take_vetted('POST', request.url), 'the popup never borrows a pass'
+    assert worker.refused_submits == int(method == 'POST')
+
+
+def test_post_new_window_notification_after_window_open_is_refused_before_replay(worker):
+    browser, target = worker.engine.browser, worker.main_target
+    browser.hold_method, browser.held_responses = 'Runtime.evaluate', []
+    window_open(worker, 'https://public.test/submit', gesture=True)
+    assert worker.deciding == 1 and not packets(worker, 'Page.navigate')
+    # Chromium's form creates its target first, then reports method and target
+    # frame on the opener. The disposition can be currentTab in the new frame.
+    target.receive({'method': 'Page.frameRequestedNavigation', 'params': {
+        'frameId': 'new-window-frame', 'url': 'https://public.test/submit',
+        'reason': 'formSubmissionPost', 'disposition': 'currentTab'}})
+    popup = worker.context.new_page(reported=False)
+    for response in browser.held_responses:
+        response()
+    assert popup.is_closed() and worker.refused_submits == 1
+    assert worker.deciding == 0
+    assert not packets(worker, 'Page.navigate') and not packets(worker, 'Fetch.continueRequest')
+    worker.pending[8] = True
+    worker.finish_input(8, blocked_before=0)
+    assert worker.messages[-1] == {'id': 8, 'ok': False, 'error': 'submit_refused'}
+
+
+def test_window_open_renderer_barrier_is_bounded_and_late_answer_cannot_replay(worker, monkeypatch):
+    browser = worker.engine.browser
+    browser.hold_method, browser.held_responses = 'Runtime.evaluate', []
+    monkeypatch.setattr(shared, 'WARM_SECONDS', 0)
+    window_open(worker, 'https://public.test/')
+    worker.AppHelper.pump()
+    assert worker.deciding == 0 and worker.blocked_reason == 'navigation_failed'
+    for response in browser.held_responses:
+        response()
+    assert not packets(worker, 'Page.navigate')
+
+
+@pytest.mark.parametrize('commit', [False, True])
+@pytest.mark.parametrize('url', ['blob:https://public.test/id', 'data:text/html,bad'])
+def test_owner_popup_unsupported_main_document_is_closed(worker, commit, url):
+    popup, target = unreported_popup(worker)
+    if commit:
+        worker.frame_navigated(target, {'id': target.main_frame, 'url': url})
+    else:
+        worker.frame_requested(target, {'frameId': target.main_frame, 'url': url})
+    assert popup.is_closed() and not worker.page.is_closed()
+    assert not packets(worker, 'Page.navigateToHistoryEntry')
+
+
+def test_unsupported_history_recovery_is_bounded_and_blank_parking_is_not_a_loop(worker):
+    target = worker.main_target
+    worker.reading = True
+    worker.engine.browser.navigation_history = {'currentIndex': 1, 'entries': [
+        {'id': 10, 'url': 'https://public.test/previous'}, {'id': 11, 'url': 'blob:bad'}]}
+    for _ in range(3):
+        worker.frame_navigated(target, {'id': target.main_frame, 'url': 'blob:bad'})
+        worker.frame_navigated(target, {'id': target.main_frame,
+                                      'url': getattr(target, 'restoring_history', 'about:blank')})
+    assert packets(worker, 'Page.navigateToHistoryEntry') == [{'entryId': 10}]
+    assert packets(worker, 'Page.navigate') == [{'url': 'about:blank'}, {'url': 'about:blank'}]
+    assert worker.blocked == 3 and worker.blocked_reason == 'unsupported_navigation'
+    assert worker.read_navigations == 3
+
+
+def test_frame_waits_for_paint_in_recreated_world_before_capture_and_keeps_phone_zoom(worker):
+    target, browser = worker.main_target, worker.engine.browser
+    worker.owner_visible = worker.guard_off = True
+    command(worker, 'remote_begin')
+    target.contexts[target.main_frame] = 999
+    worker.frame_navigated(target, {'id': target.main_frame, 'url': 'https://public.test/desktop-only'})
+    assert target.main_frame not in target.contexts
+    worker.set_page_zoom(.39)
+    browser.hold_method, browser.held_responses = 'Runtime.callFunctionOn', []
+    before = len(packets(worker, 'Page.captureScreenshot'))
+    worker.handle({'id': 8, 'op': 'frame', 'timeout': 10})
+    assert len(packets(worker, 'Page.captureScreenshot')) == before
+    assert packets(worker, 'Page.createIsolatedWorld')[-1]['frameId'] == target.main_frame
+    assert 'requestAnimationFrame' in packets(worker, 'Runtime.callFunctionOn')[-1]['functionDeclaration']
+    browser.hold_method = None
+    browser.script_results.extend([{'focus': 'text', 'fields': []}, {'page': 1000, 'inner': 1000}])
+    for response in browser.held_responses:
+        response()
+    answer = worker.messages[-1]
+    assert answer['id'] == 8 and answer['ok'] and answer['focus'] == 'text'
+    assert answer['width'] == shared.MOBILE_SIZE[0]
+    clip = packets(worker, 'Page.captureScreenshot')[-1]['clip']
+    assert clip['width'] == pytest.approx(1000)
+    assert clip['height'] == pytest.approx(shared.MOBILE_SIZE[1] / .39)
+    assert target.contexts[target.main_frame] == 101
+
+
+def test_owner_popup_pending_decision_cannot_continue_after_guard_is_armed(worker):
+    popup, target = unreported_popup(worker)
+    callbacks = []
+    route = FakeRoute()
+    with mock.patch.object(worker, 'decide', side_effect=lambda url, counted, done: callbacks.append(done)):
+        worker.route_popup(route, UnreportedPopupRequest(popup, 'https://public.test/'))
+    assert route.outcome is None
+    worker.guard_off = False
+    callbacks[0](True)
+    assert route.outcome == 'abort:aborted' and popup.is_closed()
+    assert not packets(worker, 'Fetch.continueRequest')
+    assert worker.deciding == 0
+
+
+def test_owner_popup_fetch_post_preserves_original_body_and_redirect_policy(worker):
+    popup, target = unreported_popup(worker)
+    decisions = []
+
+    def decide(url, counted, done):
+        decisions.append((url, counted))
+        done(len(decisions) == 1, 'blocked_destination')
+
+    with mock.patch.object(worker, 'decide', side_effect=decide):
+        worker.fetch_paused(target, {**popup_fetch(target), 'request': {
+            'url': 'https://public.test/', 'method': 'POST', 'postData': 'original=body'}})
+        worker.fetch_paused(target, popup_fetch(target, 'http://127.0.0.1/',
+                                              requestId='redirect', redirectedRequestId='first-fetch'))
+    assert decisions == [('https://public.test/', False), ('http://127.0.0.1/', False)]
+    assert packets(worker, 'Fetch.continueRequest')[-1] == {'requestId': 'first-fetch'}
+    assert packets(worker, 'Fetch.failRequest')[-1]['requestId'] == 'redirect'
+    assert popup.is_closed() and not packets(worker, 'Page.navigate')
+
+
+def test_popup_child_request_after_guard_is_armed_is_never_continued(worker):
+    popup, target = unreported_popup(worker)
+    worker.guard_off = False
+    route = FakeRoute()
+    worker.route_popup(route, FakeRequest(popup, 'https://public.test/child', child=True))
+    assert route.outcome == 'abort:aborted'
+    # A related OOPIF arriving after the mode change is closed without resuming.
+    worker.attached(target, {'sessionId': 'popup-child', 'targetInfo': {
+        'type': 'iframe', 'targetId': 'popup-child'}})
+    assert popup.is_closed()
+    assert not any(session == 'popup-child' for session, _ in worker.engine.browser.packets)
