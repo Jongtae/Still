@@ -70,7 +70,23 @@ class EngineContract(unittest.TestCase):
         omitted = ScriptedSchemaEngine({'answer': False, 'gap': GAP, 'confidence': 0.9})
         self.assertIsNone(omitted.judge_explained(DecisionContext('p', {}), 'q').note, 'an engine without the note keeps the gap path')
         yes = ScriptedSchemaEngine({'answer': True, 'gap': '', 'note': 'stray', 'confidence': 0.9})
-        self.assertIsNone(yes.judge_explained(DecisionContext('p', {}), 'q').note)
+        self.assertEqual(yes.judge_explained(DecisionContext('p', {}), 'q').note, 'stray') # #631: yes keeps its note.
+
+    def test_either_explained_verdict_keeps_a_line_silence_or_absence(self):
+        # #631: exercise schema parsing as well as BinaryDecision and the handoff.
+        for answer in (True, False):
+            for fields in ({}, {'note': ''}, {'note': 'The example draft remains open.'}):
+                with self.subTest(answer=answer, fields=fields):
+                    engine = ScriptedSchemaEngine({'answer': answer, 'gap': 'Internal gap.', 'confidence': 0.9, **fields})
+                    judged = ConversationJudgments(engine).goal_reached('Review the example draft.', 'Example result.',
+                                                                       failed_steps='Example step failed.', answer='Example reply.')
+                    self.assertEqual(judged.note, fields.get('note'))
+                    self.assertEqual(len(engine.asked), 1)
+                    verdict = agent_runtime.goal_verdict(judged.outcome, judged.value, judged.note)
+                    self.assertEqual(verdict.note, fields.get('note'))
+                    if answer:
+                        self.assertEqual(verdict.gap, '')
+                        self.assertFalse(verdict.retry_warranted)
 
     def test_the_note_never_asks_again_for_a_step_the_owner_took(self):
         """#155: the owner typed the approval; the closing line asked for it again in a formal register."""
@@ -217,7 +233,7 @@ class ClosingLine(unittest.TestCase):
         self.assertEqual(report_statement(report), note)
         empty = agent_runtime.agency_report('r', [], [], [], None)
         empty['note'] = ''
-        self.assertIsNone(answer_note([], 'partial', report=empty))
+        self.assertEqual(answer_note([], 'partial', report=empty), '') # #631: explicit silence.
         self.assertIsNone(report_statement(empty))
         both = agent_runtime.agency_report('r', [], [], [], None)
         both.update(note=note, gap=GAP)

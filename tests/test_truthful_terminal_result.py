@@ -501,5 +501,35 @@ class UnsupportedTextNeverTerminalTests(TerminalResultTestCase):
                       AgentService.telegram_result_text('', 'cause', None))
 
 
+class JudgedClosingLine631(TerminalResultTestCase):
+    def test_partial_direct_work_persists_and_delivers_all_three_note_states(self):
+        # #631: real run_agent -> report -> SQLite -> Telegram transport, one goal call.
+        from personal_agent.decision import BinaryDecision, FixtureDecisionEngine, OUTCOME_DECIDED, fixture_confidence
+        from personal_agent.conversation_projection import TERMINAL_PARTIAL_NOTE
+        self.connect_folder('Example project outline.')
+        for answer in (True, False):
+            for note in ('', 'The example reminder is still missing.', None):
+                with self.subTest(answer=answer, note=note):
+                    calls = []
+                    def judge(context, proposition):
+                        if context.purpose != 'goal-reached':return None
+                        calls.append(context)
+                        return BinaryDecision(OUTCOME_DECIDED, answer, fixture_confidence(), note=note, retry_warranted=False)
+                    self.service.use_decision_engine(FixtureDecisionEngine(judge=judge))
+                    self.plan = [('example_unavailable', {}), ('find_files', {'query': 'outline'}), ('schedule_preparation', {
+                        **PAST_REMINDER, 'goal': 'Example reminder'})]
+                    self.claim = True # #631: a decided yes with an invalid call still concludes partial.
+                    self.text = 'Example outline found. Please send the example value.'
+                    job, bubble = self.ask('Find the example outline and set an example reminder.')
+                    self.assertEqual(job['status'], 'partial')
+                    expected = note if note is not None else TERMINAL_PARTIAL_NOTE
+                    with self.store.db() as db:
+                        stored = db.execute('SELECT owner_note FROM jobs WHERE id=?', (job['id'],)).fetchone()[0]
+                    self.assertEqual(stored, expected)
+                    self.assertEqual(bubble, job['response'] + ('\n\n' + expected if expected else ''))
+                    self.assertEqual(len(calls), 1)
+                    self.assertNotEqual(calls[0].facts['failed_steps'], 'none')
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -3586,5 +3586,62 @@ class JudgmentHistoryAudit(Harness):
         self.assertEqual(self.asked_goals[-1].context_messages, 2)
 
 
+class ClosingJudgment631(unittest.TestCase):
+    def test_decided_notes_survive_the_engine_handoff_and_terminal_attempt(self):
+        # #631: one call, either verdict, with and without an owner stop.
+        for answer in (True, False):
+            for note in ('', 'The example attachment is still missing.', None):
+                for owner_needed in (False, True):
+                    with self.subTest(answer=answer, note=note, owner_needed=owner_needed):
+                        calls = []
+                        def judge(context, proposition):
+                            calls.append(context)
+                            return BinaryDecision(OUTCOME_DECIDED, answer, fixture_confidence(), gap='Internal gap.', note=note,
+                                                  retry_warranted=False)
+                        engine = FixtureDecisionEngine(structured=lambda *_: decided(plan('a', 'Answer.')), judge=judge)
+                        orchestration = Orchestration(ConversationJudgments(engine), OrchestrationUnit.catalogue(None),
+                                                      request='Compare example drafts.', record=lambda *_: None)
+                        attempt = orchestration.first()
+                        verdict = orchestration.evaluate_answer('Please send the example value.', 'Example read succeeded.',
+                                                                'Example write failed.')
+                        orchestration.next(attempt, 'owner_needed' if owner_needed else verdict,
+                                           judged=verdict if owner_needed else None, effect=True)
+                        self.assertEqual(orchestration.terminal_note, note)
+                        self.assertEqual(len(calls), 1)
+                        self.assertEqual(calls[0].facts['failed_steps'], 'Example write failed.')
+                        self.assertEqual(orchestration.terminal_gap, '' if answer else 'Internal gap.')
+
+    def test_undecided_notes_are_absent(self):
+        for outcome, answer in ((OUTCOME_UNAVAILABLE, True), (OUTCOME_DECIDED, None)):
+            self.assertIsNone(BinaryDecision(outcome, answer, fixture_confidence(), note='Not decided.').note)
+
+
+class CliClosingJudgment631(Harness):
+    def test_partial_cli_reached_and_owner_needed_keep_the_note_through_storage(self):
+        from personal_agent.conversation_projection import TERMINAL_PARTIAL_NOTE
+        for owner_needed in (False, True):
+            for note in ('', 'The example draft could not be saved.', None):
+                with self.subTest(owner_needed=owner_needed, note=note):
+                    def work(tools):
+                        GoalDecidesOutcome.step(tools, 'browser_read', 'succeeded', evidence={})
+                        GoalDecidesOutcome.step(tools, 'browser_type', 'failed', code='tool_failed', effect='none')
+                    self.engine.before = work
+                    self.engine.answers = ['Please send the example value.']
+                    engine = self.script([plan('codex', 'Answer.')])
+                    calls = []
+                    def judge(context, proposition):
+                        if context.purpose != 'goal-reached':return None
+                        calls.append(context)
+                        return BinaryDecision(OUTCOME_DECIDED, True, fixture_confidence(), note=note)
+                    engine._judge = judge # #631: replace only the fixture's outcome answer.
+                    with mock.patch.object(self.service, 'step_approval_pending', return_value=owner_needed):
+                        job, row = self.run_work('Compare example drafts.', key=f'closing-{owner_needed}-{note}')
+                    self.assertEqual(row['status'], 'partial')
+                    self.assertEqual(row['owner_note'], note if note is not None else TERMINAL_PARTIAL_NOTE)
+                    self.assertEqual(len(calls), 1)
+                    self.assertEqual(self.events(job, 'evaluated')[-1][1]['outcome'],
+                                     'owner_needed' if owner_needed else 'reached')
+
+
 if __name__ == '__main__':
     unittest.main()

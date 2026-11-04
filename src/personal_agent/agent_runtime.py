@@ -5316,7 +5316,8 @@ class GoalVerdict(str):
 
 def goal_verdict(outcome,gap='',note=None,retry_warranted=None):
  verdict=GoalVerdict(outcome);verdict.gap=gap if outcome=='no' else ''
- verdict.note=note if outcome=='no' and isinstance(note,str) else None
+ # #631: a yes can still leave steps unfinished.
+ verdict.note=note if outcome in ('yes','no') and isinstance(note,str) else None
  verdict.retry_warranted=retry_warranted if outcome=='no' else False
  return verdict
 
@@ -5661,10 +5662,11 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
   result.judgment=judgment
   question=claim['summary'] if claim is not None and claim['status']=='needs_owner' and result.outcome!='succeeded' else None
   result.report=agency_report(goal,verified,[*failures,*stated],unknown,(claim or {}).get('next') or None,question)
-  if result.outcome!='succeeded' and judgment=='no':
+  if result.outcome!='succeeded' and judgment in ('yes','no'):
+   # #631: keep the same judgment's line on either verdict.
    # #1459: the owner reads the judgment's note; the gap only when no note was given.
    if isinstance(getattr(judgment,'note',None),str):result.report['note']=judgment.note
-   elif getattr(judgment,'gap',''):result.report['gap']=judgment.gap
+   elif judgment=='no' and getattr(judgment,'gap',''):result.report['gap']=judgment.gap
   if trail:
    kinds={}
    for row in alternatives:kinds[row['kind']]=kinds.get(row['kind'],0)+1
