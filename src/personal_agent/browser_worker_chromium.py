@@ -29,6 +29,13 @@ framework would still need X11. The new native effect is limited to relinquishin
 desktop keyboard focus when parking; data, network and guard policy are unchanged.
 References: https://chromedevtools.github.io/devtools-protocol/tot/Page/
 and https://www.x.org/releases/current/doc/libX11/libX11/libX11.html.
+#640 findings reuse review (Adapt): Xlib's XSetErrorHandler/XSync contain native
+errors; Playwright's crPage.takeScreenshot and crNetworkManager request settlement
+supply the viewport and cancellation semantics behind the existing CDP adapter.
+These maintained platform/official APIs need only stdlib ctypes and existing
+transport glue; no additional framework, dependency, licence or authority change.
+Navigation expiry reuses the existing deadline and loader correlation (N/A: bug
+fix only, no new component or case in a policy mechanism).
 The stdlib queue/heapq provide the main-thread handoff and timer queue. Selenium
 would still need the same CDP boundary; a second automation framework adds no
 required API. Still's browser_worker.Worker supplies the existing protocol,
@@ -129,6 +136,24 @@ class _ClassHint(ctypes.Structure):
     _fields_ = [('res_name', ctypes.c_void_p), ('res_class', ctypes.c_void_p)]
 
 
+class _XErrorEvent(ctypes.Structure):
+    _fields_ = [('type', ctypes.c_int), ('display', ctypes.c_void_p), ('resourceid', ctypes.c_ulong),
+                ('serial', ctypes.c_ulong), ('error_code', ctypes.c_ubyte),
+                ('request_code', ctypes.c_ubyte), ('minor_code', ctypes.c_ubyte)]
+
+
+_XErrorHandler = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.POINTER(_XErrorEvent))
+_focus_x_error = False
+
+
+@_XErrorHandler
+def _focus_error_handler(display, event):
+    # Retained at module scope: Xlib holds a native function pointer, not a Python reference.
+    global _focus_x_error
+    _focus_x_error = True
+    return 0
+
+
 def relinquish_keyboard_focus():
     """Give the desktop keyboard back when a parked Still window holds it (Codex review on #640).
 
@@ -139,6 +164,7 @@ def relinquish_keyboard_focus():
     Browser.Bounds has no focus property, a DOM blur does not release native focus, and minimizing
     would stop requestAnimationFrame for the parked page.
     """
+    global _focus_x_error
     try:
         x11 = ctypes.CDLL('libX11.so.6')
     except OSError:
@@ -152,16 +178,20 @@ def relinquish_keyboard_focus():
     x11.XFree.argtypes = [ctypes.c_void_p]
     x11.XSetInputFocus.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int, ctypes.c_ulong]
     x11.XSync.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    x11.XSetErrorHandler.argtypes, x11.XSetErrorHandler.restype = [_XErrorHandler], _XErrorHandler
     x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
     display = x11.XOpenDisplay(None)
     if not display:
         return False
+    _focus_x_error = False
+    previous_handler = x11.XSetErrorHandler(_focus_error_handler)
+    ours = False
     try:
         window, revert = ctypes.c_ulong(), ctypes.c_int()
         x11.XGetInputFocus(display, ctypes.byref(window), ctypes.byref(revert))
         current, ours = window.value, False
         for _ in range(32):
-            if current in (0, 1):   # None, PointerRoot
+            if _focus_x_error or current in (0, 1):   # None, PointerRoot
                 break
             hint = _ClassHint()
             if x11.XGetClassHint(display, current, ctypes.byref(hint)):
@@ -181,15 +211,20 @@ def relinquish_keyboard_focus():
             if parent.value in (0, root.value):
                 break
             current = parent.value
-        if ours:
+        x11.XSync(display, False)
+        if ours and not _focus_x_error:
             # PointerRoot=1, RevertToPointerRoot=1, CurrentTime=0 (X11/X.h).
             x11.XSetInputFocus(display, 1, 1, 0)
-            x11.XSync(display, False)
-        return ours
     except Exception:
-        return False
+        ours = False
     finally:
-        x11.XCloseDisplay(display)
+        try:
+            # Deliver asynchronous errors while our handler is still installed.
+            x11.XSync(display, False)
+        finally:
+            x11.XSetErrorHandler(previous_handler)
+            x11.XCloseDisplay(display)
+    return ours and not _focus_x_error
 
 
 def parse_args(argv=None):
@@ -307,13 +342,13 @@ class _Target:
         self.initializing, self.setup_pending = True, set()
         self.ids = itertools.count(1)
 
-    def post(self, method, params=None, done=None):
+    def post(self, method, params=None, done=None, *, setup=True):
         if self.disposed:
             if done is not None:
                 done({}, {'code': -1})
             return
         ident = next(self.ids)
-        if self.initializing:
+        if self.initializing and setup:
             self.setup_pending.add(ident)
             original_done = done
 
@@ -333,6 +368,15 @@ class _Target:
             self.parent.post('Target.sendMessageToTarget', envelope)
         else:
             self.parent.send('Target.sendMessageToTarget', envelope)
+
+    def settle_request(self, request_id, allowed):
+        # Like Playwright's request settlement: cancellation/disposal may win the race.
+        # This is not guard initialization, even while setup commands are outstanding.
+        method = 'Fetch.continueRequest' if allowed else 'Fetch.failRequest'
+        params = {'requestId': request_id}
+        if not allowed:
+            params['errorReason'] = 'Aborted'
+        self.post(method, params, lambda result, error: None, setup=False)
 
     def finish_setup(self):
         if not self.disposed and not self.initializing and not self.setup_pending and not self.worker.fatal:
@@ -777,11 +821,10 @@ class Worker(shared.Worker):
         ``route_popup``); by default the request is the one this target's Fetch paused.
         """
         request = event['request']
-        release = release or (lambda: target.post('Fetch.continueRequest', {'requestId': event['requestId']}))
+        release = release or (lambda: target.settle_request(event['requestId'], True))
         # 'Aborted' (net::ERR_ABORTED) leaves the current document in place, as WebKit's cancelled
         # policy decision does; 'BlockedByClient' would commit Chromium's error page instead.
-        refuse = refuse or (lambda: target.post('Fetch.failRequest', {'requestId': event['requestId'],
-                                                                      'errorReason': 'Aborted'}))
+        refuse = refuse or (lambda: target.settle_request(event['requestId'], False))
         url, method = request['url'], request.get('method', 'GET')
         page_target = target
         while page_target.kind == 'iframe' and isinstance(page_target.parent, _Target):
@@ -854,8 +897,8 @@ class Worker(shared.Worker):
         # Context routing and our Fetch can both hold the initial request, in
         # either order. Share its decision, not a URL-based bypass for a later
         # request. Redirects ALWAYS get their own decision.
-        release = lambda: target.post('Fetch.continueRequest', {'requestId': event['requestId']})
-        refuse = lambda: target.post('Fetch.failRequest', {'requestId': event['requestId'], 'errorReason': 'Aborted'})
+        release = lambda: target.settle_request(event['requestId'], True)
+        refuse = lambda: target.settle_request(event['requestId'], False)
         if getattr(target, 'popup_navigation', False) and event.get('frameId') == target.main_frame \
                 and not event.get('redirectedRequestId'):
             return self.initial_popup_request(target, event, 'fetch', release, refuse)
@@ -905,9 +948,9 @@ class Worker(shared.Worker):
             if not request.is_navigation_request():
                 if page is not self.page and not self.owner_popups():
                     return self._settle_route(route, False)
-                return route.continue_()
+                return self._settle_route(route, True)
             if page is self.page or self.owner_popups() and frame is not None and frame.parent_frame is not None:
-                return route.continue_()   # this worker's own Fetch decides (each hop)
+                return self._settle_route(route, True)   # this worker's own Fetch decides (each hop)
         except Exception:
             self.navigation_refused(not self.owner_visible, 'navigation_failed')
             if page is not None and not page.is_closed():
@@ -1200,7 +1243,13 @@ class Worker(shared.Worker):
                 self.resize(shared.DESKTOP_SIZE if layout == 'desktop' else shared.MOBILE_SIZE)
             self.emulate(self.main_target)
             self._install_guard_scripts()
-        self.deadline(ident, timeout, self.view.stopLoading)
+        def expired():
+            if self.navigation is not None and self.navigation[0] == ident:
+                self.navigation = None
+                self.navigation_events.clear()
+                self.view.stopLoading()
+
+        self.deadline(ident, timeout, expired)
         self.main_target.history_recovered = False
         self.navigation = (ident, None)
         self.navigation_events.clear()
@@ -1434,12 +1483,20 @@ class Worker(shared.Worker):
                 return
             if error:
                 return self.fail(ident, 'frame_failed')
-            capture()
+            target.post('Page.getLayoutMetrics', done=capture)
 
-        def capture():
+        def capture(result, error):
+            if ident not in self.pending:
+                return
+            if error or not result.get('cssVisualViewport'):
+                return self.fail(ident, 'frame_failed')
+            viewport = result['cssVisualViewport']
+            # CDP clips use document coordinates; input remains viewport-relative.
+            # Width/height already undo our emulated page zoom, as in crPage.takeScreenshot.
             target.post('Page.captureScreenshot', {'format': 'jpeg', 'quality': int(shared.FRAME_JPEG_QUALITY * 100),
                                                  'captureBeyondViewport': False,
-                                                 'clip': {'x': 0, 'y': 0, 'width': width / zoom, 'height': height / zoom,
+                                                 'clip': {'x': viewport['pageX'], 'y': viewport['pageY'],
+                                                          'width': width / zoom, 'height': height / zoom,
                                                           'scale': pixel_width / (width / zoom)}}, captured)
 
         self.run('await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));'

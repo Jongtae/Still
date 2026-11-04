@@ -60,6 +60,8 @@ class FakeCDP:
                                                         if self.browser.script_results else {})}}
             elif command == 'Page.captureScreenshot':
                 result = {'data': '/9j/fakejpeg'}
+            elif command == 'Page.getLayoutMetrics':
+                result = getattr(self.browser, 'layout_metrics', {'cssVisualViewport': {'pageX': 0, 'pageY': 0}})
             elif command == 'Page.navigate':
                 result = getattr(self.browser, 'navigate_result', {'frameId': 'f', 'loaderId': 'loader'})
             response = {'sessionId': params['sessionId'],
@@ -1485,8 +1487,10 @@ class FakeX11:
     def __init__(self, focused, classes, parents, display=1):
         self.focused, self.classes, self.parents, self.display = focused, classes, parents, display
         self.set_focus, self.closed, self.freed = [], 0, 0
+        self.handler = chromium._XErrorHandler(lambda display, event: 0)
+        self.original_handler = self.handler
         for name in ('XOpenDisplay', 'XGetInputFocus', 'XGetClassHint', 'XQueryTree', 'XFree', 'XSetInputFocus',
-                     'XSync', 'XCloseDisplay'):
+                     'XSync', 'XSetErrorHandler', 'XCloseDisplay'):
             setattr(self, name, mock.MagicMock(side_effect=getattr(self, '_' + name)))
         self._strings = []
 
@@ -1518,6 +1522,10 @@ class FakeX11:
     def _XSync(self, display, discard):
         pass
 
+    def _XSetErrorHandler(self, handler):
+        previous, self.handler = self.handler, handler
+        return previous
+
     def _XCloseDisplay(self, display):
         self.closed += 1
 
@@ -1541,6 +1549,135 @@ def test_focus_release_is_best_effort(monkeypatch):
     closed = FakeX11(focused=7, classes={}, parents={}, display=None)
     monkeypatch.setattr(chromium.ctypes, 'CDLL', lambda name: closed)
     assert _native_relinquish_keyboard_focus() is False
+
+
+def test_native_x_error_during_class_lookup_is_contained(monkeypatch):
+    x11 = FakeX11(focused=7, classes={7: ('stillbrowser', chromium.WINDOW_CLASS)}, parents={})
+    monkeypatch.setattr(chromium.ctypes, 'CDLL', lambda name: x11)
+
+    def bad_window(display, window, hint):
+        assert isinstance(x11.handler, chromium._XErrorHandler)
+        assert x11.handler(display, ctypes.pointer(chromium._XErrorEvent(error_code=3))) == 0
+        return 0
+
+    x11.XGetClassHint.side_effect = bad_window
+    assert _native_relinquish_keyboard_focus() is False
+    assert x11.set_focus == [] and x11.closed == 1
+    assert x11.handler is x11.original_handler
+    assert x11.XSetErrorHandler.argtypes == [chromium._XErrorHandler]
+    assert x11.XSetErrorHandler.restype is chromium._XErrorHandler
+    x11.XSync.assert_called_with(x11.display, False)
+    assert x11.XSetErrorHandler.call_args_list[-1] == mock.call(x11.original_handler)
+
+
+def test_asynchronous_focus_error_is_delivered_before_handler_restoration(monkeypatch):
+    x11 = FakeX11(focused=7, classes={7: ('stillbrowser', chromium.WINDOW_CLASS)}, parents={})
+    monkeypatch.setattr(chromium.ctypes, 'CDLL', lambda name: x11)
+
+    def sync(display, discard):
+        if x11.set_focus:
+            assert x11.handler is chromium._focus_error_handler
+            x11.handler(display, ctypes.pointer(chromium._XErrorEvent(error_code=3)))
+
+    x11.XSync.side_effect = sync
+    assert _native_relinquish_keyboard_focus() is False
+    assert x11.handler is x11.original_handler and x11.closed == 1
+
+
+@pytest.mark.parametrize('zoom', [1.0, .39])
+def test_phone_frame_uses_scrolled_visual_viewport_and_taps_stay_viewport_relative(worker, zoom):
+    worker.owner_visible = worker.guard_off = True
+    command(worker, 'remote_begin')
+    worker.set_page_zoom(zoom)
+    worker.engine.browser.layout_metrics = {
+        'cssVisualViewport': {'pageX': 23.5, 'pageY': 811.25, 'scale': zoom},
+        'visualViewport': {'pageX': 9999, 'pageY': 9999}}
+    command(worker, 'frame')
+    clip = packets(worker, 'Page.captureScreenshot')[-1]['clip']
+    assert clip['x'] == 23.5 and clip['y'] == 811.25
+    assert clip['width'] == pytest.approx(shared.MOBILE_SIZE[0] / zoom)
+    assert clip['height'] == pytest.approx(shared.MOBILE_SIZE[1] / zoom)
+    assert clip['width'] * clip['scale'] == pytest.approx(min(shared.FRAME_MAX_WIDTH,
+                                                            shared.MOBILE_SIZE[0] / zoom))
+    worker.handle({'id': 8, 'op': 'remote_tap', 'x': 100, 'y': 200})
+    mouse = packets(worker, 'Input.dispatchMouseEvent')[-3:]
+    assert all(p['x'] == pytest.approx(100 / zoom) and p['y'] == pytest.approx(200 / zoom) for p in mouse)
+
+
+@pytest.mark.parametrize('entry', ['request_paused', 'fetch_paused'])
+@pytest.mark.parametrize('allowed', [False, True])
+@pytest.mark.parametrize('initializing', [False, True])
+def test_cancelled_fetch_settlement_does_not_fault_target(worker, entry, allowed, initializing):
+    target, browser = worker.main_target, worker.engine.browser
+    target.initializing = initializing
+    method = 'Fetch.continueRequest' if allowed else 'Fetch.failRequest'
+    browser.hold_method, browser.held_responses = method, []
+    event = {'requestId': 'cancelled', 'frameId': target.main_frame, 'resourceType': 'Document',
+             'request': {'url': 'https://public.test/', 'method': 'GET'}}
+    with mock.patch.object(worker, 'decide', side_effect=lambda url, counted, done: done(allowed, 'blocked_destination')):
+        getattr(worker, entry)(target, event)
+    packet = next(p for _, p in reversed(browser.packets) if p['method'] == method)
+    assert packet['id'] not in target.setup_pending
+    target.receive({'id': packet['id'], 'error': {'code': -32602, 'message': 'Invalid InterceptionId'}})
+    assert not worker.fatal and not worker.page.closed
+    assert packet['id'] not in target.callbacks
+
+
+@pytest.mark.parametrize('allowed', [False, True])
+def test_disposed_request_settlement_is_best_effort(worker, allowed):
+    worker.main_target.disposed = True
+    worker.main_target.settle_request('disposed', allowed)
+    assert not worker.fatal
+
+
+@pytest.mark.parametrize('main_page', [False, True])
+@pytest.mark.parametrize('navigation', [False, True])
+def test_route_continuation_cancellation_does_not_close_page(worker, main_page, navigation):
+    worker.owner_visible = worker.guard_off = True
+    page = worker.page if main_page else worker.context.new_page()
+    request = FakeRequest(page, 'https://public.test/', navigation=navigation, child=not main_page)
+    route = mock.Mock()
+    route.continue_.side_effect = RuntimeError('Target page, context or browser has been closed')
+    worker.route_popup(route, request)
+    route.continue_.assert_called_once_with()
+    assert not page.closed and not worker.fatal and worker.blocked == 0
+
+
+def test_navigation_timeout_clears_record_and_late_events_cannot_revive_it(worker):
+    target = worker.main_target
+    browser = worker.engine.browser
+    browser.hold_method, browser.held_responses = 'Page.navigate', []
+    with mock.patch.object(chromium.time, 'monotonic', return_value=100) as clock:
+        worker.handle({'id': 41, 'op': 'navigate', 'timeout': 1, 'url': 'https://new.test/'})
+        navigation_load(target, 'unrelated')
+        assert worker.navigation_events == {'unrelated': 'load'}
+        clock.return_value = 102
+        worker.AppHelper.pump()
+    assert worker.messages == [{'id': 41, 'ok': False, 'error': 'timeout'}]
+    assert worker.navigation is None and worker.navigation_events == {} and 41 not in worker.pending
+    assert packets(worker, 'Page.stopLoading')
+    navigation_load(target, 'later')
+    for respond in browser.held_responses:
+        respond()
+    assert worker.navigation is None and worker.navigation_events == {}
+    assert worker.messages == [{'id': 41, 'ok': False, 'error': 'timeout'}]
+
+
+def test_old_navigation_timeout_leaves_current_navigation_and_events_alone(worker):
+    target = worker.main_target
+    with mock.patch.object(chromium.time, 'monotonic', return_value=100) as clock:
+        worker.handle({'id': 41, 'op': 'navigate', 'timeout': 1, 'url': 'https://old.test/'})
+        worker.engine.browser.navigate_result = {'loaderId': 'replacement'}
+        worker.handle({'id': 42, 'op': 'navigate', 'timeout': 10, 'url': 'https://new.test/'})
+        navigation_load(target, 'unrelated')
+        clock.return_value = 102
+        worker.AppHelper.pump()
+        assert worker.navigation == (42, 'replacement')
+        assert worker.navigation_events == {'unrelated': 'load'}
+        assert not packets(worker, 'Page.stopLoading')
+        navigation_load(target, 'replacement')
+    assert [row['id'] for row in worker.messages] == [41, 42]
+    assert worker.messages[0]['error'] == 'timeout' and worker.messages[1]['ok']
 
 
 def test_the_worker_windows_carry_stills_window_class():
