@@ -21,6 +21,7 @@ import unittest
 from datetime import datetime, timedelta, timezone
 
 from personal_agent import owner_model as om
+from personal_agent.current_context import TIMEZONE_CONFIG_KEY
 from personal_agent import preparations as prep
 
 from test_owner_model_dream import Dream, dream
@@ -295,6 +296,11 @@ class Offer(_Case):
 
 class OneOff(Offer):
     """#638: a look back holding a one-off is offered on the tick, in the owner's daytime, without a new Work."""
+
+    def setUp(self):
+        super().setUp()
+        # The offer hours and the daily cap read the owner's zone (``resolve_local_timezone``), not the host's.
+        self.store.put(TIMEZONE_CONFIG_KEY, 'Asia/Seoul')
 
     def one_off(self, anchor, seconds=2 * 86400):
         outcomes, _calls = self.service.suggest_preparations(anchor, [suggestion(
