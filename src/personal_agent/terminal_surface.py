@@ -46,7 +46,7 @@ class TerminalSurface(DirectMessageSurface):
     capabilities = SurfaceCapabilities(buttons=True)
     #: Notice kinds answered with a choice, as Slack's button pair: the item is settled exactly, with no judgment.
     CHOICES = {'settings_change_proposed': ('button.apply', 'button.keep'),
-               'preparation_proposed': ('button.accept', 'button.decline_schedule')}
+               'preparation_proposed': ('button.preparation_accept', 'button.preparation_decline')}
     #: The inputs a confirmed settings draft may ask the terminal to read (``settings_orchestrator`` connect_chat).
     INPUTS = frozenset({'telegram'})
     #: Owner messages are pushed by the terminal loop (``say``), never polled.
