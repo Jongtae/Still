@@ -1539,6 +1539,9 @@ DISPLAY_TEXT = ('브라우저 기능은 데스크톱 화면이 있는 세션에�
                 '시작하세요.')
 DOWNLOAD_TEXT = ('Linux 브라우저용 Chromium을 내려받거나 확인하지 못했습니다. 네트워크를 확인한 뒤 다시 시도하세요. '
                  '확인되지 않은 파일은 실행하지 않습니다.')
+LIBRARIES_TEXT = ('이 Linux 데스크톱에는 Chromium이 쓰는 시스템 라이브러리 일부가 없어 브라우저를 시작하지 못했습니다. '
+                  '터미널에서 아래 명령을 한 번 실행한 뒤 다시 시도하세요. 관리자 비밀번호가 필요하며, Ubuntu 패키지 '
+                  '관리자로 필요한 라이브러리만 설치합니다.')
 SANDBOX_TEXT = ('Ubuntu 보안 설정 때문에 Still의 Chromium이 보호 모드(샌드박스)로 시작하지 못했습니다. 터미널에서 아래 '
                 '명령을 한 번 실행한 뒤 다시 시도하세요. 관리자 비밀번호가 필요하며, Still의 Chromium 하나에만 사용자 '
                 '네임스페이스를 허용합니다.')
@@ -1953,7 +1956,8 @@ def unavailable_text(reason, platform=None):
     platform = sys.platform if platform is None else platform
     if reason == 'dependency':
         return LINUX_DEPENDENCY_TEXT if platform.startswith('linux') else DEPENDENCY_TEXT
-    return {'display': DISPLAY_TEXT, 'sandbox': SANDBOX_TEXT, 'download': DOWNLOAD_TEXT}.get(reason, PLATFORM_TEXT)
+    return {'display': DISPLAY_TEXT, 'sandbox': SANDBOX_TEXT, 'download': DOWNLOAD_TEXT,
+            'libraries': LIBRARIES_TEXT}.get(reason, PLATFORM_TEXT)
 
 
 class WorkerError(RuntimeError):
@@ -2521,6 +2525,11 @@ class BrowserProfile:
             except (OSError, RuntimeError):
                 self._start_blocked, self._blocked_at = 'download', time.monotonic()
                 raise ToolError(DOWNLOAD_TEXT, UNAVAILABLE_CODE) from None
+            if chromium_runtime.missing_libraries(chrome):
+                # Codex review on #640: a desktop without some of Chromium's libraries gets the one command.
+                self._start_blocked, self._blocked_chrome = 'libraries', chrome
+                self._blocked_at = time.monotonic()
+                raise ToolError(LIBRARIES_TEXT + '\n\n' + chromium_runtime.libraries_setup(), UNAVAILABLE_CODE)
             command = chromium_worker_command(self.profile_dir.name, chrome, self._allowed_origins)
         before_start = None
         if command is not None:
@@ -2584,6 +2593,7 @@ class BrowserProfile:
         from . import chromium_runtime
         if (self._start_blocked == 'sandbox' and chromium_runtime.apparmor_installed(self._chrome_path())) or \
                 time.monotonic() - getattr(self, '_blocked_at', 0.0) > START_RETRY_SECONDS:
+            # A library check is cheap to repeat at the next start; the profile is retried after the wait too.
             self._start_blocked = None
         return self._start_blocked
 
@@ -2591,6 +2601,9 @@ class BrowserProfile:
         reason = self.unavailable_reason()
         if reason == 'sandbox':
             return sandbox_text(self._chrome_path())
+        if reason == 'libraries':
+            from . import chromium_runtime
+            return LIBRARIES_TEXT + '\n\n' + chromium_runtime.libraries_setup()
         return unavailable_text(reason) if reason else None
 
     def _chrome_path(self):
@@ -2607,9 +2620,12 @@ class BrowserProfile:
         if reason == 'sandbox':
             from . import chromium_runtime
             try:
-                status['sandbox_command'] = chromium_runtime.apparmor_setup(self._chrome_path())
+                status['sandbox_command'] = status['setup_command'] = chromium_runtime.apparmor_setup(self._chrome_path())
             except ValueError:
                 pass
+        elif reason == 'libraries':
+            from . import chromium_runtime
+            status['setup_command'] = chromium_runtime.libraries_setup()
         if reason is None:
             state, sessions = self._jar_view()
             status['storage'] = {'what': 'site-sign-in-cookies', 'path': str(self.jar.path),

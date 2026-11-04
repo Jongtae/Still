@@ -26,7 +26,6 @@ for this exact binary path.  Nothing here runs ``sudo`` or falls back to
 """
 import hashlib
 import os
-import re
 import platform
 import shlex
 import shutil
@@ -51,15 +50,22 @@ PINS = {
 MAX_BYTES = 320 * 1024 * 1024
 #: Unpacked about 420 MB; a zip claiming far more is refused before extraction.
 MAX_UNPACKED_BYTES = 640 * 1024 * 1024
+#: Per blocking socket operation, and for the whole transfer (a slow but live connection ends too).
 DOWNLOAD_SECONDS = 600
+DOWNLOAD_DEADLINE_SECONDS = 1200
 #: The sysctl Ubuntu uses to restrict unprivileged user namespaces to AppArmor-profiled programs.
 USERNS_RESTRICTION = Path('/proc/sys/kernel/apparmor_restrict_unprivileged_userns')
 #: The AppArmor profile name and file this module's setup command writes.
 APPARMOR_PROFILE = 'still-chromium'
 APPARMOR_FILE = Path('/etc/apparmor.d') / APPARMOR_PROFILE
-#: A path the profile can name literally: no AppArmor pattern (``* ? [ ] { } ^``), variable (``@``),
-#: escape, quote or alternation character, so the attachment is exactly that one file.
-_LITERAL_PATH = re.compile(r'/[A-Za-z0-9._+ /-]*')
+#: Besides letters and digits of any script (a Korean folder name included), the characters a literal
+#: attachment may hold: no AppArmor pattern (``* ? [ ] { } ^``), variable (``@``), escape, quote,
+#: alternation or control character, so the attachment is exactly that one file.
+_LITERAL_PUNCTUATION = frozenset('._+-/ ')
+
+
+def _literal_path(path):
+    return path.startswith('/') and all(ch.isalnum() or ch in _LITERAL_PUNCTUATION for ch in path)
 
 
 def pin(system=None, machine=None):
@@ -77,14 +83,18 @@ def _sha256(path):
     return digest.hexdigest()
 
 
-def _fetch(url, destination):
+def _fetch(url, destination, clock=None):
     """Stream ``url`` into ``destination``; the SHA-256 of what was written."""
-    digest, size = hashlib.sha256(), 0
+    import time
+    clock = clock or time.monotonic
+    digest, size, deadline = hashlib.sha256(), 0, clock() + DOWNLOAD_DEADLINE_SECONDS
     with urllib.request.urlopen(url, timeout=DOWNLOAD_SECONDS) as response, open(destination, 'wb') as out:
         for block in iter(lambda: response.read(1 << 20), b''):
             size += len(block)
             if size > MAX_BYTES:
                 raise RuntimeError('the Chromium download was larger than expected; nothing was kept.')
+            if clock() > deadline:
+                raise RuntimeError('the Chromium download took too long; nothing was kept.')
             digest.update(block)
             out.write(block)
     return digest.hexdigest()
@@ -172,6 +182,28 @@ def ensure(directory, *, fetch=None, chosen=None):
     return str(target / 'chrome')
 
 
+def missing_libraries(chrome, run=None):
+    """The shared libraries ``chrome`` needs that this system lacks (``ldd``'s "not found"); [] when none or unknown."""
+    import subprocess
+    run = run or subprocess.run
+    try:
+        result = run(['ldd', str(chrome)], capture_output=True, text=True, timeout=30, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return []
+    return sorted({line.split('=>', 1)[0].strip() for line in (result.stdout or '').splitlines()
+                   if '=> not found' in line})
+
+
+def libraries_setup(python=None):
+    """The one command (run by the owner, with sudo) that installs Chromium's system libraries.
+
+    Adopted: Playwright's own ``install-deps``, which keeps the per-distribution package lists
+    (``nativeDeps``) and installs them with the system package manager.  It downloads no browser.
+    """
+    import sys
+    return f'sudo {shlex.quote(python or sys.executable)} -m playwright install-deps chromium'
+
+
 def userns_restricted(path=USERNS_RESTRICTION):
     """Whether this kernel restricts unprivileged user namespaces to AppArmor-profiled programs."""
     try:
@@ -188,7 +220,7 @@ def apparmor_profile(chrome):
     absolute path; a different Chromium version needs the command again.
     """
     chrome = str(chrome)
-    if not _LITERAL_PATH.fullmatch(chrome) or '//' in chrome or '/../' in chrome or chrome.endswith('/..'):
+    if not _literal_path(chrome) or '//' in chrome or '/../' in chrome or chrome.endswith('/..'):
         raise ValueError('the Chromium path cannot be written into an AppArmor profile literally')
     return ('abi <abi/4.0>,\n'
             'include <tunables/global>\n\n'

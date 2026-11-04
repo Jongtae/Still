@@ -2174,12 +2174,13 @@ class WebKitIntegrationTests(unittest.TestCase):
         try:
             page = sess.open({'url': self.origin + '/device', 'effect': 'read'})
             if LINUX:
-                # #34: Chromium says what it is: Chrome on an Android phone, touch, a phone-width layout.
+                # #34: Chromium says what it is: Chrome on an Android phone and a phone-width layout; no touch is
+                # advertised, as on macOS, because presses are mouse input (Codex review on #640).
                 agent = page['text'].split('\n', 1)[0]
                 self.assertIn('Android', agent)
                 self.assertIn('Mobile Safari/537.36', agent)
                 self.assertNotIn('iPhone', agent)
-                self.assertIn('터치 1 true 같은UA true', page['text'])
+                self.assertIn('터치 0 false 같은UA true', page['text'])
                 width = int(page['text'].split('폭 ', 1)[1].split()[0])
                 self.assertLessEqual(width, 430, page['text'])
                 return

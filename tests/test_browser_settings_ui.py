@@ -63,6 +63,8 @@ const checks=[];
  render({available:false,unavailable_reason:'display',engine:'linux-chromium',sessions:[],pending_steps:[]});assert(text().includes('데스크톱 화면이 있는 세션'));
  render({available:false,unavailable_reason:'sandbox',engine:'linux-chromium',sandbox_command:'printf x | sudo tee /etc/apparmor.d/still-chromium',sessions:[],pending_steps:[]});
  assert(text().includes('보호 모드(샌드박스)'));assert(text().includes('sudo tee /etc/apparmor.d/still-chromium'));assert(!text().includes('no-sandbox'));
+ render({available:false,unavailable_reason:'libraries',engine:'linux-chromium',setup_command:'sudo /x/python -m playwright install-deps chromium',sessions:[],pending_steps:[]});
+ assert(text().includes('시스템 라이브러리 일부'));assert(text().includes('install-deps chromium'));
  assert.equal($('browser-login-form').hidden,true);assert.equal($('browser-login-open').hidden,true);assert.equal(buttons().length,0);
  render({available:false,unavailable_reason:'dependency',sessions:[],pending_steps:[]});
  assert(text().includes('pyobjc-framework-WebKit'));

@@ -120,6 +120,11 @@ class ChromiumRuntime(unittest.TestCase):
                         '/home/o/a\\b/chrome', '/home/o/../chrome', '/home/o//chrome'):
             with self.assertRaises(ValueError, msg=pattern):
                 cr.apparmor_profile(pattern)
+        # Codex review on #640: a folder named in Korean is a literal path too.
+        self.assertIn('"/home/owner/자료/tools/chrome"', cr.apparmor_profile('/home/owner/자료/tools/chrome'))
+        for control in ('/home/o/a\tb/chrome', '/home/o/a\x00b/chrome', '/home/o/a$b/chrome', "/home/o/a'b/chrome"):
+            with self.assertRaises(ValueError, msg=repr(control)):
+                cr.apparmor_profile(control)
         profile = cr.apparmor_profile('/home/owner/.local/share/agentos/tools/chromium/1/chrome-linux64/chrome')
         self.assertIn('profile still-chromium "/home/owner/.local/share/agentos/tools/chromium/1/chrome-linux64/chrome"',
                       profile)
@@ -132,6 +137,19 @@ class ChromiumRuntime(unittest.TestCase):
         for bad in ('relative/chrome', '/a"b/chrome', '/a\nb'):
             with self.assertRaises(ValueError):
                 cr.apparmor_profile(bad)
+
+    def test_a_slow_live_download_ends_at_its_deadline(self):
+        """Codex review on #640: the socket timeout bounds each read, not the whole transfer."""
+        class Response(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+        ticks = iter(range(0, 10 ** 6, cr.DOWNLOAD_DEADLINE_SECONDS // 2))
+        with mock.patch('urllib.request.urlopen', return_value=Response(b'x' * (4 << 20))), \
+                self.assertRaises(RuntimeError):
+            cr._fetch('https://example.invalid/chrome.zip', self.directory / 'chrome.zip', clock=lambda: next(ticks))
 
     def test_the_user_namespace_restriction_is_read_not_assumed(self):
         path = self.directory / 'restrict'
@@ -297,6 +315,7 @@ class EngineChoice(unittest.TestCase):
             started.append(kwargs['command'])
             raise bs.WorkerError('worker_unavailable', 'sandbox_unavailable')
         with mock.patch.object(sys, 'platform', 'linux'), mock.patch.object(cr, 'ensure', return_value=chrome), \
+             mock.patch.object(cr, 'missing_libraries', return_value=[]), \
              mock.patch.object(bs, 'WebKitWorkerDriver', side_effect=worker):
             with self.assertRaises(ToolError) as caught:
                 profile._launch_engine(profile.profile_dir, True)
@@ -313,6 +332,7 @@ class EngineChoice(unittest.TestCase):
         self.assertIn('apparmor_parser', status['sandbox_command'])
         self.assertIsNotNone(profile.driver_factory('w'), 'the owner may have run the command: the next use tries again')
         with mock.patch.object(sys, 'platform', 'linux'), mock.patch.object(cr, 'ensure', return_value=chrome), \
+             mock.patch.object(cr, 'missing_libraries', return_value=[]), \
              mock.patch.object(bs, 'WebKitWorkerDriver', return_value=object()):
             profile._launch_engine(profile.profile_dir, True)
         self.assertIsNone(profile.unavailable_reason())
@@ -336,6 +356,29 @@ class EngineChoice(unittest.TestCase):
         self.assertTrue(cr.apparmor_installed('/opt/a/chrome', path))
         self.assertFalse(cr.apparmor_installed('/opt/b/chrome', path))
         self.assertFalse(cr.apparmor_installed('/opt/a/chrome', self.root / 'missing'))
+
+    def test_missing_system_libraries_name_the_one_install_command(self):
+        """Codex review on #640: a desktop lacking some Chromium libraries is told how to add them."""
+        class Ldd:
+            def __init__(self, stdout):
+                self.stdout = stdout
+        found = cr.missing_libraries('/c', run=lambda *a, **k: Ldd('libatk-bridge-2.0.so.0 => not found\n'
+                                                                       'libc.so.6 => /lib/libc.so.6\n'))
+        self.assertEqual(found, ['libatk-bridge-2.0.so.0'])
+        self.assertEqual(cr.missing_libraries('/c', run=lambda *a, **k: (_ for _ in ()).throw(OSError())), [])
+        self.assertEqual(cr.libraries_setup('/opt/still/bin/python'),
+                         'sudo /opt/still/bin/python -m playwright install-deps chromium')
+        profile = self.profile()
+        with mock.patch.object(sys, 'platform', 'linux'), mock.patch.object(cr, 'ensure', return_value='/c'), \
+             mock.patch.object(cr, 'missing_libraries', return_value=['libatk-bridge-2.0.so.0']), \
+             mock.patch.object(bs, 'WebKitWorkerDriver', side_effect=AssertionError('never started')):
+            with self.assertRaises(ToolError) as caught:
+                profile._launch_engine(profile.profile_dir, True)
+        self.assertIn(bs.LIBRARIES_TEXT, str(caught.exception))
+        self.assertIn('-m playwright install-deps chromium', str(caught.exception))
+        self.assertEqual(profile.unavailable_reason(), 'libraries')
+        with mock.patch.object(sys, 'platform', 'linux'):
+            self.assertIn('install-deps', profile.status()['setup_command'])
 
     def test_the_worker_receives_the_desktop_session_and_nothing_else(self):
         env = bs.worker_environment({'DISPLAY': ':0', 'XAUTHORITY': '/run/x', 'DBUS_SESSION_BUS_ADDRESS': 'unix:path=/b',
