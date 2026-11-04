@@ -47,8 +47,13 @@ class FakeCDP:
             self.browser.packets.append((params['sessionId'], packet))
             command, args = packet['method'], packet['params']
             result = {}
-            if command == 'Page.getFrameTree':
+            if command == 'Target.sendMessageToTarget':
+                self.send(command, args)
+            elif command == 'Page.getFrameTree':
                 result = {'frameTree': {'frame': {'id': 'frame-' + params['sessionId']}}}
+            elif command == 'Storage.getStorageKeyForFrame':
+                result = {'storageKey': getattr(self.browser, 'storage_keys', {}).get(
+                    args['frameId'], 'https://public.test/')}
             elif command == 'Page.addScriptToEvaluateOnNewDocument':
                 result = {'identifier': str(packet['id'])}
             elif command == 'Page.getNavigationHistory':
@@ -549,6 +554,50 @@ def test_payment_dialog_decision_and_remote_answer(worker):
     assert worker.held_dialog is None
 
 
+@pytest.mark.parametrize('cached', [False, True])
+@pytest.mark.parametrize('kind', ['confirm', 'prompt', 'alert'])
+def test_held_dialog_frame_is_answerable_before_first_capture(worker, cached, kind):
+    import base64
+
+    worker.owner_visible = worker.remote = True
+    dialog = mock.Mock(type=kind, message='Owner question')
+    worker.dialog(dialog)
+    if cached:
+        worker.last_frame = ('cached-jpeg', 123, 456, [])
+    with mock.patch.object(worker, 'run', side_effect=AssertionError('dialog blocks renderer')):
+        result = command(worker, 'frame')
+    assert result['ok'] and result['dialog'] == {'kind': kind, 'text': 'Owner question'}
+    assert result['focus'] is None and result['fields'] == result['links'] == []
+    if cached:
+        assert (result['jpeg'], result['width'], result['height']) == ('cached-jpeg', 123, 456)
+    else:
+        assert (result['width'], result['height']) == (1, 1)
+        assert base64.b64decode(result['jpeg']).startswith(b'\xff\xd8')
+    assert not packets(worker, 'Page.captureScreenshot')
+    assert command(worker, 'remote_dialog', answer='ok')['answered']
+    assert worker.held_dialog is None
+
+
+@pytest.mark.parametrize('op', ['settle', 'load_more'])
+@pytest.mark.parametrize('timeout,expected', [(20, 3), (2, 2)])
+def test_operation_internal_deadline_also_bounds_unanswered_script(worker, monkeypatch, op, timeout, expected):
+    now = [100.0]
+    monkeypatch.setattr(chromium.time, 'monotonic', lambda: now[0])
+    worker.AppHelper.items.clear()
+    # A renderer which never answers must still obey the operation's soft cap + 2s.
+    with mock.patch.object(worker, 'run'):
+        worker.handle({'id': 7, 'op': op, 'seconds': 1, 'rounds': 1, 'timeout': timeout})
+        assert worker.expiry[7] == 100 + timeout
+        now[0] += expected - .01
+        worker.AppHelper.pump()
+        assert not worker.messages
+        now[0] += .02
+        worker.AppHelper.pump()
+    assert worker.messages == [{'id': 7, 'ok': False, 'error': 'timeout'}]
+    if op == 'load_more':
+        assert not worker.reading
+
+
 def test_every_shared_dispatch_op_has_an_implementation_and_unknown_is_typed(worker):
     ops = {name for name in vars(shared.Worker) if name.startswith('op_')}
     assert {name.removeprefix('op_') for name in ops} == {
@@ -592,6 +641,89 @@ def test_session_storage_is_cleared_in_isolated_frame_world(worker):
     assert result == {'id': 7, 'ok': True}
     assert packets(worker, 'Page.createIsolatedWorld')[-1] == {'frameId': 'child', 'worldName': 'still'}
     assert 'sessionStorage.clear()' in packets(worker, 'Runtime.callFunctionOn')[-1]['functionDeclaration']
+
+
+@pytest.mark.parametrize('clear_all', [False, True])
+def test_session_deletion_clears_retained_partition_keys_and_live_session_storage(worker, clear_all):
+    main = worker.main_target
+    child = chromium._Target(worker, main, 'child', {'type': 'iframe', 'targetId': 'child'})
+    worker.targets[child.ident] = worker.sessions[child.session_id] = child
+    child.initializing = False
+    browser = worker.engine.browser
+    browser.storage_keys = {'one': 'https://id.test/^0https://shop.test',
+                            'two': 'https://id.test/^0https://news.test',
+                            'other': 'https://other.test/^0https://shop.test'}
+    for frame_id in ('one', 'two', 'other'):
+        origin = 'other.test' if frame_id == 'other' else 'id.test'
+        child.receive({'method': 'Page.frameNavigated', 'params': {'frame': {
+            'id': frame_id, 'parentId': main.main_frame, 'url': 'https://' + origin}}})
+    # One partition's renderer has gone away; its storage still needs erasing.
+    worker.detached({'sessionId': child.session_id})
+    main.receive({'method': 'Page.frameNavigated', 'params': {'frame': {
+        'id': main.main_frame, 'url': 'https://id.test/login'}}})
+    result = command(worker, 'cookies_clear' if clear_all else 'cookies_delete', site='id.test')
+    assert result == ({'id': 7, 'ok': True} if clear_all else {'id': 7, 'ok': True, 'deleted': 1})
+    expected = {browser.storage_keys['one'], browser.storage_keys['two'], 'https://public.test/'}
+    if clear_all:
+        expected.add(browser.storage_keys['other'])
+    assert {p['storageKey'] for p in packets(worker, 'Storage.clearDataForStorageKey')} == expected
+    assert all(p['storageTypes'] == 'all' for p in packets(worker, 'Storage.clearDataForStorageKey'))
+    assert 'sessionStorage.clear()' in packets(worker, 'Runtime.callFunctionOn')[-1]['functionDeclaration']
+
+
+@pytest.mark.parametrize('timeout', [False, True])
+def test_session_deletion_waits_for_partition_key_lookup(worker, timeout):
+    browser, target = worker.engine.browser, worker.main_target
+    browser.hold_method, browser.held_responses = 'Storage.getStorageKeyForFrame', []
+    browser.storage_keys = {target.main_frame: 'https://id.test/^0https://shop.test'}
+    target.receive({'method': 'Page.frameNavigated', 'params': {'frame': {
+        'id': target.main_frame, 'url': 'https://id.test'}}})
+    assert command(worker, 'cookies_delete', site='id.test') is None
+    assert not packets(worker, 'Storage.clearDataForOrigin')
+    if timeout:
+        worker.fail(7, 'timeout')
+    browser.held_responses.pop()()
+    if timeout:
+        assert worker.messages == [{'id': 7, 'ok': False, 'error': 'timeout'}]
+        assert not packets(worker, 'Storage.clearDataForStorageKey')
+        return
+    assert worker.messages == [{'id': 7, 'ok': True, 'deleted': 1}]
+    assert packets(worker, 'Storage.clearDataForStorageKey') == [{
+        'storageKey': 'https://id.test/^0https://shop.test', 'storageTypes': 'all'}]
+
+
+@pytest.mark.parametrize('method', ['Storage.getStorageKeyForFrame', 'Storage.clearDataForStorageKey'])
+def test_session_deletion_reports_partition_storage_failure(worker, method):
+    target = worker.main_target
+    original_post = target.post
+
+    def post(command, params=None, done=None, **kwargs):
+        if command == method:
+            return done({}, {'code': -1})
+        return original_post(command, params, done, **kwargs)
+    with mock.patch.object(target, 'post', side_effect=post):
+        worker.frame_navigated(target, {'id': target.main_frame, 'url': 'https://id.test'})
+        assert command(worker, 'cookies_delete', site='id.test')['error'] == 'worker_error'
+
+
+def test_attachment_records_storage_keys_for_existing_frame_tree(worker):
+    original_send = worker.root_cdp.send
+    frames = {'frame': {'id': 'existing', 'url': 'https://top.test'}, 'childFrames': [
+        {'frame': {'id': 'embedded', 'url': 'https://id.test'}}]}
+
+    def send(method, params=None):
+        if method == 'Target.sendMessageToTarget':
+            packet = json.loads(params['message'])
+            if packet['method'] == 'Page.getFrameTree':
+                worker.target_message({'sessionId': params['sessionId'], 'message': json.dumps({
+                    'id': packet['id'], 'result': {'frameTree': frames}})})
+                return {}
+        return original_send(method, params)
+    with mock.patch.object(worker.root_cdp, 'send', side_effect=send):
+        worker.attached(worker.main_target, {'sessionId': 'existing-child', 'targetInfo': {
+            'type': 'iframe', 'targetId': 'existing-child'}})
+    assert {'https://top.test', 'https://id.test'} <= worker.storage_keys.keys()
+    assert {'existing', 'embedded'} <= {p['frameId'] for p in packets(worker, 'Storage.getStorageKeyForFrame')}
 
 
 def test_subframe_network_failure_does_not_fail_main_navigation(worker):
@@ -1205,9 +1337,84 @@ def test_chromiums_own_error_page_is_not_an_unsupported_navigation():
         assert not chromium.Worker.supported_document(url), url
 
 
-def window_open(worker, url, gesture=False):
-    worker.main_target.receive({'method': 'Page.windowOpen', 'params': {
+def window_open(worker, url, gesture=False, target=None):
+    (target or worker.main_target).receive({'method': 'Page.windowOpen', 'params': {
         'url': url, 'userGesture': gesture, 'windowName': '', 'windowFeatures': []}})
+
+
+def iframe_target(worker, parent=None, ident='opener-child'):
+    target = chromium._Target(worker, parent or worker.main_target, ident,
+                              {'type': 'iframe', 'targetId': ident})
+    target.initializing = False
+    target.main_frame = 'frame-' + ident
+    worker.targets[ident] = worker.sessions[ident] = target
+    return target
+
+
+@pytest.mark.parametrize('nested', [False, True])
+@pytest.mark.parametrize('allowed', [False, True])
+def test_iframe_popup_replays_on_main_with_opener_referrer_and_destination_checks(worker, nested, allowed):
+    target = iframe_target(worker)
+    if nested:
+        target = iframe_target(worker, parent=target, ident='nested')
+    worker.engine.browser.opener_metadata = {'url': 'https://embedded.test/login', 'policy': 'origin'}
+    url = 'https://public.test/' if allowed else 'http://127.0.0.1/'
+    window_open(worker, url, gesture=True, target=target)
+    navigate = [(session, p['params']) for session, p in worker.engine.browser.packets
+                if p['method'] == 'Page.navigate']
+    assert navigate == [(worker.main_target.session_id, {
+        'url': url, 'transitionType': 'link', 'referrer': 'https://embedded.test/login',
+        'referrerPolicy': 'origin'})]
+    with mock.patch.object(worker, 'decide', side_effect=lambda url, main, done:
+                           done(allowed, None if allowed else 'blocked_destination')) as decide:
+        worker.fetch_paused(worker.main_target, popup_fetch(worker.main_target, url))
+    decide.assert_called_once_with(url, True, mock.ANY)
+    assert packets(worker, 'Fetch.continueRequest' if allowed else 'Fetch.failRequest')
+
+
+@pytest.mark.parametrize('reason', ['formSubmissionGet', 'formSubmissionPost'])
+def test_iframe_popup_form_correlates_with_main_replay_without_turning_post_into_get(worker, reason):
+    browser, target = worker.engine.browser, iframe_target(worker)
+    browser.hold_method, browser.held_responses = 'Runtime.evaluate', []
+    url = 'https://public.test/submit'
+    window_open(worker, url, target=target)
+    target.receive({'method': 'Page.frameRequestedNavigation', 'params': {
+        'frameId': 'popup-frame', 'url': url, 'reason': reason, 'disposition': 'newWindow'}})
+    browser.held_responses.pop()()
+    assert worker.deciding == 0
+    if reason == 'formSubmissionPost':
+        assert worker.refused_submits == 1 and not packets(worker, 'Page.navigate')
+    else:
+        assert packets(worker, 'Page.navigate')
+        with mock.patch.object(worker, 'check_form_navigation', side_effect=lambda url, method, done, **kw:
+                               done(False)) as check:
+            worker.fetch_paused(worker.main_target, popup_fetch(worker.main_target, url))
+        check.assert_called_once_with(url, 'GET', mock.ANY, into_frame=False)
+        assert packets(worker, 'Fetch.failRequest')
+
+
+@pytest.mark.parametrize('change', ['opener_navigation', 'main_navigation', 'detach', 'contexts_cleared'])
+def test_iframe_popup_cannot_replay_after_opener_document_is_gone(worker, change):
+    browser, target = worker.engine.browser, iframe_target(worker)
+    browser.hold_method, browser.held_responses = 'Runtime.evaluate', []
+    window_open(worker, 'https://public.test/', target=target)
+    if change.endswith('navigation'):
+        navigating = target if change == 'opener_navigation' else worker.main_target
+        worker.frame_navigated(navigating, {'id': navigating.main_frame, 'url': 'https://new.test/'})
+    elif change == 'detach':
+        worker.detached({'sessionId': target.session_id})
+    else:
+        target.receive({'method': 'Runtime.executionContextsCleared'})
+    for response in browser.held_responses:
+        response()
+    assert not packets(worker, 'Page.navigate')
+    assert worker.deciding == 0 and worker.blocked_reason == 'navigation_failed'
+
+
+def test_popup_from_iframe_on_another_page_is_not_replayed(worker):
+    other = chromium._Target(worker, worker.root_cdp, 'other', {'type': 'page', 'targetId': 'other'})
+    window_open(worker, 'https://public.test/', target=iframe_target(worker, parent=other))
+    assert not packets(worker, 'Page.navigate') and worker.deciding == 0
 
 
 @pytest.mark.parametrize('policy,cdp_policy', [
@@ -1215,9 +1422,11 @@ def window_open(worker, url, gesture=False):
     ('origin', 'origin'), ('same-origin', 'sameOrigin'),
     ('no-referrer-when-downgrade', 'noReferrerWhenDowngrade'),
     ('unsafe-url', 'unsafeUrl')])
-def test_ai_popup_replay_preserves_opener_referrer_and_policy(worker, policy, cdp_policy):
+@pytest.mark.parametrize('iframe', [False, True])
+def test_ai_popup_replay_preserves_opener_referrer_and_policy(worker, policy, cdp_policy, iframe):
     worker.engine.browser.opener_metadata = {'url': 'https://public.test/login', 'policy': policy}
-    window_open(worker, 'https://public.test/account', gesture=True)
+    window_open(worker, 'https://public.test/account', gesture=True,
+                target=iframe_target(worker) if iframe else None)
     assert packets(worker, 'Page.navigate') == [{
         'url': 'https://public.test/account', 'transitionType': 'link',
         'referrer': 'https://public.test/login', 'referrerPolicy': cdp_policy}]
@@ -1231,9 +1440,10 @@ def test_ai_popup_replay_preserves_opener_referrer_and_policy(worker, policy, cd
     (['noreferrer'], '', 'unsafe-url'), (['noopener'], '', 'unsafe-url'),
     ([], 'noreferrer', 'unsafe-url'), ([], 'noopener', 'unsafe-url'),
     ([], '', 'no-referrer')])
-def test_ai_popup_replay_suppresses_referrer(worker, features, rel, policy):
+@pytest.mark.parametrize('iframe', [False, True])
+def test_ai_popup_replay_suppresses_referrer(worker, features, rel, policy, iframe):
     worker.engine.browser.opener_metadata = {'url': 'https://public.test/private', 'policy': policy, 'rel': rel}
-    worker.window_open(worker.main_target, {
+    worker.window_open(iframe_target(worker) if iframe else worker.main_target, {
         'url': 'https://public.test/account', 'windowFeatures': features})
     assert packets(worker, 'Page.navigate') == [{
         'url': 'https://public.test/account', 'transitionType': 'other',

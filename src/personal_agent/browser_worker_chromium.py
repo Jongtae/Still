@@ -43,6 +43,12 @@ no added dependency, destination or authority. A second browser SDK cannot
 improve these existing protocol boundaries.
 Navigation expiry reuses the existing deadline and loader correlation (N/A: bug
 fix only, no new component or case in a policy mechanism).
+#640 final findings (Adapt): CDP Storage.getStorageKeyForFrame and
+Storage.clearDataForStorageKey retain and erase Chromium's opaque partition
+identifiers; Page.getFrameTree covers documents present at attachment. These
+official Chromium APIs reuse the existing transport, without parsing keys or
+adding dependencies, authority, destinations or licence obligations. The
+existing CDP popup replay and timer queue supply the other fixes.
 The stdlib queue/heapq provide the main-thread handoff and timer queue. Selenium
 would still need the same CDP boundary; a second automation framework adds no
 required API. Still's browser_worker.Worker supplies the existing protocol,
@@ -81,6 +87,15 @@ from . import browser_worker as shared
 from .browser_session import registrable_domain
 
 WORLD = 'still'
+
+# A white 1px JPEG: a held native dialog can prevent the first compositor capture.
+# Keep the phone frame protocol usable without waiting for that dialog to close.
+DIALOG_PLACEHOLDER_JPEG = (
+    '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0a'
+    'HBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIy'
+    'MjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAAR'
+    'CAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA'
+    '/8QAFAEBAAAAAAAAAAAAAAAAAAAAAP/EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/AL+AD//Z')
 
 BINDING = '__still_guard_message'
 PAGE_FILTER = [{'type': 'page'}, {'exclude': True}]
@@ -342,6 +357,7 @@ class _Target:
         self.ident, self.kind = info['targetId'], info['type']
         self.contexts, self.callbacks, self.scripts = {}, {}, []
         self.main_frame = None
+        self.document_generation = 0
         self.ready = False
         self.disposed = False
         #: Fetch interception acknowledged (browser-side): this target's redirect hops are checked from now on.
@@ -415,6 +431,7 @@ class _Target:
                 self.worker.clear_vetted()
             self.contexts = {k: v for k, v in self.contexts.items() if v != params.get('executionContextId')}
         elif method == 'Runtime.executionContextsCleared':
+            self.document_generation += 1
             if self is self.worker.main_target:
                 self.worker.clear_vetted()
             self.contexts.clear()
@@ -487,6 +504,9 @@ class Worker(shared.Worker):
         self.reading = False
         self.document_generation, self.vetted = 0, []
         self.resolved, self.frame_requests, self.frame_origins = {}, {}, {}
+        # Retain keys after navigation/detachment: the data outlives the frame.
+        self.storage_keys, self.storage_pending, self.storage_errors = {}, {}, set()
+        self.storage_waiters = []
         self.intranet = frozenset()
         self.popups, self.reported = [], []
         self.guard_off = self.owner_visible = self.remote = False
@@ -582,8 +602,17 @@ class Worker(shared.Worker):
         target.post('Page.enable')
         target.post('Page.setLifecycleEventsEnabled', {'enabled': True})
         target.post('Network.enable')
-        target.post('Page.getFrameTree', done=lambda result, error: setattr(
-            target, 'main_frame', result.get('frameTree', {}).get('frame', {}).get('id')))
+        def frame_tree(result, error):
+            tree = result.get('frameTree', {})
+            target.main_frame = tree.get('frame', {}).get('id')
+
+            def record(node):
+                if node.get('frame'):
+                    self.record_frame_storage(target, node['frame'])
+                for child in node.get('childFrames', []):
+                    record(child)
+            record(tree)
+        target.post('Page.getFrameTree', done=frame_tree)
         target.post('Runtime.addBinding', {'name': BINDING, 'executionContextName': WORLD})
         self.install_scripts(target)
         # Every redirect has another requestPaused event, unlike context.route.
@@ -781,7 +810,8 @@ class Worker(shared.Worker):
 
     def deadline(self, ident, seconds, on_timeout=None, observed=None):
         # Bound even the shared settle/load_more soft caps by the caller's deadline.
-        cap = self.expiry.get(ident, time.monotonic() + max(.5, float(seconds)))
+        cap = time.monotonic() + max(0, float(seconds))
+        cap = min(self.expiry.get(ident, cap), cap)
         self.pending[ident] = True
 
         def expire():
@@ -1034,7 +1064,15 @@ class Worker(shared.Worker):
         self.refused_submits += 1
 
     def window_open(self, target, event):
-        if target is not self.main_target or self.owner_popups():
+        def belongs_to_main():
+            ancestor = target
+            while ancestor.kind == 'iframe' and isinstance(ancestor.parent, _Target):
+                if ancestor.disposed:
+                    return False
+                ancestor = ancestor.parent
+            return ancestor is self.main_target and not ancestor.disposed
+
+        if not belongs_to_main() or self.owner_popups():
             return
         url = event.get('url', '')
         if not self.origin(url):
@@ -1044,6 +1082,7 @@ class Worker(shared.Worker):
         target.window_opens = opens
         opens.append(pending)
         document = self.document_generation
+        opener_document = target.document_generation
         self.deciding += 1
 
         def replay(result, error):
@@ -1051,7 +1090,8 @@ class Worker(shared.Worker):
                 return
             opens.remove(pending)
             self.deciding -= 1
-            if error or result.get('exceptionDetails') or target is not self.main_target or document != self.document_generation:
+            if error or result.get('exceptionDetails') or not belongs_to_main() \
+                    or document != self.document_generation or opener_document != target.document_generation:
                 self.navigation_refused(True, 'navigation_failed')
                 return
             form = pending['form']
@@ -1059,7 +1099,7 @@ class Worker(shared.Worker):
                 if form.get('reason') == 'formSubmissionPost' or form.get('url') != url:
                     self.refuse_popup_submit()
                     return
-                self.frame_requests[(target.ident, target.main_frame)] = form
+                self.frame_requests[(self.main_target.ident, self.main_target.main_frame)] = form
             # Use the opener's event, never the popup's URL or document authority.
             # Fetch handles destination policy, read holds and navigation accounting.
             metadata = result.get('result', {}).get('value') or {}
@@ -1084,7 +1124,7 @@ class Worker(shared.Worker):
                 params.update(referrer='', referrerPolicy=policy)
             elif self.origin(referrer):
                 params.update(referrer=referrer, referrerPolicy=policy)
-            target.post('Page.navigate', params)
+            self.main_target.post('Page.navigate', params)
 
         # Chromium creates a form's window before NotifyInspector reports its
         # method (FormSubmission::Create / Frame::ScheduleFormSubmission). Wait
@@ -1147,14 +1187,12 @@ class Worker(shared.Worker):
             target.post('Page.stopLoading')
 
     def frame_navigated(self, target, frame):
+        target.document_generation += 1
         if target.kind == 'page' and target is not self.main_target and not frame.get('parentId'):
             if not self.owner_popups() or not self.popup_document(frame.get('url', '')):
                 self.root_cdp.send('Target.closeTarget', {'targetId': target.ident})
                 return
-        origin = self.origin(frame.get('url', ''))
-        if origin:
-            self.origins.add(origin)
-        self.frame_origins[(target.ident, frame['id'])] = origin
+        self.record_frame_storage(target, frame)
         if not frame.get('parentId'):
             target.main_frame = frame['id']
             if frame.get('url') not in ('', ':', 'about:blank', None):
@@ -1476,11 +1514,11 @@ class Worker(shared.Worker):
         if not self._remote_allowed(ident):
             return
         held, last = self.held_dialog, self.last_frame
-        if held and last:
+        if held:
+            if not last:
+                last = (DIALOG_PLACEHOLDER_JPEG, 1, 1)
             return self.reply(ident, jpeg=last[0], width=last[1], height=last[2],
                               dialog={'kind': held['kind'], 'text': held['text']}, focus=None, fields=[], links=[])
-        if held:
-            return self.fail(ident, 'frame_failed')
         self.deadline(ident, timeout)
         view = self.front_view()
         target = self.main_target if view is self.view else self.target_for(view)
@@ -1628,11 +1666,42 @@ class Worker(shared.Worker):
             self.context.add_cookies(cookies)
         self.reply(ident, imported=len(cookies))
 
-    def clear_storage(self, origins, done):
+    def record_frame_storage(self, target, frame):
+        origin = self.origin(frame.get('url', ''))
+        self.frame_origins[(target.ident, frame['id'])] = origin
+        if not origin:
+            return
+        self.origins.add(origin)
+        token = object()
+        self.storage_pending[token] = origin
+
+        def recorded(result, error):
+            key = result.get('storageKey')
+            if error or not key:
+                self.storage_errors.add(origin)
+            else:
+                self.storage_keys.setdefault(origin, set()).add(key)
+            self.storage_pending.pop(token, None)
+            waiters, self.storage_waiters = self.storage_waiters, []
+            for waiter in waiters:
+                waiter()
+        target.post('Storage.getStorageKeyForFrame', {'frameId': frame['id']}, recorded, setup=False)
+
+    def clear_storage(self, origins, done, ident=None):
+        if ident is not None and ident not in self.pending:
+            return
+        if any(origin in origins for origin in self.storage_pending.values()):
+            self.storage_waiters.append(lambda: self.clear_storage(origins, done, ident))
+            return
+        if self.storage_errors.intersection(origins):
+            return done('worker_error')
         jobs = []
         for origin in origins:
             jobs.append((self.main_target, 'Storage.clearDataForOrigin',
                          {'origin': origin, 'storageTypes': 'all'}))
+            for key in self.storage_keys.get(origin, ()):
+                jobs.append((self.main_target, 'Storage.clearDataForStorageKey',
+                             {'storageKey': key, 'storageTypes': 'all'}))
         for (ident, frame_id), origin in self.frame_origins.items():
             target = self.targets.get(ident)
             if target is not None and origin in origins:
@@ -1678,7 +1747,7 @@ class Worker(shared.Worker):
             for cookie in hits:
                 self.context.clear_cookies(name=cookie['name'], domain=cookie['domain'], path=cookie['path'])
             self.reply(ident, deleted=len(origins) + len(hits))
-        self.clear_storage(origins, cleared)
+        self.clear_storage(origins, cleared, ident)
 
     def op_cookies_clear(self, ident, command, timeout):
         self.deadline(ident, timeout)
@@ -1690,7 +1759,7 @@ class Worker(shared.Worker):
                 return self.fail(ident, error)
             self.context.clear_cookies()
             self.reply(ident)
-        self.clear_storage(set(self.origins), cleared)
+        self.clear_storage(set(self.origins), cleared, ident)
 
     def op_quit(self, ident, command, timeout):
         self.reply(ident)
