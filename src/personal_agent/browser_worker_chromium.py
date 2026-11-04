@@ -185,6 +185,8 @@ class _Target:
             self.parent.send('Target.sendMessageToTarget', envelope)
 
     def receive(self, message):
+        if 'error' in message:
+            _trace('cdp_error', message.get('error'))
         if 'id' in message:
             callback = self.callbacks.pop(message['id'], None)
             if callback is not None:
@@ -433,7 +435,10 @@ class Worker(shared.Worker):
         target = self.main_target if page is self.page else self.target_for(page)
         args = arguments or {}
 
+        began = time.monotonic()
+
         def evaluated(result, error):
+            _trace('run_done', round(time.monotonic() - began, 3), body.count('\n'), bool(error))
             try:
                 if error or result.get('exceptionDetails'):
                     _trace('script_failed', error or result.get('exceptionDetails'))
@@ -450,6 +455,7 @@ class Worker(shared.Worker):
                 'executionContextId': context_id, 'arguments': [{'value': v} for v in args.values()],
                 'awaitPromise': True, 'returnByValue': True}, evaluated)
         context_id = target.contexts.get(target.main_frame)
+        _trace('run', body.count('\n'), target.kind, context_id, target.main_frame)
         if context_id is not None:
             return execute(context_id)
 
