@@ -2808,11 +2808,17 @@ def same_invocation(first, second):
 
  The same recorded call (``scope`` and ``call_id``), or both carry recorded ``arguments`` and
  they are equal.  Without either there is no evidence they acted on the same thing: False.
+ #630 review P1: recorded arguments are redacted (``recorded_arguments``: typed text, an API body
+ or code kept as a length), so two different values of one length record alike.  Arguments that
+ carry a masking mark (``telegram_presence.MASK_MARK``) never show the same invocation; only the
+ same recorded call does.  No plaintext is kept to tell them apart.
  """
+ from .telegram_presence import masked
  first=first if isinstance(first,dict) else {};second=second if isinstance(second,dict) else {}
  if first.get('call_id') and (first.get('scope'),first.get('call_id'))==(second.get('scope'),second.get('call_id')):return True
  if first.get('arguments') is None or second.get('arguments') is None:return False
- return json.dumps(first['arguments'],sort_keys=True,ensure_ascii=False)==json.dumps(second['arguments'],sort_keys=True,ensure_ascii=False)
+ recorded=json.dumps(first['arguments'],sort_keys=True,ensure_ascii=False)
+ return not masked(recorded) and recorded==json.dumps(second['arguments'],sort_keys=True,ensure_ascii=False)
 
 #: #14: what the outcome judgment reads beside a failed call a later call made up for, or whose effect is unknown.
 STEP_FACTS={RECOVERED:'[recovered: the same action succeeded later]',
@@ -4636,6 +4642,9 @@ def evidence_qualifiers(result):
  found=[label for key,label in EVIDENCE_QUALIFIER_FLAGS if result.get(key) is True]
  if isinstance(result.get('read_failures'),list) and result['read_failures']:found.append('partial')
  if result.get('outcome') in ('failed','partial') and result['outcome'] not in found:found.append(result['outcome'])
+ # #630 review P1: a write that returned normally yet says it wrote nothing and nothing was written
+ # before (a detached, missing, changed or unverifiable earlier result) did not do what it was asked.
+ if result.get('saved') is False and result.get('already_saved') is False:found.append('not-done')
  return found
 
 #: Qualifiers that make a call that ran count as incomplete for the Work outcome.
@@ -4645,7 +4654,9 @@ def evidence_qualifiers(result):
 INCOMPLETE_QUALIFIERS=('partial',
                        # #1216: data that does not add up, is older than asked, or has no known reference
                        # time does not answer a request for the current state; the owner is told why.
-                       'inconsistent','stale','as-of-unknown')
+                       'inconsistent','stale','as-of-unknown',
+                       # #630 review P1: the call's own result says it did not do the write.
+                       'not-done')
 
 #: What Still says in its own voice about a qualified result it summarises.
 QUALIFIER_NOTES={
@@ -4656,6 +4667,7 @@ QUALIFIER_NOTES={
  'stale':msg('agent_runtime.stale_data'),
  'as-of-unknown':msg('agent_runtime.unknown_data_time'),
  'failed':msg('agent_runtime.step_incomplete'),
+ 'not-done':msg('agent_runtime.step_incomplete'),
 }
 
 #: #1216: response-truth qualifiers Still always tells the owner, whatever the outcome or the judgment.

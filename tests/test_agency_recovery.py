@@ -507,7 +507,8 @@ class GoalSummaryTests(unittest.TestCase):
         """#752: ``truncated`` is an Evidence qualifier, not incompleteness; the goal judgment decides."""
         from personal_agent.agent_runtime import INCOMPLETE_QUALIFIERS
         # #1216: response-truth flags (inconsistent, stale, undated) count as incomplete; truncated still does not.
-        self.assertEqual(INCOMPLETE_QUALIFIERS, ('partial', 'inconsistent', 'stale', 'as-of-unknown'))
+        # #630 review P1: a write whose own result says it wrote nothing (not-done) counts as incomplete too.
+        self.assertEqual(INCOMPLETE_QUALIFIERS, ('partial', 'inconsistent', 'stale', 'as-of-unknown', 'not-done'))
         self.assertNotIn('truncated', INCOMPLETE_QUALIFIERS)
         rows = [('weather', 'failed', json.dumps({'host_action': 'weather', 'code': 'transient_failure'})),
                 ('weather', 'succeeded', json.dumps({'host_action': 'weather', 'evidence': {}})),
