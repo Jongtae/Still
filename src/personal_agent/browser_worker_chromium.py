@@ -211,6 +211,8 @@ class _Target:
         self.contexts, self.callbacks, self.scripts = {}, {}, []
         self.main_frame = None
         self.ready = False
+        #: Fetch interception acknowledged (browser-side): this target's redirect hops are checked from now on.
+        self.fetch_ready = False
         self.initializing, self.setup_pending = True, set()
         self.ids = itertools.count(1)
 
@@ -426,7 +428,8 @@ class Worker(shared.Worker):
         self.install_scripts(target)
         # Every redirect has another requestPaused event, unlike context.route.
         target.post('Fetch.enable', {'patterns': [{'urlPattern': '*', 'requestStage': 'Request',
-                                                  'resourceType': 'Document'}]})
+                                                  'resourceType': 'Document'}]},
+                    done=lambda result, error: setattr(target, 'fetch_ready', not error))
         target.post('Target.setAutoAttach', {'autoAttach': True, 'waitForDebuggerOnStart': True,
                                             'flatten': False, 'filter': FRAME_FILTER})
         self.emulate(target)
@@ -804,7 +807,10 @@ class Worker(shared.Worker):
             target = self.popup_target(page)
             _trace('route_ready', target is not None and target.ident, target is not None and target.ready,
                    [(t.kind, t.ident in self.pages, t is self.main_target) for t in self.targets.values()])
-            if target is None or not target.ready:
+            # #34 (observed): while its first request is held, the popup's renderer answers no CDP command,
+            # so only the browser-side Fetch acknowledgement can be waited for; the isolated-world scripts
+            # and binding are queued before it and reach the renderer before its first document runs.
+            if target is None or not target.fetch_ready:
                 if time.monotonic() - began < shared.WARM_SECONDS:
                     return self.AppHelper.callLater(.02, ready)
                 # Fail closed, and say so: the step reports the refused navigation.

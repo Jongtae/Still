@@ -902,19 +902,21 @@ def test_a_later_same_url_navigation_and_same_url_redirect_are_not_initial_reque
     assert decide.call_count == 3
 
 
-def test_initial_route_waits_for_guard_setup_acknowledgement(worker):
-    worker.engine.browser.hold_method = 'Page.addScriptToEvaluateOnNewDocument'
+def test_initial_route_waits_for_the_fetch_acknowledgement_only(worker):
+    """#34 (observed): while the popup's first request is held its renderer answers nothing, so the barrier is
+    the browser-side Fetch interception (later hops checked), not the renderer's script acknowledgements."""
+    worker.engine.browser.hold_method = 'Fetch.enable'
     worker.engine.browser.held_responses = []
     popup = worker.context.new_page(reported=False)
     target = worker.targets[popup.ident]
-    assert not target.ready, 'a later runIfWaitingForDebugger response is not a setup barrier'
+    assert not target.fetch_ready
     route = FakeRoute()
     with mock.patch.object(worker, 'decide', side_effect=lambda url, counted, done: done(True)) as decide:
         worker.route_popup(route, UnreportedPopupRequest(popup, 'https://public.test/'))
         assert route.outcome is None and not decide.called
         for response in worker.engine.browser.held_responses:
             response()
-        assert target.ready
+        assert target.fetch_ready
         # Run the scheduled readiness retry without sleeping on a real clock.
         _, _, retry, args = min(worker.AppHelper.items)
         retry(*args)
