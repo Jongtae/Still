@@ -8,7 +8,7 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -46,10 +46,7 @@ jobs:
         env:
           AGENTOS_REAL_BROWSER_TESTS: '1'
         run: |
-          for t in test_label_and_script_forwarded_payment_submits_need_an_approval \
-                   test_the_production_policy_refuses_the_agentos_port_by_redirect_and_window_open \
-                   test_sessions_survive_a_restart_only_through_the_encrypted_jar \
-                   test_a_layer_put_up_by_the_locate_scroll_is_a_cover_found_before_pressing; do
+          for t in $(PYTHONPATH=src .venv/bin/python -m pytest -q --collect-only tests/test_browser_webkit.py::WebKitIntegrationTests | grep '::' | sed 's/.*:://'); do
             echo "=== $t"
             PYTHONPATH="$RUNNER_TEMP/site:src" timeout 150 xvfb-run -a .venv/bin/python -m pytest -q -s -x -p no:cacheprovider \
               "tests/test_browser_webkit.py::WebKitIntegrationTests::$t" 2>&1 | grep -vE '^\s*$' | grep -vE '^    [a-z#]|^>' | tail -150 || echo "!!! TIMEOUT/FAIL $t"

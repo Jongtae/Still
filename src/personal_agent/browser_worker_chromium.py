@@ -60,6 +60,42 @@ FRAME_FILTER = [{'type': 'iframe'}, {'exclude': True}]
 #: is what Chrome for Testing 156 prints where user namespaces are refused (observed, #34).
 SANDBOX_FAILURE_MARKERS = ('sandboxing failed', 'no usable sandbox', 'sandbox_host_linux', 'suid sandbox',
                            'running as root without --no-sandbox', 'failed to move to new namespace')
+#: How long a paused form submission waits for the guard's own record of it (#34): the guard's message
+#: is sent at the submit event, before the navigation, but may reach the worker after the paused request.
+VETTED_WAIT_SECONDS = 0.5
+#: The shared guard keeps an ordinary form's pass this long (``ORDINARY_MS`` in ``PRELUDE``).
+ORDINARY_VETTED_SECONDS = 2.0
+#: Chromium-only, in the isolated world after the shared guard: every submit the guard lets through
+#: (``state().vetted``) is also told to the worker, because Chromium runs no page script while a form's
+#: request is paused (observed, #34), so the shared ``FORM_NAVIGATION_SCRIPT`` cannot be asked then.
+VETTED_SHIM = r"""(() => { const s = window.__agentos; if (!s) return;
+  let list = s.vetted || [];
+  const tell = (kind, entry) => { try { %(binding)s(JSON.stringify({[kind]: {method: String(entry.method || ''),
+    action: String(entry.action || ''), payment: !!entry.payment}})); } catch (error) { /* the page check decides */ } };
+  Object.defineProperty(s, 'vetted', {configurable: true, get: () => list, set: (value) => {
+    const next = Array.isArray(value) ? value : [];
+    for (const entry of next) if (!list.includes(entry)) tell('vetted', entry);
+    // A payment pass the page withdrew (its submit was prevented) vouches for nothing any more.
+    if (next.length < list.length) for (const entry of list) if (entry.payment && !next.includes(entry)) tell('unvetted', entry);
+    list = next; }}); })();"""
+
+
+def bare_url(value):
+    """``origin + pathname`` of an http(s) URL as the guard's ``bare()`` reads it; '' otherwise."""
+    try:
+        parts = urlsplit(str(value or ''))
+        port = parts.port
+    except ValueError:
+        return ''
+    scheme, host = parts.scheme.lower(), (parts.hostname or '').lower()
+    if scheme not in ('http', 'https') or not host:
+        return ''
+    if ':' in host:
+        host = '[' + host + ']'
+    default = {'http': 80, 'https': 443}[scheme]
+    return f'{scheme}://{host}' + (f':{port}' if port and port != default else '') + (parts.path or '/')
+
+
 LAUNCH_ARGS = [
     '--ozone-platform=x11',
     f'--window-position={shared.PARK_ORIGIN},{shared.PARK_ORIGIN}',
@@ -397,7 +433,8 @@ class Worker(shared.Worker):
         target.scripts = []
         shim = ('window.webkit = {messageHandlers: {' + json.dumps(shared.GUARD_HANDLER) +
                 ': {postMessage: m => ' + BINDING + '(JSON.stringify(m))}}};\n')
-        sources = [(shim + shared.client_guard_user_script(self.guard_off), WORLD, True)]
+        sources = [(shim + shared.client_guard_user_script(self.guard_off) + '\n' +
+                    VETTED_SHIM % {'binding': BINDING}, WORLD, True)]
         if not self.guard_off:
             sources.append((shared.PAGE_WRAP_USER_SCRIPT, None, True))
         # Adapt the platform shim rather than claiming the macOS phone's platform.
@@ -425,10 +462,80 @@ class Worker(shared.Worker):
             record = json.loads(event.get('payload', ''))
         except (ValueError, TypeError):
             return
+        if isinstance(record, dict) and isinstance(record.get('vetted') or record.get('unvetted'), dict):
+            return self.note_vetted(record)
         if shared._press_record(record) is not None:
             self.receive_press(record)
         else:
             self.receive_cancelled(record)
+
+    def note_vetted(self, record):
+        """Keep (or withdraw) the guard's record of a submit it let through, for the paused request (#34)."""
+        withdrawn = 'unvetted' in record
+        entry = record.get('unvetted') if withdrawn else record['vetted']
+        key = (str(entry.get('method') or '').lower(), bare_url(entry.get('action')), bool(entry.get('payment')))
+        now = time.monotonic()
+        keep = shared.VETTED_SECONDS if key[2] else ORDINARY_VETTED_SECONDS
+        self.vetted = [(k, t) for k, t in getattr(self, 'vetted', []) if now - t <= shared.VETTED_SECONDS and
+                       not (withdrawn and k == key)]
+        if not withdrawn and key[1]:
+            self.vetted = (self.vetted + [(key, now)])[-8:]
+        self.vetted_keep = keep
+
+    def take_vetted(self, method, url):
+        """Whether the guard let this submission through just before; a payment pass is used once."""
+        verb, place, now = str(method or 'get').lower(), bare_url(url), time.monotonic()
+        for index, ((entry_verb, entry_place, payment), at) in enumerate(getattr(self, 'vetted', [])):
+            limit = shared.VETTED_SECONDS if payment else ORDINARY_VETTED_SECONDS
+            if entry_verb == verb and entry_place == place and place and now - at <= limit:
+                if payment:
+                    del self.vetted[index]
+                return True
+        return False
+
+    def check_form_navigation(self, url, method, then, into_frame=False):
+        """A paused form submission (#34; the shared check is ``browser_worker.Worker.check_form_navigation``).
+
+        Chromium runs no page script while the submission's request is paused, so the page cannot be
+        asked then.  A submission the guard let through (its own record, ``VETTED_SHIM``) proceeds to the
+        destination check.  Any other is refused at once (nothing is sent) and the page is asked
+        afterwards which payment form it was: that one is held for the owner's approval as on macOS,
+        anything else is a typed ``submit_refused``.  Fail closed: a non-payment submission the guard
+        could not see (a native submit from another realm) is refused here, where macOS lets it through.
+        """
+        began = time.monotonic()
+        self.deciding += 1   # a click waits for this decision (#736)
+
+        def look():
+            if self.take_vetted(method, url):
+                self.deciding -= 1
+                return then(True)
+            if time.monotonic() - began < VETTED_WAIT_SECONDS:
+                return self.AppHelper.callLater(.02, look)
+            then(False)   # aborted: nothing was sent; the page answers now that it runs again
+            answered = []
+
+            def answer(record=None):
+                if answered:
+                    return
+                answered.append(True)
+                self.deciding -= 1
+                if isinstance(record, dict):
+                    self.receive_cancelled(record)   # held: an approval of it can release it
+                else:
+                    self.refused_submits += 1
+
+            def done(value, error):
+                held = value.get('cancelled') if error is None and isinstance(value, dict) else None
+                answer(held if isinstance(held, dict) else None)
+            try:
+                self.run(shared.FORM_NAVIGATION_SCRIPT,
+                         {'url': url, 'method': str(method or 'GET'), 'frame': into_frame is True}, done)
+            except Exception:
+                answer()
+                raise
+            self.AppHelper.callLater(shared.FORM_CHECK_SECONDS, answer)
+        look()
 
     def run(self, body, arguments, done, world=None, view=None):
         page = view if view is not None and view is not self.view else self.page

@@ -362,7 +362,10 @@ def test_allowed_redirect_continues_once_without_rechecking_form_allowance(worke
     assert worker.posted_submits == 0
 
 
-def test_native_form_navigation_is_checked_and_cancelled_record_is_preserved(worker):
+def test_native_form_navigation_is_checked_and_cancelled_record_is_preserved(worker, monkeypatch):
+    # #34: a submission the guard never vetted is aborted first (Chromium runs no page script while it is
+    # paused), then the page names the payment form it was, which is held for the owner's approval.
+    monkeypatch.setattr(chromium, 'VETTED_WAIT_SECONDS', 0)
     target = worker.main_target
     worker.engine.browser.script_results.append({'allow': False, 'cancelled': {
         'id': 'hold', 'dom': 0, 'method': 'post', 'action': 'https://public.test/submit',
@@ -573,7 +576,8 @@ def test_ai_popup_post_is_adopted_without_replaying_the_request(worker):
     popup = worker.context.new_page()
     worker.register_page(popup)
     target = worker.target_for(popup)
-    worker.engine.browser.script_results.append({'allow': True})
+    # #34: the guard let this submit through (its own record), so the paused request proceeds.
+    worker.note_vetted({'vetted': {'method': 'post', 'action': 'https://public.test/submit', 'payment': False}})
     with mock.patch.object(worker, 'decide', side_effect=lambda url, main, done: done(True)):
         worker.request_paused(target, {'requestId': 'original-post', 'frameId': target.main_frame,
                                       'request': {'url': 'https://public.test/submit', 'method': 'POST'}})
@@ -667,3 +671,45 @@ def test_main_emits_one_ready_and_processes_pipe_commands_on_main_thread(capsys)
     assert rows[1:] == [{'id': 1, 'ok': True, 'visible': False, 'navigations': 0}, {'id': 2, 'ok': True}]
     assert called_threads and set(called_threads) == {owner_thread}
     assert 'third-party diagnostic' in capsys.readouterr().err
+
+
+def test_bare_url_reads_the_place_a_submission_goes_as_the_guard_does():
+    assert chromium.bare_url('HTTPS://Shop.Test:443/pay?x=1#f') == 'https://shop.test/pay'
+    assert chromium.bare_url('http://shop.test:8080') == 'http://shop.test:8080/'
+    assert chromium.bare_url('javascript:alert(1)') == ''
+
+
+def test_a_vetted_submission_proceeds_and_a_payment_pass_is_used_once(worker):
+    worker.note_vetted({'vetted': {'method': 'post', 'action': 'https://shop.test/pay', 'payment': True}})
+    assert worker.take_vetted('POST', 'https://shop.test/pay?step=2')
+    assert not worker.take_vetted('POST', 'https://shop.test/pay'), 'a payment pass is spent once'
+    worker.note_vetted({'vetted': {'method': 'post', 'action': 'https://shop.test/search', 'payment': False}})
+    assert worker.take_vetted('POST', 'https://shop.test/search')
+    assert not worker.take_vetted('GET', 'https://shop.test/search'), 'the method must match'
+    assert not worker.take_vetted('POST', 'https://other.test/search'), 'the place must match'
+
+
+def test_a_payment_pass_the_page_withdrew_vouches_for_nothing(worker):
+    entry = {'method': 'post', 'action': 'https://shop.test/pay', 'payment': True}
+    worker.note_vetted({'vetted': entry})
+    worker.note_vetted({'unvetted': entry})
+    assert not worker.take_vetted('POST', 'https://shop.test/pay')
+
+
+def test_an_unvetted_ordinary_submission_is_never_sent(worker, monkeypatch):
+    """Fail closed (#34): the page says it is no payment form, but the request was already refused."""
+    monkeypatch.setattr(chromium, 'VETTED_WAIT_SECONDS', 0)
+    target = worker.main_target
+    worker.engine.browser.script_results.append({'allow': True})
+    worker.request_paused(target, {'requestId': 'post', 'frameId': target.main_frame,
+                                  'request': {'url': 'https://public.test/submit', 'method': 'POST'}})
+    assert packets(worker, 'Fetch.failRequest')[-1]['requestId'] == 'post'
+    assert not packets(worker, 'Fetch.continueRequest')
+    assert worker.refused_submits == 1 and worker.cancelled is None
+    assert worker.deciding == 0
+
+
+def test_the_vetted_notice_runs_only_in_the_isolated_world(worker):
+    sources = packets(worker, 'Page.addScriptToEvaluateOnNewDocument')
+    with_notice = [source for source in sources if "Object.defineProperty(s, 'vetted'" in source['source']]
+    assert with_notice and all(source.get('worldName') == chromium.WORLD for source in with_notice)
