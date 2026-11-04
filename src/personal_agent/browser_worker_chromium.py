@@ -58,11 +58,6 @@ from .browser_session import registrable_domain
 
 WORLD = 'still'
 
-
-def _trace(*parts):
-    """TEMPORARY #34 diagnostics: stderr only (the parent discards it), and only when asked for."""
-    if os.environ.get('STILL_CHROMIUM_TRACE') == '1':
-        print('[trace]', *(str(part)[:400] for part in parts), file=sys.stderr, flush=True)
 BINDING = '__still_guard_message'
 PAGE_FILTER = [{'type': 'page'}, {'exclude': True}]
 FRAME_FILTER = [{'type': 'iframe'}, {'exclude': True}]
@@ -250,8 +245,6 @@ class _Target:
             self.ready = True
 
     def receive(self, message):
-        if 'error' in message:
-            _trace('cdp_error', message.get('error'))
         if 'id' in message:
             callback = self.callbacks.pop(message['id'], None)
             if callback is not None:
@@ -400,7 +393,6 @@ class Worker(shared.Worker):
         self.AppHelper.callAfter(self.register_page, page)
 
     def register_page(self, page):
-        _trace('register_page', page.url[:80])
         if not page.is_closed():
             if page is not self.page and self.page is not None and not self.owner_popups():
                 page.close(run_before_unload=False)
@@ -421,9 +413,6 @@ class Worker(shared.Worker):
         self.attached(self.root_cdp, {'sessionId': session_id, 'targetInfo': info})
 
     def attached(self, parent, event):
-        _trace('attached', 'root' if not isinstance(parent, _Target) else parent.kind, event.get('waitingForDebugger'),
-               event.get('targetInfo', {}).get('type'), event.get('targetInfo', {}).get('url', '')[:80],
-               event.get('targetInfo', {}).get('openerId'))
         target = _Target(self, parent, event['sessionId'], event['targetInfo'])
         self.sessions[target.session_id] = self.targets[target.ident] = target
         page_target = target
@@ -608,13 +597,9 @@ class Worker(shared.Worker):
         target = self.main_target if page is self.page else self.target_for(page)
         args = arguments or {}
 
-        began = time.monotonic()
-
         def evaluated(result, error):
-            _trace('run_done', round(time.monotonic() - began, 3), body.count('\n'), bool(error))
             try:
                 if error or result.get('exceptionDetails'):
-                    _trace('script_failed', error or result.get('exceptionDetails'))
                     return done(None, 'script_failed')
                 value = result.get('result', {}).get('value')
                 decoded = json.loads(value) if value is not None else None
@@ -628,7 +613,6 @@ class Worker(shared.Worker):
                 'executionContextId': context_id, 'arguments': [{'value': v} for v in args.values()],
                 'awaitPromise': True, 'returnByValue': True}, evaluated)
         context_id = target.contexts.get(target.main_frame)
-        _trace('run', body.count('\n'), target.kind, context_id, target.main_frame)
         if context_id is not None:
             return execute(context_id)
 
@@ -694,8 +678,6 @@ class Worker(shared.Worker):
         # policy decision does; 'BlockedByClient' would commit Chromium's error page instead.
         refuse = refuse or (lambda: target.post('Fetch.failRequest', {'requestId': event['requestId'],
                                                                       'errorReason': 'Aborted'}))
-        _trace('request_paused', target.kind, request.get('method'), request.get('url', '')[:120],
-               self.frame_requests.get((target.ident, event.get('frameId')), {}).get('reason'))
         url, method = request['url'], request.get('method', 'GET')
         page_target = target
         while page_target.kind == 'iframe' and isinstance(page_target.parent, _Target):
@@ -816,8 +798,6 @@ class Worker(shared.Worker):
                 # Supported Request.frame raises for the first navigation of
                 # a popup whose Page has not been reported yet (1.64.1).
                 frame = None
-            _trace('route_popup', request.url[:100], page is self.page,
-                   frame is not None and frame.parent_frame is not None)
             if not request.is_navigation_request():
                 if page is not self.page and not self.owner_popups():
                     return self._settle_route(route, False)
@@ -849,8 +829,6 @@ class Worker(shared.Worker):
 
         def ready():
             target = self.popup_target(page)
-            _trace('route_ready', target is not None and target.ident, target is not None and target.ready,
-                   [(t.kind, t.ident in self.pages, t is self.main_target) for t in self.targets.values()])
             # #34 (observed): while its first request is held, the popup's renderer answers no CDP command,
             # so only the browser-side Fetch acknowledgement can be waited for; the isolated-world scripts
             # and binding are queued before it and reach the renderer before its first document runs.
