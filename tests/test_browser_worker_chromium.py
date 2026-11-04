@@ -64,6 +64,8 @@ class FakeCDP:
                 result = getattr(self.browser, 'layout_metrics', {'cssVisualViewport': {'pageX': 0, 'pageY': 0}})
             elif command == 'Page.navigate':
                 result = getattr(self.browser, 'navigate_result', {'frameId': 'f', 'loaderId': 'loader'})
+            elif command == 'Runtime.evaluate':
+                result = {'result': {'value': getattr(self.browser, 'opener_metadata', {})}}
             response = {'sessionId': params['sessionId'],
                         'message': json.dumps({'id': packet['id'], 'result': result})}
             if command == getattr(self.browser, 'hold_method', None):
@@ -696,6 +698,66 @@ def test_bare_url_reads_the_place_a_submission_goes_as_the_guard_does():
     assert chromium.bare_url('javascript:alert(1)') == ''
 
 
+@pytest.mark.parametrize('failure', [None, 'transport', 'disconnected'])
+def test_main_pump_survives_login_page_close_but_transport_failure_is_fatal(failure):
+    import threading
+
+    engine = FakePlaywright()
+    browser, stream = engine.browser, io.StringIO()
+    replaced = threading.Event()
+    original_new_page, original_send = browser.context.new_page, FakeCDP.send
+    cookie = {'name': 'login', 'value': 'session', 'domain': 'example.test', 'path': '/'}
+    closed = []
+
+    def new_page(*args, **kwargs):
+        page = original_new_page(*args, **kwargs)
+        if len(browser.context.pages) == 2:
+            replaced.set()
+        return page
+
+    def send(session, method, params=None):
+        if method == 'Browser.getVersion' and not closed:
+            page = browser.context.pages[0]
+            browser.context.jar.append(cookie)
+            closed.append(page)
+            page.close()
+            if failure == 'transport':
+                raise RuntimeError('transport failed')
+            if failure == 'disconnected':
+                browser.is_connected = lambda: False
+        return original_send(session, method, params)
+
+    def commands():
+        if replaced.wait(1):
+            yield '{"id": 1, "op": "state"}\n'
+            yield '{"id": 2, "op": "cookies_export"}\n'
+            yield '{"id": 3, "op": "quit"}\n'
+
+    manager = mock.MagicMock()
+    manager.__enter__.return_value = engine
+    with mock.patch.object(chromium.sys, 'platform', 'linux'), \
+         mock.patch.object(chromium.sys, 'stdout', stream), \
+         mock.patch.object(chromium.sys, 'stdin', commands()), \
+         mock.patch.dict(chromium.os.environ, {'DISPLAY': ':8'}, clear=True), \
+         mock.patch.object(chromium, '_playwright_factory', return_value=lambda: manager), \
+         mock.patch.object(browser.context, 'new_page', side_effect=new_page), \
+         mock.patch.object(browser.context, 'close') as close_context, \
+         mock.patch.object(FakeCDP, 'send', send):
+        status = chromium.main(['--profile', 'owner', '--chromium', '/pinned/chrome'])
+    assert close_context.called and closed
+    if failure:
+        assert status == (2 if failure == 'transport' else 0)
+        assert not replaced.is_set()
+        return
+    assert status == 0 and replaced.is_set()
+    assert len(browser.context.pages) == 2 and not browser.context.pages[1].is_closed()
+    rows = [json.loads(line) for line in stream.getvalue().splitlines()]
+    replies = {row['id']: row for row in rows if 'id' in row}
+    assert replies[1]['ok'] and not replies[1]['visible']
+    assert replies[2]['sites']['example.test'] == [chromium.cookie_row(cookie)]
+    assert replies[3] == {'id': 3, 'ok': True}
+
+
 def test_a_vetted_submission_proceeds_and_a_payment_pass_is_used_once(worker):
     worker.note_vetted({'vetted': {'method': 'post', 'action': 'https://shop.test/pay', 'payment': True}})
     assert worker.take_vetted('POST', 'https://shop.test/pay?step=2')
@@ -1146,6 +1208,63 @@ def test_chromiums_own_error_page_is_not_an_unsupported_navigation():
 def window_open(worker, url, gesture=False):
     worker.main_target.receive({'method': 'Page.windowOpen', 'params': {
         'url': url, 'userGesture': gesture, 'windowName': '', 'windowFeatures': []}})
+
+
+@pytest.mark.parametrize('policy,cdp_policy', [
+    ('strict-origin-when-cross-origin', 'strictOriginWhenCrossOrigin'),
+    ('origin', 'origin'), ('same-origin', 'sameOrigin'),
+    ('no-referrer-when-downgrade', 'noReferrerWhenDowngrade'),
+    ('unsafe-url', 'unsafeUrl')])
+def test_ai_popup_replay_preserves_opener_referrer_and_policy(worker, policy, cdp_policy):
+    worker.engine.browser.opener_metadata = {'url': 'https://public.test/login', 'policy': policy}
+    window_open(worker, 'https://public.test/account', gesture=True)
+    assert packets(worker, 'Page.navigate') == [{
+        'url': 'https://public.test/account', 'transitionType': 'link',
+        'referrer': 'https://public.test/login', 'referrerPolicy': cdp_policy}]
+    evaluation = packets(worker, 'Runtime.evaluate')[-1]
+    assert evaluation['returnByValue']
+    assert 'document.URL' in evaluation['expression'] and 'document.referrerPolicy' in evaluation['expression']
+    assert 'source?.referrerPolicy' in evaluation['expression']
+
+
+@pytest.mark.parametrize('features,rel,policy', [
+    (['noreferrer'], '', 'unsafe-url'), (['noopener'], '', 'unsafe-url'),
+    ([], 'noreferrer', 'unsafe-url'), ([], 'noopener', 'unsafe-url'),
+    ([], '', 'no-referrer')])
+def test_ai_popup_replay_suppresses_referrer(worker, features, rel, policy):
+    worker.engine.browser.opener_metadata = {'url': 'https://public.test/private', 'policy': policy, 'rel': rel}
+    worker.window_open(worker.main_target, {
+        'url': 'https://public.test/account', 'windowFeatures': features})
+    assert packets(worker, 'Page.navigate') == [{
+        'url': 'https://public.test/account', 'transitionType': 'other',
+        'referrer': '', 'referrerPolicy': 'noReferrer'}]
+
+
+@pytest.mark.parametrize('link,expected_policy,expected_rel', [
+    (None, 'same-origin', ''),
+    ({'href': 'https://public.test/account', 'referrerPolicy': 'origin', 'rel': ''}, 'origin', ''),
+    ({'href': 'https://public.test/account', 'referrerPolicy': '', 'rel': 'noreferrer'}, 'same-origin', 'noreferrer'),
+    ({'href': 'https://other.test/', 'referrerPolicy': 'unsafe-url', 'rel': 'noopener'}, 'same-origin', '')])
+def test_popup_referrer_script_reads_document_and_matching_link(worker, link, expected_policy, expected_rel):
+    import shutil
+    import subprocess
+
+    node = shutil.which('node')
+    if not node:
+        pytest.skip('node is needed to execute the opener metadata script')
+    window_open(worker, 'https://public.test/account')
+    expression = packets(worker, 'Runtime.evaluate')[-1]['expression']
+    source = '''const document = {
+        URL: 'https://user:password@public.test/login?next=account#private',
+        referrerPolicy: 'same-origin',
+        activeElement: {closest: () => (LINK)}
+    };
+    console.log(JSON.stringify(''' + expression + '));'
+    source = source.replace('LINK', json.dumps(link))
+    metadata = json.loads(subprocess.run([node, '-e', source], check=True, capture_output=True,
+                                        text=True, timeout=10).stdout)
+    assert metadata == {'url': 'https://public.test/login?next=account',
+                        'policy': expected_policy, 'rel': expected_rel}
 
 
 @pytest.mark.parametrize('allowed', [True, False])

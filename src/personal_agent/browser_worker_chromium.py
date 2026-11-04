@@ -34,6 +34,13 @@ errors; Playwright's crPage.takeScreenshot and crNetworkManager request settleme
 supply the viewport and cancellation semantics behind the existing CDP adapter.
 These maintained platform/official APIs need only stdlib ctypes and existing
 transport glue; no additional framework, dependency, licence or authority change.
+#640 findings 1/3 (Adapt): browser-scoped CDP Browser.getVersion pumps the
+existing Playwright transport independently of page lifetime. Runtime.evaluate
+reads the opener's document/link policy; Page.navigate applies Chromium's
+ReferrerPolicy rather than implementing a second HTTP referrer policy engine.
+The same maintained, Apache-2.0/BSD APIs and dependency/platform fit apply;
+no added dependency, destination or authority. A second browser SDK cannot
+improve these existing protocol boundaries.
 Navigation expiry reuses the existing deadline and loader correlation (N/A: bug
 fix only, no new component or case in a policy mechanism).
 The stdlib queue/heapq provide the main-thread handoff and timer queue. Selenium
@@ -1044,7 +1051,7 @@ class Worker(shared.Worker):
                 return
             opens.remove(pending)
             self.deciding -= 1
-            if error or target is not self.main_target or document != self.document_generation:
+            if error or result.get('exceptionDetails') or target is not self.main_target or document != self.document_generation:
                 self.navigation_refused(True, 'navigation_failed')
                 return
             form = pending['form']
@@ -1055,14 +1062,44 @@ class Worker(shared.Worker):
                 self.frame_requests[(target.ident, target.main_frame)] = form
             # Use the opener's event, never the popup's URL or document authority.
             # Fetch handles destination policy, read holds and navigation accounting.
-            target.post('Page.navigate', {'url': url, 'transitionType': 'link' if event.get('userGesture') else 'other'})
+            metadata = result.get('result', {}).get('value') or {}
+            policy = event.get('referrerPolicy', metadata.get('policy', 'strict-origin-when-cross-origin'))
+            # DOM policy spelling differs from CDP's enum. Let Chromium apply
+            # origin trimming, same-origin and downgrade restrictions itself.
+            policies = {
+                'no-referrer': 'noReferrer', 'no-referrer-when-downgrade': 'noReferrerWhenDowngrade',
+                'origin': 'origin', 'origin-when-cross-origin': 'originWhenCrossOrigin',
+                'same-origin': 'sameOrigin', 'strict-origin': 'strictOrigin',
+                'strict-origin-when-cross-origin': 'strictOriginWhenCrossOrigin', 'unsafe-url': 'unsafeUrl'}
+            policy = policies.get(policy, policy)
+            if policy not in policies.values():
+                policy = 'strictOriginWhenCrossOrigin'
+            features = {str(feature).lower().split('=')[0] for feature in event.get('windowFeatures', [])}
+            rel = set(metadata.get('rel', '').lower().split())
+            if features.intersection(('noreferrer', 'noopener')) or rel.intersection(('noreferrer', 'noopener')):
+                policy = 'noReferrer'
+            referrer = event.get('referrer', metadata.get('url', ''))
+            params = {'url': url, 'transitionType': 'link' if event.get('userGesture') else 'other'}
+            if policy == 'noReferrer':
+                params.update(referrer='', referrerPolicy=policy)
+            elif self.origin(referrer):
+                params.update(referrer=referrer, referrerPolicy=policy)
+            target.post('Page.navigate', params)
 
         # Chromium creates a form's window before NotifyInspector reports its
         # method (FormSubmission::Create / Frame::ScheduleFormSubmission). Wait
         # for an opener-renderer round trip, after that synchronous task, so a
         # POST is identified before any GET can be issued. No popup is resumed.
         self.AppHelper.callLater(shared.WARM_SECONDS, replay, {}, {'code': -1})
-        target.post('Runtime.evaluate', {'expression': 'void 0'}, replay)
+        target.post('Runtime.evaluate', {'expression': '''(() => {
+            const link = document.activeElement?.closest('a[href],area[href]');
+            const opener = new URL(document.URL);
+            opener.hash = ''; opener.username = ''; opener.password = '';
+            const source = link && link.href === ''' + json.dumps(url) + ''' ? link : null;
+            return {url: opener.href,
+                    policy: source?.referrerPolicy || document.referrerPolicy || 'strict-origin-when-cross-origin',
+                    rel: source?.rel || ''};
+        })()''', 'returnByValue': True}, replay)
 
     @staticmethod
     def origin(url):
@@ -1737,11 +1774,11 @@ def _main(args, emit):
                     next_window_poll = time.monotonic() + .25
                 if not worker.AppHelper.running:
                     break
-                # Playwright dispatches callbacks only while one of its APIs runs.
-                if worker.page.is_closed():
-                    worker.root_cdp.send('Browser.getVersion')
-                else:
-                    worker.page.wait_for_timeout(10)
+                # Pump through the browser session: closing the login Page
+                # must not abort dispatch before its queued replacement runs.
+                # Browser/transport errors still reach the fatal outer handler.
+                worker.root_cdp.send('Browser.getVersion')
+                time.sleep(.01)
             worker.close()
     except Exception as exc:
         if not ready:
