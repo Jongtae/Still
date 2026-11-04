@@ -488,11 +488,13 @@ _DREAM_ITEM['required'] = [*_DREAM_ITEM['required'], 'sources']
 _DREAM_END = _DREAM_ITEM['properties']['invalidates']['items']
 _DREAM_END['properties'].update(because={'type': 'string', 'enum': list(END_BECAUSE)}, turn={'type': 'string'})
 _DREAM_END['required'] = [*_DREAM_END['required'], 'because', 'turn']
-#: #583: one standing preparation the look back suggests; the owner accepts or declines it.
+#: #638: the recurrence of a one-off suggestion (a dated need the owner mentioned); stored as no recurrence.
+SUGGESTION_ONCE = 'once'
+#: #583: one preparation the look back suggests; the owner accepts or declines it.
 _DREAM_SUGGESTION = {'type': 'object', 'additionalProperties': False,
                      'properties': {'kind': {'type': 'string', 'enum': list(prep.KINDS)},
                                     'goal': {'type': 'string'}, 'due': {'type': 'string'},
-                                    'recurrence': {'type': 'string', 'enum': list(prep.RECURRENCES)},
+                                    'recurrence': {'type': 'string', 'enum': [*prep.RECURRENCES, SUGGESTION_ONCE]},
                                     'delivery': {'type': 'string', 'enum': ['send', 'keep', prep.DELIVERY_WHEN_NEEDED]},
                                     'title': {'type': 'string'}, 'offer': {'type': 'string'},
                                     'sources': {'type': 'array', 'items': {'type': 'string'}}},
@@ -525,11 +527,12 @@ def dream_shape(data):
 def validate_suggestions(suggestions, refs, turn_days, limit=DREAM_SUGGESTIONS):
     """``(kept, dropped)`` of a look back's preparation suggestions (#583, deterministic).
 
-    A suggestion rests on a repetition: at least two turns the dream read (``refs``), from different
-    owner dates (``turn_days``; an undated turn dates nothing) - the same two-occasion rule a pattern
-    fact follows.  At most ``limit`` are kept.  What the suggestion asks for is the AI's (C16); its
-    fields are validated where it is stored, by ``schedule_preparation``'s own normalisers.  A dropped
-    entry names its position and reason, never its text.
+    A standing suggestion rests on a repetition: at least two turns the dream read (``refs``), from
+    different owner dates (``turn_days``; an undated turn dates nothing) - the same two-occasion rule a
+    pattern fact follows.  #638: a one-off (``SUGGESTION_ONCE``) cannot repeat; it rests on at least one
+    turn the dream read, where the owner said what is coming.  At most ``limit`` are kept.  What the
+    suggestion asks for is the AI's (C16); its fields are validated where it is stored, by
+    ``schedule_preparation``'s own normalisers.  A dropped entry names its position and reason, never its text.
     """
     kept, dropped = [], []
     for index, item in enumerate(suggestions if isinstance(suggestions, list) else []):
@@ -540,11 +543,13 @@ def validate_suggestions(suggestions, refs, turn_days, limit=DREAM_SUGGESTIONS):
             reason = 'shape'
         elif not named:
             reason = 'sources'
+        elif item.get('recurrence') == SUGGESTION_ONCE:
+            pass  # #638: one cited turn is the evidence of a dated need
         elif len(named) < 2:
             reason = 'one-occasion'
         elif len(days) < 2:
             reason = 'one-day'
-        elif len(kept) >= limit:
+        if reason is None and len(kept) >= limit:
             reason = 'limit'
         if reason:
             dropped.append({'suggestion': index, 'reason': reason})

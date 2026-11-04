@@ -1950,6 +1950,10 @@ class AgentService:
         now=self.preparations.clock() if now is None else now
         # #583: an unanswered look-back suggestion lapses after a week (one read when there is none).
         self.preparations.expire_suggestions(now)
+        # #638: a look back's one-off suggestion is offered without waiting for the owner (one read when there is none).
+        try:self.offer_one_off_suggestion(now)
+        except Exception as exc:  # noqa: BLE001 - an offer never stops the preparations tick
+            LOG.warning('one-off suggestion not offered kind=%s',type(exc).__name__)
         rows=self.preparations.due(now)
         if not rows:return False
         for row in rows:
@@ -2347,7 +2351,8 @@ class AgentService:
     def suggest_preparations(self, anchor_id, items, judgments=None):
         """Store the look-back's suggestions (#583) as ``proposed`` rows of its anchor Work; ``(outcomes, calls)``.
 
-        ``items`` passed ``om.validate_suggestions`` (two cited turns on different days).  Each is then
+        ``items`` passed ``om.validate_suggestions`` (two cited turns on different days, or one for a
+        one-off, #638).  Each is then
         validated by ``schedule_preparation``'s own normalisers and skipped when a preparation with the
         same goal is active or the owner declined it recently (``declined_before``, whose judgment is the
         only model call here, counted in ``calls`` and asked only while the upkeep budget has one left).
@@ -2362,9 +2367,11 @@ class AgentService:
         outcomes,calls=[],0
         for item in items:
             args={name:item.get(name) for name in ('kind','goal','due','recurrence','delivery','title','offer')}
+            once=args['recurrence']==om.SUGGESTION_ONCE
+            if once:args['recurrence']=None
             try:
                 fields=self.preparation_fields(args,now)
-                if fields['recurrence'] is None:raise prep.PreparationRefusal('invalid_recurrence')
+                if fields['recurrence'] is None and not once:raise prep.PreparationRefusal('invalid_recurrence')
                 goal=fields['goal']
                 if self.preparations.has_active_goal(goal):
                     outcomes.append({'reason':'active'})
@@ -2394,22 +2401,26 @@ class AgentService:
             LOG.info('preparation suggested id=%s work=%s kind=%s',row['id'],anchor_id,row['kind'])
         return outcomes,calls
 
-    def queue_preparation_suggestion(self, job):
+    def queue_preparation_suggestion(self, job, one_off=False):
         """With the owner's own Work, offer once the look-back's suggestions not offered yet (#583).
 
-        No push of its own: one ``preparation_proposed`` message on ``job``'s conversation, with the
-        usual accept/decline buttons, bound (digest) to exactly the suggestions of one look back and
-        recorded on their anchor Work, so ``offered_proposals`` and the answer paths act on those rows
-        only.  At most one such message per owner day, none while the owner paused upkeep; a message
-        queued marks its rows offered, so each is offered once.  Returns the notification or None.
+        One ``preparation_proposed`` message on ``job``'s conversation, with the usual accept/decline
+        buttons, bound (digest) to exactly the suggestions of one look back and recorded on their anchor
+        Work, so ``offered_proposals`` and the answer paths act on those rows only.  At most one such
+        message per owner day, none while the owner paused upkeep; a message queued marks its rows
+        offered, so each is offered once.  #638: ``one_off`` (``offer_one_off_suggestion``) takes only a
+        look back that holds a one-off and, with no ``job``, uses the anchor Work's own conversation.
+        Returns the notification or None.
         """
         from .current_context import owner_today
         now=self.preparations.clock()
         last=self.preparations.last_suggestion_offered()
         if last is not None and owner_today(self.store,last)==owner_today(self.store,now):return None
         if not self.owner_model.settings()['enabled']:return None
-        anchor,rows=self.preparations.unoffered_suggestions(now)
+        anchor,rows=self.preparations.unoffered_suggestions(now,one_off=one_off)
         if not rows:return None
+        job=job or self.store.job(anchor)
+        if not job:return None
         shown=prep.proposal_page(rows)[0]
         self.queue_notification({**job,'id':anchor},'preparation_proposed',fingerprint=prep.digest(shown))
         # A surface queues it only for its current paired conversation (and not every surface returns the row).
@@ -2418,6 +2429,18 @@ class AgentService:
         self.preparations.mark_offered(rows,now)
         LOG.info('preparation suggestion offered work=%s anchor=%s count=%s',job['id'],anchor,len(shown))
         return notification
+
+    def offer_one_off_suggestion(self, now=None):
+        """#638: a look back that holds a one-off suggestion is offered without waiting for the owner's next Work.
+
+        A dated need cannot wait for the owner to come back, so on the preparations tick, inside the owner's
+        ``prep.SUGGESTION_OFFER_HOURS``, ``queue_preparation_suggestion`` offers it on its anchor Work's
+        conversation under the same cap and pause.  Nothing unoffered is one read.  Returns the notification or None.
+        """
+        if not self.preparations.has_unoffered_one_off():return None
+        now=self.preparations.clock() if now is None else now
+        if self._owner_local_hour(now) not in prep.SUGGESTION_OFFER_HOURS:return None
+        return self.queue_preparation_suggestion(None,one_off=True)
 
     def preparation_cancel_markup(self, notification_id):
         """#1455: the one button that cancels exactly the reservations a message confirmed."""

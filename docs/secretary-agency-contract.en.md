@@ -367,6 +367,10 @@ It builds on the merged current-context work and CONTEXT-STATE-01 #627, which is
   - Still keeps at most 2 per look-back, each citing at least two turns the dream read on different local days, and skips one whose goal an active preparation already has or the owner declined (`declined_before`). Each passes the `schedule_preparation` normalisers and is stored `proposed`, created from the dream's anchor Work.
   - It is offered once, in the existing proposal message with its buttons, bound to exactly its rows; at most one such message a day, and none while upkeep is paused.
   - One still unanswered after 7 days lapses as `expired`. That is not a decline, so it does not block a later offer.
+- **A one-off from the look-back (owner request 2026-11-05, #638).** When the dream sees that the owner mentioned something specific coming at a definite date or time, and nothing covers it yet, it may suggest a one-off reminder or preparation before it (`recurrence: once`).
+  - It cites at least one turn the dream read; the two-day rule stays for standing suggestions. The limit of 2 per look-back, the normalisers, the active and declined checks and the anchor rule are the same.
+  - A dated need cannot wait for the owner to come back, so a look-back that holds a one-off is offered on the preparations tick without waiting for the next Work, inside the owner's daytime hours (08:00–21:59 local), on the anchor Work's conversation. The daily cap and the pause are the same. Standing-only suggestions still wait for the next Work.
+  - A one-off whose time passes before the owner accepts it lapses as `expired`, not a decline. Nothing is sent when the dream found nothing dated; there is no periodic or digest message.
 
 Neither changes authority. No preparation runs without the owner's acceptance. Habit inference for anything other than offering a preparation stays out of scope.
 
@@ -391,7 +395,7 @@ Completion does not select a successor. The hardening program and any further ca
 ## Non-goals
 
 - Payment, order submission or any effect the owner has not connected.
-- Background pattern mining, habit inference or unsolicited interruptions beyond accepted preparations, except the offered preparations above (#582, #583).
+- Background pattern mining, habit inference or unsolicited interruptions beyond accepted preparations, except the offered preparations above (#582, #583, #638).
 - Multiple principals on one installation; the family peer is a separate agent.
 - A new coordinator, planner framework, graph store or evaluation platform.
 - Rewriting merged Presence, Settings, Telegram or current-context work; they are regression inputs.
