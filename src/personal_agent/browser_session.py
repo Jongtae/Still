@@ -2413,7 +2413,7 @@ class BrowserProfile:
         #: #34: why the last start failed on this computer (``sandbox`` / ``download``), until a start succeeds.
         self._start_blocked = None
         #: #34: the one background preparation (first Chromium download) and its lock.
-        self._preparing, self._prepare_lock = None, threading.Lock()
+        self._preparing, self._prepare_lock = None, threading.RLock()
         self.jar = jar if jar is not None else CookieJar(self.profile_dir / JAR_NAME,
                                                          platform_key(store_account(self.profile_dir)), clock)
         self.launcher = launcher or self._launch_engine
@@ -2530,8 +2530,7 @@ class BrowserProfile:
             chrome = self._prepared_chromium()
             if chromium_runtime.missing_libraries(chrome):
                 # Codex review on #640: a desktop without some of Chromium's libraries gets the one command.
-                self._start_blocked, self._blocked_chrome = 'libraries', chrome
-                self._blocked_at = time.monotonic()
+                self._block('libraries', chrome)
                 raise ToolError(LIBRARIES_TEXT + '\n\n' + chromium_runtime.libraries_setup(), UNAVAILABLE_CODE)
             command = chromium_worker_command(self.profile_dir.name, chrome, self._allowed_origins)
         before_start = None
@@ -2544,11 +2543,11 @@ class BrowserProfile:
                                         command=command, before_start=before_start)
         except WorkerError as exc:
             if exc.detail == 'sandbox_unavailable':
-                self._start_blocked, self._blocked_chrome = 'sandbox', chrome
-                self._blocked_at = time.monotonic()
+                self._block('sandbox', chrome)
                 raise ToolError(sandbox_text(chrome), UNAVAILABLE_CODE) from None
             raise
-        self._start_blocked = None
+        with self._prepare_lock:
+            self._start_blocked = None
         return driver
 
     def _prepared_chromium(self):
@@ -2559,24 +2558,32 @@ class BrowserProfile:
         that Work ends at once with ``PREPARING_TEXT`` and a later use starts the browser.
         """
         from . import chromium_runtime
-        found = chromium_runtime.installed(self.tools_dir)
+        try:
+            found = chromium_runtime.installed(self.tools_dir)
+        except OSError:
+            found = None   # an unreadable build is prepared again (and a failure there is the typed refusal)
         if found:
             return found
-        if self._start_blocked == 'download' and self._still_blocked() == 'download':
-            raise ToolError(DOWNLOAD_TEXT, UNAVAILABLE_CODE)
         with self._prepare_lock:
+            if self._still_blocked() == 'download':
+                raise ToolError(DOWNLOAD_TEXT, UNAVAILABLE_CODE)
             if self._preparing is None or not self._preparing.is_alive():
                 def prepare():
                     try:
                         chromium_runtime.ensure(self.tools_dir)
                     except (OSError, RuntimeError):
-                        self._start_blocked, self._blocked_at = 'download', time.monotonic()
+                        self._block('download')
                         return
-                    if self._start_blocked == 'preparing':
-                        self._start_blocked = None
+                    with self._prepare_lock:
+                        if self._start_blocked == 'preparing':
+                            self._start_blocked = None
                 self._preparing = threading.Thread(target=prepare, name='agentos-chromium-prepare', daemon=True)
                 self._start_blocked = 'preparing'
                 self._preparing.start()
+        # The download may already have failed; say that rather than "preparing" (Codex review on #640).
+        self._preparing.join(0.05)
+        if self._still_blocked() == 'download':
+            raise ToolError(DOWNLOAD_TEXT, UNAVAILABLE_CODE)
         raise ToolError(PREPARING_TEXT, UNAVAILABLE_CODE)
 
     def remove_legacy_profile(self):
@@ -2619,17 +2626,27 @@ class BrowserProfile:
         """The last start failure while it may still hold (#34, Codex review on #640): a refused sandbox until
         its profile names this Chromium, a failed download for ``START_RETRY_SECONDS``.  Afterwards the
         browser shows as available again, so Settings offers the sign-in window that retries the start."""
-        if not self._start_blocked:
-            return None
-        if self._start_blocked == 'preparing':
-            # Until the background download ends; it then clears this, or leaves ``download``.
-            return self._start_blocked if self._preparing is not None and self._preparing.is_alive() else None
-        from . import chromium_runtime
-        if (self._start_blocked == 'sandbox' and chromium_runtime.apparmor_installed(self._chrome_path())) or \
-                time.monotonic() - getattr(self, '_blocked_at', 0.0) > START_RETRY_SECONDS:
-            # A library check is cheap to repeat at the next start; the profile is retried after the wait too.
-            self._start_blocked = None
-        return self._start_blocked
+        # One lock for every read, expiry and write of the remembered failure (Codex review on #640), so a
+        # reader never clears a failure a Work or the preparing thread has just recorded.
+        with self._prepare_lock:
+            if not self._start_blocked:
+                return None
+            if self._start_blocked == 'preparing':
+                # Until the background download ends; it then clears this, or leaves ``download``.
+                return self._start_blocked if self._preparing is not None and self._preparing.is_alive() else None
+            from . import chromium_runtime
+            if (self._start_blocked == 'sandbox' and chromium_runtime.apparmor_installed(self._chrome_path())) or \
+                    time.monotonic() - getattr(self, '_blocked_at', 0.0) > START_RETRY_SECONDS:
+                # A library check is cheap to repeat at the next start; the profile is retried after the wait too.
+                self._start_blocked = None
+            return self._start_blocked
+
+    def _block(self, reason, chrome=None):
+        """Record why this start failed, under the state lock."""
+        with self._prepare_lock:
+            self._start_blocked, self._blocked_at = reason, time.monotonic()
+            if chrome is not None:
+                self._blocked_chrome = chrome
 
     def unavailable_message(self):
         reason = self.unavailable_reason()

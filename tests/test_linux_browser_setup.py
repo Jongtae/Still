@@ -350,13 +350,34 @@ class EngineChoice(unittest.TestCase):
              mock.patch.object(bs, 'WebKitWorkerDriver', side_effect=AssertionError('never started')):
             with self.assertRaises(ToolError) as caught:
                 profile._launch_engine(profile.profile_dir, True)
-            self.assertEqual(str(caught.exception), bs.PREPARING_TEXT)
+            # Codex review on #640: an instant failure is said as such, not as "preparing".
+            self.assertEqual(str(caught.exception), bs.DOWNLOAD_TEXT)
             profile._preparing.join(5)
             self.assertEqual(profile.unavailable_reason(), 'download')
             with self.assertRaises(ToolError) as caught:
                 profile._launch_engine(profile.profile_dir, True)
         self.assertEqual(caught.exception.code, bs.UNAVAILABLE_CODE)
         self.assertEqual(str(caught.exception), bs.DOWNLOAD_TEXT)
+
+    def test_an_unreadable_build_is_prepared_again_not_a_crash(self):
+        """Codex review on #640: a read error of the installed build is not an untyped exception."""
+        profile = self.profile()
+        with mock.patch.object(sys, 'platform', 'linux'), \
+             mock.patch.object(cr, 'installed', side_effect=PermissionError('denied')), \
+             mock.patch.object(cr, 'ensure', side_effect=RuntimeError('digest')):
+            with self.assertRaises(ToolError) as caught:
+                profile._launch_engine(profile.profile_dir, True)
+        self.assertEqual(caught.exception.code, bs.UNAVAILABLE_CODE)
+
+    def test_a_reader_never_clears_a_failure_just_recorded(self):
+        """Codex review on #640: the expiry decision and the write happen under one lock."""
+        profile = self.profile()
+        profile._block('download')
+        profile._blocked_at -= bs.START_RETRY_SECONDS + 1
+        with profile._prepare_lock:
+            # A reader that already decided the old failure expired must not overwrite a new one recorded now.
+            profile._block('download')
+            self.assertEqual(profile._still_blocked(), 'download')
 
     def test_the_first_download_runs_outside_the_work_that_asked(self):
         """Codex review on #640: the ~200 MB download never holds a Work past its deadline or Stop."""
