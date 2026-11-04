@@ -129,6 +129,9 @@ _COLLECTION_CALLS = frozenset({'frozenset', 'set', 'tuple', 'list'})
 #:   Interpretation is never ``enforcement``.
 CLASSIFICATIONS = frozenset({'enforcement', 'adapter', 'own-text', 'open-finding'})
 CLASSIFIED = {
+    ('chromium_runtime.py', '=> not found'): (
+        'adapter', "#34: glibc ldd's own output marker for an unresolved shared library of the pinned Chromium; "
+                   'tool output, never owner or page text'),
     ('local_tools.py', 'metadata.google.internal'): (
         'enforcement', 'SSRF denylist of cloud metadata hosts (DENIED_PUBLIC_HOSTS); a security boundary that '
                        'refuses every request to that host, not a site the model may choose'),

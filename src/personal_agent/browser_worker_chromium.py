@@ -20,6 +20,15 @@ policy enforcement and bounded recovery are Still-owned glue (Build); no externa
 SDK can choose Still's authority policy. Existing Playwright/CDP APIs suffice,
 with unchanged Apache-2.0/BSD provenance, platform fit, egress and dependency set.
 No dependency or authority is added.
+#640 reuse review (Adapt): CDP Page.navigate.loaderId, Page.lifecycleEvent and
+Network.requestWillBeSent.loaderId supply document identity; Still only correlates
+its pending reply. Xlib XSetInputFocus (X.Org's maintained platform API, MIT-style
+licence) supplies native focus release via stdlib ctypes, without copied code or
+an added package. Playwright/CDP have no native blur API; a second automation
+framework would still need X11. The new native effect is limited to relinquishing
+desktop keyboard focus when parking; data, network and guard policy are unchanged.
+References: https://chromedevtools.github.io/devtools-protocol/tot/Page/
+and https://www.x.org/releases/current/doc/libX11/libX11/libX11.html.
 The stdlib queue/heapq provide the main-thread handoff and timer queue. Selenium
 would still need the same CDP boundary; a second automation framework adds no
 required API. Still's browser_worker.Worker supplies the existing protocol,
@@ -42,6 +51,7 @@ is a process failure, never a successful hide.
 """
 import argparse
 import contextlib
+import ctypes
 import heapq
 import itertools
 import json
@@ -102,12 +112,84 @@ def bare_url(value):
 
 
 LAUNCH_ARGS = [
-    '--ozone-platform=x11',
+    '--ozone-platform=x11', '--class=StillBrowser',
     f'--window-position={shared.PARK_ORIGIN},{shared.PARK_ORIGIN}',
     '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding',
     '--disable-background-timer-throttling', '--autoplay-policy=user-gesture-required',
     '--disable-dev-shm-usage', '--disable-crash-reporter',
 ]
+
+
+#: The X11 window class of this worker's Chromium windows (``--class``), so focus is only ever taken
+#: back from Still's own browser, never from the owner's other applications.
+WINDOW_CLASS = 'StillBrowser'
+
+
+class _ClassHint(ctypes.Structure):
+    _fields_ = [('res_name', ctypes.c_void_p), ('res_class', ctypes.c_void_p)]
+
+
+def relinquish_keyboard_focus():
+    """Give the desktop keyboard back when a parked Still window holds it (Codex review on #640).
+
+    Adopted: Xlib (X.Org, MIT) through stdlib ctypes; libX11 is what the X11 Chromium launch already
+    needs.  Only when the focused window, or one of its ancestors, has ``WINDOW_CLASS`` is the focus
+    set to PointerRoot (keys go to the window under the pointer, outside the off-screen window);
+    otherwise the owner's focus is left alone.  Best effort: any failure leaves focus unchanged.
+    Browser.Bounds has no focus property, a DOM blur does not release native focus, and minimizing
+    would stop requestAnimationFrame for the parked page.
+    """
+    try:
+        x11 = ctypes.CDLL('libX11.so.6')
+    except OSError:
+        return False
+    x11.XOpenDisplay.argtypes, x11.XOpenDisplay.restype = [ctypes.c_char_p], ctypes.c_void_p
+    x11.XGetInputFocus.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_ulong), ctypes.POINTER(ctypes.c_int)]
+    x11.XGetClassHint.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.POINTER(_ClassHint)]
+    x11.XQueryTree.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.POINTER(ctypes.c_ulong),
+                               ctypes.POINTER(ctypes.c_ulong), ctypes.POINTER(ctypes.c_void_p),
+                               ctypes.POINTER(ctypes.c_uint)]
+    x11.XFree.argtypes = [ctypes.c_void_p]
+    x11.XSetInputFocus.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int, ctypes.c_ulong]
+    x11.XSync.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
+    display = x11.XOpenDisplay(None)
+    if not display:
+        return False
+    try:
+        window, revert = ctypes.c_ulong(), ctypes.c_int()
+        x11.XGetInputFocus(display, ctypes.byref(window), ctypes.byref(revert))
+        current, ours = window.value, False
+        for _ in range(32):
+            if current in (0, 1):   # None, PointerRoot
+                break
+            hint = _ClassHint()
+            if x11.XGetClassHint(display, current, ctypes.byref(hint)):
+                names = [ctypes.string_at(p).decode('latin-1') for p in (hint.res_name, hint.res_class) if p]
+                for pointer in (hint.res_name, hint.res_class):
+                    if pointer:
+                        x11.XFree(pointer)
+                if WINDOW_CLASS in names:
+                    ours = True
+                    break
+            root, parent, children, count = ctypes.c_ulong(), ctypes.c_ulong(), ctypes.c_void_p(), ctypes.c_uint()
+            if not x11.XQueryTree(display, current, ctypes.byref(root), ctypes.byref(parent),
+                                  ctypes.byref(children), ctypes.byref(count)):
+                break
+            if children.value:
+                x11.XFree(children)
+            if parent.value in (0, root.value):
+                break
+            current = parent.value
+        if ours:
+            # PointerRoot=1, RevertToPointerRoot=1, CurrentTime=0 (X11/X.h).
+            x11.XSetInputFocus(display, 1, 1, 0)
+            x11.XSync(display, False)
+        return ours
+    except Exception:
+        return False
+    finally:
+        x11.XCloseDisplay(display)
 
 
 def parse_args(argv=None):
@@ -212,12 +294,17 @@ class _Target:
         self.contexts, self.callbacks, self.scripts = {}, {}, []
         self.main_frame = None
         self.ready = False
+        self.disposed = False
         #: Fetch interception acknowledged (browser-side): this target's redirect hops are checked from now on.
         self.fetch_ready = False
         self.initializing, self.setup_pending = True, set()
         self.ids = itertools.count(1)
 
     def post(self, method, params=None, done=None):
+        if self.disposed:
+            if done is not None:
+                done({}, {'code': -1})
+            return
         ident = next(self.ids)
         if self.initializing:
             self.setup_pending.add(ident)
@@ -241,10 +328,12 @@ class _Target:
             self.parent.send('Target.sendMessageToTarget', envelope)
 
     def finish_setup(self):
-        if not self.initializing and not self.setup_pending and not self.worker.fatal:
+        if not self.disposed and not self.initializing and not self.setup_pending and not self.worker.fatal:
             self.ready = True
 
     def receive(self, message):
+        if self.disposed:
+            return
         if 'id' in message:
             callback = self.callbacks.pop(message['id'], None)
             if callback is not None:
@@ -296,15 +385,15 @@ class _Target:
             # (Codex review on #640).
             if self is self.worker.main_target and params.get('frameId') == self.main_frame \
                     and params.get('type') == 'Document':
-                self.worker.main_requests.add(params['requestId'])
+                self.worker.main_requests[params['requestId']] = params.get('loaderId')
         elif method == 'Network.loadingFinished':
-            self.worker.main_requests.discard(params.get('requestId'))
+            self.worker.main_requests.pop(params.get('requestId'), None)
         elif method == 'Network.loadingFailed':
             self.worker.network_failed(self, params)
         elif method == 'Page.javascriptDialogClosed':
             self.worker.native_dialog_closed(self, params)
-        elif method == 'Page.loadEventFired':
-            self.worker.loaded(self)
+        elif method == 'Page.lifecycleEvent' and params.get('name') == 'load':
+            self.worker.loaded(self, params)
 
 
 class _View:
@@ -334,7 +423,9 @@ class Worker(shared.Worker):
         self.reported_refused = self.main_navigations = self.landed = self.deciding = self.read_navigations = 0
         self.blocked_reason = None
         self.hosts, self.origins, self.loading, self.stopping = set(), set(), set(), set()
-        self.main_requests = set()
+        self.main_requests = {}
+        # Lifecycle/network events can arrive before the Page.navigate reply.
+        self.navigation_events = {}
         self.reading = False
         self.document_generation, self.vetted = 0, []
         self.resolved, self.frame_requests, self.frame_origins = {}, {}, {}
@@ -357,7 +448,7 @@ class Worker(shared.Worker):
             viewport={'width': int(shared.MOBILE_SIZE[0]), 'height': int(shared.MOBILE_SIZE[1])},
             # #34: WKWebView parity: a phone-sized window lays pages out at its own width, so no mobile
             # viewport semantics (a page without a viewport tag would get a 980px layout instead).
-            user_agent=user_agent_for('mobile', self.version), is_mobile=False, has_touch=True,
+            user_agent=user_agent_for('mobile', self.version), is_mobile=False, has_touch=False,
             device_scale_factor=1)
         self.context.on('page', self.page_created)
         # #34: a popup's first request, before this worker's CDP session on it exists (``route_popup``).
@@ -431,6 +522,7 @@ class Worker(shared.Worker):
             target.popup_navigation = True
         target.post('Runtime.enable')
         target.post('Page.enable')
+        target.post('Page.setLifecycleEventsEnabled', {'enabled': True})
         target.post('Network.enable')
         target.post('Page.getFrameTree', done=lambda result, error: setattr(
             target, 'main_frame', result.get('frameTree', {}).get('frame', {}).get('id')))
@@ -460,6 +552,8 @@ class Worker(shared.Worker):
     def detached(self, event):
         target = self.sessions.pop(event.get('sessionId'), None)
         if target is not None:
+            target.disposed = True
+            target.ready = False
             self.targets.pop(target.ident, None)
             self.loading = {key for key in self.loading if key[0] != target.ident}
             self.frame_origins = {key: value for key, value in self.frame_origins.items() if key[0] != target.ident}
@@ -469,7 +563,7 @@ class Worker(shared.Worker):
             target.callbacks.clear()
 
     def target_fault(self, target):
-        if self.closing:
+        if self.closing or target.disposed:
             return
         # A missing security domain/script is not permission to resume unguarded.
         self.fatal = True
@@ -1028,6 +1122,7 @@ class Worker(shared.Worker):
             if host:
                 self.hosts.add(host)
             self.phone_navigated()
+            self.finish_navigation()
 
     def network_failed(self, target, event):
         if event.get('type') == 'Document':
@@ -1036,22 +1131,37 @@ class Worker(shared.Worker):
             target.initial_request = None
         if target is not self.main_target or event.get('requestId') not in self.main_requests:
             return
-        self.main_requests.discard(event['requestId'])
+        loader = self.main_requests.pop(event['requestId'])
         if event.get('canceled'):
             return
         self.landed += 1
-        if self.navigation is not None:
-            ident, _ = self.navigation
-            self.navigation = None
-            if ident in self.pending:
-                self.fail(ident, navigation_error_code(event.get('errorText', '')))
+        if self.navigation is not None and loader:
+            self.navigation_events[loader] = navigation_error_code(event.get('errorText', ''))
+            self.finish_navigation()
 
-    def loaded(self, target):
-        if target is self.main_target and self.navigation is not None:
-            ident, _ = self.navigation
-            self.navigation = None
-            if ident in self.pending:
-                self.reply(ident, url=self.page.url, layout=self.layout)
+    def loaded(self, target, event):
+        if target is self.main_target and event.get('frameId') == target.main_frame \
+                and event.get('loaderId') and self.navigation is not None:
+            self.navigation_events[event['loaderId']] = 'load'
+            self.finish_navigation()
+
+    def finish_navigation(self):
+        if self.navigation is None:
+            return
+        ident, loader = self.navigation
+        outcome = self.navigation_events.get(loader) if loader else None
+        if outcome is None:
+            return
+        frame = getattr(self.main_target, 'committed_frame', {})
+        if outcome == 'load' and frame.get('loaderId') != loader:
+            return  # A load must describe the requested committed document.
+        self.navigation = None
+        self.navigation_events.clear()
+        if ident in self.pending:
+            if outcome == 'load':
+                self.reply(ident, url=frame['url'], layout=self.layout)
+            else:
+                self.fail(ident, outcome)
 
     def emulate(self, target):
         mobile = self.layout == 'mobile'
@@ -1060,7 +1170,9 @@ class Worker(shared.Worker):
                                                       'platform': 'Linux armv8l' if mobile else 'Linux x86_64'})
         if target.kind != 'page':
             return  # OOPIF metrics inherit the top-level frame; CDP forbids overriding them.
-        target.post('Emulation.setTouchEmulationEnabled', {'enabled': mobile, 'maxTouchPoints': 1})
+        # Disabled touch exposes navigator.maxTouchPoints=0. Do not pass 0 as
+        # maxTouchPoints: CDP only accepts 1..16 for that optional parameter.
+        target.post('Emulation.setTouchEmulationEnabled', {'enabled': False})
         target.post('Emulation.setDeviceMetricsOverride', {
             'width': round(width / self.zoom), 'height': round(height / self.zoom),
             'deviceScaleFactor': 1, 'mobile': False, 'scale': self.zoom,
@@ -1084,9 +1196,10 @@ class Worker(shared.Worker):
         self.deadline(ident, timeout, self.view.stopLoading)
         self.main_target.history_recovered = False
         self.navigation = (ident, None)
+        self.navigation_events.clear()
 
         def navigated(result, error):
-            if ident not in self.pending:
+            if ident not in self.pending or self.navigation is None or self.navigation[0] != ident:
                 return
             if error or result.get('errorText'):
                 self.navigation = None
@@ -1096,6 +1209,9 @@ class Worker(shared.Worker):
                 # event; CDP answers it without a loaderId (Codex review on #640).
                 self.navigation = None
                 self.reply(ident, url=url, layout=self.layout)
+            else:
+                self.navigation = (ident, result['loaderId'])
+                self.finish_navigation()
         self.main_target.post('Page.navigate', {'url': url}, navigated)
 
     def press(self, x, y, view=None):
@@ -1130,6 +1246,7 @@ class Worker(shared.Worker):
 
     def park(self):
         self.bounds(left=shared.PARK_ORIGIN, top=shared.PARK_ORIGIN, windowState='normal')
+        relinquish_keyboard_focus()
 
     def op_show(self, ident, command, timeout):
         self.owner_visible = True

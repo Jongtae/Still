@@ -1,4 +1,5 @@
 """Model-free protocol/CDP contract tests; no Chromium, display or sockets needed."""
+import ctypes
 import io
 import json
 import time
@@ -9,6 +10,8 @@ import pytest
 
 from personal_agent import browser_worker as shared
 from personal_agent import browser_worker_chromium as chromium
+
+_native_relinquish_keyboard_focus = chromium.relinquish_keyboard_focus
 
 
 class FakeCDP:
@@ -164,6 +167,12 @@ class FakePlaywright:
         return self.browser
 
 
+@pytest.fixture(autouse=True)
+def no_native_display():
+    with mock.patch.object(chromium, 'relinquish_keyboard_focus'):
+        yield
+
+
 @pytest.fixture
 def worker():
     engine = FakePlaywright()
@@ -242,7 +251,9 @@ def test_launch_and_single_context_security_contract(worker):
     assert options['accept_downloads'] is False
     assert options['service_workers'] == 'block'
     assert options['permissions'] == []
-    assert options['has_touch'] is True
+    assert options['has_touch'] is False
+    assert options['viewport'] == {'width': int(shared.MOBILE_SIZE[0]), 'height': int(shared.MOBILE_SIZE[1])}
+    assert options['user_agent'] == chromium.user_agent_for('mobile', worker.version)
     assert 'user_data_dir' not in options
 
 
@@ -467,7 +478,9 @@ def test_layout_change_and_window_show_hide(worker):
     assert packets(worker, 'Emulation.setDeviceMetricsOverride')[-1]['width'] == 1280
     assert 'X11; Linux' in packets(worker, 'Emulation.setUserAgentOverride')[-1]['userAgent']
     worker.page.url = 'https://public.test/'
-    worker.loaded(worker.main_target)
+    worker.frame_navigated(worker.main_target, {'id': worker.main_target.main_frame,
+                                               'loaderId': 'loader', 'url': worker.page.url})
+    worker.loaded(worker.main_target, {'frameId': worker.main_target.main_frame, 'loaderId': 'loader'})
     assert worker.messages[-1]['layout'] == 'desktop'
     command(worker, 'show')
     assert worker.owner_visible and worker.guard_off
@@ -579,11 +592,11 @@ def test_session_storage_is_cleared_in_isolated_frame_world(worker):
 
 def test_subframe_network_failure_does_not_fail_main_navigation(worker):
     worker.pending[7] = True
-    worker.navigation = (7, None)
+    worker.navigation = (7, 'requested')
     worker.network_failed(worker.main_target, {'requestId': 'child', 'type': 'Document',
                                                'errorText': 'net::ERR_NAME_NOT_RESOLVED'})
-    assert worker.navigation == (7, None) and worker.messages == []
-    worker.main_requests.add('main-request')
+    assert worker.navigation == (7, 'requested') and worker.messages == []
+    worker.main_requests['main-request'] = 'requested'
     worker.network_failed(worker.main_target, {'requestId': 'main-request', 'type': 'Document',
                                                'errorText': 'net::ERR_NAME_NOT_RESOLVED'})
     assert worker.messages[-1]['error'] == 'host_not_found'
@@ -1355,3 +1368,180 @@ def test_a_failed_sub_resource_is_not_a_failed_navigation(worker):
     target.receive({'method': 'Network.requestWillBeSent',
                     'params': {'requestId': 'doc', 'frameId': target.main_frame, 'type': 'Document'}})
     assert 'doc' in worker.main_requests
+
+
+@pytest.mark.parametrize('layout', ['mobile', 'desktop'])
+def test_mouse_only_emulation_keeps_layout_and_ua(worker, layout):
+    worker.layout = layout
+    worker.emulate(worker.main_target)
+    assert packets(worker, 'Emulation.setTouchEmulationEnabled')[-1] == {'enabled': False}
+    assert packets(worker, 'Emulation.setDeviceMetricsOverride')[-1]['mobile'] is False
+    assert packets(worker, 'Emulation.setUserAgentOverride')[-1]['userAgent'] == chromium.user_agent_for(
+        layout, worker.version)
+    worker.press(10, 20)
+    assert len(packets(worker, 'Input.dispatchMouseEvent')) == 3
+    assert not packets(worker, 'Input.dispatchTouchEvent')
+
+
+def test_parking_releases_native_focus_after_moving_without_minimizing(worker):
+    calls = []
+    with mock.patch.object(worker, 'bounds', side_effect=lambda **kw: calls.append(kw)), \
+         mock.patch.object(chromium, 'relinquish_keyboard_focus', side_effect=lambda: calls.append('blur')):
+        worker.park()
+    assert calls == [{'left': shared.PARK_ORIGIN, 'top': shared.PARK_ORIGIN, 'windowState': 'normal'}, 'blur']
+
+
+@pytest.mark.parametrize('kind', ['iframe', 'page'])
+@pytest.mark.parametrize('detach', [True, False])
+def test_target_initialization_teardown_is_not_guard_failure(worker, kind, detach):
+    target = chromium._Target(worker, worker.root_cdp, 'initializing',
+                              {'targetId': 'initializing', 'type': kind})
+    worker.sessions[target.session_id] = target
+    worker.targets[target.ident] = target
+    worker.engine.browser.hold_method = 'Page.addScriptToEvaluateOnNewDocument'
+    worker.engine.browser.held_responses = []
+    worker.install_scripts(target)
+    assert target.callbacks and not target.ready
+    ident = next(iter(target.callbacks))
+    if detach:
+        worker.detached({'sessionId': target.session_id})
+        assert target.disposed and not target.callbacks and not target.ready
+        # A late guard reply cannot revive the target or kill the worker.
+        target.receive({'id': ident, 'error': {'code': -1}})
+        assert not worker.fatal
+    else:
+        target.receive({'id': ident, 'error': {'code': -1}})
+        assert worker.fatal and not target.disposed
+        assert ('Target.closeTarget', {'targetId': target.ident}) in worker.root_cdp.calls
+
+
+def navigation_load(target, loader, url='https://new.test/'):
+    target.receive({'method': 'Page.frameNavigated', 'params': {'frame': {
+        'id': target.main_frame, 'loaderId': loader, 'url': url}}})
+    target.receive({'method': 'Page.lifecycleEvent', 'params': {
+        'name': 'load', 'frameId': target.main_frame, 'loaderId': loader}})
+
+
+@pytest.mark.parametrize('defer_response', [False, True])
+def test_old_document_load_cannot_answer_new_navigation(worker, defer_response):
+    browser, target = worker.engine.browser, worker.main_target
+    browser.navigate_result = {'frameId': target.main_frame, 'loaderId': 'new'}
+    browser.held_responses = []
+    if defer_response:
+        browser.hold_method = 'Page.navigate'
+    worker.handle({'id': 41, 'op': 'navigate', 'timeout': 10, 'url': 'https://new.test/'})
+    worker.page.url = 'https://old.test/'
+    navigation_load(target, 'old', worker.page.url)
+    target.receive({'method': 'Page.loadEventFired', 'params': {'timestamp': 1}})
+    assert worker.messages == [] and 41 in worker.pending
+    # Subframe lifecycle events also cannot complete it.
+    target.receive({'method': 'Page.lifecycleEvent', 'params': {
+        'name': 'load', 'frameId': 'child', 'loaderId': 'new'}})
+    assert worker.messages == []
+    navigation_load(target, 'new', 'https://redirect.test/final')
+    for respond in browser.held_responses:
+        respond()
+    assert worker.messages == [{'id': 41, 'ok': True, 'url': 'https://redirect.test/final', 'layout': 'mobile'}]
+
+
+@pytest.mark.parametrize('defer_response', [False, True])
+def test_old_document_failure_cannot_fail_new_navigation(worker, defer_response):
+    browser, target = worker.engine.browser, worker.main_target
+    browser.navigate_result = {'frameId': target.main_frame, 'loaderId': 'new'}
+    browser.held_responses = []
+    if defer_response:
+        browser.hold_method = 'Page.navigate'
+    worker.handle({'id': 41, 'op': 'navigate', 'timeout': 10, 'url': 'https://new.test/'})
+    for loader in ['old', 'new']:
+        target.receive({'method': 'Network.requestWillBeSent', 'params': {
+            'requestId': loader + '-request', 'frameId': target.main_frame, 'type': 'Document', 'loaderId': loader}})
+        target.receive({'method': 'Network.loadingFailed', 'params': {
+            'requestId': loader + '-request', 'errorText': 'net::ERR_NAME_NOT_RESOLVED', 'type': 'Document'}})
+        if loader == 'old':
+            assert worker.messages == [] and 41 in worker.pending
+    for respond in browser.held_responses:
+        respond()
+    assert worker.messages == [{'id': 41, 'ok': False, 'error': 'host_not_found'}]
+
+
+def test_matching_load_waits_for_matching_committed_document(worker):
+    target = worker.main_target
+    worker.engine.browser.navigate_result = {'loaderId': 'new'}
+    worker.handle({'id': 41, 'op': 'navigate', 'timeout': 10, 'url': 'https://new.test/'})
+    target.receive({'method': 'Page.lifecycleEvent', 'params': {
+        'name': 'load', 'frameId': target.main_frame, 'loaderId': 'new'}})
+    assert worker.messages == []
+    target.receive({'method': 'Page.frameNavigated', 'params': {'frame': {
+        'id': target.main_frame, 'loaderId': 'old', 'url': 'https://old.test/'}}})
+    assert worker.messages == []
+    target.receive({'method': 'Page.frameNavigated', 'params': {'frame': {
+        'id': target.main_frame, 'loaderId': 'new', 'url': 'https://new.test/'}}})
+    assert worker.messages[-1] == {'id': 41, 'ok': True, 'url': 'https://new.test/', 'layout': 'mobile'}
+
+
+class FakeX11:
+    """libX11 through ctypes: one focused window, its class, and its parent chain."""
+
+    def __init__(self, focused, classes, parents, display=1):
+        self.focused, self.classes, self.parents, self.display = focused, classes, parents, display
+        self.set_focus, self.closed, self.freed = [], 0, 0
+        for name in ('XOpenDisplay', 'XGetInputFocus', 'XGetClassHint', 'XQueryTree', 'XFree', 'XSetInputFocus',
+                     'XSync', 'XCloseDisplay'):
+            setattr(self, name, mock.MagicMock(side_effect=getattr(self, '_' + name)))
+        self._strings = []
+
+    def _XOpenDisplay(self, name):
+        return self.display
+
+    def _XGetInputFocus(self, display, window, revert):
+        window._obj.value = self.focused
+
+    def _XGetClassHint(self, display, window, hint):
+        names = self.classes.get(window)
+        if not names:
+            return 0
+        buffers = [ctypes.create_string_buffer(n.encode()) for n in names]
+        self._strings += buffers
+        hint._obj.res_name, hint._obj.res_class = (ctypes.addressof(b) for b in buffers)
+        return 1
+
+    def _XQueryTree(self, display, window, root, parent, children, count):
+        root._obj.value, parent._obj.value, children._obj.value = 100, self.parents.get(window, 100), None
+        return 1
+
+    def _XFree(self, pointer):
+        self.freed += 1
+
+    def _XSetInputFocus(self, display, window, revert, time_):
+        self.set_focus.append((window, revert, time_))
+
+    def _XSync(self, display, discard):
+        pass
+
+    def _XCloseDisplay(self, display):
+        self.closed += 1
+
+
+def test_focus_is_released_only_from_stills_own_parked_window(monkeypatch):
+    """Codex review on #640: a parked window must not keep the desktop keyboard, and the owner's focus
+    elsewhere is never taken."""
+    ours = FakeX11(focused=7, classes={5: ('stillbrowser', chromium.WINDOW_CLASS)}, parents={7: 5})
+    monkeypatch.setattr(chromium.ctypes, 'CDLL', lambda name: ours)
+    assert _native_relinquish_keyboard_focus() is True
+    assert ours.set_focus == [(1, 1, 0)] and ours.closed == 1
+    theirs = FakeX11(focused=9, classes={9: ('gnome-terminal', 'Gnome-terminal')}, parents={})
+    monkeypatch.setattr(chromium.ctypes, 'CDLL', lambda name: theirs)
+    assert _native_relinquish_keyboard_focus() is False
+    assert theirs.set_focus == [] and theirs.closed == 1
+
+
+def test_focus_release_is_best_effort(monkeypatch):
+    monkeypatch.setattr(chromium.ctypes, 'CDLL', mock.Mock(side_effect=OSError('no libX11')))
+    assert _native_relinquish_keyboard_focus() is False
+    closed = FakeX11(focused=7, classes={}, parents={}, display=None)
+    monkeypatch.setattr(chromium.ctypes, 'CDLL', lambda name: closed)
+    assert _native_relinquish_keyboard_focus() is False
+
+
+def test_the_worker_windows_carry_stills_window_class():
+    assert '--class=' + chromium.WINDOW_CLASS in chromium.LAUNCH_ARGS
