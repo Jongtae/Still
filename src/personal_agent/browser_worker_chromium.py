@@ -729,15 +729,12 @@ class Worker(shared.Worker):
         began = time.monotonic()
 
         def ready():
-            target = next((t for t in self.targets.values() if self.pages.get(t.ident) is page), None)
-            if target is None:
-                try:
-                    target = self.target_for(page)
-                except Exception:
-                    target = None
+            target = self.popup_target(page)
             if target is None or not target.ready:
                 if time.monotonic() - began < shared.WARM_SECONDS:
                     return self.AppHelper.callLater(.02, ready)
+                # Fail closed, and say so: the step reports the refused navigation.
+                self.navigation_refused(not self.owner_visible, 'navigation_failed')
                 return self._settle_route(route, False)
             target.routed_first = request.url
             self.request_paused(target, {'request': {'url': request.url, 'method': request.method},
@@ -745,6 +742,19 @@ class Worker(shared.Worker):
                                 release=lambda: self._settle_route(route, True),
                                 refuse=lambda: self._settle_route(route, False))
         ready()
+
+    def popup_target(self, page):
+        """This worker's CDP target of a popup page: mapped already, or the one new page target not yet
+        mapped (a session opened from inside the route callback would wait on the held request)."""
+        known = next((t for t in self.targets.values() if self.pages.get(t.ident) is page), None)
+        if known is not None:
+            return known
+        unmapped = [t for t in self.targets.values()
+                    if t.kind == 'page' and t is not self.main_target and t.ident not in self.pages]
+        if len(unmapped) != 1:
+            return None
+        self.pages[unmapped[0].ident] = page
+        return unmapped[0]
 
     @staticmethod
     def _settle_route(route, allowed):

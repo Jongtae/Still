@@ -769,6 +769,16 @@ def test_a_popup_that_cannot_be_identified_is_refused(worker, monkeypatch):
     monkeypatch.setattr(shared, 'WARM_SECONDS', 0)
     route = FakeRoute()
     stranger = mock.Mock(url='about:blank')
-    with mock.patch.object(worker, 'target_for', side_effect=KeyError('not attached')):
+    with mock.patch.object(worker, 'popup_target', return_value=None):
         worker.route_popup(route, FakeRequest(stranger, 'https://public.test/'))
     assert route.outcome == 'abort:aborted'
+    assert worker.blocked_reason == 'navigation_failed', 'the step is told its navigation was refused'
+
+
+def test_an_unmapped_popup_is_matched_to_the_one_new_page_target(worker):
+    popup = mock.Mock(url='about:blank')
+    worker.attached(worker.root_cdp, {'sessionId': 'flat-popup', 'waitingForDebugger': True,
+                                      'targetInfo': {'type': 'page', 'targetId': 'popup-target'}})
+    target = worker.popup_target(popup)
+    assert target is not None and target.ident == 'popup-target'
+    assert worker.popup_target(popup) is target, 'mapped once, found again'
