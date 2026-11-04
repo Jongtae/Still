@@ -1512,8 +1512,15 @@ QR_PNG = ('iVBORw0KGgoAAAANSUhEUgAAAIQAAACECAYAAABRRIOnAAAAAklEQVR4AewaftIAAARgS
           )
 
 
-def _webkit_ready():
-    return REAL_BROWSER_TESTS and bs.webkit_unavailable_reason() is None and Path('/usr/bin/security').exists()
+#: #34: the same real-engine classes run against the Linux desktop's Chromium worker.
+LINUX = sys.platform.startswith('linux')
+
+
+def _engine_ready():
+    """macOS with WebKit and the real Keychain, or a Linux desktop session with the Chromium worker (#34)."""
+    if not REAL_BROWSER_TESTS or bs.engine_unavailable_reason() is not None:
+        return False
+    return LINUX or Path('/usr/bin/security').exists()
 
 
 class SessionFixtureHandler(FixtureHandler):
@@ -1818,7 +1825,7 @@ class SessionFixtureHandler(FixtureHandler):
         return super().do_GET()
 
 
-@unittest.skipUnless(_webkit_ready(), 'embedded WebKit needs macOS with pyobjc-framework-WebKit')
+@unittest.skipUnless(_engine_ready(), 'the real engine needs macOS WebKit or a Linux desktop with Chromium')
 class WebKitIntegrationTests(unittest.TestCase):
     """Evidence class: model-free integration with the real worker process and system WebKit."""
 
@@ -1844,11 +1851,17 @@ class WebKitIntegrationTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.store = QuickStore(Path(self.tmp.name) / 'data')
         profile_dir = self.store.private / 'browser-profile'
-        # The real Keychain, under a test-only service name this test deletes.
-        self.key = KeychainKey(store_account(profile_dir), service='personal-agentos.browser-jar.test-' + uuid.uuid4().hex[:12])
+        # The real Keychain, under a test-only service name this test deletes.  On Linux (#34) an in-memory
+        # key: CI has no desktop keyring; ``SecretServiceKey`` is covered in tests/test_linux_browser_setup.py.
+        if LINUX:
+            self.key = MemoryKey()
+        else:
+            self.key = KeychainKey(store_account(profile_dir), service='personal-agentos.browser-jar.test-' + uuid.uuid4().hex[:12])
         self.addCleanup(self.key.delete)
+        # #34: the pinned Chromium is downloaded once per machine, not per test.
+        self.tools = Path(os.environ.get('AGENTOS_TEST_TOOLS_DIR') or Path(self.tmp.name) / 'tools')
         self.jar = CookieJar(profile_dir / JAR_NAME, self.key)
-        self.profile = bs.BrowserProfile(profile_dir, jar=self.jar)
+        self.profile = bs.BrowserProfile(profile_dir, jar=self.jar, tools_dir=self.tools)
         # Test-only: the fixture origin (and only it) may be loaded from loopback.
         self.profile.allow_origins_for_tests(self.fixture)
 
@@ -2705,7 +2718,11 @@ class WebKitIntegrationTests(unittest.TestCase):
         needle = value.encode()
         home = Path.home() / 'Library'
         hits = []
-        for root in (Path(self.tmp.name), home / 'WebKit', home / 'HTTPStorages'):
+        roots = [Path(self.tmp.name), home / 'WebKit', home / 'HTTPStorages']
+        if LINUX:
+            # #34: Chromium's own profile folders (Playwright's temporary one, a default one) and the cache.
+            roots += [Path(tempfile.gettempdir()), Path.home() / '.config' / 'chromium', Path.home() / '.cache']
+        for root in roots:
             if not root.is_dir():
                 continue
             for folder, _, files in os.walk(root, followlinks=False):

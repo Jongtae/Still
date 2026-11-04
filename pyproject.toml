@@ -44,15 +44,27 @@ license = {text = "AGPL-3.0-only"}
 # python-dateutil: #580 direct recurrence expansion via rrulestr (2.9.0.post0,
 # BSD-3-Clause/Apache-2.0); already locked through arrow. Still validates the
 # subset and owns scheduling state; no network or new authority.
+# playwright: #34 the Linux desktop browser worker drives Chromium through
+# Playwright's sync API and a CDP session (Apache-2.0, Microsoft; 1.64.1
+# reviewed, exact pin: chromium_runtime pins the Chrome for Testing build made
+# for it). The `linux-browser` extra, which the installer adds on glibc Linux
+# only (Playwright publishes no musl wheel); its wheel bundles Playwright's Node
+# driver; adds greenlet (MIT/PSF) and pyee (MIT). Never runs `playwright install`.
+# secretstorage: #34 the jar/API/OAuth key in the Linux desktop keyring through
+# the freedesktop Secret Service (BSD-3-Clause, mitya57; 3.5.0 reviewed). Linux
+# only; pure Python over jeepney (MIT, pure-Python D-Bus).
 dependencies = ["python-dateutil>=2.9,<3", "pypdf>=5.0", "python-docx>=1.1", "openpyxl>=3.1", "mcp-types==2.3.0", "oauthlib>=3.3.1,<4",
                 "cryptography>=42.0; sys_platform != 'darwin' or platform_machine != 'x86_64'",
                 "cryptography>=42.0,<49; sys_platform == 'darwin' and platform_machine == 'x86_64'",
                 "pyobjc-framework-WebKit>=12.2,<13; sys_platform == 'darwin'", "publicsuffixlist>=1.0.2,<2", "PyYAML>=6.0.1,<7",
                 "pydantic>=2.11,<3", "httpx2>=2.13.1,<3", "slack_sdk>=3.45.0,<4",
-                "rich>=15.0.0,<16", "prompt_toolkit>=3.0.53,<4"]
+                "rich>=15.0.0,<16", "prompt_toolkit>=3.0.53,<4",
+                "secretstorage>=3.5,<4; sys_platform == 'linux'"]
 
 [project.optional-dependencies]
 schema-validation = ["jsonschema[format]>=4.23"]
+# #34: the Linux desktop browser worker; see the playwright note above the dependencies.
+linux-browser = ["playwright==1.64.1; sys_platform == 'linux'"]
 # Official stdio transport/dispatcher for host profiles only (#1025). MIT.
 # Keep the HTTP/OAuth/server closure outside the base install.
 # CONNECT-FIND-01: official model-free CLI status API. SDK source is MIT;

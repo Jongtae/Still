@@ -358,7 +358,7 @@ def test_a_release_file_change_beyond_its_identifiers_keeps_the_whole_suite(tmp_
     assert not module.release_change("README.md", "v0.2.0\n", "v0.2.0.1\n")
 
 
-REAL_BROWSER_GATE = re.compile(r"_webkit_ready\(\)|AGENTOS_REAL_BROWSER_TESTS|REAL_BROWSER_TESTS\b")
+REAL_BROWSER_GATE = re.compile(r"_(?:webkit|engine)_ready\(\)|AGENTOS_REAL_BROWSER_TESTS|REAL_BROWSER_TESTS\b")
 
 
 def _serial_browser_classes(source, filename):

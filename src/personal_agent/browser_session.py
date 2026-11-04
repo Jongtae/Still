@@ -80,7 +80,7 @@ from urllib.parse import urlsplit, urlunsplit, unquote_plus
 
 from .agent_runtime import BROWSER_ACTIONS, ToolError, WorkBudget, lookup_norm, lookup_text_violations, lookup_words
 from .bounded_execution import SECRET_PATTERN
-from .browser_jar import (JAR_NAME, SERVICE as JAR_SERVICE, CookieJar, JarError, KeychainKey, latest_token_expiry,
+from .browser_jar import (JAR_NAME, SERVICE as JAR_SERVICE, CookieJar, JarError, latest_token_expiry, platform_key,
                           store_account)
 from .browser_worker import LAYOUTS, PAYMENT_TOKENS, SECRET_TOKENS, destination_refusal, qr_links, remote_fields
 
@@ -1530,8 +1530,27 @@ class BrowserSession:
 
 #: The typed refusal when this computer cannot run the embedded engine.
 UNAVAILABLE_CODE = 'browser_unavailable_platform'
-PLATFORM_TEXT = ('브라우저 기능은 시범 기간 동안 macOS에서만 제공됩니다. 이 컴퓨터에서는 브라우저가 필요한 단계를 '
-                 '실행하지 않습니다.')
+PLATFORM_TEXT = ('브라우저 기능은 macOS와 Linux 데스크톱(x86_64·arm64)에서 제공됩니다. 이 컴퓨터에서는 브라우저가 '
+                 '필요한 단계를 실행하지 않습니다.')
+#: #34: the Linux desktop worker's own reasons (``chromium_unavailable_reason`` and its first start).
+LINUX_DEPENDENCY_TEXT = ('Linux 브라우저 구성요소(playwright, secretstorage)가 없어 브라우저 기능을 사용할 수 없습니다. '
+                         'Still을 다시 설치한 뒤 다시 시작하세요.')
+DISPLAY_TEXT = ('브라우저 기능은 데스크톱 화면이 있는 세션에서만 동작합니다. 데스크톱에 로그인한 상태에서 Still을 '
+                '시작하세요.')
+DOWNLOAD_TEXT = ('Linux 브라우저용 Chromium을 내려받거나 확인하지 못했습니다. 네트워크를 확인한 뒤 다시 시도하세요. '
+                 '확인되지 않은 파일은 실행하지 않습니다.')
+SANDBOX_TEXT = ('Ubuntu 보안 설정 때문에 Still의 Chromium이 보호 모드(샌드박스)로 시작하지 못했습니다. 터미널에서 아래 '
+                '명령을 한 번 실행한 뒤 다시 시도하세요. 관리자 비밀번호가 필요하며, Still의 Chromium 하나에만 사용자 '
+                '네임스페이스를 허용합니다.')
+
+
+def sandbox_text(chrome):
+    """``SANDBOX_TEXT`` with the one command that lets exactly ``chrome`` start its sandbox (#34)."""
+    from . import chromium_runtime
+    try:
+        return SANDBOX_TEXT + '\n\n' + chromium_runtime.apparmor_setup(chrome)
+    except ValueError:
+        return SANDBOX_TEXT
 DEPENDENCY_TEXT = ('macOS 시스템 WebKit 연결 구성요소(pyobjc-framework-WebKit)가 없어 브라우저 기능을 사용할 수 '
                    '없습니다. Still을 다시 설치한 뒤 다시 시작하세요.')
 GOOGLE_NOTE = 'Google 로그인은 내장 브라우저에서 지원되지 않습니다.'
@@ -1695,7 +1714,9 @@ def registrable_domain(host):
 
 #: Environment names a worker inherits: nothing else (no provider keys, tokens
 #: or Still settings).  ``PYTHONPATH`` lets a source checkout find the package.
-WORKER_ENVIRONMENT = ('PATH', 'HOME', 'USER', 'LOGNAME', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE', 'PYTHONPATH')
+#: #34: the Linux worker also needs the desktop session it shows its window and reads the keyring in.
+WORKER_ENVIRONMENT = ('PATH', 'HOME', 'USER', 'LOGNAME', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE', 'PYTHONPATH',
+                      'DISPLAY', 'WAYLAND_DISPLAY', 'XAUTHORITY', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS')
 
 
 def worker_environment(base=None):
@@ -1876,16 +1897,60 @@ def webkit_unavailable_reason(platform=None, find_spec=None):
     return None
 
 
-def unavailable_text(reason):
-    return DEPENDENCY_TEXT if reason == 'dependency' else PLATFORM_TEXT
+def chromium_unavailable_reason(find_spec=None, environ=None, machine=None):
+    """None when the Linux Chromium worker (#34) can run here, else ``platform``, ``dependency`` or ``display``.
+
+    Only presence is checked: a pinned build for this machine, the
+    ``playwright`` and ``secretstorage`` packages, and a desktop session.
+    Nothing is downloaded or started here; the Chromium download and the
+    sandbox are checked when the worker first starts.
+    """
+    from . import chromium_runtime
+    find_spec = importlib.util.find_spec if find_spec is None else find_spec
+    if chromium_runtime.pin(system='Linux', machine=machine) is None:
+        return 'platform'
+    for module in ('playwright', 'secretstorage'):
+        try:
+            if find_spec(module) is None:
+                return 'dependency'
+        except (ImportError, ValueError):
+            return 'dependency'
+    environ = os.environ if environ is None else environ
+    if not (environ.get('DISPLAY') or environ.get('WAYLAND_DISPLAY')):
+        return 'display'
+    return None
+
+
+def engine_unavailable_reason(platform=None, find_spec=None, environ=None):
+    """None when this computer's browser engine can run: macOS WebKit, or Chromium on a Linux desktop (#34)."""
+    platform = sys.platform if platform is None else platform
+    if platform == 'darwin':
+        return webkit_unavailable_reason(platform, find_spec)
+    if platform.startswith('linux'):
+        return chromium_unavailable_reason(find_spec, environ)
+    return 'platform'
+
+
+def engine_name(platform=None):
+    platform = sys.platform if platform is None else platform
+    return 'linux-chromium' if platform.startswith('linux') else 'macos-webkit'
+
+
+def unavailable_text(reason, platform=None):
+    platform = sys.platform if platform is None else platform
+    if reason == 'dependency':
+        return LINUX_DEPENDENCY_TEXT if platform.startswith('linux') else DEPENDENCY_TEXT
+    return {'display': DISPLAY_TEXT, 'sandbox': SANDBOX_TEXT, 'download': DOWNLOAD_TEXT}.get(reason, PLATFORM_TEXT)
 
 
 class WorkerError(RuntimeError):
     """A worker op failed; ``code`` is the worker's Still code, never library or page text."""
 
-    def __init__(self, code):
+    def __init__(self, code, detail=None):
         super().__init__(code)
         self.code = code
+        #: #34: why a worker could not start (its ``unavailable`` event's ``error``), an Still code.
+        self.detail = detail
 
 
 class WebKitWorkerDriver:
@@ -1979,7 +2044,7 @@ class WebKitWorkerDriver:
                 message = None
             if message is None or message.get('event') == 'unavailable':
                 self._kill()
-                raise WorkerError('worker_unavailable')
+                raise WorkerError('worker_unavailable', (message or {}).get('error'))
             if message.get('event') == 'ready':
                 break
         rows = []
@@ -2312,14 +2377,19 @@ class BrowserProfile:
     ``profile_dir`` (under ``store.private``) holds only the encrypted jar.
     """
 
-    def __init__(self, profile_dir, *, launcher=None, headless=True, available=None, clock=time.time, jar=None):
+    def __init__(self, profile_dir, *, launcher=None, headless=True, available=None, clock=time.time, jar=None,
+                 tools_dir=None):
         self.profile_dir = Path(profile_dir)
+        #: #34: where the Linux worker's pinned Chromium is kept (the store's ``tools``, beside Node and cloudflared).
+        self.tools_dir = Path(tools_dir) if tools_dir is not None else self.profile_dir.parent.parent / 'tools'
+        #: #34: why the last start failed on this computer (``sandbox`` / ``download``), until a start succeeds.
+        self._start_blocked = None
         self.jar = jar if jar is not None else CookieJar(self.profile_dir / JAR_NAME,
-                                                         KeychainKey(store_account(self.profile_dir)), clock)
-        self.launcher = launcher or self._launch_webkit
+                                                         platform_key(store_account(self.profile_dir)), clock)
+        self.launcher = launcher or self._launch_engine
         self.headless = headless
         self._available = available if available is not None else (
-            (lambda: webkit_unavailable_reason() is None) if launcher is None else (lambda: True))
+            (lambda: engine_unavailable_reason() is None) if launcher is None else (lambda: True))
         self.clock = clock
         self._lock = threading.Lock()
         self._jar_lock = threading.RLock()
@@ -2422,9 +2492,31 @@ class BrowserProfile:
         self._imported |= sites
         return rows
 
-    def _launch_webkit(self, profile_dir, headless):
-        return WebKitWorkerDriver(self.profile_dir.name, seed=self._seed, cwd=self.profile_dir,
-                                  allowed_origins_for_tests=self._allowed_origins, intranet=self.intranet_keys)
+    def _launch_engine(self, profile_dir, headless):
+        """The worker for this computer: macOS WebKit, or the pinned Chromium on a Linux desktop (#34)."""
+        command = None
+        if sys.platform.startswith('linux'):
+            from . import chromium_runtime
+            try:
+                chrome = chromium_runtime.ensure(self.tools_dir)
+            except (OSError, RuntimeError):
+                self._start_blocked = 'download'
+                raise ToolError(DOWNLOAD_TEXT, UNAVAILABLE_CODE) from None
+            command = [sys.executable, '-P', '-m', 'personal_agent.browser_worker_chromium',
+                       '--profile', self.profile_dir.name, '--chromium', chrome]
+            for origin in self._allowed_origins:
+                command += ['--test-allow-origin', str(origin)]
+        try:
+            driver = WebKitWorkerDriver(self.profile_dir.name, seed=self._seed, cwd=self.profile_dir,
+                                        allowed_origins_for_tests=self._allowed_origins, intranet=self.intranet_keys,
+                                        command=command)
+        except WorkerError as exc:
+            if exc.detail == 'sandbox_unavailable':
+                self._start_blocked, self._blocked_chrome = 'sandbox', chrome
+                raise ToolError(sandbox_text(chrome), UNAVAILABLE_CODE) from None
+            raise
+        self._start_blocked = None
+        return driver
 
     def remove_legacy_profile(self):
         """Delete the pre-#680 Playwright Chromium profile (plaintext cookies) from ``profile_dir``.
@@ -2458,20 +2550,33 @@ class BrowserProfile:
 
     def unavailable_reason(self):
         """None, or ``platform`` / ``dependency`` (the typed refusal ``browser_unavailable_platform``)."""
-        if self.available():
-            return None
-        return webkit_unavailable_reason() or 'platform'
+        if not self.available():
+            return engine_unavailable_reason() or 'platform'
+        return self._start_blocked
 
     def unavailable_message(self):
         reason = self.unavailable_reason()
+        if reason == 'sandbox':
+            return sandbox_text(self._chrome_path())
         return unavailable_text(reason) if reason else None
+
+    def _chrome_path(self):
+        """The Chromium whose sandbox was refused, else where the pinned one lives (#34)."""
+        from . import chromium_runtime
+        return getattr(self, '_blocked_chrome', None) or str(chromium_runtime.executable(self.tools_dir) or '')
 
     def status(self):
         reason = self.unavailable_reason()
-        status = {'available': reason is None, 'unavailable_reason': reason, 'engine': 'macos-webkit',
-                  'message': unavailable_text(reason) if reason else None,
+        status = {'available': reason is None, 'unavailable_reason': reason, 'engine': engine_name(),
+                  'message': self.unavailable_message() if reason else None,
                   'login_window_open': self._holder == 'login', 'in_use': self._holder is not None and self._holder != 'login',
                   'limitation': LIMITATION_TEXT, 'google_note': GOOGLE_NOTE, 'sessions': []}
+        if reason == 'sandbox':
+            from . import chromium_runtime
+            try:
+                status['sandbox_command'] = chromium_runtime.apparmor_setup(self._chrome_path())
+            except ValueError:
+                pass
         if reason is None:
             state, sessions = self._jar_view()
             status['storage'] = {'what': 'site-sign-in-cookies', 'path': str(self.jar.path),

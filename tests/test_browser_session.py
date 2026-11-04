@@ -2102,7 +2102,7 @@ class HttpAndCliTests(unittest.TestCase):
         class ClosedByOwner(FakeDriver):
             def is_open(self):
                 return False   # the owner closed the window at once
-        with mock.patch.object(bs.BrowserProfile, '_launch_webkit', lambda self, d, h: ClosedByOwner()), \
+        with mock.patch.object(bs.BrowserProfile, '_launch_engine', lambda self, d, h: ClosedByOwner()), \
              mock.patch.object(bs, 'webkit_unavailable_reason', lambda *a, **k: None), \
              mock.patch('sys.stdout') as out:
             code = quickstart.browser_login_main(['--url', ORIGIN + '/login', '--data', tmp.name])

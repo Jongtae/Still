@@ -13,7 +13,7 @@ import secrets
 
 from cryptography.fernet import Fernet
 
-from .browser_jar import KeychainKey, store_account
+from .browser_jar import platform_key, store_account
 
 PREFIX = 'api_credential:'
 #: #1380: one code-run secret set's run state (for example an access token and its expiry),
@@ -84,7 +84,7 @@ class ApiCredentials:
     def __init__(self, store):
         self.store = store
         # Only wiring/tests may inject a key provider, never a tool argument.
-        self.key = getattr(store, 'api_slot_key', None) or KeychainKey(store_account(store.root), KEY_SERVICE)
+        self.key = getattr(store, 'api_slot_key', None) or platform_key(store_account(store.root), KEY_SERVICE)
 
     def _cipher(self, create=False):
         value = self.key.get()

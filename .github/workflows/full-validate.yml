@@ -35,6 +35,45 @@ jobs:
       # so loadfile stays.  --durations lists the slowest tests for the next look.
       - run: PATH="$PWD/.venv/bin:$PATH" python3 -m pytest -q -n auto --dist loadfile --durations=25 tests
 
+  # #34: the real-engine browser classes against the Linux desktop's Chromium worker: the pinned
+  # Chrome for Testing build Still itself downloads and checks, under a virtual display, with its
+  # sandbox on.  Where Ubuntu restricts user namespaces, the runner installs the AppArmor profile
+  # with the same command Still shows an owner.
+  full-validate-linux-browser:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: '0.11.33'
+          enable-cache: true
+      - run: uv sync --locked --extra mcp-host --extra linux-browser --extra schema-validation --group dev --no-python-downloads
+      - name: Chromium's system libraries and a virtual display
+        run: sudo "$PWD/.venv/bin/playwright" install-deps chromium && sudo apt-get install -y -qq xvfb xauth
+      - name: The pinned Chromium, and its sandbox profile where user namespaces are restricted
+        run: |
+          tools="$RUNNER_TEMP/still-tools"
+          echo "AGENTOS_TEST_TOOLS_DIR=$tools" >> "$GITHUB_ENV"
+          runtime() { PYTHONPATH=src .venv/bin/python -c "import sys; from personal_agent import chromium_runtime as c; $1" "$tools"; }
+          chrome=$(runtime 'print(c.ensure(sys.argv[1]))')
+          if runtime 'sys.exit(0 if c.userns_restricted() else 1)'; then
+            sh -c "$(PYTHONPATH=src .venv/bin/python -c "import sys; from personal_agent import chromium_runtime as c; print(c.apparmor_setup(sys.argv[1]))" "$chrome")"
+          fi
+      - name: Real-engine browser classes against Chromium (serial)
+        env:
+          AGENTOS_REAL_BROWSER_TESTS: '1'
+        run: PATH="$PWD/.venv/bin:$PATH" xvfb-run -a python3 -m pytest -q --durations=25 tests/test_browser_webkit.py::WebKitIntegrationTests
+
   # MACOS-CI-01 #1178: the same suite on macOS, where the embedded system
   # WebKit browser, Keychain-backed sessions and launchd paths actually run.
   # AGENTOS_REAL_BROWSER_TESTS keeps real windows off an owner's screen during

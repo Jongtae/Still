@@ -9,7 +9,8 @@ the login window, and keeps them here:
   already uses) of ``{"sites": {site: {"cookies": [...], "last_used": t}}}``;
 * the Fernet key in the **macOS Keychain** as a generic password (service
   ``personal-agentos.browser-jar``, account = this store's id), read and
-  written through ``/usr/bin/security``.  The key never appears on a command
+  written through ``/usr/bin/security``; on Linux (#34) in the desktop
+  keyring through the Secret Service (``SecretServiceKey``).  The key never appears on a command
   line: it is written through ``security -i`` on standard input and read from
   ``find-generic-password -w`` output.
 
@@ -143,6 +144,96 @@ class KeychainKey:
         if result.returncode == NOT_FOUND:
             return False
         raise JarError('keychain_delete_failed')
+
+
+class SecretServiceKey:
+    """The jar key as one item in the desktop keyring over the freedesktop Secret Service (Linux, #34).
+
+    Adopted: ``secretstorage`` (BSD-3-Clause) over ``jeepney`` (MIT), pure
+    Python, the Secret Service API GNOME Keyring and KWallet implement.  The
+    item lives in the default collection (the owner's login keyring), with
+    attributes ``service`` and ``account`` like the macOS item.  The same
+    limit as the Keychain holds: any program running as this desktop user can
+    read an unlocked collection.  A locked collection is unlocked through the
+    desktop's own prompt; when that is dismissed, or no Secret Service is
+    running, the jar is unavailable and never written in the clear.
+    """
+
+    location = 'secret-service'
+
+    def __init__(self, account, service=SERVICE, backend=None):
+        for value in (account, service):
+            if not isinstance(value, str) or not value or not all(ch.isalnum() or ch in '._-' for ch in value):
+                raise ValueError('Secret Service account and service must be plain tokens.')
+        self.account, self.service, self._backend = account, service, backend
+
+    def _attributes(self):
+        return {'service': self.service, 'account': self.account}
+
+    def _collection(self, use):
+        """Run ``use(collection)`` on the unlocked default collection; ``JarError`` when that is impossible."""
+        try:
+            backend = self._backend
+            if backend is None:
+                import secretstorage as backend
+            connection = backend.dbus_init()
+        except Exception:
+            raise JarError('keyring_unavailable') from None
+        try:
+            collection = backend.get_default_collection(connection)
+            if collection.is_locked():
+                collection.unlock()
+            if collection.is_locked():
+                raise JarError('keyring_locked')
+            return use(collection)
+        except JarError:
+            raise
+        except Exception:
+            raise JarError('keyring_unavailable') from None
+        finally:
+            try:
+                connection.close()
+            except Exception:
+                pass
+
+    def get(self):
+        """The key, or None when this item does not exist."""
+        def read(collection):
+            for item in collection.search_items(self._attributes()):
+                value = bytes(item.get_secret() or b'').strip()
+                return value or None
+            return None
+        return self._collection(read)
+
+    def create(self):
+        """Generate and store a new key (replacing an item with the same attributes)."""
+        key = Fernet.generate_key()
+        self._collection(lambda collection: collection.create_item(
+            'Still browser sign-in key', self._attributes(), key, replace=True))
+        if self.get() != key:
+            raise JarError('keyring_unavailable')
+        return key
+
+    def delete(self):
+        """True when an item was deleted, False when there was none; raises ``JarError`` otherwise."""
+        def remove(collection):
+            items = list(collection.search_items(self._attributes()))
+            for item in items:
+                item.delete()
+            return bool(items)
+        try:
+            return self._collection(remove)
+        except JarError as exc:
+            raise JarError('keyring_delete_failed') from exc
+
+
+def platform_key(account, service=SERVICE, platform=None):
+    """This computer's key store: the macOS Keychain, or the desktop keyring's Secret Service on Linux (#34)."""
+    import sys
+    platform = sys.platform if platform is None else platform
+    if platform.startswith('linux'):
+        return SecretServiceKey(account, service)
+    return KeychainKey(account, service)
 
 
 class MemoryKey:
