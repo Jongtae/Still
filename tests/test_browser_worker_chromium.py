@@ -1930,7 +1930,74 @@ def test_phone_frame_uses_scrolled_visual_viewport_and_taps_stay_viewport_relati
                                                             shared.MOBILE_SIZE[0] / zoom))
     worker.handle({'id': 8, 'op': 'remote_tap', 'x': 100, 'y': 200})
     mouse = packets(worker, 'Input.dispatchMouseEvent')[-3:]
-    assert all(p['x'] == pytest.approx(100 / zoom) and p['y'] == pytest.approx(200 / zoom) for p in mouse)
+    assert all(p['x'] == pytest.approx(100) and p['y'] == pytest.approx(200) for p in mouse)
+
+
+@pytest.mark.parametrize('css_y', [120, 230])
+def test_phone_fit_taps_land_on_far_right_field_and_button(worker, css_y):
+    """CDP's emulated input surface unscales events; sending CSS points directly misses."""
+    worker.owner_visible = worker.guard_off = True
+    command(worker, 'remote_begin')
+    zoom = shared.phone_fit_zoom(1000, 390, 1.0, None)
+    worker.engine.browser.script_results.append({'page': 1000, 'inner': 390})
+    worker.fit_phone_page()
+    assert worker.zoom == zoom
+    metrics = packets(worker, 'Emulation.setDeviceMetricsOverride')[-1]
+    assert metrics['width'] == 1000 and metrics['scale'] == zoom
+    command(worker, 'frame')
+    clip = packets(worker, 'Page.captureScreenshot')[-1]['clip']
+    assert clip['width'] == 1000
+    assert worker.messages[-1]['width'] == 390
+
+    command(worker, 'remote_tap', x=920 * zoom, y=css_y * zoom)
+    mouse = packets(worker, 'Input.dispatchMouseEvent')[-3:]
+    assert [p['type'] for p in mouse] == ['mouseMoved', 'mousePressed', 'mouseReleased']
+    # Chromium's device emulation divides the surface point by metrics.scale
+    # before DOM hit testing. Pin the resulting CSS point, not just the packet.
+    assert all((p['x'] / metrics['scale'], p['y'] / metrics['scale']) == pytest.approx((920, css_y))
+               for p in mouse)
+    # A LOCATE_SCRIPT result uses CSS pixels and must reach the same point.
+    worker.press(920, css_y)
+    assert packets(worker, 'Input.dispatchMouseEvent')[-3:] == mouse
+
+
+def test_phone_fit_text_keys_navigation_reset_and_session_restore(worker):
+    worker.owner_visible = worker.guard_off = True
+    worker.resize(shared.DESKTOP_SIZE)
+    before = dict(worker.viewport_size)
+    command(worker, 'remote_begin')
+
+    def fit():
+        worker.engine.browser.script_results.append({'page': 1000, 'inner': 390})
+        worker.fit_phone_page()
+        assert worker.zoom == shared.phone_fit_zoom(1000, 390, 1.0, None)
+
+    fit()
+    for text, replace in [('홍', False), ('김', False), ('홍길동', True)]:
+        worker.engine.browser.script_results.append({'focus': 'text'})
+        assert command(worker, 'remote_text', text=text, replace=replace)['ok']
+        if text == '홍':
+            assert command(worker, 'remote_key', key='Backspace')['ok']
+    assert packets(worker, 'Input.insertText') == [{'text': text} for text in ('홍', '김', '홍길동')]
+    keys = packets(worker, 'Input.dispatchKeyEvent')
+    assert [p['type'] for p in keys] == ['keyDown', 'keyUp']
+    assert all(p['key'] == 'Backspace' for p in keys)
+    assert "el.select()" in packets(worker, 'Runtime.callFunctionOn')[-1]['functionDeclaration']
+
+    worker.phone_navigated(committed=False)
+    metrics = packets(worker, 'Emulation.setDeviceMetricsOverride')[-1]
+    assert metrics['width'] == 390 and metrics['scale'] == 1.0
+    worker.phone_navigated()
+    assert worker.phone_fit is None and worker.zoom == 1.0
+    command(worker, 'remote_tap', x=100, y=120)
+    assert packets(worker, 'Input.dispatchMouseEvent')[-1]['x'] == 100
+
+    fit()
+    command(worker, 'remote_end')
+    assert worker.viewport_size == before and worker.mobile_restore is None
+    assert worker.zoom == 1.0 and worker.phone_fit is None
+    metrics = packets(worker, 'Emulation.setDeviceMetricsOverride')[-1]
+    assert metrics['width'] == before['width'] and metrics['scale'] == 1.0
 
 
 @pytest.mark.parametrize('entry', ['request_paused', 'fetch_paused'])

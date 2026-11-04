@@ -1348,8 +1348,13 @@ class Worker(shared.Worker):
     def press(self, x, y, view=None):
         page = view if view is not None and view is not self.view else self.page
         target = self.main_target if page is self.page else self.target_for(page)
-        # LOCATE supplies viewport CSS pixels. Remote taps convert view points.
-        x, y = float(x), float(y)
+        # LOCATE supplies viewport CSS pixels; remote taps undo the view zoom first.
+        # Device-metrics `scale` also scales Chromium's input surface: hit testing
+        # divides dispatched coordinates by it. Apply it here exactly once, so a
+        # phone tap stays in view points on the wire and lands at the intended CSS
+        # point. Popups have their own unscaled surface. Never add document scroll.
+        zoom = self.zoom if target is self.main_target else 1.0
+        x, y = float(x) * zoom, float(y) * zoom
         target.post('Input.dispatchMouseEvent', {'type': 'mouseMoved', 'x': x, 'y': y})
         for kind in ('mousePressed', 'mouseReleased'):
             target.post('Input.dispatchMouseEvent', {'type': kind, 'x': x, 'y': y,
