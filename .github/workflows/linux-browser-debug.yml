@@ -46,16 +46,16 @@ jobs:
         env:
           AGENTOS_REAL_BROWSER_TESTS: '1'
         run: |
-          for t in test_a_desktop_only_page_is_zoomed_out_in_the_phone_window_and_its_far_right_controls_work \
-                   test_a_native_submit_from_another_realm_is_refused_as_a_navigation \
-                   test_label_and_script_forwarded_payment_submits_need_an_approval \
-                   test_loading_more_never_follows_a_navigation_the_page_starts \
+          for t in test_label_and_script_forwarded_payment_submits_need_an_approval \
                    test_a_lazy_list_loads_its_later_rows_and_stops_when_nothing_more_appears \
                    test_a_layer_put_up_by_the_locate_scroll_is_a_cover_found_before_pressing \
                    test_sessions_survive_a_restart_only_through_the_encrypted_jar \
                    test_the_production_policy_refuses_the_agentos_port_by_redirect_and_window_open \
-                   test_every_page_is_loaded_as_its_mobile_version; do
+                   test_a_desktop_only_page_is_zoomed_out_in_the_phone_window_and_its_far_right_controls_work \
+                   test_a_native_submit_from_another_realm_is_refused_as_a_navigation \
+                   test_a_sign_in_popup_navigating_does_not_end_the_owner_window \
+                   test_the_owner_login_window_turns_the_guard_off_and_back_on; do
             echo "=== $t"
-            PYTHONPATH="$RUNNER_TEMP/site:src" timeout 150 xvfb-run -a .venv/bin/python -m pytest -q -x -p no:cacheprovider \
-              "tests/test_browser_webkit.py::WebKitIntegrationTests::$t" 2>&1 | grep -vE '^\s*$' | tail -60 || echo "!!! TIMEOUT/FAIL $t"
+            PYTHONPATH="$RUNNER_TEMP/site:src" timeout 150 xvfb-run -a .venv/bin/python -m pytest -q -s -x -p no:cacheprovider \
+              "tests/test_browser_webkit.py::WebKitIntegrationTests::$t" 2>&1 | grep -vE '^\s*$' | grep -vE '^(src|tests)/|^    |^>' | tail -120 || echo "!!! TIMEOUT/FAIL $t"
           done

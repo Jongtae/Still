@@ -1931,6 +1931,15 @@ def engine_unavailable_reason(platform=None, find_spec=None, environ=None):
     return 'platform'
 
 
+def chromium_worker_command(profile_id, chrome, allowed_origins=()):
+    """The Linux worker's command line for the pinned ``chrome`` (#34); test origins only from a test constructor."""
+    command = [sys.executable, '-P', '-m', 'personal_agent.browser_worker_chromium', '--profile', str(profile_id),
+               '--chromium', str(chrome)]
+    for origin in allowed_origins:
+        command += ['--test-allow-origin', str(origin)]
+    return command
+
+
 def engine_name(platform=None):
     platform = sys.platform if platform is None else platform
     return 'linux-chromium' if platform.startswith('linux') else 'macos-webkit'
@@ -2502,10 +2511,7 @@ class BrowserProfile:
             except (OSError, RuntimeError):
                 self._start_blocked = 'download'
                 raise ToolError(DOWNLOAD_TEXT, UNAVAILABLE_CODE) from None
-            command = [sys.executable, '-P', '-m', 'personal_agent.browser_worker_chromium',
-                       '--profile', self.profile_dir.name, '--chromium', chrome]
-            for origin in self._allowed_origins:
-                command += ['--test-allow-origin', str(origin)]
+            command = chromium_worker_command(self.profile_dir.name, chrome, self._allowed_origins)
         try:
             driver = WebKitWorkerDriver(self.profile_dir.name, seed=self._seed, cwd=self.profile_dir,
                                         allowed_origins_for_tests=self._allowed_origins, intranet=self.intranet_keys,

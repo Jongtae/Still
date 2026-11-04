@@ -1867,6 +1867,15 @@ class WebKitIntegrationTests(unittest.TestCase):
         # Test-only: the fixture origin (and only it) may be loaded from loopback.
         self.profile.allow_origins_for_tests(self.fixture)
 
+    def worker(self, origins=None):
+        """The real worker for this computer, driven directly: on Linux the Chromium worker (#34)."""
+        origins = (self.fixture,) if origins is None else tuple(origins)
+        command = None
+        if LINUX:
+            from personal_agent import chromium_runtime
+            command = bs.chromium_worker_command('p', chromium_runtime.ensure(self.tools), origins)
+        return bs.WebKitWorkerDriver('p', cwd=self.tmp.name, allowed_origins_for_tests=origins, command=command)
+
     def session(self, work_id):
         return bs.BrowserSession(self.profile.driver_factory(work_id), work_id=work_id, approvals=Approvals(), excluded=lambda: [PASSPORT], allowed_origins_for_tests=(self.fixture,))
 
@@ -2234,7 +2243,7 @@ class WebKitIntegrationTests(unittest.TestCase):
             sess.close()
         self.assertEqual(self.agentos.posts, [], 'the stand-in Still received no request')
         # Only the exact test origin was allowed; the worker in production has no allowance at all.
-        worker = bs.WebKitWorkerDriver('p', cwd=self.tmp.name)
+        worker = self.worker(origins=())
         try:
             with self.assertRaises(ToolError) as caught:
                 worker.goto(self.origin + '/product', 10)
@@ -2335,7 +2344,7 @@ class WebKitIntegrationTests(unittest.TestCase):
             sess.close()
         self.assertEqual(self.server.posts, ['/coupon', '/coupon', '/pay', '/pay'])
         # The worker's own guard, without the session's classification: a press on the span is cancelled.
-        worker = bs.WebKitWorkerDriver('p', cwd=self.tmp.name, allowed_origins_for_tests=(self.fixture,))
+        worker = self.worker()
         try:
             worker.goto(page_url, 10)
             page = worker.snapshot()
@@ -2434,7 +2443,7 @@ class WebKitIntegrationTests(unittest.TestCase):
             self.assertEqual(self.server.posts, ['/pay'])
         finally:
             sess.close()
-        worker = bs.WebKitWorkerDriver('p', cwd=self.tmp.name, allowed_origins_for_tests=(self.fixture,))
+        worker = self.worker()
         try:
             # A held submit is recorded, and released, where its submitter's formaction sends it.
             worker.goto(page_url, 10)
@@ -2544,7 +2553,7 @@ class WebKitIntegrationTests(unittest.TestCase):
 
     def test_a_native_submit_from_another_realm_is_refused_as_a_navigation(self):
         """#700 item 2: a fresh iframe's unwrapped ``HTMLFormElement.prototype.submit`` on the payment form."""
-        worker = bs.WebKitWorkerDriver('p', cwd=self.tmp.name, allowed_origins_for_tests=(self.fixture,))
+        worker = self.worker()
         try:
             worker.goto(self.origin + '/checkout-realm', 10)
             index = next(row['index'] for row in worker.snapshot()['elements'] if row['name'] == '다른 창 진행')
@@ -2579,7 +2588,7 @@ class WebKitIntegrationTests(unittest.TestCase):
 
     def test_a_sign_in_popup_navigating_does_not_end_the_owner_window(self):
         """#1579 (live 2026-10-17): a popup's navigation decision raised inside WebKit and aborted the worker."""
-        worker = bs.WebKitWorkerDriver('p', cwd=self.tmp.name, allowed_origins_for_tests=(self.fixture,))
+        worker = self.worker()
         try:
             worker.show(self.origin + '/popup-open', 10)
             time.sleep(2)   # the popup opens and navigates on its own
@@ -2590,7 +2599,7 @@ class WebKitIntegrationTests(unittest.TestCase):
 
     def test_the_owner_login_window_turns_the_guard_off_and_back_on(self):
         page_url = self.origin + '/checkout-forwarded'
-        worker = bs.WebKitWorkerDriver('p', cwd=self.tmp.name, allowed_origins_for_tests=(self.fixture,))
+        worker = self.worker()
 
         def scripted_pay():
             return next(row['index'] for row in worker.snapshot()['elements'] if row['name'] == '바로 진행')
@@ -2612,7 +2621,7 @@ class WebKitIntegrationTests(unittest.TestCase):
         resize): the frame stays phone-shaped and is drawn at the page's width; the fields are named by kind and
         place; a QR code's link is read; taps (view points) and typing land; the next page starts at zoom 1; the
         session's end restores the window."""
-        worker = bs.WebKitWorkerDriver('p', cwd=self.tmp.name, allowed_origins_for_tests=(self.fixture,))
+        worker = self.worker()
 
         def frame_until(check, seconds=8):
             # The phone polls frames; the worker measures the page after each one.
