@@ -4,6 +4,7 @@ Compatible with the original Still separation of engine health/run and model
 construction; this module has no host CLI, systemd or third-party dependency.
 """
 import json
+import re
 from dataclasses import dataclass
 from urllib.request import Request, build_opener, HTTPRedirectHandler
 from urllib.error import HTTPError, URLError
@@ -33,11 +34,19 @@ def request_json(url, body, headers=None, timeout=60):
                 raise ProviderError(msg('providers.response_too_large'))
             return json.loads(raw)
     except HTTPError as exc:
-        error=ProviderError(msg('providers.free_model_rate_limited') if exc.code==429 else msg('providers.http_error', status=exc.code), status=exc.code)
         # #678: the provider's own error type/code/param/message, bounded, for
         # protocol classification by a caller (a hosted tool the model does not
-        # support).  Never part of the message, a log line or Evidence.
-        error.error_detail=_error_detail(exc)
+        # support).  The provider's free-text message is never part of the
+        # owner-facing text, a log line or Evidence.
+        detail=_error_detail(exc)
+        # #629: the provider's machine identifiers (code or type, and param) name what it refused, so a
+        # request-shape error is not reported as an address/model/auth problem.  Identifiers only.
+        reason=_error_reason(detail)
+        text=(msg('providers.free_model_rate_limited') if exc.code==429 else
+              msg('providers.http_error_reason', status=exc.code, reason=reason) if reason else
+              msg('providers.http_error', status=exc.code))
+        error=ProviderError(text, status=exc.code)
+        error.error_detail=detail
         raise error from None
     except (URLError, TimeoutError, OSError) as exc:
         # A timeout is reported distinctly so a caller with its own time
@@ -61,6 +70,17 @@ def _error_detail(exc):
     if isinstance(error,str):error={'message':error}
     if not isinstance(error,dict):return {}
     return {key:str(error.get(key))[:300] for key in ('type','code','param','message') if isinstance(error.get(key),(str,int))}
+
+
+#: A provider error identifier the owner may read: no spaces, quotes or free text.
+_IDENTIFIER=re.compile(r"[A-Za-z0-9_.\[\]-]{1,120}")
+
+
+def _error_reason(detail):
+    """The provider's ``code`` (else ``type``) and ``param`` when each is a plain identifier; ``''`` otherwise."""
+    kind=next((detail.get(key) for key in ('code','type') if _IDENTIFIER.fullmatch(str(detail.get(key) or ''))),None)
+    param=detail.get('param') if _IDENTIFIER.fullmatch(str(detail.get('param') or '')) else None
+    return ' '.join(f'({part})' if part is param else part for part in (kind,param) if part)
 
 
 def validate_model(config):

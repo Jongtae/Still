@@ -128,11 +128,11 @@ class FamilyAssistantConversation(_Case):
         self.assertEqual(self.started, [])
 
     def test_the_tool_offers_family_add(self):
-        from personal_agent.agent_runtime import DEFINITIONS
+        from personal_agent.agent_runtime import DEFINITIONS, model_facing_text
         change = next(row['function'] for row in DEFINITIONS if row['function']['name'] == 'settings_change')
         self.assertIn('family', change['parameters']['properties']['category']['enum'])
         self.assertIn('add', change['parameters']['properties']['setting']['enum'])
-        self.assertIn('family add', change['description'])
+        self.assertIn('family add', model_facing_text(change))
 
 
 class FamilySetupInTheService(_Case):
@@ -1083,11 +1083,12 @@ class TypedConfirmation(ReviewRemediation):
         self.assertEqual(self.applies, [{'enabled': True}], 'carried forward exactly once')
 
     def test_no_owner_facing_string_names_a_settings_command(self):
-        from personal_agent.agent_runtime import SETTINGS_CHANGE_DESCRIPTION
+        from personal_agent.agent_runtime import DEFINITIONS, model_facing_text
+        [change] = [row['function'] for row in DEFINITIONS if row['function']['name'] == 'settings_change']
         work, draft = self.web_draft()
         tools = self.service.settings_tools(self.store.job(work))
         result = tools('settings_change', {'category': 'current_context', 'setting': 'timezone', 'value': 'America/New_York'})
-        texts = [result['next_step'], SETTINGS_CHANGE_DESCRIPTION, json.dumps(self.store.task_events(work), ensure_ascii=False),
+        texts = [result['next_step'], model_facing_text(change), json.dumps(self.store.task_events(work), ensure_ascii=False),
                  self.settings.confirmation_text(self.settings.pending_for_work(work)), str(self.store.job(work)['response'])]
         for text in texts:
             self.assertNotIn('/settings', text)

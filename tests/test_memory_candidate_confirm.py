@@ -28,7 +28,7 @@ from personal_agent.agent_runtime import (CORE_INSTRUCTIONS, DEFINITIONS, event_
                                           outcome_from_events, state_change_short)
 from personal_agent.orchestrator import QUESTION
 from personal_agent.providers import ModelAdapter, ProviderError
-from personal_agent.agent_runtime import worker_result
+from personal_agent.agent_runtime import model_facing_text, worker_result
 from personal_agent.quickstart_service import (MEMORY_CANDIDATES_KIND, MEMORY_PENDING_WEB_NOTE, MEMORY_UPKEEP_KIND,
                                                AgentService)
 from personal_agent.quickstart_store import QuickStore
@@ -639,8 +639,8 @@ class GuidanceTests(unittest.TestCase):
 
     def test_save_memory_content_is_the_value_in_the_owners_words(self):
         [save_memory] = [tool['function'] for tool in DEFINITIONS if tool['function']['name'] == 'save_memory']
-        self.assertIn("content is the value itself in the owner's own words", save_memory['description'])
-        self.assertIn('not a sentence about it; memory_key names the attribute', save_memory['description'])
+        self.assertIn("content is the value itself in the owner's own words", model_facing_text(save_memory))
+        self.assertIn('not a sentence about it; memory_key names the attribute', model_facing_text(save_memory))
 
     def test_owner_statements_get_a_secretarys_response(self):
         self.assertIn('When the owner tells you something about themselves or their situation rather than asking',
@@ -668,10 +668,10 @@ class GuidanceTests(unittest.TestCase):
     def test_the_worker_speaks_as_the_secretary(self):
         self.assertIn("Never narrate Still, tools, approvals, candidates or other internal states", CORE_INSTRUCTIONS)
         [save_memory] = [tool['function'] for tool in DEFINITIONS if tool['function']['name'] == 'save_memory']
-        self.assertNotIn('candidate', save_memory['description'])
+        self.assertNotIn('candidate', model_facing_text(save_memory))
         # #918: the owner's worker saves at once; nothing is asked.
-        self.assertIn('remembered at once and the owner is told afterwards with an undo', save_memory['description'])
-        self.assertNotIn('asked with one tap', save_memory['description'])
+        self.assertIn('remembered at once and the owner is told afterwards with an undo', model_facing_text(save_memory))
+        self.assertNotIn('asked with one tap', model_facing_text(save_memory))
 
 
 if __name__ == '__main__':

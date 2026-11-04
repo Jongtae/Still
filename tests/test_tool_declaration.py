@@ -18,9 +18,10 @@ class OneDeclaration(unittest.TestCase):
         """All protocol surfaces consume the same parameter declaration (#580)."""
         definition = next(item['function'] for item in agent_runtime.DEFINITIONS
                           if item['function']['name'] == 'schedule_preparation')
-        self.assertEqual(definition['parameters']['properties']['rrule'], {'type':'string'})
+        rrule = definition['parameters']['properties']['rrule']
+        self.assertEqual(rrule['type'], 'string')
         self.assertNotIn('rrule', definition['parameters']['required'])
-        self.assertIn('repeats from due', definition['description'])
+        self.assertIn('repeats from due', rrule['description'])
 
     def test_no_attribute_has_a_default(self):
         for field in dataclasses.fields(manifests.HostTool):

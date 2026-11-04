@@ -142,7 +142,7 @@ class Names(unittest.TestCase):
         change = change.get('function') or change
         self.assertIn('share_site', change['parameters']['properties']['setting']['enum'])
         self.assertIn('unshare_site', change['parameters']['properties']['setting']['enum'])
-        self.assertIn('share_site', change['description'])
+        self.assertIn('share_site', change['parameters']['properties']['setting']['description'])
 
 
 class OwnerSide(unittest.TestCase):

@@ -29,7 +29,7 @@ import unittest
 from pathlib import Path
 
 from personal_agent import owner_model as om
-from personal_agent.agent_runtime import API_TOOL_GUIDANCE, DEFINITIONS
+from personal_agent.agent_runtime import API_TOOL_GUIDANCE, DEFINITIONS, model_facing_text
 from personal_agent.conversation_handoff import MEMORY_REQUEST_PROPOSITION
 from personal_agent.decision import OUTCOME_DECIDED, BinaryDecision, FixtureDecisionEngine, fixture_confidence
 from personal_agent.memory_service import PROFILE_KEY_GUIDANCE, PROFILE_SNAPSHOT_CHARS, MemoryService
@@ -68,8 +68,8 @@ class ProfileJudgmentAndGuidance(unittest.TestCase):
 
     def test_save_memory_and_the_tool_guidance_name_the_profile_namespace(self):
         [save_memory] = [tool['function'] for tool in DEFINITIONS if tool['function']['name'] == 'save_memory']
-        self.assertIn(PROFILE_KEY_GUIDANCE, save_memory['description'])
-        self.assertIn('profile.allergy.peanut', save_memory['description'])
+        self.assertIn(PROFILE_KEY_GUIDANCE, model_facing_text(save_memory))
+        self.assertIn('profile.allergy.peanut', model_facing_text(save_memory))
         # #794 phase 3 adds only the optional correction flag (a wrong value vs an outdated one); no key argument.
         self.assertEqual(sorted(save_memory['parameters']['properties']), ['content', 'correction', 'memory_key'],
                          'no new key argument: the model already chooses memory_key')
