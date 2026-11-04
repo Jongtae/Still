@@ -359,12 +359,16 @@ class Worker(shared.Worker):
         self.AppHelper.callAfter(self.register_page, page)
 
     def register_page(self, page):
+        _trace('register_page', page.url[:80])
         if not page.is_closed():
             self.target_for(page)
             if self.page is not None and page is not self.page and self.owner_visible and page not in self.popups:
                 self.popups.append(page)
 
     def attached(self, parent, event):
+        _trace('attached', 'root' if not isinstance(parent, _Target) else parent.kind, event.get('waitingForDebugger'),
+               event.get('targetInfo', {}).get('type'), event.get('targetInfo', {}).get('url', '')[:80],
+               event.get('targetInfo', {}).get('openerId'))
         bootstrap = None
         if not isinstance(parent, _Target):
             # Chromium requires flattened *browser* auto-attachment. Public

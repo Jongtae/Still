@@ -2754,7 +2754,9 @@ class WebKitIntegrationTests(unittest.TestCase):
         roots = [Path(self.tmp.name), home / 'WebKit', home / 'HTTPStorages']
         if LINUX:
             # #34: Chromium's own profile folders (Playwright's temporary one, a default one) and the cache.
-            roots += [Path(tempfile.gettempdir()), Path.home() / '.config' / 'chromium', Path.home() / '.cache']
+            # (Not all of ~/.cache: package caches there hold thousands of unrelated files.)
+            roots += [path for path in Path(tempfile.gettempdir()).glob('playwright*')]
+            roots += [Path.home() / '.config' / 'chromium', Path.home() / '.cache' / 'chromium']
         for root in roots:
             if not root.is_dir():
                 continue
