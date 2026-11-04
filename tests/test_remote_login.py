@@ -187,12 +187,13 @@ class WorkerOpsWhileParked(unittest.TestCase):
         worker = self.worker()
         worker.owner_visible = True
         worker.held_dialog = {'kind': 'confirm', 'text': 'delete?', 'handler': None, 'sheet': None}
-        worker.last_frame = ('AAAA', 1280.0, 900.0, [{'url': 'https://auth.example/qr?q=1'}])
-        worker.front_view = lambda: self.fail('no snapshot while a dialog is held')
+        view = object()
+        worker.front_view = lambda: view
+        worker.last_frame = ('AAAA', 1280.0, 900.0, [{'url': 'https://auth.example/qr?q=1'}], worker.remote_view()[1])
         worker.handle({'id': 9, 'op': 'frame'})
         self.assertEqual(worker.replies[-1], {'id': 9, 'ok': True, 'jpeg': 'AAAA', 'width': 1280.0, 'height': 900.0,
                                               'dialog': {'kind': 'confirm', 'text': 'delete?'}, 'focus': None,
-                                              'fields': [], 'links': [{'url': 'https://auth.example/qr?q=1'}]},
+                                              'fields': [], 'links': [{'url': 'https://auth.example/qr?q=1'}], 'view_id': worker.remote_view()[1]},
                          'nothing can be typed now; the last frame\'s QR links stay')
 
     def test_a_page_dialog_is_held_for_the_phone_only_during_a_phone_session(self):
@@ -261,7 +262,8 @@ class WorkerOpsWhileParked(unittest.TestCase):
 
         worker.WebKit = type('WebKit', (), {'WKSnapshotConfiguration': type('C', (), {'alloc': staticmethod(Config)})})
         worker.AppKit = None
-        worker.front_view = View
+        view = View()
+        worker.front_view = lambda: view
         worker.scripts = []
 
         def run(body, arguments, done, world=None, view=None):
@@ -271,6 +273,59 @@ class WorkerOpsWhileParked(unittest.TestCase):
             done(focus_answer, None)
         worker.run = run
         return worker
+
+    def test_closed_popup_snapshot_is_dropped_and_opener_inputs_are_bound(self):
+        from unittest import mock
+        from types import SimpleNamespace
+        worker = self.snapshot_worker({'focus': None})
+        opener = worker.front_view()
+        popup = type(opener)()
+        callbacks = []
+        popup.takeSnapshotWithConfiguration_completionHandler_ = lambda config, done: callbacks.append(done)
+        worker.view = opener
+        hidden = []
+        worker.popups = [(popup, SimpleNamespace(orderOut_=lambda arg: hidden.append(True)), None)]
+        worker.front_view = lambda: worker.popups[-1][0] if worker.popups else worker.view
+        with mock.patch.object(browser_worker, '_jpeg_bytes', return_value=b'jpg'):
+            worker.handle({'id': 21, 'op': 'frame'})
+            old_id = worker.remote_view()[1]
+            worker.close_popup(view=popup)
+            callbacks.pop()(object(), None)
+            self.assertEqual(worker.replies[-1], {'id': 21, 'ok': False, 'error': 'stale_view'})
+            self.assertTrue(worker.owner_visible, 'closing a popup never ends sign-in')
+            self.assertEqual(hidden, [True])
+            self.assertFalse(any(row.get('event') == 'hidden' for row in worker.replies))
+            worker.handle({'id': 22, 'op': 'frame'})
+        frame = worker.replies[-1]
+        self.assertEqual((frame['id'], frame['ok']), (22, True))
+        current_id = frame['view_id']
+        self.assertNotEqual(old_id, current_id)
+        effects = []
+        worker.press = lambda x, y, view: effects.append(('tap', view))
+        worker.key = lambda key, view: effects.append(('key', view))
+        opener.reload = lambda: effects.append(('nav', opener))
+        worker.run = lambda body, args, done, **kw: (effects.append(('text', kw['view'])), done({'ok': True}, None))
+        for op, fields in (('tap', {'x': 1, 'y': 1}), ('text', {'text': 'secret'}),
+                           ('key', {'key': 'Enter'}), ('nav', {'action': 'reload'})):
+            worker.handle({'id': 23, 'op': 'remote_' + op, 'view_id': old_id, **fields})
+            self.assertEqual(worker.replies[-1]['error'], 'stale_view')
+            self.assertEqual(effects, [])
+        for op, fields in (('tap', {'x': 1, 'y': 1}), ('text', {'text': 'secret'}),
+                           ('key', {'key': 'Enter'}), ('nav', {'action': 'reload'})):
+            worker.handle({'id': 24, 'op': 'remote_' + op, 'view_id': current_id, **fields})
+            self.assertTrue(worker.replies[-1]['ok'])
+        self.assertEqual(effects, [(op, opener) for op in ('tap', 'text', 'key', 'nav')])
+
+    def test_view_change_during_focus_probe_also_drops_frame(self):
+        from unittest import mock
+        worker = self.snapshot_worker({'focus': None})
+        callbacks = []
+        worker.run = lambda body, args, done, **kw: callbacks.append(done)
+        with mock.patch.object(browser_worker, '_jpeg_bytes', return_value=b'jpg'):
+            worker.handle({'id': 25, 'op': 'frame'})
+            worker.front_view = lambda: object()
+            callbacks.pop()({'focus': 'text'}, None)
+        self.assertEqual(worker.replies[-1], {'id': 25, 'ok': False, 'error': 'stale_view'})
 
     def test_a_frame_carries_the_kind_of_the_focused_element_and_nothing_else(self):
         """#293: the phone keyboard follows what has focus; an unknown or failed answer is no focus."""
@@ -285,7 +340,8 @@ class WorkerOpsWhileParked(unittest.TestCase):
                     worker.handle({'id': 11, 'op': 'frame'})
                     self.assertEqual(worker.scripts, [browser_worker.REMOTE_FOCUS_SCRIPT])
                     self.assertEqual(worker.replies[-1], {'id': 11, 'ok': True, 'jpeg': 'anBn', 'width': 390.0, 'height': 844.0,
-                                                          'dialog': None, 'focus': expected, 'fields': [], 'links': []})
+                                                          'dialog': None, 'focus': expected, 'fields': [], 'links': [],
+                                                          'view_id': worker.remote_view()[1]})
 
     def test_a_frame_names_the_editable_fields_by_kind_and_place_only(self):
         """#596: where the text and password fields are, as fractions of the viewport; anything else is dropped."""
@@ -441,6 +497,30 @@ console.log(JSON.stringify(out));
         self.assertEqual(frame['links'], [{'url': 'https://auth.example/qr', 'x': 0.1, 'y': 0.1, 'w': 0.2, 'h': 0.1}])
         driver._request_shown = lambda op, **kw: {'jpeg': 'AAAA', 'width': 1.0, 'height': 1.0, 'focus': None}
         self.assertEqual((driver.frame()['fields'], driver.frame()['links']), ([], []))
+
+    def test_remote_session_forwards_view_identity_and_counts_view_changes_as_frames(self):
+        from types import SimpleNamespace
+        session = remote_login.RemoteLogin.__new__(remote_login.RemoteLogin)
+        session.alive = lambda: True
+        session.window = 'window'
+        session._last_frame = None
+        frame = {'jpeg': 'same', 'view_id': 'popup'}
+        calls = []
+        session.profile = SimpleNamespace(login_window_frame=lambda window: dict(frame),
+            login_window_input=lambda window, kind, **fields: calls.append((kind, fields)) or True)
+        self.assertEqual(session.frame()['view_id'], 'popup')
+        self.assertEqual(session.frame(), {'unchanged': True})
+        frame['view_id'] = 'opener'
+        self.assertEqual(session.frame()['view_id'], 'opener')
+        self.assertTrue(session.input({'type': 'key', 'key': 'Enter', 'view_id': 'popup'}))
+        self.assertEqual(calls, [('key', {'key': 'Enter', 'view_id': 'popup'})])
+        profile = bs.BrowserProfile(Path('/unused'))
+        profile.login_window_driver = lambda window: SimpleNamespace(remote_input=lambda *args, **kwargs:
+            (_ for _ in ()).throw(bs.WorkerError('stale_view')))
+        session.profile = profile
+        with self.assertRaises(bs.WorkerError) as caught:
+            session.input({'type': 'text', 'text': 'secret', 'view_id': 'popup'})
+        self.assertEqual(caught.exception.code, 'stale_view')
 
     def test_the_keys_and_actions_the_phone_offers_are_the_ones_the_worker_knows(self):
         self.assertEqual(set(remote_login.KEYS), set(browser_worker.REMOTE_KEYS))
@@ -968,7 +1048,8 @@ class RemoteLoginSurface(unittest.TestCase):
         cookie = self.bound_cookie(session)
         page = self.request(remote_login.PAGE_PATH + self.code(session), cookie=cookie)[1].decode()
         post = page.split('async function post')[1].split('\n')[1]
-        self.assertIn('if(!r.ok)return false;const d=await r.json();return d&&d.ok===true', post)
+        self.assertIn('if(!r.ok)return false;const d=await r.json();', post)
+        self.assertIn('return d&&d.ok===true}', post)
         self.assertNotRegex(post, r'return r\.ok\}', 'the HTTP status alone never counts as success')
         self.assertIn("const ok=await post('/api/remote-login/input',body)", page)
         self.assertIn("if(item.type!=='tap'&&!ok)failed=true", page)
@@ -1001,8 +1082,11 @@ class RemoteLoginSurface(unittest.TestCase):
             # A log line exists (content-free), so assertLogs has something to inspect.
             logging.getLogger('personal_agent.remote_login').info('remote login probe site=%s', session.site)
         remote = [entry for entry in self.driver_log if entry[0].startswith('remote_') and entry[0] != 'remote_begin']
-        self.assertEqual(remote, [('remote_tap', {'x': 640.0, 'y': 300.0}), ('remote_text', {'text': SECRET_TEXT}),
-                                  ('remote_key', {'key': 'Backspace'}), ('remote_nav', {'action': 'reload'})])
+        # #643: each input carries the frame's view identity (this fake window reports none).
+        self.assertEqual(remote, [('remote_tap', {'x': 640.0, 'y': 300.0, 'view_id': None}),
+                                  ('remote_text', {'text': SECRET_TEXT, 'view_id': None}),
+                                  ('remote_key', {'key': 'Backspace', 'view_id': None}),
+                                  ('remote_nav', {'action': 'reload', 'view_id': None})])
         self.assertNotIn(SECRET_TEXT, '\n'.join(logs.output))
         self.assertNotIn('640', '\n'.join(logs.output))
         self.assertFalse([line for line in logs.output if 'AAAA' in line], 'no frame in a log')
@@ -1897,6 +1981,36 @@ class PhonePageTyping(unittest.TestCase):
             result = subprocess.run([node, '-e', PAGE_TYPING_CHECKS, str(path)], capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
         self.assertIn('ok', result.stdout)
+
+    def test_stale_input_refreshes_the_frame_and_queued_inputs_keep_their_view(self):
+        import shutil
+        import subprocess
+        node = shutil.which('node')
+        if node is None:
+            self.skipTest('Node is needed to run the phone page script')
+        from types import SimpleNamespace
+        session = SimpleNamespace(site='shop.test', code='c0de', expires=1000, clock=lambda: 400)
+        script = remote_login.page(session, 'nonce').split('<script nonce="nonce">')[1].split('</script>')[0]
+        checks = PAGE_TYPING_CHECKS.split('(async()=>{')[0] + r"""(async()=>{
+ await tick();frameAnswer.body={...frameAnswer.body,view_id:'popup'};await ctx.frame();sent();
+ let release;holds.push({type:'tap',wait:new Promise(r=>release=r)});
+ tap(20,20);await settle();type('secret',{inputType:'insertText'});
+ frameAnswer.body={...frameAnswer.body,view_id:'opener'};await ctx.frame();
+ release();await tick();
+ const queued=sent();assert(queued.length>=2);assert(queued.every(p=>p.view_id==='popup'));
+ inputAnswer=()=>({ok:false,error:'stale_view'});
+ tap(20,20);await tick();assert.equal(sent()[0].view_id,'opener');
+ assert.equal($('end').textContent,'','stale is not done');
+ inputAnswer=()=>({ok:true});tap(20,20);await tick();
+ assert.equal(sent()[0].view_id,'opener','refresh accepts the opener');
+ console.log('ok');
+})().catch(error=>{console.error(error);process.exit(1);});
+"""
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'page.js'
+            path.write_text(script)
+            result = subprocess.run([node, '-e', checks, str(path)], capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr or result.stdout)
 
     def test_the_page_opens_the_input_box_for_text_fields_and_opens_qr_links(self):
         """#596/#602: a text field opens the visible input box in the tap; a QR code's link opens from the code."""

@@ -1,4 +1,4 @@
-"""#572: the AI can ask for a site's desktop version; Still keeps it per site.
+"""#572: the AI can ask for desktop for this Work only.
 
 Evidence class: focused unit tests with a fake page driver and a temporary
 profile directory; no WebKit worker, model or network is used.  The worker's
@@ -37,32 +37,35 @@ class SiteLayout(unittest.TestCase):
     def layouts(self):
         return [entry[1] for entry in self.log if entry[0] == 'layout']
 
-    def test_desktop_is_kept_for_the_site_across_hosts_and_works_until_mobile(self):
-        work = self.work('w1')
-        self.assertNotIn('layout', work.open({'url': 'https://www.shop.co.kr/account', 'effect': 'read'}))
-        page = work.open({'url': 'https://www.shop.co.kr/account', 'effect': 'read', 'layout': 'desktop'})
-        self.assertEqual(page['layout'], 'desktop')
-        # Another host of the same site, without asking again, and a different site.
-        self.assertEqual(work.open({'url': 'https://m.shop.co.kr/account', 'effect': 'read'})['layout'], 'desktop')
-        work.open({'url': 'https://www.other.co.kr/account', 'effect': 'read'})
-        self.assertEqual(self.layouts(), ['mobile', 'desktop', 'desktop', 'mobile'])
+    def test_desktop_is_kept_only_for_the_same_work_and_its_resume(self):
+        work = self.work('A')
+        work.open({'url': 'https://shop.test/account', 'effect': 'read'})
+        work.open({'url': 'https://shop.test/account', 'effect': 'read', 'layout': 'desktop'})
+        work.open({'url': 'https://auth.test/account', 'effect': 'read'})
         work.close()
-        later = self.work('w2')
-        self.assertEqual(later.open({'url': 'https://shop.co.kr/account', 'effect': 'read'})['layout'], 'desktop')
-        later.open({'url': 'https://shop.co.kr/account', 'effect': 'read', 'layout': 'mobile'})
-        later.open({'url': 'https://www.shop.co.kr/account', 'effect': 'read'})
-        self.assertEqual(self.layouts()[-3:], ['desktop', 'mobile', 'mobile'])
-        later.close()
-        self.assertEqual(json.loads((Path(self.tmp.name) / 'profile' / bs.LAYOUTS_NAME).read_text()), {})
+        resumed = self.work('A')
+        resumed.open({'url': 'https://shop.test/account', 'effect': 'read'})
+        resumed.close()
+        other = self.work('B')
+        other.open({'url': 'https://shop.test/account', 'effect': 'read'})
+        other.close()
+        self.assertEqual(self.layouts(), ['mobile', 'desktop', 'desktop', 'desktop', 'mobile'])
+        self.assertFalse((self.profile.profile_dir / bs.LAYOUTS_NAME).exists())
 
-    def test_desktop_sites_reads_the_saved_choices_and_mobile_removes_one(self):
+    def test_legacy_layouts_are_ignored_and_left_untouched(self):
+        self.profile.profile_dir.mkdir()
+        path = self.profile.profile_dir / bs.LAYOUTS_NAME
+        legacy = json.dumps({'shop.test': 'desktop'})
+        path.write_text(legacy)
+        work = self.work('A')
+        work.open({'url': 'https://shop.test/account', 'effect': 'read'})
+        work.open({'url': 'https://shop.test/account', 'effect': 'read', 'layout': 'desktop'})
+        work.close()
+        self.assertEqual(self.layouts(), ['mobile', 'desktop'])
+        self.profile.remove_legacy_profile()
+        self.assertEqual(path.read_text(), legacy)
+        self.assertEqual(bs.BrowserProfile(self.profile.profile_dir).layout_for('shop.test', work_id='B'), 'mobile')
         self.assertEqual(self.profile.desktop_sites(), [])
-        self.profile.set_layout('www.shop.co.kr', 'desktop')
-        self.profile.set_layout('www.other.co.kr', 'desktop')
-        saved = bs.BrowserProfile(self.profile.profile_dir)
-        self.assertEqual(saved.desktop_sites(), ['other.co.kr', 'shop.co.kr'])
-        saved.set_layout('m.shop.co.kr', 'mobile')
-        self.assertEqual(self.profile.desktop_sites(), ['other.co.kr'])
 
     def test_an_unknown_layout_is_refused_before_anything_is_opened(self):
         work = self.work('w1')
@@ -83,7 +86,7 @@ class SiteLayout(unittest.TestCase):
         self.assertEqual(log[0][0], 'goto')
         work.close()
 
-    def test_the_login_window_loads_the_site_in_its_kept_layout(self):
+    def test_the_login_window_uses_its_work_layout_across_auth_hosts(self):
         from personal_agent.browser_jar import JAR_NAME, CookieJar
         from test_browser_webkit import Clock, CookieDriver, MemoryKey
 
@@ -100,12 +103,13 @@ class SiteLayout(unittest.TestCase):
             def is_open(self):
                 return False
 
-        self.profile.set_layout('accounts.shop.co.kr', 'desktop')
-        for url, expected in (('https://www.shop.co.kr/login', 'desktop'), ('https://www.other.co.kr/login', 'mobile')):
+        for work_id, expected in (('A', 'desktop'), ('B', 'mobile'), ('A', 'desktop')):
+            url = 'https://auth.test/login'
             window = Window()
             jar = CookieJar(Path(self.tmp.name) / 'profile' / JAR_NAME, MemoryKey(), Clock())
             profile = bs.BrowserProfile(Path(self.tmp.name) / 'profile', launcher=lambda d, h: window, jar=jar)
-            profile.open_for_login(url, wait=True)
+            profile.set_layout('shop.test', 'desktop', work_id='A')
+            profile.open_for_login(url, wait=True, work_id=work_id)
             self.assertEqual(window.shown, [(url, expected)])
 
 

@@ -1354,7 +1354,7 @@ class Worker:
         self.allowed_origins = frozenset(allowed_origins)
         self.pending = {}          # op id -> True while the op has not answered
         self.navigation = None     # (id, WKNavigation) the navigate op waits for
-        self.blocked = 0           # main-frame navigations refused so far
+        self.blocked = 0           # main-frame navigation failures (app-link cancellations excluded)
         self.blocked_reason = None  # #615: why the latest one was refused
         self.refused_submits = 0   # form navigations refused with no page form to hold (#700 review)
         self.step_refused = 0      # ``refused_submits`` when the current step began
@@ -1824,10 +1824,11 @@ class Worker:
                 # #615: the step answers why its navigation was refused, not always "private network".
                 return self.fail(ident, self.blocked_reason or 'blocked_destination', **self.step_posted_field())
             dialogs = (step or {}).get('dialogs') or []
+            app_link = (step or {}).get('app_link') is True
             # #899: whether the page started a non-GET form submission during this step; a decision
             # still pending when the step answers counts as one (review P1: unknown is not "none").
             self.reply(ident, **({'navigated': True} if navigated else {}), **({'dialogs': dialogs} if dialogs else {}),
-                       **self.step_posted_field())
+                       **({'app_link': True} if app_link else {}), **self.step_posted_field())
         step, self.dialog_step = getattr(self, 'dialog_step', None), None
         self.end_step(answer)
 
@@ -1897,6 +1898,12 @@ class Worker:
 
     def navigation_refused(self, main_frame, reason='blocked_destination'):
         if not main_frame:
+            return
+        if reason == 'unsupported_navigation' and self.navigation is None:
+            # Policy cancellation keeps the document. Only explicit opens fail.
+            step = getattr(self, 'dialog_step', None)
+            if isinstance(step, dict):
+                step['app_link'] = True
             return
         self.blocked += 1
         self.blocked_reason = reason
@@ -2445,20 +2452,37 @@ class Worker:
             return False
         return True
 
+    def remote_view(self):
+        """The current native view and its opaque frame identity."""
+        view = self.front_view()
+        current = getattr(self, '_remote_view', None)
+        if current is None or current[0] is not view:
+            current = self._remote_view = (view, uuid.uuid4().hex)
+        return current
+
+    def _remote_input_allowed(self, ident, command):
+        if not self._remote_allowed(ident):
+            return False
+        if command.get('view_id') != self.remote_view()[1]:
+            self.fail(ident, 'stale_view')
+            return False
+        return True
+
     def op_frame(self, ident, command, timeout):
         """A JPEG of the frontmost login view (base64), that view's size in points, and what kind of
         element has focus in it (``REMOTE_FOCUS_SCRIPT``, #293)."""
         if not self._remote_allowed(ident):
             return
+        view, view_id = self.remote_view()
         held = self.held_dialog
         last = getattr(self, 'last_frame', None)
-        if held is not None and last is not None:
+        if held is not None and last is not None and last[4] == view_id:
             # A page waiting on its own dialog renders nothing until it is answered, so a
             # snapshot would never complete: the phone gets the last frame and the question.
             # Its scripts are blocked too, so no focus is asked: nothing can be typed now.
             return self.reply(ident, jpeg=last[0], width=last[1], height=last[2],
-                              dialog={'kind': held['kind'], 'text': held['text']}, focus=None, fields=[], links=last[3])
-        view = self.front_view()
+                              dialog={'kind': held['kind'], 'text': held['text']}, focus=None, fields=[], links=last[3],
+                              view_id=view_id)
         size = view.frame().size
         width, height = float(size.width), float(size.height)
         config = self.WebKit.WKSnapshotConfiguration.alloc().init()
@@ -2470,23 +2494,27 @@ class Worker:
         def done(image, error):
             if ident not in self.pending:
                 return
+            if self.remote_view() != (view, view_id):
+                return self.fail(ident, 'stale_view')
             data = _jpeg_bytes(self.AppKit, image) if error is None and image is not None else None
             if data is None:
                 return self.fail(ident, 'frame_failed')
             encoded = base64.b64encode(data).decode('ascii')
             links = self.frame_links(data)
-            self.last_frame = (encoded, width, height, links)
+            self.last_frame = (encoded, width, height, links, view_id)
 
             def focused(value, error):
                 if ident not in self.pending:
                     return
+                if self.remote_view() != (view, view_id):
+                    return self.fail(ident, 'stale_view')
                 answer = value if error is None and isinstance(value, dict) else {}
                 kind = answer.get('focus')
                 held = self.held_dialog
                 dialog = {'kind': held['kind'], 'text': held['text']} if held is not None else None
                 self.reply(ident, jpeg=encoded, width=width, height=height, dialog=dialog,
                            focus=kind if kind in REMOTE_FOCUS_KINDS else None, fields=remote_fields(answer.get('fields')),
-                           links=links)
+                           links=links, view_id=view_id)
                 self.fit_phone_page()   # #254: the next frame shows a wide page whole
             if self.held_dialog is not None:
                 return focused(None, 'held')
@@ -2508,7 +2536,7 @@ class Worker:
 
     def op_remote_tap(self, ident, command, timeout):
         """A native press at ``(x, y)`` in view points of the frontmost view."""
-        if not self._remote_allowed(ident):
+        if not self._remote_input_allowed(ident, command):
             return
         view = self.front_view()
         size = view.frame().size
@@ -2526,7 +2554,7 @@ class Worker:
         ``op_type`` uses, then the native text-input path when nothing in the main frame
         has focus (a field inside a frame).  ``replace`` (#602) selects the field's content first,
         in the main frame only.  The text is never kept or echoed."""
-        if not self._remote_allowed(ident):
+        if not self._remote_input_allowed(ident, command):
             return
         text = command.get('text')
         if not isinstance(text, str) or not text:
@@ -2536,6 +2564,8 @@ class Worker:
 
         def inserted(value, error):
             if ident not in self.pending:
+                return
+            if not self._remote_input_allowed(ident, command):
                 return
             if error is None and isinstance(value, dict) and value.get('ok'):
                 return self.reply(ident)
@@ -2547,7 +2577,7 @@ class Worker:
         self.run(REMOTE_INSERT_SCRIPT, {'text': text, 'replace': command.get('replace') is True}, inserted, view=view)
 
     def op_remote_key(self, ident, command, timeout):
-        if not self._remote_allowed(ident):
+        if not self._remote_input_allowed(ident, command):
             return
         name = command.get('key')
         if name not in REMOTE_KEYS:
@@ -2556,7 +2586,7 @@ class Worker:
         self.reply(ident)
 
     def op_remote_nav(self, ident, command, timeout):
-        if not self._remote_allowed(ident):
+        if not self._remote_input_allowed(ident, command):
             return
         action = command.get('action')
         if action not in REMOTE_NAV_ACTIONS:

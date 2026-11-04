@@ -9124,7 +9124,7 @@ class AgentService:
         with self.lock:window_url=self._browser_login_window_url(work_id,row)
         try:
             opened=self.browser_profile.open_for_login(
-                window_url,seconds=BROWSER_LOGIN_SECONDS,
+                window_url,seconds=BROWSER_LOGIN_SECONDS,work_id=work_id,
                 on_opened=lambda window,landed=None:self._browser_login_opened(work_id,nonce,window,landed),
                 on_closed=lambda window,reason,saved:self._browser_login_window_closed(work_id,nonce,window))
         except (ValueError,OSError):

@@ -847,7 +847,7 @@ class WorkerGuardLogicTests(unittest.TestCase):
 
     def test_a_step_answers_the_reason_its_navigation_was_refused(self):
         # #615 (live, #610): a sign-in control opened an app link; the step said "private network".
-        for reason in ('unsupported_navigation', 'destination_check_timeout', 'destination_check_failed',
+        for reason in ('destination_check_timeout', 'destination_check_failed',
                        'blocked_destination'):
             with self.subTest(reason=reason):
                 bw, worker = self.worker()
@@ -857,8 +857,66 @@ class WorkerGuardLogicTests(unittest.TestCase):
                 worker.fail = lambda ident, code, **fields: worker.failed.append((ident, code, fields))
                 worker.run = lambda body, arguments, done, world=None: done({'cancelled': None}, None)
                 worker.navigation_refused(True, reason)
+                worker.navigation_refused(True, 'unsupported_navigation')
                 worker.finish_input(5, 0)
                 self.assertEqual(worker.failed, [(5, reason, {'posted': False})])
+
+    def test_app_link_click_returns_current_or_web_fallback_page_with_note(self):
+        from test_browser_session import FakeDriver
+        from types import SimpleNamespace
+        from personal_agent.messages import msg
+        for fallback in (False, True):
+            bw, worker = self.worker(blocked=0, blocked_reason=None, navigation=None)
+            worker.resolved = {bw.origin_key('https://shop.test/fallback'): None}
+            pages = {'/start': '<title>Current</title><button>Continue</button>',
+                     '/fallback': '<title>Web fallback</title><p>Web sign-in</p>'}
+            page_driver = FakeDriver(pages=pages)
+            # Exercise the worker reply -> real driver decoding -> session page boundary.
+            driver = bs.WebKitWorkerDriver.__new__(bs.WebKitWorkerDriver)
+            driver.takes_layout = False
+            driver.goto, driver.snapshot = page_driver.goto, page_driver.snapshot
+            driver.settle = lambda *args: page_driver.log.append(('settle',))
+            driver.close = page_driver.close
+            driver._expect = {0: {}}
+            worker.reply = lambda ident, ok=True, **fields: replies.append({'ok': ok, **fields})
+            worker.run = lambda body, arguments, done, world=None: done({'cancelled': None}, None)
+            worker.AppHelper = SimpleNamespace(callLater=lambda seconds, fn: fn())
+            worker.allowed_origins, worker.intranet = (), ()
+            def request(op, timeout, **args):
+                worker.dialog_step = {'dialogs': []}
+                worker.pending[5] = True
+                def cancelled(allowed, reason=None):
+                    self.assertFalse(allowed)
+                    worker.navigation_refused(True, reason)
+                worker.decide('app-example://login', True, cancelled)
+                if fallback:
+                    def follow(allowed, reason=None):
+                        self.assertTrue(allowed)
+                        page_driver.goto('https://shop.test/fallback', timeout)
+                    worker.decide('https://shop.test/fallback', True, follow)
+                worker.finish_input(5, 0)
+                return replies[-1]
+            driver._request = request
+            replies = []
+            session = bs.BrowserSession(lambda: driver, work_id='app-link')
+            try:
+                session.open({'url': 'https://shop.test/start', 'effect': 'read'})
+                page = session.click({'target': 'Continue', 'effect': 'navigate'})
+                self.assertEqual(page['title'], 'Web fallback' if fallback else 'Current')
+                self.assertEqual(page['note'], msg('browser.app_link_not_followed'))
+                self.assertEqual(worker.failed, [])
+                self.assertEqual(worker.blocked, 0)
+            finally:
+                session.close()
+
+    def test_explicit_app_navigation_still_fails(self):
+        session = bs.BrowserSession(lambda: self.fail('app URL must not reach a driver'), work_id='explicit-app')
+        with self.assertRaises(ValueError):
+            session.open({'url': 'app-example://login', 'effect': 'navigate'})
+        bw, worker = self.worker(blocked=0, blocked_reason=None, navigation=(5, 'app-example://login'))
+        worker.pending[5] = True
+        worker.navigation_refused(True, 'unsupported_navigation')
+        self.assertEqual(worker.failed, [(5, 'unsupported_navigation')])
 
     def test_a_step_whose_navigation_was_refused_answers_whether_it_posted(self):
         """#610: the press ran before Still refused where it led; its answer carries ``posted`` as a finished one."""
