@@ -343,7 +343,7 @@ class ProfileTests(unittest.TestCase):
                 super().__init__([cookie('only.test')])
                 self.seeded = seed()
         # #34: on Linux the default launcher first checks the pinned Chromium; nothing is downloaded here.
-        ensure = mock.patch('personal_agent.chromium_runtime.ensure', return_value='/pinned/chrome')
+        ensure = mock.patch('personal_agent.chromium_runtime.installed', return_value='/pinned/chrome')
         with mock.patch.object(bs, 'WebKitWorkerDriver', Worker), ensure:
             profile = bs.BrowserProfile(Path(self.tmp.name), jar=locked, available=lambda: True)
             session = profile.driver_factory('w1')()

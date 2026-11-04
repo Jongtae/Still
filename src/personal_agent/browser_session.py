@@ -1539,6 +1539,8 @@ DISPLAY_TEXT = ('브라우저 기능은 데스크톱 화면이 있는 세션에�
                 '시작하세요.')
 DOWNLOAD_TEXT = ('Linux 브라우저용 Chromium을 내려받거나 확인하지 못했습니다. 네트워크를 확인한 뒤 다시 시도하세요. '
                  '확인되지 않은 파일은 실행하지 않습니다.')
+PREPARING_TEXT = ('브라우저를 처음 쓰기 위해 Chromium(약 200MB)을 내려받아 확인하고 있습니다. 끝나면 브라우저가 필요한 '
+                  '요청을 다시 해 주세요.')
 LIBRARIES_TEXT = ('이 Linux 데스크톱에는 Chromium이 쓰는 시스템 라이브러리 일부가 없어 브라우저를 시작하지 못했습니다. '
                   '터미널에서 아래 명령을 한 번 실행한 뒤 다시 시도하세요. 관리자 비밀번호가 필요하며, Ubuntu 패키지 '
                   '관리자로 필요한 라이브러리만 설치합니다.')
@@ -1960,7 +1962,7 @@ def unavailable_text(reason, platform=None):
     if reason == 'dependency':
         return LINUX_DEPENDENCY_TEXT if platform.startswith('linux') else DEPENDENCY_TEXT
     return {'display': DISPLAY_TEXT, 'sandbox': SANDBOX_TEXT, 'download': DOWNLOAD_TEXT,
-            'libraries': LIBRARIES_TEXT}.get(reason, PLATFORM_TEXT)
+            'libraries': LIBRARIES_TEXT, 'preparing': PREPARING_TEXT}.get(reason, PLATFORM_TEXT)
 
 
 class WorkerError(RuntimeError):
@@ -2410,6 +2412,8 @@ class BrowserProfile:
         self.tools_dir = Path(tools_dir) if tools_dir is not None else self.profile_dir.parent.parent / 'tools'
         #: #34: why the last start failed on this computer (``sandbox`` / ``download``), until a start succeeds.
         self._start_blocked = None
+        #: #34: the one background preparation (first Chromium download) and its lock.
+        self._preparing, self._prepare_lock = None, threading.Lock()
         self.jar = jar if jar is not None else CookieJar(self.profile_dir / JAR_NAME,
                                                          platform_key(store_account(self.profile_dir)), clock)
         self.launcher = launcher or self._launch_engine
@@ -2523,11 +2527,7 @@ class BrowserProfile:
         command = None
         if sys.platform.startswith('linux'):
             from . import chromium_runtime
-            try:
-                chrome = chromium_runtime.ensure(self.tools_dir)
-            except (OSError, RuntimeError):
-                self._start_blocked, self._blocked_at = 'download', time.monotonic()
-                raise ToolError(DOWNLOAD_TEXT, UNAVAILABLE_CODE) from None
+            chrome = self._prepared_chromium()
             if chromium_runtime.missing_libraries(chrome):
                 # Codex review on #640: a desktop without some of Chromium's libraries gets the one command.
                 self._start_blocked, self._blocked_chrome = 'libraries', chrome
@@ -2550,6 +2550,34 @@ class BrowserProfile:
             raise
         self._start_blocked = None
         return driver
+
+    def _prepared_chromium(self):
+        """The checked Chromium, or a typed refusal while it is prepared in the background (#34).
+
+        Codex review on #640: the first download (about 200 MB) never runs inside the Work that asked
+        for the browser, whose deadline and Stop it would outlast.  It runs once, in its own thread;
+        that Work ends at once with ``PREPARING_TEXT`` and a later use starts the browser.
+        """
+        from . import chromium_runtime
+        found = chromium_runtime.installed(self.tools_dir)
+        if found:
+            return found
+        if self._start_blocked == 'download' and self._still_blocked() == 'download':
+            raise ToolError(DOWNLOAD_TEXT, UNAVAILABLE_CODE)
+        with self._prepare_lock:
+            if self._preparing is None or not self._preparing.is_alive():
+                def prepare():
+                    try:
+                        chromium_runtime.ensure(self.tools_dir)
+                    except (OSError, RuntimeError):
+                        self._start_blocked, self._blocked_at = 'download', time.monotonic()
+                        return
+                    if self._start_blocked == 'preparing':
+                        self._start_blocked = None
+                self._preparing = threading.Thread(target=prepare, name='agentos-chromium-prepare', daemon=True)
+                self._start_blocked = 'preparing'
+                self._preparing.start()
+        raise ToolError(PREPARING_TEXT, UNAVAILABLE_CODE)
 
     def remove_legacy_profile(self):
         """Delete the pre-#680 Playwright Chromium profile (plaintext cookies) from ``profile_dir``.
@@ -2593,6 +2621,9 @@ class BrowserProfile:
         browser shows as available again, so Settings offers the sign-in window that retries the start."""
         if not self._start_blocked:
             return None
+        if self._start_blocked == 'preparing':
+            # Until the background download ends; it then clears this, or leaves ``download``.
+            return self._start_blocked if self._preparing is not None and self._preparing.is_alive() else None
         from . import chromium_runtime
         if (self._start_blocked == 'sandbox' and chromium_runtime.apparmor_installed(self._chrome_path())) or \
                 time.monotonic() - getattr(self, '_blocked_at', 0.0) > START_RETRY_SECONDS:

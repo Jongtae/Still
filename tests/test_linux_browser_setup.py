@@ -345,14 +345,47 @@ class EngineChoice(unittest.TestCase):
 
     def test_a_failed_download_is_a_typed_refusal_and_runs_nothing(self):
         profile = self.profile()
-        with mock.patch.object(sys, 'platform', 'linux'), \
+        with mock.patch.object(sys, 'platform', 'linux'), mock.patch.object(cr, 'installed', return_value=None), \
              mock.patch.object(cr, 'ensure', side_effect=RuntimeError('digest')), \
              mock.patch.object(bs, 'WebKitWorkerDriver', side_effect=AssertionError('never started')):
             with self.assertRaises(ToolError) as caught:
                 profile._launch_engine(profile.profile_dir, True)
+            self.assertEqual(str(caught.exception), bs.PREPARING_TEXT)
+            profile._preparing.join(5)
+            self.assertEqual(profile.unavailable_reason(), 'download')
+            with self.assertRaises(ToolError) as caught:
+                profile._launch_engine(profile.profile_dir, True)
         self.assertEqual(caught.exception.code, bs.UNAVAILABLE_CODE)
         self.assertEqual(str(caught.exception), bs.DOWNLOAD_TEXT)
-        self.assertEqual(profile.unavailable_reason(), 'download')
+
+    def test_the_first_download_runs_outside_the_work_that_asked(self):
+        """Codex review on #640: the ~200 MB download never holds a Work past its deadline or Stop."""
+        import threading
+        profile = self.profile()
+        release, calls, chrome = threading.Event(), [], str(self.root / 'tools' / 'chrome')
+        state = {'installed': None}
+
+        def slow_download(directory):
+            calls.append(directory)
+            release.wait(5)
+            state['installed'] = chrome
+            return chrome
+        with mock.patch.object(sys, 'platform', 'linux'), \
+             mock.patch.object(cr, 'installed', side_effect=lambda directory: state['installed']), \
+             mock.patch.object(cr, 'ensure', side_effect=slow_download), \
+             mock.patch.object(cr, 'missing_libraries', return_value=[]), \
+             mock.patch.object(bs, 'WebKitWorkerDriver', return_value=object()) as started:
+            for _ in range(2):
+                with self.assertRaises(ToolError) as caught:
+                    profile._launch_engine(profile.profile_dir, True)   # returns at once
+                self.assertEqual(str(caught.exception), bs.PREPARING_TEXT)
+            self.assertEqual(profile.unavailable_reason(), 'preparing')
+            self.assertEqual(len(calls), 1, 'one background download')
+            release.set()
+            profile._preparing.join(5)
+            self.assertIsNone(profile.unavailable_reason())
+            profile._launch_engine(profile.profile_dir, True)
+            self.assertTrue(started.called)
 
     def test_a_refused_sandbox_names_the_one_command_and_is_retried_next_time(self):
         profile = self.profile()
@@ -362,7 +395,7 @@ class EngineChoice(unittest.TestCase):
         def worker(*args, **kwargs):
             started.append(kwargs['command'])
             raise bs.WorkerError('worker_unavailable', 'sandbox_unavailable')
-        with mock.patch.object(sys, 'platform', 'linux'), mock.patch.object(cr, 'ensure', return_value=chrome), \
+        with mock.patch.object(sys, 'platform', 'linux'), mock.patch.object(cr, 'installed', return_value=chrome), \
              mock.patch.object(cr, 'missing_libraries', return_value=[]), \
              mock.patch.object(bs, 'WebKitWorkerDriver', side_effect=worker):
             with self.assertRaises(ToolError) as caught:
@@ -379,7 +412,7 @@ class EngineChoice(unittest.TestCase):
         self.assertEqual(status['unavailable_reason'], 'sandbox')
         self.assertIn('apparmor_parser', status['sandbox_command'])
         self.assertIsNotNone(profile.driver_factory('w'), 'the owner may have run the command: the next use tries again')
-        with mock.patch.object(sys, 'platform', 'linux'), mock.patch.object(cr, 'ensure', return_value=chrome), \
+        with mock.patch.object(sys, 'platform', 'linux'), mock.patch.object(cr, 'installed', return_value=chrome), \
              mock.patch.object(cr, 'missing_libraries', return_value=[]), \
              mock.patch.object(bs, 'WebKitWorkerDriver', return_value=object()):
             profile._launch_engine(profile.profile_dir, True)
@@ -417,7 +450,7 @@ class EngineChoice(unittest.TestCase):
         self.assertEqual(cr.libraries_setup('/opt/still/bin/python'),
                          'sudo /opt/still/bin/python -m playwright install-deps chromium')
         profile = self.profile()
-        with mock.patch.object(sys, 'platform', 'linux'), mock.patch.object(cr, 'ensure', return_value='/c'), \
+        with mock.patch.object(sys, 'platform', 'linux'), mock.patch.object(cr, 'installed', return_value='/c'), \
              mock.patch.object(cr, 'missing_libraries', return_value=['libatk-bridge-2.0.so.0']), \
              mock.patch.object(bs, 'WebKitWorkerDriver', side_effect=AssertionError('never started')):
             with self.assertRaises(ToolError) as caught:
