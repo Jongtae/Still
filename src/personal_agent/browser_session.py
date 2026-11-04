@@ -76,12 +76,12 @@ import threading
 import time
 import unicodedata
 from pathlib import Path
-from urllib.parse import urlsplit, urlunsplit, unquote_plus
+from urllib.parse import parse_qsl, urlsplit, urlunsplit, unquote_plus
 
 from .agent_runtime import BROWSER_ACTIONS, ToolError, WorkBudget, lookup_norm, lookup_text_violations, lookup_words
 from .bounded_execution import SECRET_PATTERN
 from .browser_jar import (JAR_NAME, SERVICE as JAR_SERVICE, CookieJar, JarError, KeychainKey, latest_token_expiry,
-                          store_account)
+                          site_marks, store_account, unexpired)
 from .browser_worker import (LAYOUTS, PAYMENT_TOKENS, SECRET_TOKENS, authorization_host, destination_refusal, qr_links,
                              remote_fields)
 
@@ -1088,14 +1088,23 @@ class BrowserSession:
                         'provider_sign_in': {'site': resign['site'], 'provider': resign['provider'], 'state': 'available'}}
             return {**page, 'next_step': offered or LOGIN_REQUIRED_TEXT}
         page = {'state': 'page', **public_view(snapshot)}
-        if resign:
+        if resign and not resign.get('ended'):
             if self._on_provider(snapshot['_page']):
                 resign['seen'] = True
             elif registrable_domain(landed_host(snapshot['_page'])) == resign['site'] and self._through_provider():
-                # #636: back on the site, no sign-in form, through the provider: the receipt the Work's
-                # Evidence and information-use audit show (``evidence_summary``).
-                page['provider_sign_in'] = {'site': resign['site'], 'provider': resign['provider'], 'state': 'signed_in'}
-                self._resign = None
+                # #636 (Codex P1 on #637): back on the site through the provider.  No sign-in form proves
+                # nothing; only the site's session cookies set or renewed since the re-sign-in began (the
+                # owner window's own evidence, ``_signed_in_sites``), with no OAuth error at the redirect
+                # (RFC 6749 §4.1.2.1), make it a sign-in.  Otherwise it is unconfirmed: no success receipt,
+                # and the owner is asked to sign in.
+                signed = self._sign_in_evidence(snapshot)
+                page['provider_sign_in'] = {'site': resign['site'], 'provider': resign['provider'],
+                                            'state': 'signed_in' if signed else 'unconfirmed'}
+                if signed:
+                    self._resign = None
+                else:
+                    resign['ended'] = 'unconfirmed'
+                    page['next_step'] = msg('browser.provider_unconfirmed', provider=resign['provider']) + ' ' + self._hand_off()
         return page
 
     # -- #636: signing back in through the provider the owner already used -------------------
@@ -1124,8 +1133,37 @@ class BrowserSession:
         self._resign = {'site': site, 'provider': provider, 'reference': snapshot['url'],
                         'window_url': snapshot['_window_url'],
                         'mark': current['mark'] if current else self._authorization_mark(),
+                        'cookies': current['cookies'] if current else self._site_cookies(site),
                         'seen': bool(current and current['seen'])}
         return self._resign
+
+    def _site_cookies(self, site):
+        """#636: the digests of the site's unexpired cookies in this Work's browser now (``browser_jar.site_marks``,
+        the jar's own rule), or None when the browser cannot say.  Values are only hashed, in memory."""
+        export = getattr(self.driver, 'cookies_export', None) if self.driver is not None else None
+        if not callable(export):
+            return None
+        try:
+            grouped = export()[0]
+        except Exception:
+            return None
+        if not isinstance(grouped, dict):
+            return None
+        return unexpired(site_marks(grouped, site), time.time())
+
+    def _sign_in_evidence(self, snapshot):
+        """#636: whether the re-sign-in affirmatively completed: the redirect carried no OAuth error and the
+        site holds a session cookie that is new or renewed since the re-sign-in began.  Unknown is not proof."""
+        try:
+            names = {name for name, _value in parse_qsl(urlsplit(snapshot.get('_window_url') or '').query,
+                                                        keep_blank_values=True)}
+        except ValueError:
+            return False
+        if 'error' in names:
+            return False
+        before = self._resign.get('cookies')
+        after = self._site_cookies(self._resign['site'])
+        return before is not None and after is not None and bool(after - before)
 
     def _authorization_mark(self):
         answer = _authorizations(self.driver) if self.driver is not None else None

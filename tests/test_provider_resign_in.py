@@ -60,6 +60,8 @@ PAGES = {
     f'{SITE}/home': '''<html><head><title>내 페이지</title></head><body><h1>주문 내역</h1>
       <a href="https://site.test/settings">설정</a></body></html>''',
     f'{SITE}/settings': '<html><head><title>설정</title></head><body><h1>설정</h1></body></html>',
+    # A public page of the site (no sign-in form, no session needed).
+    f'{SITE}/': '<html><head><title>홈</title></head><body><h1>공개 페이지</h1></body></html>',
     # A provider page that asks for something without a password: an account choice / consent.
     f'{PROVIDER}/choose': '''<html><head><title>계정 선택</title></head><body><h1>계속할 계정</h1>
       <form action="/consent" method="post"><button type="submit">계속</button></form>
@@ -71,8 +73,12 @@ PAGES = {
       <button type="submit">다음</button></form></body></html>''',
 }
 #: Where the provider's authorization endpoint sends the browser, by how the provider answers.
-PROVIDER_ANSWERS = {'silent': 'https://site.test/home', 'chooser': f'https://{PROVIDER}/choose',
-                    'password': f'https://{PROVIDER}/signin'}
+#: ``silent`` returns an authorization code to the site's redirect URI (the site then sets its session);
+#: ``refused`` returns an OAuth error there (RFC 6749 §4.1.2.1); ``silent_no_session`` returns but the
+#: site sets no session.
+PROVIDER_ANSWERS = {'silent': 'https://site.test/callback?code=abc', 'chooser': f'https://{PROVIDER}/choose',
+                    'password': f'https://{PROVIDER}/signin', 'refused': 'https://site.test/?error=access_denied&state=s',
+                    'silent_no_session': 'https://site.test/home'}
 
 
 class TwoHostDriver(FakeDriver):
@@ -86,6 +92,8 @@ class TwoHostDriver(FakeDriver):
         super().__init__(pages=PAGES, origin='https://' + SITE, log=log)
         self.answer = answer
         self.worker = types.SimpleNamespace(authorizations=[], authorization_count=0)
+        #: The browser's cookies by site; the signed-out site already holds an anonymous one.
+        self.cookies = {SITE: [{'name': 'anon', 'value': 'a1', 'domain': SITE, 'path': '/', 'expires': None}]}
 
     def _path(self, url):
         parts = urlsplit(url)
@@ -96,9 +104,17 @@ class TwoHostDriver(FakeDriver):
         browser_worker.Worker.note_authorization(self.worker, url)
         if self._path(url) == f'{PROVIDER}/authorize':
             url = PROVIDER_ANSWERS[self.answer]   # the provider's redirect: navigation only
+        if self._path(url) == f'{SITE}/callback':
+            # The site exchanges the code and sets its session cookie, then shows the signed-in page.
+            self.cookies[SITE] = [{'name': 'sid', 'value': 'session-' + str(time.time_ns()), 'domain': SITE,
+                                   'path': '/', 'expires': None}]
+            url = f'https://{SITE}/home'
         if self._path(url) not in self.pages:
             raise RuntimeError('not found')
         self.url = url
+
+    def cookies_export(self):
+        return {site: list(rows) for site, rows in self.cookies.items()}, []
 
     def authorizations(self):
         return self.worker.authorization_count, tuple(self.worker.authorizations)
@@ -224,6 +240,45 @@ class ResignInSessionTests(unittest.TestCase):
         self.assertTrue(page['next_step'].startswith(msg('browser.provider_not_returned', provider=PROVIDER)))
         self.assertEqual(approvals.offers[-1], (f'https://{SITE}/login', True))
 
+    def assert_unconfirmed(self, page, approvals):
+        self.assertEqual(page['provider_sign_in'], {'site': SITE, 'provider': PROVIDER, 'state': 'unconfirmed'})
+        self.assertTrue(page['next_step'].startswith(msg('browser.provider_unconfirmed', provider=PROVIDER)))
+        self.assertTrue(page['next_step'].endswith('OFFER-EXPLICIT'), 'the owner is asked to sign in')
+        self.assertEqual(approvals.offers[-1], (f'https://{SITE}/login', True))
+        self.assertEqual(evidence_summary('browser_click', page)['provider_sign_in']['state'], 'unconfirmed')
+
+    def test_an_oauth_error_at_the_redirect_is_no_sign_in(self):
+        sess, driver, approvals = resign_session('refused')
+        open_login(sess)
+        # The site even sets a cookie on the error page: the OAuth error still decides.
+        driver.cookies[SITE].append({'name': 'flash', 'value': 'denied', 'domain': SITE, 'path': '/', 'expires': None})
+        page = sess.run('browser_click', {'target': '다른 계정으로 로그인', 'effect': 'navigate'})
+        self.assertEqual(page['state'], 'page', 'no sign-in form on the error page')
+        self.assert_unconfirmed(page, approvals)
+
+    def test_returning_to_a_public_page_with_no_new_session_is_no_sign_in(self):
+        sess, _driver, approvals = resign_session('silent_no_session')
+        open_login(sess)
+        page = sess.run('browser_click', {'target': '다른 계정으로 로그인', 'effect': 'navigate'})
+        self.assertEqual(page['url'], f'https://{SITE}/home')
+        self.assert_unconfirmed(page, approvals)
+        # Decided once: a later page of the site carries no second receipt.
+        self.assertNotIn('provider_sign_in', sess.run('browser_click', {'target': '설정', 'effect': 'navigate'}))
+
+    def test_leaving_the_chooser_for_a_public_page_of_the_site_is_no_sign_in(self):
+        sess, _driver, approvals = resign_session('chooser')
+        open_login(sess)
+        sess.run('browser_click', {'target': '다른 계정으로 로그인', 'effect': 'navigate'})
+        page = sess.run('browser_open', {'url': f'https://{SITE}/', 'effect': 'navigate'})
+        self.assert_unconfirmed(page, approvals)
+
+    def test_a_browser_that_cannot_report_its_cookies_is_no_sign_in(self):
+        sess, driver, approvals = resign_session('silent')
+        driver.cookies_export = None   # unknown is not proof
+        open_login(sess)
+        page = sess.run('browser_click', {'target': '다른 계정으로 로그인', 'effect': 'navigate'})
+        self.assert_unconfirmed(page, approvals)
+
     def test_an_unrecorded_provider_gets_no_hint_and_no_special_path(self):
         for approvals_providers in ({}, None):
             sess, driver, approvals = resign_session('chooser', providers={})
@@ -289,6 +344,18 @@ class ResignInLoopTests(unittest.TestCase):
         self.assertIn(msg('information_use.browser_provider_sign_in', site=SITE, provider=PROVIDER),
                       information_use.render_korean(audit))
         self.assertFalse(any(value in json.dumps(audit, ensure_ascii=False) for value in (CLIENT, STATE, NONCE)))
+
+    def test_an_unconfirmed_re_sign_in_is_no_success_in_the_receipt_or_the_audit(self):
+        self.run_work('refused',
+                      {'tool_calls': [call('1', 'browser_open', url=f'https://{SITE}/login', effect='navigate')]},
+                      {'tool_calls': [call('2', 'browser_click', target='다른 계정으로 로그인', effect='navigate')]},
+                      {'content': '로그인이 필요합니다.'})
+        [(_status, detail)] = self.details('browser_click')
+        self.assertEqual(detail['evidence']['provider_sign_in']['state'], 'unconfirmed')
+        audit = information_use.work_information_use(self.store, self.job)
+        self.assertNotIn('browser_provider_sign_ins', audit['sent_to'])
+        self.assertNotIn(msg('information_use.browser_provider_sign_in', site=SITE, provider=PROVIDER),
+                         information_use.render_korean(audit))
 
     def test_a_refused_provider_step_is_recorded_as_not_run(self):
         driver = self.run_work('chooser',

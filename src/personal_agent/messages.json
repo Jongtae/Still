@@ -6791,6 +6791,12 @@
   "ja": "{provider} がログインを求めたため、この再ログインを止めました。Still はパスワードを入力しません。",
   "zh": "{provider} 要求登录，因此已停止此次重新登录。Still 不会输入密码。"
  },
+ "browser.provider_unconfirmed": {
+  "ko": "{provider}를 거쳐 사이트로 돌아왔지만 로그인됐다는 근거(새로 생기거나 갱신된 사이트 세션)가 없어 이 다시 로그인을 완료로 보지 않습니다.",
+  "en": "The browser came back to the site through {provider}, but there is no evidence of a sign-in (no new or renewed site session), so this re-sign-in is not counted as done.",
+  "ja": "{provider} を経由してサイトに戻りましたが、ログインした根拠（新しく作られたか更新されたサイトのセッション）がないため、この再ログインを完了とはみなしません。",
+  "zh": "已通过 {provider} 返回网站，但没有登录的依据（没有新建或更新的网站会话），因此不将此次重新登录视为完成。"
+ },
  "browser.provider_not_returned": {
   "ko": "{provider}를 거쳤지만 사이트가 여전히 로그인을 요구해 이 다시 로그인을 멈췄습니다.",
   "en": "The sign-in went through {provider} but the site still asks for a sign-in, so this re-sign-in stopped.",
