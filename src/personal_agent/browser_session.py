@@ -896,6 +896,13 @@ class BrowserSession:
         #: the site, the provider host, the login reference and window address, the driver's authorization
         #: count when it began, and whether a provider page or request was seen since.  None otherwise.
         self._resign = None
+        #: #636 (Codex P1 on #637): the provider window, derived from observed main-frame navigation only:
+        #: set while the page is on a host any recorded provider chain names, or was reached from one by
+        #: redirect, until the main frame is back on the site it left from (or the AI opens another page).
+        #: ``{'origin': page outside it, 'host': where it began}``; ``_outside`` is the last page outside it.
+        self._window = None
+        self._outside = None
+        self._auth_seen = 0   # the driver's authorization-request count already looked at
         self.judgments = judgments
 
     # -- plumbing --
@@ -1065,6 +1072,8 @@ class BrowserSession:
             snapshot['load_state'] = ('navigation_timeout' if self._navigation_error == 'browser_timeout'
                                       else 'navigation_interrupted')
         resign = self._resign
+        # #636: the provider window, from where the main frame is and how it got there (never the hint).
+        inside = self._observe(snapshot, registrable_domain(urlsplit(requested_url).hostname or '') if requested_url else None)
         if snapshot['login_required']:
             # Generic (`login_form_present`): the profile holds no session for
             # this page.  #1269: the mediated page comes with the login request
@@ -1072,12 +1081,11 @@ class BrowserSession:
             # with an account the owner is already signed in to where the page
             # offers one; it never types a password.
             page = {**public_view(snapshot), 'state': 'login_required', 'needs_setup': True, 'requires': 'browser-login'}
-            hop = self._provider_of(snapshot['_page']) if resign else None
-            if hop:
-                # #636: the provider asks for a sign-in (a password field): the re-sign-in stops and
-                # the owner signs in (C14); nothing is typed there.
-                resign['seen'] = True
-                return {**page, 'next_step': msg('browser.provider_asks', provider=hop) + ' ' + self._hand_off()}
+            if inside:
+                # #636: the provider asks for a sign-in (a password field): the owner signs in (C14);
+                # nothing is typed there.
+                return {**page, 'next_step': msg('browser.provider_asks', provider=self._window['host']) + ' '
+                        + self._hand_off(snapshot)}
             if resign and registrable_domain(landed_host(snapshot['_page'])) == resign['site'] and self._through_provider():
                 # #636: the sign-in went through the provider and the site still asks: the owner signs in.
                 return {**page, 'next_step': msg('browser.provider_not_returned', provider=resign['provider']) + ' '
@@ -1089,10 +1097,8 @@ class BrowserSession:
                         'provider_sign_in': self._receipt('available')}
             return {**page, 'next_step': offered or LOGIN_REQUIRED_TEXT}
         page = {'state': 'page', **public_view(snapshot)}
-        if resign and not resign.get('ended'):
-            if self._on_provider(snapshot['_page']):
-                resign['seen'] = True
-            elif registrable_domain(landed_host(snapshot['_page'])) == resign['site'] and self._through_provider():
+        if resign and not resign.get('ended') and not inside:
+            if registrable_domain(landed_host(snapshot['_page'])) == resign['site'] and self._through_provider():
                 # #636 (Codex P1 on #637): back on the site through the provider.  No sign-in form proves
                 # nothing; only the site's session cookies set or renewed since the re-sign-in began (the
                 # owner window's own evidence, ``_signed_in_sites``), with no OAuth error at the redirect
@@ -1194,17 +1200,61 @@ class BrowserSession:
             receipt['chain'] = list(resign['chain'])
         return receipt
 
-    def _provider_of(self, page):
-        """The host of the re-sign-in's chain ``page`` is on (that host or its registrable domain), or None."""
-        host = landed_host(page)
-        if not host or not self._resign:
-            return None
-        host, domain = ascii_host(host), registrable_domain(host)
-        return next((hop for hop in self._resign['chain'] if host == hop or domain == registrable_domain(hop)), None)
+    def _protected_hosts(self):
+        """#636: every host any recorded provider chain names (``approvals.provider_hosts``): the exact hosts the
+        owner's own login window saw carrying an OAuth 2.0 authorization request.  Hosts only."""
+        hosts = getattr(self.approvals, 'provider_hosts', None)
+        if not callable(hosts):
+            return frozenset()
+        try:
+            return frozenset(ascii_host(host) for host in hosts() or () if isinstance(host, str) and host)
+        except Exception:
+            return frozenset()
 
-    def _on_provider(self, page):
-        """Whether ``page`` is on any host of the re-sign-in's provider chain or its registrable domain."""
-        return self._provider_of(page) is not None
+    def _new_authorizations(self):
+        """#636: the hosts of the authorization requests the browser sent since last looked at (its main frame)."""
+        answer = _authorizations(self.driver) if self.driver is not None else None
+        if not answer:
+            return ()
+        count, hosts = answer
+        fresh = count - self._auth_seen
+        self._auth_seen = count
+        return tuple(hosts[-min(fresh, len(hosts)):]) if fresh > 0 and hosts else ()
+
+    def _observe(self, snapshot, origin_site=None):
+        """#636 (Codex P1 on #637): whether the main frame in ``snapshot`` is inside a provider window.
+
+        Inside when the page is on a host a recorded provider chain names, or when it was reached
+        from one by redirect (the browser sent an authorization request to such a host on the way)
+        and is not back on the site it left from: a broker's upstream, or a chooser on another host
+        of the provider's domain.  The window ends when the main frame is on that site again, or the
+        AI opens another page (``open`` passes the requested site).  A page of a provider's
+        registrable domain the AI opened directly, outside a window, is an ordinary page.  Derived
+        from navigation only: no hint, sign-in form or re-sign-in is needed.
+        """
+        host = ascii_host(landed_host(snapshot.get('_page')) or '')
+        passed = any(ascii_host(hop) in self._protected_hosts() for hop in self._new_authorizations())
+        if not host:
+            return bool(self._window)
+        domain = registrable_domain(host)
+        if origin_site is not None:
+            self._window = None   # an AI-opened page: a window never carries over an explicit open
+        if host in self._protected_hosts():
+            inside = True
+        elif self._window:
+            inside = domain != ((self._window.get('origin') or {}).get('site'))
+        else:
+            left = origin_site if origin_site is not None else (self._outside or {}).get('site')
+            inside = passed and domain != left
+        if inside:
+            if not self._window:
+                self._window = {'origin': self._outside if origin_site is None else None, 'host': host}
+            if self._resign:
+                self._resign['seen'] = True
+        else:
+            self._window = None
+            self._outside = {'site': domain, 'url': snapshot.get('url'), 'window_url': snapshot.get('_window_url')}
+        return inside
 
     def _through_provider(self):
         """Whether this re-sign-in reached the provider: one of its pages was seen, or the browser
@@ -1220,20 +1270,24 @@ class BrowserSession:
         targets = {registrable_domain(hop) for hop in resign['chain']}
         return any(registrable_domain(host) in targets for host in recent)
 
-    def _hand_off(self):
-        """The re-sign-in stops; the owner signs in to the site (the in-flow login, asked however the Work ends)."""
-        resign = self._resign
-        return self._offer_login(resign['reference'], explicit=True, window_url=resign['window_url']) or LOGIN_REQUIRED_TEXT
+    def _hand_off(self, snapshot=None):
+        """The owner signs in (the in-flow login, asked however the Work ends): at the re-sign-in's site, else
+        at the page the provider window was entered from, else at this page."""
+        resign, origin = self._resign, (self._window or {}).get('origin')
+        if resign:
+            url, window_url = resign['reference'], resign['window_url']
+        elif origin and origin.get('url'):
+            url, window_url = origin['url'], origin.get('window_url')
+        else:
+            url, window_url = (snapshot or {}).get('url'), (snapshot or {}).get('_window_url')
+        return (self._offer_login(url, explicit=True, window_url=window_url) if url else None) or LOGIN_REQUIRED_TEXT
 
     def _refuse_on_provider(self, snapshot):
-        """#636: during a re-sign-in, a press or typing step on the provider's pages is refused before
-        anything reaches the page (``ran: false``), and the owner is asked to sign in instead."""
-        resign = self._resign
-        hop = self._provider_of(snapshot.get('_page')) if resign else None
-        if not hop:
+        """#636: inside a provider window (``_observe``), a press or typing step - and so any form submit it
+        could start - is refused before anything reaches the page (``ran: false``); the owner signs in."""
+        if not self._observe(snapshot):
             return
-        resign['seen'] = True
-        text = msg('browser.provider_interaction_refused', provider=hop) + ' ' + self._hand_off()
+        text = msg('browser.provider_interaction_refused', provider=self._window['host']) + ' ' + self._hand_off(snapshot)
         raise ToolError(text, PROVIDER_INTERACTION_CODE, ran=False)
 
     def _offer_login(self, url, explicit=False, *, window_url=None):

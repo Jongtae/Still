@@ -64,6 +64,12 @@ PAGES = {
     f'{SITE}/home': '''<html><head><title>내 페이지</title></head><body><h1>주문 내역</h1>
       <a href="https://site.test/settings">설정</a></body></html>''',
     f'{SITE}/settings': '<html><head><title>설정</title></head><body><h1>설정</h1></body></html>',
+    # A sign-in page that offers only the provider (no password field anywhere).
+    f'{SITE}/start': f'''<html><head><title>시작</title></head><body><h1>시작하기</h1>
+      <a href="{html.escape(AUTHORIZE)}">다른 계정으로 계속</a></body></html>''',
+    # Another host of the provider's registrable domain that is no sign-in host (a search page).
+    'search.provider.test/': '''<html><head><title>검색</title></head><body><h1>검색</h1>
+      <label>검색어 <input type="text" name="q"></label><button type="button">검색하기</button></body></html>''',
     # A public page of the site (no sign-in form, no session needed).
     f'{SITE}/': '<html><head><title>홈</title></head><body><h1>공개 페이지</h1></body></html>',
     # A provider page that asks for something without a password: an account choice / consent.
@@ -151,6 +157,11 @@ class ProviderApprovals(Approvals):
     def login_resolved(self, url):
         self.resolved = getattr(self, 'resolved', []) + [url]
         return True
+
+    def provider_hosts(self):
+        """As the service: every host of every recorded chain (``browser_provider_hosts``)."""
+        return frozenset(host for chain in self.providers.values()
+                         for host in (chain if isinstance(chain, list) else [chain]) if host)
 
 
 def resign_session(answer='silent', providers=None):
@@ -321,6 +332,58 @@ class ResignInSessionTests(unittest.TestCase):
         page = open_login(sess)
         self.assertEqual(page['next_step'], 'OFFER')
         self.assertNotIn('provider_sign_in', page)
+
+    # -- Codex P1 on #637: protection comes from navigation, never from the hint or a password form --
+    def test_a_provider_only_sign_in_page_still_protects_the_providers_chooser(self):
+        sess, driver, approvals = resign_session('chooser')
+        start = sess.run('browser_open', {'url': f'https://{SITE}/start', 'effect': 'navigate'})
+        self.assertEqual(start['state'], 'page', 'no password field: no sign-in page and no hint')
+        self.assertNotIn('provider_sign_in', start)
+        chooser = sess.run('browser_click', {'target': '다른 계정으로 계속', 'effect': 'navigate'})
+        self.assertEqual(urlsplit(chooser['url']).hostname, PROVIDER)
+        with self.assertRaises(ToolError) as caught:
+            sess.run('browser_click', {'target': '계속', 'effect': 'navigate'})
+        self.assertEqual(caught.exception.code, bs.PROVIDER_INTERACTION_CODE)
+        self.assertIs(caught.exception.ran, False)
+        self.assertEqual(len([entry for entry in driver.log if entry[0] == 'click']), 1, 'only the site link was pressed')
+        self.assertEqual(approvals.offers[-1], (f'https://{SITE}/start', True), 'the owner signs in from where it began')
+
+    def test_the_ai_opening_a_recorded_provider_host_directly_is_refused(self):
+        for url in (AUTHORIZE, f'https://{PROVIDER}/choose'):
+            sess, driver, _approvals = resign_session('chooser')
+            page = sess.run('browser_open', {'url': url, 'effect': 'navigate'})
+            self.assertEqual(urlsplit(page['url']).hostname, PROVIDER)
+            for action, args in (('browser_click', {'target': '계속', 'effect': 'navigate'}),
+                                 ('browser_type', {'target': '메모', 'text': 'x', 'effect': 'mutate'})):
+                with self.assertRaises(ToolError) as caught:
+                    sess.run(action, args)
+                self.assertEqual(caught.exception.code, bs.PROVIDER_INTERACTION_CODE, url)
+            self.assertFalse([entry for entry in driver.log if entry[0] in ('click', 'type')])
+
+    def test_another_host_of_the_providers_domain_opened_directly_is_an_ordinary_page(self):
+        sess, driver, _approvals = resign_session('chooser')
+        sess.run('browser_open', {'url': 'https://search.provider.test/', 'effect': 'navigate'})
+        sess.run('browser_type', {'target': '검색어', 'text': '날씨', 'effect': 'read'})
+        sess.run('browser_click', {'target': '검색하기', 'effect': 'read'})
+        self.assertEqual([entry[0] for entry in driver.log if entry[0] in ('click', 'type')], ['type', 'click'])
+
+    def test_the_window_covers_pages_reached_from_the_provider_and_clears_back_on_the_site(self):
+        # Only the broker is recorded: its upstream's chooser is reached from it by redirect, so it is inside.
+        sess, driver, _approvals = resign_session('federated', providers={SITE: PROVIDER})
+        sess.run('browser_open', {'url': f'https://{SITE}/start', 'effect': 'navigate'})
+        upstream = sess.run('browser_click', {'target': '다른 계정으로 계속', 'effect': 'navigate'})
+        self.assertEqual(urlsplit(upstream['url']).hostname, UPSTREAM)
+        with self.assertRaises(ToolError) as caught:
+            sess.run('browser_click', {'target': '이 계정으로 계속', 'effect': 'navigate'})
+        self.assertEqual(caught.exception.code, bs.PROVIDER_INTERACTION_CODE)
+        self.assertIn(UPSTREAM, str(caught.exception))
+        # A provider that returns to the site at once: back on the site, the window is over.
+        sess, driver, _approvals = resign_session('silent', providers={SITE: PROVIDER})
+        sess.run('browser_open', {'url': f'https://{SITE}/start', 'effect': 'navigate'})
+        home = sess.run('browser_click', {'target': '다른 계정으로 계속', 'effect': 'navigate'})
+        self.assertEqual(home['url'], f'https://{SITE}/home')
+        sess.run('browser_click', {'target': '설정', 'effect': 'navigate'})
+        self.assertEqual(len([entry for entry in driver.log if entry[0] == 'click']), 2, 'the site is free again')
 
     def test_an_unrecorded_provider_gets_no_hint_and_no_special_path(self):
         for approvals_providers in ({}, None):
@@ -558,6 +621,14 @@ class ProviderRecordTests(LoginHarness):
         self.assertEqual(self.service.browser_signin_provider(url),
                          {'site': 'fixture.test', 'provider': PROVIDER, 'chain': [PROVIDER, UPSTREAM]})
         self.assertIn(f'{PROVIDER} → {UPSTREAM}', self.service.provider_signin_settings()['sites']['fixture.test'])
+
+    def test_the_protected_hosts_are_every_recorded_hop_whatever_the_switch(self):
+        self.store.put(BROWSER_PROVIDERS_KEY, {
+            'fixture.test': {'provider': PROVIDER, 'chain': [PROVIDER, UPSTREAM], 'complete': False},
+            'other.test': {'provider': 'old.idp.test'}})
+        self.service.set_provider_signin('off')
+        hosts = self.service.browser_approvals_for({'id': 'w', 'channel': 'web-636'}).provider_hosts()
+        self.assertEqual(hosts, frozenset({PROVIDER, UPSTREAM, 'old.idp.test'}))
 
     def test_an_old_single_provider_record_is_a_one_host_chain(self):
         self.store.put(BROWSER_PROVIDERS_KEY, {'fixture.test': {'provider': PROVIDER, 'observed_at': time.time(),

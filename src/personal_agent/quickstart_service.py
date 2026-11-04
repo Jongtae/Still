@@ -8647,6 +8647,8 @@ class AgentService:
             def provider_sign_in(self,url):return service.browser_signin_provider(url)
             # #636 (Codex P2 on #637): a confirmed re-sign-in settles this Work's own login request for that site.
             def login_resolved(self,url):return service.resolve_browser_login(job,url)
+            # #636 (Codex P1 on #637): the hosts whose pages no AI step may press or type on.
+            def provider_hosts(self):return service.browser_provider_hosts()
             # #934: on a site received from the owner, a payment step is refused outright (no request, no approval).
             # #619: so is every guarded step of a scheduled run: no owner is present to approve it.
             def refuse(self,host):
@@ -9405,6 +9407,18 @@ class AgentService:
                 switch['off_sites']=sorted(off)
             self.store.put(BROWSER_PROVIDER_SIGNIN_KEY,switch)
         return switch
+
+    def browser_provider_hosts(self):
+        """#636 (Codex P1 on #637): every host any recorded provider chain names, complete or not, whatever the
+        hint switch says: the exact hosts the owner's own login window saw carrying an OAuth 2.0
+        authorization request.  An AI step is never pressed or typed on their pages (``BrowserSession._observe``)."""
+        records=self.store.config(BROWSER_PROVIDERS_KEY,{})
+        hosts=set()
+        for record in (records.values() if isinstance(records,dict) else ()):
+            if not isinstance(record,dict):continue
+            chain=record.get('chain') if isinstance(record.get('chain'),list) else []
+            hosts.update(ascii_host(host) for host in [*chain,record.get('provider')] if isinstance(host,str) and host)
+        return frozenset(hosts)
 
     def browser_signin_provider(self, url):
         """#636: ``{site, provider}`` when a Work may sign back in to ``url``'s site through the provider the

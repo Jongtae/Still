@@ -6780,16 +6780,16 @@
   "zh": "此页面需要登录。所有者以前通过 {provider} 账号登录过此网站，Still 保存着 {provider} 的登录会话。可以按网站上用 {provider} 账号登录的按钮重新登录。如果该按钮转到应用而停止（unsupported_navigation），请用 browser_open 并设置 layout: desktop 重新打开此网站的登录页面再按。Still 会拒绝在 {provider} 页面上的所有点击和输入，因此只有 {provider} 不询问任何内容就返回网站时登录才会完成。如果 {provider} 要求密码、额外验证、选择账号或同意，或者此方法不行，请用 browser_sign_in 交给所有者登录。不要输入密码。"
  },
  "browser.provider_interaction_refused": {
-  "ko": "다시 로그인하는 동안 {provider} 페이지에서는 누르기와 입력을 하지 않습니다. 이 단계는 실행하지 않았고 아무것도 보내지 않았습니다. {provider} 페이지에서 누르거나 입력해야 한다면 {provider}가 무언가를 묻는 것이므로, 이 다시 로그인을 멈추고 소유자가 로그인합니다.",
-  "en": "During a re-sign-in Still does not press or type on {provider}'s pages. This step did not run and nothing was sent. A {provider} page that needs a press or typing means {provider} is asking for something, so this re-sign-in stopped and the owner signs in.",
-  "ja": "再ログイン中は {provider} のページで押す操作や入力をしません。この手順は実行せず、何も送っていません。{provider} のページで押す操作や入力が必要なら {provider} が何かを尋ねているので、この再ログインを止めてオーナーがログインします。",
-  "zh": "重新登录期间，Still 不会在 {provider} 页面上点击或输入。此步骤未执行，也未发送任何内容。如果 {provider} 页面需要点击或输入，说明 {provider} 在询问内容，因此已停止此次重新登录，由所有者登录。"
+  "ko": "{provider}는 소유자가 로그인할 때 쓰는 계정 제공자라서, Still은 그 페이지와 거기서 이어진 페이지에서 누르기와 입력을 하지 않습니다. 이 단계는 실행하지 않았고 아무것도 보내지 않았습니다. 계정 선택·동의·비밀번호처럼 그곳에서 묻는 것은 소유자가 직접 합니다.",
+  "en": "{provider} is an identity provider the owner signs in with, so Still does not press or type on its pages or on pages reached from it. This step did not run and nothing was sent. Whatever it asks there (an account choice, consent, a password) is for the owner.",
+  "ja": "{provider} はオーナーがログインに使うアカウント提供元なので、Still はそのページとそこから続くページで押す操作や入力をしません。この手順は実行せず、何も送っていません。アカウント選択・同意・パスワードなど、そこで尋ねられることはオーナーが自分で行います。",
+  "zh": "{provider} 是所有者用来登录的账号提供方，因此 Still 不会在其页面以及从那里继续到达的页面上点击或输入。此步骤未执行，也未发送任何内容。在那里询问的内容（选择账号、同意、密码）由所有者亲自处理。"
  },
  "browser.provider_asks": {
-  "ko": "{provider}가 로그인을 요구해 이 다시 로그인을 멈췄습니다. Still은 비밀번호를 입력하지 않습니다.",
-  "en": "{provider} asks for a sign-in, so this re-sign-in stopped. Still never types a password.",
-  "ja": "{provider} がログインを求めたため、この再ログインを止めました。Still はパスワードを入力しません。",
-  "zh": "{provider} 要求登录，因此已停止此次重新登录。Still 不会输入密码。"
+  "ko": "{provider}가 로그인을 요구합니다. Still은 비밀번호를 입력하지 않으며, 소유자가 로그인합니다.",
+  "en": "{provider} asks for a sign-in. Still never types a password; the owner signs in.",
+  "ja": "{provider} がログインを求めています。Still はパスワードを入力せず、オーナーがログインします。",
+  "zh": "{provider} 要求登录。Still 不会输入密码，由所有者登录。"
  },
  "browser.provider_unconfirmed": {
   "ko": "{provider}를 거쳐 사이트로 돌아왔지만 로그인됐다는 근거(새로 생기거나 갱신된 사이트 세션)가 없어 이 다시 로그인을 완료로 보지 않습니다.",
