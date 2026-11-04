@@ -292,7 +292,10 @@ class _Target:
         elif method == 'Page.frameStoppedLoading':
             self.worker.loading.discard((self.ident, params['frameId']))
         elif method == 'Network.requestWillBeSent':
-            if self is self.worker.main_target and params.get('frameId') == self.main_frame:
+            # Only the main frame's document request is a navigation; its sub-resources share the frame id
+            # (Codex review on #640).
+            if self is self.worker.main_target and params.get('frameId') == self.main_frame \
+                    and params.get('type') == 'Document':
                 self.worker.main_requests.add(params['requestId'])
         elif method == 'Network.loadingFinished':
             self.worker.main_requests.discard(params.get('requestId'))

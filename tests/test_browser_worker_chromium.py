@@ -1340,3 +1340,18 @@ def test_a_bare_wayland_session_is_no_display_for_the_x11_worker():
          mock.patch.object(chromium, '_playwright_factory', return_value=mock.MagicMock()):
         assert chromium.main(['--chromium', '/pinned/chrome']) == 2
     assert json.loads(output.getvalue()) == {'event': 'unavailable', 'error': 'no_display'}
+
+
+def test_a_failed_sub_resource_is_not_a_failed_navigation(worker):
+    """Codex review on #640: an image or script of the main frame failing never fails the navigation."""
+    target = worker.main_target
+    worker.navigation = (9, None)
+    worker.pending[9] = True
+    for kind in ('Image', 'Script', 'Stylesheet'):
+        target.receive({'method': 'Network.requestWillBeSent',
+                        'params': {'requestId': kind, 'frameId': target.main_frame, 'type': kind}})
+        target.receive({'method': 'Network.loadingFailed', 'params': {'requestId': kind, 'errorText': 'net::ERR_FAILED'}})
+    assert worker.navigation == (9, None) and 9 in worker.pending
+    target.receive({'method': 'Network.requestWillBeSent',
+                    'params': {'requestId': 'doc', 'frameId': target.main_frame, 'type': 'Document'}})
+    assert 'doc' in worker.main_requests
