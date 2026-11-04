@@ -2206,8 +2206,11 @@ class GoalDecidesOutcome(Harness):
     def test_a_reached_goal_after_an_effect_succeeds_despite_step_failures(self):
         def work(tools):
             self.step(tools, 'browser_open', 'succeeded', evidence={'qualifiers': ['truncated']})
-            self.step(tools, 'browser_click', 'failed', code='target_not_found', effect='none', error='없음. 목록: 1 · 2')
-            self.step(tools, 'browser_click', 'succeeded', evidence={})
+            # #630: the click that succeeded is the same invocation (equal recorded arguments).
+            clicked = {'target': '2', 'effect': 'mutate'}
+            self.step(tools, 'browser_click', 'failed', code='target_not_found', effect='none', error='없음. 목록: 1 · 2',
+                      arguments=clicked)
+            self.step(tools, 'browser_click', 'succeeded', evidence={}, arguments=clicked)
             self.step(tools, 'weather', 'failed', code='transient_failure')
         self.engine.before = work
         self.engine.answers = ['추천 상품 네 가지와 링크입니다.']
