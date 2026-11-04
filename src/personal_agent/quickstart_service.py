@@ -2117,20 +2117,35 @@ class AgentService:
             return
         try:since=float(row.get('reason'))
         except (TypeError,ValueError):since=now-om.DREAM_WINDOW_SECONDS
-        works=upkeep.dream_works(since,now)
+        candidates=upkeep.dream_works(since-om.DREAM_EARLIER_DAYS*86400,now,limit=None)
+        works=[work for work in candidates if work['created']>since][-om.DREAM_TURNS:]
+        tonight={work['id'] for work in works}
         turns=[]
+        earlier=[]
         source_works={}
-        for work in works:
+        for work in candidates:
+            current=work['id'] in tonight
+            if work['created']>since and not current:continue
+            outcome=om.turn_outcome(work['status'],work['linked_kinds'])
+            if not current and outcome not in om.MISS_OUTCOMES:continue
             key=work.get('request_key')
             if (work.get('provider') in (None,'builtin') or prep.preparation_of(key) is not None
                     or continuation_request(key) is not None or self.store.managed_owner_state(work['id'])):
                 continue
             owner=self.scrub_work_text(work['id'],work.get('message') or '')
             if not owner.strip():continue
+            answer=self.scrub_work_text(work['id'],work.get('response') or '')
+            when=self._owner_local_time(work.get('created'))
+            if not current:
+                correction=work['correction']
+                words=(self.scrub_work_text(correction['id'],correction['message'] or '') if correction else '')
+                earlier.append((owner,answer,when,outcome,words[:om.DREAM_CORRECTION_CHARS]))
+                continue
             ref=f"t{len(turns)+1}"
             source_works[ref]=work['id']
-            turns.append((ref,owner,self.scrub_work_text(work['id'],work.get('response') or ''),
-                          self._owner_local_time(work.get('created'))))
+            turns.append((ref,owner,answer,when,outcome))
+        # #496: only the newest eligible misses, oldest first; never earlier daily summaries or successful turns.
+        earlier=[(f'm{index}',*miss) for index,miss in enumerate(earlier[-om.DREAM_EARLIER_MISSES:],1)]
         period={'works':len(works),'turns':len(turns)}
         if not turns:
             upkeep.finish(work_id,om.STATE_GONE,0,om.EVENT_UNAVAILABLE,{'reason':'nothing-to-review','period':period},now,kind=kind)
@@ -2138,7 +2153,7 @@ class AgentService:
         from .current_context import owner_today
         deadline=upkeep.clock()+om.DREAM_RUN_SECONDS
         state,calls,status,detail=upkeep.run_dream(
-            job,row,self._owner_model_judgments(work_id),turns=turns,source_works=source_works,
+            job,row,self._owner_model_judgments(work_id),turns=turns,earlier=earlier,source_works=source_works,
             profile=lambda:self.owner_profile_snapshot(None,notes=False,ids=True),clock=self._owner_model_clock(),
             diary_date=owner_today(self.store,works[-1]['created']),ends_after=now,
             cancelled=lambda:self.stop.is_set() or upkeep.clock()>deadline,
