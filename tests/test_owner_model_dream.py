@@ -261,8 +261,8 @@ class Run(Dream):
                          "#420: the dream asks for the engine's strongest model")
         self.assertEqual(schema, om.DREAM_SCHEMA)
         turns = context.facts['turns']
-        self.assertRegex(turns, r'^\[t1\] \d{4}-\d{2}-\d{2} \d{2}:\d{2} owner: 내년 3월까지')
-        self.assertRegex(turns, r'\[t3\] [0-9: -]+ owner: 이번에도 표로')
+        self.assertRegex(turns, r'^\[t1\] \d{4}-\d{2}-\d{2} \d{2}:\d{2} \(done\) owner: 내년 3월까지')
+        self.assertRegex(turns, r'\[t3\] [0-9: -]+ \(done\) owner: 이번에도 표로')
         self.assertEqual(context.work_id, newest)
         [plan] = self.store.memories(MEMORY_OWNER, key_prefix='profile.')
         self.assertEqual((plan['memory_key'], plan['valid_until']), ('profile.plan.car_installment', '2027-03-31'))
@@ -380,7 +380,7 @@ class TwoPasses(Dream):
         [(gather_context, question, schema)] = self.gathered
         self.assertEqual((question, schema), (om.DREAM_GATHER_QUESTION, om.DREAM_GATHER_SCHEMA))
         self.assertEqual((gather_context.strongest, gather_context.timeout), (True, om.DREAM_TIMEOUT_SECONDS))
-        self.assertRegex(gather_context.facts['turns'], r'\[t1\] [0-9: -]+ owner: 주말엔 보통 자가용으로')
+        self.assertRegex(gather_context.facts['turns'], r'\[t1\] [0-9: -]+ \(done\) owner: 주말엔 보통 자가용으로')
         saved = {row['memory_key'] for row in self.store.memories(MEMORY_OWNER, key_prefix='profile.')}
         self.assertEqual(saved, {'profile.routine.car', 'profile.preference.cooking'})
         [(look_context, _question, _schema)] = self.asked
@@ -455,6 +455,178 @@ class Basis(Dream):
             self.store.save_memory('profile.a.b', 'x', MEMORY_OWNER, basis='rumour')
         with self.assertRaises(ValueError):
             self.store.save_memory('profile.a.b', 'x', MEMORY_OWNER, evidence='e' * 301)
+
+
+class Misses(Dream):
+    """#496: observed misses can ground lessons across nights, never new facts from old material."""
+
+    def look_back(self, data, turns, earlier=()):
+        anchor = self.settled('anchor')
+        self.dreams = [data]
+        return self.upkeep.run_dream(self.store.job(anchor), {}, self.service._owner_model_judgments(anchor),
+                                     turns=turns, earlier=earlier, profile='', clock='2026-11-05 03:00',
+                                     diary_date='2026-11-04', ends_after=time.time())[3]
+
+    def test_outcomes_are_typed_and_correction_wins(self):
+        from personal_agent.conversation_handoff import FOLLOWUP_CORRECTION, FOLLOWUP_RETRY
+        cases = [('failed', {FOLLOWUP_CORRECTION, FOLLOWUP_RETRY}, 'corrected'),
+                 ('partial', {FOLLOWUP_CORRECTION}, 'corrected'), ('failed', {FOLLOWUP_RETRY}, 'retried'),
+                 ('failed', set(), 'failed'), ('partial', set(), 'partial'), ('succeeded', set(), 'done'),
+                 ('unknown', {'reference', 'steer'}, 'done')]
+        for status, kinds, expected in cases:
+            with self.subTest(status=status, kinds=kinds):
+                self.assertEqual(om.turn_outcome(status, kinds), expected)
+                self.assertIn(expected, om.TURN_OUTCOMES)
+
+    def test_a_tonight_miss_and_an_earlier_miss_keep_narrow_notes(self):
+        detail = self.look_back(dream(notes='- 비교에는 기준을 먼저 확인', change='비교 기준', notes_sources=['t1', 'm1']),
+                                [('t1', 'tonight words', 'answer', '2026-11-04 10:00', 'corrected')],
+                                [('m1', 'earlier words', 'earlier answer', '2026-11-03 10:00', 'retried', 'correction words')])
+        self.assertIsNotNone(om.WorkingNotes(self.store).current())
+        context = self.asked[0][0]
+        self.assertIn('[t1] 2026-11-04 10:00 (corrected) owner:', context.facts['turns'])
+        self.assertIn('[m1] 2026-11-03 10:00 (retried) owner:', context.facts['earlier_misses'])
+        self.assertIn('correction: correction words', context.facts['earlier_misses'])
+        self.assertNotIn('earlier_misses', self.gathered[0][0].facts)
+        self.assertEqual(detail['notes_evidence'], {'tonight_misses': 1, 'earlier_misses': 1, 'rule': 'misses'})
+        self.assertEqual(detail['inputs']['earlier_misses'], 1)
+        for text in ('earlier words', 'earlier answer', 'correction words'):
+            self.assertNotIn(text, json.dumps(detail))
+
+    def test_two_earlier_misses_alone_are_not_a_new_lesson(self):
+        detail = self.look_back(dream(notes='- 비교에는 기준을 먼저 확인', change='비교 기준', notes_sources=['m1', 'm2']),
+                                [('t1', 'today', 'answer', '2026-11-04 10:00', 'failed')],
+                                [('m1', 'old', 'answer', '2026-11-02 10:00', 'failed', ''),
+                                 ('m2', 'old too', 'answer', '2026-11-03 10:00', 'corrected', '')])
+        self.assertIsNone(om.WorkingNotes(self.store).current())
+        self.assertIsNone(detail['notes_evidence']['rule'])
+
+    def test_misses_on_one_owner_day_are_one_occasion(self):
+        detail = self.look_back(dream(notes='- 비교에는 기준을 먼저 확인', change='비교 기준', notes_sources=['t1', 'm1']),
+                                [('t1', 'today', 'answer', '2026-11-04 20:00', 'failed')],
+                                [('m1', 'old', 'answer', '2026-11-04 10:00', 'failed', '')])
+        self.assertIsNone(om.WorkingNotes(self.store).current())
+        self.assertIn({'note': 'notes', 'reason': 'one-day'}, detail['dropped'])
+
+    def test_a_done_turn_does_not_make_two_misses(self):
+        self.look_back(dream(notes='- 비교에는 기준을 먼저 확인', change='비교 기준', notes_sources=['t1', 'm1']),
+                       [('t1', 'today', 'answer', '2026-11-04 10:00', 'done')],
+                       [('m1', 'old', 'answer', '2026-11-03 10:00', 'failed', '')])
+        self.assertIsNone(om.WorkingNotes(self.store).current())
+
+    def test_the_existing_two_tonight_days_rule_still_holds_with_earlier_refs(self):
+        detail = self.look_back(dream(notes='- 비교에는 기준을 먼저 확인', change='비교 기준', notes_sources=['t1', 't2', 'm1']),
+                                [('t1', 'yesterday', 'answer', '2026-11-03 10:00', 'done'),
+                                 ('t2', 'today', 'answer', '2026-11-04 10:00', 'done')],
+                                [('m1', 'old', 'answer', '2026-11-02 10:00', 'failed', '')])
+        self.assertIsNotNone(om.WorkingNotes(self.store).current())
+        self.assertEqual(detail['notes_evidence']['rule'], 'occasions')
+
+    def test_earlier_refs_cannot_ground_facts_endings_or_suggestions(self):
+        old = self.profile('profile.place.old_office', 'old office')
+        line = old['id'][:8]
+        data = dream([fact('profile.place.home', 'earlier home', 'm1', category='place'),
+                      fact('profile.place.office', 'new office', 't1', line, category='place',
+                           invalidates=[(line, 'moved', om.END_REPLACED, 'm1')])])
+        data['suggestions'] = [{'sources': ['t1', 'm1']}]
+        detail = self.look_back(data, [('t1', 'my new office', 'answer', '2026-11-04 10:00', 'failed')],
+                                [('m1', 'earlier home', 'answer', '2026-11-03 10:00', 'failed', '')])
+        self.assertEqual(self.store.memories(MEMORY_OWNER, key_prefix='profile.place.home'), [])
+        self.assertIn('end-ungrounded', [item['reason'] for item in detail['dropped']])
+        self.assertEqual(detail['suggestions']['dropped'], [{'suggestion': 0, 'reason': 'sources'}])
+
+    def test_legacy_turns_are_unknown_and_do_not_add_an_earlier_block(self):
+        self.look_back(dream(), [('t1', 'owner', 'answer'), ('t2', 'owner', 'answer', '2026-11-04 10:00')])
+        context = self.asked[0][0]
+        self.assertEqual(context.facts['turns'].count('(unknown)'), 2)
+        self.assertNotIn('earlier_misses', context.facts)
+
+    def test_earlier_block_keeps_whole_newest_misses_under_its_own_cap(self):
+        earlier = [(f'm{i}', 'a' * 600, 'b' * 300, f'2026-11-03 10:{i:02}', 'failed', 'c' * 300)
+                   for i in range(1, 13)]
+        detail = self.look_back(dream(notes='- 비교에는 기준을 먼저 확인', change='비교 기준', notes_sources=['t1', 'm1']),
+                                [('t1', 'today', 'answer', '2026-11-04 10:00', 'failed')], earlier)
+        block = self.asked[0][0].facts['earlier_misses']
+        self.assertLessEqual(len(block), om.DREAM_EARLIER_CHARS)
+        self.assertNotIn('[m1]', block)
+        self.assertIn('[m12]', block)
+        self.assertIsNone(om.WorkingNotes(self.store).current(), 'unshown refs cannot support notes')
+        self.assertIn({'note': 'notes', 'reason': 'sources'}, detail['dropped'])
+
+    def test_service_filters_batches_and_scrubs_earlier_misses_per_work(self):
+        from personal_agent import preparations as prep
+        from personal_agent.context_observations import continuation_key
+        now = time.time() + 1
+        since = now - HOUR
+        made = []
+        for text, status, provider in [('old miss', 'failed', 'subscription'), ('old done', 'succeeded', 'subscription'),
+                                       ('old builtin', 'failed', 'builtin'), ('old none', 'failed', None),
+                                       ('old preparation', 'failed', 'subscription'), ('old location', 'failed', 'subscription'),
+                                       ('old managed', 'failed', 'subscription'), ('old forgotten', 'failed', 'subscription'),
+                                       ('old corrected', 'succeeded', 'subscription'), ('too old', 'failed', 'subscription')]:
+            made.append(self.settled(text, answer=text + ' answer', status=status, provider=provider))
+        correction = self.settled('correcting words')
+        anchor = self.settled('tonight failed', status='failed')
+        with self.store.db() as db:
+            db.execute('UPDATE jobs SET message=? WHERE id=?', ('correcting words ' + 'x' * 400, correction))
+            for index, work in enumerate(made):
+                db.execute('UPDATE jobs SET created=? WHERE id=?', (since - 86400 - 100 + index, work))
+            db.execute('UPDATE jobs SET created=? WHERE id=?', (since - 8 * 86400, made[-1]))
+            db.execute('UPDATE jobs SET request_key=? WHERE id=?', (prep.request_key('fixture', now), made[4]))
+            db.execute('UPDATE jobs SET request_key=? WHERE id=?', (continuation_key('fixture'), made[5]))
+            db.execute("UPDATE jobs SET relation_kind='correction',related_job_id=? WHERE id=?", (made[8], correction))
+        # The batch consumes the same recorded action and forgotten-turn markers as the normal dream path.
+        with self.store.db() as db:
+            db.execute("INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,'forget_record','succeeded',?,?)",
+                       (made[6], json.dumps({'evidence': {'action': 'forget'}}), now))
+            db.execute("INSERT INTO messages(job_id,role,content,created) VALUES (?,'user','old forgotten',?)", (made[7], now))
+            message = db.execute('SELECT id FROM messages WHERE job_id=?', (made[7],)).fetchone()[0]
+            db.execute('INSERT INTO forgotten_messages(message_id,receipt_id,created) VALUES (?,?,?)',
+                       (message, 'fixture-forget', now))
+        scrub = self.service.scrub_work_text
+        self.service.scrub_work_text = lambda work, text: scrub(work, text).replace(
+            'old miss', 'scrubbed miss' if work == made[0] else 'wrong scope').replace(
+            'correcting words', 'scrubbed correction' if work == correction else 'wrong scope')
+        self.dreams = [dream()]
+        self.service._owner_model_dream({'job_id': anchor, 'reason': str(since)}, self.store.job(anchor), now)
+        context = self.asked[0][0]
+        block = context.facts['earlier_misses']
+        self.assertIn('[m1]', block)
+        self.assertIn('[m2]', block)
+        self.assertIn('(corrected)', block)
+        self.assertIn('scrubbed miss', block)
+        self.assertIn('correction: scrubbed correction', block)
+        self.assertNotIn('wrong scope', block)
+        self.assertNotIn('x' * (om.DREAM_CORRECTION_CHARS + 1), block)
+        for text in ('old done', 'old builtin', 'old none', 'old preparation', 'old location', 'old managed',
+                     'old forgotten', 'too old'):
+            self.assertNotIn(text, block)
+        self.assertIn('(failed) owner: tonight failed', context.facts['turns'])
+        detail = self.evidence(anchor)[0][1]
+        self.assertEqual(detail['inputs']['earlier_misses'], 2)
+        for text in ('old corrected', 'scrubbed miss', 'scrubbed correction'):
+            self.assertNotIn(text, json.dumps(detail))
+
+    def test_service_keeps_the_newest_twelve_eligible_misses_oldest_first(self):
+        now = time.time() + 1
+        since = now - HOUR
+        for index in range(15):
+            work = self.settled(f'miss-{index:02}', status='failed')
+            with self.store.db() as db:
+                db.execute('UPDATE jobs SET created=? WHERE id=?', (since - 86400 + index, work))
+        # Ineligible newer rows must not take an eligible miss's place in the twelve.
+        work = self.settled('newer builtin', status='failed', provider='builtin')
+        with self.store.db() as db:
+            db.execute('UPDATE jobs SET created=? WHERE id=?', (since - 60, work))
+        anchor = self.settled('tonight')
+        self.dreams = [dream()]
+        self.service._owner_model_dream({'job_id': anchor, 'reason': str(since)}, self.store.job(anchor), now)
+        block = self.asked[0][0].facts['earlier_misses']
+        self.assertEqual(len(block.splitlines()), om.DREAM_EARLIER_MISSES)
+        self.assertIn('[m1]', block.splitlines()[0])
+        self.assertIn('owner: miss-03', block.splitlines()[0])
+        self.assertIn('owner: miss-14', block.splitlines()[-1])
+        self.assertNotIn('newer builtin', block)
 
 
 class NotesDays(Dream):
