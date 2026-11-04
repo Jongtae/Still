@@ -899,7 +899,8 @@ class BrowserSession:
         #: #636 (Codex P1 on #637): the provider window, derived from observed main-frame navigation only:
         #: set while the page is on a host any recorded provider chain names, or was reached from one by
         #: redirect, until the main frame is back on the site it left from (or the AI opens another page).
-        #: ``{'origin': page outside it, 'host': where it began}``; ``_outside`` is the last page outside it.
+        #: ``{'origin': where the flow started, 'hosts': hosts visited inside it, 'current': this page's host}``
+        #: (``_observe``); ``_outside`` is the last page outside it.
         self._window = None
         self._outside = None
         self._auth_seen = 0   # the driver's authorization-request count already looked at
@@ -1073,7 +1074,7 @@ class BrowserSession:
                                       else 'navigation_interrupted')
         resign = self._resign
         # #636: the provider window, from where the main frame is and how it got there (never the hint).
-        inside = self._observe(snapshot, registrable_domain(urlsplit(requested_url).hostname or '') if requested_url else None)
+        inside = self._observe(snapshot, requested_url)
         if snapshot['login_required']:
             # Generic (`login_form_present`): the profile holds no session for
             # this page.  #1269: the mediated page comes with the login request
@@ -1084,7 +1085,7 @@ class BrowserSession:
             if inside:
                 # #636: the provider asks for a sign-in (a password field): the owner signs in (C14);
                 # nothing is typed there.
-                return {**page, 'next_step': msg('browser.provider_asks', provider=self._window['host']) + ' '
+                return {**page, 'next_step': msg('browser.provider_asks', provider=self._window['current']) + ' '
                         + self._hand_off(snapshot)}
             if resign and registrable_domain(landed_host(snapshot['_page'])) == resign['site'] and self._through_provider():
                 # #636: the sign-in went through the provider and the site still asks: the owner signs in.
@@ -1221,34 +1222,53 @@ class BrowserSession:
         self._auth_seen = count
         return tuple(hosts[-min(fresh, len(hosts)):]) if fresh > 0 and hosts else ()
 
-    def _observe(self, snapshot, origin_site=None):
-        """#636 (Codex P1 on #637): whether the main frame in ``snapshot`` is inside a provider window.
+    def _observe(self, snapshot, requested_url=None):
+        """#636 (Codex on #637): whether the main frame in ``snapshot`` is inside a provider window.
 
-        Inside when the page is on a host a recorded provider chain names, or when it was reached
-        from one by redirect (the browser sent an authorization request to such a host on the way)
-        and is not back on the site it left from: a broker's upstream, or a chooser on another host
-        of the provider's domain.  The window ends when the main frame is on that site again, or the
-        AI opens another page (``open`` passes the requested site).  A page of a provider's
-        registrable domain the AI opened directly, outside a window, is an ordinary page.  Derived
-        from navigation only: no hint, sign-in form or re-sign-in is needed.
+        One state machine, from observed main-frame navigation only (no hint, sign-in form or
+        re-sign-in is needed).  The window is ``{origin, hosts, current}``: ``origin`` is where the
+        flow started (the page the AI was on, or what an explicit ``browser_open`` requested before
+        any redirect), ``hosts`` every host the main frame visited inside the window.
+
+        * Opens when the page is on a protected host (one a recorded provider chain names), or was
+          reached by a redirect through one (an authorization request to it was seen on the way)
+          and is not back on the site it started from.
+        * Stays open on any protected host or any host in ``hosts``, including when the AI reopens
+          one (``requested_url``), and on any other host the main frame reached from inside it.
+        * Clears when the main frame lands on ``origin``'s site, or when the AI opens a page whose
+          requested and landed hosts are neither protected nor in ``hosts``.
+
+        ``requested_url`` is the address an explicit ``browser_open`` asked for.  A page of a
+        provider's registrable domain the AI opened directly, outside a window, is an ordinary page.
         """
         host = ascii_host(landed_host(snapshot.get('_page')) or '')
-        passed = any(ascii_host(hop) in self._protected_hosts() for hop in self._new_authorizations())
+        protected = self._protected_hosts()
+        passed = any(ascii_host(hop) in protected for hop in self._new_authorizations())
         if not host:
             return bool(self._window)
         domain = registrable_domain(host)
-        if origin_site is not None:
-            self._window = None   # an AI-opened page: a window never carries over an explicit open
-        if host in self._protected_hosts():
-            inside = True
-        elif self._window:
-            inside = domain != ((self._window.get('origin') or {}).get('site'))
+        window = self._window
+        asked = ascii_host(landed_host(requested_url) or '') if requested_url else None
+        if window and asked is not None:
+            known = protected | window['hosts']
+            if asked not in known and host not in known:
+                window = self._window = None   # the AI opened a page outside the window
+        if window:
+            origin_site = (window.get('origin') or {}).get('site')
+            inside = host in protected or host in window['hosts'] or not (origin_site and domain == origin_site)
         else:
-            left = origin_site if origin_site is not None else (self._outside or {}).get('site')
-            inside = passed and domain != left
+            if asked is not None:
+                origin = None if asked in protected else {
+                    'site': registrable_domain(asked), 'url': page_reference(requested_url),
+                    'window_url': login_window_url(requested_url)}
+            else:
+                origin = self._outside
+            inside = host in protected or (passed and domain != (origin or {}).get('site'))
+            if inside:
+                window = self._window = {'origin': origin, 'hosts': set()}
         if inside:
-            if not self._window:
-                self._window = {'origin': self._outside if origin_site is None else None, 'host': host}
+            window['hosts'].add(host)
+            window['current'] = host
             if self._resign:
                 self._resign['seen'] = True
         else:
@@ -1287,7 +1307,7 @@ class BrowserSession:
         could start - is refused before anything reaches the page (``ran: false``); the owner signs in."""
         if not self._observe(snapshot):
             return
-        text = msg('browser.provider_interaction_refused', provider=self._window['host']) + ' ' + self._hand_off(snapshot)
+        text = msg('browser.provider_interaction_refused', provider=self._window['current']) + ' ' + self._hand_off(snapshot)
         raise ToolError(text, PROVIDER_INTERACTION_CODE, ran=False)
 
     def _offer_login(self, url, explicit=False, *, window_url=None):

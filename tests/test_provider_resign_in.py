@@ -70,6 +70,9 @@ PAGES = {
     # Another host of the provider's registrable domain that is no sign-in host (a search page).
     'search.provider.test/': '''<html><head><title>검색</title></head><body><h1>검색</h1>
       <label>검색어 <input type="text" name="q"></label><button type="button">검색하기</button></body></html>''',
+    # An unrelated public site.
+    'public.test/': '''<html><head><title>뉴스</title></head><body><h1>뉴스</h1>
+      <button type="button">더 보기</button></body></html>''',
     # A public page of the site (no sign-in form, no session needed).
     f'{SITE}/': '<html><head><title>홈</title></head><body><h1>공개 페이지</h1></body></html>',
     # A provider page that asks for something without a password: an account choice / consent.
@@ -114,6 +117,9 @@ class TwoHostDriver(FakeDriver):
     def goto(self, url, timeout):
         self.log.append(('goto', url, timeout))
         browser_worker.Worker.note_authorization(self.worker, url)
+        if self._path(url) == f'{SITE}/signin-redirect':
+            url = AUTHORIZE   # the site's own sign-in address redirects to the provider at once
+            browser_worker.Worker.note_authorization(self.worker, url)
         if self._path(url) == f'{PROVIDER}/authorize':
             url = PROVIDER_ANSWERS[self.answer]   # the provider's redirect: navigation only
         if self._path(url) == f'{UPSTREAM}/authorize':
@@ -384,6 +390,43 @@ class ResignInSessionTests(unittest.TestCase):
         self.assertEqual(home['url'], f'https://{SITE}/home')
         sess.run('browser_click', {'target': '설정', 'effect': 'navigate'})
         self.assertEqual(len([entry for entry in driver.log if entry[0] == 'click']), 2, 'the site is free again')
+
+    # -- Codex P1/P2 on #637: one window state machine (origin, hosts visited inside) --
+    def test_reopening_the_chooser_keeps_the_protection(self):
+        sess, driver, _approvals = resign_session('federated', providers={SITE: PROVIDER})
+        sess.run('browser_open', {'url': f'https://{SITE}/start', 'effect': 'navigate'})
+        sess.run('browser_click', {'target': '다른 계정으로 계속', 'effect': 'navigate'})
+        reopened = sess.run('browser_open', {'url': f'https://{UPSTREAM}/choose', 'effect': 'navigate'})
+        self.assertEqual(urlsplit(reopened['url']).hostname, UPSTREAM)
+        for action, args in (('browser_click', {'target': '이 계정으로 계속', 'effect': 'navigate'}),):
+            with self.assertRaises(ToolError) as caught:
+                sess.run(action, args)
+            self.assertEqual(caught.exception.code, bs.PROVIDER_INTERACTION_CODE)
+        self.assertEqual(len([entry for entry in driver.log if entry[0] == 'click']), 1, 'only the site link was pressed')
+
+    def test_an_explicit_open_that_redirects_to_the_provider_keeps_the_site_as_its_origin(self):
+        sess, driver, approvals = resign_session('chooser')
+        chooser = sess.run('browser_open', {'url': f'https://{SITE}/signin-redirect', 'effect': 'navigate'})
+        self.assertEqual(urlsplit(chooser['url']).hostname, PROVIDER)
+        with self.assertRaises(ToolError):
+            sess.run('browser_click', {'target': '계속', 'effect': 'navigate'})
+        # The hand-off names the site the open asked for, not the provider's page.
+        self.assertEqual(approvals.offers[-1], (f'https://{SITE}/signin-redirect', True))
+        # The provider later returns the main frame to the site (its own redirect): the window is over.
+        driver.url = f'https://{SITE}/home'
+        sess.run('browser_read', {})
+        sess.run('browser_click', {'target': '설정', 'effect': 'navigate'})
+        self.assertEqual([entry[0] for entry in driver.log if entry[0] == 'click'], ['click'], "the site's controls work")
+
+    def test_an_explicit_open_of_an_unrelated_site_ends_the_window(self):
+        sess, driver, _approvals = resign_session('chooser')
+        open_login(sess)
+        sess.run('browser_click', {'target': '다른 계정으로 로그인', 'effect': 'navigate'})
+        with self.assertRaises(ToolError):
+            sess.run('browser_click', {'target': '계속', 'effect': 'navigate'})
+        sess.run('browser_open', {'url': 'https://public.test/', 'effect': 'navigate'})
+        sess.run('browser_click', {'target': '더 보기', 'effect': 'read'})
+        self.assertEqual(len([entry for entry in driver.log if entry[0] == 'click']), 2)
 
     def test_an_unrecorded_provider_gets_no_hint_and_no_special_path(self):
         for approvals_providers in ({}, None):
