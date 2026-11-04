@@ -63,6 +63,8 @@ SANDBOX_FAILURE_MARKERS = ('sandboxing failed', 'no usable sandbox', 'sandbox_ho
 #: How long a paused form submission waits for the guard's own record of it (#34): the guard's message
 #: is sent at the submit event, before the navigation, but may reach the worker after the paused request.
 VETTED_WAIT_SECONDS = 0.5
+#: How long a step waits for a page it opened to ask for its first navigation (#34).
+POPUP_DECISION_SECONDS = 3.0
 #: The shared guard keeps an ordinary form's pass this long (``ORDINARY_MS`` in ``PRELUDE``).
 ORDINARY_VETTED_SECONDS = 2.0
 #: Chromium-only, in the isolated world after the shared guard: every submit the guard lets through
@@ -323,7 +325,9 @@ class Worker(shared.Worker):
         self.context = self.browser.new_context(
             accept_downloads=False, service_workers='block', permissions=[],
             viewport={'width': int(shared.MOBILE_SIZE[0]), 'height': int(shared.MOBILE_SIZE[1])},
-            user_agent=user_agent_for('mobile', self.version), is_mobile=True, has_touch=True,
+            # #34: WKWebView parity: a phone-sized window lays pages out at its own width, so no mobile
+            # viewport semantics (a page without a viewport tag would get a 980px layout instead).
+            user_agent=user_agent_for('mobile', self.version), is_mobile=False, has_touch=True,
             device_scale_factor=1)
         self.context.on('page', self.page_created)
         self.root_cdp = self.browser.new_browser_cdp_session()
@@ -376,6 +380,13 @@ class Worker(shared.Worker):
             session_id = event['sessionId']
         target = _Target(self, parent, session_id, event['targetInfo'])
         self.sessions[target.session_id] = self.targets[target.ident] = target
+        # #34: a page the step opened (window.open, a target=_blank link) is created asynchronously in
+        # Chromium; the step waits for its first navigation decision as WebKit's synchronous popup delegate
+        # does, bounded so a popup that never navigates cannot hold the step.
+        if target.kind == 'page' and self.main_target is not None and not self.owner_visible:
+            target.awaiting_first = True
+            self.deciding += 1
+            self.AppHelper.callLater(POPUP_DECISION_SECONDS, self.popup_decided, target)
         target.post('Runtime.enable')
         target.post('Page.enable')
         target.post('Network.enable')
@@ -409,9 +420,16 @@ class Worker(shared.Worker):
                 self.delegate_failed('cdp_event', exc, False)
                 self.target_fault(target)
 
+    def popup_decided(self, target):
+        """The step no longer waits for this popup's first navigation (#34); idempotent."""
+        if getattr(target, 'awaiting_first', False):
+            target.awaiting_first = False
+            self.deciding -= 1
+
     def detached(self, event):
         target = self.sessions.pop(event.get('sessionId'), None)
         if target is not None:
+            self.popup_decided(target)
             self.targets.pop(target.ident, None)
             self.loading = {key for key in self.loading if key[0] != target.ident}
             self.frame_origins = {key: value for key, value in self.frame_origins.items() if key[0] != target.ident}
@@ -633,6 +651,7 @@ class Worker(shared.Worker):
             if answered:
                 return
             answered.append(True)
+            self.AppHelper.callAfter(self.popup_decided, target)
             if allowed and counted and self.reading:
                 self.read_navigations += 1
                 allowed = False
@@ -747,7 +766,7 @@ class Worker(shared.Worker):
         target.post('Emulation.setTouchEmulationEnabled', {'enabled': mobile, 'maxTouchPoints': 1})
         target.post('Emulation.setDeviceMetricsOverride', {
             'width': round(width / self.zoom), 'height': round(height / self.zoom),
-            'deviceScaleFactor': 1, 'mobile': mobile, 'scale': self.zoom,
+            'deviceScaleFactor': 1, 'mobile': False, 'scale': self.zoom,
             'screenWidth': int(width), 'screenHeight': int(height)})
 
     def op_navigate(self, ident, command, timeout):

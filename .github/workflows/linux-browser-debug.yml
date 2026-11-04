@@ -48,6 +48,6 @@ jobs:
         run: |
           for t in $(PYTHONPATH=src .venv/bin/python -m pytest -q --collect-only tests/test_browser_webkit.py::WebKitIntegrationTests | grep '::' | sed 's/.*:://'); do
             echo "=== $t"
-            PYTHONPATH="$RUNNER_TEMP/site:src" timeout 150 xvfb-run -a .venv/bin/python -m pytest -q -s -x -p no:cacheprovider \
+            PYTHONPATH="$RUNNER_TEMP/site:src" timeout -s INT 120 xvfb-run -a .venv/bin/python -m pytest -q -s -x -p no:cacheprovider \
               "tests/test_browser_webkit.py::WebKitIntegrationTests::$t" 2>&1 | grep -vE '^\s*$' | grep -vE '^    [a-z#]|^>' | tail -150 || echo "!!! TIMEOUT/FAIL $t"
           done

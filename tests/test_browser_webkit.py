@@ -2571,10 +2571,18 @@ class WebKitIntegrationTests(unittest.TestCase):
                 worker.click(index, 10)
             self.assertEqual((caught.exception.code, caught.exception.cancelled_form['dom']), ('approval_required', 2))
             self.assertEqual(self.server.posts, [], 'no POST into the frame either')
-            # An ordinary form submitted the same way still goes.
+            # An ordinary form submitted the same way still goes.  #34: on Linux, Chromium runs no page script
+            # while the request is paused, so a submit the guard never saw is refused first (fail closed).
             worker.goto(self.origin + '/checkout-realm', 10)
             index = next(row['index'] for row in worker.snapshot()['elements'] if row['name'] == '다른 창 쿠폰')
-            worker.click(index, 10)
+            if LINUX:
+                with self.assertRaises(ToolError) as caught:
+                    worker.click(index, 10)
+                self.assertEqual(caught.exception.code, 'submit_refused')
+                self.assertEqual(self.server.posts, [], 'nothing was sent')
+                self.server.posts.append('/coupon')   # the rest of the test reads the macOS sequence
+            else:
+                worker.click(index, 10)
             self.assertEqual(self.server.posts, ['/coupon'])
             # The owner's approval of that form in that state releases the held submit.
             worker.goto(self.origin + '/checkout-realm', 10)
@@ -2667,6 +2675,10 @@ class WebKitIntegrationTests(unittest.TestCase):
             name = [field for field in frame['fields'] if field['kind'] == 'text']
             self.assertEqual(len(name), 1, frame['fields'])
             self.assertAlmostEqual(name[0]['x'] * frame['width'], 860 * zoom, delta=2)
+            if LINUX:
+                # #34: no QR reading on Linux (macOS Vision); the frame never names a link.
+                self.assertEqual(worker.frame()['links'], [])
+                return
             links = frame_until(lambda frame: frame['links'])['links']
             self.assertEqual([link['url'] for link in links], ['https://auth.example/qr?q=596'])
             # #602: the code's box in the frame holds the code's middle (CSS 98, 158 at this zoom), so a
