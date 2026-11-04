@@ -497,6 +497,12 @@ BROWSER_LOGIN_NO_SESSION_LINE=((msg('quickstart_service.login_first_visit')+'\n'
 #: #749: owner-private config row ``{registrable domain: last time}`` of the sites the owner signed in
 #: to through an Still login window (evidence of a sign-in when the window closed and saved, #765).
 BROWSER_OWNER_SIGNINS_KEY='browser_owner_signins'
+#: #636: owner-private config row ``{site: {provider, observed_at, observed_in}}``: the identity provider
+#: host the owner's own login window sent an OAuth 2.0 authorization request to (RFC 6749 §4.1.1) while
+#: the owner signed in to that site by hand.  Registrable domain and host only, never a query value.
+BROWSER_PROVIDERS_KEY='browser_signin_providers'
+#: #636: the owner's switch for re-signing in through that provider: ``{enabled, off_sites}`` (on by default).
+BROWSER_PROVIDER_SIGNIN_KEY='browser_provider_signin'
 BROWSER_LOGIN_SKIP_LABEL=msg('service.skip_if_this_is_not_the')
 #: #939: the prompt's third button: the same window, driven from the phone through a one-time link.
 BROWSER_LOGIN_PHONE_LABEL=msg('button.phone_sign_in')
@@ -8566,7 +8572,7 @@ class AgentService:
             failed=reason=='failed' and (self._settings_login or {}).get('state')=='opening'
             signed=self._signed_in_sites({**row,'window':window}) if saved else []
             started=time.time()
-            if signed:self._record_owner_signins(signed)
+            if signed:self._record_owner_signins(signed,providers=self.browser_profile.login_window_providers(window))
             # #488: Settings tells the owner what the close saved: the site(s) whose sign-in was just recorded.
             signins=self.store.config(BROWSER_OWNER_SIGNINS_KEY,{}) if signed else {}
             sites=sorted(site for site,record in (signins.items() if isinstance(signins,dict) else ())
@@ -8589,10 +8595,17 @@ class AgentService:
         if body.get('all') is True:
             result=self.browser_profile.delete_all()
             self.store.put(BROWSER_LEGACY_KEY,None)
+            self.store.put(BROWSER_PROVIDERS_KEY,{})   # #636: no sign-in left, no provider record either
             return result
         site=body.get('site')
         if not isinstance(site,str) or not site.strip():raise ValueError(msg('quickstart_service.specify_site_to_delete'))
-        return self.browser_profile.delete_site(site)
+        result=self.browser_profile.delete_site(site)
+        with self.lock:
+            records=self.store.config(BROWSER_PROVIDERS_KEY,{})
+            if isinstance(records,dict) and registrable_domain(site.strip()) in records:
+                records.pop(registrable_domain(site.strip()))
+                self.store.put(BROWSER_PROVIDERS_KEY,records)
+        return result
 
     def browser_step_requests(self):
         rows=self.store.config(BROWSER_REQUESTS_KEY,{})
@@ -8628,6 +8641,8 @@ class AgentService:
             def api_effect_current(self):return not service.work_stopped(job['id'])
             # #709: a login page during this Work asks the owner in-flow.
             def login_required(self,url,explicit=False,*,window_url=None):return service._request_browser_login(job,url,explicit,window_url=window_url)
+            # #636: the provider the owner's own login window recorded for this site, while Still holds its session.
+            def provider_sign_in(self,url):return service.browser_signin_provider(url)
             # #934: on a site received from the owner, a payment step is refused outright (no request, no approval).
             # #619: so is every guarded step of a scheduled run: no owner is present to approve it.
             def refuse(self,host):
@@ -9292,10 +9307,84 @@ class AgentService:
             return site
         return None
 
-    def _record_owner_signins(self, signed, *, db=None):
-        """Record each ``(host, before)`` of ``_signed_in_sites`` as a site the owner signed in to."""
+    def _record_owner_signins(self, signed, *, db=None, providers=()):
+        """Record each ``(host, before)`` of ``_signed_in_sites`` as a site the owner signed in to.
+
+        #636: ``providers`` are the hosts the same owner login window sent an OAuth 2.0
+        authorization request to (``BrowserProfile.login_window_providers``); each signed-in
+        site records the last one that is not the site itself as the provider the owner used
+        there.  A sign-in with none observed (the owner used another way this time) forgets
+        the site's earlier provider.  The AI's own browsing never reaches here.
+        """
         for host,before in signed or ():
             self._record_owner_signin(host,before,db=db)
+        self._record_signin_providers([host for host,_before in signed or ()],providers,db=db)
+
+    def _record_signin_providers(self, hosts, providers, *, db=None):
+        sites=[site for site in dict.fromkeys(registrable_domain(host) for host in hosts or () if host) if site]
+        if not sites:return
+        observed=[ascii_host(host) for host in providers or () if isinstance(host,str) and host]
+        with self.lock:
+            records=self.store.config(BROWSER_PROVIDERS_KEY,{},db=db)
+            records=records if isinstance(records,dict) else {}
+            now=time.time()
+            for site in sites:
+                used=[host for host in observed if registrable_domain(host)!=site]
+                if used:records[site]={'provider':used[-1],'observed_at':now,'observed_in':'owner_login_window'}
+                else:records.pop(site,None)
+            self.store.put(BROWSER_PROVIDERS_KEY,records,db=db)
+
+    def provider_signin_settings(self):
+        """#636: the owner's switch (on unless turned off), the sites it is off for, and each recorded
+        site's provider host (names only)."""
+        switch=self.store.config(BROWSER_PROVIDER_SIGNIN_KEY,{})
+        switch=switch if isinstance(switch,dict) else {}
+        records=self.store.config(BROWSER_PROVIDERS_KEY,{})
+        records=records if isinstance(records,dict) else {}
+        return {'enabled':switch.get('enabled') is not False,
+                'off_sites':sorted(str(site) for site in switch.get('off_sites') or () if isinstance(site,str)),
+                'sites':{site:str(row.get('provider')) for site,row in sorted(records.items())
+                         if isinstance(row,dict) and isinstance(row.get('provider'),str)}}
+
+    def set_provider_signin(self, value):
+        """#636: ``on``/``off`` for every site, or ``<site>|on``/``<site>|off`` for one."""
+        site,sep,state=str(value or '').rpartition('|')
+        if state not in ('on','off') or (sep and not site):raise ValueError(msg('settings_orchestrator.invalid_value'))
+        with self.lock:
+            switch=self.store.config(BROWSER_PROVIDER_SIGNIN_KEY,{})
+            switch=dict(switch) if isinstance(switch,dict) else {}
+            if not sep:
+                switch['enabled']=state=='on'
+            else:
+                off=set(switch.get('off_sites') or ())
+                site=registrable_domain(site)
+                if state=='off':off.add(site)
+                else:off.discard(site)
+                switch['off_sites']=sorted(off)
+            self.store.put(BROWSER_PROVIDER_SIGNIN_KEY,switch)
+        return switch
+
+    def browser_signin_provider(self, url):
+        """#636: ``{site, provider}`` when a Work may sign back in to ``url``'s site through the provider the
+        owner used there, else None.
+
+        Only a provider the owner's own login window recorded (``_record_signin_providers``), only
+        while the owner has not turned this off for every site or for this one, only for a site
+        this instance may sign in to (``login_refusal``), and only while the jar holds an unexpired
+        cookie of that provider.  Nothing is sent anywhere here.
+        """
+        try:
+            host=urlsplit(str(url or '')).hostname
+        except ValueError:
+            return None
+        site=registrable_domain(host) if host else None
+        if not site:return None
+        settings=self.provider_signin_settings()
+        provider=settings['sites'].get(site)
+        if not provider or not settings['enabled'] or site in settings['off_sites'] or self.login_refusal(host):return None
+        read=self.browser_profile.site_cookie_marks(provider)
+        if not read or not unexpired(read[0],read[1]):return None
+        return {'site':site,'provider':provider}
 
     def _login_cookie_marks(self, row):
         """``{'at': jar time, 'marks': [[keyed digest, expires], ...], 'ids': [[keyed identity, expires], ...]}``
@@ -9536,7 +9625,7 @@ class AgentService:
                             db.execute("UPDATE jobs SET status='unknown',error=?,owner_cause=? WHERE id=?",
                                        (UNKNOWN_EFFECT_RETRY_REFUSAL,UNKNOWN_EFFECT_RETRY_REFUSAL,work_id))
                     final=shown='resumed' if resumed else 'not_resumed'
-                    if resumed:self._record_owner_signins(signed,db=db)
+                    if resumed:self._record_owner_signins(signed,db=db,providers=self.browser_profile.login_window_providers(row.get('window')))
             elif intent=='skip':
                 final=shown='skipped'
             else:

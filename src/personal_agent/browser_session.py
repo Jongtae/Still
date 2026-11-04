@@ -82,7 +82,8 @@ from .agent_runtime import BROWSER_ACTIONS, ToolError, WorkBudget, lookup_norm, 
 from .bounded_execution import SECRET_PATTERN
 from .browser_jar import (JAR_NAME, SERVICE as JAR_SERVICE, CookieJar, JarError, KeychainKey, latest_token_expiry,
                           store_account)
-from .browser_worker import LAYOUTS, PAYMENT_TOKENS, SECRET_TOKENS, destination_refusal, qr_links, remote_fields
+from .browser_worker import (LAYOUTS, PAYMENT_TOKENS, SECRET_TOKENS, authorization_host, destination_refusal, qr_links,
+                             remote_fields)
 
 #: The model's declared effect class of one action.
 EFFECTS = ('read', 'navigate', 'mutate', 'payment')
@@ -149,6 +150,9 @@ KEY_DELETE_FAILED_TEXT = ('로그인 세션은 삭제했지만 macOS 키체인�
 BLOCKED_TEXT = ('이 컴퓨터나 내부 네트워크(루프백·사설·링크 로컬·.local) 주소는 브라우저로 열지 않습니다. '
                 '공개 웹 주소만 열 수 있습니다.')
 UNAVAILABLE_TEXT = '이 작업 경로에는 브라우저 기능이 연결되어 있지 않습니다.'
+#: #636: the stable code of a press or typing step Still refused on the pages of the provider a
+#: re-sign-in goes through: only a provider that returns to the site asking nothing completes it.
+PROVIDER_INTERACTION_CODE = 'provider_interaction_refused'
 #: #615: the worker's reason a navigation was refused, as the model reads it (OWASP SSRF: the scheme
 #: is checked first, then the resolved address; a check that could not finish is not a verdict).
 NAVIGATION_REFUSALS = {
@@ -888,6 +892,10 @@ class BrowserSession:
         # #934 (review P2-1): once this Work landed on a site whose sign-in was received from the
         # owner, the reason it may not approve anything; it then holds for the rest of the Work.
         self._refusal = None
+        #: #636: this Work's re-sign-in through the provider the owner used for a site (``_provider_hint``):
+        #: the site, the provider host, the login reference and window address, the driver's authorization
+        #: count when it began, and whether a provider page or request was seen since.  None otherwise.
+        self._resign = None
         self.judgments = judgments
 
     # -- plumbing --
@@ -1056,16 +1064,108 @@ class BrowserSession:
         if self._navigation_error:
             snapshot['load_state'] = ('navigation_timeout' if self._navigation_error == 'browser_timeout'
                                       else 'navigation_interrupted')
+        resign = self._resign
         if snapshot['login_required']:
             # Generic (`login_form_present`): the profile holds no session for
             # this page.  #1269: the mediated page comes with the login request
             # (guarded values are never in it), so the owner's AI can continue
             # with an account the owner is already signed in to where the page
             # offers one; it never types a password.
-            return {**public_view(snapshot), 'state': 'login_required',
-                    'needs_setup': True, 'requires': 'browser-login',
-                    'next_step': self._offer_login(snapshot['url'], window_url=snapshot['_window_url']) or LOGIN_REQUIRED_TEXT}
-        return {'state': 'page', **public_view(snapshot)}
+            page = {**public_view(snapshot), 'state': 'login_required', 'needs_setup': True, 'requires': 'browser-login'}
+            if resign and self._on_provider(snapshot['_page']):
+                # #636: the provider asks for a sign-in (a password field): the re-sign-in stops and
+                # the owner signs in (C14); nothing is typed there.
+                resign['seen'] = True
+                return {**page, 'next_step': msg('browser.provider_asks', provider=resign['provider']) + ' ' + self._hand_off()}
+            if resign and registrable_domain(landed_host(snapshot['_page'])) == resign['site'] and self._through_provider():
+                # #636: the sign-in went through the provider and the site still asks: the owner signs in.
+                return {**page, 'next_step': msg('browser.provider_not_returned', provider=resign['provider']) + ' '
+                        + self._hand_off()}
+            offered = self._offer_login(snapshot['url'], window_url=snapshot['_window_url'])
+            resign = self._provider_hint(snapshot)
+            if resign:
+                return {**page, 'next_step': msg('browser.provider_sign_in_hint', provider=resign['provider']),
+                        'provider_sign_in': {'site': resign['site'], 'provider': resign['provider'], 'state': 'available'}}
+            return {**page, 'next_step': offered or LOGIN_REQUIRED_TEXT}
+        page = {'state': 'page', **public_view(snapshot)}
+        if resign:
+            if self._on_provider(snapshot['_page']):
+                resign['seen'] = True
+            elif registrable_domain(landed_host(snapshot['_page'])) == resign['site'] and self._through_provider():
+                # #636: back on the site, no sign-in form, through the provider: the receipt the Work's
+                # Evidence and information-use audit show (``evidence_summary``).
+                page['provider_sign_in'] = {'site': resign['site'], 'provider': resign['provider'], 'state': 'signed_in'}
+                self._resign = None
+        return page
+
+    # -- #636: signing back in through the provider the owner already used -------------------
+    def _provider_hint(self, snapshot):
+        """Begin (or keep) this Work's re-sign-in for the sign-in page in ``snapshot``, or None.
+
+        ``approvals.provider_sign_in(url)`` (optional) answers ``{site, provider}`` when
+        the owner's own login window recorded that the owner signed in to the
+        site through that provider host, the owner has not turned this off, and
+        Still holds the provider's session.  No provider is named here.
+        """
+        lookup = getattr(self.approvals, 'provider_sign_in', None)
+        if not callable(lookup):
+            return None
+        try:
+            found = lookup(snapshot['_page'])
+        except Exception:
+            return None
+        if not isinstance(found, dict) or not found.get('provider') or not found.get('site'):
+            return None
+        provider, site = ascii_host(found['provider']), registrable_domain(found['site'])
+        if not provider or not site or registrable_domain(provider) == site \
+                or registrable_domain(landed_host(snapshot['_page'])) != site:
+            return None
+        current = self._resign if self._resign and self._resign['site'] == site else None
+        self._resign = {'site': site, 'provider': provider, 'reference': snapshot['url'],
+                        'window_url': snapshot['_window_url'],
+                        'mark': current['mark'] if current else self._authorization_mark(),
+                        'seen': bool(current and current['seen'])}
+        return self._resign
+
+    def _authorization_mark(self):
+        answer = _authorizations(self.driver) if self.driver is not None else None
+        return answer[0] if answer else None
+
+    def _on_provider(self, page):
+        """Whether ``page`` is on the re-sign-in's provider host or its registrable domain."""
+        host = landed_host(page)
+        provider = (self._resign or {}).get('provider')
+        return bool(host and provider) and (ascii_host(host) == provider
+                                            or registrable_domain(host) == registrable_domain(provider))
+
+    def _through_provider(self):
+        """Whether this re-sign-in reached the provider: one of its pages was seen, or the browser
+        sent an OAuth 2.0 authorization request to it since the re-sign-in began (hosts only)."""
+        resign = self._resign or {}
+        if resign.get('seen'):
+            return True
+        mark = resign.get('mark')
+        answer = _authorizations(self.driver) if self.driver is not None and mark is not None else None
+        if not answer or answer[0] <= mark:
+            return False
+        recent = answer[1][-min(answer[0] - mark, len(answer[1])):] if answer[1] else ()
+        target = registrable_domain(resign['provider'])
+        return any(registrable_domain(host) == target for host in recent)
+
+    def _hand_off(self):
+        """The re-sign-in stops; the owner signs in to the site (the in-flow login, asked however the Work ends)."""
+        resign = self._resign
+        return self._offer_login(resign['reference'], explicit=True, window_url=resign['window_url']) or LOGIN_REQUIRED_TEXT
+
+    def _refuse_on_provider(self, snapshot):
+        """#636: during a re-sign-in, a press or typing step on the provider's pages is refused before
+        anything reaches the page (``ran: false``), and the owner is asked to sign in instead."""
+        resign = self._resign
+        if not resign or not self._on_provider(snapshot.get('_page')):
+            return
+        resign['seen'] = True
+        text = msg('browser.provider_interaction_refused', provider=resign['provider']) + ' ' + self._hand_off()
+        raise ToolError(text, PROVIDER_INTERACTION_CODE, ran=False)
 
     def _offer_login(self, url, explicit=False, *, window_url=None):
         """Ask the owner to log in during this Work (#709), when the approvals surface can.
@@ -1403,6 +1503,7 @@ class BrowserSession:
         self._require_page()
         self._check()
         snapshot = self._snapshot()
+        self._refuse_on_provider(snapshot)   # #636: before the target is even resolved
         element = resolve_target(snapshot, args.get('target'))
         key = target_key(element)
         state = self._state_of(snapshot, element)
@@ -1467,6 +1568,7 @@ class BrowserSession:
             raise ValueError('입력 텍스트는 2000자 이하여야 합니다.')
         self._check()
         snapshot = self._snapshot()
+        self._refuse_on_provider(snapshot)   # #636: nothing is typed on the provider's pages
         element = resolve_target(snapshot, args.get('target'))
         binding = step_binding(self.work_id, 'browser_type', snapshot['_page'], target_key(element), text,
                                self._state_of(snapshot, element))
@@ -2220,6 +2322,15 @@ class WebKitWorkerDriver:
         count = self._request('state', ACTION_TIMEOUT_SECONDS).get('navigations')
         return count if isinstance(count, int) and not isinstance(count, bool) else None
 
+    def authorizations(self):
+        """#636: ``(count, hosts)`` of the navigations this worker allowed that carried an OAuth 2.0
+        authorization request: how many, and the hosts of the latest ones.  Never a query value."""
+        answer = self._request('state', ACTION_TIMEOUT_SECONDS)
+        count, hosts = answer.get('authorization_count'), answer.get('authorizations')
+        if not isinstance(count, int) or isinstance(count, bool) or not isinstance(hosts, list):
+            return None
+        return count, tuple(str(host) for host in hosts if isinstance(host, str))
+
     def hide(self):
         self._request('hide', ACTION_TIMEOUT_SECONDS)
         self._visible = False
@@ -2847,6 +2958,9 @@ class BrowserProfile:
                     # the save ran is counted with the cookies that save stored.
                     after, before = _navigations(driver), record.get('navigations')
                     record['navigated'] = after is not None and before is not None and after > before
+                    # #636: the hosts of the OAuth 2.0 authorization requests this window's navigations
+                    # carried while the owner signed in by hand (hosts only, never a query value).
+                    record['authorization_hosts'] = _authorization_hosts(driver)
                     try:
                         driver.close()
                     except Exception:
@@ -2896,6 +3010,14 @@ class BrowserProfile:
         False when that was not observed (a crashed worker, a driver that cannot count)."""
         record = self._login_windows.get(window) if window else None
         return bool(record and record.get('navigated'))
+
+    def login_window_providers(self, window):
+        """#636: the hosts the owner's own login ``window`` sent an OAuth 2.0 authorization request to,
+        in the order seen, once it closed; () when none was observed or the window is unknown."""
+        record = self._login_windows.get(window) if window else None
+        if record is None or not record['done'].is_set():
+            return ()
+        return tuple(record.get('authorization_hosts') or ())
 
     def login_window_outcome(self, window):
         """``(reason, saved)`` once ``window`` has closed, saved and released; None while it is open or unknown."""
@@ -2992,6 +3114,28 @@ def _navigations(driver):
     except Exception:
         return None
     return count if isinstance(count, int) and not isinstance(count, bool) else None
+
+
+def _authorization_hosts(driver):
+    """#636: the distinct hosts of the driver's OAuth 2.0 authorization requests, in order; () when it cannot say."""
+    if not _alive(driver):
+        return ()
+    hosts = _authorizations(driver)
+    return tuple(dict.fromkeys(ascii_host(host) for host in hosts[1] if host)) if hosts else ()
+
+
+def _authorizations(driver):
+    """#636: the driver's ``(count, hosts)`` of authorization requests, or None when it cannot say."""
+    read = getattr(driver, 'authorizations', None)
+    if not callable(read):
+        return None
+    try:
+        answer = read()
+    except Exception:
+        return None
+    if not (isinstance(answer, tuple) and len(answer) == 2 and isinstance(answer[0], int)):
+        return None
+    return answer[0], tuple(str(host) for host in answer[1] or ())
 
 
 def _alive(driver):

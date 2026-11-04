@@ -115,7 +115,8 @@ SETTINGS = {"current_context": ("enabled", "timezone"), "judgment_ai": ("mode", 
             # #1455: the owner's reservations (#659), seen and managed in the conversation first.
             "preparations": ("cancel", "accept", "pause", "resume", "edit", "run_now"),
             # #1572: close one exact login window that holds the browser while the owner will not sign in.
-            "browser": ("close_login", "use_mobile"),
+            # #636: signing back in through the provider the owner used (every site, or one site).
+            "browser": ("close_login", "use_mobile", "provider_sign_in"),
             # #1197: Works may use the owner's AI-side connections (claude.ai connectors), read-only.
             # #1297: which of the owner's MCP servers load, and the owner's trust record per connection.
             "ai_connections": ("enabled", "connect", "servers", "review", "money", "rung", "undo", "forget", "restore"),
@@ -128,6 +129,7 @@ SETTING_LABELS = {"enabled": msg('label.use'), "timezone": msg('label.time_zone'
                   "connect": msg('settings_orchestrator.connect_label'), "rung": msg('settings_orchestrator.rung_label'), "undo": msg('settings_orchestrator.undo_label'), "forget": msg('settings_orchestrator.forget_label'), "restore": msg('settings_orchestrator.restore_label'),
                   "cancel": msg('label.cancel'), "accept": msg('button.accept'), "disconnect": msg('settings_orchestrator.disconnect_label'), "close_login": msg('settings_orchestrator.close_login_label'),
                   "use_mobile": msg('settings_orchestrator.use_mobile_label'),
+                  "provider_sign_in": msg('settings_orchestrator.provider_sign_in_label'),
                   "connect_chat": msg('settings_orchestrator.connect_chat_label'),
                   **{operation: msg('settings_orchestrator.label_preparations_' + operation)
                      for operation in ('pause', 'resume', 'edit', 'run_now')}}
@@ -172,6 +174,7 @@ _SETTING_VALUE_IDS = {
     SETTING_LABELS['disconnect']: 'settings_orchestrator.setting_value_disconnect',
     SETTING_LABELS['close_login']: 'settings_orchestrator.setting_value_close_login',
     SETTING_LABELS['use_mobile']: 'settings_orchestrator.setting_value_use_mobile',
+    SETTING_LABELS['provider_sign_in']: 'settings_orchestrator.setting_value_provider_sign_in',
     SETTING_LABELS['connect_chat']: 'settings_orchestrator.setting_value_connect_chat',
     msg('settings_orchestrator.new_api_connection'): 'settings_orchestrator.setting_value_new_api',
 }
@@ -200,6 +203,7 @@ _CHANGE_LABELS = {
        for operation in ('pause', 'resume', 'edit', 'run_now')},
     ('browser', 'close_login'): msg('settings_orchestrator.label_browser_close_login'),
     ('browser', 'use_mobile'): msg('settings_orchestrator.label_browser_use_mobile'),
+    ('browser', 'provider_sign_in'): msg('settings_orchestrator.label_browser_provider_sign_in'),
     ('ai_connections', 'enabled'): msg('settings_orchestrator.label_ai_connections_enabled'),
     ('ai_connections', 'connect'): msg('settings_orchestrator.label_ai_connections_connect'),
     ('ai_connections', 'servers'): msg('settings_orchestrator.label_ai_connections_servers'),
@@ -625,7 +629,26 @@ class SettingsOrchestrator:
                                          self._options(tuple(windows), windows), format=msg('settings_orchestrator.close_login_format'),
                                          note=msg('settings_orchestrator.close_login_note')),
                 "use_mobile": self._row("use_mobile", "", ", ".join(sites) or msg('label.none'),
-                                        self._options(sites, {site: site for site in sites}))}
+                                        self._options(sites, {site: site for site in sites})),
+                "provider_sign_in": self._provider_sign_in()}
+
+    def _provider_sign_in(self):
+        """#636: the switch for signing back in through the provider the owner used, and each recorded site."""
+        current = self.service.provider_signin_settings()
+        state = "on" if current["enabled"] else "off"
+        off = set(current["off_sites"])
+        listed = [msg('settings_orchestrator.provider_sign_in_site', site=site, provider=provider,
+                      state=VALUE_LABELS["off" if site in off else "on"]) for site, provider in current["sites"].items()]
+        values = ["on", "off"]
+        labels = {}
+        for site in current["sites"]:
+            for choice in ("on", "off"):
+                values.append(f"{site}|{choice}")
+                labels[f"{site}|{choice}"] = msg('settings_orchestrator.provider_sign_in_site_option', site=site,
+                                                 state=VALUE_LABELS[choice])
+        return self._row("provider_sign_in", state, " · ".join([VALUE_LABELS[state], *listed]), self._options(values, labels),
+                         format=msg('settings_orchestrator.provider_sign_in_format'),
+                         note=msg('settings_orchestrator.provider_sign_in_note'))
 
     def _skills(self):
         """#961: the switch, and the installed skills for ``add`` / ``remove`` (names and pinned sources only)."""
@@ -961,6 +984,13 @@ class SettingsOrchestrator:
             return self.service.connection_disconnect_before(value)
         if (category, setting) == ("browser", "use_mobile"):
             return self.service.browser_profile.layout_for(value)
+        if (category, setting) == ("browser", "provider_sign_in"):
+            # #636: the switch the value names, as it is now (every site, or the one site).
+            current = self.service.provider_signin_settings()
+            site, sep, _state = value.rpartition("|")
+            if not sep:
+                return "on" if current["enabled"] else "off"
+            return f"{site}|{'off' if site in current['off_sites'] else 'on'}"
         if category == "browser":
             # #1572: bound to the login's state; the value already names the exact window.
             work_id = value.partition("|")[0]
@@ -1086,6 +1116,8 @@ class SettingsOrchestrator:
             summary = msg('settings_orchestrator.disconnect_summary', connection=self._describe(category, setting, after, row))
         elif (category, setting) == ("browser", "use_mobile"):
             summary = msg('settings_orchestrator.use_mobile_summary', site=after)
+        elif (category, setting) == ("browser", "provider_sign_in"):
+            summary = msg('settings_orchestrator.provider_sign_in_summary', choice=self._describe(category, setting, after, row))
         elif category == "browser":
             summary = (msg('settings_orchestrator.close_login_summary', window=self._describe(category, setting, after, row)))
         elif (category, setting) == ("preparations", "edit"):
@@ -1262,6 +1294,8 @@ class SettingsOrchestrator:
             self.__dict__.setdefault("_apply_text", {})[row["id"]] = (receipt or {}).get("message")
         elif (category, setting) == ("browser", "use_mobile"):
             self.service.browser_profile.set_layout(after, "mobile")
+        elif (category, setting) == ("browser", "provider_sign_in"):
+            self.service.set_provider_signin(after)
         elif category == "browser":
             # #1572: the prompt's own 건너뛰기 settlement for exactly this window; its text is the answer.
             self.__dict__.setdefault("_apply_text", {})[row["id"]] = self.service.close_login_window_by_owner(after)

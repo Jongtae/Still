@@ -390,6 +390,8 @@ def work_information_use(store, job_id, redact=None):
     attempts = []
     # #167 (#28 option A): labels of held values outbound calls carried, and the hosts the browser opened.
     matches, opened, cuts = [], [], {}
+    # #636: sites the AI signed back in to through the provider the owner used (site and provider host only).
+    resigned = []
     for event in store.task_events(job_id):
         tool, status, trace = event.get('tool'), event.get('status'), event.get('trace') or {}
         # #467: one terminal event per CLI attempt; reuse the numeric-only boundary.
@@ -444,6 +446,11 @@ def work_information_use(store, job_id, redact=None):
                 host = label(value, 120)
                 if host and host not in opened and len(opened) < MAX_ITEMS:
                     opened.append(host)
+        signed = evidence.get('provider_sign_in') if status == 'succeeded' and action.startswith('browser_') else None
+        if isinstance(signed, dict) and signed.get('state') == 'signed_in':
+            row = {'site': label(signed.get('site'), 80), 'provider': label(signed.get('provider'), 120)}
+            if row['site'] and row['provider'] and row not in resigned and len(resigned) < MAX_ITEMS:
+                resigned.append(row)
         if action in LOOKUP_ACTIONS and status == 'running':
             # The arguments a lookup started with, for a call that then failed.
             started[(tool, trace.get('call_id'))] = trace
@@ -496,6 +503,8 @@ def work_information_use(store, job_id, redact=None):
     # #167: places the signed-in browser opened (a URL carries data to its host), and held-value matches.
     sent_to['browser_destinations'] = opened
     sent_to['held_value_matches'] = matches
+    if resigned:
+        sent_to['browser_provider_sign_ins'] = resigned
     if cuts:
         sent_to['held_value_comparison_cut'] = [{'kind': kind, 'limit': cuts[kind]} for kind in COMPARISON_CUTS if kind in cuts]
     if connections:sent_to['connections']=list(connections.values())[-MAX_ITEMS:]
@@ -604,6 +613,8 @@ def render_korean(audit):
         lines.append('- 웹 검색: 실행하지 않음')
     if sent.get('browser_destinations'):
         lines.append(msg('information_use.browser_destinations', hosts=', '.join(sent['browser_destinations'])))
+    for row in sent.get('browser_provider_sign_ins') or ():
+        lines.append(msg('information_use.browser_provider_sign_in', site=row['site'], provider=row['provider']))
     matches = sent.get('held_value_matches') or ()
     if matches:
         lines.append(msg('information_use.held_values_that_went_out'))
