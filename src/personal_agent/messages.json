@@ -6708,10 +6708,16 @@
   "zh": "公共网络地址检查超时，已停止本次导航。尚未确认存在访问限制。"
  },
  "browser.unsupported_navigation": {
-  "ko": "이 동작이 http(s)가 아닌 앱 전용 주소(앱 실행 링크 등)로 이동하려 해 중단했습니다. 이 브라우저는 앱을 열 수 없습니다. 페이지의 웹 경로를 쓰고, 앱으로 넘어가는 로그인이라면 browser_sign_in으로 소유자에게 로그인을 맡기세요.",
-  "en": "This step tried to go to an app-only address (not http/https, such as an app launch link), so it was stopped. This browser cannot open apps. Use the page's web route; if it was a sign-in that hands off to an app, give the sign-in to the owner with browser_sign_in.",
-  "ja": "この操作が http(s) ではないアプリ専用アドレス（アプリ起動リンクなど）へ移動しようとしたため停止しました。このブラウザはアプリを開けません。ページのウェブ経路を使い、アプリに渡るログインなら browser_sign_in でオーナーにログインを任せてください。",
-  "zh": "此操作试图前往非 http(s) 的应用专用地址（如应用启动链接），已停止。此浏览器无法打开应用。请使用页面的网页路径；如果是转到应用的登录，请用 browser_sign_in 交给所有者登录。"
+  "ko": "http(s)가 아닌 앱 주소는 열 수 없습니다. 웹 주소를 사용하세요.",
+  "en": "An app address outside http/https cannot be opened. Use a web address.",
+  "ja": "http(s) 以外のアプリのアドレスは開けません。ウェブのアドレスを使ってください。",
+  "zh": "无法打开非 http(s) 的应用地址。请使用网页地址。"
+ },
+ "browser.app_link_not_followed": {
+  "ko": "페이지가 앱 링크를 열려고 했지만 Still은 따라가지 않았습니다. 현재 페이지를 반환합니다. 나중에 읽으면 사이트의 웹 대체 페이지가 표시될 수 있습니다.",
+  "en": "The page tried to open an app link; Still did not follow it. This is the current page. A later read may show the site’s web fallback.",
+  "ja": "ページがアプリのリンクを開こうとしましたが、Still は移動しませんでした。現在のページを返します。後で読むとサイトのウェブ代替ページが表示される場合があります。",
+  "zh": "页面尝试打开应用链接，Still 未跟随。返回当前页面。稍后读取可能会显示网站的网页备用页面。"
  },
  "button.reopen_sign_in": {
   "ko": "로그인 창 다시 열기",

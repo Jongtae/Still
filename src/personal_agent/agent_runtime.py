@@ -338,8 +338,9 @@ BROWSER_SIGN_IN_ROUTE_RULE=('A sign-in on the site is one route to the owner\'s 
 #: #572: pages load as the site's mobile version; a site that sends a phone away from the page asked for gets its desktop version.
 BROWSER_LAYOUT_NOTE=(' Pages load as the site\'s mobile version. When the page you reach is the site\'s mobile home page '
                      'instead of the address you asked for (landed on another host or the path is gone), open that address '
-                     'again with layout=desktop: Still then loads the site, its sign-in window included, as on a Mac, '
-                     'and keeps that for the site until you pass layout=mobile. Omit layout otherwise.')
+                     'again with layout=desktop: Still then uses desktop for later opens and sign-in windows in this Work '
+                     'and its resumed continuation. An app-only sign-in link may have a web sign-in in the desktop '
+                     'layout for this Work. The next request starts mobile again. Omit layout otherwise.')
 BROWSER_SIGN_IN_NOTE=(' Whenever a page you open or reach shows a sign-in form, Still asks the owner to sign in (on this Mac, '
                       'and from their phone where that is set up) and continues the request once they have. When the owner\'s own account is needed '
                       'and a page shows you are signed out or asks you to sign in, first open the site\'s sign-in page when it '

@@ -1282,13 +1282,13 @@ class BrowserSession:
         return page
 
     def _layout(self, host, asked):
-        """#572: the layout to load ``host`` in: the one asked for (kept for its site), else the site's kept one."""
+        """The requested layout, kept only for this Work and its sign-in/continuation."""
         keep = getattr(self._factory, 'set_layout', None)
         if asked and callable(keep):
             try:
                 keep(host, asked)
             except Exception:
-                LOG.warning('browser layout not kept for this site')
+                LOG.warning('browser layout not kept for this Work')
             return asked
         kept = getattr(self._factory, 'layout_for', None)
         try:
@@ -1450,6 +1450,8 @@ class BrowserSession:
 
     def _with_dialogs(self, page, answer):
         """#936: a page's own alert/confirm/prompt during the step, mediated like page text."""
+        if isinstance(answer, dict) and answer.get('app_link'):
+            page['note'] = msg('browser.app_link_not_followed')
         rows = answer.get('dialogs') if isinstance(answer, dict) else None
         if rows:
             excluded = self._excluded()
@@ -1716,11 +1718,8 @@ WORKER_START_SECONDS = 30
 WORKER_GRACE_SECONDS = 5
 WORKER_QUIT_SECONDS = 5
 LOGIN_OPEN_SECONDS = 45
-#: #572: the page layout a site loads in: ``mobile`` (the default since #1183) or ``desktop``, which the AI asks
-#: for when a site sends its mobile user agent away from the page asked for.  Kept per registrable domain in
-#: the profile directory, so a site's user agent changes once, not back and forth (a sign-in may drop on a change).
+#: Legacy filename only: existing contents are left untouched and never read.
 LAYOUTS_NAME = 'layouts.json'
-LAYOUTS_KEPT = 200
 #: #939: the phone inputs a login window accepts, as the worker's ``remote_*`` ops.
 REMOTE_INPUT_KINDS = ('tap', 'text', 'key', 'nav', 'dialog')
 #: #293: the focused-element kinds a frame may report (the worker's ``REMOTE_FOCUS_KINDS``).
@@ -2178,13 +2177,15 @@ class WebKitWorkerDriver:
         # this press; ``confirm_ok`` is False on a page that shows a payment field.
         message = self._request('click', timeout, approved=approved is True, dialog_approved=approved is True,
                                 confirm_ok=confirm_ok is True, effect=_declared(effect), **self._target(index))
-        return {'navigated': bool(message.get('navigated')), 'dialogs': step_dialogs(message), **step_posted(message)}
+        return {'navigated': bool(message.get('navigated')), 'dialogs': step_dialogs(message),
+                **({'app_link': True} if message.get('app_link') is True else {}), **step_posted(message)}
 
     def type(self, index, text, timeout, approved=False, confirm_ok=False, effect=None):
         # #937 review: an approval to type into a field never confirms a payment question.
         message = self._request('type', timeout, text=text, approved=approved is True, dialog_approved=False,
                                 confirm_ok=confirm_ok is True, effect=_declared(effect), **self._target(index))
-        return {'dialogs': step_dialogs(message), **step_posted(message)}
+        return {'dialogs': step_dialogs(message),
+                **({'app_link': True} if message.get('app_link') is True else {}), **step_posted(message)}
 
     def release_submit(self, record, timeout):
         """Release the cancelled payment-form submit ``record`` names, which the owner approved (#700).
@@ -2245,7 +2246,7 @@ class WebKitWorkerDriver:
         message = self._request_shown('frame')
         dialog = message.get('dialog') if isinstance(message.get('dialog'), dict) else None
         focus = message.get('focus')
-        return {'jpeg': str(message.get('jpeg') or ''), 'width': message.get('width'), 'height': message.get('height'),
+        return {'view_id': message.get('view_id'), 'jpeg': str(message.get('jpeg') or ''), 'width': message.get('width'), 'height': message.get('height'),
                 'dialog': {'kind': str(dialog.get('kind') or ''), 'text': str(dialog.get('text') or '')} if dialog else None,
                 'focus': focus if focus in REMOTE_FOCUS_KINDS else None,
                 'fields': remote_fields(message.get('fields')), 'links': qr_links(message.get('links'))}
@@ -2324,6 +2325,7 @@ class BrowserProfile:
         self._lock = threading.Lock()
         self._jar_lock = threading.RLock()
         self._layout_lock = threading.Lock()
+        self._work_layouts = {}
         self._holder = None
         self._live = None
         self._suppressed = set()
@@ -2364,44 +2366,21 @@ class BrowserProfile:
         except Exception:
             return frozenset()
 
-    def _layouts(self):
-        try:
-            data = json.loads((self.profile_dir / LAYOUTS_NAME).read_text(encoding='utf-8'))
-        except (OSError, ValueError):
-            return {}
-        return {str(site): 'desktop' for site, layout in data.items() if layout == 'desktop'} if isinstance(data, dict) else {}
-
     def desktop_sites(self):
-        """The sites kept in desktop version, names only."""
-        return sorted(self._layouts())
+        """No site-wide choices remain; legacy layouts.json is ignored."""
+        return []
 
-    def layout_for(self, host):
-        """#572: the layout ``host``'s site loads in: ``desktop`` when the AI asked for it there, else ``mobile``."""
-        site = registrable_domain(host) if host else ''
-        return self._layouts().get(site, 'mobile') if site else 'mobile'
+    def layout_for(self, host=None, *, work_id=None):
+        with self._layout_lock:
+            return self._work_layouts.get(work_id, 'mobile') if work_id else 'mobile'
 
-    def set_layout(self, host, layout):
-        """#572: keep ``layout`` for ``host``'s site; ``mobile`` forgets the site's desktop choice."""
+    def set_layout(self, host, layout, *, work_id=None):
+        """Keep a layout for the Work, never for a site or a later request."""
         if layout not in LAYOUTS:
             raise ValueError(layout)
-        site = registrable_domain(host) if host else ''
-        if not site:
-            return
-        with self._layout_lock:
-            layouts = self._layouts()
-            if layouts.get(site, 'mobile') == layout:
-                return
-            layouts.pop(site, None)
-            if layout == 'desktop':
-                layouts[site] = layout
-            layouts = dict(list(layouts.items())[-LAYOUTS_KEPT:])
-            self.profile_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-            path = self.profile_dir / LAYOUTS_NAME
-            temporary = path.with_suffix('.tmp')
-            fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-            with os.fdopen(fd, 'w', encoding='utf-8') as handle:
-                json.dump(layouts, handle)   # insertion order: LAYOUTS_KEPT keeps the latest
-            os.replace(temporary, path)
+        if work_id:
+            with self._layout_lock:
+                self._work_layouts[work_id] = layout
 
     def allow_origins_for_tests(self, *origins):
         """Test-only: exact ``host:port`` fixture origins the worker may load.  Never set by config."""
@@ -2438,7 +2417,7 @@ class BrowserProfile:
         except OSError:
             return False
         for entry in entries:
-            if entry.name == JAR_NAME or entry.name.startswith(JAR_NAME + '.tmp-'):
+            if entry.name in (JAR_NAME, LAYOUTS_NAME) or entry.name.startswith(JAR_NAME + '.tmp-'):
                 continue
             try:
                 if entry.is_dir() and not entry.is_symlink():
@@ -2635,7 +2614,8 @@ class BrowserProfile:
             self._live = driver
             return _ReleasingDriver(driver, self._save, self._release)
         launch.intranet = self.intranet_keys
-        launch.layout_for, launch.set_layout = self.layout_for, self.set_layout   # #572
+        launch.layout_for = lambda host: self.layout_for(host, work_id=work_id)
+        launch.set_layout = lambda host, layout: self.set_layout(host, layout, work_id=work_id)
         return launch
 
     # -- the owner's sessions (Settings) -------------------------------------------
@@ -2764,7 +2744,7 @@ class BrowserProfile:
         finally:
             self._release()
 
-    def open_for_login(self, url, wait=False, seconds=None, on_closed=None, on_opened=None):
+    def open_for_login(self, url, wait=False, seconds=None, on_closed=None, on_opened=None, *, work_id=None):
         """Show the worker window at ``url`` for the owner to log in by hand.
 
         Still navigates to ``url`` and does nothing else: no typing, no
@@ -2826,8 +2806,8 @@ class BrowserProfile:
                 self._live = driver
                 record['driver'] = driver   # #939: what the phone drives, while the window is open
                 show = getattr(driver, 'show', None)
-                # #572: the login window loads the site in the layout its Works use.
-                layout = {'layout': self.layout_for(urlsplit(str(url or '')).hostname)} if getattr(driver, 'takes_layout', False) else {}
+                # The login window shares its Work's layout, including across auth hosts.
+                layout = {'layout': self.layout_for(work_id=work_id)} if getattr(driver, 'takes_layout', False) else {}
                 if show is not None:
                     landed = show(url, LOGIN_OPEN_SECONDS, **layout)
                 else:
@@ -2963,6 +2943,10 @@ class BrowserProfile:
             return False
         try:
             remote_input(kind, **fields)
+        except WorkerError as exc:
+            if exc.code == 'stale_view':
+                raise
+            return False
         except Exception:
             return False
         return True

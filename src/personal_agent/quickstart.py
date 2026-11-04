@@ -951,7 +951,13 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                     body=json.loads(self.rfile.read(length))
                 except (TypeError,ValueError):
                     return self.reply(400,{'error':msg('quickstart.invalid_request')})
-                return self.reply(200,{'ok':bool(session.input(body))})
+                from .browser_session import WorkerError
+                try:
+                    accepted=bool(session.input(body))
+                except WorkerError as exc:
+                    if exc.code!='stale_view':raise
+                    return self.reply(200,{'ok':False,'error':'stale_view'})
+                return self.reply(200,{'ok':accepted})
             if path==remote_login.DONE_PATH and method=='POST':
                 # Review P3-3: the answer leaves before the tunnel it travels through is stopped.
                 return self.reply(200,{'ok':bool(session.finish_later('done'))})

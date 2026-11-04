@@ -596,6 +596,7 @@ class InFlowLogin(LoginHarness):
         with mock.patch.object(self.profile, 'open_for_login', wraps=self.profile.open_for_login) as opened:
             job_id, url = self.query_login_work()
             self.assertEqual(opened.call_args.args[0], url)
+            self.assertEqual(opened.call_args.kwargs['work_id'], job_id)
         self.assertEqual(self.driver_log[-1][0], 'goto')
         self.owner_closes(job_id)
         self.assertNotIn(job_id, self.service._browser_login_window_urls)
@@ -1185,55 +1186,23 @@ class LoginWindowHolder(LoginHarness):
         self.assertTrue(wait_until(lambda: self.profile.occupancy() == 'none'))
         self.assertEqual(settings.read(self.service.settings_owner(follow), 'browser')['settings']['browser']['close_login']['options'], [])
 
-    def test_browser_settings_list_only_kept_desktop_site_names(self):
-        self.profile.set_layout('www.fixture.test', 'desktop')
-        self.profile.set_layout('account.other.test', 'desktop')
-        self.profile.set_layout('mobile.test', 'mobile')
+    def test_browser_settings_do_not_offer_work_scoped_layouts_as_saved_sites(self):
+        self.profile.set_layout('fixture.test', 'desktop', work_id='A')
         job = self.store.job(self.receive('브라우저 설정'))
         read = self.service.settings_orchestrator.read(self.service.settings_owner(job), 'browser')
-        row = read['settings']['browser']['use_mobile']
-        self.assertEqual(row['options'], [{'value': site, 'label': site}
-                                         for site in ['fixture.test', 'other.test']])
-        self.assertEqual(row['value_label'], 'fixture.test, other.test')
+        self.assertEqual(read['settings']['browser']['use_mobile']['options'], [])
+        self.assertEqual(self.profile.layout_for(work_id='A'), 'desktop')
 
-    def test_use_mobile_resets_only_the_listed_site_after_owner_confirmation(self):
-        self.profile.set_layout('www.fixture.test', 'desktop')
-        self.profile.set_layout('other.test', 'desktop')
-        job = self.store.job(self.receive('모바일 버전으로 돌려줘'))
-        settings = self.service.settings_orchestrator
-        draft = self.service.settings_tools(job)('settings_change', {
-            'category': 'browser', 'setting': 'use_mobile', 'value': 'fixture.test'})
-        row = settings._drafts()[draft['draft_id']]
-        self.assertIn('fixture.test', row['effect'])
-        self.assertEqual(self.profile.layout_for('www.fixture.test'), 'desktop')
-        result = settings.confirm(self.service.settings_owner(job), job['channel'], draft['draft_id'], row['digest'])
-        self.assertEqual(result['state'], 'applied')
-        self.assertEqual(self.profile.layout_for('www.fixture.test'), 'mobile')
-        self.assertEqual(self.profile.layout_for('other.test'), 'desktop')
-        self.assertEqual(self.profile.desktop_sites(), ['other.test'])
-
-    def test_use_mobile_refuses_an_unlisted_site_without_changes(self):
+    def test_use_mobile_cannot_change_another_works_layout(self):
         from personal_agent.settings_orchestrator import SettingsError
-        self.profile.set_layout('fixture.test', 'desktop')
+        self.profile.set_layout('fixture.test', 'desktop', work_id='A')
         job = self.store.job(self.receive('모바일 버전으로 돌려줘'))
         settings = self.service.settings_orchestrator
         with self.assertRaises(SettingsError):
-            settings.propose(self.service.settings_owner(job), job['channel'], 'browser', 'use_mobile', 'other.test')
-        self.assertEqual(self.profile.desktop_sites(), ['fixture.test'])
-        self.assertEqual(self.profile.layout_for('fixture.test'), 'desktop')
+            settings.propose(self.service.settings_owner(job), job['channel'], 'browser', 'use_mobile', 'fixture.test')
+        self.assertEqual(self.profile.layout_for(work_id='A'), 'desktop')
+        self.assertEqual(self.profile.layout_for(work_id=job['id']), 'mobile')
         self.assertEqual(settings._drafts(), {})
-
-    def test_use_mobile_refuses_a_draft_when_the_site_is_no_longer_listed(self):
-        from personal_agent.settings_orchestrator import SettingsError
-        self.profile.set_layout('fixture.test', 'desktop')
-        job = self.store.job(self.receive('모바일 버전으로 돌려줘'))
-        settings = self.service.settings_orchestrator
-        draft = settings.propose(self.service.settings_owner(job), job['channel'], 'browser', 'use_mobile', 'fixture.test')
-        row = settings._drafts()[draft['draft_id']]
-        self.profile.set_layout('fixture.test', 'mobile')
-        with self.assertRaises(SettingsError):
-            settings.confirm(self.service.settings_owner(job), job['channel'], draft['draft_id'], row['digest'])
-        self.assertEqual(self.profile.desktop_sites(), [])
 
     def test_the_settings_change_schema_offers_every_declared_setting(self):
         """#1572 review P1: a setting the orchestrator declares is in the tool's enum (one declaration)."""
