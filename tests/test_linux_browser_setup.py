@@ -98,6 +98,9 @@ class ChromiumRuntime(unittest.TestCase):
     def test_a_changed_binary_is_not_used_again(self):
         data = release()
         chrome = cr.ensure(self.directory, fetch=Fetch(data), chosen=pin_for(data))
+        self.assertFalse(os.stat(chrome).st_mode & 0o222, 'the checked build is kept read-only')
+        os.chmod(Path(chrome).parent, 0o755)
+        os.chmod(chrome, 0o755)   # a same-user change; the digest check before each start catches it
         Path(chrome).write_bytes(b'tampered')
         self.assertIsNone(cr.installed(self.directory, chosen=pin_for(data)))
         self.assertEqual(Path(cr.ensure(self.directory, fetch=Fetch(data), chosen=pin_for(data))).read_bytes(), CHROME)
@@ -111,6 +114,10 @@ class ChromiumRuntime(unittest.TestCase):
             cr.ensure(self.directory, fetch=Fetch(b'never'))
 
     def test_the_apparmor_profile_names_exactly_this_binary(self):
+        for pattern in ('/home/o/*/chrome', '/home/o/[ab]/chrome', '/home/o/@{HOME}/chrome', '/home/o/a{b,c}/chrome',
+                        '/home/o/a\\b/chrome', '/home/o/../chrome', '/home/o//chrome'):
+            with self.assertRaises(ValueError, msg=pattern):
+                cr.apparmor_profile(pattern)
         profile = cr.apparmor_profile('/home/owner/.local/share/agentos/tools/chromium/1/chrome-linux64/chrome')
         self.assertIn('profile still-chromium "/home/owner/.local/share/agentos/tools/chromium/1/chrome-linux64/chrome"',
                       profile)
@@ -312,6 +319,21 @@ class EngineChoice(unittest.TestCase):
         self.assertEqual(env['DISPLAY'], ':0')
         self.assertEqual(env['DBUS_SESSION_BUS_ADDRESS'], 'unix:path=/b')
         self.assertNotIn('OPENAI_API_KEY', env)
+
+    def test_a_changed_chromium_never_starts_not_even_on_a_restart(self):
+        """Codex review P2 on #34: the digest is checked before every start, a crash restart included."""
+        allowed = [True]
+        script = self.root / 'ready.py'
+        script.write_text('import json,sys\nprint(json.dumps({"event": "ready"}), flush=True)\nsys.stdin.read()\n')
+        driver = bs.WebKitWorkerDriver('p', command=[sys.executable, str(script)], start_seconds=10, cwd=self.root,
+                                       before_start=lambda: allowed[0])
+        try:
+            allowed[0] = False
+            with self.assertRaises(bs.WorkerError) as caught:
+                driver._start()
+            self.assertEqual(caught.exception.detail, 'chromium_changed')
+        finally:
+            driver.close()
 
     def test_a_worker_that_cannot_start_says_why(self):
         """The driver keeps the worker's own ``unavailable`` reason (an Still code) for the profile."""

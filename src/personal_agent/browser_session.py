@@ -1982,10 +1982,13 @@ class WebKitWorkerDriver:
     """
 
     def __init__(self, profile_id='default', *, seed=None, command=None, start_seconds=WORKER_START_SECONDS,
-                 grace_seconds=WORKER_GRACE_SECONDS, cwd=None, allowed_origins_for_tests=(), intranet=None):
+                 grace_seconds=WORKER_GRACE_SECONDS, cwd=None, allowed_origins_for_tests=(), intranet=None,
+                 before_start=None):
         self.profile_id = str(profile_id)
         #: #209: ``() -> {host:port}``, sent with every command so a change applies from the next one.
         self._intranet = intranet or frozenset
+        #: #34: ``() -> bool``, whether the engine binary may start now; asked before every start.
+        self._before_start = before_start
         self._seed = seed
         # ``-P``: the working directory is never on the worker's import path.
         self._command = list(command) if command else [sys.executable, '-P', '-m', 'personal_agent.browser_worker',
@@ -2014,6 +2017,9 @@ class WebKitWorkerDriver:
 
     # -- process ---------------------------------------------------------------
     def _start(self):
+        # #34: checked before every start, a restart after a crash included (the pinned Chromium's digest).
+        if self._before_start is not None and not self._before_start():
+            raise WorkerError('worker_unavailable', 'chromium_changed')
         self.starts += 1
         proc = subprocess.Popen(self._command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                                 text=True, encoding='utf-8', bufsize=1, close_fds=True, cwd=self._cwd,
@@ -2512,10 +2518,14 @@ class BrowserProfile:
                 self._start_blocked = 'download'
                 raise ToolError(DOWNLOAD_TEXT, UNAVAILABLE_CODE) from None
             command = chromium_worker_command(self.profile_dir.name, chrome, self._allowed_origins)
+        before_start = None
+        if command is not None:
+            from . import chromium_runtime
+            before_start = lambda: chromium_runtime.installed(self.tools_dir) == chrome
         try:
             driver = WebKitWorkerDriver(self.profile_dir.name, seed=self._seed, cwd=self.profile_dir,
                                         allowed_origins_for_tests=self._allowed_origins, intranet=self.intranet_keys,
-                                        command=command)
+                                        command=command, before_start=before_start)
         except WorkerError as exc:
             if exc.detail == 'sandbox_unavailable':
                 self._start_blocked, self._blocked_chrome = 'sandbox', chrome
