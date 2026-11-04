@@ -8,8 +8,10 @@ throwaway process directory; non-persistent context data is not a durable jar.
 
 Reuse review (Adapt): Playwright's official Python sync API (requested version
 1.64.1, Apache-2.0) owns launch, context and page lifetimes. CDP Page, Runtime,
-Input, Fetch and Target supply isolated worlds, trusted input, redirect-hop
-interception and pre-navigation attachment, including out-of-process frames.
+Input, Fetch and Target supply isolated worlds, trusted input and redirect-hop
+interception, including out-of-process frames. Context routing holds a popup's
+first request while Target discovery installs its CDP guard. This adapts the
+existing pinned Playwright dependency; no dependency or authority is added.
 The stdlib queue/heapq provide the main-thread handoff and timer queue. Selenium
 would still need the same CDP boundary; a second automation framework adds no
 required API. Still's browser_worker.Worker supplies the existing protocol,
@@ -197,8 +199,8 @@ class _Timers:
 class _Target:
     """CDP Target.sendMessageToTarget envelope over Playwright's public CDPSession.
 
-    Browser auto-attachment pauses pages; related-target attachment pauses
-    OOPIFs before their first script/request. A non-flattened session envelope
+    Context routing holds new pages' first requests; related-target attachment
+    pauses OOPIFs. A non-flattened session envelope
     provides asynchronous commands, so awaitPromise never
     blocks the stdin loop or a deadline, including while a dialog is held.
     This is only CDP framing; Playwright owns the actual transport.
@@ -209,10 +211,23 @@ class _Target:
         self.contexts, self.callbacks, self.scripts = {}, {}, []
         self.main_frame = None
         self.ready = False
+        self.initializing, self.setup_pending = True, set()
         self.ids = itertools.count(1)
 
     def post(self, method, params=None, done=None):
         ident = next(self.ids)
+        if self.initializing:
+            self.setup_pending.add(ident)
+            original_done = done
+
+            def setup_done(result, error):
+                self.setup_pending.discard(ident)
+                if error:
+                    self.worker.target_fault(self)
+                elif original_done is not None:
+                    original_done(result, error)
+                self.finish_setup()
+            done = setup_done
         if done is not None:
             self.callbacks[ident] = done
         packet = {'id': ident, 'method': method, 'params': params or {}}
@@ -221,6 +236,10 @@ class _Target:
             self.parent.post('Target.sendMessageToTarget', envelope)
         else:
             self.parent.send('Target.sendMessageToTarget', envelope)
+
+    def finish_setup(self):
+        if not self.initializing and not self.setup_pending and not self.worker.fatal:
+            self.ready = True
 
     def receive(self, message):
         if 'error' in message:
@@ -250,7 +269,7 @@ class _Target:
         elif method == 'Runtime.bindingCalled':
             self.worker.binding_called(self, params)
         elif method == 'Fetch.requestPaused':
-            self.worker.request_paused(self, params)
+            self.worker.fetch_paused(self, params)
         elif method == 'Page.frameRequestedNavigation':
             self.worker.frame_requests[(self.ident, params['frameId'])] = params
         elif method == 'Page.frameNavigated':
@@ -333,11 +352,13 @@ class Worker(shared.Worker):
         # #34: a popup's first request, before this worker's CDP session on it exists (``route_popup``).
         self.context.route('**/*', self.route_popup)
         self.root_cdp = self.browser.new_browser_cdp_session()
-        self.root_cdp.on('Target.attachedToTarget', lambda p: self.attached(self.root_cdp, p))
+        self.root_cdp.on('Target.targetCreated', self.target_created)
         self.root_cdp.on('Target.receivedMessageFromTarget', self.target_message)
         self.root_cdp.on('Target.detachedFromTarget', self.detached)
-        self.root_cdp.send('Target.setAutoAttach', {'autoAttach': True, 'waitForDebuggerOnStart': True,
-                                                   'flatten': True, 'filter': PAGE_FILTER})
+        # Do not compete with Playwright's auto-attach/debugger resume. A popup
+        # may not have a public Page until its first navigation commits, so a
+        # per-page public CDPSession cannot install the guard at this boundary.
+        self.root_cdp.send('Target.setDiscoverTargets', {'discover': True, 'filter': PAGE_FILTER})
         self.page = self.context.new_page()
         self.main_target = self.target_for(self.page)
         self.view = _View(self)
@@ -349,7 +370,10 @@ class Worker(shared.Worker):
         if client is None:
             client = self.context.new_cdp_session(page)
             self.clients[page] = client
-        ident = client.send('Target.getTargetInfo')['targetInfo']['targetId']
+        info = client.send('Target.getTargetInfo')['targetInfo']
+        ident = info['targetId']
+        if ident not in self.targets:
+            self.target_created({'targetInfo': info})
         self.pages[ident] = page
         return self.targets[ident]
 
@@ -363,36 +387,36 @@ class Worker(shared.Worker):
     def register_page(self, page):
         _trace('register_page', page.url[:80])
         if not page.is_closed():
-            self.target_for(page)
+            target = self.target_for(page)
+            if getattr(target, 'adopt_when_reported', False) and not self.owner_visible:
+                target.adopt_when_reported = False
+                self.promote_popup(target, lambda: None)
             if self.page is not None and page is not self.page and self.owner_visible and page not in self.popups:
                 self.popups.append(page)
+
+    def target_created(self, event):
+        info = event['targetInfo']
+        if info['type'] != 'page' or info['targetId'] in self.targets:
+            return
+        session_id = self.root_cdp.send('Target.attachToTarget', {
+            'targetId': info['targetId'], 'flatten': False})['sessionId']
+        self.attached(self.root_cdp, {'sessionId': session_id, 'targetInfo': info})
 
     def attached(self, parent, event):
         _trace('attached', 'root' if not isinstance(parent, _Target) else parent.kind, event.get('waitingForDebugger'),
                event.get('targetInfo', {}).get('type'), event.get('targetInfo', {}).get('url', '')[:80],
                event.get('targetInfo', {}).get('openerId'))
-        bootstrap = None
-        if not isinstance(parent, _Target):
-            # Chromium requires flattened *browser* auto-attachment. Public
-            # CDPSession.send has no flattened-session argument, so attach a
-            # second, non-flattened session using the supported Target API.
-            # Keep the automatic session paused until installation is acknowledged.
-            if not event.get('waitingForDebugger'):
-                return  # notification of our explicit attachment below
-            bootstrap = event['sessionId']
-            session_id = parent.send('Target.attachToTarget', {
-                'targetId': event['targetInfo']['targetId'], 'flatten': False})['sessionId']
-        else:
-            session_id = event['sessionId']
-        target = _Target(self, parent, session_id, event['targetInfo'])
+        target = _Target(self, parent, event['sessionId'], event['targetInfo'])
         self.sessions[target.session_id] = self.targets[target.ident] = target
         # #34: a page the step opened (window.open, a target=_blank link) is created asynchronously in
         # Chromium; the step waits for its first navigation decision as WebKit's synchronous popup delegate
         # does, bounded so a popup that never navigates cannot hold the step.
-        if target.kind == 'page' and self.main_target is not None and not self.owner_visible:
-            target.awaiting_first = True
-            self.deciding += 1
-            self.AppHelper.callLater(POPUP_DECISION_SECONDS, self.popup_decided, target)
+        if target.kind == 'page' and self.main_target is not None:
+            target.popup_navigation = True
+            if not self.owner_visible:
+                target.awaiting_first = True
+                self.deciding += 1
+                self.AppHelper.callLater(POPUP_DECISION_SECONDS, self.popup_decided, target)
         target.post('Runtime.enable')
         target.post('Page.enable')
         target.post('Network.enable')
@@ -407,15 +431,9 @@ class Worker(shared.Worker):
                                             'flatten': False, 'filter': FRAME_FILTER})
         self.emulate(target)
 
-        def initialized(result, error):
-            if error or self.fatal:
-                return self.target_fault(target)
-            target.ready = True
-            if bootstrap:
-                # Detaching this session releases its navigation throttle;
-                # the legacy session keeps Fetch and isolated scripts installed.
-                self.root_cdp.send('Target.detachFromTarget', {'sessionId': bootstrap})
-        target.post('Runtime.runIfWaitingForDebugger', done=initialized)
+        target.post('Runtime.runIfWaitingForDebugger')
+        target.initializing = False
+        target.finish_setup()
 
     def target_message(self, event):
         target = self.sessions.get(event.get('sessionId'))
@@ -647,11 +665,6 @@ class Worker(shared.Worker):
         ``route_popup``); by default the request is the one this target's Fetch paused.
         """
         request = event['request']
-        if release is None and getattr(target, 'routed_first', None) == request.get('url') \
-                and not event.get('redirectedRequestId'):
-            # The same first request, already decided by ``route_popup``: let it through once.
-            target.routed_first = None
-            return target.post('Fetch.continueRequest', {'requestId': event['requestId']})
         release = release or (lambda: target.post('Fetch.continueRequest', {'requestId': event['requestId']}))
         # 'Aborted' (net::ERR_ABORTED) leaves the current document in place, as WebKit's cancelled
         # policy decision does; 'BlockedByClient' would commit Chromium's error page instead.
@@ -683,15 +696,20 @@ class Worker(shared.Worker):
                 release()
 
             if allowed and popup and not self.owner_visible:
-                # Adopt the already paused page rather than replaying its request.
-                # This preserves the original POST body, redirects and at-most-once
-                # effect. The old view is retired only after the new one is known.
-                return self.promote_popup(target, continue_navigation)
+                # Playwright may report Page only AFTER this navigation commits.
+                # Release the guarded original request first; never wait for Page
+                # while holding the request that creates it, or replay its POST.
+                target.adopt_when_reported = True
+                page = self.pages.get(target.ident)
+                if page is not None:
+                    target.adopt_when_reported = False
+                    self.promote_popup(target, lambda: None)
             if not allowed:
+                target.adopt_when_reported = False
                 if reason:
                     self.navigation_refused(counted, reason)
                 refuse()
-                if popup and not self.owner_visible:
+                if popup or getattr(target, 'popup_navigation', False):
                     self.root_cdp.send('Target.closeTarget', {'targetId': target.ident})
             else:
                 continue_navigation()
@@ -712,22 +730,75 @@ class Worker(shared.Worker):
                                               if allowed else decision(False), into_frame=not main)
         self.decide(url, counted, decision)
 
+    def fetch_paused(self, target, event):
+        # Context routing and our Fetch can both hold the initial request, in
+        # either order. Share its decision, not a URL-based bypass for a later
+        # request. Redirects ALWAYS get their own decision.
+        release = lambda: target.post('Fetch.continueRequest', {'requestId': event['requestId']})
+        refuse = lambda: target.post('Fetch.failRequest', {'requestId': event['requestId'], 'errorReason': 'Aborted'})
+        if getattr(target, 'popup_navigation', False) and event.get('frameId') == target.main_frame \
+                and not event.get('redirectedRequestId'):
+            return self.initial_popup_request(target, event, 'fetch', release, refuse)
+        self.request_paused(target, event, release, refuse)
+
+    def initial_popup_request(self, target, event, source, release, refuse):
+        request = event['request']
+        key = (request['url'], request.get('method', 'GET'))
+        first = getattr(target, 'initial_request', None)
+        if first is not None and first['key'] == key and source not in first['sources']:
+            first['sources'].add(source)
+            if first['allowed'] is None:
+                first['waiters'].append((release, refuse))
+            else:
+                (release if first['allowed'] else refuse)()
+            return
+        first = {'key': key, 'sources': {source}, 'allowed': None, 'waiters': [(release, refuse)]}
+        target.initial_request = first
+
+        def settle(allowed):
+            first['allowed'] = allowed
+            for yes, no in first['waiters']:
+                (yes if allowed else no)()
+            first['waiters'].clear()
+
+        self.request_paused(target, event, lambda: settle(True), lambda: settle(False))
+
     def route_popup(self, route, request):
         """A popup's first request (#34): held by Playwright, which resumes a new page before this worker's
         own CDP session can intercept it.  Decided like any paused request; let through only once this
         worker's interception is installed on the popup, so its redirect hops are checked too.  A popup
         that cannot be identified is refused (fail closed)."""
+        page = None
         try:
             if not request.is_navigation_request():
                 return route.continue_()
-            frame = request.frame
-            page = frame.page
-            _trace('route_popup', request.url[:100], page is self.page, frame.parent_frame is not None)
-            if page is self.page or frame.parent_frame is not None or self.closing:
+            try:
+                frame = request.frame
+                page = frame.page
+            except Exception:
+                # Supported Request.frame raises for the first navigation of
+                # a popup whose Page has not been reported yet (1.64.1).
+                frame = None
+            _trace('route_popup', request.url[:100], page is self.page,
+                   frame is not None and frame.parent_frame is not None)
+            if page is self.page or frame is not None and frame.parent_frame is not None:
                 return route.continue_()   # this worker's own Fetch decides (each hop)
         except Exception:
+            self.navigation_refused(not self.owner_visible, 'navigation_failed')
+            if page is not None and not page.is_closed():
+                page.close(run_before_unload=False)
             return self._settle_route(route, False)
         began = time.monotonic()
+        self.deciding += 1
+        settled = False
+
+        def finish(allowed):
+            nonlocal settled
+            if settled:
+                return
+            settled = True
+            self.deciding -= 1
+            self._settle_route(route, allowed)
 
         def ready():
             target = self.popup_target(page)
@@ -738,25 +809,33 @@ class Worker(shared.Worker):
                     return self.AppHelper.callLater(.02, ready)
                 # Fail closed, and say so: the step reports the refused navigation.
                 self.navigation_refused(not self.owner_visible, 'navigation_failed')
-                return self._settle_route(route, False)
-            target.routed_first = request.url
-            self.request_paused(target, {'request': {'url': request.url, 'method': request.method},
-                                         'frameId': target.main_frame},
-                                release=lambda: self._settle_route(route, True),
-                                refuse=lambda: self._settle_route(route, False))
+                # No safe correlation: abort and close all still-unreported
+                # popup candidates rather than guessing an opener/URL match.
+                for candidate in list(self.targets.values()):
+                    if getattr(candidate, 'popup_navigation', False) and candidate.ident not in self.pages:
+                        candidate.adopt_when_reported = False
+                        self.root_cdp.send('Target.closeTarget', {'targetId': candidate.ident})
+                if page is not None and not page.is_closed():
+                    page.close(run_before_unload=False)
+                return finish(False)
+            self.initial_popup_request(target, {'request': {'url': request.url, 'method': request.method},
+                                                'frameId': target.main_frame}, 'route',
+                                       lambda: finish(True), lambda: finish(False))
         ready()
 
     def popup_target(self, page):
-        """This worker's CDP target of a popup page: mapped already, or the one new page target not yet
-        mapped (a session opened from inside the route callback would wait on the held request)."""
-        known = next((t for t in self.targets.values() if self.pages.get(t.ident) is page), None)
+        """Use the public Page when available, otherwise only an unambiguous
+        unreported popup. Never correlate concurrent popups by URL/opener order.
+        """
+        known = next((t for t in self.targets.values() if page is not None and self.pages.get(t.ident) is page), None)
         if known is not None:
             return known
+        if page is not None:
+            return self.target_for(page)
         unmapped = [t for t in self.targets.values()
-                    if t.kind == 'page' and t is not self.main_target and t.ident not in self.pages]
+                    if getattr(t, 'popup_navigation', False) and t.ident not in self.pages]
         if len(unmapped) != 1:
             return None
-        self.pages[unmapped[0].ident] = page
         return unmapped[0]
 
     @staticmethod
@@ -801,6 +880,9 @@ class Worker(shared.Worker):
         self.frame_origins[(target.ident, frame['id'])] = origin
         if not frame.get('parentId'):
             target.main_frame = frame['id']
+            if frame.get('url') not in ('', ':', 'about:blank', None):
+                target.initial_request = None
+                target.popup_navigation = False
         if target is self.main_target and frame['id'] == target.main_frame:
             self.landed += 1
             host = shared._host(frame.get('url'))
@@ -809,6 +891,11 @@ class Worker(shared.Worker):
             self.phone_navigated()
 
     def network_failed(self, target, event):
+        if event.get('type') == 'Document':
+            # A cancelled/replaced navigation cannot lend its first-request
+            # decision (or a consumed form pass) to the replacement.
+            target.initial_request = None
+            target.adopt_when_reported = False
         if target is not self.main_target or event.get('requestId') not in self.main_requests:
             return
         self.main_requests.discard(event['requestId'])

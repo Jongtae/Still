@@ -29,9 +29,16 @@ class FakeCDP:
         params = params or {}
         self.calls.append((method, params))
         if method == 'Target.getTargetInfo':
-            return {'targetInfo': {'targetId': self.page.ident}}
+            return {'targetInfo': {'targetId': self.page.ident, 'type': 'page'}}
         if method == 'Target.attachToTarget':
             return {'sessionId': 'legacy-' + params['targetId']}
+        if method == 'Target.closeTarget':
+            for page in self.browser.context.pages:
+                if page.ident == params['targetId']:
+                    if 'close' in page.handlers:
+                        page.close()
+                    else:
+                        page.closed = True
         if method == 'Target.sendMessageToTarget':
             packet = json.loads(params['message'])
             self.browser.packets.append((params['sessionId'], packet))
@@ -48,8 +55,12 @@ class FakeCDP:
                                                         if self.browser.script_results else {})}}
             elif command == 'Page.captureScreenshot':
                 result = {'data': '/9j/fakejpeg'}
-            self.fire('Target.receivedMessageFromTarget', {
-                'sessionId': params['sessionId'], 'message': json.dumps({'id': packet['id'], 'result': result})})
+            response = {'sessionId': params['sessionId'],
+                        'message': json.dumps({'id': packet['id'], 'result': result})}
+            if command == getattr(self.browser, 'hold_method', None):
+                self.browser.held_responses.append(lambda: self.fire('Target.receivedMessageFromTarget', response))
+            else:
+                self.fire('Target.receivedMessageFromTarget', response)
         if method == 'Browser.getWindowForTarget':
             return {'windowId': 1, 'bounds': {'windowState': self.browser.window_state}}
         return {}
@@ -89,13 +100,13 @@ class FakeContext:
     def route(self, pattern, handler):
         self.routes = getattr(self, 'routes', []) + [(pattern, handler)]
 
-    def new_page(self):
+    def new_page(self, reported=True):
         page = FakePage('page-' + str(len(self.pages)))
         self.pages.append(page)
-        self.browser.root.fire('Target.attachedToTarget', {
-            'sessionId': 'flat-' + page.ident, 'waitingForDebugger': True,
+        self.browser.root.fire('Target.targetCreated', {
             'targetInfo': {'type': 'page', 'targetId': page.ident}})
-        self.handlers['page'](page)
+        if reported:
+            self.handlers['page'](page)
         return page
 
     def new_cdp_session(self, page):
@@ -321,17 +332,16 @@ def test_forged_binding_and_subframe_context_are_ignored(worker):
     assert worker.press_seen == {'nonce': 'nonce', 'hit': True}
 
 
-def test_autoattachment_installs_fetch_before_resuming_popup_and_oopif(worker):
+def test_discovery_installs_guard_without_a_second_browser_autoattach(worker):
     root_calls = worker.engine.browser.root.calls
-    auto = next(p for m, p in root_calls if m == 'Target.setAutoAttach')
-    assert auto['flatten'] is True and auto['waitForDebuggerOnStart'] is True
-    assert auto['filter'] == chromium.PAGE_FILTER
+    assert ('Target.setDiscoverTargets', {'discover': True, 'filter': chromium.PAGE_FILTER}) in root_calls
+    assert not any(m == 'Target.setAutoAttach' for m, _ in root_calls)
     methods = [p['method'] for _, p in worker.engine.browser.packets]
     assert methods.index('Fetch.enable') < methods.index('Runtime.runIfWaitingForDebugger')
     assert packets(worker, 'Fetch.enable')[0]['patterns'] == [
         {'urlPattern': '*', 'requestStage': 'Request', 'resourceType': 'Document'}]
     assert packets(worker, 'Target.setAutoAttach')[0]['filter'] == chromium.FRAME_FILTER
-    assert any(m == 'Target.detachFromTarget' and p['sessionId'].startswith('flat-') for m, p in root_calls)
+    assert not any(m == 'Target.detachFromTarget' for m, _ in root_calls)
 
 
 def test_redirect_hop_is_checked_before_network_continues(worker):
@@ -755,6 +765,7 @@ def test_a_popups_first_request_to_a_refused_destination_is_aborted(worker):
         worker.route_popup(route, FakeRequest(popup, 'http://127.0.0.1:8787/'))
     assert route.outcome == 'abort:aborted'
     assert worker.blocked_reason == 'blocked_destination'
+    assert worker.blocked == 1 and popup.is_closed()
 
 
 def test_the_main_page_and_sub_resources_are_left_to_the_worker_own_fetch(worker):
@@ -775,10 +786,181 @@ def test_a_popup_that_cannot_be_identified_is_refused(worker, monkeypatch):
     assert worker.blocked_reason == 'navigation_failed', 'the step is told its navigation was refused'
 
 
-def test_an_unmapped_popup_is_matched_to_the_one_new_page_target(worker):
-    popup = mock.Mock(url='about:blank')
-    worker.attached(worker.root_cdp, {'sessionId': 'flat-popup', 'waitingForDebugger': True,
-                                      'targetInfo': {'type': 'page', 'targetId': 'popup-target'}})
-    target = worker.popup_target(popup)
-    assert target is not None and target.ident == 'popup-target'
-    assert worker.popup_target(popup) is target, 'mapped once, found again'
+def test_a_reported_popup_uses_its_public_cdp_identity(worker):
+    popup = worker.context.new_page()
+    assert worker.popup_target(popup) is worker.targets[popup.ident]
+    assert worker.pages[popup.ident] is popup
+
+
+class UnreportedPopupRequest(FakeRequest):
+    @property
+    def frame(self):
+        raise RuntimeError('Frame for this navigation request is not available')
+
+    @frame.setter
+    def frame(self, value):
+        pass
+
+
+def unreported_popup(worker):
+    page = worker.context.new_page(reported=False)
+    target = worker.targets[page.ident]
+    assert target.ready
+    assert target.ident not in worker.pages
+    return page, target
+
+
+def popup_fetch(target, url='https://public.test/', **fields):
+    return {'requestId': 'first-fetch', 'frameId': target.main_frame,
+            'request': {'url': url, 'method': 'GET'}, **fields}
+
+
+def test_unreported_popup_refusal_aborts_reports_and_closes(worker):
+    popup, target = unreported_popup(worker)
+    route = FakeRoute()
+    with mock.patch.object(worker, 'decide', side_effect=lambda url, main, done: done(False, 'blocked_destination')), \
+         mock.patch.object(worker, 'navigation_refused', wraps=worker.navigation_refused) as refused:
+        worker.route_popup(route, UnreportedPopupRequest(popup, 'http://127.0.0.1:8787/'))
+    refused.assert_called_once_with(True, 'blocked_destination')
+    assert route.outcome == 'abort:aborted'
+    assert popup.is_closed() and worker.blocked_reason == 'blocked_destination'
+    assert worker.page is not popup
+    worker.AppHelper.pump()
+    assert worker.deciding == 0
+
+
+def test_unreported_allowed_popup_is_released_then_adopted_when_page_is_reported(worker):
+    old = worker.page
+    popup, target = unreported_popup(worker)
+    route = FakeRoute()
+    with mock.patch.object(worker, 'decide', side_effect=lambda url, main, done: done(True)):
+        worker.route_popup(route, UnreportedPopupRequest(popup, 'https://public.test/'))
+    assert route.outcome == 'continue', 'do not wait for the Page whose navigation the route is holding'
+    assert worker.page is old and not old.is_closed()
+    methods = [p['method'] for session, p in worker.engine.browser.packets if session == target.session_id]
+    assert 'Fetch.enable' in methods and 'Runtime.addBinding' in methods
+    assert 'Page.addScriptToEvaluateOnNewDocument' in methods
+    worker.context.handlers['page'](popup)
+    worker.AppHelper.pump()
+    assert worker.page is popup and worker.main_target is target and old.is_closed()
+    assert not packets(worker, 'Page.navigate'), 'the original request/body must never be replayed'
+
+
+@pytest.mark.parametrize('adopted', [False, True])
+def test_popup_redirect_refusal_is_reported_and_closes_the_popup(worker, adopted):
+    popup, target = unreported_popup(worker)
+    route = FakeRoute()
+    decisions = []
+
+    def decide(url, counted, done):
+        decisions.append(url)
+        done(url == 'https://public.test/', 'blocked_destination')
+
+    with mock.patch.object(worker, 'decide', side_effect=decide):
+        worker.route_popup(route, UnreportedPopupRequest(popup, 'https://public.test/'))
+        if adopted:
+            worker.context.handlers['page'](popup)
+            worker.AppHelper.pump()
+        worker.fetch_paused(target, popup_fetch(target, 'http://127.0.0.1:8787/',
+                                                requestId='redirect', redirectedRequestId='first-fetch'))
+    assert decisions == ['https://public.test/', 'http://127.0.0.1:8787/']
+    assert packets(worker, 'Fetch.failRequest')[-1]['requestId'] == 'redirect'
+    assert not packets(worker, 'Fetch.continueRequest')
+    assert worker.blocked_reason == 'blocked_destination' and popup.is_closed()
+
+
+@pytest.mark.parametrize('fetch_first', [False, True])
+@pytest.mark.parametrize('allowed', [False, True])
+def test_both_initial_interceptors_wait_for_one_policy_decision(worker, fetch_first, allowed):
+    popup, target = unreported_popup(worker)
+    route = FakeRoute()
+    request = UnreportedPopupRequest(popup, 'https://public.test/')
+    callbacks = []
+    with mock.patch.object(worker, 'decide', side_effect=lambda url, counted, done: callbacks.append(done)) as decide:
+        actions = [lambda: worker.route_popup(route, request),
+                   lambda: worker.fetch_paused(target, popup_fetch(target))]
+        for action in reversed(actions) if fetch_first else actions:
+            action()
+        assert route.outcome is None
+        assert not packets(worker, 'Fetch.continueRequest') and not packets(worker, 'Fetch.failRequest')
+        assert decide.call_count == 1
+        callbacks[0](allowed, None if allowed else 'blocked_destination')
+    assert route.outcome == ('continue' if allowed else 'abort:aborted')
+    assert packets(worker, 'Fetch.continueRequest' if allowed else 'Fetch.failRequest')[-1]['requestId'] == 'first-fetch'
+    assert popup.is_closed() is not allowed
+
+
+def test_a_later_same_url_navigation_and_same_url_redirect_are_not_initial_request_passes(worker):
+    popup, target = unreported_popup(worker)
+    route = FakeRoute()
+    with mock.patch.object(worker, 'decide', side_effect=lambda url, counted, done: done(True)) as decide:
+        worker.route_popup(route, UnreportedPopupRequest(popup, 'https://public.test/'))
+        worker.fetch_paused(target, popup_fetch(target))
+        worker.fetch_paused(target, popup_fetch(target, requestId='redirect', redirectedRequestId='first-fetch'))
+        worker.frame_navigated(target, {'id': target.main_frame, 'url': 'https://public.test/'})
+        worker.fetch_paused(target, popup_fetch(target, requestId='next'))
+    assert decide.call_count == 3
+
+
+def test_initial_route_waits_for_guard_setup_acknowledgement(worker):
+    worker.engine.browser.hold_method = 'Page.addScriptToEvaluateOnNewDocument'
+    worker.engine.browser.held_responses = []
+    popup = worker.context.new_page(reported=False)
+    target = worker.targets[popup.ident]
+    assert not target.ready, 'a later runIfWaitingForDebugger response is not a setup barrier'
+    route = FakeRoute()
+    with mock.patch.object(worker, 'decide', side_effect=lambda url, counted, done: done(True)) as decide:
+        worker.route_popup(route, UnreportedPopupRequest(popup, 'https://public.test/'))
+        assert route.outcome is None and not decide.called
+        for response in worker.engine.browser.held_responses:
+            response()
+        assert target.ready
+        # Run the scheduled readiness retry without sleeping on a real clock.
+        _, _, retry, args = min(worker.AppHelper.items)
+        retry(*args)
+    assert route.outcome == 'continue'
+
+
+def test_ambiguous_unreported_popups_fail_closed(worker, monkeypatch):
+    first, first_target = unreported_popup(worker)
+    second, second_target = unreported_popup(worker)
+    monkeypatch.setattr(shared, 'WARM_SECONDS', 0)
+    route = FakeRoute()
+    with mock.patch.object(worker, 'decide') as decide:
+        worker.route_popup(route, UnreportedPopupRequest(first, 'https://public.test/'))
+    assert route.outcome == 'abort:aborted' and not decide.called
+    assert first.is_closed() and second.is_closed()
+    assert worker.blocked_reason == 'navigation_failed'
+
+
+@pytest.mark.parametrize('fetch_first', [False, True])
+def test_popup_post_both_interceptors_spend_one_payment_pass_without_replay(worker, fetch_first):
+    popup, target = unreported_popup(worker)
+    route = FakeRoute()
+    request = UnreportedPopupRequest(popup, 'https://public.test/pay')
+    request.method = 'POST'
+    event = popup_fetch(target, request.url)
+    event['request']['method'] = 'POST'
+    worker.note_vetted({'vetted': {'method': 'post', 'action': request.url, 'payment': True}})
+    with mock.patch.object(worker, 'decide', side_effect=lambda url, counted, done: done(True)) as decide:
+        actions = [lambda: worker.route_popup(route, request), lambda: worker.fetch_paused(target, event)]
+        for action in reversed(actions) if fetch_first else actions:
+            action()
+    assert decide.call_count == 1 and worker.posted_submits == 1
+    assert route.outcome == 'continue'
+    assert packets(worker, 'Fetch.continueRequest')[-1]['requestId'] == 'first-fetch'
+    assert not worker.take_vetted('POST', request.url)
+    assert not packets(worker, 'Page.navigate')
+
+
+def test_cancelled_initial_navigation_does_not_authorize_a_replacement(worker):
+    popup, target = unreported_popup(worker)
+    route = FakeRoute()
+    with mock.patch.object(worker, 'decide', side_effect=lambda url, counted, done: done(True)):
+        worker.route_popup(route, UnreportedPopupRequest(popup, 'https://public.test/'))
+    worker.network_failed(target, {'requestId': 'original', 'type': 'Document', 'canceled': True})
+    with mock.patch.object(worker, 'decide', side_effect=lambda url, counted, done: done(False, 'blocked_destination')) as decide:
+        worker.fetch_paused(target, popup_fetch(target, requestId='replacement'))
+    decide.assert_called_once()
+    assert packets(worker, 'Fetch.failRequest')[-1]['requestId'] == 'replacement'
+    assert popup.is_closed()
