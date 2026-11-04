@@ -200,8 +200,9 @@ class Collection:
 class SecretService:
     """A fake of the ``secretstorage`` module functions SecretServiceKey uses."""
 
-    def __init__(self, collection=None, running=True):
-        self.collection, self.running, self.opened, self.closed = collection or Collection(), running, 0, 0
+    def __init__(self, collection=None, running=True, missing=False):
+        self.collection = None if missing else (collection or Collection())
+        self.running, self.opened, self.closed = running, 0, 0
 
     def dbus_init(self):
         if not self.running:
@@ -214,8 +215,13 @@ class SecretService:
                 backend.closed += 1
         return Connection()
 
-    def get_default_collection(self, connection):
+    def Collection(self, connection):   # noqa: N802 - the secretstorage name
+        if self.collection is None:
+            raise LookupError('no default collection')
         return self.collection
+
+    def get_default_collection(self, connection):
+        raise AssertionError('never creates a collection (its prompt has no timeout)')
 
 
 class DesktopKeyring(unittest.TestCase):
@@ -243,6 +249,16 @@ class DesktopKeyring(unittest.TestCase):
             SecretServiceKey('store-abc', backend=refused).create()
         self.assertEqual(str(caught.exception), 'keyring_locked')
         self.assertEqual(refused.collection.items, [], 'nothing is written while locked')
+
+    def test_a_desktop_without_a_default_keyring_is_a_typed_failure(self):
+        """Codex review on #640: no default collection is created (that prompt has no timeout)."""
+        service = SecretService(missing=True)
+        for operation in (SecretServiceKey('store-abc', backend=service).get,
+                          SecretServiceKey('store-abc', backend=service).create):
+            with self.assertRaises(JarError) as caught:
+                operation()
+            self.assertEqual(str(caught.exception), 'keyring_unavailable')
+        self.assertEqual(service.closed, service.opened)
 
     def test_an_unanswered_unlock_prompt_ends_at_its_timeout(self):
         """Codex review on #640: the prompt is bounded, so the browser is never held by it."""

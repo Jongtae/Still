@@ -180,7 +180,12 @@ class SecretServiceKey:
         except Exception:
             raise JarError('keyring_unavailable') from None
         try:
-            collection = backend.get_default_collection(connection)
+            # The default collection (the login keyring), never created here: creating one runs a prompt with no
+            # timeout (Codex review on #640).  A desktop with no default keyring is a typed failure.
+            try:
+                collection = backend.Collection(connection)
+            except Exception:
+                raise JarError('keyring_unavailable') from None
             if collection.is_locked():
                 # Bounded (Codex review on #640): an unanswered unlock prompt must not hold the browser.
                 try:

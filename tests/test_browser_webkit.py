@@ -2677,15 +2677,16 @@ class WebKitIntegrationTests(unittest.TestCase):
             self.assertEqual(len(name), 1, frame['fields'])
             self.assertAlmostEqual(name[0]['x'] * frame['width'], 860 * zoom, delta=2)
             if LINUX:
-                # #34: no QR reading on Linux (macOS Vision); the frame never names a link.
+                # #34: no QR reading on Linux (macOS Vision); the frame never names a link.  Only the QR
+                # assertions are skipped: taps, typing and the zoom and restore checks below run on Linux too.
                 self.assertEqual(worker.frame()['links'], [])
-                return
-            links = frame_until(lambda frame: frame['links'])['links']
-            self.assertEqual([link['url'] for link in links], ['https://auth.example/qr?q=596'])
-            # #602: the code's box in the frame holds the code's middle (CSS 98, 158 at this zoom), so a
-            # tap there on the phone opens its link.
-            box, middle = links[0], (98 * zoom / frame['width'], 158 * zoom / frame['height'])
-            self.assertTrue(box['x'] < middle[0] < box['x'] + box['w'] and box['y'] < middle[1] < box['y'] + box['h'], box)
+            else:
+                links = frame_until(lambda frame: frame['links'])['links']
+                self.assertEqual([link['url'] for link in links], ['https://auth.example/qr?q=596'])
+                # #602: the code's box in the frame holds the code's middle (CSS 98, 158 at this zoom), so a
+                # tap there on the phone opens its link.
+                box, middle = links[0], (98 * zoom / frame['width'], 158 * zoom / frame['height'])
+                self.assertTrue(box['x'] < middle[0] < box['x'] + box['w'] and box['y'] < middle[1] < box['y'] + box['h'], box)
             # The phone maps a tap by the frame's own width and height: view points.
             worker.remote_input('tap', x=920.0 * zoom, y=120.0 * zoom)
             self.assertEqual(frame_until(lambda frame: frame['focus'] == 'text')['focus'], 'text', '#293 focus')
