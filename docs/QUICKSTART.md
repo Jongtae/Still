@@ -538,7 +538,7 @@ Python 3.12+ on macOS or Linux is required for source execution. Check with `pyt
 
 ```sh
 python3 -m venv ~/.venvs/agentos
-~/.venvs/agentos/bin/pip install -e '.[mcp-host]'   # run inside the checkout
+~/.venvs/agentos/bin/pip install -e '.[mcp-host]'   # run inside the checkout; on a glibc Linux desktop use '.[mcp-host,linux-browser]' for the browser tool
 ~/.venvs/agentos/bin/agentos start --no-browser
 ```
 

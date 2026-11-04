@@ -178,8 +178,11 @@ class Collection:
     def is_locked(self):
         return self.locked
 
-    def unlock(self):
+    def unlock(self, timeout=None):
         self.unlock_calls += 1
+        self.timeout = timeout
+        if self.unlocks == 'never':
+            raise TimeoutError()
         if self.unlocks:
             self.locked = False
         return not self.unlocks
@@ -240,6 +243,16 @@ class DesktopKeyring(unittest.TestCase):
             SecretServiceKey('store-abc', backend=refused).create()
         self.assertEqual(str(caught.exception), 'keyring_locked')
         self.assertEqual(refused.collection.items, [], 'nothing is written while locked')
+
+    def test_an_unanswered_unlock_prompt_ends_at_its_timeout(self):
+        """Codex review on #640: the prompt is bounded, so the browser is never held by it."""
+        waiting = SecretService(Collection(locked=True, unlocks='never'))
+        with self.assertRaises(JarError) as caught:
+            SecretServiceKey('store-abc', backend=waiting).get()
+        self.assertEqual(str(caught.exception), 'keyring_locked')
+        from personal_agent.browser_jar import KEYRING_PROMPT_SECONDS
+        self.assertEqual(waiting.collection.timeout, KEYRING_PROMPT_SECONDS)
+        self.assertEqual(waiting.closed, waiting.opened)
 
     def test_no_secret_service_is_a_typed_failure_never_a_plaintext_fallback(self):
         key = SecretServiceKey('store-abc', backend=SecretService(running=False))

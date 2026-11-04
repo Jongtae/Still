@@ -182,7 +182,11 @@ class SecretServiceKey:
         try:
             collection = backend.get_default_collection(connection)
             if collection.is_locked():
-                collection.unlock()
+                # Bounded (Codex review on #640): an unanswered unlock prompt must not hold the browser.
+                try:
+                    collection.unlock(timeout=KEYRING_PROMPT_SECONDS)
+                except TimeoutError:
+                    raise JarError('keyring_locked') from None
             if collection.is_locked():
                 raise JarError('keyring_locked')
             return use(collection)
@@ -225,6 +229,10 @@ class SecretServiceKey:
             return self._collection(remove)
         except JarError as exc:
             raise JarError('keyring_delete_failed') from exc
+
+
+#: How long the desktop's keyring unlock prompt may wait for the owner.
+KEYRING_PROMPT_SECONDS = 120
 
 
 def platform_key(account, service=SERVICE, platform=None):
