@@ -17,7 +17,7 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlsplit
 
-from personal_agent.agent_runtime import (Capabilities, ToolError, WorkBudget, action_definitions, classify_failure,
+from personal_agent.agent_runtime import (Capabilities, ToolError, WorkBudget, action_definitions, model_facing_text, classify_failure,
                                           evidence_summary, run_agent, turn_context, verified_text)
 from personal_agent.bounded_execution import (CLI_PROFILES, STRICT_PROFILE, AgentOSMcpTools, BoundedExecutionAdapter,
                                               ExecutionResult, cli_metadata, turn_actions)
@@ -510,17 +510,19 @@ class ToolSchema(unittest.TestCase):
     def test_enum_is_exactly_the_configured_options_and_the_text_names_them_without_a_preference(self):
         function = self.definition(registry(main=main_ai(OPENAI), bing_enabled=True, **{BRAVE_TOKEN: BRAVE_KEY}))
         self.assertEqual(function['parameters']['properties']['provider']['enum'], [AI_NATIVE, 'brave', 'bing'])
-        self.assertIn("ai-native = The connected AI's own web search (OpenAI API", function['description'])
-        self.assertIn('When provider is omitted, ai-native is used.', function['description'])
-        self.assertIn('answer field', function['description'])
+        text = model_facing_text(function)
+        self.assertIn("ai-native = The connected AI's own web search (OpenAI API", text)
+        self.assertIn('When provider is omitted, ai-native is used.', text)
+        self.assertIn('answer field', text)
         for steer in ('prefer', 'Korean quer', 'best for'):
-            self.assertNotIn(steer, function['description'])
+            self.assertNotIn(steer, text)
 
     def test_without_native_search_the_description_says_why_and_names_the_site_route(self):
         function = self.definition(registry(main=main_ai(OLLAMA, key='')))
-        self.assertEqual(function['parameters']['properties']['provider'], {'type': 'string'})
-        self.assertIn('call fails', function['description'])
-        self.assertIn('public_page_read', function['description'])
+        provider = function['parameters']['properties']['provider']
+        self.assertEqual((provider['type'], 'enum' in provider), ('string', False))
+        self.assertIn('call fails', model_facing_text(function))
+        self.assertIn('public_page_read', model_facing_text(function))
 
 
 class Wire:

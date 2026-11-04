@@ -72,7 +72,9 @@ class ToolDeclaration(unittest.TestCase):
         self.assertEqual(result, {'requested': True, 'channel': 'telegram', 'with_answer': True})
         self.assertEqual(seen, [(('다른 곳이면 위치를 보내 주세요.', None), {'with_answer': True})])
         schema = next(d for d in caps.definitions() if d['function']['name'] == 'ask_location')['function']
-        self.assertEqual(schema['parameters']['properties']['mode'], {'type': 'string', 'enum': ['ask', 'with_answer']})
+        mode = schema['parameters']['properties']['mode']
+        self.assertEqual((mode['type'], mode['enum']), ('string', ['ask', 'with_answer']))
+        self.assertIn('with_answer', mode['description'])
         self.assertEqual(evidence_summary('ask_location', result), result)
         # Mode ask is the ordinary question.
         caps.execute('ask_location', {'reason': '지금 어디세요?', 'mode': 'ask'})

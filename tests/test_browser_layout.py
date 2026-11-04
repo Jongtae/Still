@@ -114,7 +114,7 @@ class LayoutArgument(unittest.TestCase):
         tool = next(d['function'] for d in DEFINITIONS if d['function']['name'] == 'browser_open')
         self.assertEqual(tool['parameters']['properties']['layout']['enum'], ['mobile', 'desktop'])
         self.assertNotIn('layout', tool['parameters']['required'])
-        self.assertIn('layout=desktop', tool['description'])
+        self.assertIn('layout=desktop', tool['parameters']['properties']['layout']['description'])
 
 
 if __name__ == '__main__':

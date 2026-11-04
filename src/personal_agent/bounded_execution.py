@@ -1787,7 +1787,7 @@ class AgentOSMcpTools:
         """#701: the sentence a search-off CLI turn adds to the bridge search tools.
 
         It names why the CLI's own search is off and that the providers listed
-        in the description answer instead; a provider's own caveat comes from
+        under ``provider`` (#629) answer instead; a provider's own caveat comes from
         the provider (``describe_options``), never from a branch here.
         """
         if self.native_search or not self.native_search_reason:
@@ -1795,7 +1795,7 @@ class AgentOSMcpTools:
         from .search_providers import NATIVE_REASONS
         why = NATIVE_REASONS.get(self.native_search_reason, '')
         return (" The CLI's own web search is off for this turn" + (f' ({why})' if why else '')
-                + '; this tool answers with the providers listed above.')
+                + '; this tool answers with the providers listed under provider.')
 
     def definitions(self):
         # Fresh JSON-compatible copies: callers must not mutate the contract.

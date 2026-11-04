@@ -2524,10 +2524,10 @@ class SecretaryStandard(Harness):
 
     def test_the_watch_and_memory_tool_descriptions_state_the_standing_wish_default(self):
         """#846: the tool text carries the default cadence and the value-not-request rule, with no task names."""
-        from personal_agent.agent_runtime import DEFINITIONS, PROFILE_KEY_GUIDANCE, SCHEDULE_PREPARATION_DESCRIPTION
+        from personal_agent.agent_runtime import DEFINITIONS, PROFILE_KEY_GUIDANCE, model_facing_text
         from test_no_scenario_code import scenario_tokens
-        by_name = {tool['function']['name']: tool['function']['description'] for tool in DEFINITIONS}
-        for text in (SCHEDULE_PREPARATION_DESCRIPTION, by_name['schedule_preparation']):
+        by_name = {tool['function']['name']: model_facing_text(tool['function']) for tool in DEFINITIONS}
+        for text in (by_name['schedule_preparation'],):
             self.assertIn('about three checks a day', text)
             self.assertIn('every_minutes around 360 to 480', text)
             self.assertIn('hourly or closer only when the owner asks for it or the deadline is within hours', text)
@@ -2552,8 +2552,9 @@ class SecretaryStandard(Harness):
             self.assertIn('ordinary conversation that needs no current facts', guidance)
         # #846: a standing wish is proposed as a watch; #1508: its method and cadence are stated once,
         # in the schedule_preparation description, not repeated in the core prompt.
-        from personal_agent.agent_runtime import SCHEDULE_PREPARATION_DESCRIPTION
-        self.assertIn('about three checks a day', SCHEDULE_PREPARATION_DESCRIPTION)
+        from personal_agent.agent_runtime import DEFINITIONS, model_facing_text
+        [preparation] = [tool['function'] for tool in DEFINITIONS if tool['function']['name'] == 'schedule_preparation']
+        self.assertIn('about three checks a day', model_facing_text(preparation))
         self.assertNotIn('about three checks a day', CORE_INSTRUCTIONS)
         self.assertNotIn('every_minutes', CORE_INSTRUCTIONS)
         self.assertIn('never the request sentence itself', CORE_INSTRUCTIONS)
@@ -2578,7 +2579,7 @@ class SecretaryStandard(Harness):
         """#854: a looked-up changing fact carries its link or is called unsourced; an assumable missing detail never
         blocks a watch (#406: only one that decides what is checked is asked first)."""
         from personal_agent.agent_runtime import (CLI_NATIVE_SEARCH_GUIDANCE, CORE_INSTRUCTIONS, DEFINITIONS,
-                                                  SCHEDULE_PREPARATION_DESCRIPTION)
+                                                  model_facing_text)
         from test_no_scenario_code import scenario_tokens
         self.assertIn('put the source link right next to it in the answer', CORE_INSTRUCTIONS)
         self.assertIn('if the lookup returned no link, say briefly that the fact is unsourced rather than presenting it as checked',
@@ -2587,12 +2588,12 @@ class SecretaryStandard(Harness):
         # #1419: a page the CLI's own search could not open or show is read with the recorded browser tools first.
         self.assertIn('open and read that page with the agentos browser tools where offered', CLI_NATIVE_SEARCH_GUIDANCE)
         self.assertIn('before saying it could not be checked', CLI_NATIVE_SEARCH_GUIDANCE)
-        by_name = {tool['function']['name']: tool['function']['description'] for tool in DEFINITIONS}
-        for text in (SCHEDULE_PREPARATION_DESCRIPTION, by_name['schedule_preparation']):
+        by_name = {tool['function']['name']: model_facing_text(tool['function']) for tool in DEFINITIONS}
+        for text in (by_name['schedule_preparation'],):
             self.assertIn('still propose the watch with what is known, say the assumption and ask in the same reply', text)
             self.assertIn('when the missing detail decides what is checked (which date, which item) and nothing gives it, '
                           'ask that one question first', text)
-        for text in (CORE_INSTRUCTIONS, CLI_NATIVE_SEARCH_GUIDANCE, SCHEDULE_PREPARATION_DESCRIPTION):
+        for text in (CORE_INSTRUCTIONS, CLI_NATIVE_SEARCH_GUIDANCE, by_name['schedule_preparation']):
             self.assertEqual(scenario_tokens(text), [])
 
     def test_a_tool_less_direct_reply_gets_the_one_judgment_and_stays_on_the_main_ai_when_short(self):

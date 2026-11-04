@@ -11,7 +11,7 @@ from unittest.mock import Mock, patch
 from urllib.parse import parse_qs, urlsplit
 
 from personal_agent.capability_search import CapabilitySearch, MAX_BYTES, REGISTRY, TTL
-from personal_agent.agent_runtime import Capabilities, DEFINITIONS, ToolError
+from personal_agent.agent_runtime import Capabilities, DEFINITIONS, ToolError, model_facing_text
 from personal_agent.bounded_execution import AgentOSMcpTools, StrictIsolatedAgentOSMcpTools
 from personal_agent.cli_browser_relay import BrowserRelay, RelayClient
 from personal_agent.quickstart_service import AgentService
@@ -172,5 +172,5 @@ class RelayTests(unittest.TestCase):
         definitions={row['function']['name']:row['function'] for row in DEFINITIONS}
         for name in ('settings_read','settings_change'):
             self.assertIn('ai_connections',definitions[name]['parameters']['properties']['category']['enum'])
-        self.assertNotIn('only read operations run',definitions['settings_change']['description'])
-        self.assertIn('per-action',definitions['settings_change']['description'])
+        self.assertNotIn('only read operations run',model_facing_text(definitions['settings_change']))
+        self.assertIn('per-action',model_facing_text(definitions['settings_change']))

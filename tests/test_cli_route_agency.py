@@ -37,7 +37,7 @@ from unittest import mock
 
 from personal_agent import browser_session as bs
 from personal_agent import mcp_bridge
-from personal_agent.agent_runtime import (BROWSER_ACTIONS, EFFECT_NONE, ENGINE_UNMEDIATED, HISTORY_PREFIX, OWNER_CONVERSATION,
+from personal_agent.agent_runtime import (model_facing_text, BROWSER_ACTIONS, EFFECT_NONE, ENGINE_UNMEDIATED, HISTORY_PREFIX, OWNER_CONVERSATION,
                                           WORK_SOURCES_BACKFILL_KEY, WORK_SOURCES_KEY, backfill_work_sources, base_label,
                                           history_provenance, legacy_work_sources, record_effect)
 from personal_agent.bounded_execution import (AgentOSMcpTools, BoundedExecutionAdapter, ExecutionResult,
@@ -681,7 +681,7 @@ class NativeSearchTurnArgv(unittest.TestCase):
         caps = _caps(network=network)
         tools = AgentOSMcpTools(caps)
         tools.native_search_reason = 'refused'
-        described = {tool['name']: tool['description'] for tool in tools.definitions()}
+        described = {tool['name']: model_facing_text(tool) for tool in tools.definitions()}
         for name in ('web_search',):
             self.assertIn("The CLI's own web search is off for this turn", described[name])
             self.assertIn('자체 웹 검색을 쓸 수 없다고', described[name], 'the owner-facing reason')

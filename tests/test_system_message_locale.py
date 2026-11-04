@@ -55,6 +55,10 @@ class ConnectionFailureFixtures(unittest.TestCase):
         return (
             (provider_error(HTTPError('u', 401, 'x', {}, io.BytesIO(b'{}'))), 'providers.http_error', {'status': 401}),
             (provider_error(HTTPError('u', 429, 'x', {}, io.BytesIO(b'{}'))), 'providers.free_model_rate_limited', {}),
+            # #629: a provider's own error identifiers are named; its free-text message is not.
+            (provider_error(HTTPError('u', 400, 'x', {}, io.BytesIO(
+                b'{"error": {"code": "string_above_max_length", "param": "tools[0].function.description", "message": "m"}}'))),
+             'providers.http_error_reason', {'status': 400, 'reason': 'string_above_max_length (tools[0].function.description)'}),
             (provider_error(URLError('down')), 'providers.unreachable', {}),
             (provider_error(TimeoutError()), 'providers.unreachable', {}),
             (provider_error(Body(b'not json')), 'providers.invalid_json', {}),

@@ -12,7 +12,7 @@ from pathlib import Path
 from personal_agent import isolated_engine_mcp_bridge
 from personal_agent.agent_runtime import (SKILL_ACTIONS, BROWSER_ACTIONS, BROWSER_SESSION_NOTE, BROWSER_SIGN_IN_DESCRIPTION, BROWSER_SIGN_IN_NOTE, BROWSER_SIGN_IN_ROUTE_RULE, DEFINITIONS, STATUS_ARGUMENT, STATUS_SCHEMA,
                                           Capabilities,
-                                          check_arguments)
+                                          check_arguments, model_facing_text)
 from personal_agent.bounded_execution import (
     BOUNDED_PROFILE,
     CLI_PROFILES,
@@ -145,9 +145,9 @@ class OneActionSource(_Store):
         self.assertIn('the account owner can see it there', BROWSER_SESSION_NOTE)
         self.assertIn('including what was already there', BROWSER_SESSION_NOTE)
         self.assertIn('never suggest the person you serve can order or pay now', BROWSER_SESSION_NOTE)
-        self.assertIn(BROWSER_SESSION_NOTE, NATIVE['browser_open']['description'])
+        self.assertIn(BROWSER_SESSION_NOTE, model_facing_text(NATIVE['browser_open']))
         # #910: a signed-out page starts the in-flow login; #953: by asking for it directly (browser_sign_in).
-        self.assertIn(BROWSER_SIGN_IN_NOTE, NATIVE['browser_open']['description'])
+        self.assertIn(BROWSER_SIGN_IN_NOTE, model_facing_text(NATIVE['browser_open']))
         self.assertIn("call browser_sign_in with the site's address", BROWSER_SIGN_IN_NOTE)
         self.assertIn('from their phone where that is set up', BROWSER_SIGN_IN_DESCRIPTION)
         self.assertIn('Never tell the person to sign in in a browser yourself', BROWSER_SIGN_IN_DESCRIPTION)
@@ -159,9 +159,9 @@ class OneActionSource(_Store):
         self.assertIn('never types a password', BROWSER_SIGN_IN_DESCRIPTION)
         self.assertEqual(NATIVE['browser_sign_in']['description'], BROWSER_SIGN_IN_DESCRIPTION)
         wire = {tool['name']: tool for tool in AgentOSMcpTools(self.caps(browser=lambda: None)).definitions()}
-        self.assertIn(BROWSER_SESSION_NOTE, wire['browser_open']['description'])
+        self.assertIn(BROWSER_SESSION_NOTE, model_facing_text(wire['browser_open']))
         static = {tool['name']: tool for tool in profile_mcp_tools(BOUNDED_PROFILE)}
-        self.assertIn(BROWSER_SESSION_NOTE, static['browser_open']['description'])
+        self.assertIn(BROWSER_SESSION_NOTE, model_facing_text(static['browser_open']))
         # #953: the sign-in request reaches the CLI bridge with the same text as the API definition.
         self.assertEqual(wire['browser_sign_in']['description'], BROWSER_SIGN_IN_DESCRIPTION)
         self.assertEqual(static['browser_sign_in']['description'], BROWSER_SIGN_IN_DESCRIPTION)
@@ -177,7 +177,7 @@ class OneActionSource(_Store):
         seen = 0
         for route, tools in (('native', NATIVE), ('wire', wire), ('static', static)):
             for name, tool in tools.items():
-                text = str(tool.get('description') or '')
+                text = model_facing_text(tool)
                 if name != 'browser_sign_in' and 'browser_sign_in' not in text:
                     continue
                 seen += 1
@@ -211,7 +211,7 @@ class OneActionSource(_Store):
                 if route == 'wire' and name not in tools:
                     continue  # these test capabilities gate capability_search off the wire list
                 with self.subTest(route=route, tool=name):
-                    self.assertIn(API_KEY_ROUTE, str(tools[name].get('description') or ''))
+                    self.assertIn(API_KEY_ROUTE, model_facing_text(tools[name]))
         self.assertIn('settings_change', profile_actions(BOUNDED_PROFILE))
         for profile in CLI_PROFILES:
             actions = profile_actions(profile)

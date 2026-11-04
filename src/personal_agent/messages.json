@@ -6737,6 +6737,12 @@
   "ja": "接続先が HTTP {status} エラーを返しました。アドレス・モデル・認証の設定を確認してください。",
   "zh": "连接目标返回了 HTTP {status} 错误。请检查地址、模型和认证设置。"
  },
+ "providers.http_error_reason": {
+  "ko": "연결 대상이 HTTP {status} 오류를 반환했습니다. 제공자가 알린 원인: {reason}",
+  "en": "The connection returned HTTP error {status}. The provider's reason: {reason}",
+  "ja": "接続先が HTTP {status} エラーを返しました。提供元が示した原因: {reason}",
+  "zh": "连接目标返回了 HTTP {status} 错误。提供方给出的原因：{reason}"
+ },
  "providers.unreachable": {
   "ko": "연결할 수 없거나 응답 시간이 초과되었습니다. 서버와 네트워크를 확인하세요.",
   "en": "Couldn't connect, or the response timed out. Check the server and the network.",
