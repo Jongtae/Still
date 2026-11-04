@@ -50,6 +50,10 @@ WORLD = 'still'
 BINDING = '__still_guard_message'
 PAGE_FILTER = [{'type': 'page'}, {'exclude': True}]
 FRAME_FILTER = [{'type': 'iframe'}, {'exclude': True}]
+#: Chromium's own launch-failure text when its sandbox cannot start (lower-cased).  'sandboxing failed'
+#: is what Chrome for Testing 156 prints where user namespaces are refused (observed, #34).
+SANDBOX_FAILURE_MARKERS = ('sandboxing failed', 'no usable sandbox', 'sandbox_host_linux', 'suid sandbox',
+                           'running as root without --no-sandbox', 'failed to move to new namespace')
 LAUNCH_ARGS = [
     '--ozone-platform=x11',
     f'--window-position={shared.PARK_ORIGIN},{shared.PARK_ORIGIN}',
@@ -1094,10 +1098,7 @@ def _main(args, emit):
     except Exception as exc:
         if not ready:
             text = str(exc).lower()
-            # 'sandboxing failed' is what Chrome for Testing 156 prints where user namespaces are refused
-            # (observed in an unprivileged container, #34).
-            sandbox = any(s in text for s in ('sandboxing failed', 'no usable sandbox', 'sandbox_host_linux', 'suid sandbox',
-                                             'running as root without --no-sandbox', 'failed to move to new namespace'))
+            sandbox = any(marker in text for marker in SANDBOX_FAILURE_MARKERS)
             emit({'event': 'unavailable', 'error': 'sandbox_unavailable' if sandbox else 'chromium_failed'})
         if worker is not None:
             try:

@@ -1,0 +1,41 @@
+# TEMPORARY (#34): diagnostics for the Linux Chromium worker on the feature branch only; removed before merge.
+name: linux-browser-debug
+on:
+  push:
+    branches: ['feat/34-linux-chromium-browser']
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: '0.11.33'
+      - run: uv sync --locked --extra mcp-host --extra linux-browser --extra schema-validation --group dev --no-python-downloads
+      - run: sudo "$PWD/.venv/bin/playwright" install-deps chromium && sudo apt-get install -y -qq xvfb xauth
+      - name: Chromium and sandbox profile
+        run: |
+          tools="$RUNNER_TEMP/still-tools"; echo "AGENTOS_TEST_TOOLS_DIR=$tools" >> "$GITHUB_ENV"
+          chrome=$(PYTHONPATH=src .venv/bin/python -c "import sys; from personal_agent import chromium_runtime as c; print(c.ensure(sys.argv[1]))" "$tools")
+          echo "CHROME=$chrome" >> "$GITHUB_ENV"
+          cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns || true
+          if PYTHONPATH=src .venv/bin/python -c "import sys; from personal_agent import chromium_runtime as c; sys.exit(0 if c.userns_restricted() else 1)"; then
+            sh -c "$(PYTHONPATH=src .venv/bin/python -c "import sys; from personal_agent import chromium_runtime as c; print(c.apparmor_setup(sys.argv[1]))" "$chrome")"
+          fi
+      - name: Worker probe (stderr visible)
+        timeout-minutes: 5
+        run: PYTHONPATH=src xvfb-run -a .venv/bin/python scripts/dev/linux_browser_probe.py "$CHROME"
+      - name: Conformance, one test at a time with a time limit
+        if: ${{ !cancelled() }}
+        env:
+          AGENTOS_REAL_BROWSER_TESTS: '1'
+        run: |
+          for t in $(PYTHONPATH=src .venv/bin/python -m pytest -q --collect-only tests/test_browser_webkit.py::WebKitIntegrationTests | grep '::'); do
+            echo "=== $t"; PYTHONPATH=src timeout 120 xvfb-run -a .venv/bin/python -m pytest -q -x "$t" 2>&1 | tail -25 || echo "!!! TIMEOUT/FAIL $t"
+          done

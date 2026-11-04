@@ -342,7 +342,9 @@ class ProfileTests(unittest.TestCase):
             def __init__(self, profile_id, seed=None, **kwargs):
                 super().__init__([cookie('only.test')])
                 self.seeded = seed()
-        with mock.patch.object(bs, 'WebKitWorkerDriver', Worker):
+        # #34: on Linux the default launcher first checks the pinned Chromium; nothing is downloaded here.
+        ensure = mock.patch('personal_agent.chromium_runtime.ensure', return_value='/pinned/chrome')
+        with mock.patch.object(bs, 'WebKitWorkerDriver', Worker), ensure:
             profile = bs.BrowserProfile(Path(self.tmp.name), jar=locked, available=lambda: True)
             session = profile.driver_factory('w1')()
             self.assertEqual(session.seeded, [])
@@ -350,7 +352,7 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual(self.jar.path.read_bytes(), before, 'the jar was left as it was')
         self.assertEqual(profile.save_error, 'key_missing')
         # With a readable jar the import is recorded and the save merges.
-        with mock.patch.object(bs, 'WebKitWorkerDriver', Worker):
+        with mock.patch.object(bs, 'WebKitWorkerDriver', Worker), ensure:
             profile = bs.BrowserProfile(Path(self.tmp.name), jar=self.jar, available=lambda: True)
             session = profile.driver_factory('w2')()
             self.assertEqual(len(session.seeded), 2)
