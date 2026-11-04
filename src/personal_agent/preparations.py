@@ -96,6 +96,9 @@ DECLINED_GOALS_LIMIT = 20
 #: lapses as ``expired`` (not ``cancelled``, so it is not a decline).
 ORIGIN_DREAM = 'dream'
 SUGGESTION_EXPIRY_SECONDS = 7 * 86400
+#: #638: a look back that holds a one-off suggestion (no recurrence) is offered without waiting for the
+#: owner's next Work, but only inside these owner-local hours; one whose time passed unanswered lapses.
+SUGGESTION_OFFER_HOURS = range(8, 22)
 #: ``accepted_by`` values: who turned a proposal into a schedule.
 ACCEPTED_OWNER_REQUEST, ACCEPTED_OWNER_BUTTON, ACCEPTED_OWNER_SETTINGS = 'owner-request', 'owner-button', 'owner-settings'
 #: #172: the owner's reply or reaction to the proposal message, judged a plain yes to it.
@@ -1034,16 +1037,26 @@ class Preparations:
             row = db.execute('SELECT MAX(offered_at) FROM preparations WHERE origin=?', (ORIGIN_DREAM,)).fetchone()
         return float(row[0]) if row and row[0] is not None else None
 
-    def unoffered_suggestions(self, now):
+    def has_unoffered_one_off(self):
+        """Whether a look back holds a one-off suggestion not offered yet (#638; one read)."""
+        with self.store.db() as db:
+            return db.execute('SELECT 1 FROM preparations WHERE state=? AND origin=? AND offered_at IS NULL '
+                              'AND recurrence IS NULL LIMIT 1', (STATE_PROPOSED, ORIGIN_DREAM)).fetchone() is not None
+
+    def unoffered_suggestions(self, now, one_off=False):
         """The oldest look-back's suggestions not offered yet, ``(work_id, rows)``, or ``(None, [])``.
 
         A first slot that has passed meanwhile moves to the recurrence's next slot,
-        so the message shows the schedule an acceptance would keep.
+        so the message shows the schedule an acceptance would keep; a one-off whose
+        time passed lapses (#638).  ``one_off`` takes only a look back that holds one.
         """
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            db.execute(f'UPDATE preparations SET state=?,updated_at=? WHERE {self._LAPSED_ONE_OFF}',
+                       (STATE_EXPIRED, now, STATE_PROPOSED, ORIGIN_DREAM, now))
             anchor = db.execute('SELECT created_from FROM preparations WHERE origin=? AND state=? AND offered_at IS NULL '
-                                'ORDER BY created_at LIMIT 1', (ORIGIN_DREAM, STATE_PROPOSED)).fetchone()
+                                + ('AND recurrence IS NULL ' if one_off else '')
+                                + 'ORDER BY created_at LIMIT 1', (ORIGIN_DREAM, STATE_PROPOSED)).fetchone()
             if anchor is None:
                 return None, []
             for row in db.execute('SELECT * FROM preparations WHERE created_from=? AND origin=? AND state=? AND due_at<=?',
@@ -1059,19 +1072,24 @@ class Preparations:
             for row in rows:
                 db.execute('UPDATE preparations SET offered_at=? WHERE id=? AND offered_at IS NULL', (now, row['id']))
 
+    #: #638: an unanswered one-off suggestion whose time came (params: state, origin, now).
+    _LAPSED_ONE_OFF = 'state=? AND origin=? AND recurrence IS NULL AND due_at<=?'
+
     def expire_suggestions(self, now):
-        """Look-back suggestions still unanswered after ``SUGGESTION_EXPIRY_SECONDS`` lapse; returns how many.
+        """Look-back suggestions still unanswered after ``SUGGESTION_EXPIRY_SECONDS``, or one-offs whose time
+        came (#638), lapse; returns how many.
 
         ``expired``, not ``cancelled``: the owner never said no, so ``declined_goals`` does not count it.
         Nothing to expire is one read.
         """
         cutoff = now - SUGGESTION_EXPIRY_SECONDS
+        where = 'state=? AND origin=? AND (created_at<=? OR (recurrence IS NULL AND due_at<=?))'
+        params = (STATE_PROPOSED, ORIGIN_DREAM, cutoff, now)
         with self.store.db() as db:
-            if db.execute('SELECT 1 FROM preparations WHERE state=? AND origin=? AND created_at<=? LIMIT 1',
-                          (STATE_PROPOSED, ORIGIN_DREAM, cutoff)).fetchone() is None:
+            if db.execute(f'SELECT 1 FROM preparations WHERE {where} LIMIT 1', params).fetchone() is None:
                 return 0
-            return db.execute('UPDATE preparations SET state=?,updated_at=? WHERE state=? AND origin=? AND created_at<=?',
-                              (STATE_EXPIRED, now, STATE_PROPOSED, ORIGIN_DREAM, cutoff)).rowcount
+            return db.execute(f'UPDATE preparations SET state=?,updated_at=? WHERE {where}',
+                              (STATE_EXPIRED, now, *params)).rowcount
 
     def rows(self, limit=100):
         """Every row with its last run's Work status and delivery, active first."""
