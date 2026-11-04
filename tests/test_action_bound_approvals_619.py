@@ -295,16 +295,35 @@ class PreparationDraftBinding(_Case):
     def edit_draft(self, **changes):
         return self.settings.propose('owner', 'http', 'preparations', 'edit', json.dumps({'id': self.row['id'], **changes}))
 
-    def test_a_timezone_change_cannot_move_an_approved_wall_clock_time(self):
-        """Codex P1 on #626: an offset-free ``due`` is bound to the timezone it was resolved in."""
+    def test_a_timezone_change_makes_a_wall_clock_edit_stale(self):
+        """Codex on #626: an offset-free ``due`` is bound to the timezone it was resolved in."""
         draft = self.edit_draft(due='2026-11-05T09:00')
-        self.assertEqual(json.loads(draft['after'])['timezone'], 'Asia/Seoul')
-        expected = prep.parse_due('2026-11-05T09:00', 'Asia/Seoul', 'Asia/Seoul', self.clock[0])[0]
+        self.assertEqual(json.loads(draft['after'])['bound_timezone'], 'Asia/Seoul')
+        self.assertNotIn('timezone', json.loads(draft['after']), 'not passed on as a timezone edit')
         self.service.preparations.edit(self.row['id'], timezone='America/New_York')
-        self.settings.confirm('owner', 'http', draft['draft_id'], draft['digest'])
+        before = self.service.preparations.get(self.row['id'])
+        with self.assertRaises(SettingsError):
+            self.settings.confirm('owner', 'http', draft['draft_id'], draft['digest'])
         current = self.service.preparations.get(self.row['id'])
-        self.assertEqual((current['due_at'], current['timezone']), (expected, 'Asia/Seoul'),
-                         'the time the owner approved, not 14 hours later')
+        self.assertEqual((current['due_at'], current['timezone']), (before['due_at'], 'America/New_York'),
+                         'nothing applies, so the approved time can never move 14 hours')
+
+    def test_an_offset_free_due_resolves_in_the_bound_timezone(self):
+        draft = self.edit_draft(due='2026-11-05T09:00')
+        self.settings.confirm('owner', 'http', draft['draft_id'], draft['digest'])
+        expected = prep.parse_due('2026-11-05T09:00', 'Asia/Seoul', 'Asia/Seoul', self.clock[0])[0]
+        current = self.service.preparations.get(self.row['id'])
+        self.assertEqual((current['due_at'], current['timezone']), (expected, 'Asia/Seoul'))
+
+    def test_a_recurrence_only_edit_of_a_paused_past_due_preparation_applies(self):
+        """Codex P2 on #626: the bound timezone is no due/timezone edit, so the stored due time is kept."""
+        self.service.preparations.pause(self.row['id'])
+        self.clock[0] = self.row['due_at'] + 3 * 86400
+        draft = self.edit_draft(recurrence='weekly')
+        self.assertEqual(self.settings.confirm('owner', 'http', draft['draft_id'], draft['digest'])['state'], 'applied')
+        current = self.service.preparations.get(self.row['id'])
+        self.assertEqual((current['recurrence'], current['due_at'], current['state']),
+                         ('weekly', self.row['due_at'], prep.STATE_PAUSED))
 
     def test_a_watch_run_does_not_make_an_edit_draft_stale(self):
         draft = self.edit_draft(due='2026-11-05T09:00')
@@ -317,7 +336,7 @@ class PreparationDraftBinding(_Case):
 
     def test_a_rule_edit_binds_its_timezone_and_an_explicit_one_is_kept(self):
         draft = self.edit_draft(recurrence='weekly')
-        self.assertEqual(json.loads(draft['after'])['timezone'], 'Asia/Seoul')
+        self.assertEqual(json.loads(draft['after'])['bound_timezone'], 'Asia/Seoul')
         draft = self.settings.propose('owner', 'http', 'preparations', 'edit',
                                       json.dumps({'id': self.row['id'], 'due': '2026-11-05T09:00+09:00',
                                                   'timezone': 'Asia/Tokyo'}))

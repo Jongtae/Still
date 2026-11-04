@@ -285,6 +285,8 @@ UNATTENDED_SETTINGS_TEXT = ('No owner is present in this scheduled run, so no se
                             'make; the owner can ask for it in the conversation.')
 
 
+#: #619: the timezone an edit's wall-clock values were resolved in, bound in its draft (not an edit).
+BOUND_TIMEZONE = "bound_timezone"
 #: #619: what each preparation operation authorizes, and so what its draft binds (Codex P1 on #626).
 _PREPARATION_IDENTITY = ('id', 'kind', 'goal_text')
 _PREPARATION_RUN = (*_PREPARATION_IDENTITY, 'title_text', 'offer_text', 'delivery_mode', 'channel')
@@ -779,15 +781,21 @@ class SettingsOrchestrator:
                 raise prep.PreparationRefusal('already_running')
             if current['state'] not in (prep.STATE_PROPOSED, prep.STATE_SCHEDULED, prep.STATE_PAUSED):
                 raise prep.PreparationRefusal('invalid_state')
-            # #619 (Codex P1 on #626): the draft binds the preparation's identity, not its schedule, so
-            # every value an edit would otherwise resolve from the current row at apply time is fixed
-            # here.  A wall-clock time (an offset-free ``due`` or ``until``, a rule or a recurrence)
-            # is read in a timezone: the one it was resolved in now becomes part of the change, so a
-            # timezone change before the owner confirms cannot move the approved time.  ``due_at``
-            # itself stays unbound, so a watch run that advances it does not make the draft stale.
-            if 'timezone' not in changes and set(changes) & {'due', 'until', 'rrule', 'recurrence'}:
-                changes['timezone'] = current['timezone']
-            prep.Preparations.edit_values(current, {k: v for k, v in changes.items() if k != 'id'}, self.service.preparations.clock())
+            # #619 (Codex on #626): the draft binds the preparation's identity, not its schedule, so
+            # what an edit would otherwise resolve from the current row at apply time is fixed here.  A
+            # wall-clock time (an offset-free ``due`` or ``until``, a rule or a recurrence) is read in a
+            # timezone: the one it was resolved in is bound beside the change (``BOUND_TIMEZONE``, in
+            # the digest), never passed on as a requested timezone edit, so a recurrence-only edit keeps
+            # its stored ``due_at`` as before.  A timezone changed since makes the draft stale here, when
+            # it is applied, and nothing applies.  ``due_at`` stays unbound: a watch run advancing it
+            # does not make the draft stale.
+            bound = changes.get(BOUND_TIMEZONE)
+            if bound is not None and bound != current['timezone']:
+                raise SettingsError(STALE_MESSAGE)
+            requested = {k: v for k, v in changes.items() if k not in ('id', BOUND_TIMEZONE)}
+            if bound is None and 'timezone' not in requested and set(requested) & {'due', 'until', 'rrule', 'recurrence'}:
+                changes[BOUND_TIMEZONE] = current['timezone']
+            prep.Preparations.edit_values(current, requested, self.service.preparations.clock())
             return json.dumps(changes, sort_keys=True, ensure_ascii=False), row
         if (category, setting) == ('api_connections', 'connect'):
             from .api_input import value as api_value
@@ -1244,7 +1252,10 @@ class SettingsOrchestrator:
             self.__dict__.setdefault("_apply_text", {})[row["id"]] = self.service.close_login_window_by_owner(after)
         elif category == "preparations":
             # #1455: the same operations as the Settings list (#659), confirmed by the owner in the conversation.
-            self.service.preparation_request({"operation": setting, **(json.loads(after) if setting == "edit" else {"id": after})})
+            # #619: only the owner's requested fields reach the edit; the bound timezone was checked above.
+            self.service.preparation_request({"operation": setting, **({k: v for k, v in json.loads(after).items()
+                                                                        if k != BOUND_TIMEZONE} if setting == "edit"
+                                                                       else {"id": after})})
         elif category == "skills":
             # #961: the service's own setters; adding returns the installed identity as the answer.
             receipt = self.service.apply_skill_setting(setting, after)
