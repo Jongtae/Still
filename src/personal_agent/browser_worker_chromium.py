@@ -330,6 +330,8 @@ class Worker(shared.Worker):
             user_agent=user_agent_for('mobile', self.version), is_mobile=False, has_touch=True,
             device_scale_factor=1)
         self.context.on('page', self.page_created)
+        # #34: a popup's first request, before this worker's CDP session on it exists (``route_popup``).
+        self.context.route('**/*', self.route_popup)
         self.root_cdp = self.browser.new_browser_cdp_session()
         self.root_cdp.on('Target.attachedToTarget', lambda p: self.attached(self.root_cdp, p))
         self.root_cdp.on('Target.receivedMessageFromTarget', self.target_message)
@@ -638,9 +640,23 @@ class Worker(shared.Worker):
         except Exception:
             self.fail(ident, 'worker_error')
 
-    def request_paused(self, target, event):
-        """Check *each* Document request, including redirectedRequestId hops."""
+    def request_paused(self, target, event, release=None, refuse=None):
+        """Check *each* Document request, including redirectedRequestId hops.
+
+        ``release``/``refuse`` answer a request held elsewhere (a popup's first request, held by
+        ``route_popup``); by default the request is the one this target's Fetch paused.
+        """
         request = event['request']
+        if release is None and getattr(target, 'routed_first', None) == request.get('url') \
+                and not event.get('redirectedRequestId'):
+            # The same first request, already decided by ``route_popup``: let it through once.
+            target.routed_first = None
+            return target.post('Fetch.continueRequest', {'requestId': event['requestId']})
+        release = release or (lambda: target.post('Fetch.continueRequest', {'requestId': event['requestId']}))
+        # 'Aborted' (net::ERR_ABORTED) leaves the current document in place, as WebKit's cancelled
+        # policy decision does; 'BlockedByClient' would commit Chromium's error page instead.
+        refuse = refuse or (lambda: target.post('Fetch.failRequest', {'requestId': event['requestId'],
+                                                                      'errorReason': 'Aborted'}))
         _trace('request_paused', target.kind, request.get('method'), request.get('url', '')[:120],
                self.frame_requests.get((target.ident, event.get('frameId')), {}).get('reason'))
         url, method = request['url'], request.get('method', 'GET')
@@ -664,7 +680,7 @@ class Worker(shared.Worker):
                     self.main_navigations += 1
                     self.phone_navigated(committed=False)
                 self.origins.add(self.origin(url))
-                target.post('Fetch.continueRequest', {'requestId': event['requestId']})
+                release()
 
             if allowed and popup and not self.owner_visible:
                 # Adopt the already paused page rather than replaying its request.
@@ -674,9 +690,7 @@ class Worker(shared.Worker):
             if not allowed:
                 if reason:
                     self.navigation_refused(counted, reason)
-                # 'Aborted' (net::ERR_ABORTED) leaves the current document in place, as WebKit's cancelled
-                # policy decision does; 'BlockedByClient' would commit Chromium's error page instead.
-                target.post('Fetch.failRequest', {'requestId': event['requestId'], 'errorReason': 'Aborted'})
+                refuse()
                 if popup and not self.owner_visible:
                     self.root_cdp.send('Target.closeTarget', {'targetId': target.ident})
             else:
@@ -697,6 +711,47 @@ class Worker(shared.Worker):
             return self.check_form_navigation(url, method, lambda allowed: self.decide(url, counted, decision)
                                               if allowed else decision(False), into_frame=not main)
         self.decide(url, counted, decision)
+
+    def route_popup(self, route, request):
+        """A popup's first request (#34): held by Playwright, which resumes a new page before this worker's
+        own CDP session can intercept it.  Decided like any paused request; let through only once this
+        worker's interception is installed on the popup, so its redirect hops are checked too.  A popup
+        that cannot be identified is refused (fail closed)."""
+        try:
+            if not request.is_navigation_request():
+                return route.continue_()
+            frame = request.frame
+            page = frame.page
+            if page is self.page or frame.parent_frame is not None or self.closing:
+                return route.continue_()   # this worker's own Fetch decides (each hop)
+        except Exception:
+            return self._settle_route(route, False)
+        began = time.monotonic()
+
+        def ready():
+            target = next((t for t in self.targets.values() if self.pages.get(t.ident) is page), None)
+            if target is None:
+                try:
+                    target = self.target_for(page)
+                except Exception:
+                    target = None
+            if target is None or not target.ready:
+                if time.monotonic() - began < shared.WARM_SECONDS:
+                    return self.AppHelper.callLater(.02, ready)
+                return self._settle_route(route, False)
+            target.routed_first = request.url
+            self.request_paused(target, {'request': {'url': request.url, 'method': request.method},
+                                         'frameId': target.main_frame},
+                                release=lambda: self._settle_route(route, True),
+                                refuse=lambda: self._settle_route(route, False))
+        ready()
+
+    @staticmethod
+    def _settle_route(route, allowed):
+        try:
+            route.continue_() if allowed else route.abort('aborted')
+        except Exception:
+            pass
 
     def promote_popup(self, target, then, began=None):
         began = time.monotonic() if began is None else began

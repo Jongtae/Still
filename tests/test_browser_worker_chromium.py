@@ -86,6 +86,9 @@ class FakeContext:
     def on(self, event, fn):
         self.handlers[event] = fn
 
+    def route(self, pattern, handler):
+        self.routes = getattr(self, 'routes', []) + [(pattern, handler)]
+
     def new_page(self):
         page = FakePage('page-' + str(len(self.pages)))
         self.pages.append(page)
@@ -713,3 +716,59 @@ def test_the_vetted_notice_runs_only_in_the_isolated_world(worker):
     sources = packets(worker, 'Page.addScriptToEvaluateOnNewDocument')
     with_notice = [source for source in sources if "Object.defineProperty(s, 'vetted'" in source['source']]
     assert with_notice and all(source.get('worldName') == chromium.WORLD for source in with_notice)
+
+
+class FakeRoute:
+    def __init__(self):
+        self.outcome = None
+
+    def continue_(self):
+        self.outcome = 'continue'
+
+    def abort(self, reason):
+        self.outcome = 'abort:' + reason
+
+
+class FakeRequest:
+    def __init__(self, page, url, navigation=True, child=False):
+        self.url, self.method = url, 'GET'
+        self.frame = mock.Mock(page=page, parent_frame=object() if child else None)
+        self._navigation = navigation
+
+    def is_navigation_request(self):
+        return self._navigation
+
+
+def test_every_request_of_the_context_passes_the_popup_gate(worker):
+    """#34: Playwright resumes a new page before this worker's CDP session exists; its route holds the
+    popup's first request so it is decided like any other."""
+    assert [pattern for pattern, _ in worker.context.routes] == ['**/*']
+
+
+def test_a_popups_first_request_to_a_refused_destination_is_aborted(worker):
+    popup = worker.context.new_page()
+    worker.register_page(popup)
+    target = worker.target_for(popup)
+    target.ready = True
+    route = FakeRoute()
+    with mock.patch.object(worker, 'decide', side_effect=lambda url, main, done: done(False, 'blocked_destination')):
+        worker.route_popup(route, FakeRequest(popup, 'http://127.0.0.1:8787/'))
+    assert route.outcome == 'abort:aborted'
+    assert worker.blocked_reason == 'blocked_destination'
+
+
+def test_the_main_page_and_sub_resources_are_left_to_the_worker_own_fetch(worker):
+    for request in (FakeRequest(worker.page, 'https://public.test/'), FakeRequest(object(), 'https://cdn.test/x.js',
+                                                                                     navigation=False)):
+        route = FakeRoute()
+        worker.route_popup(route, request)
+        assert route.outcome == 'continue'
+
+
+def test_a_popup_that_cannot_be_identified_is_refused(worker, monkeypatch):
+    monkeypatch.setattr(shared, 'WARM_SECONDS', 0)
+    route = FakeRoute()
+    stranger = mock.Mock(url='about:blank')
+    with mock.patch.object(worker, 'target_for', side_effect=KeyError('not attached')):
+        worker.route_popup(route, FakeRequest(stranger, 'https://public.test/'))
+    assert route.outcome == 'abort:aborted'
