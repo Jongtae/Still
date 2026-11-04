@@ -5035,6 +5035,7 @@ def _evidence_detail(name,result):
   if isinstance(signed,dict) and signed.get('state') in ('available','signed_in','unconfirmed'):
    # #636: the site and the provider host a re-sign-in went through (hosts only), for the receipt and the audit.
    summary['provider_sign_in']={key:str(signed.get(key) or '')[:120] for key in ('site','provider','state')}
+   if signed.get('login_request')=='resolved':summary['provider_sign_in']['login_request']='resolved'
   loaded=result.get('loaded')
   if isinstance(loaded,dict):
    # #11: the load-more operation and its outcome, never the loaded text.

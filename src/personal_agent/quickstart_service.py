@@ -590,7 +590,9 @@ BROWSER_LOGIN_RESULT_TEXT={'resumed':msg('service.closing_the_sign_in_window_and
                            'no_session':msg('service.the_login_session_was_not_saved'),
                            'close_failed':(msg('service.i_could_not_confirm_that_the'))}
 #: #709: a Work whose last login ended this way may be asked again at the next login page.
-BROWSER_LOGIN_REASK_STATES=('expired','unavailable','not_logged_in')
+#: #636: ``resolved``: the Work's own re-sign-in through the owner's provider completed with evidence before
+#: the window was shown; a later login page of the same Work may ask again.
+BROWSER_LOGIN_REASK_STATES=('expired','unavailable','not_logged_in','resolved')
 #: #1006: a login not yet settled; another login page in the same Work joins it.
 BROWSER_LOGIN_PENDING_STATES=('requested','opening','offered','closing')
 
@@ -8643,6 +8645,8 @@ class AgentService:
             def login_required(self,url,explicit=False,*,window_url=None):return service._request_browser_login(job,url,explicit,window_url=window_url)
             # #636: the provider the owner's own login window recorded for this site, while Still holds its session.
             def provider_sign_in(self,url):return service.browser_signin_provider(url)
+            # #636 (Codex P2 on #637): a confirmed re-sign-in settles this Work's own login request for that site.
+            def login_resolved(self,url):return service.resolve_browser_login(job,url)
             # #934: on a site received from the owner, a payment step is refused outright (no request, no approval).
             # #619: so is every guarded step of a scheduled run: no owner is present to approve it.
             def refuse(self,host):
@@ -9055,7 +9059,7 @@ class AgentService:
         with self.lock:
             cached=self._browser_login_window_urls.get(work_id)
             # #340: keep an unanswered expiry only while it may be reopened; pruning removes it too.
-            if row is None or row.get('state') in ('resumed','skipped','not_logged_in') or (cached and cached[0]!=row.get('nonce')) \
+            if row is None or row.get('state') in ('resumed','skipped','not_logged_in','resolved') or (cached and cached[0]!=row.get('nonce')) \
                     or (row.get('state')=='unavailable' and not row.get('reopens')) \
                     or (row.get('state')=='expired' and (row.get('cause')=='close_failed' or int(row.get('reopens') or 0)>=BROWSER_LOGIN_REOPENS)):
                 self._browser_login_window_urls.pop(work_id,None)
@@ -9114,6 +9118,27 @@ class AgentService:
             if window_url and '[가림]' not in url:
                 self._browser_login_window_urls[job['id']]=(nonce,login_window_url(window_url))
         return BROWSER_LOGIN_OFFERED_TEXT if explicit else BROWSER_LOGIN_PAGE_OFFERED_TEXT
+
+    def resolve_browser_login(self, job, url):
+        """#636 (Codex P2 on #637): settle this Work's login request for ``url``'s site as ``resolved``.
+
+        Called only when the Work's re-sign-in through the owner's provider completed with
+        evidence (a new or renewed site session, no OAuth error).  Only a request still to be
+        shown (``requested``: no window opened, no prompt armed) of this Work and of the same
+        registrable domain moves, by compare-and-set; another site's or another Work's request is
+        never touched, and a window already offered is left to the owner.  True when it moved.
+        """
+        try:
+            site=registrable_domain(urlsplit(str(url or '')).hostname or '')
+        except ValueError:
+            return False
+        if not site or not isinstance((job or {}).get('id'),str):return False
+        with self.lock:
+            row=self._browser_login(job['id'])
+            if not row or row.get('state')!='requested' or registrable_domain(row.get('host'))!=site:return False
+            self._put_browser_login(job['id'],{**row,'state':'resolved','cause':'provider_sign_in','closed_at':time.time()})
+        LOG.info('browser login resolved by re-sign-in work=%s',job['id'])
+        return True
 
     def offer_browser_login(self, job):
         """After a Work's run: show the login window it asked for and ask the owner (#709).

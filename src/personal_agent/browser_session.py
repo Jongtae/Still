@@ -1101,6 +1101,9 @@ class BrowserSession:
                 page['provider_sign_in'] = {'site': resign['site'], 'provider': resign['provider'],
                                             'state': 'signed_in' if signed else 'unconfirmed'}
                 if signed:
+                    # Codex P2 on #637: the login this Work asked the owner for is no longer needed.
+                    if self._login_resolved(resign['reference']):
+                        page['provider_sign_in']['login_request'] = 'resolved'
                     self._resign = None
                 else:
                     resign['ended'] = 'unconfirmed'
@@ -1136,6 +1139,16 @@ class BrowserSession:
                         'cookies': current['cookies'] if current else self._site_cookies(site),
                         'seen': bool(current and current['seen'])}
         return self._resign
+
+    def _login_resolved(self, url):
+        """#636: settle this Work's pending login request for ``url``'s site (``approvals.login_resolved``)."""
+        resolve = getattr(self.approvals, 'login_resolved', None)
+        if not callable(resolve):
+            return False
+        try:
+            return resolve(url) is True
+        except Exception:
+            return False
 
     def _site_cookies(self, site):
         """#636: the digests of the site's unexpired cookies in this Work's browser now (``browser_jar.site_marks``,

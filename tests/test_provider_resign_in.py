@@ -137,6 +137,10 @@ class ProviderApprovals(Approvals):
         provider = self.providers.get(site)
         return {'site': site, 'provider': provider} if provider else None
 
+    def login_resolved(self, url):
+        self.resolved = getattr(self, 'resolved', []) + [url]
+        return True
+
 
 def resign_session(answer='silent', providers=None):
     driver = TwoHostDriver(answer)
@@ -186,9 +190,13 @@ class ResignInSessionTests(unittest.TestCase):
         open_login(sess)
         page = sess.run('browser_click', {'target': '다른 계정으로 로그인', 'effect': 'navigate'})
         self.assertEqual((page['state'], page['url']), ('page', f'https://{SITE}/home'))
-        self.assertEqual(page['provider_sign_in'], {'site': SITE, 'provider': PROVIDER, 'state': 'signed_in'})
+        # The Work's own pending login request for the site is settled (the service's ``resolve_browser_login``).
+        self.assertEqual(_approvals.resolved, [f'https://{SITE}/login'])
+        self.assertEqual(page['provider_sign_in'], {'site': SITE, 'provider': PROVIDER, 'state': 'signed_in',
+                                                    'login_request': 'resolved'})
         summary = evidence_summary('browser_click', page)
-        self.assertEqual(summary['provider_sign_in'], {'site': SITE, 'provider': PROVIDER, 'state': 'signed_in'})
+        self.assertEqual(summary['provider_sign_in'], {'site': SITE, 'provider': PROVIDER, 'state': 'signed_in',
+                                                       'login_request': 'resolved'})
         self.assertFalse(any(value in flat(summary) for value in QUERY_VALUES), 'no query value in the receipt')
         # The re-sign-in is over: a later page of the site carries no second receipt.
         later = sess.run('browser_click', {'target': '설정', 'effect': 'navigate'})
@@ -241,6 +249,7 @@ class ResignInSessionTests(unittest.TestCase):
         self.assertEqual(approvals.offers[-1], (f'https://{SITE}/login', True))
 
     def assert_unconfirmed(self, page, approvals):
+        self.assertFalse(getattr(approvals, 'resolved', []), 'the login request stays for the owner')
         self.assertEqual(page['provider_sign_in'], {'site': SITE, 'provider': PROVIDER, 'state': 'unconfirmed'})
         self.assertTrue(page['next_step'].startswith(msg('browser.provider_unconfirmed', provider=PROVIDER)))
         self.assertTrue(page['next_step'].endswith('OFFER-EXPLICIT'), 'the owner is asked to sign in')
@@ -338,7 +347,8 @@ class ResignInLoopTests(unittest.TestCase):
                       {'content': '주문 내역을 확인했습니다.'})
         [(status, detail)] = self.details('browser_click')
         self.assertEqual(status, 'succeeded')
-        self.assertEqual(detail['evidence']['provider_sign_in'], {'site': SITE, 'provider': PROVIDER, 'state': 'signed_in'})
+        self.assertEqual(detail['evidence']['provider_sign_in'], {'site': SITE, 'provider': PROVIDER, 'state': 'signed_in',
+                                                                  'login_request': 'resolved'})
         audit = information_use.work_information_use(self.store, self.job)
         self.assertEqual(audit['sent_to']['browser_provider_sign_ins'], [{'site': SITE, 'provider': PROVIDER}])
         self.assertIn(msg('information_use.browser_provider_sign_in', site=SITE, provider=PROVIDER),
@@ -506,6 +516,89 @@ class ProviderRecordTests(LoginHarness):
             self.assertTrue(check(self.service.provider_signin_settings()))
         self.assertEqual(self.store.config(BROWSER_PROVIDER_SIGNIN_KEY, {}), {'enabled': False, 'off_sites': ['fixture.test']})
         self.assertIsNone(self.service.browser_signin_provider(ORIGIN + '/login'))
+
+
+class ResolvedLoginTests(LoginHarness):
+    """Codex P2 on #637: a confirmed re-sign-in settles the Work's own login request; nothing else moves."""
+
+    def setUp(self):
+        super().setUp()
+        self.answer = 'silent'
+
+        def launcher(profile_dir, headless):
+            driver = TwoHostDriver(self.answer, log=self.driver_log)
+            self.drivers.append(driver)
+            return driver
+        self.profile.launcher = launcher
+        self.store.put(BROWSER_PROVIDERS_KEY, {SITE: {'provider': PROVIDER, 'observed_at': time.time(),
+                                                      'observed_in': 'owner_login_window'}})
+        self.profile.jar.save_export({'provider.test': [{'name': 'idp', 'value': 'v1', 'domain': '.provider.test', 'path': '/',
+                                                         'expires': None, 'secure': True, 'http_only': True,
+                                                         'same_site': None}]})
+
+    def resign_work(self):
+        self.scripts = [Script({'tool_calls': [call('1', 'browser_open', url=f'https://{SITE}/login', effect='navigate')]},
+                               {'tool_calls': [call('2', 'browser_click', target='다른 계정으로 로그인', effect='navigate')]},
+                               {'content': '주문 내역을 확인했습니다.'})]
+        job_id = self.receive('주문 내역 확인해줘')
+        self.assertTrue(self.service.run_one())
+        return job_id
+
+    def receipt(self, job_id):
+        with self.store.db() as db:
+            rows = db.execute("SELECT detail FROM tool_events WHERE job_id=? AND tool='browser_click' AND status='succeeded'",
+                              (job_id,)).fetchall()
+        return [json.loads(row['detail'])['evidence'].get('provider_sign_in') for row in rows]
+
+    def test_a_confirmed_re_sign_in_leaves_no_pending_login_and_opens_no_window(self):
+        job_id = self.resign_work()
+        row = self.service._browser_login(job_id)
+        self.assertEqual((row['state'], row['cause']), ('resolved', 'provider_sign_in'))
+        self.assertEqual(self.receipt(job_id), [{'site': SITE, 'provider': PROVIDER, 'state': 'signed_in',
+                                                 'login_request': 'resolved'}])
+        self.assertFalse(self.service.work_has_pending_resume(job_id))
+        self.assertFalse(self.service.sign_in_requested(job_id))
+        # No login window was opened after the run: only the Work's own browser ever started.
+        self.assertEqual(len(self.drivers), 1)
+        self.assertNotEqual(self.profile.occupancy(), 'login')
+        self.assertEqual(self.service.browser_status()['pending_logins'], [])
+        self.assertFalse(self.service.offer_browser_login(self.store.job(job_id)), 'nothing left to offer')
+        # The Work's status is its own outcome; no pending login made it partial or holds it.
+        self.assertIn(self.store.job(job_id)['status'], ('succeeded', 'partial', 'failed'))
+        self.assertNotIn(self.store.job(job_id)['status'], ('queued', 'running', 'awaiting_connection'))
+        # A later login page in the same Work may ask again.
+        from personal_agent.quickstart_service import BROWSER_LOGIN_REASK_STATES
+        self.assertIn('resolved', BROWSER_LOGIN_REASK_STATES)
+
+    def test_an_unconfirmed_re_sign_in_keeps_the_request_and_the_owner_is_asked(self):
+        self.answer = 'silent_no_session'
+        job_id = self.resign_work()
+        self.assertEqual(self.receipt(job_id)[0]['state'], 'unconfirmed')
+        self.assertTrue(wait_until(lambda: self.state(job_id) in ('opening', 'offered')), self.state(job_id))
+        self.assertTrue(self.service._browser_login(job_id)['explicit'], 'asked however the Work ends')
+        self.assertTrue(wait_until(lambda: len(self.drivers) == 2), 'the owner login window was opened')
+
+    def test_another_sites_or_another_works_request_is_untouched(self):
+        job = {'id': 'work-a', 'channel': 'web'}
+        other = {'work_id': 'work-a', 'url': 'https://other.test/login', 'host': 'other.test', 'state': 'requested',
+                 'requested_at': time.time(), 'nonce': 'n1', 'explicit': False}
+        self.service._put_browser_login('work-a', other)
+        self.assertFalse(self.service.resolve_browser_login(job, f'https://{SITE}/login'))
+        self.assertEqual(self.service._browser_login('work-a'), other)
+        theirs = {**other, 'work_id': 'work-b', 'url': f'https://{SITE}/login', 'host': SITE, 'nonce': 'n2'}
+        self.service._put_browser_login('work-b', theirs)
+        self.assertFalse(self.service.resolve_browser_login(job, f'https://{SITE}/login'))
+        self.assertEqual(self.service._browser_login('work-b'), theirs)
+        # A window already offered for this Work is the owner's; only a request still to be shown moves.
+        offered = {**theirs, 'work_id': 'work-c', 'state': 'offered', 'nonce': 'n3'}
+        self.service._put_browser_login('work-c', offered)
+        self.assertFalse(self.service.resolve_browser_login({'id': 'work-c'}, f'https://{SITE}/login'))
+        self.assertEqual(self.service._browser_login('work-c'), offered)
+        mine = {**theirs, 'work_id': 'work-d', 'nonce': 'n4'}
+        self.service._put_browser_login('work-d', mine)
+        self.assertTrue(self.service.resolve_browser_login({'id': 'work-d'}, f'https://www.{SITE}/home'))
+        self.assertEqual(self.service._browser_login('work-d')['state'], 'resolved')
+        self.assertEqual(self.service._browser_login('work-b'), theirs)
 
 
 if __name__ == '__main__':
