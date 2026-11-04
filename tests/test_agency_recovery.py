@@ -522,24 +522,25 @@ class GoalSummaryTests(unittest.TestCase):
     def test_a_failed_state_changing_action_is_never_recovered_by_a_later_read(self):
         """#752 review P1: ``effect: none`` (a payment step awaiting approval, a refused write)
         does not make a failed action recoverable; only the goal judgment may decide such a Work."""
-        from personal_agent.agent_runtime import outcome_from_events, state_change_short, event_trail
+        from personal_agent.agent_runtime import outcome_from_events, state_change_short, trail_steps
         read = ('browser_read', 'succeeded', json.dumps({'host_action': 'browser_read', 'evidence': {}}))
         for code in ('approval_required', 'target_not_found', 'tool_failed'):
             with self.subTest(code=code):
                 click = ('browser_click', 'failed', json.dumps({'host_action': 'browser_click', 'code': code, 'effect': 'none'}))
                 self.assertEqual(outcome_from_events([click, read])[0], 'partial')
                 self.assertEqual(goal_summary([click, read])['unresolved'], ['browser_click'])
-                trail = event_trail([click, read])[0]
-                self.assertTrue(state_change_short(trail))
-        retried = ('browser_click', 'succeeded', json.dumps({'host_action': 'browser_click', 'evidence': {}}))
-        miss = ('browser_click', 'failed', json.dumps({'host_action': 'browser_click', 'code': 'target_not_found', 'effect': 'none'}))
-        self.assertFalse(state_change_short(event_trail([miss, retried])[0]), 'the same action succeeded later')
-        self.assertFalse(state_change_short(event_trail([('weather', 'failed', '{}'), read])[0]), 'reads never count')
+                self.assertTrue(state_change_short(trail_steps([click, read])))
+        # #630: the same invocation (the recorded call, or equal recorded arguments) succeeded later.
+        retried = ('browser_click', 'succeeded', json.dumps({'host_action': 'browser_click', 'evidence': {}, 'arguments': {'target': '4'}}))
+        miss = ('browser_click', 'failed', json.dumps({'host_action': 'browser_click', 'code': 'target_not_found', 'effect': 'none',
+                                                       'arguments': {'target': '4'}}))
+        self.assertFalse(state_change_short(trail_steps([miss, retried])), 'the same invocation succeeded later')
+        self.assertFalse(state_change_short(trail_steps([('weather', 'failed', '{}'), read])), 'reads never count')
 
     def test_a_call_agentos_could_not_make_and_a_completed_draft_do_not_hold_back_a_reached_goal(self):
         """#1445 rehearsal: a settings draft the owner completed and an api_request to a code-run-only
         set (its one path, code_run, sends only reads) are not state changes that fell short."""
-        from personal_agent.agent_runtime import event_trail, state_change_short
+        from personal_agent.agent_runtime import event_trail, state_change_short, trail_steps
 
         def api(code, declared):
             return ('api_request', 'failed', json.dumps({'host_action': 'api_request', 'code': code, 'effect': 'none',
@@ -549,21 +550,23 @@ class GoalSummaryTests(unittest.TestCase):
         resumed = ('settings_continuation', 'queued', json.dumps({'draft_ids': ['d1'], 'reason': 'prerequisite-ready'}))
         run = ('code_run', 'succeeded', json.dumps({'host_action': 'code_run', 'evidence': {}}))
         self.assertEqual(event_trail([draft, resumed, run])[0][0], ('settings_change', 'succeeded'))
-        self.assertTrue(state_change_short(event_trail([draft, run])[0]), 'a draft still waiting is withheld')
-        self.assertTrue(state_change_short(event_trail(
-            [draft, ('settings_continuation', 'withheld', json.dumps({'draft_ids': ['d1']})), run])[0]))
+        self.assertTrue(state_change_short(trail_steps([draft, run])), 'a draft still waiting is withheld')
+        self.assertTrue(state_change_short(trail_steps(
+            [draft, ('settings_continuation', 'withheld', json.dumps({'draft_ids': ['d1']})), run])))
         for missed in (api('api_slot_code_only', 'mutate'), api('api_slot_unknown', 'read'), api('api_path_invalid', 'navigate')):
             with self.subTest(missed=missed[2]):
                 self.assertEqual(event_trail([missed])[0], [('api_request', 'missed')])
-                self.assertFalse(state_change_short(event_trail([missed, run])[0]))
+                self.assertFalse(state_change_short(trail_steps([missed, run])))
         for kept in (api('approval_required', 'mutate'), api('api_read_only', 'mutate'), api('api_slot_unknown', 'mutate'),
-                     api('api_http_error', 'read')):
+                     api('api_http_error', 'mutate')):
             with self.subTest(kept=kept[2]):
-                self.assertTrue(state_change_short(event_trail([kept, run])[0]))
+                self.assertTrue(state_change_short(trail_steps([kept, run])))
+        # #630: a read Still made (the effect it applies from the method) that failed changed nothing.
+        self.assertFalse(state_change_short(trail_steps([api('api_http_error', 'read'), run])))
 
     def test_a_read_declared_browser_step_agentos_did_not_run_recovers_like_a_failed_read(self):
         """#1276 (live 2026-10-10): two typing steps refused before running, then the result reached another way."""
-        from personal_agent.agent_runtime import event_trail, outcome_from_events, state_change_short
+        from personal_agent.agent_runtime import event_trail, outcome_from_events, state_change_short, trail_steps
 
         def step(action, code, declared, effect='none'):
             return (action, 'failed', json.dumps({'host_action': action, 'code': code, 'effect': effect,
@@ -572,7 +575,7 @@ class GoalSummaryTests(unittest.TestCase):
         missed = step('browser_type', 'target_unavailable', 'read')
         self.assertEqual(event_trail([missed])[0], [('browser_type', 'missed')])
         self.assertEqual(outcome_from_events([missed, missed, opened])[0], 'succeeded')
-        self.assertFalse(state_change_short(event_trail([missed, opened])[0]))
+        self.assertFalse(state_change_short(trail_steps([missed, opened])))
         self.assertEqual(outcome_from_events([step('browser_click', 'target_not_found', 'navigate'), opened])[0], 'succeeded')
         for kept in (step('browser_type', 'target_unavailable', 'mutate'),
                      step('browser_click', 'target_unavailable', 'payment'),
@@ -582,7 +585,7 @@ class GoalSummaryTests(unittest.TestCase):
             with self.subTest(kept=kept[2]):
                 self.assertEqual(event_trail([kept])[0][0][1], 'failed')
                 self.assertEqual(outcome_from_events([kept, opened])[0], 'partial')
-                self.assertTrue(state_change_short(event_trail([kept, opened])[0]))
+                self.assertTrue(state_change_short(trail_steps([kept, opened])))
         self.assertEqual(outcome_from_events([missed])[0], 'failed', 'nothing succeeded after it')
 
 if __name__ == '__main__':

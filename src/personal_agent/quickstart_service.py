@@ -6223,13 +6223,13 @@ class AgentService:
         except Exception:
             return None
 
-    def work_trail(self, job_id):
-        """The ordered ``(host_action, state)`` trail of one Work's tool events."""
-        from .agent_runtime import event_trail
+    def work_steps(self, job_id):
+        """The ordered ``trail_steps`` of one Work's tool events: each call with its recorded detail (#630)."""
+        from .agent_runtime import trail_steps
         with self.store.db() as db:
             rows=db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=? ORDER BY id',(job_id,)).fetchall()
         tools={tool['id']:tool for package in self.runtime_packages() for tool in package['tools']}
-        return event_trail([(row['tool'],row['status'],row['detail']) for row in rows],tools)[0]
+        return trail_steps([(row['tool'],row['status'],row['detail']) for row in rows],tools)
 
     def owner_jobs(self, jobs):
         """Work rows as the web reads them (#820: the AI's answer is always delivered).
@@ -6264,7 +6264,7 @@ class AgentService:
         from .agent_runtime import state_change_short
         if (self._browser_request(job_id) or {}).get('state')=='requested' or self.sign_in_requested(job_id):
             return False
-        return not state_change_short(self.work_trail(job_id))
+        return not state_change_short(self.work_steps(job_id))
 
     def sign_in_requested(self, job_id, since=0):
         """Whether this Work's worker itself asked for the owner's sign-in (#981).

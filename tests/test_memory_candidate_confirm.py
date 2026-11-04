@@ -25,7 +25,7 @@ import unittest
 from pathlib import Path
 
 from personal_agent.agent_runtime import (CORE_INSTRUCTIONS, DEFINITIONS, event_trail, goal_summary, memory_proposal,
-                                          outcome_from_events, state_change_short)
+                                          outcome_from_events, state_change_short, trail_steps)
 from personal_agent.orchestrator import QUESTION
 from personal_agent.providers import ModelAdapter, ProviderError
 from personal_agent.agent_runtime import worker_result
@@ -51,7 +51,7 @@ class TrailTests(unittest.TestCase):
     def test_a_memory_proposal_is_settled_not_short(self):
         trail = event_trail([self.PROPOSAL])[0]
         self.assertEqual(trail, [('save_memory', 'proposed')])
-        self.assertFalse(state_change_short(trail))
+        self.assertFalse(state_change_short(trail_steps([self.PROPOSAL])))
         self.assertEqual(outcome_from_events([self.PROPOSAL])[0], 'succeeded')
         self.assertEqual(goal_summary([self.PROPOSAL])['unresolved'], [])
         read = event('web_search')
@@ -61,7 +61,7 @@ class TrailTests(unittest.TestCase):
         """``refused_because`` on another tool, or a draft awaiting approval, still withholds."""
         other = event('settings_change', applied=False, requires_owner_confirmation=True, draft_id='d1')
         self.assertEqual(event_trail([other])[0], [('settings_change', 'withheld')])
-        self.assertTrue(state_change_short(event_trail([other])[0]))
+        self.assertTrue(state_change_short(trail_steps([other])))
         refused = event('save_note', refused_because='no-owner-memory-request', state='pending')
         self.assertEqual(event_trail([refused])[0], [('save_note', 'withheld')])
         self.assertFalse(memory_proposal('save_note', {'state': 'pending', 'refused_because': 'x'}))
@@ -71,7 +71,7 @@ class TrailTests(unittest.TestCase):
         errored = ('save_memory', 'failed', json.dumps({'host_action': 'save_memory', 'code': 'tool_failed'}))
         trail = event_trail([errored])[0]
         self.assertEqual(trail, [('save_memory', 'failed')])
-        self.assertTrue(state_change_short(trail))
+        self.assertTrue(state_change_short(trail_steps([errored])))
         self.assertEqual(outcome_from_events([errored])[0], 'failed')
 
 

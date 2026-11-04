@@ -84,10 +84,10 @@ class StepRecoveryTests(unittest.TestCase):
         for label, rows, expected in cases:
             with self.subTest(label):
                 self.assertEqual(self.marks(rows), expected)
-                trail = event_trail(rows)[0]
+                steps = trail_steps(rows)
                 for index in expected:
                     # Never more lenient than #752's deterministic guard.
-                    self.assertFalse(state_change_short(trail[index:]))
+                    self.assertFalse(state_change_short(steps[index:]))
 
     def test_the_judgment_text_marks_each_call_and_lists_open_ones_first(self):
         rows = [failed('weather'), failed('browser_click', 'effect_unknown', effect='unknown', declared='mutate'),
@@ -144,6 +144,67 @@ class StepRecoveryTests(unittest.TestCase):
                 self.assertEqual(service.unrecovered_refusals(job, None, refusals), expected)
         # The CLI outcome rule itself is unchanged: its own events decide the status.
         self.assertEqual(outcome_from_events(typed('1', NAME, False) + typed('2', NAME, True))[0], 'partial')
+
+
+class SuccessFloorTests(unittest.TestCase):
+    """#630: ``state_change_short`` reads each call's own record and recovers only the same invocation."""
+
+    READ = succeeded('browser_read', {'state': 'page'})
+    NAVIGATED = {'posted': False, 'approved': False}
+
+    def short(self, rows):
+        return state_change_short(trail_steps(rows))
+
+    def test_only_the_same_invocation_recovers_a_failed_write(self):
+        self.assertFalse(self.short(typed('1', NAME, False) + typed('2', NAME, True)))
+        self.assertTrue(self.short(typed('1', NAME, False) + typed('2', EMAIL, True)), 'another target')
+        self.assertTrue(self.short([failed('browser_type', 'target_not_found', declared='mutate'),
+                                    succeeded('browser_type', {'state': 'typed'})]), 'no recorded arguments')
+
+    def test_writes_that_did_not_happen_still_hold(self):
+        held = {
+            'refused before it ran': failed('browser_click', 'approval_required', declared='mutate', ran=False),
+            'refused by the service': failed('api_request', 'api_http_error', declared='mutate', executed=False),
+            'effect none on a failed write': failed('save_note', 'tool_failed'),
+            'an owner-local write': failed('save_result', 'tool_failed', ran=False),
+            'a read-declared click refused by a guard': failed('browser_click', 'approval_required', declared='read', ran=False),
+            'a navigate-declared click with no observation': failed('browser_click', 'press_unconfirmed', declared='navigate'),
+            'a navigation that submitted': failed('browser_click', 'press_unconfirmed', declared='navigate',
+                                                  observed_step={'posted': True, 'approved': False}),
+            'a code run that sent a change': failed('code_run', 'tool_failed', evidence={'effects': [{'method': 'POST'}]}),
+            'a browser_open declared to change something': failed('browser_open', 'tool_failed', declared='mutate'),
+            'a call without evidence': ('browser_click', 'failed', json.dumps({'host_action': 'browser_click'})),
+            'withheld': succeeded('settings_change', {'draft_id': 'd9', 'applied': False, 'requires_owner_confirmation': True}),
+            'withheld though declared a read': succeeded('browser_click', {'refused_because': 'owner-approval',
+                                                                           'observed_step': self.NAVIGATED}, declared_effect='read'),
+            'incomplete': succeeded('save_note', {'qualifiers': ['partial']}),
+        }
+        for label, row in held.items():
+            with self.subTest(label):
+                self.assertTrue(self.short([row, self.READ]))
+                self.assertTrue(self.short([row, self.READ, succeeded(row[0], {'state': 'done'})]),
+                                'a later success of the action without the same invocation')
+
+    def test_an_unknown_effect_holds_even_when_the_same_call_succeeded_later(self):
+        rows = [running('browser_click', '3', {'target': 'send', 'effect': 'mutate'}),
+                failed('browser_click', 'effect_unknown', effect='unknown', declared='mutate', scope='main', call_id='3'),
+                succeeded('browser_click', {'state': 'clicked'}, scope='main', call_id='3')]
+        self.assertTrue(self.short(rows))
+
+    def test_calls_still_records_show_changed_nothing_do_not_hold(self):
+        cleared = {
+            'a navigation click Still observed submitting nothing': failed('browser_click', 'press_unconfirmed', declared='navigate',
+                                                                           observed_step=self.NAVIGATED),
+            'a read-declared step whose target Still could not act on': failed('browser_click', 'target_unavailable', declared='read'),
+            'a read Still made by its method': failed('api_request', 'api_http_error', declared='read'),
+            'a failed effect-free read': failed('weather'),
+            'a page load': failed('browser_open', 'tool_failed', declared='navigate'),
+            'an incomplete read': succeeded('web_search', {'qualifiers': ['partial']}),
+            'a delegation': failed('delegate_agent', 'tool_failed'),
+        }
+        for label, row in cleared.items():
+            with self.subTest(label):
+                self.assertFalse(self.short([row, self.READ]))
 
 
 class FakeBrowserCapabilities(Capabilities):
@@ -237,6 +298,43 @@ class DirectRouteJudgmentInputTests(unittest.TestCase):
         result = self.run_script(script, lambda facts: ROUTED_AROUND_STEP_FACT in facts['failed_steps'], browser=False)
         self.assertEqual(result.outcome, 'succeeded')
         self.assertEqual(self.seen[0]['failed_steps'], f'weather: {loop.NOT_FOUND} {ROUTED_AROUND_STEP_FACT}')
+
+    def test_a_judged_yes_does_not_lift_the_floor_over_another_target(self):
+        """#630: the direct route's conclusion applies the CLI route's floor: typing into another field
+        does not make up for the field that failed, whatever the judgment says."""
+        script = loop.Script(self.type_into('1', 'name'), self.type_into('2', 'email'),
+                             loop.finish('f', '2', summary='이름 칸에 Kim을 입력했습니다.'))
+        result = self.run_script(script, lambda facts: True)
+        self.assertEqual(len(self.seen), 1, 'the judgment was asked and said yes')
+        self.assertEqual(result.outcome, 'partial')
+        self.assertIn(['browser_type', '입력할 칸을 찾지 못했습니다.'], result.report['failed'])
+        # The same target succeeding later still concludes on the judgment.
+        script = loop.Script(self.type_into('3', 'name'), self.type_into('4', 'name'),
+                             loop.finish('g', '4', summary='이름 칸에 Kim을 입력했습니다.'))
+        self.assertEqual(self.run_script(script, lambda facts: True).outcome, 'succeeded')
+
+    def test_a_judged_yes_stands_over_a_navigation_still_observed_submitting_nothing(self):
+        """#630: a click declared ``navigate`` whose failure carries Still's observation that it posted
+        nothing and spent no approval changed nothing, so it does not hold a reached goal down."""
+        class Navigating(FakeBrowserCapabilities):
+            posted = False
+
+            def execute(self, name, args):
+                if name == 'browser_click':
+                    exc = ToolError('누른 뒤 페이지가 확인되지 않았습니다.', 'press_unconfirmed')
+                    exc.observed_step = {'posted': self.posted, 'approved': False}
+                    raise exc
+                return super().execute(name, args)
+        for posted, expected in ((False, 'succeeded'), (True, 'partial')):
+            with self.subTest(posted=posted):
+                script = loop.Script({'tool_calls': [loop.call('1', 'browser_click', target='more', effect='navigate')]},
+                                     self.type_into('2', 'name'),
+                                     loop.finish('f', '2', summary='이름 칸에 Kim을 입력했습니다.'))
+                caps = Navigating(self.store, ModelAdapter(script), loop.CFG, '', 'job', lambda *event: self.events.append(event),
+                                  network=loop.Network(), judgments=loop.judgments(lambda facts: True), misses=0)
+                caps.posted = posted
+                result = run_agent(caps.adapter, loop.CFG, '', self.REQUEST, '', caps, caps.record)
+                self.assertEqual(result.outcome, expected)
 
     def test_a_claim_without_sufficient_observation_stays_partial_and_says_why(self):
         shown = lambda facts: self.strict(facts) and 'submitted' in facts['observations']
@@ -344,6 +442,27 @@ class CliRouteOutcomeTests(orch.Harness):
         self.assertIn('target_not_found', row['error'])
         [goal] = self.asked_goals
         self.assertNotIn(RECOVERED_STEP_FACT, goal.facts['failed_steps'])
+
+    def test_another_target_of_the_same_action_does_not_lift_the_floor(self):
+        """#630: a reached verdict does not upgrade a Work whose failed write only another target's success follows."""
+        self.attempt(*typed('1', NAME, False), *typed('2', EMAIL, True))
+        self.script([orch.plan('codex', 'Fill it in.')], goals=[True])
+        job, row = self.run_work('이름 칸에 Kim 넣어줘')
+        self.assertEqual(row['status'], 'partial')
+        self.assertTrue(self.asked_goals, 'the judgment was asked')
+
+    def test_a_navigation_still_observed_submitting_nothing_does_not_hold_a_reached_goal(self):
+        """#630: a refused navigation-only click with no effect keeps no complete answer partial; a click
+        whose failure Still did not observe, or saw submit, still does."""
+        for observed, expected in (({'posted': False, 'approved': False}, 'succeeded'),
+                                   ({'posted': True, 'approved': False}, 'partial'), (None, 'partial')):
+            with self.subTest(observed=observed):
+                extra = {'observed_step': observed} if observed else {}
+                self.attempt(failed('browser_click', 'press_unconfirmed', declared='navigate', **extra),
+                             succeeded('browser_read', {'state': 'page'}))
+                self.script([orch.plan('codex', 'Look it up.')], goals=[True])
+                job, row = self.run_work('그 페이지 내용 알려줘')
+                self.assertEqual(row['status'], expected)
 
     def test_an_unknown_external_effect_is_unknown_and_never_judged_or_replayed(self):
         self.attempt(running('browser_click', '1', {'target': 'submit', 'effect': 'mutate'}),

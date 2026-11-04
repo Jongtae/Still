@@ -2618,15 +2618,9 @@ def record_effect(action,detail,status):
  if action in OWNER_LOCAL_ACTIONS:return EFFECT_NONE
  # #618: handed off, and the service answered that it did not execute the request.
  if status=='failed' and detail.get('executed') is False:return EFFECT_NONE
- if action in OBSERVED_INPUT_ACTIONS and status=='failed' and observed_page_load(detail):return EFFECT_NONE
+ if effect_free_call(action,detail,status):return EFFECT_NONE
  if unknown_effect(detail):return EFFECT_UNKNOWN
- # A browser_open is a read only by its declaration (#787): page_load_only decides it below.
- # #1456: a code run that sent an owner-approved state-changing request changed something.
- if action in CODE_ACTIONS and isinstance(detail.get('evidence'),dict) and detail['evidence'].get('effects'):return EFFECT_CHANGED
- if action in EFFECT_FREE_READS-{'browser_open'} or action in INTERNAL_STATE_ACTIONS:return EFFECT_NONE
- if page_load_only(action,detail,status):return EFFECT_NONE
  if status=='failed':
-  if unrun_page_step(action,detail):return EFFECT_NONE
   if action in API_ACTIONS and detail.get('code') in PRE_DISPATCH_CODES:return EFFECT_NONE
   if action=='settings_change' and detail.get('code')=='settings_refused' and detail.get('effect')=='none':return EFFECT_NONE
  # #182: a result save that found a folder grant missing wrote nothing; the Work may park for that grant.
@@ -2642,6 +2636,27 @@ def record_effect(action,detail,status):
   if evidence.get('applied') is False and evidence.get('unattended') is True:return EFFECT_NONE
  if action=='connector_read' and detail.get('effect')=='none':return EFFECT_NONE
  return EFFECT_CHANGED
+
+def effect_free_call(action,detail,status):
+ """Whether Still's own records of one call show it could change nothing, whatever it was for (#630).
+
+ The part of ``record_effect`` that reads what the call is, not whether it ran: an effect-free
+ read or internal bookkeeping (``manifests.HOST_TOOLS``), a page load (``page_load_only``: a
+ ``browser_open`` by its declaration, an API call by the effect Still applies from its method), a
+ click or typing step declared ``read``/``navigate`` that Still observed starting no submission and
+ spending no approval, and a read-declared step whose target Still could not act on
+ (``unrun_page_step``).  ``ran: false``, ``executed: false``, an owner-local write and a failure's
+ ``effect: none`` are not this: a refused write records them too.  An unknown effect never is.
+ """
+ detail=detail if isinstance(detail,dict) else {}
+ if action in OBSERVED_INPUT_ACTIONS and status=='failed' and observed_page_load(detail):return True
+ if unknown_effect(detail):return False
+ # A browser_open is a read only by its declaration (#787): page_load_only decides it below.
+ # #1456: a code run that sent an owner-approved state-changing request changed something.
+ if action in CODE_ACTIONS and isinstance(detail.get('evidence'),dict) and detail['evidence'].get('effects'):return False
+ if action in EFFECT_FREE_READS-{'browser_open'} or action in INTERNAL_STATE_ACTIONS:return True
+ if page_load_only(action,detail,status):return True
+ return status=='failed' and unrun_page_step(action,detail)
 
 def call_effects(rows,with_detail=False):
  """``[(action, effect class, status)]``, one per tool call of recorded rows (#1445).
@@ -2929,14 +2944,25 @@ def read_state_text(calls, limit=READ_STATE_CHARS):
                            else f'every opened item was read through ({len(opened)} opened)')
  return ('read_state (Still\'s record of which items this attempt opened and read through): '+'; '.join(parts))[:limit]
 
-def state_change_short(trail):
- """Whether a state-changing action - anything outside the effect-free reads
- and internal-state actions - failed, was withheld or left incomplete without
- the same action succeeding later (#752).  Then an answer may claim an action
- that did not happen, and a goal verdict does not upgrade the Work."""
- reads=EFFECT_FREE_READS|INTERNAL_STATE_ACTIONS|{'delegate_agent'}
- return any(state in ('failed','withheld','incomplete') and action not in reads
-            and (action,'succeeded') not in trail[index+1:] for index,(action,state) in enumerate(trail))
+def state_change_short(steps):
+ """Whether a state change fell short (#752): an answer may then claim an action that did not
+ happen, and a goal verdict does not upgrade the Work.
+
+ ``steps`` are ``(tool, host_action, state, detail, reason)`` in order (``trail_steps``, or the
+ direct route's own attempts).  #630: a failed, withheld or incomplete call holds unless the same
+ invocation (``same_invocation``) succeeded later and its effect is known, or Still's own records
+ of the call show it changed nothing (``effect_free_call``; a delegation, whose specialist's calls
+ are held on their own).  A withheld call waits for the owner's decision: only its kind clears it.
+ """
+ free=_state_free_actions()
+ for index,(_tool,action,state,detail,_reason) in enumerate(steps):
+  if state not in ('failed','withheld','incomplete') or action=='delegate_agent':continue
+  detail=detail if isinstance(detail,dict) else {}
+  if action in free if state=='withheld' else effect_free_call(action,detail,'failed' if state=='failed' else 'succeeded'):continue
+  if not unknown_effect(detail) and any(other==action and result=='succeeded' and same_invocation(detail,done)
+                                        for _t,other,result,done,_r in steps[index+1:]):continue
+  return True
+ return False
 
 def goal_summary(rows, tools=None):
  """Attempts versus obligations for one Work (#607 AX-07), from its durable tool events.
@@ -5616,7 +5642,9 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
    # Ordinary conversation: no tool ran (or only internal current-state
    # bookkeeping, #627), so there is nothing to observe.
    result.outcome='succeeded'
-  elif (claim is None or claim['status']=='done') and judgment=='yes' and not invalid_calls:
+  # #630: the CLI route's floor (``goal_upgrade_allowed``) on this route too: a judged yes never
+  # outranks a state change that fell short.
+  elif (claim is None or claim['status']=='done') and judgment=='yes' and not invalid_calls and not state_change_short(steps):
    result.outcome='succeeded'
   else:result.outcome='partial' if successful else 'failed'
   unknown=[]
