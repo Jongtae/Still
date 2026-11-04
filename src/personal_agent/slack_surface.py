@@ -78,7 +78,7 @@ BODY_REFUSED = frozenset({'invalid_arguments', 'invalid_blocks', 'invalid_blocks
 OWNER_ID = re.compile(r'^[UW][A-Z0-9]{2,30}$')
 #: Notice kinds that carry an approve / decline button pair (the item each one shows is settled exactly).
 BUTTON_LABELS = {'budget_continue': ('button.continue', 'button.deny'), 'settings_change_proposed': ('button.apply', 'button.keep'),
-                 'preparation_proposed': ('button.accept', 'button.decline_schedule'),
+                 'preparation_proposed': ('button.preparation_accept', 'button.preparation_decline'),
                  'browser_approval_needed': ('button.approve', 'button.deny')}
 ACTION_APPROVE, ACTION_DECLINE = 'still_approve', 'still_decline'
 

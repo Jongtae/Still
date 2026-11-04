@@ -3216,7 +3216,9 @@ class AgentService:
                          'max_runs':row.get('max_runs'),'run_count':row.get('run_count') or 0,
                          'last_decision':row.get('last_decision'),'last_decision_reason':row.get('last_decision_reason')})
         # #575: the page uses the same catalog in its selected language.
-        labels={**{operation:'settings_orchestrator.label_preparations_'+operation for operation in ('pause','resume','edit','run_now')},
+        labels={'accept':'button.preparation_accept','decline':'button.preparation_decline',
+                **{'delivery_'+mode:'preparations.delivery_'+mode for mode in ('send','keep','when_needed')},
+                **{operation:'settings_orchestrator.label_preparations_'+operation for operation in ('pause','resume','edit','run_now')},
                 **{field:'preparations.field_'+field for field in ('due','recurrence','every_minutes','until','max_runs',
                                                                               'rule','weekly_days','monthly_day','interval','rule_until')},
                 **{'day_'+day:'preparations.day_'+day for day in prep.RULE_DAYS},

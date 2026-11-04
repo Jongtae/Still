@@ -282,8 +282,8 @@ class TelegramSurface(ConversationSurface):
         if kind=='preparation_scheduled':
             return service.preparation_cancel_markup(nid)
         if kind=='preparation_proposed':
-            return {'inline_keyboard':[[{'text':msg('button.accept'),'callback_data':f"p7p:{nid}:accept"},
-                                        {'text':msg('button.decline_schedule'),'callback_data':f"p7p:{nid}:deny"}]]}
+            return {'inline_keyboard':[[{'text':msg('button.preparation_accept'),'callback_data':f"p7p:{nid}:accept"},
+                                        {'text':msg('button.preparation_decline'),'callback_data':f"p7p:{nid}:deny"}]]}
         if kind in MEMORY_PROMPT_KINDS:
             return service.memory_prompt_markup(nid,bound['memory_prompt'])
         if kind in MEMORY_SAVED_KINDS:

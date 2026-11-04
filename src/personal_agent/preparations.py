@@ -674,11 +674,11 @@ def schedule_text(row, home_zone=None):
     if row['kind'] == KIND_REMINDER:
         return when
     if row.get('delivery_mode') == DELIVERY_WHEN_NEEDED:
-        tell = '알릴 일이 있을 때만 알려요'
+        tell = msg('preparations.delivery_when_needed')
     elif row.get('channel') == CHANNEL_WEB:
-        tell = '결과는 Still에 보관해요'
+        tell = msg('preparations.delivery_keep')
     else:
-        tell = '결과를 보내 드려요'
+        tell = msg('preparations.delivery_send')
     return f'{when} · {tell}'
 
 
@@ -727,7 +727,7 @@ def proposal_summary(row, home_zone=None, brief=True):
 def proposal_html(shown, remaining, home_zone=None):
     """#393: the Telegram (HTML) proposal: the offer first, each run's brief folded."""
     from html import escape
-    single = len(shown) == 1 and offered(shown[0])
+    single = len(shown) == 1
     parts = [] if single else [escape(PROPOSAL_HEADER)]
     for row in shown:
         if not offered(row):
@@ -740,14 +740,14 @@ def proposal_html(shown, remaining, home_zone=None):
         parts.append('\n'.join(block))
     if remaining:
         parts.append(escape(MORE_TEXT.format(remaining=remaining)))
-    if single:
+    if single and not shown[0].get('offer_text'):
         parts.append(escape(PROPOSAL_QUESTION))
     return '\n\n'.join(parts)
 
 
 PROPOSAL_HEADER = msg('preparations.shall_i_schedule_the_following_preparation')
-#: #393: a single offered proposal ends with one question instead of the generic header.
-PROPOSAL_QUESTION = '이대로 예약할까요?'
+#: A single proposal without AI offer prose uses the catalog question.
+PROPOSAL_QUESTION = msg('preparations.proposal_question')
 #: #393: the label of the run's brief under an offer.
 BRIEF_LABEL = msg('preparations.brief_label')
 MORE_TEXT = '그 밖의 제안 {remaining}개는 이 메시지로 수락되지 않습니다. "예약 보여줘"처럼 대화로 확인하고 수락할 수 있어요.'
@@ -774,12 +774,12 @@ def proposal_page(rows):
 
 def proposal_text(shown, remaining, home_zone=None):
     """The plain proposal; #393: a single offered proposal needs no generic header."""
-    single = len(shown) == 1 and offered(shown[0])
+    single = len(shown) == 1
     parts = ([] if single else [PROPOSAL_HEADER]) + [proposal_summary(row, home_zone) for row in shown]
     text = ('\n\n' if any(offered(row) for row in shown) else '\n').join(parts)
     if remaining:
         text += '\n' + MORE_TEXT.format(remaining=remaining)
-    if single:
+    if single and not shown[0].get('offer_text'):
         text += '\n\n' + PROPOSAL_QUESTION
     return text
 
