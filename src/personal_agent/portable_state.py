@@ -1,4 +1,6 @@
 """Portable, secret-free owner-state export and restore."""
+
+from . import work_status as ws
 import hashlib
 import json
 from pathlib import Path
@@ -45,11 +47,11 @@ def _portable_db(source, target, redaction=((), None)):
         # request after restore; preserving it as queued/running would replay
         # an external action when the restored service starts.
         if "jobs" in tables:
-            copy.execute("""UPDATE jobs
+            copy.execute(f"""UPDATE jobs
                             SET status='interrupted',
                                 error='Restored work was quarantined; submit a new request to retry.',
                                 delivery=CASE WHEN delivery IN ('sending','pending') THEN 'unknown' ELSE delivery END
-                            WHERE status IN ('queued','running')""")
+                            WHERE status IN {ws.sql_in(ws.ACTIVE)}""")
         if "memory_approvals" in tables:
             # Approval tokens are runtime-secret-bound and cannot survive a
             # portable boundary. Quarantine every outstanding row, and remove

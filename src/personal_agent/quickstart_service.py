@@ -1,4 +1,6 @@
 """One personal conversation shared by web and an explicitly paired Telegram user."""
+
+from . import work_status as ws
 from datetime import datetime
 import collections
 import concurrent.futures
@@ -925,7 +927,7 @@ class AgentService:
         return information_use.work_information_use(self.store,job_id,redact=self._redact_known_secrets)
 
     #: Work states whose answer the owner may ask about.
-    INFORMATION_USE_STATES=('succeeded','partial','failed','interrupted','unknown')
+    INFORMATION_USE_STATES=ws.INSPECTABLE_ANSWER
 
     def information_use_tool(self, job):
         """The ``information_use`` handler bound to one Work's conversation (#826).
@@ -942,7 +944,7 @@ class AgentService:
                 if not target or target.get('id')==job['id']:raise ValueError(msg('quickstart_service.work_record_missing'))
             else:
                 target=next((row for row in self.store.jobs() if row.get('id')!=job['id'] and row.get('channel')==job.get('channel')
-                             and row.get('status') in self.INFORMATION_USE_STATES
+                             and ws.has_inspectable_answer(row.get('status'))
                              and (row.get('created') or 0)<=(job.get('created') or 0)),None)
                 if not target:raise ValueError(msg('quickstart_service.previous_reply_missing'))
             audit=self.work_information_use(target['id'])
@@ -1031,7 +1033,7 @@ class AgentService:
     def mcp_setup_guard(self, draft):
         job=self.store.job(draft.get('work_id')) if draft.get('work_id') else None
         if (not job or self.settings_owner(job)!=draft['owner'] or job['channel']!=draft['channel']
-                or self.work_stopped(job['id']) or draft.get('recovery_of') and draft.get('continuation') and job['status']=='succeeded'):
+                or self.work_stopped(job['id']) or draft.get('recovery_of') and draft.get('continuation') and ws.is_succeeded(job['status'])):
             raise ValueError(msg('quickstart_service.check_connection_work_owner'))
         # #213: a Work from a conversation surface is held to that surface's current pairing.
         surface=self.surface_claiming(job)
@@ -1138,7 +1140,7 @@ class AgentService:
         """Retry known failures, or observe unknown setup without repeating mutations."""
         try:
             job=self.store.job(draft.get('work_id'))
-            return (job is not None and (not draft.get('continuation') or job['status'] in ('partial','failed','interrupted','awaiting_connection'))
+            return (job is not None and (not draft.get('continuation') or ws.is_resumable_settings(job['status']))
                     and (draft.get('state')=='unknown' or draft.get('state')=='failed' and draft.get('setup_failure',{}).get('retryable') is True)
                     and (draft.get('category'),draft.get('setting'))==('ai_connections','connect')
                     and 0<=self.settings_orchestrator.now()-float(draft.get('settled_at') or 0)<=self.settings_orchestrator.RENEW_GRACE_SECONDS
@@ -1424,7 +1426,7 @@ class AgentService:
 
     def settings_prerequisites_observed(self, job, drafts):
         """The still-running worker may have used the new read and finished already."""
-        if job['status']!='succeeded':return False
+        if not ws.is_succeeded(job['status']):return False
         with self.store.db() as db:
             rows=db.execute("SELECT id,detail FROM tool_events WHERE job_id=? AND tool='connector_read' AND status='succeeded'",
                             (job['id'],)).fetchall()
@@ -1459,7 +1461,7 @@ class AgentService:
                     groups.setdefault(draft.get('work_id'),[]).append(draft)
             for work_id,drafts in groups.items():
                 job=self.store.job(work_id) if work_id else None
-                if not job or job['status'] in ('running','queued'):continue
+                if not job or ws.is_active(job['status']):continue
                 with self.store.db() as db:
                     prior=db.execute("SELECT detail FROM tool_events WHERE job_id=? AND tool IN ('settings_continuation','action_continuation')",(work_id,)).fetchall()
                 receipts=[json.loads(row['detail']) for row in prior]
@@ -1470,7 +1472,7 @@ class AgentService:
                           and row.get('owner')==self.settings_owner(job) and row.get('channel')==job['channel']
                           and row['continuation'].get('generation')==self._owner_generation(self.issuer_owner_id(job))
                           for row in drafts)
-                stopped=self.work_stopped(work_id) or job['status'] not in ('partial','failed','interrupted','succeeded','awaiting_connection')
+                stopped=self.work_stopped(work_id) or not ws.is_resumable_settings_settlement(job['status'])
                 surface=self.surface_claiming(job)
                 if surface is not None:
                     stopped=stopped or not surface.paired_owner(job['chat_id'])
@@ -1968,7 +1970,7 @@ class AgentService:
                                 # promote that prompt into a prepared answer.
                                 cause=msg('quickstart_service.scheduled_input_incomplete')
                                 changed=db.execute("UPDATE jobs SET status='failed',error=?,owner_cause=? WHERE id=? "
-                                                   "AND status IN ('succeeded','partial')",(cause,cause,work_id)).rowcount
+                                                   f"AND status IN {ws.sql_in(ws.DELIVERED_RESULT)}",(cause,cause,work_id)).rowcount
                                 if changed:
                                     if request['state']=='pending':
                                         db.execute("UPDATE context_location_requests SET state='expired' WHERE id=?",(request['id'],))
@@ -2015,7 +2017,7 @@ class AgentService:
         a bare API request, such as a developer's verification call, is not.
         """
         key=job.get('request_key')
-        return (outcome in ('succeeded','partial') and provider!='builtin' and owner_words_work(job)
+        return (ws.has_delivered_result(outcome) and provider!='builtin' and owner_words_work(job)
                 and prep.preparation_of(key) is None and continuation_request(key) is None)
 
     @staticmethod
@@ -2028,7 +2030,7 @@ class AgentService:
         a worker attempt was recorded, since no provider is settled there.
         """
         key=job.get('request_key')
-        return (outcome=='failed' and provider!='builtin'
+        return (ws.is_failed(outcome) and provider!='builtin'
                 and prep.preparation_of(key) is None and continuation_request(key) is None)
 
     def run_owner_model_upkeep(self, now=None):
@@ -2177,7 +2179,7 @@ class AgentService:
             if kind==om.KIND_DREAM:
                 self._owner_model_dream(row,job,now)
                 return
-            if not job or job.get('status') not in (om.REVIEWABLE_STATUSES if review else ('succeeded','partial')):
+            if not job or not (ws.has_reviewable_result(job.get('status')) if review else ws.has_delivered_result(job.get('status'))):
                 upkeep.finish(work_id,om.STATE_GONE,0,om.EVENT_UNAVAILABLE,{'reason':'work-not-finished'},now,kind=kind)
                 return
             if self.store.work_turn_forgotten(work_id):
@@ -4245,7 +4247,7 @@ class AgentService:
         _ok,blocker=self.may_continue(previous['id'],'retry')
         if blocker in ('unknown','unaccounted'):
             return False,UNKNOWN_EFFECT_RETRY_REFUSAL
-        if previous.get('status') not in ('failed','interrupted'):
+        if not ws.ended_abnormally(previous.get('status')):
             return False,msg('quickstart_service.retry_not_failed')
         # #730 review: a Work that itself ran as a refused retry is part of a retry
         # chain; its retry attempt was already spent, so it is not retried again.
@@ -4448,7 +4450,7 @@ class AgentService:
                 if drafts:
                     with self.store.db() as db:
                         changed=db.execute("UPDATE jobs SET status='cancelled',error=?,delivery='cancelled' "
-                                           "WHERE id=? AND status IN ('awaiting_connection','queued')",
+                                           f"WHERE id=? AND status IN {ws.sql_in(ws.QUEUED_CONNECTION)}",
                                            (msg('quickstart_service.cancelled_followup'),work_id)).rowcount
                     if changed:
                         for row in drafts:
@@ -4471,7 +4473,7 @@ class AgentService:
                 self.update_task_card(self.store.job(work_id),'cancelled')
                 self._clear_queued_presence(self.store.job(work_id))
                 return True,msg('quickstart_service.cancelled_request')
-        if previous.get('status') not in ('queued','running') and self.context_observations.cancel_work_requests(work_id):
+        if not ws.is_active(previous.get('status')) and self.context_observations.cancel_work_requests(work_id):
             # #774: a finished Work that asked for a location continues only on its
             # answer; cancelling it withdraws the request, so the answer continues nothing.
             self.store.remove_telegram_photo(work_id)
@@ -4759,7 +4761,7 @@ class AgentService:
         model_ready=self.model_ready(model, self.store.config('model_test'))
         subscription=self.subscription_engine_status()['selected']
         recovery=self.store.recovery_summary()
-        active=sum(1 for job in self.store.jobs() if job['status'] in ('queued','running'))
+        active=sum(1 for job in self.store.jobs() if ws.is_active(job['status']))
         if any(recovery.values()):
             state='attention';next_action=msg('quickstart_service.work_delivery_uncertain')
         elif active:
@@ -4787,11 +4789,11 @@ class AgentService:
     @staticmethod
     def _progress_status(job):
         status=job.get('status')
-        if status in ('queued','running'):return 'active',msg('state.running')
-        if status in ('awaiting_context','awaiting_drive','awaiting_connection') or job.get('delivery')=='unknown':return 'attention',msg('label.needs_attention')
-        if status in ('failed','partial','interrupted','unknown'):return 'attention',msg('label.needs_attention')
-        if status in ('cancelled',):return 'finished',msg('state.cancelled')
-        if status in ('succeeded',):return 'finished',msg('state.succeeded')
+        if ws.is_active(status):return 'active',msg('state.running')
+        if ws.is_waiting_prerequisite(status) or job.get('delivery')=='unknown':return 'attention',msg('label.needs_attention')
+        if ws.needs_attention(status):return 'attention',msg('label.needs_attention')
+        if ws.is_cancelled(status):return 'finished',msg('state.cancelled')
+        if ws.is_succeeded(status):return 'finished',msg('state.succeeded')
         return 'attention',msg('service.state_unknown')
 
     @staticmethod
@@ -4861,8 +4863,8 @@ class AgentService:
         ``running`` by an interrupted Work reports the Work's terminal state.
         """
         def outcome(status):
-            if status!='running' or job.get('status') in ('queued','running'):return status
-            return job.get('status') if job.get('status') in ('failed','interrupted','cancelled') else 'unknown'
+            if status!='running' or ws.is_active(job.get('status')):return status
+            return job.get('status') if ws.has_observed_stop(job.get('status')) else 'unknown'
         engine=[event for event in events if event['tool']=='subscription_engine']
         if engine:
             # The terminal outcome and its engine must come from the same
@@ -4878,7 +4880,7 @@ class AgentService:
             model=attempt.get('model')
             if not isinstance(model,str) or model==NOT_REPORTED:model=attempt.get('requested_model')
             return {'kind':'direct-api','model':model if isinstance(model,str) else job.get('model'),
-                    'status':outcome('running' if job.get('status') in ('queued','running') else job.get('status'))}
+                    'status':outcome('running' if ws.is_active(job.get('status')) else job.get('status'))}
         # 'builtin' marks turns Still answered itself (e.g. notes): no AI ran.
         if job.get('provider') and job['provider']!='builtin':
             subscription=job['provider']=='subscription'
@@ -4924,7 +4926,7 @@ class AgentService:
                     waits.append(msg('label.waiting_for_approval'))
             artifacts=[{'id':item['id'],'kind':msg('handoff.saved_result') if 'path' not in item else msg('quickstart_service.file_result'),'path':item.get('path'),'workspace_id':item.get('workspace_id'),'created':item.get('created'),'state':item.get('state','current')} for item in self.store.task_artifacts(job['id'])]
             retained_rows.append((job['id'],events))
-            task={'id':job['id'],'title':self._progress_title(job.get('message'),job['id']),'status':job.get('status'),'status_kind':kind,'status_label':label,'started_at':job.get('created'),'observed_at':last,'result_available':bool(job.get('response')) and job.get('status') in ('succeeded','partial','failed'),'workspace_id':job.get('workspace_id'),'events_count':len(events),'waits':waits,'configured':{'provider':configured.get('provider'),'model':configured.get('model'),'runtime':selected_subscription or (configured.get('provider') if configured else None)},'observed':{'provider':job.get('provider'),'model':job.get('model'),'runtime':job.get('provider') or None},'route':self._observed_route(job,events,model_events),'artifacts':artifacts}
+            task={'id':job['id'],'title':self._progress_title(job.get('message'),job['id']),'status':job.get('status'),'status_kind':kind,'status_label':label,'started_at':job.get('created'),'observed_at':last,'result_available':bool(job.get('response')) and ws.has_available_result(job.get('status')),'workspace_id':job.get('workspace_id'),'events_count':len(events),'waits':waits,'configured':{'provider':configured.get('provider'),'model':configured.get('model'),'runtime':selected_subscription or (configured.get('provider') if configured else None)},'observed':{'provider':job.get('provider'),'model':job.get('model'),'runtime':job.get('provider') or None},'route':self._observed_route(job,events,model_events),'artifacts':artifacts}
             # The same typed qualifier the transcript and model context use
             # (#494), so the card cannot disagree with them.
             task['budget_continue']=None
@@ -4966,7 +4968,7 @@ class AgentService:
                                    for row in self.store.work_decisions(job['id'])]
                 task['events']=[self._progress_event(event) for event in events]
                 task['source_references']=self.store.evidence_summary(job['id'])
-                task['error']=job.get('error') if job.get('status') in ('failed','partial','interrupted','unknown') else None
+                task['error']=job.get('error') if ws.needs_attention(job.get('status')) else None
                 task['conversation']={'job_id':job['id'],'workspace_id':job.get('workspace_id')}
             observed.append(task)
         retained=self._retained_links(retained_rows)
@@ -5296,7 +5298,7 @@ class AgentService:
 
     def usage_limit_route_options(self, job):
         """Already signed-in subscription routes for one matching failed Work."""
-        if not isinstance(job, dict) or job.get('status') != 'failed':return []
+        if not isinstance(job, dict) or not ws.is_failed(job.get('status')):return []
         provenance=self.store.turn_provenance(job.get('id')) or {}
         engine_id=provenance.get('engine')
         if (provenance.get('route')!='subscription' or provenance.get('failure_class')!='usage-limit'
@@ -5310,7 +5312,7 @@ class AgentService:
         """Require a still-failed Work and its still-selected exhausted route."""
         job=self.store.job(work_id)
         provenance=self.store.turn_provenance(work_id) or {}
-        if (not job or job.get('status')!='failed' or provenance.get('route')!='subscription'
+        if (not job or not ws.is_failed(job.get('status')) or provenance.get('route')!='subscription'
                 or provenance.get('failure_class')!='usage-limit'
                 or provenance.get('engine')!=expected_current
                 or provenance.get('usage_limit_recovery_selected')):
@@ -6684,7 +6686,7 @@ class AgentService:
         # that left a draft, a proposal or a missing connection waiting for the owner stops for the owner.
         reasons=self.continuation_reasons(job_id,'redelegate',since=since,
                                           unaccounted=bool(unmediated and self.cli_host_actions(engine_meta)!=()))
-        unknown=outcome=='unknown' or bool({'unknown','unaccounted'}&set(reasons))
+        unknown=ws.is_effect_unknown(outcome) or bool({'unknown','unaccounted'}&set(reasons))
         if 'owner' in reasons:owner_needed=True
         from .memory_service import conversation_block, recalled_tool_exchanges
         recalled=conversation_block(recalled_tool_exchanges(self.store,job_id),budget=9000)
@@ -6761,7 +6763,7 @@ class AgentService:
             except Exception:time_left=0
             evaluation=(orchestration.evaluate_answer(answer,observations,failed_steps,final=True)
                         if not unknown and orchestration.may_judge()
-                        and (effect or outcome in ('partial','failed') or time_left>=FINAL_JUDGMENT_SECONDS)
+                        and (effect or ws.has_incomplete_result(outcome) or time_left>=FINAL_JUDGMENT_SECONDS)
                         else NOT_JUDGED)
         else:
             evaluation=orchestration.evaluate_answer(answer,observations,failed_steps)
@@ -6900,10 +6902,10 @@ class AgentService:
                 handoff=self.local_handoff if local else self.connector_handoff
                 if handoff is None:continue
                 job=self.store.job(row['work_id'])
-                if not job or job.get('status')!='awaiting_connection':
+                if not job or not ws.is_awaiting_connection(job.get('status')):
                     # Keep claimed/queued recovery handles: their claimant, not
                     # an expired offer, still owns completion after a crash.
-                    if not job or job.get('status') in ('succeeded','failed','partial','cancelled','interrupted','unknown','blocked'):
+                    if not job or ws.is_terminal(job.get('status')):
                         if job:
                             try:
                                 handoff.pending.complete(row['resume_token'],self.issuer_owner_id(job),
@@ -6949,7 +6951,7 @@ class AgentService:
             key=row['connector_id']
             if not handoff.known(key):continue
             job=self.store.job(row['work_id'])
-            if not job or job.get('status')!='awaiting_connection':continue
+            if not job or not ws.is_awaiting_connection(job.get('status')):continue
             owner=self._local_handoff_owner(row)
             if owner is None or row.get('generation','')!=self._owner_generation(owner):continue
             terminal='failed'
@@ -6990,7 +6992,7 @@ class AgentService:
                 # Another callback may have settled this exact handle. A
                 # retryable claim stays quiet; terminal failure is told once.
                 current=self.store.job(job['id'])
-                if current and current.get('status')=='failed' and self._surface_work(current):
+                if current and ws.is_failed(current.get('status')) and self._surface_work(current):
                     self._notify_owner(owner,ConnectorHandoff.refusal_text(exc.reason))
         return resumed
 
@@ -7315,7 +7317,7 @@ class AgentService:
             self._forget_work(LOCAL_RESUMED_KEY,work_id)
             with self.store.db() as db:
                 db.execute('BEGIN IMMEDIATE')
-                resumed=db.execute("UPDATE jobs SET status='queued',error=NULL,delivery='none' WHERE id=? AND status='failed'",(work_id,)).rowcount==1
+                resumed=db.execute(f"UPDATE jobs SET status='queued',error=NULL,delivery='none' WHERE id=? AND status IN {ws.sql_in(ws.FAILED)}",(work_id,)).rowcount==1
         if not resumed and not self.photo_work_has_pending_resume(work_id):self.store.remove_telegram_photo(work_id)
         return resumed
 
@@ -7836,7 +7838,7 @@ class AgentService:
         status=job.get('status')
         # Owner direction 2026-09-30: no 상세 button.  It read an in-memory turn
         # record, so after a restart it did nothing; the reply itself says what happened.
-        if status in ('failed','interrupted') and not blocked:
+        if ws.ended_abnormally(status) and not blocked:
             allowed,_reason=self.safe_retry(job)
             return (CONTROL_RETRY,) if allowed else ()
         # Never a retry for an unknown effect: the owner checks first.
@@ -8334,8 +8336,8 @@ class AgentService:
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
             for work_id in work_ids:
-                db.execute("UPDATE jobs SET delivery='cancelled' WHERE id=? AND status IN ('awaiting_connection','awaiting_drive') AND delivery='pending'",(work_id,))
-                db.execute("UPDATE jobs SET status='failed',error=? WHERE id=? AND status IN ('awaiting_connection','awaiting_drive')",(text,work_id))
+                db.execute(f"UPDATE jobs SET delivery='cancelled' WHERE id=? AND status IN {ws.sql_in(ws.WAITING_CONNECTION_DRIVE)} AND delivery='pending'",(work_id,))
+                db.execute(f"UPDATE jobs SET status='failed',error=? WHERE id=? AND status IN {ws.sql_in(ws.WAITING_CONNECTION_DRIVE)}",(text,work_id))
         for work_id in work_ids:
             job=self.store.job(work_id)
             if job:self._present_outcome(job,delivered=False,blocked=False)
@@ -8832,7 +8834,7 @@ class AgentService:
                 if (self.work_stopped(work_id) or time.time()>float(actual.get('requested_at',0))+PAYMENT_APPROVAL_SECONDS or
                         actual.get('generation')!=self._owner_generation(self.issuer_owner_id(job))):return False
                 current_job=db.execute('SELECT status FROM jobs WHERE id=?',(work_id,)).fetchone()
-                if not current_job or current_job['status'] not in ('running','failed','partial','interrupted','succeeded'):return False
+                if not current_job or not ws.is_resumable_action_decision(current_job['status']):return False
                 issued={**row,'state':'issued','token':approval['approval_token'],'issued_at':time.time()}
                 requests[work_id]=issued
                 db.execute('INSERT INTO config VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
@@ -8850,7 +8852,7 @@ class AgentService:
     def _queue_action_continuation(self, db, job, row):
         """Consume one exact approval wait and enqueue its original Work atomically."""
         current=db.execute('SELECT status FROM jobs WHERE id=?',(job['id'],)).fetchone()
-        if not current or current['status'] not in ('failed','partial','interrupted','succeeded'):return False
+        if not current or not ws.is_resumable_action(current['status']):return False
         refusal=self.preparations.run_refusal(db,job['id'],self.preparations.clock())
         if refusal:
             self.preparations.refuse_run(db,job['id'],self.preparations.clock(),refusal)
@@ -8875,7 +8877,7 @@ class AgentService:
         if row.get('action')=='budget_continue':
             from .agent_runtime import renew_for_owner_prerequisite
             if not renew_for_owner_prerequisite(db,job['id'],budget_continue=True):return False
-        changed=db.execute("UPDATE jobs SET status='queued',error=NULL,delivery='none' WHERE id=? AND status IN ('failed','partial','interrupted','succeeded')",
+        changed=db.execute(f"UPDATE jobs SET status='queued',error=NULL,delivery='none' WHERE id=? AND status IN {ws.sql_in(ws.RESUMABLE_ACTION)}",
                            (job['id'],)).rowcount==1
         if changed:
             db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
@@ -8946,7 +8948,7 @@ class AgentService:
                     with self.store.db() as db:
                         db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                             (job['id'],'action_continuation','withheld',json.dumps({'action_digest':row['digest'],'resumed':False,'reason':reason}),time.time()))
-                        db.execute("UPDATE jobs SET owner_cause=? WHERE id=? AND status IN ('partial','failed','interrupted')",
+                        db.execute(f"UPDATE jobs SET owner_cause=? WHERE id=? AND status IN {ws.sql_in(ws.RESUMABLE_INTERRUPTED)}",
                                    (msg('quickstart_service.resume_authority_expired'),job['id']))
                 continue
             if row.get('state')!='issued':continue
@@ -9181,7 +9183,7 @@ class AgentService:
         if now<self._keepalive_next:return False
         self._keepalive_next=now+self.KEEPALIVE_CHECK_SECONDS
         with self.store.db() as db:
-            if db.execute("SELECT 1 FROM jobs WHERE status IN ('queued','running') LIMIT 1").fetchone():return False
+            if db.execute(f"SELECT 1 FROM jobs WHERE status IN {ws.sql_in(ws.ACTIVE)} LIMIT 1").fetchone():return False
         with self.lock:
             running=self.__dict__.get('_keepalive_thread')
             if running is not None and running.is_alive():return False
@@ -9217,7 +9219,7 @@ class AgentService:
         signins=self.store.config(BROWSER_OWNER_SIGNINS_KEY,{})
         if not isinstance(signins,dict) or not signins or not self.browser_profile.available():return None
         with self.store.db() as db:
-            if db.execute("SELECT 1 FROM jobs WHERE status IN ('queued','running') LIMIT 1").fetchone():return None
+            if db.execute(f"SELECT 1 FROM jobs WHERE status IN {ws.sql_in(ws.ACTIVE)} LIMIT 1").fetchone():return None
         refreshed=self.store.config(self.KEEPALIVE_KEY,{})
         refreshed=refreshed if isinstance(refreshed,dict) else {}
         paused=self.store.config(self.KEEPALIVE_PAUSED_KEY,{})
@@ -9583,8 +9585,7 @@ class AgentService:
             elif intent in ('resume','owner_close'):
                 job_row=db.execute('SELECT * FROM jobs WHERE id=?',(work_id,)).fetchone()
                 job=dict(job_row) if job_row else None
-                statuses=('failed','partial','succeeded') if row.get('explicit') else ('failed','partial')
-                current=bool(job and job['status'] in statuses and not self.work_stopped(work_id)
+                current=bool(job and (ws.is_resumable_login_explicit(job['status']) if row.get('explicit') else ws.is_resumable_continuation(job['status'])) and not self.work_stopped(work_id)
                              and (not any(surface.claims_channel(job.get('channel')) for surface in self.surfaces) or self._surface_work(job))
                             )
                 if time.time()>float(row.get('deadline') or 0):
@@ -9682,7 +9683,7 @@ class AgentService:
         job=self.store.job(work_id)
         return bool(row.get('state')=='expired' and row.get('cause')=='expired'
                     and int(row.get('reopens') or 0)<BROWSER_LOGIN_REOPENS
-                    and job and job['status'] in ('partial','failed') and not self.work_stopped(work_id)
+                    and job and ws.is_resumable_continuation(job['status']) and not self.work_stopped(work_id)
                     and self._surface_work(job))
 
     def reopen_browser_login(self, work_id, nonce):
@@ -9807,7 +9808,7 @@ class AgentService:
         try:ledger=WorkLedger._validate(self.store.config(row.get('ledger_key')))
         except (ValueError,TypeError,KeyError):return False
         if ledger['active'] or ledger['epoch']!=row.get('epoch'):return False
-        return bool(job and job.get('status') in ('partial','failed') and row.get('state')=='offered'
+        return bool(job and ws.is_resumable_continuation(job.get('status')) and row.get('state')=='offered'
                     and time.time()<float(row.get('deadline') or 0) and not self.work_stopped(job['id'])
                     and not self.work_waits_for_owner(job)
                     and (self._browser_login(job['id']) or {}).get('state') not in ('requested','opening','offered','closing')
@@ -9838,14 +9839,14 @@ class AgentService:
         work_id=run.job['id']
         if not offered and self.budget_continue_offer(work_id).get('state')=='pending':
             self.store.put('budget_continue:'+work_id,{'state':'none'})
-            if run.outcome in ('failed','partial') and not self.photo_work_has_pending_resume(work_id):
+            if ws.is_resumable_continuation(run.outcome) and not self.photo_work_has_pending_resume(work_id):
                 self.store.remove_telegram_photo(work_id)
         return offered
 
     def _offer_budget_continue(self, run):
         from .agent_runtime import read_state_text
         job=self.store.job(run.job['id'])
-        if not job or job['status'] not in ('partial','failed') or self.work_stopped(job['id']):return False
+        if not job or not ws.is_resumable_continuation(job['status']) or self.work_stopped(job['id']):return False
         with self.store.db() as db:
             rows=db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=? AND created>=? ORDER BY id',
                             (job['id'],run.claimed_at)).fetchall()
@@ -10475,7 +10476,7 @@ class AgentService:
                     job=db.execute('SELECT status FROM jobs WHERE id=?',(work_id,)).fetchone()
                     # The queue itself proves prior scheduling, not authentication.
                     # Never create another queue entry from this legacy record.
-                    queued=bool(job and job['status'] in ('queued','running'))
+                    queued=bool(job and ws.is_active(job['status']))
                     final,shown=('resumed','resumed') if queued else ('expired','close_failed')
                     self._put_browser_login(work_id,{**current,'state':final,'cause':shown,'closed_at':now},db=db)
                 self._finish_login_notification(work_id,shown)
@@ -10898,7 +10899,7 @@ class AgentService:
     #: utterance, and a digest of that utterance are kept - never its text.
     JUDGED_RESUME_KEY='judged_resume_intents'
     RESUMABLE_JUDGED_INTENTS=frozenset({INTENT_CALENDAR_CREATE,INTENT_DRIVE_READ,INTENT_SAVED_CONTEXT})
-    PARKED_STATUSES=('awaiting_connection','awaiting_drive','awaiting_context','queued','running')
+    PARKED_STATUSES=ws.ACTIVE_PARKED
 
     @staticmethod
     def _utterance_digest(text):
@@ -10954,7 +10955,7 @@ class AgentService:
         rows=rows if isinstance(rows,dict) else {}
         # Bounded: rows of Work no longer waiting for (or running after) a resume go.
         rows={key:row for key,row in rows.items()
-              if key!=job_id and (self.store.job(key) or {}).get('status') in self.PARKED_STATUSES}
+              if key!=job_id and ws.is_active_parked((self.store.job(key) or {}).get('status'))}
         rows[job_id]={'intent':decision.intent,'prompt_work_id':prompt_work_id,
                       'digest':self._utterance_digest(prompt)}
         self.store.put(self.JUDGED_RESUME_KEY,rows)
@@ -11289,7 +11290,7 @@ class AgentService:
         # #581: a succeeded card has served its purpose and keeps no control;
         # other terminal states keep one on-demand 상세 (technical detail).
         if state=='succeeded':return {'inline_keyboard':[]}
-        progress_label=msg('button.progress') if state in ('queued','running') else msg('button.details')
+        progress_label=msg('button.progress') if ws.is_active(state) else msg('button.details')
         buttons=[{'text':progress_label,'callback_data':f'p7v:{job_id}'}]
         if state=='queued':
             buttons.append({'text':msg('button.cancel_work'),'callback_data':f'p7c:{job_id}'})
@@ -11856,7 +11857,7 @@ class AgentService:
         # A steered Work that then failed or ended unknown may never have read the steer
         # (claimed, then the process or provider failed): the message runs as its own Work.
         steered=self.store.job(job.get('related_job_id')) if job.get('relation_kind')=='steer' else None
-        if not steered or steered.get('status') not in ('succeeded','partial'):return False
+        if not steered or not ws.has_delivered_result(steered.get('status')):return False
         # #308 S4: applied in the reply being written, or by the one second pass (S1).
         events=self._steer_events(steered['id'])
         text=STEER_SECOND_PASS_TEXT if 'continued' in events and 'continuation_failed' not in events else STEER_FOLDED_TEXT
@@ -11897,8 +11898,8 @@ class AgentService:
             if not reason and 'continuation_failed' in events:reason='failed'
             if not reason:
                 status=str(steered.get('status') or '')
-                reason=('unknown' if status=='unknown' else 'owner' if status.startswith('awaiting_')
-                        else 'failed' if status in ('failed','interrupted','cancelled','unsupported') else 'new_request')
+                reason=('unknown' if ws.is_effect_unknown(status) else 'owner' if status.startswith('awaiting_')
+                        else 'failed' if ws.has_failed_steer(status) else 'new_request')
         return msg(STEER_NOT_APPLIED_REASONS[reason]) if reason in STEER_NOT_APPLIED_REASONS else ''
 
     @staticmethod
@@ -11996,7 +11997,7 @@ class AgentService:
                 cause=msg('quickstart_service.original_work_link_missing')
                 db.execute("UPDATE jobs SET status='failed',error=?,owner_cause=? WHERE id=?",(cause,cause,job['id']))
                 return True
-            if any(parent['status'] in ('queued','running') for parent in chain[1:]):return False
+            if any(ws.is_active(parent['status']) for parent in chain[1:]):return False
             refusal=self.preparations.run_refusal(db,job['id'],self.preparations.clock())
             if refusal:
                 self.preparations.refuse_run(db,job['id'],self.preparations.clock(),refusal)
@@ -12125,7 +12126,7 @@ class AgentService:
                 self.record_continuity(job['id'],previous['id'],relation,
                                        executed=cancelled,
                                        reason=None if cancelled else run.response)
-                if cancelled or previous.get('status') in ('queued','running'):
+                if cancelled or ws.is_active(previous.get('status')):
                     self.settle_early_judgment(run.early_intent)
                     return self.complete_continuity_turn(job,run.response)
                 # #1506 (live 2026-10-14): "cancel the reserved order and buy at 25,800" was read
@@ -12654,7 +12655,7 @@ class AgentService:
         """
         job_id=run.job['id']
         if run.steer_note:return 'continued'
-        if run.outcome=='unknown':return 'unknown'
+        if ws.is_effect_unknown(run.outcome):return 'unknown'
         if not isinstance((run.base_history or [{}])[-1].get('content'),str):return 'route'
         # #618 E2: the one continuation rule.  A browser step asked for or approved and unspent is a
         # recorded owner prerequisite: the steer may change what it covers.
@@ -13450,8 +13451,8 @@ class AgentService:
         # run released the profile, and ask the owner to log in.  #752: only
         # when the Work did not succeed; a reached goal did not need it.  #978: a sign-in
         # the model asked for itself is offered either way - its answer told the owner to sign in.
-        if run.outcome!='succeeded' or (self._browser_login(job['id']) or {}).get('explicit'):self.offer_browser_login(job)
-        if run.outcome in ('failed','partial') and not self.photo_work_has_pending_resume(job['id']):
+        if not ws.is_succeeded(run.outcome) or (self._browser_login(job['id']) or {}).get('explicit'):self.offer_browser_login(job)
+        if ws.is_resumable_continuation(run.outcome) and not self.photo_work_has_pending_resume(job['id']):
             self.store.remove_telegram_photo(job['id'])
         if run.resolved_blocker:
             self.projection.clear(self.issuer_owner_id(job))

@@ -38,6 +38,8 @@ Nothing here knows about calendars, sites, providers or question kinds: the
 model reads the calendar with ``calendar_query`` and schedules with
 ``schedule_preparation`` like any other goal.
 """
+
+from . import work_status as ws
 from .messages import msg
 from .prompt_files import prompt
 import hashlib
@@ -523,7 +525,7 @@ def run_outcome(kind, job):
         return STATE_FAILED
     if kind == KIND_REMINDER:
         return STATE_DELIVERED
-    return STATE_DELIVERED if job.get('status') in ('succeeded', 'partial') else STATE_FAILED
+    return STATE_DELIVERED if ws.has_delivered_result(job.get('status')) else STATE_FAILED
 
 
 def text_digest(text):
@@ -1117,7 +1119,7 @@ class Preparations:
                 'LEFT JOIN jobs j ON j.id=p.last_run_job_id '
                 "WHERE ((p.state='scheduled' AND p.due_at<=?) OR p.state='running') "
                 "AND (p.state='scheduled' OR j.id IS NULL OR (p.recurrence='window' AND p.window_end<=?) "
-                "OR (j.status NOT IN ('queued','running','awaiting_connection') "
+                f"OR (j.status NOT IN {ws.sql_in(ws.ACTIVE_PREPARATION)} "
                 "AND j.delivery NOT IN ('pending','sending'))) ORDER BY p.due_at LIMIT ?", (now, now, TICK_LIMIT))]
 
     @staticmethod
@@ -1147,7 +1149,7 @@ class Preparations:
         """
         cause = '예약된 작업의 실행 기간이나 조건이 끝나 원래 요청을 계속 실행하지 않았습니다.'
         changed = db.execute("UPDATE jobs SET status='failed',error=?,owner_cause=? WHERE id=? "
-                             "AND status IN ('queued','awaiting_connection','failed','partial','interrupted','succeeded') "
+                             f"AND status IN {ws.sql_in(ws.REFUSABLE_PREPARATION)} "
                              "AND (status!='failed' OR error IS NOT ?)", (cause, cause, work_id, cause)).rowcount
         if not changed:
             return False
@@ -1264,11 +1266,11 @@ class Preparations:
         answer = finished = None
         if row['kind'] == KIND_PREPARE:
             finished = self.store.job(row['last_run_job_id']) if row.get('last_run_job_id') else None
-            if finished and finished['status'] in ('succeeded', 'partial'):
+            if finished and ws.has_delivered_result(finished['status']):
                 answer = scrub(finished) if scrub is not None else str(finished.get('response') or '')
         decision = None
         if (row.get('delivery_mode') == DELIVERY_WHEN_NEEDED and finished
-                and finished['status'] not in ('queued', 'running', 'awaiting_connection')
+                and not ws.is_active_preparation(finished['status'])
                 and finished['delivery'] not in ('pending', 'sending')):
             decision = watch_decision(row, answer, decide, stopped=finished['status'] == 'cancelled')
         with self.store.db() as db:
@@ -1280,7 +1282,7 @@ class Preparations:
             current = dict(current)
             job = db.execute('SELECT * FROM jobs WHERE id=?', (current['last_run_job_id'],)).fetchone()
             job = dict(job) if job else None
-            if job and (job['status'] in ('queued', 'running', 'awaiting_connection')
+            if job and (ws.is_active_preparation(job['status'])
                         or job['delivery'] in ('pending', 'sending')
                         or waiting is not None and waiting(job['id'])):
                 return None
@@ -1290,7 +1292,7 @@ class Preparations:
                 return None
             outcome = run_outcome(current['kind'], job)
             updates = {'last_outcome': outcome, 'updated_at': now}
-            if current['kind'] == KIND_PREPARE and job and job['status'] in ('succeeded', 'partial') and answer is not None:
+            if current['kind'] == KIND_PREPARE and job and ws.has_delivered_result(job['status']) and answer is not None:
                 updates.update(prepared_result_ref=job['id'], prepared_at=now, prepared_text=answer)
             if current['recurrence'] == RECURRENCE_WINDOW:
                 following = next_window_slot(current, now)

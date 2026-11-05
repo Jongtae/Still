@@ -20,6 +20,8 @@ Two things live here:
   one-line reminder instead of the same failure again.  Which blocker it is
   comes from typed state at the raise site, not from reading the wording.
 """
+
+from . import work_status as ws
 from datetime import datetime, timezone
 import json
 
@@ -379,7 +381,7 @@ def terminal_text(response, error=None, outcome=None, next_action=None, verified
     cause = (error or '').strip()
     action = next_action or TERMINAL_NEXT_ACTION
     answer = ai_text((response or '').strip())
-    if outcome in ('failed', 'partial', 'interrupted') and answer:
+    if ws.has_incomplete_answer(outcome) and answer:
         # #847: the answer is the message.  The recorded note (owner words,
         # no tool names) or one outcome sentence follows it; never a header.
         if waiting:
@@ -399,7 +401,7 @@ def terminal_text(response, error=None, outcome=None, next_action=None, verified
             body.append(cause)
         body.append(action)
         text = '\n\n'.join(body)
-    elif outcome in ('partial', 'interrupted'):
+    elif ws.has_unfinished_portion(outcome):
         body = [TERMINAL_PARTIAL_HEADER if outcome == 'partial' else TERMINAL_INTERRUPTED_HEADER]
         observed = verified_portion([verified]) if outcome == 'partial' else None
         if observed:
@@ -408,10 +410,10 @@ def terminal_text(response, error=None, outcome=None, next_action=None, verified
             body.append(cause)
         body.append(action)
         text = '\n\n'.join(body)
-    elif outcome == 'unknown':
+    elif ws.is_effect_unknown(outcome):
         text = cause or TERMINAL_UNKNOWN_EFFECT
     else:
-        text = (ai_text(response) if outcome in (None, 'succeeded') else response) if response else (TERMINAL_FAILED_HEADER + ' ' + (cause or action))
+        text = (ai_text(response) if ws.is_unspecified_or_succeeded(outcome) else response) if response else (TERMINAL_FAILED_HEADER + ' ' + (cause or action))
     if len(text) > TELEGRAM_RESULT_PREVIEW_CHARS:
         # #709: a link the preview bound would split stays whole (Telegram's 4096-character limit holds).
         return clip_keeping_links(text, TELEGRAM_RESULT_PREVIEW_CHARS, keep=TELEGRAM_LINK_KEEP_CHARS) + '\n\n전체 결과는 Still 웹에서 확인하세요.'
@@ -488,7 +490,7 @@ class ConversationProjection:
 
 #: Work outcomes whose assistant text is preserved and offered, not asserted.
 #: ``unknown``: a consequential effect was attempted and not observed (#598 I1).
-UNVERIFIED_OUTCOMES = ('failed', 'partial', 'interrupted', 'unknown')
+UNVERIFIED_OUTCOMES = ws.UNVERIFIED_RESULT
 TRANSCRIPT_LABELS = {'failed': '완료하지 못함', 'partial': '일부 완료', 'interrupted': '중단됨',
                      'unknown': '외부 결과 불확실'}
 TRANSCRIPT_NOTICE = msg('projection.this_is_not_a_verified_result')
@@ -536,7 +538,7 @@ def shown_note(row):
 
 def turn_qualifier(outcome, cause=None):
     """The typed truth qualifier for one Work's text, or ``None`` when none is needed."""
-    if outcome not in UNVERIFIED_OUTCOMES:
+    if not ws.has_unverified_result(outcome):
         return None
     return {'outcome': outcome, 'verified': False, 'label': TRANSCRIPT_LABELS[outcome],
             'notice': TRANSCRIPT_NOTICE, 'cause': (cause or '').strip() or None}
@@ -622,6 +624,6 @@ def context_message(row, *, current=False):
         content = shown + '\n' + content
     qualifier = row.get('qualifier')
     if (row.get('role') == 'assistant' and isinstance(qualifier, dict)
-            and qualifier.get('outcome') in UNVERIFIED_OUTCOMES):
+            and ws.has_unverified_result(qualifier.get('outcome'))):
         content = CONTEXT_QUALIFIER.format(outcome=qualifier['outcome']) + '\n' + content
     return {'role': row.get('role'), 'content': content}

@@ -33,6 +33,8 @@ through their AI clears that guard (``restated``).
 Scope: the local store.  Copies already sent to a model provider, exported
 bundles and backups are outside it, and the result says so.
 """
+
+from . import work_status as ws
 import json
 import time
 import uuid
@@ -50,7 +52,7 @@ MESSAGE_PREFIX = 'message:'
 #: At most this many transcript rows under one receipt.
 MESSAGE_REFS = 20
 #: A Work in one of these states no longer runs on its own; a transcript row of any other Work is refused.
-FINISHED_WORK = ('succeeded', 'failed', 'partial', 'cancelled', 'interrupted', 'unknown', 'blocked')
+FINISHED_WORK = ws.TERMINAL
 #: #1486: ``procedure:<id>``, one saved version of a secret set's function library (``procedures``).
 KINDS = {MEMORY_PREFIX: 'memory', CLAIM_PREFIX: 'claim', OBSERVATION_PREFIX: 'observation', 'trust:': 'trust',
          'procedure:': 'procedure', MESSAGE_PREFIX: 'message'}
@@ -266,7 +268,7 @@ class OwnerForget:
                     draft.update(state='cancelled', terminal='cancelled', settled_at=now, trust_revoked=True)
                     if draft.get('continuation') and draft.get('work_id'):
                         db.execute("UPDATE jobs SET status='cancelled',error='trust-forgotten' WHERE id=? "
-                                   "AND status IN ('queued','awaiting_connection')", (draft['work_id'],))
+                                   f"AND status IN {ws.sql_in(ws.QUEUED_CONNECTION)}", (draft['work_id'],))
             db.execute("UPDATE config SET value=? WHERE key='settings_change_drafts'", (json.dumps(drafts),))
         return {'rows': [{'table': 'config', 'id': identity, 'revision': revision}], 'scope': list(scope)}
 
@@ -306,7 +308,7 @@ class OwnerForget:
                     'SELECT 1 FROM forgotten_messages WHERE message_id=?', (message_id,)).fetchone():
                 raise _refuse('stale')
             # #367 review P1: only a finished Work's turn; a queued, running or parked one could still run.
-            if row['status'] is not None and row['status'] not in FINISHED_WORK:
+            if row['status'] is not None and not ws.is_terminal(row['status']):
                 raise _refuse('running')
             db.execute('INSERT INTO forgotten_messages(message_id,receipt_id,created) VALUES (?,?,?)',
                        (message_id, receipt_id, now))
