@@ -12667,6 +12667,8 @@ class AgentService:
             # #663: either route's attempt is settled by the Work-wide scan (#598 I1), whatever its worker reported.
             if self._work_has_unknown_effect(job['id']):
                 run.outcome='unknown';run.unknown_statement=run.response;run.resolved_blocker=False
+                # #691: the turn record the attempt wrote agrees with the settled outcome.
+                self.record_turn_provenance(job['id'],status='unknown')
             # #710: evaluate this attempt; re-delegate while the goal is not shown
             # and the bounds allow (at most two more attempts, the Work budget, no
             # effect in this attempt).  A fallback run is never re-delegated.
