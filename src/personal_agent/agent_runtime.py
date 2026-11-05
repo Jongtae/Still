@@ -2998,6 +2998,78 @@ def failed_steps_text(steps, limit=FAILED_STEPS_CHARS):
  if len(kept)<len(entries):kept.append(FAILED_STEPS_MORE.format(count=len(entries)-len(kept)))
  return '; '.join(kept)
 
+#: #674: what the outcome judgment reads beside each call Still's own record shows completed in this
+#: Work, and the ``not_done`` entry for a shortfall that is not one of them.
+RECORDED_EFFECT_FACT='done: Still\'s own record of this call of this Work says {receipt}: true'
+NOT_DONE_OTHER='other'
+RECORDED_EFFECTS_LIMIT=12
+#: #674: the explicit completion receipts tools already return (``evidence_summary``): a change applied,
+#: a preparation scheduled, a note or result saved.  Only one of these, true, shows a call completed;
+#: the effect classifier's ``changed`` fallback is continuation safety, not proof of completion.
+COMPLETION_RECEIPTS=('applied','scheduled','saved')
+
+def recorded_effects(steps, limit=RECORDED_EFFECTS_LIMIT):
+ """``[(id, tool, receipt)]``: the calls of ``steps`` Still's own record shows completed (#674).
+
+ ``steps`` are ``(tool, host_action, state, detail, reason)`` in order (``trail_steps``, or the
+ direct route's own attempts), the same steps ``failed_steps_text`` reads.  A call is listed only
+ with positive typed evidence: its trail state is ``succeeded``, its recorded result (``evidence``
+ on the CLI route, the result itself on the direct route) carries a ``COMPLETION_RECEIPTS`` flag
+ that is true, and nothing about it is withheld or waits for the owner (``withheld_effect``,
+ ``owner_decision_record``) or has an unknown effect.  A proposal awaiting acceptance, a draft
+ awaiting confirmation and a call the classifier merely could not rule out are never listed.
+ The ids are the handles the outcome judgment's ``not_done`` refers to (``record_contradictions``).
+ """
+ from .owner_model import owner_decision_record
+ done=[]
+ for tool,action,state,detail,_reason in steps:
+  detail=detail if isinstance(detail,dict) else {}
+  record=detail.get('evidence') if isinstance(detail.get('evidence'),dict) else detail
+  receipt=next((key for key in COMPLETION_RECEIPTS if record.get(key) is True),None)
+  if (state!='succeeded' or receipt is None or unknown_effect(detail) or withheld_effect(action,record) is not None
+      or owner_decision_record(detail) is not None or owner_decision_record(record) is not None):continue
+  done.append((f'e{len(done)+1}',str(tool),receipt))
+ return done[:limit]
+
+def recorded_effects_text(effects):
+ """The outcome judgment's ``recorded_effects`` fact (#674): one line per ``recorded_effects`` entry, or ''."""
+ return '\n'.join(f'{ident} {tool}: '+RECORDED_EFFECT_FACT.format(receipt=receipt) for ident,tool,receipt in effects or ())
+
+#: #674: the fact the one re-judgment reads when the first reported a recorded-done call as not done.
+RECORD_CONTRADICTION_FACT=('Your first reading reported {ids} as not done. Still\'s own record says otherwise: {facts}. '
+                           'Still\'s record stands; judge again with it as a fact.')
+
+def record_contradiction_text(effects, contradicted):
+ """The ``record_contradiction`` fact of the re-judgment (#674): each contradicted id with its recorded receipt."""
+ known={ident:(tool,receipt) for ident,tool,receipt in effects or ()}
+ facts='; '.join(f'{ident} {known[ident][0]} recorded {known[ident][1]}: true' for ident in contradicted if ident in known)
+ return RECORD_CONTRADICTION_FACT.format(ids=', '.join(contradicted),facts=facts)
+
+def record_contradictions(effects, not_done):
+ """The ids a judgment's ``not_done`` reported as not done that Still recorded as done, in order (#674).
+
+ Typed ids only, never wording.  An unknown id or ``NOT_DONE_OTHER`` contradicts nothing, nor does a
+ missing ``not_done`` (an engine that does not report it).
+ """
+ if not isinstance(not_done,(list,tuple)):return ()
+ done={entry[0] for entry in effects or ()}
+ reported=[str(item).strip().lower() for item in not_done if isinstance(item,str) and item.strip()]
+ return tuple(dict.fromkeys(item for item in reported if item in done))
+
+def second_judgment_allowed(judgments, budget):
+ """Whether the one re-judgment (#674) may be asked now, spending its turn when the engine does not.
+
+ The same allowance as any judgment that can only end the Work (``Orchestration.may_judge``): the
+ Work is neither stopped nor past its deadline.  The turn is spent as the first judgment's was: by
+ the engine when it carries this budget, else here (reserved).  Any budget error says no.
+ """
+ if budget is None:return True
+ try:
+  if budget.interrupted() is not None or budget.remaining()<=0:return False
+  if getattr(getattr(judgments,'engine',None),'work_budget',None) is not budget:budget.spend_turn(reserve=True)
+  return True
+ except Exception:return False
+
 #: #151: the outcome judgment's ``read_state`` line - which items this attempt listed, opened and read through.
 READ_STATE_CHARS=600
 READ_STATE_IDS=6
@@ -5495,6 +5567,8 @@ class GoalVerdict(str):
  #: #1459: the line the owner reads ('' when the reply already says it; None when none was given).
  note=None
  retry_warranted=None
+ #: #674: ``Judgment.record_check`` of the outcome judgment, or None.
+ record_check=None
 
 def goal_verdict(outcome,gap='',note=None,retry_warranted=None):
  verdict=GoalVerdict(outcome);verdict.gap=gap if outcome=='no' else ''
@@ -5520,7 +5594,7 @@ def work_awaiting_owner_text(capabilities):
  try:return awaiting_owner_text(work_awaiting_owner(capabilities.store,capabilities.job_id))[:AWAITING_OWNER_CHARS]
  except Exception:return ''
 
-def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact=None,conversation='',owner_context=None,*,budget=None,attachments='',read_state='',awaiting='',conversation_turns=None):
+def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact=None,conversation='',owner_context=None,*,budget=None,attachments='',read_state='',awaiting='',conversation_turns=None,effects=()):
  """``yes`` / ``no`` / ``unavailable``: did the reply serve the owner's message ``goal``?
 
  The one outcome judgment (#657, #820): one ``ConversationJudgments.goal_reached``
@@ -5530,7 +5604,8 @@ def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact
  worker was given - ``owner_context`` is the turn context's ``profile`` /
  ``current_context`` sections, rendered by ``owner_context_fact``.  #151: ``read_state``
  (``steps_read_state``) says which listed items the run opened and read through.  #240: ``awaiting``
- (``work_awaiting_owner_text``) is what this Work showed for the owner's own approval.  No judgments, an engine error or a non-answer is
+ (``work_awaiting_owner_text``) is what this Work showed for the owner's own approval.  #674: ``effects``
+ (``recorded_effects``) are the calls whose own record shows them completed; a judgment denying one is asked once more.  No judgments, an engine error or a non-answer is
  ``unavailable``, which never yields ``succeeded``.  ``redact(text,
  private)`` (``Capabilities.judgment_text``) runs on every fact before it is
  bounded, so a cut can never leave part of a secret; the owner's request is
@@ -5567,13 +5642,17 @@ def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact
  try:judged=judgments.goal_reached(clean(goal,private=False),observed,failed,work_id=work_id,answer=reply,conversation=recent,
                                    owner_context=owner,**({'conversation_messages':count} if count is not None else {}),
                                    **({'attachments':attachments} if attachments else {}),
-                                   **({'awaiting_owner':clean(awaiting)} if awaiting else {}))
+                                   **({'awaiting_owner':clean(awaiting)} if awaiting else {}),
+                                   **({'recorded_effects':tuple(effects),
+                                       'may_rejudge':lambda:second_judgment_allowed(judgments,budget)} if effects else {}))
  except Exception:return 'unavailable'
  outcome=getattr(judged,'outcome',None)
  if outcome not in ('yes','no'):return goal_verdict('unavailable')
  note=getattr(judged,'note',None)
  note=clean(' '.join(note.split()),private=False)[:GOAL_GAP_CHARS] if isinstance(note,str) else None
- return goal_verdict(outcome,clean(' '.join(str(getattr(judged,'value',None) or '').split()),private=False)[:GOAL_GAP_CHARS],note,getattr(judged,'retry_warranted',None))
+ verdict=goal_verdict(outcome,clean(' '.join(str(getattr(judged,'value',None) or '').split()),private=False)[:GOAL_GAP_CHARS],note,getattr(judged,'retry_warranted',None))
+ verdict.record_check=getattr(judged,'record_check',None) # #674
+ return verdict
 
 def agency_report(goal,verified,failures,unknown,next_step,question=None):
  """The typed owner report of one run: requested / observed / failed / unknown / next.
@@ -5820,7 +5899,8 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
    judgment=goal_judgment(capabilities.judgments,goal,{'evidence_refs':refs,'summary':content},observations,failed_steps_text(steps),
                           capabilities.job_id,getattr(capabilities,'judgment_text',None),conversation,owner_context,budget=budget,
                             attachments=attachment_facts(images=len(images)) if images else '',read_state=steps_read_state(steps),
-                            awaiting=work_awaiting_owner_text(capabilities),conversation_turns=conversation_turns)
+                            awaiting=work_awaiting_owner_text(capabilities),conversation_turns=conversation_turns,
+                            effects=recorded_effects(steps))
   if not _external(trail) and not invalid_calls:
    # Ordinary conversation: no tool ran (or only internal current-state
    # bookkeeping, #627), so there is nothing to observe.
@@ -5855,7 +5935,8 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
    record('model','concluded',json.dumps({'scope':scope,'outcome':result.outcome,
     'claim':None if claim is None else {'status':claim['status'],'evidence_refs':claim['evidence_refs']},
     'judgment':judgment,'alternatives_tried':{'count':len(alternatives),'kinds':kinds},
-    'nudges':nudges,'unknown':len(result.report['unknown'])},ensure_ascii=False))
+    'nudges':nudges,'unknown':len(result.report['unknown']),
+    **({'record_check':judgment.record_check} if getattr(judgment,'record_check',None) else {})},ensure_ascii=False))
   return result
 
  while True:
@@ -5952,7 +6033,8 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
       judgment=goal_judgment(capabilities.judgments,goal,claim,observations,failed_steps_text(steps),capabilities.job_id,
                              getattr(capabilities,'judgment_text',None),conversation,owner_context,budget=budget,
                              attachments=attachment_facts(images=len(images)) if images else '',read_state=steps_read_state(steps),
-                             awaiting=work_awaiting_owner_text(capabilities),conversation_turns=conversation_turns)
+                             awaiting=work_awaiting_owner_text(capabilities),conversation_turns=conversation_turns,
+                            effects=recorded_effects(steps))
       # A "not shown" answer returns the claim once, so the model can take
       # another path; a second one, or no engine, ends the run below.
       if judgment=='no' and getattr(judgment,'retry_warranted',None) is not False and judged<GOAL_JUDGMENTS:reason='goal_not_observed'

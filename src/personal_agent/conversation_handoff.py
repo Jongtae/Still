@@ -784,15 +784,22 @@ WATCH_NOTIFY_PROPOSITION = ('The owner accepted a standing watch with the goal s
 GOAL_REACHED_PROPOSITION = prompt('goal_reached')
 #: #1451: the outcome judgment's gap sentence, as kept.
 GOAL_GAP_CHARS = 300
+#: #674: what became of the one re-judgment asked after the outcome judgment denied a recorded-done call.
+REJUDGED_YES, REJUDGED_NO, REJUDGED_DENIED_AGAIN, REJUDGED_UNAVAILABLE, REJUDGED_NOT_ALLOWED = (
+    'yes', 'no', 'denied_again', 'unavailable', 'not_allowed')
 
 
 class Judgment:
     """One bounded judgment reduced by policy.  It informs routing; it never authorizes."""
 
-    __slots__ = ('outcome', 'value', 'source', 'note', 'retry_warranted', 'refused')
+    __slots__ = ('outcome', 'value', 'source', 'note', 'retry_warranted', 'refused', 'record_check')
 
-    def __init__(self, outcome, value=None, source='policy', note=None, retry_warranted=None, refused=None):
+    def __init__(self, outcome, value=None, source='policy', note=None, retry_warranted=None, refused=None,
+                 record_check=None):
         self.outcome, self.value, self.source = outcome, value, source
+        #: #674: when the outcome judgment reported a call Still recorded as done as not done:
+        #: ``{'contradicted': [ids], 'rejudged': REJUDGED_*}``; None otherwise.
+        self.record_check = record_check
         #: #1459: the outcome judgment's owner-facing line (``BinaryDecision.note``), when it said no.
         self.note = note
         self.retry_warranted = retry_warranted
@@ -1098,7 +1105,8 @@ class ConversationJudgments:
         return self.policy.selection(decision)
 
     def goal_reached(self, request, observations, failed_steps='', work_id=None, answer='', conversation='',
-                     owner_context='', continues='', attachments='', awaiting_owner='', conversation_messages=None):
+                     owner_context='', continues='', attachments='', awaiting_owner='', conversation_messages=None,
+                     recorded_effects=(), may_rejudge=None):
         """Did the reply serve the owner's ``request`` (#657, #820)?  The one outcome judgment.
 
         One ``judge`` call over the owner's message (never cut), the recent
@@ -1111,7 +1119,15 @@ class ConversationJudgments:
         #1517: ``attachments`` is what the message carried besides its words ('1 photo'), which
         the worker was given and this judgment is not.  #240: ``awaiting_owner`` is this Work's typed
         "awaiting the owner" items (``owner_model.awaiting_owner_text``), names and counts only.
+        #674: ``recorded_effects`` (``agent_runtime.recorded_effects``) are the calls of this Work whose
+        own record shows them completed.  When the judgment's ``not_done`` names one of them, the same
+        judgment is asked once more with Still's record stated as a fact (``record_contradiction``),
+        when ``may_rejudge()`` allows it (the Work's judgment budget).  Its answer is used when it
+        names no recorded-done call; otherwise, or when it is unavailable or not allowed, the first
+        verdict stands with neither its note nor its gap (the truth floor, or nothing, follows #631).
+        Still never turns a verdict into another one; only typed ids are compared, never wording.
         """
+        from .agent_runtime import record_contradiction_text, record_contradictions, recorded_effects_text
         request = str(request or '')
         facts = {'owner_request': request, 'recent_conversation': conversation or 'none',
                  # #980: the earlier exchange this message was judged to follow up, when linked.
@@ -1120,24 +1136,52 @@ class ConversationJudgments:
                  'attachments': attachments or 'none',
                  'reply': answer or 'none (only the observations are known)',
                  'observations': observations, 'failed_steps': failed_steps or 'none',
-                 'awaiting_owner': str(awaiting_owner or '') or 'none'}
-        context = self._context('goal-reached', facts, work_id=work_id, reserve=True,
-                                context_messages=conversation_messages,
-                                # #1451: the observations are caller-bounded too (``OBSERVATION_CHARS``).
-                                uncut=('owner_request', 'reply', 'recent_conversation', 'continues', 'owner_context',
-                                       'observations'))
-        # #1451: the same one judgment, which also says what is missing when the answer is no.
-        method = getattr(self.engine, 'judge_explained', None)
-        decision = (method or self.engine.judge)(context, GOAL_REACHED_PROPOSITION)
-        verdict = self.policy.binary(decision)
-        gap = ' '.join(str(getattr(decision, 'gap', '') or '').split())[:GOAL_GAP_CHARS] if verdict == 'no' else ''
-        # #631: either decided verdict may close an unfinished run.
-        note = getattr(decision, 'note', None) if verdict in ('yes', 'no') else None
-        note = ' '.join(str(note).split())[:GOAL_GAP_CHARS] if isinstance(note, str) else None
+                 'awaiting_owner': str(awaiting_owner or '') or 'none',
+                 'recorded_effects': recorded_effects_text(recorded_effects) or 'none'}
+
+        def ask(facts):
+            context = self._context('goal-reached', facts, work_id=work_id, reserve=True,
+                                    context_messages=conversation_messages,
+                                    # #1451: the observations are caller-bounded too (``OBSERVATION_CHARS``).
+                                    uncut=('owner_request', 'reply', 'recent_conversation', 'continues', 'owner_context',
+                                           'observations'))
+            # #1451: the same one judgment, which also says what is missing when the answer is no.
+            method = getattr(self.engine, 'judge_explained', None)
+            decision = (method or self.engine.judge)(context, GOAL_REACHED_PROPOSITION)
+            verdict = self.policy.binary(decision)
+            gap = ' '.join(str(getattr(decision, 'gap', '') or '').split())[:GOAL_GAP_CHARS] if verdict == 'no' else ''
+            # #631: either decided verdict may close an unfinished run.
+            note = getattr(decision, 'note', None) if verdict in ('yes', 'no') else None
+            note = ' '.join(str(note).split())[:GOAL_GAP_CHARS] if isinstance(note, str) else None
+            retry = getattr(decision, 'retry_warranted', None) if verdict == 'no' else False
+            denied = record_contradictions(recorded_effects, getattr(decision, 'not_done', None)) \
+                if verdict in ('yes', 'no') else ()
+            return verdict, gap, note, retry, denied, decision, context
+
+        verdict, gap, note, retry, denied, decision, context = ask(facts)
+        check = None
+        if denied:
+            # #674: the judgment denied a call Still's own record shows completed: ask it once more,
+            # with that record as a fact.  Its second answer is used only when it denies none.
+            check = {'contradicted': list(denied), 'rejudged': REJUDGED_NOT_ALLOWED}
+            try:
+                allowed = may_rejudge is None or bool(may_rejudge())
+            except Exception:
+                allowed = False
+            again = ask({**facts, 'record_contradiction': record_contradiction_text(recorded_effects, denied)}) \
+                if allowed else None
+            if again is not None and again[0] in ('yes', 'no') and not again[4]:
+                check['rejudged'] = REJUDGED_YES if again[0] == 'yes' else REJUDGED_NO
+                verdict, gap, note, retry, _denied, decision, context = again
+            else:
+                if again is not None:
+                    check['rejudged'] = REJUDGED_DENIED_AGAIN if again[4] else REJUDGED_UNAVAILABLE
+                # The first verdict stands; neither of its sentences is said (#631 note states).
+                note, gap = None, ''
         return Judgment(JUDGMENT_UNAVAILABLE if verdict == 'unknown' else verdict, gap or None,
                         source=decision.confidence.provider or decision.outcome, note=note,
-                        retry_warranted=getattr(decision, 'retry_warranted', None) if verdict == 'no' else False,
-                        refused=context.refused if verdict == 'unknown' else None)
+                        retry_warranted=retry,
+                        refused=context.refused if verdict == 'unknown' else None, record_check=check)
 
     def explicit_memory_request(self, utterance):
         """Does ``utterance`` explicitly ask Still to remember a stated value (#597)?
