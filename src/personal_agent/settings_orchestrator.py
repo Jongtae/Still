@@ -925,6 +925,15 @@ class SettingsOrchestrator:
 
     def _describe(self, category, setting, value, row):
         options = {option["value"]: option["label"] for option in row[setting].get("options") or ()}
+        # #675: preparation values are identities/JSON, never an owner-facing fallback.
+        if category == "preparations":
+            if setting == "edit":
+                return self._edit_summary(value)
+            from . import preparations as prep
+            from .current_context import redact_known_secrets
+            current = self.service.preparations.get(value)
+            return options.get(value) or (redact_known_secrets(self.store, prep.owner_title(current))
+                                          if current else msg('settings_orchestrator.value_not_set'))
         if setting == "daily_calls":
             return msg('settings_orchestrator.call_count', value=value)
         return options.get(value) or VALUE_LABELS.get(value) or value or msg('settings_orchestrator.value_not_set')
@@ -1226,6 +1235,7 @@ class SettingsOrchestrator:
                     'awaiting-input': ('applying',),
                     'expired': ('awaiting-confirmation', 'awaiting-input'),
                     'satisfied': ('awaiting-confirmation',),
+                    'superseded': ('awaiting-confirmation', 'expired'),
                     'renewed': ('awaiting-confirmation', 'expired', 'failed', 'unknown'),
                     'canceled': ('awaiting-confirmation', 'awaiting-input', 'expired', 'failed', 'unknown'),
                     'cancelled': ('awaiting-confirmation', 'awaiting-input', 'expired'),
@@ -1306,6 +1316,29 @@ class SettingsOrchestrator:
         if settled.get('state') != outcome:
             self.__dict__.get('_apply_text', {}).pop(row['id'], None)
             raise SettingsError(IN_DOUBT_MESSAGE.format(effect=row['effect']))
+        if outcome in ('applied', 'requested'):
+            # #675: another change drafted from the same prior state of this target is settled when this one
+            # lands: stale by the usual check, or, when the binding cannot tell this change apart (an
+            # identity-bound edit), superseded by it, so approving it later never overwrites this change.
+            # The same change asked again (another Work's request) and a still-covered commuting change
+            # keep their own path.
+            with self._confirming:
+                for other in list(self._drafts().values()):
+                    if not (isinstance(other, dict) and other.get('id') != row['id'] and 'setup_guard' not in other
+                            and other.get('state') in ('awaiting-confirmation', 'expired')
+                            and other.get('target') == row['target'] and other.get('before') == row['before']
+                            and other.get('after') != row['after']):
+                        continue
+                    try:
+                        current = self._current_before(other)
+                    except Exception as exc:
+                        if isinstance(exc, SettingsError) and str(exc) == STALE_MESSAGE:
+                            self._supersede(other, 'stale')
+                        continue
+                    if current is None:
+                        self._supersede(other, 'stale')
+                    elif current == other['before']:
+                        self._supersede(other, 'superseded-by:' + row['id'])
         if self.service is not None:
             self.service.resume_settings_work()
         response = (FOLLOW_REQUESTED_MESSAGE
@@ -1320,6 +1353,8 @@ class SettingsOrchestrator:
             row = self._drafts().get(row["id"]) or row
             if row.get("state") in ("applied", "requested"):
                 raise SettingsError(msg('settings_orchestrator.draft_already_applied'))
+            if row.get("state") == "superseded":
+                raise SettingsError(STALE_MESSAGE)
             if row.get("state") == "unknown":
                 raise SettingsError(IN_DOUBT_MESSAGE.format(effect=row["effect"]))
             if row.get("state") != "awaiting-confirmation":
@@ -1357,6 +1392,47 @@ class SettingsOrchestrator:
         record = trust_record.hand(self.store, trust_record.connection(*parts[:3]))
         return trust_record.read_revision_covers(record, previous[0], parts[3])
 
+    def _current_before(self, row):
+        """The target's ``before`` now when it still covers ``row``, else None; read-only (#675)."""
+        after, current = self._normalized(row["category"], row["setting"], row["after"])
+        if after != row["after"]:
+            return None
+        before = self._before(row["category"], row["setting"], after, current)
+        return before if self._before_covered(row, before) else None
+
+    def _check_current(self, row):
+        """The same read-only binding check for admission and pending-card withdrawal (#675)."""
+        if self._current_before(row) is None:
+            raise SettingsError(STALE_MESSAGE)
+
+    def _supersede(self, row, reason):
+        try:
+            self._settle(row['id'], 'superseded', 'superseded', reason,
+                         expected={'state': row['state'], 'digest': row.get('digest')})
+        except SettingsError:
+            pass  # #675: a concurrent settlement already withdrew this authority.
+
+    def _supersede_stale(self):
+        with self._confirming:
+            if self.service is None or getattr(self, '_checking_stale', False):
+                return
+            self._checking_stale = True
+            try:
+                for row in self._drafts().values():
+                    # #675: a timed-out draft stays on the renewal path, which answers the owner's yes as stale;
+                    # a setup draft (``setup_guard``) keeps its own wait-and-recovery lifecycle.
+                    if (not isinstance(row, dict) or row.get('state') != 'awaiting-confirmation' or self.expired(row)
+                            or 'setup_guard' in row):
+                        continue
+                    try:
+                        self._check_current(row)
+                    except Exception as exc:
+                        # #675: unavailable snapshots and operation refusals do not prove a stale binding.
+                        if isinstance(exc, SettingsError) and str(exc) == STALE_MESSAGE:
+                            self._supersede(row, 'stale')
+            finally:
+                self._checking_stale = False
+
     def _checked_apply(self, row):
         """Compare-and-apply (#814 review): re-check ``before``, then the setter.  The caller holds the category lock."""
         try:
@@ -1366,10 +1442,7 @@ class SettingsOrchestrator:
                     self.service.resume_settings_work()
                     return {'state': 'satisfied', 'draft_id': row['id'], 'applied': False,
                             'response': msg('settings_orchestrator.connection_ready_elsewhere')}
-                after, current = self._normalized(row["category"], row["setting"], row["after"])
-                current_before = self._before(row["category"], row["setting"], after, current)
-                if after != row["after"] or not self._before_covered(row, current_before):
-                    raise SettingsError(STALE_MESSAGE)
+                self._check_current(row)
             except Exception as exc:
                 self._settle(row["id"], "failed", "failed", type(exc).__name__)
                 message = str(exc) if isinstance(exc, ValueError) and str(exc) else msg('settings_orchestrator.apply_failed_fallback')
@@ -1442,6 +1515,7 @@ class SettingsOrchestrator:
 
     def pending_drafts(self):
         """Every draft still awaiting the owner (not expired, its Work not cancelled), oldest first."""
+        self._supersede_stale()
         now = self.now()
         rows = [row for row in self._drafts().values() if isinstance(row, dict)
                 and row.get("state") == "awaiting-confirmation" and not self.expired(row, now)
@@ -1474,6 +1548,11 @@ class SettingsOrchestrator:
             try:
                 if error is not None:
                     raise error
+                if not apply and self._owned(owner, channel, row['id']).get('state') == 'superseded':
+                    result = self.cancel(owner, channel, row['id'])
+                    states.append(result['state'])
+                    lines.append(msg('settings_orchestrator.the_settings_change_was_canceled_nothing'))
+                    continue
                 if row.get("state") != "awaiting-confirmation" or self.expired(row):
                     # Only time ran out: the owner's answer carries the exact change forward (or declines it).
                     if not apply:
@@ -1617,7 +1696,9 @@ class SettingsOrchestrator:
         lines = [msg('settings_orchestrator.this_settings_change_was_requested_in')]
         for row in rows:
             # #511: catalog lines, so each surface shows them in its language.
-            lines.append(msg('settings_orchestrator.draft_line_with_note', effect=row['effect'], note=row['note'])
+            # #675: keep multiline catalog blocks intact so surfaces can translate the whole template.
+            lines.append(row['effect'] if '\n' in row['effect'] and not row.get('note') else
+                         msg('settings_orchestrator.draft_line_with_note', effect=row['effect'], note=row['note'])
                          if row.get("note") else msg('settings_orchestrator.draft_line', effect=row['effect']))
             if row.get("reason"):
                 lines.append("  " + msg('settings_orchestrator.draft_reason', reason=row['reason']))
@@ -1742,7 +1823,7 @@ class SettingsOrchestrator:
     def cancel(self, owner, channel, draft_id):
         with self._confirming:
             row = self._owned(owner, channel, draft_id)
-            if row["state"] == "canceled": return {"state": "canceled", "idempotent": True}
+            if row["state"] in ("canceled", "superseded"): return {"state": row['state'], "idempotent": True}
             if row["state"] not in ('awaiting-confirmation', 'awaiting-input'): raise SettingsError(msg('settings_orchestrator.draft_cannot_cancel'))
             self._settle(draft_id, "canceled", "canceled",
                          expected={'state': row['state'], 'digest': row['digest']})
