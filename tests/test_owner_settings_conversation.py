@@ -28,7 +28,7 @@ from personal_agent.quickstart_store import QuickStore
 from personal_agent import preparations as prep
 from conftest import SERVICE_THREAD_JOIN_SECONDS
 from personal_agent.settings_orchestrator import (CREDENTIAL_VALUE_MESSAGE, FOLLOW_REQUESTED_MESSAGE,
-                                                  NOT_OWNER_TYPED_MESSAGE, SettingsError,
+                                                  NOT_OWNER_TYPED_MESSAGE, STALE_MESSAGE, SettingsError,
                                                   canonical_timezone)
 
 CHAT, GENERATION = 77, 'gen-1'
@@ -704,7 +704,7 @@ class ReviewRemediation(ConversationConfirmation):
         self.assertIn('바뀌었', outcomes[second['draft_id']])
         self.assertEqual(self.context()['timezone'], 'Asia/Seoul')
         states = {key: row['state'] for key, row in self.store.config('settings_change_drafts').items()}
-        self.assertEqual((states[first['draft_id']], states[second['draft_id']]), ('applied', 'failed'))
+        self.assertEqual((states[first['draft_id']], states[second['draft_id']]), ('applied', 'superseded'))
 
     def test_the_off_thread_apply_holds_the_category_lock_until_it_commits(self):
         self.service.main_ai.save_key({'provider': 'openai', 'key': OPENAI_KEY})
@@ -1064,6 +1064,113 @@ class PreparationManagementConversation(_Case):
         self.assertNotEqual(prep.schedule_text(watch), prep.schedule_text(edited))
         for leaked in ('{', watch['id'], 'max_runs', 'bound_timezone'):
             self.assertNotIn(leaked, text)
+
+    def test_new_owner_requested_edit_supersedes_only_alternatives_of_the_same_preparation(self):
+        other = self.service.preparations.create(kind='prepare', goal='Example second report', due_at=self.clock[0] + 3600,
+                                                  timezone='Asia/Seoul', recurrence='daily', channel='web',
+                                                  created_from=None, state=prep.STATE_SCHEDULED)
+        def edit(ident, recurrence, work=None):
+            return self.settings.propose('owner', 'http', 'preparations', 'edit',
+                                         json.dumps({'id': ident, 'recurrence': recurrence}), work_id=work)
+        old = edit(self.row['id'], 'weekly', 'example-work')
+        offered = self.settings.pending_for_work('example-work')
+        notification = {'job_id': 'example-work', 'fingerprint': self.settings.drafts_digest(offered)}
+        self.assertEqual(len(self.service.offered_settings_drafts(notification)), 1)
+        expired = edit(self.row['id'], 'weekly')
+        self.settings._settle(expired['draft_id'], 'expired', 'expired')
+        different = edit(other['id'], 'weekly')
+        context = self.settings.propose('owner', 'http', 'current_context', 'enabled', 'on')
+        newer = edit(self.row['id'], 'weekdays')
+        self.assertTrue(self.settings._apply_owner_request('owner', 'http', newer, lambda summary: True)['applied'])
+        for draft in (old, expired):
+            self.assertEqual(self.settings._drafts()[draft['draft_id']]['state'], 'superseded')
+            self.assertTrue(any(row['draft_ref'] == draft['draft_id'] and row['terminal'] == 'superseded'
+                                for row in self.store.config('settings_audit')))
+            with self.assertRaises(SettingsError) as caught:
+                self.settings.confirm('owner', 'http', draft['draft_id'], draft['digest'])
+            self.assertEqual(str(caught.exception), STALE_MESSAGE)
+            with self.assertRaises(SettingsError):
+                self.settings._renew('owner', 'http', self.settings._drafts()[draft['draft_id']])
+            self.assertTrue(self.settings.cancel('owner', 'http', draft['draft_id'])['idempotent'])
+        self.assertEqual(self.settings.pending_for_work('example-work'), [])
+        self.assertEqual(self.service.offered_settings_drafts(notification), [])
+        self.assertEqual(self.settings.renew_expired('owner', 'http', 'example-work', notification['fingerprint']), [])
+        self.assertEqual(self.settings.settle_pending('owner', 'http', offered, False)['state'], 'superseded')
+        self.assertEqual(self.settings.settle_pending('owner', 'http', [self.settings._drafts()[expired['draft_id']]], False)['state'], 'superseded')
+        self.assertEqual(self.service.preparations.get(self.row['id'])['recurrence'], 'weekdays')
+        self.assertEqual({row['id'] for row in self.settings.pending_drafts()}, {different['draft_id'], context['draft_id']})
+        for draft in (different, context):
+            self.assertEqual(self.settings._drafts()[draft['draft_id']]['state'], 'awaiting-confirmation')
+            self.assertEqual(self.settings.confirm('owner', 'http', draft['draft_id'], draft['digest'])['state'], 'applied')
+
+    def test_pending_read_supersedes_only_definitively_stale_bindings(self):
+        draft = self.settings.propose('owner', 'http', 'current_context', 'timezone', 'Europe/Paris')
+        self.service.set_current_context({'timezone': 'America/New_York'})
+        with mock.patch.object(self.settings, '_snapshot', side_effect=RuntimeError('example unavailable')):
+            self.assertEqual([row['id'] for row in self.settings.pending_drafts()], [draft['draft_id']])
+        self.assertEqual(self.settings._drafts()[draft['draft_id']]['state'], 'awaiting-confirmation')
+        with mock.patch.object(self.service, 'set_current_context', side_effect=AssertionError('read must not apply')):
+            self.assertEqual(self.settings.pending_drafts(), [])
+            self.assertEqual(self.settings.read('owner')['pending_changes'], [])
+        self.assertEqual(self.settings._drafts()[draft['draft_id']]['state'], 'superseded')
+        audit = [row for row in self.store.config('settings_audit') if row['draft_ref'] == draft['draft_id']]
+        self.assertEqual([row['terminal'] for row in audit], ['drafted', 'superseded'])
+        self.assertEqual(audit[-1]['error_class'], 'stale')
+
+    def test_pending_read_checks_normalized_changes_and_explicit_stale_without_reviving_terminals(self):
+        draft = self.settings.propose('owner', 'http', 'current_context', 'enabled', 'on')
+        with mock.patch.object(self.settings, '_normalized', return_value=('off', {})):
+            self.assertEqual(self.settings.pending_drafts(), [])
+        self.assertEqual(self.settings._drafts()[draft['draft_id']]['state'], 'superseded')
+        second = self.settings.propose('owner', 'http', 'current_context', 'enabled', 'on')
+        with mock.patch.object(self.settings, '_normalized', side_effect=SettingsError(STALE_MESSAGE)):
+            self.assertEqual(self.settings.pending_drafts(), [])
+        self.assertEqual(self.settings._drafts()[second['draft_id']]['state'], 'superseded')
+        self.assertFalse(self.context()['enabled'])
+
+    def test_requested_outcome_also_supersedes_another_change_from_the_same_prior_state(self):
+        zone = self.context()['timezone']
+        old = self.settings.propose('owner', 'http', 'current_context', 'timezone', 'Europe/Paris')
+        same = self.settings.propose('owner', 'http', 'current_context', 'timezone', 'Asia/Tokyo')
+        new = self.settings.propose('owner', 'http', 'current_context', 'timezone', 'Asia/Tokyo')
+        with mock.patch.object(self.settings, '_apply', return_value='requested'):
+            self.assertEqual(self.settings.confirm('owner', 'http', new['draft_id'], new['digest'])['state'], 'requested')
+        audit = {row['draft_ref']: row for row in self.store.config('settings_audit') if row['terminal'] == 'superseded'}
+        self.assertEqual(self.settings._drafts()[old['draft_id']]['state'], 'superseded')
+        self.assertEqual(audit[old['draft_id']]['error_class'], 'superseded-by:' + new['draft_id'])
+        # #675: the same change asked again keeps its own path.
+        self.assertEqual(self.settings._drafts()[same['draft_id']]['state'], 'awaiting-confirmation')
+        self.assertEqual(self.context()['timezone'], zone)
+
+    def test_watch_edit_card_uses_local_times_and_catalog_languages_through_renewal(self):
+        from personal_agent.telegram_locale import translate
+        self.service.set_current_context({'timezone': 'America/New_York'})
+        watch = self.service.preparations.create(
+            kind='prepare', goal='Example window report', title='Example watch', due_at=self.clock[0] + 600,
+            timezone='Asia/Seoul', recurrence=None, channel='web', created_from=None, state=prep.STATE_SCHEDULED,
+            window=(3600, self.clock[0] + 86400, 24))
+        local = datetime.fromtimestamp(self.clock[0] + 86400, prep.zone('Asia/Seoul')).replace(hour=20, minute=10, second=0)
+        draft = self.settings.propose('owner', 'http', 'preparations', 'edit',
+                                      json.dumps({'id': watch['id'], 'until': local.isoformat(), 'max_runs': 9}))
+        row = self.settings._drafts()[draft['draft_id']]
+        for current in (row, self.settings._renew('owner', 'http', row)):
+            text = self.settings.confirmation_text([current])
+            for part in ('Example watch', '20:10', '9'):
+                self.assertIn(part, text)
+            for leaked in ('{', watch['id'], 'max_runs', 'bound_timezone', '+09:00'):
+                self.assertNotIn(leaked, text)
+                self.assertNotIn(leaked, self.settings.short_label(current))
+            self.assertIn("Change the reservation's schedule", translate(text, 'en'))
+            self.assertIn('予約の予定を変更しますか', translate(text, 'ja'))
+
+    def test_preparation_descriptions_never_fall_back_to_internal_values(self):
+        for operation in ('cancel', 'accept', 'pause', 'resume', 'run_now', 'edit'):
+            with self.subTest(operation=operation):
+                value = json.dumps({'id': self.row['id'], 'recurrence': 'weekly'}) if operation == 'edit' else self.row['id']
+                text = self.settings._describe('preparations', operation, value, {operation: {'options': []}})
+                self.assertIn(prep.owner_title(self.row), text)
+                self.assertNotIn(self.row['id'], text)
+                self.assertNotIn('{', text)
 
     def test_rule_edit_uses_the_same_owner_confirmation(self):
         """Rules remain schedule edits with the existing confirmation boundary (#580)."""
