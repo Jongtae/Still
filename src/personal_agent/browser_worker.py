@@ -1430,6 +1430,7 @@ class Worker:
         #: the last ``AUTHORIZATIONS_KEPT``), and how many there were in this worker's life.
         self.authorizations = []
         self.authorization_count = 0
+        self.popup_id = 0
         self.popup_state = {}      # #683: host-only lifecycle of the latest Work popup
         self.login_return = None   # latest owner-window start; consumed at most once
         self.login_return_pending = None  # only the latest settle-time return may run
@@ -2519,8 +2520,9 @@ class Worker:
         self.popups.append((view, window, delegate))
         delegate.reserved = True
         if not self.owner_visible:
+            self.popup_id += 1
             self.popup_state = {'active': True, 'host': '', 'oauth_error': False,
-                                'mark': self.authorization_count}
+                                'id': self.popup_id}
             state = self.popup_state
             def expire():
                 if self.popup_state is state and state['active']:

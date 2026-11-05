@@ -787,6 +787,7 @@ class ProviderPopupWorkerTests(unittest.TestCase):
         worker.AppHelper = NS(callLater=lambda seconds, fn: self.later.append((seconds, fn)))
         worker.owner_visible = worker.guard_off = False
         worker.popups, worker.popup_state = [], {}
+        worker.popup_id = 0
         worker.main_navigations, worker.landed = 0, 0
         worker.authorizations, worker.authorization_count = [], 0
         worker.provider_sign_in_policy = {'protected_hosts': ['id.provider.test'], 'enabled': True}
@@ -916,12 +917,29 @@ class ProviderPopupWorkerTests(unittest.TestCase):
 
     def test_an_old_timeout_cannot_close_a_new_popup(self):
         first = self.create(self.authorize)
+        first_id = self.worker.popup_state['id']
         expire = next(fn for seconds, fn in self.later if seconds == 20)
         self.worker.close_popup(view=first)
         second = self.create(self.authorize)
+        self.assertGreater(self.worker.popup_state['id'], first_id)
         expire()
         self.assertIs(self.worker.popups[0][0], second)
         self.assertTrue(self.worker.popup_state['active'])
+
+    def test_blank_popup_expiry_does_not_taint_a_later_main_view_sign_in(self):
+        from test_provider_resign_in import popup_session
+        sess, driver, approvals = popup_session()
+        self.create('about:blank')
+        state = self.worker.popup_state
+        expire = next(fn for seconds, fn in self.later if seconds == 20)
+        expire()
+        self.assertTrue(state['needs_owner'])
+        self.assertFalse(state['active'])
+        self.assertEqual(self.worker.authorization_count, 0)
+        driver.popup = dict(state)
+        page = sess.run('browser_click', {'target': '다른 계정으로 계속', 'effect': 'navigate'})
+        self.assertEqual(page['provider_sign_in']['state'], 'signed_in')
+        self.assertFalse(approvals.offers)
 
     def test_normal_close_cancels_timeout_before_native_teardown_reenters(self):
         from unittest import mock

@@ -325,15 +325,17 @@ class PopupHostDriver(TwoHostDriver):
     def __init__(self):
         super().__init__()
         self.popup = {}
+        self.popup_id = 0
 
     def snapshot(self):
         return {**super().snapshot(), '_provider_popup': dict(self.popup)}
 
     def popup_authorize(self, url=AUTHORIZE):
-        mark = self.worker.authorization_count
+        if not self.popup.get('active'):
+            self.popup_id += 1
         browser_worker.Worker.note_authorization(self.worker, url)
         host = browser_worker.authorization_host(url)
-        self.popup = {'active': True, 'host': host, 'provider_host': host, 'oauth_error': False, 'mark': mark}
+        self.popup = {'active': True, 'host': host, 'provider_host': host, 'oauth_error': False, 'id': self.popup_id}
 
     def popup_finish(self, *, error=False, needs_owner=False):
         if not error and not needs_owner:
@@ -350,6 +352,33 @@ def popup_session():
 
 
 class PopupResignInTests(unittest.TestCase):
+    def test_blank_popup_timeout_does_not_poison_a_new_main_view_sign_in(self):
+        for observed in (False, True):
+            for error in (False, True):
+                with self.subTest(observed=observed, error=error):
+                    sess, driver, approvals = popup_session()
+                    driver.popup_id += 1
+                    driver.popup = {'id': driver.popup_id, 'active': True, 'host': '', 'oauth_error': error}
+                    if observed:
+                        sess.run('browser_read', {})
+                    driver.popup.update(active=False, needs_owner=True)
+                    self.assertEqual(driver.worker.authorization_count, 0)
+                    page = sess.run('browser_click', {'target': '다른 계정으로 계속', 'effect': 'navigate'})
+                    self.assertEqual(page['provider_sign_in']['state'], 'signed_in')
+                    self.assertNotIn('OFFER-EXPLICIT', page.get('next_step', ''))
+                    self.assertFalse(approvals.offers)
+
+    def test_same_attempt_owner_popup_still_blocks_a_renewed_cookie(self):
+        sess, driver, approvals = popup_session()
+        driver.popup_authorize()
+        sess.run('browser_read', {})
+        driver.popup_finish(needs_owner=True)
+        driver.goto(f'https://{SITE}/callback?code=abc', 1)
+        page = sess.run('browser_read', {})
+        self.assertEqual(page['provider_sign_in']['state'], 'unconfirmed')
+        self.assertIn('OFFER-EXPLICIT', page['next_step'])
+        self.assertTrue(approvals.offers)
+
     def test_popup_only_authorizations_open_the_window_and_grow_its_chain(self):
         sess, driver, approvals = popup_session()
         driver.popup_authorize()
