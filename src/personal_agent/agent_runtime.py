@@ -2897,14 +2897,32 @@ def trail_steps(rows, tools=None):
    steps.append((tool,action,'exhausted' if data.get('code') in BUDGET_CODES else 'missed' if missed else 'failed',data,reason));continue
   evidence=data.get('evidence') if isinstance(data.get('evidence'),dict) else {}
   gaps=[label for label in evidence.get('qualifiers') or () if label in INCOMPLETE_QUALIFIERS]
+  withheld=recorded_withheld(action,data,completed)
   if memory_proposal(action,evidence):state='proposed'
-  elif evidence.get('refused_because') or (action=='settings_change' and evidence.get('requires_owner_confirmation') and not evidence.get('applied')
-         and evidence.get('draft_id') not in completed):
-   state='withheld'
+  elif withheld:state='withheld'
   elif gaps:state='incomplete'
   else:state='succeeded'
+  # #170: a withheld step waits for the owner; the judgment reads ``AWAITING_OWNER_STEP_FACT``.
   steps.append((tool,action,state,data,' '.join(QUALIFIER_NOTES[label] for label in gaps) if state=='incomplete' else None))
  return steps
+
+def recorded_withheld(action, detail, completed=frozenset()):
+ """The ``Withheld`` of a call recorded as returning normally, from its recorded Evidence, or None (#679).
+
+ The CLI route's bridge records a normal return as ``succeeded`` with the call's Evidence summary
+ (``evidence_summary``), which keeps the typed fields ``withheld_effect`` reads.  The same rule then
+ classifies it as the direct route classifies the result itself: a result that advanced the Work
+ and waits for the owner's decision (a draft, a proposal) is withheld on both routes.  A settings
+ draft whose continuation was queued (``completed``, #1445) no longer waits.  Of the results that
+ advanced nothing, a refused write stays withheld as before; a missing connection or sign-in keeps
+ the CLI route's own owner-prerequisite handling (#709/#981 sign-in, #774 connector, #182 folder),
+ which reads the same records.
+ """
+ detail=detail if isinstance(detail,dict) else {}
+ evidence=detail.get('evidence') if isinstance(detail.get('evidence'),dict) else {}
+ if action=='settings_change' and evidence.get('draft_id') in completed:return None
+ withheld=withheld_effect(action,evidence)
+ return withheld if withheld is not None and (withheld.advanced or evidence.get('refused_because')) else None
 
 def _state_free_actions():
  """The actions ``state_change_short`` never holds against a Work: they change no outside state."""
@@ -3214,10 +3232,14 @@ def outcome_from_events(rows, tools=None):
  order.  A failed call, a withheld effect or an incomplete result keeps the
  outcome down unless ``recovered`` holds; unknown effects are the caller's.
  """
- trail,refusals=event_trail(rows,tools)
+ steps=trail_steps(rows,tools)
+ trail=[(action,state) for _tool,action,state,_detail,_reason in steps]
+ refusals=[(tool,reason) for tool,_action,state,_detail,reason in steps if state in FAILED_CALL_STATES]
  if all(state in SETTLED_STATES for _action,state in trail) or recovered(trail):return 'succeeded',refusals
+ # #679: a withheld call advanced the Work exactly when ``withheld_effect`` says so (a draft or a
+ # proposal waiting for the owner), as on the direct route; a refused write did not.
  advanced=any(state in ('succeeded','incomplete') for _action,state in trail) or any(
-  state=='withheld' and action=='settings_change' for action,state in trail)
+  state=='withheld' and getattr(recorded_withheld(action,detail),'advanced',False) for _tool,action,state,detail,_reason in steps)
  return ('partial' if advanced else 'failed'),refusals
 
 class Capabilities:
