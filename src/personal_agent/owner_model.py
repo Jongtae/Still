@@ -66,6 +66,8 @@ Semantic owner facts stay in Memory.
 
 Nothing here names a site, provider, task or request category.
 """
+
+from . import work_status as ws
 import hashlib
 import json
 import re
@@ -166,7 +168,7 @@ EVALUATION_CHARS = 1500
 FOLLOWUP_CHARS = 1500
 MAX_OBSERVATION_CHARS = 500
 #: A reviewed Work must have settled; a queued or running one is not reviewed.
-REVIEWABLE_STATUSES = ('succeeded', 'partial', 'failed', 'unknown')
+REVIEWABLE_STATUSES = ws.REVIEWABLE_RESULT
 #: The owner's controls: ``{'enabled': bool, 'daily_calls': int}``.
 CONFIG_KEY = 'owner_model_upkeep'
 DEFAULT_DAILY_CALLS = 20
@@ -572,7 +574,7 @@ def turn_outcome(status, linked_kinds):
         return 'corrected'
     if FOLLOWUP_RETRY in linked_kinds:
         return 'retried'
-    return status if status in ('failed', 'partial') else 'done'
+    return status if ws.has_incomplete_result(status) else 'done'
 
 
 def dream_refs(sources, refs):
@@ -952,7 +954,7 @@ class Upkeep:
             if db.execute('SELECT 1 FROM owner_model_upkeep WHERE state IN (?,?) LIMIT 1',
                           (STATE_PENDING, STATE_CLAIMED)).fetchone():
                 return None
-            if db.execute("SELECT 1 FROM jobs WHERE status IN ('queued','running') LIMIT 1").fetchone():
+            if db.execute(f"SELECT 1 FROM jobs WHERE status IN {ws.sql_in(ws.ACTIVE)} LIMIT 1").fetchone():
                 return None
             last = self.last_dream(db)
             if last is not None and now - last < DREAM_INTERVAL_SECONDS:
@@ -984,7 +986,7 @@ class Upkeep:
                 f"SELECT j.id,j.request_key,j.provider,j.created,j.status,"
                 f"CASE WHEN {forgotten_turn('user', 'j.id')} THEN '' ELSE j.message END AS message,"
                 f"CASE WHEN {forgotten_turn('assistant', 'j.id')} THEN '' ELSE j.response END AS response "
-                f"FROM jobs j WHERE j.created>? AND j.created<=? AND j.status IN ('succeeded','partial','failed') "
+                f"FROM jobs j WHERE j.created>? AND j.created<=? AND j.status IN {ws.sql_in(ws.AVAILABLE_RESULT)} "
                 f"AND {OWNER_WORDS_SQL} ORDER BY j.created DESC LIMIT ?", (since, until, limit if limit is not None else -1)).fetchall()
             # #496: the later correction and retry links in one batch; forgotten words remain withheld.
             links = db.execute(
@@ -1049,7 +1051,7 @@ class Upkeep:
             settings = self.settings(db)
             if row is None or not settings['enabled']:
                 return None
-            if db.execute("SELECT 1 FROM jobs WHERE status IN ('queued','running') LIMIT 1").fetchone():
+            if db.execute(f"SELECT 1 FROM jobs WHERE status IN {ws.sql_in(ws.ACTIVE)} LIMIT 1").fetchone():
                 return None
             expired = now - row['created'] > MAX_PENDING_SECONDS
             remaining = settings['daily_calls'] - self.calls_used(now, db)

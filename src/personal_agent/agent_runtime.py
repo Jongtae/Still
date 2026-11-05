@@ -1,4 +1,6 @@
 """Capability registry and a provider-independent, bounded native tool loop."""
+
+from . import work_status as ws
 from .messages import msg
 import hashlib
 import inspect
@@ -976,7 +978,6 @@ _RECORD_ONLY_LABELS=frozenset({'owner-memory','owner-current-context','owner-pre
                                'engine-unmediated-read',UNRECORDED_PROVENANCE,'conversation-history'})
 #: Tool events that show the reply came from a model or CLI turn.
 _MODEL_TURN_TOOLS=('model','subscription_engine')
-_UNFINISHED=('queued','running')
 def legacy_splice_possible(store, job_id, splice_chats=()):
  """Whether a connector file splice could have reached a Work that left no trace of one (#703).
 
@@ -1008,7 +1009,7 @@ def legacy_work_sources(store, job_id, tools=None, document_jobs=(), splice_chat
  """
  if not isinstance(job_id,str) or not job_id:return None
  job=store.job(job_id)
- if not job or job.get('status') in _UNFINISHED:return None
+ if not job or ws.is_active(job.get('status')):return None
  if job_id in set(document_jobs or ()):return None
  if recorded_private_sources(store,job_id,tools):return None
  if str(job.get('message') or '').strip() in NOTES_SUMMARY_COMMANDS:return None
@@ -2122,7 +2123,7 @@ class WorkLedger:
   old=[]
   for candidate in candidates:
    if self.request_chain(db,candidate['id'])[-1]['id']==root:
-    if candidate['id']!=self.job_id and candidate['status'] in ('queued','running'):
+    if candidate['id']!=self.job_id and ws.is_active(candidate['status']):
      raise ValueError('legacy request budget is still in use')
     old.append((candidate['id'],self._validate(json.loads(candidate['value']))))
   if old:
@@ -2172,7 +2173,7 @@ class WorkLedger:
    if self.epoch is not None and row['epoch']!=self.epoch:raise LedgerSuperseded('stale work run')
    if row['active_work_id']!=self.job_id:
     if (not fresh or row['active_work_id'] not in {work['id'] for work in chain[1:]}
-        or any(work['status'] in ('queued','running') for work in chain[1:])):
+        or any(ws.is_active(work['status']) for work in chain[1:])):
      raise LedgerSuperseded('request is owned by another run')
     row.update(active_work_id=self.job_id,epoch=row['epoch']+1)
    if fresh and not row['active']:
@@ -4758,7 +4759,7 @@ def withheld_effect(name,result):
  if name=='settings_change' and result.get('applied') is False and result.get('requires_owner_confirmation'):
   # #814: drafted, not applied; real work with the owner's confirmation remaining.
   return Withheld(result.get('next_step') or SETTINGS_PENDING,advanced=True)
- if result.get('outcome') in ('failed','partial'):
+ if ws.has_incomplete_result(result.get('outcome')):
   # A nested run's own typed outcome.  A partly finished specialist report
   # is real work with a step remaining (`partial`); a specialist that
   # accomplished nothing advanced nothing, so a turn whose only call was
@@ -4784,7 +4785,7 @@ def evidence_qualifiers(result):
  if not isinstance(result,dict):return []
  found=[label for key,label in EVIDENCE_QUALIFIER_FLAGS if result.get(key) is True]
  if isinstance(result.get('read_failures'),list) and result['read_failures']:found.append('partial')
- if result.get('outcome') in ('failed','partial') and result['outcome'] not in found:found.append(result['outcome'])
+ if ws.has_incomplete_result(result.get('outcome')) and result['outcome'] not in found:found.append(result['outcome'])
  # #630 review P1: a write that returned normally yet says it wrote nothing and nothing was written
  # before (a detached, missing, changed or unverifiable earlier result) did not do what it was asked.
  if result.get('saved') is False and result.get('already_saved') is False:found.append('not-done')

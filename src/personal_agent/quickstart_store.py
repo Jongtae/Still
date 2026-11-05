@@ -1,4 +1,6 @@
 """Private, single-owner persistence for the quickstart."""
+
+from . import work_status as ws
 from .messages import msg
 from contextlib import contextmanager
 from functools import cached_property
@@ -128,6 +130,7 @@ class QuickStore:
         self.secret_lock = _SECRET_STATE_LOCK
         self.memory_search_available = False
         with self._schema_transaction() as db:
+            #664: trigger mirrors ws.is_terminal and ws.is_resumable_continuation; keep SQL literal.
             db.executescript('''
             CREATE TABLE IF NOT EXISTS auth(id INTEGER PRIMARY KEY CHECK(id=1), salt TEXT, password TEXT);
             CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY, expires REAL);
@@ -303,7 +306,7 @@ class QuickStore:
             if 'answered_at' not in {row['name'] for row in db.execute('PRAGMA table_info(work_steers)')}:
                 db.execute('ALTER TABLE work_steers ADD COLUMN answered_at REAL')
                 db.execute("UPDATE work_steers SET answered_at=delivered_at WHERE delivered_at IS NOT NULL AND job_id IN "
-                           "(SELECT id FROM jobs WHERE status IN ('succeeded','partial'))")
+                           f"(SELECT id FROM jobs WHERE status IN {ws.sql_in(ws.DELIVERED_RESULT)})")
             memory_columns={row['name'] for row in db.execute('PRAGMA table_info(memories)')}
             # #220: append + invalidate: which save ended a row, why and when; and the last day a fact holds.
             for name,kind in (('owner_key','TEXT'),('work_key','TEXT'),('content_digest','TEXT'),('candidate_id','TEXT'),
@@ -724,7 +727,7 @@ class QuickStore:
             if old['message']!=message or old['channel']!=channel or old['chat_id']!=chat_id or old['workspace_id']!=workspace_id:
                 raise ValueError('같은 요청 식별자를 다른 메시지에 사용할 수 없습니다.')
             return old['id']
-        if db.execute("SELECT count(*) FROM jobs WHERE status IN ('queued','running')").fetchone()[0]>=100:
+        if db.execute(f"SELECT count(*) FROM jobs WHERE status IN {ws.sql_in(ws.ACTIVE)}").fetchone()[0]>=100:
             raise ValueError('대기 중인 작업이 많습니다. 잠시 후 다시 시도하세요.')
         task_id=str(uuid.uuid4())
         db.execute('INSERT INTO jobs(id,request_key,message,channel,chat_id,status,response,error,delivery,provider,model,created,workspace_id,owner_typed,owner_words) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',(task_id,request_key,message,channel,chat_id,'queued',None,None,'none',None,None,time.time(),workspace_id,1 if owner_typed is True else None,1 if owner_typed is True and owner_words is True else None))
@@ -1991,7 +1994,7 @@ class QuickStore:
         workspace=self.workspace(workspace_id)
         if not workspace:raise ValueError(msg('quickstart_service.workspace_missing'))
         with self.db() as db:
-            job=db.execute("SELECT * FROM jobs WHERE id=? AND status IN ('succeeded','partial')",(job_id,)).fetchone()
+            job=db.execute(f"SELECT * FROM jobs WHERE id=? AND status IN {ws.sql_in(ws.DELIVERED_RESULT)}",(job_id,)).fetchone()
             if not job:raise ValueError('저장할 완료 결과를 찾을 수 없습니다.')
             detail=db.execute("SELECT detail FROM tool_events WHERE job_id=? AND tool!='model' AND status='succeeded' ORDER BY id DESC LIMIT 8",(job_id,)).fetchall()
             evidence=json.dumps([row['detail'][:500] for row in detail],ensure_ascii=False)

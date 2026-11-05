@@ -25,6 +25,8 @@ current-state hypotheses of #627) lives in ``current_context``; this module
 owns the tables, the owner controls and :meth:`ContextObservations.usable`.
 Precise coordinates are never logged and never returned by :meth:`status`.
 """
+
+from . import work_status as ws
 import json
 import math
 import time
@@ -165,7 +167,7 @@ def _live_period(location):
 def _drop_finished_exposures(db):
     """Exposed location text is kept only while its Work can still dispatch."""
     db.execute("DELETE FROM current_context_exposures WHERE job_id NOT IN "
-               "(SELECT id FROM jobs WHERE status IN ('queued','running','awaiting_approval'))")
+               f"(SELECT id FROM jobs WHERE status IN {ws.sql_in(ws.ACTIVE_APPROVAL)})")
 
 
 def owner_key(owner_id):

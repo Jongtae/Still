@@ -18,6 +18,8 @@ message, so it never reaches a model, a log or Evidence.
 """
 from __future__ import annotations
 
+from . import work_status as ws
+
 import itertools
 import logging
 import threading
@@ -135,7 +137,7 @@ class TerminalSurface(DirectMessageSurface):
         if not self.usable(cfg):
             return None
         with self.service.store.db() as db:
-            row = db.execute("SELECT MIN(created) FROM jobs WHERE channel=? AND (status IN ('queued','running') "
+            row = db.execute(f"SELECT MIN(created) FROM jobs WHERE channel=? AND (status IN {ws.sql_in(ws.ACTIVE)} "
                              "OR delivery IN ('pending','sending'))",
                              (f'{self.channel_prefix}{cfg["generation"]}',)).fetchone()
         return row[0] if row else None

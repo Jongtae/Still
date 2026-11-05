@@ -1,4 +1,6 @@
 """Launch a local personal agent and its browser setup, using only Python."""
+
+from . import work_status as ws
 from .messages import msg
 import argparse
 import datetime
@@ -1188,7 +1190,7 @@ def make_handler(service, public_hosts=(), public_access_token=''):
             if path=='/api/state':
                 # #752 review: a withheld answer is kept off the web as it is off Telegram.
                 jobs=service.owner_jobs(store.jobs())
-                return self.reply(200,{'settings':service.settings(),'messages':service.owner_messages(store.history(include_forgotten=True)),'jobs':jobs,'notes':store.notes(),'tool_events':store.recent_tool_events(),'evidence':{job['id']:store.evidence_summary(job['id']) for job in jobs if job['status'] in ('succeeded','partial')},'healthy':service.healthy()})
+                return self.reply(200,{'settings':service.settings(),'messages':service.owner_messages(store.history(include_forgotten=True)),'jobs':jobs,'notes':store.notes(),'tool_events':store.recent_tool_events(),'evidence':{job['id']:store.evidence_summary(job['id']) for job in jobs if ws.has_delivered_result(job['status'])},'healthy':service.healthy()})
             if path=='/api/onboarding':return self.reply(200,service.onboarding())
             self.reply(404,{'error':msg('quickstart.path_not_found')})
 

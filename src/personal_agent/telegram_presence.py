@@ -60,6 +60,8 @@ animated"), the ``stopped_message_generation`` update
 (``MessageGenerationStopped``: ``chat``, ``draft_id``), ``ReplyParameters``,
 ``InlineKeyboardButton.disabled`` / ``DisabledButton`` and the HTML parse mode.
 """
+
+from . import work_status as ws
 from .messages import msg
 from .telegram_locale import Text, ai_text
 import hashlib
@@ -452,7 +454,7 @@ DONE_REACTIONS = (DONE_REACTION, WROTE_REACTION)
 
 #: Decided outcomes that end a Work.  Anything else (queued, running, parked
 #: for a connection, Drive or context) is not decided yet and keeps 👀.
-TERMINAL_OUTCOMES = frozenset({'succeeded', 'partial', 'failed', 'unknown', 'cancelled', 'interrupted'})
+TERMINAL_OUTCOMES = ws.TERMINAL_OUTCOME
 #: Tool kinds whose ``succeeded`` event with ``evidence.saved`` true is an
 #: owner record actually written (a pending MemoryCandidate is not ``saved``).
 #: The same kinds as ``AgentService.RETAINED_TOOLS``.
@@ -508,9 +510,9 @@ def outcome_reaction(outcome, events=(), *, delivered=True, blocked=False, await
       could be read as success (a 👌 under a settings confirmation would
       read as "applied").
     """
-    if outcome not in TERMINAL_OUTCOMES:
+    if not ws.is_terminal_outcome(outcome):
         return None
-    if outcome != 'succeeded' or blocked or not delivered or awaiting_owner or awaits_owner(events):
+    if not ws.is_succeeded(outcome) or blocked or not delivered or awaiting_owner or awaits_owner(events):
         return CLEAR_REACTION
     return WROTE_REACTION if wrote_record(events) else DONE_REACTION
 
