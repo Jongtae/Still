@@ -2186,6 +2186,22 @@ class PreparationManagementTests(unittest.TestCase):
         self.refusal('invalid_window', self.preparations.edit, row['id'], every_minutes=1)
         self.refusal('invalid_max_runs', self.preparations.edit, row['id'], max_runs=0)
 
+    def test_editing_a_running_watchs_end_keeps_the_slots_left(self):
+        """#693: a watch at run 7 of 12, its end moved to two more slots, runs exactly those two."""
+        start = self.now
+        row = self.make(window=(3600, start + 12 * 3600, 12))
+        with self.store.db() as db:
+            db.execute('UPDATE preparations SET run_count=7,due_at=? WHERE id=?', (start + 7 * 3600, row['id']))
+        until = datetime.fromtimestamp(start + 8 * 3600 + 600, SEOUL).isoformat()
+        edited = self.preparations.edit(row['id'], until=until)
+        self.assertEqual((edited['run_count'], edited['max_runs']), (7, 9))
+        self.assertEqual(prep.next_window_slot({**edited, 'due_at': start + 7 * 3600, 'run_count': 8}, start + 7 * 3600),
+                         start + 8 * 3600, 'the second slot left still runs')
+        self.assertIsNone(prep.next_window_slot({**edited, 'run_count': 9}, start + 8 * 3600))
+        # A total is a total: at or below the runs done it ends the watch.
+        self.assertEqual(self.preparations.edit(row['id'], max_runs=5)['max_runs'], 5)
+        self.assertEqual(self.preparations.edit(row['id'], max_runs=12)['max_runs'], 9)
+
     def test_run_now_uses_one_atomic_work_and_preserves_schedule_across_restart(self):
         for paused in (False, True):
             recurrence = 'daily' if paused else None

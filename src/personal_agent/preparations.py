@@ -971,9 +971,17 @@ class Preparations:
         if row['recurrence'] == RECURRENCE_WINDOW:
             if 'recurrence' in changes:
                 raise PreparationRefusal('invalid_window')
-            every, end, runs = normalize_window(changes.get('every_minutes', row['every_seconds'] // 60),
+            # #693: ``max_runs`` is the total that ``run_count`` is held to, while the window from the
+            # next slot only counts the slots left; the runs already started are added back.
+            done = int(row.get('run_count') or 0)
+            every, end, left = normalize_window(changes.get('every_minutes', row['every_seconds'] // 60),
                                                 changes.get('until', datetime.fromtimestamp(row['window_end'], zone(timezone_name)).isoformat()),
-                                                changes.get('max_runs', row['max_runs']), due_at, timezone_name, now)
+                                                None, due_at, timezone_name, now)
+            total = changes.get('max_runs', row['max_runs'])
+            total = None if total in (None, '') else total
+            if total is not None and not 1 <= (_whole_number(total) or 0) <= MAX_WINDOW_RUNS:
+                raise PreparationRefusal('invalid_max_runs')
+            runs = done + left if total is None else min(_whole_number(total), done + left)
             updates.update(every_seconds=every, window_end=end, max_runs=runs)
         else:
             if set(changes) & {'every_minutes', 'until', 'max_runs'}:
