@@ -649,6 +649,61 @@ class Redelegation(Harness):
         last = self.events(job, 'evaluated')[-1][1]
         self.assertEqual((last['outcome'], last['stop']), ('not_judged', 'budget'))
 
+    def test_no_attempt_starts_that_the_time_left_cannot_carry(self):
+        """#671: each attempt took 250 s of a 600 s Work.  After the second, 100 s are left: a third
+        attempt would be killed at the deadline, so the second reply is judged once as final and
+        delivered under the shortfall header instead of being lost with the third."""
+        clock = [0.0]
+        self.service.work_budget = lambda job_id: WorkBudget(clock=lambda: clock[0], seconds=600)
+
+        def slow_search(tools):
+            clock[0] += 250
+            tools.capabilities.record('web_search', 'succeeded',
+                                      json.dumps({'host_action': 'web_search', 'evidence': {'sources': ['https://a.test']}}))
+        self.engine.before = slow_search
+        self.engine.answers = ['first report', 'second report', 'third report']
+        self.script([plan('codex', 'Look it up.', model='gpt-5.6-luna'),
+                     plan('codex', 'Check the filings too.', model='gpt-5.6-terra'),
+                     plan('codex', 'Once more.', model='haiku')],
+                    goals=[False, False, True])
+        job, row = self.run_work('시간 걸리는 일')
+        self.assertEqual(len(self.engine.turns), 2, 'no third attempt')
+        self.assertEqual(len(self.asked_plans), 2, 'no re-plan after the second attempt')
+        self.assertEqual(self.goals, [True], 'the second reply was judged once, as final')
+        last = self.events(job, 'evaluated')[-1][1]
+        self.assertEqual((last['attempt'], last['outcome'], last['stop'], last.get('code')),
+                         (2, 'not_reached', 'budget', 'deadline_exceeded'))
+        self.assertEqual((row['status'], row['response']), ('partial', 'second report'))
+        self.assertIn(GOAL_NOT_SHOWN, row['owner_cause'])
+
+    def test_an_attempt_starts_while_the_time_left_carries_one(self):
+        """#671: the same Work with 900 s re-delegates after 500 s, when 400 s still cover a 250 s attempt."""
+        clock = [0.0]
+        self.service.work_budget = lambda job_id: WorkBudget(clock=lambda: clock[0], seconds=900)
+        self.engine.before = lambda tools: clock.__setitem__(0, clock[0] + 250)
+        self.engine.answers = ['first report', 'second report', 'third report']
+        self.script([plan('codex', 'Look it up.', model='gpt-5.6-luna'),
+                     plan('codex', 'Check the filings too.', model='gpt-5.6-terra'),
+                     plan('codex', 'Once more.', model='haiku')],
+                    goals=[False, False, True])
+        job, row = self.run_work('시간 걸리는 일')
+        self.assertEqual(len(self.engine.turns), 3)
+        self.assertEqual((row['status'], row['response']), ('succeeded', 'third report'))
+
+    def test_a_preparation_run_is_judged_as_this_run_not_as_the_schedule(self):
+        """#671: the plan and the outcome judgment of a preparation's Work read the run fact with its
+        brief, so one run is not asked to prove the schedule or the delivery Still itself keeps."""
+        from personal_agent import preparations as prep
+        from personal_agent.messages import msg
+        goal = '매시간 시세를 확인해 Telegram으로 보고한다'
+        scheduled = {'id': 'w1', 'message': goal, 'request_key': prep.request_key('p1', 1_800_000_000)}
+        ordinary = {'id': 'w2', 'message': goal, 'request_key': 'web-1'}
+        fact = msg('preparations.run_fact')
+        for job, carries in ((scheduled, True), (ordinary, False)):
+            orchestration = self.service.work_orchestration(job, goal, [], {}, WorkBudget())
+            self.assertTrue(orchestration.request.startswith(goal))
+            self.assertEqual(fact in orchestration.request, carries)
+
     def test_the_deadline_is_checked_again_before_the_replan(self):
         clock = [0.0]
         self.service.work_budget = lambda job_id: WorkBudget(clock=lambda: clock[0], seconds=600)

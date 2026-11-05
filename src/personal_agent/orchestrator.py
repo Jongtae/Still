@@ -66,7 +66,8 @@ SECTIONS = ('profile', 'current_context', 'prepared', 'history')
 ALWAYS_SECTIONS = SECTIONS
 #: Re-delegations after the first attempt (so at most three attempts per Work).
 MAX_REDELEGATIONS = 2
-#: An attempt is started only while the Work's deadline leaves at least this.
+#: An attempt is started only while the Work's deadline leaves at least this, and (#671) at least
+#: as long as the longest attempt this Work has already run (``Orchestration.attempt_seconds``).
 MIN_ATTEMPT_SECONDS = 60
 #: Bounds of the plan text Still keeps and forwards.
 MAX_NOTES_CHARS = 1200
@@ -976,6 +977,9 @@ class Orchestration:
         self.terminal_note = None
         #: #308 S1: the owner steers a continuation was given, read with the request by the outcome judgment.
         self.steers = ''
+        #: #671: the Work's remaining seconds when each attempt was planned and when it was evaluated
+        #: (None while it runs), by attempt number.
+        self.spans = {}
 
     # -- the plan call --------------------------------------------------------
     def _redact(self, text, private=True):
@@ -1005,11 +1009,39 @@ class Orchestration:
             interrupted = budget.interrupted()
             if interrupted is not None:
                 return interrupted if interrupted in BUDGET_CODES else 'budget_unavailable'
-            if budget.remaining() < MIN_ATTEMPT_SECONDS:
+            if budget.remaining() < self.attempt_seconds():
                 return 'deadline_exceeded'
             return None if getattr(budget, 'turns_used', 0) + calls <= self._turn_limit(reserve) else 'turn_budget'
         except Exception:
             return 'budget_unavailable'
+
+    def attempt_seconds(self):
+        """The time an attempt needs: the longest this Work's attempts have taken, at least ``MIN_ATTEMPT_SECONDS`` (#671).
+
+        Each attempt is measured from its plan to its evaluation, the one still running to now.  Like a
+        per-try timeout under one deadline (gRPC deadlines, Envoy retry budgets): an attempt the time left
+        cannot carry is not started, because the deadline would kill it with its effects unknown and the
+        replies already finished would be lost with it.
+        """
+        try:
+            left = self.budget.remaining()
+        except Exception:
+            return MIN_ATTEMPT_SECONDS
+        return max([MIN_ATTEMPT_SECONDS, *(began - (left if ended is None else ended)
+                                           for began, ended in self.spans.values())])
+
+    def _span(self, number, end=False):
+        """#671: record the time left when attempt ``number`` was planned, or (``end``) evaluated."""
+        if self.budget is None:
+            return
+        try:
+            left = self.budget.remaining()
+        except Exception:
+            return
+        if not end:
+            self.spans[number] = (left, None)
+        elif number in self.spans and self.spans[number][1] is None:
+            self.spans[number] = (self.spans[number][0], left)
 
     def _turn_limit(self, reserve=False):
         limit = getattr(self.budget, 'turn_limit', None)
@@ -1367,6 +1399,7 @@ class Orchestration:
         return f'{worker.get("name") or attempt.worker} · {attempt.model or DEFAULT_MODEL_LABEL}' + (f' · {effort}' if effort else '')
 
     def _planned(self, attempt):
+        self._span(attempt.number)
         self.record(PLANNED, {'attempt': attempt.number, 'worker': attempt.worker, 'model': attempt.model or None,
                               'effort': getattr(attempt, 'effort', '') or None,
                               # #1261: whether this plan was asked while routing ran (first attempt only).
@@ -1586,6 +1619,7 @@ class Orchestration:
         """
         if not self.orchestrated:
             return None
+        self._span(attempt.number, end=True)
         self.history.append((attempt, evaluation, answer, failed))
         short = NOT_REACHED in (evaluation, judged)
         gap, self.gap = (self.gap if short else ''), ''
@@ -1669,6 +1703,7 @@ class Orchestration:
         self.steers = str(steers or '')
         self.terminal = None
         self.attempts.append(following)
+        self._span(following.number)
         self.record(STEER_CONTINUED, {'attempt': following.number, 'worker': following.worker,
                                       'model': following.model or None, 'count': int(count),
                                       'text': STEER_CONTINUED_TEXT})
