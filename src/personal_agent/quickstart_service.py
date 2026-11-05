@@ -12816,6 +12816,9 @@ class AgentService:
                 break
             if step is REDELEGATED:continue
             if step is not PROCEED:return step
+            # #663: either route's attempt is settled by the Work-wide scan (#598 I1), whatever its worker reported.
+            if self._work_has_unknown_effect(job['id']):
+                run.outcome='unknown';run.unknown_statement=run.response;run.resolved_blocker=False
             # #710: evaluate this attempt; re-delegate while the goal is not shown
             # and the bounds allow (at most two more attempts, the Work budget, no
             # effect in this attempt).  A fallback run is never re-delegated.
@@ -13302,8 +13305,7 @@ class AgentService:
             self.record_work_sources(job['id'],run.work_sources|run.capabilities.private_provenance)
             self.record_turn_provenance(job['id'],status='setup-required')
             return self.park_for_local_authority(job,local_need,run.reply_notice)
-        if self._work_has_unknown_effect(job['id']):
-            run.outcome='unknown';run.unknown_statement=run.response
+        # #663: an unknown effect is settled for both routes in ``_run_worker_attempts``.
         run.resolved_blocker=run.result.exit_code==0 and run.outcome=='succeeded'
         return PROCEED
 
