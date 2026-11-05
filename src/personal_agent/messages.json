@@ -7433,10 +7433,10 @@
   "zh": "全部{label}"
  },
  "quickstart_service.prepared_result": {
-  "ko": "미리 준비한 결과입니다 ({title}).",
-  "en": "Prepared result ({title}).",
-  "ja": "事前に準備した結果です（{title}）。",
-  "zh": "预先准备的结果（{title}）。"
+  "ko": "알려드리기로 한 {title}",
+  "en": "As promised: {title}",
+  "ja": "お約束の{title}",
+  "zh": "按约定：{title}"
  },
  "quickstart_service.check_preparation_request": {
   "ko": "준비 요청을 확인하세요.",
