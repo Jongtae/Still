@@ -43,11 +43,10 @@ TELEGRAM_FAILURE_TEXT = msg('conversation_handoff.telegram_request_failed')
 #: ``stopped_message_generation`` carries the owner's Stop on a draft (#581).
 # #626: edited_message carries live-location updates and owner text edits;
 # an edit is recorded as a source revision, never replayed as a request.
-# 'managed_bot' (#897): a family member created a bot through the owner's Managed Bots link.
 #: #996: ``message_reaction`` - the owner's emoji on an assistant message.  Telegram documents
 #: delivery for chats where the bot is an administrator; the bot asks for it anyway and treats
 #: every reaction that does arrive as the owner's signal.
-TELEGRAM_POLL_UPDATE_KINDS = ('message', 'edited_message', 'callback_query', 'stopped_message_generation', 'managed_bot',
+TELEGRAM_POLL_UPDATE_KINDS = ('message', 'edited_message', 'callback_query', 'stopped_message_generation',
                               'message_reaction')
 #: Presence calls (reaction, chat action, draft) are best-effort decoration
 #: sent while terminal delivery may be waiting on the same lock, so they get a
@@ -1242,7 +1241,7 @@ class ConversationJudgments:
         return self.policy.structured(decision), decision
 
     def owner_model_dream(self, turns, profile, working_notes, previous_diary, clock, work_id=None, cancelled=None,
-                          preparations=''):
+                          preparations='', earlier=''):
         """``(data, decision)``: one look back over the requests since the last one (#402, the "dream").
 
         One ``structured`` call over the turns (each scrubbed by its own Work's values by the
@@ -1261,9 +1260,13 @@ class ConversationJudgments:
                  'previous_diary': self.redact(previous_diary)[:DIARY_CHARS] or 'none',
                  'preparations': self.redact(preparations)[:DREAM_PREPARATIONS_CHARS] or 'none',
                  'clock': self.redact(clock)[:CLOCK_CHARS] or 'unknown'}
+        # #496: caller-bounded and scrubbed per Work, then redacted like turns; absent when there are no earlier misses.
+        if earlier:
+            facts = {'turns': facts.pop('turns'), 'earlier_misses': self.redact(earlier), **facts}
         # Once a day and off the conversation: the engine's strongest model, with the longer bound it may need.
         context = self._context(DREAM_PURPOSE, facts, work_id=work_id,
-                                uncut=('turns', 'owner_profile', 'working_notes', 'preparations'),
+                                uncut=('turns', 'owner_profile', 'working_notes', 'preparations') +
+                                      (('earlier_misses',) if earlier else ()),
                                 cancelled=cancelled, strongest=True, timeout=DREAM_TIMEOUT_SECONDS)
         method = getattr(self.engine, 'structured', None)
         decision = (method(context, DREAM_QUESTION, DREAM_SCHEMA, dream_shape) if method is not None

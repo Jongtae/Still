@@ -17,7 +17,7 @@ report gives each request's seconds, tool calls and documentation fetches.
 Usage: PYTHONPATH=src python3 scripts/rehearsal/run.py [--domains brokerage,parcel]
        [--owner-data ~/.local/share/agentos]
 
-It reads the owner's AI route (``family_setup.share_ai_route``) and nothing else
+It reads the owner's AI route (``copy_ai_route``) and nothing else
 from the owner's store, and uses the owner's subscription for a few model turns.
 Exit status 0 only when every check passes.
 """
@@ -160,8 +160,54 @@ def run_request(service, store, vendor, text, value_of, deadline):
             'answer': job.get('response') or '', 'timeline': timeline, 'tools': tools, 'events': events}
 
 
+REHEARSAL_ROUTE_ROWS = {
+    'subscription_engine': ((), ('claude_code_token',)),
+    'model': (('model_test',), ('model_key',)),
+    'decision_route': (('decision_route_checks',), ()),
+    'decision_model': ((), ('decision_model_key',)),
+    'decision_jev': ((), ('decision_jev_key',)),
+}
+
+
+def _has_route(store):
+    engine = store.config('subscription_engine', {})
+    model = store.config('model', {})
+    return bool((isinstance(engine, dict) and engine.get('id')) or (isinstance(model, dict) and model.get('provider')))
+
+
+def copy_ai_route(owner_store, scratch_store):
+    """Copy only the owner's AI route into a scratch rehearsal store.
+
+    Existing scratch routes stay; companion rows and secrets travel only with
+    their route. Returns copied names, never values, or None without a route.
+    This development helper is never called by the product runtime.
+    """
+    if not _has_route(owner_store):
+        return None
+    if _has_route(scratch_store):
+        return []
+    copied = []
+    for key, (companions, secret_keys) in REHEARSAL_ROUTE_ROWS.items():
+        value = owner_store.config(key, None)
+        if not value:
+            continue
+        scratch_store.put(key, value)
+        copied.append(key)
+        for companion in companions:
+            extra = owner_store.config(companion, None)
+            if extra:
+                scratch_store.put(companion, extra)
+                copied.append(companion)
+        for secret_key in secret_keys:
+            secret = owner_store.secret(secret_key)
+            if secret:
+                scratch_store.secret(secret_key, secret)
+                copied.append(secret_key)
+    return copied
+
+
 def rehearse_domain(name, service, store, deadline, owner):
-    from personal_agent.family_setup import start_tunnel
+    from personal_agent.https_tunnel import start_tunnel
     vendor_class, value_of, requests, secrets = DOMAINS[name]
     vendor = vendor_class().start()
     # A public HTTPS address, as a real vendor has: the product needs no rehearsal exception.
@@ -223,7 +269,6 @@ def main():
         return 2
 
     from personal_agent.browser_jar import MemoryKey
-    from personal_agent.family_setup import share_ai_route
     from personal_agent.quickstart import configured_service
     from personal_agent.quickstart_store import QuickStore
 
@@ -250,11 +295,11 @@ def main():
         # #208: a rehearsal opens public tunnels and sends requests the scratch store cannot gate.
         print('work mode is on for the owner; no rehearsal runs')
         return 2
-    copied = share_ai_route(owner, store)
+    copied = copy_ai_route(owner, store)
     if copied is None:
         print('no owner AI route to rehearse with')
         return 2
-    # The Judgment AI's route also needs its recorded CLI checks (not part of the family share).
+    # The Judgment AI's route also needs its recorded CLI checks (not part of the route copy).
     for key in ('decision_cli_capabilities', 'main_ai_checks', 'codex_bundled_models', 'engine_login'):
         value = owner.config(key, None)
         if value:

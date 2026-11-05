@@ -23,7 +23,7 @@ from urllib.request import urlopen
 LABEL = "com.personal-agentos"
 DEFAULT_DATA_RELATIVE = Path(".local/share/agentos")
 DEFAULT_PORT = 8787
-# #893: a named instance (for example a family member's agent) is a separate
+# #893: a named instance is a separate
 # launchd job with its own data directory and port; the owner's default
 # service keeps LABEL, its data directory and port 8787.
 DEFAULT_INSTANCES_RELATIVE = Path(".local/share/agentos-instances")
@@ -827,3 +827,9 @@ def build_identity() -> dict[str, object]:
             "identity_taken_at": time.time(),
         }
     return dict(_BUILD_IDENTITY)
+
+
+def installed_instances(home=None):
+    """Names of installed named services, including legacy installs needing cleanup."""
+    folder = Path(home or Path.home()) / 'Library/LaunchAgents'
+    return sorted(path.name[len(LABEL) + 1:-len('.plist')] for path in folder.glob(f'{LABEL}.*.plist'))

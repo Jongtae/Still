@@ -1,9 +1,8 @@
 """A one-time phone page for inputs only a page can safely take (PHONE-INPUT-01 #1213).
 
 The owner who is not at the Mac asks in conversation, confirms the draft, and
-gets a temporary HTTPS link (``family_setup.start_tunnel``: ngrok when installed,
-else a Cloudflare quick tunnel, #523; as the remote login's, #939, and the family
-setup's, #897) in the paired Telegram chat.  The page does one of two things:
+gets a temporary HTTPS link (``https_tunnel.start_tunnel``: ngrok when installed,
+else a Cloudflare quick tunnel, #523; as the remote login's, #939) in the paired Telegram chat.  The page does one of two things:
 
 * ``google-client``: take the owner's own Google "Desktop app" client JSON
   (``AgentService.save_google_client``, #1172).
@@ -31,7 +30,7 @@ import time
 from html import escape
 from urllib.parse import quote
 
-from .family_setup import start_tunnel
+from .https_tunnel import start_tunnel
 from . import telegram_locale, work_mode
 from .messages import msg
 from .work_mode import WorkModeRefused

@@ -1,4 +1,6 @@
 """Launch a local personal agent and its browser setup, using only Python."""
+
+from . import work_status as ws
 from .messages import msg
 import argparse
 import datetime
@@ -43,8 +45,6 @@ from .providers import ProviderError
 from .isolated_engine_gateway import IsolatedEngineGateway
 from .drive_web_oauth import DriveWebOAuthHandoff, EncryptedDriveSecretStore, DriveWebOAuthError
 from .connector_contract import ConnectorRegistry
-from . import family_setup
-from . import family_share
 from . import remote_login
 from . import phone_input
 from .service_control import DEFAULT_DATA_RELATIVE, DEFAULT_PORT as SERVICE_PORT, service_action
@@ -658,6 +658,7 @@ def configured_service(store, environ=None):
     # The same builder runs when the owner adds a client in Settings, so a
     # client saved there works without restarting Still.
     google_port=environ.get('AGENTOS_GOOGLE_LOCAL_PORT','8787')
+    service.a2a_secret_key=environ.get('AGENTOS_A2A_ENCRYPTION_KEY')
     key_provider=environ.get('AGENTOS_GOOGLE_OAUTH_KEY') or google_oauth_key(store)
     def install_google_client(client):
         port=service.local_server_port if isinstance(service.local_server_port,int) else google_port
@@ -843,63 +844,6 @@ def make_handler(service, public_hosts=(), public_access_token=''):
             """
             return self.owner_local_surface() if self.loopback_server() else not self.public_host()
 
-        def family_gate(self,path):
-            """#897: on a family instance a tunneled request reaches only the setup paths.
-
-            True when the request was answered here (refused).  The gate stays
-            closed after the setup finishes or expires, so a tunnel left up
-            reaches nothing (review P2-2).  An instance never set up this way
-            is unchanged.
-            """
-            # #949: a family member signs in to their own accounts from their phone too; the remote-login
-            # paths pass here and ``remote_login_gate`` (exact code, bound client) decides them.
-            if (self.tunneled() and family_setup.setup_recorded(store) and path not in family_setup.PUBLIC_PATHS
-                    and path not in remote_login.PUBLIC_PATHS and path not in phone_input.PUBLIC_PATHS):
-                self.reply(404,{'error':msg('quickstart.not_found')})
-                return True
-            return False
-
-        def family_route(self,method,parts):
-            """The family setup page and its APIs (#897); None when the path is not one of them."""
-            path=parts.path
-            if path==family_share.SHARE_PATH and method=='POST':
-                # #934/#957: the giving instance (the owner's or a family member's) on loopback only, with the link
-                # secret it wrote into this instance's private folder (same macOS user); never through a tunnel or
-                # a forwarded request.  Routed on every instance, the owner's main one included.
-                if not (self.local_setup() and family_share.link_ok(store.root,self.headers.get(family_share.LINK_HEADER,''))):
-                    return self.reply(404,{'error':msg('quickstart.not_found')})
-                try:
-                    length=int(self.headers.get('Content-Length','0'))
-                    if not 0<length<=family_share.MAX_BODY:raise ValueError(msg('quickstart.invalid_request_size'))
-                    return self.reply(200,family_share.accept(service,json.loads(self.rfile.read(length))))
-                except family_share.Refused as exc:return self.reply(400,{'error':str(exc),'code':exc.code})
-                except ValueError as exc:return self.reply(400,{'error':str(exc)})
-            if path=='/api/family/telegram-token' and method=='POST':
-                record=family_setup.read_setup(store)
-                # Loopback from the owner's instance only: never through a tunnel.
-                if not (self.local_setup() and family_setup.handoff_ok(record,self.headers.get(family_setup.HANDOFF_HEADER,''))):
-                    return self.reply(404,{'error':msg('quickstart.not_found')})
-                try:
-                    length=int(self.headers.get('Content-Length','0'))
-                    if not 0<length<=4096:raise ValueError(msg('quickstart.invalid_request_size'))
-                    body=json.loads(self.rfile.read(length))
-                    token=body.get('token','') if isinstance(body,dict) else ''
-                    creator=body.get('creator_id') if isinstance(body,dict) else None
-                    return self.reply(200,family_setup.accept_token(service,record,token,creator))
-                except (ValueError,ProviderError) as exc:return self.reply(400,{'error':str(exc)})
-            if path not in family_setup.PUBLIC_PATHS:return None
-            record=family_setup.read_setup(store)
-            if not family_setup.code_ok(record,parse_qs(parts.query).get('code',[''])[0]):
-                return self.reply(404,{'error':msg('quickstart.setup_link_invalid')})
-            if path=='/family-setup' and method=='GET':
-                nonce=secrets.token_urlsafe(16)
-                return self.reply(200,family_setup.page(record,nonce).encode(),'text/html; charset=utf-8',csp=family_setup.page_csp(nonce))
-            if path=='/api/family/status' and method=='GET':return self.reply(200,family_setup.status(service,record))
-            if path=='/api/family/pair' and method=='POST':
-                try:return self.reply(200,family_setup.pair_again(service,record))
-                except ValueError as exc:return self.reply(409,{'error':str(exc)})
-            return self.reply(405,{'error':msg('family_share.unsupported_request')})
-
         def remote_login_gate(self,path):
             """#939: once a remote login was started in this process, a tunneled request (other than
             one on a configured public tunnel host) reaches only the remote-login routes.
@@ -951,11 +895,17 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                     body=json.loads(self.rfile.read(length))
                 except (TypeError,ValueError):
                     return self.reply(400,{'error':msg('quickstart.invalid_request')})
-                return self.reply(200,{'ok':bool(session.input(body))})
+                from .browser_session import WorkerError
+                try:
+                    accepted=bool(session.input(body))
+                except WorkerError as exc:
+                    if exc.code!='stale_view':raise
+                    return self.reply(200,{'ok':False,'error':'stale_view'})
+                return self.reply(200,{'ok':accepted})
             if path==remote_login.DONE_PATH and method=='POST':
                 # Review P3-3: the answer leaves before the tunnel it travels through is stopped.
                 return self.reply(200,{'ok':bool(session.finish_later('done'))})
-            return self.reply(405,{'error':msg('family_share.unsupported_request')})
+            return self.reply(405,{'error':msg('quickstart.unsupported_request')})
 
         def phone_input_gate(self,path):
             """#1213: once a phone input link was started in this process, a tunneled request (other than one
@@ -998,7 +948,7 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                 nonce=secrets.token_urlsafe(16)
                 return reply(200,phone_input.page(session,nonce).encode(),'text/html; charset=utf-8',
                                   cookie=phone_input.cookie_header(issued) if issued else None,csp=phone_input.page_csp(nonce))
-            if method!='POST' or path==phone_input.PAGE_PATH:return reply(405,{'error':msg('family_share.unsupported_request')})
+            if method!='POST' or path==phone_input.PAGE_PATH:return reply(405,{'error':msg('quickstart.unsupported_request')})
             if not session.client_ok(cookie):return reply(404,{'error':msg('quickstart.link_invalid')})
             if self.headers.get('Content-Type','').split(';')[0].strip().lower()!='application/json':
                 return reply(415,{'error':msg('quickstart.json_required')})
@@ -1020,7 +970,7 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                 # #1213 review P2: a token exchange or delivery failure still answers the phone; nothing it carried is logged.
                 logging.getLogger('personal_agent.phone_input').warning('phone input request failed (%s)',type(exc).__name__)
                 return reply(502,{'ok':False,'error':msg('quickstart.try_again_later')})
-            return reply(405,{'error':msg('family_share.unsupported_request')})
+            return reply(405,{'error':msg('quickstart.unsupported_request')})
 
         def cookie(self,token,max_age=86400):
             secure='; Secure' if os.environ.get('AGENTOS_SECURE_COOKIE')=='1' or public_hosts else ''
@@ -1048,8 +998,7 @@ def make_handler(service, public_hosts=(), public_access_token=''):
             if not self.valid_host():return
             parts=urlsplit(self.path)
             path=parts.path
-            if self.family_gate(path) or self.remote_login_gate(path) or self.phone_input_gate(path):return
-            if path in family_setup.PUBLIC_PATHS:return self.family_route('GET',parts)
+            if self.remote_login_gate(path) or self.phone_input_gate(path):return
             if path in remote_login.PUBLIC_PATHS:return self.remote_login_route('GET',parts)
             if path in phone_input.PUBLIC_PATHS:return self.phone_input_route('GET',parts)
             if path=='/' and self.public_host() and public_access_token:
@@ -1189,6 +1138,8 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                 return self.reply(200,{'configured':bool(handoff),'local_only':bool(handoff),
                                        'state':handoff.status()['state'] if handoff else 'not-configured'})
             if not self.auth():return
+            if path=='/api/a2a':
+                return self.reply(200,{**service.a2a_peers.status(),**service.a2a_peers.conversations()})
             if path=='/api/home':return self.reply(200,service.home())
             if path=='/api/tasks':return self.reply(200,service.task_progress())
             if path=='/api/folder-requests':
@@ -1242,7 +1193,7 @@ def make_handler(service, public_hosts=(), public_access_token=''):
             if path=='/api/state':
                 # #752 review: a withheld answer is kept off the web as it is off Telegram.
                 jobs=service.owner_jobs(store.jobs())
-                return self.reply(200,{'settings':service.settings(),'messages':service.owner_messages(store.history(include_forgotten=True)),'jobs':jobs,'notes':store.notes(),'tool_events':store.recent_tool_events(),'evidence':{job['id']:store.evidence_summary(job['id']) for job in jobs if job['status'] in ('succeeded','partial')},'healthy':service.healthy()})
+                return self.reply(200,{'settings':service.settings(),'messages':service.owner_messages(store.history(include_forgotten=True)),'jobs':jobs,'notes':store.notes(),'tool_events':store.recent_tool_events(),'evidence':{job['id']:store.evidence_summary(job['id']) for job in jobs if ws.has_delivered_result(job['status'])},'healthy':service.healthy()})
             if path=='/api/onboarding':return self.reply(200,service.onboarding())
             self.reply(404,{'error':msg('quickstart.path_not_found')})
 
@@ -1259,8 +1210,7 @@ def make_handler(service, public_hosts=(), public_access_token=''):
             self.settings_change=None
             if not self.valid_host():return
             parts=urlsplit(self.path)
-            if self.family_gate(parts.path) or self.remote_login_gate(parts.path) or self.phone_input_gate(parts.path):return
-            if parts.path in family_setup.PUBLIC_PATHS or parts.path in ('/api/family/telegram-token',family_share.SHARE_PATH):return self.family_route('POST',parts)
+            if self.remote_login_gate(parts.path) or self.phone_input_gate(parts.path):return
             if parts.path in remote_login.PUBLIC_PATHS:return self.remote_login_route('POST',parts)
             if parts.path in phone_input.PUBLIC_PATHS:return self.phone_input_route('POST',parts)
             if parts.path==ISOLATED_MCP_PATH:
@@ -1444,6 +1394,44 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                     if path=='/api/mattermost/connect':return self.reply(200,service.connect_mattermost(body))
                     if path=='/api/mattermost/disconnect':return self.reply(200,service.disconnect_mattermost())
                     return self.reply(200,service.set_mattermost_company_approved(body))
+                # #651: peer management belongs only to this Mac's authenticated owner.
+                if path.startswith('/api/a2a/'):
+                    if self.tunneled() or not self.owner_local_surface():
+                        return self.reply(403,{'error':'local_owner_required'})
+                    peers=service.a2a_peers
+                    if path not in ('/api/a2a/block','/api/a2a/remove','/api/a2a/owner-item','/api/a2a/listener/stop'):
+                        peers.transport()
+                    action=path[len('/api/a2a/'):]
+                    if action in ('preview','register'):
+                        body={**body,'outbound_credential':peers.prepare_credential(body.get('outbound_credential',''))}
+                        if body.get('card_url'):body['card_url']=peers.card_url(body['card_url'])
+                    if action=='preview':
+                        from .a2a_transport import parse_card, fetch_card
+                        from .a2a_peers import confirmation_digest
+                        import asyncio
+                        card=(asyncio.run(fetch_card(body['card_url'], store=service.store))
+                              if body.get('card_url') else parse_card(body.get('card')))
+                        card=peers.reviewed_card(card)
+                        return self.reply(200,{'card':card,'card_url':body.get('card_url'),'digest':confirmation_digest(card,body.get('card_url'))})
+                    if action=='register':
+                        from .a2a_peers import confirmation_digest
+                        if body.get('card') is not None:
+                            if body.get('confirm_digest')!=confirmation_digest(peers.reviewed_card(body['card']),body.get('card_url')):
+                                raise ValueError('card_confirmation_required')
+                        if body.get('card_url'):
+                            import asyncio
+                            from .a2a_transport import fetch_card
+                            body={**body,'card':asyncio.run(fetch_card(body['card_url'], store=service.store))}
+                        from .a2a_transport import parse_card
+                        if body.get('confirm_digest')!=confirmation_digest(parse_card(body.get('card')),body.get('card_url')):
+                            raise ValueError('card_confirmation_required')
+                        return self.reply(200,peers.register(body))
+                    if action=='update':return self.reply(200,peers.update(body))
+                    if action in ('block','remove'):return self.reply(200,peers.block(body.get('peer_id'),remove=action=='remove'))
+                    if action=='owner-item':return self.reply(200,peers.settle_owner_item(body))
+                    if action=='listener/start':return self.reply(200,peers.start(body.get('host','127.0.0.1'),body.get('port',0)))
+                    if action=='listener/stop':return self.reply(200,peers.stop())
+                    return self.reply(404,{'error':'unknown_peer_operation'})
                 # #214: Slack is connected in Settings on this computer only, never through a tunnel.
                 if path in ('/api/slack/connect','/api/slack/disconnect','/api/slack/company-approved'):
                     if self.tunneled():return self.reply(400,{'error':msg('slack.local_only')})
@@ -1671,7 +1659,7 @@ def service_main(argv):
     # service does not actually use.
     parser.add_argument('--data',default=None,help='Override the data directory (default: AGENTOS_DATA, else the installed service definition).')
     parser.add_argument('--cli-path',default=None,help='Override the agentos executable recorded in the service definition.')
-    # #893: a named instance (e.g. a family member's agent) is its own launchd
+    # #893: a named instance is its own launchd
     # job with its own data directory (default ~/.local/share/agentos-instances/<name>) and port.
     parser.add_argument('--instance',default=None,help='Manage a named instance instead of the owner service (lowercase letters, digits, hyphens).')
     parser.add_argument('--port',type=int,default=None,help='Port of a named instance (required on install; not 8787).')
@@ -1771,7 +1759,6 @@ COMMANDS_HELP="""other commands (each has its own --help):
                         terminal; it starts again at every login (macOS)
   agentos uninstall     remove Still from this computer
   agentos guide         show onboarding and recovery guidance
-  agentos family        create a family member's own agent on this Mac
   agentos browser-login open the embedded browser window for manual login
   agentos plugins       manage local plugin manifests
   agentos gmail-config | calendar-config | drive-config
@@ -1792,9 +1779,6 @@ def main():
     if len(sys.argv)>1 and sys.argv[1]=='uninstall':
         from .uninstall import main as uninstall_main
         return uninstall_main(sys.argv[2:])
-    if len(sys.argv)>1 and sys.argv[1]=='family':
-        # #897: a family member's own agent and its one-page setup link.
-        return family_setup.family_main(sys.argv[2:],service_action=service_action)
     if len(sys.argv)>1 and sys.argv[1]=='browser-login':
         return browser_login_main(sys.argv[2:])
     if len(sys.argv)>1 and sys.argv[1]=='guide':
@@ -1853,7 +1837,7 @@ def main():
         return server,handoff_server
     server,handoff_server=listen()
     # #1445 part 5: a tunnel a killed earlier server left running blocks the next phone link.
-    from .family_setup import reclaim_orphan_tunnels
+    from .https_tunnel import reclaim_orphan_tunnels
     reclaim_orphan_tunnels(server.server_port)
     def close_listeners():
         server.server_close()
@@ -1923,6 +1907,7 @@ def main():
     try:run()
     finally:
         service.stop.set()
+        service.a2a_peers.stop()
         # #1380: a tunnel must not outlive its server (it blocks the next link).
         service.end_tunnel_sessions('closed')
         server.server_close()

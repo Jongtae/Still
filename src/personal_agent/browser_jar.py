@@ -409,7 +409,7 @@ class CookieJar:
             return set(sites), rows
 
     def site_rows(self, site):
-        """One site's unexpired cookie rows, values included (#934: a family push or a worker import; never a log).
+        """One site's unexpired cookie rows, values included (#680: a worker import; never a log).
 
         Raises ``JarError`` when the jar exists but cannot be read; an absent
         jar or an unknown site is ``[]``.
@@ -482,18 +482,8 @@ class CookieJar:
             token = self.path.read_bytes() if self.path.is_file() else None
             now = self.clock()
         sites = self._decrypt(token)['sites']
-        marks = []
-        for site, entry in sites.items():
-            if not isinstance(entry, dict) or not (host == site or host.endswith('.' + site) or site.endswith('.' + host)):
-                continue
-            for row in entry.get('cookies') or []:
-                if not isinstance(row, dict):
-                    continue
-                identity = [site, str(row.get('name')), str(row.get('domain')), str(row.get('path'))]
-                expires = row.get('expires') if isinstance(row.get('expires'), (int, float)) else None
-                marks.append((_digest(identity + [str(row.get('value'))]), expires, _digest(identity),
-                              effective_expiry(row)))
-        return marks, now
+        return site_marks({site: entry.get('cookies') for site, entry in sites.items() if isinstance(entry, dict)},
+                          host), now
 
     def cached_sites(self):
         """``(state, sites)`` without touching the Keychain, or None when the file changed since it was read."""
@@ -539,6 +529,28 @@ class CookieJar:
 def _index(payload):
     return {site: {'cookies': len(entry.get('cookies') or []), 'last_used': entry.get('last_used')}
             for site, entry in (payload.get('sites') or {}).items() if isinstance(entry, dict)}
+
+
+def site_marks(grouped, host):
+    """The ``(digest, expires, identity, effective)`` marks of ``{site: [cookie rows]}`` for ``host``'s site(s).
+
+    One rule for the jar (``CookieJar.site_cookie_marks``) and for a running
+    worker's export (#636: a re-sign-in's evidence): digests only, never a value.
+    """
+    host = str(host or '').lower().rstrip('.')
+    marks = []
+    for site, rows in (grouped or {}).items():
+        site = str(site)
+        if not (host == site or host.endswith('.' + site) or site.endswith('.' + host)):
+            continue
+        for row in rows or []:
+            if not isinstance(row, dict):
+                continue
+            identity = [site, str(row.get('name')), str(row.get('domain')), str(row.get('path'))]
+            expires = row.get('expires') if isinstance(row.get('expires'), (int, float)) else None
+            marks.append((_digest(identity + [str(row.get('value'))]), expires, _digest(identity),
+                          effective_expiry(row)))
+    return marks
 
 
 def _digest(parts):

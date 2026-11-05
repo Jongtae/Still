@@ -443,13 +443,7 @@
   "ja": "Google Drive の接続を完了できませんでした。Telegram で新しい接続リンクを依頼してください。",
   "zh": "没能完成 Google Drive 连接。请在 Telegram 中请求新的连接链接。"
  },
- "family_setup.the_family_assistant_is_connected_your": {
-  "ko": "가족 AI 연결이 끝났어요. 이제 가족이 텔레그램에서 AI와 대화할 수 있어요.",
-  "en": "The family assistant is connected. Your family can now chat with the assistant in Telegram.",
-  "ja": "家族用アシスタントの接続が完了しました。これで家族がTelegramでアシスタントと話せます。",
-  "zh": "家人助手已连接好，家人现在可以在 Telegram 中与助手对话了。"
- },
- "family_share.not_connected": {
+ "settings_orchestrator.not_connected": {
   "ko": "연결 안 됨",
   "en": "Not connected",
   "ja": "未接続",
@@ -772,6 +766,12 @@
   "en": "- Opened in the browser: {hosts}",
   "ja": "- ブラウザで開いた先: {hosts}",
   "zh": "- 在浏览器中打开的地方: {hosts}"
+ },
+ "information_use.browser_provider_sign_in": {
+  "ko": "- 브라우저 다시 로그인: {site} (소유자가 전에 쓴 {provider} 계정으로, 아무 입력 없이)",
+  "en": "- Browser re-sign-in: {site} (through {provider}, which the owner used before, with nothing typed)",
+  "ja": "- ブラウザの再ログイン: {site}（オーナーが以前使った {provider} 経由、入力なし）",
+  "zh": "- 浏览器重新登录: {site}（通过所有者以前使用的 {provider}，未输入任何内容）"
  },
  "information_use.cli_search_is_not_compared": {
   "ko": "- AI CLI가 스스로 하는 웹 검색은 Still을 거치지 않습니다. 그 검색어는 CLI가 알려 준 만큼만 보이고, 보관한 값과 비교하지 않습니다.",
@@ -1589,11 +1589,53 @@
   "ja": "この手順は許可されませんでした。依頼はここで止まります。",
   "zh": "未允许这一步，请求到此为止。"
  },
+ "preparations.proposal_question": {
+  "ko": "이렇게 해 둘까요?",
+  "en": "Shall I set this up?",
+  "ja": "このようにしておきましょうか？",
+  "zh": "这样安排好吗？"
+ },
+ "preparations.delivery_send": {
+  "ko": "결과를 보내 드려요",
+  "en": "I’ll send you each result.",
+  "ja": "毎回結果をお送りします。",
+  "zh": "每次都会把结果发给您。"
+ },
+ "preparations.delivery_when_needed": {
+  "ko": "알릴 일이 있을 때만 알려요",
+  "en": "I’ll tell you only when a result needs your attention.",
+  "ja": "対応が必要な結果があるときだけお知らせします。",
+  "zh": "只有结果需要您关注时才会通知您。"
+ },
+ "preparations.delivery_keep": {
+  "ko": "결과가 나와도 따로 알리지 않아요",
+  "en": "I won’t notify you when results are ready.",
+  "ja": "結果が出ても個別にはお知らせしません。",
+  "zh": "结果出来后不会另行通知您。"
+ },
+ "button.preparation_accept": {
+  "ko": "좋아요",
+  "en": "Sounds good",
+  "ja": "お願いします",
+  "zh": "好的"
+ },
+ "button.preparation_decline": {
+  "ko": "필요 없어요",
+  "en": "No thanks",
+  "ja": "今はやめておきます",
+  "zh": "暂时不用"
+ },
  "preparations.accepted_offer_label": {
   "ko": "소유자가 읽고 수락한 내용(이 범위 안에서 하세요):",
   "en": "What the owner read and accepted (stay within it):",
   "ja": "オーナーが読んで承諾した内容（この範囲内で行ってください）:",
   "zh": "主人阅读并接受的内容（请在此范围内进行）："
+ },
+ "preparations.run_fact": {
+  "ko": "이 Work는 소유자가 수락한 준비를 Still이 일정대로 실행한 것입니다. 일정을 이어 가고 결과를 소유자에게 전하는 일은 Still이 하므로, 이 Work의 답은 이번 실행의 결과입니다.",
+  "en": "This Work is a run of a preparation the owner accepted, which Still runs on its schedule. Still keeps the schedule and brings the result to the owner, so this Work's reply is this run's result.",
+  "ja": "このWorkは、オーナーが承諾した準備をStillが予定どおり実行したものです。予定を続け、結果をオーナーに届けるのはStillなので、このWorkの答えは今回の実行の結果です。",
+  "zh": "此 Work 是 Still 按计划执行主人已接受的准备事项。继续执行计划并把结果交给主人由 Still 负责，因此此 Work 的回答是本次执行的结果。"
  },
  "preparations.brief_label": {
   "ko": "매번 실행할 때 맡길 내용",
@@ -1602,10 +1644,10 @@
   "zh": "每次运行时交代的内容"
  },
  "preparations.shall_i_schedule_the_following_preparation": {
-  "ko": "다음 준비를 예약할까요? 수락하면 정해진 때에 실행합니다.",
-  "en": "Shall I schedule the following preparation? If you accept, it will run at the set time.",
-  "ja": "次の準備を予約しますか？承諾すると、決めた時刻に実行します。",
-  "zh": "要安排以下准备任务吗？接受后会在指定时间执行。"
+  "ko": "다음처럼 해 둘까요? 좋다고 하시면 정해진 때에 해 드릴게요.",
+  "en": "Shall I set these up? If you say yes, I’ll take care of them at the set times.",
+  "ja": "次のようにしておきましょうか？よろしければ、決めた時刻に対応します。",
+  "zh": "按下面这样安排好吗？您同意后，我会在指定时间处理。"
  },
  "projection.check_information_used": {
   "ko": "사용한 정보 확인",
@@ -2302,12 +2344,6 @@
   "en": "There are no saved notes. Try recording one with /note followed by its text.",
   "ja": "保存済みのメモはありません。/noteの後に内容を入力して記録してみてください。",
   "zh": "没有已保存的笔记，试试用 /note 加上内容来记录。"
- },
- "service.this_mac_s_ai_sign_in": {
-  "ko": "이 Mac의 AI 로그인과 그 연결은 소유자의 것이라 가족 AI에서는 쓸 수 없어요.",
-  "en": "This Mac's AI sign-in and its connections belong to the owner, so a family member's assistant cannot use them.",
-  "ja": "この Mac の AI ログインとその接続は所有者のものなので、家族のアシスタントでは使えません。",
-  "zh": "此 Mac 的 AI 登录及其连接属于所有者，家人的助理无法使用。"
  },
  "service.this_request_was_already_retried_once": {
   "ko": "이 요청은 이미 한 번 다시 시도했습니다. 같은 요청을 중복으로 실행하지 않았습니다.",
@@ -3359,47 +3395,11 @@
   "ja": "確認済みの操作なし",
   "zh": "无已审查操作"
  },
- "family_share.request_body": {
-  "ko": "요청 본문을 확인하세요.",
-  "en": "Check the request body.",
-  "ja": "リクエスト本文を確認してください。",
-  "zh": "请检查请求正文。"
- },
- "family_share.site_domain": {
-  "ko": "사이트 이름은 등록 가능한 도메인이어야 합니다.",
-  "en": "The site name must be a registrable domain.",
-  "ja": "サイト名は登録可能なドメインにしてください。",
-  "zh": "网站名称必须为可注册域名。"
- },
- "family_share.unsupported_request": {
+ "quickstart.unsupported_request": {
   "ko": "지원하지 않는 요청입니다.",
   "en": "This request is not supported.",
   "ja": "未対応のリクエストです。",
   "zh": "不支持此请求。"
- },
- "family_share.cookie_list": {
-  "ko": "쿠키 목록을 확인하세요.",
-  "en": "Check the cookie list.",
-  "ja": "Cookie 一覧を確認してください。",
-  "zh": "请检查 Cookie 列表。"
- },
- "family_share.session_store_unavailable": {
-  "ko": "이 비서의 로그인 세션 저장소를 쓸 수 없습니다({exc}).",
-  "en": "This assistant's login session store is unavailable ({exc}).",
-  "ja": "このアシスタントのログインセッション保存先を使用できません（{exc}）。",
-  "zh": "此助手的登录会话存储不可用（{exc}）。"
- },
- "family_share.session_save_failed": {
-  "ko": "이 비서에 로그인 세션을 저장하지 못했습니다.",
-  "en": "Could not save the login session for this assistant.",
-  "ja": "このアシスタントにログインセッションを保存できませんでした。",
-  "zh": "无法为此助手保存登录会话。"
- },
- "family_share.session_read_failed": {
-  "ko": "이 비서의 로그인 세션 저장소를 읽을 수 없습니다({exc}).",
-  "en": "Could not read this assistant's login session store ({exc}).",
-  "ja": "このアシスタントのログインセッション保存先を読めません（{exc}）。",
-  "zh": "无法读取此助手的登录会话存储（{exc}）。"
  },
  "conversation_handoff.knowledge": {
   "ko": "개인 공간 검색",
@@ -3893,12 +3893,6 @@
   "ja": "覚えておくこと",
   "zh": "需要记住的事"
  },
- "settings_orchestrator.family_label": {
-  "ko": "가족 비서",
-  "en": "Family assistant",
-  "ja": "家族用アシスタント",
-  "zh": "家庭助手"
- },
  "settings_orchestrator.skills_label": {
   "ko": "스킬",
   "en": "Skills",
@@ -3964,18 +3958,6 @@
   "en": "Create new",
   "ja": "新規作成",
   "zh": "新建"
- },
- "settings_orchestrator.share_site_label": {
-  "ko": "로그인 공유",
-  "en": "Share login",
-  "ja": "ログイン共有",
-  "zh": "共享登录"
- },
- "settings_orchestrator.unshare_site_label": {
-  "ko": "공유 그만",
-  "en": "Stop sharing",
-  "ja": "共有を停止",
-  "zh": "停止共享"
  },
  "settings_orchestrator.send_label": {
   "ko": "보내기",
@@ -4061,6 +4043,54 @@
   "ja": "{site} をモバイル版に戻します",
   "zh": "将 {site} 恢复为移动版"
  },
+ "settings_orchestrator.provider_sign_in_label": {
+  "ko": "전에 쓴 로그인 제공자로 다시 로그인",
+  "en": "Sign back in through the provider used before",
+  "ja": "以前使ったログイン提供元で再ログイン",
+  "zh": "通过以前使用的登录提供方重新登录"
+ },
+ "settings_orchestrator.label_browser_provider_sign_in": {
+  "ko": "브라우저 로그인 제공자로 다시 로그인",
+  "en": "Browser re-sign-in through a provider",
+  "ja": "ブラウザのログイン提供元での再ログイン",
+  "zh": "浏览器通过登录提供方重新登录"
+ },
+ "settings_orchestrator.setting_value_provider_sign_in": {
+  "ko": "전에 쓴 로그인 제공자로 다시 로그인: {value}",
+  "en": "Sign back in through the provider used before: {value}",
+  "ja": "以前使ったログイン提供元で再ログイン: {value}",
+  "zh": "通过以前使用的登录提供方重新登录：{value}"
+ },
+ "settings_orchestrator.provider_sign_in_site": {
+  "ko": "{site} ← {provider} ({state})",
+  "en": "{site} ← {provider} ({state})",
+  "ja": "{site} ← {provider}（{state}）",
+  "zh": "{site} ← {provider}（{state}）"
+ },
+ "settings_orchestrator.provider_sign_in_site_option": {
+  "ko": "{site} 사이트만: {state}",
+  "en": "{site} only: {state}",
+  "ja": "{site} のみ {state}",
+  "zh": "仅 {site}：{state}"
+ },
+ "settings_orchestrator.provider_sign_in_format": {
+  "ko": "on 또는 off(모든 사이트), 또는 \"<사이트>|on\" / \"<사이트>|off\"(그 사이트만)",
+  "en": "on or off (every site), or \"<site>|on\" / \"<site>|off\" (that site only)",
+  "ja": "on または off（すべてのサイト）、または \"<サイト>|on\" / \"<サイト>|off\"（そのサイトのみ）",
+  "zh": "on 或 off（所有网站），或 \"<网站>|on\" / \"<网站>|off\"（仅该网站）"
+ },
+ "settings_orchestrator.provider_sign_in_note": {
+  "ko": "켜 두면, 소유자가 직접 로그인할 때 쓴 로그인 제공자(예: 다른 계정으로 로그인)의 세션이 남아 있는 사이트에서 AI가 그 사이트의 로그인 버튼을 눌러 다시 로그인할 수 있습니다. 제공자 페이지에서는 누르기와 입력을 하지 않으며, 제공자가 무언가를 물으면 소유자에게 로그인을 요청합니다.",
+  "en": "When on, on a site where the owner signed in through a provider (another account) whose session Still still holds, the AI may press the site's sign-in control to sign back in. It never presses or types on the provider's pages; if the provider asks anything, the owner is asked to sign in.",
+  "ja": "オンにすると、オーナーが手動ログインで使ったログイン提供元（別のアカウントでのログイン）のセッションが残っているサイトで、AI がサイトのログインボタンを押して再ログインできます。提供元のページでは押す操作も入力もせず、提供元が何かを尋ねたらオーナーにログインを依頼します。",
+  "zh": "开启后，在所有者手动登录时使用过登录提供方（用其他账号登录）且会话仍保留的网站上，AI 可以按该网站的登录按钮重新登录。它不会在提供方页面上点击或输入；提供方询问任何内容时，会请所有者登录。"
+ },
+ "settings_orchestrator.provider_sign_in_summary": {
+  "ko": "전에 쓴 로그인 제공자로 다시 로그인: {choice}",
+  "en": "Sign back in through the provider used before: {choice}",
+  "ja": "以前使ったログイン提供元で再ログイン: {choice}",
+  "zh": "通过以前使用的登录提供方重新登录：{choice}"
+ },
  "settings_orchestrator.close_login_label": {
   "ko": "로그인 창 닫기",
   "en": "Close login window",
@@ -4115,17 +4145,11 @@
   "ja": "委任範囲内で実行",
   "zh": "在委托范围内执行"
  },
- "settings_orchestrator.family_share_note": {
-  "ko": "비밀번호는 넘기지 않고 지금 로그인된 세션만 전달해요. 내 세션이 갱신되면 따라가고, 결제는 계정 주인만 할 수 있어요.",
-  "en": "Only the current signed-in session is shared, never the password. It follows updates to your session. Only the account owner can make payments.",
-  "ja": "パスワードは渡さず、現在ログイン中のセッションだけを共有します。自分のセッションの更新に追従し、支払いはアカウント所有者のみが行えます。",
-  "zh": "只共享当前登录会话，不传递密码。你的会话更新时会同步，只有账户所有者可以付款。"
- },
  "settings_orchestrator.unknown_setting": {
-  "ko": "대화로 바꿀 수 있는 설정이 아닙니다. 현재 맥락(enabled, timezone), 판단 AI(mode, model), 기본 AI(route, model), 알아 두기(enabled, daily_calls), 가족 비서(add, share_site, unshare_site), 스킬(enabled, add, remove), 휴대폰 링크(send), AI의 연결 서비스(enabled, connect, servers, review, money, rung, undo, forget, restore), 예약(cancel, accept), 브라우저(close_login, use_mobile)만 바꿀 수 있습니다. API 키, 토큰, 로그인은 비밀 입력 화면에서 직접 입력하세요.",
-  "en": "This setting cannot be changed in conversation. Supported settings: current context (enabled, timezone), Judgment AI (mode, model), Main AI (route, model), things to remember (enabled, daily_calls), family assistant (add, share_site, unshare_site), skills (enabled, add, remove), phone link (send), AI connections (enabled, connect, servers, review, money, rung, undo, forget, restore), reservations (cancel, accept), browser (close_login, use_mobile). Enter API keys, tokens, and logins directly on the private input page.",
-  "ja": "この設定は会話では変更できません。変更できるのは、現在のコンテキスト（enabled, timezone）、判断 AI（mode, model）、メイン AI（route, model）、覚えておくこと（enabled, daily_calls）、家族用アシスタント（add, share_site, unshare_site）、スキル（enabled, add, remove）、スマートフォン用リンク（send）、AI の接続サービス（enabled, connect, servers, review, money, rung, undo, forget, restore）、予約（cancel, accept）、ブラウザ（close_login, use_mobile）です。API キー、トークン、ログイン情報は秘密情報の入力画面に直接入力してください。",
-  "zh": "此设置无法在对话中更改。支持的设置：当前上下文（enabled, timezone）、判断 AI（mode, model）、主 AI（route, model）、需要记住的事（enabled, daily_calls）、家庭助手（add, share_site, unshare_site）、技能（enabled, add, remove）、手机链接（send）、AI 连接服务（enabled, connect, servers, review, money, rung, undo, forget, restore）、预约（cancel, accept）、浏览器（close_login, use_mobile）。API 密钥、令牌和登录信息请直接在私密输入页面填写。"
+  "ko": "대화로 바꿀 수 있는 설정이 아닙니다. 현재 맥락(enabled, timezone), 판단 AI(mode, model), 기본 AI(route, model), 알아 두기(enabled, daily_calls), 스킬(enabled, add, remove), 휴대폰 링크(send), AI의 연결 서비스(enabled, connect, servers, review, money, rung, undo, forget, restore), 예약(cancel, accept), 브라우저(close_login, use_mobile, provider_sign_in)만 바꿀 수 있습니다. API 키, 토큰, 로그인은 비밀 입력 화면에서 직접 입력하세요.",
+  "en": "This setting cannot be changed in conversation. Supported settings: current context (enabled, timezone), Judgment AI (mode, model), Main AI (route, model), things to remember (enabled, daily_calls), skills (enabled, add, remove), phone link (send), AI connections (enabled, connect, servers, review, money, rung, undo, forget, restore), reservations (cancel, accept), browser (close_login, use_mobile, provider_sign_in). Enter API keys, tokens, and logins directly on the private input page.",
+  "ja": "この設定は会話では変更できません。変更できるのは、現在のコンテキスト（enabled, timezone）、判断 AI（mode, model）、メイン AI（route, model）、覚えておくこと（enabled, daily_calls）、スキル（enabled, add, remove）、スマートフォン用リンク（send）、AI の接続サービス（enabled, connect, servers, review, money, rung, undo, forget, restore）、予約（cancel, accept）、ブラウザ（close_login, use_mobile, provider_sign_in）です。API キー、トークン、ログイン情報は秘密情報の入力画面に直接入力してください。",
+  "zh": "此设置无法在对话中更改。支持的设置：当前上下文（enabled, timezone）、判断 AI（mode, model）、主 AI（route, model）、需要记住的事（enabled, daily_calls）、技能（enabled, add, remove）、手机链接（send）、AI 连接服务（enabled, connect, servers, review, money, rung, undo, forget, restore）、预约（cancel, accept）、浏览器（close_login, use_mobile, provider_sign_in）。API 密钥、令牌和登录信息请直接在私密输入页面填写。"
  },
  "settings_orchestrator.credential_value": {
   "ko": "자격 증명처럼 보이는 값은 대화로 설정하지 않습니다. API 키, 토큰, 로그인은 설정 화면에서 직접 입력하세요. 아무것도 바꾸지 않았습니다.",
@@ -4180,12 +4204,6 @@
   "en": "Judgment AI was asked to follow Main AI. It will apply once the check finishes.",
   "ja": "判断 AI をメイン AI に合わせるよう依頼しました。確認が終わると適用されます。",
   "zh": "已请求让判断 AI 跟随主 AI，检查完成后会应用。"
- },
- "settings_orchestrator.family_requested": {
-  "ko": "가족 비서를 만드는 중이에요. 준비되면 가족에게 보낼 설정 링크를 여기로 보내 드릴게요.",
-  "en": "Creating the family assistant. When ready, its setup link will appear here for you to share with your family.",
-  "ja": "家族用アシスタントを作成中です。準備ができたら、家族に送る設定リンクをここにお届けします。",
-  "zh": "正在创建家庭助手。准备好后，会在这里提供可转发给家人的设置链接。"
  },
  "settings_orchestrator.recovery_declined": {
   "ko": "추가 연결 설정 시도를 취소했어요. 이전 시도의 등록이나 부분 설정은 남아 있을 수 있어요.",
@@ -4252,30 +4270,6 @@
   "en": "Integer from 0 to {limit} (Judgment AI calls over 24 hours)",
   "ja": "0～{limit} の整数（24 時間の判断 AI 呼び出し回数）",
   "zh": "0 至 {limit} 的整数（24 小时内判断 AI 的调用次数）"
- },
- "settings_orchestrator.family_name_format": {
-  "ko": "새 가족 비서의 텔레그램 이름(예: 아내 비서)",
-  "en": "Telegram name for the new family assistant (e.g. Partner's assistant)",
-  "ja": "新しい家族用アシスタントの Telegram 名（例: パートナーのアシスタント）",
-  "zh": "新家庭助手的 Telegram 名称（例如：伴侣的助手）"
- },
- "settings_orchestrator.family_add_note": {
-  "ko": "내 AI 구독을 함께 쓰는 가족 전용 비서를 만들고, 가족에게 보낼 설정 링크를 텔레그램으로 드립니다.",
-  "en": "Creates a family assistant sharing your AI subscription and sends its setup link to you on Telegram.",
-  "ja": "自分の AI サブスクリプションを共有する家族専用アシスタントを作成し、家族に送る設定リンクを Telegram でお届けします。",
-  "zh": "创建共享你 AI 订阅的家庭专用助手，并通过 Telegram 发送可转发给家人的设置链接。"
- },
- "settings_orchestrator.share_format": {
-  "ko": "비서 이름|사이트 주소(예: <비서 이름>|example.com)",
-  "en": "Assistant name and site address, separated by a vertical bar (e.g. Assistant name followed by example.com)",
-  "ja": "アシスタント名とサイトのアドレスを縦線で区切って指定（例: アシスタント名と example.com）",
-  "zh": "助手名称和网站地址，用竖线分隔（例如助手名称与 example.com）"
- },
- "settings_orchestrator.unshare_format": {
-  "ko": "사이트 주소, 또는 비서 이름|사이트 주소(예: example.com)",
-  "en": "Site address, or assistant name and site address separated by a vertical bar (e.g. example.com)",
-  "ja": "サイトのアドレス、またはアシスタント名とサイトのアドレスを縦線で区切って指定（例: example.com）",
-  "zh": "网站地址，或用竖线分隔的助手名称和网站地址（例如 example.com）"
  },
  "settings_orchestrator.server_review_on_request": {
   "ko": "요청할 때 공개 서버 정보를 검토",
@@ -4451,24 +4445,6 @@
   "ja": "インストール済みのスキル名",
   "zh": "已安装的技能名称"
  },
- "settings_orchestrator.share_ambiguous": {
-  "ko": "{site}은(는) 여러 비서({assistants})와 공유 중이에요. 어느 비서인지 이름을 주세요.",
-  "en": "{site} is shared with several assistants ({assistants}). Specify which one.",
-  "ja": "{site} は複数のアシスタント（{assistants}）と共有中です。対象の名前を指定してください。",
-  "zh": "{site} 正与多个助手（{assistants}）共享。请指定助手名称。"
- },
- "settings_orchestrator.share_already_enabled": {
-  "ko": "{instance} 비서와 {site} 로그인 세션을 이미 공유하고 있어요. 바꿀 것이 없어요.",
-  "en": "The {site} login session is already shared with {instance}. Nothing to change.",
-  "ja": "{instance} と {site} のログインセッションをすでに共有しています。変更は不要です。",
-  "zh": "已与 {instance} 共享 {site} 登录会话，无需更改。"
- },
- "settings_orchestrator.share_already_disabled": {
-  "ko": "{instance} 비서와 {site} 로그인 세션을 공유하고 있지 않아요. 바꿀 것이 없어요.",
-  "en": "The {site} login session is not shared with {instance}. Nothing to change.",
-  "ja": "{instance} と {site} のログインセッションは共有していません。変更は不要です。",
-  "zh": "未与 {instance} 共享 {site} 登录会话，无需更改。"
- },
  "settings_orchestrator.judgment_model_note": {
   "ko": "모델을 바꾸면 기본 AI 따라가기 대신 따로 지정됩니다.",
   "en": "Changing the model selects it separately instead of following Main AI.",
@@ -4492,24 +4468,6 @@
   "en": "{exc} Nothing was changed.",
   "ja": "{exc} 何も変更していません。",
   "zh": "{exc} 未作任何更改。"
- },
- "settings_orchestrator.invalid_family_name": {
-  "ko": "가족 비서 이름을 1~64자로 주세요. 아무것도 만들지 않았습니다.",
-  "en": "Use 1–64 characters for the family assistant's name. Nothing was created.",
-  "ja": "家族用アシスタントの名前は 1～64 文字で指定してください。何も作成していません。",
-  "zh": "家庭助手名称需为 1 至 64 个字符。未创建任何内容。"
- },
- "settings_orchestrator.family_name_is_self": {
-  "ko": "'{name}'은(는) 지금 대화하고 있는 이 비서의 이름이에요. 새로 만들지 않았어요. 가족의 비서라면 다른 이름으로 다시 요청해 주세요.",
-  "en": "'{name}' is the name of the assistant you are talking to. Nothing was created. Use a different name for a family assistant.",
-  "ja": "「{name}」は今話しているこのアシスタントの名前です。新規作成していません。家族用なら別の名前で依頼してください。",
-  "zh": "“{name}”是当前对话助手的名称，未新建。若要创建家庭助手，请使用其他名称。"
- },
- "settings_orchestrator.family_name_exists": {
-  "ko": "'{name}' 비서는 이미 있어요: {listed}. 새로 만들지 않았어요. 다른 가족의 비서라면 다른 이름으로 다시 요청해 주세요.",
-  "en": "An assistant named '{name}' already exists: {listed}. Nothing was created. Use a different name for another family member's assistant.",
-  "ja": "「{name}」というアシスタントはすでに存在します: {listed}。新規作成していません。別の家族用なら別の名前で依頼してください。",
-  "zh": "名为“{name}”的助手已存在：{listed}。未新建。若是其他家人的助手，请使用其他名称。"
  },
  "settings_orchestrator.invalid_daily_calls": {
   "ko": "하루 판단 횟수는 0~{limit} 사이의 정수로 주세요. 아무것도 바꾸지 않았습니다.",
@@ -4715,12 +4673,6 @@
   "ja": "{label} はすでに {value} です。変更は不要です。",
   "zh": "{label}已为{value}，无需更改。"
  },
- "settings_orchestrator.family_add_summary": {
-  "ko": "가족 비서 '{after}'를 만듭니다",
-  "en": "Create family assistant '{after}'",
-  "ja": "家族用アシスタント「{after}」を作成します",
-  "zh": "创建家庭助手“{after}”"
- },
  "settings_orchestrator.skill_add_summary": {
   "ko": "스킬을 추가합니다: {repo}의 {path} (커밋 {revision})",
   "en": "Add skill: {path} in {repo} (commit {revision})",
@@ -4804,18 +4756,6 @@
   "en": "Send the '{link}' link to your phone (valid for about 10 minutes)",
   "ja": "「{link}」のリンクをスマートフォンに送ります（約 10 分間有効）",
   "zh": "将“{link}”链接发送到手机（约 10 分钟有效）"
- },
- "settings_orchestrator.share_summary": {
-  "ko": "'{label}' 비서에 {site} 로그인 세션을 공유합니다",
-  "en": "Share the {site} login session with assistant '{label}'",
-  "ja": "アシスタント「{label}」に {site} のログインセッションを共有します",
-  "zh": "与助手“{label}”共享 {site} 登录会话"
- },
- "settings_orchestrator.unshare_summary": {
-  "ko": "'{label}' 비서의 {site} 로그인 공유를 그만둡니다",
-  "en": "Stop sharing the {site} login with assistant '{label}'",
-  "ja": "アシスタント「{label}」との {site} のログイン共有を停止します",
-  "zh": "停止与助手“{label}”共享 {site} 登录"
  },
  "settings_orchestrator.route_destination_note": {
   "ko": "이후 작업 내용이 {destination}(으)로 전송됩니다.",
@@ -5003,12 +4943,6 @@
   "ja": "スキルをこのバージョンに更新します: {repo} の {path}（コミット {revision}）",
   "zh": "将技能更新至此版本：{repo} 中的 {path}（提交 {revision}）"
  },
- "settings_orchestrator.share_delivery_pending": {
-  "ko": "{label}: {site} (전달 대기)",
-  "en": "{label}: {site} (delivery pending)",
-  "ja": "{label}: {site}（送信待ち）",
-  "zh": "{label}：{site}（等待发送）"
- },
  "settings_orchestrator.skill_disabled": {
   "ko": "{skill} ({source}, 꺼짐)",
   "en": "{skill} ({source}, off)",
@@ -5086,24 +5020,6 @@
   "en": "Things to remember · Overnight memory review",
   "ja": "覚えておくこと · 夜間の記憶整理",
   "zh": "需要记住的事 · 夜间记忆整理"
- },
- "settings_orchestrator.label_family_add": {
-  "ko": "가족 비서 새로 만들기",
-  "en": "Family assistant · Create new",
-  "ja": "家族用アシスタント · 新規作成",
-  "zh": "家庭助手 · 新建"
- },
- "settings_orchestrator.label_family_share_site": {
-  "ko": "가족 비서 로그인 공유",
-  "en": "Family assistant · Share login",
-  "ja": "家族用アシスタント · ログイン共有",
-  "zh": "家庭助手 · 共享登录"
- },
- "settings_orchestrator.label_family_unshare_site": {
-  "ko": "가족 비서 공유 그만",
-  "en": "Family assistant · Stop sharing",
-  "ja": "家族用アシスタント · 共有を停止",
-  "zh": "家庭助手 · 停止共享"
  },
  "settings_orchestrator.label_skills_enabled": {
   "ko": "스킬 사용",
@@ -5267,18 +5183,6 @@
   "ja": "新規作成: {value}",
   "zh": "新建：{value}"
  },
- "settings_orchestrator.setting_value_share_site": {
-  "ko": "로그인 공유: {value}",
-  "en": "Share login: {value}",
-  "ja": "ログイン共有: {value}",
-  "zh": "共享登录：{value}"
- },
- "settings_orchestrator.setting_value_unshare_site": {
-  "ko": "공유 그만: {value}",
-  "en": "Stop sharing: {value}",
-  "ja": "共有を停止: {value}",
-  "zh": "停止共享：{value}"
- },
  "settings_orchestrator.setting_value_remove": {
   "ko": "빼기: {value}",
   "en": "Remove: {value}",
@@ -5405,12 +5309,6 @@
   "ja": "覚えておくこと · {details}",
   "zh": "需要记住的事 · {details}"
  },
- "settings_orchestrator.category_line_family": {
-  "ko": "가족 비서 · {details}",
-  "en": "Family assistant · {details}",
-  "ja": "家族用アシスタント · {details}",
-  "zh": "家庭助手 · {details}"
- },
  "settings_orchestrator.category_line_skills": {
   "ko": "스킬 · {details}",
   "en": "Skills · {details}",
@@ -5494,18 +5392,6 @@
   "en": "Create new: {value} · {remaining}",
   "ja": "新規作成: {value} · {remaining}",
   "zh": "新建：{value} · {remaining}"
- },
- "settings_orchestrator.setting_value_share_site_remaining": {
-  "ko": "로그인 공유: {value} · {remaining}",
-  "en": "Share login: {value} · {remaining}",
-  "ja": "ログイン共有: {value} · {remaining}",
-  "zh": "共享登录：{value} · {remaining}"
- },
- "settings_orchestrator.setting_value_unshare_site_remaining": {
-  "ko": "공유 그만: {value} · {remaining}",
-  "en": "Stop sharing: {value} · {remaining}",
-  "ja": "共有を停止: {value} · {remaining}",
-  "zh": "停止共享：{value} · {remaining}"
  },
  "settings_orchestrator.setting_value_remove_remaining": {
   "ko": "빼기: {value} · {remaining}",
@@ -5632,12 +5518,6 @@
   "en": "Things to remember · {details} ({effective})",
   "ja": "覚えておくこと · {details} ({effective})",
   "zh": "需要记住的事 · {details} ({effective})"
- },
- "settings_orchestrator.category_line_family_effective": {
-  "ko": "가족 비서 · {details} ({effective})",
-  "en": "Family assistant · {details} ({effective})",
-  "ja": "家族用アシスタント · {details} ({effective})",
-  "zh": "家庭助手 · {details} ({effective})"
  },
  "settings_orchestrator.category_line_skills_effective": {
   "ko": "스킬 · {details} ({effective})",
@@ -6678,11 +6558,52 @@
   "zh": "公共网络地址检查超时，已停止本次导航。尚未确认存在访问限制。"
  },
  "browser.unsupported_navigation": {
-  "ko": "이 동작이 http(s)가 아닌 앱 전용 주소(앱 실행 링크 등)로 이동하려 해 중단했습니다. 이 브라우저는 앱을 열 수 없습니다. 페이지의 웹 경로를 쓰고, 앱으로 넘어가는 로그인이라면 browser_sign_in으로 소유자에게 로그인을 맡기세요.",
-  "en": "This step tried to go to an app-only address (not http/https, such as an app launch link), so it was stopped. This browser cannot open apps. Use the page's web route; if it was a sign-in that hands off to an app, give the sign-in to the owner with browser_sign_in.",
-  "ja": "この操作が http(s) ではないアプリ専用アドレス（アプリ起動リンクなど）へ移動しようとしたため停止しました。このブラウザはアプリを開けません。ページのウェブ経路を使い、アプリに渡るログインなら browser_sign_in でオーナーにログインを任せてください。",
-  "zh": "此操作试图前往非 http(s) 的应用专用地址（如应用启动链接），已停止。此浏览器无法打开应用。请使用页面的网页路径；如果是转到应用的登录，请用 browser_sign_in 交给所有者登录。"
+  "ko": "http(s)가 아닌 앱 주소는 열 수 없습니다. 웹 주소를 사용하세요.",
+  "en": "An app address outside http/https cannot be opened. Use a web address.",
+  "ja": "http(s) 以外のアプリのアドレスは開けません。ウェブのアドレスを使ってください。",
+  "zh": "无法打开非 http(s) 的应用地址。请使用网页地址。"
  },
+ "browser.app_link_not_followed": {
+  "ko": "페이지가 앱 링크를 열려고 했지만 Still은 따라가지 않았습니다. 현재 페이지를 반환합니다. 나중에 읽으면 사이트의 웹 대체 페이지가 표시될 수 있습니다.",
+  "en": "The page tried to open an app link; Still did not follow it. This is the current page. A later read may show the site’s web fallback.",
+  "ja": "ページがアプリのリンクを開こうとしましたが、Still は移動しませんでした。現在のページを返します。後で読むとサイトのウェブ代替ページが表示される場合があります。",
+  "zh": "页面尝试打开应用链接，Still 未跟随。返回当前页面。稍后读取可能会显示网站的网页备用页面。"
+ },
+ "browser.provider_sign_in_hint": {
+  "ko": "이 페이지는 로그인이 필요합니다. 소유자는 전에 이 사이트에 {provider} 계정으로 로그인했고, Still에 {provider}의 로그인 세션이 있습니다. 사이트에 있는 {provider} 계정으로 로그인하는 버튼을 눌러 다시 로그인할 수 있습니다. 그 버튼이 앱으로 넘어가 멈추면(unsupported_navigation) 이 사이트의 로그인 페이지를 browser_open의 layout: desktop으로 다시 열고 그 버튼을 누르세요. {provider} 페이지에서는 Still이 누르기와 입력을 모두 거절하므로, {provider}가 아무것도 묻지 않고 사이트로 돌려보낼 때만 로그인이 끝납니다. {provider}가 비밀번호·추가 인증·계정 선택·동의를 묻거나 이 방법이 안 되면 browser_sign_in으로 소유자에게 로그인을 맡기세요. 비밀번호는 입력하지 마세요.",
+  "en": "This page needs a sign-in. The owner signed in to this site before through {provider}, and Still holds {provider}'s session. You may sign in again by pressing the site's own control for signing in with {provider}. If that control hands off to an app and stops (unsupported_navigation), reopen the site's sign-in page with browser_open and layout: desktop and press it there. Still refuses every press and typing step on {provider}'s pages, so the sign-in completes only when {provider} returns to the site without asking anything. If {provider} asks for anything (a password, a second factor, an account choice or consent), or this does not work, give the sign-in to the owner with browser_sign_in. Never type a password.",
+  "ja": "このページはログインが必要です。オーナーは以前このサイトに {provider} のアカウントでログインしており、Still には {provider} のログインセッションがあります。サイトにある {provider} でログインするボタンを押して再ログインできます。そのボタンがアプリに渡って止まったら（unsupported_navigation）、このサイトのログインページを browser_open の layout: desktop で開き直してそのボタンを押してください。{provider} のページでは Still が押す操作と入力をすべて拒否するため、{provider} が何も尋ねずにサイトへ戻したときだけログインが完了します。{provider} がパスワード・追加認証・アカウント選択・同意を求めたり、この方法がうまくいかなければ、browser_sign_in でオーナーにログインを任せてください。パスワードは入力しないでください。",
+  "zh": "此页面需要登录。所有者以前通过 {provider} 账号登录过此网站，Still 保存着 {provider} 的登录会话。可以按网站上用 {provider} 账号登录的按钮重新登录。如果该按钮转到应用而停止（unsupported_navigation），请用 browser_open 并设置 layout: desktop 重新打开此网站的登录页面再按。Still 会拒绝在 {provider} 页面上的所有点击和输入，因此只有 {provider} 不询问任何内容就返回网站时登录才会完成。如果 {provider} 要求密码、额外验证、选择账号或同意，或者此方法不行，请用 browser_sign_in 交给所有者登录。不要输入密码。"
+ },
+ "browser.provider_sign_in_off": {
+  "ko": "이 사이트의 AI 제공자 재로그인이 꺼져 있어 인증 페이지를 열지 않았습니다. browser_sign_in으로 주인에게 로그인을 요청하세요.",
+  "en": "AI provider re-sign-in is off for this site, so the authorization page was not opened. Use browser_sign_in to ask the owner to sign in.",
+  "ja": "このサイトのAIによるプロバイダー再ログインは無効のため、認証ページを開きませんでした。browser_sign_inでオーナーにログインを依頼してください。",
+  "zh": "此网站的 AI 提供方重新登录已关闭，因此未打开授权页面。请使用 browser_sign_in 请求所有者登录。"
+ },
+ "browser.provider_interaction_refused": {
+  "ko": "{provider}는 소유자가 로그인할 때 쓰는 계정 제공자라서, Still은 그 페이지와 거기서 이어진 페이지에서 누르기와 입력을 하지 않습니다. 이 단계는 실행하지 않았고 아무것도 보내지 않았습니다. 계정 선택·동의·비밀번호처럼 그곳에서 묻는 것은 소유자가 직접 합니다.",
+  "en": "{provider} is an identity provider the owner signs in with, so Still does not press or type on its pages or on pages reached from it. This step did not run and nothing was sent. Whatever it asks there (an account choice, consent, a password) is for the owner.",
+  "ja": "{provider} はオーナーがログインに使うアカウント提供元なので、Still はそのページとそこから続くページで押す操作や入力をしません。この手順は実行せず、何も送っていません。アカウント選択・同意・パスワードなど、そこで尋ねられることはオーナーが自分で行います。",
+  "zh": "{provider} 是所有者用来登录的账号提供方，因此 Still 不会在其页面以及从那里继续到达的页面上点击或输入。此步骤未执行，也未发送任何内容。在那里询问的内容（选择账号、同意、密码）由所有者亲自处理。"
+ },
+ "browser.provider_asks": {
+  "ko": "{provider}가 로그인을 요구합니다. Still은 비밀번호를 입력하지 않으며, 소유자가 로그인합니다.",
+  "en": "{provider} asks for a sign-in. Still never types a password; the owner signs in.",
+  "ja": "{provider} がログインを求めています。Still はパスワードを入力せず、オーナーがログインします。",
+  "zh": "{provider} 要求登录。Still 不会输入密码，由所有者登录。"
+ },
+ "browser.provider_unconfirmed": {
+  "ko": "{provider}를 거쳐 사이트로 돌아왔지만 로그인됐다는 근거(새로 생기거나 갱신된 사이트 세션)가 없어 이 다시 로그인을 완료로 보지 않습니다.",
+  "en": "The browser came back to the site through {provider}, but there is no evidence of a sign-in (no new or renewed site session), so this re-sign-in is not counted as done.",
+  "ja": "{provider} を経由してサイトに戻りましたが、ログインした根拠（新しく作られたか更新されたサイトのセッション）がないため、この再ログインを完了とはみなしません。",
+  "zh": "已通过 {provider} 返回网站，但没有登录的依据（没有新建或更新的网站会话），因此不将此次重新登录视为完成。"
+ },
+ "browser.provider_not_returned": {
+  "ko": "{provider}를 거쳤지만 사이트가 여전히 로그인을 요구해 이 다시 로그인을 멈췄습니다.",
+  "en": "The sign-in went through {provider} but the site still asks for a sign-in, so this re-sign-in stopped.",
+  "ja": "{provider} を経由しましたが、サイトがまだログインを求めているため、この再ログインを止めました。",
+  "zh": "已经过 {provider}，但网站仍要求登录，因此已停止此次重新登录。" },
  "button.reopen_sign_in": {
   "ko": "로그인 창 다시 열기",
   "en": "Reopen sign-in",
@@ -6887,126 +6808,6 @@
   "ja": "スマートフォンからログインするリンクです（{site}）。このリンクを開いたスマートフォン 1 台だけが使え、約 {minutes} 分後に閉じます。\n画面をタップすると Mac のログイン画面の同じ位置がタップされ、入力した文字は選んだ欄に入ります。「ログインしたままにする」のようなオプションがあればオンにしてください。終わったらページ下部のボタンを押してください。\n{link}",
   "zh": "这是用手机登录的链接（{site}）。只有打开这个链接的那一部手机可以使用，大约 {minutes} 分钟后关闭。\n点击屏幕会点击 Mac 登录窗口中的相同位置，输入的文字会进入所选的输入框。如果有“保持登录”之类的选项，请打开。完成后请点击页面底部的按钮。\n{link}"
  },
- "family_share.payment_refused": {
-  "ko": "결제는 계정 주인이 해 주세요. 공유받은 로그인으로는 결제 단계를 진행하지 않습니다.",
-  "en": "Payment is for the account owner. I don't go through payment steps with a shared sign-in.",
-  "ja": "支払いはアカウントの持ち主が行ってください。共有されたログインでは支払いの手順を進めません。",
-  "zh": "付款请由账户所有者完成。使用共享的登录不会进行付款步骤。"
- },
- "family_share.login_refused": {
-  "ko": "이 사이트는 공유받은 로그인이라 여기서 다시 로그인할 수 없어요",
-  "en": "This site's sign-in was shared with me, so I can't sign in again here",
-  "ja": "このサイトは共有されたログインのため、ここで再ログインはできません",
-  "zh": "这个网站的登录是共享来的，所以不能在这里重新登录"
- },
- "family_share.not_installed": {
-  "ko": "'{instance}' AI가 이 Mac에 설치되어 있지 않아요.",
-  "en": "The '{instance}' assistant isn't installed on this Mac.",
-  "ja": "「{instance}」アシスタントはこの Mac にインストールされていません。",
-  "zh": "这台 Mac 上没有安装“{instance}”助理。"
- },
- "family_share.not_yours": {
-  "ko": "{site} 로그인은 계정 주인에게 받은 것이라 다른 AI에게 공유할 수 없어요. 아무것도 바꾸지 않았어요.",
-  "en": "The {site} sign-in was shared with me by its account owner, so I can't share it with another assistant. Nothing was changed.",
-  "ja": "{site} のログインはアカウントの持ち主から共有されたものなので、ほかのアシスタントには共有できません。何も変更していません。",
-  "zh": "{site} 的登录是账户所有者共享给我的，不能再共享给其他助理。没有做任何更改。"
- },
- "family_share.not_to_self": {
-  "ko": "이 AI 자체에는 공유할 수 없어요. 아무것도 바꾸지 않았어요.",
-  "en": "I can't share with this assistant itself. Nothing was changed.",
-  "ja": "このアシスタント自身には共有できません。何も変更していません。",
-  "zh": "不能共享给这个助理自己。没有做任何更改。"
- },
- "family_share.receiver_signed_in": {
-  "ko": "이 AI는 그 사이트에 자기 계정으로 이미 로그인되어 있어 공유받지 않았어요.",
-  "en": "This assistant is already signed in to that site with its own account, so it didn't take the shared sign-in.",
-  "ja": "このアシスタントはそのサイトに自分のアカウントですでにログインしているため、共有を受けませんでした。",
-  "zh": "这个助理已经用自己的账户登录了该网站，所以没有接收共享。"
- },
- "family_share.receiver_signed_in_receipt": {
-  "ko": "'{label}' AI는 {site}에 이미 자기 계정으로 로그인되어 있어 공유하지 않았어요. 그 AI의 로그인은 그대로예요. 그 AI가 그 사이트에서 로그아웃하면 다시 공유할 수 있어요.",
-  "en": "The '{label}' assistant is already signed in to {site} with its own account, so I didn't share. Its sign-in is unchanged. You can share again after it signs out of that site.",
-  "ja": "「{label}」アシスタントは {site} に自分のアカウントですでにログインしているため、共有しませんでした。そのアシスタントのログインはそのままです。そのアシスタントがそのサイトからログアウトすれば、もう一度共有できます。",
-  "zh": "“{label}”助理已经用自己的账户登录了 {site}，所以没有共享。它的登录保持不变。它从该网站退出后可以再次共享。"
- },
- "family_share.sessions_unreadable": {
-  "ko": "저장된 로그인 세션을 읽지 못해 공유하지 않았어요. 설정의 브라우저 로그인 세션 상태를 확인해 주세요.",
-  "en": "I couldn't read the saved sign-in sessions, so I didn't share. Check the browser sign-in sessions in Settings.",
-  "ja": "保存されたログインセッションを読み取れなかったため、共有しませんでした。設定のブラウザのログインセッションの状態を確認してください。",
-  "zh": "未能读取已保存的登录会话，所以没有共享。请在设置中检查浏览器登录会话的状态。"
- },
- "family_share.site_needed": {
-  "ko": "공유할 사이트 주소를 주세요(예: example.com). 아무것도 바꾸지 않았어요.",
-  "en": "Tell me the site to share (for example, example.com). Nothing was changed.",
-  "ja": "共有するサイトのアドレスを教えてください（例：example.com）。何も変更していません。",
-  "zh": "请告诉我要共享的网站地址（例如 example.com）。没有做任何更改。"
- },
- "family_share.assistant_name_needed": {
-  "ko": "어느 AI인지 이름을 주세요. 아무것도 바꾸지 않았어요.",
-  "en": "Tell me which assistant, by name. Nothing was changed.",
-  "ja": "どのアシスタントか名前を教えてください。何も変更していません。",
-  "zh": "请告诉我是哪个助理的名字。没有做任何更改。"
- },
- "family_share.no_session": {
-  "ko": "{site}에 저장된 내 로그인 세션이 없어 공유하지 않았어요. 먼저 로그인 창에서 그 사이트에 로그인해 주세요.",
-  "en": "I don't have a saved sign-in session for {site}, so I didn't share. First sign in to that site in the sign-in window.",
-  "ja": "{site} に保存されたログインセッションがないため、共有しませんでした。先にログイン画面でそのサイトにログインしてください。",
-  "zh": "没有保存的 {site} 登录会话，所以没有共享。请先在登录窗口中登录该网站。"
- },
- "family_share.no_session_signed_in": {
-  "ko": "{site}에 저장된 내 로그인 세션이 없어 공유하지 않았어요. 먼저 로그인 창에서 그 사이트에 로그인해 주세요. 지금 로그인된 사이트: {sites}.",
-  "en": "I don't have a saved sign-in session for {site}, so I didn't share. First sign in to that site in the sign-in window. Sites signed in now: {sites}.",
-  "ja": "{site} に保存されたログインセッションがないため、共有しませんでした。先にログイン画面でそのサイトにログインしてください。現在ログインしているサイト: {sites}。",
-  "zh": "没有保存的 {site} 登录会话，所以没有共享。请先在登录窗口中登录该网站。当前已登录的网站：{sites}。"
- },
- "family_share.several_named": {
-  "ko": "'{value}'라는 이름의 AI가 여럿이에요: {listed}. 어느 AI인지 괄호 안의 id로 말해 주세요. 아무것도 바꾸지 않았어요.",
-  "en": "There are several assistants named '{value}': {listed}. Tell me which one by the id in parentheses. Nothing was changed.",
-  "ja": "「{value}」という名前のアシスタントが複数あります: {listed}。どのアシスタントか、かっこ内の id で教えてください。何も変更していません。",
-  "zh": "名为“{value}”的助理有多个：{listed}。请用括号里的 id 说明是哪一个。没有做任何更改。"
- },
- "family_share.not_found": {
-  "ko": "'{value}'라는 AI를 찾지 못했어요. 이 Mac의 다른 AI: {listed}. 아무것도 바꾸지 않았어요.",
-  "en": "I couldn't find an assistant named '{value}'. Other assistants on this Mac: {listed}. Nothing was changed.",
-  "ja": "「{value}」というアシスタントが見つかりませんでした。この Mac のほかのアシスタント: {listed}。何も変更していません。",
-  "zh": "没有找到名为“{value}”的助理。这台 Mac 上的其他助理：{listed}。没有做任何更改。"
- },
- "family_share.shared": {
-  "ko": "{label} AI에 {site} 로그인 세션을 공유했어요(쿠키 {count}개). 내 세션이 갱신되면 따라가고, 결제는 계정 주인만 할 수 있어요.",
-  "en": "I shared my {site} sign-in session with the {label} assistant ({count} cookies). It follows when my session is renewed, and only the account owner can pay.",
-  "ja": "{label} アシスタントに {site} のログインセッションを共有しました（Cookie {count} 個）。こちらのセッションが更新されると追従し、支払いはアカウントの持ち主だけができます。",
-  "zh": "已把 {site} 的登录会话共享给 {label} 助理（Cookie {count} 个）。我的会话更新时会跟着更新，只有账户主人可以付款。"
- },
- "family_share.share_pending": {
-  "ko": "{label} AI가 지금 응답하지 않아 {site} 로그인 세션은 AI가 켜지면 전달돼요. 공유는 기록해 두었어요.",
-  "en": "The {label} assistant isn't responding right now, so the {site} sign-in session will be delivered when it's back on. I've recorded the share.",
-  "ja": "{label} アシスタントが今応答しないため、{site} のログインセッションはアシスタントが起動したときに届けます。共有は記録しました。",
-  "zh": "{label} 助理现在没有响应，{site} 的登录会话会在它开启后送达。已记录这次共享。"
- },
- "family_share.not_shared": {
-  "ko": "{site} 로그인 세션은 공유하고 있지 않아요. 바꿀 것이 없어요.",
-  "en": "I'm not sharing the {site} sign-in session, so there's nothing to change.",
-  "ja": "{site} のログインセッションは共有していません。変更するものはありません。",
-  "zh": "没有在共享 {site} 的登录会话，没有需要更改的。"
- },
- "family_share.unshared": {
-  "ko": "{done} AI에서 {site} 로그인 세션을 지웠어요. 내 세션은 그대로예요.",
-  "en": "Removed the {site} sign-in session from the {done} assistant. My own session is unchanged.",
-  "ja": "{done} アシスタントから {site} のログインセッションを削除しました。こちらのセッションはそのままです。",
-  "zh": "已从 {done} 助理中删除 {site} 的登录会话。我的会话保持不变。"
- },
- "family_share.unshare_pending": {
-  "ko": "{pending} AI가 지금 응답하지 않아 {site} 세션은 AI가 켜지면 지워져요. 그때까지 새 세션은 보내지 않아요.",
-  "en": "The {pending} assistant isn't responding right now, so its {site} session will be removed when it's back on. Until then, no new session is sent.",
-  "ja": "{pending} アシスタントが今応答しないため、{site} のセッションはアシスタントが起動したときに削除されます。それまで新しいセッションは送りません。",
-  "zh": "{pending} 助理现在没有响应，{site} 的会话会在它开启后删除。在那之前不会发送新的会话。"
- },
- "family_share.unshared_and_pending": {
-  "ko": "{done} AI에서 {site} 로그인 세션을 지웠어요. 내 세션은 그대로예요. {pending} AI가 지금 응답하지 않아 {site} 세션은 AI가 켜지면 지워져요. 그때까지 새 세션은 보내지 않아요.",
-  "en": "Removed the {site} sign-in session from the {done} assistant. My own session is unchanged. The {pending} assistant isn't responding right now, so its {site} session will be removed when it's back on. Until then, no new session is sent.",
-  "ja": "{done} アシスタントから {site} のログインセッションを削除しました。こちらのセッションはそのままです。{pending} アシスタントが今応答しないため、{site} のセッションはアシスタントが起動したときに削除されます。それまで新しいセッションは送りません。",
-  "zh": "已从 {done} 助理中删除 {site} 的登录会话。我的会话保持不变。{pending} 助理现在没有响应，{site} 的会话会在它开启后删除。在那之前不会发送新的会话。"
- },
  "projection.some_steps_unfinished": {
   "ko": "일부 단계는 끝내지 못했어요.",
   "en": "Some steps didn't finish.",
@@ -7144,6 +6945,12 @@
   "en": "Work mode is on, so I didn't open a temporary link into this Mac from outside. Please do it at this Mac: sign in in the window open on this Mac, or enter values in Still's Settings on this Mac.",
   "ja": "会社モードがオンのため、外部からこの Mac に入る一時リンクを開きませんでした。この Mac の前で直接行ってください。ログインはこの Mac に開いたウィンドウで、入力はこの Mac の Still 設定画面でできます。",
   "zh": "工作模式已开启，因此没有打开从外部进入这台 Mac 的临时链接。请在这台 Mac 前直接操作：在这台 Mac 上打开的窗口中登录，或在这台 Mac 的 Still 设置中输入。"
+ },
+ "work_mode.refused.a2a": {
+  "ko": "회사 모드가 켜져 있어 다른 AI 에이전트의 소개 정보를 가져오거나 메시지를 보내지 않았어요. 설정 > 외부 연결에서 회사 모드를 끄면 다시 할 수 있어요.",
+  "en": "Work mode is on, so I didn't fetch another AI agent’s card or send it a message. Turn work mode off in Settings > External connections to do it again.",
+  "ja": "会社モードがオンのため、他の AI エージェントの紹介情報を取得したり、メッセージを送信したりしませんでした。設定 > 外部接続 で会社モードをオフにすると、再びできます。",
+  "zh": "工作模式已开启，因此没有获取其他 AI 智能体的介绍信息或向其发送消息。在“设置 > 外部连接”中关闭工作模式后即可再次进行。"
  },
  "work_mode.refused.telegram": {
   "ko": "회사 모드가 켜져 있어 텔레그램을 쓰지 않아요. 이 Mac의 Still 화면에서 대화해 주세요. 설정 > 외부 연결에서 회사 모드를 끄면 텔레그램이 다시 동작해요.",
@@ -7644,10 +7451,10 @@
   "zh": "全部{label}"
  },
  "quickstart_service.prepared_result": {
-  "ko": "미리 준비한 결과입니다 ({title}).",
-  "en": "Prepared result ({title}).",
-  "ja": "事前に準備した結果です（{title}）。",
-  "zh": "预先准备的结果（{title}）。"
+  "ko": "**{title}**",
+  "en": "**{title}**",
+  "ja": "**{title}**",
+  "zh": "**{title}**"
  },
  "quickstart_service.check_preparation_request": {
   "ko": "준비 요청을 확인하세요.",
@@ -8459,24 +8266,6 @@
   "ja": "進行中の別のリクエスト",
   "zh": "正在进行的其他请求"
  },
- "quickstart_service.family_link_no_destination": {
-  "ko": "설정 링크를 보낼 곳이 없어요. 텔레그램을 연결한 뒤 대화에서 다시 요청해 주세요.",
-  "en": "There is nowhere to send the setup link. Connect Telegram, then request it again in the conversation.",
-  "ja": "設定リンクの送信先がありません。Telegramを接続し、会話でもう一度リクエストしてください。",
-  "zh": "没有可发送设置链接的位置。请连接Telegram后在对话中重新请求。"
- },
- "quickstart_service.family_setup_active": {
-  "ko": "이미 가족 비서를 만드는 중이에요. 그 설정이 끝난 뒤에 다시 요청해 주세요.",
-  "en": "A family assistant is already being set up. Try again after setup finishes.",
-  "ja": "家族用アシスタントを作成中です。設定が終わってから再度リクエストしてください。",
-  "zh": "正在创建家庭助手。请等设置完成后再试。"
- },
- "quickstart_service.family_setup_failed": {
-  "ko": "가족 비서를 만들지 못했어요. 잠시 뒤에 다시 요청해 주세요.",
-  "en": "Could not create the family assistant. Try again shortly.",
-  "ja": "家族用アシスタントを作成できませんでした。少し待って再度リクエストしてください。",
-  "zh": "无法创建家庭助手。请稍后重试。"
- },
  "quickstart_service.original_work_link_missing": {
   "ko": "원래 요청의 연결 기록을 확인할 수 없어 추가 실행하지 않았습니다.",
   "en": "The original request's link record could not be confirmed, so no further action was performed.",
@@ -8662,12 +8451,6 @@
   "en": "Corrected the previous operation decision and lowered trust. You can undo this precisely in Settings.",
   "ja": "以前の操作判断を修正し、信頼段階を下げました。設定で正確に元に戻せます。",
   "zh": "已纠正之前的操作决定并降低信任级别。可在设置中精确撤销。"
- },
- "quickstart_service.family_setup_link": {
-  "ko": "{name} 설정 링크예요. 가족에게 보내 주세요. 약 {minutes}분 동안 열려 있어요.",
-  "en": "Setup link for {name}. Send it to your family member. It stays open for about {minutes} minutes.",
-  "ja": "{name}の設定リンクです。家族に送ってください。約{minutes}分間有効です。",
-  "zh": "这是{name}的设置链接。请发送给家人。有效期约{minutes}分钟。"
  },
  "quickstart_service.memory_in_records_line": {
   "ko": "{fact} → 내 기록에서 확인해 주세요",
@@ -10583,6 +10366,12 @@
   "ja": "{reservation} — {operation}しますか？",
   "zh": "{reservation} — 要{operation}吗？"
  },
+ "settings_orchestrator.preparation_edit_summary": {
+  "ko": "예약 일정을 바꿀까요: {title}\n  지금: {before}\n  바꾼 뒤: {after}",
+  "en": "Change the reservation's schedule: {title}\n  Now: {before}\n  After: {after}",
+  "ja": "予約の予定を変更しますか: {title}\n  現在: {before}\n  変更後: {after}",
+  "zh": "要更改预约的计划吗：{title}\n  现在：{before}\n  更改后：{after}"
+ },
  "settings_orchestrator.preparation_edit_format": {
   "ko": "id와 바꿀 due, timezone, recurrence 또는 watch의 every_minutes, until, max_runs를 JSON으로 주세요. 목표는 바꿀 수 없습니다.",
   "en": "Provide JSON with id and due, timezone, recurrence, or watch every_minutes, until, max_runs. The goal cannot be edited.",
@@ -10780,5 +10569,11 @@
   "en": "Every two weeks",
   "ja": "隔週",
   "zh": "每两周"
+ },
+ "a2a.owner_review": {
+  "ko": "{name} 에이전트가 확인해 주셔야 할 요청을 보냈어요. 아래는 그 에이전트가 쓴 말이에요.\n\n“{request}”\n\n저는 아직 아무것도 하지 않았어요. 진행하시려면 여기서 저에게 직접 말씀해 주세요. 설정 → 외부 연결 → 다른 AI 에이전트에서 확인함이나 거절을 고를 수도 있는데, 확인함은 읽었다는 표시일 뿐 어떤 행동도 승인하지 않아요.",
+  "en": "The agent {name} sent a request for your review. These are that agent’s words:\n\n“{request}”\n\nI have not taken any action. To respond, ask me directly in your usual conversation, or choose Acknowledge or Decline in Settings → External connections → Other AI agents. Acknowledging in Settings only marks it as read; it approves no action.",
+  "ja": "{name} エージェントから確認が必要なリクエストが届きました。以下はそのエージェントの言葉です。\n\n「{request}」\n\n私はまだ何も実行していません。返答するには、普段の自分の会話で私に直接依頼するか、設定 → 外部接続 → 他のAIエージェントで確認済みまたは辞退を選んでください。設定の確認済みは読んだ印であり、どの行動も承認しません。",
+  "zh": "智能体 {name} 发来了需要你确认的请求。以下是该智能体的原话：\n\n“{request}”\n\n我尚未采取任何行动。如需回应，请在你平常使用的对话中直接告诉我，或在设置 → 外部连接 → 其他 AI 智能体中选择已阅或拒绝。设置中的已阅仅表示你已阅读，不批准任何行动。"
  }
 }

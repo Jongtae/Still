@@ -5,7 +5,6 @@ import types
 import unittest
 from pathlib import Path
 
-from personal_agent import family_share
 from personal_agent.information_use import context_claims
 from personal_agent.quickstart_service import AgentService
 from personal_agent.quickstart_store import QuickStore
@@ -27,15 +26,6 @@ class BrowserSessionsInContext(unittest.TestCase):
         self.view()
         self.assertIsNone(self.text())
 
-    def test_sites_are_named_and_a_shared_one_says_so(self):
-        self.view('shop.test', 'news.test')
-        self.store.put(family_share.SHARED_KEY, {'shop.test': {'from': 'owner', 'since': 1}})
-        line = self.text()
-        self.assertIn("shop.test (the owner's sign-in shared with you", line)
-        self.assertIn('payment is the owner', line)
-        self.assertNotIn('news.test', line, '#563: a site with cookies only is not a sign-in')
-        labels = [claim['label'] for claim in context_claims('legend\n{}\n' + line)]
-        self.assertEqual(labels, ['로그인한 사이트: shop.test (공유받은 로그인)'])
 
     def test_a_site_the_owner_signed_in_to_names_when_and_that_a_site_can_end_it(self):
         """#1006 (live 2026-10-04): stored cookies outlived the site's session; the guest cart read as the owner's."""
@@ -80,14 +70,6 @@ class BrowserSessionsInContext(unittest.TestCase):
         claims = context_claims(rendered)
         self.assertIn('clock', [claim['ref'] for claim in claims])
         self.assertIn({'ref': 'browser:shop.test', 'label': '로그인한 사이트: shop.test'}, claims, 'the audit names the sites sent')
-
-    def test_an_unreadable_share_row_never_blocks_the_turn(self):
-        from personal_agent.quickstart_service import BROWSER_OWNER_SIGNINS_KEY
-        self.view('shop.test')
-        self.store.put(BROWSER_OWNER_SIGNINS_KEY, {'shop.test': {'at': time.time(), 'marks': ['m']}})
-        config = self.store.config
-        self.store.config = lambda key, default=None, **kw: (_ for _ in ()).throw(ValueError('corrupt')) if key == family_share.SHARED_KEY else config(key, default, **kw)
-        self.assertIn('shop.test', self.text())
 
 
 if __name__ == '__main__':

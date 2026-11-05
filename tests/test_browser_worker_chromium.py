@@ -197,6 +197,8 @@ def packets(worker, method):
 
 
 def command(worker, op, **kwargs):
+    if op in ('remote_tap', 'remote_text', 'remote_key', 'remote_nav'):
+        kwargs.setdefault('view_id', worker.remote_view()[1])
     worker.handle({'id': 7, 'op': op, 'timeout': 10, **kwargs})
     return worker.messages[-1] if worker.messages else None
 
@@ -563,7 +565,7 @@ def test_held_dialog_frame_is_answerable_before_first_capture(worker, cached, ki
     dialog = mock.Mock(type=kind, message='Owner question')
     worker.dialog(dialog)
     if cached:
-        worker.last_frame = ('cached-jpeg', 123, 456, [])
+        worker.last_frame = ('cached-jpeg', 123, 456, [], worker.remote_view()[1])
     with mock.patch.object(worker, 'run', side_effect=AssertionError('dialog blocks renderer')):
         result = command(worker, 'frame')
     assert result['ok'] and result['dialog'] == {'kind': kind, 'text': 'Owner question'}
@@ -819,7 +821,8 @@ def test_main_emits_one_ready_and_processes_pipe_commands_on_main_thread(capsys)
         assert chromium.main(['--profile', 'owner', '--chromium', '/pinned/chrome']) == 0
     rows = [json.loads(line) for line in stream.getvalue().splitlines()]
     assert rows[0] == {'event': 'ready', 'profile': 'owner', 'pid': chromium.os.getpid()}
-    assert rows[1:] == [{'id': 1, 'ok': True, 'visible': False, 'navigations': 0}, {'id': 2, 'ok': True}]
+    assert rows[1:] == [{'id': 1, 'ok': True, 'visible': False, 'navigations': 0,
+                        'authorizations': [], 'authorization_count': 0}, {'id': 2, 'ok': True}]
     assert called_threads and set(called_threads) == {owner_thread}
     assert 'third-party diagnostic' in capsys.readouterr().err
 
@@ -1222,6 +1225,47 @@ def test_form_policy_result_cannot_outlive_its_document(worker):
     decisions[0](True)
     assert not packets(worker, 'Fetch.continueRequest')
     assert packets(worker, 'Fetch.failRequest') == [{'requestId': 'late', 'errorReason': 'Aborted'}]
+
+
+def test_policy_cancelled_app_link_keeps_document_without_counting_a_failure(worker):
+    worker.dialog_step = {'dialogs': []}
+    target = worker.main_target
+    worker.request_paused(target, {'requestId': 'app-link', 'frameId': target.main_frame,
+                                  'request': {'url': 'app-example://login'}})
+    assert worker.blocked == 0 and worker.blocked_reason is None
+    assert worker.dialog_step['app_link'] is True
+    assert packets(worker, 'Fetch.failRequest') == [{'requestId': 'app-link', 'errorReason': 'Aborted'}]
+    assert not packets(worker, 'Page.stopLoading')
+
+
+@pytest.mark.parametrize('op,args', [('remote_tap', {'x': 10, 'y': 10}),
+                                    ('remote_text', {'text': 'private'}),
+                                    ('remote_key', {'key': 'Backspace'}),
+                                    ('remote_nav', {'action': 'reload'})])
+@pytest.mark.parametrize('view_id', [None, 'old-view'])
+def test_remote_input_requires_the_displayed_view(worker, op, args, view_id):
+    worker.owner_visible = worker.remote = True
+    assert command(worker, op, view_id=view_id, **args)['error'] == 'stale_view'
+
+
+def test_allowed_authorization_is_reported_in_chromium_state(worker):
+    worker.resolved[shared.origin_key('https://auth.test/')] = None
+    worker.request_paused(worker.main_target, {
+        'requestId': 'authorization', 'frameId': worker.main_target.main_frame,
+        'request': {'url': 'https://auth.test/authorize?response_type=code&client_id=private'}})
+    state = command(worker, 'state')
+    assert state['authorizations'] == ['auth.test'] and state['authorization_count'] == 1
+    assert 'private' not in json.dumps(state)
+
+
+def test_unsupported_document_fails_a_pending_explicit_open(worker):
+    worker.navigation = (7, 'requested')
+    worker.pending[7] = True
+    worker.frame_requested(worker.main_target, {'frameId': worker.main_target.main_frame,
+                                              'url': 'file:///tmp/page.html'})
+    assert worker.blocked == 1 and worker.blocked_reason == 'unsupported_navigation'
+    assert worker.navigation is None and 7 not in worker.pending
+    assert worker.messages[-1]['error'] == 'unsupported_navigation'
 
 
 @pytest.mark.parametrize('reading', [False, True])
@@ -1928,7 +1972,7 @@ def test_phone_frame_uses_scrolled_visual_viewport_and_taps_stay_viewport_relati
     assert clip['height'] == pytest.approx(shared.MOBILE_SIZE[1] / zoom)
     assert clip['width'] * clip['scale'] == pytest.approx(min(shared.FRAME_MAX_WIDTH,
                                                             shared.MOBILE_SIZE[0] / zoom))
-    worker.handle({'id': 8, 'op': 'remote_tap', 'x': 100, 'y': 200})
+    worker.handle({'id': 8, 'op': 'remote_tap', 'x': 100, 'y': 200, 'view_id': worker.remote_view()[1]})
     mouse = packets(worker, 'Input.dispatchMouseEvent')[-3:]
     assert all(p['x'] == pytest.approx(100) and p['y'] == pytest.approx(200) for p in mouse)
 

@@ -147,8 +147,7 @@ def browser_signin_claims(text):
         for item in line.split(':', 1)[1].split(', '):
             site = item.split(' (', 1)[0].strip()
             if site and len(claims) < 20:
-                shared = ' (공유받은 로그인)' if "shared with you" in item else ''
-                claims.append({'ref': f'browser:{_text(site, 60)}', 'label': f'로그인한 사이트: {_text(site, 60)}{shared}'})
+                claims.append({'ref': f'browser:{_text(site, 60)}', 'label': f'로그인한 사이트: {_text(site, 60)}'})
     return claims
 
 
@@ -388,8 +387,11 @@ def work_information_use(store, job_id, redact=None):
         add('spliced', [f'Telegram 사진 {photo_count}개'])
     lookups, results, started, connections = [], [], {}, {}
     attempts = []
+    peers = []
     # #167 (#28 option A): labels of held values outbound calls carried, and the hosts the browser opened.
     matches, opened, cuts = [], [], {}
+    # #636: sites the AI signed back in to through the provider the owner used (site and provider host only).
+    resigned = []
     for event in store.task_events(job_id):
         tool, status, trace = event.get('tool'), event.get('status'), event.get('trace') or {}
         # #467: one terminal event per CLI attempt; reuse the numeric-only boundary.
@@ -401,6 +403,12 @@ def work_information_use(store, job_id, redact=None):
         if tool in _NOT_TOOLS or not isinstance(trace, dict):
             continue
         action = trace.get('host_action') or tool
+        if action == 'a2a_message' and trace.get('peer_id'):
+            peers.append({'peer_id':label(trace.get('peer_id'),80),
+                'destination':label(trace.get('destination'),200),
+                'direction':label(trace.get('direction'),20),'status':status,
+                'sections':list(trace.get('sections') or []),'tools':list(trace.get('tools') or [])})
+            continue
         if action == 'connection_setup':
             # Both requested and terminal attempts are honest even after a crash.
             # Registration is local; SDK/login attempts do not reveal OAuth redirects.
@@ -444,6 +452,13 @@ def work_information_use(store, job_id, redact=None):
                 host = label(value, 120)
                 if host and host not in opened and len(opened) < MAX_ITEMS:
                     opened.append(host)
+        signed = evidence.get('provider_sign_in') if status == 'succeeded' and action.startswith('browser_') else None
+        if isinstance(signed, dict) and signed.get('state') == 'signed_in':
+            row = {'site': label(signed.get('site'), 80), 'provider': label(signed.get('provider'), 120)}
+            if isinstance(signed.get('chain'), list):
+                row['chain'] = [label(host, 120) for host in signed['chain']]
+            if row['site'] and row['provider'] and row not in resigned and len(resigned) < MAX_ITEMS:
+                resigned.append(row)
         if action in LOOKUP_ACTIONS and status == 'running':
             # The arguments a lookup started with, for a call that then failed.
             started[(tool, trace.get('call_id'))] = trace
@@ -494,8 +509,11 @@ def work_information_use(store, job_id, redact=None):
                              'earlier_exchanges':[{'purpose':row.get('purpose'),'exchanges':row['earlier_exchanges']} for row in judgments if row.get('earlier_exchanges')]},
              'web_search_ran': bool(lookups), 'lookups': lookups[:MAX_ITEMS]}
     # #167: places the signed-in browser opened (a URL carries data to its host), and held-value matches.
+    if peers:sent_to['peers'] = peers[-MAX_ITEMS:]
     sent_to['browser_destinations'] = opened
     sent_to['held_value_matches'] = matches
+    if resigned:
+        sent_to['browser_provider_sign_ins'] = resigned
     if cuts:
         sent_to['held_value_comparison_cut'] = [{'kind': kind, 'limit': cuts[kind]} for kind in COMPARISON_CUTS if kind in cuts]
     if connections:sent_to['connections']=list(connections.values())[-MAX_ITEMS:]
@@ -585,6 +603,8 @@ def render_korean(audit):
     for connection in sent.get('connections') or ():
         lines.append(f"- 연결 준비 시도({connection['engine']}, {connection['phase']}): "
                      f"{connection['destination']} · {connection['state']} (원격 수신·OAuth 이동 주소는 미확인)")
+    for peer in sent.get('peers') or ():
+        lines.append(f"- A2A peer {peer['peer_id']}: {peer['destination']} ({peer['direction']}, {peer['status']})")
     judgment = sent.get('judgment_ai') or {}
     if judgment.get('calls'):
         models = ', '.join(judgment.get('models') or ()) or '판단 AI'
@@ -604,6 +624,9 @@ def render_korean(audit):
         lines.append('- 웹 검색: 실행하지 않음')
     if sent.get('browser_destinations'):
         lines.append(msg('information_use.browser_destinations', hosts=', '.join(sent['browser_destinations'])))
+    for row in sent.get('browser_provider_sign_ins') or ():
+        providers = row.get('chain') or [row['provider']]
+        lines.append(msg('information_use.browser_provider_sign_in', site=row['site'], provider=' → '.join(providers)))
     matches = sent.get('held_value_matches') or ()
     if matches:
         lines.append(msg('information_use.held_values_that_went_out'))

@@ -18,6 +18,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from personal_agent import preparations as prep
+from personal_agent.messages import msg
 from personal_agent.agent_runtime import (PROFILE_HEADING, Capabilities, ToolError, action_definitions, recorded_arguments,
                                           turn_context, render_turn_prompt)
 from personal_agent.conversation_handoff import ConversationJudgments, PREPARATION_REQUEST_PROPOSITION, TelegramNotSent
@@ -636,7 +637,7 @@ class AcceptanceTests(_Case):
         self.assertTrue(self.service.run_one())
         self.service.deliver_one()
         self.assertEqual(len(self.sends()), 3)
-        self.assertTrue(self.sends()[-1]['text'].startswith('미리 준비한 결과입니다 (점심 후보 준비)'))
+        self.assertTrue(self.sends()[-1]['text'].startswith('<b>점심 후보 준비</b>\n\n'))
 
     def test_declining_the_proposal_cancels_it(self):
         self.service.use_decision_engine(engine(preparation=False))
@@ -835,6 +836,8 @@ class PreparationScopeTests(_Case):
         self.assertIn('점심 후보 3곳 준비', sent)
         self.assertNotIn('UNRELATED-MARK', sent)
         self.assertEqual([m['role'] for m in seen[0][1:]], ['user', 'user'])
+        # #671: the run is told Still keeps the schedule and delivers, so its reply is this run's result.
+        self.assertIn(msg('preparations.run_fact'), seen[0][-1]['content'])
 
     def test_cli_route_preparation_work_sees_only_its_origin_and_goal(self):
         from personal_agent.bounded_execution import ExecutionResult
@@ -864,6 +867,7 @@ class PreparationScopeTests(_Case):
         self.assertIn('ORIGIN-MARK', prompt)
         self.assertIn('점심 후보 3곳 준비', prompt)
         self.assertNotIn('UNRELATED-MARK', prompt)
+        self.assertIn(msg('preparations.run_fact'), prompt)
         self.assertEqual(len(self.runs(row['id'])), 1)
 
     def test_a_secret_in_a_preparation_answer_is_never_persisted_or_replayed(self):
@@ -1578,10 +1582,47 @@ class OwnerOfferTests(_WatchCase):
         self.assertIn('완성분봉', text[brief_at:])
         self.assertNotIn('완성분봉', text[:brief_at], 'the method is not in what the owner reads first')
         self.assertNotIn(prep.PROPOSAL_HEADER, text)
-        self.assertTrue(text.endswith(prep.PROPOSAL_QUESTION))
+        self.assertNotIn(prep.PROPOSAL_QUESTION, text)
         # The judged-answer path and other surfaces get the same offer first, the brief under its label.
         plain = prep.proposal_text([row], 0, 'Asia/Seoul')
         self.assertLess(plain.index(self.OFFER.splitlines()[-1]), plain.index(prep.BRIEF_LABEL))
+
+    def test_ai_offer_supplies_the_only_question_in_text_and_html(self):
+        work, _ = self.propose(offer='조건에 맞는 결과가 있으면 알려 드릴까요?')
+        [row] = self.rows()
+        for render in (prep.proposal_text, prep.proposal_html):
+            text = render([row], 0)
+            self.assertEqual(text.count('?'), 1, text)
+            self.assertIn(row['offer_text'], text)
+            self.assertNotIn(prep.PROPOSAL_QUESTION, text)
+        _, sent = self.proposal_message(work)
+        self.assertEqual([b['text'] for b in sent['reply_markup']['inline_keyboard'][0]],
+                         [msg('button.preparation_accept'), msg('button.preparation_decline')])
+        self.assertEqual(msg('button.accept'), '수락')
+
+    def test_proposal_button_labels_on_slack_and_terminal(self):
+        from types import SimpleNamespace
+        notice = {'id': 'n1', 'kind': 'preparation_proposed', 'job_id': None}
+        posted = []
+        def post(**kwargs):
+            posted.append(kwargs)
+            return {'ok': True, 'ts': '123.456'}
+        labels = self.service.preparations_status()['management']
+        for key, message_id in {'accept': 'button.preparation_accept', 'decline': 'button.preparation_decline',
+                                **{'delivery_' + mode: 'preparations.delivery_' + mode
+                                   for mode in ('send', 'keep', 'when_needed')}}.items():
+            for lang in ('ko', 'en'):
+                self.assertEqual(labels[key][lang], msg(message_id, lang))
+        surface = self.service.slack_surface
+        surface.client = lambda cfg: SimpleNamespace(chat_postMessage=post)
+        surface._post_notice({'channel_id': 'C1'}, '제안', notice, {})
+        self.assertEqual([button['text']['text'] for button in posted[0]['blocks'][-1]['elements']],
+                         [msg('button.preparation_accept'), msg('button.preparation_decline')])
+        surface = self.service.terminal_surface
+        generation = surface.attach(lambda text: None)
+        surface._post_notice({'generation': generation}, '제안', notice, {})
+        self.assertEqual([msg(key) for key in surface.take_request()['labels']],
+                         [msg('button.preparation_accept'), msg('button.preparation_decline')])
 
     def test_accepting_binds_the_offer_that_was_shown(self):
         work, _result = self.propose()
@@ -1772,6 +1813,25 @@ class ScheduleTextTests(unittest.TestCase):
         row.update(extra)
         return row
 
+    def test_single_proposal_without_offer_uses_catalog_fallback(self):
+        for title in (None, '준비 제목'):
+            row = self.row(title_text=title)
+            for render in (prep.proposal_text, prep.proposal_html):
+                text = render([row], 0)
+                self.assertTrue(text.endswith(msg('preparations.proposal_question')), text)
+                self.assertEqual(text.count('?'), 1)
+                self.assertNotIn('예약', text)
+        self.assertEqual(msg('preparations.proposal_question', 'en'), 'Shall I set this up?')
+
+    def test_delivery_lines_use_catalog_for_each_mode(self):
+        from unittest.mock import patch
+        for mode, extra in (('send', {}), ('keep', {'channel': 'web'}),
+                            ('when_needed', {'delivery_mode': 'when_needed'})):
+            row = self.row(**extra)
+            self.assertTrue(prep.schedule_text(row).endswith(msg('preparations.delivery_' + mode)))
+            with patch.object(prep, 'msg', side_effect=lambda key, **kwargs: msg(key, 'en', **kwargs)):
+                self.assertTrue(prep.schedule_text(row).endswith(msg('preparations.delivery_' + mode, 'en')))
+
     def window(self, minutes, until_hm, runs):
         due = self.row()['due_at']
         until = datetime(2026, 10, 28, *until_hm, tzinfo=SEOUL) if until_hm[0] >= 18 else datetime(2026, 10, 29, *until_hm, tzinfo=SEOUL)
@@ -1803,7 +1863,7 @@ class ScheduleTextTests(unittest.TestCase):
         self.assertEqual(prep.schedule_text(self.window(5, (19, 0), 1), 'Asia/Seoul'),
                          '10월 28일(수) 18:35부터 19:00 전까지 한 번 · 알릴 일이 있을 때만 알려요')
         self.assertEqual(prep.schedule_text(self.row(recurrence='daily', channel='web'), 'Asia/Seoul'),
-                         '10월 28일(수) 18:35부터 매일 · 결과는 Still에 보관해요')
+                         '10월 28일(수) 18:35부터 매일 · 결과가 나와도 따로 알리지 않아요')
         self.assertEqual(prep.schedule_text(self.row(kind='reminder'), 'Asia/Seoul'), '10월 28일(수) 18:35')
 
 
@@ -1846,7 +1906,7 @@ const part=(start,end)=>app.slice(app.indexOf(start),app.indexOf(end));
 const source=part('const LANGUAGES=','function normalizeEndpoint(')+part('function element(','function setError(')+part('let preparationRows=','// end of #659 preparations');
 const calls=[];
 const ctx={document,$,console,calls,
- api:async(path,body)=>{calls.push({path,body});if(body&&body.operation==='accept')ctx.rows=[{...ctx.rows[0],state:'scheduled',accepted_by:'owner-settings'}];if(body&&body.operation==='delete')ctx.rows=[];return {preparations:ctx.rows,management:{pause:'일시 정지',resume:'다시 시작',edit:'일정 변경',run_now:'지금 실행',paused:'일시 정지됨',saved:'준비 일정을 변경했습니다.'}};},
+ api:async(path,body)=>{calls.push({path,body});if(body&&body.operation==='accept')ctx.rows=[{...ctx.rows[0],state:'scheduled',accepted_by:'owner-settings'}];if(body&&body.operation==='delete')ctx.rows=[];return {preparations:ctx.rows,management:{...JSON.parse(process.argv[2]),pause:'일시 정지',resume:'다시 시작',edit:'일정 변경',run_now:'지금 실행',paused:'일시 정지됨',saved:'준비 일정을 변경했습니다.'}};},
  busy:async(button,fn)=>fn(),setError:(id,error)=>{$(id).textContent=error?.message||String(error||'');},setFeedback:(id,text)=>{$(id).textContent=text||'';}};
 vm.createContext(ctx);vm.runInContext(source,ctx);vm.runInContext("setLanguage('ko')",ctx);
 const rows=()=>$('preparations-list').children.filter(node=>node.tag==='div'&&node.className.split(' ')[0]==='settings-row');
@@ -1859,10 +1919,17 @@ const press=async(label)=>{const button=descendants(rows()[0]).find(n=>n.tag==='
  ctx.rows=[{id:'p1',kind:'prepare',goal:'점심 후보 준비',state:'proposed',due_local:'2026-09-28 11:30 (Mon, Asia/Seoul)',recurrence:'daily',delivery:'keep',last_result:''}];
  await ctx.loadPreparations();
  assert.deepEqual(texts(rows()[0],'settings-row-title'),['점심 후보 준비']);
- assert.equal(texts(rows()[0],'settings-row-description')[0],'미리 준비 · 매일 · 2026-09-28 11:30 (Mon, Asia/Seoul) 예정 · 결과는 보관만 함');
+ assert.equal(texts(rows()[0],'settings-row-description')[0],'미리 준비 · 매일 · 2026-09-28 11:30 (Mon, Asia/Seoul) 예정 · 결과가 나와도 따로 알리지 않아요');
  assert.deepEqual(texts(rows()[0],'settings-state attention'),['수락 대기']);
- assert.deepEqual(buttons(rows()[0]),['수락','취소','일정 변경','삭제']);
- await press('수락');
+ assert.deepEqual(buttons(rows()[0]),['좋아요','필요 없어요','일정 변경','삭제']);
+ for(const [mode,key] of [['send','delivery_send'],['keep','delivery_keep'],['when_needed','delivery_when_needed']]){
+  assert.equal(ctx.preparationDeliveryLabel(mode),JSON.parse(process.argv[2])[key].ko);
+ }
+ vm.runInContext("setLanguage('en')",ctx);ctx.renderPreparations();
+ assert.deepEqual(buttons(rows()[0]),['Sounds good','No thanks','일정 변경','Delete']);
+ for(const mode of ['send','keep','when_needed'])assert.equal(ctx.preparationDeliveryLabel(mode),JSON.parse(process.argv[2])['delivery_'+mode].en);
+ vm.runInContext("setLanguage('ko')",ctx);ctx.renderPreparations();
+ await press('좋아요');
  assert.equal(JSON.stringify(calls.at(-1)),JSON.stringify({path:'/api/preparations/request',body:{operation:'accept',id:'p1'}}));
  assert.deepEqual(texts(rows()[0],'settings-state active'),['예약됨']);
  assert.deepEqual(buttons(rows()[0]),['취소','일시 정지','지금 실행','일정 변경','삭제']);
@@ -1878,13 +1945,13 @@ const press=async(label)=>{const button=descendants(rows()[0]).find(n=>n.tag==='
  // #719: a watch shows its window, bound, delivery and last typed decision; Settings cancels it.
  ctx.rows=[{id:'p3',kind:'prepare',goal:'출발 확인',state:'scheduled',due_local:'D',recurrence:'window',every_minutes:10,until_local:'U',max_runs:6,run_count:2,delivery:'when_needed',last_decision:'quiet',last_decision_reason:'judged-not-needed',last_result:''}];
  await ctx.loadPreparations();
- assert.equal(texts(rows()[0],'settings-row-description')[0],'미리 준비 · 10분마다 U까지 · 2/6회 실행 · D 예정 · 알려야 할 때만 Telegram으로 알림 · 마지막 실행: 조용히 넘어감 (알릴 일이 없다고 판단)');
+ assert.equal(texts(rows()[0],'settings-row-description')[0],'미리 준비 · 10분마다 U까지 · 2/6회 실행 · D 예정 · 알릴 일이 있을 때만 알려요 · 마지막 실행: 조용히 넘어감 (알릴 일이 없다고 판단)');
  assert.deepEqual(buttons(rows()[0]),['취소','일시 정지','지금 실행','일정 변경','삭제']);
  await press('취소');
  assert.equal(JSON.stringify(calls.at(-1).body),JSON.stringify({operation:'cancel',id:'p3'}));
  vm.runInContext("setLanguage('en')",ctx);ctx.rows=[{...ctx.rows[0],state:'expired',last_decision:'notify',last_decision_reason:'judged-needed'}];
  await ctx.loadPreparations();
- assert.equal(texts(rows()[0],'settings-row-description')[0],'Prepare ahead · Every 10 min until U · 2/6 runs · D · Telegram only when you need to know · Last run: notified (judged you need to know)');
+ assert.equal(texts(rows()[0],'settings-row-description')[0],'Prepare ahead · Every 10 min until U · 2/6 runs · D · I’ll tell you only when a result needs your attention. · Last run: notified (judged you need to know)');
  assert.deepEqual(texts(rows()[0],'settings-state neutral'),['Window closed']);
  // #393: a row with the owner's title and offer is listed by them, the brief is not its name.
  vm.runInContext("setLanguage('ko')",ctx);ctx.rows=[{...ctx.rows[0],state:'scheduled',goal:'매회 잔고와 호가를 조회한다',title:'5종목 지켜보기',offer:'예산 10만 원\n주문은 하지 않아요'}];
@@ -1946,7 +2013,12 @@ class PreparationSettingsUi(unittest.TestCase):
         if node is None:
             raise unittest.SkipTest('Node is needed for the DOM-stub check')
         app = Path(__file__).resolve().parents[1] / 'src' / 'personal_agent' / 'web' / 'app.js'
-        result = subprocess.run([node, '-e', UI_CHECK, str(app)], capture_output=True, text=True, timeout=30)
+        result = subprocess.run([node, '-e', UI_CHECK, str(app), json.dumps({
+            key: {lang: msg(message_id, lang) for lang in ('ko', 'en')}
+            for key, message_id in {
+                'accept': 'button.preparation_accept', 'decline': 'button.preparation_decline',
+                **{'delivery_' + mode: 'preparations.delivery_' + mode for mode in ('send', 'keep', 'when_needed')}
+            }.items()})], capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip().splitlines()[-1], 'ok')
 

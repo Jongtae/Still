@@ -1,6 +1,6 @@
 # Still — install, configure, talk
 
-Still is a self-hosted personal agent preview. One local process serves browser setup and task records; you talk to it in the terminal where you ran `agentos start` (once an AI is connected) and in your paired Telegram chat. The browser screens open in the language the terminal setup used (English otherwise), with English, Korean, Simplified Chinese and Japanese selectable; connection errors and Still's catalogued system lines (including the connection and folder-permission handoffs, family sharing receipts and the phone sign-in link) follow your language in Telegram, the terminal and the browser. Still in Korean: parts of conversational Settings, many error replies in the browser Settings screens, calendar draft field labels, the phone sign-in page, the phone input link and page, the family assistant setup page, and, in a failure reply, the reasons given for some failed steps. Docker and Kubernetes are not required. Homebrew installs Python automatically; model runtimes and model weights are separate.
+Still is a self-hosted personal agent preview. One local process serves browser setup and task records; you talk to it in the terminal where you ran `agentos start` (once an AI is connected) and in your paired Telegram chat. The browser screens open in the language the terminal setup used (English otherwise), with English, Korean, Simplified Chinese and Japanese selectable; connection errors and Still's catalogued system lines (including the connection and folder-permission handoffs, the phone sign-in link) follow your language in Telegram, the terminal and the browser. Still in Korean: parts of conversational Settings, many error replies in the browser Settings screens, calendar draft field labels, the phone sign-in page, the phone input link and page, and, in a failure reply, the reasons given for some failed steps. Docker and Kubernetes are not required. Homebrew installs Python automatically; model runtimes and model weights are separate.
 
 ## Current use versus planned work
 
@@ -102,11 +102,11 @@ Evidence is a local observation of a whole Work on Claude Code 2.1.287 and codex
 
 On a company network, switch on **회사 모드 (work mode)** in Settings > External connections, on this Mac (#208). It cannot be switched from a conversation or through a phone link, and every change is recorded. While it is on:
 
-- no temporary link into this Mac is opened (phone sign-in, phone input and family setup say to do it at the Mac instead), and a link that is open closes when you switch it on;
+- no temporary link into this Mac is opened (phone sign-in and phone input say to do it at the Mac instead), and a link that is open closes when you switch it on;
 - Telegram is not used: no polling, no replies or notifications (a reply that could not be sent is not sent later), and a bot cannot be connected or paired. Mattermost and Slack pause the same way, unless you marked them company-approved (below);
 - the AI's web search, public page reads, weather, browser, API calls, code runs and MCP server lookup are refused before they run, the CLI's own web search is off, signed-in sites are not refreshed, and no skill is fetched from GitHub.
 
-The AI route you set up keeps working. Not controlled by work mode: traffic a CLI makes inside its own turn besides that web search (its model provider, its own telemetry and update checks, and what its sandbox lets a command reach; Codex runs with `--sandbox read-only`), services you connected yourself (Google connections, the AI's claude.ai connectors, your MCP servers) and family assistants on this Mac. Page reads, API calls and code runs may still reach the intranet addresses you declared (below); the browser stays refused, because a page loads resources from wherever it names. Evidence so far is unit tests with fake tunnels and transports, not an observation on a company network.
+The AI route you set up keeps working. Not controlled by work mode: traffic a CLI makes inside its own turn besides that web search (its model provider, its own telemetry and update checks, and what its sandbox lets a command reach; Codex runs with `--sandbox read-only`), services you connected yourself (Google connections, the AI's claude.ai connectors, your MCP servers). Page reads, API calls and code runs may still reach the intranet addresses you declared (below); the browser stays refused, because a page loads resources from wherever it names. Evidence so far is unit tests with fake tunnels and transports, not an observation on a company network.
 
 ## Windows (WSL2)
 
@@ -173,7 +173,7 @@ all natural-language requests work. Share redacted observations, not private doc
 
 Create your own bot using Telegram’s BotFather. In `v1.1.0` and later, open **설정 → 외부 연결** (Settings → External connections) in the browser, open **Telegram 연결 설정**, and paste the bot token. **Telegram 연결** saves the token and produces a pairing link. Open **Telegram 열기** in your own Telegram account and press **Start** to pair it. Only that paired private account can submit Telegram work. Send requests in that chat; use the browser to configure connections and inspect the resulting task records. Still uses outbound polling, so no public inbound port is needed for Telegram. Use a dedicated bot without an existing webhook.
 
-When you connect your own bot, Still gives it the default assistant's profile once: the name **Still**, its picture, and a short introduction in English, Korean, Japanese and Chinese. If you rename the bot or change its picture in BotFather afterwards, Still leaves your choice alone. Family instances keep their own names. The chat background is a Telegram app setting that a bot cannot change.
+When you connect your own bot, Still gives it the default assistant's profile once: the name **Still**, its picture, and a short introduction in English, Korean, Japanese and Chinese. If you rename the bot or change its picture in BotFather afterwards, Still leaves your choice alone. The chat background is a Telegram app setting that a bot cannot change.
 
 The computer must remain running and awake for remote requests to be processed. Installing Still does not start it at login: on macOS, register the background login service once with `agentos service install` so Still starts again after a restart without a terminal; see [Background service (macOS)](#background-service-macos) for exactly what that does and does not cover. Without that service, keep the terminal open; Ctrl-C stops Still.
 
@@ -241,7 +241,7 @@ If the browser does not open, use the link in `~/.local/share/agentos/private/se
 agentos uninstall
 ```
 
-It lists what it will remove, asks once, then removes every Still background service (yours and family instances) and the program, using uv or Homebrew, whichever installed it. Your data stays in `~/.local/share/agentos` (and `~/.local/share/agentos-instances`) unless you type `delete` when asked; deleting it also deletes the macOS Keychain keys that encrypt its credentials, and cannot be undone. Stop any `agentos start` still running in a terminal first. Without a terminal, use `agentos uninstall --yes` (keeps data) or `--yes --delete-data`.
+It lists what it will remove, asks once, then removes every Still background service (including any legacy named services) and the program, using uv or Homebrew, whichever installed it. Your data stays in `~/.local/share/agentos` (and `~/.local/share/agentos-instances`) unless you type `delete` when asked; deleting it also deletes the macOS Keychain keys that encrypt its credentials, and cannot be undone. Stop any `agentos start` still running in a terminal first. Without a terminal, use `agentos uninstall --yes` (keeps data) or `--yes --delete-data`.
 
 Deleting local files does not reach other services. Delete the Telegram bot with `/deletebot` in @BotFather, and remove Still access to Google at [myaccount.google.com/permissions](https://myaccount.google.com/permissions). Codex, Claude Code and uv are separate tools and stay installed.
 
@@ -300,53 +300,6 @@ What this does **not** yet cover, stated exactly:
   on the owner's Mac ([release manifest](release-manifest.json)); a real login service
   surviving a machine restart and an end-to-end Telegram result with no terminal open
   remain owner operating validation.
-
-## An agent for a family member (macOS)
-
-Each family member gets their own Still instance on your Mac. An instance has its own memory, folders, approvals and work history, and its own Telegram bot paired to that person. Nothing is shared with your own instance.
-
-**The simplest way is to ask your assistant**, for example "아내 비서 만들어줘". It shows what it will create; tap 👍 (or 적용), and the setup link arrives in the same chat for you to forward. It needs your own Still Telegram bot to be connected, and its **Bot Management Mode** switched on once in the BotFather Mini App. The same setup is also one command:
-
-```sh
-agentos family add spouse --display-name "아내 비서"
-```
-
-Either way:
-- creates and starts the instance;
-- opens a temporary HTTPS link (about 30 minutes): through your `ngrok` when it is installed and signed in, otherwise through a Cloudflare quick tunnel, which needs no account (Still downloads a pinned, checksum-verified `cloudflared` the first time unless one is installed);
-- sends the link to you on Telegram so you can forward it.
-
-The family member opens the link on their phone:
-1. They install Telegram.
-2. They tap **텔레그램에서 봇 만들기**. Telegram shows a pre-filled "create bot" screen (Managed Bots); they confirm, and they own the new bot.
-3. Your bot fetches the new bot's token, limits the bot to its owner, and hands the token to the instance on this Mac.
-4. They tap **비서와 대화 시작**.
-
-The link then closes by itself. Through the link, only the setup page and its status answer, and only with the link's one-time code. Once an instance was set up this way, no tunnel reaches anything else on it: a family instance is not meant to be served through `--public-tunnel-host`. The page tells the family member that the agent runs on your Mac with your AI subscription.
-
-The instance runs on **your** AI route. `family add` copies your main AI and judgment AI settings, with only the keys or tokens those routes use. It copies nothing else: not your Telegram bot, folders, memory or other connections. An instance that already has a route keeps it. If you later change or rotate your AI key, the family instance keeps the old one until you set its route again.
-
-The manual commands below remain available.
-
-```sh
-agentos service install --instance spouse --port 8797   # data: ~/.local/share/agentos-instances/spouse
-agentos service status    --instance spouse
-agentos service stop      --instance spouse             # stop and persistently disable
-agentos service start     --instance spouse             # re-enable and start a stopped instance
-agentos service uninstall --instance spouse             # remove the registration; data is retained
-```
-
-To remove an instance completely, run `stop` before `uninstall`. Still has no command that deletes an instance's data directory; after stopping it, delete `~/.local/share/agentos-instances/spouse` yourself, which cannot be undone.
-
-The service definition sets `KeepAlive`, so launchd restarts an instance whose process exits. Killing the process is therefore not a way to stop it; use `service stop`. Instances started by `family add` are registered the same way and can be managed with these commands.
-
-- **Name and port.** The instance name uses lowercase letters, digits and hyphens. The port must be free and must not be 8787. The next port (8798 here) is used for its local handoff.
-- **Data directory.** An instance never uses your own data directory or `AGENTOS_DATA`.
-- **Setup.** Open `http://127.0.0.1:8797/` and use the setup link in that instance's `private/setup-link.txt`.
-  - Codex uses this Mac's Codex login. Claude Code needs its setup token entered once in that instance.
-  - Pair the family member's own Telegram bot the same way as in [Telegram](#telegram).
-- **Google Calendar and Gmail.** An instance's callbacks use its own port, for example `http://localhost:8797/oauth/calendar/callback` and `.../oauth/gmail/callback`. Add those as authorised redirect URIs in your Google OAuth client.
-- **Not yet covered.** The same "not covered" notes as [Background service](#background-service-macos) apply: tests substitute `launchctl`, and a real login service is owner operating validation.
 
 ## Google Drive, Gmail and Calendar
 

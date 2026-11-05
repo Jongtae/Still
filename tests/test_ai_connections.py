@@ -132,17 +132,6 @@ class ServiceDecisionTests(unittest.TestCase):
         with mock.patch.object(type(self.service), 'reviewed_connector_reads', staticmethod(lambda: {})):
             self.assertEqual(self.decide(READ)['behavior'], 'deny')
 
-    def test_a_named_instance_is_treated_as_a_family_instance(self):
-        from unittest import mock
-        from personal_agent import quickstart_service
-        from personal_agent.service_control import DEFAULT_INSTANCES_RELATIVE
-        fake_home = Path(self.store.root).parent / 'home'
-        instance_root = fake_home / DEFAULT_INSTANCES_RELATIVE / 'family-9'
-        instance_root.mkdir(parents=True)
-        store = QuickStore(instance_root)
-        service = quickstart_service.AgentService(store)
-        with mock.patch.object(quickstart_service.Path, 'home', lambda: fake_home):
-            self.assertFalse(service.ai_connections_status()['available'])
 
     def test_only_connector_tools_are_ever_decided(self):
         self.service.set_ai_connections({'enabled': True})
@@ -164,16 +153,6 @@ class ServiceDecisionTests(unittest.TestCase):
         self.assertIn('Google Drive · list_recent_files', flat)
         self.assertNotIn('read_file_content', flat)
 
-    def test_a_family_instance_can_never_turn_it_on(self):
-        from unittest import mock
-        from personal_agent import family_setup
-        with mock.patch.object(family_setup, 'setup_recorded', lambda store: True):
-            with self.assertRaises(ValueError):
-                self.service.set_ai_connections({'enabled': True})
-            self.store.put('ai_connections', {'enabled': True})  # even a stored value is ignored
-            self.assertFalse(self.service.ai_connections_enabled())
-            read = self.service.conversation_settings_request({'operation': 'read', 'category': 'ai_connections'})
-            self.assertIn('unavailable', read['settings']['ai_connections'])
 
     def test_the_conversation_switches_it_through_a_confirmed_draft(self):
         orchestrator = self.service.settings_orchestrator

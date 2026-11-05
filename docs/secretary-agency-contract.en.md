@@ -90,6 +90,8 @@ Owner direction 2026-10-29: Still's model of the owner should also improve betwe
 - **The owner is told.** One saved-memory notice per dream, with undo; the notes keep their own notice. When the anchor's saved notice was already sent, the dream's saves get the separate upkeep notice instead of a late edit.
 - **Evidence.** One `owner_model_dream` event on the anchor: counts, outcomes, digests and the period's size, never text.
 
+**#496 — observed misses for lessons.** Each dream turn carries its observed outcome from Work status and typed correction/retry links. For working notes only, the dream also reads at most 12 eligible missed Works from the 7 days before its period, scrubbed per Work with bounded correction words. A revision may cite two misses on different owner dates, at least one from tonight, alongside the existing two-turn, two-day rule; lessons stay as narrow as what went wrong and what the owner corrected. Earlier `m` refs never support facts, invalidations, suggestions or the diary. Existing revision checks remain; Evidence adds only counts and the rule that kept the notes, never earlier text.
+
 ## Amendment — #220 (2026-10-23): append + invalidate
 
 Owner direction: memory is not overwritten or erased. A new fact is added, and the facts it replaces are invalidated. The #205 memory experiment measured this structure (M5) against key rows with a full view (M3). M5 delivered 54% of needed facts against 35%, with 11 stale facts shown as current against 19.

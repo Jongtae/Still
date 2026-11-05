@@ -491,6 +491,8 @@ class Worker(shared.Worker):
     def __init__(self, profile, emit, playwright, chromium, allowed_origins=()):
         self.profile, self.emit = profile, emit
         self.allowed_origins = frozenset(allowed_origins)
+        self.provider_sign_in_policy = {}
+        self.authorizations, self.authorization_count = [], 0
         self.AppHelper = _Timers()
         self.pending, self.expiry = {}, {}
         self.navigation = None
@@ -899,6 +901,8 @@ class Worker(shared.Worker):
                 if counted and not restoring:
                     self.main_navigations += 1
                     self.phone_navigated(committed=False)
+                if main and not restoring:
+                    self.note_authorization(url)
                 self.origins.add(self.origin(url))
                 release()
 
@@ -1160,6 +1164,15 @@ class Worker(shared.Worker):
     def popup_document(url):
         return url == 'about:blank' or bool(Worker.origin(url))
 
+    def unsupported_document_refused(self):
+        # Unlike an app link cancelled by request policy, these CDP document events require
+        # stopping or recovering a navigation. Report the failure even without an explicit open.
+        if self.navigation is None:
+            self.blocked += 1
+            self.blocked_reason = 'unsupported_navigation'
+        else:
+            self.navigation_refused(True, 'unsupported_navigation')
+
     def frame_requested(self, target, event):
         if event.get('reason') in ('formSubmissionGet', 'formSubmissionPost'):
             for pending in getattr(target, 'window_opens', []):
@@ -1183,7 +1196,7 @@ class Worker(shared.Worker):
             if self.reading:
                 self.read_navigations += 1
             if unsupported:
-                self.navigation_refused(True, 'unsupported_navigation')
+                self.unsupported_document_refused()
             target.post('Page.stopLoading')
 
     def frame_navigated(self, target, frame):
@@ -1212,7 +1225,7 @@ class Worker(shared.Worker):
                     if self.reading:
                         self.read_navigations += 1
                     if unsupported:
-                        self.navigation_refused(True, 'unsupported_navigation')
+                        self.unsupported_document_refused()
                 target.refused_navigation = None
                 target.post('Page.stopLoading')
 
@@ -1518,14 +1531,16 @@ class Worker(shared.Worker):
     def op_frame(self, ident, command, timeout):
         if not self._remote_allowed(ident):
             return
+        view, view_id = self.remote_view()
         held, last = self.held_dialog, self.last_frame
+        if last and last[4] != view_id:
+            last = None
         if held:
             if not last:
                 last = (DIALOG_PLACEHOLDER_JPEG, 1, 1)
             return self.reply(ident, jpeg=last[0], width=last[1], height=last[2],
-                              dialog={'kind': held['kind'], 'text': held['text']}, focus=None, fields=[], links=[])
+                              dialog={'kind': held['kind'], 'text': held['text']}, focus=None, fields=[], links=[], view_id=view_id)
         self.deadline(ident, timeout)
-        view = self.front_view()
         target = self.main_target if view is self.view else self.target_for(view)
         width, height = self.viewport_size['width'], self.viewport_size['height']
         zoom = self.zoom if target is self.main_target else 1.0
@@ -1536,17 +1551,21 @@ class Worker(shared.Worker):
             if error or not result.get('data'):
                 return self.fail(ident, 'frame_failed')
             encoded = result['data']
-            self.last_frame = (encoded, width, height, [])
+            if self.remote_view() != (view, view_id):
+                return self.fail(ident, 'stale_view')
+            self.last_frame = (encoded, width, height, [], view_id)
 
             def focused(value, error):
                 if ident not in self.pending:
                     return
+                if self.remote_view() != (view, view_id):
+                    return self.fail(ident, 'stale_view')
                 value = value if isinstance(value, dict) and not error else {}
                 held = self.held_dialog
                 self.reply(ident, jpeg=encoded, width=width, height=height,
                            dialog={'kind': held['kind'], 'text': held['text']} if held else None,
                            focus=value.get('focus') if value.get('focus') in shared.REMOTE_FOCUS_KINDS else None,
-                           fields=shared.remote_fields(value.get('fields')), links=[])
+                           fields=shared.remote_fields(value.get('fields')), links=[], view_id=view_id)
                 self.fit_phone_page()
             if self.held_dialog:
                 focused(None, 'held')
@@ -1583,7 +1602,7 @@ class Worker(shared.Worker):
                  + 'return JSON.stringify(null);', {}, paint_ready, view=view)
 
     def op_remote_tap(self, ident, command, timeout):
-        if not self._remote_allowed(ident):
+        if not self._remote_input_allowed(ident, command):
             return
         try:
             x, y = float(command.get('x')), float(command.get('y'))
@@ -1597,7 +1616,7 @@ class Worker(shared.Worker):
         self.reply(ident)
 
     def op_remote_text(self, ident, command, timeout):
-        if not self._remote_allowed(ident):
+        if not self._remote_input_allowed(ident, command):
             return
         text = command.get('text')
         if not isinstance(text, str) or not text:
@@ -1608,6 +1627,8 @@ class Worker(shared.Worker):
 
         def focused(value, error):
             if ident not in self.pending:
+                return
+            if not self._remote_input_allowed(ident, command):
                 return
             kind = (value or {}).get('focus') if not error else None
             if kind not in shared.REMOTE_FOCUS_KINDS:
@@ -1625,7 +1646,8 @@ class Worker(shared.Worker):
                     if ident in self.pending:
                         if error:
                             return self.fail(ident, 'not_typable')
-                        target.post('Input.insertText', {'text': text}, insert)
+                        if self._remote_input_allowed(ident, command):
+                            target.post('Input.insertText', {'text': text}, insert)
                 self.run("const el = document.activeElement; if (typeof el.select === 'function') el.select(); "
                          "else document.execCommand('selectAll', false, null); return JSON.stringify({ok:true});",
                          {}, selected, view=view)
@@ -1634,7 +1656,7 @@ class Worker(shared.Worker):
         self.run(shared.REMOTE_FOCUS_SCRIPT, {}, focused, view=view)
 
     def op_remote_nav(self, ident, command, timeout):
-        if not self._remote_allowed(ident):
+        if not self._remote_input_allowed(ident, command):
             return
         action = command.get('action')
         if action not in shared.REMOTE_NAV_ACTIONS:
@@ -1644,6 +1666,8 @@ class Worker(shared.Worker):
             target.post('Page.reload')
         else:
             def history(result, error):
+                if not self._remote_input_allowed(ident, command):
+                    return
                 index = result.get('currentIndex', 0)
                 if not error and index > 0:
                     target.post('Page.navigateToHistoryEntry', {'entryId': result['entries'][index - 1]['id']})

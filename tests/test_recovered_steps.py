@@ -185,13 +185,9 @@ class SuccessFloorTests(unittest.TestCase):
         self.assertTrue(self.short([failed('browser_type', 'target_not_found', declared='mutate'),
                                     succeeded('browser_type', {'state': 'typed'})]), 'no recorded arguments')
 
-    def test_writes_that_did_not_happen_still_hold(self):
+    def test_changed_unknown_withheld_and_incomplete_calls_still_hold(self):
         held = {
-            'refused before it ran': failed('browser_click', 'approval_required', declared='mutate', ran=False),
-            'refused by the service': failed('api_request', 'api_http_error', declared='mutate', executed=False),
             'effect none on a failed write': failed('save_note', 'tool_failed'),
-            'an owner-local write': failed('save_result', 'tool_failed', ran=False),
-            'a read-declared click refused by a guard': failed('browser_click', 'approval_required', declared='read', ran=False),
             'a navigate-declared click with no observation': failed('browser_click', 'press_unconfirmed', declared='navigate'),
             'a navigation that submitted': failed('browser_click', 'press_unconfirmed', declared='navigate',
                                                   observed_step={'posted': True, 'approved': False}),
@@ -233,6 +229,10 @@ class SuccessFloorTests(unittest.TestCase):
 
     def test_calls_still_records_show_changed_nothing_do_not_hold(self):
         cleared = {
+            'a read-declared click refused by a guard': failed('browser_click', 'approval_required', declared='read', ran=False),
+            'an owner-local write': failed('save_result', 'tool_failed', ran=False),
+            'refused by the service': failed('api_request', 'api_http_error', declared='mutate', executed=False),
+            'refused before it ran': failed('browser_click', 'approval_required', declared='mutate', ran=False),
             'a navigation click Still observed submitting nothing': failed('browser_click', 'press_unconfirmed', declared='navigate',
                                                                            observed_step=self.NAVIGATED),
             'a read-declared step whose target Still could not act on': failed('browser_click', 'target_unavailable', declared='read'),
@@ -420,6 +420,42 @@ class DirectRouteJudgmentInputTests(unittest.TestCase):
         self.assertTrue(all(RECOVERED_STEP_FACT in facts['failed_steps'] for facts in self.seen))
         self.assertEqual(result.report['unknown'], [GOAL_NOT_SHOWN])
 
+    def test_reached_completion_uses_the_failed_calls_effect_class(self):
+        """#656: the same completion floor applies to plain replies and finish claims."""
+        from personal_agent.agent_runtime import record_effect
+
+        class Browser(Capabilities):
+            def execute(self, name, args):
+                if name == 'browser_read':
+                    raise ToolError('No page open.', 'no_page')
+                if name == 'browser_type':
+                    exc = ToolError('Element is not typable.', 'target_unavailable', ran=False if self.effect == 'none' else None)
+                    if self.effect == 'unknown':exc.effect = 'unknown'
+                    raise exc
+                return super().execute(name, args)
+
+        for effect in ('none', 'changed', 'unknown'):
+            for reached in (True, False):
+                for explicit in (True, False):
+                    with self.subTest(effect=effect, reached=reached, explicit=explicit):
+                        events = []
+                        end = loop.finish('f', '3', summary='Found it.') if explicit else {'content': 'Found it.'}
+                        script = loop.Script(
+                            {'tool_calls': [loop.call('1', 'browser_read')]},
+                            self.type_into('2', 'name'),
+                            {'tool_calls': [loop.call('3', 'web_search', query='example')]}, end,
+                            {'content': 'Found it.'})
+                        caps = Browser(self.store, ModelAdapter(script), loop.CFG, '', 'job',
+                                       lambda *event: events.append(event), browser=lambda: object(),
+                                       network=loop.Network(), judgments=loop.judgments(reached))
+                        caps.effect = effect
+                        result = run_agent(caps.adapter, loop.CFG, '', self.REQUEST, '', caps, caps.record)
+                        self.assertEqual(result.outcome, 'succeeded' if reached and effect == 'none' else 'partial')
+                        failures = [(tool, json.loads(detail)) for tool, status, detail in events if status == 'failed']
+                        self.assertEqual([tool for tool, _ in failures], ['browser_read', 'browser_type'])
+                        self.assertEqual([record_effect(tool, detail, 'failed') for tool, detail in failures], ['none', effect])
+                        self.assertEqual([tool for tool, _reason in result.report['failed']], ['browser_read', 'browser_type'])
+
 
 class DirectRouteServiceTests(unittest.TestCase):
     """``AgentService.run_one`` on the web and Telegram channels."""
@@ -471,6 +507,23 @@ class CliRouteOutcomeTests(orch.Harness):
             for tool, status, detail in rows:
                 tools.capabilities.record(tool, status, detail)
         self.engine.before = record
+
+    def test_reached_effect_free_failures_succeed_and_keep_the_evidence(self):
+        rows = [failed('browser_read', 'no_page'),
+                failed('browser_type', 'target_unavailable', declared='mutate', ran=False,
+                       error='Element is not typable.'),
+                succeeded('web_search')]
+        for reached, expected in ((True, 'succeeded'), (False, 'partial')):
+            with self.subTest(reached=reached):
+                self.attempt(*rows)
+                self.script([orch.plan('codex', 'Look it up.')], goals=[reached])
+                job, row = self.run_work('Find the information.')
+                self.assertEqual(row['status'], expected)
+                if reached:self.assertIsNone(row['owner_note'])
+                with self.store.db() as db:
+                    kept = db.execute("SELECT tool,detail FROM tool_events WHERE job_id=? AND status='failed' ORDER BY id", (job,)).fetchall()
+                self.assertEqual([item['tool'] for item in kept], ['browser_read', 'browser_type'])
+                self.assertEqual([json.loads(item['detail'])['code'] for item in kept], ['no_page', 'target_unavailable'])
 
     def test_recovered_success_is_succeeded_without_naming_the_earlier_step(self):
         self.attempt(*pressed('1', SAVE, False), *pressed('2', SAVE, True))

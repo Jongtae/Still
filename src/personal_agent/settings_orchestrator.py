@@ -47,7 +47,7 @@ class SettingsError(ValueError):
 # reported as needing a check rather than guessed as connected.
 STATE_LABELS = {
     "connected": msg('label.connected'),
-    "disconnected": msg('family_share.not_connected'),
+    "disconnected": msg('settings_orchestrator.not_connected'),
     "reauth_required": msg('settings_orchestrator.sign_in_again'),
     "blocked": msg('label.blocked'),
     "pending": msg('label.needs_attention'),
@@ -98,16 +98,13 @@ def next_action(row):
 
 #: #814: owner-visible names of the categories and settings the conversation may read/change.
 CATEGORY_LABELS = {"connections": msg('label.external_connections'), "current_context": msg('label.current_context'), "judgment_ai": msg('label.judgment_ai'), "main_ai": msg('label.main_ai'),
-                   "owner_model": msg('settings_orchestrator.owner_model_label'), "family": msg('settings_orchestrator.family_label'), "skills": msg('settings_orchestrator.skills_label'),
+                   "owner_model": msg('settings_orchestrator.owner_model_label'), "skills": msg('settings_orchestrator.skills_label'),
                    "phone_link": msg('settings_orchestrator.phone_link_label'), "ai_connections": msg('settings_orchestrator.ai_connections_label'), "api_connections": msg('settings_orchestrator.api_connections_label'),
                    "preparations": msg('settings_orchestrator.preparations_label'), "browser": msg('settings_orchestrator.browser_label')}
 SETTINGS = {"current_context": ("enabled", "timezone"), "judgment_ai": ("mode", "model"), "main_ai": ("route", "model"),
             # #805 owner-model upkeep: its pause switch and rolling 24-hour call cap.
             # #402: the once-a-day look back over recent requests has its own switch.
             "owner_model": ("enabled", "daily_calls", "dream"),
-            # #912: a family member's own agent, created by asking the assistant (FAMILY-02 #897).
-            # #934: the owner shares (and stops sharing) one signed-in site with one of them.
-            "family": ("add", "share_site", "unshare_site"),
             # #961: optional skill know-how: the switch, adding one pinned GitHub skill, removing one.
             "skills": ("enabled", "add", "remove"),
             # #1213: a one-time phone link for an input only a page can take (own Google client, Google consent).
@@ -115,7 +112,8 @@ SETTINGS = {"current_context": ("enabled", "timezone"), "judgment_ai": ("mode", 
             # #1455: the owner's reservations (#659), seen and managed in the conversation first.
             "preparations": ("cancel", "accept", "pause", "resume", "edit", "run_now"),
             # #1572: close one exact login window that holds the browser while the owner will not sign in.
-            "browser": ("close_login", "use_mobile"),
+            # #636: signing back in through the provider the owner used (every site, or one site).
+            "browser": ("close_login", "use_mobile", "provider_sign_in"),
             # #1197: Works may use the owner's AI-side connections (claude.ai connectors), read-only.
             # #1297: which of the owner's MCP servers load, and the owner's trust record per connection.
             "ai_connections": ("enabled", "connect", "servers", "review", "money", "rung", "undo", "forget", "restore"),
@@ -123,11 +121,12 @@ SETTINGS = {"current_context": ("enabled", "timezone"), "judgment_ai": ("mode", 
             # #438: connect a place to talk (Telegram) from the terminal conversation; its token is typed there, hidden.
             "connections": ("disconnect", "connect_chat")}
 SETTING_LABELS = {"enabled": msg('label.use'), "timezone": msg('label.time_zone'), "mode": msg('settings_orchestrator.mode_label'), "model": msg('label.model'), "route": msg('settings_orchestrator.route_label'),
-                  "daily_calls": msg('settings_orchestrator.daily_calls_label'), "dream": msg('settings_orchestrator.dream_label'), "add": msg('settings_orchestrator.add_label'), "share_site": msg('settings_orchestrator.share_site_label'), "unshare_site": msg('settings_orchestrator.unshare_site_label'),
+                  "daily_calls": msg('settings_orchestrator.daily_calls_label'), "dream": msg('settings_orchestrator.dream_label'), "add": msg('settings_orchestrator.add_label'),
                   "remove": msg('label.remove'), "send": msg('settings_orchestrator.send_label'), "servers": msg('settings_orchestrator.servers_label'), "review": msg('settings_orchestrator.review_label'), "money": msg('settings_orchestrator.money_label'),
                   "connect": msg('settings_orchestrator.connect_label'), "rung": msg('settings_orchestrator.rung_label'), "undo": msg('settings_orchestrator.undo_label'), "forget": msg('settings_orchestrator.forget_label'), "restore": msg('settings_orchestrator.restore_label'),
                   "cancel": msg('label.cancel'), "accept": msg('button.accept'), "disconnect": msg('settings_orchestrator.disconnect_label'), "close_login": msg('settings_orchestrator.close_login_label'),
                   "use_mobile": msg('settings_orchestrator.use_mobile_label'),
+                  "provider_sign_in": msg('settings_orchestrator.provider_sign_in_label'),
                   "connect_chat": msg('settings_orchestrator.connect_chat_label'),
                   **{operation: msg('settings_orchestrator.label_preparations_' + operation)
                      for operation in ('pause', 'resume', 'edit', 'run_now')}}
@@ -137,7 +136,6 @@ _CATEGORY_LINE_IDS = {
     'judgment_ai': 'settings_orchestrator.category_line_judgment_ai',
     'main_ai': 'settings_orchestrator.category_line_main_ai',
     'owner_model': 'settings_orchestrator.category_line_owner_model',
-    'family': 'settings_orchestrator.category_line_family',
     'skills': 'settings_orchestrator.category_line_skills',
     'phone_link': 'settings_orchestrator.category_line_phone_link',
     'ai_connections': 'settings_orchestrator.category_line_ai_connections',
@@ -155,8 +153,6 @@ _SETTING_VALUE_IDS = {
     SETTING_LABELS['daily_calls']: 'settings_orchestrator.setting_value_daily_calls',
     SETTING_LABELS['dream']: 'settings_orchestrator.setting_value_dream',
     SETTING_LABELS['add']: 'settings_orchestrator.setting_value_add',
-    SETTING_LABELS['share_site']: 'settings_orchestrator.setting_value_share_site',
-    SETTING_LABELS['unshare_site']: 'settings_orchestrator.setting_value_unshare_site',
     SETTING_LABELS['remove']: 'settings_orchestrator.setting_value_remove',
     SETTING_LABELS['send']: 'settings_orchestrator.setting_value_send',
     SETTING_LABELS['servers']: 'settings_orchestrator.setting_value_servers',
@@ -172,6 +168,7 @@ _SETTING_VALUE_IDS = {
     SETTING_LABELS['disconnect']: 'settings_orchestrator.setting_value_disconnect',
     SETTING_LABELS['close_login']: 'settings_orchestrator.setting_value_close_login',
     SETTING_LABELS['use_mobile']: 'settings_orchestrator.setting_value_use_mobile',
+    SETTING_LABELS['provider_sign_in']: 'settings_orchestrator.setting_value_provider_sign_in',
     SETTING_LABELS['connect_chat']: 'settings_orchestrator.setting_value_connect_chat',
     msg('settings_orchestrator.new_api_connection'): 'settings_orchestrator.setting_value_new_api',
 }
@@ -186,9 +183,6 @@ _CHANGE_LABELS = {
     ('owner_model', 'enabled'): msg('settings_orchestrator.label_owner_model_enabled'),
     ('owner_model', 'daily_calls'): msg('settings_orchestrator.label_owner_model_daily_calls'),
     ('owner_model', 'dream'): msg('settings_orchestrator.label_owner_model_dream'),
-    ('family', 'add'): msg('settings_orchestrator.label_family_add'),
-    ('family', 'share_site'): msg('settings_orchestrator.label_family_share_site'),
-    ('family', 'unshare_site'): msg('settings_orchestrator.label_family_unshare_site'),
     ('skills', 'enabled'): msg('settings_orchestrator.label_skills_enabled'),
     ('skills', 'add'): msg('settings_orchestrator.label_skills_add'),
     ('skills', 'remove'): msg('settings_orchestrator.label_skills_remove'),
@@ -200,6 +194,7 @@ _CHANGE_LABELS = {
        for operation in ('pause', 'resume', 'edit', 'run_now')},
     ('browser', 'close_login'): msg('settings_orchestrator.label_browser_close_login'),
     ('browser', 'use_mobile'): msg('settings_orchestrator.label_browser_use_mobile'),
+    ('browser', 'provider_sign_in'): msg('settings_orchestrator.label_browser_provider_sign_in'),
     ('ai_connections', 'enabled'): msg('settings_orchestrator.label_ai_connections_enabled'),
     ('ai_connections', 'connect'): msg('settings_orchestrator.label_ai_connections_connect'),
     ('ai_connections', 'servers'): msg('settings_orchestrator.label_ai_connections_servers'),
@@ -219,9 +214,6 @@ TRUST_SETTINGS = frozenset({("ai_connections", "servers"), ("ai_connections", "r
                             ("ai_connections", "restore")})
 TRUST_CLASS_LABELS = {"read": msg('settings_orchestrator.read_class'), "mutate": msg('label.change'), "payment": msg('settings_orchestrator.payment_class'), "refused": msg('settings_orchestrator.refused_class')}
 TRUST_RUNG_LABELS = {"report": msg('settings_orchestrator.report_rung'), "propose": msg('settings_orchestrator.propose_rung'), "approve": msg('settings_orchestrator.approve_rung'), "mandate": msg('settings_orchestrator.mandate_rung')}
-#: #934: the value of a share is "<family assistant>|<site>"; a stop may name the site alone.
-FAMILY_SHARE_SETTINGS = frozenset({("family", "share_site"), ("family", "unshare_site")})
-FAMILY_SHARE_NOTE = msg('settings_orchestrator.family_share_note')
 VALUE_LABELS = {"on": msg('label.on'), "off": msg('label.off'), "follow_main": msg('settings_orchestrator.follow_main_ai'), "explicit": msg('label.separate_configuration')}
 JUDGMENT_MODE_LABELS = {"off": msg('settings_orchestrator.not_used')}
 UNKNOWN_SETTING_MESSAGE = msg('settings_orchestrator.unknown_setting')
@@ -253,8 +245,6 @@ BUSY_MESSAGE = msg('settings_orchestrator.busy')
 STALE_MESSAGE = msg('settings_orchestrator.stale')
 WORKER_START_MESSAGE = msg('settings_orchestrator.apply_not_started')
 FOLLOW_REQUESTED_MESSAGE = msg('settings_orchestrator.follow_requested')
-#: #912: the family setup runs in the background; its link and outcome follow on Telegram.
-FAMILY_REQUESTED_MESSAGE = msg('settings_orchestrator.family_requested')
 
 
 def canonical_timezone(name):
@@ -271,8 +261,8 @@ RECOVERY_DECLINED_MESSAGE = msg('settings_orchestrator.recovery_declined')
 #: The settings a Work the owner's own typed message started may apply without a second
 #: confirmation, once the ``explicit-settings-request`` judgment says that message asked for exactly
 #: this change.  Only changes that add no authority, no data destination and no external send:
-#: a new connection, server, trust level, skill, family member or share, phone link, Telegram
-#: pairing, AI route or Judgment AI keeps the owner's confirmation of Still's exact preview.
+#: a new connection, server, trust level, skill, phone link, Telegram pairing, AI route or
+#: Judgment AI keeps the owner's confirmation of Still's exact preview.
 DIRECT_REQUEST_SETTINGS = frozenset({
     ('current_context', 'enabled'), ('current_context', 'timezone'),
     ('owner_model', 'enabled'), ('owner_model', 'daily_calls'), ('owner_model', 'dream'),
@@ -498,36 +488,9 @@ class SettingsOrchestrator:
                 "daily_calls": self._row("daily_calls", cap, msg('settings_orchestrator.call_count', value=cap), None,
                                          format=msg('settings_orchestrator.daily_calls_format', limit=MAX_DAILY_CALLS))}
 
-    def _family(self):
-        """#912: the family members' agents on this Mac; ``add`` takes the new one's display name.
-
-        #934: ``share_site`` / ``unshare_site`` carry the current shares (names
-        only) and, for the model to match the owner's words against, the
-        sites the owner is signed in to and the family assistants' names.
-        """
-        from . import family_share
-        # #957: every other instance on this Mac (the owner's main one included), never this one, each with
-        # its bot's display name and the state its own store reports.
-        others = family_share.instances(own=self.store.root)
-        assistants = {name: {**row, "state_label": family_share.STATE_LABELS.get(row.get("state"), "")}
-                      for name, row in others.items()}
-        shares = family_share.listing(self.store, others)
-        shared = ", ".join((f"{row['label']}: {row['site']}" if row["delivered"] else msg('settings_orchestrator.share_delivery_pending', label=row['label'], site=row['site'])) for row in shares) or msg('label.none')
-        signed_in = self._signed_in_sites()
-        family = ", ".join(family_share.describe(name, row) for name, row in others.items() if not row.get("main")) or msg('label.none')
-        return {"add": self._row("add", "", family, None,
-                                 format=msg('settings_orchestrator.family_name_format'),
-                                 note=msg('settings_orchestrator.family_add_note')),
-                "share_site": self._row("share_site", "", shared, None, format=msg('settings_orchestrator.share_format'),
-                                        note=FAMILY_SHARE_NOTE, assistants=assistants, signed_in_sites=signed_in,
-                                        shared=[{"instance": row["instance"], "site": row["site"]} for row in shares],
-                                        received_sites=sorted(family_share.received(self.store))),
-                "unshare_site": self._row("unshare_site", "", shared, None,
-                                          format=msg('settings_orchestrator.unshare_format'),
-                                          shared=[{"instance": row["instance"], "site": row["site"]} for row in shares])}
 
     def _ai_connections(self):
-        """#1197: whether Works may use the owner's AI-side connections; unavailable on a family instance."""
+        """#1197: whether Works may use the owner's AI-side connections."""
         status = self.service.ai_connections_status()
         if not status["available"]:
             return {"unavailable": status["note"]}
@@ -608,7 +571,7 @@ class SettingsOrchestrator:
         labels = {row["id"]: f"{row['label']} ({state_label(row['state'])})"
                   for row in self.service.connection_disconnect_options()}
         telegram = msg("label.connected" if self.service.store.config("telegram", {}).get("enabled")
-                       else "family_share.not_connected")
+                       else "settings_orchestrator.not_connected")
         return {"disconnect": self._row("disconnect", "", ", ".join(labels.values()) or msg('label.none'),
                                         self._options(tuple(labels), labels), format=msg('settings_orchestrator.disconnect_format'),
                                         note=DISCONNECT_NOTE),
@@ -625,7 +588,26 @@ class SettingsOrchestrator:
                                          self._options(tuple(windows), windows), format=msg('settings_orchestrator.close_login_format'),
                                          note=msg('settings_orchestrator.close_login_note')),
                 "use_mobile": self._row("use_mobile", "", ", ".join(sites) or msg('label.none'),
-                                        self._options(sites, {site: site for site in sites}))}
+                                        self._options(sites, {site: site for site in sites})),
+                "provider_sign_in": self._provider_sign_in()}
+
+    def _provider_sign_in(self):
+        """#636: the switch for signing back in through the provider the owner used, and each recorded site."""
+        current = self.service.provider_signin_settings()
+        state = "on" if current["enabled"] else "off"
+        off = set(current["off_sites"])
+        listed = [msg('settings_orchestrator.provider_sign_in_site', site=site, provider=provider,
+                      state=VALUE_LABELS["off" if site in off else "on"]) for site, provider in current["sites"].items()]
+        values = ["on", "off"]
+        labels = {}
+        for site in current["sites"]:
+            for choice in ("on", "off"):
+                values.append(f"{site}|{choice}")
+                labels[f"{site}|{choice}"] = msg('settings_orchestrator.provider_sign_in_site_option', site=site,
+                                                 state=VALUE_LABELS[choice])
+        return self._row("provider_sign_in", state, " · ".join([VALUE_LABELS[state], *listed]), self._options(values, labels),
+                         format=msg('settings_orchestrator.provider_sign_in_format'),
+                         note=msg('settings_orchestrator.provider_sign_in_note'))
 
     def _skills(self):
         """#961: the switch, and the installed skills for ``add`` / ``remove`` (names and pinned sources only)."""
@@ -645,49 +627,7 @@ class SettingsOrchestrator:
                 "remove": self._row("remove", "", ", ".join(removable) or msg('label.none'), None, format=msg('settings_orchestrator.skill_name_format'),
                                     installed=removable)}
 
-    def _signed_in_sites(self):
-        """The sites the owner's browser is signed in to, names only, from the profile's non-blocking view."""
-        profile = getattr(self.service, "browser_profile", None)
-        view = getattr(profile, "_jar_view", None)
-        if not callable(view):
-            return []
-        try:
-            _state, sessions = view()
-        except Exception:
-            return []
-        return [row["site"] for row in sessions if isinstance(row, dict) and row.get("site")]
 
-    @staticmethod
-    def _share_value(setting, value, row):
-        """``"<instance>|<site>"`` for a share or a stop (#934), resolved and normalized, or ``SettingsError``."""
-        from . import family_share
-        # Without a "|" the value is the site: a stop may name it alone; a share still needs the assistant.
-        who, _sep, where = value.rpartition("|")
-        try:
-            site = family_share.normalize_site(where)
-        except ValueError as exc:
-            raise SettingsError(str(exc)) from None
-        shared = row[setting].get("shared") or []
-        if setting == "unshare_site" and not who.strip():
-            holders = [item["instance"] for item in shared if item["site"] == site]
-            if not holders:
-                raise SettingsError(msg('family_share.not_shared', site=site))
-            if len(holders) > 1:
-                raise SettingsError(msg('settings_orchestrator.share_ambiguous', site=site, assistants=', '.join(holders)))
-            return f"{holders[0]}|{site}"
-        if setting == "share_site" and site in (row["share_site"].get("received_sites") or ()):
-            # Review P1-1: a session received from the owner is not this instance's to pass on.
-            raise SettingsError(family_share.NOT_YOURS_TEXT.format(site=site))
-        try:
-            instance = family_share.resolve_instance(who, row["share_site"].get("assistants") or {})
-        except ValueError as exc:
-            raise SettingsError(str(exc)) from None
-        already = any(item["instance"] == instance and item["site"] == site for item in shared)
-        if setting == "share_site" and already:
-            raise SettingsError(msg('settings_orchestrator.share_already_enabled', instance=instance, site=site))
-        if setting == "unshare_site" and not already:
-            raise SettingsError(msg('settings_orchestrator.share_already_disabled', instance=instance, site=site))
-        return f"{instance}|{site}"
 
     def _model_lists(self):
         rows = self.store.config("decision_model_lists", {})
@@ -811,26 +751,6 @@ class SettingsOrchestrator:
                 return valid_timezone(canonical_timezone(value)), row
             except ValueError as exc:
                 raise SettingsError(msg('settings_orchestrator.error_unchanged', exc=exc)) from None
-        if (category, setting) == ("family", "add"):
-            # A display name only: letters and spaces, 1-64 characters, no control characters.
-            name = " ".join(value.split())
-            if not name or len(name) > 64 or any(ord(char) < 32 for char in value):
-                raise SettingsError(msg('settings_orchestrator.invalid_family_name'))
-            # SKILL-MANAGE-01 (#962): a repeated request never makes a second assistant of the same name.
-            # Only an already paired one blocks; an unfinished setup is reused by the setter itself.
-            from . import family_share
-            same = [(instance, item) for instance, item in (row["share_site"].get("assistants") or {}).items()
-                    if " ".join(str(item.get("name") or "").split()).lower() == name.lower() and item.get("state") == "paired"]
-            # The listing leaves this instance out (it never offers itself), so its own bot name is checked here.
-            own = " ".join(str(family_share.display_name(self.store.root) or "").split())
-            if own and own.lower() == name.lower():
-                raise SettingsError(msg('settings_orchestrator.family_name_is_self', name=name))
-            if same:
-                listed = ", ".join(family_share.describe(instance, item) for instance, item in same)
-                raise SettingsError(msg('settings_orchestrator.family_name_exists', name=name, listed=listed))
-            return name, row
-        if (category, setting) in FAMILY_SHARE_SETTINGS:
-            return self._share_value(setting, value, row), row
         if (category, setting) in TRUST_SETTINGS:
             return self._trust_value(setting, value, row), row
         if (category, setting) in (("skills", "add"), ("skills", "remove")):
@@ -961,6 +881,13 @@ class SettingsOrchestrator:
             return self.service.connection_disconnect_before(value)
         if (category, setting) == ("browser", "use_mobile"):
             return self.service.browser_profile.layout_for(value)
+        if (category, setting) == ("browser", "provider_sign_in"):
+            # #636: the switch the value names, as it is now (every site, or the one site).
+            current = self.service.provider_signin_settings()
+            site, sep, _state = value.rpartition("|")
+            if not sep:
+                return "on" if current["enabled"] else "off"
+            return f"{site}|{'off' if site in current['off_sites'] else 'on'}"
         if category == "browser":
             # #1572: bound to the login's state; the value already names the exact window.
             work_id = value.partition("|")[0]
@@ -998,9 +925,31 @@ class SettingsOrchestrator:
 
     def _describe(self, category, setting, value, row):
         options = {option["value"]: option["label"] for option in row[setting].get("options") or ()}
+        # #675: preparation values are identities/JSON, never an owner-facing fallback.
+        if category == "preparations":
+            if setting == "edit":
+                return self._edit_summary(value)
+            from . import preparations as prep
+            from .current_context import redact_known_secrets
+            current = self.service.preparations.get(value)
+            return options.get(value) or (redact_known_secrets(self.store, prep.owner_title(current))
+                                          if current else msg('settings_orchestrator.value_not_set'))
         if setting == "daily_calls":
             return msg('settings_orchestrator.call_count', value=value)
         return options.get(value) or VALUE_LABELS.get(value) or value or msg('settings_orchestrator.value_not_set')
+
+    def _edit_summary(self, after):
+        """A schedule edit in the owner's words: its name, the schedule now and after (never the draft's JSON)."""
+        from . import preparations as prep
+        from .current_context import redact_known_secrets
+        changes = json.loads(after)
+        current = self.service.preparations.get(changes['id'])
+        requested = {key: value for key, value in changes.items() if key not in ('id', BOUND_TIMEZONE)}
+        edited = {**current, **prep.Preparations.edit_values(current, requested, self.service.preparations.clock())}
+        home_zone = self.service.home_zone()
+        return msg('settings_orchestrator.preparation_edit_summary',
+                   title=redact_known_secrets(self.store, prep.owner_title(current)),
+                   before=prep.schedule_text(current, home_zone), after=prep.schedule_text(edited, home_zone))
 
     @staticmethod
     def _digest(row):
@@ -1048,9 +997,7 @@ class SettingsOrchestrator:
         before = self._before(category, setting, after, row)
         if after == self._shown_before(category, setting, before):
             raise SettingsError(msg('settings_orchestrator.setting_unchanged', label=_CHANGE_LABELS[category, setting], value=self._describe(category, setting, after, row)))
-        if (category, setting) == ("family", "add"):
-            summary = msg('settings_orchestrator.family_add_summary', after=after)
-        elif (category, setting) == ("skills", "add"):
+        if (category, setting) == ("skills", "add"):
             from .skills import parse_source
             source = parse_source(after)
             name = source["path"].rstrip("/").split("/")[-1]
@@ -1073,8 +1020,12 @@ class SettingsOrchestrator:
             summary = msg('settings_orchestrator.disconnect_summary', connection=self._describe(category, setting, after, row))
         elif (category, setting) == ("browser", "use_mobile"):
             summary = msg('settings_orchestrator.use_mobile_summary', site=after)
+        elif (category, setting) == ("browser", "provider_sign_in"):
+            summary = msg('settings_orchestrator.provider_sign_in_summary', choice=self._describe(category, setting, after, row))
         elif category == "browser":
             summary = (msg('settings_orchestrator.close_login_summary', window=self._describe(category, setting, after, row)))
+        elif (category, setting) == ("preparations", "edit"):
+            summary = self._edit_summary(after)
         elif category == "preparations":
             summary = (msg('settings_orchestrator.cancel_reservation_summary', reservation=self._describe(category, setting, after, row)) if setting == "cancel"
                        else msg('settings_orchestrator.accept_reservation_summary', reservation=self._describe(category, setting, after, row)) if setting == "accept"
@@ -1137,12 +1088,6 @@ class SettingsOrchestrator:
             summary = self._trust_summary(setting, after)
         elif (category, setting) == ("phone_link", "send"):
             summary = msg('settings_orchestrator.phone_link_summary', link=self._describe(category, setting, after, row))
-        elif (category, setting) in FAMILY_SHARE_SETTINGS:
-            from . import family_share
-            instance, _sep, site = after.partition("|")
-            label = family_share.names(row["share_site"].get("assistants") or {}).get(instance, instance)
-            summary = (msg('settings_orchestrator.share_summary', label=label, site=site) if setting == "share_site"
-                       else msg('settings_orchestrator.unshare_summary', label=label, site=site))
         else:
             summary = (msg(
                 'settings_orchestrator.change_summary',
@@ -1212,17 +1157,6 @@ class SettingsOrchestrator:
             return 'awaiting-input'
         elif category == "current_context":
             self.service.set_current_context({"enabled": after == "on"} if setting == "enabled" else {"timezone": after})
-        elif (category, setting) in FAMILY_SHARE_SETTINGS:
-            # #934: the push (or the revocation) runs now over loopback; the receipt's text is the answer.
-            instance, _sep, site = after.partition("|")
-            receipt = (self.service.share_site(instance, site) if setting == "share_site"
-                       else self.service.unshare_site(instance, site))
-            self.__dict__.setdefault("_apply_text", {})[row["id"]] = (receipt or {}).get("response")
-        elif category == "family":
-            # #912: runs in the background; the link, then the outcome, follow in the confirming conversation.
-            notify = self.__dict__.get("_family_notify", {}).pop(row["id"], None)
-            self.service.start_family_setup(after, notify=notify)
-            return "requested"
         elif (category, setting) in TRUST_SETTINGS:
             result = self.service.apply_trust_setting(setting, after, expected_revision=row['before'].partition(':')[0])
             if isinstance(result, dict) and result.get('response'):
@@ -1247,6 +1181,8 @@ class SettingsOrchestrator:
             self.__dict__.setdefault("_apply_text", {})[row["id"]] = (receipt or {}).get("message")
         elif (category, setting) == ("browser", "use_mobile"):
             self.service.browser_profile.set_layout(after, "mobile")
+        elif (category, setting) == ("browser", "provider_sign_in"):
+            self.service.set_provider_signin(after)
         elif category == "browser":
             # #1572: the prompt's own 건너뛰기 settlement for exactly this window; its text is the answer.
             self.__dict__.setdefault("_apply_text", {})[row["id"]] = self.service.close_login_window_by_owner(after)
@@ -1299,6 +1235,7 @@ class SettingsOrchestrator:
                     'awaiting-input': ('applying',),
                     'expired': ('awaiting-confirmation', 'awaiting-input'),
                     'satisfied': ('awaiting-confirmation',),
+                    'superseded': ('awaiting-confirmation', 'expired'),
                     'renewed': ('awaiting-confirmation', 'expired', 'failed', 'unknown'),
                     'canceled': ('awaiting-confirmation', 'awaiting-input', 'expired', 'failed', 'unknown'),
                     'cancelled': ('awaiting-confirmation', 'awaiting-input', 'expired'),
@@ -1379,11 +1316,33 @@ class SettingsOrchestrator:
         if settled.get('state') != outcome:
             self.__dict__.get('_apply_text', {}).pop(row['id'], None)
             raise SettingsError(IN_DOUBT_MESSAGE.format(effect=row['effect']))
+        if outcome in ('applied', 'requested'):
+            # #675: another change drafted from the same prior state of this target is settled when this one
+            # lands: stale by the usual check, or, when the binding cannot tell this change apart (an
+            # identity-bound edit), superseded by it, so approving it later never overwrites this change.
+            # The same change asked again (another Work's request) and a still-covered commuting change
+            # keep their own path.
+            with self._confirming:
+                for other in list(self._drafts().values()):
+                    if not (isinstance(other, dict) and other.get('id') != row['id'] and 'setup_guard' not in other
+                            and other.get('state') in ('awaiting-confirmation', 'expired')
+                            and other.get('target') == row['target'] and other.get('before') == row['before']
+                            and other.get('after') != row['after']):
+                        continue
+                    try:
+                        current = self._current_before(other)
+                    except Exception as exc:
+                        if isinstance(exc, SettingsError) and str(exc) == STALE_MESSAGE:
+                            self._supersede(other, 'stale')
+                        continue
+                    if current is None:
+                        self._supersede(other, 'stale')
+                    elif current == other['before']:
+                        self._supersede(other, 'superseded-by:' + row['id'])
         if self.service is not None:
             self.service.resume_settings_work()
-        response = ((FAMILY_REQUESTED_MESSAGE if row.get("category") == "family" else FOLLOW_REQUESTED_MESSAGE)
+        response = (FOLLOW_REQUESTED_MESSAGE
                     if outcome == "requested" else msg('settings_orchestrator.changed_receipt', effect=row['effect']))
-        # #934: a share's receipt says what was delivered (names and counts); it replaces the generic line.
         response = self.__dict__.get("_apply_text", {}).pop(row["id"], None) or response
         return {"state": outcome, "draft_id": row["id"], "target": row["target"], "before": row["before"],
                 "after": row["after"], "response": response}
@@ -1394,6 +1353,8 @@ class SettingsOrchestrator:
             row = self._drafts().get(row["id"]) or row
             if row.get("state") in ("applied", "requested"):
                 raise SettingsError(msg('settings_orchestrator.draft_already_applied'))
+            if row.get("state") == "superseded":
+                raise SettingsError(STALE_MESSAGE)
             if row.get("state") == "unknown":
                 raise SettingsError(IN_DOUBT_MESSAGE.format(effect=row["effect"]))
             if row.get("state") != "awaiting-confirmation":
@@ -1431,6 +1392,47 @@ class SettingsOrchestrator:
         record = trust_record.hand(self.store, trust_record.connection(*parts[:3]))
         return trust_record.read_revision_covers(record, previous[0], parts[3])
 
+    def _current_before(self, row):
+        """The target's ``before`` now when it still covers ``row``, else None; read-only (#675)."""
+        after, current = self._normalized(row["category"], row["setting"], row["after"])
+        if after != row["after"]:
+            return None
+        before = self._before(row["category"], row["setting"], after, current)
+        return before if self._before_covered(row, before) else None
+
+    def _check_current(self, row):
+        """The same read-only binding check for admission and pending-card withdrawal (#675)."""
+        if self._current_before(row) is None:
+            raise SettingsError(STALE_MESSAGE)
+
+    def _supersede(self, row, reason):
+        try:
+            self._settle(row['id'], 'superseded', 'superseded', reason,
+                         expected={'state': row['state'], 'digest': row.get('digest')})
+        except SettingsError:
+            pass  # #675: a concurrent settlement already withdrew this authority.
+
+    def _supersede_stale(self):
+        with self._confirming:
+            if self.service is None or getattr(self, '_checking_stale', False):
+                return
+            self._checking_stale = True
+            try:
+                for row in self._drafts().values():
+                    # #675: a timed-out draft stays on the renewal path, which answers the owner's yes as stale;
+                    # a setup draft (``setup_guard``) keeps its own wait-and-recovery lifecycle.
+                    if (not isinstance(row, dict) or row.get('state') != 'awaiting-confirmation' or self.expired(row)
+                            or 'setup_guard' in row):
+                        continue
+                    try:
+                        self._check_current(row)
+                    except Exception as exc:
+                        # #675: unavailable snapshots and operation refusals do not prove a stale binding.
+                        if isinstance(exc, SettingsError) and str(exc) == STALE_MESSAGE:
+                            self._supersede(row, 'stale')
+            finally:
+                self._checking_stale = False
+
     def _checked_apply(self, row):
         """Compare-and-apply (#814 review): re-check ``before``, then the setter.  The caller holds the category lock."""
         try:
@@ -1440,10 +1442,7 @@ class SettingsOrchestrator:
                     self.service.resume_settings_work()
                     return {'state': 'satisfied', 'draft_id': row['id'], 'applied': False,
                             'response': msg('settings_orchestrator.connection_ready_elsewhere')}
-                after, current = self._normalized(row["category"], row["setting"], row["after"])
-                current_before = self._before(row["category"], row["setting"], after, current)
-                if after != row["after"] or not self._before_covered(row, current_before):
-                    raise SettingsError(STALE_MESSAGE)
+                self._check_current(row)
             except Exception as exc:
                 self._settle(row["id"], "failed", "failed", type(exc).__name__)
                 message = str(exc) if isinstance(exc, ValueError) and str(exc) else msg('settings_orchestrator.apply_failed_fallback')
@@ -1506,9 +1505,6 @@ class SettingsOrchestrator:
         """
         if notify is not None and (row.get("category"), row.get("setting")) in SLOW_SETTINGS:
             return self._enqueue(self._admit(row, digest), notify)
-        if row.get("category") == "family":
-            # #913 review P2-1: the family setup's link and outcome go to the conversation that confirmed it.
-            self.__dict__.setdefault("_family_notify", {})[row.get("id")] = notify
         category_lock = self._category_locks.get(row.get("category"))
         if category_lock is None or not category_lock.acquire(timeout=APPLY_WAIT_SECONDS):
             raise SettingsError(BUSY_MESSAGE)
@@ -1519,6 +1515,7 @@ class SettingsOrchestrator:
 
     def pending_drafts(self):
         """Every draft still awaiting the owner (not expired, its Work not cancelled), oldest first."""
+        self._supersede_stale()
         now = self.now()
         rows = [row for row in self._drafts().values() if isinstance(row, dict)
                 and row.get("state") == "awaiting-confirmation" and not self.expired(row, now)
@@ -1551,6 +1548,11 @@ class SettingsOrchestrator:
             try:
                 if error is not None:
                     raise error
+                if not apply and self._owned(owner, channel, row['id']).get('state') == 'superseded':
+                    result = self.cancel(owner, channel, row['id'])
+                    states.append(result['state'])
+                    lines.append(msg('settings_orchestrator.the_settings_change_was_canceled_nothing'))
+                    continue
                 if row.get("state") != "awaiting-confirmation" or self.expired(row):
                     # Only time ran out: the owner's answer carries the exact change forward (or declines it).
                     if not apply:
@@ -1694,7 +1696,9 @@ class SettingsOrchestrator:
         lines = [msg('settings_orchestrator.this_settings_change_was_requested_in')]
         for row in rows:
             # #511: catalog lines, so each surface shows them in its language.
-            lines.append(msg('settings_orchestrator.draft_line_with_note', effect=row['effect'], note=row['note'])
+            # #675: keep multiline catalog blocks intact so surfaces can translate the whole template.
+            lines.append(row['effect'] if '\n' in row['effect'] and not row.get('note') else
+                         msg('settings_orchestrator.draft_line_with_note', effect=row['effect'], note=row['note'])
                          if row.get("note") else msg('settings_orchestrator.draft_line', effect=row['effect']))
             if row.get("reason"):
                 lines.append("  " + msg('settings_orchestrator.draft_reason', reason=row['reason']))
@@ -1819,7 +1823,7 @@ class SettingsOrchestrator:
     def cancel(self, owner, channel, draft_id):
         with self._confirming:
             row = self._owned(owner, channel, draft_id)
-            if row["state"] == "canceled": return {"state": "canceled", "idempotent": True}
+            if row["state"] in ("canceled", "superseded"): return {"state": row['state'], "idempotent": True}
             if row["state"] not in ('awaiting-confirmation', 'awaiting-input'): raise SettingsError(msg('settings_orchestrator.draft_cannot_cancel'))
             self._settle(draft_id, "canceled", "canceled",
                          expected={'state': row['state'], 'digest': row['digest']})
@@ -1865,4 +1869,3 @@ class SettingsOrchestrator:
             if owner_typed is not True: raise SettingsError(NOT_OWNER_TYPED_MESSAGE)
             return self.cancel(owner, channel, match.group(1))
         return self.read(owner)
-

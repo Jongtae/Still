@@ -84,7 +84,7 @@ def test_validation_uses_the_pinned_resolver_with_read_only_permissions() -> Non
         assert f"astral-sh/setup-uv@{SETUP_UV_REF}" in workflow
         assert f"version: '{UV_VERSION}'" in workflow
         # Both run the whole suite (#234), so both sync every extra, locked to the pinned resolver.
-        assert "uv sync --locked --extra mcp-host --extra schema-validation --group dev" in workflow
+        assert "uv sync --locked --extra mcp-host --extra schema-validation --extra a2a --group dev" in workflow
         assert "permissions:\n  contents: read" in workflow
         assert "pull_request_target" not in workflow
         assert "contents: write" not in workflow

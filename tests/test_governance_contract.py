@@ -180,7 +180,7 @@ def test_required_validate_runs_the_whole_linux_suite() -> None:
     assert not re.search(r"^    name:", jobs, re.M)
     assert "runs-on: ubuntu-latest" in jobs
     # Same locked environment and the same parallel invocation of the whole `tests` directory.
-    sync = "uv sync --locked --extra mcp-host --extra schema-validation --group dev --no-python-downloads"
+    sync = "uv sync --locked --extra mcp-host --extra schema-validation --extra a2a --group dev --no-python-downloads"
     assert sync in workflow and sync in linux
     suite = 'PATH="$PWD/.venv/bin:$PATH" python3 -m pytest -q -n auto --dist loadfile --durations=25 tests\n'
     assert suite in workflow and suite in linux

@@ -20,11 +20,13 @@ module only refuses the egress classes below):
   - ``Capabilities.execute``: every model-chosen tool that reaches a host off
     this Mac (``TOOL_EGRESS``), on every route (direct, CLI bridge, browser
     relay, delegated specialist), before the tool runs;
+  - ``a2a_transport``: remote card retrieval and every outbound SDK dispatch,
+    including Settings URL previews/registration; local inbound peers stay available;
   - ``ProviderRegistry.search``: every web search, the service's own lookup
     preflight included;
   - ``SkillLibrary``: skill acquisition from GitHub;
-  - ``family_setup.start_tunnel``: every public tunnel (remote login, phone
-    input, family setup);
+  - ``https_tunnel.start_tunnel``: every public tunnel (remote login, phone
+    input);
   - ``TelegramChannel``: every Bot API and file request; the receive and
     delivery loops also stand down;
   - the service's CLI native-search decision: the CLI's own web search stays
@@ -48,8 +50,7 @@ connection to its model provider, its own telemetry or update checks, and
 whatever its sandbox lets a shell command reach (Codex runs with
 ``--sandbox read-only``; Claude Code's ``-p`` mode denies a built-in tool that
 has no allow rule).  Owner-connected services (Google connectors, the AI's own
-claude.ai connectors, the owner's MCP servers) and family instances on this
-Mac, which keep their own settings, are not narrowed by this switch.
+claude.ai connectors, the owner's MCP servers), which keep their own settings, are not narrowed by this switch.
 """
 from __future__ import annotations
 
@@ -68,13 +69,15 @@ TOOL_EGRESS = {
     'public_page_read': 'public_read', 'weather': 'public_read',
     **{action: 'browser' for action in ('browser_open', 'browser_read', 'browser_find', 'browser_click',
                                         'browser_type', 'browser_sign_in')},
-    'api_request': 'api_request', 'code_run': 'code_run',
+    'api_request': 'api_request', 'code_run': 'code_run', 'a2a_message': 'a2a',
 }
 #: Every egress class this module refuses, with its owner-facing reason.
 EGRESS_CLASSES = ('web_search', 'public_read', 'browser', 'api_request', 'code_run', 'skill_acquisition',
-                  'tunnel', 'telegram')
+                  'tunnel', 'telegram', 'a2a')
 #: #209: egress classes whose every request is checked against its destination, so a declared
 #: intranet destination may be reached while work mode is on.
+# A2A tools name a peer identity, not every destination. Outbound peer traffic
+# (including discovery) stays paused, even for a declared intranet peer.
 DESTINATION_EGRESS = frozenset({'public_read', 'api_request', 'code_run'})
 
 

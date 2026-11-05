@@ -24,7 +24,7 @@ jobs:
         with:
           version: '0.11.33'
           enable-cache: true
-      - run: uv sync --locked --extra mcp-host --extra schema-validation --group dev --no-python-downloads
+      - run: uv sync --locked --extra mcp-host --extra schema-validation --extra a2a --group dev --no-python-downloads
       - run: .venv/bin/python scripts/verify_master_plan_docs.py
       - run: .venv/bin/python scripts/verify_readme_localization.py --check-git-diff
       - run: .venv/bin/python scripts/verify_src_layout.py
@@ -108,7 +108,7 @@ jobs:
         with:
           version: '0.11.33'
           enable-cache: true
-      - run: uv sync --locked --extra mcp-host --extra schema-validation --group dev --no-python-downloads
+      - run: uv sync --locked --extra mcp-host --extra schema-validation --extra a2a --group dev --no-python-downloads
       # #135, #156: the whole suite in parallel.  AGENTOS_REAL_BROWSER_TESTS is not set
       # here, so the real-WebKit classes skip; the rest of their files runs with the suite.
       - name: Suite (parallel; real-WebKit classes skip)

@@ -2,7 +2,7 @@
 
 An in-flow login (#709) or an explicit login request shows the Still login
 window on the Mac.  The owner who is not at the Mac gets a temporary HTTPS
-link (ngrok or a Cloudflare quick tunnel, #523, as the family setup's, #897)
+link (ngrok or a Cloudflare quick tunnel, #523)
 to a page that shows that window as an image refreshed about twice a second; a tap on the image is pressed at
 the same point in the window and opens the phone keyboard while an editable
 element has focus there, each keystroke goes into that field (#293), and [완료]
@@ -39,7 +39,7 @@ import time
 from html import escape
 from urllib.parse import quote
 
-from .family_setup import start_tunnel
+from .https_tunnel import start_tunnel
 from . import work_mode
 from .work_mode import WorkModeRefused
 
@@ -320,7 +320,7 @@ class RemoteLogin:
         if not isinstance(frame, dict):
             return None
         digest = hashlib.sha256(json.dumps([frame.get('jpeg'), frame.get('width'), frame.get('height'), frame.get('dialog'),
-                                            frame.get('focus'), frame.get('fields'), frame.get('links')],
+                                            frame.get('focus'), frame.get('fields'), frame.get('links'), frame.get('view_id')],
                                            sort_keys=True).encode()).hexdigest()
         if not full and digest == self._last_frame:
             return {'unchanged': True}
@@ -335,6 +335,8 @@ class RemoteLogin:
         if checked is None:
             return False
         kind, fields = checked
+        if kind in ('tap', 'text', 'key', 'nav'):
+            fields['view_id'] = body.get('view_id')
         return bool(self.profile.login_window_input(self.window, kind, **fields))
 
     def status(self):
@@ -385,14 +387,14 @@ margin-top:6px;overflow-wrap:anywhere}}
 <p id="end"></p>
 <script nonce="{nonce}">
 const code={code};const q='?code='+encodeURIComponent(code);const $=id=>document.getElementById(id);
-let W=0,H=0,busy=false,ended=false,full=true,F=null,FS=[],QRS=[],qrKey='',checkAfter=0,moveSeq=0,composing=false,sending=false;const sendQ=[],idle=[];
+let viewId=null,W=0,H=0,busy=false,ended=false,full=true,F=null,FS=[],QRS=[],qrKey='',checkAfter=0,moveSeq=0,composing=false,sending=false;const sendQ=[],idle=[];
 function end(text){{ended=true;$('keys').blur();$('line').blur();$('line').value='';$('live').classList.add('hidden');$('end').style.display='block';$('end').textContent=text}}
-async function post(path,body){{try{{const r=await fetch(path+q,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(body||{{}}),credentials:'same-origin'}});
-if(r.status===404){{end('이 링크는 닫혔어요.');return false}}if(!r.ok)return false;const d=await r.json();return d&&d.ok===true}}catch(e){{return false}}}}
+async function post(path,body){{if(path==='{INPUT_PATH}'&&body&&body.type!=='dialog'&&!Object.prototype.hasOwnProperty.call(body,'view_id'))body.view_id=viewId;try{{const r=await fetch(path+q,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(body||{{}}),credentials:'same-origin'}});
+if(r.status===404){{end('이 링크는 닫혔어요.');return false}}if(!r.ok)return false;const d=await r.json();if(d&&d.error==='stale_view'){{viewId=null;sendQ.splice(0);full=true;setTimeout(frame,0)}}return d&&d.ok===true}}catch(e){{return false}}}}
 async function frame(){{if(ended||busy)return;busy=true;const t0=Date.now();try{{const r=await fetch('{FRAME_PATH}'+q+(full?'&full=1':''),{{cache:'no-store',credentials:'same-origin'}});
 if(r.status===404){{end('이 링크는 닫혔어요.');return}}
 if(r.status===204){{full=false;if(t0>=checkAfter)applyFocus();return}}
-if(r.ok){{const d=await r.json();full=false;W=d.width;H=d.height;$('shot').src='data:image/jpeg;base64,'+d.jpeg;dialog(d.dialog);
+if(r.ok){{const d=await r.json();full=false;viewId=d.view_id;W=d.width;H=d.height;$('shot').src='data:image/jpeg;base64,'+d.jpeg;dialog(d.dialog);
 F=d.focus||null;FS=Array.isArray(d.fields)?d.fields:[];qr(d.links);if(t0>=checkAfter){{applyFocus();if(F==='text')$('compose').classList.remove('hidden')}}}}}}catch(e){{}}finally{{busy=false}}}}
 // #293: typing goes straight into the Mac window.  A tap focuses the invisible #keys over the image in
 // the same gesture (iOS opens the keyboard only then); each change to it is read against a sentinel
@@ -435,10 +437,10 @@ k.setAttribute('autocomplete',t==='password'?'current-password':'username');rese
 function applyFocus(){{const k=$('keys');if(document.activeElement!==k)return;if(!F){{k.blur();return}}setKeyType()}}
 // Text is split only between code points (for..of), never inside a surrogate pair.
 function addText(part){{const last=sendQ[sendQ.length-1];
-if(last&&last.type==='text'&&!last.sent&&!last.replace&&last.text.length+part.length<={TEXT_LIMIT})last.text+=part;else sendQ.push({{type:'text',text:part}})}}
+if(last&&last.type==='text'&&!last.sent&&!last.replace&&last.view_id===viewId&&last.text.length+part.length<={TEXT_LIMIT})last.text+=part;else sendQ.push({{type:'text',text:part,view_id:viewId}})}}
 function enqueue(item){{if(item.type==='text'){{let part='';for(const ch of item.text.replace(/[\\r\\n]+/g,'')){{
 if(part.length+ch.length>{TEXT_LIMIT}){{addText(part);part=''}}part+=ch}}if(part)addText(part)}}
-else sendQ.push(item);pump()}}
+else sendQ.push(Object.assign({{view_id:viewId}},item));pump()}}
 async function pump(){{if(sending)return;sending=true;let failed=false;
 while(sendQ.length&&!ended){{const item=sendQ[0];item.sent=true;const body=Object.assign({{}},item);delete body.sent;delete body.seq;
 const ok=await post('{INPUT_PATH}',body);sendQ.shift();if(item.seq!==undefined&&item.seq===moveSeq)checkAfter=Date.now();if(item.type!=='tap'&&!ok)failed=true}}
@@ -467,7 +469,7 @@ setInterval(frame,{REFRESH_MS});frame();
 // (``replace``) and clears the box; a tap anywhere else drops an unsent draft, so it never lands in
 // another field.  A password field or a point with no known field keeps the hidden direct typing (#293).
 const line=$('line');
-function put(){{const v=line.value.replace(/[\\r\\n]+/g,'');line.value='';if(!v)return;sendQ.push({{type:'text',text:v,replace:true}});pump()}}
+function put(){{const v=line.value.replace(/[\\r\\n]+/g,'');line.value='';if(!v)return;sendQ.push({{type:'text',text:v,replace:true,view_id:viewId}});pump()}}
 $('put').onclick=put;
 line.addEventListener('keydown',e=>{{if(e.key!=='Enter'||e.isComposing||e.keyCode===229)return;e.preventDefault();put()}});
 $('shot').addEventListener('click',e=>{{if(!W||!H)return;const r=e.currentTarget.getBoundingClientRect();
@@ -480,10 +482,10 @@ resetKeys();k.focus();moving({{type:'tap',x:x,y:y}},kind)}});
 // #1170: the phone's own AutoFill fills these two; they go out like typed text (ID, Tab, password) and are
 // cleared at once: the page keeps neither.
 function clearCred(){{$('user').value='';$('pass').value='';line.value=''}}
-$('cred').addEventListener('submit',async e=>{{e.preventDefault();const u=$('user').value,p=$('pass').value;clearCred();await drained();
-if(u&&!(await post('{INPUT_PATH}',{{type:'text',text:u}})))return;
-if(u&&p&&!(await post('{INPUT_PATH}',{{type:'key',key:'Tab'}})))return;
-if(p)await post('{INPUT_PATH}',{{type:'text',text:p}});setTimeout(frame,150)}});
+$('cred').addEventListener('submit',async e=>{{e.preventDefault();const u=$('user').value,p=$('pass').value,aimed=viewId;clearCred();await drained();
+if(u&&!(await post('{INPUT_PATH}',{{type:'text',text:u,view_id:aimed}})))return;
+if(u&&p&&!(await post('{INPUT_PATH}',{{type:'key',key:'Tab',view_id:aimed}})))return;
+if(p)await post('{INPUT_PATH}',{{type:'text',text:p,view_id:aimed}});setTimeout(frame,150)}});
 window.addEventListener('pagehide',clearCred);
 $('enter').onclick=()=>moving({{type:'key',key:'Enter'}});
 $('tab').onclick=()=>moving({{type:'key',key:'Tab'}});

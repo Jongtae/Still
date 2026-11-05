@@ -82,7 +82,7 @@ import sys
 import threading
 import time
 import uuid
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlsplit
 
 #: Appended to the user agent.  Still's own HTTP server refuses every
 #: request that carries it, so a page in the embedded browser can never use
@@ -1169,6 +1169,69 @@ def _host(url):
         return ''
 
 
+#: #636: the parameters that make a navigation an OAuth 2.0 authorization request (RFC 6749 §4.1.1;
+#: OIDC Core §3.1.2.1 adds ``scope=openid`` to the same request).  Only their names are compared.
+AUTHORIZATION_PARAMETERS = frozenset({'response_type', 'client_id'})
+#: #636: how many authorization-request hosts one worker keeps (in order; hosts only).
+AUTHORIZATIONS_KEPT = 16
+
+
+def authorization_host(url):
+    """The host of ``url`` when it carries an OAuth 2.0 authorization request, else None (#636).
+
+    The query's parameter names are compared with ``AUTHORIZATION_PARAMETERS``;
+    no value is returned or kept, and no provider is named. RFC 6749 permits
+    redirect_uri to be omitted; such requests still need a policy decision.
+    """
+    try:
+        parts = urlsplit(str(url or ''))
+        host = (parts.hostname or '').lower().rstrip('.')
+    except ValueError:
+        return None
+    if parts.scheme not in ('http', 'https') or not host:
+        return None
+    names = {name for name, _value in parse_qsl(parts.query, keep_blank_values=True)}
+    return host if AUTHORIZATION_PARAMETERS <= names else None
+
+
+def authorization_blocked(url, policy):
+    """Apply Work switches to the request's client endpoint (RFC 6749 §§3.1.2, 4.1.1).
+
+    Query values are parsed only in memory, never retained in policy or evidence.
+    Missing, ambiguous or unusable endpoints fail closed whenever any switch is off.
+    """
+    if authorization_host(url) not in policy.get('protected_hosts', ()):
+        return False
+    enabled = policy.get('enabled', True)
+    off_sites = policy.get('off_sites', ())
+    if not enabled:
+        return True
+    if not off_sites:
+        return False
+    from .browser_session import registrable_domain
+    host = authorization_redirect_host(url)
+    return host is None or registrable_domain(host) in off_sites
+
+
+def authorization_redirect_host(url):
+    """The unambiguous client endpoint's host, parsed in memory; retain no redirect URI value."""
+    try:
+        redirects = [value for name, value in parse_qsl(urlsplit(url).query, keep_blank_values=True)
+                     if name == 'redirect_uri']
+        if len(redirects) != 1:
+            return None
+        endpoint = urlsplit(redirects[0])
+        host = endpoint.hostname
+        # urlsplit is intentionally permissive; require an absolute usable client endpoint.
+        if not endpoint.scheme or not host or endpoint.username is not None or endpoint.fragment \
+                or any(char.isspace() or char in '%\\' for char in host):
+            return None
+        endpoint.port  # Validate a supplied port without retaining it.
+        return host
+    except ValueError:
+        return None
+
+
 def origin_key(url):
     """``host:port`` of an http(s) URL (default ports filled), or ''."""
     try:
@@ -1352,9 +1415,10 @@ class Worker:
         self.AppKit, self.Foundation, self.WebKit, self.AppHelper = AppKit, Foundation, WebKit, AppHelper
         self.profile, self.emit = profile, emit
         self.allowed_origins = frozenset(allowed_origins)
+        self.provider_sign_in_policy = {}
         self.pending = {}          # op id -> True while the op has not answered
         self.navigation = None     # (id, WKNavigation) the navigate op waits for
-        self.blocked = 0           # main-frame navigations refused so far
+        self.blocked = 0           # main-frame navigation failures (app-link cancellations excluded)
         self.blocked_reason = None  # #615: why the latest one was refused
         self.refused_submits = 0   # form navigations refused with no page form to hold (#700 review)
         self.step_refused = 0      # ``refused_submits`` when the current step began
@@ -1362,6 +1426,10 @@ class Worker:
         self.step_posted = 0       # ``posted_submits`` when the current step began
         self.reported_refused = 0  # ``refused_submits`` last reported (step answer or snapshot, #758)
         self.hosts = set()         # hosts of committed main-frame navigations in this worker's life
+        #: #636: hosts of allowed navigations that carried an OAuth 2.0 authorization request (hosts only,
+        #: the last ``AUTHORIZATIONS_KEPT``), and how many there were in this worker's life.
+        self.authorizations = []
+        self.authorization_count = 0
         self.popups = []           # #914: (view, window, delegate) of sign-in popups while the owner signs in
         self.main_navigations = 0  # main-frame navigations allowed so far (#736)
         #: #11: while a ``load_more`` read runs, a main-frame navigation the page starts is
@@ -1824,12 +1892,20 @@ class Worker:
                 # #615: the step answers why its navigation was refused, not always "private network".
                 return self.fail(ident, self.blocked_reason or 'blocked_destination', **self.step_posted_field())
             dialogs = (step or {}).get('dialogs') or []
+            app_link = (step or {}).get('app_link') is True
             # #899: whether the page started a non-GET form submission during this step; a decision
             # still pending when the step answers counts as one (review P1: unknown is not "none").
             self.reply(ident, **({'navigated': True} if navigated else {}), **({'dialogs': dialogs} if dialogs else {}),
-                       **self.step_posted_field())
+                       **({'app_link': True} if app_link else {}), **self.step_posted_field())
         step, self.dialog_step = getattr(self, 'dialog_step', None), None
         self.end_step(answer)
+
+    def note_authorization(self, url):
+        """#636: count an allowed navigation that carries an OAuth 2.0 authorization request; its host only."""
+        host = authorization_host(url)
+        if host:
+            self.authorization_count += 1
+            self.authorizations = (self.authorizations + [host])[-AUTHORIZATIONS_KEPT:]
 
     # -- destinations ----------------------------------------------------------
     def decide(self, url, main_frame, decision):
@@ -1841,6 +1917,8 @@ class Worker:
             return decision(True)
         if scheme not in ('http', 'https'):
             return decision(False, 'unsupported_navigation')
+        if main_frame and authorization_blocked(url, getattr(self, 'provider_sign_in_policy', {})):
+            return decision(False, 'provider_sign_in_off')
         key = origin_key(url)
         if key in self.resolved:
             return decision(self.resolved[key] is None, self.resolved[key])
@@ -1898,6 +1976,12 @@ class Worker:
     def navigation_refused(self, main_frame, reason='blocked_destination'):
         if not main_frame:
             return
+        if reason == 'unsupported_navigation' and self.navigation is None:
+            # Policy cancellation keeps the document. Only explicit opens fail.
+            step = getattr(self, 'dialog_step', None)
+            if isinstance(step, dict):
+                step['app_link'] = True
+            return
         self.blocked += 1
         self.blocked_reason = reason
         if self.navigation is not None:
@@ -1948,6 +2032,8 @@ class Worker:
         op = command.get('op')
         timeout = command.get('timeout') or 20
         try:
+            if 'provider_sign_in_policy' in command:
+                self.provider_sign_in_policy = command['provider_sign_in_policy']
             if 'intranet' in command:
                 self.set_intranet(command['intranet'])
             method = getattr(self, 'op_' + str(op), None)
@@ -2445,20 +2531,37 @@ class Worker:
             return False
         return True
 
+    def remote_view(self):
+        """The current native view and its opaque frame identity."""
+        view = self.front_view()
+        current = getattr(self, '_remote_view', None)
+        if current is None or current[0] is not view:
+            current = self._remote_view = (view, uuid.uuid4().hex)
+        return current
+
+    def _remote_input_allowed(self, ident, command):
+        if not self._remote_allowed(ident):
+            return False
+        if command.get('view_id') != self.remote_view()[1]:
+            self.fail(ident, 'stale_view')
+            return False
+        return True
+
     def op_frame(self, ident, command, timeout):
         """A JPEG of the frontmost login view (base64), that view's size in points, and what kind of
         element has focus in it (``REMOTE_FOCUS_SCRIPT``, #293)."""
         if not self._remote_allowed(ident):
             return
+        view, view_id = self.remote_view()
         held = self.held_dialog
         last = getattr(self, 'last_frame', None)
-        if held is not None and last is not None:
+        if held is not None and last is not None and last[4] == view_id:
             # A page waiting on its own dialog renders nothing until it is answered, so a
             # snapshot would never complete: the phone gets the last frame and the question.
             # Its scripts are blocked too, so no focus is asked: nothing can be typed now.
             return self.reply(ident, jpeg=last[0], width=last[1], height=last[2],
-                              dialog={'kind': held['kind'], 'text': held['text']}, focus=None, fields=[], links=last[3])
-        view = self.front_view()
+                              dialog={'kind': held['kind'], 'text': held['text']}, focus=None, fields=[], links=last[3],
+                              view_id=view_id)
         size = view.frame().size
         width, height = float(size.width), float(size.height)
         config = self.WebKit.WKSnapshotConfiguration.alloc().init()
@@ -2470,23 +2573,27 @@ class Worker:
         def done(image, error):
             if ident not in self.pending:
                 return
+            if self.remote_view() != (view, view_id):
+                return self.fail(ident, 'stale_view')
             data = _jpeg_bytes(self.AppKit, image) if error is None and image is not None else None
             if data is None:
                 return self.fail(ident, 'frame_failed')
             encoded = base64.b64encode(data).decode('ascii')
             links = self.frame_links(data)
-            self.last_frame = (encoded, width, height, links)
+            self.last_frame = (encoded, width, height, links, view_id)
 
             def focused(value, error):
                 if ident not in self.pending:
                     return
+                if self.remote_view() != (view, view_id):
+                    return self.fail(ident, 'stale_view')
                 answer = value if error is None and isinstance(value, dict) else {}
                 kind = answer.get('focus')
                 held = self.held_dialog
                 dialog = {'kind': held['kind'], 'text': held['text']} if held is not None else None
                 self.reply(ident, jpeg=encoded, width=width, height=height, dialog=dialog,
                            focus=kind if kind in REMOTE_FOCUS_KINDS else None, fields=remote_fields(answer.get('fields')),
-                           links=links)
+                           links=links, view_id=view_id)
                 self.fit_phone_page()   # #254: the next frame shows a wide page whole
             if self.held_dialog is not None:
                 return focused(None, 'held')
@@ -2508,7 +2615,7 @@ class Worker:
 
     def op_remote_tap(self, ident, command, timeout):
         """A native press at ``(x, y)`` in view points of the frontmost view."""
-        if not self._remote_allowed(ident):
+        if not self._remote_input_allowed(ident, command):
             return
         view = self.front_view()
         size = view.frame().size
@@ -2526,7 +2633,7 @@ class Worker:
         ``op_type`` uses, then the native text-input path when nothing in the main frame
         has focus (a field inside a frame).  ``replace`` (#602) selects the field's content first,
         in the main frame only.  The text is never kept or echoed."""
-        if not self._remote_allowed(ident):
+        if not self._remote_input_allowed(ident, command):
             return
         text = command.get('text')
         if not isinstance(text, str) or not text:
@@ -2536,6 +2643,8 @@ class Worker:
 
         def inserted(value, error):
             if ident not in self.pending:
+                return
+            if not self._remote_input_allowed(ident, command):
                 return
             if error is None and isinstance(value, dict) and value.get('ok'):
                 return self.reply(ident)
@@ -2547,7 +2656,7 @@ class Worker:
         self.run(REMOTE_INSERT_SCRIPT, {'text': text, 'replace': command.get('replace') is True}, inserted, view=view)
 
     def op_remote_key(self, ident, command, timeout):
-        if not self._remote_allowed(ident):
+        if not self._remote_input_allowed(ident, command):
             return
         name = command.get('key')
         if name not in REMOTE_KEYS:
@@ -2556,7 +2665,7 @@ class Worker:
         self.reply(ident)
 
     def op_remote_nav(self, ident, command, timeout):
-        if not self._remote_allowed(ident):
+        if not self._remote_input_allowed(ident, command):
             return
         action = command.get('action')
         if action not in REMOTE_NAV_ACTIONS:
@@ -2675,7 +2784,9 @@ class Worker:
 
     def op_state(self, ident, command, timeout):
         # #765: ``navigations`` is a count of main-frame navigations (never a URL).
-        self.reply(ident, visible=bool(self.owner_visible), navigations=self.landed)
+        # #636: ``authorizations`` the hosts of OAuth 2.0 authorization requests (never a query value).
+        self.reply(ident, visible=bool(self.owner_visible), navigations=self.landed,
+                   authorizations=list(self.authorizations), authorization_count=self.authorization_count)
 
     def _all_types(self):
         return self.WebKit.WKWebsiteDataStore.allWebsiteDataTypes()
@@ -2905,10 +3016,15 @@ def _popup_delegate_class():
                 top = frame is None or bool(frame.isMainFrame())
                 if top and str(urlsplit(url).scheme or '').lower() in ('data', 'blob'):
                     return handler(WebKit.WKNavigationActionPolicyCancel)
-                # main_frame=False: a popup's navigations never touch the login window's counters.
+                # main_frame=False: a popup's navigations never touch the login window's navigation counters.
                 # #1579: ``decide`` answers ``(allowed, reason)``; a one-argument callback raised here.
-                worker.decide(url, False, lambda allowed, reason=None: handler(
-                    WebKit.WKNavigationActionPolicyAllow if allowed else WebKit.WKNavigationActionPolicyCancel))
+                def decision(allowed, reason=None):
+                    if allowed and top:
+                        # #636: a popup exists only while the owner signs in by hand (``open_popup``): its
+                        # authorization request's host is recorded like the window's own, never a value.
+                        worker.note_authorization(url)
+                    handler(WebKit.WKNavigationActionPolicyAllow if allowed else WebKit.WKNavigationActionPolicyCancel)
+                worker.decide(url, False, decision)
             guarded_policy(worker, 'popup_navigation', handler, WebKit.WKNavigationActionPolicyCancel, body)
 
         def webView_runJavaScriptAlertPanelWithMessage_initiatedByFrame_completionHandler_(self, view, message, frame, handler):
@@ -3013,6 +3129,7 @@ def _delegate_class():
                         worker.navigation_refused(main_frame, reason or 'blocked_destination')
                     elif main_frame:
                         worker.main_navigations += 1   # a click waits for it to land (#736)
+                        worker.note_authorization(url)   # #636: a host, only when the URL is an authorization request
                         try:
                             worker.phone_navigated(committed=False)   # #254: the next page loads phone-sized
                         except Exception:

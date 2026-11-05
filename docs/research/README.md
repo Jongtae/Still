@@ -12,6 +12,7 @@ This directory preserves owner-facing research, concept proposals and their revi
 | [Skill supply and execution — 2026-10-01](skill-supply-and-execution-2026-10-01.ko.md) | Historical research; current implementation was separately inspected for the new concept paper. |
 | [Role ontology and mandate — v0.3](role-ontology-and-mandate-2026-10-05.ko.md) | Owner-centered multi-role concept proposal revised through rounds 11–20. Practical reuse, not novelty, is the objective. No runtime activation or canonical-contract replacement. |
 | [Memory telling — 2026-10-30](memory-telling-2026-10-30.ko.md) | Evidence behind #422: how memory is told, ended and shown in use; adopted rules live in the Secretary Agency Contract #422 amendment. |
+| [Memory and dream experiments — 2026-10-22 to 11-05](memory-and-dream-experiments-2026-10-22-to-11-05.ko.md) | Aggregate results of the offline replays M1–M5 and m7–m11 behind #205 D2, #217, #402, #416, #442, #495 and #496; the owner's data, test sets and judgments stay private on the owner's machine. |
 | [Reuse and reference register — v0.2](role-ontology-reuse-2026-10-05.ko.md) | Twenty-one source records and ten adoption/adaptation/deferral decisions, including current code seams and explicit evidence limits. |
 
 ## Editorial resources
