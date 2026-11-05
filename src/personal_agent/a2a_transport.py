@@ -29,6 +29,7 @@ from a2a.types.a2a_pb2 import (AgentCard, AgentInterface, Role, SendMessageReque
                                Task, TaskStatus, TaskState, AgentCapabilities, AgentSkill, SecurityScheme, HTTPAuthSecurityScheme, SecurityRequirement)
 
 from .a2a_peers import PeerError, endpoint
+from . import work_mode
 
 MAX_BYTES = 65536
 _services = weakref.WeakSet()
@@ -119,7 +120,8 @@ def parse_card(value):
         raise PeerError('invalid_agent_card') from None
 
 
-async def fetch_card(url, *, credential='', http=None):
+async def fetch_card(url, *, store, credential='', http=None):
+    work_mode.refuse(store, 'a2a')
     endpoint(url)
     own = http is None
     http = http or httpx.AsyncClient(timeout=15, follow_redirects=False, trust_env=False)
@@ -144,8 +146,9 @@ async def fetch_card(url, *, credential='', http=None):
             await http.aclose()
 
 
-async def send_message(card, text, message_id, credential='', *, http=None, guard=lambda: None,
+async def send_message(card, text, message_id, credential='', *, store, http=None, guard=lambda: None,
                        redact=lambda text: text):
+    work_mode.refuse(store, 'a2a')
     card = ParseDict(parse_card(card), AgentCard())
     # The SDK only receives a client restricted to the single confirmed endpoint.
     # No automatic redirects, proxy environment, retries or alternate interfaces.
@@ -156,6 +159,7 @@ async def send_message(card, text, message_id, credential='', *, http=None, guar
 
     class BoundTransport(httpx.AsyncBaseTransport):
         async def handle_async_request(self, request):
+            work_mode.refuse(store, 'a2a')
             guard()
             if request.url != httpx.URL(url) or request.method != 'POST':
                 raise PeerError('unregistered_peer_destination')

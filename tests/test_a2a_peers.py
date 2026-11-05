@@ -588,7 +588,7 @@ def test_local_owner_registers_from_card_url_via_real_sdk_app(state):
             {'card_url': 'http://127.0.0.1/.well-known/agent-card.json', 'confirm_digest': preview['digest'],
              'outbound_credential': 'not-yet-confirmed-peer-credential'})
         assert status == 200
-    assert result['peer']['card_digest'] == preview['digest']
+    assert result['peer']['card_digest'] == digest(preview['card'])
     assert result['peer']['card_url'].endswith('/.well-known/agent-card.json')
     assert sent_auth == [None, None]  # No endpoint credential goes to an unreviewed card URL.
 
@@ -863,3 +863,142 @@ def test_notice_language_uses_latest_owner_correction_not_older_work_or_peer_tex
         peers.propose_owner_item(turn, 'English peer words')
     assert sent.call_args.args[0] == msg('a2a.owner_review', name=registration['peer']['card']['name'],
                                         request='English peer words')
+
+
+def test_work_mode_refuses_tool_preview_and_transport_before_network(state):
+    from personal_agent import work_mode
+    from personal_agent.agent_runtime import Capabilities
+    from personal_agent.a2a_transport import fetch_card, send_message
+    from personal_agent.messages import msg
+    service, peers, model, registration = state
+    document = registration['peer']['card']
+    app = echo_application(card('http://127.0.0.1/'))
+    app.router.routes.extend(create_agent_card_routes(card('http://127.0.0.1/')))
+    observed = []
+    async def observe(request):
+        observed.append((request.method, str(request.url)))
+    actual_client = httpx.AsyncClient
+    def client(*args, **kwargs):
+        kwargs.setdefault('transport', httpx.ASGITransport(app=app))
+        kwargs['event_hooks'] = {'request': [observe]}
+        return actual_client(*args, **kwargs)
+    work_id = owner_work(service)
+    work_mode.set_enabled(service.store, True, surface='settings')
+    reason = msg('work_mode.refused.a2a')
+    caps = Capabilities(service.store, None, CFG, '', work_id, lambda *a: None,
+                        a2a=lambda args: peers.tool(work_id, args))
+    with mock.patch('personal_agent.a2a_transport.httpx.AsyncClient', side_effect=client):
+        with pytest.raises(work_mode.WorkModeRefused) as caught:
+            caps.execute('a2a_message', {'peer_id': registration['peer']['id'], 'message': 'hello'})
+        assert str(caught.value) == reason and caught.value.ran is False
+        for action in ('preview', 'register'):
+            status, result = api_request(service, '/api/a2a/' + action,
+                                        {'card_url': 'http://127.0.0.1/.well-known/agent-card.json'})
+            assert status == 400 and result['error'] == reason
+        async def run():
+            async with client() as http:
+                for operation in (
+                    peers.send(registration['peer']['id'], work_id, 'hello', 'blocked', http=http),
+                    fetch_card('http://127.0.0.1/.well-known/agent-card.json', store=service.store, http=http),
+                    send_message(document, 'hello', 'blocked-direct', store=service.store, http=http),
+                ):
+                    with pytest.raises(work_mode.WorkModeRefused) as refused:
+                        await operation
+                    assert str(refused.value) == reason
+        asyncio.run(run())
+    assert observed == []
+    assert peers.conversations()['turns'] == []
+
+
+def test_work_mode_rechecked_after_card_fetch_before_sdk_dispatch(state):
+    from personal_agent import work_mode
+    service, peers, model, registration = state
+    remote_card = card('http://127.0.0.1/')
+    app = echo_application(remote_card)
+    app.router.routes.extend(create_agent_card_routes(remote_card))
+    observed = []
+    async def on_request(request):
+        observed.append(request.method)
+    async def on_response(response):
+        if response.request.method == 'GET':
+            work_mode.set_enabled(service.store, True, surface='settings')
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
+                event_hooks={'request': [on_request], 'response': [on_response]}) as http:
+            with pytest.raises(work_mode.WorkModeRefused):
+                await peers.send(registration['peer']['id'], owner_work(service), 'hello', 'switch', http=http)
+    asyncio.run(run())
+    assert observed == ['GET']
+    assert peers.conversations()['turns'][0]['state'] == 'failed'
+
+
+def test_url_review_binds_custom_discovery_source_and_reuses_it(state):
+    from starlette.responses import JSONResponse
+    from starlette.routing import Route
+    service, peers, model, registration = state
+    remote_card = card('http://127.0.0.1/')
+    document = MessageToDict(remote_card)
+    source = 'https://discovery.example/cards/reviewed.json'
+    app = echo_application(remote_card)
+    async def discovery(request):
+        return JSONResponse(document)
+    app.router.routes.append(Route('/cards/reviewed.json', discovery))
+    actual_client = httpx.AsyncClient
+    observed = []
+    async def observe(request):
+        observed.append((request.method, str(request.url), request.headers.get('Authorization')))
+    def client(*args, **kwargs):
+        kwargs.setdefault('transport', httpx.ASGITransport(app=app))
+        kwargs['event_hooks'] = {'request': [observe]}
+        return actual_client(*args, **kwargs)
+    with mock.patch('personal_agent.a2a_transport.httpx.AsyncClient', side_effect=client):
+        status, preview = api_request(service, '/api/a2a/preview', {'card_url': source})
+        assert status == 200 and preview['card_url'] == source
+        # Even identical card contents at a different URL cannot use this confirmation.
+        changed = {**preview, 'card_url': 'https://other.example/cards/reviewed.json',
+                   'confirm_digest': preview['digest']}
+        status, result = api_request(service, '/api/a2a/register', changed)
+        assert status == 400 and result['error'] == 'card_confirmation_required'
+        with pytest.raises(PeerError, match='card_confirmation_required'):
+            peers.register(changed)
+        status, result = api_request(service, '/api/a2a/register',
+            {'card': preview['card'], 'card_url': source, 'confirm_digest': preview['digest']})
+        assert status == 200 and result['peer']['card_url'] == source
+        async def run():
+            async with client() as http:
+                return await peers.send(result['peer']['id'], owner_work(service), 'hello', 'custom', http=http)
+        assert asyncio.run(run())['answer'] == 'answer: hello'
+    assert [url for method, url, auth in observed if method == 'GET' and url == source] == [source] * 3
+    assert all('/.well-known/' not in url for method, url, auth in observed)
+    assert all(auth is None for method, url, auth in observed if method == 'GET')
+
+
+def test_work_mode_keeps_loopback_inbound_work_available(state, channel):
+    from personal_agent import work_mode
+    service, peers, model, registration = state
+    work_mode.set_enabled(service.store, True, surface='settings')
+    assert answer(asyncio.run(send(channel))) == 'The counterpart answer from the owner AI.'
+
+
+@pytest.mark.parametrize('declared', [False, True])
+def test_work_mode_pauses_even_declared_intranet_peer_destinations(state, declared):
+    from personal_agent import intranet, work_mode
+    from personal_agent.a2a_transport import fetch_card, send_message
+    service, peers, model, registration = state
+    url = 'https://peer.corp.example/'
+    if declared:
+        service.store.put(intranet.CONFIG_KEY, [{'host': 'peer.corp.example', 'port': 443}])
+    assert intranet.declared(service.store, 'peer.corp.example', 443) is declared
+    work_mode.set_enabled(service.store, True, surface='settings')
+    observed = []
+    async def observe(request):
+        observed.append(request)
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=echo_application(card(url))),
+                                     event_hooks={'request': [observe]}) as http:
+            with pytest.raises(work_mode.WorkModeRefused):
+                await fetch_card(url + '.well-known/agent-card.json', store=service.store, http=http)
+            with pytest.raises(work_mode.WorkModeRefused):
+                await send_message(MessageToDict(card(url)), 'hello', 'intranet', store=service.store, http=http)
+    asyncio.run(run())
+    assert observed == []

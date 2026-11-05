@@ -1407,20 +1407,23 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                         if body.get('card_url'):body['card_url']=peers.card_url(body['card_url'])
                     if action=='preview':
                         from .a2a_transport import parse_card, fetch_card
-                        from .a2a_peers import digest
+                        from .a2a_peers import confirmation_digest
                         import asyncio
-                        card=(asyncio.run(fetch_card(body['card_url']))
+                        card=(asyncio.run(fetch_card(body['card_url'], store=service.store))
                               if body.get('card_url') else parse_card(body.get('card')))
                         card=peers.reviewed_card(card)
-                        return self.reply(200,{'card':card,'digest':digest(card)})
+                        return self.reply(200,{'card':card,'card_url':body.get('card_url'),'digest':confirmation_digest(card,body.get('card_url'))})
                     if action=='register':
+                        from .a2a_peers import confirmation_digest
+                        if body.get('card') is not None:
+                            if body.get('confirm_digest')!=confirmation_digest(peers.reviewed_card(body['card']),body.get('card_url')):
+                                raise ValueError('card_confirmation_required')
                         if body.get('card_url'):
                             import asyncio
                             from .a2a_transport import fetch_card
-                            body={**body,'card':asyncio.run(fetch_card(body['card_url']))}
+                            body={**body,'card':asyncio.run(fetch_card(body['card_url'], store=service.store))}
                         from .a2a_transport import parse_card
-                        from .a2a_peers import digest
-                        if body.get('confirm_digest')!=digest(parse_card(body.get('card'))):
+                        if body.get('confirm_digest')!=confirmation_digest(parse_card(body.get('card')),body.get('card_url')):
                             raise ValueError('card_confirmation_required')
                         return self.reply(200,peers.register(body))
                     if action=='update':return self.reply(200,peers.update(body))

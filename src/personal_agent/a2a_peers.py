@@ -20,6 +20,7 @@ from urllib.parse import urlsplit
 
 from .drive_web_oauth import EncryptedDriveSecretStore
 from .messages import msg
+from .work_mode import WorkModeRefused
 from .telegram_locale import ai_text, owner_language
 
 REGISTRY = 'a2a_peers'
@@ -41,6 +42,11 @@ class PeerError(ValueError):
 
 def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
+def confirmation_digest(card, card_url=None):
+    """Confirm the discovery source as well as the reviewed card's contents."""
+    return digest({'card': card, 'card_url': card_url}) if card_url else digest(card)
 
 
 def endpoint(url):
@@ -202,6 +208,8 @@ class A2APeers:
         credential = self.prepare_credential(body.get('outbound_credential', ''))
         public_card = self.reviewed_card(body.get('card'))
         card_url = self.card_url(body['card_url']) if body.get('card_url') else None
+        if card_url and body.get('confirm_digest') != confirmation_digest(public_card, card_url):
+            raise PeerError('card_confirmation_required')
         scope = disclosure(body.get('scope'))
         budget, rate = body.get('budget', 100), body.get('rate', 10)
         if any(type(n) is not int or not 1 <= n <= 10000 for n in (budget, rate)):
@@ -477,7 +485,7 @@ class A2APeers:
             # An explicitly registered public card source may be separate from
             # the peer endpoint. Its revalidation never gets endpoint credentials.
             credential = self.secrets.get(peer_id).get('outbound', '') if same_origin else ''
-            card = await fetch_card(row['card_url'], credential=credential, http=http)
+            card = await fetch_card(row['card_url'], store=self.store, credential=credential, http=http)
             if digest(card) != row['card_digest']:
                 raise PeerError('card_confirmation_required')
         else:
@@ -486,7 +494,7 @@ class A2APeers:
             url = row['card']['supportedInterfaces'][0]['url']
             parsed = urlsplit(url)
             card = await fetch_card(f'{parsed.scheme}://{parsed.netloc}/.well-known/agent-card.json',
-                                    credential=self.secrets.get(peer_id).get('outbound', ''), http=http)
+                                    store=self.store, credential=self.secrets.get(peer_id).get('outbound', ''), http=http)
             if digest(card) != row['card_digest']:
                 raise PeerError('card_confirmation_required')
         turn, fresh = self.admit(peer_id, message_id, None, text, 'outbound', work_id)
@@ -503,13 +511,16 @@ class A2APeers:
             credential = self.secrets.get(peer_id).get('outbound', '')
             self.record(work_id, 'requested', {'peer_id': peer_id, 'direction': 'outbound',
                         'destination': row['card']['supportedInterfaces'][0]['url'], 'sections': sent_sections, 'state': 'dispatching'})
-            answer = await send_message(row['card'], turn['question'], message_id, credential, http=http,
+            answer = await send_message(row['card'], turn['question'], message_id, credential, store=self.store, http=http,
                                         guard=lambda: self.guard(peer_id, row['revision']),
                                         redact=self.service._redact_known_secrets)
             answer = self.finish(turn, answer)
             self.record(work_id, 'succeeded', {'peer_id': peer_id, 'direction': 'outbound',
                         'destination': row['card']['supportedInterfaces'][0]['url'], 'sections': sent_sections, 'state': 'response-observed'})
             return {'answer': answer, 'origin': 'third-party', 'peer_id': peer_id}
+        except WorkModeRefused:
+            self.fail(turn, 'work_mode')
+            raise
         except Exception:
             self.record(work_id, 'failed', {'peer_id': peer_id, 'direction': 'outbound',
                         'destination': row['card']['supportedInterfaces'][0]['url'],

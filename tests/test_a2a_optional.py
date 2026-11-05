@@ -63,7 +63,7 @@ const catalog=JSON.parse(source.slice(source.indexOf('const I18N=')+11,source.in
 let language=process.argv[2];
 const ctx={t:(key,values={})=>(catalog[language]?.[key]||key).replace(/\{(\w+)\}/g,(_,name)=>values[name]??''),activeView:'settings',activeSettings:'external',element:(tag,text,cls)=>{const node=new Element(tag,text);node.className=cls||'';return node;},$,
  document:{getElementById:$,activeElement:null},window:{confirm:()=>confirmed},
- api:async(path,body)=>{calls.push([path,body]);if(path==='/api/a2a/preview')return {card:peer.card,digest:'reviewed'};
+ api:async(path,body)=>{calls.push([path,body]);if(path==='/api/a2a/preview')return {card:peer.card,card_url:body.card_url,digest:'reviewed'};
  if(path==='/api/a2a/register')return {peer,inbound_credential:'once-only-credential'};return data;}};
 vm.createContext(ctx);vm.runInContext(source.slice(source.indexOf('// #651: counterpart setup'),source.indexOf('// A boot failure')),ctx);
 (async()=>{
@@ -89,7 +89,9 @@ vm.createContext(ctx);vm.runInContext(source.slice(source.indexOf('// #651: coun
  json.value='{}';await form.onsubmit({preventDefault(){}});
  const register=all.find(node=>node.textContent===ctx.t('확인한 에이전트 등록'));assert(!register.hidden);
  json.oninput();assert(register.hidden,'changed card invalidates preview');
+ const url=all.find(node=>node.name==='a2a-card-url');url.value='https://discovery.example/custom/card.json';
  await form.onsubmit({preventDefault(){}});await register.onclick();
+ assert.equal(calls.find(([path])=>path==='/api/a2a/register')[1].card_url,url.value,'registration preserves the reviewed card source');
  const token=all.find(node=>node.attrs['aria-label']===ctx.t('상대에게 전달할 일회 표시 인증 정보'));assert.equal(token.value,'once-only-credential');
  const hide=all.find(node=>node.textContent===ctx.t('인증 정보 숨기기'));hide.onclick();
  await ctx.renderA2aPeers();assert.equal(token.value,'','a refresh cannot show the credential again');
