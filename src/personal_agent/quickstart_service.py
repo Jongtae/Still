@@ -6664,6 +6664,77 @@ class AgentService:
             tool_rows.append((row['tool'],row['status'],data if isinstance(data,dict) else {}))
         return tool_rows
 
+    def attempt_observations(self, orchestration, rows, *, pages=()):
+        """Build judgment evidence from supplied Work-scoped host events only.
+
+        Callers own event selection; this helper never reads conversation or owner history.
+        """
+        from .agent_runtime import failed_steps_text, read_state_text, recorded_effects, trail_steps
+        observed=[]
+        # #729: the factual summary the next plan call reads (names and codes only).
+        called,failed_codes,incomplete,sourceless=[],[],[],0
+        tool_rows=self.attempt_tool_rows(rows)
+        # The owner is told an action ran only for a recorded change; an unknown one is said as such.
+        for row in rows:
+            if row['tool'] in self.LOCAL_NON_TOOL_EVENTS|{'subscription_engine'} or row['status'] not in ('running','succeeded','failed'):
+                continue
+            try:data=json.loads(row['detail'] or '{}')
+            except (TypeError,ValueError):data={}
+            data=data if isinstance(data,dict) else {}
+            if row['tool'] not in called:called.append(row['tool'])
+            if row['status']=='succeeded':
+                evidence=data.get('evidence') if isinstance(data.get('evidence'),dict) else {}
+                if data.get('scope')=='cli-native':
+                    # #1308, #621: the worker's own search or page open, as its CLI reported it.
+                    if not evidence.get('sources'):sourceless+=1
+                    observed.append(native_observation_line(row['tool'],data,evidence))
+                else:
+                    observed.append(f"- {row['tool']}: {json.dumps(evidence,ensure_ascii=False)[:600]}")
+            elif row['status']=='failed':
+                if data.get('code')==TOOL_INCOMPLETE:incomplete.append(row['tool'])
+                else:failed_codes.append(f"{row['tool']} ({data.get('code') or 'failed'})")
+        # #14: the judgment reads every unsettled call with what Still observed about it: whether a later
+        # call redid it or routed around it, or whether its effect is unknown.
+        steps=trail_steps(tool_rows)
+        failed_steps=failed_steps_text(steps)
+        # #674: the calls Still recorded as having made their change; they bound the judgment's verdict and line.
+        effects=recorded_effects(steps)
+        # #151: which listed items this attempt opened and read through, from the recorded evidence;
+        # kept whole at the end of the bounded observations, so no number of step lines drops it.
+        read_state=read_state_text([(tool,data.get('evidence')) for tool,status,data in tool_rows if status=='succeeded'])
+        read_state=('- '+str(orchestration._redact(read_state,private=False) or '')) if read_state else ''
+        observations=observations_with_pages(observed,pages,orchestration._redact,last=read_state)
+        summary='; '.join(part for part in (
+            f"tools called: {', '.join(called) or 'none'}",
+            f"failed: {', '.join(failed_codes)}" if failed_codes else '',
+            f"started but never completed (tool_incomplete): {', '.join(incomplete)}" if incomplete else '',
+            f"own web searches that reported no source URL: {sourceless}" if sourceless else '') if part)
+        return observations, failed_steps, effects, summary
+
+    def evaluate_cli_attempt(self, orchestration, answer, observations, failed_steps, *,
+                             owner_needed=False, effect=False, unknown=False, outcome=None, effects=()):
+        """Use the same reserved/final judgment rules for owner and peer CLI Work."""
+        if owner_needed:
+            evaluation=OWNER_NEEDED
+        elif effect or not orchestration.budget_allows(reserve=True):
+            # Nothing may follow an effect, or the Work's time is short (#1418: the
+            # judgment's own held turn counts here; a re-plan is checked in ``next``).  #752: the goal
+            # judgment decides completion after a known effect, including an otherwise
+            # successful reply. It can end the Work, never authorize replay.
+            # #1445 rehearsal: a correct final answer on the last turns was left unjudged and the Work
+            # ended partial; the judgment's held turn now decides a reply that looks complete too, when
+            # the time left can carry one call (review P2-3: no call is started once time is short).
+            budget=orchestration.budget
+            try:time_left=budget.remaining() if budget is not None else FINAL_JUDGMENT_SECONDS
+            except Exception:time_left=0
+            evaluation=(orchestration.evaluate_answer(answer,observations,failed_steps,final=True,effects=effects)
+                        if not unknown and orchestration.may_judge()
+                        and (effect or ws.has_incomplete_result(outcome) or time_left>=FINAL_JUDGMENT_SECONDS)
+                        else NOT_JUDGED)
+        else:
+            evaluation=orchestration.evaluate_answer(answer,observations,failed_steps,effects=effects)
+        return evaluation
+
     def orchestration_step(self, orchestration, attempt, job_id, since, *, result=None, answer='', outcome=None,
                            owner_needed=False, failed=None, unmediated=False, engine_meta=None, pages=()):
         """Evaluate one attempt and return the next one, or None (#710).
@@ -6700,7 +6771,6 @@ class AgentService:
         # #466: what this attempt already told the owner, so a further attempt does not say it again.
         told=getattr(orchestration,'owner_told',None)
         if callable(told):told(self.store.sent_updates(job_id))
-        from .agent_runtime import failed_steps_text, read_state_text, recorded_effects, trail_steps
         with self.store.db() as db:
             rows=db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=? AND id>? ORDER BY id',(job_id,since or 0)).fetchall()
         # #618 E2: the one continuation rule.  #795: a trusted-local CLI attempt whose own report shows
@@ -6712,48 +6782,10 @@ class AgentService:
         if 'owner' in reasons:owner_needed=True
         from .memory_service import conversation_block, recalled_tool_exchanges
         recalled=conversation_block(recalled_tool_exchanges(self.store,job_id),budget=9000)
-        observed=[]
-        # #729: the factual summary the next plan call reads (names and codes only).
-        called,failed_codes,incomplete,sourceless=[],[],[],0
-        tool_rows=self.attempt_tool_rows(rows)
-        # The owner is told an action ran only for a recorded change; an unknown one is said as such.
         from .orchestrator import EFFECT_UNKNOWN_STOP
         effect=EFFECT_UNKNOWN_STOP if unknown else 'changed' if 'effect' in reasons else False
-        for row in rows:
-            if row['tool'] in self.LOCAL_NON_TOOL_EVENTS|{'subscription_engine'} or row['status'] not in ('running','succeeded','failed'):
-                continue
-            try:data=json.loads(row['detail'] or '{}')
-            except (TypeError,ValueError):data={}
-            data=data if isinstance(data,dict) else {}
-            if row['tool'] not in called:called.append(row['tool'])
-            if row['status']=='succeeded':
-                evidence=data.get('evidence') if isinstance(data.get('evidence'),dict) else {}
-                if data.get('scope')=='cli-native':
-                    # #1308, #621: the worker's own search or page open, as its CLI reported it.
-                    if not evidence.get('sources'):sourceless+=1
-                    observed.append(native_observation_line(row['tool'],data,evidence))
-                else:
-                    observed.append(f"- {row['tool']}: {json.dumps(evidence,ensure_ascii=False)[:600]}")
-            elif row['status']=='failed':
-                if data.get('code')==TOOL_INCOMPLETE:incomplete.append(row['tool'])
-                else:failed_codes.append(f"{row['tool']} ({data.get('code') or 'failed'})")
-        # #14: the judgment reads every unsettled call with what Still observed about it: whether a later
-        # call redid it or routed around it, or whether its effect is unknown.
-        steps=trail_steps(tool_rows)
-        failed_steps=failed_steps_text(steps)
-        # #674: the calls Still recorded as having made their change; they bound the judgment's verdict and line.
-        effects=recorded_effects(steps)
-        # #151: which listed items this attempt opened and read through, from the recorded evidence;
-        # kept whole at the end of the bounded observations, so no number of step lines drops it.
-        read_state=read_state_text([(tool,data.get('evidence')) for tool,status,data in tool_rows if status=='succeeded'])
-        read_state=('- '+str(orchestration._redact(read_state,private=False) or '')) if read_state else ''
-        observations=observations_with_pages(observed,pages,orchestration._redact,last=read_state)
+        observations,failed_steps,effects,summary=self.attempt_observations(orchestration,rows,pages=pages)
         if recalled:observations=recalled+'\n'+observations[:max(0,16000-len(recalled)-1)]
-        summary='; '.join(part for part in (
-            f"tools called: {', '.join(called) or 'none'}",
-            f"failed: {', '.join(failed_codes)}" if failed_codes else '',
-            f"started but never completed (tool_incomplete): {', '.join(incomplete)}" if incomplete else '',
-            f"own web searches that reported no source URL: {sourceless}" if sourceless else '') if part)
         if failed is not None:
             evaluation=WORKER_FAILED
             failed_steps='; '.join(part for part in (failed_steps,self._redact_reason(failed) or '') if part)
@@ -6773,25 +6805,9 @@ class AgentService:
                 if evaluation==REACHED:
                     if judged==NOT_REACHED:evaluation=NOT_REACHED
                 else:evaluation=judged
-        elif owner_needed:
-            evaluation=OWNER_NEEDED
-        elif effect or not orchestration.budget_allows(reserve=True):
-            # Nothing may follow an effect, or the Work's time is short (#1418: the
-            # judgment's own held turn counts here; a re-plan is checked in ``next``).  #752: the goal
-            # judgment decides completion after a known effect, including an otherwise
-            # successful reply. It can end the Work, never authorize replay.
-            # #1445 rehearsal: a correct final answer on the last turns was left unjudged and the Work
-            # ended partial; the judgment's held turn now decides a reply that looks complete too, when
-            # the time left can carry one call (review P2-3: no call is started once time is short).
-            budget=orchestration.budget
-            try:time_left=budget.remaining() if budget is not None else FINAL_JUDGMENT_SECONDS
-            except Exception:time_left=0
-            evaluation=(orchestration.evaluate_answer(answer,observations,failed_steps,final=True,effects=effects)
-                        if not unknown and orchestration.may_judge()
-                        and (effect or ws.has_incomplete_result(outcome) or time_left>=FINAL_JUDGMENT_SECONDS)
-                        else NOT_JUDGED)
         else:
-            evaluation=orchestration.evaluate_answer(answer,observations,failed_steps,effects=effects)
+            evaluation=self.evaluate_cli_attempt(orchestration,answer,observations,failed_steps,
+                owner_needed=owner_needed,effect=effect,unknown=unknown,outcome=outcome,effects=effects)
         # #618 E2: an attempt that stops for a recorded owner prerequisite is still judged once (the
         # one outcome judgment always runs); the judgment is recorded, the stop stays the owner's.
         judged=None

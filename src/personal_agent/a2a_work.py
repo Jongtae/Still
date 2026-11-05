@@ -12,7 +12,7 @@ import json
 
 from .a2a_peers import PeerError
 from .agent_runtime import Capabilities, ToolError, WorkBudget, run_agent
-from .orchestrator import Catalogue, Orchestration, REACHED, worker_catalogue
+from .orchestrator import Catalogue, Orchestration, REACHED, OWNER_NEEDED, EFFECT_UNKNOWN_STOP, MIN_ATTEMPT_SECONDS, worker_catalogue
 from .bounded_execution import RelayedWorkMcpTools, STRICT_PROFILE, ExecutionError
 from .cli_browser_relay import BrowserRelay
 
@@ -34,7 +34,9 @@ def answer_peer(peers, turn):
             super().spend_turn(reserve=reserve)
             peers.spend(peer_id, revision)
 
-    budget = PeerBudget(turns=12, attempts=12, seconds=60,
+    # Leave room for the shared orchestrator's minimum attempt window after
+    # setup and one revision; a single window expires before even first().
+    budget = PeerBudget(turns=12, attempts=12, seconds=2 * MIN_ATTEMPT_SECONDS,
                         stop=lambda: (store.job(work_id) or {}).get('status') != 'peer-running'
                         or service.stop.is_set() or peers.rows().get(peer_id, {}).get('revision') != revision)
     # #673: judgments are part of the same disclosure boundary, including
@@ -149,6 +151,8 @@ def answer_peer(peers, turn):
                 **({'engine': route['subscription']['id'], 'profile': STRICT_PROFILE} if route['kind'] == 'subscription' else {}),
                 'provider': config.get('provider'), 'model': config.get('model'),
                 'owner_information': service.owner_information_refs(sections, [])})
+            with store.db() as db:
+                since = db.execute('SELECT COALESCE(MAX(id),0) FROM tool_events WHERE job_id=?', (work_id,)).fetchone()[0]
             if route['kind'] == 'api':
                 result = run_agent(service.adapter, config, route['key'], history, system, capabilities,
                                    record, scope='a2a-peer', owner_context=sections)
@@ -177,12 +181,27 @@ def answer_peer(peers, turn):
                     if relay is not None:
                         relay.close()
             pending = any(item['state'] == 'pending' for item in peers.owner_outcomes(peer_id, work_id))
-            evaluation = orchestration.evaluate_run(result, owner_needed=pending)
-            if evaluation == REACHED:
-                break
-            attempt = orchestration.next(attempt, evaluation, answer=result.content, effect=False)
+            judged, effect, summary = None, False, ''
+            if route['kind'] == 'api':
+                # run_agent carries the API route's own outcome judgment. A pending
+                # owner item remains a prerequisite even for a conversational reply.
+                evaluation = OWNER_NEEDED if pending else orchestration.evaluate_run(result)
+            else:
+                with store.db() as db:
+                    rows = db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=? AND id>? ORDER BY id',
+                                      (work_id, since)).fetchall()
+                observations, failed_steps, effects, summary = service.attempt_observations(orchestration, rows)
+                reasons = service.continuation_reasons(work_id, 'redelegate', since=since, owner_waits=pending)
+                unknown = 'unknown' in reasons
+                effect = EFFECT_UNKNOWN_STOP if unknown else 'changed' if 'effect' in reasons else False
+                evaluation = service.evaluate_cli_attempt(orchestration, result.content, observations, failed_steps,
+                    owner_needed=pending, effect=effect, unknown=unknown, effects=effects)
+                if evaluation == OWNER_NEEDED and not unknown and orchestration.may_judge():
+                    judged = orchestration.evaluate_answer(result.content, observations, failed_steps, final=True, effects=effects)
+            attempt = orchestration.next(attempt, evaluation, answer=result.content, failed=summary,
+                                         effect=effect, judged=judged)
         guard()
         if result is None:
             raise PeerError('peer_model_budget_exhausted')
         budget.check()
-        return result.content
+        return result.content, evaluation == REACHED

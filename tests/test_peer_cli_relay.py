@@ -44,12 +44,19 @@ class InProcessRelay:
 
 
 def catalogue(engine):
-    return Catalogue([{'id': engine, 'available': True, 'tools': [], 'reason': '', 'models': []}],
+    return Catalogue([{'id': engine, 'available': True, 'tools': [], 'reason': '', 'models': [],
+                       'default_model': '', 'model_tiers': {}, 'name': engine, 'kind': 'subscription',
+                       'default': True, 'cost': 'subscription', 'latency': 'unknown'}],
                      {engine: {'kind': 'subscription', 'subscription': {'id': engine}}}, engine)
 
 
-def peer_turn(state, engine='codex', callback=None, real_socket=False):
+def peer_turn(state, engine='codex', callback=None, real_socket=False, *, decision_engine=None, answer='Scoped answer'):
     service, peers, model, registration = state
+    from personal_agent.decision import FixtureDecisionEngine, BinaryDecision, OUTCOME_DECIDED
+    from personal_agent.decision import fixture_confidence
+    service.use_decision_engine(decision_engine or FixtureDecisionEngine(
+        judge=lambda context, proposition: BinaryDecision(OUTCOME_DECIDED, True, fixture_confidence())
+        if context.purpose == 'goal-reached' else None))
     service.store.put('subscription_isolation', {'profile': STRICT_PROFILE})
     observed = {}
     relays = []
@@ -78,7 +85,7 @@ def peer_turn(state, engine='codex', callback=None, real_socket=False):
                 stack.enter_context(mock.patch.object(mcp_bridge, 'Capabilities', side_effect=AssertionError('local capabilities')))
             mcp_bridge.serve(service.store.root, tools.capabilities.job_id, profile=STRICT_PROFILE,
                              peer_relay=tools.browser_relay)
-        return ExecutionResult('Scoped answer', engine_id, 0)
+        return ExecutionResult(answer, engine_id, 0)
     patches = [mock.patch('personal_agent.a2a_work.worker_catalogue', return_value=catalogue(engine)),
                mock.patch('personal_agent.a2a_work.BrowserRelay', side_effect=create),
                mock.patch.object(service.execution_adapter, 'execute', side_effect=execute)]
@@ -126,7 +133,8 @@ def test_peer_relay_candidate_notice_budget_redaction_and_audit(state):
         assert tools.capabilities.budget.attempts_used == 3
         return values
     seen = peer_turn(state, callback=calls)
-    assert seen['turn']['state'] == 'completed'
+    assert seen['turn']['state'] == 'failed'  # pending owner item is not completion
+    assert service.store.job(seen['turn']['work_id'])['status'] == 'failed'
     assert 'SCOPED-MEMORY-673' in json.dumps(seen['results'])
     assert 'fixture-secret-value-673' not in json.dumps(seen['results'])
     assert len(service.store.memory_candidates(work_id=seen['turn']['work_id'])) == 1
@@ -514,3 +522,135 @@ def test_refresh_due_reason_reaches_settings_without_cli_launch(state, tmp_path)
     assert 'SYNTHETIC-REFRESH-673' not in reason
     adapter.runner.assert_not_called()
     assert not model.calls
+
+
+def peer_decisions(verdicts, plans=()):
+    """Script the model at the decision transport, keeping real orchestration."""
+    from personal_agent.decision import FixtureDecisionEngine, BinaryDecision, StructuredDecision, OUTCOME_DECIDED
+    from personal_agent.decision import fixture_confidence
+    verdicts, plans = iter(verdicts), iter(plans)
+    def judge(context, proposition):
+        if context.purpose == 'goal-reached':
+            verdict = next(verdicts, None)
+            if verdict is not None:
+                return BinaryDecision(OUTCOME_DECIDED, verdict, fixture_confidence())
+    def structured(context, question, schema):
+        if context.purpose == 'work-orchestration':
+            notes = next(plans, None)
+            if notes:
+                return StructuredDecision(OUTCOME_DECIDED,
+                    {'worker': 'codex', 'model': '', 'brief': {'notes': notes}, 'reason': 'fits'},
+                    fixture_confidence())
+    return FixtureDecisionEngine(judge=judge, structured=structured)
+
+
+def test_peer_cli_failed_read_is_judged_and_redelegated(state):
+    service, peers, model, registration = state
+    peers.update({'peer_id': registration['peer']['id'],
+                  'scope': {'sections': ['folders'], 'tools': ['read_file']}})
+    engine = peer_decisions([False, False], ['Read the shared file.', 'Try another scoped source.'])
+    attempts = []
+    def calls(handle, tools):
+        attempts.append(tools.capabilities.job_id)
+        result = handle('tools/call', {'name': 'read_file', 'arguments': {'root_id': 'missing-root', 'path': 'missing.txt'}})
+        assert result['isError']
+        return [result]
+    seen = peer_turn(state, callback=calls, decision_engine=engine, answer='I could not read the requested file.')
+    assert len(attempts) == 2
+    assert seen['turn']['state'] == 'failed'
+    assert seen['turn']['answer'] == 'I could not read the requested file.'
+    assert service.store.job(seen['turn']['work_id'])['status'] == 'failed'
+    goals = [entry[1] for entry in engine.asked if entry[0] == 'judge' and entry[1].purpose == 'goal-reached']
+    assert len(goals) == 2
+    assert all('read_file' in json.dumps(goal.facts) for goal in goals)
+    evaluations = [row['trace'] for row in service.store.task_events(seen['turn']['work_id'])
+                   if row['tool'] == 'orchestrator' and row['status'] == 'evaluated']
+    assert evaluations and all(row['outcome'] == 'not_reached' for row in evaluations)
+
+
+def test_peer_cli_pending_owner_stops_after_one_judgment(state):
+    service, peers, model, registration = state
+    engine = peer_decisions([True], ['Ask the owner.', 'Must never run.'])
+    attempts = []
+    def calls(handle, tools):
+        attempts.append(1)
+        return [handle('tools/call', {'name': 'tell_owner', 'arguments': {'text': 'Please decide.'}})]
+    seen = peer_turn(state, callback=calls, decision_engine=engine)
+    assert attempts == [1]
+    assert seen['turn']['state'] == 'failed'
+    assert service.store.job(seen['turn']['work_id'])['status'] == 'failed'
+    evaluations = [row['trace'] for row in service.store.task_events(seen['turn']['work_id'])
+                   if row['tool'] == 'orchestrator' and row['status'] == 'evaluated']
+    assert evaluations[0]['outcome'] == 'owner_needed'
+    assert len([row for row in engine.asked if row[0] == 'judge' and row[1].purpose == 'goal-reached']) == 1
+
+
+def test_peer_cli_success_judgment_is_scoped_and_redacted(state):
+    service, peers, model, registration = state
+    service.store.save_memory('private', 'OUT-OF-SCOPE-JUDGMENT-CANARY')
+    other = service.store.enqueue('OWNER-HISTORY-JUDGMENT-CANARY', 'owner-private')
+    with service.store.db() as db:
+        db.execute('INSERT INTO messages(role,content,channel,created,job_id) VALUES (?,?,?,?,?)',
+            ('user', 'OWNER-HISTORY-JUDGMENT-CANARY', 'web', 1, other))
+        db.execute("INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)",
+            (other, 'read_file', 'succeeded', json.dumps({'evidence': {'text': 'OTHER-WORK-EVENT-CANARY'}}), 1))
+    service.store.secret('model_key', 'JUDGMENT-SECRET-CANARY')
+    engine = peer_decisions([True], ['Answer the peer.'])
+    seen = peer_turn(state, decision_engine=engine, answer='Served JUDGMENT-SECRET-CANARY')
+    assert seen['turn']['state'] == 'completed'
+    assert service.store.job(seen['turn']['work_id'])['status'] == 'succeeded'
+    goals = [entry[1] for entry in engine.asked if entry[0] == 'judge' and entry[1].purpose == 'goal-reached']
+    assert len(goals) == 1
+    facts = json.dumps(goals[0].facts)
+    assert 'Share only what is permitted' in facts
+    for canary in ('OUT-OF-SCOPE-JUDGMENT-CANARY', 'OWNER-HISTORY-JUDGMENT-CANARY',
+                   'OTHER-WORK-EVENT-CANARY', 'JUDGMENT-SECRET-CANARY'):
+        assert canary not in facts
+
+
+@pytest.mark.parametrize('verdicts', [[], [False]])
+def test_peer_cli_unavailable_or_negative_judgment_never_succeeds(state, verdicts):
+    seen = peer_turn(state, decision_engine=peer_decisions(verdicts))
+    assert seen['turn']['state'] == 'failed'
+    assert state[0].store.job(seen['turn']['work_id'])['status'] == 'failed'
+
+
+@pytest.mark.parametrize('reached', [True, False])
+def test_peer_api_reuses_its_own_outcome_judgment(state, reached):
+    service, peers, model, registration = state
+    peers.update({'peer_id': registration['peer']['id'],
+                  'scope': {'sections': ['memory'], 'tools': ['list_memory']}})
+    model.batch = [('list_memory', {})]
+    engine = peer_decisions([reached])
+    service.use_decision_engine(engine)
+    turn = peers.receive(registration['peer']['id'], 'api-judgment', None, 'Read the shared memory.')
+    assert turn['state'] == ('completed' if reached else 'failed')
+    assert service.store.job(turn['work_id'])['status'] == ('succeeded' if reached else 'failed')
+    assert len([row for row in engine.asked if row[0] == 'judge' and row[1].purpose == 'goal-reached']) == 1
+
+
+def test_peer_api_pending_owner_is_not_completion(state):
+    service, peers, model, registration = state
+    model.batch = [('tell_owner', {'text': 'Please decide.'})]
+    service.use_decision_engine(peer_decisions([True]))
+    turn = peers.receive(registration['peer']['id'], 'api-owner-needed', None, 'Ask the owner to decide.')
+    assert peers.owner_outcomes(registration['peer']['id'], turn['work_id'])[0]['state'] == 'pending'
+    assert turn['state'] == 'failed'
+    assert service.store.job(turn['work_id'])['status'] == 'failed'
+
+
+@pytest.mark.parametrize('seconds,exhausted,expected,calls', [
+    (40, False, 'completed', 1), (10, False, 'failed', 0), (40, True, 'failed', 0)])
+def test_peer_cli_final_judgment_obeys_service_budget(state, seconds, exhausted, expected, calls):
+    engine = peer_decisions([True], ['Serve the peer.'])
+    def shorten_budget(handle, tools):
+        budget = tools.capabilities.budget
+        budget.deadline = budget.clock() + seconds
+        if exhausted:
+            budget.turns_used = budget.turns
+        return []
+    seen = peer_turn(state, callback=shorten_budget, decision_engine=engine)
+    assert seen['turn']['state'] == expected
+    goals = [row for row in engine.asked if row[0] == 'judge' and row[1].purpose == 'goal-reached']
+    assert len(goals) == calls
+    assert state[0].store.job(seen['turn']['work_id'])['status'] == ('succeeded' if expected == 'completed' else 'failed')
