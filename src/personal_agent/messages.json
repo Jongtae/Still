@@ -1673,6 +1673,12 @@
   "ja": "このWorkの終了後、Stillが{channel}でオーナーに知らせるか判断し、このWork自身は送信しません。",
   "zh": "此 Work 结束后，由 Still 决定是否通过{channel}通知主人；此 Work 不自行发送。"
  },
+ "preparations.previous_report": {
+  "ko": "위 대화의 마지막 답은 이 준비의 직전 실행이 {at}에 소유자에게 보낸 보고입니다.",
+  "en": "The last reply above is the report this preparation's previous run sent the owner at {at}.",
+  "ja": "上の会話の最後の回答は、この準備の前回の実行が{at}にオーナーへ送った報告です。",
+  "zh": "上方对话中的最后一条回答，是此准备事项上一次运行于{at}发给主人的报告。"
+ },
  "preparations.run_fact": {
   "ko": "이 Work는 소유자가 수락한 준비를 Still이 일정대로 실행한 것입니다. 일정을 이어 가고 결과를 소유자에게 전하는 일은 Still이 하므로, 이 Work의 답은 이번 실행의 결과입니다.",
   "en": "This Work is a run of a preparation the owner accepted, which Still runs on its schedule. Still keeps the schedule and brings the result to the owner, so this Work's reply is this run's result.",

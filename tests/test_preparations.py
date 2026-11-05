@@ -193,7 +193,8 @@ class PreparationRunFactTests(_Case):
             self.assertIn('이 Work가 직접 보내지 않습니다', fact)
             if number == 3:
                 self.assertIn('다음 실행 예정: 2026-11-05 15:00 (Thu, Asia/Seoul)', fact)
-                self.assertEqual(self.service.preparation_history(job)[-1]['content'], job['message'] + '\n\n' + fact)
+                # #692: followed by the line naming the previous run's report.
+                self.assertTrue(self.service.preparation_history(job)[-1]['content'].startswith(job['message'] + '\n\n' + fact))
                 orchestration = self.service.work_orchestration(job, job['message'], [], {}, WorkBudget())
                 self.assertEqual(orchestration.request, job['message'] + '\n\n' + fact)
                 with self.store.db() as db:
@@ -242,6 +243,105 @@ class PreparationRunFactTests(_Case):
             self.assertEqual(self.service.preparation_run_fact(job), msg('preparations.run_fact'))
         history = self.service.preparation_history({**job, 'id': 'missing', 'message': '확인'})
         self.assertEqual(history[-1]['content'], '확인\n\n' + msg('preparations.run_fact'))
+
+
+class PreparationEarlierReportTests(_Case):
+    """#692: one attributable delivered report, shared by both workers and judgment."""
+
+    def run_job(self, row, number, *, response=None, status='succeeded', delivery='none',
+                chat_id=None, suffix=''):
+        ident = self.store.enqueue(row['goal_text'], prep.request_key(row['id'], self.now + number) + suffix,
+                                   channel='telegram' if chat_id else 'web', chat_id=chat_id)
+        with self.store.db() as db:
+            db.execute('UPDATE jobs SET created=?,status=?,response=?,delivery=? WHERE id=?',
+                       (self.now + number, status, response, delivery, ident))
+            db.execute('INSERT INTO messages(role,content,channel,created,job_id) VALUES (?,?,?,?,?)',
+                       ('user', row['goal_text'], 'telegram' if chat_id else 'web', self.now + number, ident))
+        return self.store.job(ident)
+
+    def test_latest_earlier_delivered_result_is_selected_structurally(self):
+        row = self.scheduled()
+        first = self.run_job(row, 1, response='First report')
+        self.assertEqual([r['role'] for r in self.service.preparation_history(first)], ['user'])
+        second = self.run_job(row, 2, status='queued')
+        self.assertEqual(self.service.preparation_history(second)[0]['content'], 'First report')
+        latest = self.run_job(row, 3, response='Latest report', status='partial', delivery='sent', chat_id=CHAT,
+                              suffix=prep.CONTINUATION_SEPARATOR + '1')
+        for number, status, delivery, chat_id, response in (
+                (4, 'failed', 'sent', CHAT, 'Failure notice'),
+                (5, 'cancelled', 'sent', CHAT, 'Cancelled notice'),
+                (6, 'succeeded', 'unknown', CHAT, 'Unknown delivery'),
+                (7, 'succeeded', 'none', CHAT, 'Not sent'),
+                (8, 'succeeded', 'none', None, '\t\n ')):
+            self.run_job(row, number, status=status, delivery=delivery, chat_id=chat_id, response=response)
+        current = self.run_job(row, 10, status='queued', response='Current response')
+        self.run_job(row, 11, response='Future response')
+        other = self.scheduled(goal='Unrelated preparation')
+        self.run_job(other, 9, response='Unrelated report')
+        # More than jobs()'s 40-row window must not hide the last result.
+        for number in range(45):
+            self.store.enqueue('Unrelated conversation', f'unrelated-{number}')
+        history = self.service.preparation_history(current)
+        self.assertEqual([r['role'] for r in history], ['assistant', 'user'])
+        self.assertIn(msg('preparations.previous_report', at=prep.local_text(self.now + 3, 'Asia/Seoul')), history[-1]['content'])
+        self.assertEqual(history[0], {'role': 'assistant', 'content': 'Latest report', 'job_id': latest['id'],
+                                     'channel': 'telegram', 'qualifier': None,
+                                     'request_key': self.store.job(latest['id'])['request_key'], 'created': self.now + 3})
+
+    def test_forgotten_report_is_skipped_for_an_earlier_delivered_report(self):
+        from personal_agent.owner_forget import OwnerForget
+        row = self.scheduled()
+        first = self.run_job(row, 1, response='Kept report')
+        forgotten = self.run_job(row, 2, response='Forgotten report')
+        current = self.run_job(row, 3, status='queued')
+        with self.store.db() as db:
+            message_id = db.execute("SELECT id FROM messages WHERE job_id=? AND role='user'",
+                                    (forgotten['id'],)).fetchone()['id']
+        OwnerForget(self.store).forget('local-owner', f'message:{message_id}')
+        history = self.service.preparation_history(current)
+        self.assertEqual(history[0]['job_id'], first['id'])
+        self.assertNotIn('Forgotten report', json.dumps(history))
+        with self.store.db() as db:
+            message_id = db.execute("SELECT id FROM messages WHERE job_id=? AND role='user'",
+                                    (first['id'],)).fetchone()['id']
+        OwnerForget(self.store).forget('local-owner', f'message:{message_id}')
+        self.assertEqual([r['role'] for r in self.service.preparation_history(current)], ['user'])
+
+    def test_report_is_scrubbed_and_bounded_in_both_worker_envelopes_and_judgment(self):
+        from personal_agent.agent_runtime import MESSAGE_CAP_CHARS
+        from personal_agent.conversation_projection import context_message, earlier_turn_line
+        from personal_agent.agent_runtime import WorkBudget
+        from unittest.mock import patch
+        row = self.scheduled()
+        private = 'PRIVATE-SAVED-VALUE-12345678'
+        previous = self.run_job(row, 1, response=f'Report {private} {SECRET} ' + 'x' * 5000)
+        with self.store.db() as db:
+            db.execute('INSERT INTO memory_candidates(id,job_id,memory_key,content,created,state,work_key) '
+                       'VALUES (?,?,?,?,?,?,?)', ('private', None, 'private.fact', private, self.now, 'pending',
+                                                self.store._work_binding(previous['id'])))
+        current = self.run_job(row, 2, status='queued')
+        rows = self.service.history_for_models(self.service.preparation_history(current))
+        self.assertEqual(rows[0]['content'], self.service.scrub_work_text(previous['id'], previous['response']))
+        for route in ('cli', 'api'):
+            context = turn_context([context_message(r, current=i == len(rows)-1) for i, r in enumerate(rows)], route)
+            [report] = context['conversation']
+            self.assertEqual(report['role'], 'assistant')
+            self.assertLessEqual(len(report['content']), MESSAGE_CAP_CHARS + len(' [...]'))
+            rendered = render_turn_prompt(context)
+            self.assertIn('[assistant] Report', rendered)
+            self.assertNotIn(private, rendered)
+            self.assertNotIn(SECRET, rendered)
+            self.assertIn('[assistant, earlier Work 2026-10-14 21:00]', earlier_turn_line(rows[0], report, SEOUL))
+        orchestration = self.service.work_orchestration(current, current['message'], rows, {}, WorkBudget())
+        self.assertIn('[assistant, earlier Work 2026-10-14 21:00] Report', orchestration.conversation)
+        self.assertNotIn(private, orchestration.conversation)
+        with patch('personal_agent.orchestrator.Orchestration.early_plan', autospec=True, return_value=None) as early:
+            self.service.early_work_plan(current, current['message'])
+        self.assertEqual(early.call_args.args[0].conversation, orchestration.conversation)
+        orchestration.evaluate_answer('Current report', '')
+        judged = [item[1] for item in self.judge.asked if item[0] == 'judge' and item[1].purpose == 'goal-reached']
+        self.assertTrue(judged)
+        self.assertIn('[assistant, earlier Work 2026-10-14 21:00] Report', json.dumps(judged[-1].facts))
 
 
 class ReminderTests(_Case):
@@ -880,7 +980,7 @@ class SecretTests(_Case):
 
 
 class PreparationScopeTests(_Case):
-    """PR #671 review: a preparation's Work sees its origin and goal only, and
+    """A preparation's Work sees its origin, latest delivered report and goal, and
     persists nothing unscrubbed; a proposal message accepts only what it shows."""
 
     ORIGIN = '매일 점심 후보 준비해 줘 ORIGIN-MARK'
@@ -902,7 +1002,7 @@ class PreparationScopeTests(_Case):
     def test_direct_route_preparation_work_sees_only_its_origin_and_goal(self):
         self.origin_then_unrelated()
         seen = []
-        self.script = [lambda body: seen.append(json.loads(json.dumps(body['messages']))) or {'content': '후보: 국수집'}]
+        self.script = [lambda body: seen.append(json.loads(json.dumps(body['messages']))) or {'content': '후보: 국수집'}] * 2
         self.assertTrue(self.service.run_one())
         sent = json.dumps(seen[0], ensure_ascii=False)
         self.assertIn('ORIGIN-MARK', sent)
@@ -913,6 +1013,21 @@ class PreparationScopeTests(_Case):
         [run] = [job for job in self.store.jobs() if prep.preparation_of(job.get('request_key'))]
         self.assertIn(self.service.preparation_run_fact(run), seen[0][-1]['content'])
         self.assertIn('다음 실행 예정: 2026-10-15 21:10 (Thu, Asia/Seoul)', seen[0][-1]['content'])
+
+        self.assertTrue(self.tick())  # settle the first web-channel result
+        self.now += 86400
+        self.assertTrue(self.tick())
+        seen.clear()
+        self.script = [lambda body: seen.append(json.loads(json.dumps(body['messages']))) or {'content': '두 번째 후보'}]
+        self.assertTrue(self.service.run_one())
+        self.assertEqual([m['role'] for m in seen[0][1:]], ['user', 'assistant', 'user'])
+        self.assertEqual(seen[0][2], {'role': 'assistant', 'content': '후보: 국수집'})
+        self.assertNotIn('UNRELATED-MARK', json.dumps(seen[0]))
+        # An ordinary Work still reads the ordinary transcript, including unrelated owner turns.
+        seen.clear()
+        self.script = [lambda body: seen.append(body['messages']) or {'content': '일반 답변'}]
+        self.web_turn('일반 요청')
+        self.assertIn('UNRELATED-MARK', json.dumps(seen[0]))
 
     def test_cli_route_preparation_work_sees_only_its_origin_and_goal(self):
         from personal_agent.bounded_execution import ExecutionResult
@@ -932,7 +1047,7 @@ class PreparationScopeTests(_Case):
         origin = self.web_turn(self.ORIGIN)
         self.web_turn(self.UNRELATED)
         row = self.service.preparations.create(kind='prepare', goal='점심 후보 3곳 준비', due_at=self.now + 60,
-                                               timezone='Asia/Seoul', recurrence=None, channel='web', created_from=origin,
+                                               timezone='Asia/Seoul', recurrence='daily', channel='web', created_from=origin,
                                                state=prep.STATE_SCHEDULED, accepted_by=prep.ACCEPTED_OWNER_SETTINGS)
         self.now += 120
         self.assertTrue(self.tick())
@@ -943,8 +1058,17 @@ class PreparationScopeTests(_Case):
         self.assertIn('점심 후보 3곳 준비', prompt)
         self.assertNotIn('UNRELATED-MARK', prompt)
         self.assertIn(self.service.preparation_run_fact(self.runs(row['id'])[0]), prompt)
-        self.assertIn('이번이 마지막 실행', prompt)
+        self.assertIn('다음 실행 예정:', prompt)
         self.assertEqual(len(self.runs(row['id'])), 1)
+        self.assertNotIn('[assistant] 준비했습니다.', prompt)
+        self.assertTrue(self.tick())
+        self.now += 86400
+        self.assertTrue(self.tick())
+        prompts.clear()
+        self.assertTrue(self.service.run_one())
+        [prompt] = prompts
+        self.assertEqual(prompt.count('[assistant] 준비했습니다.'), 1)
+        self.assertNotIn('UNRELATED-MARK', prompt)
 
     def test_a_secret_in_a_preparation_answer_is_never_persisted_or_replayed(self):
         self.origin_then_unrelated()
