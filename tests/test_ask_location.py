@@ -601,7 +601,7 @@ class PreparationContinuation(_LocationCase):
         self.assertIn('출발하셨네요', finished['response'])
         self.assertNotIn(SECRET, finished['response'], 'the preparation scrub applies')
         self.service.deliver_one()
-        self.assertTrue(self.sends()[-1]['text'].startswith(f'알려드리기로 한 {self.GOAL}\n\n'))
+        self.assertTrue(self.sends()[-1]['text'].startswith(f'<b>{self.GOAL}</b>\n\n'))
 
         self.tick()
         settled = self.service.preparations.get(row['id'])

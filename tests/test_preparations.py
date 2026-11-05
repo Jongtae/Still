@@ -637,7 +637,7 @@ class AcceptanceTests(_Case):
         self.assertTrue(self.service.run_one())
         self.service.deliver_one()
         self.assertEqual(len(self.sends()), 3)
-        self.assertTrue(self.sends()[-1]['text'].startswith('알려드리기로 한 점심 후보 준비\n\n'))
+        self.assertTrue(self.sends()[-1]['text'].startswith('<b>점심 후보 준비</b>\n\n'))
 
     def test_declining_the_proposal_cancels_it(self):
         self.service.use_decision_engine(engine(preparation=False))
