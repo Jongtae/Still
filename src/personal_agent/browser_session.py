@@ -904,7 +904,7 @@ class BrowserSession:
         self._outside = None
         self._requested_origin = None
         self._auth_seen = 0   # the driver's authorization-request count already looked at
-        self._popup_seen = 0   # latest Work popup identity observed, including blank reservations
+        self._popups = {}   # popup id -> lifecycle evidence and the attempt it authorized
         self.judgments = judgments
 
     # -- plumbing --
@@ -1131,7 +1131,8 @@ class BrowserSession:
                         'mark': current['mark'] if current else self._authorization_mark(),
                         'cookies': current['cookies'] if current else self._site_cookies(site),
                         'seen': bool(current and current['seen']),
-                        'popup': current.get('popup', {}) if current else {}}
+                        'popup': current.get('popup', {}) if current else {},
+                        'attempt': current['attempt'] if current else object()}
         return self._resign
 
     def _login_resolved(self, url):
@@ -1166,12 +1167,23 @@ class BrowserSession:
                                                         keep_blank_values=True)}
         except ValueError:
             return False
-        popup = self._resign.get('popup', {})
+        popup = self._attempt_popup_evidence()
         if 'error' in names or popup.get('oauth_error') or popup.get('needs_owner'):
             return False
         before = self._resign.get('cookies')
         after = self._site_cookies(self._resign['site'])
         return before is not None and after is not None and bool(after - before)
+
+    def _attempt_popup_evidence(self):
+        """Read only popup lifecycles bound to this authorization attempt."""
+        evidence = {}
+        for popup in self._popups.values():
+            if popup.get('attempt') is self._resign['attempt']:
+                evidence.update({key: popup[key] for key in ('id', 'host') if key in popup})
+                for key in ('oauth_error', 'needs_owner'):
+                    evidence[key] = evidence.get(key, False) or popup[key]
+        self._resign['popup'] = evidence
+        return evidence
 
     def _finalize_sign_in(self, snapshot):
         """Close the observed flow once; retain its result until a tool can deliver it."""
@@ -1260,21 +1272,34 @@ class BrowserSession:
         """
         popup = snapshot.get('_provider_popup') or {}
         popup_id = popup.get('id', 0)
-        new_popup = popup_id > self._popup_seen
-        self._popup_seen = max(self._popup_seen, popup_id)
         protected = self._protected_hosts()
         hops = tuple(ascii_host(hop) for hop in self._new_authorizations() if ascii_host(hop) in protected)
-        flow_popup = popup if popup.get('active') or (new_popup and popup.get('provider_host') in hops) else {}
+        lifecycle = None
+        newly_authorized = False
+        if popup_id:
+            lifecycle = self._popups.setdefault(popup_id, {
+                'id': popup_id, 'first_seen': time.monotonic(), 'authorized': False,
+                'oauth_error': False, 'needs_owner': False, 'closed': False})
+            newly_authorized = not lifecycle['authorized'] and popup.get('provider_host') in hops
+            lifecycle['authorized'] |= newly_authorized
+            for key in ('oauth_error', 'needs_owner'):
+                lifecycle[key] |= bool(popup.get(key))
+            lifecycle['closed'] |= not popup.get('active')
+            for key in ('host', 'provider_host'):
+                if popup.get(key):
+                    lifecycle[key] = popup[key]
+            if lifecycle['closed'] and not lifecycle['authorized'] and 'attempt' not in lifecycle:
+                del self._popups[popup_id]
+                lifecycle = None
+        belongs = lifecycle and (newly_authorized or
+                  (self._resign and lifecycle.get('attempt') is self._resign['attempt']))
+        flow_popup = lifecycle if belongs else {}
         popup_host = popup.get('provider_host') or popup.get('host') or (hops[-1] if hops else '')
         host = ascii_host(popup_host if popup.get('active') else landed_host(snapshot.get('_page')) or '')
         passed = bool(hops)
         window = self._window
-        # Closed popup evidence belongs only to the window that observed its identity.
-        # A blank reservation may expire without ever incrementing authorization_count.
-        if window and popup_id and (new_popup or window.get('popup_id') == popup_id):
-            window['popup_id'] = popup_id
-            if self._resign:
-                self._resign['popup'] = dict(popup)
+        if window and flow_popup and self._resign and 'attempt' not in flow_popup:
+            flow_popup['attempt'] = self._resign['attempt']
         if window and self._resign:
             self._resign['chain'] = tuple(dict.fromkeys((*self._resign['chain'], *hops)))
         if not host:
@@ -1303,11 +1328,12 @@ class BrowserSession:
                 self._resign = {'site': origin['site'], 'provider': chain[0], 'chain': chain,
                                 'reference': origin['url'], 'window_url': origin['window_url'],
                                 'cookies': origin.get('cookies'), 'mark': origin.get('mark'), 'seen': entered,
-                                'popup': dict(flow_popup)}
+                                'popup': {}, 'attempt': object()}
             inside = host in protected or (entered and domain != (origin or {}).get('site'))
             if inside:
-                window = self._window = {'origin': origin, 'hosts': set(),
-                                         'popup_id': flow_popup.get('id')}
+                window = self._window = {'origin': origin, 'hosts': set()}
+        if flow_popup and self._resign and 'attempt' not in flow_popup:
+            flow_popup['attempt'] = self._resign['attempt']
         if inside:
             window['hosts'].add(host)
             window['current'] = host

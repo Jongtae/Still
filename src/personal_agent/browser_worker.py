@@ -3262,7 +3262,19 @@ def _delegate_class():
         def userContentController_didReceiveScriptMessage_(self, controller, message):
             # Registered for the client world only: the page world cannot post here (#698).
             try:
+                view = message.webView()
+                if view is None:
+                    view = message.frameInfo().webView()
                 body = message.body()
+                if view is not self.worker.view:
+                    # A shared content controller also receives popup reports.
+                    # Those documents have no main-view approval/release path.
+                    if (not self.worker.owner_visible and _press_record(body) is None
+                            and _form_record(body) is not None
+                            and any(entry[0] is view for entry in self.worker.popups)):
+                        self.worker.popup_state['needs_owner'] = True
+                        self.worker.close_popup(view=view)
+                    return
                 if _press_record(body) is not None:
                     self.worker.receive_press(body)   # #103: the press guard's report
                 else:

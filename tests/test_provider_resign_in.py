@@ -352,6 +352,27 @@ def popup_session():
 
 
 class PopupResignInTests(unittest.TestCase):
+    def test_observed_blank_popup_retains_failure_after_silent_authorization_and_close(self):
+        for error, needs_owner in ((True, False), (False, True), (True, True)):
+            with self.subTest(error=error, needs_owner=needs_owner):
+                sess, driver, approvals = popup_session()
+                driver.popup_id = 1
+                driver.popup = {'id': 1, 'active': True, 'host': ''}
+                sess.run('browser_read', {})
+                self.assertIsNone(sess._window)
+                driver.popup_authorize()
+                driver.popup_finish(error=error, needs_owner=needs_owner)
+                driver.goto(f'https://{SITE}/callback?code=abc', 1)  # new cookie, even on an error page
+                page = sess.run('browser_read', {})
+                self.assertEqual(page['provider_sign_in']['state'], 'unconfirmed')
+                self.assertNotIn('login_request', page['provider_sign_in'])
+                self.assertFalse(getattr(approvals, 'resolved', []))
+                self.assertIn('OFFER-EXPLICIT', page['next_step'])
+                self.assertTrue(approvals.offers)
+                self.assertTrue(sess._popups[1]['authorized'])
+                self.assertTrue(sess._popups[1]['closed'])
+
+
     def test_blank_popup_timeout_does_not_poison_a_new_main_view_sign_in(self):
         for observed in (False, True):
             for error in (False, True):
@@ -367,6 +388,37 @@ class PopupResignInTests(unittest.TestCase):
                     self.assertEqual(page['provider_sign_in']['state'], 'signed_in')
                     self.assertNotIn('OFFER-EXPLICIT', page.get('next_step', ''))
                     self.assertFalse(approvals.offers)
+
+    def test_popup_failure_is_merged_until_its_attempt_finishes(self):
+        sess, driver, approvals = popup_session()
+        driver.popup_authorize()
+        driver.popup['oauth_error'] = True
+        sess.run('browser_read', {})
+        # Later observations cannot erase an already observed failure.
+        driver.popup['oauth_error'] = False
+        sess.run('browser_read', {})
+        driver.popup_finish()
+        page = sess.run('browser_read', {})
+        self.assertEqual(page['provider_sign_in']['state'], 'unconfirmed')
+        self.assertFalse(getattr(approvals, 'resolved', []))
+        self.assertTrue(approvals.offers)
+
+    def test_popup_failure_joins_an_existing_main_view_attempt(self):
+        sess, driver, approvals = popup_session()
+        driver.answer = 'chooser'
+        driver.goto(AUTHORIZE, 1)
+        sess.run('browser_read', {})
+        attempt = sess._resign['attempt']
+        driver.popup_id = 1
+        driver.popup = {'id': 1, 'active': True, 'host': ''}
+        sess.run('browser_read', {})
+        driver.popup_authorize()
+        driver.popup_finish(error=True, needs_owner=True)
+        driver.goto(f'https://{SITE}/callback?code=abc', 1)
+        page = sess.run('browser_read', {})
+        self.assertIs(sess._popups[1]['attempt'], attempt)
+        self.assertEqual(page['provider_sign_in']['state'], 'unconfirmed')
+        self.assertTrue(approvals.offers)
 
     def test_same_attempt_owner_popup_still_blocks_a_renewed_cookie(self):
         sess, driver, approvals = popup_session()

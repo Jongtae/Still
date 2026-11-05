@@ -875,6 +875,50 @@ class ProviderPopupWorkerTests(unittest.TestCase):
                         self.assertFalse(worker.popups)
                     self.assertEqual(worker.deciding, 0)
 
+    def test_guard_messages_are_routed_by_the_originating_view(self):
+        from test_provider_resign_in import popup_session, SITE
+        worker = self.worker
+        worker.cancelled, worker.held, worker.reported = None, None, []
+        record = {'id': 'popup-hold', 'dom': 0, 'method': 'GET',
+                  'action': 'https://site.test/pay', 'page': 'https://site.test/', 'state': 's'}
+        sess, driver, approvals = popup_session()
+        view = self.create('about:blank')
+        driver.popup = dict(worker.popup_state)
+        sess.run('browser_read', {})
+        self.navigate(view, self.authorize)
+        driver.popup_authorize()
+        # Exercise the shared delegate, including a subframe's view fallback.
+        for fallback in (False, True):
+            message = self.NS(body=lambda: record, webView=lambda: None if fallback else view,
+                              frameInfo=lambda: self.NS(webView=lambda: view))
+            self.delegate.userContentController_didReceiveScriptMessage_(None, message)
+        self.assertIsNone(worker.cancelled)
+        self.assertIsNone(worker.take_cancelled())
+        self.assertTrue(worker.popup_state['needs_owner'])
+        self.assertFalse(worker.popups)
+        driver.popup = dict(worker.popup_state)
+        driver.goto(f'https://{SITE}/callback?code=abc', 1)
+        snapshot = driver.snapshot
+        driver.snapshot = lambda: {**snapshot(), 'cancelled_submit': worker.take_cancelled()}
+        page = sess.run('browser_read', {})
+        self.assertEqual(page['provider_sign_in']['state'], 'unconfirmed')
+        self.assertFalse(approvals.requests)
+        self.assertTrue(approvals.offers)
+        # The same report from the main document (or its subframes) still holds a form.
+        message = self.NS(body=lambda: record, webView=lambda: worker.view)
+        self.delegate.userContentController_didReceiveScriptMessage_(None, message)
+        self.assertEqual(worker.cancelled['id'], 'popup-hold')
+        self.assertEqual(worker.take_cancelled()['action'], record['action'])
+
+    def test_owner_popup_guard_message_does_not_close_the_window_or_hold_a_main_form(self):
+        self.worker.owner_visible = self.worker.guard_off = True
+        view = self.create(self.authorize)
+        self.worker.cancelled = None
+        message = self.NS(body=lambda: {'id': 'owner-form'}, webView=lambda: view)
+        self.delegate.userContentController_didReceiveScriptMessage_(None, message)
+        self.assertTrue(self.worker.popups)
+        self.assertIsNone(self.worker.cancelled)
+
     def test_owner_visible_popup_keeps_native_post_behavior(self):
         self.worker.owner_visible = self.worker.guard_off = True
         view = self.create(self.authorize)
