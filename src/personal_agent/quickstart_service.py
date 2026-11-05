@@ -2342,9 +2342,9 @@ class AgentService:
         """The only conversation a preparation's Work is shown (#659).
 
         Structural, not semantic: a Work started by a preparation (its
-        request key) sees the Work that created the preparation - its owner
-        request, scrubbed - and the accepted goal, never the unrelated
-        conversation that happened since.  Profile, current context and
+        request key) sees the scrubbed owner request that created it, its
+        latest earlier delivered report and the accepted goal, never the
+        unrelated conversation that happened since.  Profile, current context and
         prepared answers still arrive as the usual turn_context sections.
         """
         rows=[]
@@ -2357,9 +2357,33 @@ class AgentService:
             rows.append({'role':'user','content':self.scrub_work_text(origin['id'],origin['message']),
                          'job_id':origin['id'],'channel':origin.get('channel'),'qualifier':None,
                          'request_key':origin.get('request_key'),'created':origin.get('created')})
+        # #692: this preparation's latest earlier run that delivered a result, read from its own runs
+        # (not the bounded recent window), so the run can say what changed since the last report.
+        preparation_id=prep.preparation_of(job.get('request_key'))
+        previous=None
+        if preparation_id and job.get('created') is not None:
+            with self.store.db() as db:
+                candidates=[dict(item) for item in db.execute(
+                    "SELECT * FROM jobs WHERE created<? AND id<>? AND request_key LIKE ? "
+                    "AND response IS NOT NULL AND TRIM(response)<>'' "
+                    "AND (delivery='sent' OR (chat_id IS NULL AND delivery='none')) ORDER BY created DESC,id DESC",
+                    (job['created'],job['id'],prep.REQUEST_KEY_PREFIX+preparation_id+':%'))]
+            previous=next((item for item in candidates
+                           if prep.preparation_of(item['request_key'])==preparation_id and item['response'].strip()
+                           and ws.has_delivered_result(item['status'])
+                           and not self.store.work_request_forgotten(item['id'])),None)
+        if previous:
+            rows.append({'role':'assistant','content':self.scrub_work_text(previous['id'],previous['response']),
+                         'job_id':previous['id'],'channel':previous.get('channel'),'qualifier':None,
+                         'request_key':previous['request_key'],'created':previous['created']})
+        # Both worker routes and the planner apply turn_context's existing earlier-turn bounds.
         # #671: the run is told it is one run of a schedule Still keeps and delivers.
         fact=self.preparation_run_fact(job)
         content=job['message']+('\n\n'+fact if fact else '')
+        if previous:
+            # #692: the worker's envelope shows earlier turns without their time; say which report it is.
+            row_zone=(row or {}).get('timezone')
+            content+='\n\n'+msg('preparations.previous_report',at=prep.local_text(previous['created'],row_zone))
         if row and prep.offered(row):
             # #393: the run works within what the owner read and accepted, not only its brief.
             content+='\n\n'+msg('preparations.accepted_offer_label')+'\n'+prep.accepted_offer(row)
