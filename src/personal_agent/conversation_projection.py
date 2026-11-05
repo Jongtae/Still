@@ -93,6 +93,7 @@ TOOL_LABELS = {
     # OWNER-SETTINGS-01 (#814): owner settings, changed only after the owner confirms.
     'settings_read': '설정 확인', 'settings_change': msg('projection.settings_change_draft'),
     'capability_search': msg('projection.find_a_way_to_connect'),
+    'a2a_message': 'A2A peer conversation',
     'information_use': msg('projection.check_information_used'),
     # SKILL-SUPPLY-02 (#961): an installed skill's know-how read for this request.
     'skill_load': '스킬 읽기', 'skill_resource': '스킬 자료 읽기',

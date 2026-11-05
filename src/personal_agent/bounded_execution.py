@@ -134,6 +134,7 @@ _OWNER_UPDATE = 'owner-telegram-interim-message-served-on-trusted-local-route-on
 _SETTINGS = 'owner-settings-served-on-trusted-local-route-only'
 #: #826: the Work records are held by the service, reached only through its relay.
 _INFORMATION_USE = 'work-information-use-served-on-trusted-local-route-only'
+_A2A = 'peer-conversation-requires-contained-api-worker'
 #: #961: skills are read from the owner store; the isolated profiles never read it (#960 section 3).
 _SKILLS = 'skills-served-on-trusted-local-route-only'
 _SKILL_ACTIONS = ('skill_load', 'skill_resource', 'method_gap')
@@ -220,7 +221,7 @@ CLI_PROFILES = {
                     'public_page_read', 'read_file', 'save_note', 'save_result', 'weather', 'web_search',
                     *_BROWSER_ACTIONS, *_OWNER_STATE_RELAYED, *_SKILL_ACTIONS),
         'unavailable': {
-            'list_agents': _SPECIALISTS, 'delegate_agent': _SPECIALISTS,
+            'list_agents': _SPECIALISTS, 'delegate_agent': _SPECIALISTS, 'a2a_message': _A2A,
         },
         # No Still-mediated live run of this catalog has been observed.
         # Reference versions are the argv shapes recorded from each CLI's own
@@ -240,7 +241,7 @@ CLI_PROFILES = {
             'save_note', 'weather', 'web_search', 'public_page_read',
             'find_files', 'read_file', 'list_roots', 'save_result', 'calendar_query', 'save_memory', 'list_memory', 'search_memory', 'search_conversation', 'forget_record',
             'list_agents', 'delegate_agent', 'propose_current_state', 'schedule_preparation', 'ask_location',
-            'tell_owner', 'settings_read', 'settings_change', 'capability_search', 'information_use', 'drive_search', 'drive_read', 'mail_search', 'mail_read', 'api_request', 'code_run',
+            'tell_owner', 'settings_read', 'settings_change', 'capability_search', 'information_use', 'a2a_message', 'drive_search', 'drive_read', 'mail_search', 'mail_read', 'api_request', 'code_run',
             *_BROWSER_ACTIONS, *_SKILL_ACTIONS)},
                 'runtimes': {'codex': {'pinned_version': '0.153.4', 'live_tested_version': None}},
     },
@@ -271,6 +272,7 @@ CLI_PROFILES = {
             'tell_owner': _OWNER_UPDATE,
             'settings_read': _SETTINGS, 'settings_change': _SETTINGS, 'capability_search': _SETTINGS,
             'information_use': _INFORMATION_USE,
+            'a2a_message': _A2A,
             **{action: _SKILLS for action in _SKILL_ACTIONS},
         },
         # Historical manual observations; admission uses local checks for the installed identity.

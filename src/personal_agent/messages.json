@@ -10557,5 +10557,11 @@
   "en": "Every two weeks",
   "ja": "隔週",
   "zh": "每两周"
+ },
+ "a2a.owner_review": {
+  "ko": "{name} 에이전트가 확인해 주셔야 할 요청을 보냈어요. 아래는 그 에이전트가 쓴 말이에요.\n\n“{request}”\n\n저는 아직 아무것도 하지 않았어요. 진행하시려면 여기서 저에게 직접 말씀해 주세요. 설정 → 외부 연결 → 다른 AI 에이전트에서 확인함이나 거절을 고를 수도 있는데, 확인함은 읽었다는 표시일 뿐 어떤 행동도 승인하지 않아요.",
+  "en": "The agent {name} sent a request for your review. These are that agent’s words:\n\n“{request}”\n\nI have not taken any action. To respond, ask me directly in your usual conversation, or choose Acknowledge or Decline in Settings → External connections → Other AI agents. Acknowledging in Settings only marks it as read; it approves no action.",
+  "ja": "{name} エージェントから確認が必要なリクエストが届きました。以下はそのエージェントの言葉です。\n\n「{request}」\n\n私はまだ何も実行していません。返答するには、普段の自分の会話で私に直接依頼するか、設定 → 外部接続 → 他のAIエージェントで確認済みまたは辞退を選んでください。設定の確認済みは読んだ印であり、どの行動も承認しません。",
+  "zh": "智能体 {name} 发来了需要你确认的请求。以下是该智能体的原话：\n\n“{request}”\n\n我尚未采取任何行动。如需回应，请在你平常使用的对话中直接告诉我，或在设置 → 外部连接 → 其他 AI 智能体中选择已阅或拒绝。设置中的已阅仅表示你已阅读，不批准任何行动。"
  }
 }

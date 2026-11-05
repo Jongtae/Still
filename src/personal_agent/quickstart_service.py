@@ -4790,7 +4790,7 @@ class AgentService:
     @staticmethod
     def _progress_status(job):
         status=job.get('status')
-        if ws.is_active(status):return 'active',msg('state.running')
+        if ws.is_active(status) or status=='peer-running':return 'active',msg('state.running')
         if ws.is_waiting_prerequisite(status) or job.get('delivery')=='unknown':return 'attention',msg('label.needs_attention')
         if ws.needs_attention(status):return 'attention',msg('label.needs_attention')
         if ws.is_cancelled(status):return 'finished',msg('state.cancelled')
@@ -4928,6 +4928,11 @@ class AgentService:
             artifacts=[{'id':item['id'],'kind':msg('handoff.saved_result') if 'path' not in item else msg('quickstart_service.file_result'),'path':item.get('path'),'workspace_id':item.get('workspace_id'),'created':item.get('created'),'state':item.get('state','current')} for item in self.store.task_artifacts(job['id'])]
             retained_rows.append((job['id'],events))
             task={'id':job['id'],'title':self._progress_title(job.get('message'),job['id']),'status':job.get('status'),'status_kind':kind,'status_label':label,'started_at':job.get('created'),'observed_at':last,'result_available':bool(job.get('response')) and ws.has_available_result(job.get('status')),'workspace_id':job.get('workspace_id'),'events_count':len(events),'waits':waits,'configured':{'provider':configured.get('provider'),'model':configured.get('model'),'runtime':selected_subscription or (configured.get('provider') if configured else None)},'observed':{'provider':job.get('provider'),'model':job.get('model'),'runtime':job.get('provider') or None},'route':self._observed_route(job,events,model_events),'artifacts':artifacts}
+            task['channel']=job.get('channel')
+            if str(job.get('channel') or '').startswith('a2a-peer:'):
+                peer_id=job['channel'].split(':',1)[1]
+                task['origin']={'kind':'peer','peer_id':peer_id}
+                task['title']='Peer '+peer_id[:12]+': '+task['title']
             # The same typed qualifier the transcript and model context use
             # (#494), so the card cannot disagree with them.
             task['budget_continue']=None
@@ -5898,6 +5903,19 @@ class AgentService:
     def set_mattermost_company_approved(self, body):
         """#208: whether this Mattermost may be used while work mode is on (the owner's word for company-approved)."""
         return self.mattermost_surface.set_company_approved((body or {}).get('approved') if isinstance(body,dict) else None)
+
+    @cached_property
+    def a2a_peers(self):
+        """#651: peer counterparts, never owner conversation surfaces; optional SDK is lazy."""
+        from .a2a_peers import A2APeers
+        return A2APeers(self, secret_key=getattr(self, 'a2a_secret_key', None))
+
+    def a2a_tool(self, job):
+        if not any(not row.get('blocked') and not row.get('removed')
+                   for row in self.store.config('a2a_peers', {}).values()):
+            return None
+        from .a2a_peers import PeerWorkTool
+        return PeerWorkTool(self.a2a_peers, job['id'])
 
     @cached_property
     def slack_surface(self):
@@ -13139,7 +13157,7 @@ class AgentService:
                                   # #814: owner settings read, and changes the owner confirms.
                                   settings=self.settings_tools(job),
                                   # #826: what an earlier answer used and where it went.
-                                  information_use=self.information_use_tool(job),
+                                  information_use=self.information_use_tool(job),a2a=self.a2a_tool(job),
                                   # #657: completion is judged from observations.
                                   judgments=self.decision_judge,
                                   # Pilot boundary 1: stored secrets never reach the judgment.
@@ -13563,6 +13581,7 @@ class AgentService:
         return purged
 
     def start(self):
+        self.a2a_peers.recover()
         self.recover_interrupted_work()
         # #794 phase 3: a purge a restart left overdue runs before any Work reads owner state.
         self.purge_forgotten()

@@ -15,7 +15,7 @@ from .manifests import validate
 FORMAT = "agentos-owner-state-v1"
 ROOT = "agentos-owner-state"
 DB_RELATIVE = "private/quickstart.db"
-_RESET_CONFIG = ("telegram", "telegram_status", "model", "model_test", "model_draft_test", "subscription_engine", "document_sharing", "tool_run", "file_roots", "file_workspace", "file_workspace_document_jobs", "capability_registry", "connector_contract_state", "connector_pending_work")
+_RESET_CONFIG = ("telegram", "telegram_status", "model", "model_test", "model_draft_test", "subscription_engine", "document_sharing", "tool_run", "file_roots", "file_workspace", "file_workspace_document_jobs", "capability_registry", "connector_contract_state", "connector_pending_work", "a2a_peers")
 
 def _sha256(path):
     digest = hashlib.sha256()
@@ -51,7 +51,13 @@ def _portable_db(source, target, redaction=((), None)):
                             SET status='interrupted',
                                 error='Restored work was quarantined; submit a new request to retry.',
                                 delivery=CASE WHEN delivery IN ('sending','pending') THEN 'unknown' ELSE delivery END
-                            WHERE status IN {ws.sql_in(ws.ACTIVE)}""")
+                            WHERE status IN {ws.sql_in(ws.ACTIVE | {'peer-running'})}""")
+        # #651: retain conversations, but a portable copy carries no peer authority.
+        copy.execute("DELETE FROM config WHERE key LIKE 'a2a_tasks:%'")
+        if 'a2a_turns' in tables:
+            copy.execute("UPDATE a2a_turns SET state='failed',answer='peer_interrupted' WHERE state='working'")
+        if 'a2a_owner_items' in tables:
+            copy.execute("UPDATE a2a_owner_items SET state='cancelled' WHERE state='pending'")
         if "memory_approvals" in tables:
             # Approval tokens are runtime-secret-bound and cannot survive a
             # portable boundary. Quarantine every outstanding row, and remove
