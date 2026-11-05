@@ -836,6 +836,8 @@ class PreparationScopeTests(_Case):
         self.assertIn('점심 후보 3곳 준비', sent)
         self.assertNotIn('UNRELATED-MARK', sent)
         self.assertEqual([m['role'] for m in seen[0][1:]], ['user', 'user'])
+        # #671: the run is told Still keeps the schedule and delivers, so its reply is this run's result.
+        self.assertIn(msg('preparations.run_fact'), seen[0][-1]['content'])
 
     def test_cli_route_preparation_work_sees_only_its_origin_and_goal(self):
         from personal_agent.bounded_execution import ExecutionResult
@@ -865,6 +867,7 @@ class PreparationScopeTests(_Case):
         self.assertIn('ORIGIN-MARK', prompt)
         self.assertIn('점심 후보 3곳 준비', prompt)
         self.assertNotIn('UNRELATED-MARK', prompt)
+        self.assertIn(msg('preparations.run_fact'), prompt)
         self.assertEqual(len(self.runs(row['id'])), 1)
 
     def test_a_secret_in_a_preparation_answer_is_never_persisted_or_replayed(self):

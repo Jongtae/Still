@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest import mock
 
 from personal_agent.agent_runtime import MEMORY_OWNER, Capabilities, ToolError, evidence_summary, recorded_arguments
+from personal_agent.messages import msg
 from personal_agent.owner_forget import UNDO_SECONDS, ForgetError, OwnerForget
 from personal_agent.quickstart_service import AgentService
 from personal_agent.quickstart_store import QuickStore, forgotten_turn
@@ -175,7 +176,7 @@ class ForgetTranscript(unittest.TestCase):
             self.assertEqual(len(service.preparation_history(run)), 2, 'before the forget the origin is shown')
             self.forget.forget(MEMORY_OWNER, self.refs(ids[:1]))
             history = service.preparation_history(run)
-        self.assertEqual([row['content'] for row in history], ['오늘 준비'])
+        self.assertEqual([row['content'] for row in history], ['오늘 준비\n\n' + msg('preparations.run_fact')])
         retry = self.store.enqueue('다시 해줘', 'retry')
         with self.store.db() as db:
             db.execute("UPDATE jobs SET relation_kind='retry',related_job_id=? WHERE id=?", (origin, retry))

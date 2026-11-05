@@ -2324,7 +2324,8 @@ class AgentService:
             rows.append({'role':'user','content':self.scrub_work_text(origin['id'],origin['message']),
                          'job_id':origin['id'],'channel':origin.get('channel'),'qualifier':None,
                          'request_key':origin.get('request_key'),'created':origin.get('created')})
-        content=job['message']
+        # #671: the run is told it is one run of a schedule Still keeps and delivers.
+        content=job['message']+'\n\n'+msg('preparations.run_fact')
         if row and prep.offered(row):
             # #393: the run works within what the owner read and accepted, not only its brief.
             content+='\n\n'+msg('preparations.accepted_offer_label')+'\n'+prep.accepted_offer(row)
@@ -6440,6 +6441,9 @@ class AgentService:
                 db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                            (job['id'],ORCHESTRATION_EVENT,status,json.dumps(detail,ensure_ascii=False),time.time()))
         state=(lambda:self.store.config(self.ORCHESTRATION_STATE,{}),lambda value:self.store.put(self.ORCHESTRATION_STATE,value))
+        # #671: a preparation's run is judged as this run, not as the schedule Still itself keeps.
+        if prep.preparation_of(job.get('request_key')) and job.get('model')!='preparation':
+            request=str(request or '')+'\n\n'+msg('preparations.run_fact')
         return Orchestration(self.decision_judge,catalogue,request=request,conversation=conversation,
                              continues='\n'.join(part for part in (self.continued_exchange(job),self.action_continuation_note(job)) if part),
                              sections={**sections,'history':len(earlier)},budget=budget,record=event,state=state,

@@ -1631,6 +1631,12 @@
   "ja": "オーナーが読んで承諾した内容（この範囲内で行ってください）:",
   "zh": "主人阅读并接受的内容（请在此范围内进行）："
  },
+ "preparations.run_fact": {
+  "ko": "이 Work는 소유자가 수락한 준비를 Still이 일정대로 실행한 것입니다. 일정을 이어 가고 결과를 소유자에게 전하는 일은 Still이 하므로, 이 Work의 답은 이번 실행의 결과입니다.",
+  "en": "This Work is a run of a preparation the owner accepted, which Still runs on its schedule. Still keeps the schedule and brings the result to the owner, so this Work's reply is this run's result.",
+  "ja": "このWorkは、オーナーが承諾した準備をStillが予定どおり実行したものです。予定を続け、結果をオーナーに届けるのはStillなので、このWorkの答えは今回の実行の結果です。",
+  "zh": "此 Work 是 Still 按计划执行主人已接受的准备事项。继续执行计划并把结果交给主人由 Still 负责，因此此 Work 的回答是本次执行的结果。"
+ },
  "preparations.brief_label": {
   "ko": "매번 실행할 때 맡길 내용",
   "en": "What each run is asked to do",
