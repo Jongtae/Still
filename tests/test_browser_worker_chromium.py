@@ -1467,10 +1467,11 @@ def test_popup_from_iframe_on_another_page_is_not_replayed(worker):
     ('no-referrer-when-downgrade', 'noReferrerWhenDowngrade'),
     ('unsafe-url', 'unsafeUrl')])
 @pytest.mark.parametrize('iframe', [False, True])
-def test_ai_popup_replay_preserves_opener_referrer_and_policy(worker, policy, cdp_policy, iframe):
-    worker.engine.browser.opener_metadata = {'url': 'https://public.test/login', 'policy': policy}
-    window_open(worker, 'https://public.test/account', gesture=True,
-                target=iframe_target(worker) if iframe else None)
+@pytest.mark.parametrize('features,rel', [([], ''), (['noopener'], ''), ([], 'noopener')])
+def test_ai_popup_replay_preserves_opener_referrer_and_policy(worker, policy, cdp_policy, iframe, features, rel):
+    worker.engine.browser.opener_metadata = {'url': 'https://public.test/login', 'policy': policy, 'rel': rel}
+    worker.window_open(iframe_target(worker) if iframe else worker.main_target, {
+        'url': 'https://public.test/account', 'userGesture': True, 'windowFeatures': features})
     assert packets(worker, 'Page.navigate') == [{
         'url': 'https://public.test/account', 'transitionType': 'link',
         'referrer': 'https://public.test/login', 'referrerPolicy': cdp_policy}]
@@ -1481,8 +1482,8 @@ def test_ai_popup_replay_preserves_opener_referrer_and_policy(worker, policy, cd
 
 
 @pytest.mark.parametrize('features,rel,policy', [
-    (['noreferrer'], '', 'unsafe-url'), (['noopener'], '', 'unsafe-url'),
-    ([], 'noreferrer', 'unsafe-url'), ([], 'noopener', 'unsafe-url'),
+    (['noreferrer'], '', 'unsafe-url'), (['noopener', 'noreferrer'], '', 'unsafe-url'),
+    ([], 'noreferrer', 'unsafe-url'), ([], 'noopener noreferrer', 'unsafe-url'),
     ([], '', 'no-referrer')])
 @pytest.mark.parametrize('iframe', [False, True])
 def test_ai_popup_replay_suppresses_referrer(worker, features, rel, policy, iframe):

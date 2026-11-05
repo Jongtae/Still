@@ -1120,7 +1120,8 @@ class Worker(shared.Worker):
                 policy = 'strictOriginWhenCrossOrigin'
             features = {str(feature).lower().split('=')[0] for feature in event.get('windowFeatures', [])}
             rel = set(metadata.get('rel', '').lower().split())
-            if features.intersection(('noreferrer', 'noopener')) or rel.intersection(('noreferrer', 'noopener')):
+            # noopener only severs window.opener; noreferrer also suppresses Referer.
+            if 'noreferrer' in features or 'noreferrer' in rel:
                 policy = 'noReferrer'
             referrer = event.get('referrer', metadata.get('url', ''))
             params = {'url': url, 'transitionType': 'link' if event.get('userGesture') else 'other'}
