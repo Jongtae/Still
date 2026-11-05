@@ -9,6 +9,7 @@ qualification suite is replaced by a pass for the one model-change case.  No
 live model or Telegram is contacted, and none is claimed.
 """
 import json
+from datetime import datetime
 import tempfile
 import threading
 import unittest
@@ -1186,6 +1187,23 @@ class PreparationManagementConversation(_Case):
         self.assertEqual((current['state'], current['due_at'], current['recurrence']),
                          (prep.STATE_RUNNING, self.row['due_at'], 'weekly'))
         self.assertIsNotNone(current['last_run_job_id'])
+
+    def test_an_edit_draft_reads_as_the_schedule_now_and_after_never_the_drafts_json(self):
+        """The owner confirms a schedule edit by its name and both schedules, not ``{"id": ...}``."""
+        watch = self.service.preparations.create(
+            kind='prepare', goal='주식 현황 알림', due_at=self.clock[0] + 600, timezone='Asia/Seoul', recurrence=None,
+            channel='web', created_from=None, state=prep.STATE_SCHEDULED, title='국내 주식 현황 알림',
+            window=(3600, self.clock[0] + 600 + 11 * 3600, 12))
+        until = datetime.fromtimestamp(self.clock[0] + 600 + 8 * 3600, prep.zone('Asia/Seoul')).isoformat()
+        draft = self.settings.propose('owner', 'http', 'preparations', 'edit',
+                                      json.dumps({'id': watch['id'], 'until': until, 'max_runs': 9}))
+        text = self.settings.confirmation_text([self.store.config('settings_change_drafts')[draft['draft_id']]])
+        edited = {**watch, **prep.Preparations.edit_values(watch, {'until': until, 'max_runs': 9}, self.clock[0])}
+        for part in ('국내 주식 현황 알림', prep.schedule_text(watch), prep.schedule_text(edited)):
+            self.assertIn(part, text)
+        self.assertNotEqual(prep.schedule_text(watch), prep.schedule_text(edited))
+        for leaked in ('{', watch['id'], 'max_runs', 'bound_timezone'):
+            self.assertNotIn(leaked, text)
 
     def test_rule_edit_uses_the_same_owner_confirmation(self):
         """Rules remain schedule edits with the existing confirmation boundary (#580)."""

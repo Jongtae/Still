@@ -1002,6 +1002,19 @@ class SettingsOrchestrator:
             return msg('settings_orchestrator.call_count', value=value)
         return options.get(value) or VALUE_LABELS.get(value) or value or msg('settings_orchestrator.value_not_set')
 
+    def _edit_summary(self, after):
+        """A schedule edit in the owner's words: its name, the schedule now and after (never the draft's JSON)."""
+        from . import preparations as prep
+        from .current_context import redact_known_secrets
+        changes = json.loads(after)
+        current = self.service.preparations.get(changes['id'])
+        requested = {key: value for key, value in changes.items() if key not in ('id', BOUND_TIMEZONE)}
+        edited = {**current, **prep.Preparations.edit_values(current, requested, self.service.preparations.clock())}
+        home_zone = self.service.home_zone()
+        return msg('settings_orchestrator.preparation_edit_summary',
+                   title=redact_known_secrets(self.store, prep.owner_title(current)),
+                   before=prep.schedule_text(current, home_zone), after=prep.schedule_text(edited, home_zone))
+
     @staticmethod
     def _digest(row):
         body = {key: row.get(key) for key in ("id", "owner", "channel", "category", "setting", "before", "after", "expires_at")}
@@ -1075,6 +1088,8 @@ class SettingsOrchestrator:
             summary = msg('settings_orchestrator.use_mobile_summary', site=after)
         elif category == "browser":
             summary = (msg('settings_orchestrator.close_login_summary', window=self._describe(category, setting, after, row)))
+        elif (category, setting) == ("preparations", "edit"):
+            summary = self._edit_summary(after)
         elif category == "preparations":
             summary = (msg('settings_orchestrator.cancel_reservation_summary', reservation=self._describe(category, setting, after, row)) if setting == "cancel"
                        else msg('settings_orchestrator.accept_reservation_summary', reservation=self._describe(category, setting, after, row)) if setting == "accept"
