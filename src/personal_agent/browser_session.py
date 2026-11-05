@@ -731,6 +731,7 @@ def mediate_snapshot(raw, excluded=(), requested_url=None):
     snapshot['_page'] = page_reference(raw.get('url'))
     # #340: only the login window consumes this address; public_view drops it.
     snapshot['_window_url'] = login_window_url(raw.get('url'))
+    snapshot['_provider_popup'] = raw.get('_provider_popup') or {}
     states, identities = page_states(raw, elements, text, excluded)
     snapshot['_states'] = states
     # Every payment form's identity and state (#698): part of every step's binding.
@@ -1079,6 +1080,8 @@ class BrowserSession:
             # with an account the owner is already signed in to where the page
             # offers one; it never types a password.
             page = {**public_view(snapshot), 'state': 'login_required', 'needs_setup': True, 'requires': 'browser-login'}
+            if inside and (snapshot.get('_provider_popup') or {}).get('active'):
+                return page   # the main site's form is not a request for input in the popup
             if inside:
                 # #636: the provider asks for a sign-in (a password field): the owner signs in (C14);
                 # nothing is typed there.
@@ -1161,7 +1164,10 @@ class BrowserSession:
                                                         keep_blank_values=True)}
         except ValueError:
             return False
-        if 'error' in names:
+        popup = snapshot.get('_provider_popup') or {}
+        mark = self._resign.get('mark')
+        current_popup = mark is None or popup.get('mark', mark) >= mark
+        if 'error' in names or (current_popup and (popup.get('oauth_error') or popup.get('needs_owner'))):
             return False
         before = self._resign.get('cookies')
         after = self._site_cookies(self._resign['site'])
@@ -1175,7 +1181,7 @@ class BrowserSession:
         signed = self._sign_in_evidence(snapshot)
         receipt = self._receipt('signed_in' if signed else 'unconfirmed')
         next_step = None
-        if snapshot['login_required']:
+        if snapshot['login_required'] or (not signed and (snapshot.get('_provider_popup') or {}).get('needs_owner')):
             next_step = msg('browser.provider_not_returned', provider=resign['provider']) + ' ' + self._hand_off()
         elif signed:
             if self._login_resolved(resign['reference']):
@@ -1223,7 +1229,7 @@ class BrowserSession:
                 'cookies': self._site_cookies(site), 'mark': self._authorization_mark()}
 
     def _new_authorizations(self):
-        """#636: the hosts of the authorization requests the browser sent since last looked at (its main frame)."""
+        """#636: the hosts of the authorization requests the browser sent since last looked at (main view or allowed popup)."""
         answer = _authorizations(self.driver) if self.driver is not None else None
         if not answer:
             return ()
@@ -1235,7 +1241,7 @@ class BrowserSession:
     def _observe(self, snapshot, requested_url=None):
         """#636 (Codex on #637): whether the main frame in ``snapshot`` is inside a provider window.
 
-        One state machine, from observed main-frame navigation only (no hint, sign-in form or
+        One state machine, from observed navigation and the allowed popup lifecycle (no hint, sign-in form or
         re-sign-in is needed).  The window is ``{origin, hosts, current}``: ``origin`` is where the
         flow started (the page the AI was on, or what an explicit ``browser_open`` requested before
         any redirect), ``hosts`` every host the main frame visited inside the window.
@@ -1251,9 +1257,11 @@ class BrowserSession:
         ``requested_url`` is the address an explicit ``browser_open`` asked for.  A page of a
         provider's registrable domain the AI opened directly, outside a window, is an ordinary page.
         """
-        host = ascii_host(landed_host(snapshot.get('_page')) or '')
+        popup = snapshot.get('_provider_popup') or {}
         protected = self._protected_hosts()
         hops = tuple(ascii_host(hop) for hop in self._new_authorizations() if ascii_host(hop) in protected)
+        popup_host = popup.get('provider_host') or popup.get('host') or (hops[-1] if hops else '')
+        host = ascii_host(popup_host if popup.get('active') else landed_host(snapshot.get('_page')) or '')
         passed = bool(hops)
         window = self._window
         if window and self._resign:
@@ -1315,9 +1323,12 @@ class BrowserSession:
     def _refuse_on_provider(self, snapshot):
         """#636: inside a provider window (``_observe``), a press or typing step - and so any form submit it
         could start - is refused before anything reaches the page (``ran: false``); the owner signs in."""
-        if not self._observe(snapshot):
+        inside = self._observe(snapshot)
+        popup = snapshot.get('_provider_popup') or {}
+        if not inside and not (popup.get('needs_owner') and self._pending_provider_sign_in):
             return
-        text = msg('browser.provider_interaction_refused', provider=self._window['current']) + ' ' + self._hand_off(snapshot)
+        provider = self._window['current'] if self._window else popup.get('host', '')
+        text = msg('browser.provider_interaction_refused', provider=provider) + ' ' + self._hand_off(snapshot)
         raise ToolError(text, PROVIDER_INTERACTION_CODE, ran=False)
 
     def _offer_login(self, url, explicit=False, *, window_url=None):
@@ -2395,6 +2406,8 @@ class WebKitWorkerDriver:
                 # #12: the field the page moved the focus to, named by the session the same way.
                 exc.focused = message.get('focused') if code == 'focus_moved' else None
                 raise exc
+            if code == PROVIDER_INTERACTION_CODE:
+                raise ToolError(msg('browser.provider_interaction_refused', provider=''), code, ran=False)
             refused = NAVIGATION_REFUSALS.get(code)
             if refused is not None:
                 exc = ToolError(refused, code)

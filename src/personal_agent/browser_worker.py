@@ -1430,6 +1430,9 @@ class Worker:
         #: the last ``AUTHORIZATIONS_KEPT``), and how many there were in this worker's life.
         self.authorizations = []
         self.authorization_count = 0
+        self.popup_state = {}      # #683: host-only lifecycle of the latest Work popup
+        self.login_return = None   # latest owner-window start; consumed at most once
+        self.login_return_pending = None  # only the latest settle-time return may run
         self.popups = []           # #914: (view, window, delegate) of sign-in popups while the owner signs in
         self.main_navigations = 0  # main-frame navigations allowed so far (#736)
         #: #11: while a ``load_more`` read runs, a main-frame navigation the page starts is
@@ -2052,6 +2055,8 @@ class Worker:
         url = str(command.get('url') or '')
         if urlsplit(url).scheme not in ('http', 'https'):
             return self.fail(ident, 'bad_url')
+        if not getattr(self, 'owner_visible', False) and getattr(self, 'popups', ()):
+            self.close_popup()
         if layout != self.layout:
             self.view.setCustomUserAgent_(user_agent_for(layout))
             if getattr(self, 'mobile_restore', None) is None:
@@ -2142,6 +2147,8 @@ class Worker:
             if self.refused_submits > self.reported_refused:
                 self.reported_refused = self.refused_submits
                 value['refused_submit'] = True
+            if getattr(self, 'popup_state', None):
+                value['_provider_popup'] = dict(self.popup_state)
             then(value, None)
         self.run(SNAPSHOT_SCRIPT, {}, done)
 
@@ -2360,6 +2367,9 @@ class Worker:
                                  'approved': approved, 'lasts': int(lasts * 1000)}, located)
 
     def op_click(self, ident, command, timeout):
+        if (not getattr(self, 'owner_visible', False)
+                and getattr(self, 'popups', ())):
+            return self.fail(ident, 'provider_interaction_refused', ran=False, posted=False)
         self.deadline(ident, timeout, on_timeout=self.end_step, observed=self.step_posted_field)
 
         def click(point, nonce, expect, tokens):
@@ -2388,6 +2398,9 @@ class Worker:
         self._locate(ident, command, click)
 
     def op_type(self, ident, command, timeout):
+        if (not getattr(self, 'owner_visible', False)
+                and getattr(self, 'popups', ())):
+            return self.fail(ident, 'provider_interaction_refused', ran=False, posted=False)
         text = command.get('text')
         if not isinstance(text, str):
             return self.fail(ident, 'bad_text')
@@ -2447,6 +2460,7 @@ class Worker:
 
     def op_show(self, ident, command, timeout):
         url = command.get('url')
+        self.login_return = (object(), url or (str(self.view.URL().absoluteString()) if self.view.URL() else None))
         # The owner signs in by hand: the guard is off while the window shows (#698).
         self.set_guard_off(True)
         self.owner_visible = True
@@ -2461,20 +2475,21 @@ class Worker:
         self.reply(ident)
 
     def open_popup(self, config):
-        """#914: a popup (``window.open``) in its own window while the owner signs in by hand.
+        """#914/#683: a sign-in popup using WebKit's configuration and opener.
 
         A social sign-in opens the provider in a popup and hands its result back
         to the page that opened it (``window.opener``).  Loading the popup in the
         login window itself destroyed that page, so the provider signed the owner
         in while the site never did.  The popup is a separate web view built from
         WebKit's own configuration (same data store, opener kept); its navigations
-        pass the same destination check.  Only while the login window shows.
+        pass the same destination check. Work popups remain hidden and bounded.
         """
         AppKit, Foundation, WebKit = self.AppKit, self.Foundation, self.WebKit
         rect = Foundation.NSMakeRect(0, 0, WIDTH, HEIGHT)
         view = WebKit.WKWebView.alloc().initWithFrame_configuration_(rect, config)
         delegate = _popup_delegate_class().alloc().init()
         delegate.worker = self
+        delegate.main_at_open = self.main_navigations
         view.setNavigationDelegate_(delegate)
         view.setUIDelegate_(delegate)
         try:
@@ -2488,16 +2503,82 @@ class Worker:
         window.setDelegate_(delegate)
         window.setTitle_('Still · 로그인')
         window.center()
-        window.makeKeyAndOrderFront_(None)
+        if self.owner_visible:
+            window.makeKeyAndOrderFront_(None)
+        else:
+            # Like the main Work view (#930), render off screen without taking owner input.
+            window.setIgnoresMouseEvents_(True)
+            window.setCollectionBehavior_(AppKit.NSWindowCollectionBehaviorTransient |
+                                          AppKit.NSWindowCollectionBehaviorIgnoresCycle)
+            window.setExcludedFromWindowsMenu_(True)
+            window.setFrameOrigin_(Foundation.NSMakePoint(PARK_ORIGIN, PARK_ORIGIN))
+            window.orderBack_(None)
         self.popups.append((view, window, delegate))
+        delegate.reserved = True
+        if not self.owner_visible:
+            self.popup_state = {'active': True, 'host': '', 'oauth_error': False,
+                                'mark': self.authorization_count}
+            state = self.popup_state
+            def expire():
+                if self.popup_state is state and state['active']:
+                    state['needs_owner'] = True
+                    self.close_popup(view=view)
+            self.AppHelper.callLater(20, expire)
+            self.AppHelper.callLater(0.5, lambda: self.check_popup_input(view, state))
         return view
 
     def close_popup(self, view=None, window=None):
         """Close one popup (by its view or window), or every popup when neither is given."""
         for entry in list(self.popups):
             if (view is None and window is None) or entry[0] is view or entry[1] is window:
-                entry[1].orderOut_(None)
+                # Cancel expiry/input callbacks before native teardown can re-enter the run loop.
+                # Retain the closed popup's error/hand-off evidence for the next snapshot.
                 self.popups.remove(entry)
+                if not self.owner_visible and not self.popups:
+                    self.popup_state['active'] = False
+                entry[0].stopLoading()
+                entry[1].orderOut_(None)
+                # Tear down the document too: a timed-out popup must not keep running hidden scripts.
+                entry[0].loadHTMLString_baseURL_('', None)
+
+    def check_popup_input(self, view, state):
+        """Poll a silent Work popup, bounded by its expiry, for visible input requests."""
+        if self.popup_state is not state or not state['active'] or self.owner_visible:
+            return
+        def checked(value, error):
+            if self.popup_state is not state or not state['active']:
+                return
+            if value is True and state.get('host') in self.provider_sign_in_policy.get('protected_hosts', ()):
+                state['needs_owner'] = True
+                self.close_popup(view=view)
+            else:
+                self.AppHelper.callLater(0.5, lambda: self.check_popup_input(view, state))
+        self.run("return JSON.stringify(Array.from(document.querySelectorAll('input,select,textarea,button,[role=button]'))"
+                 ".some(e => !e.disabled && e.type !== 'hidden' && e.getClientRects().length > 0));",
+                 {}, checked, view=view)
+
+    def return_from_login(self, delay=0):
+        """Only the latest start may return, and a later main navigation wins."""
+        reference = getattr(self, 'login_return', None)
+        baseline = self.main_navigations
+        pending = self.login_return_pending = object()
+        def finish():
+            if (not self.owner_visible or not reference or not reference[1] or self.login_return is not reference
+                    or self.login_return_pending is not pending or self.main_navigations != baseline):
+                return
+            self.login_return_pending = None
+            self.login_return = None
+            request = self.Foundation.NSURLRequest.requestWithURL_(self.Foundation.NSURL.URLWithString_(reference[1]))
+            self.view.loadRequest_(request)
+        if delay:
+            self.AppHelper.callLater(delay, finish)
+        else:
+            finish()
+
+    def popup_allowed(self, url):
+        """A Work may reserve a blank window; its first real URL must be recorded OAuth."""
+        host = authorization_host(url)
+        return bool(host and host in self.provider_sign_in_policy.get('protected_hosts', ()))
 
     def op_hide(self, ident, command, timeout):
         self.end_remote()
@@ -3014,20 +3095,51 @@ def _popup_delegate_class():
                 url = str(request.URL().absoluteString()) if request is not None and request.URL() is not None else ''
                 frame = action.targetFrame()
                 top = frame is None or bool(frame.isMainFrame())
+                work = not getattr(worker, 'owner_visible', True)
                 if top and str(urlsplit(url).scheme or '').lower() in ('data', 'blob'):
+                    if work:
+                        worker.close_popup(view=view)
                     return handler(WebKit.WKNavigationActionPolicyCancel)
+                if work and top:
+                    if _blank(request.URL() if request else None):
+                        return handler(WebKit.WKNavigationActionPolicyAllow)
+                    if getattr(self, 'reserved', False):
+                        self.reserved = False
+                        if not worker.popup_allowed(url):
+                            worker.close_popup(view=view)
+                            return handler(WebKit.WKNavigationActionPolicyCancel)
+                    if authorization_blocked(url, worker.provider_sign_in_policy):
+                        worker.navigation_refused(True, 'provider_sign_in_off')
+                        worker.close_popup(view=view)
+                        return handler(WebKit.WKNavigationActionPolicyCancel)
                 # main_frame=False: a popup's navigations never touch the login window's navigation counters.
                 # #1579: ``decide`` answers ``(allowed, reason)``; a one-argument callback raised here.
                 def decision(allowed, reason=None):
+                    if work and not any(entry[0] is view for entry in worker.popups):
+                        return handler(WebKit.WKNavigationActionPolicyCancel)
                     if allowed and top:
-                        # #636: a popup exists only while the owner signs in by hand (``open_popup``): its
-                        # authorization request's host is recorded like the window's own, never a value.
+                        # Record authorization hosts from both owner and Work popups, never query values.
                         worker.note_authorization(url)
+                        if work:
+                            host = _host(url).rstrip('.')
+                            worker.popup_state['host'] = host
+                            if host in worker.provider_sign_in_policy.get('protected_hosts', ()):
+                                worker.popup_state['provider_host'] = host
+                            worker.popup_state['oauth_error'] |= any(
+                                name == 'error' for name, _ in parse_qsl(urlsplit(url).query, keep_blank_values=True))
+                    if not allowed and work:
+                        worker.navigation_refused(True, reason or 'blocked_destination')
+                        worker.close_popup(view=view)
                     handler(WebKit.WKNavigationActionPolicyAllow if allowed else WebKit.WKNavigationActionPolicyCancel)
                 worker.decide(url, False, decision)
             guarded_policy(worker, 'popup_navigation', handler, WebKit.WKNavigationActionPolicyCancel, body)
 
         def webView_runJavaScriptAlertPanelWithMessage_initiatedByFrame_completionHandler_(self, view, message, frame, handler):
+            if not self.worker.owner_visible:
+                self.worker.popup_state['needs_owner'] = True
+                handler()
+                self.worker.close_popup(view=view)
+                return
             # #936: answered by the worker's rule; never left to WebKit's silent default.
             if self.worker.hold_dialog('alert', message, handler):
                 return   # #939: the phone (or the Mac's sheet) answers
@@ -3037,6 +3149,11 @@ def _popup_delegate_class():
                 handler()
 
         def webView_runJavaScriptConfirmPanelWithMessage_initiatedByFrame_completionHandler_(self, view, message, frame, handler):
+            if not self.worker.owner_visible:
+                self.worker.popup_state['needs_owner'] = True
+                handler(False)
+                self.worker.close_popup(view=view)
+                return
             if self.worker.hold_dialog('confirm', message, handler):
                 return   # #939: the phone (or the Mac's sheet) answers
             answer = False
@@ -3047,6 +3164,11 @@ def _popup_delegate_class():
 
         def webView_runJavaScriptTextInputPanelWithPrompt_defaultText_initiatedByFrame_completionHandler_(
                 self, view, prompt, default, frame, handler):
+            if not self.worker.owner_visible:
+                self.worker.popup_state['needs_owner'] = True
+                handler(None)
+                self.worker.close_popup(view=view)
+                return
             if self.worker.hold_dialog('prompt', prompt, handler):
                 return   # #939: the phone (or the Mac's sheet) answers
             try:
@@ -3073,6 +3195,8 @@ def _popup_delegate_class():
         def webViewDidClose_(self, view):
             # The page closed its own popup (window.close()), as a finished sign-in does.
             self.worker.close_popup(view=view)
+            if self.worker.owner_visible and self.worker.main_navigations == self.main_at_open:
+                self.worker.return_from_login(2)
 
         def windowShouldClose_(self, window):
             self.worker.close_popup(window=window)
@@ -3128,6 +3252,7 @@ def _delegate_class():
                     if not allowed:
                         worker.navigation_refused(main_frame, reason or 'blocked_destination')
                     elif main_frame:
+                        worker.login_return_pending = None
                         worker.main_navigations += 1   # a click waits for it to land (#736)
                         worker.note_authorization(url)   # #636: a host, only when the URL is an authorization request
                         try:
@@ -3224,7 +3349,9 @@ def _delegate_class():
             request = action.request()
             url = request.URL() if request is not None else None
             scheme = str(url.scheme() or '').lower() if url is not None else ''
-            if self.worker.guard_off and self.worker.owner_visible and (scheme in ('http', 'https') or _blank(url)):
+            if ((self.worker.guard_off and self.worker.owner_visible and (scheme in ('http', 'https') or _blank(url)))
+                    or (not self.worker.owner_visible and not self.worker.popups
+                        and (_blank(url) or self.worker.popup_allowed(str(url.absoluteString()) if url else '')))):
                 # A blank popup (window.open('') / 'about:blank') is a sign-in flow reserving its
                 # window before it sets the address; that later navigation is checked like any other.
                 return self.worker.open_popup(config)
@@ -3232,6 +3359,10 @@ def _delegate_class():
                 return None
             view.loadRequest_(request)
             return None
+
+        def webViewDidClose_(self, view):
+            if view is self.worker.view and self.worker.owner_visible:
+                self.worker.return_from_login()
 
         def windowShouldClose_(self, window):
             # Closing the login window hides it; the parent then exports the session.

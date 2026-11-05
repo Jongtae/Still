@@ -735,6 +735,259 @@ class DriverProtocolTests(unittest.TestCase):
 
 # ---------------------------------------------------------------- destinations, output encoding, the UI marker (unit)
 
+class ProviderPopupWorkerTests(unittest.TestCase):
+    """#683: real delegate and worker lifecycle with fake Cocoa objects."""
+
+    def setUp(self):
+        from types import SimpleNamespace as NS
+        from unittest import mock
+        from personal_agent import browser_worker as bw
+        self.bw, self.NS = bw, NS
+
+        class Cocoa:
+            def __init_subclass__(cls, protocols=()):
+                super().__init_subclass__()
+
+            @classmethod
+            def alloc(cls):
+                return cls()
+
+            def init(self):
+                return self
+
+            def initWithFrame_configuration_(self, rect, config):
+                self.loads = []
+                return self
+
+            def initWithContentRect_styleMask_backing_defer_(self, *args):
+                return self
+
+            def loadRequest_(self, request):
+                self.loads.append(request)
+
+            def __getattr__(self, name):
+                return lambda *args: None
+
+        foundation = NS(NSObject=Cocoa, NSMakeRect=lambda *a: a, NSMakePoint=lambda *a: a,
+                        NSURL=NS(URLWithString_=lambda s: s), NSURLRequest=NS(requestWithURL_=lambda s: s))
+        webkit = NS(WKWebView=Cocoa, WKNavigationActionPolicyAllow=1, WKNavigationActionPolicyCancel=0)
+        appkit = NS(NSWindow=Cocoa, NSWindowStyleMaskTitled=1, NSWindowStyleMaskClosable=2,
+                    NSWindowStyleMaskResizable=4, NSBackingStoreBuffered=0,
+                    NSWindowCollectionBehaviorTransient=1, NSWindowCollectionBehaviorIgnoresCycle=2)
+        modules = {'Foundation': foundation, 'WebKit': webkit,
+                   'objc': NS(ivar=lambda: None, protocolNamed=lambda name: object())}
+        for patch in (mock.patch.dict(sys.modules, modules), mock.patch.object(bw, '_POPUP_DELEGATE', []),
+                      mock.patch.object(bw, '_DELEGATE', [])):
+            patch.start()
+            self.addCleanup(patch.stop)
+        self.later = []
+        worker = object.__new__(bw.Worker)
+        worker.Foundation, worker.WebKit, worker.AppKit = foundation, webkit, appkit
+        worker.AppHelper = NS(callLater=lambda seconds, fn: self.later.append((seconds, fn)))
+        worker.owner_visible = worker.guard_off = False
+        worker.popups, worker.popup_state = [], {}
+        worker.main_navigations, worker.landed = 0, 0
+        worker.authorizations, worker.authorization_count = [], 0
+        worker.provider_sign_in_policy = {'protected_hosts': ['id.provider.test'], 'enabled': True}
+        worker.view = Cocoa().initWithFrame_configuration_(None, None)
+        worker.resolved = {bw.origin_key('https://id.provider.test'): None}
+        worker.blocked, worker.navigation = 0, None
+        worker.emit = lambda event: self.fail(event)
+        worker.pending = {}
+        self.worker = worker
+        self.delegate = bw._delegate_class()()
+        self.delegate.worker = worker
+        self.authorize = 'https://id.provider.test/authorize?response_type=code&client_id=x&redirect_uri=https%3A%2F%2Fsite.test%2Fcallback'
+
+    def action(self, url):
+        ns = self.NS
+        native = ns(absoluteString=lambda: url, scheme=lambda: url.split(':', 1)[0]) if url else None
+        return ns(request=lambda: ns(URL=lambda: native), targetFrame=lambda: None)
+
+    def create(self, url):
+        return self.delegate.webView_createWebViewWithConfiguration_forNavigationAction_windowFeatures_(
+            self.worker.view, object(), self.action(url), None)
+
+    def navigate(self, view, url):
+        answers = []
+        self.worker.popups[-1][2].webView_decidePolicyForNavigationAction_decisionHandler_(
+            view, self.action(url), answers.append)
+        return answers
+
+    def test_recorded_authorization_creates_a_work_popup_and_counts_hosts_only(self):
+        view = self.create(self.authorize)
+        self.assertIsNotNone(view)
+        self.assertEqual(self.navigate(view, self.authorize), [1])
+        self.assertEqual((self.worker.authorizations, self.worker.authorization_count), (['id.provider.test'], 1))
+        self.assertEqual((self.worker.main_navigations, self.worker.landed), (0, 0))
+
+    def test_unrecorded_and_non_authorization_requests_create_no_popup(self):
+        for url in ('https://unknown.test/authorize?response_type=code&client_id=x',
+                    'https://id.provider.test/page', 'file:///tmp/private'):
+            self.assertIsNone(self.create(url))
+            self.assertFalse(self.worker.popups)
+
+    def test_reserved_blank_is_closed_on_its_first_non_authorization_navigation(self):
+        view = self.create('about:blank')
+        self.assertEqual(self.navigate(view, 'about:blank'), [1])
+        self.assertEqual(self.navigate(view, 'https://id.provider.test/page'), [0])
+        self.assertFalse(self.worker.popups)
+        self.assertEqual(self.worker.authorization_count, 0)
+
+    def test_off_switch_closes_the_popup_and_records_the_typed_refusal(self):
+        self.worker.provider_sign_in_policy['enabled'] = False
+        view = self.create(self.authorize)
+        self.assertEqual(self.navigate(view, self.authorize), [0])
+        self.assertFalse(self.worker.popups)
+        self.assertEqual(self.worker.blocked_reason, 'provider_sign_in_off')
+        self.assertEqual(self.worker.authorization_count, 0)
+
+    def test_work_popup_refuses_input_before_touching_the_dom_or_native_input(self):
+        self.create(self.authorize)
+        replies = []
+        self.worker.emit = replies.append
+        self.worker.op_click(1, {}, 1)
+        self.worker.op_type(2, {'text': 'private'}, 1)
+        self.assertEqual([row['error'] for row in replies], ['provider_interaction_refused'] * 2)
+        self.assertTrue(all(row['ran'] is False for row in replies))
+
+    def test_an_old_timeout_cannot_close_a_new_popup(self):
+        first = self.create(self.authorize)
+        expire = next(fn for seconds, fn in self.later if seconds == 20)
+        self.worker.close_popup(view=first)
+        second = self.create(self.authorize)
+        expire()
+        self.assertIs(self.worker.popups[0][0], second)
+        self.assertTrue(self.worker.popup_state['active'])
+
+    def test_normal_close_cancels_timeout_before_native_teardown_reenters(self):
+        from unittest import mock
+        from test_provider_resign_in import popup_session, SITE
+        sess, driver, approvals = popup_session()
+        view = self.create(self.authorize)
+        expire = next(fn for seconds, fn in self.later if seconds == 20)
+        state = self.worker.popup_state
+        self.navigate(view, self.authorize)
+        driver.popup_authorize()
+        driver.popup = state  # the session observes the real worker's retained lifecycle
+        sess.run('browser_read', {})
+        driver.goto(f'https://{SITE}/callback?code=abc', 1)
+        observed = []
+        def stopping():
+            # A native call can pump callbacks while the popup is being closed.
+            observed.append(state['active'])
+            expire()
+        view.stopLoading = stopping
+        self.worker.close_popup(view=view)
+        expire()  # also harmless after normal closure
+        self.assertEqual(observed, [False])
+        self.assertFalse(state.get('needs_owner'))
+        self.assertFalse(self.worker.popups)
+        export = driver.cookies_export
+        def cookies_after_close():
+            expire()  # deliver the actual old timer while finalization gathers cookie evidence
+            return export()
+        driver.cookies_export = cookies_after_close
+        with mock.patch.object(sess, '_finalize_sign_in', wraps=sess._finalize_sign_in) as finalize:
+            self.assertEqual(sess.run('browser_read', {})['provider_sign_in']['state'], 'signed_in')
+            self.assertNotIn('provider_sign_in', sess.run('browser_read', {}))
+            self.assertEqual(finalize.call_count, 1)
+        self.assertFalse(approvals.offers)
+
+    def test_popup_oauth_error_survives_close_and_a_later_navigation(self):
+        from test_provider_resign_in import popup_session, SITE
+        for query in ('error=access_denied', 'error='):
+            with self.subTest(query=query):
+                sess, driver, approvals = popup_session()
+                view = self.create(self.authorize)
+                self.navigate(view, self.authorize)
+                driver.popup_authorize()
+                driver.popup = self.worker.popup_state
+                sess.run('browser_read', {})
+                self.worker.resolved[self.bw.origin_key('https://site.test')] = None
+                self.assertEqual(self.navigate(view, 'https://site.test/callback?' + query), [1])
+                self.assertEqual(self.navigate(view, 'https://site.test/done'), [1])
+                self.worker.popups[-1][2].webViewDidClose_(view)
+                self.assertFalse(self.worker.popup_state['active'])
+                self.assertTrue(self.worker.popup_state['oauth_error'])
+                driver.goto(f'https://{SITE}/callback?code=abc', 1)
+                self.assertEqual(sess.run('browser_read', {})['provider_sign_in']['state'], 'unconfirmed')
+                self.assertTrue(approvals.offers)
+
+    def test_main_close_returns_once_to_the_latest_owner_window_start(self):
+        self.worker.owner_visible = True
+        self.worker.login_return = (object(), 'https://site.test/start')
+        self.delegate.webViewDidClose_(self.worker.view)
+        self.delegate.webViewDidClose_(self.worker.view)
+        self.assertEqual(self.worker.view.loads, ['https://site.test/start'])
+
+    def test_popup_return_settles_and_yields_to_navigation_or_a_new_show(self):
+        self.worker.owner_visible = self.worker.guard_off = True
+        self.worker.login_return = (object(), 'https://site.test/start')
+        for change in ('none', 'navigation', 'new_show'):
+            with self.subTest(change=change):
+                self.worker.login_return = (object(), 'https://site.test/start')
+                view = self.create(self.authorize)
+                delegate = self.worker.popups[-1][2]
+                delegate.webViewDidClose_(view)
+                seconds, finish = self.later.pop()
+                self.assertEqual(seconds, 2)
+                if change == 'navigation':
+                    self.worker.main_navigations += 1
+                elif change == 'new_show':
+                    self.worker.login_return = (object(), 'https://site.test/start')
+                before = len(self.worker.view.loads)
+                finish()
+                self.assertEqual(len(self.worker.view.loads) - before, int(change == 'none'))
+
+    def test_only_the_latest_scheduled_owner_return_applies(self):
+        self.worker.owner_visible = True
+        self.worker.login_return = (object(), 'https://site.test/start')
+        self.worker.return_from_login(2)
+        first = self.later[-1][1]
+        self.worker.return_from_login(2)
+        latest = self.later[-1][1]
+        first()
+        self.assertFalse(self.worker.view.loads)
+        latest()
+        latest()
+        self.assertEqual(self.worker.view.loads, ['https://site.test/start'])
+
+    def test_main_navigation_cancels_pending_owner_return(self):
+        self.worker.owner_visible = self.worker.guard_off = True
+        self.worker.reading = False
+        self.worker.login_return = (object(), 'https://site.test/start')
+        self.worker.return_from_login(2)
+        finish = self.later[-1][1]
+        action = self.action('https://site.test/elsewhere')
+        action.sourceFrame = lambda: None
+        action.navigationType = lambda: 0
+        self.worker.resolved[self.bw.origin_key('https://site.test')] = None
+        answers = []
+        self.delegate.webView_decidePolicyForNavigationAction_decisionHandler_(
+            self.worker.view, action, answers.append)
+        self.assertEqual(answers, [1])
+        self.assertIsNone(self.worker.login_return_pending)
+        finish()
+        self.assertFalse(self.worker.view.loads)
+
+    def test_popup_timeout_and_visible_input_close_and_request_the_owner(self):
+        for cause in ('timeout', 'input'):
+            with self.subTest(cause=cause):
+                view = self.create(self.authorize)
+                self.navigate(view, self.authorize)
+                state = self.worker.popup_state
+                if cause == 'timeout':
+                    next(fn for seconds, fn in self.later if seconds == 20)()
+                else:
+                    self.worker.run = lambda body, arguments, done, **kwargs: done(True, None)
+                    self.worker.check_popup_input(view, state)
+                self.assertFalse(self.worker.popups)
+                self.assertFalse(state['active'])
+                self.assertTrue(state['needs_owner'])
+                self.later.clear()
+
+
 class WorkerGuardLogicTests(unittest.TestCase):
     """#700: the worker's own Python side of the submit guard, without WebKit (any platform)."""
 
@@ -1592,6 +1845,21 @@ class SessionFixtureHandler(FixtureHandler):
     def do_GET(self):
         path = urlsplit(self.path).path
         value = self.server.cookie_value
+        if path == '/popup-sign-in':
+            if 'popup_sid=' in self.headers.get('Cookie', ''):
+                return self._send('<html><title>Signed in</title><body>Site session ready</body></html>')
+            authorize = self.server.popup_authorize
+            return self._send('<html><title>Sign in</title><body><button onclick=\'window.open('
+                              + json.dumps(authorize) + ')\'>Continue with provider</button></body></html>')
+        if path == '/popup-callback':
+            body = b'<html><body><script>window.opener.location.reload(); window.close();</script></body></html>'
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/html; charset=utf-8')
+            self.send_header('Set-Cookie', 'popup_sid=renewed-683; Path=/; HttpOnly; SameSite=Lax')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if path == '/plain-contenteditable':
             return self._send('''<html><head><title>Editable fields</title></head><body>
               <div contenteditable aria-label="Bare memo" id="bare" style="min-height:40px;border:1px solid"></div>
@@ -2655,6 +2923,52 @@ class WebKitIntegrationTests(unittest.TestCase):
             self.assertEqual(self.server.posts, ['/coupon', '/pay'])
         finally:
             worker.close()
+
+    @unittest.skipUnless(sys.platform == 'darwin', 'the #683 popup path uses system WebKit')
+    def test_silent_provider_popup_returns_a_signed_in_work_receipt(self):
+        from http.server import BaseHTTPRequestHandler
+        from urllib.parse import quote
+        callback = self.origin + '/popup-callback'
+
+        class Provider(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_GET(self):
+                self.send_response(302)
+                self.send_header('Location', callback)
+                self.send_header('Content-Length', '0')
+                self.end_headers()
+
+        provider = ThreadingHTTPServer(('127.0.0.1', 0), Provider)
+        threading.Thread(target=provider.serve_forever, daemon=True).start()
+        self.addCleanup(provider.server_close)
+        self.addCleanup(provider.shutdown)
+        provider_origin = f'localhost:{provider.server_address[1]}'
+        self.server.popup_authorize = (f'http://{provider_origin}/authorize?response_type=code&client_id=fixture'
+                                       + '&redirect_uri=' + quote(callback, safe=''))
+
+        class Recorded(Approvals):
+            def provider_hosts(self):
+                return ['localhost']
+
+            def login_resolved(self, url):
+                return True
+
+        worker = self.worker((self.fixture, provider_origin))
+        sess = bs.BrowserSession(lambda: worker, work_id='popup-683-real', approvals=Recorded(),
+                                 allowed_origins_for_tests=(self.fixture, provider_origin))
+        try:
+            sess.run('browser_open', {'url': self.origin + '/popup-sign-in', 'effect': 'navigate'})
+            page = sess.run('browser_click', {'target': 'Continue with provider', 'effect': 'navigate'})
+            deadline = time.monotonic() + 10
+            while 'provider_sign_in' not in page and time.monotonic() < deadline:
+                time.sleep(0.2)
+                page = sess.run('browser_read', {})
+            self.assertEqual(page.get('provider_sign_in', {}).get('state'), 'signed_in', page)
+            self.assertEqual(page['provider_sign_in']['provider'], 'localhost')
+        finally:
+            sess.close()
 
     def test_a_sign_in_popup_navigating_does_not_end_the_owner_window(self):
         """#1579 (live 2026-10-17): a popup's navigation decision raised inside WebKit and aborted the worker."""
