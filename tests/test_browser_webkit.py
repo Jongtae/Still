@@ -735,6 +735,149 @@ class DriverProtocolTests(unittest.TestCase):
 
 # ---------------------------------------------------------------- destinations, output encoding, the UI marker (unit)
 
+class OwnerPopupReturnTests(unittest.TestCase):
+    """#683: real delegate and worker lifecycle with fake Cocoa objects."""
+
+    def setUp(self):
+        from types import SimpleNamespace as NS
+        from unittest import mock
+        from personal_agent import browser_worker as bw
+        self.bw, self.NS = bw, NS
+
+        class Cocoa:
+            def __init_subclass__(cls, protocols=()):
+                super().__init_subclass__()
+
+            @classmethod
+            def alloc(cls):
+                return cls()
+
+            def init(self):
+                return self
+
+            def initWithFrame_configuration_(self, rect, config):
+                self.loads = []
+                return self
+
+            def initWithContentRect_styleMask_backing_defer_(self, *args):
+                return self
+
+            def loadRequest_(self, request):
+                self.loads.append(request)
+
+            def __getattr__(self, name):
+                return lambda *args: None
+
+        foundation = NS(NSObject=Cocoa, NSMakeRect=lambda *a: a, NSMakePoint=lambda *a: a,
+                        NSURL=NS(URLWithString_=lambda s: s), NSURLRequest=NS(requestWithURL_=lambda s: s))
+        webkit = NS(WKWebView=Cocoa, WKNavigationActionPolicyAllow=1, WKNavigationActionPolicyCancel=0,
+                    WKNavigationTypeFormSubmitted=1, WKNavigationTypeFormResubmitted=2)
+        appkit = NS(NSWindow=Cocoa, NSWindowStyleMaskTitled=1, NSWindowStyleMaskClosable=2,
+                    NSWindowStyleMaskResizable=4, NSBackingStoreBuffered=0,
+                    NSWindowCollectionBehaviorTransient=1, NSWindowCollectionBehaviorIgnoresCycle=2)
+        modules = {'Foundation': foundation, 'WebKit': webkit,
+                   'objc': NS(ivar=lambda: None, protocolNamed=lambda name: object())}
+        for patch in (mock.patch.dict(sys.modules, modules), mock.patch.object(bw, '_POPUP_DELEGATE', []),
+                      mock.patch.object(bw, '_DELEGATE', [])):
+            patch.start()
+            self.addCleanup(patch.stop)
+        self.later = []
+        worker = object.__new__(bw.Worker)
+        worker.Foundation, worker.WebKit, worker.AppKit = foundation, webkit, appkit
+        worker.AppHelper = NS(callLater=lambda seconds, fn: self.later.append((seconds, fn)))
+        worker.owner_visible = worker.guard_off = False
+        worker.popups = []
+        worker.login_return = worker.login_return_pending = None
+        worker.main_navigations, worker.landed = 0, 0
+        worker.authorizations, worker.authorization_count = [], 0
+        worker.view = Cocoa().initWithFrame_configuration_(None, None)
+        worker.resolved = {bw.origin_key('https://id.provider.test'): None}
+        worker.blocked, worker.navigation = 0, None
+        worker.emit = lambda event: self.fail(event)
+        worker.pending = {}
+        worker.posted_submits = worker.refused_submits = worker.deciding = 0
+        self.worker = worker
+        self.delegate = bw._delegate_class()()
+        self.delegate.worker = worker
+        self.authorize = 'https://id.provider.test/authorize?response_type=code&client_id=x&redirect_uri=https%3A%2F%2Fsite.test%2Fcallback'
+
+    def action(self, url, kind=0, method='GET', top=True):
+        ns = self.NS
+        native = ns(absoluteString=lambda: url, scheme=lambda: url.split(':', 1)[0]) if url else None
+        return ns(request=lambda: ns(URL=lambda: native, HTTPMethod=lambda: method),
+                  targetFrame=lambda: ns(isMainFrame=lambda: top), navigationType=lambda: kind)
+
+    def create(self, url):
+        return self.delegate.webView_createWebViewWithConfiguration_forNavigationAction_windowFeatures_(
+            self.worker.view, object(), self.action(url), None)
+
+    def test_main_close_returns_once_to_the_latest_owner_window_start(self):
+        self.worker.owner_visible = True
+        self.worker.login_return = (object(), 'https://site.test/start')
+        self.delegate.webViewDidClose_(self.worker.view)
+        self.delegate.webViewDidClose_(self.worker.view)
+        self.assertEqual(self.worker.view.loads, ['https://site.test/start'])
+
+    def test_popup_return_settles_and_yields_to_navigation_or_a_new_show(self):
+        self.worker.owner_visible = self.worker.guard_off = True
+        self.worker.login_return = (object(), 'https://site.test/start')
+        for change in ('none', 'navigation', 'new_show'):
+            with self.subTest(change=change):
+                self.worker.login_return = (object(), 'https://site.test/start')
+                view = self.create(self.authorize)
+                delegate = self.worker.popups[-1][2]
+                delegate.webViewDidClose_(view)
+                seconds, finish = self.later.pop()
+                self.assertEqual(seconds, 2)
+                if change == 'navigation':
+                    self.worker.main_navigations += 1
+                elif change == 'new_show':
+                    self.worker.login_return = (object(), 'https://site.test/start')
+                before = len(self.worker.view.loads)
+                finish()
+                self.assertEqual(len(self.worker.view.loads) - before, int(change == 'none'))
+
+    def test_only_the_latest_scheduled_owner_return_applies(self):
+        self.worker.owner_visible = True
+        self.worker.login_return = (object(), 'https://site.test/start')
+        self.worker.return_from_login(2)
+        first = self.later[-1][1]
+        self.worker.return_from_login(2)
+        latest = self.later[-1][1]
+        first()
+        self.assertFalse(self.worker.view.loads)
+        latest()
+        latest()
+        self.assertEqual(self.worker.view.loads, ['https://site.test/start'])
+
+    def test_main_navigation_cancels_pending_owner_return(self):
+        self.worker.owner_visible = self.worker.guard_off = True
+        self.worker.reading = False
+        self.worker.login_return = (object(), 'https://site.test/start')
+        self.worker.return_from_login(2)
+        finish = self.later[-1][1]
+        action = self.action('https://site.test/elsewhere')
+        action.sourceFrame = lambda: None
+        action.navigationType = lambda: 0
+        self.worker.resolved[self.bw.origin_key('https://site.test')] = None
+        answers = []
+        self.delegate.webView_decidePolicyForNavigationAction_decisionHandler_(
+            self.worker.view, action, answers.append)
+        self.assertEqual(answers, [1])
+        self.assertIsNone(self.worker.login_return_pending)
+        finish()
+        self.assertFalse(self.worker.view.loads)
+
+    def test_work_still_creates_no_popup(self):
+        for guard_off in (False, True):
+            self.worker.guard_off = guard_off
+            for url in (self.authorize, 'https://site.test/', 'about:blank', ''):
+                with self.subTest(guard_off=guard_off, url=url):
+                    self.assertIsNone(self.create(url))
+                    self.assertFalse(self.worker.popups)
+                    self.assertFalse(self.later)
+
+
 class WorkerGuardLogicTests(unittest.TestCase):
     """#700: the worker's own Python side of the submit guard, without WebKit (any platform)."""
 

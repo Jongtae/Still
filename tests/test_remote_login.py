@@ -282,6 +282,9 @@ class WorkerOpsWhileParked(unittest.TestCase):
         popup = type(opener)()
         callbacks = []
         popup.takeSnapshotWithConfiguration_completionHandler_ = lambda config, done: callbacks.append(done)
+        # #683: closing a popup also stops and blanks its document.
+        popup.stopLoading = lambda: None
+        popup.loadHTMLString_baseURL_ = lambda html, base: None
         worker.view = opener
         hidden = []
         worker.popups = [(popup, SimpleNamespace(orderOut_=lambda arg: hidden.append(True)), None)]
