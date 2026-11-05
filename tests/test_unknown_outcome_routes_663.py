@@ -64,12 +64,15 @@ class DirectRouteUnknownOutcomeTests(unittest.TestCase):
                 self.assertFalse(allowed)
                 self.assertNotEqual(service.budget_continue_offer(row['id']).get('state'), 'pending')
                 self.assertEqual(store.turn_provenance(row['id'])['goal']['effect'], 'unknown')
+                # #691: the turn record agrees with the Work row.
+                self.assertEqual(store.turn_provenance(row['id'])['status'], 'unknown')
 
     def test_a_work_without_one_keeps_the_outcome_run_agent_reported(self):
         for outcome in ('partial', 'failed'):
             with self.subTest(outcome=outcome):
-                service, _store, row = self.run_work(outcome, SETTLED_CALL)
+                service, store, row = self.run_work(outcome, SETTLED_CALL)
                 self.assertEqual(row['status'], outcome)
+                self.assertEqual(store.turn_provenance(row['id'])['status'], outcome)
                 self.assertNotEqual(self.bubble(service, row), STATEMENT)
                 self.assertTrue(self.bubble(service, row).startswith(STATEMENT))
 
@@ -92,14 +95,18 @@ class CliRouteUnknownOutcomeTests(unittest.TestCase):
         service.connect_subscription_engine({'engine': 'codex', 'officially_authenticated': True})
         job = store.enqueue('update the example board', 'cli-unknown', channel='http')
         self.assertTrue(service.run_one())
-        return store.job(job)
+        return store, store.job(job)
 
     def test_an_unknown_effect_call_ends_unknown(self):
-        row = self.run_work(UNKNOWN_CALL)
+        store, row = self.run_work(UNKNOWN_CALL)
         self.assertEqual((row['status'], row['error'], row['owner_cause']), ('unknown', STATEMENT, STATEMENT))
+        # #691: the turn record agrees with the Work row.
+        self.assertEqual(store.turn_provenance(row['id'])['status'], 'unknown')
 
     def test_a_work_without_one_is_not_unknown(self):
-        self.assertNotEqual(self.run_work(SETTLED_CALL)['status'], 'unknown')
+        store, row = self.run_work(SETTLED_CALL)
+        self.assertNotEqual(row['status'], 'unknown')
+        self.assertEqual(store.turn_provenance(row['id'])['status'], 'answered')
 
 
 if __name__ == '__main__':
