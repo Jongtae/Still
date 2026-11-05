@@ -244,7 +244,6 @@ class DirectMessageSurface(ConversationSurface):
                 verified=job.get('owner_verified'), note=job.get('owner_note'),
                 waiting=service.step_approval_pending(job['id']) # #631: silence is not an absent note.
                 or (job.get('owner_note') is None and service.work_awaits_owner_preview(job)))
-            text = service.preparation_reply_prefix(job) + text
             try:
                 memory_pending = not blocked and bool(service.pending_memory_candidates(job['id'])[0])
             except Exception:
