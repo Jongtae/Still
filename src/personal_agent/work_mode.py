@@ -23,8 +23,8 @@ module only refuses the egress classes below):
   - ``ProviderRegistry.search``: every web search, the service's own lookup
     preflight included;
   - ``SkillLibrary``: skill acquisition from GitHub;
-  - ``family_setup.start_tunnel``: every public tunnel (remote login, phone
-    input, family setup);
+  - ``https_tunnel.start_tunnel``: every public tunnel (remote login, phone
+    input);
   - ``TelegramChannel``: every Bot API and file request; the receive and
     delivery loops also stand down;
   - the service's CLI native-search decision: the CLI's own web search stays
@@ -48,8 +48,7 @@ connection to its model provider, its own telemetry or update checks, and
 whatever its sandbox lets a shell command reach (Codex runs with
 ``--sandbox read-only``; Claude Code's ``-p`` mode denies a built-in tool that
 has no allow rule).  Owner-connected services (Google connectors, the AI's own
-claude.ai connectors, the owner's MCP servers) and family instances on this
-Mac, which keep their own settings, are not narrowed by this switch.
+claude.ai connectors, the owner's MCP servers), which keep their own settings, are not narrowed by this switch.
 """
 from __future__ import annotations
 

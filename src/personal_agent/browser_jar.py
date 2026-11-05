@@ -284,7 +284,7 @@ class CookieJar:
             return set(sites), rows
 
     def site_rows(self, site):
-        """One site's unexpired cookie rows, values included (#934: a family push or a worker import; never a log).
+        """One site's unexpired cookie rows, values included (#680: a worker import; never a log).
 
         Raises ``JarError`` when the jar exists but cannot be read; an absent
         jar or an unknown site is ``[]``.

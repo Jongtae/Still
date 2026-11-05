@@ -724,7 +724,6 @@ def mediate_snapshot(raw, excluded=(), requested_url=None):
         snapshot['elements_capped'] = True
     snapshot['_rows'] = visible
     snapshot['_elements'] = internal
-    # #934: where each form posts, so a step's destination host is known before it runs.
     snapshot['_form_actions'] = {form['id']: form.get('action') for form in raw.get('forms') or []
                                  if isinstance(form, dict) and 'id' in form}
     # Internal only (never returned): the unmediated page reference the
@@ -890,9 +889,6 @@ class BrowserSession:
         # (#698).  Cleared by browser_open and a navigation (#700).
         self._last_input = None
         self._refused_pending = False   # a between-steps refused form post not yet told (#758)
-        # #934 (review P2-1): once this Work landed on a site whose sign-in was received from the
-        # owner, the reason it may not approve anything; it then holds for the rest of the Work.
-        self._refusal = None
         #: #636: this Work's re-sign-in through the provider the owner used for a site (``_provider_hint``):
         #: the site, the provider host, the login reference and window address, the driver's authorization
         #: count when it began, and whether a provider page or request was seen since.  None otherwise.
@@ -995,7 +991,6 @@ class BrowserSession:
             self.last = None
             raise ToolError(NO_PAGE_TEXT, 'no_page')
         self.last = mediate_snapshot(raw, excluded, requested_url)
-        self._note_refusal((landed_host(self.last.get('url')),))
         if isinstance(raw, dict) and raw.get('refused_submit'):
             # #758: a form post the guard refused between steps, with nothing to hold;
             # the next result the model sees says so (``run``).
@@ -1033,9 +1028,6 @@ class BrowserSession:
         """
         record = record if isinstance(record, dict) else {}
         binding = self._submit_binding(record)
-        # #934: a held payment-form submit in a Work that touched a family-shared site, or whose form
-        # posts to one, is never released or asked about.
-        self._refuse_unapprovable((landed_host(record.get('action')),))
         if depth < 2 and self.approvals.consume(binding):
             release = getattr(self._driver(), 'release_submit', None)
             if not callable(release):
@@ -1372,53 +1364,12 @@ class BrowserSession:
         needs its own approval, even while an approval of a cancelled submit
         is issued: a press can pay by ``fetch`` without any submit (#700 review).
         """
-        if required:
-            self._refuse_unapprovable()
-        if self._refusal:
-            # #935 re-review P3-a: on a shared site no approval is consumed, guarded or not.
-            return False
         if self.approvals.consume(binding):
             return True
         if required:
             self._refuse(binding, description)
         return False
 
-    def _note_refusal(self, hosts):
-        """Remember the first reason ``approvals.refuse(host)`` gives for any of ``hosts`` (#934).
-
-        ``refuse`` (optional) answers the owner-facing reason, or None: on a
-        family instance a site whose sign-in the owner shared lets the family
-        assistant read and add to a cart, but its payment steps are the
-        account owner's alone.  The reason is sticky for the Work: a checkout
-        that hands off to a payment page on another domain (the ordinary
-        gateway hop) stays refused (review P2-1).
-        """
-        if self._refusal is not None:
-            return
-        refuse = getattr(self.approvals, 'refuse', None)
-        if not callable(refuse):
-            return
-        for host in hosts:
-            if not host:
-                continue
-            try:
-                reason = refuse(host)
-            except Exception:
-                reason = None
-            if reason:
-                self._refusal = str(reason)
-                return
-
-    def _refuse_unapprovable(self, hosts=()):
-        """Refuse a guarded step outright when this Work may not approve anything (#934).
-
-        Neither an approval request nor a consumed approval lets the step
-        through.  ``hosts`` adds hosts the step itself names (a held submit's
-        form action) to the current page's.
-        """
-        self._note_refusal((landed_host((self.last or {}).get('url')), *hosts))
-        if self._refusal:
-            raise ToolError(self._refusal, 'approval_refused')
 
     def _refuse(self, binding, description):
         try:
@@ -1529,10 +1480,6 @@ class BrowserSession:
             from .agent_runtime import not_run
             raise not_run(ToolError(msg('browser.provider_sign_in_off'), 'provider_sign_in_off'))
         self._check()
-        # #934: the requested destination counts before the page is opened: a shared site's payment
-        # deep link is refused here (no approval consumed), and any open of one makes the Work's
-        # refusal sticky.
-        self._note_refusal((parts.hostname,))
         self._guard(step_binding(self.work_id, 'browser_open', url, url, url), f'{_host(parts)} 페이지 열기',
                     effect == 'payment')
         self._last_input = None   # a submit cancelled on the new page is not that step's (#700)
@@ -1716,7 +1663,6 @@ class BrowserSession:
         # declaration are the whole press check; no AI judgment is asked per press.
         required = bool(element['submit_guarded'] or element['commit'] or effect == 'payment')
         binding = step_binding(self.work_id, 'browser_click', snapshot['_page'], key, key, state)
-        self._note_refusal(self._destinations(snapshot, element))
         approved = self._guard(binding, description, required)
         self._spend_step()   # #620: a press held for approval, or on a missing target, spends nothing
         before = page_reference(snapshot.get('url'))
@@ -1762,7 +1708,6 @@ class BrowserSession:
         binding = step_binding(self.work_id, 'browser_type', snapshot['_page'], target_key(element), text,
                                self._state_of(snapshot, element))
         description = f"'{element.get('name') or element.get('role')}' 입력란에 입력"
-        self._note_refusal(self._destinations(snapshot, element))
         # Typing presses the field first, so a label forwarding that press is guarded too.
         required = element['payment'] or element.get('forwards_payment') or effect == 'payment'
         approved = self._guard(binding, description, required)
@@ -1776,18 +1721,6 @@ class BrowserSession:
             raise self._named_cover(self._observed(exc, approved), snapshot) from None
         return self._with_dialogs(observe_step(self._page_state(), answer, approved), answer)
 
-    @staticmethod
-    def _destinations(snapshot, element):
-        """The hosts a step on ``element`` may navigate to, known before it runs (#934): its link, its form's action."""
-        hosts = []
-        row = next((row for row in snapshot.get('_rows') or () if row.get('n') == element.get('n')), None)
-        if row and row.get('href'):
-            hosts.append(landed_host(row['href']))
-        actions = snapshot.get('_form_actions') or {}
-        for form_id in (element.get('form'), element.get('label_form')):
-            if form_id is not None and actions.get(form_id):
-                hosts.append(landed_host(actions[form_id]))
-        return [host for host in hosts if host]
 
     @staticmethod
     def _state_of(snapshot, element):
@@ -2654,13 +2587,6 @@ class BrowserProfile:
         self._view = None
         self._view_refreshing = False
         self._allowed_origins = ()
-        # #934: called with the names of the sites whose stored rows may have
-        # changed (None: every site) after a save or delete, outside the jar
-        # lock, never with a value.  The owner's service pushes shared sites.
-        self.on_saved = None
-        #: #950 review P1: ``() -> {site}`` a login window must never load or overwrite (a family
-        #: instance's sites received from the owner); None for none.  Agent sessions are unaffected.
-        self.login_excluded = None
         #: #209: ``() -> {host:port}`` of the owner's declared intranet destinations; None for none.
         self.intranet = None
 
@@ -2700,7 +2626,6 @@ class BrowserProfile:
             self._import_error = str(exc)
             return []
         if self._suppressed:
-            # #950 review P1: a login window never holds a session it must not drive.
             sites = set(sites) - self._suppressed
             rows = [row for row in rows
                     if registrable_domain(str(row.get('domain') or '').lstrip('.')) not in self._suppressed]
@@ -2846,7 +2771,7 @@ class BrowserProfile:
                 return False
             sites = {site: rows for site, rows in sites.items() if site not in self._suppressed}
             # #990: cookies that did not change since this holder's last write are not written again
-            # (and nothing is told to on_saved): a close right after the landing save writes nothing.
+            # A close right after the landing save writes nothing.
             mark = _export_mark(sites, hosts, self._imported)
             if mark == self._save_mark:
                 return True
@@ -2859,51 +2784,8 @@ class BrowserProfile:
                 return False
             self._save_mark = mark
             self.save_error = None
-            # Exported sites were replaced; imported sites missing from the export were dropped.
-            touched = set(sites) | set(self._imported)
-        self._saved(touched)
         return True
 
-    def _saved(self, touched):
-        """Tell ``on_saved`` which sites' stored rows may have changed (#934); a failing hook never fails a save."""
-        hook = self.on_saved
-        if hook is None:
-            return
-        try:
-            hook(touched)
-        except Exception as exc:
-            LOG.warning('browser profile: saved hook failed (%s)', type(exc).__name__)
-
-    def import_site(self, site, rows):
-        """Store one site's rows pushed by the owner's instance (#934) and give them to a running worker.
-
-        The site's stored rows are replaced (empty ``rows`` removes them);
-        every other site is untouched.  A running worker drops the site and
-        imports the rows; when it cannot, it is stopped without saving, so
-        the Work's next step starts a fresh worker from the jar.  Returns
-        names and counts only.  Raises ``JarError`` when the jar cannot be
-        read; nothing is then written.  ``on_saved`` is not called: a site
-        received from the owner is never pushed anywhere.
-        """
-        site = str(site or '').strip().lower()
-        rows = [row for row in rows or () if isinstance(row, dict) and row.get('name')]
-        with self._jar_lock:
-            self._save_mark = None
-            self.jar.save_export({site: rows}, imported={site})
-            live = self._live
-            worker = None
-            if live is not None and hasattr(live, 'cookies_import') and _alive(live):
-                try:
-                    if hasattr(live, 'cookies_delete'):
-                        live.cookies_delete(site)
-                    if rows:
-                        live.cookies_import(rows)
-                    self._imported.add(site)
-                    worker = 'imported'
-                except Exception:
-                    self._worker_failed(live)
-                    worker = 'failed'
-        return {'site': site, 'cookies': len(rows), 'running_browser': worker}
 
     def driver_factory(self, work_id):
         """A zero-argument factory a ``BrowserSession`` calls on first use, or None when unavailable."""
@@ -2965,7 +2847,6 @@ class BrowserProfile:
                 removed = self.jar.remove(site)
             except Exception:
                 raise ValueError('저장된 로그인 세션을 읽지 못했습니다. "모두 삭제"로 초기화할 수 있습니다.') from None
-        self._saved({site})
         if worker == 'failed':
             return {'deleted': False, 'site': site, 'removed_from_jar': bool(removed), 'running_browser': 'failed',
                     'message': WORKER_DELETE_FAILED_TEXT}
@@ -2992,7 +2873,6 @@ class BrowserProfile:
             cleared = self.jar.clear()
             legacy = self.remove_legacy_profile()
             self.save_error = None
-        self._saved(None)
         result = {'all': True, 'jar_deleted': cleared['jar_deleted'] or legacy, 'key_deleted': cleared['key_deleted'],
                   'key_error': cleared['key_error'], 'running_browser': worker}
         result['deleted'] = cleared['key_error'] is None and worker != 'failed'
@@ -3008,8 +2888,7 @@ class BrowserProfile:
 
         Under the profile lock (no worker holds older cookies meanwhile), the
         site's stored rows go out with one GET (``http_refresh``); what the
-        site answered replaces that site's rows only, and ``on_saved`` pushes
-        it like any save.  Returns ``{'state': refreshed | unchanged | answered
+        site answered replaces that site's rows only.  Returns ``{'state': refreshed | unchanged | answered
         | blocked | failed | busy}``; ``blocked`` means the site refused a
         non-browser request.  #1269: what the answer did to the session is
         stated as observed, from the site's token cookies (``latest_token_expiry``):
@@ -3038,8 +2917,7 @@ class BrowserProfile:
             with self._jar_lock:
                 self._save_mark = None
                 self.jar.save_export({site: after}, [parts.hostname], imported={site})
-            self._saved({site})
-            before_exp, after_exp = latest_token_expiry(rows), latest_token_expiry(after)
+                before_exp, after_exp = latest_token_expiry(rows), latest_token_expiry(after)
             if before_exp is None and after_exp is None:
                 return {'state': 'answered'}
             if after_exp is not None and (before_exp is None or after_exp > before_exp):
@@ -3086,12 +2964,6 @@ class BrowserProfile:
             self._acquire('login')
         except ToolError:
             return {'state': 'busy', 'message': BUSY_TEXT}
-        try:
-            # #950 review P1: excluded sites are neither loaded into the window nor saved back from it.
-            self._suppressed |= set(self.login_excluded() or ()) if callable(self.login_excluded) else set()
-        except Exception:
-            self._release()
-            raise
         opened = threading.Event()
         window_id = secrets.token_hex(8)
         # The flag a programmatic close sets before it stops the loop, so an

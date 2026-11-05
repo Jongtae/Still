@@ -10,7 +10,6 @@ import unittest
 from pathlib import Path
 
 from personal_agent import browser_session as bs
-from personal_agent import family_share
 from personal_agent.agent_runtime import ToolError
 from personal_agent.browser_jar import (JAR_NAME, CookieJar, MemoryKey, effective_expiry, latest_token_expiry,
                                         token_expiry)
@@ -133,8 +132,6 @@ class ProfileTests(unittest.TestCase):
             self.drivers.append(driver)
             return driver
         self.profile = bs.BrowserProfile(Path(self.tmp.name), launcher=launcher, jar=self.jar)
-        self.touched = []
-        self.profile.on_saved = self.touched.append
 
     def test_an_unchanged_export_is_not_written_again_and_a_change_is(self):
         self.profile._acquire('login')
@@ -142,10 +139,10 @@ class ProfileTests(unittest.TestCase):
         driver = ExportDriver()
         for _ in range(3):
             self.assertTrue(self.profile._save(driver))
-        self.assertEqual((self.jar.writes, len(self.touched)), (1, 1), 'one write and one push for three equal saves')
+        self.assertEqual(self.jar.writes, 1, 'one write for three equal saves')
         driver.sites = {'shop.test': [cookie('.shop.test', value='v2')]}
         self.assertTrue(self.profile._save(driver))
-        self.assertEqual((self.jar.writes, len(self.touched)), (2, 2))
+        self.assertEqual(self.jar.writes, 2)
 
     def test_a_new_holder_or_a_jar_change_always_writes(self):
         driver = ExportDriver()
@@ -155,10 +152,10 @@ class ProfileTests(unittest.TestCase):
         self.profile._acquire('b')
         self.profile._save(driver)
         self.assertEqual(self.jar.writes, 2, 'a new holder writes its first save')
-        self.profile.import_site('shop.test', [cookie('.shop.test', value='pushed')])
+        self.profile.delete_site('shop.test')
         self.profile._save(driver)
         self.profile._release()
-        self.assertEqual(self.jar.writes, 4, 'after an import the jar differs from the last write')
+        self.assertEqual(self.jar.writes, 3, 'after a deletion the jar differs from the last write')
 
     def test_a_refresh_never_goes_to_this_computer_and_reports_a_busy_profile(self):
         self.jar.save_export({'shop.test': [cookie('.shop.test')]})
@@ -169,7 +166,7 @@ class ProfileTests(unittest.TestCase):
         self.addCleanup(self.profile._release)
         self.assertEqual(self.profile.refresh_session_http('https://www.shop.test/'), {'state': 'busy'})
 
-    def test_an_http_refresh_rewrites_only_that_site_and_pushes_it(self):
+    def test_an_http_refresh_rewrites_only_that_site(self):
         self.jar.save_export({'shop.test': [cookie('.shop.test', 'FSID', 'old')], 'news.test': [cookie('.news.test')]})
         writes = self.jar.writes
         build, _ = HttpRefreshTests().opener(set_cookie='FSID=new; Domain=.shop.test; Path=/')
@@ -179,7 +176,6 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual(self.jar.writes, writes + 1)
         self.assertEqual([row['value'] for row in self.jar.site_rows('shop.test')], ['new'])
         self.assertEqual(len(self.jar.site_rows('news.test')), 1, 'another site is untouched')
-        self.assertEqual(self.touched[-1], {'shop.test'})
         self.assertTrue(self.profile._lock.acquire(blocking=False))
         self.profile._lock.release()
 
@@ -287,10 +283,6 @@ class ServiceTests(unittest.TestCase):
         self.assertIsNone(self.service.keep_sessions_alive(now=NOW))
         self.assertEqual(self.refreshes, [])
 
-    def test_a_received_site_is_refreshed_where_it_is_held_not_here(self):
-        self.store.put(family_share.SHARED_KEY, {'shop.test': {'from': 'owner', 'since': 1.0}})
-        self.assertIsNone(self.service.keep_sessions_alive(now=NOW))
-        self.assertEqual(self.refreshes, [])
 
     def test_a_busy_browser_records_nothing_and_is_tried_again(self):
         self.profile.refresh_session_http = lambda url: {'state': 'busy'}

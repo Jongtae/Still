@@ -286,7 +286,7 @@ class SideAnswerTests(_SteerCase):
         handler.headers = {'Content-Length': str(len(payload)), 'Content-Type': 'application/json'}
         handler.rfile = io.BytesIO(payload)
         handler.valid_host = lambda: True
-        handler.family_gate = handler.remote_login_gate = handler.phone_input_gate = lambda path: False
+        handler.remote_login_gate = handler.phone_input_gate = lambda path: False
         handler.auth = lambda: True
         handler.csrf = lambda: True
         handler.reply = mock.Mock()
@@ -428,7 +428,7 @@ class SideAnswerTests(_SteerCase):
         handler.headers = {'Content-Length': str(len(payload)), 'Content-Type': 'application/json'}
         handler.rfile = io.BytesIO(payload)
         handler.valid_host = lambda: True
-        handler.family_gate = handler.remote_login_gate = handler.phone_input_gate = lambda path: False
+        handler.remote_login_gate = handler.phone_input_gate = lambda path: False
         handler.auth = lambda: True
         handler.reply = mock.Mock()
         with mock.patch.object(self.service, 'consider_steer', side_effect=RuntimeError()):

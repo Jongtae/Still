@@ -19,7 +19,7 @@ from urllib.request import Request, urlopen
 
 from cryptography.fernet import Fernet
 
-from personal_agent import family_setup, phone_input, remote_login, work_mode
+from personal_agent import https_tunnel, phone_input, remote_login, work_mode
 from personal_agent.agent_runtime import Capabilities
 from personal_agent.bounded_execution import BOUNDED_PROFILE
 from personal_agent.local_tools import LocalTools, PublicPageReader
@@ -319,12 +319,6 @@ class StaleChecks(WorkModeCase):
             library.transport('https://codeload.github.com/example/skills/tar.gz/abc')
         self.assertEqual((caught.exception.code, len(fetched)), ('work_mode', 1))
 
-    def test_family_setup_direct_telegram_requests_ask_again(self):
-        opened = []
-        self.on()
-        with self.assertRaises(family_setup.SetupError):
-            family_setup._telegram_get('123:token', 'getMe', lambda *a, **k: opened.append(a), store=self.store)
-        self.assertEqual(opened, [])
 
     def test_the_keep_alive_request_asks_again_after_the_scan(self):
         from personal_agent.quickstart_service import BROWSER_OWNER_SIGNINS_KEY
@@ -346,7 +340,7 @@ class Tunnels(WorkModeCase):
         tunnel = FakeTunnel()
         self.on()
         with self.assertRaises(work_mode.WorkModeRefused):
-            family_setup.start_tunnel(8787, popen=tunnel, store=self.store)
+            https_tunnel.start_tunnel(8787, popen=tunnel, store=self.store)
         self.assertEqual(tunnel.processes, [])
 
     def test_no_quick_tunnel_is_located_downloaded_or_started(self):
@@ -355,10 +349,10 @@ class Tunnels(WorkModeCase):
         self.on()
         with mock.patch('personal_agent.quick_tunnel._fetch', side_effect=AssertionError('downloaded')):
             with self.assertRaises(work_mode.WorkModeRefused):
-                family_setup.start_tunnel(8787, popen=tunnel, store=self.store,
+                https_tunnel.start_tunnel(8787, popen=tunnel, store=self.store,
                                           locate=lambda name: located.append(name) or f'/bin/{name}')
             with self.assertRaises(work_mode.WorkModeRefused):
-                family_setup.start_tunnel(8787, store=self.store)  # the real launcher and locator
+                https_tunnel.start_tunnel(8787, store=self.store)  # the real launcher and locator
         self.assertEqual((tunnel.processes, located), ([], []))
         self.assertFalse((self.root / 'data' / 'tools').exists(), 'nothing was downloaded')
 
@@ -380,8 +374,8 @@ class Tunnels(WorkModeCase):
         with mock.patch('personal_agent.subscription_engines.find_cli', side_effect=lambda name, **kw: installed(name)), \
                 mock.patch('personal_agent.quick_tunnel._fetch', side_effect=AssertionError('downloaded')) as fetch, \
                 self.assertRaises(work_mode.WorkModeRefused):
-            family_setup.start_tunnel(8787, popen=popen, store=self.store, timeout=2,
-                                      locate=family_setup._locator(self.store))
+            https_tunnel.start_tunnel(8787, popen=popen, store=self.store, timeout=2,
+                                      locate=https_tunnel._locator(self.store))
         self.assertEqual(started, ['/bin/ngrok'])
         fetch.assert_not_called()
         self.assertFalse((self.store.root / 'tools').exists(), 'nothing was downloaded or written')
@@ -411,16 +405,6 @@ class Tunnels(WorkModeCase):
         self.assertEqual(tunnel.processes, [])
         self.assertEqual(sent, [])
         self.assertIsNone(service.phone_input_session())
-
-    def test_family_setup_refuses_before_telegram_or_a_tunnel(self):
-        tunnel = FakeTunnel()
-        opened = []
-        self.on()
-        with self.assertRaises(family_setup.SetupError) as caught:
-            family_setup.prepare_family_setup(self.store, 'spouse', None, service_action=lambda *a, **k: {},
-                                              opener=lambda *a, **k: opened.append(a), popen=tunnel)
-        self.assertIn('이 Mac', str(caught.exception))
-        self.assertEqual((tunnel.processes, opened), ([], []))
 
 
 class SwitchedOnDuringStart(WorkModeCase):

@@ -218,8 +218,6 @@ CLASSIFIED_TABLES = {
         'own-text', 'the "not reported" sentinel Still writes when a model does not report its identity'),
     ('information_use.py', 'BROWSER_SIGNINS_PREFIX'): (
         'own-text', "the browser sign-ins line Still's current context renders (quickstart BROWSER_SIGNINS_LINE)"),
-    ('information_use.py', 'browser_signin_claims'): (
-        'own-text', 'the "shared with you" note Still writes on a shared sign-in in that rendered line'),
     ('information_use.py', '_WORKING_NOTES'): (
         'own-text', 'the header line owner_model.WorkingNotes.block writes'),
     # --- open findings, each removed by the named issue ----------------------

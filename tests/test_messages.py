@@ -14,32 +14,9 @@ PLACEHOLDER = re.compile(r'\{([a-z_]+)\}')
 # #514 preserves existing Korean output byte for byte, including historical role names.
 # Translations and all other entries still reject that framing.
 PRESERVED_KOREAN_ROLE_IDS = frozenset({
-    'quickstart_service.family_setup_active',
-    'quickstart_service.family_setup_failed',
-    'family_share.session_store_unavailable',
-    'family_share.session_save_failed',
-    'family_share.session_read_failed',
-    'settings_orchestrator.category_line_family',
-    'settings_orchestrator.category_line_family_effective',
-    'settings_orchestrator.family_label',
     'settings_orchestrator.unknown_setting',
-    'settings_orchestrator.family_requested',
-    'settings_orchestrator.family_name_format',
-    'settings_orchestrator.family_add_note',
     'settings_orchestrator.share_format',
     'settings_orchestrator.unshare_format',
-    'settings_orchestrator.share_ambiguous',
-    'settings_orchestrator.share_already_enabled',
-    'settings_orchestrator.share_already_disabled',
-    'settings_orchestrator.invalid_family_name',
-    'settings_orchestrator.family_name_is_self',
-    'settings_orchestrator.family_name_exists',
-    'settings_orchestrator.family_add_summary',
-    'settings_orchestrator.share_summary',
-    'settings_orchestrator.unshare_summary',
-    'settings_orchestrator.label_family_add',
-    'settings_orchestrator.label_family_share_site',
-    'settings_orchestrator.label_family_unshare_site',
 })
 
 # Every retained literal is input syntax, stored identity, or guidance for the model.
@@ -101,14 +78,6 @@ MIGRATED_MODULES = {
             'Never pass API keys, tokens, passwords or credential-bearing endpoints: credentials are entered only in Settings. '
             'After calling it, tell the owner what is waiting for their confirmation, in one sentence.'
         ),
-        # Model-only settings_change setting guidance; Korean examples describe input.
-        (
-            'category and setting: main_ai route or model, judgment_ai mode or model, current_context enabled or timezone, owner_model enabled or daily_calls, family add (create a family member\'s own assistant on this Mac that uses the owner\'s AI; value is its Telegram name such as 아내 AI; after confirmation the owner receives a setup link on Telegram to forward), family share_site (share this assistant\'s current sign-in session for one site with another assistant on this Mac, no password; value is "<assistant name>|<site domain>": pick the assistant from settings_read family assistants (its Telegram name or instance id; the owner\'s own assistant is listed too) and the site from its signed_in_sites that matches what was named, resolving a nickname to the site\'s domain yourself; the receiving assistant can then read and add to a cart there but never pay), family unshare_site (stop that share at once; value is "<assistant name>|<site domain>" or the site domain alone), skills enabled (on or off), skills add (value is the GitHub folder address of one skill, https://github.com/<owner>/<repo>/tree/<branch, tag or commit>/<folder>, or the name of an Still reference skill that settings_read skills lists under available; Still pins the commit and checks the folder before installing, and switches skills on if they are off), skills remove (value is an installed skill\'s name), browser close_login (value is one of the waiting login windows settings_read browser lists: closes that window when the owner will not sign in there or asked to go on without it; the request that opened it ends without sign-in and is never resumed as if signed in, and saved sign-ins stay), browser use_mobile (value is a site kept in desktop version from settings_read browser; reset it to mobile), browser provider_sign_in (on or off for every site, or "<site>|on" / "<site>|off" for one site from settings_read browser: whether the AI may sign back in to a site through the sign-in provider the owner used there, with no interaction on the provider), ai_connections enabled (on or off: let this owner\'s Works use the services connected to the owner\'s own AI, for reads and general non-payment changes; payments require exact per-action owner approval; not available on a family member\'s assistant), ai_connections servers (which of the owner\'s own MCP servers are on for Works in one AI; value is "<claude-code or codex>|<server names, comma separated>", empty names to turn all off; only servers settings_read lists as available), ai_connections review (the owner\'s decision for one operation of one connection, after you introduced what it does; value is "<engine>|<connection kind>|<stable identity>|<operation>|<read, mutate, payment or refused>"; reads and pilot non-payment mutations may run; payments still need exact per-action approval), ai_connections money ("<engine>|<connection kind>|<stable identity>|<on or off>" marks a connection where money moves, such as a brokerage or bank; only owner-reviewed reads avoid the payment floor; all other operations require exact per-action payment approval, and it starts at the report rung), ai_connections rung ("<engine>|<connection kind>|<stable identity>|<report, propose, approve or mandate>": the trust rung; only the owner raises it; a money-capable connection never goes to mandate), ai_connections undo, forget and restore use the exact value offered by settings_read (undo restores the full prior authority snapshot; forget disables old permissions; restore requires owner confirmation and never revives old pending work), api_connections connect (use the public JSON format from settings_read; never put credentials in value; confirmation opens a one-time input page, checks the required read, then resumes the originating Work when continue_work is yes), preparations cancel (value is a reservation id from settings_read preparations: stop every future run of it), preparations accept (value is the id of one waiting for the owner\'s yes), phone_link send (when the owner is away from the Mac: send a one-time link, open about 10 minutes, to the paired Telegram chat for an input only a page can take - adding the own Google client from the phone; connecting a Google service is done on the Mac; value is one of the options settings_read phone_link lists). '
-            'connections disconnect stops one Google connection the owner asked to disconnect: value is its id from settings_read connections (a row with disconnectable). '
-            'After the owner confirms, Still stops using it, deletes the credential stored on this machine and asks Google to revoke it; saved results, records and the data in Google stay, and using it again needs a new connection. '
-            'It is not forgetting or deleting anything: that is a separate request. '
-            'Pausing or resuming a connection does not exist; say so rather than proposing a disconnect the owner did not ask for.'
-        ),
         # Model-only tool description; Korean examples describe input.
         (
             'Search the owner\'s current saved Memory for a fact relevant to this request. Use concise terms from the request and likely synonyms (for example, sushi and 초밥); results include saved_at and a source reference with source_status, as in list_memory, so you can say why you know something. Search only when prior saved information can help. It returns a bounded set and never reads another owner\'s data.'
@@ -145,7 +114,6 @@ MIGRATED_MODULES = {
         '기록만 했어요. 실패가 아니니 스킬 없이 요청에 계속 답하세요.',  # Model-only method_gap result note.
     },
     'trust_record.py': set(),
-    'family_share.py': set(),
     'conversation_handoff.py': set(),
     'owner_forget.py': set(),
 }

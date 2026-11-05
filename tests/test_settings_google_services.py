@@ -169,14 +169,6 @@ class AiSideRoutes(Fixture):
         services = {service['service']: service for service in self.service.google_service_rows([], self.service.ai_side_routes())}
         self.assertEqual([item['identity'] for item in services['gmail']['ai_routes']], ['Gmail'])
 
-    def test_the_switch_and_a_family_instance(self):
-        self.configured['claude-code'] = ['gmail']
-        owner_mcp.set_confirmed(self.store, 'claude-code', ['gmail'])
-        self.enabled = False
-        route = self.routes()[('claude-code', 'gmail')]
-        self.assertEqual((route['usable'], route['unusable_reason']), (False, 'off'))
-        self.service.ai_connections_status = lambda: {'enabled': False, 'available': False, 'note': ''}
-        self.assertEqual(self.routes(), {}, 'a family instance shows no AI-side route')
 
     def test_names_only_and_forgotten_records_are_not_shown(self):
         target = trust_record.connection('codex', 'owner-mcp', 'gmail-mcp')
