@@ -694,11 +694,18 @@ class Redelegation(Harness):
         """#671: the plan and the outcome judgment of a preparation's Work read the run fact with its
         brief, so one run is not asked to prove the schedule or the delivery Still itself keeps."""
         from personal_agent import preparations as prep
-        from personal_agent.messages import msg
         goal = '매시간 시세를 확인해 Telegram으로 보고한다'
         scheduled = {'id': 'w1', 'message': goal, 'request_key': prep.request_key('p1', 1_800_000_000)}
         ordinary = {'id': 'w2', 'message': goal, 'request_key': 'web-1'}
-        fact = msg('preparations.run_fact')
+        row = self.service.preparations.create(kind='prepare', goal=goal, due_at=1_800_000_000,
+            timezone='Asia/Seoul', recurrence=None, channel='telegram', created_from='settings',
+            state=prep.STATE_SCHEDULED)
+        scheduled['request_key'] = prep.request_key(row['id'], row['due_at'])
+        with self.store.db() as db:
+            db.execute('UPDATE preparations SET run_count=1 WHERE id=?', (row['id'],))
+        fact = self.service.preparation_run_fact(scheduled)
+        self.assertIn('1번째 실행', fact)
+        self.assertIn('이번이 마지막 실행', fact)
         for job, carries in ((scheduled, True), (ordinary, False)):
             orchestration = self.service.work_orchestration(job, goal, [], {}, WorkBudget())
             self.assertTrue(orchestration.request.startswith(goal))

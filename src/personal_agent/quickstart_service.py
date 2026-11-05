@@ -2305,6 +2305,39 @@ class AgentService:
         text,_count=redact_private_values(str(text or ''),work_written_values(self.store,work_id))
         return self._redact_known_secrets(text)
 
+    def preparation_run_fact(self, job):
+        """What Still records about this run of a preparation, for the worker and the judgment (#671, #682).
+
+        Which run it is, when the next is due (or that it is the last), when a watch's window ends,
+        and that Still delivers the reply after the Work: read from the preparation row with the
+        scheduler's own slot functions, so a reply that states them can be checked against them.
+        '' for a Work no preparation started; the fixed #671 sentence when the row cannot be read.
+        """
+        preparation_id=prep.preparation_of(job.get('request_key'))
+        if not preparation_id or job.get('model')=='preparation':return ''
+        try:
+            row=self.preparations.get(preparation_id)
+            if not row:return msg('preparations.run_fact')
+            count,maximum,recurrence=int(row['run_count']),row.get('max_runs'),row.get('recurrence')
+            # ``start`` counts the run and leaves ``due_at`` on its slot until the run is settled.
+            if recurrence==prep.RECURRENCE_WINDOW:
+                following=prep.next_window_slot(row,row['due_at'])
+            else:
+                following=prep.next_due(row['due_at'],row['timezone'],recurrence,row['due_at'],row.get('rule_start'),count)
+            local=lambda slot:prep.local_text(slot,row['timezone'])
+            schedule=(msg('preparations.run_next',due=local(following)) if following is not None
+                      else msg('preparations.run_last'))
+            if row.get('window_end') is not None:
+                schedule+=msg('preparations.run_end',end=local(row['window_end']))
+            delivery=msg('preparations.run_delivery_needed' if row.get('delivery_mode')==prep.DELIVERY_WHEN_NEEDED
+                         else 'preparations.run_delivery',channel=row['channel'])
+            return msg('preparations.run_record',
+                       position=msg('preparations.run_bounded',run=count,maximum=maximum) if maximum else str(count),
+                       schedule=schedule,delivery=delivery)
+        except Exception:
+            LOG.info('preparation run fact unavailable job=%s',job.get('id'))
+            return msg('preparations.run_fact')
+
     def preparation_history(self, job):
         """The only conversation a preparation's Work is shown (#659).
 
@@ -2325,7 +2358,8 @@ class AgentService:
                          'job_id':origin['id'],'channel':origin.get('channel'),'qualifier':None,
                          'request_key':origin.get('request_key'),'created':origin.get('created')})
         # #671: the run is told it is one run of a schedule Still keeps and delivers.
-        content=job['message']+'\n\n'+msg('preparations.run_fact')
+        fact=self.preparation_run_fact(job)
+        content=job['message']+('\n\n'+fact if fact else '')
         if row and prep.offered(row):
             # #393: the run works within what the owner read and accepted, not only its brief.
             content+='\n\n'+msg('preparations.accepted_offer_label')+'\n'+prep.accepted_offer(row)
@@ -6461,7 +6495,7 @@ class AgentService:
         state=(lambda:self.store.config(self.ORCHESTRATION_STATE,{}),lambda value:self.store.put(self.ORCHESTRATION_STATE,value))
         # #671: a preparation's run is judged as this run, not as the schedule Still itself keeps.
         if prep.preparation_of(job.get('request_key')) and job.get('model')!='preparation':
-            request=str(request or '')+'\n\n'+msg('preparations.run_fact')
+            request=str(request or '')+'\n\n'+self.preparation_run_fact(job)
         return Orchestration(self.decision_judge,catalogue,request=request,conversation=conversation,
                              continues='\n'.join(part for part in (self.continued_exchange(job),self.action_continuation_note(job)) if part),
                              sections={**sections,'history':len(earlier)},budget=budget,record=event,state=state,

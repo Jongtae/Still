@@ -7,7 +7,6 @@ import json
 from datetime import datetime, timezone
 
 from personal_agent import preparations as prep
-from personal_agent.messages import msg
 from personal_agent.agent_runtime import render_turn_prompt, turn_context
 from personal_agent.conversation_projection import context_message, earlier_turn_line
 from test_preparations import _Case
@@ -73,7 +72,7 @@ class ScheduledRequestContext(_Case):
         row, job = self.saved_run()
         sent = self.model_calls[0]['messages']
         # #671: the exact goal, then the run fact.
-        self.assertEqual(sent[-1], {'role': 'user', 'content': self.GOAL + '\n\n' + msg('preparations.run_fact')})
+        self.assertEqual(sent[-1], {'role': 'user', 'content': self.GOAL + '\n\n' + self.service.preparation_run_fact(job)})
         self.assertEqual(self.store.job(job['id'])['message'], self.GOAL)
 
     def test_a_real_owner_statement_or_an_unknown_source_is_not_reclassified(self):
