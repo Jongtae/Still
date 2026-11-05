@@ -2030,8 +2030,79 @@ class ScheduleTextTests(unittest.TestCase):
                             ('when_needed', {'delivery_mode': 'when_needed'})):
             row = self.row(**extra)
             self.assertTrue(prep.schedule_text(row).endswith(msg('preparations.delivery_' + mode)))
-            with patch.object(prep, 'msg', side_effect=lambda key, **kwargs: msg(key, 'en', **kwargs)):
+            # #689: schedule helpers now pass the language through every catalog call.
+            with patch.object(prep, 'msg', side_effect=lambda key, lang='ko', **kwargs: msg(key, 'en', **kwargs)):
                 self.assertTrue(prep.schedule_text(row).endswith(msg('preparations.delivery_' + mode, 'en')))
+
+    # #689: exercise composed schedules at the real catalog/Telegram seam.
+    def localized_rows(self):
+        rows = [self.row(recurrence=recurrence) for recurrence in (
+            None, 'daily', 'weekdays', 'weekly',
+            'RRULE:FREQ=WEEKLY;BYDAY=MO,TH;COUNT=3',
+            'RRULE:FREQ=MONTHLY;BYMONTHDAY=-1',
+            'RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=1MO',
+            'RRULE:FREQ=MONTHLY;BYDAY=-1FR',
+            'RRULE:FREQ=MONTHLY;BYDAY=1MO,-1FR',
+            'RRULE:FREQ=MONTHLY;BYMONTHDAY=1,15,-1',
+            'RRULE:FREQ=DAILY;UNTIL=20261231',
+            'RRULE:FREQ=MONTHLY;INTERVAL=3;BYMONTHDAY=15',
+        )]
+        rows += [self.window(*args) for args in (
+            (5, (19, 55), 16), (5, (19, 56), 16), (5, (19, 57), 16),
+            (120, (0, 40), None), (5, (19, 0), 1), (90, (23, 0), None),
+            (60, (21, 0), 3),
+        )]
+        rows += [self.row(kind='reminder'), self.row(kind='reminder', recurrence='daily'),
+                 self.row(timezone='Europe/Paris')]
+        return rows
+
+    def test_schedules_and_cards_translate_in_all_owner_languages(self):
+        from personal_agent.telegram_locale import translate
+        for base_row in self.localized_rows():
+            for extra in ({}, {'channel': 'web'}, {'delivery_mode': 'when_needed'}):
+                row = {**base_row, **extra}
+                for home_zone in (None, 'Asia/Seoul', 'Europe/Paris'):
+                    for lang in ('en', 'ja', 'zh'):
+                        with self.subTest(recurrence=row['recurrence'], extra=extra, zone=home_zone, lang=lang):
+                            direct = prep.schedule_text(row, home_zone, lang)
+                            seam = translate(prep.schedule_text(row, home_zone), lang)
+                            self.assertNotRegex(direct, '[가-힣]')
+                            self.assertNotRegex(seam, '[가-힣]')
+                            self.assertEqual(direct, seam)
+                            for offered in (row, {**row, 'title_text': 'Title', 'offer_text': 'Offer'}):
+                                for render in (prep.proposal_text, prep.proposal_html):
+                                    self.assertNotRegex(translate(render([offered], 0, home_zone), lang), '[가-힣]')
+
+    def test_localized_dates_keep_row_time_and_zone_note(self):
+        # #689: calendar fields use the row's zone, independent of process locale.
+        for lang, date in (('ko', '10월 28일(수)'), ('en', 'Wed, 10/28'),
+                           ('ja', '10月28日(水)'), ('zh', '10月28日（周三）')):
+            with self.subTest(lang=lang):
+                self.assertEqual(prep.schedule_text(self.row(kind='reminder'), 'Asia/Seoul', lang), date + ' 18:35')
+                foreign = prep.schedule_text(self.row(kind='reminder', timezone='Europe/Paris'), 'Asia/Seoul', lang)
+                self.assertEqual(foreign, date + ' 10:35 (Europe/Paris)')
+
+    def test_settings_edit_summary_translates_nested_schedules(self):
+        # #689: Settings' actual composer keeps both nested schedule lines translatable.
+        from types import SimpleNamespace
+        from personal_agent.settings_orchestrator import SettingsOrchestrator
+        from personal_agent.telegram_locale import translate
+        with tempfile.TemporaryDirectory() as directory:
+            store = QuickStore(Path(directory))
+            for row in self.localized_rows():
+                row = {**row, 'id': 'schedule', 'title_text': 'Title'}
+                service = SimpleNamespace(
+                    preparations=SimpleNamespace(get=lambda ident: row, clock=lambda: row['due_at'] - 60),
+                    home_zone=lambda: 'Asia/Seoul')
+                orchestrator = SettingsOrchestrator(store, service=service)
+                changes = {'id': row['id'], 'timezone': 'Europe/Paris'}
+                # The legacy biweekly ordinal fixture renders but cannot be saved by normalization.
+                if row['recurrence'] == 'RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=1MO':
+                    changes['recurrence'] = 'weekly'
+                summary = orchestrator._edit_summary(json.dumps(changes))
+                for lang in ('en', 'ja', 'zh'):
+                    with self.subTest(recurrence=row['recurrence'], lang=lang):
+                        self.assertNotRegex(translate(summary, lang), '[가-힣]')
 
     def window(self, minutes, until_hm, runs):
         due = self.row()['due_at']
