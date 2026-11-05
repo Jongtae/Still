@@ -1209,21 +1209,27 @@ def authorization_blocked(url, policy):
     if not off_sites:
         return False
     from .browser_session import registrable_domain
+    host = authorization_redirect_host(url)
+    return host is None or registrable_domain(host) in off_sites
+
+
+def authorization_redirect_host(url):
+    """The unambiguous client endpoint's host, parsed in memory; retain no redirect URI value."""
     try:
         redirects = [value for name, value in parse_qsl(urlsplit(url).query, keep_blank_values=True)
                      if name == 'redirect_uri']
         if len(redirects) != 1:
-            return True
+            return None
         endpoint = urlsplit(redirects[0])
         host = endpoint.hostname
         # urlsplit is intentionally permissive; require an absolute usable client endpoint.
         if not endpoint.scheme or not host or endpoint.username is not None or endpoint.fragment \
                 or any(char.isspace() or char in '%\\' for char in host):
-            return True
+            return None
         endpoint.port  # Validate a supplied port without retaining it.
-        return registrable_domain(host) in off_sites
+        return host
     except ValueError:
-        return True
+        return None
 
 
 def origin_key(url):

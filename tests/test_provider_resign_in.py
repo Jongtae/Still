@@ -143,6 +143,10 @@ class TwoHostDriver(FakeDriver):
             self.navigate(url)
         if self._path(url) == f'{PROVIDER}/authorize':
             url = PROVIDER_ANSWERS[self.answer]   # the provider's redirect: navigation only
+            if self.answer == 'refused':
+                # The error page sets its flash cookie during the redirect, after the baseline.
+                self.cookies[SITE].append({'name': 'flash', 'value': 'denied', 'domain': SITE,
+                                           'path': '/', 'expires': None})
         if self._path(url) == f'{UPSTREAM}/authorize':
             browser_worker.Worker.note_authorization(self.worker, url)   # the broker's own authorization request
             url = f'https://{UPSTREAM}/choose'
@@ -490,8 +494,9 @@ class ResignInSessionTests(unittest.TestCase):
         sess, driver, approvals = resign_session('refused')
         open_login(sess)
         # The site even sets a cookie on the error page: the OAuth error still decides.
-        driver.cookies[SITE].append({'name': 'flash', 'value': 'denied', 'domain': SITE, 'path': '/', 'expires': None})
+        before = driver.cookies_export()
         page = sess.run('browser_click', {'target': '다른 계정으로 로그인', 'effect': 'navigate'})
+        self.assertNotEqual(driver.cookies_export(), before, 'the redirect set a new cookie')
         self.assertEqual(page['state'], 'page', 'no sign-in form on the error page')
         self.assert_unconfirmed(page, approvals)
 
@@ -574,6 +579,32 @@ class ResignInSessionTests(unittest.TestCase):
         sess.run('browser_type', {'target': '검색어', 'text': '날씨', 'effect': 'read'})
         sess.run('browser_click', {'target': '검색하기', 'effect': 'read'})
         self.assertEqual([entry[0] for entry in driver.log if entry[0] in ('click', 'type')], ['type', 'click'])
+
+    def test_a_protected_open_preserves_the_prior_site_without_authorization_parameters(self):
+        sess, driver, _approvals = resign_session('chooser')
+        sess.run('browser_open', {'url': f'https://{SITE}/start', 'effect': 'navigate'})
+        sess.run('browser_open', {'url': f'https://{PROVIDER}/choose', 'effect': 'navigate'})
+        self.assertEqual(sess._window['origin']['site'], SITE)
+        driver.goto(f'https://{SITE}/callback?code=abc', 1)
+        page = sess.run('browser_read', {})
+        self.assertIsNone(sess._window)
+        self.assertEqual(page['provider_sign_in']['state'], 'signed_in')
+        sess.run('browser_click', {'target': '설정', 'effect': 'navigate'})
+
+    def test_an_unknown_origin_does_not_clear_on_a_silent_return(self):
+        base = f'https://{PROVIDER}/authorize?response_type=code&client_id={CLIENT}'
+        for suffix in ('', '&redirect_uri=invalid', '&redirect_uri=https%3A%2F%2Fsite.test%2F&redirect_uri=other',
+                       '&redirect_uri=https%3A%2F%2Fsite.test%3Abad%2F'):
+            with self.subTest(suffix=suffix):
+                sess, _driver, _approvals = resign_session('silent')
+                page = sess.run('browser_open', {'url': base + suffix, 'effect': 'navigate'})
+                self.assertIsNone(sess._window['origin'])
+                self.assertNotIn('provider_sign_in', page)
+                with self.assertRaises(ToolError) as caught:
+                    sess.run('browser_click', {'target': '설정', 'effect': 'navigate'})
+                self.assertEqual(caught.exception.code, bs.PROVIDER_INTERACTION_CODE)
+                sess.run('browser_open', {'url': 'https://public.test/', 'effect': 'navigate'})
+                self.assertIsNone(sess._window, 'the existing unrelated-open rule still clears the window')
 
     def test_the_window_covers_pages_reached_from_the_provider_and_clears_back_on_the_site(self):
         # Only the broker is recorded: its upstream's chooser is reached from it by redirect, so it is inside.
@@ -693,6 +724,32 @@ class ResignInLoopTests(unittest.TestCase):
         self.assertEqual(audit['sent_to']['browser_provider_sign_ins'], [{'site': SITE, 'provider': PROVIDER}])
         self.assertIn(msg('information_use.browser_provider_sign_in', site=SITE, provider=PROVIDER),
                       information_use.render_korean(audit))
+
+    def assert_explicit_authorization_return(self, prior_page):
+        steps = []
+        if prior_page:
+            steps.append({'tool_calls': [call('start', 'browser_open', url=prior_page, effect='navigate')]})
+        driver = self.run_work('silent', *steps,
+                               {'tool_calls': [call('authorize', 'browser_open', url=AUTHORIZE, effect='navigate')]},
+                               {'tool_calls': [call('settings', 'browser_click', target='설정', effect='navigate')]},
+                               {'content': '확인했습니다.'})
+        status, detail = self.details('browser_open')[-1]
+        self.assertEqual(status, 'succeeded')
+        self.assertEqual(detail['evidence']['provider_sign_in']['state'], 'signed_in')
+        [(status, _detail)] = self.details('browser_click')
+        self.assertEqual(status, 'succeeded', 'the returned site is outside the provider window')
+        self.assertEqual(driver.url, f'https://{SITE}/settings')
+        audit = information_use.work_information_use(self.store, self.job)
+        self.assertEqual(audit['sent_to']['browser_provider_sign_ins'], [{'site': SITE, 'provider': PROVIDER}])
+        self.assertIn(msg('information_use.browser_provider_sign_in', site=SITE, provider=PROVIDER),
+                      information_use.render_korean(audit))
+        self.assertFalse(any(value in flat(audit) for value in QUERY_VALUES))
+
+    def test_explicit_authorization_open_preserves_the_prior_site(self):
+        self.assert_explicit_authorization_return(f'https://{SITE}/start')
+
+    def test_explicit_authorization_open_without_a_prior_page_uses_the_redirect_site(self):
+        self.assert_explicit_authorization_return(None)
 
     def test_provider_only_page_without_new_marks_is_unconfirmed(self):
         self.run_work('silent_no_session',

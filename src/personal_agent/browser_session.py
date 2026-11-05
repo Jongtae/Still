@@ -82,8 +82,8 @@ from .agent_runtime import BROWSER_ACTIONS, ToolError, WorkBudget, lookup_norm, 
 from .bounded_execution import SECRET_PATTERN
 from .browser_jar import (JAR_NAME, SERVICE as JAR_SERVICE, CookieJar, JarError, KeychainKey, latest_token_expiry,
                           site_marks, store_account, unexpired)
-from .browser_worker import (LAYOUTS, PAYMENT_TOKENS, SECRET_TOKENS, authorization_blocked, authorization_host, destination_refusal, qr_links,
-                             remote_fields)
+from .browser_worker import (LAYOUTS, PAYMENT_TOKENS, SECRET_TOKENS, authorization_blocked, authorization_host,
+                             authorization_redirect_host, destination_refusal, qr_links, remote_fields)
 
 #: The model's declared effect class of one action.
 EFFECTS = ('read', 'navigate', 'mutate', 'payment')
@@ -1278,7 +1278,7 @@ class BrowserSession:
             inside = host in protected or host in window['hosts'] or not (origin_site and domain == origin_site)
         else:
             if asked is not None:
-                origin = None if asked in protected else self._requested_origin
+                origin = self._requested_origin
             else:
                 origin = self._outside
             # A silent redirect can open and close the provider window between snapshots.
@@ -1544,7 +1544,18 @@ class BrowserSession:
         # #233: a browser that could not be started (the factory raised or gave none) received nothing,
         # so the driver is obtained before the address is handed to it.
         driver = self._driver()
-        self._requested_origin = self._outside if authorization_host(url) and self._outside else self._origin(url)
+        if parts.hostname in self._protected_hosts() or authorization_host(url):
+            # The site being signed in to is the request's own client endpoint (RFC 6749 §3.1.2) when it
+            # names one; else the page the AI came from.  Only the client host becomes a reference.
+            host = authorization_redirect_host(url) if authorization_host(url) else None
+            if host and host not in self._protected_hosts():
+                outside = self._outside or {}
+                self._requested_origin = (outside if outside.get('site') == registrable_domain(host)
+                                          else self._origin('https://' + host))
+            else:
+                self._requested_origin = self._outside
+        else:
+            self._requested_origin = self._origin(url)
         self._spend_step()   # #620: after the approval and a busy browser, which spend nothing
         from .agent_runtime import handed_off
         handed_off()   # the address goes to the browser from here
