@@ -261,6 +261,12 @@ def close_login_windows(test, drivers, profile):
     if thread is not None:
         thread.join(30)
         test.assertFalse(thread.is_alive(), 'the login window thread finished')
+    # #684: a ``browser_status()`` poll starts the off-thread sign-in check (``_owner_signin_view``), whose
+    # ``QuickStore.secret()`` read creates ``private/connections.lock``; it ends before the directory is removed.
+    for thread in threading.enumerate():
+        if thread.name == 'agentos-signin-view':
+            thread.join(30)
+            test.assertFalse(thread.is_alive(), 'the sign-in status check finished')
 
 
 def wait_until(condition, seconds=5.0):
