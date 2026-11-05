@@ -1985,7 +1985,7 @@ class ServiceTests(unittest.TestCase):
     def test_unavailable_platform_offers_no_tools_and_a_typed_refusal(self):
         from unittest import mock
         profile = bs.BrowserProfile(Path(self.tmp.name) / 'p2', launcher=None)
-        with mock.patch.object(bs, 'webkit_unavailable_reason', lambda *a, **k: 'platform'):
+        with mock.patch.object(bs, 'engine_unavailable_reason', lambda *a, **k: 'platform'):
             self.service.browser_profile = profile
             status = self.service.browser_status()
             self.assertFalse(status['available'])
@@ -2006,8 +2006,9 @@ class ServiceTests(unittest.TestCase):
             self.assertFalse(offered & BROWSER_ACTIONS)
             self.assertNotEqual(self.store.job(job_id)['status'], 'succeeded')
             self.assertEqual(self.drivers, [])
-        with mock.patch.object(bs, 'webkit_unavailable_reason', lambda *a, **k: 'dependency'):
-            self.assertEqual(profile.status()['message'], bs.DEPENDENCY_TEXT)
+        with mock.patch.object(bs, 'engine_unavailable_reason', lambda *a, **k: 'dependency'):
+            # #34: the text names this computer's own engine components.
+            self.assertEqual(profile.status()['message'], bs.unavailable_text('dependency'))
         # A browser call that reaches the runtime anyway is the typed refusal, not a setup hint.
         caps = Capabilities(self.store, None, {}, '', 'w', lambda *a: None, browser_unavailable=bs.PLATFORM_TEXT)
         with self.assertRaises(ToolError) as caught:
@@ -2093,7 +2094,7 @@ class HttpAndCliTests(unittest.TestCase):
         from personal_agent import quickstart
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        with mock.patch.object(bs, 'webkit_unavailable_reason', lambda *a, **k: 'platform'), \
+        with mock.patch.object(bs, 'engine_unavailable_reason', lambda *a, **k: 'platform'), \
              mock.patch('sys.stderr') as err:
             with self.assertRaises(SystemExit) as caught:
                 quickstart.browser_login_main(['--url', ORIGIN + '/login', '--data', tmp.name])
@@ -2102,8 +2103,8 @@ class HttpAndCliTests(unittest.TestCase):
         class ClosedByOwner(FakeDriver):
             def is_open(self):
                 return False   # the owner closed the window at once
-        with mock.patch.object(bs.BrowserProfile, '_launch_webkit', lambda self, d, h: ClosedByOwner()), \
-             mock.patch.object(bs, 'webkit_unavailable_reason', lambda *a, **k: None), \
+        with mock.patch.object(bs.BrowserProfile, '_launch_engine', lambda self, d, h: ClosedByOwner()), \
+             mock.patch.object(bs, 'engine_unavailable_reason', lambda *a, **k: None), \
              mock.patch('sys.stdout') as out:
             code = quickstart.browser_login_main(['--url', ORIGIN + '/login', '--data', tmp.name])
         self.assertEqual(code, 0)

@@ -33,7 +33,7 @@ from .calendar import CalendarConnector
 from .calendar_oauth import (GMAIL_FILTERS_GRANT, GMAIL_MODIFY_GRANT, GMAIL_MODIFY_SECRET_NAMESPACE, DRIVE_GRANT, DRIVE_SECRET_NAMESPACE, CalendarOAuth, EncryptedCalendarSecretStore,
                              calendar_transport, drive_transport)
 from .google_drive_read import GoogleDriveReader
-from .browser_jar import KeychainKey, store_account
+from .browser_jar import platform_key, store_account
 from .google_calendar import GoogleCalendar
 from .quickstart_service import (AgentService, CALENDAR_CONNECT_PATH, DRIVE_CONNECT_PATH, DRIVE_CALLBACK_PATH,
                                  GMAIL_MODIFY_CONNECT_PATH, GMAIL_MODIFY_CALLBACK_PATH,
@@ -282,7 +282,7 @@ def google_oauth_key(store):
     memoised under a lock: two first uses must not each create a key and
     leave tokens encrypted under the one the other overwrote.
     """
-    keychain=KeychainKey(store_account(store.root),GOOGLE_OAUTH_KEY_SERVICE)
+    keychain=platform_key(store_account(store.root),GOOGLE_OAUTH_KEY_SERVICE)
     lock=threading.Lock()
     cached=[]
     def provider():

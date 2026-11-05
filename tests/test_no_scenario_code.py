@@ -65,7 +65,7 @@ SRC = Path(__file__).resolve().parents[1] / 'src' / 'personal_agent'
 #: ORCH-01 (#710) orchestration step and its worker catalogue; ``owner_model.py`` the
 #: #805 owner-model upkeep; ``skills.py`` the #961 skill-supply glue.
 SCANNED_MODULES = ('agent_runtime.py', 'conversation_handoff.py', 'current_context.py', 'browser_session.py',
-                   'browser_worker.py', 'browser_jar.py',
+                   'browser_worker.py', 'browser_jar.py', 'browser_worker_chromium.py', 'chromium_runtime.py',
                    'preparations.py', 'local_tools.py', 'quickstart_service.py', 'orchestrator.py', 'owner_model.py',
                    # SKILL-SUPPLY-02 (#961): the skill-supply glue stays free of site/category branches;
                    # skill content is data in packages, not scanned (#960 section 8).
@@ -129,6 +129,9 @@ _COLLECTION_CALLS = frozenset({'frozenset', 'set', 'tuple', 'list'})
 #:   Interpretation is never ``enforcement``.
 CLASSIFICATIONS = frozenset({'enforcement', 'adapter', 'own-text', 'open-finding'})
 CLASSIFIED = {
+    ('chromium_runtime.py', '=> not found'): (
+        'adapter', "#34: glibc ldd's own output marker for an unresolved shared library of the pinned Chromium; "
+                   'tool output, never owner or page text'),
     ('local_tools.py', 'metadata.google.internal'): (
         'enforcement', 'SSRF denylist of cloud metadata hosts (DENIED_PUBLIC_HOSTS); a security boundary that '
                        'refuses every request to that host, not a site the model may choose'),
@@ -170,6 +173,9 @@ CLASSIFIED = {
 #: table sits in.  A new table or function has a new name, so its cue literals
 #: fail until listed here; an entry that no hit uses any more fails as stale.
 CLASSIFIED_TABLES = {
+    ('browser_worker_chromium.py', 'SANDBOX_FAILURE_MARKERS'): (
+        'adapter', "#34: Chromium's own launch-error text for a sandbox that cannot start, mapped to the "
+                   "worker's sandbox_unavailable code; engine protocol output, never owner or page text"),
     # --- enforcement ---------------------------------------------------------
     **{('browser_session.py', name): (
         'enforcement', '#758/#899/#936 payment floor: a control label or a site confirm question that may commit '

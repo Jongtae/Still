@@ -121,7 +121,28 @@ Things that differ from macOS:
 
 - A Codex or Claude Code subscription must be installed and logged in inside Ubuntu, not in Windows.
 - Windows folders appear under `/mnt/c/`, for example `/mnt/c/Users/your-name/Documents/Still`.
-- Keep the Ubuntu window open while you talk. The background login service and the embedded browser tool are macOS only for now ([#33](https://github.com/Jongtae/Still/issues/33), [#34](https://github.com/Jongtae/Still/issues/34)).
+- Keep the Ubuntu window open while you talk. The background login service is macOS only for now ([#33](https://github.com/Jongtae/Still/issues/33)). The browser tool needs a [Linux desktop session](#browser-on-a-linux-desktop); under WSL2 that would be WSLg's display, which has not been observed.
+
+## Browser on a Linux desktop
+
+On macOS the browser tool uses the system WebKit. On a Linux desktop (Ubuntu with its desktop session, x86_64 or arm64; [#34](https://github.com/Jongtae/Still/issues/34)) it uses Chromium:
+
+- **What Still downloads.** The first time a request needs the browser, Still downloads Google's Chrome for Testing 156.0.8078.4 (about 200 MB) into `~/.local/share/agentos/tools/chromium`. It keeps the download only when its pinned SHA-256 matches, and checks the `chrome` binary's digest again before every start. Nothing is installed system-wide and `playwright install` is never run. The installer adds the Playwright library on glibc Linux; Alpine and other musl systems have no browser tool.
+- **The sandbox, once.** Chromium always starts with its sandbox; Still has no switch to turn it off. Ubuntu 23.10 and later allow the user namespaces the sandbox needs only to programs with an AppArmor profile. When the sandbox cannot start, Settings › 외부 연결 › 브라우저 shows one command to run in a terminal (it asks for your password). The command installs a profile for Still's Chromium binary only, at `/etc/apparmor.d/still-chromium`. A later Chromium version asks again. Ubuntu 22.04 needs nothing.
+- **System libraries, once.** On a desktop that lacks some of the libraries Chromium uses, Settings shows one command to run with sudo. It is Playwright's own `install-deps chromium`, which installs only those libraries with the system package manager.
+- **Where sign-ins are kept.** As on macOS: an encrypted file under `~/.local/share/agentos/private`, with its key in your desktop keyring (GNOME Keyring or KWallet through the Secret Service). If the keyring is locked, the desktop asks you to unlock it. If no keyring answers, sign-ins are not saved, never written in the clear. API connection keys and the Google token key use the same keyring on Linux.
+- **What differs.**
+  - The window is shown only while you sign in. Without an X11 display (`DISPLAY`; a Wayland desktop provides one through XWayland, as Ubuntu's does), the browser is unavailable.
+  - Sites see Chrome on an Android phone, where macOS shows Safari on an iPhone.
+  - QR codes on a sign-in page are not read for phone sign-in, and Google sign-in is not supported in the embedded browser.
+  - As on macOS, a page that opens a new window during the AI's work loads it in the same page; only your own sign-in window keeps sign-in popups.
+  - A few page tricks that macOS lets through are refused here, because Chromium cannot ask the page about a form while its request is held:
+    - a form posting into a new window;
+    - an ordinary form submitted through another frame's untouched submit function.
+
+    Nothing is sent in those cases.
+
+Evidence: the macOS real-engine browser tests run against Chromium on Linux in CI (`full-validate`), plus unit tests for the download, keyring and refusals. This is not yet an observation on an owner's Ubuntu desktop.
 
 ## First task
 
@@ -470,7 +491,7 @@ Python 3.12+ on macOS or Linux is required for source execution. Check with `pyt
 
 ```sh
 python3 -m venv ~/.venvs/agentos
-~/.venvs/agentos/bin/pip install -e '.[mcp-host]'   # run inside the checkout
+~/.venvs/agentos/bin/pip install -e '.[mcp-host]'   # run inside the checkout; on a glibc Linux desktop use '.[mcp-host,linux-browser]' for the browser tool
 ~/.venvs/agentos/bin/agentos start --no-browser
 ```
 

@@ -93,8 +93,11 @@ else
   [ -x "$UV" ] || fail "uv was installed but not found at $UV."
 fi
 
+# #34: on a glibc Linux the browser worker's Playwright comes too; it publishes no musl (Alpine) build.
+extras="mcp-host"
+if [ "$(uname -s)" = "Linux" ] && ! ls /lib/ld-musl-* >/dev/null 2>&1; then extras="mcp-host,linux-browser"; fi
 say "Installing Still $AGENTOS_VERSION (this can take a minute)..."
-"$UV" --no-config tool install --force --python "$PYTHON_VERSION" "personal-agentos[mcp-host] @ $archive" \
+"$UV" --no-config tool install --force --python "$PYTHON_VERSION" "personal-agentos[$extras] @ $archive" \
   >"$work/install.log" 2>&1 &
 installing=$!
 # #438: a dot a second, so resolving and downloading do not look stuck.

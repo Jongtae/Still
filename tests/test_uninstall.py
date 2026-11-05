@@ -139,13 +139,32 @@ class UninstallTest(unittest.TestCase):
                                                    which=lambda name: '/opt/homebrew/bin/brew' if name == 'brew' else None)
         self.assertEqual((label, command), ('Homebrew', ['/opt/homebrew/bin/brew', 'uninstall', 'agentos']))
 
-    def test_linux_has_no_launchd_services_or_keychain(self):
+    def test_linux_has_no_launchd_services_and_deletes_its_keyring_keys(self):
+        """#34 (Codex review on #640): on Linux the keys live in the desktop keyring; deleting data deletes them."""
         term = ScriptedTerminal(asks=['y', 'delete'])
         uninstall.run(term, home=self.home, env={}, platform='linux', prefix=self.prefix,
                       action=self.action, runner=self.runner, key_factory=FakeKey, which=lambda name: None)
         self.assertEqual(self.actions, [])
-        self.assertEqual(FakeKey.deleted, [])
+        self.assertTrue(FakeKey.deleted)
         self.assertFalse(self.owner.exists())
+
+    def test_a_key_that_cannot_be_deleted_is_said_and_the_removal_is_incomplete(self):
+        from personal_agent.browser_jar import JarError
+
+        class Locked(FakeKey):
+            def delete(self):
+                raise JarError('keyring_delete_failed')
+        term = ScriptedTerminal(asks=['y', 'delete'])
+        code = uninstall.run(term, home=self.home, env={}, platform='linux', prefix=self.prefix,
+                             action=self.action, runner=self.runner, key_factory=Locked, which=lambda name: None)
+        self.assertEqual(code, 1)
+        self.assertIn('personal-agentos', term.text())
+
+    def test_the_default_key_store_follows_the_platform(self):
+        from personal_agent.browser_jar import KeychainKey, SecretServiceKey, platform_key
+        self.assertIs(uninstall.run.__kwdefaults__['key_factory'], platform_key)
+        self.assertIsInstance(platform_key('store-a', 'svc', platform='linux'), SecretServiceKey)
+        self.assertIsInstance(platform_key('store-a', 'svc', platform='darwin'), KeychainKey)
 
     def test_cli_refuses_delete_data_without_yes(self):
         with self.assertRaises(SystemExit):

@@ -406,7 +406,7 @@ class OwnClientConnectorsTest(unittest.TestCase):
                 self.value = Fernet.generate_key()
                 return self.value
 
-        with mock.patch.object(quickstart, 'KeychainKey', FakeKeychain):
+        with mock.patch.object(quickstart, 'platform_key', FakeKeychain):
             provider = quickstart.google_oauth_key(QuickStore(str(self.root / 'data')))
             self.assertEqual(provider(), provider())
         self.assertEqual(FakeKeychain.created, 1)
