@@ -53,7 +53,7 @@ from . import trust_record
 from .prompt_files import prompt
 from .conversation_projection import earlier_turn_line, earlier_turns_in
 from .agent_runtime import (BUDGET_CODES, BUDGET_TEXTS, CURRENT_CONTEXT_FACT_CHARS, PROFILE_FACT_CHARS, GOAL_CONVERSATION_CHARS,
-                            budget_stop_code, owner_context_fact)
+                            budget_stop_code, owner_context_fact, second_judgment_allowed)
 from .current_context import without_moving_clock
 from .api_requests import CONTEXT_LINE as API_SLOTS_LINE
 from .information_use import BROWSER_SIGNINS_PREFIX
@@ -975,8 +975,8 @@ class Orchestration:
         #: already says it, None when the judgment did not give one), and the last attempt's.
         self.note = None
         self.terminal_note = None
-        #: #674: the recorded effects the last outcome judgment denied (Still's record won).
-        self.contradicted = ()
+        #: #674: the last outcome judgment's record check (``Judgment.record_check``), or None.
+        self.record_check = None
         #: #308 S1: the owner steers a continuation was given, read with the request by the outcome judgment.
         self.steers = ''
         #: #671: the Work's remaining seconds when each attempt was planned and when it was evaluated
@@ -1538,9 +1538,9 @@ class Orchestration:
         ``final`` (#752): no attempt can follow and the judgment only decides
         this attempt's outcome, so the Work need only be neither stopped nor
         past its deadline.  #674: ``effects`` (``agent_runtime.recorded_effects``) are the attempt's
-        calls Still recorded as having made their change; they bound the judgment (``goal_reached``).
+        calls whose own record shows them completed; a judgment denying one is asked once more (``goal_reached``).
         """
-        self.gap, self.note, self.contradicted = '', None, ()
+        self.gap, self.note, self.record_check = '', None, None
         self.retry_warranted = None
         goal_reached = getattr(self.judgments, 'goal_reached', None)
         if goal_reached is None:
@@ -1569,7 +1569,9 @@ class Orchestration:
                                      if self.turns is not None else {}),
                                   **({'attachments': self.attachments} if getattr(self, 'attachments', '') else {}),
                                   **({'awaiting_owner': awaiting} if (awaiting := self._work_awaiting()) else {}),
-                                  **({'recorded_effects': tuple(effects)} if effects else {}))
+                                  **({'recorded_effects': tuple(effects),
+                                      'may_rejudge': lambda: second_judgment_allowed(self.judgments, self.budget)}
+                                     if effects else {}))
         except Exception:
             return UNJUDGED
         verdict = getattr(judged, 'outcome', None)
@@ -1579,7 +1581,7 @@ class Orchestration:
             self.budget_stop = judged.refused
             return NOT_JUDGED
         self.retry_warranted = getattr(judged, 'retry_warranted', None)
-        self.contradicted = tuple(getattr(judged, 'contradicted', None) or ())
+        self.record_check = getattr(judged, 'record_check', None)
         if verdict == 'no':
             # #1451: the judgment's own statement of what is missing (already owner-facing text).
             self.gap = self._redact(getattr(judged, 'value', None) or '', private=False)[:GAP_CHARS]
@@ -1630,7 +1632,7 @@ class Orchestration:
         gap, self.gap = (self.gap if short else ''), ''
         # #631: owner-needed stops carry their attempt's judgment too.
         note, self.note = (self.note if (judged or evaluation) in (REACHED, NOT_REACHED) else None), None
-        contradicted, self.contradicted = getattr(self, 'contradicted', ()), ()
+        record_check, self.record_check = getattr(self, 'record_check', None), None
         if gap:
             self.gaps[attempt.number] = gap
         worker = self.catalogue.worker(attempt.worker)
@@ -1686,8 +1688,8 @@ class Orchestration:
                                 **({'code': code} if code else {}),
                                 'invalid': (invalid or None) if not stop or stop == STOP_REPLAN else None,
                                 'gap': gap or None, **({'judged': judged} if judged else {}),
-                                # #674: the recorded effects the judgment denied; Still's record won.
-                                **({'record_won': list(contradicted)} if contradicted else {}),
+                                # #674: the judgment denied a recorded-done call, and what the one re-judgment said.
+                                **({'record_check': record_check} if record_check else {}),
                                 'text': ' '.join(part for part in (EVALUATED_TEXT[evaluation], gap, after) if part)})
         if following is not None:
             self.attempts.append(following)
