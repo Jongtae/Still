@@ -2,15 +2,17 @@
 
 Start with the question you have, not the order in which the project created files.
 
-| Reading path | Start here | What it is for |
+| Reading path | Start here | Purpose |
 | --- | --- | --- |
-| Use Still | [QUICKSTART](QUICKSTART.md), [product status](product-status.en.md) | Install, connect, operate, and distinguish released behavior from newer source and evidence limits |
+| Install and try Still | [Quick start](QUICKSTART.md) | Install, connect one AI and reach a first conversation |
+| Use and maintain it | [Connections](guide/connections.en.md), [operations](guide/operations.en.md), [company networks](guide/workplace.en.md), [platforms](guide/platforms.en.md) | Task-specific setup, recovery and operating limits |
+| Check current coverage | [Product status](product-status.en.md), [한국어](product-status.ko.md) | Published coverage, newer source, observations and historical evidence kept separate |
 | Understand the ideas | [Concepts — seven connected chapters (Korean)](concepts/README.md), [VISION](VISION.md) | Ownership, ontology, memory, judgment, Presence, authority and ecosystem hypotheses |
-| Change the implementation | [Contributor onboarding](contributor-onboarding.en.md), the contracts below | Current rules, code responsibilities and relevant evidence |
-| Develop and release | [CONTRIBUTING](../.github/CONTRIBUTING.md), [development workflow](development-governance.en.md), [release procedure](release.en.md) | Repository work, validation and publication, not end-user runtime behavior |
-| Inspect the sources | [Research](research/README.md), [fixed publications](whitepapers/README.md) | Original studies, experiments, references and editorial provenance |
+| Change the implementation | [Contributor onboarding](contributor-onboarding.en.md), the contracts below | Current rules, code responsibilities and relevant tests |
+| Develop and release | [CONTRIBUTING](../.github/CONTRIBUTING.md), [development workflow](development-governance.en.md), [release procedure](release.en.md) | Repository work and publication, not product runtime behavior |
+| Inspect original sources | [Research](research/README.md), [publications](whitepapers/README.md), [concept references](concepts/references.md) | Dated studies, experiments, external references and editorial provenance |
 
-The [Engineering hub](https://jongtae.github.io/Still/engineering/) is the public explanatory route. The new concept chapters synthesize the existing compendium and later public repository decisions; they are not another policy source or a shipped-capability claim. Existing canonical paths stay stable while their contents and consumers are audited. The five reading paths above do not imply that every file has already been physically relocated.
+The [Engineering hub](https://jongtae.github.io/Still/engineering/) is the public explanatory route. Concepts and guides explain the product; they do not create policy, activate work or establish shipped functionality.
 
 ## What is authoritative
 
@@ -18,42 +20,46 @@ The [Engineering hub](https://jongtae.github.io/Still/engineering/) is the publi
 | --- | --- |
 | Why the project exists | [VISION](VISION.md) |
 | Contribution invariants | [AGENTS.md](../AGENTS.md) and the [Development Constitution](development-constitution.en.md) |
-| Currently selected goal and order | Root [delivery-plan.yaml](../delivery-plan.yaml), `next_goal` and the selected program record |
-| Issue, PR, merge and required-check status | GitHub Issues, Pull Requests and Checks |
-| Intended product/runtime behavior | Applicable current contract plus current code/tests; a contract alone does not prove delivery |
-| Released behavior and evidence limits | [Product status](product-status.en.md) and the [release manifest](release-manifest.json) |
-| Explanation and rationale | [Concept chapters](concepts/README.md); normative contracts take precedence |
-| Research or historical observation | The dated source at its original evidence level; it does not activate implementation |
+| Selected goal and order | Root [delivery-plan.yaml](../delivery-plan.yaml), `next_goal` and the selected program record |
+| Issue, PR, merge and required-check state | GitHub Issues, Pull Requests and Checks |
+| Required product behavior | Applicable current contract; code and tests establish implementation, not the requirement's existence |
+| Released coverage and observations | [Release manifest](release-manifest.json) and the evidence named by [product status](product-status.en.md) |
+| Explanation and rationale | [Concept chapters](concepts/README.md); current normative contracts take precedence |
+| Research or historical observation | Its dated source and original evidence class, not a later restatement |
 
 ## Current contracts by responsibility
 
 | Responsibility | Canonical entry points |
 | --- | --- |
-| Architecture and owner state | [Architecture](personal-agentos-architecture.en.md), [Owner Control](owner-control-contract.en.md) |
+| Product boundary and owner rights | [Architecture](personal-agentos-architecture.en.md), [Owner Control](owner-control-contract.en.md) |
 | Meaning, roles and mandates | [Professional Roles and Communication](professional-roles-and-communication-contract.en.md) |
-| Memory and present context | [Secretary Agency](secretary-agency-contract.en.md), [Current Context](current-context-contract.en.md), [implementation reference](current-context-implementation.en.md) |
+| Memory and learning | [Memory contract](engineering/contracts/memory.en.md): saves, correction, upkeep, working notes and dream |
+| Temporary present context | [Current Context](current-context-contract.en.md), [implementation reference](current-context-implementation.en.md) |
+| Pilot policy and accepted preparations | [Secretary Agency](secretary-agency-contract.en.md); Memory details live in the shared contract above |
 | Judgment and execution | [Decision Layer](decision-layer.en.md), [Assistant Execution](assistant-execution-contract.en.md) |
-| Relationship and collaboration | [Presence](presence-experience-contract.en.md), [Professional Roles and Communication](professional-roles-and-communication-contract.en.md) |
+| Relationship and collaboration | [Presence](presence-experience-contract.en.md), [local web presentation](web-management-contract.en.md) |
 | Connections, skills and delegation | [Connection and Delegation](connection-delegation-contract.en.md), [connection support](connection-support.en.md) |
-| Future distribution design | [Platform Foundation](agent-distribution-platform-foundation.en.md); not evidence that a marketplace ships |
+| Future distribution design | [Platform Foundation](agent-distribution-platform-foundation.en.md); not evidence of a shipped marketplace |
 | Repository delivery | [Development Governance](development-governance.en.md), [Goal Execution](goal-execution-contract.en.md), [Incremental Delivery](incremental-delivery.en.md) |
 
-Some contracts still contain mixed live rules and dated amendments. Their current-rule/precedence sections control conflicts until a scoped consolidation removes superseded prose. Do not discard a still-live exception or a paused program's valid resume contract merely because it is old. The concept chapters do not replace these rules.
+Architecture, Decision and Presence now lead with topic-based current rules. Their dated source text remains at pinned pre-edit revisions, rather than as competing amendment chains. The Memory contract is shared by agency and presentation; a new memory rule belongs there, not in three parallel copies.
 
-## Planning is not current execution status
+A paused program can retain a valid resume contract. Age or a historical filename is not, by itself, a reason to delete a rule. Contracts not yet consolidated still use their explicit precedence sections. The two Memory source/text discrepancies are stated in that contract; an editorial cleanup does not decide them silently.
 
-[Roadmap](roadmap.md) is a short direction entry, and [TASKS](TASKS.md) now routes to the actual work-selection/status sources rather than repeating old program tables. Their previous contents remain accessible at the pinned pre-cleanup revision linked from each page. Immutable ledgers, predecessor plan/release records and unique evidence remain intact.
+## Where historical material belongs
 
-The obsolete utility-v1 HTML/CSS/JS study is retired from the active tree; its [compatibility entry](design/utility-v1/README.md) points to the original revision and current experience concepts. Retiring the study is not a change to current web behavior or its governing contracts.
+[Roadmap](roadmap.md) explains direction; [TASKS](TASKS.md) routes to selection and execution records rather than duplicating old program tables. Their previous text is available at the pinned revisions linked from each page. Immutable ledgers, predecessor plan/release records, fixed publications and unique experiments remain intact.
 
-Earlier source history that was never imported into Still remains in the private predecessor repository; do not pretend it can be recovered from this repository's Git history. [Name compatibility](still-name-compatibility.en.md) separates retained technical names and historical issue provenance from current operational links.
+The retired [utility-v1 study](design/utility-v1/README.md) has a compact provenance entry rather than a second executable prototype. The original remains at its pinned commit. Source history never imported into Still remains in the private predecessor; it cannot be reconstructed from this repository's Git history by assumption. [Name compatibility](still-name-compatibility.en.md) identifies deliberate technical names and historical issue references.
 
-## Editing without rebuilding the clutter
+## Editing rules
 
-Change one canonical rule and link to it. Concepts explain the reason and trade-offs without duplicating field-by-field contracts or release status. Research retains unique evidence and fixed editions, not copies of every current explanation. Retire one-off instructions and redundant prose after preserving their unique content and updating their consumers; do not move every obsolete file into another archive.
+Use one canonical home for a rule and link to it. Concepts explain choices and unresolved questions; guides explain procedures; product status separates coverage from proof. Research keeps unique sources and fixed editions, not a parallel copy of every current explanation.
 
-The cleanup is tracked in [#35](https://github.com/Jongtae/Still/issues/35). Core contract consolidation, QUICKSTART extraction and further path/reference migration remain separate uncompleted slices. This entry does not claim the whole cleanup is finished.
+When moving a section, update its readers and preserve required deep links. A short compatibility pointer is preferable to a duplicated manual. Retire one-off instructions only after their still-live rules have a named successor. Do not change runtime policy, evidence meaning or activation through an editorial edit. Release-managed status sentences are also an interface: edit their script and tests together if their format changes.
+
+Canonical root filenames and tool-required entry points remain stable where they have consumers. The new guide/concept/engineering directories organize substantial content, not empty placeholder folders. Further path moves need a consumer map; the [#35](https://github.com/Jongtae/Still/issues/35) work is not permission for a blind rename of every older plan or contract.
 
 ## Community, review and releases
 
-[Contributing](../.github/CONTRIBUTING.md), [Governance](../GOVERNANCE.md) and [Code of Conduct](../CODE_OF_CONDUCT.md) apply to humans and their AI tools. [Contributor onboarding](contributor-onboarding.en.md) supplies one shared setup and role procedure. [AI contribution and review](governance/ai-contribution-review.en.md) distinguishes author self-review from independent review. [Release Policy](governance/release-policy.en.md) governs publication authority; [Release Procedure](release.en.md) supplies the operational steps.
+[Contributing](../.github/CONTRIBUTING.md), [Governance](../GOVERNANCE.md) and [Code of Conduct](../CODE_OF_CONDUCT.md) apply to humans and their AI tools. [Contributor onboarding](contributor-onboarding.en.md) supplies one setup and role procedure. [AI contribution and review](governance/ai-contribution-review.en.md) distinguishes author self-review from independent review. [Release Policy](governance/release-policy.en.md) governs publication authority; [Release Procedure](release.en.md) supplies the operational steps.

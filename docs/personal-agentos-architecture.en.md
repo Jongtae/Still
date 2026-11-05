@@ -1,258 +1,235 @@
 # Still Architecture
 
-## Current execution refinement
-
-For #600, the [Assistant execution contract](assistant-execution-contract.en.md) specifies ordinary goals → existing run_agent/qualified CLI loops → Still broker → authorized context → goal-level Evidence, without another state store. Its [delivery/ownership contract](assistant-execution-delivery.en.md) takes precedence over historical activation suggestions below. Capability parity means actual qualified invocations, not identical prompts/declarations. Shipped status remains evidence-bound.
-
 ## Status and purpose
 
-This is the canonical product-architecture definition: intended product boundary, meaning of **OS**, and authority between the personal AI kernel, installable AgentPackages, distribution and replaceable runtimes. It is not a claim that every described layer is shipped. Current support depends on merged implementation, the [roadmap](roadmap.md) and named acceptance evidence.
+Still is a personal agent installed on an owner-controlled machine. It keeps the owner's memory, open work, permissions and results while the AI and tools doing the work can change. This document defines those responsibility boundaries. It is not a list of shipped integrations or a claim that the proposed package ecosystem is complete.
 
-The [Owner Control Contract](owner-control-contract.en.md) maps this architecture to six observable owner rights and enforcement/acceptance. [Default Agent Usefulness](default-agent-usefulness.en.md) defines useful task outcomes and separate development/live-quality gates. The [Presence Experience Contract](presence-experience-contract.en.md) defines how this authoritative state is projected into one continuous owner-facing assistant across conversation, recovery, Settings and contextual handoffs; its research basis is preserved in the [2026-09-23 Presence study](research/presence-and-settings-ux.ko.md). These documents refine product acceptance; they do not replace the v0.1 schema authority or add another state store. [USE-01 readiness](use-01-goal-readiness.en.md) prepares the next narrow product goal without activating the heartbeat.
+Read [product status](product-status.en.md) for release coverage and observations, [the concepts](concepts/README.md) for the reasoning, and [contributor onboarding](contributor-onboarding.en.md) for development. The detailed contracts linked below define behavior within their scope. The v0.1 [core/package specification](core-primitives-agentpackage-v0.1.en.md) and its schemas retain their versioned authority; this edit does not migrate records.
+
+This consolidation uses revision `99fad1598b75837cf4428cfa43ad810266e5dff7`. The [earlier architecture](https://github.com/Jongtae/Still/blob/99fad1598b75837cf4428cfa43ad810266e5dff7/docs/personal-agentos-architecture.en.md) preserves the original program chronology and design wording.
 
 ## Product identity
 
-**Still is a local-first, owner-installed personal AI operating environment for one person: an AI environment the owner installs, owns and controls to do useful work.**
+**The product is the continuing personal agent, not whichever model, CLI or framework currently performs a task.** Its state and authority must remain independent of those workers.
 
-> **Still = Owner-authoritative Personal AI Kernel + Open Agent Distribution Platform**
+“Operating environment” or “Personal AgentOS” describes this persistent AI layer. Still does not replace macOS or Linux, control the host kernel, or make a compromised host trustworthy. Local installation alone is neither isolation proof nor a guarantee that inference happens locally.
 
-Like a personal PC/OS, it gives one owner a durable environment across conversations, tasks, tools, agents, packages and models. Personal state and policy remain in Still. Models, coding agents, packages, connectors and multi-agent frameworks are replaceable workers/capabilities, not its owners.
+Assistant/secretary work is a starting role, not an exclusive product domain. Research, purchasing and other professional lenses can use the same owner context and work records. A role does not grant professional status or permission to act. Coding harnesses and repository delivery automation build or assist Still; they are not its product identity.
 
-Still does not replace macOS/Linux; it is not a host kernel, hypervisor or general-purpose OS. The host still owns hardware, devices and processes. Still is the persistent AI layer on an owner-controlled host or isolated owner runtime. A host/runtime compromise remains a limit of this trust model; local installation alone is not isolation or safety proof.
-
-It is **not a coding harness or swarm framework**. Coding/orchestration may be capabilities, but do not define the product. Equally, control alone is insufficient: a few reliable, useful default capabilities must serve the owner before a marketplace grows.
+The long-term distribution direction remains an owner-authoritative personal AI core with an open agent/capability ecosystem. A useful assistant and observable owner control come before marketplace scale. Package discovery, third-party execution and marketplace commerce must be described separately from capabilities already supported by current code.
 
 ## Architecture thesis
 
-Separate owner-authoritative state/policy, non-authorizing package/distribution metadata, replaceable bounded workers, and owner experience surfaces. The kernel is **agent-independent**; the product and marketplace may be **agent-centric**.
+Separate what the owner retains from the workers that can be replaced, and separate semantic judgment from permission and result truth.
 
 ```text
-                              OWNER
-                                |
-                 conversation / work / inspect / approve
-                                |
-+-------------------------------------------------------------------+
-|                         PERSONAL AGENTOS                           |
-| Owner plane                                                       |
-| identity/policy; Context/Memory; data/workspace; Grants/approvals;   |
-| Work/Event; Artifact/Evidence; recovery/audit                       |
-| Capability plane                                                  |
-| tools/connectors; capability registry; Runtime Adapter boundary    |
-| Distribution plane                                                |
-| AgentPackage/Package Manager; Registry identity/version/trust;     |
-| Marketplace discovery/reviews/commerce; compatibility adapters     |
-| Experience plane                                                  |
-| local conversation; supported Telegram/companion; package inspect;|
-| useful result, observed progress, redacted receipts, owner controls|
-+--------------------------------+----------------------------------+
-                                 |
-                   bounded Work / Context / effective Grant
-                                 |
-               Codex / Claude Code / model / local / Ruflo
-                              nested workers
+owner request, correction or decision
+                  |
+        conversation / necessary input
+                  |
+        owner state and current authority
+                  |
+          judgment and execution
+                  |
+       bounded model / CLI / tool / peer
+                  |
+         recorded observations and result
+                  |
+       useful answer / retained artifact
 ```
 
-Everything above the worker boundary remains authoritative when a worker changes. No model, agent, Registry, Marketplace or framework becomes canonical Memory, Grant, approval, Work transition/recovery or Evidence authority. A receipt UI is a projection of these records, not another lifecycle database. Owner-facing conversation is likewise a projection: worker/runtime identities remain inspectable technical facts, but Still owns the conversational identity and must project truth-qualified kernel state according to the [Presence Experience Contract](presence-experience-contract.en.md).
+The arrows are responsibility and information flow, not a request to build another set of services. A worker can propose a plan or result; it does not become the source of truth for Memory, Grants, Work transitions or external effects. A page and a conversation are views of that state, not competing lifecycle stores. Owner corrections must feed back into work rather than only changing the final wording.
+
+| Responsibility | Canonical definition |
+| --- | --- |
+| Owner rights and limits | [Owner Control](owner-control-contract.en.md) |
+| Durable facts, learning and correction | [Memory](engineering/contracts/memory.en.md) and [Current Context](current-context-contract.en.md) |
+| Meaning, roles and mandates | [Professional Roles and Communication](professional-roles-and-communication-contract.en.md) |
+| Semantic planning and qualification | [Decision Layer](decision-layer.en.md) |
+| Invocation, effects, recovery and result truth | [Assistant Execution](assistant-execution-contract.en.md) |
+| Connections, skills and peer delegation | [Connection and Delegation](connection-delegation-contract.en.md) |
+| Conversation and collaboration | [Presence](presence-experience-contract.en.md) |
+| Future package/distribution design | [Platform Foundation](agent-distribution-platform-foundation.en.md) and the versioned package specification |
 
 ## Kernel primitives
 
-D-AP-01 / [#334](https://github.com/Jongtae/agentos/issues/334) supplies the v0.1 schema/specification foundation. This architecture retains ten responsibility boundaries:
+These ten terms distinguish responsibilities. They are not ten mandatory databases or ten newly implemented services.
 
 ### Owner
-The human principal whose state is protected: identity, policies, devices/runtime claims, preferences and trust settings. Authority is not delegated to a package or marketplace.
+
+The human principal whose state and choices are protected: identity, preferences, policies and trusted configuration. A provider, package or marketplace does not become that principal.
 
 ### Context
-Task-scoped attributable information assembled for a specific Work. Bounded/ephemeral by default, not automatically durable Memory.
+
+Attributable information assembled for a particular Work. Its task scope, source and lifetime are distinct from durable Memory.
 
 ### Memory
-Durable owner knowledge with sources/provenance, confidence, sensitivity, retention/expiry, supersession and deletion. Third parties do not own or directly mutate canonical Memory by default.
+
+Owner knowledge kept with provenance, stated/inferred status, currentness, replacement, retention and correction semantics. The owner's direct-save path and a third party's candidate path remain different.
 
 ### Artifact
-Durable document, code, image, spreadsheet, data, draft or report with provenance and ownership independent of its producing package/runtime.
+
+A retained result, file or document with provenance and ownership independent of the worker that produced it. A link or success sentence without a usable result is not an Artifact completion claim.
 
 ### Capability
-Typed ability independently understood by Still policy, such as research, file reading, spreadsheet creation, drafting, coding or sending; distinct from its implementation.
+
+An ability understood at the policy boundary, distinct from the particular tool or runtime implementing it. Listing or describing an ability does not prove it is reachable or authorized on this installation.
 
 ### Runtime
-Replaceable environment/adapter performing bounded Work: model provider, Codex/Claude Code, local model, script/API, human-mediated executor or delegated framework.
+
+A bounded execution environment or adapter: a model route, subscription CLI, local tool, connector or delegated runtime. Replacement changes the worker, not ownership of the retained state.
 
 ### Grant
-Explicit authority over resource/action/scope/destination/time/budget, issued by policy/owner, not by the requester.
+
+Authority over a resource, action, scope, destination and applicable limits. A model, role, package declaration or event cannot issue itself a Grant.
 
 ### Work
-Durable lifecycle with goal, package/capability/runtime identity, ContextSnapshot, current Grants, approvals, leases/checkpoints, artifacts/evidence, budgets, results and recovery.
+
+The durable unit of requested work, with the applicable context, permissions, execution identity, budgets, approvals, outcome and recovery records. A user message and an external effect are not automatically the same Work state.
 
 ### Event
-Typed user/schedule/file/connector/system trigger. May prompt policy evaluation and Work creation, but grants no action authority itself.
+
+A recorded trigger or transition. It can lead to policy evaluation or Work creation; it is not permission to execute an action.
 
 ### Evidence
-Retained record of exact revisions, context/grants/tools/destinations, changes and validation/approval. Distinguish requested, attempted, observed and unknown, and fixture/local/external operating evidence.
+
+An attributable record of what was requested, attempted, observed and left unknown, including relevant identity, authority and result information. Product execution records and development validation have different scopes. Model prose is not an independent observation.
 
 ## Observable owner control
 
-The six rights are: inspect what is installed (OC-01), choose accessed data (OC-02), see and limit destinations (OC-03), bound actions (OC-04), stop/revoke (OC-05), and retain/move owner state when agents change (OC-06). Each right maps to actual enforcement and positive/negative evidence in the [control contract](owner-control-contract.en.md).
+The six owner rights remain inspection (OC-01), data choice (OC-02), destination visibility/control (OC-03), bounded actions (OC-04), stop/revoke (OC-05), and retained/portable state across worker replacement (OC-06). The [control contract](owner-control-contract.en.md) supplies enforcement and acceptance requirements. This architecture does not turn those requirements into claims that every current path is fully hardened.
 
-Enforcement lives in current Grant checks, capability broker, filesystem/network/process boundary and mediated secrets—not solely in model instructions. Useful approved reads can proceed without repeated prompts; new authority or consequential effects require covering explicit approval.
+Apply the current action-specific policy, including the [pilot rules](secretary-agency-contract.en.md). Public reading, cart/session mutation, personal-data entry, sending, reservation and payment are different effect classes. Where approval is required, it must cover the actual target and parameters; a change invalidates non-covering approval. Connecting or logging in does not grant every action the service could technically perform. Neither every write nor every Memory writer has the same confirmation rule.
 
-Expose concise progress derived from actual Work/tool events and expandable redacted receipts. Receipts show relevant structured inputs, destination, package/runtime revision where available, configured versus observed/provider-reported model, current authorization, evidence and actual effect. Unknown telemetry remains unknown. Hidden reasoning, system prompts and unrestricted raw tool payloads are not required and must not leak through logs/UI/exports.
+Stop/revoke prevents new unauthorized work and stale queued replay through the supported boundary. It does not undo a completed external action or establish that an in-flight remote action stopped. Preserve unknown outcomes and the no-duplicate-effect rule. Useful allowed work and effective denial of unauthorized work are joint acceptance requirements.
 
-Public reads, cart/hold/session mutations, personal-data entry, sending, reservation submission and payment are distinct effect classes. A cart mutation is not pure reading. Exact approvals bind target/item/quantity/recipient/currency/amount/fees/terms/parameters as applicable; changes invalidate non-covering approval. A progress message does not authorize a side effect.
-
-Stop/revoke prevents new calls and stale queued replay. Supported local work is cancelled through its real execution boundary. Already completed effects may be irreversible; in-flight remote outcomes may be unknown. Do not promise undo, remote deletion or complete cancellation without evidence.
+Receipts distinguish configured, launched and observed model/runtime identity; unknown telemetry stays unknown. Preserve redacted targets, destinations, permissions and effects without making hidden reasoning, secrets or unrestricted raw payloads a transparency requirement.
 
 ## Execution location and data limits
 
-- **Local code/local model:** supported execution can remain on the owner host; network permissions still matter.
-- **Local code/external model:** Still owns state/tools while selected context is transmitted to an approved model endpoint. Local install is not local-only processing.
-- **Remote-agent connection:** the installed component may be a connector; Still controls outgoing requests/current credentials and local state, not the remote server's internals. Disclose retention/deletion/control limits.
+Local code can use a local model or an external model. In the latter case, permitted context is sent to the selected destination; local-first does not mean local-only. A remote connector or peer does not place the remote service's internals, retention or deletion under Still's control.
 
-Disconnecting new access, revoking Grants, removing packages and forgetting/deleting owner data are different operations. Specify local copies/indexes/caches, retained artifacts/evidence, backup retention and unresolved remote copies. Replacement needs fresh authority, not inherited grants. Removing an agent must not silently erase the owner's results.
-
-## AgentPackage
-
-The installable product unit appears as an agent/app/capability bundle, not a privileged mini-OS. Its machine-verifiable manifest declares:
-
-- ID, publisher, version and compatible Still API;
-- capabilities/actions and runtime/model requirements;
-- filesystem/data scopes, external destinations and mediated secret/connector references;
-- Memory read/candidate-write policy and Event/background subscriptions;
-- time/cost/resource budgets and consequential approval requirements;
-- Artifact inputs/outputs, dependencies and sandbox profile;
-- health/migration/install/update/rollback/remove expectations;
-- licence, provenance, digest/signature/SBOM metadata where supported.
-
-It describes requested potential authority only. Effective authority is resolved from current policy/Grants for each Work. A declaration/configuration-only package must not be advertised as arbitrary executable support.
-
-## Package lifecycle and authority
-
-```text
-discovered → inspected → verified → staged → health_checked
-→ installed_disabled → separately granted/enabled/connected
-→ running under Work-scoped Grants → updated/rolled_back
-→ disabled/quarantined → uninstalled
-```
-
-`downloaded != installed != enabled != connected != authorized-for-action`.
-
-Install never creates or widens Grants. Credentials do not authorize every technically possible action. Event subscription and trust tier do not replace per-action authority. Grant-free health checks receive no owner-data or paid-provider authority.
-
-Updates expanding data, destinations, Memory, background/events, budgets, dependencies or effects need fresh policy/owner review. Failed health checks cannot activate. Failed update preserves/restores supported known-good state; rollback cannot restore revoked authority. Disable/quarantine/uninstall revokes package authority while preserving owner artifacts/evidence under retention/deletion policy. Implementation—not merely a design or valid schema—must demonstrate isolation before arbitrary code is supported.
+Disconnecting a connection, revoking a Grant, removing a package, forgetting a fact and deleting data have different scopes. Account for local copies, rebuildable indexes, retained artifacts, backups and unresolved remote copies. A replacement does not inherit new authority merely because the old worker had it. Removing a worker must not silently erase the owner's results.
 
 ## Context and Memory boundary
 
-Still builds a Work-scoped **ContextSnapshot** from authorized sources. Packages get only needed context. Full conversations do not automatically become permanent Memory.
+A Work uses authorized, attributable context. Conversation history is not automatically a set of durable owner facts. Keep temporary conditions, lasting facts, working methods and dated retrieval aids distinct under the [Memory contract](engineering/contracts/memory.en.md).
 
-A third party returns a **MemoryCandidate** with source/confidence/sensitivity/expiry/retention/supersession. Policy/owner decides its canonical disposition. Declared package/runtime-local memory stays subordinate and removable/exportable. Revoked/deleted sources must not reappear through stale caches or replacement context. External sharing remains separate from local retrieval.
+A third-party worker proposes a MemoryCandidate through its declared writer path. The owner's own AI uses the separately adopted direct-save and notice/undo rules. Neither case gives the external runtime ownership of the canonical store. Revoked or deleted sources must not be reintroduced through stale context or indexes. Permission to retrieve locally is not, by itself, permission for a new external destination.
 
 ### Facts and role interpretations
 
-A sourced record is one thing; a role's reading of it is another, and Still does not recreate reality for each role. An account's total balance of 100 million won and immediately available 80 million won may measure different things, so they are not automatically contradictory. Compare the account, measure, unit, scope, time and source; if those match and the values still differ, retain the source conflict rather than reconciling it silently.
+A sourced fact and a role's interpretation are different records. In a hypothetical account, total balance and immediately available funds can differ without contradicting one another. Match the account, measure, unit, scope, time and source before comparing values; retain a genuine source conflict rather than silently choosing the convenient number.
 
-The same balance can inform readiness for planned spending, asset liquidity or funds available under an investment mandate, but none of those interpretations overwrites the record. Likewise, an asset-management role relates a sourced stock holding to total assets, liabilities, cash flow and goals, while a discretionary-investment role checks whether it is a managed position and which mandate, constraints and permitted actions apply. Neither a role name nor a useful inference grants permission to trade; action authority still comes from a Grant. These are design illustrations, not released financial services or observed runs.
+A spending plan and an investment analysis can use that same account record for different judgments. They must not overwrite the source fact or infer transaction authority from a professional role. The [ontology chapter](concepts/ontology-and-roles.ko.md) and roles contract explain the distinctions; these examples do not advertise a financial service.
 
 ## Capability and Runtime contract
 
-One capability can have several runtimes; one runtime can expose multiple capabilities. Minimum common semantic boundary:
+One capability can have several runtime implementations, and a runtime can expose several capabilities. The versioned semantic boundary covers capability discovery/preparation/invocation/cancellation/health; Work creation, lease/checkpoint/report/transition; effective-Grant evaluation/escalation; and attributable Evidence/result output. These conceptual operations are not a claim that a universal public API already implements them all.
 
-- Capability List/Describe/Prepare/Invoke/Cancel/Health;
-- Work Create/Get/AcquireLease/Checkpoint/Report/Transition;
-- Grant Evaluate/ListEffective/RequestEscalation;
-- Evidence Append/Seal/QueryRedacted;
-- bounded ContextSnapshot; deadline/cost/resource/cancellation/idempotency;
-- compatible Artifact/result/Evidence/MemoryCandidate output.
-
-A worker may request escalation, append current evidence and propose memory; it cannot mint Grants, rewrite sealed history or self-certify final Work completion. Still validates outcome evidence. Reroute/fallback needs covering destination/data/budget authority. A future remote runtime's unavailable model telemetry remains unknown.
+A runtime receives Work-scoped context and effective authority. It can request escalation or propose an output, not mint Grants, rewrite sealed history or self-certify an unobserved external result. Nested workers cannot exceed their parent's applicable authority. Result, Artifact and MemoryCandidate outputs retain provenance and cancellation/idempotency limits. A reroute needs covering destination, data and budget authority.
 
 ### Provider-independent decision layer
 
-Bounded semantic judgments such as Attention relevance, candidate selection, routing, result scoring, or whether another reasoning/evidence step is needed may use a replaceable **DecisionEngine**. The contract is owned by Still and remains provider-neutral; providers only implement it.
+Model-backed semantic interpretation is the normal boundary for language, reference, relevance and planning. Exact security, protocol and effect invariants remain deterministic. Test doubles are not a semantic keyword fallback. Providers implement Still's interface; provider-specific names do not become kernel concepts.
 
-Decision inference is not policy or authority. A decision result/confidence may inform deterministic Still policy, but it cannot mint/widen Grants, bypass approval, authorize new egress, mutate canonical Memory, rewrite Evidence, or self-certify final Work completion. Known deterministic rules remain code.
-
-Implementations may include rules, the existing LLM path, local/small models, or optional specialist providers. Jev is currently only an optional/experimental adapter candidate; Jev-specific concepts such as `Choice`, `Score`, or `Noul` must be translated at the adapter boundary rather than becoming kernel vocabulary or a mandatory dependency.
-
-External decision providers remain subject to Work-scoped Context minimization, destination/Grant checks, budgets, cancellation, truthful provider/evidence reporting, and explicit fallback/safe-stop semantics. See [Provider-independent Decision Layer](decision-layer.en.md) and [#415](https://github.com/Jongtae/agentos/issues/415).
+An implemented optional adapter is not necessarily qualified for every operation. For example, a typed judgment route is not automatically an arbitrary-schema planner. The [Decision Layer](decision-layer.en.md) owns route activation, model selection, qualification and bounded fallback; this architecture does not repeat a dated model list.
 
 ### Ruflo's place
 
-An optional delegated Runtime Adapter. Its swarm/agents/memory are runtime-local. Durable proposals return as MemoryCandidates; nested agents/tools cannot exceed current parent Grants. Swapping/removing Ruflo cannot erase owner state or rewrite history. It is not required for the first useful default assistant or Files package.
+Ruflo remains a possible bounded delegated runtime, not a required component or an implemented-runtime claim. Its own agents and memory would remain runtime-local. Retained owner state and any candidate proposals stay under the same authority rules as other third-party execution.
+
+## Local service code boundaries
+
+The existing local implementation uses named modules rather than a new framework. The module descriptions below explain code responsibilities, not independent services to deploy.
+
+| Boundary | Existing responsibility |
+| --- | --- |
+| `quickstart_service.AgentService` | Composition root for the store, connectors, orchestrators, surfaces and queue worker. |
+| `work_execution.WorkRun` and the service's execution phases | Claim, route, prepare, execute, settle and finish/fail one Work, including judgment/budget settlement and post-work handling. The extraction does not create another state owner. |
+| `orchestrator` and `settings_orchestrator` | Typed work planning/evaluation and bound setting drafts on existing state. |
+| `conversation_handoff` and `conversation_surface` | Contextual continuation and the shared owner pairing, ingestion, delivery and presence interface. |
+| `telegram_surface.TelegramSurface` | Telegram-specific ingestion, callbacks and delivery, with forwarding service entry points; it does not own a second store. |
+| `conversation_projection` and `telegram_presence` | Truth-qualified owner-facing output and best-effort transient signals. |
+| `telegram_store.TelegramStore` via `QuickStore.telegram` | Telegram tables in the owner's existing SQLite database, preserving caller transaction participation and recovery boundaries. |
+
+`SurfaceCapabilities` declares reactions, typing, live drafts, buttons and native stop. Core presentation follows capabilities rather than a named-channel branch. Existing adapters and terminal/browser entry points retain their actual support limits; [Presence](presence-experience-contract.en.md) and [onboarding](contributor-onboarding.en.md) provide the behavior and code map. Sharing a conversation boundary is not evidence that all surfaces support identical widgets.
+
+## AgentPackage
+
+**This section and the distribution sections below define an extension design, not a shipped arbitrary-code marketplace.** The full manifest and lifecycle rules live in the [v0.1 specification](core-primitives-agentpackage-v0.1.en.md) and [platform foundation](agent-distribution-platform-foundation.en.md).
+
+A package declares identity/version, capabilities and runtime requirements, requested data/destinations and secret references, Memory/event behavior, budgets, approvals, artifact interfaces, dependencies, isolation, lifecycle and provenance. The declaration describes requested potential authority; effective authority is resolved for each Work. A declaration-only or instruction-only package must not be advertised as evidence of arbitrary executable support.
+
+## Package lifecycle and authority
+
+`downloaded != installed != enabled != connected != authorized-for-action`.
+
+The designed lifecycle distinguishes discovery, inspection, verification, staging and health checks from installed-disabled state, separate enabling/connection/grants, execution, update/rollback, quarantine and removal. Installation and health checks grant no implicit owner-data, paid-provider or action authority.
+
+An update that expands data, destinations, Memory behavior, background events, budget, dependency or effect scope needs new applicable review/approval. Failed health checks cannot activate; failed updates preserve or restore supported known-good state. Rollback cannot restore revoked authority. Disable/quarantine/removal revoke the package's authority while preserving owner results and Evidence under retention policy. Actual isolation needs implementation evidence, not merely a valid schema.
 
 ## Distribution plane
 
 ### Package Manager
-Local exact-revision validation, verification, stage/health/install, enable/disable coordination, update/rollback/quarantine/remove. No authority minting.
+
+Local exact-revision validation, staging, health, installation, enabling, update, rollback, quarantine and removal. It coordinates lifecycle without creating authority.
 
 ### Registry
-Publisher namespace, immutable version/digest, API/runtime compatibility, signatures/provenance/SBOM, trust/evaluation, advisories/revocation and optional binary location. Never private owner Context/Memory/Work storage.
+
+Publisher namespace, immutable versions/digests, compatibility, signatures, provenance, advisories and revocation. It is not a store for private owner Context, Memory or Work.
 
 ### Marketplace / discovery
-Search/recommendations/ranking/reviews/curation/install metrics and possible commerce. Prefer structured minimized capability metadata, not raw private prompts. Popularity/payment cannot override invalid or revoked releases, quarantine, policy or approval.
+
+Discovery, ranking, reviews, curation and possible commerce. Use minimized capability descriptions rather than private owner prompts. Popularity, payment and ranking cannot override a revoked release, quarantine or the owner's policy.
 
 ### Trust is multidimensional
-Keep publisher identity, signing/integrity, build provenance/SBOM, static policy checks, behavioral evaluation, permission/destination risk, update/incident history, reviews/install base and curation distinct. A signed or popular package may still be unsafe. `Verified` must state exactly what was verified; quality and security are not one badge.
+
+Identity, integrity, build provenance, policy checks, behavioral evidence, requested permissions, incident history and popularity answer different questions. A signature or installation count is not a safety result. A verification label must name what was checked.
 
 ## Compatibility and ecosystem strategy
 
-Wrap/import existing official MCP and selected OpenAI/Codex/Claude formats only where metadata/licence and authority map explicitly. Apply the same validation, Grants, isolation, Evidence, update and Memory rules; unsupported hooks/hidden authority fail closed or are labelled partial. A2A agents are external capabilities/runtimes, not implicitly privileged peers.
+Reuse supported formats and interfaces only where metadata, licensing, authority and lifecycle semantics can be mapped explicitly. Unknown hooks or hidden authority are refused or labelled unsupported/partial, not silently accepted. MCP and peer-agent compatibility are interfaces, not delegated ownership. The current [connection contract](connection-delegation-contract.en.md) defines actual connection and peer control levels separately from this future distribution design.
 
 ## Useful bootstrap/reference agents
 
-Start with a capable default assistant and shared research/file/result/continuity tools. Few bundles is acceptable; weak supported tasks are not. Evaluate actual source-grounded outcomes, latency/friction and repeatability before adding more orchestration.
+Prioritize a capable assistant and reusable tools that complete useful work. Measure source-grounded outcomes, continuity, latency/friction and denial/recovery behavior before adding orchestration or more packages. A future reference package must use the same public authority boundary as another author's package; hidden privilege is not a successful demonstration.
 
-A first useful Files package proves the same public Package/Runtime/Grant boundary external authors use. General/Research/Coding references remain subsequent SDK work, not hidden privilege. The first integrated app must do useful work, then survive revoke/remove/restart and replacement with owner results intact; denying every task is not success.
-
-[USE-01 #358](https://github.com/Jongtae/agentos/issues/358) improves current defaults without waiting for the whole platform. [OBS-01 #359](https://github.com/Jongtae/agentos/issues/359) projects actual progress and controls. [AGENT-UX-01 #360](https://github.com/Jongtae/agentos/issues/360) consumes the existing #335/#337/#338/#340/#341/#342 contracts/implementations for install/run/revoke/remove/replacement. Preserve all unfinished update/rollback/event/SDK scope; downstream consumers are not reverse prerequisites of foundation tasks.
+The older Files/USE-01/OBS-01 program order is historical, not the current queue. A benchmark seed is not an executed result. [Default Agent Usefulness](default-agent-usefulness.en.md) retains its scoped acceptance requirements; [delivery-plan.yaml](../delivery-plan.yaml) and current issues govern selected work.
 
 ## Autonomous acquisition
 
-L1 manual install; L2 recommendation; L3 exact owner-approved install plan; L4 trusted low-risk standing acquisition with separate grants; L5 package requests another capability through the kernel. Acquisition and action authority are independent. L4/L5 is not first-MVP scope and cannot silently accept new destinations, terms, payments, permissions or human-only identity/MFA/CAPTCHA gates.
+The design distinguishes manual installation, recommendation, an exact owner-approved install plan, standing low-risk acquisition and a package requesting another capability through the core. The latter acquisition levels are not implied current scope. Acquisition and action authority remain independent. They cannot silently accept a new destination, terms, payment, permissions or a human-only authentication step.
 
 ## Durable state versus replaceable workers
 
-Keep identity/policy, Grants/connection references, Context/Memory, material/results/provenance, Work/Event/approval/Evidence/recovery, package declarations/exact versions and capability bindings durable where supported. Models, coding runtimes, local engines, Ruflo, connectors/packages, Registry/Marketplace and experience surfaces remain replaceable. Reconstructing the owner's AI life from prompt history must not be required.
+Retain the supported owner identity/policy, Context/Memory, permissions and connection references, open Work, results and provenance, approval/effect/recovery records and exact package/capability bindings. Models, CLIs, tools, connectors and experience surfaces are replaceable workers or views.
+
+Portability must preserve meaning and ongoing-work limits, not just export bytes. Credentials, sessions and grants excluded from an export must be reconnected or separately authorized; an import is not permission to replay old work. Backups and rebuildable indexes have their own retention and integrity rules.
 
 ## Services and development harness
 
-Research, files, coding, communication and scheduling use the same owner state/Grant/Work/Artifact/Evidence model, not isolated agent silos. Current file-workspace reuse proves a narrow owner-state property, not all future services.
+Research, files, communication and scheduling share owner state and authority rather than becoming independent agent silos. The current file-workspace evidence supports its own scope, not every future service.
 
-Repository issues/branches/PR/CI, Constitution, Goal Execution Contract and handoff are **development infrastructure**, not end-user features. Spec Kit/BuilderMethods/Open Still-style patterns may inform development, but are not mandatory runtime dependencies or evidence of live autonomy.
-
-## Local service code boundaries
-
-`AgentService` (`quickstart_service.py`) is the local service's composition root: it builds the store, connectors, orchestrators and channel adapters and owns the queue worker. It is not a dependency-injection or plugin framework. Responsibilities move out of it as named boundaries (#21), following the existing extractions (`orchestrator`, `settings_orchestrator`, `conversation_handoff`, `telegram_presence`):
-
-- **Work execution.** `_run_one` claims one queued Work (`_claim_queued_work`) and runs it through named phases that share one `WorkRun` record (`work_execution.py`): route (`_route_work`), photos (`_load_work_photos`), Still-answered intent (`_run_rule_intent`), worker turn preparation (`_prepare_worker_turn`), orchestrated attempts (`_run_worker_attempts` with `_run_cli_attempt` or `_run_api_attempt`), outcome (`_settle_worker_outcome`), then `_finish_work` or `_fail_work`, and always `_settle_work_judgments` and `_after_work`. The phases call the same service methods as before; authority, approvals, budgets and recovery are unchanged by the split.
-- **Telegram surface.** Receiving updates (`poll_telegram`, `receive_telegram`, `ingest_update`, `ingest_reaction`, `ingest_stop`, expired photo albums), the owner's taps (`ingest_callback`, `ingest_settings_callback`, `ingest_engine_recovery_callback`) and delivery (`queue_notification`, `deliver_notification`, `deliver_one`, the task card, `deliver_conversation_notice`) live in `telegram_surface.py` (`TelegramSurface`), beside the channel projection modules `conversation_projection` and `telegram_presence`. `AgentService` keeps one forwarding entry point per method through `AgentService.telegram_surface`; the surface holds no state of its own and reads and writes through the service. The Bot API client is separate: `conversation_handoff.TelegramChannel` (`AgentService.telegram`).
-- **Conversation surface boundary (#212).** `conversation_surface.py` names what an owner conversation surface does for Still: pairing to exactly one owner identity (`pairing`, `owns`), ingestion (`receive`), delivery (`deliver_reply`, `queue_notification`, `deliver_notification`, `deliver_conversation_notice`) and best-effort presence (`source_message`, `present`, `show_draft`). The optional presentation a surface supports is declared as `SurfaceCapabilities` (`reactions`, `typing`, `live_drafts`, `buttons`, `native_stop`); the core Presence code (`acknowledge_long_work`, `present_waiting_work`, the received, chosen, progress and outcome reactions) iterates `AgentService.surfaces` and branches on those capabilities, never on a surface name. `TelegramSurface` is the first implementation and declares all five; the Bot API calls behind reactions, `typing…`, the rich/plain draft and inline-control consumption live in it. `AgentService` builds the surfaces itself; there is no plugin registry.
-- **Telegram tables.** `telegram_store.py` (`TelegramStore`, reached as `QuickStore.telegram`) is the interface to the Telegram tables in the owner's one SQLite file: task cards, photo attachments and albums, notifications and context-choice buttons. There is no schema or data migration; the tables and their `CREATE TABLE` statements are unchanged, and the store uses the same `QuickStore.db()` connections, so a method given `db` runs in the caller's transaction. `QuickStore` keeps a forwarding method for each moved method. The module docstring lists the few statements that still touch these tables from another owner's transaction (restart recovery, the held Memory notice, preparations, context observations, the photo cleanup trigger).
+Repository issues, branches, PRs, CI and handoff procedures are development infrastructure. They do not demonstrate an end-user agent running autonomously. Governance patterns are not mandatory runtime frameworks.
 
 ## Current implementation boundary
 
-FILE-WORKSPACE-01 #314 is complete via PR #320 and #324: read-only approved references, managed writes, provenance, rebuildable-index separation and restart reuse with deterministic adapters/temp files. D-AP-01 #334 / PR #350 supplies v0.1 schema/fixture evidence, not a package manager. DOGFOOD-01 #351 / PRs #354–#356 adds documented owner steps and simulated-provider/local-HTTP/file/restart acceptance; it does not establish current live browser/provider quality.
+Read [product status](product-status.en.md), the [release manifest](release-manifest.json), named tests and dated operating observations together. The current code, a published build and a successful live task are different claims. Platform diagrams, schemas and catalogue entries do not erase this distinction.
 
-GOV-USE-01 #357 / PR #361 aligns specifications and prepares USE-01 #358. Static evaluation cases are not a benchmark score. USE-01 remains non-executing until this preparation merges and the owner explicitly invokes it; #335–#346/#359/#360 stay inactive. No full-page-reader, live inventory, arbitrary package execution, Registry/Marketplace, Ruflo or L4/L5 claim follows from these documents.
-
-Historical D-MP2-02 remains read-only recommendation authority. Optional Drive and SITE-01 publication remain deferred unless separately authorized. Earlier live evidence retains only its named prompt/provider/time scope; no history is rewritten.
+The prior account of FILE-WORKSPACE-01, D-AP-01, DOGFOOD-01 and the unactivated USE-01 sequence is preserved in the [pinned architecture](https://github.com/Jongtae/Still/blob/99fad1598b75837cf4428cfa43ad810266e5dff7/docs/personal-agentos-architecture.en.md#current-implementation-boundary). It describes those historical scopes, not today's activation or support status. No deferred program is reopened by this consolidation.
 
 ## Design invariants
 
-1. One owner, one durable personal state; workers/distribution do not own it.
-2. Kernel agent-independent; product may be agent-centric.
-3. Install is not authorization; download/install/enable/connect/action are distinct.
-4. Local-first is not local-only; destinations and control limits are explicit.
-5. Minimum current Work-scoped authority, including nested workers.
-6. Consequential sends/payments/destructive changes/escalation/new destinations need explicit authority.
-7. Canonical Memory remains owner-authoritative; third parties propose candidates.
-8. Recoverable Work/Evidence across supported restart/update/replacement without duplicate effects.
-9. Exact revisions/digests/provenance are attributable.
-10. Identity, integrity, evaluation, popularity, risk and incidents remain separate signals.
-11. Owner state is portable without treating credentials, sessions, caches or marketplace accounts as identity.
-12. Evidence precedes capability claims; fixtures/design/harnesses are not live proof.
-13. Utility and control are joint requirements: useful permitted results plus actual denied unauthorized effects.
-14. Progress/receipts reflect observed state; hidden reasoning and raw secrets are not telemetry requirements.
+Owner state and authority remain independent of workers. Installation is not action authorization. Local-first is not local-only. Nested execution remains bounded. Memory writers retain their different dispositions. Outcome and recovery records survive supported replacement without duplicate effects. Evidence is attributable and truthful about uncertainty. Trust signals remain distinct. Useful permitted work and real enforcement must both be demonstrated.
 
-The detailed v0.1 schemas remain normative for their version. Acceptance refinements here require separately authorized implementation; they do not silently migrate legacy records or broaden runtime authority.
+These invariants refine acceptance without silently widening a runtime, changing a schema version or migrating a stored record. Refer to the responsible contract for exact limits rather than copying a second mutable policy here.
 
 ## Professional lenses across the owner-centered architecture (design direction)
 
-The persistent owner-facing agent is not restricted to secretary work. Compose role-independent world facts, relevant domain concepts, one or more professional role lenses, owner context and a scoped mandate before Decision Model planning. Keep **role/ontology (meaning)**, **mandate (objectives and constraints)** and **Grant/approval (enforced authority)** separate. Skills and workers implement bounded actions; Presence mediates meaningful updates and in-flight owner correction. Do not add a monolithic ontology store or domain-specific kernel routes without demonstrated need. See [Professional Roles and Communication Contract](professional-roles-and-communication-contract.en.md). This section is direction, not shipped evidence.
+Compose sourced world facts, relevant domain concepts, professional standards, owner context and a scoped mandate before deciding on execution. Role/ontology explains meaning; mandate describes objectives and constraints; Grant/approval controls what may actually happen. Skills supply expertise without becoming a domain-specific kernel router. Presence carries meaningful feedback and owner corrections throughout the work. This is a design direction with separately evidenced implementation, not a claim that every professional role is shipped.
+
+<a id="current-execution-refinement"></a>
+The historical execution refinement is now read through the current [execution](assistant-execution-contract.en.md) and [delivery/ownership](assistant-execution-delivery.en.md) contracts. Capability parity requires actual qualified invocations, not matching declarations or prompts.
+
+[Documentation map](README.md)

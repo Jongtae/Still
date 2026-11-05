@@ -23,6 +23,7 @@ DOCUMENTS = (
     "docs/secretary-agency-contract.en.md",
     "docs/web-management-contract.en.md", "docs/web-management-contract.ko.md",
     "docs/decision-layer.en.md", "docs/presence-experience-contract.en.md",
+    "docs/personal-agentos-architecture.en.md",
     MEMORY, *GUIDES,
 )
 QUICKSTART_ALIASES = (
