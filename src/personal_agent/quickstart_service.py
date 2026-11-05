@@ -3192,6 +3192,13 @@ class AgentService:
             except ProviderError:pass
         return text
 
+    def preparation_reply_prefix(self, job):
+        """A prepared answer says what it was prepared for; a reminder needs nothing."""
+        preparation_id=prep.preparation_of(job.get('request_key'))
+        if preparation_id is None or job.get('model')=='preparation':return ''
+        row=self.preparations.get(preparation_id) or {'goal_text':job.get('message') or ''}
+        return (msg('quickstart_service.prepared_result', title=prep.owner_title(row))+'\n\n')
+
     def preparations_status(self):
         """The Settings 준비해 둔 일 list: owner's own view (#659)."""
         rows=[]

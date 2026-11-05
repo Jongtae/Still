@@ -7768,6 +7768,12 @@
   "ja": "すべて{label}",
   "zh": "全部{label}"
  },
+ "quickstart_service.prepared_result": {
+  "ko": "알려드리기로 한 {title}",
+  "en": "As promised: {title}",
+  "ja": "お約束の{title}",
+  "zh": "按约定：{title}"
+ },
  "quickstart_service.check_preparation_request": {
   "ko": "준비 요청을 확인하세요.",
   "en": "Check the preparation request.",

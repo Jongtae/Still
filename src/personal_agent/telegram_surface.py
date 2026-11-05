@@ -1300,6 +1300,8 @@ class TelegramSurface(ConversationSurface):
                                                       job.get('owner_cause') or job['error'],job.get('status'),
                                                       verified=job.get('owner_verified'),note=job.get('owner_note'),
                                                       waiting=service.wait_explains_outcome(job,waits))
+            # #659: a prepared answer arrives without an owner turn; say what it is for.
+            text=service.preparation_reply_prefix(job)+text
             try:route_options=service.usage_limit_route_options(job)
             except Exception as exc:
                 LOG.debug('usage-limit route recovery unavailable kind=%s',type(exc).__name__)
