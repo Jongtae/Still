@@ -15,7 +15,7 @@ from pathlib import Path
 
 from .api_credentials import KEY_SERVICE as API_KEY_SERVICE
 from .browser_jar import SERVICE as JAR_SERVICE, KeychainKey, store_account
-from .family_setup import family_instances
+from .service_control import installed_instances
 from .first_run import Terminal, terminal_language
 from .messages import msg
 from .service_control import DEFAULT_DATA_RELATIVE, DEFAULT_INSTANCES_RELATIVE, LABEL, service_action
@@ -24,10 +24,10 @@ PACKAGE = 'personal-agentos'
 
 
 def services(home):
-    """The installed background services: None for the owner's, then family instance names."""
+    """The installed background services: None for the owner's, then named instances."""
     agents = Path(home) / 'Library/LaunchAgents'
     owner = [None] if (agents / f'{LABEL}.plist').is_file() else []
-    return owner + family_instances(home)
+    return owner + installed_instances(home)
 
 
 def data_folders(home, env):

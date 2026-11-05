@@ -5,8 +5,7 @@ own bot, Still gives it Still's name, photo and descriptions so the chat
 they open looks like the assistant the homepage introduced.  Everything here
 is best-effort: a refused or failed call changes nothing else and never
 blocks the connection.  It runs once per bot, so a later rename in BotFather
-is never overwritten.  Family instances are not touched: their bot names
-identify them as share targets (#957).
+is never overwritten.
 """
 from __future__ import annotations
 
@@ -16,7 +15,7 @@ from pathlib import Path
 
 LOG = logging.getLogger(__name__)
 
-#: Seconds each best-effort Bot API call may take (as in family_setup.describe_bot).
+#: Seconds each best-effort Bot API call may take.
 PROFILE_TIMEOUT = 4
 #: #1541: the photo is an upload, not a short call.
 PHOTO_TIMEOUT = 20

@@ -438,7 +438,7 @@ TELL_OWNER_DESCRIPTION=('Send the owner one short message now, in their paired c
 #: setting (preparations cancel/accept, browser close_login/use_mobile) cannot be missing from the schema.
 from .settings_orchestrator import SETTINGS as _OWNER_SETTINGS
 SETTING_NAMES=list(dict.fromkeys(name for names in _OWNER_SETTINGS.values() for name in names))
-SETTINGS_CATEGORIES=['main_ai','judgment_ai','current_context','owner_model','family','skills','ai_connections','api_connections','phone_link','preparations','browser','connections']
+SETTINGS_CATEGORIES=['main_ai','judgment_ai','current_context','owner_model','skills','ai_connections','api_connections','phone_link','preparations','browser','connections']
 #: #826: the owner's audit of what an answer used, readable in conversation.
 INFORMATION_USE_DESCRIPTION=('Show which owner information an earlier answer (Work) used and where it went, from Still\'s own records: '
                              'the owner profile keys, memory rows, calendar entries, files, current-context claims and earlier '
@@ -459,7 +459,7 @@ SKILL_RESOURCE_DESCRIPTION=('Read one text file packaged with a skill you loaded
                             'path: the file path relative to the skill, as listed in its resources.')
 SETTINGS_READ_DESCRIPTION=('Read the owner\'s current Still settings: Main AI (route, model), Judgment AI (mode, model), current context (enabled, time zone), owner-model upkeep (enabled, daily call cap) and external connections, each with the values it may take. '
  'Keys, tokens and private endpoints are never included; connection setup may show only credential-free public HTTPS definitions.')
-SETTINGS_READ_ARGUMENTS={'category':'Optional, one of api_connections (generic API connection metadata and a contextual secret input page), main_ai, judgment_ai, current_context, owner_model, family (the other assistants on this Mac - family members\' agents and, from a family assistant, the owner\'s own - each with its Telegram name and state, which sites this assistant shares with them, and the sites it is signed in to), skills (whether skills are on, which are installed, and the Still reference skills that can be added by name, listed even while skills are off), phone_link (what a one-time phone link can be sent for now), preparations (the owner\'s reservations - reminders, prepared tasks and watches - with when, how often, the goal and whether each is scheduled, running or waiting for the owner\'s yes; read it when the owner asks what is reserved), browser (what holds the one browser profile now - a login window waiting for the owner, another Work, a short session keep-alive or nothing - the login windows waiting for the owner, each by site and minutes left, and sites kept in desktop version; read it when a browser action was refused as busy), ai_connections (whether Works may use the owner\'s AI-side connected services for reads and general non-payment changes; payments require exact per-action owner approval; the MCP servers the owner configured in each AI and which are on for Works; the owner\'s trust record per connection: each operation\'s class, money-capable marking and trust rung), connections (omit for all).'}
+SETTINGS_READ_ARGUMENTS={'category':'Optional, one of api_connections (generic API connection metadata and a contextual secret input page), main_ai, judgment_ai, current_context, owner_model, skills (whether skills are on, which are installed, and the Still reference skills that can be added by name, listed even while skills are off), phone_link (what a one-time phone link can be sent for now), preparations (the owner\'s reservations - reminders, prepared tasks and watches - with when, how often, the goal and whether each is scheduled, running or waiting for the owner\'s yes; read it when the owner asks what is reserved), browser (what holds the one browser profile now - a login window waiting for the owner, another Work, a short session keep-alive or nothing - the login windows waiting for the owner, each by site and minutes left, and sites kept in desktop version; read it when a browser action was refused as busy), ai_connections (whether Works may use the owner\'s AI-side connected services for reads and general non-payment changes; payments require exact per-action owner approval; the MCP servers the owner configured in each AI and which are on for Works; the owner\'s trust record per connection: each operation\'s class, money-capable marking and trust rung), connections (omit for all).'}
 SETTINGS_CHANGE_DESCRIPTION=('Propose one change to an owner setting that the owner asked for. This does NOT change anything: Still creates '
  'a draft and Still asks the owner to confirm it in this conversation (an 적용 button, or a plain yes typed in '
  'reply); never tell the owner a command to send, and nothing applies without that confirmation. Never pass API '
@@ -467,14 +467,7 @@ SETTINGS_CHANGE_DESCRIPTION=('Propose one change to an owner setting that the ow
  'calling it, tell the owner what is waiting for their confirmation, in one sentence.')
 SETTINGS_CHANGE_ARGUMENTS={
  'setting':('category and setting: main_ai route or model, judgment_ai mode or model, current_context enabled or timezone, '
-  'owner_model enabled or daily_calls, family add (create a family member\'s own assistant on this Mac that uses '
-  'the owner\'s AI; value is its Telegram name such as 아내 AI; after confirmation the owner receives a setup link '
-  'on Telegram to forward), family share_site (share this assistant\'s current sign-in session for one site with '
-  'another assistant on this Mac, no password; value is "<assistant name>|<site domain>": pick the assistant '
-  'from settings_read family assistants (its Telegram name or instance id; the owner\'s own assistant is listed '
-  'too) and the site from its signed_in_sites that matches what was named, resolving a nickname to the site\'s '
-  'domain yourself; the receiving assistant can then read and add to a cart there but never pay), family '
-  'unshare_site (stop that share at once; value is "<assistant name>|<site domain>" or the site domain alone), '
+  'owner_model enabled or daily_calls, '
   'skills enabled (on or off), skills add (value is the GitHub folder address of one skill, '
   'https://github.com/<owner>/<repo>/tree/<branch, tag or commit>/<folder>, or the name of an Still reference '
   'skill that settings_read skills lists under available; Still pins the commit and checks the folder before '
@@ -485,8 +478,7 @@ SETTINGS_CHANGE_ARGUMENTS={
   'a site kept in desktop version from settings_read browser; reset it to mobile), '
   'browser provider_sign_in (on or off for every site, or "<site>|on" / "<site>|off" for one site from settings_read browser: whether the AI may sign back in to a site through the sign-in provider the owner used there, with no interaction on the provider), ai_connections enabled (on or '
   'off: let this owner\'s Works use the services connected to the owner\'s own AI, for reads and general '
-  'non-payment changes; payments require exact per-action owner approval; not available on a family member\'s '
-  'assistant), ai_connections servers (which of the owner\'s own MCP servers are on for Works in one AI; value is '
+  'non-payment changes; payments require exact per-action owner approval), ai_connections servers (which of the owner\'s own MCP servers are on for Works in one AI; value is '
   '"<claude-code or codex>|<server names, comma separated>", empty names to turn all off; only servers '
   'settings_read lists as available), ai_connections review (the owner\'s decision for one operation of one '
   'connection, after you introduced what it does; value is "<engine>|<connection kind>|<stable '

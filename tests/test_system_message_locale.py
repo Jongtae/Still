@@ -134,10 +134,10 @@ class ConnectionFailureFixtures(unittest.TestCase):
 
 
 class OtherFlowsTest(unittest.TestCase):
-    """The sign-in handoff and family-sharing lines moved into the catalog.
+    """The sign-in handoff lines moved into the catalog.
 
     #242: what the owner is sent on those flows is read off the real send paths in
-    ``test_handoff_locale`` (``PhoneSignInLines``, ``FamilySharingLines``).
+    ``test_handoff_locale`` (``PhoneSignInLines``).
     """
 
     def test_telegram_buttons_and_bodies_use_the_same_lines(self):

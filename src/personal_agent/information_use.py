@@ -147,8 +147,7 @@ def browser_signin_claims(text):
         for item in line.split(':', 1)[1].split(', '):
             site = item.split(' (', 1)[0].strip()
             if site and len(claims) < 20:
-                shared = ' (공유받은 로그인)' if "shared with you" in item else ''
-                claims.append({'ref': f'browser:{_text(site, 60)}', 'label': f'로그인한 사이트: {_text(site, 60)}{shared}'})
+                claims.append({'ref': f'browser:{_text(site, 60)}', 'label': f'로그인한 사이트: {_text(site, 60)}'})
     return claims
 
 

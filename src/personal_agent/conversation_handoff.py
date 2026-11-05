@@ -43,11 +43,10 @@ TELEGRAM_FAILURE_TEXT = msg('conversation_handoff.telegram_request_failed')
 #: ``stopped_message_generation`` carries the owner's Stop on a draft (#581).
 # #626: edited_message carries live-location updates and owner text edits;
 # an edit is recorded as a source revision, never replayed as a request.
-# 'managed_bot' (#897): a family member created a bot through the owner's Managed Bots link.
 #: #996: ``message_reaction`` - the owner's emoji on an assistant message.  Telegram documents
 #: delivery for chats where the bot is an administrator; the bot asks for it anyway and treats
 #: every reaction that does arrive as the owner's signal.
-TELEGRAM_POLL_UPDATE_KINDS = ('message', 'edited_message', 'callback_query', 'stopped_message_generation', 'managed_bot',
+TELEGRAM_POLL_UPDATE_KINDS = ('message', 'edited_message', 'callback_query', 'stopped_message_generation',
                               'message_reaction')
 #: Presence calls (reaction, chat action, draft) are best-effort decoration
 #: sent while terminal delivery may be waiting on the same lock, so they get a

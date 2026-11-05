@@ -7,6 +7,8 @@ import fcntl
 import hashlib
 import hmac
 import json
+import logging
+
 import math
 import os
 import re
@@ -19,6 +21,8 @@ import unicodedata
 import uuid
 
 from .conversation_projection import qualify_transcript, turn_qualifier
+
+LOG = logging.getLogger(__name__)
 
 #: #367: the transcript rows the owner forgot; every AI reader of ``messages`` leaves them out.
 FORGOTTEN_MESSAGE_IDS='SELECT message_id FROM forgotten_messages'
@@ -327,9 +331,61 @@ class QuickStore:
                 db.execute('UPDATE memory_candidates SET job_id=NULL,owner_key=?,work_key=?,content_digest=? WHERE id=?',
                            (row['owner_key'] or default_owner,row['work_key'] or self._memory_binding(row['job_id'] or 'legacy-work'),
                             row['content_digest'] or self.memory_digest(row['memory_key'],row['content']),row['id']))
+            # #657: retain old records as inert history, never as active sharing authority.
+            retired = dict(self.config('retired_family_657', {}, db=db) or {})
+            changed = 0
+            for key in ('family_setups', 'family_shared_sites', 'shared_sites'):
+                row = db.execute('SELECT value FROM config WHERE key=?', (key,)).fetchone()
+                if row:
+                    retired.setdefault(key, row['value'])
+                    db.execute('DELETE FROM config WHERE key=?', (key,))
+                    changed += 1
+            drafts = self.config('settings_change_drafts', {}, db=db)
+            if isinstance(drafts, dict):
+                family_drafts = {key: row for key, row in drafts.items()
+                                 if isinstance(row, dict) and row.get('category') == 'family'}
+                if family_drafts:
+                    retired.setdefault('settings_change_drafts', {}).update(family_drafts)
+                    self.put('settings_change_drafts', {key: row for key, row in drafts.items()
+                                                       if key not in family_drafts}, db=db)
+                    changed += len(family_drafts)
+            telegram = self.config('telegram', {}, db=db)
+            if isinstance(telegram, dict) and 'pair_user_id' in telegram:
+                retired.setdefault('pair_user_id', telegram.pop('pair_user_id'))
+                self.put('telegram', telegram, db=db)
+                changed += 1
+            if changed:
+                self.put('retired_family_657', retired, db=db)
+                LOG.info('family sharing retired (#657): config records=%s; owner data retained', changed)
+            self._retire_family_files()
         self.path.chmod(0o600)
         if not self.claimed() and not self.bootstrap.exists():
             self.write_private(self.bootstrap, secrets.token_urlsafe(32))
+
+    def _retire_family_files(self):
+        """Retire only the removed feature's secrets/files, restart-safe (#657).
+
+        Owner sessions, original instance directories, Work and conversation records stay.
+        Hard-link before unlink avoids overwriting an archive if startup is interrupted.
+        """
+        removed = sum(self.remove_secret(key) for key in self.secret_items('family_handoff.'))
+        moved = 0
+        for name in ('family-setup.json', 'owner-link.secret'):
+            path = self.private / name
+            archive = self.private / (name + '.retired-657')
+            if not path.exists():
+                continue
+            try:
+                os.link(path, archive, follow_symlinks=False)
+            except FileExistsError:
+                # A previous startup may have linked it but not yet removed the active name.
+                if not os.path.samestat(path.lstat(), archive.lstat()):
+                    LOG.warning('family retirement archive conflict (#657); both files retained')
+                    continue
+            path.unlink()
+            moved += 1
+        if removed or moved:
+            LOG.info('family sharing retired (#657): secrets=%s files=%s; owner data retained', removed, moved)
 
     @contextmanager
     def _schema_transaction(self):

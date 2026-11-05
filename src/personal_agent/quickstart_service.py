@@ -610,7 +610,6 @@ BROWSER_SIGNINS_LINE=('Browser sign-ins (stored sessions browser_open uses; no p
 SIDE_ANSWER_DELIVERY_PASSES=3
 
 
-
 def worker_line(entry, effort=''):
     """The waiting bubble's line for one launched attempt: worker, model and effort, as launched.
 
@@ -645,16 +644,12 @@ class AgentService:
         # under the owner-only private directory.  The embedded WebKit worker
         # starts only when a Work's browser tool runs or the owner opens the login window.
         self.browser_profile=browser_profile or BrowserProfile(store.private/'browser-profile')
-        # #950 review P1: a login window never carries a site received from the owner (#934).
-        self.browser_profile.login_excluded=lambda:set(__import__('personal_agent.family_share',fromlist=['received']).received(self.store))
         # #680 review P2-4: the pre-#680 Playwright Chromium profile in that
         # folder kept cookies in plaintext; it is deleted once and recorded.
         try:
             if self.browser_profile.remove_legacy_profile():store.put(BROWSER_LEGACY_KEY,time.time())
         except Exception:
             pass
-        # #934: a jar save or delete that touched a site the owner shares with a family instance pushes it.
-        self.browser_profile.on_saved=self._shared_sites_saved
         # #209: the owner's declared intranet destinations, read again for every browser step.
         self.browser_profile.intranet=lambda:intranet.origin_keys(self.store)
         # AX-11 (#603): identity of the code this process loaded, taken once
@@ -827,10 +822,6 @@ class AgentService:
         self._phone_input=None
         self._phone_input_started=False
         self.phone_input_popen=None   # a test injects a fake tunnel here
-        #: #940 hook: ``(site) -> owner-facing refusal text or None``.  A login window (explicit, in-flow or
-        #: from the phone) never opens for a site this refuses: the family-share follow-up (#935) sets it to
-        #: refuse the sites this instance *received*, so a family member never re-drives the owner's session.
-        self.refuse_login=None
         # Contextual local authority (#505).  Always present: it declares no
         # connector and grants nothing by existing; it only parks a file
         # request until the owner approves one folder on this Mac.
@@ -1678,15 +1669,12 @@ class AgentService:
     def browser_sessions_text(self):
         """One line naming the sites the embedded browser holds a sign-in for, or None (#942).
 
-        Names only, from the profile's non-blocking view.  A site the owner
-        shared with this (family) instance says so, and that payment there is the
-        owner's.  Without it the AI did not know it could act on a shared site.
-        #563: only a shared site or one with the owner's recorded login-window
+        Names only, from the profile's non-blocking view.
+        #563: only a site with the owner's recorded login-window
         sign-in is named.  The jar also keeps the cookies of every site a Work only
         visited; naming those as sign-ins sent a new Mac's planner to the browser
         for an account it had never signed in to, past the official API.
         """
-        from . import family_share
         view=getattr(self.browser_profile,'_jar_view',None)
         try:
             _state,rows=view() if callable(view) else (None,[])
@@ -1694,10 +1682,6 @@ class AgentService:
             return None
         stored=[row['site'] for row in rows if isinstance(row,dict) and row.get('site')]
         if not stored:return None
-        try:
-            shared=family_share.received(self.store)
-        except Exception:
-            shared={}   # #943 review: an unreadable share row never blocks the turn
         try:
             signins=self.store.config(BROWSER_OWNER_SIGNINS_KEY,{})
         except Exception:
@@ -1710,11 +1694,8 @@ class AgentService:
             return at if isinstance(at,(int,float)) and at>0 else None
 
         def named(site):
-            if site in shared:
-                return (f"{site} (the owner's sign-in shared with you: you act in the owner's account; reading and cart "
-                        'changes only; payment is the owner\'s)')
             return f"{site} (owner signed in {time.strftime('%Y-%m-%d %H:%M',time.localtime(signed_at(site)))})"
-        sites=[site for site in stored if site in shared or signed_at(site) is not None][:BROWSER_SESSION_SITES]
+        sites=[site for site in stored if signed_at(site) is not None][:BROWSER_SESSION_SITES]
         if not sites:return None
         return BROWSER_SIGNINS_LINE+', '.join(named(site) for site in sites)
 
@@ -8543,8 +8524,6 @@ class AgentService:
             host=urlsplit(url.strip()).hostname
         except ValueError:
             host=None
-        refused=self.login_refusal(host)
-        if refused:raise ValueError(refused)
         # #939: ``phone``: once the window shows, send the paired owner a one-time link that drives it.
         phone=isinstance(body,dict) and body.get('phone') is True
         if phone:
@@ -8651,64 +8630,8 @@ class AgentService:
             def login_resolved(self,url):return service.resolve_browser_login(job,url)
             # #636 (Codex P1 on #637): the hosts whose pages no AI step may press or type on.
             def provider_hosts(self):return service.browser_provider_hosts()
-            # #934: on a site received from the owner, a payment step is refused outright (no request, no approval).
-            # #619: so is every guarded step of a scheduled run: no owner is present to approve it.
-            def refuse(self,host):
-                if service.unattended_work(job):return UNATTENDED_APPROVAL_TEXT
-                from .family_share import payment_refusal
-                return payment_refusal(service.store,host)
         return Approvals()
 
-    # -- #934/#957: one signed-in site shared with another instance on this Mac ----------
-    def other_instances(self):
-        """The other Still instances on this Mac (``family_share.instances``), never this one; names and states only."""
-        from . import family_share
-        return family_share.instances(own=self.store.root)
-
-    def share_site(self, instance, site):
-        """Grant another instance this instance's session for one site and push it; names and counts only."""
-        from . import family_share
-        label=family_share.names(self.other_instances()).get(instance)
-        return family_share.share(self.store,self.browser_profile.jar,instance,site,label=label)
-
-    def unshare_site(self, instance, site):
-        """End a share: the receiver's jar, its running worker and its mark are cleared; this instance's session stays."""
-        from . import family_share
-        return family_share.unshare(self.store,instance,site,labels=family_share.names(self.other_instances()))
-
-    def shared_sites(self):
-        """This instance's shares, names only, with each target's display name."""
-        from . import family_share
-        return family_share.listing(self.store,self.other_instances())
-
-    def _shared_sites_saved(self, touched):
-        """``BrowserProfile.on_saved``: push the touched sites the owner shares (never a received one)."""
-        from . import family_share
-        if not self.store.config(family_share.GRANTS_KEY,[]):return 0
-        return family_share.sync(self.store,self.browser_profile.jar,touched)
-
-    def retry_shared_sites(self, now=None):
-        """Start one delivery of pending pushes and revocations off the work loop; 1 when started, else 0.
-
-        Review P3-3: the jar read may wait on the Keychain, so, as at start,
-        it never runs on the ``work()`` thread; one delivery thread at a time.
-        """
-        from . import family_share
-        try:
-            if not family_share.pending(self.store):return 0
-        except Exception as exc:
-            LOG.warning('family share: retry failed (%s)',type(exc).__name__)
-            return 0
-        with self.lock:
-            running=self.__dict__.get('_shared_sites_thread')
-            if running is not None and running.is_alive():return 0
-            def deliver():
-                try:family_share.sync(self.store,self.browser_profile.jar,set(),retry_after=family_share.RETRY_SECONDS)
-                except Exception as exc:LOG.warning('family share: retry failed (%s)',type(exc).__name__)
-            thread=threading.Thread(target=deliver,daemon=True,name='agentos-family-share-retry')
-            self._shared_sites_thread=thread
-            thread.start()
-        return 1
 
     def _browser_step_keys(self, binding):
         """Keyed digests of one step binding: what the approval row and request row hold.
@@ -8728,6 +8651,8 @@ class AgentService:
         unspent and the step asks again.
         """
         row=self._browser_request(job['id'])
+        if row and row.get('state')=='issued' and self.unattended_work(job):
+            raise not_run(ToolError(UNATTENDED_APPROVAL_TEXT,'unattended_run'))
         keys=self._browser_step_keys(binding)
         surface=self.surface_claiming(job)
         if (surface is not None and not surface.owns(job) or
@@ -9099,10 +9024,6 @@ class AgentService:
         if parts.scheme not in ('http','https') or not host or not self.browser_profile.available():
             return None
         target=page_reference(url) if '[가림]' not in url else page_reference(f'{parts.scheme}://{parts.netloc}/')
-        # #954 review: a refused site (a share received from the owner, #940) says so to the model
-        # now, instead of a request that ``offer_browser_login`` would then silently refuse.
-        refused=self.login_refusal(host)
-        if refused:return refused
         with self.lock:
             existing=self._browser_login(job['id'])
             if existing is not None and existing.get('state') not in BROWSER_LOGIN_REASK_STATES:
@@ -9156,11 +9077,6 @@ class AgentService:
         """
         row=self._browser_login(job['id'])
         if not row or row.get('state')!='requested':return False
-        if self.login_refusal(row.get('host')):
-            # #940: a site this instance may not sign in to again (a received share): no window, no prompt.
-            self._put_browser_login(job['id'],{**row,'state':'unavailable','cause':'refused','closed_at':time.time()})
-            LOG.info('browser login window refused work=%s',job['id'])
-            return False
         # The site's stored sign-in cookies before the window: a login is evidenced by their change.
         now=time.time()
         row={**row,'cookies_before':self._login_cookie_marks(row),'site':registrable_domain(row['host'])}
@@ -9302,14 +9218,12 @@ class AgentService:
         if not isinstance(signins,dict) or not signins or not self.browser_profile.available():return None
         with self.store.db() as db:
             if db.execute("SELECT 1 FROM jobs WHERE status IN ('queued','running') LIMIT 1").fetchone():return None
-        from . import family_share
-        held=set(family_share.received(self.store))
         refreshed=self.store.config(self.KEEPALIVE_KEY,{})
         refreshed=refreshed if isinstance(refreshed,dict) else {}
         paused=self.store.config(self.KEEPALIVE_PAUSED_KEY,{})
         paused=paused if isinstance(paused,dict) else {}
         for site,record in sorted(signins.items()):
-            if site in held or not isinstance(record,dict):continue
+            if not isinstance(record,dict):continue
             # #1041: a site that refused a refresh waits for the owner's next sign-in to it.
             if isinstance(paused.get(site),(int,float)) and paused[site]>=float(record.get('at') or 0):continue
             host=record.get('host') or site
@@ -9432,8 +9346,7 @@ class AgentService:
         owner used there, else None.
 
         Only a provider the owner's own login window recorded (``_record_signin_providers``), only
-        while the owner has not turned this off for every site or for this one, only for a site
-        this instance may sign in to (``login_refusal``), and only while the jar holds an unexpired
+        while the owner has not turned this off for every site or for this one, and while the jar holds an unexpired
         cookie of that provider.  Nothing is sent anywhere here.
         """
         try:
@@ -9444,7 +9357,7 @@ class AgentService:
         if not site:return None
         records=self.store.config(BROWSER_PROVIDERS_KEY,{})
         chain=self._provider_chain(records.get(site) if isinstance(records,dict) else None)
-        if not chain or not self.browser_provider_signin_enabled(url) or self.login_refusal(host):return None
+        if not chain or not self.browser_provider_signin_enabled(url):return None
         # Which hop holds the session that lets the provider answer silently is not known, so every hop's is required.
         for hop in chain:
             read=self.browser_profile.site_cookie_marks(hop)
@@ -9673,7 +9586,7 @@ class AgentService:
                 statuses=('failed','partial','succeeded') if row.get('explicit') else ('failed','partial')
                 current=bool(job and job['status'] in statuses and not self.work_stopped(work_id)
                              and (not any(surface.claims_channel(job.get('channel')) for surface in self.surfaces) or self._surface_work(job))
-                             and not self.login_refusal(row.get('host')))
+                            )
                 if time.time()>float(row.get('deadline') or 0):
                     final=shown='expired'
                 else:
@@ -9770,7 +9683,7 @@ class AgentService:
         return bool(row.get('state')=='expired' and row.get('cause')=='expired'
                     and int(row.get('reopens') or 0)<BROWSER_LOGIN_REOPENS
                     and job and job['status'] in ('partial','failed') and not self.work_stopped(work_id)
-                    and self._surface_work(job) and not self.login_refusal(row.get('host')))
+                    and self._surface_work(job))
 
     def reopen_browser_login(self, work_id, nonce):
         """The expired prompt's 로그인 창 다시 열기: ask the same login again for the same Work (#1573).
@@ -9812,21 +9725,6 @@ class AgentService:
                                             if reopen else BROWSER_LOGIN_RESULT_TEXT['expired'],markup)
         except ProviderError:pass
 
-    def login_refusal(self, host_or_site):
-        """Why no login window may open for this site, or None (#940).
-
-        By default a site this instance *received* from the owner (family share,
-        #935) is refused; ``refuse_login`` replaces that rule when set.
-        """
-        from . import family_share
-        hook=self.refuse_login if callable(self.refuse_login) else (lambda site:family_share.login_refusal(self.store,site))
-        site=registrable_domain(host_or_site) if host_or_site else None
-        if not site:return None
-        try:reason=hook(site)
-        except Exception as exc:
-            LOG.warning('login refusal hook failed (%s)',type(exc).__name__)
-            return None
-        return str(reason) if reason else None
 
     # -- the phone's one-time link to the login window (#939) -------------------------------
     # -- the owner's AI connections (AI-GOOGLE-01 #1197) ---------------------------
@@ -9841,23 +9739,10 @@ class AgentService:
                     if isinstance(operations,list)}
         except (OSError,ValueError,AttributeError):
             return {}
-    AI_CONNECTIONS_FAMILY_TEXT=msg('service.this_mac_s_ai_sign_in')
-
     def ai_connections_status(self):
-        """Whether Works may use the owner's AI-side connections (claude.ai connectors), and whether this instance may."""
-        from . import family_setup
-        from .service_control import DEFAULT_INSTANCES_RELATIVE
-        # Review on #1197: any named instance (a family member's, #893/#897) is refused,
-        # not only one set up through the tunnel page.
-        try:
-            named=(Path.home()/DEFAULT_INSTANCES_RELATIVE).resolve() in Path(self.store.root).resolve().parents
-        except OSError:
-            named=True
-        family=family_setup.setup_recorded(self.store) or named
-        enabled=bool((self.store.config(self.AI_CONNECTIONS_KEY,{}) or {}).get('enabled')) and not family
-        return {'enabled':enabled,'available':not family,
-                'note':(self.AI_CONNECTIONS_FAMILY_TEXT if family else
-                        msg('quickstart_service.trust_policy_summary'))}
+        """Whether Works may use the owner's AI-side connections."""
+        return {'enabled': bool((self.store.config(self.AI_CONNECTIONS_KEY,{}) or {}).get('enabled')),
+                'available': True, 'note': msg('quickstart_service.trust_policy_summary')}
 
     def ai_connections_enabled(self):
         return self.ai_connections_status()['enabled']
@@ -9899,10 +9784,9 @@ class AgentService:
         raise ValueError(msg('quickstart_service.check_reviewed_settings'))
 
     def set_ai_connections(self, body):
-        """Switch the owner's AI connections on or off; never on a family instance."""
+        """Switch the owner's AI connections on or off."""
         enabled=(body or {}).get('enabled') if isinstance(body,dict) else None
         if not isinstance(enabled,bool):raise ValueError(msg('quickstart_service.select_on_off'))
-        if enabled and not self.ai_connections_status()['available']:raise ValueError(self.AI_CONNECTIONS_FAMILY_TEXT)
         self.store.put(self.AI_CONNECTIONS_KEY,{'enabled':enabled,'changed_at':time.time(),'revision':secrets.token_hex(16)})
         return self.ai_connections_status()
 
@@ -10432,7 +10316,7 @@ class AgentService:
         open, no tunnel tool can be had or the link could not open or be delivered.
         """
         from . import phone_input
-        from .family_setup import tunnel_available
+        from .https_tunnel import tunnel_available
         kinds=self.phone_input_kinds()
         if kind not in kinds:raise ValueError(msg('quickstart_service.phone_link_unsupported'))
         cfg=self.store.config('telegram',{})
@@ -10490,10 +10374,8 @@ class AgentService:
         tunnel did not open.  ``chat_id`` must be the paired owner's chat when
         given; the link is sent there and nowhere else.
         """
-        from .family_setup import tunnel_available
+        from .https_tunnel import tunnel_available
         popen=self.remote_login_popen or subprocess.Popen
-        refused=self.login_refusal(site)
-        if refused:raise remote_login.RemoteLoginError(refused)
         with self.lock:
             if self.remote_login_session() is not None:raise remote_login.RemoteLoginError(remote_login.BUSY_TEXT)
             if popen is subprocess.Popen and not tunnel_available():raise remote_login.RemoteLoginError(remote_login.NO_TUNNEL_TEXT)
@@ -11238,7 +11120,6 @@ class AgentService:
             raise ProviderError(msg('quickstart.telegram_webhook_unchecked'))
         if webhook.get('url'):
             raise ValueError(msg('quickstart_service.bot_webhook_active'))
-        # #957: the bot's display name is how another instance on this Mac names this one as a share target.
         bot_name=self._bot_name_of(me)
         with self.lock:
             self.store.secret('telegram_token',token)
@@ -11251,26 +11132,6 @@ class AgentService:
         name=me.get('first_name') if isinstance(me,dict) else None
         return ' '.join(name.split())[:64] if isinstance(name,str) and name.strip() else None
 
-    def backfill_bot_name(self):
-        """#957: an instance connected before bot names were kept learns its own from one ``getMe``.
-
-        Best-effort: a failed or empty answer changes nothing and is tried
-        again at the next start.  Runs off the start path (the poll thread).
-        """
-        cfg=self.store.config('telegram',{})
-        if not cfg.get('enabled') or cfg.get('bot_name'):return False
-        try:
-            name=self._bot_name_of(self.telegram.call('getMe',{}))
-        except Exception as exc:
-            LOG.warning('telegram: bot name not read (%s)',type(exc).__name__)
-            return False
-        if not name:return False
-        with self.lock:
-            cfg=self.store.config('telegram',{})
-            if not cfg.get('enabled') or cfg.get('bot_name'):return False
-            cfg['bot_name']=name
-            self.store.put('telegram',cfg)
-        return True
 
     def apply_still_profile(self):
         """#1337: give the owner's own bot Still's name, photo and descriptions, once per bot.
@@ -11278,10 +11139,8 @@ class AgentService:
         Best-effort and off the request path.  Pinned to the bot that was
         connected when it started: every call uses that token, and the
         marker and stored name are written only if that bot is still the
-        connected one.  Family instances keep their own names (#957).
+        connected one.
         """
-        from .family_setup import setup_path
-        if setup_path(self.store).exists():return None
         cfg=self.store.config('telegram',{})
         username=cfg.get('username')
         token=self.store.secret('telegram_token')
@@ -11488,7 +11347,7 @@ class AgentService:
         """The owner's Settings switch for work mode (#208); the local endpoint is its only caller.
 
         Turning it on also ends what is already open to the outside: a live
-        phone input or remote login tunnel, a family setup's tunnel and every
+        phone input or remote login tunnel and every
         queued Telegram reply and notification (cancelled, never sent).  Turning
         it off restores personal mode; nothing refused while it was on is run
         again, and the Telegram status it paused is cleared for the next poll to set.
@@ -11505,11 +11364,6 @@ class AgentService:
             for surface in self.surfaces:
                 surface.cancel_pending_deliveries()
             self.end_tunnel_sessions('work_mode')
-            from . import family_setup
-            for row in self.store.config(family_setup.PENDING_KEY,[]) or []:
-                if isinstance(row,dict):
-                    try:family_setup.stop_stale_tunnel(row)
-                    except Exception as exc:LOG.warning('family setup tunnel not stopped (%s)',type(exc).__name__)
         elif (self.store.config('telegram_status') or {}).get('state')=='paused':
             self.store.put('telegram_status',None)
         LOG.info('work mode %s',('on' if current['enabled'] else 'off'))
@@ -12069,88 +11923,6 @@ class AgentService:
     def poll_telegram(self):
         return self.telegram_surface.poll_telegram()
 
-    def start_family_setup(self, display_name, name=None, notify=None):
-        """Create a family member's agent after the owner confirmed it in conversation (#912).
-
-        Runs in the background: the instance, its temporary link (sent to the
-        owner's Telegram), the wait for pairing and the close - the same steps
-        as ``agentos family add``.  One setup at a time.
-        """
-        from . import family_setup
-        cfg=self.store.config('telegram',{})
-        if notify is None and not (cfg.get('enabled') and isinstance(cfg.get('user_id'),int)):
-            # #913 review P2-1: never open a link that can be sent nowhere.
-            raise ValueError(msg('quickstart_service.family_link_no_destination'))
-        with self.lock:
-            running=self.__dict__.get('_family_setup_thread')
-            if running is not None and running.is_alive():
-                raise ValueError(msg('quickstart_service.family_setup_active'))
-            name=name or family_setup.pick_instance_name()
-            thread=threading.Thread(target=self._run_family_setup,args=(display_name,name,notify),daemon=True,name='family-setup')
-            self._family_setup_thread=thread
-            # #913 review P3-1: started under the lock, so a second call always sees it alive.
-            thread.start()
-        return {'state':'requested','instance':name}
-
-    def _family_notify(self, text):
-        cfg=self.store.config('telegram',{})
-        if not (cfg.get('enabled') and isinstance(cfg.get('user_id'),int)):return False
-        try:self.telegram.send_message(cfg['user_id'],text)
-        except Exception as exc:
-            LOG.warning('family setup: owner notice not sent (%s)',type(exc).__name__)
-            return False
-        return True
-
-    def _run_family_setup(self, display_name, name, notify=None):
-        from . import family_setup
-        from .service_control import service_action
-
-        def say(text):
-            if notify is None:return self._family_notify(text)
-            try:notify(text)
-            except Exception as exc:
-                LOG.warning('family setup: notice not sent (%s)',type(exc).__name__)
-                return False
-            return True
-        try:
-            handle=family_setup.prepare_family_setup(self.store,name,display_name,service_action=service_action)
-        except family_setup.SetupError as exc:
-            return say(str(exc))
-        except Exception as exc:
-            LOG.warning('family setup failed to start (%s)',type(exc).__name__)
-            return say(msg('quickstart_service.family_setup_failed'))
-        if not say(msg('quickstart_service.family_setup_link', name=handle['display_name'], minutes=family_setup.SETUP_SECONDS//60)+"\n"+handle['link']):
-            # #913 review: a link nobody received must not keep a public tunnel open; close now so
-            # the owner can simply ask again (the unpaired instance is reused).
-            LOG.warning('family setup: link not delivered; closing the setup')
-            try:family_setup.close_family_setup(handle,self.store)
-            except Exception as exc:LOG.warning('family setup close failed (%s)',type(exc).__name__)
-            return
-        try:
-            family_setup.watch_family_setup(handle,self.store,on_state=lambda state:state in ('paired','expired')
-                                            and say(family_setup.STATE_TEXT.get(state,family_setup.EXPIRED_TEXT)))
-        except Exception as exc:
-            LOG.warning('family setup watch ended (%s)',type(exc).__name__)
-
-    def ingest_managed_bot(self, update):
-        """Hand a family member's new bot to their instance (#897); content-free log only."""
-        from . import family_setup
-        try:
-            receipt=family_setup.accept_managed_bot(self.store,self.telegram.call,update,family_setup.deliver_token)
-        except Exception as exc:
-            LOG.warning('family setup: managed bot not handed over (%s)',type(exc).__name__)
-            return {'accepted':False,'reason':type(exc).__name__}
-        if receipt.get('accepted'):LOG.info('family setup: bot handed to instance %s',receipt['instance'])
-        return receipt
-
-    def retry_family_handovers(self):
-        """Retry a family bot hand-over that failed, while its setup is open (#897 review P2-3)."""
-        from . import family_setup
-        if not self.store.config(family_setup.PENDING_KEY,[]):return 0
-        try:return family_setup.retry_pending(self.store,self.telegram.call,family_setup.deliver_token)
-        except Exception as exc:
-            LOG.warning('family setup: retry failed (%s)',type(exc).__name__)
-            return 0
 
     def settle_expired_telegram_photo_albums(self, now=None):
         return self.telegram_surface.settle_expired_telegram_photo_albums(now)
@@ -13784,12 +13556,6 @@ class AgentService:
         return purged
 
     def start(self):
-        # #913 review P3-2: a family setup whose watcher died with the last process is closed.
-        try:
-            from . import family_setup
-            family_setup.reconcile_pending(self.store)
-        except Exception as exc:
-            LOG.warning('family setup reconcile failed (%s)',type(exc).__name__)
         self.recover_interrupted_work()
         # #794 phase 3: a purge a restart left overdue runs before any Work reads owner state.
         self.purge_forgotten()
@@ -13812,15 +13578,8 @@ class AgentService:
             self.retire_unattended_waits()
         except Exception as exc:
             LOG.warning('unattended waits not retired (%s)',type(exc).__name__)
-        # #934: every share is re-pushed at start (a family instance that was down, a session refreshed
-        # while it was); off this thread, since the jar read may wait on the Keychain.
-        from . import family_share
-        if self.store.config(family_share.GRANTS_KEY,[]):
-            threading.Thread(target=lambda:family_share.sync(self.store,self.browser_profile.jar,None),
-                             daemon=True,name='agentos-family-share-sync').start()
         def work():
             next_document_resume_prune=0.0
-            next_shared_sites_retry=0.0
             while not self.stop.is_set():
                 # #659: one indexed query; nothing due costs no model or network call.
                 self.run_due_preparation()
@@ -13844,17 +13603,10 @@ class AgentService:
                     # #794 phase 3 / #367: the forget purge hook; a forget is never purged now, so this finds nothing.
                     self.purge_forgotten()
                     next_document_resume_prune=now+30
-                if now>=next_shared_sites_retry:
-                    # #934: a push or revocation a family instance did not confirm is retried; one config read otherwise.
-                    self.retry_shared_sites()
-                    next_shared_sites_retry=now+family_share.RETRY_SECONDS
                 # #805: claim one pending owner-model upkeep when idle; it runs off this thread.
                 self.run_owner_model_upkeep()
                 self.stop.wait(.3)
         def poll():
-            # #957: one best-effort getMe when this instance's bot name is still unknown; never blocks start.
-            try:self.backfill_bot_name()
-            except Exception as exc:LOG.warning('telegram: bot name not read (%s)',type(exc).__name__)
             while not self.stop.is_set():
                 self.receive_telegram()
                 self.stop.wait(.5)

@@ -16,7 +16,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from personal_agent import family_setup, quick_tunnel
+from personal_agent import https_tunnel, quick_tunnel
 from personal_agent.quickstart_store import QuickStore
 
 ADDRESS = 'https://charge-confirmed-claimed-angel.trycloudflare.com'
@@ -77,7 +77,7 @@ class StartTunnel(TunnelCase):
     def test_without_ngrok_a_quick_tunnel_opens_once_the_edge_registered_it(self):
         launcher = Launcher(cloudflared=cloudflared_lines())
         with mock.patch.dict(os.environ, {'TUNNEL_LOGFILE': '/tmp/requests.log', 'TUNNEL_LOGLEVEL': 'debug'}):
-            process, url = family_setup.start_tunnel(8787, popen=launcher, store=self.store, timeout=5,
+            process, url = https_tunnel.start_tunnel(8787, popen=launcher, store=self.store, timeout=5,
                                                      locate=self.locate(cloudflared='/opt/homebrew/bin/cloudflared'))
         self.assertEqual(url, ADDRESS)
         self.assertEqual(self.located, ['ngrok', 'cloudflared'])
@@ -97,22 +97,22 @@ class StartTunnel(TunnelCase):
     def test_the_link_is_handed_out_only_after_the_new_hostname_had_time_to_resolve(self):
         waited = []
         launcher = Launcher(cloudflared=cloudflared_lines())
-        with mock.patch.object(quick_tunnel, 'SETTLE_SECONDS', 6), mock.patch.object(family_setup.time, 'sleep', waited.append):
-            family_setup.start_tunnel(8787, popen=launcher, store=self.store, timeout=5,
+        with mock.patch.object(quick_tunnel, 'SETTLE_SECONDS', 6), mock.patch.object(https_tunnel.time, 'sleep', waited.append):
+            https_tunnel.start_tunnel(8787, popen=launcher, store=self.store, timeout=5,
                                       locate=self.locate(cloudflared='cloudflared'))
         self.assertEqual(waited, [6])
 
     def test_the_address_alone_is_not_enough_while_the_connection_is_still_coming(self):
         lines = cloudflared_lines(connected=False) + [json.dumps({'level': 'info', 'message': 'Registered tunnel connection'}) + '\n']
         launcher = Launcher(cloudflared=lines)
-        _process, url = family_setup.start_tunnel(8787, popen=launcher, store=self.store, timeout=5,
+        _process, url = https_tunnel.start_tunnel(8787, popen=launcher, store=self.store, timeout=5,
                                                   locate=self.locate(cloudflared='cloudflared'))
         self.assertEqual(url, ADDRESS)
 
     def test_a_quick_tunnel_that_ends_without_an_address_is_reported_and_stopped(self):
         launcher = Launcher(cloudflared=cloudflared_lines(address=False, connected=False, error='failed to request quick Tunnel'))
         with self.assertRaises(RuntimeError) as caught:
-            family_setup.start_tunnel(8787, popen=launcher, store=self.store, timeout=5,
+            https_tunnel.start_tunnel(8787, popen=launcher, store=self.store, timeout=5,
                                       locate=self.locate(cloudflared='cloudflared'))
         self.assertIn('cloudflared did not report', str(caught.exception))
         self.assertIn('failed to request quick Tunnel', str(caught.exception))
@@ -138,13 +138,13 @@ class StartTunnel(TunnelCase):
                 self.release.set()
         process = Silent()
         self.addCleanup(process.release.set)
-        got, url = family_setup.start_tunnel(8787, popen=lambda argv, **kw: process, store=self.store, timeout=0.3,
+        got, url = https_tunnel.start_tunnel(8787, popen=lambda argv, **kw: process, store=self.store, timeout=0.3,
                                              locate=self.locate(cloudflared='cloudflared'))
         self.assertEqual((got, url, process.terminated), (process, ADDRESS, False))
 
     def test_ngrok_stays_first_when_it_opens(self):
         launcher = Launcher(ngrok=[json.dumps({'msg': 'started tunnel', 'url': 'https://abc123.ngrok-free.app'}) + '\n'])
-        _process, url = family_setup.start_tunnel(8787, popen=launcher, store=self.store, timeout=5,
+        _process, url = https_tunnel.start_tunnel(8787, popen=launcher, store=self.store, timeout=5,
                                                   locate=self.locate(ngrok='/opt/homebrew/bin/ngrok', cloudflared='cloudflared'))
         self.assertEqual(url, 'https://abc123.ngrok-free.app')
         self.assertEqual(self.located, ['ngrok'], 'cloudflared is neither sought nor downloaded')
@@ -153,7 +153,7 @@ class StartTunnel(TunnelCase):
     def test_an_ngrok_without_an_account_token_falls_back_to_a_quick_tunnel(self):
         ngrok_error = json.dumps({'lvl': 'eror', 'err': 'authentication failed: ERR_NGROK_4018'}) + '\n'
         launcher = Launcher(ngrok=[ngrok_error], cloudflared=cloudflared_lines())
-        _process, url = family_setup.start_tunnel(8787, popen=launcher, store=self.store, timeout=5,
+        _process, url = https_tunnel.start_tunnel(8787, popen=launcher, store=self.store, timeout=5,
                                                   locate=self.locate(ngrok='ngrok', cloudflared='cloudflared'))
         self.assertEqual(url, ADDRESS)
         self.assertEqual([name for name, *_ in launcher.spawned], ['ngrok', 'cloudflared'])
@@ -164,11 +164,11 @@ class StartTunnel(TunnelCase):
         launcher = Launcher(ngrok=[ngrok_error])
         broken = RuntimeError('the cloudflared 2026.10.7 download did not match its pinned SHA-256; nothing was run.')
         with self.assertRaises(RuntimeError) as caught:
-            family_setup.start_tunnel(8787, popen=launcher, store=self.store, timeout=5,
+            https_tunnel.start_tunnel(8787, popen=launcher, store=self.store, timeout=5,
                                       locate=self.locate(ngrok='ngrok', cloudflared=broken))
         self.assertIn('authentication failed', str(caught.exception))
         with self.assertRaises(RuntimeError) as caught:
-            family_setup.start_tunnel(8787, popen=launcher, store=self.store, timeout=5, locate=self.locate(cloudflared=broken))
+            https_tunnel.start_tunnel(8787, popen=launcher, store=self.store, timeout=5, locate=self.locate(cloudflared=broken))
         self.assertIs(caught.exception, broken)
         self.assertEqual([name for name, *_ in launcher.spawned], ['ngrok'], 'an unverified cloudflared is never run')
 
@@ -184,31 +184,31 @@ class StartTunnel(TunnelCase):
             work_mode.set_enabled(self.store, True, surface='settings')  # the owner switches it on mid-download
             return '/data/tools/cloudflared-pinned/cloudflared'
         with self.assertRaises(work_mode.WorkModeRefused):
-            family_setup.start_tunnel(8787, popen=launcher, store=self.store, timeout=5, locate=downloading)
+            https_tunnel.start_tunnel(8787, popen=launcher, store=self.store, timeout=5, locate=downloading)
         self.assertEqual(self.located, ['ngrok', 'cloudflared'])
         self.assertEqual(launcher.spawned, [], 'the located cloudflared is never started')
 
     def test_no_tool_at_all_is_a_missing_file_for_the_owner_facing_text(self):
         with self.assertRaises(FileNotFoundError):
-            family_setup.start_tunnel(8787, popen=Launcher(), store=self.store, timeout=5, locate=self.locate())
+            https_tunnel.start_tunnel(8787, popen=Launcher(), store=self.store, timeout=5, locate=self.locate())
 
     def test_the_real_locator_prefers_an_installed_cloudflared_and_else_the_pinned_download(self):
         with mock.patch('personal_agent.subscription_engines.find_cli', return_value='/opt/homebrew/bin/cloudflared'), \
                 mock.patch.object(quick_tunnel, 'ensure', side_effect=AssertionError('downloaded')):
-            self.assertEqual(family_setup._locator(self.store)('cloudflared'), '/opt/homebrew/bin/cloudflared')
+            self.assertEqual(https_tunnel._locator(self.store)('cloudflared'), '/opt/homebrew/bin/cloudflared')
         with mock.patch('personal_agent.subscription_engines.find_cli', return_value=None), \
                 mock.patch.object(quick_tunnel, 'ensure', return_value='/pinned/cloudflared') as ensure:
-            self.assertEqual(family_setup._locator(self.store)('cloudflared'), '/pinned/cloudflared')
-            self.assertIsNone(family_setup._locator(self.store)('ngrok'), 'ngrok is never downloaded')
+            self.assertEqual(https_tunnel._locator(self.store)('cloudflared'), '/pinned/cloudflared')
+            self.assertIsNone(https_tunnel._locator(self.store)('ngrok'), 'ngrok is never downloaded')
         ensure.assert_called_once_with(self.store.root / 'tools')
 
     def test_a_link_can_be_tried_with_either_tool_or_a_pin(self):
         with mock.patch.object(quick_tunnel, 'pin', return_value=None):
-            self.assertFalse(family_setup.tunnel_available(find=lambda name: None))
-            self.assertTrue(family_setup.tunnel_available(find={'cloudflared': '/x/cloudflared'}.get))
-            self.assertTrue(family_setup.tunnel_available(find={'ngrok': '/x/ngrok'}.get))
+            self.assertFalse(https_tunnel.tunnel_available(find=lambda name: None))
+            self.assertTrue(https_tunnel.tunnel_available(find={'cloudflared': '/x/cloudflared'}.get))
+            self.assertTrue(https_tunnel.tunnel_available(find={'ngrok': '/x/ngrok'}.get))
         with mock.patch.object(quick_tunnel, 'pin', return_value=('a', 'b', 'c')):
-            self.assertTrue(family_setup.tunnel_available(find=lambda name: None))
+            self.assertTrue(https_tunnel.tunnel_available(find=lambda name: None))
 
 
 def release(binary=b'\x7fELF cloudflared', tgz=True):
@@ -308,7 +308,7 @@ class OwnTunnels(unittest.TestCase):
                  '  207     1 /usr/bin/python3 cloudflared tunnel --url http://127.0.0.1:8787\n')
         killed = []
         run = lambda argv, **_kw: subprocess.CompletedProcess(argv, 0, table, '')
-        family_setup.reclaim_orphan_tunnels(8787, run=run, kill=lambda pid, sig: killed.append((pid, sig)))
+        https_tunnel.reclaim_orphan_tunnels(8787, run=run, kill=lambda pid, sig: killed.append((pid, sig)))
         self.assertEqual(killed, [(201, signal.SIGTERM), (202, signal.SIGTERM)])
 
 

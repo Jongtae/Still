@@ -217,3 +217,5 @@ The owner said "I already had lunch at a restaurant" (a statement: "I already ha
 - **C14 for reads:** repeated reads refused as `repeat_path`.
 - **D7:** the `safe_retry` status and artifact refusals.
 - **A17:** shorten the envelope instead of sending the bare request.
+
+Removal amendment — #657: the owner retired family sharing after deleting all family instances on 2026-10-24. Family setup, site sharing, its Settings/tool surface and the #934 shared-site payment-refusal path are removed. The shared temporary HTTPS link remains for phone sign-in and input. Startup retires only legacy family metadata and handoff secrets with a receipt, retaining owner data. Payment on the owner's Works still uses one deterministic gate and one exact owner confirmation. Historical rules above describe their original scope.

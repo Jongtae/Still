@@ -475,8 +475,8 @@ class UnattendedRuns(_Case):
             self.service.browser_approvals_for(self.run).request(binding, 'pay')
         self.assertEqual(caught.exception.code, 'unattended_run')
         self.assertIsNone(self.service._browser_request(self.run['id']))
-        self.assertEqual(self.service.browser_approvals_for(self.run).refuse('shop.test'), UNATTENDED_APPROVAL_TEXT)
-        self.assertIsNone(self.service.browser_approvals_for(self.owned).refuse('shop.test'))
+        self.assertFalse(self.service.browser_approvals_for(self.run).consume(binding))
+        self.assertFalse(self.service.browser_approvals_for(self.owned).consume(binding))
 
     def test_its_refusals_are_classified_none_under_the_one_effect_rule(self):
         """#618: what Still refused or drafted nothing for changed nothing outside, so it never blocks continuing."""
