@@ -335,7 +335,13 @@ class PopupHostDriver(TwoHostDriver):
             self.popup_id += 1
         browser_worker.Worker.note_authorization(self.worker, url)
         host = browser_worker.authorization_host(url)
-        self.popup = {'active': True, 'host': host, 'provider_host': host, 'oauth_error': False, 'id': self.popup_id}
+        if self.popup.get('id') != self.popup_id:
+            self.popup = {'id': self.popup_id}
+        self.popup.update(active=True, host=host)
+        for key in ('hosts', 'authorization_hosts'):
+            self.popup.setdefault(key, [])
+            if host not in self.popup[key]:
+                self.popup[key].append(host)
 
     def popup_finish(self, *, error=False, needs_owner=False):
         if not error and not needs_owner:
@@ -385,9 +391,45 @@ class PopupResignInTests(unittest.TestCase):
                     driver.popup.update(active=False, needs_owner=True)
                     self.assertEqual(driver.worker.authorization_count, 0)
                     page = sess.run('browser_click', {'target': '다른 계정으로 계속', 'effect': 'navigate'})
+                    self.assertEqual(page['provider_sign_in']['state'], 'unconfirmed')
+                    self.assertIn('OFFER-EXPLICIT', page['next_step'])
+                    offers = list(approvals.offers)
+                    self.assertNotIn('provider_sign_in', sess.run('browser_read', {}))
+                    self.assertEqual(approvals.offers, offers)
+                    page = sess.run('browser_click', {'target': '다른 계정으로 계속', 'effect': 'navigate'})
                     self.assertEqual(page['provider_sign_in']['state'], 'signed_in')
-                    self.assertNotIn('OFFER-EXPLICIT', page.get('next_step', ''))
-                    self.assertFalse(approvals.offers)
+                    self.assertEqual(approvals.offers, offers)
+
+    def test_host_change_without_authorization_cannot_move_or_drop_failure(self):
+        for observed in (False, True):
+            with self.subTest(observed=observed):
+                sess, driver, approvals = popup_session()
+                driver.popup = {'id': 1, 'active': True, 'host': ''}
+                driver.popup_id = 1
+                sess.run('browser_read', {})
+                driver.popup_authorize()
+                if observed:
+                    sess.run('browser_read', {})
+                driver.popup['host'] = UPSTREAM
+                driver.popup['hosts'].append(UPSTREAM)
+                driver.popup_finish(error=True, needs_owner=True)
+                driver.goto(f'https://{SITE}/callback?code=abc', 1)  # error-page flash cookie
+                page = sess.run('browser_read', {})
+                self.assertEqual(page['provider_sign_in']['state'], 'unconfirmed')
+                self.assertEqual(page['provider_sign_in']['chain'], [PROVIDER, UPSTREAM])
+                self.assertIn('OFFER-EXPLICIT', page['next_step'])
+                self.assertFalse(getattr(approvals, 'resolved', []))
+                offers = list(approvals.offers)
+                self.assertNotIn('provider_sign_in', sess.run('browser_read', {}))
+                self.assertEqual(approvals.offers, offers)
+
+    def test_blank_popup_without_authorization_or_failure_finalizes_nothing(self):
+        sess, driver, approvals = popup_session()
+        driver.popup = {'id': 1, 'active': True, 'host': ''}
+        sess.run('browser_read', {})
+        driver.popup['active'] = False
+        self.assertNotIn('provider_sign_in', sess.run('browser_read', {}))
+        self.assertFalse(approvals.offers)
 
     def test_popup_failure_is_merged_until_its_attempt_finishes(self):
         sess, driver, approvals = popup_session()
@@ -403,12 +445,22 @@ class PopupResignInTests(unittest.TestCase):
         self.assertFalse(getattr(approvals, 'resolved', []))
         self.assertTrue(approvals.offers)
 
-    def test_popup_failure_joins_an_existing_main_view_attempt(self):
+    def test_refused_interaction_fails_the_popup_and_hands_off_only_once(self):
+        sess, driver, approvals = popup_session()
+        driver.popup_authorize()
+        with self.assertRaises(ToolError):
+            sess.run('browser_click', {'target': '다른 계정으로 계속', 'effect': 'navigate'})
+        self.assertEqual(len(approvals.offers), 1)
+        driver.popup_finish()  # even a later clean callback cannot erase the refusal
+        page = sess.run('browser_read', {})
+        self.assertEqual(page['provider_sign_in']['state'], 'unconfirmed')
+        self.assertEqual(len(approvals.offers), 1)
+
+    def test_popup_binds_its_own_attempt_when_a_main_view_flow_exists(self):
         sess, driver, approvals = popup_session()
         driver.answer = 'chooser'
         driver.goto(AUTHORIZE, 1)
         sess.run('browser_read', {})
-        attempt = sess._resign['attempt']
         driver.popup_id = 1
         driver.popup = {'id': 1, 'active': True, 'host': ''}
         sess.run('browser_read', {})
@@ -416,7 +468,7 @@ class PopupResignInTests(unittest.TestCase):
         driver.popup_finish(error=True, needs_owner=True)
         driver.goto(f'https://{SITE}/callback?code=abc', 1)
         page = sess.run('browser_read', {})
-        self.assertIs(sess._popups[1]['attempt'], attempt)
+        self.assertEqual(sess._popups[1]['popup']['id'], 1)
         self.assertEqual(page['provider_sign_in']['state'], 'unconfirmed')
         self.assertTrue(approvals.offers)
 

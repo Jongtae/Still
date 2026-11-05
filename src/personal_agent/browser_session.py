@@ -891,8 +891,7 @@ class BrowserSession:
         self._last_input = None
         self._refused_pending = False   # a between-steps refused form post not yet told (#758)
         #: #636: this Work's re-sign-in through the provider the owner used for a site (``_provider_hint``):
-        #: the site, the provider host, the login reference and window address, the driver's authorization
-        #: count when it began, and whether a provider page or request was seen since.  None otherwise.
+        #: the site, provider chain, login reference and window address, and session baseline.
         self._resign = None
         self._pending_provider_sign_in = None   # finalized at observation, delivered by run exactly once
         #: #636 (Codex P1 on #637): the provider window, derived from observed main-frame navigation only:
@@ -904,7 +903,7 @@ class BrowserSession:
         self._outside = None
         self._requested_origin = None
         self._auth_seen = 0   # the driver's authorization-request count already looked at
-        self._popups = {}   # popup id -> lifecycle evidence and the attempt it authorized
+        self._popups = {}   # popup id at creation -> one attempt, including its finalization
         self.judgments = judgments
 
     # -- plumbing --
@@ -1128,11 +1127,8 @@ class BrowserSession:
         current = self._resign if self._resign and self._resign['site'] == site else None
         self._resign = {'site': site, 'provider': chain[0], 'chain': chain, 'reference': snapshot['url'],
                         'window_url': snapshot['_window_url'],
-                        'mark': current['mark'] if current else self._authorization_mark(),
                         'cookies': current['cookies'] if current else self._site_cookies(site),
-                        'seen': bool(current and current['seen']),
-                        'popup': current.get('popup', {}) if current else {},
-                        'attempt': current['attempt'] if current else object()}
+                        'popup': current.get('popup', {}) if current else {}}
         return self._resign
 
     def _login_resolved(self, url):
@@ -1167,30 +1163,19 @@ class BrowserSession:
                                                         keep_blank_values=True)}
         except ValueError:
             return False
-        popup = self._attempt_popup_evidence()
+        popup = self._resign.get('popup', {})
         if 'error' in names or popup.get('oauth_error') or popup.get('needs_owner'):
             return False
         before = self._resign.get('cookies')
         after = self._site_cookies(self._resign['site'])
         return before is not None and after is not None and bool(after - before)
 
-    def _attempt_popup_evidence(self):
-        """Read only popup lifecycles bound to this authorization attempt."""
-        evidence = {}
-        for popup in self._popups.values():
-            if popup.get('attempt') is self._resign['attempt']:
-                evidence.update({key: popup[key] for key in ('id', 'host') if key in popup})
-                for key in ('oauth_error', 'needs_owner'):
-                    evidence[key] = evidence.get(key, False) or popup[key]
-        self._resign['popup'] = evidence
-        return evidence
-
     def _finalize_sign_in(self, snapshot):
         """Close the observed flow once; retain its result until a tool can deliver it."""
         if not self._resign:
             return
         resign = self._resign
-        signed = self._sign_in_evidence(snapshot)
+        signed = resign.get('authorized', True) and self._sign_in_evidence(snapshot)
         receipt = self._receipt('signed_in' if signed else 'unconfirmed')
         next_step = None
         if snapshot['login_required'] or (not signed and resign.get('popup', {}).get('needs_owner')):
@@ -1201,12 +1186,8 @@ class BrowserSession:
         else:
             next_step = msg('browser.provider_unconfirmed', provider=resign['provider']) + ' ' + self._hand_off()
         self._pending_provider_sign_in = {'receipt': receipt, 'next_step': next_step,
-                                         'popup': resign.get('popup', {})}
+                                         'popup_id': resign.get('popup', {}).get('id')}
         self._resign = None
-
-    def _authorization_mark(self):
-        answer = _authorizations(self.driver) if self.driver is not None else None
-        return answer[0] if answer else None
 
     def _receipt(self, state):
         """#636: what a step's result (and its Evidence) says of this re-sign-in: hosts only."""
@@ -1239,7 +1220,7 @@ class BrowserSession:
         """The origin reference and in-memory session baseline before entering a provider window."""
         site = registrable_domain(landed_host(url))
         return {'site': site, 'url': page_reference(url), 'window_url': login_window_url(url),
-                'cookies': self._site_cookies(site), 'mark': self._authorization_mark()}
+                'cookies': self._site_cookies(site)}
 
     def _new_authorizations(self):
         """#636: the hosts of the authorization requests the browser sent since last looked at (main view or allowed popup)."""
@@ -1250,6 +1231,53 @@ class BrowserSession:
         fresh = count - self._auth_seen
         self._auth_seen = count
         return tuple(hosts[-min(fresh, len(hosts)):]) if fresh > 0 and hosts else ()
+
+    def _observe_popup(self, snapshot, popup, protected):
+        """One popup id is one attempt, from reservation through close/timeout.
+
+        WebKit's delegate retains lifetime hosts and failures even when the whole
+        redirect chain runs between snapshots. No current URL or global request
+        counter is used to associate evidence with a popup.
+        """
+        ident = popup['id']
+        if ident not in self._popups:
+            origin = (self._window or {}).get('origin') or self._outside or self._requested_origin
+            if not origin:
+                return False
+            self._popups[ident] = {
+                'site': origin['site'], 'reference': origin['url'], 'window_url': origin['window_url'],
+                'cookies': origin.get('cookies'), 'origin': origin, 'chain': (),
+                'popup': {'id': ident, 'oauth_error': False, 'needs_owner': False}, 'finalized': False}
+        attempt = self._popups[ident]
+        evidence = attempt['popup']
+        for key in ('oauth_error', 'needs_owner'):
+            evidence[key] |= bool(popup.get(key))
+        evidence['host'] = popup.get('host', '')
+        attempt['chain'] = tuple(dict.fromkeys((*attempt['chain'],
+            *(host for host in popup.get('hosts', ()) if host in protected))))
+        attempt['authorized'] = attempt.get('authorized', False) or any(
+            host in protected for host in popup.get('authorization_hosts', ()))
+        attempt['closed'] = not popup.get('active')
+        if attempt['chain']:
+            attempt['provider'] = attempt['chain'][0]
+            self._resign = attempt
+            self._window = {'origin': attempt['origin'], 'hosts': set(attempt['chain']),
+                            'current': attempt['chain'][-1]}
+        if not attempt['closed']:
+            return bool(self._window)
+        attempt['finalized'] = True
+        failed = evidence['oauth_error'] or evidence['needs_owner']
+        if attempt['authorized'] or failed:
+            # A blank timeout still belongs to its origin and needs a receipt.
+            attempt.setdefault('provider', '')
+            self._resign = attempt
+            self._finalize_sign_in(snapshot)
+        elif self._resign is attempt:
+            self._resign = None
+        self._window = None
+        self._outside = self._origin(snapshot.get('_window_url') or snapshot.get('_page'))
+        self._requested_origin = None
+        return False
 
     def _observe(self, snapshot, requested_url=None):
         """#636 (Codex on #637): whether the main frame in ``snapshot`` is inside a provider window.
@@ -1271,35 +1299,13 @@ class BrowserSession:
         provider's registrable domain the AI opened directly, outside a window, is an ordinary page.
         """
         popup = snapshot.get('_provider_popup') or {}
-        popup_id = popup.get('id', 0)
         protected = self._protected_hosts()
         hops = tuple(ascii_host(hop) for hop in self._new_authorizations() if ascii_host(hop) in protected)
-        lifecycle = None
-        newly_authorized = False
-        if popup_id:
-            lifecycle = self._popups.setdefault(popup_id, {
-                'id': popup_id, 'first_seen': time.monotonic(), 'authorized': False,
-                'oauth_error': False, 'needs_owner': False, 'closed': False})
-            newly_authorized = not lifecycle['authorized'] and popup.get('provider_host') in hops
-            lifecycle['authorized'] |= newly_authorized
-            for key in ('oauth_error', 'needs_owner'):
-                lifecycle[key] |= bool(popup.get(key))
-            lifecycle['closed'] |= not popup.get('active')
-            for key in ('host', 'provider_host'):
-                if popup.get(key):
-                    lifecycle[key] = popup[key]
-            if lifecycle['closed'] and not lifecycle['authorized'] and 'attempt' not in lifecycle:
-                del self._popups[popup_id]
-                lifecycle = None
-        belongs = lifecycle and (newly_authorized or
-                  (self._resign and lifecycle.get('attempt') is self._resign['attempt']))
-        flow_popup = lifecycle if belongs else {}
-        popup_host = popup.get('provider_host') or popup.get('host') or (hops[-1] if hops else '')
-        host = ascii_host(popup_host if popup.get('active') else landed_host(snapshot.get('_page')) or '')
+        if popup.get('id') and not self._popups.get(popup['id'], {}).get('finalized'):
+            return self._observe_popup(snapshot, popup, protected)
+        host = ascii_host(landed_host(snapshot.get('_page')) or '')
         passed = bool(hops)
         window = self._window
-        if window and flow_popup and self._resign and 'attempt' not in flow_popup:
-            flow_popup['attempt'] = self._resign['attempt']
         if window and self._resign:
             self._resign['chain'] = tuple(dict.fromkeys((*self._resign['chain'], *hops)))
         if not host:
@@ -1327,18 +1333,13 @@ class BrowserSession:
                                              *(hops or (asked if asked in protected else host,)))))
                 self._resign = {'site': origin['site'], 'provider': chain[0], 'chain': chain,
                                 'reference': origin['url'], 'window_url': origin['window_url'],
-                                'cookies': origin.get('cookies'), 'mark': origin.get('mark'), 'seen': entered,
-                                'popup': {}, 'attempt': object()}
+                                'cookies': origin.get('cookies'), 'popup': {}}
             inside = host in protected or (entered and domain != (origin or {}).get('site'))
             if inside:
                 window = self._window = {'origin': origin, 'hosts': set()}
-        if flow_popup and self._resign and 'attempt' not in flow_popup:
-            flow_popup['attempt'] = self._resign['attempt']
         if inside:
             window['hosts'].add(host)
             window['current'] = host
-            if self._resign:
-                self._resign['seen'] = True
         else:
             if self._resign and (window or entered):
                 self._finalize_sign_in(snapshot)
@@ -1351,22 +1352,28 @@ class BrowserSession:
         """The owner signs in (the in-flow login, asked however the Work ends): at the re-sign-in's site, else
         at the page the provider window was entered from, else at this page."""
         resign, origin = self._resign, (self._window or {}).get('origin')
+        if resign and resign.get('hand_off'):
+            return resign['hand_off']
         if resign:
             url, window_url = resign['reference'], resign['window_url']
         elif origin and origin.get('url'):
             url, window_url = origin['url'], origin.get('window_url')
         else:
             url, window_url = (snapshot or {}).get('url'), (snapshot or {}).get('_window_url') or (snapshot or {}).get('window_url')
-        return (self._offer_login(url, explicit=True, window_url=window_url) if url else None) or LOGIN_REQUIRED_TEXT
+        text = (self._offer_login(url, explicit=True, window_url=window_url) if url else None) or LOGIN_REQUIRED_TEXT
+        if resign and resign.get('popup'):
+            resign['hand_off'] = text
+        return text
 
     def _refuse_on_provider(self, snapshot):
         """#636: inside a provider window (``_observe``), a press or typing step - and so any form submit it
         could start - is refused before anything reaches the page (``ran: false``); the owner signs in."""
         inside = self._observe(snapshot)
-        popup = (self._pending_provider_sign_in or {}).get('popup', {})
-        if not inside and not popup.get('needs_owner'):
+        if not inside:
             return
-        provider = self._window['current'] if self._window else popup.get('host', '')
+        provider = self._window['current']
+        if self._resign and self._resign.get('popup'):
+            self._resign['popup']['needs_owner'] = True
         text = msg('browser.provider_interaction_refused', provider=provider) + ' ' + self._hand_off(snapshot)
         raise ToolError(text, PROVIDER_INTERACTION_CODE, ran=False)
 
@@ -1690,6 +1697,8 @@ class BrowserSession:
         self._check()
         snapshot = self._snapshot()
         self._refuse_on_provider(snapshot)   # #636: before the target is even resolved
+        if (self._pending_provider_sign_in or {}).get('popup_id'):
+            return self._page_state()   # deliver the closed attempt before starting another action
         element = resolve_target(snapshot, args.get('target'))
         key = target_key(element)
         state = self._state_of(snapshot, element)
@@ -1754,6 +1763,8 @@ class BrowserSession:
         self._check()
         snapshot = self._snapshot()
         self._refuse_on_provider(snapshot)   # #636: nothing is typed on the provider's pages
+        if (self._pending_provider_sign_in or {}).get('popup_id'):
+            return self._page_state()
         element = resolve_target(snapshot, args.get('target'))
         binding = step_binding(self.work_id, 'browser_type', snapshot['_page'], target_key(element), text,
                                self._state_of(snapshot, element))

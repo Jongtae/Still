@@ -1431,7 +1431,7 @@ class Worker:
         self.authorizations = []
         self.authorization_count = 0
         self.popup_id = 0
-        self.popup_state = {}      # #683: host-only lifecycle of the latest Work popup
+        self.popup_state = {}      # #683: one attempt per Work popup id, retained through close
         self.login_return = None   # latest owner-window start; consumed at most once
         self.login_return_pending = None  # only the latest settle-time return may run
         self.popups = []           # #914: (view, window, delegate) of sign-in popups while the owner signs in
@@ -2522,8 +2522,8 @@ class Worker:
         if not self.owner_visible:
             self.popup_id += 1
             self.popup_state = {'active': True, 'host': '', 'oauth_error': False,
-                                'id': self.popup_id}
-            state = self.popup_state
+                                'id': self.popup_id, 'hosts': [], 'authorization_hosts': []}
+            state = delegate.state = self.popup_state
             def expire():
                 if self.popup_state is state and state['active']:
                     state['needs_owner'] = True
@@ -2539,8 +2539,8 @@ class Worker:
                 # Cancel expiry/input callbacks before native teardown can re-enter the run loop.
                 # Retain the closed popup's error/hand-off evidence for the next snapshot.
                 self.popups.remove(entry)
-                if not self.owner_visible and not self.popups:
-                    self.popup_state['active'] = False
+                if not self.owner_visible:
+                    entry[2].state['active'] = False
                 entry[0].stopLoading()
                 entry[1].orderOut_(None)
                 # Tear down the document too: a timed-out popup must not keep running hidden scripts.
@@ -2553,7 +2553,7 @@ class Worker:
         def checked(value, error):
             if self.popup_state is not state or not state['active']:
                 return
-            if value is True and state.get('host') in self.provider_sign_in_policy.get('protected_hosts', ()):
+            if value is True:
                 state['needs_owner'] = True
                 self.close_popup(view=view)
             else:
@@ -3101,12 +3101,14 @@ def _popup_delegate_class():
                 frame = action.targetFrame()
                 top = frame is None or bool(frame.isMainFrame())
                 work = not getattr(worker, 'owner_visible', True)
+                if work and not any(entry[0] is view for entry in worker.popups):
+                    return handler(WebKit.WKNavigationActionPolicyCancel)
                 if work and action.navigationType() in (
                         WebKit.WKNavigationTypeFormSubmitted, WebKit.WKNavigationTypeFormResubmitted):
                     method = str(request.HTTPMethod() or 'GET') if request is not None else ''
 
                     def refuse_form():
-                        worker.popup_state['needs_owner'] = True
+                        self.state['needs_owner'] = True
                         handler(WebKit.WKNavigationActionPolicyCancel)
                         worker.close_popup(view=view)
 
@@ -3133,6 +3135,7 @@ def _popup_delegate_class():
                     form_check = None
                 if top and str(urlsplit(url).scheme or '').lower() in ('data', 'blob'):
                     if work:
+                        self.state['needs_owner'] = True
                         worker.close_popup(view=view)
                     return handler(WebKit.WKNavigationActionPolicyCancel)
                 if work and top:
@@ -3141,9 +3144,11 @@ def _popup_delegate_class():
                     if getattr(self, 'reserved', False):
                         self.reserved = False
                         if not worker.popup_allowed(url):
+                            self.state['needs_owner'] = True
                             worker.close_popup(view=view)
                             return handler(WebKit.WKNavigationActionPolicyCancel)
                     if authorization_blocked(url, worker.provider_sign_in_policy):
+                        self.state['needs_owner'] = True
                         worker.navigation_refused(True, 'provider_sign_in_off')
                         worker.close_popup(view=view)
                         return handler(WebKit.WKNavigationActionPolicyCancel)
@@ -3157,12 +3162,16 @@ def _popup_delegate_class():
                         worker.note_authorization(url)
                         if work:
                             host = _host(url).rstrip('.')
-                            worker.popup_state['host'] = host
+                            self.state['host'] = host
                             if host in worker.provider_sign_in_policy.get('protected_hosts', ()):
-                                worker.popup_state['provider_host'] = host
-                            worker.popup_state['oauth_error'] |= any(
+                                if host not in self.state['hosts']:
+                                    self.state['hosts'].append(host)
+                                if authorization_host(url) and host not in self.state['authorization_hosts']:
+                                    self.state['authorization_hosts'].append(host)
+                            self.state['oauth_error'] |= any(
                                 name == 'error' for name, _ in parse_qsl(urlsplit(url).query, keep_blank_values=True))
                     if not allowed and work:
+                        self.state['needs_owner'] = True
                         worker.navigation_refused(True, reason or 'blocked_destination')
                         worker.close_popup(view=view)
                     handler(WebKit.WKNavigationActionPolicyAllow if allowed else WebKit.WKNavigationActionPolicyCancel)
@@ -3178,7 +3187,7 @@ def _popup_delegate_class():
 
         def webView_runJavaScriptAlertPanelWithMessage_initiatedByFrame_completionHandler_(self, view, message, frame, handler):
             if not self.worker.owner_visible:
-                self.worker.popup_state['needs_owner'] = True
+                self.state['needs_owner'] = True
                 handler()
                 self.worker.close_popup(view=view)
                 return
@@ -3192,7 +3201,7 @@ def _popup_delegate_class():
 
         def webView_runJavaScriptConfirmPanelWithMessage_initiatedByFrame_completionHandler_(self, view, message, frame, handler):
             if not self.worker.owner_visible:
-                self.worker.popup_state['needs_owner'] = True
+                self.state['needs_owner'] = True
                 handler(False)
                 self.worker.close_popup(view=view)
                 return
@@ -3207,7 +3216,7 @@ def _popup_delegate_class():
         def webView_runJavaScriptTextInputPanelWithPrompt_defaultText_initiatedByFrame_completionHandler_(
                 self, view, prompt, default, frame, handler):
             if not self.worker.owner_visible:
-                self.worker.popup_state['needs_owner'] = True
+                self.state['needs_owner'] = True
                 handler(None)
                 self.worker.close_popup(view=view)
                 return

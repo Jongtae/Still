@@ -825,6 +825,29 @@ class ProviderPopupWorkerTests(unittest.TestCase):
         self.assertEqual((self.worker.authorizations, self.worker.authorization_count), (['id.provider.test'], 1))
         self.assertEqual((self.worker.main_navigations, self.worker.landed), (0, 0))
 
+    def test_popup_id_retains_authorization_and_failure_across_a_different_protected_host(self):
+        from test_provider_resign_in import popup_session, SITE, PROVIDER, UPSTREAM
+        sess, driver, approvals = popup_session()
+        self.worker.provider_sign_in_policy['protected_hosts'].append(UPSTREAM)
+        self.worker.resolved[self.bw.origin_key('https://' + UPSTREAM)] = None
+        view = self.create('about:blank')
+        state = self.worker.popup_state
+        driver.popup = state
+        sess.run('browser_read', {})  # reserve and bind the blank popup
+        self.navigate(view, self.authorize)
+        self.navigate(view, 'https://' + UPSTREAM + '/callback?error=access_denied')
+        self.worker.popups[-1][2].webViewDidClose_(view)
+        self.assertEqual(state['authorization_hosts'], [PROVIDER])
+        self.assertEqual(state['hosts'], [PROVIDER, UPSTREAM])
+        driver.goto(f'https://{SITE}/callback?code=abc', 1)
+        page = sess.run('browser_read', {})
+        self.assertEqual(page['provider_sign_in']['state'], 'unconfirmed')
+        self.assertEqual(page['provider_sign_in']['chain'], [PROVIDER, UPSTREAM])
+        self.assertIn('OFFER-EXPLICIT', page['next_step'])
+        self.assertEqual(len(approvals.offers), 1)
+        self.assertNotIn('provider_sign_in', sess.run('browser_read', {}))
+        self.assertEqual(len(approvals.offers), 1)
+
     def test_work_popup_native_posts_are_refused_and_handed_off(self):
         # Native submits (including a fresh iframe's unwrapped submit) arrive
         # through this delegate even when no JavaScript guard reports a form.
@@ -981,9 +1004,15 @@ class ProviderPopupWorkerTests(unittest.TestCase):
         self.assertFalse(state['active'])
         self.assertEqual(self.worker.authorization_count, 0)
         driver.popup = dict(state)
+        page = sess.run('browser_read', {})
+        self.assertEqual(page['provider_sign_in']['state'], 'unconfirmed')
+        self.assertIn('OFFER-EXPLICIT', page['next_step'])
+        offers = list(approvals.offers)
+        self.assertNotIn('provider_sign_in', sess.run('browser_read', {}))
+        self.assertEqual(approvals.offers, offers)
         page = sess.run('browser_click', {'target': '다른 계정으로 계속', 'effect': 'navigate'})
         self.assertEqual(page['provider_sign_in']['state'], 'signed_in')
-        self.assertFalse(approvals.offers)
+        self.assertEqual(approvals.offers, offers)
 
     def test_normal_close_cancels_timeout_before_native_teardown_reenters(self):
         from unittest import mock
