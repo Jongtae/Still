@@ -789,10 +789,13 @@ GOAL_GAP_CHARS = 300
 class Judgment:
     """One bounded judgment reduced by policy.  It informs routing; it never authorizes."""
 
-    __slots__ = ('outcome', 'value', 'source', 'note', 'retry_warranted', 'refused')
+    __slots__ = ('outcome', 'value', 'source', 'note', 'retry_warranted', 'refused', 'contradicted')
 
-    def __init__(self, outcome, value=None, source='policy', note=None, retry_warranted=None, refused=None):
+    def __init__(self, outcome, value=None, source='policy', note=None, retry_warranted=None, refused=None,
+                 contradicted=()):
         self.outcome, self.value, self.source = outcome, value, source
+        #: #674: the ``recorded_effects`` ids the judgment reported as not done, which Still recorded as done.
+        self.contradicted = tuple(contradicted or ())
         #: #1459: the outcome judgment's owner-facing line (``BinaryDecision.note``), when it said no.
         self.note = note
         self.retry_warranted = retry_warranted
@@ -1098,7 +1101,8 @@ class ConversationJudgments:
         return self.policy.selection(decision)
 
     def goal_reached(self, request, observations, failed_steps='', work_id=None, answer='', conversation='',
-                     owner_context='', continues='', attachments='', awaiting_owner='', conversation_messages=None):
+                     owner_context='', continues='', attachments='', awaiting_owner='', conversation_messages=None,
+                     recorded_effects=()):
         """Did the reply serve the owner's ``request`` (#657, #820)?  The one outcome judgment.
 
         One ``judge`` call over the owner's message (never cut), the recent
@@ -1111,7 +1115,13 @@ class ConversationJudgments:
         #1517: ``attachments`` is what the message carried besides its words ('1 photo'), which
         the worker was given and this judgment is not.  #240: ``awaiting_owner`` is this Work's typed
         "awaiting the owner" items (``owner_model.awaiting_owner_text``), names and counts only.
+        #674: ``recorded_effects`` (``agent_runtime.recorded_effects``) are the calls of this Work Still
+        recorded as having made their change.  They bound the judgment: when its ``not_done`` reports
+        one of them as not done, neither its note nor its gap is said (the truth floor, or nothing,
+        follows), and a no whose every reported shortfall is one of them is answered by Still's
+        record, so it reads as yes.  No wording is read: only the typed ids.
         """
+        from .agent_runtime import record_contradictions, recorded_effects_text
         request = str(request or '')
         facts = {'owner_request': request, 'recent_conversation': conversation or 'none',
                  # #980: the earlier exchange this message was judged to follow up, when linked.
@@ -1120,7 +1130,8 @@ class ConversationJudgments:
                  'attachments': attachments or 'none',
                  'reply': answer or 'none (only the observations are known)',
                  'observations': observations, 'failed_steps': failed_steps or 'none',
-                 'awaiting_owner': str(awaiting_owner or '') or 'none'}
+                 'awaiting_owner': str(awaiting_owner or '') or 'none',
+                 'recorded_effects': recorded_effects_text(recorded_effects) or 'none'}
         context = self._context('goal-reached', facts, work_id=work_id, reserve=True,
                                 context_messages=conversation_messages,
                                 # #1451: the observations are caller-bounded too (``OBSERVATION_CHARS``).
@@ -1134,10 +1145,19 @@ class ConversationJudgments:
         # #631: either decided verdict may close an unfinished run.
         note = getattr(decision, 'note', None) if verdict in ('yes', 'no') else None
         note = ' '.join(str(note).split())[:GOAL_GAP_CHARS] if isinstance(note, str) else None
+        retry = getattr(decision, 'retry_warranted', None) if verdict == 'no' else False
+        # #674: Still's typed record of this Work's effects wins over a judgment that denies one.
+        contradicted, only = (record_contradictions(recorded_effects, getattr(decision, 'not_done', None))
+                              if verdict in ('yes', 'no') else ((), False))
+        if contradicted:
+            # Neither of its sentences is said: the truth floor, or nothing, follows (#631 note states).
+            note, gap = None, ''
+            if verdict == 'no' and only:
+                verdict, retry = 'yes', False
         return Judgment(JUDGMENT_UNAVAILABLE if verdict == 'unknown' else verdict, gap or None,
                         source=decision.confidence.provider or decision.outcome, note=note,
-                        retry_warranted=getattr(decision, 'retry_warranted', None) if verdict == 'no' else False,
-                        refused=context.refused if verdict == 'unknown' else None)
+                        retry_warranted=retry,
+                        refused=context.refused if verdict == 'unknown' else None, contradicted=contradicted)
 
     def explicit_memory_request(self, utterance):
         """Does ``utterance`` explicitly ask Still to remember a stated value (#597)?

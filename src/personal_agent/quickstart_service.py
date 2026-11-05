@@ -6682,7 +6682,7 @@ class AgentService:
         # #466: what this attempt already told the owner, so a further attempt does not say it again.
         told=getattr(orchestration,'owner_told',None)
         if callable(told):told(self.store.sent_updates(job_id))
-        from .agent_runtime import failed_steps_text, read_state_text, trail_steps
+        from .agent_runtime import failed_steps_text, read_state_text, recorded_effects, trail_steps
         with self.store.db() as db:
             rows=db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=? AND id>? ORDER BY id',(job_id,since or 0)).fetchall()
         # #618 E2: the one continuation rule.  #795: a trusted-local CLI attempt whose own report shows
@@ -6721,7 +6721,10 @@ class AgentService:
                 else:failed_codes.append(f"{row['tool']} ({data.get('code') or 'failed'})")
         # #14: the judgment reads every unsettled call with what Still observed about it: whether a later
         # call redid it or routed around it, or whether its effect is unknown.
-        failed_steps=failed_steps_text(trail_steps(tool_rows))
+        steps=trail_steps(tool_rows)
+        failed_steps=failed_steps_text(steps)
+        # #674: the calls Still recorded as having made their change; they bound the judgment's verdict and line.
+        effects=recorded_effects(steps)
         # #151: which listed items this attempt opened and read through, from the recorded evidence;
         # kept whole at the end of the bounded observations, so no number of step lines drops it.
         read_state=read_state_text([(tool,data.get('evidence')) for tool,status,data in tool_rows if status=='succeeded'])
@@ -6748,7 +6751,7 @@ class AgentService:
             asked=bool((getattr(result,'report',None) or {}).get('question')) and evaluation!=OWNER_NEEDED
             if (evaluation==REACHED or asked) and getattr(result,'judgment',None) is None and not effect \
                     and orchestration.budget_allows(reserve=True):
-                judged=orchestration.evaluate_answer(answer,observations,failed_steps)
+                judged=orchestration.evaluate_answer(answer,observations,failed_steps,effects=effects)
                 if evaluation==REACHED:
                     if judged==NOT_REACHED:evaluation=NOT_REACHED
                 else:evaluation=judged
@@ -6765,18 +6768,18 @@ class AgentService:
             budget=orchestration.budget
             try:time_left=budget.remaining() if budget is not None else FINAL_JUDGMENT_SECONDS
             except Exception:time_left=0
-            evaluation=(orchestration.evaluate_answer(answer,observations,failed_steps,final=True)
+            evaluation=(orchestration.evaluate_answer(answer,observations,failed_steps,final=True,effects=effects)
                         if not unknown and orchestration.may_judge()
                         and (effect or ws.has_incomplete_result(outcome) or time_left>=FINAL_JUDGMENT_SECONDS)
                         else NOT_JUDGED)
         else:
-            evaluation=orchestration.evaluate_answer(answer,observations,failed_steps)
+            evaluation=orchestration.evaluate_answer(answer,observations,failed_steps,effects=effects)
         # #618 E2: an attempt that stops for a recorded owner prerequisite is still judged once (the
         # one outcome judgment always runs); the judgment is recorded, the stop stays the owner's.
         judged=None
         if (evaluation==OWNER_NEEDED and not unknown and orchestration.may_judge()
                 and (result is None or getattr(result,'judgment',None) is None)):
-            judged=orchestration.evaluate_answer(answer,observations,failed_steps,final=True)
+            judged=orchestration.evaluate_answer(answer,observations,failed_steps,final=True,effects=effects)
         return orchestration.next(attempt,evaluation,answer=str(answer or '')[:600],failed=summary,effect=effect,judged=judged)
 
     def cancel_superseded_work(self, work_ids, notify=True):

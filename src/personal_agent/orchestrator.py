@@ -975,6 +975,8 @@ class Orchestration:
         #: already says it, None when the judgment did not give one), and the last attempt's.
         self.note = None
         self.terminal_note = None
+        #: #674: the recorded effects the last outcome judgment denied (Still's record won).
+        self.contradicted = ()
         #: #308 S1: the owner steers a continuation was given, read with the request by the outcome judgment.
         self.steers = ''
         #: #671: the Work's remaining seconds when each attempt was planned and when it was evaluated
@@ -1523,7 +1525,7 @@ class Orchestration:
             return UNJUDGED
         return NOT_REACHED
 
-    def evaluate_answer(self, answer, observations, failed='', final=False):
+    def evaluate_answer(self, answer, observations, failed='', final=False, effects=()):
         """The one outcome judgment of a CLI attempt (#657, #820).
 
         ``goal_reached`` over the owner's message (whole), the recent
@@ -1535,9 +1537,10 @@ class Orchestration:
         allows another attempt (``NOT_JUDGED``, next step ``budget``), unless
         ``final`` (#752): no attempt can follow and the judgment only decides
         this attempt's outcome, so the Work need only be neither stopped nor
-        past its deadline.
+        past its deadline.  #674: ``effects`` (``agent_runtime.recorded_effects``) are the attempt's
+        calls Still recorded as having made their change; they bound the judgment (``goal_reached``).
         """
-        self.gap, self.note = '', None
+        self.gap, self.note, self.contradicted = '', None, ()
         self.retry_warranted = None
         goal_reached = getattr(self.judgments, 'goal_reached', None)
         if goal_reached is None:
@@ -1565,7 +1568,8 @@ class Orchestration:
                                   **({'conversation_messages': self._turns_in(self._redact(self.conversation)[-CONVERSATION_CHARS:])}
                                      if self.turns is not None else {}),
                                   **({'attachments': self.attachments} if getattr(self, 'attachments', '') else {}),
-                                  **({'awaiting_owner': awaiting} if (awaiting := self._work_awaiting()) else {}))
+                                  **({'awaiting_owner': awaiting} if (awaiting := self._work_awaiting()) else {}),
+                                  **({'recorded_effects': tuple(effects)} if effects else {}))
         except Exception:
             return UNJUDGED
         verdict = getattr(judged, 'outcome', None)
@@ -1575,6 +1579,7 @@ class Orchestration:
             self.budget_stop = judged.refused
             return NOT_JUDGED
         self.retry_warranted = getattr(judged, 'retry_warranted', None)
+        self.contradicted = tuple(getattr(judged, 'contradicted', None) or ())
         if verdict == 'no':
             # #1451: the judgment's own statement of what is missing (already owner-facing text).
             self.gap = self._redact(getattr(judged, 'value', None) or '', private=False)[:GAP_CHARS]
@@ -1625,6 +1630,7 @@ class Orchestration:
         gap, self.gap = (self.gap if short else ''), ''
         # #631: owner-needed stops carry their attempt's judgment too.
         note, self.note = (self.note if (judged or evaluation) in (REACHED, NOT_REACHED) else None), None
+        contradicted, self.contradicted = getattr(self, 'contradicted', ()), ()
         if gap:
             self.gaps[attempt.number] = gap
         worker = self.catalogue.worker(attempt.worker)
@@ -1680,6 +1686,8 @@ class Orchestration:
                                 **({'code': code} if code else {}),
                                 'invalid': (invalid or None) if not stop or stop == STOP_REPLAN else None,
                                 'gap': gap or None, **({'judged': judged} if judged else {}),
+                                # #674: the recorded effects the judgment denied; Still's record won.
+                                **({'record_won': list(contradicted)} if contradicted else {}),
                                 'text': ' '.join(part for part in (EVALUATED_TEXT[evaluation], gap, after) if part)})
         if following is not None:
             self.attempts.append(following)
