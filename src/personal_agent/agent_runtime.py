@@ -3277,10 +3277,20 @@ def owner_wait_steps(rows, tools=None):
  The CLI route's counterpart of the direct route's withheld records: there the reason (the
  owner's next step) is the step's refusal and owner step; here the bridge recorded the call as
  returning normally, so the same ``withheld_effect`` reason is read back from its Evidence.
+ The direct route's own withheld records (``failed`` with ``state: withheld``) are read too, so a
+ Work of either route can tell that it ended on such a wait (``AgentService.unresumed_owner_wait``).
  """
- waits=[]
+ rows=list(rows);waits=[]
  for tool,action,state,detail,_reason in trail_steps(rows,tools):
   withheld=recorded_withheld(action,detail) if state=='withheld' else None
+  if withheld is not None and withheld.owner_step:waits.append((tool,withheld.reason))
+ for tool,status,detail in rows:
+  if status!='failed':continue
+  try:data=detail if isinstance(detail,dict) else json.loads(detail or '{}')
+  except (TypeError,ValueError):continue
+  if not isinstance(data,dict) or data.get('state')!='withheld':continue
+  action=data.get('host_action') or (tools or {}).get(tool,{}).get('host_action') or tool
+  withheld=withheld_effect(action,recorded_evidence(data))
   if withheld is not None and withheld.owner_step:waits.append((tool,withheld.reason))
  return waits
 
