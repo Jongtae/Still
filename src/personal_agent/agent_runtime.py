@@ -482,7 +482,8 @@ SETTINGS_CHANGE_ARGUMENTS={
   'browser close_login (value is one of the waiting login windows settings_read browser lists: closes that '
   'window when the owner will not sign in there or asked to go on without it; the request that opened it ends '
   'without sign-in and is never resumed as if signed in, and saved sign-ins stay), browser use_mobile (value is '
-  'a site kept in desktop version from settings_read browser; reset it to mobile), ai_connections enabled (on or '
+  'a site kept in desktop version from settings_read browser; reset it to mobile), '
+  'browser provider_sign_in (on or off for every site, or "<site>|on" / "<site>|off" for one site from settings_read browser: whether the AI may sign back in to a site through the sign-in provider the owner used there, with no interaction on the provider), ai_connections enabled (on or '
   'off: let this owner\'s Works use the services connected to the owner\'s own AI, for reads and general '
   'non-payment changes; payments require exact per-action owner approval; not available on a family member\'s '
   'assistant), ai_connections servers (which of the owner\'s own MCP servers are on for Works in one AI; value is '
@@ -5030,6 +5031,12 @@ def _evidence_detail(name,result):
            'element_count':len(result.get('elements',[])),'characters':len(result.get('text','')),
            'redacted_values':int(result.get('redacted_values') or 0),'found':result.get('found')}
   if result.get('layout')=='desktop':summary['layout']='desktop'   # #572
+  signed=result.get('provider_sign_in')
+  if isinstance(signed,dict) and signed.get('state') in ('available','signed_in','unconfirmed'):
+   # #636: the site and the provider host a re-sign-in went through (hosts only), for the receipt and the audit.
+   summary['provider_sign_in']={key:str(signed.get(key) or '')[:120] for key in ('site','provider','state')}
+   if signed.get('login_request')=='resolved':summary['provider_sign_in']['login_request']='resolved'
+   if isinstance(signed.get('chain'),list):summary['provider_sign_in']['chain']=[str(host)[:120] for host in signed['chain'][:8]]
   loaded=result.get('loaded')
   if isinstance(loaded,dict):
    # #11: the load-more operation and its outcome, never the loaded text.

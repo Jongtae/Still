@@ -82,7 +82,7 @@ import sys
 import threading
 import time
 import uuid
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlsplit
 
 #: Appended to the user agent.  Still's own HTTP server refuses every
 #: request that carries it, so a page in the embedded browser can never use
@@ -1169,6 +1169,69 @@ def _host(url):
         return ''
 
 
+#: #636: the parameters that make a navigation an OAuth 2.0 authorization request (RFC 6749 §4.1.1;
+#: OIDC Core §3.1.2.1 adds ``scope=openid`` to the same request).  Only their names are compared.
+AUTHORIZATION_PARAMETERS = frozenset({'response_type', 'client_id'})
+#: #636: how many authorization-request hosts one worker keeps (in order; hosts only).
+AUTHORIZATIONS_KEPT = 16
+
+
+def authorization_host(url):
+    """The host of ``url`` when it carries an OAuth 2.0 authorization request, else None (#636).
+
+    The query's parameter names are compared with ``AUTHORIZATION_PARAMETERS``;
+    no value is returned or kept, and no provider is named. RFC 6749 permits
+    redirect_uri to be omitted; such requests still need a policy decision.
+    """
+    try:
+        parts = urlsplit(str(url or ''))
+        host = (parts.hostname or '').lower().rstrip('.')
+    except ValueError:
+        return None
+    if parts.scheme not in ('http', 'https') or not host:
+        return None
+    names = {name for name, _value in parse_qsl(parts.query, keep_blank_values=True)}
+    return host if AUTHORIZATION_PARAMETERS <= names else None
+
+
+def authorization_blocked(url, policy):
+    """Apply Work switches to the request's client endpoint (RFC 6749 §§3.1.2, 4.1.1).
+
+    Query values are parsed only in memory, never retained in policy or evidence.
+    Missing, ambiguous or unusable endpoints fail closed whenever any switch is off.
+    """
+    if authorization_host(url) not in policy.get('protected_hosts', ()):
+        return False
+    enabled = policy.get('enabled', True)
+    off_sites = policy.get('off_sites', ())
+    if not enabled:
+        return True
+    if not off_sites:
+        return False
+    from .browser_session import registrable_domain
+    host = authorization_redirect_host(url)
+    return host is None or registrable_domain(host) in off_sites
+
+
+def authorization_redirect_host(url):
+    """The unambiguous client endpoint's host, parsed in memory; retain no redirect URI value."""
+    try:
+        redirects = [value for name, value in parse_qsl(urlsplit(url).query, keep_blank_values=True)
+                     if name == 'redirect_uri']
+        if len(redirects) != 1:
+            return None
+        endpoint = urlsplit(redirects[0])
+        host = endpoint.hostname
+        # urlsplit is intentionally permissive; require an absolute usable client endpoint.
+        if not endpoint.scheme or not host or endpoint.username is not None or endpoint.fragment \
+                or any(char.isspace() or char in '%\\' for char in host):
+            return None
+        endpoint.port  # Validate a supplied port without retaining it.
+        return host
+    except ValueError:
+        return None
+
+
 def origin_key(url):
     """``host:port`` of an http(s) URL (default ports filled), or ''."""
     try:
@@ -1352,6 +1415,7 @@ class Worker:
         self.AppKit, self.Foundation, self.WebKit, self.AppHelper = AppKit, Foundation, WebKit, AppHelper
         self.profile, self.emit = profile, emit
         self.allowed_origins = frozenset(allowed_origins)
+        self.provider_sign_in_policy = {}
         self.pending = {}          # op id -> True while the op has not answered
         self.navigation = None     # (id, WKNavigation) the navigate op waits for
         self.blocked = 0           # main-frame navigation failures (app-link cancellations excluded)
@@ -1362,6 +1426,10 @@ class Worker:
         self.step_posted = 0       # ``posted_submits`` when the current step began
         self.reported_refused = 0  # ``refused_submits`` last reported (step answer or snapshot, #758)
         self.hosts = set()         # hosts of committed main-frame navigations in this worker's life
+        #: #636: hosts of allowed navigations that carried an OAuth 2.0 authorization request (hosts only,
+        #: the last ``AUTHORIZATIONS_KEPT``), and how many there were in this worker's life.
+        self.authorizations = []
+        self.authorization_count = 0
         self.popups = []           # #914: (view, window, delegate) of sign-in popups while the owner signs in
         self.main_navigations = 0  # main-frame navigations allowed so far (#736)
         #: #11: while a ``load_more`` read runs, a main-frame navigation the page starts is
@@ -1832,6 +1900,13 @@ class Worker:
         step, self.dialog_step = getattr(self, 'dialog_step', None), None
         self.end_step(answer)
 
+    def note_authorization(self, url):
+        """#636: count an allowed navigation that carries an OAuth 2.0 authorization request; its host only."""
+        host = authorization_host(url)
+        if host:
+            self.authorization_count += 1
+            self.authorizations = (self.authorizations + [host])[-AUTHORIZATIONS_KEPT:]
+
     # -- destinations ----------------------------------------------------------
     def decide(self, url, main_frame, decision):
         """Allow or refuse one navigation; ``decision(bool)`` may be called later (after DNS)."""
@@ -1842,6 +1917,8 @@ class Worker:
             return decision(True)
         if scheme not in ('http', 'https'):
             return decision(False, 'unsupported_navigation')
+        if main_frame and authorization_blocked(url, getattr(self, 'provider_sign_in_policy', {})):
+            return decision(False, 'provider_sign_in_off')
         key = origin_key(url)
         if key in self.resolved:
             return decision(self.resolved[key] is None, self.resolved[key])
@@ -1955,6 +2032,8 @@ class Worker:
         op = command.get('op')
         timeout = command.get('timeout') or 20
         try:
+            if 'provider_sign_in_policy' in command:
+                self.provider_sign_in_policy = command['provider_sign_in_policy']
             if 'intranet' in command:
                 self.set_intranet(command['intranet'])
             method = getattr(self, 'op_' + str(op), None)
@@ -2705,7 +2784,9 @@ class Worker:
 
     def op_state(self, ident, command, timeout):
         # #765: ``navigations`` is a count of main-frame navigations (never a URL).
-        self.reply(ident, visible=bool(self.owner_visible), navigations=self.landed)
+        # #636: ``authorizations`` the hosts of OAuth 2.0 authorization requests (never a query value).
+        self.reply(ident, visible=bool(self.owner_visible), navigations=self.landed,
+                   authorizations=list(self.authorizations), authorization_count=self.authorization_count)
 
     def _all_types(self):
         return self.WebKit.WKWebsiteDataStore.allWebsiteDataTypes()
@@ -2935,10 +3016,15 @@ def _popup_delegate_class():
                 top = frame is None or bool(frame.isMainFrame())
                 if top and str(urlsplit(url).scheme or '').lower() in ('data', 'blob'):
                     return handler(WebKit.WKNavigationActionPolicyCancel)
-                # main_frame=False: a popup's navigations never touch the login window's counters.
+                # main_frame=False: a popup's navigations never touch the login window's navigation counters.
                 # #1579: ``decide`` answers ``(allowed, reason)``; a one-argument callback raised here.
-                worker.decide(url, False, lambda allowed, reason=None: handler(
-                    WebKit.WKNavigationActionPolicyAllow if allowed else WebKit.WKNavigationActionPolicyCancel))
+                def decision(allowed, reason=None):
+                    if allowed and top:
+                        # #636: a popup exists only while the owner signs in by hand (``open_popup``): its
+                        # authorization request's host is recorded like the window's own, never a value.
+                        worker.note_authorization(url)
+                    handler(WebKit.WKNavigationActionPolicyAllow if allowed else WebKit.WKNavigationActionPolicyCancel)
+                worker.decide(url, False, decision)
             guarded_policy(worker, 'popup_navigation', handler, WebKit.WKNavigationActionPolicyCancel, body)
 
         def webView_runJavaScriptAlertPanelWithMessage_initiatedByFrame_completionHandler_(self, view, message, frame, handler):
@@ -3043,6 +3129,7 @@ def _delegate_class():
                         worker.navigation_refused(main_frame, reason or 'blocked_destination')
                     elif main_frame:
                         worker.main_navigations += 1   # a click waits for it to land (#736)
+                        worker.note_authorization(url)   # #636: a host, only when the URL is an authorization request
                         try:
                             worker.phone_navigated(committed=False)   # #254: the next page loads phone-sized
                         except Exception:

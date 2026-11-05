@@ -883,6 +883,9 @@ class WorkerGuardLogicTests(unittest.TestCase):
             worker.AppHelper = SimpleNamespace(callLater=lambda seconds, fn: fn())
             worker.allowed_origins, worker.intranet = (), ()
             def request(op, timeout, **args):
+                if op == 'state':
+                    return {'authorization_count': 0, 'authorizations': []}
+                self.assertEqual(op, 'click')
                 worker.dialog_step = {'dialogs': []}
                 worker.pending[5] = True
                 def cancelled(allowed, reason=None):
