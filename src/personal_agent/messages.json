@@ -7769,10 +7769,10 @@
   "zh": "全部{label}"
  },
  "quickstart_service.prepared_result": {
-  "ko": "부탁하신 일: {title}",
-  "en": "What you asked for: {title}",
-  "ja": "ご依頼の件：{title}",
-  "zh": "您交代的事：{title}"
+  "ko": "알려드리기로 한 {title}",
+  "en": "As promised: {title}",
+  "ja": "お約束の{title}",
+  "zh": "按约定：{title}"
  },
  "quickstart_service.check_preparation_request": {
   "ko": "준비 요청을 확인하세요.",
