@@ -1241,13 +1241,26 @@ class BrowserSession:
         """
         ident = popup['id']
         if ident not in self._popups:
-            origin = (self._window or {}).get('origin') or self._outside or self._requested_origin
+            origin = self._requested_origin or (self._window or {}).get('origin')
+            if not origin:
+                page = snapshot.get('_window_url') or snapshot.get('_page')
+                if page and ascii_host(landed_host(page)) not in protected:
+                    site = registrable_domain(landed_host(page))
+                    # The popup already exists: cookies read now may include its
+                    # callback. Reuse the saved baseline only for this site;
+                    # a newly observed site has no pre-attempt cookie evidence.
+                    outside = self._outside or {}
+                    origin = (outside if outside.get('site') == site else
+                              {'site': site, 'url': page_reference(page),
+                               'window_url': login_window_url(page), 'cookies': None})
+            origin = origin or self._outside
             if not origin:
                 return False
             self._popups[ident] = {
                 'site': origin['site'], 'reference': origin['url'], 'window_url': origin['window_url'],
                 'cookies': origin.get('cookies'), 'origin': origin, 'chain': (),
                 'popup': {'id': ident, 'oauth_error': False, 'needs_owner': False}, 'finalized': False}
+            self._requested_origin = None   # navigation baseline is now bound to this attempt
         attempt = self._popups[ident]
         evidence = attempt['popup']
         for key in ('oauth_error', 'needs_owner'):
@@ -1276,7 +1289,6 @@ class BrowserSession:
             self._resign = None
         self._window = None
         self._outside = self._origin(snapshot.get('_window_url') or snapshot.get('_page'))
-        self._requested_origin = None
         return False
 
     def _observe(self, snapshot, requested_url=None):
@@ -1345,6 +1357,8 @@ class BrowserSession:
                 self._finalize_sign_in(snapshot)
             self._window = None
             self._outside = self._origin(snapshot.get('_window_url') or snapshot.get('_page'))
+        # Popup dispatch above must bind the pre-navigation baseline before it
+        # can be cleared or the ordinary-page baseline can be refreshed.
         self._requested_origin = None
         return inside
 

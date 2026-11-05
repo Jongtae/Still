@@ -358,6 +358,100 @@ def popup_session():
 
 
 class PopupResignInTests(unittest.TestCase):
+    def test_silent_click_popup_uses_the_saved_pre_attempt_cookie_baseline(self):
+        class ClickPopupDriver(PopupHostDriver):
+            def click(self, index, timeout, **kwargs):
+                self.popup_authorize()
+                self.popup_finish()   # callback, opener reload and close before the snapshot
+                return {'navigated': True}
+
+        driver = ClickPopupDriver()
+        approvals = ProviderApprovals({SITE: PROVIDER})
+        sess = bs.BrowserSession(lambda: driver, work_id='popup-click-683', approvals=approvals)
+        sess.run('browser_open', {'url': f'https://{SITE}/start', 'effect': 'navigate'})
+        before = sess._outside['cookies']
+        self.assertIsNone(sess._requested_origin)
+        page = sess.run('browser_click', {'target': '다른 계정으로 계속', 'effect': 'navigate'})
+        self.assertEqual(sess._popups[1]['cookies'], before)
+        self.assertNotEqual(before, sess._site_cookies(SITE))
+        self.assertEqual(page['provider_sign_in']['state'], 'signed_in')
+        self.assertEqual(approvals.resolved, [f'https://{SITE}/start'])
+        self.assertFalse(approvals.offers)
+
+    def test_popup_without_a_pre_attempt_baseline_cannot_prove_sign_in(self):
+        sess, driver, approvals = popup_session()
+        sess._outside = None   # no saved baseline, even though the site can be identified
+        driver.popup_authorize()
+        driver.popup_finish()
+        page = sess.run('browser_read', {})
+        self.assertIsNone(sess._popups[1]['cookies'])
+        self.assertEqual(page['provider_sign_in']['state'], 'unconfirmed')
+        self.assertFalse(getattr(approvals, 'resolved', []))
+        self.assertTrue(approvals.offers)
+
+    def test_navigation_popup_finishes_before_first_snapshot_and_binds_the_requested_site(self):
+        for outcome in ('signed_in', 'no_session', 'oauth_error', 'needs_owner'):
+            with self.subTest(outcome=outcome):
+                class NavigationPopupDriver(PopupHostDriver):
+                    def goto(self, url, timeout):
+                        super().goto(url, timeout)
+                        if url == f'https://{SITE}/start':
+                            self.popup_authorize()
+                            if outcome == 'signed_in':
+                                self.popup_finish()
+                            else:
+                                # A's cookie changes, but B has no new session.
+                                self.cookies['public.test'] = [
+                                    {'name': 'sid', 'value': 'new-a-session', 'domain': 'public.test',
+                                     'path': '/', 'expires': None}]
+                                self.popup.update(active=False, oauth_error=outcome == 'oauth_error',
+                                                  needs_owner=outcome == 'needs_owner')
+
+                driver = NavigationPopupDriver()
+                approvals = ProviderApprovals({SITE: PROVIDER})
+                sess = bs.BrowserSession(lambda: driver, work_id='popup-navigation-683', approvals=approvals)
+                sess.run('browser_open', {'url': 'https://public.test/', 'effect': 'navigate'})
+                self.assertEqual(sess._outside['site'], 'public.test')
+                before = sess._site_cookies(SITE)
+                page = sess.run('browser_open', {'url': f'https://{SITE}/start', 'effect': 'navigate'})
+                attempt = sess._popups[1]
+                self.assertEqual(attempt['site'], SITE)
+                self.assertEqual(attempt['cookies'], before)
+                self.assertEqual(attempt['reference'], f'https://{SITE}/start')
+                self.assertTrue(attempt['finalized'])
+                self.assertIsNone(sess._requested_origin)
+                self.assertEqual(page['provider_sign_in'], {
+                    'site': SITE, 'provider': PROVIDER,
+                    'state': 'signed_in' if outcome == 'signed_in' else 'unconfirmed',
+                    **({'login_request': 'resolved'} if outcome == 'signed_in' else {})})
+                if outcome == 'signed_in':
+                    self.assertFalse(approvals.offers)
+                    self.assertEqual(approvals.resolved, [f'https://{SITE}/start'])
+                else:
+                    self.assertIn('OFFER-EXPLICIT', page['next_step'])
+                    self.assertEqual(approvals.offers, [(f'https://{SITE}/start', True)])
+
+    def test_new_popup_uses_the_current_main_page_before_the_previous_outside_page(self):
+        sess, driver, approvals = popup_session()
+        driver.goto('https://public.test/', 1)
+        driver.popup_authorize()
+        driver.popup_finish(error=True)
+        page = sess.run('browser_read', {})
+        self.assertEqual(sess._popups[1]['site'], 'public.test')
+        self.assertEqual(page['provider_sign_in']['site'], 'public.test')
+        self.assertEqual(approvals.offers, [('https://public.test/', True)])
+
+    def test_new_popup_on_a_protected_main_page_falls_back_to_the_outside_page(self):
+        sess, driver, approvals = popup_session()
+        driver.answer = 'chooser'
+        driver.goto(AUTHORIZE, 1)
+        driver.popup_authorize()
+        driver.popup_finish(error=True)
+        page = sess.run('browser_read', {})
+        self.assertEqual(sess._popups[1]['reference'], f'https://{SITE}/start')
+        self.assertEqual(page['provider_sign_in']['site'], SITE)
+        self.assertEqual(approvals.offers, [(f'https://{SITE}/start', True)])
+
     def test_observed_blank_popup_retains_failure_after_silent_authorization_and_close(self):
         for error, needs_owner in ((True, False), (False, True), (True, True)):
             with self.subTest(error=error, needs_owner=needs_owner):
