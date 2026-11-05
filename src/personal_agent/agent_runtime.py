@@ -3102,14 +3102,20 @@ def state_change_short(steps):
  ``steps`` are ``(tool, host_action, state, detail, reason)`` in order (``trail_steps``, or the
  direct route's own attempts).  #630: a failed, withheld or incomplete call holds unless the same
  invocation (``same_invocation``) succeeded later and its effect is known, or Still's own records
- of the call show it changed nothing (``effect_free_call``; a delegation, whose specialist's calls
- are held on their own).  A withheld call waits for the owner's decision: only its kind clears it.
+ of a failed call classify it as ``none`` (``record_effect``, #656). A delegation's specialist's
+ calls are held on their own. Withheld and incomplete calls keep their existing rules: a withheld
+ call waits for the owner's decision, so only its kind clears it.
  """
  free=_state_free_actions()
  for index,(_tool,action,state,detail,_reason) in enumerate(steps):
   if state not in ('failed','withheld','incomplete') or action=='delegate_agent':continue
   detail=detail if isinstance(detail,dict) else {}
-  if action in free if state=='withheld' else effect_free_call(action,detail,'failed' if state=='failed' else 'succeeded'):continue
+  if state=='failed':
+   # An owner-local write that ran and failed changed nothing outside, but the change the owner
+   # asked for did not happen either: it still holds (#656 review).  Refused before it ran clears.
+   ran_and_failed_write=action in OWNER_LOCAL_ACTIONS and detail.get('ran') is not False
+   if not ran_and_failed_write and record_effect(action,detail,'failed')==EFFECT_NONE:continue
+  elif action in free if state=='withheld' else effect_free_call(action,detail,'succeeded'):continue
   if not unknown_effect(detail) and any(other==action and result=='succeeded' and same_invocation(detail,done)
                                         for _t,other,result,done,_r in steps[index+1:]):continue
   return True

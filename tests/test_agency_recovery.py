@@ -541,7 +541,7 @@ class GoalSummaryTests(unittest.TestCase):
     def test_a_call_agentos_could_not_make_and_a_completed_draft_do_not_hold_back_a_reached_goal(self):
         """#1445 rehearsal: a settings draft the owner completed and an api_request to a code-run-only
         set (its one path, code_run, sends only reads) are not state changes that fell short."""
-        from personal_agent.agent_runtime import event_trail, state_change_short, trail_steps
+        from personal_agent.agent_runtime import EFFECT_NONE, event_trail, record_effect, state_change_short, trail_steps
 
         def api(code, declared):
             return ('api_request', 'failed', json.dumps({'host_action': 'api_request', 'code': code, 'effect': 'none',
@@ -561,7 +561,9 @@ class GoalSummaryTests(unittest.TestCase):
         for kept in (api('approval_required', 'mutate'), api('api_read_only', 'mutate'), api('api_slot_unknown', 'mutate'),
                      api('api_http_error', 'mutate')):
             with self.subTest(kept=kept[2]):
-                self.assertTrue(state_change_short(trail_steps([kept, run])))
+                # #656: pre-dispatch refusals classified none do not hold a reached goal down.
+                effect = record_effect(kept[0], json.loads(kept[2]), kept[1])
+                self.assertEqual(state_change_short(trail_steps([kept, run])), effect != EFFECT_NONE)
         # #630: a read Still made (the effect it applies from the method) that failed changed nothing.
         self.assertFalse(state_change_short(trail_steps([api('api_http_error', 'read'), run])))
 
