@@ -76,11 +76,13 @@ def language(code, text=None):
     return lang if lang in LANGUAGES else ('en' if lang and lang != 'ko' else None)
 
 
-def owner_language(store, work_id=None):
+def owner_language(store, work_id=None, *, default='ko'):
     """One language decision, from the latest owner words in this Work/chat.
 
     Read existing owner state; never overwrite Telegram's language_code.
     Minimal stores used by phone pages may only expose config().
+    ``default`` supplies a language code when the surface has no saved Telegram
+    language. Script detection still wins, including Korean (returned as None).
     """
     if store is None:
         return None
@@ -101,7 +103,7 @@ def owner_language(store, work_id=None):
                 ") ORDER BY created DESC LIMIT 1", (value, value)).fetchone()
             if row:
                 text = row['content']
-    return language(cfg.get('owner_language'), text)
+    return language(cfg.get('owner_language') or default, text)
 
 
 @lru_cache(maxsize=1)

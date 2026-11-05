@@ -658,6 +658,7 @@ def configured_service(store, environ=None):
     # The same builder runs when the owner adds a client in Settings, so a
     # client saved there works without restarting Still.
     google_port=environ.get('AGENTOS_GOOGLE_LOCAL_PORT','8787')
+    service.a2a_secret_key=environ.get('AGENTOS_A2A_ENCRYPTION_KEY')
     key_provider=environ.get('AGENTOS_GOOGLE_OAUTH_KEY') or google_oauth_key(store)
     def install_google_client(client):
         port=service.local_server_port if isinstance(service.local_server_port,int) else google_port
@@ -1137,6 +1138,8 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                 return self.reply(200,{'configured':bool(handoff),'local_only':bool(handoff),
                                        'state':handoff.status()['state'] if handoff else 'not-configured'})
             if not self.auth():return
+            if path=='/api/a2a':
+                return self.reply(200,{**service.a2a_peers.status(),**service.a2a_peers.conversations()})
             if path=='/api/home':return self.reply(200,service.home())
             if path=='/api/tasks':return self.reply(200,service.task_progress())
             if path=='/api/folder-requests':
@@ -1391,6 +1394,44 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                     if path=='/api/mattermost/connect':return self.reply(200,service.connect_mattermost(body))
                     if path=='/api/mattermost/disconnect':return self.reply(200,service.disconnect_mattermost())
                     return self.reply(200,service.set_mattermost_company_approved(body))
+                # #651: peer management belongs only to this Mac's authenticated owner.
+                if path.startswith('/api/a2a/'):
+                    if self.tunneled() or not self.owner_local_surface():
+                        return self.reply(403,{'error':'local_owner_required'})
+                    peers=service.a2a_peers
+                    if path not in ('/api/a2a/block','/api/a2a/remove','/api/a2a/owner-item','/api/a2a/listener/stop'):
+                        peers.transport()
+                    action=path[len('/api/a2a/'):]
+                    if action in ('preview','register'):
+                        body={**body,'outbound_credential':peers.prepare_credential(body.get('outbound_credential',''))}
+                        if body.get('card_url'):body['card_url']=peers.card_url(body['card_url'])
+                    if action=='preview':
+                        from .a2a_transport import parse_card, fetch_card
+                        from .a2a_peers import confirmation_digest
+                        import asyncio
+                        card=(asyncio.run(fetch_card(body['card_url'], store=service.store))
+                              if body.get('card_url') else parse_card(body.get('card')))
+                        card=peers.reviewed_card(card)
+                        return self.reply(200,{'card':card,'card_url':body.get('card_url'),'digest':confirmation_digest(card,body.get('card_url'))})
+                    if action=='register':
+                        from .a2a_peers import confirmation_digest
+                        if body.get('card') is not None:
+                            if body.get('confirm_digest')!=confirmation_digest(peers.reviewed_card(body['card']),body.get('card_url')):
+                                raise ValueError('card_confirmation_required')
+                        if body.get('card_url'):
+                            import asyncio
+                            from .a2a_transport import fetch_card
+                            body={**body,'card':asyncio.run(fetch_card(body['card_url'], store=service.store))}
+                        from .a2a_transport import parse_card
+                        if body.get('confirm_digest')!=confirmation_digest(parse_card(body.get('card')),body.get('card_url')):
+                            raise ValueError('card_confirmation_required')
+                        return self.reply(200,peers.register(body))
+                    if action=='update':return self.reply(200,peers.update(body))
+                    if action in ('block','remove'):return self.reply(200,peers.block(body.get('peer_id'),remove=action=='remove'))
+                    if action=='owner-item':return self.reply(200,peers.settle_owner_item(body))
+                    if action=='listener/start':return self.reply(200,peers.start(body.get('host','127.0.0.1'),body.get('port',0)))
+                    if action=='listener/stop':return self.reply(200,peers.stop())
+                    return self.reply(404,{'error':'unknown_peer_operation'})
                 # #214: Slack is connected in Settings on this computer only, never through a tunnel.
                 if path in ('/api/slack/connect','/api/slack/disconnect','/api/slack/company-approved'):
                     if self.tunneled():return self.reply(400,{'error':msg('slack.local_only')})
@@ -1866,6 +1907,7 @@ def main():
     try:run()
     finally:
         service.stop.set()
+        service.a2a_peers.stop()
         # #1380: a tunnel must not outlive its server (it blocks the next link).
         service.end_tunnel_sessions('closed')
         server.server_close()

@@ -317,6 +317,66 @@ Rules:
 - **Revoking a mandate stops new calls; it does not undo effects already made** (Owner Control Contract, OC-05).
 - **Phase-2 family delegation** keeps its own contract (A2A D-04, Secretary Agency Contract §Family collaboration).
 
+## 5a. A2A counterparts (#651)
+
+An inbound peer is a **counterpart asking a question**, not the owner and not
+an outbound delegate. Registration authorizes conversation only. The optional
+`a2a` extra adapts the official `a2a-sdk` 1.3.0; its card validation, protobuf,
+client, server routes and task machinery remain upstream-owned. The retired
+`compatibility-a2a-peer` stays retired. MP1 D-04's minimum-context, untrusted
+result and terminal-state principles apply without reviving its fixture.
+
+The authenticated owner-local Settings/API can review a card from JSON/file
+contents or a URL, confirm its digest, choose disclosure and limits, and block
+or remove the peer. Each peer has an independently issued inbound bearer and
+an optional outbound bearer in encrypted local storage. The inbound bearer is
+shown once. The listener starts only on the literal address `127.0.0.1`; this
+slice supplies no public address, tunnel, discovery or automatic listener start.
+
+Inbound authentication precedes Work/model admission. Peer Work has a distinct
+channel and claim state, and never enters owner intent/act routing or settlement.
+The default exposes no owner profile, Memory, context, folders or accounts.
+Explicit scope can add bounded sections and selected existing read tools;
+settings, approvals, preparation tools, external mutations and nested delegation
+remain unreachable. Memory writes use the existing third-party candidate path.
+The existing orchestration/model loop answers through the owner's configured
+**API Main AI**. A subscription CLI with ambient owner access is refused; this
+slice does not establish a contained subscription-CLI peer worker. The existing
+strict-isolated profile is also refused: Codex still loads owner-authored global
+instruction files outside the peer scope, and the existing bridge reconstructs
+its profile tools (including owner notes), not the peer disclosure scope. Its
+service relay is trusted-local only; qualification does not remove these limits.
+
+A request needing an owner decision becomes an item visible on the owner's own
+surface and in Settings. The fixed notice uses the registered display name,
+quotes the other agent's words and says nothing was done. It uses the owner's
+language, never a model call. The owner may acknowledge or decline in Settings;
+conversation notices create no `owner_acts.open_items` entry and a reply to them
+cannot approve the peer's request as an effect. The peer can poll only its own
+task's decision-state metadata. Acknowledgment grants
+no action authority and does not queue privileged Work from peer text. Actual
+consequential execution remains a separate owner instruction with the existing
+exact action/payment gates; automatic effect continuation is not established.
+
+Outbound `a2a_message` is an owner-Work tool. Its response is third-party prose,
+not verified effect evidence. A Work already exposed to out-of-scope or unknown
+owner context cannot send a message to that peer, including a paraphrase.
+Registered cards are revalidated before dispatch; changed endpoint, auth or
+skills require exact owner digest confirmation. Redirects and alternate
+endpoints cannot carry the credential. The audit records peer destinations and
+observed disclosure sections/read tools. Owner conversation records retain both
+questions and answers. Message/task admission is durable and at most once;
+limits apply per peer, blocking revokes credentials and cancels unfinished peer
+Work, and interrupted exchanges end explicitly without replay. Portable copies
+retain records but discard peer authority and quarantine unfinished state.
+
+Evidence is model-free fixture/local transport evidence, including the SDK's
+real Starlette serializer through ASGI. Real-loopback variants are supplied for
+execution where socket binding is permitted. This is not evidence of any real
+external agent, public-network operation, live model quality or browser visual
+acceptance. Network, credential and recipient changes require the issue's
+exact-final-head escalated Codex review before the owner's merge.
+
 ## 6. Trust ladder and trust record
 
 One ladder for every third-party hand, skill or agent:

@@ -6940,6 +6940,12 @@
   "ja": "会社モードがオンのため、外部からこの Mac に入る一時リンクを開きませんでした。この Mac の前で直接行ってください。ログインはこの Mac に開いたウィンドウで、入力はこの Mac の Still 設定画面でできます。",
   "zh": "工作模式已开启，因此没有打开从外部进入这台 Mac 的临时链接。请在这台 Mac 前直接操作：在这台 Mac 上打开的窗口中登录，或在这台 Mac 的 Still 设置中输入。"
  },
+ "work_mode.refused.a2a": {
+  "ko": "회사 모드가 켜져 있어 다른 AI 에이전트의 소개 정보를 가져오거나 메시지를 보내지 않았어요. 설정 > 외부 연결에서 회사 모드를 끄면 다시 할 수 있어요.",
+  "en": "Work mode is on, so I didn't fetch another AI agent’s card or send it a message. Turn work mode off in Settings > External connections to do it again.",
+  "ja": "会社モードがオンのため、他の AI エージェントの紹介情報を取得したり、メッセージを送信したりしませんでした。設定 > 外部接続 で会社モードをオフにすると、再びできます。",
+  "zh": "工作模式已开启，因此没有获取其他 AI 智能体的介绍信息或向其发送消息。在“设置 > 外部连接”中关闭工作模式后即可再次进行。"
+ },
  "work_mode.refused.telegram": {
   "ko": "회사 모드가 켜져 있어 텔레그램을 쓰지 않아요. 이 Mac의 Still 화면에서 대화해 주세요. 설정 > 외부 연결에서 회사 모드를 끄면 텔레그램이 다시 동작해요.",
   "en": "Work mode is on, so Telegram isn't used. Please talk to Still on this Mac. Turn work mode off in Settings > External connections and Telegram works again.",
@@ -10557,5 +10563,11 @@
   "en": "Every two weeks",
   "ja": "隔週",
   "zh": "每两周"
+ },
+ "a2a.owner_review": {
+  "ko": "{name} 에이전트가 확인해 주셔야 할 요청을 보냈어요. 아래는 그 에이전트가 쓴 말이에요.\n\n“{request}”\n\n저는 아직 아무것도 하지 않았어요. 진행하시려면 여기서 저에게 직접 말씀해 주세요. 설정 → 외부 연결 → 다른 AI 에이전트에서 확인함이나 거절을 고를 수도 있는데, 확인함은 읽었다는 표시일 뿐 어떤 행동도 승인하지 않아요.",
+  "en": "The agent {name} sent a request for your review. These are that agent’s words:\n\n“{request}”\n\nI have not taken any action. To respond, ask me directly in your usual conversation, or choose Acknowledge or Decline in Settings → External connections → Other AI agents. Acknowledging in Settings only marks it as read; it approves no action.",
+  "ja": "{name} エージェントから確認が必要なリクエストが届きました。以下はそのエージェントの言葉です。\n\n「{request}」\n\n私はまだ何も実行していません。返答するには、普段の自分の会話で私に直接依頼するか、設定 → 外部接続 → 他のAIエージェントで確認済みまたは辞退を選んでください。設定の確認済みは読んだ印であり、どの行動も承認しません。",
+  "zh": "智能体 {name} 发来了需要你确认的请求。以下是该智能体的原话：\n\n“{request}”\n\n我尚未采取任何行动。如需回应，请在你平常使用的对话中直接告诉我，或在设置 → 外部连接 → 其他 AI 智能体中选择已阅或拒绝。设置中的已阅仅表示你已阅读，不批准任何行动。"
  }
 }

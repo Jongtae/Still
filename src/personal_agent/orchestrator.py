@@ -582,6 +582,10 @@ def worker_catalogue(service):
         # action (propose_current_state) is hidden while the owner has current context off
         # (``Capabilities.offered_tools``), so a plan never briefs a tool the worker lacks.
         tools = offered_now(tools)
+        # #651: only registered counterparts and contained API workers can talk.
+        peer_rows=store.config('a2a_peers',{}) or {}
+        if row['kind'] != KIND_API or not any(not peer.get('blocked') and not peer.get('removed') for peer in peer_rows.values()):
+            tools=[tool for tool in tools if host_action.get(tool,tool)!='a2a_message']
         worker['tools'] = sorted(dict.fromkeys(tools))
         worker['model_tiers'] = {model: model_tier(route_id, model, RANKED_MODELS, worker['models'])
                                  for model in worker['models']}
@@ -596,7 +600,9 @@ def worker_catalogue(service):
                         'destination': str(config.get('endpoint') or ''), 'default': True, 'native_search': False,
                         'browser': False, **KIND_TIERS[KIND_API], 'available': ready, 'reason': '' if ready else 'not_verified',
                         'default_model': str(config.get('model') or ''), 'models': [str(config.get('model') or '')],
-                        'model_tiers': {}, 'tools': offered_now([tool for tool in package_tools if tool not in BROWSER_ACTIONS])})
+                        'model_tiers': {}, 'tools': offered_now([tool for tool in package_tools if tool not in BROWSER_ACTIONS
+                            and (host_action.get(tool,tool)!='a2a_message' or any(not peer.get('blocked') and not peer.get('removed')
+                                 for peer in (store.config('a2a_peers',{}) or {}).values()))])})
         routes['other'] = {'kind': KIND_API, 'config': dict(config), 'key': key, 'test': None}
     observations = worker_observations(store)
     for worker in workers:

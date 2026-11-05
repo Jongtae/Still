@@ -265,6 +265,7 @@ FALLBACK_STEP_LINES = {
     'drive_read': (None, msg('step.drive_read')),
     'mail_search': (None, msg('step.mail_search')),
     'mail_read': (None, msg('step.mail_read')),
+    'a2a_message': (None, 'Contacting a registered counterpart'),
     'api_request': (None, msg('step.api')),
     'code_run': (None, msg('step.code_run')),
     'list_notes': (None, msg('step.list_notes')),
