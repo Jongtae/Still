@@ -163,7 +163,8 @@ class FailedTurnTests(TerminalResultTestCase):
                                                     'timezone': 'Asia/Seoul'})]
         self.text = '내일 일정은 팀 회의 하나입니다.'
         job, bubble = self.ask('내일 일정 뭐 있어?')
-        self.assertEqual(job['status'], 'failed', job.get('error'))
+        # #690: a missing connection waits for the owner (connect the calendar): partial, never failed.
+        self.assertEqual(job['status'], 'partial', job.get('error'))
         self.assertIsNotNone(bubble)
         self.assertAnswerFirst(bubble, job, '팀 회의 하나입니다')
 
@@ -296,7 +297,8 @@ class DeliveredAnswerTests(TerminalResultTestCase):
                                          'end': '2026-09-25T00:00:00+09:00', 'timezone': 'Asia/Seoul'})]
         self.text = '내일 일정은 팀 회의 하나입니다.'
         job, bubble = self.ask('내일 일정 뭐 있어?')
-        self.assertEqual(job['status'], 'failed')
+        # #690: a missing connection waits for the owner (connect the calendar): partial, never failed.
+        self.assertEqual(job['status'], 'partial')
         self.assertTrue(self.card(job)['result_available'])
         self.assertAnswerFirst(bubble, job, self.text)
         [served] = [row for row in self.service.owner_jobs(self.store.jobs()) if row['id'] == job['id']]
