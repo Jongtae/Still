@@ -2,8 +2,9 @@
 
 Adapt existing Orchestration, WorkBudget and Capabilities. Peer Work never goes
 through AgentService._route_work, OwnerActs, intent routing or owner-item settle.
-The owner's chosen API AI answers. Ambient trusted-local CLI execution cannot
-meet a peer disclosure boundary and is refused instead of silently changing AI.
+The owner's chosen AI answers. #673 owner decision: a strict subscription CLI
+uses the host's complete peer relay and an independently qualified launch.
+Ambient trusted-local CLI execution remains refused.
 """
 from __future__ import annotations
 
@@ -12,6 +13,8 @@ import json
 from .a2a_peers import PeerError
 from .agent_runtime import Capabilities, ToolError, WorkBudget, run_agent
 from .orchestrator import Catalogue, Orchestration, REACHED, worker_catalogue
+from .bounded_execution import RelayedWorkMcpTools, STRICT_PROFILE, ExecutionError
+from .cli_browser_relay import BrowserRelay
 
 
 def answer_peer(peers, turn):
@@ -34,6 +37,9 @@ def answer_peer(peers, turn):
     budget = PeerBudget(turns=12, attempts=12, seconds=60,
                         stop=lambda: (store.job(work_id) or {}).get('status') != 'peer-running'
                         or service.stop.is_set() or peers.rows().get(peer_id, {}).get('revision') != revision)
+    # #673: judgments are part of the same disclosure boundary, including
+    # subscription decision models used to write the worker's brief.
+    budget.peer_store_root = store.root
 
     def record(tool, status, detail):
         guard()
@@ -59,8 +65,13 @@ def answer_peer(peers, turn):
         worker = {**original, 'tools': sorted(allowed), 'native_search': False, 'browser': False}
         worker.pop('ai_connections', None)
         worker.pop('own_connections', None)
-        if catalogue.routes[worker['id']]['kind'] != 'api':
-            worker.update(available=False, reason='peer_requires_contained_api_worker')
+        kind = catalogue.routes[worker['id']]['kind']
+        if kind == 'subscription' and service.subscription_isolation()['profile'] == STRICT_PROFILE \
+                and not service.isolated_engine_adapter:
+            if worker.get('reason') == 'strict_unqualified':
+                worker.update(available=True, reason='')  # qualification occurs before dispatch
+        elif kind != 'api':
+            worker.update(available=False, reason='peer_requires_strict_host_relay')
         workers.append(worker)
     if not any(worker['id'] == catalogue.default and worker['available'] for worker in workers):
         raise PeerError('peer_main_ai_route_not_contained')
@@ -89,6 +100,8 @@ def answer_peer(peers, turn):
                     + json.dumps(outcomes))
 
     class PeerCapabilities(Capabilities):
+        peer_guard = staticmethod(guard)
+
         def offered_tools(self):
             return self.allowed_tools
 
@@ -113,12 +126,10 @@ def answer_peer(peers, turn):
         while attempt is not None:
             guard()
             route = catalogue.routes[attempt.worker]
-            if route['kind'] != 'api':
-                raise PeerError('peer_main_ai_route_not_contained')
-            config = dict(route['config'])
+            config = dict(route.get('config') or {})
             if attempt.model:
                 config['model'] = attempt.model
-            capabilities = PeerCapabilities(store, service.adapter, config, route['key'], work_id, record,
+            capabilities = PeerCapabilities(store, service.adapter, config, route.get('key', ''), work_id, record,
                 allowed_tools=allowed, packages=None, document_access='folders' in scope['sections'],
                 delegated=True, budget=budget, secret_redactor=service._redact_known_secrets,
                 judgments=service.decision_judge,
@@ -131,13 +142,40 @@ def answer_peer(peers, turn):
             # The existing outcome judgment sees only this Work's scoped
             # context/evidence. It has no owner-act reader or settle callback.
             system = instructions + '\n' + json.dumps(sections, ensure_ascii=False) + '\n' + (attempt.brief() or '')
+            system = service._redact_known_secrets(system)
             service.record_turn_provenance(work_id, owner_information=service.owner_information_refs(sections, []),
                                            peer_context_sections=sorted(sections))
-            service.record_turn_worker(work_id, {'attempt': attempt.number, 'route': 'direct-api',
+            service.record_turn_worker(work_id, {'attempt': attempt.number, 'route': 'direct-api' if route['kind'] == 'api' else 'subscription',
+                **({'engine': route['subscription']['id'], 'profile': STRICT_PROFILE} if route['kind'] == 'subscription' else {}),
                 'provider': config.get('provider'), 'model': config.get('model'),
                 'owner_information': service.owner_information_refs(sections, [])})
-            result = run_agent(service.adapter, config, route['key'], history, system, capabilities,
-                               record, scope='a2a-peer', owner_context=sections)
+            if route['kind'] == 'api':
+                result = run_agent(service.adapter, config, route['key'], history, system, capabilities,
+                                   record, scope='a2a-peer', owner_context=sections)
+            else:
+                served = RelayedWorkMcpTools(capabilities)
+                relay = None
+                try:
+                    relay = BrowserRelay(served, full_surface=True)
+                    served.browser_relay = relay.address
+                    budget.spend_turn()
+                    result = service.execution_adapter.execute(route['subscription']['id'],
+                        system + '\n' + json.dumps(history, ensure_ascii=False), served,
+                        context={'instructions': system, 'conversation': [],
+                                 'request': json.dumps(history, ensure_ascii=False)},
+                        model=attempt.model or service.main_ai.subscription_model(route['subscription']['id']),
+                        effort=attempt.effort or None)
+                    guard()
+                    budget.check()
+                except (ExecutionError, OSError) as exc:
+                    reason = (exc.reason if isinstance(exc, ExecutionError) and exc.failure_class == 'isolation-unqualified'
+                              else getattr(exc, 'failure_class', '')) or 'relay-unavailable'
+                    # Settings displays the turn's safe failure reason. No CLI
+                    # output, credential, path or peer payload is persisted.
+                    raise PeerError('peer_cli_not_contained: ' + reason) from None
+                finally:
+                    if relay is not None:
+                        relay.close()
             pending = any(item['state'] == 'pending' for item in peers.owner_outcomes(peer_id, work_id))
             evaluation = orchestration.evaluate_run(result, owner_needed=pending)
             if evaluation == REACHED:

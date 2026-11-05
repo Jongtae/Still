@@ -37,9 +37,12 @@ docs/decision-layer.en.md "DecisionEngine routes"):
 
 Whether a given *account* accepts a model is never inferred from these
 flags; it is established only by an explicit owner-triggered probe.
+#673 owner decision: subscription judgments for peer Work additionally require
+the peer qualification and exclude ambient owner instructions with auth-only homes.
 """
 from .messages import msg
 import json
+from contextlib import ExitStack
 import logging
 import os
 from pathlib import Path
@@ -230,7 +233,7 @@ class SubscriptionCliDecisionEngine(SchemaDecisionEngine):
                                         else None)
         self.last_failure = ''
 
-    def argv(self, binary, prompt, schema_path, schema, cloud=None, choice=None):
+    def argv(self, binary, prompt, schema_path, schema, cloud=None, choice=None, disabled_features=None):
         model, effort = choice or (self.model, self.effort)
         if self.engine_id == 'codex':
             # #679: a judgment runs under the #616 strict-isolated launch
@@ -244,7 +247,8 @@ class SubscriptionCliDecisionEngine(SchemaDecisionEngine):
             # instruction overrides (CODEX_DECISION_CONFIG) and one --disable
             # per non-allowlisted feature from the verified plan.  An empty or
             # unverified plan raises ExecutionError (no judgment runs).
-            argv = [binary, 'exec', '--json', *strict_launch_arguments('codex', self.codex_disabled_features),
+            argv = [binary, 'exec', '--json', *strict_launch_arguments('codex', self.codex_disabled_features
+                                                                    if disabled_features is None else disabled_features),
                     '--skip-git-repo-check', '--ignore-user-config', '--ephemeral', '--output-schema', str(schema_path)]
             if effort:
                 # Official config key; the level was checked against the
@@ -324,10 +328,14 @@ class SubscriptionCliDecisionEngine(SchemaDecisionEngine):
                   'Reply with only one JSON object that matches the required schema.')
         root = self.execution.runtime_root
         root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        peer_root = getattr(context, 'peer_store_root', None)
+        if peer_root is not None:
+            self.execution.cleanup_stale_turns()
         # #469: not a context manager - an early answer leaves the CLI exiting in this
         # directory, so bounded_run's ``on_reaped`` removes it once the CLI is gone.
-        folder = tempfile.mkdtemp(dir=root, prefix='decision-')
+        folder = tempfile.mkdtemp(dir=root, prefix='turn-peer-decision-' if peer_root is not None else 'decision-')
         launched = False
+        auth_scope = ExitStack()
         try:
             run_dir = Path(folder)
             schema_path = run_dir / 'decision-schema.json'
@@ -345,18 +353,39 @@ class SubscriptionCliDecisionEngine(SchemaDecisionEngine):
             if cloud is not None:
                 # The audit names the cloud provider, destination and profile revision (no values).
                 identity.update(provider=cloud.provider, destination=cloud.destination(), cloud_profile=cloud.identity())
+            if peer_root is not None:
+                # #673 owner decision: peer-derived plans must never import
+                # the owner's global CLI instructions either. No API fallback.
+                if cloud is not None:
+                    return done(OUTCOME_UNAVAILABLE, failure='peer-cloud-not-qualified')
+                peer_interrupted = lambda: 'stopped' if context.is_cancelled() else None
+                peer_deadline = time.monotonic() + min(self.timeout, context.timeout or self.timeout)
+                qualified = self.execution.qualified_identity(self.engine_id, binary, peer_root, purpose='peer',
+                    deadline=peer_deadline,
+                    interrupted=peer_interrupted)
+                if not qualified.get('qualified'):
+                    return done(OUTCOME_UNAVAILABLE, failure='peer-launch-not-qualified')
             try:
-                env = (self.execution.environment(self.engine_id, binary, run_dir, cloud=cloud) if cloud is not None
+                env = (auth_scope.enter_context(self.execution.peer_environment_scope(self.engine_id, binary, run_dir,
+                           store_root=peer_root, work_id=context.work_id, interrupted=peer_interrupted,
+                           deadline=peer_deadline)) if peer_root is not None else
+                       self.execution.environment(self.engine_id, binary, run_dir, cloud=cloud) if cloud is not None
                        else self.execution.environment(self.engine_id, binary, run_dir))
-            except ExecutionError:
-                return done(OUTCOME_UNAVAILABLE, failure='auth')
+            except ExecutionError as exc:
+                return done(OUTCOME_UNAVAILABLE, failure=exc.reason or 'auth')
             if self.engine_id == 'claude-code':
                 env = {**env, **CLAUDE_DECISION_ENV}
             choice = self._strongest_choice(context, cloud)
             if choice:
                 identity.update(model=choice[0], model_policy='strongest')
             try:
-                argv = self.argv(binary, prompt, schema_path, schema, cloud=cloud, choice=choice)
+                argv = self.argv(binary, prompt, schema_path, schema, cloud=cloud, choice=choice,
+                    **({'disabled_features': qualified.get('disabled_features') or ()} if peer_root is not None else {}))
+                if peer_root is not None:
+                    if self.engine_id == 'codex':
+                        argv[2:2] = ['-c', 'cli_auth_credentials_store="file"']
+                    if self.execution._strict_binary_identity(self.engine_id, binary) != qualified.get('identity'):
+                        return done(OUTCOME_UNAVAILABLE, failure='peer-binary-changed')
             except ExecutionError:
                 # The strict launch refused the stored feature plan.
                 return done(OUTCOME_UNAVAILABLE, failure='capability-unchecked')
@@ -376,7 +405,7 @@ class SubscriptionCliDecisionEngine(SchemaDecisionEngine):
                 return done(OUTCOME_CANCELLED, failure=getattr(context, 'refused', None) or '')
             try:
                 timeout = max(self.timeout, context.timeout) if getattr(context, 'timeout', None) else self.timeout
-                answer_seen = codex_answer_complete() if self.engine_id == 'codex' else None
+                answer_seen = codex_answer_complete() if self.engine_id == 'codex' and peer_root is None else None
 
                 def answered(line):
                     if answer_seen(line):
@@ -389,7 +418,8 @@ class SubscriptionCliDecisionEngine(SchemaDecisionEngine):
                                         on_line=lambda _line: observed('first_event_s'),
                                         on_exit=lambda: observed('exit_s'),
                                         answered=answered if answer_seen else None,
-                                        on_reaped=lambda: shutil.rmtree(folder, ignore_errors=True))
+                                        **({'interrupted': peer_interrupted} if peer_root is not None else {}),
+                                        on_reaped=(lambda: shutil.rmtree(folder, ignore_errors=True)) if peer_root is None else None)
             except subprocess.TimeoutExpired:
                 return done(OUTCOME_TIMEOUT, failure='timeout', sent=True)
             except OSError:
@@ -398,7 +428,10 @@ class SubscriptionCliDecisionEngine(SchemaDecisionEngine):
                 cli_timing['spawn_s'] = None
                 return done(OUTCOME_UNAVAILABLE, failure='start-failed')
         finally:
-            if not launched:
+            # Peer judgments wait for process exit: persist rotated auth before
+            # removing the copy, on every return/exception/cancellation path.
+            auth_scope.close()
+            if peer_root is not None or not launched:
                 shutil.rmtree(folder, ignore_errors=True)
         stdout = (completed.stdout or '')[-MAX_CLI_OUTPUT_BYTES:]
         stderr = getattr(completed, 'stderr', '') or ''

@@ -25,6 +25,10 @@ of that one Work; everything else stays in the bridge.  No pickle, no
 What the relay grants: nothing beyond the bridge's own browser tool list.  A
 caller holding the key (the CLI can read its own turn configuration) reaches
 the same service-side checks the bridge reaches.
+
+#673 owner decision: ``full_surface`` instead serves a scoped Work's complete
+MCP discovery and calls from the host. No action list or special redaction/
+connector operation is available on that route; its host facade owns all policy.
 """
 import hmac
 import json
@@ -126,8 +130,11 @@ class BrowserRelay:
     which the bridge may send together and which run without the turn's lock.
     """
 
-    def __init__(self, tools):
+    def __init__(self, tools, *, full_surface=False):
         self.tools = tools
+        # #673 owner decision: a scoped Work's complete MCP surface belongs
+        # to the host. No profile/action selection happens in its bridge.
+        self.full_surface = full_surface
         self._lock = threading.Lock()
         # #386: effect-free reads in flight outside the lock; closing waits for them too.
         self._reading = threading.Condition()
@@ -158,7 +165,11 @@ class BrowserRelay:
                 except OSError:
                     pass
 
-        self._server = socketserver.ThreadingUnixStreamServer(str(self.directory / SOCKET_NAME), Handler)
+        try:
+            self._server = socketserver.ThreadingUnixStreamServer(str(self.directory / SOCKET_NAME), Handler)
+        except OSError:
+            shutil.rmtree(self.directory, ignore_errors=True)
+            raise
         self._server.daemon_threads = True
         self._thread = threading.Thread(target=self._server.serve_forever, kwargs={'poll_interval': 0.2},
                                         name='agentos-cli-browser-relay', daemon=True)
@@ -181,6 +192,14 @@ class BrowserRelay:
         if not isinstance(request, dict) or not hmac.compare_digest(str(request.get('key') or ''), self._key):
             return {'error': {'kind': 'tool', 'message': RELAY_UNAVAILABLE_TEXT, 'code': 'relay_refused', 'ran': False}}
         name, arguments = request.get('name'), request.get('arguments')
+        if self.full_surface:
+            with self._lock:
+                if self._closed:
+                    return {'error': {'kind': 'tool', 'message': RELAY_UNAVAILABLE_TEXT, 'code': 'stopped', 'ran': False}}
+                try:
+                    return {'ok': self.tools.handle_mcp(name, arguments)}
+                except Exception as exc:
+                    return {'error': _error_payload(exc)}
         if name == SECRET_REDACTION:
             # #369: pure, so outside the turn lock; a failure answers an error and the bridge withholds.
             text = arguments.get('text') if isinstance(arguments, dict) else None
