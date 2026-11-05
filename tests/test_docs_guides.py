@@ -135,7 +135,11 @@ def test_legacy_sections_have_compatibility_anchors():
 def link_errors(sources, anchor_targets=None):
     """Check paths, and anchors on the declared current destinations."""
     destinations = sources if anchor_targets is None else anchor_targets
-    anchor_sets = {path: anchors(path.read_text(encoding="utf-8")) for path in destinations}
+    # ``tempfile`` may spell the same macOS directory through ``/var`` while
+    # ``Path.resolve`` uses ``/private/var``. Normalize both sides before
+    # comparing a link destination with the target set.
+    anchor_sets = {path.resolve(): anchors(path.read_text(encoding="utf-8"))
+                   for path in destinations}
     errors = []
     for source in sources:
         for target in targets(source.read_text(encoding="utf-8")):

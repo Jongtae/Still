@@ -55,6 +55,16 @@ Once the AI is connected, talk to Still in the terminal. Paste a short, non-sens
 
 Telegram is optional. Say “connect Telegram” and follow the dedicated token input and pairing link; do not type the bot token into an ordinary message. The full [messenger setup guide](guide/connections.en.md#telegram) also covers the local Settings path. A file-backed check is available in [the operating guide](guide/operations.en.md#recommended-owner-dogfood-task); it is not a prerequisite for ordinary conversation.
 
+For the legacy Gmail source-checkout connection, create the owner-only credential file before opening the local consent route:
+
+```sh
+agentos gmail-config \
+  --oauth-client-json ~/Downloads/client_secret_XXXX.json \
+  --secret-file /Users/your-name/.agentos-secrets/gmail.json
+```
+
+Then open `http://127.0.0.1:8787/google-gmail` in the same local browser session. Configuration does not connect an account or grant mailbox access. The [Gmail connection guide](guide/connections.en.md#gmail-source-checkout) gives the required file boundary, scope and evidence limits.
+
 ## Keep Still running
 
 Keep the `agentos start` terminal open while using Still. Ctrl-C stops the foreground process. The computer must remain awake for remote requests and scheduled work.
