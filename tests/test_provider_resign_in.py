@@ -734,6 +734,79 @@ class ResignInLoopTests(unittest.TestCase):
         return [(status, json.loads(detail)) for name, status, detail in self.events if name == tool
                 and status in ('succeeded', 'failed')]
 
+    def record_result(self, action, page):
+        self.record(action, 'succeeded', {'evidence': evidence_summary(action, page)})
+
+    def test_provider_hops_accumulate_across_observations_and_reach_the_audit(self):
+        sess, driver, _ = resign_session('chooser', providers={SITE: PROVIDER, 'other.test': UPSTREAM})
+        # No hint: the chain must come from the observed authorization requests.
+        sess.run('browser_open', {'url': f'https://{SITE}/start', 'effect': 'navigate'})
+        sess.run('browser_click', {'target': '다른 계정으로 계속', 'effect': 'navigate'})
+        driver.goto(UPSTREAM_AUTHORIZE, 1)
+        sess.run('browser_read', {})
+        # Repeated observations of the upstream must not duplicate it.
+        driver.goto(UPSTREAM_AUTHORIZE, 1)
+        sess.run('browser_read', {})
+        driver.goto(f'https://{SITE}/callback?code=abc', 1)
+        page = sess.run('browser_read', {})
+        self.assertEqual(page['provider_sign_in']['state'], 'signed_in')
+        self.assertEqual(page['provider_sign_in']['chain'], [PROVIDER, UPSTREAM])
+        self.assertIsNone(sess._resign)
+        self.record_result('browser_read', page)
+        audit = information_use.work_information_use(self.store, self.job)
+        self.assertEqual(audit['sent_to']['browser_provider_sign_ins'],
+                         [{'site': SITE, 'provider': PROVIDER, 'chain': [PROVIDER, UPSTREAM]}])
+        self.assertIn(PROVIDER + ' → ' + UPSTREAM, information_use.render_korean(audit))
+        self.assertNotIn('provider_sign_in', sess.run('browser_read', {}))
+
+    def test_pre_click_return_is_finalized_before_clicking_away_and_reaches_the_audit(self):
+        sess, driver, approvals = resign_session('chooser')
+        open_login(sess)
+        sess.run('browser_click', {'target': '다른 계정으로 로그인', 'effect': 'navigate'})
+        driver.pages = {**PAGES, f'{SITE}/home': '<a href="https://public.test/">뉴스</a>'}
+        # The provider returns between tools; only the pre-click observation sees the site.
+        driver.goto(f'https://{SITE}/callback?code=abc', 1)
+        page = sess.run('browser_click', {'target': '뉴스', 'effect': 'navigate'})
+        self.assertEqual(page['url'], 'https://public.test/')
+        self.assertEqual(page['provider_sign_in'], {'site': SITE, 'provider': PROVIDER,
+                                                   'state': 'signed_in', 'login_request': 'resolved'})
+        self.assertEqual(approvals.resolved, [f'https://{SITE}/login'])
+        self.assertIsNone(sess._resign)
+        self.record_result('browser_click', page)
+        audit = information_use.work_information_use(self.store, self.job)
+        self.assertEqual(audit['sent_to']['browser_provider_sign_ins'], [{'site': SITE, 'provider': PROVIDER}])
+        self.assertIn(PROVIDER, information_use.render_korean(audit))
+        self.assertNotIn('provider_sign_in', sess.run('browser_read', {}))
+
+    def test_pre_click_completion_survives_a_failed_action_until_the_next_result(self):
+        sess, driver, approvals = resign_session('chooser')
+        open_login(sess)
+        sess.run('browser_click', {'target': '다른 계정으로 로그인', 'effect': 'navigate'})
+        driver.goto(f'https://{SITE}/callback?code=abc', 1)
+        with self.assertRaises(ToolError):
+            sess.run('browser_click', {'target': '존재하지 않는 링크', 'effect': 'navigate'})
+        self.assertIsNone(sess._resign)
+        self.assertEqual(approvals.resolved, [f'https://{SITE}/login'])
+        # Delivery must use the evidence at closure, even if the session has since disappeared.
+        driver.cookies[SITE] = []
+        page = sess.run('browser_read', {})
+        self.assertEqual(page['provider_sign_in']['state'], 'signed_in')
+        self.assertNotIn('provider_sign_in', sess.run('browser_read', {}))
+        self.assertEqual(approvals.resolved, [f'https://{SITE}/login'])
+
+    def test_explicit_open_elsewhere_finalizes_with_origin_session_evidence_only(self):
+        for renewed in (False, True):
+            with self.subTest(renewed=renewed):
+                sess, driver, _ = resign_session('chooser')
+                open_login(sess)
+                sess.run('browser_click', {'target': '다른 계정으로 로그인', 'effect': 'navigate'})
+                if renewed:
+                    driver.cookies[SITE][0]['value'] = 'renewed-during-provider-window'
+                page = sess.run('browser_open', {'url': 'https://public.test/', 'effect': 'navigate'})
+                self.assertEqual(page['provider_sign_in']['state'], 'signed_in' if renewed else 'unconfirmed')
+                self.assertIsNone(sess._resign)
+                self.assertNotIn('provider_sign_in', sess.run('browser_read', {}))
+
     def test_provider_only_page_records_signed_in_and_information_use(self):
         self.run_work('silent',
                       {'tool_calls': [call('1', 'browser_open', url=f'https://{SITE}/start', effect='navigate')]},
