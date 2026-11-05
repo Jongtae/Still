@@ -449,6 +449,8 @@ def work_information_use(store, job_id, redact=None):
         signed = evidence.get('provider_sign_in') if status == 'succeeded' and action.startswith('browser_') else None
         if isinstance(signed, dict) and signed.get('state') == 'signed_in':
             row = {'site': label(signed.get('site'), 80), 'provider': label(signed.get('provider'), 120)}
+            if isinstance(signed.get('chain'), list):
+                row['chain'] = [label(host, 120) for host in signed['chain']]
             if row['site'] and row['provider'] and row not in resigned and len(resigned) < MAX_ITEMS:
                 resigned.append(row)
         if action in LOOKUP_ACTIONS and status == 'running':
@@ -614,7 +616,8 @@ def render_korean(audit):
     if sent.get('browser_destinations'):
         lines.append(msg('information_use.browser_destinations', hosts=', '.join(sent['browser_destinations'])))
     for row in sent.get('browser_provider_sign_ins') or ():
-        lines.append(msg('information_use.browser_provider_sign_in', site=row['site'], provider=row['provider']))
+        providers = row.get('chain') or [row['provider']]
+        lines.append(msg('information_use.browser_provider_sign_in', site=row['site'], provider=' → '.join(providers)))
     matches = sent.get('held_value_matches') or ()
     if matches:
         lines.append(msg('information_use.held_values_that_went_out'))

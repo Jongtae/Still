@@ -1250,7 +1250,7 @@ class BrowserSession:
         any redirect), ``hosts`` every host the main frame visited inside the window.
 
         * Opens when the page is on a protected host (one a recorded provider chain names), or was
-          reached by a redirect through one (an authorization request to it was seen on the way)
+          reached by a redirect through one (explicitly requested, or an authorization request seen on the way)
           and is not back on the site it started from.
         * Stays open on any protected host or any host in ``hosts``, including when the AI reopens
           one (``requested_url``), and on any other host the main frame reached from inside it.
@@ -1269,6 +1269,7 @@ class BrowserSession:
         domain = registrable_domain(host)
         window = self._window
         asked = ascii_host(landed_host(requested_url) or '') if requested_url else None
+        entered = passed or asked in protected
         if window and asked is not None:
             known = protected | window['hosts']
             if asked not in known and host not in known:
@@ -1282,13 +1283,13 @@ class BrowserSession:
             else:
                 origin = self._outside
             # A silent redirect can open and close the provider window between snapshots.
-            if origin and (host in protected or passed):
+            if origin and (host in protected or entered):
                 current = self._resign if self._resign and self._resign['site'] == origin['site'] else None
-                chain = current['chain'] if current else tuple(dict.fromkeys(hops or (host,)))
+                chain = current['chain'] if current else tuple(dict.fromkeys(hops or (asked if asked in protected else host,)))
                 self._resign = {'site': origin['site'], 'provider': chain[0], 'chain': chain,
                                 'reference': origin['url'], 'window_url': origin['window_url'],
-                                'cookies': origin.get('cookies'), 'mark': origin.get('mark'), 'seen': passed}
-            inside = host in protected or (passed and domain != (origin or {}).get('site'))
+                                'cookies': origin.get('cookies'), 'mark': origin.get('mark'), 'seen': entered}
+            inside = host in protected or (entered and domain != (origin or {}).get('site'))
             if inside:
                 window = self._window = {'origin': origin, 'hosts': set()}
         if inside:

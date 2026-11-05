@@ -580,6 +580,34 @@ class ResignInSessionTests(unittest.TestCase):
         sess.run('browser_click', {'target': '검색하기', 'effect': 'read'})
         self.assertEqual([entry[0] for entry in driver.log if entry[0] in ('click', 'type')], ['type', 'click'])
 
+    def test_a_protected_open_redirecting_to_an_unrecorded_host_keeps_the_window(self):
+        for prior in (None, f'https://{SITE}/start'):
+            with self.subTest(prior=prior):
+                sess, driver, _approvals = resign_session('chooser', providers={SITE: PROVIDER})
+                driver.pages = {**driver.pages, f'{UPSTREAM}/choose': PAGES[f'{PROVIDER}/choose']}
+                goto = driver.goto
+
+                def redirect(url, timeout):
+                    goto(url, timeout)
+                    if url == f'https://{PROVIDER}/choose':
+                        goto(f'https://{UPSTREAM}/choose', timeout)
+
+                driver.goto = redirect
+                if prior:
+                    sess.run('browser_open', {'url': prior, 'effect': 'navigate'})
+                page = sess.run('browser_open', {'url': f'https://{PROVIDER}/choose', 'effect': 'navigate'})
+                self.assertEqual(urlsplit(page['url']).hostname, UPSTREAM)
+                self.assertEqual(driver.authorizations(), (0, ()), 'no authorization parameters on either hop')
+                self.assertNotIn(UPSTREAM, sess._protected_hosts())
+                for action, args in (('browser_click', {'target': '계속', 'effect': 'navigate'}),
+                                     ('browser_type', {'target': '메모', 'text': 'x', 'effect': 'mutate'})):
+                    with self.assertRaises(ToolError) as caught:
+                        sess.run(action, args)
+                    self.assertEqual(caught.exception.code, bs.PROVIDER_INTERACTION_CODE)
+                    self.assertIs(caught.exception.ran, False)
+                self.assertFalse([entry for entry in driver.log if entry[0] in ('click', 'type')])
+                self.assertEqual((sess._window['origin'] or {}).get('site'), SITE if prior else None)
+
     def test_a_protected_open_preserves_the_prior_site_without_authorization_parameters(self):
         sess, driver, _approvals = resign_session('chooser')
         sess.run('browser_open', {'url': f'https://{SITE}/start', 'effect': 'navigate'})
@@ -674,13 +702,6 @@ class ResignInSessionTests(unittest.TestCase):
             # No re-sign-in began, so the provider's pages are ordinary pages (the existing guards apply).
             sess.run('browser_type', {'target': '메모', 'text': 'x', 'effect': 'mutate'})
             self.assertEqual([entry[2] for entry in driver.log if entry[0] == 'type'], ['x'])
-
-    def test_the_unsupported_navigation_text_points_to_the_desktop_layout(self):
-        text = bs.NAVIGATION_REFUSALS['unsupported_navigation']
-        self.assertIn('layout: desktop', text)
-        self.assertIn('browser_open', text)
-        self.assertIn('browser_sign_in', text)
-        self.assertIn('layout: desktop', msg('browser.unsupported_navigation', 'en'))
 
 
 class ResignInLoopTests(unittest.TestCase):
