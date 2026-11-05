@@ -171,6 +171,79 @@ class _Case(unittest.TestCase):
         return (service or self.service).run_due_preparation()
 
 
+class PreparationRunFactTests(_Case):
+    def test_window_runs_use_the_recorded_count_next_local_slot_end_and_delivery(self):
+        from personal_agent.agent_runtime import WorkBudget
+        start = datetime(2026, 11, 5, 12, tzinfo=SEOUL).timestamp()
+        end = datetime(2026, 11, 5, 18, tzinfo=SEOUL).timestamp()
+        row = self.service.preparations.create(kind='prepare', goal='정기 확인', due_at=start,
+            timezone='Asia/Seoul', recurrence=None, channel='telegram', created_from='settings',
+            state=prep.STATE_SCHEDULED, window=(3600, end, 6))
+        # Start and settle the real rows: start must not be mistaken for advancing due_at.
+        for number in range(1, 7):
+            self.now = start + (number - 1) * 3600
+            current = self.service.preparations.get(row['id'])
+            work = self.service.preparations.start(current, channel='telegram', chat_id=CHAT, now=self.now)
+            job = self.store.job(work)
+            self.assertEqual(self.service.preparations.get(row['id'])['due_at'], self.now)
+            fact = self.service.preparation_run_fact(job)
+            self.assertIn(f'총 6회 중 {number}번째', fact)
+            self.assertIn('일정 종료: 2026-11-05 18:00 (Thu, Asia/Seoul)', fact)
+            self.assertIn('Work가 끝난 뒤 Still이 답을 telegram 채널로', fact)
+            self.assertIn('이 Work가 직접 보내지 않습니다', fact)
+            if number == 3:
+                self.assertIn('다음 실행 예정: 2026-11-05 15:00 (Thu, Asia/Seoul)', fact)
+                self.assertEqual(self.service.preparation_history(job)[-1]['content'], job['message'] + '\n\n' + fact)
+                orchestration = self.service.work_orchestration(job, job['message'], [], {}, WorkBudget())
+                self.assertEqual(orchestration.request, job['message'] + '\n\n' + fact)
+                with self.store.db() as db:
+                    db.execute("UPDATE preparations SET delivery_mode='when_needed' WHERE id=?", (row['id'],))
+                needed = self.service.preparation_run_fact(job)
+                self.assertIn('Still이 telegram 채널로 소유자에게 알릴지 판단', needed)
+                self.assertIn('이 Work가 직접 보내지 않습니다', needed)
+                with self.store.db() as db:
+                    db.execute("UPDATE preparations SET delivery_mode='always' WHERE id=?", (row['id'],))
+            if number == 6:
+                self.assertIn('이번이 마지막 실행', fact)
+                self.assertNotIn('다음 실행 예정', fact)
+            with self.store.db() as db:
+                db.execute("UPDATE jobs SET status='succeeded',response='확인',delivery='sent' WHERE id=?", (work,))
+            self.service.preparations.settle(self.service.preparations.get(row['id']), self.now)
+        ordinary = {'id': 'ordinary', 'message': '확인', 'request_key': 'web-ordinary'}
+        self.assertEqual(self.service.preparation_run_fact(ordinary), '')
+        self.assertEqual(self.service.work_orchestration(ordinary, '확인', [], {}, WorkBudget()).request, '확인')
+        self.assertEqual(self.service.preparation_run_fact({**job, 'model': 'preparation'}), '')
+
+    def test_other_schedules_name_the_next_run_from_the_scheduler_or_the_last(self):
+        start = datetime(2026, 11, 5, 12, tzinfo=SEOUL).timestamp()
+        self.now = start
+        cases = [
+            (None, '이번이 마지막 실행'),
+            ('daily', '다음 실행 예정: 2026-11-06 12:00 (Fri, Asia/Seoul)'),
+            ('RRULE:FREQ=DAILY;COUNT=3', '다음 실행 예정: 2026-11-06 12:00 (Fri, Asia/Seoul)'),
+        ]
+        for recurrence, next_text in cases:
+            with self.subTest(recurrence=recurrence):
+                row = self.service.preparations.create(kind='prepare', goal=f'정기 확인 {recurrence}', due_at=start,
+                    timezone='Asia/Seoul', recurrence=recurrence, channel='web', created_from='settings',
+                    state=prep.STATE_SCHEDULED)
+                work = self.service.preparations.start(row, channel='web', chat_id=None, now=start)
+                fact = self.service.preparation_run_fact(self.store.job(work))
+                self.assertIn(next_text, fact)
+                # Only a watch records an end of its own; nothing else is computed here.
+                self.assertNotIn('일정 종료', fact)
+
+    def test_missing_or_unreadable_row_keeps_the_fixed_fallback(self):
+        from unittest.mock import patch
+        import sqlite3
+        job = {'request_key': prep.request_key('missing', self.now)}
+        self.assertEqual(self.service.preparation_run_fact(job), msg('preparations.run_fact'))
+        with patch.object(self.service.preparations, 'get', side_effect=sqlite3.OperationalError('unavailable')):
+            self.assertEqual(self.service.preparation_run_fact(job), msg('preparations.run_fact'))
+        history = self.service.preparation_history({**job, 'id': 'missing', 'message': '확인'})
+        self.assertEqual(history[-1]['content'], '확인\n\n' + msg('preparations.run_fact'))
+
+
 class ReminderTests(_Case):
     def reminder_request(self):
         """The owner asks; the scripted model reads nothing else and schedules one reminder."""
@@ -837,7 +910,9 @@ class PreparationScopeTests(_Case):
         self.assertNotIn('UNRELATED-MARK', sent)
         self.assertEqual([m['role'] for m in seen[0][1:]], ['user', 'user'])
         # #671: the run is told Still keeps the schedule and delivers, so its reply is this run's result.
-        self.assertIn(msg('preparations.run_fact'), seen[0][-1]['content'])
+        [run] = [job for job in self.store.jobs() if prep.preparation_of(job.get('request_key'))]
+        self.assertIn(self.service.preparation_run_fact(run), seen[0][-1]['content'])
+        self.assertIn('다음 실행 예정: 2026-10-15 21:10 (Thu, Asia/Seoul)', seen[0][-1]['content'])
 
     def test_cli_route_preparation_work_sees_only_its_origin_and_goal(self):
         from personal_agent.bounded_execution import ExecutionResult
@@ -867,7 +942,8 @@ class PreparationScopeTests(_Case):
         self.assertIn('ORIGIN-MARK', prompt)
         self.assertIn('점심 후보 3곳 준비', prompt)
         self.assertNotIn('UNRELATED-MARK', prompt)
-        self.assertIn(msg('preparations.run_fact'), prompt)
+        self.assertIn(self.service.preparation_run_fact(self.runs(row['id'])[0]), prompt)
+        self.assertIn('이번이 마지막 실행', prompt)
         self.assertEqual(len(self.runs(row['id'])), 1)
 
     def test_a_secret_in_a_preparation_answer_is_never_persisted_or_replayed(self):

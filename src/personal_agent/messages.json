@@ -1631,6 +1631,48 @@
   "ja": "オーナーが読んで承諾した内容（この範囲内で行ってください）:",
   "zh": "主人阅读并接受的内容（请在此范围内进行）："
  },
+ "preparations.run_record": {
+  "ko": "이 Work는 소유자가 수락한 준비의 {position}번째 실행이며, 답은 이번 실행의 결과입니다. {schedule}. {delivery}",
+  "en": "This Work is run {position} of the owner's accepted preparation; its reply is this run's result. {schedule}. {delivery}",
+  "ja": "このWorkはオーナーが承諾した準備の{position}回目で、回答は今回の実行結果です。{schedule}。{delivery}",
+  "zh": "此 Work 是主人已接受的准备事项的第{position}次运行，回答是本次运行的结果。{schedule}。{delivery}"
+ },
+ "preparations.run_bounded": {
+  "ko": "총 {maximum}회 중 {run}",
+  "en": "{run} of {maximum}",
+  "ja": "全{maximum}回中{run}",
+  "zh": "{run}（共{maximum}次）"
+ },
+ "preparations.run_next": {
+  "ko": "다음 실행 예정: {due}",
+  "en": "Next run due: {due}",
+  "ja": "次回予定: {due}",
+  "zh": "下次运行时间：{due}"
+ },
+ "preparations.run_last": {
+  "ko": "이번이 마지막 실행입니다",
+  "en": "This is the last run",
+  "ja": "今回が最後の実行です",
+  "zh": "这是最后一次运行"
+ },
+ "preparations.run_end": {
+  "ko": "; 일정 종료: {end}",
+  "en": "; schedule ends: {end}",
+  "ja": "；予定終了: {end}",
+  "zh": "；计划结束时间：{end}"
+ },
+ "preparations.run_delivery": {
+  "ko": "이 Work가 끝난 뒤 Still이 답을 {channel} 채널로 전하며, 이 Work가 직접 보내지 않습니다.",
+  "en": "After this Work ends, Still delivers its reply on {channel}; this Work does not send it itself.",
+  "ja": "このWorkの終了後、Stillが{channel}で回答を届け、このWork自身は送信しません。",
+  "zh": "此 Work 结束后，由 Still 通过{channel}交付回答；此 Work 不自行发送。"
+ },
+ "preparations.run_delivery_needed": {
+  "ko": "이 Work가 끝난 뒤 Still이 {channel} 채널로 소유자에게 알릴지 판단하며, 이 Work가 직접 보내지 않습니다.",
+  "en": "After this Work ends, Still decides whether to notify the owner on {channel}; this Work does not send it itself.",
+  "ja": "このWorkの終了後、Stillが{channel}でオーナーに知らせるか判断し、このWork自身は送信しません。",
+  "zh": "此 Work 结束后，由 Still 决定是否通过{channel}通知主人；此 Work 不自行发送。"
+ },
  "preparations.run_fact": {
   "ko": "이 Work는 소유자가 수락한 준비를 Still이 일정대로 실행한 것입니다. 일정을 이어 가고 결과를 소유자에게 전하는 일은 Still이 하므로, 이 Work의 답은 이번 실행의 결과입니다.",
   "en": "This Work is a run of a preparation the owner accepted, which Still runs on its schedule. Still keeps the schedule and brings the result to the owner, so this Work's reply is this run's result.",
