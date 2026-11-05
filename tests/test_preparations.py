@@ -333,7 +333,8 @@ class PreparationEarlierReportTests(_Case):
             self.assertNotIn(SECRET, rendered)
             self.assertIn('[assistant, earlier Work 2026-10-14 21:00]', earlier_turn_line(rows[0], report, SEOUL))
         orchestration = self.service.work_orchestration(current, current['message'], rows, {}, WorkBudget())
-        self.assertIn('[assistant, earlier Work 2026-10-14 21:00] Report', orchestration.conversation)
+        # The plan's own label carries the host zone's time (none on a zone-less host).
+        self.assertRegex(orchestration.conversation, r'\[assistant, earlier Work[^]]*\] Report')
         self.assertNotIn(private, orchestration.conversation)
         with patch('personal_agent.orchestrator.Orchestration.early_plan', autospec=True, return_value=None) as early:
             self.service.early_work_plan(current, current['message'])
@@ -341,7 +342,7 @@ class PreparationEarlierReportTests(_Case):
         orchestration.evaluate_answer('Current report', '')
         judged = [item[1] for item in self.judge.asked if item[0] == 'judge' and item[1].purpose == 'goal-reached']
         self.assertTrue(judged)
-        self.assertIn('[assistant, earlier Work 2026-10-14 21:00] Report', json.dumps(judged[-1].facts))
+        self.assertRegex(json.dumps(judged[-1].facts, ensure_ascii=False), r'\[assistant, earlier Work[^]]*\] Report')
 
 
 class ReminderTests(_Case):
