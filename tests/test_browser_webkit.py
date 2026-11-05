@@ -770,7 +770,8 @@ class ProviderPopupWorkerTests(unittest.TestCase):
 
         foundation = NS(NSObject=Cocoa, NSMakeRect=lambda *a: a, NSMakePoint=lambda *a: a,
                         NSURL=NS(URLWithString_=lambda s: s), NSURLRequest=NS(requestWithURL_=lambda s: s))
-        webkit = NS(WKWebView=Cocoa, WKNavigationActionPolicyAllow=1, WKNavigationActionPolicyCancel=0)
+        webkit = NS(WKWebView=Cocoa, WKNavigationActionPolicyAllow=1, WKNavigationActionPolicyCancel=0,
+                    WKNavigationTypeFormSubmitted=1, WKNavigationTypeFormResubmitted=2)
         appkit = NS(NSWindow=Cocoa, NSWindowStyleMaskTitled=1, NSWindowStyleMaskClosable=2,
                     NSWindowStyleMaskResizable=4, NSBackingStoreBuffered=0,
                     NSWindowCollectionBehaviorTransient=1, NSWindowCollectionBehaviorIgnoresCycle=2)
@@ -794,15 +795,17 @@ class ProviderPopupWorkerTests(unittest.TestCase):
         worker.blocked, worker.navigation = 0, None
         worker.emit = lambda event: self.fail(event)
         worker.pending = {}
+        worker.posted_submits = worker.refused_submits = worker.deciding = 0
         self.worker = worker
         self.delegate = bw._delegate_class()()
         self.delegate.worker = worker
         self.authorize = 'https://id.provider.test/authorize?response_type=code&client_id=x&redirect_uri=https%3A%2F%2Fsite.test%2Fcallback'
 
-    def action(self, url):
+    def action(self, url, kind=0, method='GET', top=True):
         ns = self.NS
         native = ns(absoluteString=lambda: url, scheme=lambda: url.split(':', 1)[0]) if url else None
-        return ns(request=lambda: ns(URL=lambda: native), targetFrame=lambda: None)
+        return ns(request=lambda: ns(URL=lambda: native, HTTPMethod=lambda: method),
+                  targetFrame=lambda: ns(isMainFrame=lambda: top), navigationType=lambda: kind)
 
     def create(self, url):
         return self.delegate.webView_createWebViewWithConfiguration_forNavigationAction_windowFeatures_(
@@ -820,6 +823,66 @@ class ProviderPopupWorkerTests(unittest.TestCase):
         self.assertEqual(self.navigate(view, self.authorize), [1])
         self.assertEqual((self.worker.authorizations, self.worker.authorization_count), (['id.provider.test'], 1))
         self.assertEqual((self.worker.main_navigations, self.worker.landed), (0, 0))
+
+    def test_work_popup_native_posts_are_refused_and_handed_off(self):
+        # Native submits (including a fresh iframe's unwrapped submit) arrive
+        # through this delegate even when no JavaScript guard reports a form.
+        for kind in (1, 2):
+            for top in (True, False):
+                for destination in ('https://site.test/pay', 'https://site.test/callback',
+                                    'https://other.test/callback'):
+                    with self.subTest(kind=kind, top=top, destination=destination):
+                        view = self.create(self.authorize)
+                        self.assertEqual(self.navigate(view, self.authorize), [1])
+                        answers = []
+                        self.worker.popups[-1][2].webView_decidePolicyForNavigationAction_decisionHandler_(
+                            view, self.action(destination, kind, 'POST', top), answers.append)
+                        self.assertEqual(answers, [0])
+                        self.assertFalse(self.worker.popups)
+                        self.assertTrue(self.worker.popup_state['needs_owner'])
+
+    def test_popup_get_form_checks_its_own_document_and_fails_closed(self):
+        for result, error in (({'allow': True}, None), ({'allow': False}, None),
+                              (None, 'script_failed'), (None, 'timeout')):
+            for top in (True, False):
+                with self.subTest(result=result, error=error, top=top):
+                    view = self.create(self.authorize)
+                    self.assertEqual(self.navigate(view, self.authorize), [1])
+                    worker = self.worker
+                    worker.dialog_step = {'confirm_ok': True}  # opener's step must not cover an unknown popup
+                    calls = []
+                    worker.run = lambda script, args, done, **kw: calls.append((script, args, done, kw))
+                    worker.decide = lambda url, main, done: done(True)
+                    answers = []
+                    worker.popups[-1][2].webView_decidePolicyForNavigationAction_decisionHandler_(
+                        view, self.action('https://site.test/pay', 1, 'GET', top), answers.append)
+                    self.assertEqual(answers, [])
+                    script, args, done, kw = calls[-1]
+                    self.assertEqual(script, self.bw.FORM_NAVIGATION_SCRIPT)
+                    self.assertEqual(kw, {'view': view})
+                    self.assertEqual(args['frame'], not top)
+                    if error == 'timeout':
+                        self.later[-1][1]()
+                    else:
+                        done(result, error)
+                    allowed = result == {'allow': True}
+                    self.assertEqual(answers, [int(allowed)])
+                    if allowed:
+                        worker.close_popup(view=view)
+                    else:
+                        self.assertTrue(worker.popup_state['needs_owner'])
+                        self.assertFalse(worker.popups)
+                    self.assertEqual(worker.deciding, 0)
+
+    def test_owner_visible_popup_keeps_native_post_behavior(self):
+        self.worker.owner_visible = self.worker.guard_off = True
+        view = self.create(self.authorize)
+        self.worker.decide = lambda url, main, done: done(True)
+        answers = []
+        self.worker.popups[-1][2].webView_decidePolicyForNavigationAction_decisionHandler_(
+            view, self.action('https://site.test/pay', 1, 'POST'), answers.append)
+        self.assertEqual(answers, [1])
+        self.assertTrue(self.worker.popups)
 
     def test_unrecorded_and_non_authorization_requests_create_no_popup(self):
         for url in ('https://unknown.test/authorize?response_type=code&client_id=x',
@@ -2077,6 +2140,8 @@ class SessionFixtureHandler(FixtureHandler):
             # #700 item 2 repro: the native submit of a fresh iframe's prototype bypasses the page-world wrapper.
             native = ("var f=document.createElement('iframe');document.body.appendChild(f);"
                       "f.contentWindow.HTMLFormElement.prototype.submit.call(document.getElementById('{0}'))")
+            auto = ('<script>' + native.format('payForm') + '</script>'
+                    if 'popup-native=1' in self.path else '')
             return self._send('''<html><head><title>다른 창</title></head><body>
               <form id="payForm" action="/pay" method="post"><p>결제 금액 12,900원</p>
                 <label>카드번호 <input type="text" autocomplete="cc-number" name="card"></label>
@@ -2088,7 +2153,7 @@ class SessionFixtureHandler(FixtureHandler):
               <div role="button" onclick="''' + native.format('payForm') + '''">다른 창 진행</div>
               <div role="button" onclick="''' + native.format('sinkForm') + '''">숨은 창 진행</div>
               <div role="button" onclick="''' + native.format('couponForm') + '''">다른 창 쿠폰</div>
-              </body></html>''')
+              ''' + auto + '''</body></html>''')
         if path == '/checkout-bound':
             # #700 review (Codex): an approval's allowance is held to the approved payload,
             # spent by one submit, and a held submit is recorded where its submitter sends it.
@@ -2921,6 +2986,35 @@ class WebKitIntegrationTests(unittest.TestCase):
                 worker.click(index, 10)
             self.assertEqual(worker.release_submit(caught.exception.cancelled_form, 10), {'navigated': True, 'posted': True})
             self.assertEqual(self.server.posts, ['/coupon', '/pay'])
+        finally:
+            worker.close()
+
+    @unittest.skipUnless(sys.platform == 'darwin', 'the #683 popup path uses system WebKit')
+    def test_work_popup_cannot_post_with_a_fresh_iframe_native_submit(self):
+        from urllib.parse import quote
+        # Record an OAuth-shaped first navigation, then submit the fixture's
+        # payment form without invoking any wrapped prototype or submit event.
+        self.server.popup_authorize = (self.origin + '/checkout-realm?popup-native=1&response_type=code'
+                                       '&client_id=fixture&redirect_uri=' + quote(self.origin + '/popup-callback', safe=''))
+        worker = self.worker()
+        try:
+            worker.set_provider_sign_in_policy(lambda: {'protected_hosts': ['127.0.0.1'], 'enabled': True})
+            worker.goto(self.origin + '/popup-sign-in', 10)
+            index = next(row['index'] for row in worker.snapshot()['elements']
+                         if row['name'] == 'Continue with provider')
+            try:
+                worker.click(index, 10)
+            except ToolError as exc:
+                self.assertEqual(exc.code, 'submit_refused')
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline:
+                state = worker.snapshot().get('_provider_popup', {})
+                if state.get('needs_owner'):
+                    break
+                time.sleep(0.1)
+            self.assertTrue(state.get('needs_owner'), state)
+            self.assertFalse(state.get('active'), state)
+            self.assertEqual(self.server.posts, [], 'native popup submit never reached the fixture server')
         finally:
             worker.close()
 

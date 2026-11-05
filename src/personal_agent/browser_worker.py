@@ -1790,7 +1790,7 @@ class Worker:
         self.held = found
         return {key: found[key] for key in ('dom', 'method', 'action', 'page', 'state')}
 
-    def check_form_navigation(self, url, method, then, into_frame=False):
+    def check_form_navigation(self, url, method, then, into_frame=False, view=None):
         """A form-submission navigation from or into the main frame while the guard is armed (#700).
 
         ``then(allowed)``; ``into_frame``: it goes into a subframe of the page.
@@ -1807,7 +1807,9 @@ class Worker:
         payment field, it is refused as before (Codex P1 on #626: fail-closed).
         """
         step = self.dialog_step if isinstance(getattr(self, 'dialog_step', None), dict) else {}
-        get = str(method or 'GET').upper() == 'GET' and step.get('confirm_ok') is True
+        # A main-view step says nothing about a popup's document. Popup refusals
+        # hand off to the owner instead of holding a form in a view we close.
+        get = view is None and str(method or 'GET').upper() == 'GET' and step.get('confirm_ok') is True
         answered = []
         self.deciding += 1   # a click waits for this decision (#736)
 
@@ -1817,7 +1819,7 @@ class Worker:
             answered.append(True)
             self.deciding -= 1
             if not allowed:
-                if isinstance(record, dict):
+                if view is None and isinstance(record, dict):
                     self.receive_cancelled(record)   # held: an approval of it can release it
                 else:
                     self.refused_submits += 1        # nothing held: a typed refusal, never an approval request
@@ -1830,7 +1832,8 @@ class Worker:
             # A page that answered with a held form refuses it; no answer refuses only a non-GET post.
             answer(get and not page_answered, value.get('cancelled') if page_answered else None)
         try:
-            self.run(FORM_NAVIGATION_SCRIPT, {'url': url, 'method': str(method or 'GET'), 'frame': into_frame is True}, done)
+            self.run(FORM_NAVIGATION_SCRIPT, {'url': url, 'method': str(method or 'GET'), 'frame': into_frame is True},
+                     done, **({'view': view} if view is not None else {}))
             self.AppHelper.callLater(FORM_CHECK_SECONDS, lambda: answered or answer(get))
         except Exception:
             # #1579 review: a check that could not start is a refusal; the pending count goes back down.
@@ -3077,7 +3080,7 @@ def guarded_policy(worker, where, handler, cancel, body):
 
 
 def _popup_delegate_class():
-    """#914: the delegate of a sign-in popup window: the same destination check, nothing else."""
+    """Sign-in popup navigation: destination checks and fail-closed Work form checks."""
     if _POPUP_DELEGATE:
         return _POPUP_DELEGATE[0]
     import Foundation
@@ -3096,12 +3099,42 @@ def _popup_delegate_class():
                 frame = action.targetFrame()
                 top = frame is None or bool(frame.isMainFrame())
                 work = not getattr(worker, 'owner_visible', True)
+                if work and action.navigationType() in (
+                        WebKit.WKNavigationTypeFormSubmitted, WebKit.WKNavigationTypeFormResubmitted):
+                    method = str(request.HTTPMethod() or 'GET') if request is not None else ''
+
+                    def refuse_form():
+                        worker.popup_state['needs_owner'] = True
+                        handler(WebKit.WKNavigationActionPolicyCancel)
+                        worker.close_popup(view=view)
+
+                    # No popup approval/release path exists. Refuse all non-GET
+                    # forms, including OAuth form_post, rather than infer payment
+                    # authority from the destination or a JavaScript wrapper.
+                    if method.upper() != 'GET':
+                        worker.posted_submits += 1
+                        worker.refused_submits += 1
+                        return refuse_form()
+
+                    def checked(allowed):
+                        try:
+                            if allowed:
+                                return worker.decide(url, False, decision)
+                        except Exception as exc:
+                            worker.delegate_failed('popup_form_navigation', exc)
+                        refuse_form()
+
+                    # Continue below to the same destination/flow checks after
+                    # checking the popup's own document, never the opener's.
+                    form_check = (method, checked)
+                else:
+                    form_check = None
                 if top and str(urlsplit(url).scheme or '').lower() in ('data', 'blob'):
                     if work:
                         worker.close_popup(view=view)
                     return handler(WebKit.WKNavigationActionPolicyCancel)
                 if work and top:
-                    if _blank(request.URL() if request else None):
+                    if form_check is None and _blank(request.URL() if request else None):
                         return handler(WebKit.WKNavigationActionPolicyAllow)
                     if getattr(self, 'reserved', False):
                         self.reserved = False
@@ -3131,6 +3164,13 @@ def _popup_delegate_class():
                         worker.navigation_refused(True, reason or 'blocked_destination')
                         worker.close_popup(view=view)
                     handler(WebKit.WKNavigationActionPolicyAllow if allowed else WebKit.WKNavigationActionPolicyCancel)
+                if form_check is not None:
+                    method, checked = form_check
+                    try:
+                        return worker.check_form_navigation(url, method, checked, into_frame=not top, view=view)
+                    except Exception as exc:
+                        worker.delegate_failed('popup_form_navigation', exc)
+                        return refuse_form()
                 worker.decide(url, False, decision)
             guarded_policy(worker, 'popup_navigation', handler, WebKit.WKNavigationActionPolicyCancel, body)
 
