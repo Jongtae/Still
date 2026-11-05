@@ -2691,21 +2691,25 @@ class WebKitIntegrationTests(unittest.TestCase):
             name = [field for field in frame['fields'] if field['kind'] == 'text']
             self.assertEqual(len(name), 1, frame['fields'])
             self.assertAlmostEqual(name[0]['x'] * frame['width'], 860 * zoom, delta=2)
-            links = frame_until(lambda frame: frame['links'])['links']
+            frame = frame_until(lambda frame: frame['links'])
+            links = frame['links']
             self.assertEqual([link['url'] for link in links], ['https://auth.example/qr?q=596'])
             # #602: the code's box in the frame holds the code's middle (CSS 98, 158 at this zoom), so a
             # tap there on the phone opens its link.
             box, middle = links[0], (98 * zoom / frame['width'], 158 * zoom / frame['height'])
             self.assertTrue(box['x'] < middle[0] < box['x'] + box['w'] and box['y'] < middle[1] < box['y'] + box['h'], box)
             # The phone maps a tap by the frame's own width and height: view points.
-            worker.remote_input('tap', x=920.0 * zoom, y=120.0 * zoom)
-            self.assertEqual(frame_until(lambda frame: frame['focus'] == 'text')['focus'], 'text', '#293 focus')
-            worker.remote_input('text', text='홍')
-            worker.remote_input('key', key='Backspace')
-            worker.remote_input('text', text='김')
+            # #647: inputs target the displayed frame's view, just like the phone client;
+            # a missing identity is rejected so a closed popup cannot redirect input.
+            worker.remote_input('tap', view_id=frame['view_id'], x=920.0 * zoom, y=120.0 * zoom)
+            frame = frame_until(lambda frame: frame['focus'] == 'text')
+            self.assertEqual(frame['focus'], 'text', '#293 focus')
+            worker.remote_input('text', view_id=frame['view_id'], text='홍')
+            worker.remote_input('key', view_id=frame['view_id'], key='Backspace')
+            worker.remote_input('text', view_id=frame['view_id'], text='김')
             # #602: the phone's input box puts its text in place of what the field holds.
-            worker.remote_input('text', text='홍길동', replace=True)
-            worker.remote_input('tap', x=920.0 * zoom, y=230.0 * zoom)
+            worker.remote_input('text', view_id=frame['view_id'], text='홍길동', replace=True)
+            worker.remote_input('tap', view_id=frame['view_id'], x=920.0 * zoom, y=230.0 * zoom)
             deadline = time.monotonic() + 5
             while '눌림' not in (text := worker.snapshot()['text']) and time.monotonic() < deadline:
                 time.sleep(0.2)
