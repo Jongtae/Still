@@ -16,6 +16,8 @@ provider cannot answer; the declared fallback is to say so.
 See docs/decision-layer.en.md.  Vendor SDK types and vocabulary stay out of
 this module: the model adapter is reached only through the repository's
 existing ``ModelAdapter`` tool-call shape.
+#673 owner decision: a peer Work's budget carries its CLI isolation binding
+to judgments; the binding is never rendered as model context.
 """
 import json
 import time
@@ -88,11 +90,12 @@ class DecisionContext:
     """
 
     __slots__ = ('purpose', 'facts', 'work_id', 'cancelled', 'max_chars', 'admission', 'reserve', 'context_messages',
-                 'strongest', 'timeout', 'refused')
+                 'strongest', 'timeout', 'refused', 'peer_store_root')
 
     def __init__(self, purpose, facts=None, *, work_id=None, cancelled=None, max_chars=MAX_CONTEXT_CHARS,
                  reserve=False, context_messages=None, strongest=False, timeout=None):
         self.context_messages = context_messages
+        self.peer_store_root = None
         # A judgment that asks for the route engine's strongest model (the newest top model its own
         # catalogue lists, never a pinned name) and the longer bound that model may need; an engine
         # that cannot choose one answers with its route model as usual.
@@ -328,6 +331,9 @@ class RoutedDecisionEngine(DecisionEngine):
     def _engine(self, context):
         budget = self.work_budget
         if budget is not None:
+            # #673 owner decision: a peer's planning/judgment CLI must also
+            # exclude ambient instructions before it can write a worker brief.
+            context.peer_store_root = getattr(budget, 'peer_store_root', None)
             context.admission = (lambda: budget.spend_turn(reserve=True)) if context.reserve else budget.spend_turn
             cancelled = context.cancelled
 

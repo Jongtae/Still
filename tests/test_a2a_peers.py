@@ -803,8 +803,8 @@ def test_review_notice_uses_owner_language_and_is_never_an_effect_approval(state
 
 
 @pytest.mark.parametrize('engine', ['codex', 'claude-code'])
-@pytest.mark.parametrize('profile', ['strict-isolated', 'trusted-local'])
-def test_cli_peer_work_refuses_even_an_available_qualified_subscription(state, engine, profile):
+@pytest.mark.parametrize('profile', ['trusted-local', 'unknown-profile'])
+def test_cli_peer_work_refuses_an_ambient_or_unknown_profile(state, engine, profile):
     from personal_agent.a2a_work import answer_peer
     from personal_agent.orchestrator import Catalogue
     service, peers, model, registration = state
@@ -822,8 +822,8 @@ def test_cli_peer_work_refuses_even_an_available_qualified_subscription(state, e
     assert not model.calls
 
 
-def test_existing_strict_bridge_is_not_a_peer_disclosure_boundary(state):
-    """Evidence for refusing CLI Work: the existing bridge does not carry peer scope.
+def test_ordinary_strict_bridge_is_unchanged_and_not_peer_scoped(state):
+    """Ordinary strict Work still serves its existing profile, independently of peer Work.
 
     Use an ordinary running Work to inspect the strict profile as implemented,
     without modifying its status checks, launching a CLI or opening a socket.

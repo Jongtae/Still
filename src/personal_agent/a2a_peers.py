@@ -385,8 +385,9 @@ class A2APeers:
             return turn
         try:
             from .a2a_work import answer_peer
-            answer = answer_peer(self, turn)
-            answer = self.finish(turn, answer)
+            answer, reached = answer_peer(self, turn)
+            state = 'completed' if reached else 'failed'
+            answer = self.finish(turn, answer, state=state)
             provenance = self.store.turn_provenance(turn['work_id']) or {}
             used_sections = provenance.get('peer_context_sections') or []
             used_tools = sorted({event['trace'].get('host_action') or event['tool']
@@ -395,7 +396,7 @@ class A2APeers:
             self.record(turn['work_id'], 'succeeded', {'peer_id': peer_id, 'direction': 'inbound',
                         'destination': self.peer(peer_id)['card']['supportedInterfaces'][0]['url'],
                         'sections': used_sections, 'tools': used_tools, 'state': 'response-returned'})
-            return {**turn, 'answer': answer, 'state': 'completed'}
+            return {**turn, 'answer': answer, 'state': state}
         except Exception as exc:
             code = str(exc) if isinstance(exc, PeerError) else 'peer_work_failed'
             self.fail(turn, code)
