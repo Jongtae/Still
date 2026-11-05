@@ -72,7 +72,7 @@ Installation alone does not register a service. See [background service](guide/o
 
 In PowerShell run `wsl --install`, restart Windows, open Ubuntu, and complete its initial account setup. Run the one-line Still installer inside Ubuntu. Install and sign in to Codex or Claude Code inside Ubuntu as well, not only in Windows. Windows files are available under `/mnt/c/`.
 
-Native Windows support is separate work ([#33](https://github.com/Jongtae/Still/issues/33)). Keep Ubuntu open. The newer Linux browser implementation has separate desktop requirements and is not part of v0.5.0; WSLg operation has not been observed. See [platform notes](guide/platforms.en.md).
+Native Windows support is separate work ([#33](https://github.com/Jongtae/Still/issues/33)). Keep Ubuntu open. Browser support and desktop prerequisites depend on the installed release; WSLg operation has not been observed. Check the release-versus-source distinction in [platform notes](guide/platforms.en.md) before relying on browser actions.
 
 ## When something does not work
 

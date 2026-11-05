@@ -1,359 +1,220 @@
 # Still Presence Experience Contract
 
-## Current rule index and precedence
-
-This is the owner-facing projection contract. **It does not select the repository's current development goal**; use repository-root [`delivery-plan.yaml`](../delivery-plan.yaml) and the [documentation map](README.md). Dated goal-selection paragraphs below are retained as program history.
-
-| Concern | Current controlling rule | Older text retained only as history where superseded |
-| --- | --- | --- |
-| Presence identity | North Star + Experience principles: one continuous secretary voice over replaceable workers; receipts/details on demand | Worker/tool/Still machinery as the ordinary speaking identity |
-| Owner AI Memory presentation | #918 slice (a): no ask; save, then one quiet notice with exact seven-day undo. #422 adds: each item names its kind, background consolidation is quiet, a change the owner relies on is raised at the next relevant conversation, and answers show memory by using it | #836/#818 ask flow for the owner's own AI; #402's one notice per dream |
-| Third-party/delegated Memory presentation | #836 one ask per owner message/Work, natural values not keys; #818 exact approval mechanics underneath | Owner-AI no-ask policy does not apply |
-| Conversation lifecycle | current Telegram rules: no routine acknowledgement/status card; native typing/thinking presence; semantic progress only when useful | received/queued/running/completed narration and fixed wait text |
-| Answer projection | PRESENCE-ANS-01 / #847 plus truth-first outcome rules: the answer is the message; technical causes stay in detail; failed/partial/unknown remain explicit | machinery headers, tool names and raw execution errors in ordinary replies |
-| Settings and management | #880 Pages + #814/#855 conversation-first settings: the agent manages in conversation; pages exist for results text cannot carry or inputs conversation cannot safely carry | web-as-general-management-console framing |
-| Authority handoff | contextual capability/folder/account handoff at the moment of need; local approval owns local authority; successful handoff resumes the original Work exactly once | Settings-first onboarding as the ordinary task path |
-| Worker identity and routing | Main AI / Judgment AI are execution roles; worker changes do not change who the owner is talking to | engine/provider names as separate assistant identities |
-
-The [Secretary Agency Contract](secretary-agency-contract.en.md) controls the underlying Memory/egress/orchestration authority when this contract only changes presentation. Work/Event/Evidence, Grants, approvals, exact external-effect semantics and truthful `unknown` remain kernel truth.
-
-## Historical program decisions
-
-Dated Presence/Secretary/UX goal selections are preserved in Presence program and Memory history. They do not select current work.
-
-## Amendment — GOV-ASK-LESS-01 / #918 slice (a) (2026-10-02): remembered, told, undoable
-
-Owner decision 2026-09-30 (#918): "I think things like this should just be handled without asking; asking at every turn is not a good user experience." For the owner's own AI the #836 ask below is replaced by act-then-tell with undo (the research pattern "기억함: X · 오늘 대화에서 · 되돌리기", `docs/research/owner-model-and-decision-journal-2026-09-28.ko.md`). The rules are canonical in the [Secretary Agency Contract](secretary-agency-contract.en.md) amendment of the same number.
-- **No ask.** The owner's worker and the owner-model upkeep save a fact at once - stated or inferred alike (the owner's own example, "has a spouse", was an inference). Nothing asks 👍/👎 for it, and no judgment call decides it. A credential-shaped value is never saved.
-- **One quiet notice per owner message, never untold.** After the reply, whether it arrived `sent` or its delivery is `unknown`: "기억했어요: <fact>" with [되돌리기]; several facts are one numbered notice with a 되돌리기 per fact and 모두 되돌리기; a replaced value is named ("(전에는 …)"). Values only, never keys; secrets removed; it never re-asks anything. A fact upkeep saves later joins the same notice (and restarts its undo window), or gets its own when the edit fails. A notice lost on the way is told again once; a save never ends without the owner being told.
-- **되돌리기.** Retracts exactly that fact and restores the value it replaced ("되돌렸어요: … (다시 …)"). Exact to the chat, generation, message, Memory id and content digest; one use per fact; valid for seven days, then the button no longer acts. A fact that changed since is left as it is and the notice says so.
-- **The web.** 내 기록 lists the fact as saved with its source; nothing of it waits in the approve/reject list. The web's undo is the existing delete.
-- **Still asked.** Only a third party's write (a package tool or a delegated specialist) keeps the #836 ask below (C5). Per-action payment approval and irreversible effects outside Still stay asks (#918 item 4).
-- **Kept.** Nothing is described as remembered before it is; the worker reads a direct save as remembered and is told not to ask.
-
-## Third-party/delegated Memory presentation
-
-The owner's own AI follows #918 above: save, tell, exact undo. A package tool or delegated specialist remains under C5 and the candidate/approval path. For those third-party candidates, keep the still-current #836 presentation semantics: one natural ask per owner message/Work, values rather than raw keys, approval bound to exactly what was shown and is still current, no machinery narration, and never describe a candidate as remembered before approval. The full pre-#918 owner-AI ask history and dated UX/Secretary program selections are preserved in Presence program and Memory history.
-
-**Pilot posture remains current as policy, not goal selection.** One owner, own machine, own accounts. Secrets never enter a model prompt, log or Evidence; payment needs per-action owner approval. Per-request sensitivity judgments, re-asks, per-provider gating and the "no cart authority" rule remain removed from the request path unless a separately activated hardening program changes that. No scenario-specific code: probes are observation windows, not request/category branches.
-
-## Execution integration refinement — AGENCY #600
-
-Presence requires useful action, not only natural projection. The [execution contract](assistant-execution-contract.en.md) and [delivery/ownership](assistant-execution-delivery.en.md) add actual tool reachability, safe context composition, typed recovery and separate model/installed-owner qualification. Reuse #597/#598 and #581. #512 can run fixture baselines early; final convergence follows #608 and cannot promote missing/xfail/stale or fixture-only evidence. No authority to weaken grants, privacy guards or uncertain-effect handling follows from this refinement.
-
 ## Status and purpose
 
-This is the canonical owner-facing experience refinement for conversation, Settings, contextual capability handoff and recovery. It distills the 2026-09-23 focused [Presence and Settings UX research](research/presence-and-settings-ux.ko.md) into implementation and review rules. Experience convergence was tracked by [PRESENCE-01 #508](https://github.com/Jongtae/agentos/issues/508). The 2026-09-24 selection of Presence and governance migration #523 are historical records. This document does not itself authorize runtime execution or select work outside the delivery-plan contract.
+This contract defines how Still communicates and collaborates with its owner across conversation, results, setup and recovery. It consolidates adopted presentation rules; it does not select development work or establish that every requirement has been observed on a live account.
 
-It does **not** replace the kernel authority model, the Owner Control Contract, Work/Event/Evidence semantics, Grants/approvals, or the Goal Execution Contract. It does not claim every target behavior is shipped. Current capability claims still require merged implementation and named evidence.
+The editorial baseline is `99fad1598b75837cf4428cfa43ad810266e5dff7`. The [original contract at that revision](https://github.com/Jongtae/Still/blob/99fad1598b75837cf4428cfa43ad810266e5dff7/docs/presence-experience-contract.en.md) preserves the dated amendments and observations. The [concept chapter](concepts/presence-and-collaboration.ko.md) explains the rationale; the [source register](concepts/references.md) distinguishes research findings from Still's design choices.
+
+## Current rule index and precedence
+
+| Concern | Current rule |
+| --- | --- |
+| Identity | One continuing assistant relationship across replaceable workers and professional roles. Technical identities remain inspectable. |
+| Ordinary replies | Give the answer or useful next action, not routine received/running/completed narration. |
+| Long work | Use transient progress presence, a model-selected initial plan preview and bounded meaningful updates. Do not invent progress. |
+| User intervention | A correction must affect the relevant work or receive a truthful explanation of why it could not. |
+| Outcomes | Distinguish succeeded, partial, failed and unknown. A good-looking reply cannot override recorded effects or approvals. |
+| Memory | Follow the [Memory contract](engineering/contracts/memory.en.md): direct saves, third-party proposals, quiet consolidation and working-note changes have different notice/undo rules. |
+| Pages | Use a page for a result or input that conversation cannot carry well or safely. Do not require users to operate an internal management console before asking for work. |
+| Settings | Distinguish configured, verified, available and currently selected state; changing one is not proof of another. |
+
+The [Secretary Agency Contract](secretary-agency-contract.en.md) owns pilot policy, the [execution contract](assistant-execution-contract.en.md) owns effect/recovery truth, and [Owner Control](owner-control-contract.en.md) owns authority. Presentation cannot widen those boundaries. [Professional Roles and Communication](professional-roles-and-communication-contract.en.md) defines cross-role collaboration. [delivery-plan.yaml](../delivery-plan.yaml), not this document, selects development work.
 
 ## North Star
 
-> **Still is not a chatbot that sounds more human. It is an owner-controlled kernel whose machinery recedes behind one continuous, truthful personal-assistant relationship.**
-
-Use this as a product decision filter for owner-facing work: keep the kernel strict and inspectable, while moving internal execution machinery behind a continuous assistant relationship unless the owner explicitly asks to inspect it.
+**One continuous, truthful personal-assistant relationship, with the underlying machinery available for inspection rather than made the subject of every conversation.**
 
 ## Product definition of Presence
 
-**Presence is the experience of one continuous, context-aware personal assistant across turns, tools, workers, failures, restarts and capability handoffs, while Still continues to enforce truthful Evidence, explicit owner authority and inspectable technical state underneath.**
+Presence is continuity across turns, tools, workers, failures, restarts and handoffs. It depends on context, memory, appropriate communication and recoverable work, not a claim of consciousness, a staged personality or artificial delay.
 
-Presence is not anthropomorphic theater, verbose friendliness, fake emotion, artificial delay, or pretending uncertainty is certainty. The product should feel continuous because it resolves references, remembers authorized context, recovers conversationally, asks for authority at the moment of need and translates kernel state into the minimum owner-relevant explanation.
-
-The kernel remains mechanical and strict:
-
-`Work → Event → runtime/tool → Evidence → outcome`
-
-The owner-facing projection should instead read as:
-
-`owner intent → assistant understanding → contextual authority if needed → work → verified result → natural continuation`
+The internal record can remain `Work → Event → tool/runtime → Evidence → outcome`. The user should experience understanding, necessary choices, useful work, an honest result and a natural continuation. These are two views of the same work, not two authoritative databases.
 
 ## Experience principles
 
-1. **Conversation first; receipts on demand.** Lead with the useful answer or next action. Technical receipts remain inspectable but are not the default conversation.
-2. **One assistant voice over many workers.** Codex, Claude Code, models, connectors, MCP tools and specialist runtimes execute work; they do not become separate speaking identities.
-3. **Continue before restarting.** Resolve a new turn against recent conversation focus, unresolved Work, corrections and approval state before creating an unrelated interaction.
-4. **Communicate semantic progress, not scheduler state.** Do not mechanically project queued/running/completed lifecycle events. Send only progress that changes what the owner needs to know.
-5. **Truth before fluency.** failed, partial, unknown and approval-pending state constrain the response before conversational wording is applied. Model prose never outranks observed Evidence.
-6. **Ask at the moment of need; the agent manages.** Capability, folder and account authority should be requested contextually when needed. The owner does not operate a management console: the owner's AI reads and changes settings in conversation. A page appears only when conversation text cannot carry a result, or cannot safely carry an input (owner direction 2026-09-30, #880; see *Pages* below).
-7. **Memory is useful, scoped and correctable.** Short-horizon conversational focus and durable Memory are distinct. Durable memory remains inspectable, correctable and revocable. Since #422, memory is **shown in use, not reported**:
-   - an answer that relies on a remembered fact mentions it in passing, in the owner's terms, so the owner can correct it in the next turn;
-   - an inferred or possibly outdated fact is offered tentatively;
-   - background consolidation is quiet and inspectable in 내 기록;
-   - a change the owner relies on is raised once, at the next conversation where it is relevant;
-   - only the owner's own words become their memory.
-
-   The rules are in the [Secretary Agency Contract](secretary-agency-contract.en.md) #422 amendment.
-8. **Proactivity must earn the interruption.** Attention/heartbeat can amplify Presence later, but reactive Presence must work without it and unsolicited contact requires relevance, authority and timing.
-9. **Model-first semantics; rules only where exactness is unavoidable.** Ordinary language/intent/reference/routing/recovery/projection decisions should use the provider-neutral DecisionEngine rather than keyword lists, regexes or capability-specific branches. Deterministic code remains authoritative for security, owner authority, approval, idempotency, effect/Evidence truth and protocol/state invariants.
+1. **Answer first; receipts on demand.** Lead with the useful result or next action. Keep technical detail accessible without making it the default response.
+2. **One voice, replaceable workers.** A worker or role is not a separate speaking identity. A coherent voice must not disguise the actual worker, its limits or the absence of professional authority.
+3. **Continue before restarting.** Resolve a follow-up against recent intent, open work, corrections and approvals when the reference is clear.
+4. **Communicate what matters.** A significant finding, changed expectation, blocker, choice or verified outcome can justify an update. Tool count and scheduler state alone do not.
+5. **Truth before fluency.** Uncertainty, failure and approval needs remain visible even when the prose is short and natural.
+6. **Ask when needed.** Request a connection, input or covering authority in the context of the task, then resume through the existing bound continuation.
+7. **Make memory useful and correctable.** Use a relevant remembered fact in the answer, state an inference tentatively and allow correction. Do not substitute repeated memory reports for useful help.
+8. **Earn an interruption.** Proactive contact needs relevance, timing and an accepted execution mechanism; it is not required to make reactive conversation work.
+9. **Let the model interpret meaning.** Code enforces exact state and authority, rather than growing a request-specific conversation rule tree.
 
 ## Model-first semantic interpretation
 
-Presence must not become a larger hand-authored conversation rule engine.
+The [Decision Layer](decision-layer.en.md) interprets intent, relevance, references, corrections and recovery choices over bounded context. Its provider and model are configuration, not part of the assistant's identity. Fixture engines support deterministic tests; they are not a production keyword fallback.
 
-Use the Still-owned `DecisionEngine` boundary from [the decision-layer contract](decision-layer.en.md) for ordinary semantic judgment over bounded conversation/Work context. The initial production default is OpenAI `gpt-4o-mini`; the provider is configuration behind the neutral interface and may later be replaced by an owner-selected AI, a local model, Jev or another adapter.
-
-Typical semantic decisions include:
-- intent/focus and whether a turn is a new request, clarification, correction, continuation or reference;
-- selecting among declared capabilities/workers that are already eligible under policy;
-- resolving “that / try again / change it to 4pm” against relevant recent Work;
-- choosing direct reply vs contextual handoff vs approval/recovery/long-running acknowledgement;
-- selecting an owner-facing projection strategy for a truth-qualified outcome.
-
-A deterministic/mock DecisionEngine is appropriate for CI and fixture-backed acceptance. It is not the normal production fallback for arbitrary language understanding. Provider failure should result in an explicit unavailable/unknown/clarification or safe-stop state, not silently re-enter a keyword/regex rule tree.
-
-The model never owns truth or authority. Grants, approvals, effect classification, idempotency, cancellation/revocation, Evidence qualification and final success/partial/failed/unknown state remain deterministic Still/kernel responsibilities.
+The model can propose what to say and what to do next. It cannot create approval, erase an unknown effect or claim an unobserved operation. The same distinction applies to role-specific communication: a professional lens changes relevant standards and evidence, not authority or the number of personalities speaking.
 
 ## Surface responsibility
 
-| Surface | Owns | Must not become |
+| Surface | Responsibility | Boundary |
 | --- | --- | --- |
-| Conversation / Telegram | intent, clarification, repair, answer, contextual handoff, meaningful progress, recovery, conversational approval | a Work-status or engine-log console |
-| Local approval surface | filesystem picker, read/write grants, owner-bound OAuth, consequential preview, allow/deny | a remote chat link that silently grants host authority |
-| Result pages | views opened from a conversation link when text is a poor fit: what Still believes about the owner with sources, a Work's decision tree and information-use audit, long tables, Artifacts, calendars | a management console the owner is expected to operate, or mandatory tutorial/onboarding before ordinary tasks |
-| Settings (existing screens) | inspect/change/revoke AI route, connections, folder grants, Memory/preferences until the #880 census reassigns each screen | a place new management pages are added |
-| Task / Evidence detail | exact Work timeline, worker/tool IDs, sources, errors, approvals, partial/unknown details | the primary path for every ordinary result or failure |
-| Internal kernel | Work/Event/Evidence/Context/Memory/Grant/effect state/idempotency/routing | the user-visible personality |
+| Conversation | Requests, questions, corrections, useful answers and supported contextual decisions. | Not a raw Work-status or engine-log console. |
+| Necessary input/approval surface | Secret entry, OAuth, local folder choice and exact approval where the applicable action requires it. | A remote conversation link cannot silently grant host authority. |
+| Result page | Long comparisons, documents, calendars, owner-model sources and execution detail that text cannot present well. | Not mandatory setup or an empty result promise. |
+| Existing Settings | Inspect, change and revoke supported configuration. | A read of the page makes no provider call; a saved value is not an active route. |
+| Technical detail | Actual Work timeline, worker identity, sources, errors, approvals and effect uncertainty. | Neither concealed from the owner nor copied wholesale into every reply. |
 
 ## Conversation surfaces: shared and per-surface rules (#212)
 
-A remote conversation surface is where the owner talks to Still away from the local web page. Telegram is the only one today; Mattermost (#213) and Slack (#214) are planned. The code boundary is `conversation_surface.ConversationSurface` (see the architecture document's *Local service code boundaries*). This section records current behavior; it adds no rule.
+The common boundary is [ConversationSurface](../src/personal_agent/conversation_surface.py). Telegram, Slack and Mattermost have their own adapters; the earlier statement that only Telegram exists is historical. Installation and release-specific support are listed in [product status](product-status.en.md) and the [connection guide](guide/connections.en.md).
 
-**Shared by every surface.**
+A paired remote surface serves one owner identity in the owner's private conversation. A message, reaction or tap from another identity or unauthorized conversation starts no Work and receives no answer. Existing channel/generation bindings apply to continuations, prompts and callbacks.
 
-- **One owner per surface.** A surface is paired to exactly one owner identity. A message, reaction or tap from any other identity, or from anything but the owner's private conversation, starts no Work and gets no answer.
-- **One durable reply.** Each Work gets one terminal reply. The send intent is recorded before the send. A send whose outcome is uncertain is never replayed; a send that certainly did not reach the surface waits out a backoff and is sent once it can be (#123).
-- **Presence is presentation only.** Reactions, typing and drafts are best-effort. A failed or refused call never fails, duplicates or changes Work, delivery or Evidence. Presence calls and the final reply are serialized under one lock, so nothing follows the answer. While an approval prompt is pending it is the only surface, and approval or payment steps get no draft line and no progress reaction.
-- **Truth before presentation.** The outcome reaction follows the deterministic truth gate in *Telegram presence* below; the Judgment AI only chooses among the emoji that gate allows.
-- **Owner acts.** A typed reply or a reaction on a message that showed an item still waiting for the owner is read by the one OWNER-ACT-01 judgment (#172) and settles at most that item through its own path. A button is an exact act bound to its message and is not judged.
-- **Degrading by capability.** Optional presentation is declared per surface as `reactions`, `typing`, `live_drafts`, `buttons` and `native_stop`, and the core shows only what the surface declares, never branching on the surface's name. Without `reactions` no received, progress or closing emoji is set. Without `live_drafts` the wait shows `typing…` only. Without `typing` and drafts nothing is shown while waiting. The terminal reply is delivered in every case.
+Each Work has one terminal reply. Record send intent before sending. An uncertain send is not blindly replayed; a send known not to have reached the service follows the supported bounded retry/backoff path. Interim updates are not the terminal reply.
 
-**Telegram-specific.**
+Typing, drafts and reactions are best-effort presentation. A failure there must not fail, duplicate or change the Work. Serialize presence calls and final delivery so a stale typing/draft update cannot follow the answer. Pending approval is the active interaction; approval/payment waits suppress the transient draft and progress reaction.
 
-- **Capabilities.** Telegram declares all five: reactions on the owner's message, `typing…`, the thinking draft, inline buttons and the draft's native Stop.
-- **Pairing.** The bot pairs with the owner's private chat through the one-time `/start` code. A Work's `jobs.channel` is `telegram:<bot generation>` and its `chat_id` is the paired Telegram user id; reconnecting the bot starts a new generation, and Work, prompts and buttons of an earlier generation are not answered.
-- **Presence.** Emoji come from the set Telegram documents for bot reactions, one regular reaction per message. The draft is `sendRichMessageDraft`, then `sendMessageDraft`, then `typing…` only, as described in *Telegram presence* below. Stop on the draft reaches Still and is reconciled with real Work state (queued Work is cancelled; running Work is told it continues).
-- **Buttons.** Approval, login, preparation, memory, settings, retry and watch prompts carry inline buttons bound to the exact notification and message they were sent as. Browser step approvals carry none and are answered by a reaction or a reply (#1472).
-- **Formatting and media.** Replies are rendered as Telegram HTML (tables as lines, #848), with one plain-text resend only when Telegram refuses the entities. Slack replies are sent as standard Markdown for Slack to lay out (`markdown_text`, or a `markdown` block beside buttons), with one plain-text resend only when Slack refuses that body (#372); Mattermost renders Markdown itself. Photos and albums, the location keyboard and the task cards of earlier versions exist only on Telegram today.
+Optional behavior follows declared capabilities (`reactions`, `typing`, `live_drafts`, `buttons`, `native_stop`), not a core branch on a surface's name. Without reactions, show none; without drafts, use typing where available; without either, wait without fabricating another capability. Truthful final delivery remains required.
+
+A typed reply or reaction concerning a pending owner item is interpreted in context through the existing owner-act judgment, settling at most the applicable item. A bound button is an exact action, not another model judgment. Unknown or unavailable interpretation does not approve anything.
+
+### Telegram bindings and formatting
+
+Pairing uses the one-time start code and the private owner identity. Work, prompts and callbacks bind to the bot generation and chat; reconnecting does not authorize callbacks from an earlier generation. A native Stop is reconciled with the actual state: cancelling queued work is not proof that a running remote action was stopped.
+
+Replies use the supported Telegram HTML projection. Render Markdown tables as a header and one line per data row, preserving safe inline formatting and links; retain the model's original answer in the store. A single plain-text retry is allowed when the service explicitly refuses the formatting, not after an uncertain send. Slack uses its supported Markdown message/block path, with the same distinction between a formatting refusal and an uncertain delivery. Mattermost renders its supported Markdown. Media and input widgets are offered only where that adapter implements them.
 
 ## Conversation projection rules
 
 ### Short work
 
-A short ordinary request should normally yield one useful answer. Internal Work and Event records may exist, but receipt/running/completed chatter is not emitted by default.
+A short ordinary request normally produces one useful answer. Internal Work and Event records remain, but they do not generate receipt/running/completed bubbles by default. Do not add an acknowledgement merely to make the assistant seem active.
 
-### Long-running work
+### Long work
 
-One concise acknowledgement is allowed when latency or handoff makes it useful. Further updates require a meaningful owner-relevant state change such as a blocker, authority request, important partial result or completion. Event count must never mechanically determine message count.
+Send additional information only when it changes what the owner needs to know. The paired Telegram path has no routine acknowledgement card: queued work can use the received reaction, and running work uses native thinking/typing presence.
 
-For paired Telegram there is no acknowledgement card (owner decision 2026-10-01, #958). Queued Work shows only the received reaction on the owner's message; the owner withdraws it in words or with Telegram's native Stop. Use the existing native typing/thinking presence for the running interval, not a status bubble.
+The first plan may provide a **plan preview** when the model judges the work needs more than a short reply. Show the understanding, any assumption, approach and two to five short steps once, before the worker starts. The preview is a durable message the owner can correct. Do not add worker/model/reason machinery to that message; the preview shown to the owner also reaches the worker brief and steer judgment. A failed preview send does not change the Work's authority or result.
 
-One exception is the plan preview (owner decision 2026-10-30, #407). When the decision model judges that a request takes more than one short reply, its first plan also writes a preview: what it understood (with any assumption), how it will be handled, and two to five steps. Still sends that preview once, before the worker starts, as one durable message the owner can answer to correct it. A short request gets no preview. The preview names no worker, model or reason; those stay in 작업 현황 (#740). The worker's brief and the running-Work steer judgment both see what the owner was shown. A failed send changes nothing else about the Work. After a preview, the worker may speak up while it works with `tell_owner`: one short message in the conversation when a step gave it something the owner would want to hear before the answer. That is at most three messages per Work, and it is the worker's judgment, not a status line (owner direction 2026-10-30: a conversation partner, not a changing system bubble). The draft stays the ordinary typing presence. Interim messages are transcript rows (`delivery_projection='update'`) and never the Work's reply.
+After a preview, `tell_owner` allows at most three brief, meaningful updates per Work. The worker chooses whether a finding deserves an interruption. Updates are transcript rows marked `delivery_projection='update'`, not the final answer or proof that the goal is complete. The transient draft remains ordinary waiting presence.
 
 ### Telegram presence: reactions, thinking draft and typing (#581, #835, #858)
 
-Owner feedback 2026-09-28 (#835) and 2026-09-29 (#858): a fixed reaction meant nothing, the "생각 중…" wait text felt stiff, and the header `typing…` ended too early. These changes stay presentation only: Work, Event, Evidence and outcome semantics are unchanged, and every reaction, chat action and draft is a best-effort call whose failure never fails, duplicates or changes Work.
+These rules describe the adapter at the review baseline, not a guarantee that every client accepts every optional method.
 
-- **Reaction on the owner's message.** For every natural-language turn (commands get none), 👀 is set immediately as the deterministic fallback, then the Judgment AI chooses a reaction from the curated documented Telegram emoji set using only the owner's message. A confident offered choice replaces 👀; unavailable, unconfident or `none-of-these` keeps 👀. A running step changes no reaction: per-step emoji judgments were removed (#219, #205 0a); developer mode can show the launched worker instead (#458/#477). Telegram permits only one regular bot reaction per message. When the Work has a succeeded, delivered, non-blocked answer with nothing awaiting the owner, the Judgment AI chooses the closing emoji from its curated documented set using the owner's message and content-free delivery facts (the answer was delivered and whether an observed note/Memory write occurred). The answer body is never sent to this presentation judgment because it may contain private source material. Unavailable, unconfident, a judgment error or `none-of-these` keeps the deterministic 👌 / ✍ choice. Telegram is not called when the chosen emoji equals the one already shown. No closing judgment is requested for any other outcome; `partial`, `failed`, `unknown`, `cancelled`, `interrupted`, a blocked reply, an uncertain delivery, or a succeeded Work that still waits for the owner's approval removes the reaction and shows no replacement emoji. A parked Work (awaiting a connection, Drive or context) keeps its reaction until it ends. All judgment contexts use the existing secret redaction and contain no history, Memory, files or mail. Candidate emoji are curated from the set Telegram documents as available and exclude rude, mocking or dismissive reactions (pinned by a test).
-- **Waiting draft.** From 5 s, `sendRichMessageDraft` with Stop shows Telegram's animated thinking block. Its text shows three still dots (`· · ·`), checked every 1.5 s and resent only when changed or after the 20 s keepalive (#445/#978). With developer mode on (#477), before the dots stands the worker and model the current attempt was launched with (#458), for example `Codex · gpt-6.1-sol · medium` (`worker_line`). That is what Still passed to the launch, or `기본 모델` when it passed none; the name is never guessed. Owner direction 2026-10-31: the per-tool step lines of #718 meant little to the owner, while seeing which AI works for them is a benefit of running Still themselves. This is the one place a worker or model name appears outside 작업 현황, an exception to #740 for the transient bubble only. The #839 attention reminder is a following paragraph block, outside the thinking block. Edits use the same `draft_id`. If the rich method is refused for a Work, it is not retried; the plain `sendMessageDraft` carries the same dots and paragraph, and if that is refused too the existing fallback is `typing…` only. The thinking text is never empty (an empty plain draft is a blank bubble on the owner's iOS client, #581). While an approval prompt is pending it is the only surface.
-- **Attention while waiting (ATTN-WAIT-01 / #839, owner direction 2026-09-28).** "when we show the thinking state, the gap could be used as an attention moment: it might be good to recall something we had prepared to deliver at that point." While the dots draft is shown, it may carry one more line, "참, …", that reminds the owner of ONE item Still already prepared for them. Selection is deterministic from existing state and makes no model call: first a fresh prepared answer (#659) that did not reach the owner as a message, then an owner-accepted reminder due within 12 hours, then an ask still waiting for the owner (a proposed preparation, an open memory ask, #836; #888: a memory ask only within an hour of being sent, so it is surfaced at most once and then waits in 내 기록). Items the current Work is itself about (its own preparation run, its own proposals or ask) are excluded; the same item is not repeated within 6 hours; at most one item per Work, kept on every frame of that Work's draft. Only when a draft is shown at all (from 5 s), so never during an approval or payment step, where the approval prompt is the only surface. The wording is the item's own text, redacted like any draft line, never a memory key. The draft is ephemeral, so the item's durable surface is unchanged: an ask keeps its own message and buttons, a reminder still fires at its time, nothing is decided, accepted or delivered by the draft. Each surfacing is recorded as a `presence` event with the item reference and shown line, so the Work's information-use audit (#826) lists it under 기다리는 동안 알린 것. Follow-up, not done here: repeating the line once on the final answer when the item is still pending.
-- **Typing.** `typing…` is refreshed at least every 4 s for as long as the Work runs, a draft shown or not. Presence calls and the final reply are serialized under one lock, so no `typing…` or draft follows the answer; the optional Judgment AI closing choice runs after the lock is released so a slow judgment cannot block polling or Stop updates.
+**Reactions.** A natural-language turn receives the deterministic eyes fallback; exact commands do not. A qualified model choice from the curated supported emoji set may replace it using only the redacted owner message. Unavailable, unconfident or out-of-set choices keep the fallback. No per-tool reaction judgment runs. Closing reactions are allowed only for a succeeded, delivered, non-blocked answer with no owner item awaiting a decision. That judgment receives the owner message and content-free delivery/write facts, never the answer body or private source material. Otherwise remove the reaction without a positive replacement. A parked connection/context Work can keep its received reaction until it ends. Do not resend an unchanged reaction.
 
-Developer mode (#477) is an owner presentation preference stored as `developer_mode`, default off. Exact `/dev on` and `/dev off` commands persist it; `/dev` or an unknown argument reports the state and usage without a model call. `_draft_step_text` gates all three surfaces: off means dots-only Telegram drafts, an empty web `step_line`, and Slack's own loading state with no words of Still's; on adds the launched worker and model (#458). Approval/payment waits suppress the draft and status in either mode. Attention (#839), worker Evidence and the conversation answer (#740) are unchanged.
+**Thinking draft.** At five seconds, the preferred rich draft can show the animated thinking block and Stop with the non-empty dots text. Check at the existing 1.5-second interval and resend only after a change or the 20-second keepalive. An explicit refusal disables that rich method for this Work; fall back to the plain draft, then typing only if that too is refused. Keep one draft identity for edits. An approval wait suppresses it. These fallbacks change presentation, never execution or result truth.
+
+**Developer mode.** Default off. Exact `/dev on` and `/dev off` persist the preference; `/dev` or an unknown argument reports state/usage without a model call. When enabled, the draft can show the worker, model and effort actually passed to the current launch, or the explicit default-model label when none was passed. This is launch metadata, not a fabricated observed provider identity. With developer mode off, Telegram shows dots, the web step line is empty and Slack uses its native loading state. Approval/payment waits suppress either mode.
+
+**Attention during waiting.** The existing draft may show one already prepared item: first an undelivered fresh prepared answer, then an accepted reminder due within twelve hours, then an eligible pending ask. A memory ask is eligible only within its first hour. Exclude the current Work's own run/proposals/asks, do not repeat an item within six hours, and keep at most one item on this Work's draft. This deterministic state projection makes no new model call and does not accept, deliver, dismiss or reschedule the item. Its durable message and buttons remain. Redact the wording and retain the presence event for the information-use audit. No such line appears during an approval/payment wait.
+
+**Typing and closure.** Refresh typing at least every four seconds while the Work runs, with or without a draft. Final delivery and presence share the lock; the optional closing judgment runs after releasing it so it cannot block polling or Stop. Nothing in these signals is a promised completion time or invented progress percentage.
 
 ### Failure and recovery
 
-Explain:
-- what is known to have failed;
-- what result must **not** be treated as successful;
-- the safest useful next action available in conversation.
-
-Do not default to “open the web console” when recovery can be explained or initiated in chat. Technical diagnostics remain available through Task/Evidence detail.
+Explain what could not be completed, what remains unconfirmed and the available next action. Do not default to sending the owner to the web console when the next step can be explained or initiated in conversation. Technical diagnostics stay accessible without exposing credentials, raw provider errors or internal element-matching details in the main answer.
 
 ### Partial outcome
 
-State the verified completed portion and the unavailable/failed portion separately. Never collapse partial into success.
+The goal outcome is not a count of successful tool steps. A recovered intermediate error does not make a successfully met request fail. Conversely, pending approval, an unresolved state-changing failure or an unknown effect cannot be overridden by a favorable goal judgment.
 
-**The goal decides the outcome, and the owner gets the answer (#752, owner direction 2026-09-28).** A Work's outcome is whether the owner's request was met, not whether every intermediate step succeeded. A worker that reads a bounded view of a long page, retries a click that found nothing, or works around a login page has not failed. When the goal judgment (#657 direct route, #710 CLI route, including after an effect) sees the request met, the Work succeeded, and its steps stay in Task/Evidence detail. The exceptions are a pending owner approval (C14) and a state-changing action that fell short without later succeeding: the verdict never outranks either. A `truncated` qualifier no longer makes a call incomplete.
-
-A failed or partial Work that has an AI answer delivers that answer first, closed by one short note (#847, below). An `unknown` effect keeps its own statement. A login prompt is offered only when the Work did not succeed.
-
-**The answer is the message; machinery stays in 상세 (PRESENCE-ANS-01 / #847, owner observation 2026-09-28).** A good Telegram answer arrived under three machinery lines: `일부 단계만 완료했습니다.` / `완료하지 못한 부분 — 브라우저에서 누르기: 일치하는 요소가 없습니다.` / `AI 답변 (위 부분은 확인되지 않았어요):`. That is the #836 presence violation on the answer path. Now the delivered message is the secretary's answer, and the truthful qualifier is at most a short closing note (`한 단계는 확인하지 못했어요.`, `요청하신 작업은 끝내지 못했어요.`, `중간에 멈춰서 끝까지 확인하지 못했어요.`): steps that errored are counted, never named; a withheld step's own next step (an approval, a login, a confirmation) is spoken as written; the worker's question to the owner and its proposed next step follow as sentences. Never a header block, a tool name, a host action or an element-matching error. Step-level detail stays in 상세/작업 현황 (the Work's technical cause and owner-word cause are unchanged). Invariant c holds: a failed state-changing step is never reported as done, `unknown` keeps its explicit statement, and a bubble without an answer is unchanged. Both the Telegram bubble and the watch notification use the same projection.
-
-**Telegram renders Markdown tables as lines (PRESENCE-TG-03 / #848, owner observation 2026-09-28).** A worker answer with a Markdown table was delivered raw (`| 출발 코스 | 티타임 | 표시 가격 |`, `|---|---|---:|`); Telegram has no tables. The #581 HTML formatter now renders a table (a `|` row followed by a separator row) as one bold header line and one line per data row, cells joined with ` · `, alignment separators dropped, bold and links inside cells kept. Deterministic formatting, no model call; the stored answer keeps the model's own text.
+When an AI answer exists, deliver that answer first with a short truthful closing note or needed next action. Prefer the supported gap explanation to an opaque step count. Do not restore the old machinery-first header, tool-name list or withheld-answer chain. Show verified and unverified portions distinctly; do not present an unsuccessful state-changing action as done. Technical step detail remains available. The same truth-qualified projection applies to supported watch notifications.
 
 ### Unknown external effect
 
-Say the external effect is unknown, explain duplicate-risk when relevant, and do not automatically retry a consequential effect without evidence/authority making that safe.
+State that the external result is unknown. Explain duplicate risk where relevant and do not repeat a consequential action without evidence and authority making that safe. This explicit statement takes precedence over an optimistic model reply. A connection error is not proof that nothing happened.
 
 ### Follow-up continuity
 
-Turns such as “try again”, “does it work now?”, “make that 4pm”, “cancel that”, and corrections must resolve against the relevant recent intent/Work when unambiguous. Retry/recovery relationships remain attributable in Evidence.
+Resolve “try again”, “does it work now?”, a changed time or quantity, cancellation and correction against the relevant recent request when unambiguous. Keep the relationship attributable in Evidence. Ambiguity requires clarification or a non-answer, not a fabricated referent.
 
 ## Identity and worker changes
 
-The assistant identity is owned by Still, not by the selected model/runtime. Changing Codex → direct API → Claude Code must not feel like changing to a different assistant.
-
-Worker/runtime identity is still inspectable in technical details when observed. Configured identity must not be presented as observed execution identity.
-
-## Contextual setup and authority
-
-A missing capability should produce one contextual next action tied to the owner’s task.
-
-Examples:
-- Gmail needed → request owner-bound connection, then resume the original Work exactly once.
-- local folder needed → hand off to an owner-local folder picker showing read/write authority, then resume exactly once.
-- consequential Calendar create → show exact effect preview and require covering approval.
-
-Conversation may trigger the handoff; it must not bypass the local/owner authority boundary.
-
-## Pages
-
-Owner direction 2026-09-30 (#880): designing Settings as a management page was a misjudgment. The agent does the work, so the owner manages Still by talking to it. Pages exist at the level of need:
-
-- **Result pages.** Open one from a conversation link when text cannot carry the result well. Examples are the owner model with sources (#794), a Work's decision tree and information-use audit (#826), long tables and comparisons, Artifacts and calendars. The conversation still gives the useful answer first.
-- **Necessary input surfaces.** Keep a local surface when conversation cannot safely carry the input: secret entry (a secret never enters a model prompt), OAuth consent, the OS folder picker, payment and consequential-effect approval, and connecting the first AI before any agent exists. Reach each one at the moment of need through a conversation link, not a management menu. Their authority semantics stay in the approval contracts and the [Owner Control Contract](owner-control-contract.en.md).
-- **No new management pages.** New work must not add a settings or management screen that the owner is expected to operate. The existing Settings screens below remain as implemented until a census classifies each one as conversation-handled, a necessary input surface or a result page, and retires the rest. That census is a separate follow-up and is not selected by #880.
-
-## Settings contract
-
-Settings is a preferences/management surface. It describes the existing screens; *Pages* above governs new work.
-
-Default rows should expose owner concepts such as:
-- service / route / folder name;
-- current owner-visible state;
-- one obvious action.
-
-Use distinct states for **currently used**, **configured**, **available**, **connected**, **needs attention**, and **not connected**. Never use “configured” as a synonym for “currently used”.
-
-Raw connector IDs, capability IDs, grant IDs, provider diagnostics, scopes and verification timestamps belong under technical details unless directly necessary for an owner decision.
-
-AI settings must show exactly one effective route when one is selected. A successful configuration test does not silently activate that route.
-
-Settings › AI names two peer roles: **기본 AI (Main AI)** — the default Work route — and **판단 AI (Judgment AI)** — the orchestrating DecisionEngine route. Following the Main AI is a preference, not a subordinate role hierarchy (#780). Preserve owner pointers to 설정 › 대화 해석. The current compact settings specification is [UX-SPEC-02](design/settings-ux-renewal-spec.en.md): one sidebar, no in-content logo, current values before editing, verification separate from selection, access implications visible, all existing language controls preserved. Changing either AI uses a fixed-order chooser; saved credentials display presence/date, never values.
-
-**Conversation-first settings (#814, owner direction 2026-09-28).** The owner's AI can read the basic settings in conversation (`settings_read`: Main AI route and model, Judgment AI mode and model, current context on/off and time zone, owner-model upkeep (#805) pause and daily call cap, connections; values, labels and allowed choices only) and propose a change (`settings_change`). A proposal is a digest-bound `SettingsOrchestrator` draft and applies nothing: the owner confirms it in the same conversation, and only then the service's existing setter runs, once, after re-checking the value is still current and allowed. **Owner direction 2026-09-29 (OWNER-SETTINGS-02 #855):** confirmation is a 적용 / 바꾸지 않음 button (Telegram, and the same pair on the web chat turn that proposed the change, through the Work-scoped draft endpoint) or the owner's typed message in that conversation: since OWNER-ACT-01 ([#172](https://github.com/Jongtae/Still/issues/172)) one judgment reads it, and any Telegram reply-to or reaction, against every item waiting for the owner, and a judged plain approve (apply, the buttons' own path) or decline (cancel) of this draft settles it; anything else, including an unavailable judgment, leaves the draft pending and the message is handled as a normal turn. No command such as `/settings 확인 <id>` is ever shown to the owner - not in the worker's `settings_change` result, the draft prompt or the confirmation message; the typed forms remain accepted silently for compatibility only. Text confirmation counts only on a Work whose message the owner typed (web chat or Telegram text, the `owner_typed` job marker); a preparation goal, a continuation, a retry or any other Still-run message can never confirm or cancel. A setter that only queues a change (Judgment AI 기본 AI 따라가기) is reported and audited as requested, not applied; a setter that probes or qualifies an AI is queued, in order, on one background worker off the caller's thread, and each result follows in the same conversation. The stale-value check and the setter run under one lock per category, so of two drafts with the same starting value only the first applies. A draft a restart cut off mid-apply is settled `unknown` (never re-applied), and the owner is told to check the current value. Values are fixed choices (a Main AI route only among connected and checked routes, which is a destination change) or a validated IANA zone. Credentials, keys, tokens, logins and endpoints are never read or changed in conversation; they stay in Settings. The tools are relayed on trusted-local and unavailable on strict-isolated/isolated. Follow-up: a first-run onboarding conversation (the typed yes was delivered by #855).
-
-## Truth and authority invariants
-
-Presence may change projection, never the underlying truth boundary:
-
-- failed/partial/unknown remain distinct;
-- unknown consequential effects are not blindly retried;
-- approval is not removed to make conversation smoother;
-- silent provider/paid-route fallback is not allowed;
-- MemoryCandidate is not described as remembered until canonical Memory actually changes (#918: the owner's own AI's save changes it at once and is told as remembered, with undo);
-- owner-visible claims must be supported by observed Evidence;
-- secrets/raw payloads/hidden reasoning do not become “transparency” requirements;
-- projection never moves approval requests, data-destination/provider/route changes, consequential-effect outcomes, blockers or failed/unknown state into on-demand-only detail;
-- this contract does not change which surface may authorize a consequential effect: conversational and local approval remain governed by the existing approval contracts and the [Owner Control Contract](owner-control-contract.en.md), including its messenger privacy boundary.
-
-## Observable acceptance matrix
-
-Presence work is not complete through copy review alone. Evidence should include owner-visible transcripts and their supporting internal state.
-
-At minimum verify:
-
-A. trivial request → useful answer without routine lifecycle bubbles;  
-B. failed runtime → truthful conversational failure + safe next action;  
-C. “try again / does it work now?” → resolves to prior failed Work;  
-D. missing Gmail → contextual connect handoff + exactly-once resume;  
-E. missing local folder → owner-local picker + scoped read/write grant + exactly-once resume;  
-F. Calendar effect → exact preview + approval boundary;  
-G. long research → selective semantic progress, not scheduler narration;  
-H. partial result → truth header and failed portion first, then the labelled AI answer (withheld only after a failed state-changing action);  
-I. unknown effect → unknown wording + no unsafe automatic duplicate;  
-J. Memory correction → canonical/pending state reported truthfully.
-
-For each relevant scenario capture:
-- Telegram/message count and order;
-- observed Work/Event/Evidence outcome;
-- owner-visible claim ↔ Evidence correspondence;
-- opposing failed/partial/unknown cases;
-- restart/recovery where material.
-
-## Architecture implication
-
-Do not invent a second kernel or conversation database merely to implement Presence. Prefer an Still-owned projection/policy layer over the existing authoritative state:
-
-```text
-internal state
-+ conversation focus
-+ relevant memory
-        ↓
-truth / authority gate
-        ↓
-conversation projection policy
-        ↓
-Telegram / conversation
-```
-
-Technical and preference projections remain separate:
-
-```text
-internal state → technical projection → Task / Evidence detail
-canonical configuration → preference projection → Settings
-```
-
-## Relationship to planned work
-
-The research recommends Presence as an **experience-convergence** program, not a new kernel architecture.
-
-- #381 is the planning/research predecessor.
-- retired #480/#477/#478 requirements are consolidated into #510 conversational projection instead of narrow phrase/capability fixes.
-- #476 and #488 are truthfulness invariants/regressions, not Presence reimplementations.
-- #494 is the consolidated Presence truth-integrity child for outcome/Evidence/history qualification (absorbing retired #489/#490/#493 requirements).
-- #504 remains the effective AI-route owner-control issue.
-- #505 is the contextual capability/local-authority handoff child; Calendar-read #475 is retained only as a fixture/example, not a dedicated intent rule.
-- #506 remains the Settings grammar/state/action issue.
-- #383 Attention/proactivity is later amplification, not a prerequisite for basic reactive Presence.
-- completed #386/#393 mechanisms should be reused rather than reopened.
-
-## Non-goals
-
-This contract does not:
-- weaken Work/Event/Evidence/Grant/approval semantics;
-- create consciousness/personhood claims;
-- require heartbeat or proactive monitoring;
-- require a new UI framework;
-- hide technical Evidence from the owner;
-- grow a phrase/regex/rule-based production conversation engine;
-- silently activate any GitHub issue or delivery-plan goal;
-- turn the local web management utility into a second conversation client.
-
-## Review rule
-
-Any owner-facing conversation, recovery, model-route, contextual setup, Settings or capability-handoff change should explicitly state how it preserves this contract or why a bounded exception is necessary. A visually smoother UI or friendlier sentence is insufficient if continuity, truthfulness, authority or inspectability regresses.
+The owner continues speaking with Still when the execution route changes. Keep actual worker/model identity inspectable, and distinguish configured, launched and observed identity. The developer-mode transient display is the explicit limited exception to keeping routine execution machinery out of conversation.
 
 ## Cross-role, collaborative Presence refinement (2026-10-10)
 
-The continuous owner-facing relationship is **not restricted to secretary tasks**. [Professional Roles and Communication Contract](professional-roles-and-communication-contract.en.md) defines the cross-role operating semantics. Separate transient ambient feedback, evidence-grounded semantic communication and collaborative intervention. The owner must be able to correct, question or stop in-flight Work where the runtime permits; if it cannot be applied, disclose that honestly. A tool-name fallback, source counter or streamed text alone does not satisfy Presence. Role-specific reporting changes what is relevant, not who is speaking. **Presence is not a role**: it is the common interaction capability held across every role, and it is tied to the Decision Model during execution, not rendered after it (that contract's *Decision Model ↔ Presence contract* and *Conversation style* sections). The #718 tool-name step lines were replaced on 2026-10-31 by the launched worker and model (*Telegram presence* above). Existing Memory, authority, payment, unknown-effect and delivery-selection rules remain controlling.
+Presence is not a professional role or a final formatting stage. It is the shared relationship across roles, tied to judgment while work runs. The [roles contract](professional-roles-and-communication-contract.en.md) separates ambient feedback, meaningful communication and collaborative intervention.
 
-## Threaded surface wait status (#446)
+Every mid-work owner message must receive the applicable disposition: reflected in the ongoing answer, applied by a bounded continuation, not applicable because of an already completed effect or other limit, or answered as separate work with the reason. Merely receiving text is not proof that a worker consumed it. Corrections reach later planning and evaluation; an approval that no longer covers the changed parameters cannot be reused. Preserve the actual route's ability to take live input rather than promising all workers can be steered identically.
 
-Owner-authorized presentation change (2026-10-31).
+Speak naturally and accurately in the owner's language. Warmth must not hide disagreement, uncertainty or failure. A professional lens supplies relevant standards, not jargon for its own sake or a claim of professional status. Follow the shared voice preference where supported, not a different persona per topic.
 
-- An inbound thread id stays with its turn across recovery. Terminal replies and the Work's notices go to that thread.
-- A surface may declare `wait_status` and implement `show_wait_status`. The status text is:
-  - the waiting line `_draft_step_text` returns (#458/#477: the launched worker and model when developer mode is on);
-  - no words of Still's own when developer mode is off or no worker is launched: Slack draws its standard loading state (`agents.sessions.setStatus` `processing`), ended with `active` after the answer (#477);
-  - no step at all during an approval or payment wait.
-- Telegram drafts show dots, with the worker line only in developer mode (#445/#477).
-- The existing delivery lock serializes status calls and terminal posts.
-- The status is refreshed every 90 seconds while the Work runs, because a Slack status lasts two minutes. A confirmed terminal post clears it once.
-- A status failure disables status for that Work, including after restart, without changing execution or replaying delivery.
+## Contextual setup and authority
 
-Slack carries the text through the legacy `assistant.threads.setStatus` (Slack's compatibility bridge). The current `agents.sessions.setStatus` takes only `processing` / `active` / `suspended` and "Custom loading messages are not supported" (https://docs.slack.dev/ai/developing-agents/, checked 2026-10-31). If Slack retires the bridge, the call fails and the status turns off for that Work.
+Offer one relevant next action when a task lacks a connection, input or covering permission. A supported Gmail connection or owner-local folder handoff resumes the original bound Work exactly once when complete. Conversation can initiate that flow; it cannot skip its owner/session/local-authority checks.
 
-Reuse decision: **Adopt**:
-- `SurfaceCapabilities`, `present_waiting_work`, `WaitState`, the direct-message delivery/turn transaction, and QuickStore's nullable-column migration pattern;
-- the existing official MIT `slack_sdk` 3.45.0 `WebClient.assistant_threads_setStatus`.
+Use exact approval preview where the current action policy requires it, particularly the pilot's per-action payment approval. Do not infer a universal per-change approval rule from the historical Calendar draft example: the newer authorized Calendar API path has different connection/write semantics. The [connection guide](guide/connections.en.md) and current action contract determine the boundary. Natural language and smooth presentation neither add nor remove authority.
 
-No new dependency, framework, runtime authority or transport.
+## Pages
 
-Boundary:
-- The approved `assistant:write` scope and `features.agent_view` enable the Slack agent presentation. Event subscriptions are unchanged.
-- Only the paired owner, workspace and DM, with effective work-mode permission, receive status, through the existing guarded client.
-- The stored thread timestamp is routing metadata, never authority.
-- Status contains only the waiting line already available to Presence, or Slack's own loading state.
-- Fake-client evidence establishes request shape and ordering, not live agent-view behavior or entitlement.
-- Stop events, streaming, titles and suggested prompts are excluded.
+Management should be achievable in conversation where supported. A page is appropriate when text cannot present the result well, or when conversation cannot safely collect the input. Result pages can show sources, long comparisons, files, calendars and detailed execution records. Necessary input surfaces include first-AI setup, secrets, OAuth, local folder choice and action approval required by policy.
+
+Do not add a general management screen that the owner must learn to operate before ordinary work. Existing Settings remain until a separately scoped change classifies and replaces their functions. This principle does not remove existing supported conversation channels or turn an old screen-layout proposal into a permanent ban on future channel design. The retired utility prototype is not a specification for the current application.
+
+## Settings contract
+
+Existing Settings show understandable service/route/folder names, current values and one clear action. Distinguish **currently used**, **configured**, **available**, **connected**, **needs attention** and **not connected**. IDs, scopes, timestamps and diagnostics belong in detail unless needed for the decision. A successful configuration test does not silently select that configuration.
+
+AI settings distinguish Main AI (default Work executor) and Judgment AI (semantic orchestration). Following Main AI is a preference, not a subordinate role. Preserve existing language controls and owner entry points. The [settings design](design/settings-ux-renewal-spec.en.md) describes the shared chooser and current-value/edit patterns; it does not supersede the Pages boundary.
+
+Conversation can read the supported settings values and allowed choices, then propose a digest-bound `SettingsOrchestrator` change. The proposal applies nothing. A bound button or a judged plain confirmation from an owner-typed conversation settles at most that draft; unclear/unavailable judgment leaves it pending. Preparations, retries and other Still-generated messages cannot approve or cancel a draft. Compatibility command syntax may remain accepted but is not the required user-facing instruction.
+
+Before applying, recheck that the starting value remains current and the choice remains allowed. The stale check and setter run under a per-category lock, so two drafts cannot both overwrite the same initial state. A setter that queues qualification is reported as requested, not already applied. Slow probe/qualification setters run in order off the calling thread and report in the original conversation. A restart during apply settles unknown rather than replaying the setter.
+
+A route choice is restricted to connected/checked options and is still a destination decision. Time zones use validated IANA choices. Credentials, keys, tokens, login material and endpoints are not ordinary conversational settings values; use the dedicated secure input path. These tools retain their existing trusted-local versus strict/isolated availability. This edit adds no setting, endpoint or authority.
+
+## Memory presentation
+
+Do not duplicate storage policy here. The [Memory contract](engineering/contracts/memory.en.md) defines direct saves and notices, exact undo, invalidation versus deletion, background upkeep, dream and working-note revisions.
+
+For foreground owner-AI saves, report the actually saved value with the supported notice/undo rather than asking again. For quiet background consolidation, do not send the retired per-dream summary; raise an applicable change or held question through the relevant later conversation. Working-note revision notices retain their separate rule. Show remembered information by using it when relevant, with source/inference/currentness limits visible where they matter.
+
+## Third-party/delegated Memory presentation
+
+A third-party MemoryCandidate is not yet remembered. Present one natural ask per applicable Work, values rather than keys, bound to exactly what was shown and is still current. The owner's direct-save path does not authorize a delegated writer. Do not collapse approval, forgetting, deletion and undo into a single vague “memory updated” message.
+
+## Truth and authority invariants
+
+Success, partial, failure and unknown remain distinct. Unknown effects and uncertain sends are not blindly replayed. Presentation cannot hide approval requests, destination changes, consequential outcomes or material blockers in on-demand-only detail. A claim of cancellation or remote deletion requires its own evidence.
+
+No silent paid-provider/route fallback is introduced to make a conversation appear successful. A candidate is not remembered before the applicable canonical write. Secrets, unrestricted payloads and hidden reasoning are not transparency requirements. These rules preserve the existing action-specific approval and messenger privacy boundaries; they do not impose a new confirmation on every allowed write.
+
+## Observable acceptance matrix
+
+Use owner-visible transcripts together with the supporting state, not copy review alone.
+
+| Case | Required observation |
+| --- | --- |
+| A. Short request | A useful answer without routine lifecycle bubbles. |
+| B. Runtime failure | A truthful limitation and safe next step without a misleading success claim. |
+| C. Follow-up | The relevant failed/open Work is continued, or ambiguity is stated. |
+| D. Missing connection | A contextual handoff and exactly-once bound continuation. |
+| E. Missing local folder | Owner-local selection and the actual read/write scope; no remote shortcut. |
+| F. External change | The current action-specific permission/approval boundary is enforced; where approval is required, its exact preview matches the action. |
+| G. Long work | Appropriate transient presence, at most one selected preview and bounded meaningful updates. |
+| H. Partial answer | Useful answer first, confirmed and unconfirmed parts distinguished, concise truthful qualifier; no machinery-first header. |
+| I. Unknown effect | Explicit uncertainty and no unsafe duplicate attempt. |
+| J. Memory correction | The actually saved, pending, invalidated or deleted state is described accurately. |
+| K. Mid-work intervention | The correction's recorded disposition agrees with later planning/execution, or the inability is disclosed. |
+
+Capture message count/order, Work/Event/Evidence correspondence and opposing failure/partial/unknown cases. Include restart, stale approval, wrong-owner and unsupported-channel cases where material. A fixture transcript does not establish live messenger behavior; a live recording does not independently prove all account effects.
+
+## Architecture implication
+
+Reuse authoritative state and the existing conversation/surface boundaries. Keep technical and preference views as projections, not additional sources of truth. Useful participation requires an input path back into judgment and work, not just a better renderer after execution.
+
+## Non-goals
+
+No new kernel, conversation database, UI framework, semantic keyword engine, compulsory heartbeat or consciousness/personhood claim. This contract neither activates a development program nor removes existing supported channel behavior.
+
+## Review rule
+
+A conversation, recovery, model-route, setup or Settings change must show how continuity, truth, authority and inspectability remain intact. A friendlier sentence is not sufficient when the outcome or continuation is wrong. Inspect both the user-facing transcript and the state it describes.
+
+## Historical program decisions
+
+Dated Presence/Secretary/UX activation sequences, the old owner-AI ask flow and the web-management-only prototype remain in the [pinned original](https://github.com/Jongtae/Still/blob/99fad1598b75837cf4428cfa43ad810266e5dff7/docs/presence-experience-contract.en.md), not as a second current rule set. Their original observations retain their evidence class. These legacy anchors preserve navigation without reactivating those programs.
+
+<a id="amendment--gov-ask-less-01--918-slice-a-2026-10-02-remembered-told-undoable"></a>
+<a id="execution-integration-refinement--agency-600"></a>
+<a id="relationship-to-planned-work"></a>
+
+[Original research](research/presence-and-settings-ux.ko.md) · [Documentation map](README.md)
