@@ -1,7 +1,8 @@
-"""Static checks for the concept reading path and retired prototype links.
+"""Static checks for the concept reading path, source IDs and retired links.
 
-These check repository paths, not external availability, anchors, policy semantics
-or product behavior. They require no model, account or network.
+These check repository paths and explicit reference anchors, not external
+availability, claim accuracy, policy semantics or product behavior. They require
+no model, account or network.
 """
 from pathlib import Path
 import re
@@ -38,8 +39,8 @@ def test_concept_chapters_are_reachable_and_local_links_exist():
     assert chapters, "The concept index must lead to actual prose, not an empty directory"
     indexed = {_local_path(entry, target) for target in _targets(entry.read_text(encoding="utf-8"))}
     assert chapters <= indexed, f"Unlisted concept chapters: {chapters - indexed}"
-    documents = [entry, root_map, ROOT / "docs/TASKS.md", ROOT / "docs/roadmap.md",
-                 ROOT / "docs/design/utility-v1/README.md", *sorted(chapters)]
+    documents = [root_map, ROOT / "docs/TASKS.md", ROOT / "docs/roadmap.md",
+                 ROOT / "docs/design/utility-v1/README.md", *sorted(CONCEPTS.glob("*.md"))]
     missing = []
     for source in documents:
         for target in _targets(source.read_text(encoding="utf-8")):
@@ -47,6 +48,24 @@ def test_concept_chapters_are_reachable_and_local_links_exist():
             if path is not None and not path.exists():
                 missing.append(f"{source.relative_to(ROOT)} -> {target}")
     assert not missing, "Missing local documentation paths:\n" + "\n".join(missing)
+
+
+def test_reference_ids_are_unique_and_chapter_citations_resolve():
+    registry = CONCEPTS / "references.md"
+    text = registry.read_text(encoding="utf-8")
+    anchors = re.findall(r"<a\s+id=[\"']([^\"']+)[\"']\s*></a>", text)
+    assert anchors, "The shared source register needs stable reference anchors"
+    assert len(anchors) == len(set(anchors)), "Duplicate reference IDs"
+    cited = set()
+    for source in sorted(CONCEPTS.glob("*.ko.md")):
+        for target in _targets(source.read_text(encoding="utf-8")):
+            if _local_path(source, target) != registry.resolve():
+                continue
+            fragment = unquote(urlsplit(target).fragment)
+            assert fragment in anchors, f"Unresolved source citation: {source.name} -> {target}"
+            cited.add(fragment)
+    assert cited, "The register must be connected to claims in the chapters"
+    assert set(anchors) <= cited, f"Uncited source entries: {set(anchors) - cited}"
 
 
 def test_retired_prototype_has_no_relative_markdown_or_html_links():

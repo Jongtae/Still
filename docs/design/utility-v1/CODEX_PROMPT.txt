@@ -4,3 +4,10 @@ Read README.md in this directory for the current contracts and the pinned origin
 The former #382/WEB-ADMIN-01 prompt describes a predecessor implementation session.
 Do not select or implement that session from this compatibility file.
 Current work selection belongs to repository-root delivery-plan.yaml and the owner's explicit issue-scoped request.
+
+READINESS AND ACTIVATION GATE — preserved historical limits, not a plan to run.
+The former handoff required a dependency-satisfied goal-ready record in both the issue and source plan. This compatibility entry supplies neither readiness nor activation.
+Do not infer activation from this document.
+Do not continue into W1-W3 in that same preparation invocation.
+Do not execute #381 or other successor goals.
+These predecessor identifiers retain their historical meaning. No preparation or implementation is authorized by retaining these limits.

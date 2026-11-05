@@ -1,37 +1,45 @@
-# Still의 생각: 주제별 읽기
+# Still의 생각: 일곱 주제로 읽기
 
-**한국어 개념 해설 · 2026-11-05 · 비규범 문서**
+**한국어 개념 해설 · 편집·출처 대조: 2026-11-05**
 
-Still을 이해하기 위해 과거 이슈의 순서를 따라갈 필요는 없다. 이 문서 묶음은 기존 총람, 연구와 현재 계약에 흩어진 생각을 일곱 질문으로 다시 엮는다. 구현 지침의 정본은 해당 영문 계약이며, 실제 지원 범위는 [제품 현황](../product-status.en.md)에서 확인한다. 여기의 설명은 새로운 기능, 권한이나 개발 목표를 활성화하지 않는다.
+Still은 지능과 실행 도구가 바뀌어도 사용자에 대한 이해, 진행 중인 일, 통제권이 이어지는 개인 에이전트를 탐색한다. 이 문서 묶음은 기존 총람과 연구, 현재 기준 문서에 흩어진 생각을 그 질문을 중심으로 다시 엮었다.
 
-## 하나의 중심 논지
-
-**지능과 실행 수단을 빌려도, 사용자와 이어온 관계의 상태와 통제권은 사용자에게 남아야 한다.**
-
-그 관계는 친근한 말투만으로 유지되지 않는다. 무엇을 알고 있는지, 무엇을 맡았는지, 무엇을 해도 되는지, 무엇이 실제로 끝났는지를 모델 밖에 남겨야 한다. 온톨로지는 그 상태의 의미를, 기억은 시간에 따른 변화를, 판단과 실행은 일을 수행하는 과정을, Presence는 그 과정에 사용자가 참여하는 방식을 설명한다. 권한과 증거는 모든 영역을 가로지르는 경계다.
-
-이는 기존 자료의 편집적 종합이지 하나의 새 런타임 설계가 아니다. 아래의 일곱 장도 일곱 개 서비스나 데이터베이스를 만들라는 요구가 아니다.
+핵심은 기록을 많이 남기는 것이 아니다. 무엇을 알고 있는지, 무엇을 맡았는지, 무엇을 해도 되는지, 무엇이 끝났는지를 구분하고 다음 행동에 사용하는 것이다. 온톨로지와 기억, 판단과 실행, Presence, 권한과 증거는 이 문제를 서로 다른 관점에서 다룬다. 일곱 장이 일곱 개의 새 서비스나 데이터베이스를 뜻하지는 않는다.
 
 ## 읽는 순서
 
-| 질문 | 본문 | 연결되는 구현 규칙 |
+| 질문 | 본문 | 현재 구현 규칙을 확인할 곳 |
 | --- | --- | --- |
-| AI를 바꾸어도 무엇이 내게 남아야 하는가? | [1. 소유와 연속성](ownership-and-continuity.ko.md) | [Architecture](../personal-agentos-architecture.en.md), [Owner Control](../owner-control-contract.en.md) |
-| 같은 현실을 어떻게 이해하고 역할별로 해석하는가? | [2. 온톨로지와 역할](ontology-and-roles.ko.md) | [Professional Roles](../professional-roles-and-communication-contract.en.md) |
-| 무엇을 기억하고 어떻게 고쳐 배워야 하는가? | [3. 기억과 학습](memory-and-learning.ko.md) | [Secretary Agency](../secretary-agency-contract.en.md), [Current Context](../current-context-contract.en.md) |
-| 고정 시나리오 없이 어떻게 일을 끝내는가? | [4. 판단과 실행](judgment-and-execution.ko.md) | [Decision](../decision-layer.en.md), [Execution](../assistant-execution-contract.en.md) |
-| 일을 하는 동안 어떻게 같은 관계를 유지하는가? | [5. Presence와 협업](presence-and-collaboration.ko.md) | [Presence](../presence-experience-contract.en.md), [Professional Roles](../professional-roles-and-communication-contract.en.md) |
-| 허용된 행동과 확인된 결과를 어떻게 구별하는가? | [6. 권한과 증거](authority-and-evidence.ko.md) | [Owner Control](../owner-control-contract.en.md), [Connection and Delegation](../connection-delegation-contract.en.md) |
-| 이 구조는 어떤 생태계와 사업을 가능하게 하는가? | [7. 생태계와 사업 가설](ecosystem-and-business.ko.md) | [Platform Foundation](../agent-distribution-platform-foundation.en.md); 사업성의 증명은 아님 |
+| AI를 바꾸어도 무엇이 남아야 하는가? | [1. 소유와 연속성](ownership-and-continuity.ko.md) | [아키텍처](../personal-agentos-architecture.en.md), [사용자 통제](../owner-control-contract.en.md) |
+| 같은 현실을 어떻게 이해하고 해석하는가? | [2. 온톨로지와 역할](ontology-and-roles.ko.md) | [역할·소통](../professional-roles-and-communication-contract.en.md) |
+| 무엇을 기억하고 어떻게 고쳐 나가는가? | [3. 기억과 학습](memory-and-learning.ko.md) | [기억·사용자 모델](../secretary-agency-contract.en.md), [현재 맥락](../current-context-contract.en.md) |
+| 고정 시나리오 없이 어떻게 일을 끝내는가? | [4. 판단과 실행](judgment-and-execution.ko.md) | [판단](../decision-layer.en.md), [실행](../assistant-execution-contract.en.md) |
+| 실행 중에도 어떻게 함께 일하는가? | [5. Presence와 협업](presence-and-collaboration.ko.md) | [Presence](../presence-experience-contract.en.md), [역할·소통](../professional-roles-and-communication-contract.en.md) |
+| 허용된 일과 확인된 결과를 어떻게 구분하는가? | [6. 권한과 증거](authority-and-evidence.ko.md) | [사용자 통제](../owner-control-contract.en.md), [연결·위임](../connection-delegation-contract.en.md) |
+| 이 구조는 어떤 가치를 만들 수 있는가? | [7. 생태계와 사업 가설](ecosystem-and-business.ko.md) | [플랫폼 설계](../agent-distribution-platform-foundation.en.md) |
 
-각 장은 문제, 핵심 구분, 선택의 이유와 남은 질문을 설명한다. 자세한 계약 문구와 매번 변하는 지원 목록을 복사하지 않는다. 장의 근거 링크를 통해 원연구와 현재 규칙을 따로 읽을 수 있다.
+각 장의 R 번호는 [원문 대조와 참고문헌](references.md)으로 이어진다. 참고문헌에는 확인한 판본과 부분, 원문에서 가져온 개념, Still에 그대로 적용할 수 없는 범위를 함께 적었다. 외부 연구의 결과와 Still의 설계 선택을 같은 주장으로 합치지 않는다.
 
-## 자료의 역할
+## 이 해설과 기준 문서의 관계
 
-[2026-10-14 총람](../whitepapers/personal-agentos-compendium.ko.md)은 이번 편집의 출발점이자 고정된 역사 판본이다. 새 본문은 그 판본의 주장을 현재 기능으로 승격시키지 않으며, 이후 기억·dream·협업 관련 변경은 해당 계약과 [연구 기록](../research/README.md)에 따로 연결한다. [백서](../whitepapers/README.md)는 산업 가설과 출판 기록으로 남는다. 두 영역을 모두 또 하나의 최신 개념 설명서로 갱신하지 않는다.
+이 묶음은 이유와 개념을 설명하는 글이다. 실제 구현 규칙은 해당 영문 기준 문서(contract)가 정하며, 출시·main 구현·모의 환경 테스트·실사용 관찰은 [제품 현황](../product-status.en.md)과 각각의 근거로 구분한다. 해설의 예시는 별도 표시가 없는 한 가상의 설계 사례다.
 
-검토 기준은 저장소 커밋 `fda6e41591d69100d2155d24b08e955a98858fac`이다. 공개된 저장소 자료만 사용했으며, 비공개 대화·실계정 데이터·개인 연구 입력을 추가 공개하지 않았다. 외부 논문을 새로 검증한 문헌 리뷰나 독립 전문가 검토도 아니다.
+[2026-10-14 총람](../whitepapers/personal-agentos-compendium.ko.md)은 편집의 출발점이자 고정된 판본으로 남긴다. 그 이후의 기억·협업 변경은 현재 기준 문서와 [연구 기록](../research/README.md)에 연결했다. 원연구와 백서의 당시 주장, 검토 상태, 관찰 결과를 이번 편집에 맞춰 소급 변경하지 않는다.
 
-**설계 원칙, 채택된 계약, main 구현, 배포본, 실사용 관찰은 서로 다른 상태다.** 본문은 그 차이를 지운 단일한 '완성된 이론'이 아니라, 무엇을 지향하며 무엇을 아직 확인해야 하는지 읽는 경로다.
+저장소 내용의 기준은 `fda6e41591d69100d2155d24b08e955a98858fac`이며, 첫 통합 원고 `cab4cd8`을 이번에 편집했다. 공개 저장소 자료와 공개된 일차 자료만 비교했다. 비공개 대화·실계정 데이터·직장 사업자료는 출판 근거에 포함하지 않았다. 이 작업은 선택한 주장에 대한 출처 대조와 작성자의 자기 검토이며, 체계적 문헌고찰이나 독립 전문가 검토는 아니다.
+
+## 용어와 문체
+
+| 표현 | 이 묶음에서의 사용 |
+| --- | --- |
+| 사용자 / 소유자(Owner) | 일반 설명에서는 사용자, 상태와 권한의 주체를 엄밀히 구분할 때는 소유자라고 한다. |
+| 기준 문서(contract) | 저장소의 구현·검토 규칙을 뜻한다. 법률상 계약과 혼동하지 않는다. |
+| 판단 모델 / 실행 AI | 작업을 조정하는 판단과 실제 수행의 역할을 구분한다. 반드시 서로 다른 공급자나 모델이라는 뜻은 아니다. |
+| 현재 맥락 / 지속 기억 | 이번 요청에 필요한 조건과 이후에도 사용할 정보를 구분한다. |
+| 작업 메모 / 밤사이 기억 정리 | working notes / dream의 설명용 표현이다. 사용자 사실과 수행 방법, 대화 중 저장과 별도 정리를 구분한다. |
+| 실행 기록(Evidence) / 검증 근거 | 제품 안의 실행 기록과 문헌·테스트·실사용 자료를 문맥에 맞게 구분한다. |
+| 미확인 | 결과를 확정할 수 없는 상태다. 실패나 성공으로 바꾸어 표현하지 않는다. |
+
+본문은 평서체로 설명하고, 가상의 사용자 대화에서만 자연스러운 대화체를 쓴다. 내부 용어는 처음에 풀어 쓰며, 같은 개념의 번역을 장마다 바꾸지 않는다. 연구는 무엇을 관찰했는지, 설계는 무엇을 선택했는지, 가설은 무엇을 확인해야 하는지 밝힌다. 반복된 주의문은 이 안내에 모으되, 의미가 달라질 수 있는 예외는 해당 본문에 남긴다.
 
 [전체 문서 지도](../README.md)
