@@ -10619,6 +10619,12 @@
   "ja": "{reservation} — {operation}しますか？",
   "zh": "{reservation} — 要{operation}吗？"
  },
+ "settings_orchestrator.preparation_edit_summary": {
+  "ko": "예약 일정을 바꿀까요: {title}\n  지금: {before}\n  바꾼 뒤: {after}",
+  "en": "Change the reservation's schedule: {title}\n  Now: {before}\n  After: {after}",
+  "ja": "予約の予定を変更しますか: {title}\n  現在: {before}\n  変更後: {after}",
+  "zh": "要更改预约的计划吗：{title}\n  现在：{before}\n  更改后：{after}"
+ },
  "settings_orchestrator.preparation_edit_format": {
   "ko": "id와 바꿀 due, timezone, recurrence 또는 watch의 every_minutes, until, max_runs를 JSON으로 주세요. 목표는 바꿀 수 없습니다.",
   "en": "Provide JSON with id and due, timezone, recurrence, or watch every_minutes, until, max_runs. The goal cannot be edited.",
