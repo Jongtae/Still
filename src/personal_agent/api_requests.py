@@ -459,7 +459,7 @@ def context_line(store, connections=None):
         # #1486: the functions saved from earlier requests that this set's runs can import.
         saved = library.listing(name) if library is not None else ''
         return (f"{text} [code_run secrets only: {env}{reads}; any other request to these hosts (an order, a change) "
-                f"is sent once after the owner approves that exact request{'; ' + saved if saved else ''}]")
+                f"is sent once after the owner approves that exact request, or under current owner-enabled payment autonomy{'; ' + saved if saved else ''}]")
     return CONTEXT_LINE + '; '.join(entry(name, slot) for name, slot in sorted(listed.items()))
 
 
@@ -932,16 +932,18 @@ class ApiRequests:
         binding = step_binding(self.work_id, 'api_request', url, f"{slot['name']}|{method}|{url}", argument=body or '',
                                state=f"api-payment-v2|{slot['name']}@{slot['revision']}|{effect}")
         approvals = self.approvals
-        if approvals is not None and approvals.consume(binding):
+        query = urlsplit(url).query
+        sent = ' '.join(part for part in (f'?{query}' if query else '', str(body or '')) if part)
+        label = f"{method} {path} {sent} → {named} ({slot['name']}, {effect})"
+        if len(label) > 8000:
+            raise ApiError('실행 내용을 비밀값 없이 온전히 확인할 수 없어 승인을 요청하지 않았습니다.',
+                           'api_approval_unrepresentable')
+        mode = getattr(approvals, 'payment_autonomy', None)
+        ticket = mode(binding, label) if callable(mode) else None
+        self._payment_ticket = (binding, label, ticket) if ticket else None
+        if ticket or approvals is not None and approvals.consume(binding):
             return binding_digest(binding)[:32]
         if approvals is not None:
-            # The owner approves what is sent: the query and the body come first, so a bounded label keeps them.
-            query = urlsplit(url).query
-            sent = ' '.join(part for part in (f'?{query}' if query else '', str(body or '')) if part)
-            label = f"{method} {path} {sent} → {named} ({slot['name']}, {effect})"
-            if len(label) > 8000:
-                raise ApiError('실행 내용을 비밀값 없이 온전히 확인할 수 없어 승인을 요청하지 않았습니다.',
-                               'api_approval_unrepresentable')
             approvals.request(binding, label)
         raise ApiError(APPROVAL_TEXT, 'approval_required', requires='api-step-approval')
 
@@ -1000,6 +1002,13 @@ class ApiRequests:
             # #208 review: asked in the reservation's own transaction, so work mode switched on
             # before it reserves nothing (the switch's write waits for this transaction).
             refuse_in_work_mode(self.store, f'https://{destination}' if destination else None)
+            authorization = getattr(self, '_payment_ticket', None)
+            if authorization:
+                binding, label, ticket = authorization
+                try:
+                    self.approvals.payment_autonomy(binding, label, ticket=ticket, dispatch=True, db=db)
+                except ValueError as exc:
+                    raise ApiError(str(exc), 'payment_autonomy_changed') from None
             detail = {'scope': 'api', 'evidence': {'engine': 'agentos', 'kind': 'api-slot',
                       'identity': slot['name'], 'operation': method, 'effect': effect, 'host': destination,
                       'input_digest': identity, 'revision': slot['revision'], 'work_id': self.work_id}}
@@ -1084,6 +1093,7 @@ class ApiRequests:
 
     def _call_slot(self, args, slot, *, before_send=None):
         """Run the same bounded transport for active calls and input readiness."""
+        self._payment_ticket = None
         if slot.get('kind') == CODE_KIND:
             raise ApiError(f"'{slot['name']}'은 코드 실행(code_run) 전용 비밀값 묶음이라 api_request로 보내지 않았습니다.",
                            'api_slot_code_only')
@@ -1202,6 +1212,8 @@ class ApiRequests:
                                    requires=f"api-slot:{slot['name']}") from None
             if identity:
                 claim = self._effect_guard(slot, identity, method=method, effect=effect, destination=named)
+                if getattr(self, '_payment_ticket', None):
+                    self.approvals.payment_autonomy_notice(self._payment_ticket[2])
             attempts += 1
             # #208 review: work mode switched on during this call (a retry, or after the token
             # exchange) refuses before anything is handed off; a reservation made for this
@@ -1213,6 +1225,12 @@ class ApiRequests:
                 checked = intranet_addresses(self.store, url, self.resolver)
                 if checked is not None:
                     self._pins[url] = checked
+                if getattr(self, '_payment_ticket', None):
+                    binding, label, ticket = self._payment_ticket
+                    try:
+                        self.approvals.payment_autonomy(binding, label, ticket=ticket)
+                    except ValueError as exc:
+                        raise ApiError(str(exc), 'payment_autonomy_changed') from None
             except ApiError:
                 if identity:
                     self._release_effect(claim)

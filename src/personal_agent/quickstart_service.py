@@ -877,6 +877,8 @@ class AgentService:
         if operation == 'draft':
             return self.settings_orchestrator.draft(owner_id, channel, body.get('intent'))
         if operation == 'confirm':
+            # #662: a draft is confirmed only by the owner's own act, never by a Work Still ran.
+            if not owner_typed:raise ValueError(msg('settings_orchestrator.owner_confirm_only'))
             return self.settings_orchestrator.confirm(owner_id, channel, body.get('draft_id'), body.get('digest'))
         if operation == 'cancel':
             return self.settings_orchestrator.cancel(owner_id, channel, body.get('draft_id'))
@@ -4770,7 +4772,7 @@ class AgentService:
                     'subscription_engines':self.subscription_engine_status(),
                     'subscription_execution':self.subscription_execution_profile(),
                     'telegram':{'enabled':tg.get('enabled',False),'mode':tg.get('mode','owner-token'),'username':tg.get('username',''),'paired':bool(tg.get('user_id')),'user_id':tg.get('user_id')},
-                    'file_roots':[{**root,'blocked':folder_grants.blocked(root.get('path',''),self.store)} for root in self.store.config('file_roots',[])], 'file_workspace':FileWorkspace(self.store).projection(), 'document_boundary':boundary, 'context_inbox':__import__('personal_agent.context_inbox',fromlist=['ContextInbox']).ContextInbox(self.store).status(), 'agents':[{'id':role['id'],'name':role['name'],'permissions':role['permissions'],'package_id':package['id']} for package in active_packages for role in package['roles']], 'packages':packages, 'tool_run':self.store.config('tool_run'), 'model_test':model_test, 'model_ready':self.model_ready(model,model_test), 'telegram_status':self.store.config('telegram_status'),'connectors':connectors,'google_services':self.google_service_rows(connectors,ai_routes),'google_client':self.google_client_status(),'ai_connections':{**self.ai_connections_status(),'routes':ai_routes},'current_context':self.current_state.status(),'browser':self.browser_status(),'work_mode':self.work_mode_status(),'intranet':self.intranet_status(),'mattermost':self.mattermost_status(),'slack':self.slack_status()}
+                    'file_roots':[{**root,'blocked':folder_grants.blocked(root.get('path',''),self.store)} for root in self.store.config('file_roots',[])], 'file_workspace':FileWorkspace(self.store).projection(), 'document_boundary':boundary, 'context_inbox':__import__('personal_agent.context_inbox',fromlist=['ContextInbox']).ContextInbox(self.store).status(), 'agents':[{'id':role['id'],'name':role['name'],'permissions':role['permissions'],'package_id':package['id']} for package in active_packages for role in package['roles']], 'packages':packages, 'tool_run':self.store.config('tool_run'), 'model_test':model_test, 'model_ready':self.model_ready(model,model_test), 'telegram_status':self.store.config('telegram_status'),'connectors':connectors,'google_services':self.google_service_rows(connectors,ai_routes),'google_client':self.google_client_status(),'ai_connections':{**self.ai_connections_status(),'routes':ai_routes},'current_context':self.current_state.status(),'payment_autonomy':self.payment_autonomy_settings(),'browser':self.browser_status(),'work_mode':self.work_mode_status(),'intranet':self.intranet_status(),'mattermost':self.mattermost_status(),'slack':self.slack_status()}
 
     def home(self):
         """Return the minimal, credential-free read model for the owner home."""
@@ -8215,12 +8217,15 @@ class AgentService:
         paired=bool(cfg.get('enabled') and cfg.get('user_id') is not None and cfg.get('generation'))
         return cfg,paired,(f"telegram:{cfg.get('generation')}" if paired else 'web')
 
-    def record_conversation_notice(self, text):
+    def record_conversation_notice(self, text, *, job=None, db=None):
         """The durable half: one assistant row in the owner's conversation."""
         _cfg,_paired,channel=self._notice_channel()
-        with self.store.db() as db:
-            db.execute('INSERT INTO messages(role,content,channel,created) VALUES (?,?,?,?)',
-                       ('assistant',text,channel,time.time()))
+        if job is not None:channel=job['channel']
+        if db is None:
+            with self.store.db() as db:self.record_conversation_notice(text,job=job,db=db)
+            return
+        db.execute('INSERT INTO messages(role,content,channel,created,job_id) VALUES (?,?,?,?,?)',
+                   ('assistant',text,channel,time.time(),job['id'] if job else None))
 
     def deliver_conversation_notice(self, text):
         return self.telegram_surface.deliver_conversation_notice(text)
@@ -8634,12 +8639,91 @@ class AgentService:
                            (BROWSER_REQUESTS_KEY,json.dumps(rows)))
                 return True
 
+    def payment_autonomy_settings(self, *, db=None):
+        row=self.store.config('payment_autonomy',{},db=db)
+        return {'enabled':row.get('enabled') is True,'revision':int(row.get('revision',0))}
+
+    def _set_payment_autonomy(self, enabled, expected_revision):
+        """Only SettingsOrchestrator's exact confirmed draft calls this setter."""
+        with self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            current=self.payment_autonomy_settings(db=db)
+            if current['revision']!=expected_revision:raise ValueError(msg('payment_autonomy.changed'))
+            self.store.put('payment_autonomy',{'enabled':enabled,'revision':current['revision']+1},db=db)
+
+    def set_payment_autonomy(self, body):
+        """The owner's Settings switch for payment autonomy (#662); the local endpoint is its only caller.
+
+        ``revision`` is the one the owner saw, so a switch changed elsewhere since is refused, not overwritten.
+        """
+        body=body if isinstance(body,dict) else {}
+        if not isinstance(body.get('enabled'),bool) or not isinstance(body.get('revision'),int):
+            raise ValueError(msg('payment_autonomy.changed'))
+        self._set_payment_autonomy(body['enabled'],body['revision'])
+        return self.payment_autonomy_settings()
+
+    def _authorize_payment_autonomy(self, job, binding, description, *, ticket=None, dispatch=False, db=None):
+        """One payment-mode gate: bind standing authority, recheck at dispatch, receipt and notice.
+
+        A ticket is host-local, never a model-supplied approval. Claims, replay/unknown holds,
+        secrets, connection authority and budgets remain the caller's dispatch prerequisites.
+        A receipt records authorization, never an assertion that the external effect succeeded.
+        """
+        if dispatch and db is None:
+            with self.store.db() as db:
+                db.execute('BEGIN IMMEDIATE')
+                result=self._authorize_payment_autonomy(job,binding,description,ticket=ticket,dispatch=True,db=db)
+            if result:self._deliver_payment_autonomy_notice(job,result)
+            return result
+        mode=self.payment_autonomy_settings(db=db)
+        if binding is None:return mode if mode['enabled'] and not self.work_stopped(job['id']) else None
+        keys=self._browser_step_keys(binding)
+        if ticket is not None and (not mode['enabled'] or ticket['revision']!=mode['revision']
+                                  or ticket['digest']!=keys['digest']):
+            raise not_run(ToolError(msg('payment_autonomy.changed'),'payment_autonomy_changed'))
+        if not mode['enabled'] or self.work_stopped(job['id']):
+            if ticket:raise not_run(ToolError(msg('payment_autonomy.changed'),'payment_autonomy_changed'))
+            return None
+        # Only the owner's worker uses this host surface; third-party runtimes retain their own
+        # refused payment path. Received family sessions cannot acquire payment authority either.
+        from .quickstart_store import REQUEST_APPROVAL_ACTIONS
+        label=(str(description or '') if binding['action'] in REQUEST_APPROVAL_ACTIONS
+               else self._redact_reason(' '.join(str(description or '').split()))[:120])
+        if not label or len(label)>8000 or self._redact_known_secrets(label)!=label:
+            if ticket:raise not_run(ToolError(msg('payment_autonomy.changed'),'payment_autonomy_changed'))
+            return None
+        authorization={'authorized_by':'payment-autonomy','revision':mode['revision'],
+                       'mode_revision':mode['revision'],'action':binding['action'],'digest':keys['digest'],'label':label}
+        if not dispatch:return authorization
+        # Browser dispatches have no API/connector claim, so retain a once-only exact-step receipt.
+        if binding['action'].startswith('browser_'):
+            from .agent_runtime import unknown_effect_targets
+            if unknown_effect_targets(self.store,job['id']):
+                raise not_run(ToolError(msg('payment_autonomy.held'),'effect_unknown'))
+            for old in db.execute("SELECT detail FROM tool_events WHERE job_id=? AND tool='payment_autonomy'",(job['id'],)):
+                if json.loads(old['detail']).get('evidence',{}).get('digest')==keys['digest']:
+                    raise not_run(ToolError(msg('payment_autonomy.held'),'payment_replayed'))
+        db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                   (job['id'],'payment_autonomy','authorized',json.dumps({'scope':'payment','effect':'none',
+                    'evidence':authorization},ensure_ascii=False),time.time()))
+        self.record_conversation_notice(msg('payment_autonomy.notice',label=label),job=job,db=db)
+        return authorization
+
+    def _deliver_payment_autonomy_notice(self, job, authorization):
+        surface=self.surface_of(job)
+        if surface is not None:
+            try:surface.deliver_conversation_notice(msg('payment_autonomy.notice',label=authorization['label']))
+            except Exception:LOG.warning('payment autonomy notice delivery failed')
+
     def browser_approvals_for(self, job):
         """The runtime's per-step approval surface for one Work: consume or request."""
         service=self
         class Approvals:
             def consume(self,binding):return service._consume_browser_step(job,binding)
+            def payment_autonomy(self,binding,description,**kwargs):
+                return service._authorize_payment_autonomy(job,binding,description,**kwargs)
             def request(self,binding,description):return service._request_browser_step(job,binding,description)
+            def payment_autonomy_notice(self,ticket):return service._deliver_payment_autonomy_notice(job,ticket)
             def api_effect_current(self):return not service.work_stopped(job['id'])
             # #709: a login page during this Work asks the owner in-flow.
             def login_required(self,url,explicit=False,*,window_url=None):return service._request_browser_login(job,url,explicit,window_url=window_url)
@@ -8653,8 +8737,17 @@ class AgentService:
             def provider_hosts(self):return service.browser_provider_hosts()
             # #934: on a site received from the owner, a payment step is refused outright (no request, no approval).
             # #619: so is every guarded step of a scheduled run: no owner is present to approve it.
+            def refresh_refusal(self,reason,hosts):
+                # Unattended refusal is current authority; a received family session stays refused
+                # even when checkout has since moved to another host.
+                if not getattr(self,'_unattended_refused',False) or not service._authorize_payment_autonomy(job,None,None):return reason
+                self._unattended_refused=False
+                from .family_share import payment_refusal
+                return next((refusal for host in hosts if (refusal:=payment_refusal(service.store,host))),None)
             def refuse(self,host):
-                if service.unattended_work(job):return UNATTENDED_APPROVAL_TEXT
+                if service.unattended_work(job) and not service._authorize_payment_autonomy(job,None,None):
+                    self._unattended_refused=True
+                    return UNATTENDED_APPROVAL_TEXT
                 from .family_share import payment_refusal
                 return payment_refusal(service.store,host)
         return Approvals()
@@ -8748,6 +8841,8 @@ class AgentService:
 
         #619: a scheduled run (no owner present) records nothing and raises ``unattended_run``.
         """
+        authorization=self._authorize_payment_autonomy(job,binding,description)
+        if authorization:return authorization
         if self.unattended_work(job):
             raise not_run(ToolError(UNATTENDED_APPROVAL_TEXT,'unattended_run'))  # #618: Still refused it, ran: false
         # #1456: a code run's request is approved as written (method, path, body), so its label is shown whole.
@@ -8899,6 +8994,18 @@ class AgentService:
                 if not self.photo_work_has_pending_resume(work_id):self.store.remove_telegram_photo(work_id)
                 return result
             result={'approved':False,'resumed':False,'work_id':work_id}
+            with self.store.db() as db:
+                db.execute('BEGIN IMMEDIATE')
+                autonomy=self._authorize_payment_autonomy(job,None,None,db=db)
+                if autonomy:
+                    requests=self.store.config(BROWSER_REQUESTS_KEY,{},db=db)
+                    if requests.get(work_id)!=row:return result
+                    authorized={**row,'state':'payment-autonomy','mode_revision':autonomy['revision']}
+                    requests[work_id]=authorized
+                    self.store.put(BROWSER_REQUESTS_KEY,requests,db=db)
+                    result.update(approved=True,authorized_by='payment-autonomy',mode_revision=autonomy['revision'])
+                    result['resumed']=self._queue_action_continuation(db,job,authorized)
+                    return result
             def commit(db,approval):
                 config=db.execute('SELECT value FROM config WHERE key=?',(BROWSER_REQUESTS_KEY,)).fetchone()
                 requests=json.loads(config['value']) if config else {}
@@ -10193,6 +10300,7 @@ class AgentService:
         values=arguments.get('input')
         binding=None
         input_digest=None
+        autonomy=None
         if effect in ('mutate','payment') and record['state']=='active':
             # #618 E1: only an unknown effect on this same connection holds this change.
             if self._unknown_effect_holds(job['id'],target):
@@ -10206,8 +10314,10 @@ class AgentService:
                 return {'behavior':'deny','message':'실행할 정확한 입력을 확인할 수 없어 실행하지 않았습니다.'}
             allow=effect=='mutate'
             if effect=='payment':
+                label=f'{service_name} / {operation}: '+json.dumps(values,ensure_ascii=False,sort_keys=True)
+                autonomy=self._authorize_payment_autonomy(job,binding,label)
                 pending=self._browser_request(job['id']) or {}
-                allow=pending.get('state')=='issued' and pending.get('digest')==self._browser_step_keys(binding)['digest']
+                allow=bool(autonomy) or pending.get('state')=='issued' and pending.get('digest')==self._browser_step_keys(binding)['digest']
                 if not allow:
                     # Never offer another approval of a possibly dispatched effect.
                     with self.store.db() as db:
@@ -10231,12 +10341,15 @@ class AgentService:
             event_id=self._connector_effect_claim(job,detail,input_digest,binding,target)
             if event_id is None:
                 return {'behavior':'deny','message':'현재 권한이나 기존 실행 기록이 달라져 실행하지 않았습니다. 권한과 기존 결과를 확인하고 남은 일만 진행하세요.'}
-            if effect=='payment' and not self._consume_browser_step(job,binding):
+            if effect=='payment' and not autonomy and not self._consume_browser_step(job,binding):
                 allow=False
                 detail['evidence'].update(decision='deny',effect='none')
             with self.store.db() as db:
                 db.execute('BEGIN IMMEDIATE')
                 allow=allow and self._connector_authority_current(job,target,binding,effect,operation)
+                if allow and autonomy:
+                    try:allow=bool(self._authorize_payment_autonomy(job,binding,label,ticket=autonomy,dispatch=True,db=db))
+                    except ToolError:allow=False
                 if not allow:detail['evidence'].update(decision='deny',effect='none')
                 db.execute('UPDATE tool_events SET status=?,detail=? WHERE id=?',
                            ('allowed' if allow else 'denied',json.dumps(detail,ensure_ascii=False),event_id))
@@ -10245,6 +10358,18 @@ class AgentService:
             with self.store.db() as db:
                 db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                            (job['id'],'connector_permission','allowed' if allow else 'denied',json.dumps(detail,ensure_ascii=False),time.time()))
+        if allow and autonomy:
+            self._deliver_payment_autonomy_notice(job,autonomy)
+            # Delivery may wait on a remote conversation. Recheck immediately before CLI dispatch.
+            with self.store.db() as db:
+                db.execute('BEGIN IMMEDIATE')
+                try:allow=bool(self._authorize_payment_autonomy(job,binding,label,ticket=autonomy,db=db))
+                except ToolError:allow=False
+                allow=allow and self._connector_authority_current(job,target,binding,effect,operation)
+                if not allow:
+                    detail['evidence'].update(decision='deny',effect='none')
+                    db.execute('UPDATE tool_events SET status=?,detail=? WHERE id=?',
+                               ('denied',json.dumps(detail,ensure_ascii=False),event_id))
         if allow:
             return {'behavior':'allow','updatedInput':values if isinstance(values,dict) else {}}
         if effect=='payment':

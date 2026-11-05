@@ -81,7 +81,7 @@ Completing a substep or program does not authorize the next feature. Only an exp
 
 ### C14. Human gates remain real gates
 
-Identity verification, MFA/CAPTCHA, legal/vendor agreement acceptance, payment, sensitive external-action approval, material product-policy expansion and other declared owner-only decisions cannot be simulated or silently bypassed to preserve automation.
+Identity verification, MFA/CAPTCHA, legal/vendor agreement acceptance, payment, sensitive external-action approval, material product-policy expansion and other declared owner-only decisions cannot be simulated or silently bypassed to preserve automation. Payment requires per-action owner approval by default; an owner-turned-on payment autonomy mode replaces it while on (#662), with exact-action receipts and current revision checks.
 
 ### C15. Reuse first: Adopt → Adapt → Build
 

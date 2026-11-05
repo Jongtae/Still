@@ -250,7 +250,7 @@ What each effect class needs, under the pilot posture:
 | --- | --- | --- | --- | --- |
 | read | yes, audited | yes, audited | read tools only, audited from the CLI's tool events (#1197 baseline) | yes; returned data is audited |
 | mutate (non-payment) on a service the owner connected | yes, told after (pilot) | yes, told after (pilot) | **not offered**: Still could neither stop nor reliably record it | only inside the mandate's stated scope |
-| payment / money movement: payments, securities orders, transfers | per-action owner approval bound to exact parameters (Owner Control Contract) | per-action owner approval, decided at the CLI's decision point with the exact input | **not offered** | **never delegated** in the pilot; each such effect returns to the owner |
+| payment / money movement: payments, securities orders, transfers | per-action owner approval bound to exact parameters by default; owner-enabled payment autonomy replaces it while on (#662) | per-action owner approval by default; owner-enabled payment autonomy replaces it while on, recorded against exact input (#662) | **not offered** | **never delegated** in the pilot; each such effect returns to the owner |
 
 Classifying an effect:
 
@@ -331,7 +331,7 @@ Rules:
 - **Starting rung.** A newly introduced third-party hand, skill or agent starts at the rung the owner chooses when it is introduced. The recommended default is rung 1 for a money-capable domain and rung 3 otherwise. The owner's own AI working on owner-connected services already runs at the pilot defaults (§4); the ladder does not lower them.
 - **Introduction is conversational.** The AI introduces the hand, skill or agent: what it is, its source and licence, what it can and cannot do, the proposed rung. It can run a trial that performs no effects first: reads only, or a provider's paper/sandbox mode.
 - **Raising a rung is an owner decision, never automatic.** Lowering may be automatic after a failure or an owner correction, and the owner is told.
-- **Payment never reaches rung 4 in the pilot.**
+- **Third-party payment never reaches rung 4 in the pilot.** For the owner's own AI, per-action approval is the default; owner-enabled payment autonomy replaces it while on (#662). It grants no payment authority to delegates or packages.
 - **The trust record is owner state.** It holds, per hand, skill or agent: what was delegated, what was observed, owner corrections, and the owner's final decisions. Popularity, install counts and review scores never move a rung (C9).
 
 ## 7. The owner's way

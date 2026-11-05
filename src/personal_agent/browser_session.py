@@ -893,6 +893,7 @@ class BrowserSession:
         # #934 (review P2-1): once this Work landed on a site whose sign-in was received from the
         # owner, the reason it may not approve anything; it then holds for the rest of the Work.
         self._refusal = None
+        self._refusal_hosts = set()
         #: #636: this Work's re-sign-in through the provider the owner used for a site (``_provider_hint``):
         #: the site, the provider host, the login reference and window address, the driver's authorization
         #: count when it began, and whether a provider page or request was seen since.  None otherwise.
@@ -954,9 +955,17 @@ class BrowserSession:
         """
         self.budget.spend_attempt()
 
-    def _call(self, operation, *args):
+    def _call(self, operation, *args, payment=False):
         try:
-            return operation(*args, self._timeout())
+            timeout = self._timeout()
+            pending = self.__dict__.pop('_autonomy_payment', None) if payment else None
+            if pending:
+                binding, description, ticket = pending
+                if not self.approvals.payment_autonomy(binding, description, ticket=ticket, dispatch=True):
+                    from .agent_runtime import not_run
+                    raise not_run(ToolError(msg('payment_autonomy.changed'), 'payment_autonomy_changed'))
+                self.approvals.payment_autonomy(binding, description, ticket=ticket)
+            return operation(*args, timeout)
         except ToolError:
             raise
         except TimeoutError as exc:
@@ -1036,12 +1045,16 @@ class BrowserSession:
         # #934: a held payment-form submit in a Work that touched a family-shared site, or whose form
         # posts to one, is never released or asked about.
         self._refuse_unapprovable((landed_host(record.get('action')),))
-        if depth < 2 and self.approvals.consume(binding):
+        mode = getattr(self.approvals, 'payment_autonomy', None)
+        autonomous = depth < 2 and callable(mode) and mode(binding, description + cancelled_note(record))
+        if autonomous:
+            self._autonomy_payment = (binding, description + cancelled_note(record), autonomous)
+        if depth < 2 and (autonomous or self.approvals.consume(binding)):
             release = getattr(self._driver(), 'release_submit', None)
             if not callable(release):
                 raise ToolError(FAILED_TEXT, 'browser_failed')
             try:
-                return self._call(lambda timeout: release(record, timeout))
+                return self._call(lambda timeout: release(record, timeout), payment=True)
             except ToolError as exc:
                 if exc.code != 'approval_required':
                     raise
@@ -1359,7 +1372,7 @@ class BrowserSession:
             raise ValueError('effect는 read, navigate, mutate, payment 중 하나여야 합니다.')
         return effect
 
-    def _guard(self, binding, description, required):
+    def _guard(self, binding, description, required, *, autonomy=True):
         """Refuse a guarded step unless an exact owner approval is consumed now.
 
         ``required`` is Still's own classification of the target, or the
@@ -1372,11 +1385,17 @@ class BrowserSession:
         needs its own approval, even while an approval of a cancelled submit
         is issued: a press can pay by ``fetch`` without any submit (#700 review).
         """
+        self.__dict__.pop('_autonomy_payment', None)
         if required:
             self._refuse_unapprovable()
         if self._refusal:
             # #935 re-review P3-a: on a shared site no approval is consumed, guarded or not.
             return False
+        mode = getattr(self.approvals, 'payment_autonomy', None)
+        ticket = mode(binding, description) if required and autonomy and callable(mode) else None
+        if ticket:
+            self._autonomy_payment = (binding, description, ticket)
+            return True
         if self.approvals.consume(binding):
             return True
         if required:
@@ -1393,6 +1412,10 @@ class BrowserSession:
         that hands off to a payment page on another domain (the ordinary
         gateway hop) stays refused (review P2-1).
         """
+        self._refusal_hosts.update(host for host in hosts if host)
+        refresh = getattr(self.approvals, 'refresh_refusal', None)
+        if self._refusal is not None and callable(refresh):
+            self._refusal = refresh(self._refusal, self._refusal_hosts)
         if self._refusal is not None:
             return
         refuse = getattr(self.approvals, 'refuse', None)
@@ -1439,7 +1462,7 @@ class BrowserSession:
         from .agent_runtime import handed_off
         handed_off()
         try:
-            return self._call(operation)
+            return self._call(operation, payment=True)
         except ToolError as exc:
             if exc.code != 'approval_required':
                 raise
@@ -1560,7 +1583,7 @@ class BrowserSession:
         layout = self._layout(parts.hostname, asked or None)
         sent = {'layout': layout} if getattr(driver, 'takes_layout', False) else {}
         try:
-            self._call(lambda timeout: driver.goto(url, timeout, **sent))
+            self._call(lambda timeout: driver.goto(url, timeout, **sent), payment=True)
         except ToolError as exc:
             self._navigation_error = exc.code if exc.code in ('browser_timeout', 'unsupported_navigation') else None
             raise
@@ -1765,7 +1788,7 @@ class BrowserSession:
         self._note_refusal(self._destinations(snapshot, element))
         # Typing presses the field first, so a label forwarding that press is guarded too.
         required = element['payment'] or element.get('forwards_payment') or effect == 'payment'
-        approved = self._guard(binding, description, required)
+        approved = self._guard(binding, description, required, autonomy=not element['guarded'])
         self._spend_step()   # #620: typing held for approval, or into a missing field, spends nothing
         confirm_ok = not page_shows_payment(snapshot)
         try:

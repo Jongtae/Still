@@ -217,3 +217,7 @@ The owner said "I already had lunch at a restaurant" (a statement: "I already ha
 - **C14 for reads:** repeated reads refused as `repeat_path`.
 - **D7:** the `safe_retry` status and artifact refusals.
 - **A17:** shorten the envelope instead of sending the bare request.
+
+## Payment autonomy amendment — #662
+
+Per-action owner approval remains invariant b's default. An owner-turned-on payment autonomy mode replaces it while on, including unattended Works. Enabling requires the owner's own confirmation, after plain injection/misjudgment risk text, either of an exact conversation Settings draft or in Settings on this computer (`/api/payment-autonomy`, never through a tunnel, bound to the revision shown); the AI cannot enable it by direct request, unattended execution, continuation or replay. Turning off is immediate and allowed by direct owner request. One helper checks the current mode revision at dispatch and records each exact action's authorization and owner notice. Secrets, budgets, dispatch claims, replay/unknown holds and the refusal of third-party payment authority remain unchanged.

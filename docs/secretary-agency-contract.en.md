@@ -16,7 +16,7 @@ This contract contains dated amendments because they are durable decision eviden
 | Main/Judgment orchestration | #710 plus the current [Decision Layer](decision-layer.en.md): Judgment plans and evaluates; deterministic code enforces authority/effect boundaries | Any older wording that treats deterministic routing rules as the semantic planner |
 | Preparations/watch | #719 on top of #659: bounded accepted watch windows, when-needed notification judgment, owner cancellation | No general background scheduler or unbounded monitoring is implied |
 
-Cross-cutting invariants remain: secrets never enter model prompts, logs or Evidence; payment is per-action approved; external effects are not replayed and `unknown` remains explicit; folder grants bound file authority; owner-visible claims remain Evidence-qualified. The [Presence Experience Contract](presence-experience-contract.en.md) controls owner-facing projection where it adds presentation rules without changing these authority boundaries.
+Cross-cutting invariants remain: secrets never enter model prompts, logs or Evidence; payment requires per-action owner approval by default; an owner-turned-on payment autonomy mode replaces it while on (#662); external effects are not replayed and `unknown` remains explicit; folder grants bound file authority; owner-visible claims remain Evidence-qualified. The [Presence Experience Contract](presence-experience-contract.en.md) controls owner-facing projection where it adds presentation rules without changing these authority boundaries.
 
 ## Amendment — #422 (2026-10-30): memory is shown in use; consolidation is quiet and reads only the owner's words
 
@@ -301,7 +301,7 @@ The pilot runs with one owner, on the owner's own machine, using the owner's own
 **In force during the pilot:**
 
 1. Passwords, tokens, cookies and API keys never enter a model prompt, a log or Evidence. Browser sessions live in a dedicated profile owned by the execution environment; the owner logs in there once, manually. The model receives page content and action results, never session material.
-2. Payment is never executed without a per-action owner approval in the conversation. Cart add, hold and similar non-payment mutations on sites the owner has connected need no approval.
+2. Payment requires per-action owner approval by default; an owner-turned-on payment autonomy mode replaces it while on (#662). Cart add, hold and similar non-payment mutations on sites the owner has connected need no approval.
 
 **Removed from the request path during the pilot:**
 

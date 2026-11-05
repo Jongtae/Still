@@ -10911,5 +10911,59 @@
   "en": "Every two weeks",
   "ja": "隔週",
   "zh": "每两周"
+ },
+ "payment_autonomy.label": {
+  "ko": "자율 결제 모드",
+  "en": "Payment autonomy mode",
+  "ja": "自律決済モード",
+  "zh": "自主付款模式"
+ },
+ "payment_autonomy.risk": {
+  "ko": "켜 두면 소유자의 AI가 건별 확인 없이 스스로 판단해 결제·주문·송금할 수 있습니다. 예약 실행 중에도 적용됩니다. 웹 페이지나 도구 결과의 지시가 AI를 속여 잘못 결제하게 할 수도 있습니다. 끄면 아직 보내지 않은 결제부터 건별 승인을 요구합니다.",
+  "en": "While on, your AI may pay, place orders or move money on its own judgment without asking for each action, including during scheduled runs. Instructions in web pages or tool results may mislead it into making an unwanted payment. Turning it off restores per-action approval for payments not yet sent.",
+  "ja": "オンの間、AI は予約実行中も、個別の確認なしに自ら判断して支払い・注文・送金できます。ウェブページやツール結果の指示に惑わされ、意図しない支払いをする可能性があります。オフにすると、未送信の支払いから個別承認が必要になります。",
+  "zh": "开启后，AI 可自行判断付款、下单或转账，无需逐次询问，定时运行时也适用。网页或工具结果中的指令可能误导 AI 进行非预期付款。关闭后，尚未发送的付款恢复逐次审批。"
+ },
+ "payment_autonomy.category_line": {
+  "ko": "자율 결제 모드: {details}",
+  "en": "Payment autonomy mode: {details}",
+  "ja": "自律決済モード: {details}",
+  "zh": "自主付款模式：{details}"
+ },
+ "payment_autonomy.changed": {
+  "ko": "자율 결제 모드가 바뀌어 이 결제는 보내지 않았어요.",
+  "en": "Payment autonomy mode changed; this payment was not sent.",
+  "ja": "自律決済モードが変更されたため、この支払いは送信していません。",
+  "zh": "自主付款模式已更改，此付款未发送。"
+ },
+ "payment_autonomy.held": {
+  "ko": "기존 실행 결과를 확인할 수 없거나 이미 허용한 결제라 다시 실행하지 않았어요.",
+  "en": "This payment was held because an earlier outcome is unknown or the action was already authorized.",
+  "ja": "前の結果が不明か、すでに承認済みのため、この支払いを保留しました。",
+  "zh": "由于先前结果未知或该操作已获授权，此付款已暂停。"
+ },
+ "payment_autonomy.owner_only": {
+  "ko": "자율 결제 모드는 소유자가 직접 시작한 대화나 설정에서 초안을 확인해야 켤 수 있어요.",
+  "en": "Payment autonomy can be enabled only by confirming an exact draft in Settings or an owner-started conversation.",
+  "ja": "自律決済モードは、設定または所有者が開始した会話で正確な下書きを確認して有効にします。",
+  "zh": "只有在设置或所有者发起的对话中确认具体草案，才能开启自主付款。"
+ },
+ "payment_autonomy.notice": {
+  "ko": "자율 결제 모드로 다음 동작의 실행을 허용했어요. 결제 성공 여부는 작업 결과에서 확인하세요.\n{label}",
+  "en": "Payment autonomy authorized this action. Check the Work result for the payment outcome.\n{label}",
+  "ja": "自律決済モードで次の操作を許可しました。支払いの結果は作業結果を確認してください。\n{label}",
+  "zh": "自主付款模式已授权以下操作。付款结果请查看工作结果。\n{label}"
+ },
+ "payment_autonomy.local_only": {
+  "ko": "자율 결제 모드는 이 컴퓨터의 Still 설정에서만 바꿀 수 있습니다.",
+  "en": "Payment autonomy can be switched only in Still's Settings on this computer.",
+  "ja": "自律決済モードはこのコンピューターの Still 設定でのみ切り替えられます。",
+  "zh": "自主付款模式只能在这台电脑的 Still 设置中切换。"
+ },
+ "settings_orchestrator.owner_confirm_only": {
+  "ko": "설정 변경은 소유자가 직접 확인해야 적용돼요.",
+  "en": "A settings change applies only when the owner confirms it.",
+  "ja": "設定の変更は所有者が確認したときだけ適用されます。",
+  "zh": "设置更改只有在所有者确认后才会生效。"
  }
 }

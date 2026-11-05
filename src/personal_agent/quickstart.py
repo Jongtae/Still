@@ -685,6 +685,8 @@ SETTINGS_WEB_CHANGES={
     '/api/decision-route/activate':(msg('label.judgment_ai'),None),'/api/current-context':(msg('label.current_context'),None),
     # #208: the read model shows on/off; the notice states which.
     '/api/work-mode':(msg('work_mode.label'),None),
+    # #662: the read model shows on/off.
+    '/api/payment-autonomy':(msg('payment_autonomy.label'),None),
     # #209: the read model does not list the hosts; the notice states the action only.
     '/api/intranet-destinations':(msg('quickstart.intranet_addresses'),msg('quickstart_service.changed_verb')),
     # #213: the read model does not show the token; the notice states the action only.
@@ -1440,6 +1442,10 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                 if path=='/api/context-inbox/telegram-policy':return self.reply(200,service.set_context_telegram_policy(body))
                 # #626: current-context privacy control (use/timezone/clear only).
                 if path=='/api/current-context':return self.reply(200,service.set_current_context(body))
+                # #662: payment autonomy is switched in Settings on this computer only, never through a tunnel.
+                if path=='/api/payment-autonomy':
+                    if self.tunneled():return self.reply(400,{'error':msg('payment_autonomy.local_only')})
+                    return self.reply(200,service.set_payment_autonomy(body))
                 # #208: work mode is switched in Settings on this computer only, never through a tunnel.
                 if path=='/api/work-mode':
                     if self.tunneled():return self.reply(400,{'error':msg('work_mode.local_only')})
