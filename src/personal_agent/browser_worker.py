@@ -1045,7 +1045,49 @@ def read_qr_codes(Foundation, data):
 #: viewport is (CSS px).  Layout widths only: nothing of the page's content is read.
 PAGE_WIDTH_SCRIPT = r"""
 const root = document.scrollingElement || document.documentElement;
-return JSON.stringify({page: root ? root.scrollWidth : 0, inner: window.innerWidth});
+// Document-local state: owner input/scrolling wins even while a measurement is in flight.
+let state = window.__stillPhoneFraming;
+if (!state) {
+  state = window.__stillPhoneFraming = {interacted: !!(window.scrollX || window.scrollY)};
+  for (const kind of ['wheel', 'touchstart', 'pointerdown', 'keydown', 'scroll'])
+    window.addEventListener(kind, () => { state.interacted = true; }, {capture: true, passive: true});
+}
+const visible = el => {
+  const r = el.getBoundingClientRect(), style = getComputedStyle(el);
+  return r.width > 0 && r.height > 0 && style.visibility === 'visible' && style.display !== 'none';
+};
+const passwords = [...document.querySelectorAll('input[type="password"]')];
+let field = passwords.find(visible);
+if (!field) {
+  const active = document.activeElement;
+  if (active && active.matches('input:not([type]), input[type="text"], input[type="email"], input[type="tel"], input[type="url"], input[type="search"], input[type="number"], textarea')
+      && visible(active)) field = active;
+}
+const regions = [];
+if (field) {
+  let region = field.closest('form') || field.parentElement || field;
+  if (region.getBoundingClientRect().width > 600) region = field.parentElement || field;
+  if (region.getBoundingClientRect().width > 600) region = field;
+  // Include adjacent actions outside the form, without swallowing a desktop page or unrelated column.
+  for (let parent = region.parentElement; parent && parent !== document.body; parent = parent.parentElement) {
+    const r = parent.getBoundingClientRect();
+    if (r.width > 600 || r.height > region.getBoundingClientRect().height + 320) break;
+    const actions = [...parent.querySelectorAll('button, a[href], input[type="submit"], input[type="button"]')];
+    if (actions.some(el => !region.contains(el) && visible(el))) { region = parent; break; }
+  }
+  const r = region.getBoundingClientRect();
+  regions.push({x: r.left + window.scrollX, y: r.top + window.scrollY, width: r.width, height: r.height});
+}
+return JSON.stringify({page: root ? root.scrollWidth : 0, inner: window.innerWidth,
+  regions, interacted: state.interacted, scrollX: window.scrollX, scrollY: window.scrollY});
+"""
+
+PHONE_CENTER_SCRIPT = r"""
+const state = window.__stillPhoneFraming;
+if (state && !state.interacted && window.scrollX === beforeX && window.scrollY === beforeY) {
+  window.scrollTo({left: x - window.innerWidth / 2, top: y - window.innerHeight / 2, behavior: 'instant'});
+}
+return JSON.stringify({});
 """
 
 #: #939: the phone's view of the login window: a JPEG no wider than this, at this quality.
@@ -1371,6 +1413,32 @@ def phone_fit_zoom(page, inner, zoom, fitted):
     # Rounded down, so the zoomed viewport is never a fraction of a pixel narrower than the page.
     target = max(MIN_PHONE_ZOOM, math.floor(zoom * inner / page * 1000) / 1000)
     return target if target < zoom else None
+
+
+def phone_region_target(measurements, zoom, fitted=None):
+    """#707: next zoom and document CSS centre, or the existing fit decision and no centre.
+
+    Rectangles wider than 600 CSS px are not bounded control regions. The margin is
+    12 view points on either side; the native frame width is innerWidth * pageZoom.
+    No field values, labels or provider/site identities participate.
+    """
+    fit = phone_fit_zoom(measurements.get('page'), measurements.get('inner'), zoom, fitted)
+    if fit == 'phone':
+        return fit, None
+    try:
+        zoom, inner = float(zoom), float(measurements.get('inner'))
+        lower = zoom if fit is None else fit
+        if not (math.isfinite(inner) and inner > 0 and math.isfinite(zoom) and zoom > 0):
+            return fit, None
+        for region in measurements.get('regions') or []:
+            x, y, width, height = (float(region[key]) for key in ('x', 'y', 'width', 'height'))
+            if not all(math.isfinite(v) for v in (x, y, width, height)) or not (0 < width <= 600 and height > 0):
+                continue
+            target = min(1.0, max(lower, (inner * zoom - 24) / width))
+            return target, (x + width / 2, y + height / 2)
+    except (TypeError, ValueError, KeyError):
+        pass
+    return fit, None
 
 
 def click_settled(elapsed, quiet, loading, started, landed, deciding=False):
@@ -1997,6 +2065,8 @@ class Worker:
         """A native left click at viewport point (x, y): trusted, never needs the window shown.
 
         ``view``: the web view to press in (a sign-in popup, #939); the main one by default.
+        Phone coordinates already use the frame's native view points. WebKit hit testing
+        applies pageZoom and document scrolling; converting to CSS pixels here would apply them twice.
         """
         AppKit, Foundation = self.AppKit, self.Foundation
         view = view if view is not None else self.view
@@ -2650,6 +2720,7 @@ class Worker:
             return self.fail(ident, 'bad_point')
         if not (0 <= x <= float(size.width) and 0 <= y <= float(size.height)):
             return self.fail(ident, 'bad_point')
+        self.phone_focus = True   # owner input cancels pending and future automatic framing
         self.press(x, y, view)
         self.reply(ident)
 
@@ -2720,6 +2791,8 @@ class Worker:
         # #956 review: the whole frame (origin and title bar included) is restored as it was.
         self.mobile_restore = self.window.frame()
         self.phone_fit = None
+        self.phone_focus = False
+        self.phone_page = object()
         self.window.setContentSize_(self.Foundation.NSMakeSize(*MOBILE_SIZE))
         if self.owner_visible:
             self.window.center()
@@ -2754,11 +2827,15 @@ class Worker:
     def fit_phone_page(self):
         """#254/#596: in a phone session, a main-view page laid out wider than the window is zoomed out
         to fit it (``phone_fit_zoom``).  Asked after each phone frame, so a page that becomes wide once
-        its scripts ran is caught too; ``phone_navigated`` starts each new page at zoom 1."""
+        its scripts ran is caught too. A bounded control region is enlarged and centred once
+        (#707), then owner input wins. ``phone_navigated`` starts each new page at zoom 1."""
         if not (getattr(self, 'remote', False) and self.owner_visible) or getattr(self, 'mobile_restore', None) is None:
             return
         if self.held_dialog is not None or self.front_view() is not self.view:
             return   # a page blocked on its dialog runs no script; a sign-in popup keeps its own window
+        if getattr(self, 'phone_focus', False) or self.view.isLoading():
+            return
+        page = getattr(self, 'phone_page', None)
         fitted = getattr(self, 'phone_fit', None)
         if fitted == 'phone':
             return   # this page's overflow follows the window: kept phone-sized until the next page
@@ -2768,12 +2845,16 @@ class Worker:
             fitted = self.phone_fit = None   # it never committed (or stayed in the same document)
 
         def measured(value, error):
-            if error is not None or not isinstance(value, dict) or not self.remote:
+            if error is not None or not isinstance(value, dict) or not self.remote or not self.owner_visible:
                 return
-            if getattr(self, 'mobile_restore', None) is None or getattr(self, 'phone_fit', None) != fitted:
+            if (getattr(self, 'mobile_restore', None) is None or getattr(self, 'phone_fit', None) != fitted
+                    or getattr(self, 'phone_page', None) is not page or getattr(self, 'phone_focus', False)):
                 return   # the session ended or a new page started while this was measured
             try:
-                zoom = phone_fit_zoom(value.get('page'), value.get('inner'), self.page_zoom(), fitted)
+                if value.get('interacted'):
+                    self.phone_focus = True
+                    return
+                zoom, centre = phone_region_target(value, self.page_zoom(), fitted)
             except Exception:
                 return
             if zoom == 'phone':
@@ -2782,6 +2863,11 @@ class Worker:
             elif zoom is not None:
                 self.phone_fit = float(value['page'])
                 self.set_page_zoom(zoom)
+                if centre is not None:
+                    self.phone_focus = True   # exactly once; later frames cannot undo owner scrolling
+                    self.run(PHONE_CENTER_SCRIPT, {'x': centre[0], 'y': centre[1],
+                             'beforeX': value.get('scrollX', 0), 'beforeY': value.get('scrollY', 0)},
+                             lambda value, error: None)
         self.run(PAGE_WIDTH_SCRIPT, {}, measured)
 
     def phone_navigated(self, committed=True):
@@ -2790,6 +2876,8 @@ class Worker:
         In a phone session the next page starts at zoom 1 (the phone width): the zoom is reset when the
         navigation is allowed, before the next document's scripts can read a widened viewport, and
         the page is measured again once that document committed (or the load ended without one)."""
+        self.phone_focus = False
+        self.phone_page = object()
         fitted, self.phone_fit = getattr(self, 'phone_fit', None), (None if committed else 'loading')
         if isinstance(fitted, float) and getattr(self, 'mobile_restore', None) is not None:
             self.set_page_zoom(1.0)
