@@ -1750,6 +1750,8 @@ class SettingsOrchestrator:
                         "next_step": UNATTENDED_SETTINGS_TEXT}
             draft = self.propose(owner, channel, args.get("category"), args.get("setting"), args.get("value"),
                                  args.get("reason"), work_id, continue_work=args.get("continue_work") == "yes", required_skill=args.get("required_skill"))
+            if self._own_unoffered_proposal(draft, work_id):
+                return self._apply_own_proposal_edit(owner, channel, draft)
             if (callable(owner_request) and args.get("continue_work", "no") == "no"
                     and direct_request_setting(draft["category"], draft["setting"], draft["after"])):
                 applied = self._apply_owner_request(owner, channel, draft, owner_request)
@@ -1760,6 +1762,33 @@ class SettingsOrchestrator:
             return {**{key: value for key, value in draft.items() if key not in ("digest", "response", "expires_at")},
                     "next_step": f"{draft['summary']} 변경은 소유자 확인을 기다립니다. {how} 확인 전에는 아무것도 바뀌지 않았습니다."}
         return call
+
+    def _own_unoffered_proposal(self, draft, work_id):
+        """#702: a schedule edit of a reservation this Work proposed and has not offered to the owner yet.
+
+        Nothing the owner has read or accepted changes: the reservation never runs before the owner's
+        yes, and its one proposal (bound to its digest) is offered only when the Work ends.
+        """
+        from . import preparations as prep
+        if (draft["category"], draft["setting"]) != ("preparations", "edit") or not work_id or self.service is None:
+            return False
+        row = self.service.preparations.get(json.loads(draft["after"])["id"])
+        return bool(row and row["state"] == prep.STATE_PROPOSED and row.get("created_from") == work_id
+                    and self.service.store.notification_of(work_id, "preparation_proposed") is None)
+
+    def _apply_own_proposal_edit(self, owner, channel, draft):
+        """#702: apply that edit through the same ``confirm`` path (digest, stale check, audit, receipt)."""
+        result = self.confirm(owner, channel, draft["draft_id"], draft["digest"])
+        self._audit({"id": draft["draft_id"], "target": f"{draft['category']}.{draft['setting']}",
+                     "before": draft["before"], "after": draft["after"]}, "own-proposal")
+        state = result.get("state")
+        return {"state": state, "draft_id": draft["draft_id"], "category": draft["category"],
+                "setting": draft["setting"], "before": draft["before"], "after": draft["after"],
+                "summary": draft["summary"], "applied": state == "applied", "own_proposal": True,
+                "response": result.get("response"),
+                "next_step": ("This reservation is still this Work's own proposal and the owner has not been shown it, so "
+                              "Still applied the edit directly. The owner accepts the reservation once, as it now reads; "
+                              "do not ask them to confirm the edit separately.")}
 
     def _apply_owner_request(self, owner, channel, draft, owner_request):
         """Apply a draft the owner's own typed message asked for exactly (#619), or None to leave it waiting.

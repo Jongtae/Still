@@ -466,7 +466,9 @@ SETTINGS_CHANGE_DESCRIPTION=('Propose one change to an owner setting that the ow
  'a draft and Still asks the owner to confirm it in this conversation (an 적용 button, or a plain yes typed in '
  'reply); never tell the owner a command to send, and nothing applies without that confirmation. Never pass API '
  'keys, tokens, passwords or credential-bearing endpoints: credentials are entered only in Settings. After '
- 'calling it, tell the owner what is waiting for their confirmation, in one sentence.')
+ 'calling it, tell the owner what is waiting for their confirmation, in one sentence. Exception (#702): a preparations '
+ 'edit of a reservation this same Work proposed, before the owner has been shown it, applies at once (applied true); '
+ 'the owner then accepts the reservation once.')
 SETTINGS_CHANGE_ARGUMENTS={
  'setting':('category and setting: main_ai route or model, judgment_ai mode or model, current_context enabled or timezone, '
   'owner_model enabled or daily_calls, '

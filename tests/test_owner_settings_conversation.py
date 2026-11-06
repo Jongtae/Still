@@ -1088,6 +1088,38 @@ class PreparationManagementConversation(_Case):
         for leaked in ('{', watch['id'], 'max_runs', 'bound_timezone'):
             self.assertNotIn(leaked, text)
 
+    def test_an_edit_of_this_works_unoffered_proposal_applies_without_a_second_ask(self):
+        """#702: the Work corrects its own proposal before the owner sees it; anything else stays a confirmed draft."""
+        def watch(work, state=prep.STATE_PROPOSED):
+            return self.service.preparations.create(
+                kind='prepare', goal='주식 현황 ' + work, due_at=self.clock[0] + 600, timezone='Asia/Seoul', recurrence=None,
+                channel='web', created_from=work, state=state, window=(3600, self.clock[0] + 600 + 6 * 3600, 7))
+
+        def edit(work, row, runs):
+            tools = self.settings.work_tools('owner', 'http', work)
+            return tools('settings_change', {'category': 'preparations', 'setting': 'edit',
+                                             'value': json.dumps({'id': row['id'], 'max_runs': runs})})
+
+        own = watch('work-a')
+        result = edit('work-a', own, 5)
+        self.assertEqual((result['applied'], result.get('own_proposal')), (True, True))
+        current = self.service.preparations.get(own['id'])
+        self.assertEqual((current['state'], current['max_runs'], current['accepted_by']), (prep.STATE_PROPOSED, 5, None),
+                         'changed, still waiting for the owner\'s one yes')
+        self.assertEqual(self.settings.pending_for_work('work-a'), [], 'nothing left waiting')
+
+        other = edit('work-b', own, 4)  # another Work's edit of it
+        offered_row = watch('work-c')
+        self.store.queue_notification('work-c', 1, 'g', 'preparation_proposed')
+        offered = edit('work-c', offered_row, 4)  # already offered to the owner
+        accepted = watch('work-d', prep.STATE_SCHEDULED)
+        scheduled = edit('work-d', accepted, 4)  # already accepted
+        for name, waiting, row in (('other work', other, own), ('offered', offered, offered_row),
+                                   ('scheduled', scheduled, accepted)):
+            with self.subTest(name):
+                self.assertEqual((waiting['applied'], waiting['requires_owner_confirmation']), (False, True))
+                self.assertNotEqual(self.service.preparations.get(row['id'])['max_runs'], 4)
+
     def test_new_owner_requested_edit_supersedes_only_alternatives_of_the_same_preparation(self):
         other = self.service.preparations.create(kind='prepare', goal='Example second report', due_at=self.clock[0] + 3600,
                                                   timezone='Asia/Seoul', recurrence='daily', channel='web',
