@@ -1656,6 +1656,19 @@ class Worker(shared.Worker):
                 target.post('Input.insertText', {'text': text}, insert)
         self.run(shared.REMOTE_FOCUS_SCRIPT, {}, focused, view=view)
 
+    def op_remote_bind(self, ident, command, timeout):
+        """#709: the phone bound; the Linux worker keeps its layout (no mobile/PC reload yet)."""
+        if not self._remote_allowed(ident):
+            return
+        self.phone_bound = True
+        self.reply(ident)
+
+    def op_remote_layout(self, ident, command, timeout):
+        """#709: the mobile/PC toggle is macOS-only for now; Linux answers a typed refusal."""
+        if not self._remote_input_allowed(ident, command):
+            return
+        return self.fail(ident, 'unsupported')
+
     def op_remote_nav(self, ident, command, timeout):
         if not self._remote_input_allowed(ident, command):
             return

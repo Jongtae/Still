@@ -606,6 +606,7 @@ def test_every_shared_dispatch_op_has_an_implementation_and_unknown_is_typed(wor
         'navigate', 'settle', 'snapshot', 'click', 'type', 'release_submit',
         'load_more', 'load_more_stop', 'show', 'hide', 'state', 'frame',
         'remote_begin', 'remote_end', 'remote_tap', 'remote_text', 'remote_key', 'remote_nav', 'remote_dialog',
+        'remote_bind', 'remote_layout',
         'cookies_export', 'cookies_import', 'cookies_delete', 'cookies_clear', 'quit'}
     for name in ops:
         assert callable(getattr(worker, name))
@@ -615,6 +616,9 @@ def test_every_shared_dispatch_op_has_an_implementation_and_unknown_is_typed(wor
                  'op_remote_end', 'op_remote_dialog', 'op_hide'):
         assert getattr(chromium.Worker, name) is getattr(shared.Worker, name)
     assert command(worker, 'invented')['error'] == 'unknown_op'
+    # #709: the WebKit mobile/PC reload uses WebKit views; Linux has its own safe answers.
+    assert chromium.Worker.op_remote_bind is not shared.Worker.op_remote_bind
+    assert chromium.Worker.op_remote_layout is not shared.Worker.op_remote_layout
 
 
 def test_unconfirmed_click_returns_pressed_without_replaying(worker):

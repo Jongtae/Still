@@ -1973,7 +1973,7 @@ LOGIN_OPEN_SECONDS = 45
 #: Legacy filename only: existing contents are left untouched and never read.
 LAYOUTS_NAME = 'layouts.json'
 #: #939: the phone inputs a login window accepts, as the worker's ``remote_*`` ops.
-REMOTE_INPUT_KINDS = ('tap', 'text', 'key', 'nav', 'dialog')
+REMOTE_INPUT_KINDS = ('tap', 'text', 'key', 'nav', 'dialog', 'layout')
 #: #293: the focused-element kinds a frame may report (the worker's ``REMOTE_FOCUS_KINDS``).
 REMOTE_FOCUS_KINDS = ('text', 'password', 'frame')
 #: #709: how long closing a login window waits for its save and release.
@@ -2578,7 +2578,7 @@ class WebKitWorkerDriver:
         message = self._request_shown('frame')
         dialog = message.get('dialog') if isinstance(message.get('dialog'), dict) else None
         focus = message.get('focus')
-        return {'view_id': message.get('view_id'), 'jpeg': str(message.get('jpeg') or ''), 'width': message.get('width'), 'height': message.get('height'),
+        return {'layout': message.get('layout'), 'view_id': message.get('view_id'), 'jpeg': str(message.get('jpeg') or ''), 'width': message.get('width'), 'height': message.get('height'),
                 'dialog': {'kind': str(dialog.get('kind') or ''), 'text': str(dialog.get('text') or '')} if dialog else None,
                 'focus': focus if focus in REMOTE_FOCUS_KINDS else None,
                 'fields': remote_fields(message.get('fields')), 'links': qr_links(message.get('links'))}
@@ -2593,6 +2593,10 @@ class WebKitWorkerDriver:
     def remote_begin(self):
         """A phone session starts: the worker holds page dialogs for the phone's answer (#939)."""
         self._request_shown('remote_begin')
+
+    def remote_bind(self):
+        """The authenticated phone bound to this login window."""
+        self._request_shown('remote_bind')
 
     def remote_end(self):
         """The phone session ended: a held dialog is cancelled; dialogs go back to the Mac alone."""
@@ -3334,6 +3338,13 @@ class BrowserProfile:
         except Exception:
             return False
         return True
+
+    def login_window_bind(self, window):
+        """Switch only the bound login window to its initial phone layout."""
+        driver = self.login_window_driver(window)
+        method = getattr(driver, 'remote_bind', None)
+        if method is not None:
+            method()
 
     def login_window_input(self, window, kind, **fields):
         """One phone input into ``window`` (#939); True when the driver accepted it.  ``fields`` are never logged."""
