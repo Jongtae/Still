@@ -1874,7 +1874,7 @@ class AgentService:
             channel=self.preparation_channel(job,kind,args.get('delivery'))
             summary=prep.proposal_summary({'kind':kind,'goal_text':goal,'due_at':due_at,'timezone':timezone,
                                            'recurrence':prep.RECURRENCE_WINDOW if window else recurrence,
-                                           'every_seconds':window and window[0],'window_end':window and window[1],
+                                           'every_seconds':window and window[0],'until_at':window and window[1],
                                            'max_runs':window and window[2],'delivery_mode':delivery_mode,
                                            'channel':channel,'title_text':title,'offer_text':offer},self.home_zone())
             own_request=(isinstance(prompt,str) and prompt==job.get('message')
@@ -1917,9 +1917,9 @@ class AgentService:
                     'recurrence':row['recurrence'] or 'none','delivery':self.preparation_delivery(row),
                     'accepted_by':row['accepted_by'],'next_step':next_step}
             if window:
-                result.update(every_minutes=row['every_seconds']//60,until=prep.iso(row['window_end'],row['timezone']),
+                result.update(every_minutes=row['every_seconds']//60,until=prep.iso(row['until_at'],row['timezone']),
                               max_runs=row['max_runs'],
-                              # #404: until is exclusive; the model sees when its last check is.
+                              # #404: the model sees when its last check is (#701: at most until).
                               last_check=prep.iso(prep.last_slot(row),row['timezone']))
             return result
         return schedule
@@ -2327,8 +2327,8 @@ class AgentService:
             local=lambda slot:prep.local_text(slot,row['timezone'])
             schedule=(msg('preparations.run_next',due=local(following)) if following is not None
                       else msg('preparations.run_last'))
-            if row.get('window_end') is not None:
-                schedule+=msg('preparations.run_end',end=local(row['window_end']))
+            if row.get('until_at') is not None:
+                schedule+=msg('preparations.run_end',end=local(row['until_at']))
             delivery=msg('preparations.run_delivery_needed' if row.get('delivery_mode')==prep.DELIVERY_WHEN_NEEDED
                          else 'preparations.run_delivery',channel=row['channel'])
             return msg('preparations.run_record',
@@ -3260,9 +3260,9 @@ class AgentService:
                          'created_at':row['created_at'],
                          # #719: the watch window, its bound and the last typed decision.
                          'every_minutes':(row['every_seconds']//60) if row.get('every_seconds') else None,
-                         'until_local_input':datetime.fromtimestamp(row['window_end'],prep.zone(row['timezone'])).strftime('%Y-%m-%dT%H:%M') if row.get('window_end') else None,
-                         'until_local':prep.local_text(row['window_end'],row['timezone']) if row.get('window_end') else None,
-                         'until':datetime.fromtimestamp(row['window_end'],prep.zone(row['timezone'])).isoformat() if row.get('window_end') else None,
+                         'until_local_input':datetime.fromtimestamp(row['until_at'],prep.zone(row['timezone'])).strftime('%Y-%m-%dT%H:%M') if row.get('until_at') else None,
+                         'until_local':prep.local_text(row['until_at'],row['timezone']) if row.get('until_at') else None,
+                         'until':datetime.fromtimestamp(row['until_at'],prep.zone(row['timezone'])).isoformat() if row.get('until_at') else None,
                          'max_runs':row.get('max_runs'),'run_count':row.get('run_count') or 0,
                          'last_decision':row.get('last_decision'),'last_decision_reason':row.get('last_decision_reason')})
         # #575: the page uses the same catalog in its selected language.
@@ -7803,7 +7803,7 @@ class AgentService:
                 "SELECT id,goal_text,due_at,timezone FROM preparations WHERE kind=? AND state=? AND due_at>? AND due_at<=? ORDER BY due_at",
                 (prep.KIND_REMINDER,prep.STATE_SCHEDULED,now,now+ATTENTION_REMINDER_HORIZON)).fetchall()]
             proposed=[dict(row) for row in db.execute(
-                "SELECT id,kind,goal_text,due_at,timezone,recurrence,every_seconds,window_end,max_runs,delivery_mode,created_at "
+                "SELECT id,kind,goal_text,due_at,timezone,recurrence,every_seconds,until_at,max_runs,delivery_mode,created_at "
                 "FROM preparations WHERE state=? AND created_from IS NOT ? ORDER BY created_at",
                 (prep.STATE_PROPOSED,job['id'])).fetchall()]
             asks=self.store.telegram.sent_asks(db,MEMORY_PROMPT_KINDS,job['id'])

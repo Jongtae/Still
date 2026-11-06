@@ -1048,6 +1048,29 @@ class PreparationManagementConversation(_Case):
                          (prep.STATE_RUNNING, self.row['due_at'], 'weekly'))
         self.assertIsNotNone(current['last_run_job_id'])
 
+    def test_an_applied_reservation_operation_says_what_it_did(self):
+        """#701: the receipt is the done operation, never the draft's question with "(으)로 바꿨습니다" appended."""
+        watch = self.service.preparations.create(
+            kind='prepare', goal='주식 현황 알림', due_at=self.clock[0] + 600, timezone='Asia/Seoul', recurrence=None,
+            channel='web', created_from=None, state=prep.STATE_PROPOSED, title='국내 주식 현황 알림',
+            window=(3600, self.clock[0] + 600 + 6 * 3600, 7))
+        until = datetime.fromtimestamp(self.clock[0] + 600 + 7 * 3600, prep.zone('Asia/Seoul')).isoformat()
+        receipts = {}
+        for operation, value in (('edit', json.dumps({'id': watch['id'], 'until': until, 'max_runs': 8})),
+                                 ('accept', watch['id']), ('pause', watch['id']), ('resume', watch['id']),
+                                 ('cancel', watch['id'])):
+            draft = self.settings.propose('owner', 'http', 'preparations', operation, value)
+            receipts[operation] = self.settings.handle_text('owner', 'http', 'confirm ' + draft['draft_id'],
+                                                            owner_typed=True)['response']
+        edited = self.service.preparations.get(watch['id'])
+        self.assertEqual(receipts['edit'], '예약 일정을 바꿨습니다: 국내 주식 현황 알림\n  '
+                         + prep.schedule_text({**edited, 'state': prep.STATE_PROPOSED}, self.service.home_zone()))
+        self.assertEqual(receipts['cancel'], '예약을 취소했습니다: 국내 주식 현황 알림')
+        for operation, receipt in receipts.items():
+            self.assertNotIn('(으)로', receipt, operation)
+            self.assertNotIn('할까요', receipt, operation)
+            self.assertIn('국내 주식 현황 알림', receipt, operation)
+
     def test_an_edit_draft_reads_as_the_schedule_now_and_after_never_the_drafts_json(self):
         """The owner confirms a schedule edit by its name and both schedules, not ``{"id": ...}``."""
         watch = self.service.preparations.create(
