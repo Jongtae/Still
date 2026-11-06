@@ -10623,5 +10623,257 @@
   "en": "The agent {name} sent a request for your review. These are that agent’s words:\n\n“{request}”\n\nI have not taken any action. To respond, ask me directly in your usual conversation, or choose Acknowledge or Decline in Settings → External connections → Other AI agents. Acknowledging in Settings only marks it as read; it approves no action.",
   "ja": "{name} エージェントから確認が必要なリクエストが届きました。以下はそのエージェントの言葉です。\n\n「{request}」\n\n私はまだ何も実行していません。返答するには、普段の自分の会話で私に直接依頼するか、設定 → 外部接続 → 他のAIエージェントで確認済みまたは辞退を選んでください。設定の確認済みは読んだ印であり、どの行動も承認しません。",
   "zh": "智能体 {name} 发来了需要你确认的请求。以下是该智能体的原话：\n\n“{request}”\n\n我尚未采取任何行动。如需回应，请在你平常使用的对话中直接告诉我，或在设置 → 外部连接 → 其他 AI 智能体中选择已阅或拒绝。设置中的已阅仅表示你已阅读，不批准任何行动。"
+ },
+ "preparations.schedule_date": {
+  "ko": "{m}월 {d}일({w})",
+  "en": "{w}, {m}/{d}",
+  "ja": "{m}月{d}日({w})",
+  "zh": "{m}月{d}日（{w}）"
+ },
+ "preparations.schedule_datetime": {
+  "ko": "{m}월 {d}일({w}) {t}",
+  "en": "{w}, {m}/{d} {t}",
+  "ja": "{m}月{d}日({w}) {t}",
+  "zh": "{m}月{d}日（{w}） {t}"
+ },
+ "preparations.schedule_minutes": {
+  "ko": "{minutes}분",
+  "en": "{minutes} min",
+  "ja": "{minutes}分",
+  "zh": "{minutes}分钟"
+ },
+ "preparations.schedule_hours": {
+  "ko": "{hours}시간",
+  "en": "{hours} hr",
+  "ja": "{hours}時間",
+  "zh": "{hours}小时"
+ },
+ "preparations.schedule_hours_minutes": {
+  "ko": "{hours}시간 {minutes}분",
+  "en": "{hours} hr {minutes} min",
+  "ja": "{hours}時間{minutes}分",
+  "zh": "{hours}小时{minutes}分钟"
+ },
+ "preparations.schedule_before": {
+  "ko": "{until} 전까지",
+  "en": "before {until}",
+  "ja": "{until}より前",
+  "zh": "{until}之前"
+ },
+ "preparations.schedule_until_zone": {
+  "ko": "{until}까지 ({zone})",
+  "en": "until {until} ({zone})",
+  "ja": "{until}まで ({zone})",
+  "zh": "截至{until} ({zone})"
+ },
+ "preparations.schedule_before_zone": {
+  "ko": "{until} 전까지 ({zone})",
+  "en": "before {until} ({zone})",
+  "ja": "{until}より前 ({zone})",
+  "zh": "{until}之前 ({zone})"
+ },
+ "preparations.schedule_window_once": {
+  "ko": "{preparation_start_time}부터 {preparation_deadline} 한 번",
+  "en": "Once from {preparation_start_time} {preparation_deadline}",
+  "ja": "{preparation_start_time}から{preparation_deadline}に1回",
+  "zh": "从{preparation_start_time}开始，{preparation_deadline}，仅一次"
+ },
+ "preparations.schedule_window_many": {
+  "ko": "{preparation_start_time}부터 {preparation_deadline}, {interval}마다 최대 {runs}번",
+  "en": "From {preparation_start_time} {preparation_deadline}, every {interval}, up to {runs} runs",
+  "ja": "{preparation_start_time}から{preparation_deadline}、{interval}ごとに最大{runs}回",
+  "zh": "从{preparation_start_time}开始，{preparation_deadline}，每{interval}一次，最多{runs}次"
+ },
+ "preparations.schedule_daily": {
+  "ko": "{preparation_start_time}부터 매일",
+  "en": "From {preparation_start_time}, Every day",
+  "ja": "{preparation_start_time}から毎日",
+  "zh": "从{preparation_start_time}开始，每天"
+ },
+ "preparations.schedule_weekdays": {
+  "ko": "{preparation_start_time}부터 평일마다",
+  "en": "From {preparation_start_time}, on weekdays",
+  "ja": "{preparation_start_time}から平日ごと",
+  "zh": "从{preparation_start_time}开始，每个工作日"
+ },
+ "preparations.schedule_weekly": {
+  "ko": "{preparation_start_time}부터 매주",
+  "en": "From {preparation_start_time}, Every week",
+  "ja": "{preparation_start_time}から毎週",
+  "zh": "从{preparation_start_time}开始，每周"
+ },
+ "preparations.schedule_delivery_send": {
+  "ko": "{owner_preparation_schedule_with_delivery} · 결과를 보내 드려요",
+  "en": "{owner_preparation_schedule_with_delivery} · I’ll send you each result.",
+  "ja": "{owner_preparation_schedule_with_delivery} · 毎回結果をお送りします。",
+  "zh": "{owner_preparation_schedule_with_delivery} · 每次都会把结果发给您。"
+ },
+ "preparations.schedule_delivery_keep": {
+  "ko": "{owner_preparation_schedule_with_delivery} · 결과가 나와도 따로 알리지 않아요",
+  "en": "{owner_preparation_schedule_with_delivery} · I won’t notify you when results are ready.",
+  "ja": "{owner_preparation_schedule_with_delivery} · 結果が出ても個別にはお知らせしません。",
+  "zh": "{owner_preparation_schedule_with_delivery} · 结果出来后不会另行通知您。"
+ },
+ "preparations.schedule_delivery_when_needed": {
+  "ko": "{owner_preparation_schedule_with_delivery} · 알릴 일이 있을 때만 알려요",
+  "en": "{owner_preparation_schedule_with_delivery} · I’ll tell you only when a result needs your attention.",
+  "ja": "{owner_preparation_schedule_with_delivery} · 対応が必要な結果があるときだけお知らせします。",
+  "zh": "{owner_preparation_schedule_with_delivery} · 只有结果需要您关注时才会通知您。"
+ },
+ "preparations.summary_reminder": {
+  "ko": "[알림] {owner_preparation_schedule_with_delivery} — {goal_text}",
+  "en": "[Reminder] {owner_preparation_schedule_with_delivery} — {goal_text}",
+  "ja": "[リマインダー] {owner_preparation_schedule_with_delivery} — {goal_text}",
+  "zh": "[提醒] {owner_preparation_schedule_with_delivery} — {goal_text}"
+ },
+ "preparations.summary_prepare": {
+  "ko": "[미리 준비] {owner_preparation_schedule_with_delivery} — {goal_text}",
+  "en": "[Preparation] {owner_preparation_schedule_with_delivery} — {goal_text}",
+  "ja": "[事前準備] {owner_preparation_schedule_with_delivery} — {goal_text}",
+  "zh": "[提前准备] {owner_preparation_schedule_with_delivery} — {goal_text}"
+ },
+ "preparations.rule_every_day_days": {
+  "ko": "매일 {selected_recurrence_calendar_day_list}",
+  "en": "Every day {selected_recurrence_calendar_day_list}",
+  "ja": "毎日 {selected_recurrence_calendar_day_list}",
+  "zh": "每天 {selected_recurrence_calendar_day_list}"
+ },
+ "preparations.rule_every_week_days": {
+  "ko": "매주 {selected_recurrence_calendar_day_list}",
+  "en": "Every week {selected_recurrence_calendar_day_list}",
+  "ja": "毎週 {selected_recurrence_calendar_day_list}",
+  "zh": "每周 {selected_recurrence_calendar_day_list}"
+ },
+ "preparations.rule_every_month_days": {
+  "ko": "매월 {selected_recurrence_calendar_day_list}",
+  "en": "Every month {selected_recurrence_calendar_day_list}",
+  "ja": "毎月 {selected_recurrence_calendar_day_list}",
+  "zh": "每月 {selected_recurrence_calendar_day_list}"
+ },
+ "preparations.rule_every_two_weeks_days": {
+  "ko": "격주 {selected_recurrence_calendar_day_list}",
+  "en": "Every two weeks {selected_recurrence_calendar_day_list}",
+  "ja": "隔週 {selected_recurrence_calendar_day_list}",
+  "zh": "每两周 {selected_recurrence_calendar_day_list}"
+ },
+ "preparations.rule_daily_days": {
+  "ko": "{n}일마다 {selected_recurrence_calendar_day_list}",
+  "en": "Every {n} day(s) {selected_recurrence_calendar_day_list}",
+  "ja": "{n}日ごと {selected_recurrence_calendar_day_list}",
+  "zh": "每{n}天 {selected_recurrence_calendar_day_list}"
+ },
+ "preparations.rule_weekly_days": {
+  "ko": "{n}주마다 {selected_recurrence_calendar_day_list}",
+  "en": "Every {n} week(s) {selected_recurrence_calendar_day_list}",
+  "ja": "{n}週ごと {selected_recurrence_calendar_day_list}",
+  "zh": "每{n}周 {selected_recurrence_calendar_day_list}"
+ },
+ "preparations.rule_monthly_days": {
+  "ko": "{n}개월마다 {selected_recurrence_calendar_day_list}",
+  "en": "Every {n} month(s) {selected_recurrence_calendar_day_list}",
+  "ja": "{n}か月ごと {selected_recurrence_calendar_day_list}",
+  "zh": "每{n}个月 {selected_recurrence_calendar_day_list}"
+ },
+ "preparations.rule_with_count": {
+  "ko": "{recurrence_rule} · {recurrence_maximum_count}번",
+  "en": "{recurrence_rule} · {recurrence_maximum_count} times",
+  "ja": "{recurrence_rule} · {recurrence_maximum_count}回",
+  "zh": "{recurrence_rule} · {recurrence_maximum_count}次"
+ },
+ "preparations.rule_with_until": {
+  "ko": "{recurrence_rule} · {recurrence_end_datetime}까지",
+  "en": "{recurrence_rule} · until {recurrence_end_datetime}",
+  "ja": "{recurrence_rule} · {recurrence_end_datetime}まで",
+  "zh": "{recurrence_rule} · 截至{recurrence_end_datetime}"
+ },
+ "preparations.rule_days_MO": {
+  "ko": "월·{selected_calendar_days}",
+  "en": "Mon·{selected_calendar_days}",
+  "ja": "月·{selected_calendar_days}",
+  "zh": "周一·{selected_calendar_days}"
+ },
+ "preparations.rule_days_TU": {
+  "ko": "화·{selected_calendar_days}",
+  "en": "Tue·{selected_calendar_days}",
+  "ja": "火·{selected_calendar_days}",
+  "zh": "周二·{selected_calendar_days}"
+ },
+ "preparations.rule_days_WE": {
+  "ko": "수·{selected_calendar_days}",
+  "en": "Wed·{selected_calendar_days}",
+  "ja": "水·{selected_calendar_days}",
+  "zh": "周三·{selected_calendar_days}"
+ },
+ "preparations.rule_days_TH": {
+  "ko": "목·{selected_calendar_days}",
+  "en": "Thu·{selected_calendar_days}",
+  "ja": "木·{selected_calendar_days}",
+  "zh": "周四·{selected_calendar_days}"
+ },
+ "preparations.rule_days_FR": {
+  "ko": "금·{selected_calendar_days}",
+  "en": "Fri·{selected_calendar_days}",
+  "ja": "金·{selected_calendar_days}",
+  "zh": "周五·{selected_calendar_days}"
+ },
+ "preparations.rule_days_SA": {
+  "ko": "토·{selected_calendar_days}",
+  "en": "Sat·{selected_calendar_days}",
+  "ja": "土·{selected_calendar_days}",
+  "zh": "周六·{selected_calendar_days}"
+ },
+ "preparations.rule_days_SU": {
+  "ko": "일·{selected_calendar_days}",
+  "en": "Sun·{selected_calendar_days}",
+  "ja": "日·{selected_calendar_days}",
+  "zh": "周日·{selected_calendar_days}"
+ },
+ "preparations.rule_ordinal_days": {
+  "ko": "{ordinal}번째 {day}·{days}",
+  "en": "{day} (ordinal {ordinal})·{days}",
+  "ja": "{ordinal}番目の{day}·{days}",
+  "zh": "第{ordinal}个{day}·{days}"
+ },
+ "preparations.rule_monthdays": {
+  "ko": "{day}일·{days}",
+  "en": "day {day}·{days}",
+  "ja": "{day}日·{days}",
+  "zh": "{day}日·{days}"
+ },
+ "preparations.schedule_datetime_before": {
+  "ko": "{m}월 {d}일({w}) {t} 전까지",
+  "en": "before {w}, {m}/{d} {t}",
+  "ja": "{m}月{d}日({w}) {t}より前",
+  "zh": "{m}月{d}日（{w}） {t}之前"
+ },
+ "preparations.schedule_datetime_before_zone": {
+  "ko": "{m}월 {d}일({w}) {t} 전까지 ({zone})",
+  "en": "before {w}, {m}/{d} {t} ({zone})",
+  "ja": "{m}月{d}日({w}) {t}より前 ({zone})",
+  "zh": "{m}月{d}日（{w}） {t}之前 ({zone})"
+ },
+ "preparations.schedule_every_weekday": {
+  "ko": "평일마다",
+  "en": "on weekdays",
+  "ja": "平日ごと",
+  "zh": "每个工作日"
+ },
+ "preparations.schedule_datetime_rule": {
+  "ko": "{m}월 {d}일({w}) {t}부터 {r}",
+  "en": "From {w}, {m}/{d} {t}, {r}",
+  "ja": "{m}月{d}日({w}) {t}から{r}",
+  "zh": "从{m}月{d}日（{w}） {t}开始，{r}"
+ },
+ "preparations.proposal_brief": {
+  "ko": "매번 실행할 때 맡길 내용: {goal}",
+  "en": "What each run is asked to do: {goal}",
+  "ja": "毎回の実行で任せる内容: {goal}",
+  "zh": "每次运行时交代的内容: {goal}"
+ },
+ "preparations.proposal_brief_html": {
+  "ko": "<blockquote expandable>매번 실행할 때 맡길 내용\n{goal}</blockquote>",
+  "en": "<blockquote expandable>What each run is asked to do\n{goal}</blockquote>",
+  "ja": "<blockquote expandable>毎回の実行で任せる内容\n{goal}</blockquote>",
+  "zh": "<blockquote expandable>每次运行时交代的内容\n{goal}</blockquote>"
  }
 }

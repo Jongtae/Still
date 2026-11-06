@@ -588,19 +588,23 @@ def reminder_text(goal, due_at, timezone_name, now):
     return text
 
 
-WEEKDAYS = '월화수목금토일'
-
-
-def _local_parts(ts, timezone_name):
+# #689: the locale seam (telegram_locale) tries longer template patterns first, so the
+# enclosing schedule shapes use long placeholder names and the date short ones: a whole
+# line is matched by its outer shape before its date, never the reverse.
+def _local_parts(ts, timezone_name, lang='ko'):
     local = datetime.fromtimestamp(ts, zone(timezone_name) or dt_timezone.utc)
-    return f'{local.month}월 {local.day}일({WEEKDAYS[local.weekday()]})', local.strftime('%H:%M'), local.date()
+    weekday = msg('preparations.day_' + ('MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU')[local.weekday()], lang)
+    return (msg('preparations.schedule_date', lang, m=local.month, d=local.day, w=weekday),
+            local.strftime('%H:%M'), local.date())
 
 
-def _minutes_text(minutes):
+def _minutes_text(minutes, lang='ko'):
     hours, rest = divmod(int(minutes), 60)
     if not hours:
-        return f'{rest}분'
-    return f'{hours}시간' + (f' {rest}분' if rest else '')
+        return msg('preparations.schedule_minutes', lang, minutes=rest)
+    if rest:
+        return msg('preparations.schedule_hours_minutes', lang, hours=hours, minutes=rest)
+    return msg('preparations.schedule_hours', lang, hours=hours)
 
 
 def last_slot(row):
@@ -617,31 +621,38 @@ def rule_text(recurrence, lang='ko'):
     parts = rule_parts(recurrence)
     interval = int(parts.get('INTERVAL', 1))
     if interval == 1:
-        text = msg('preparations.rule_every_' + {'DAILY':'day', 'WEEKLY':'week', 'MONTHLY':'month'}[parts['FREQ']], lang)
+        key = 'preparations.rule_every_' + {'DAILY':'day', 'WEEKLY':'week', 'MONTHLY':'month'}[parts['FREQ']]
     elif interval == 2 and parts['FREQ'] == 'WEEKLY':
-        text = msg('preparations.rule_every_two_weeks', lang)
+        key = 'preparations.rule_every_two_weeks'
     else:
-        text = msg('preparations.rule_' + parts['FREQ'].lower(), lang, interval=interval)
+        key = 'preparations.rule_' + parts['FREQ'].lower()
+    # #689: whole recurrence shapes translate nested selectors and limits.
+    text = msg(key, lang, interval=interval)
     if 'BYDAY' in parts:
         days = []
         for day in parts['BYDAY'].split(','):
             name = msg('preparations.day_' + day[-2:], lang)
             ordinal = day[:-2]
             days.append(msg('preparations.rule_ordinal', lang, ordinal=ordinal, day=name) if ordinal else name)
-        text += ' ' + '·'.join(days)
+        text = msg(key + '_days', lang, n=interval, selected_recurrence_calendar_day_list='·'.join(days))
     if 'BYMONTHDAY' in parts:
-        text += ' ' + '·'.join(msg('preparations.rule_last_day', lang) if day == '-1' else
-                               msg('preparations.rule_monthday', lang, day=day) for day in parts['BYMONTHDAY'].split(','))
+        days = '·'.join(msg('preparations.rule_last_day', lang) if day == '-1' else
+                        msg('preparations.rule_monthday', lang, day=day) for day in parts['BYMONTHDAY'].split(','))
+        # #689: retain both selectors when a rule constrains weekdays and dates.
+        if 'BYDAY' in parts:
+            text += ' ' + days
+        else:
+            text = msg(key + '_days', lang, n=interval, selected_recurrence_calendar_day_list=days)
     if 'UNTIL' in parts:
         until = parts['UNTIL']
-        text += ' · ' + msg('preparations.rule_until', lang, until=until[:4] + '-' + until[4:6] + '-' + until[6:8] +
+        text = msg('preparations.rule_with_until', lang, recurrence_rule=text, recurrence_end_datetime=until[:4] + '-' + until[4:6] + '-' + until[6:8] +
                     ((' ' + until[9:11] + ':' + until[11:13] + (' UTC' if until.endswith('Z') else '')) if len(until) > 8 else ''))
     if 'COUNT' in parts:
-        text += ' · ' + msg('preparations.rule_count', lang, count=parts['COUNT'])
+        text = msg('preparations.rule_with_count', lang, recurrence_rule=text, recurrence_maximum_count=parts['COUNT'])
     return text
 
 
-def schedule_text(row, home_zone=None):
+def schedule_text(row, home_zone=None, lang='ko'):
     """#393: one owner-readable line - when it runs and how the owner hears of it.
 
     A date in the owner's words (``10월 28일(수) 18:35``), the end time alone
@@ -654,34 +665,43 @@ def schedule_text(row, home_zone=None):
     that minute is named inclusively ("11:30까지"): no run can start after
     it, so the minute-level statement stays exact.
     """
-    day, at, date = _local_parts(row['due_at'], row['timezone'])
+    # #689: render directly in the owner's language or as translatable Korean.
+    day, at, date = _local_parts(row['due_at'], row['timezone'], lang)
     zone_note = '' if home_zone and row['timezone'] == home_zone else f" ({row['timezone']})"
     recurrence = row.get('recurrence') or ''
     if recurrence.startswith('RRULE:'):
-        when = msg('preparations.rule_schedule', start=f'{day} {at}{zone_note}', rule=rule_text(recurrence))
+        when = msg('preparations.rule_schedule', lang, start=f'{day} {at}{zone_note}', rule=rule_text(recurrence, lang))
     elif recurrence == RECURRENCE_WINDOW:
         runs = max(1, int(row['max_runs']))
         every, deadline = int(row['every_seconds']), row['window_end']
         last_minute = deadline - 60
         inclusive = (deadline % 60 == 0 and last_minute >= row['due_at']
                      and (last_minute - row['due_at']) % every == 0)
-        end_day, end_at, end_date = _local_parts(last_minute if inclusive else deadline, row['timezone'])
-        end = (end_at if end_date == date else f'{end_day} {end_at}') + ('까지' if inclusive else ' 전까지')
+        end_day, end_at, end_date = _local_parts(last_minute if inclusive else deadline, row['timezone'], lang)
+        end = end_at if end_date == date else f'{end_day} {end_at}'
+        end_key = 'preparations.rule_until' if inclusive else 'preparations.schedule_before'
+        if zone_note:
+            end_key = 'preparations.schedule_until_zone' if inclusive else 'preparations.schedule_before_zone'
+        end = msg(end_key, lang, until=end, zone=row['timezone'])
+        start = f'{day} {at}'
         if runs == 1:
-            when = f'{day} {at}부터 {end}{zone_note} 한 번'
+            when = msg('preparations.schedule_window_once', lang, preparation_start_time=start, preparation_deadline=end)
         else:
-            when = f"{day} {at}부터 {end}{zone_note}, {_minutes_text(every // 60)}마다 최대 {runs}번"
+            when = msg('preparations.schedule_window_many', lang, preparation_start_time=start, preparation_deadline=end,
+                       interval=_minutes_text(every // 60, lang), runs=runs)
     else:
-        when = f'{day} {at}{zone_note}' + {'daily': '부터 매일', 'weekdays': '부터 평일마다', 'weekly': '부터 매주'}.get(recurrence, '')
+        when = f'{day} {at}{zone_note}'
+        if recurrence in ('daily', 'weekdays', 'weekly'):
+            when = msg('preparations.schedule_' + recurrence, lang, preparation_start_time=when)
     if row['kind'] == KIND_REMINDER:
         return when
     if row.get('delivery_mode') == DELIVERY_WHEN_NEEDED:
-        tell = msg('preparations.delivery_when_needed')
+        mode = 'when_needed'
     elif row.get('channel') == CHANNEL_WEB:
-        tell = msg('preparations.delivery_keep')
+        mode = 'keep'
     else:
-        tell = msg('preparations.delivery_send')
-    return f'{when} · {tell}'
+        mode = 'send'
+    return msg('preparations.schedule_delivery_' + mode, lang, owner_preparation_schedule_with_delivery=when)
 
 
 def offered(row):
@@ -716,13 +736,16 @@ def proposal_summary(row, home_zone=None, brief=True):
     leaves it out).  Without one, one line as before.
     """
     if not offered(row):
-        kind = '알림' if row['kind'] == KIND_REMINDER else '미리 준비'
-        return f"[{kind}] {schedule_text(row, home_zone)} — {row['goal_text']}"
+        # #689: fixed kind labels must translate with the schedule on cards.
+        kind = 'reminder' if row['kind'] == KIND_REMINDER else 'prepare'
+        return msg('preparations.summary_' + kind,
+                   owner_preparation_schedule_with_delivery=schedule_text(row, home_zone), goal_text=row['goal_text'])
     lines = [row.get('title_text') or owner_title(row), schedule_text(row, home_zone)]
     if row.get('offer_text'):
         lines.append(row['offer_text'])
     if brief:
-        lines.append(f"{BRIEF_LABEL}: {row['goal_text']}")
+        # #689: the offered card's fixed brief label translates with its value.
+        lines.append(msg('preparations.proposal_brief', goal=row['goal_text']))
     return '\n'.join(lines)
 
 
@@ -738,7 +761,8 @@ def proposal_html(shown, remaining, home_zone=None):
         block = [f'<b>{escape(row.get("title_text") or owner_title(row))}</b>', escape(schedule_text(row, home_zone))]
         if row.get('offer_text'):
             block.append(escape(row['offer_text']))
-        block.append(f'<blockquote expandable>{escape(BRIEF_LABEL)}\n{escape(row["goal_text"])}</blockquote>')
+        # #689: keep the folded brief as one translatable catalog block.
+        block.append(msg('preparations.proposal_brief_html', goal=escape(row['goal_text'])))
         parts.append('\n'.join(block))
     if remaining:
         parts.append(escape(MORE_TEXT.format(remaining=remaining)))
