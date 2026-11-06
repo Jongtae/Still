@@ -908,7 +908,7 @@ class CodeRunner:
             return False, str(exc)
         binding = step_binding(self.work_id, 'code_run', url, f'{name}|{method}|{url}', argument=body,
                                state=f"code-effect-v1|{name}@{slot['revision']}|{effect}")
-        if effect == 'payment' and not self.approvals.consume(binding):
+        if effect == 'payment':
             shown = redact_known_secrets(self.store, ' '.join(part for part in (f'?{query}' if query else '', body) if part))
             # #1470: the AI's description comes first for the owner to read; the exact request below is
             # what is approved, so the description can never widen it.  Live 2026-10-14 (owner): plain
@@ -924,6 +924,11 @@ class CodeRunner:
             exact = f"{APPROVAL_EXACT_LABEL} {method} {host}{redact_known_secrets(self.store, path)}"
             lines.append(exact + (f"\n{APPROVAL_CONTENT_LABEL} {shown}" if shown else ''))
             label = '\n\n'.join(lines)
+            mode = getattr(self.approvals, 'payment_autonomy', None)
+            ticket = mode(binding, label) if callable(mode) else None
+            api._payment_ticket = (binding, label, ticket) if ticket else None
+            if ticket or self.approvals.consume(binding):
+                return self._claim_state_change(api, slot, identity, method, effect, host, path)
             try:
                 self.approvals.request(binding, label)
             except ValueError as exc:
@@ -931,8 +936,21 @@ class CodeRunner:
                 return False, str(exc)
             self._asked.append({'method': method, 'host': host, 'path': redact_known_secrets(self.store, path)})
             return False, APPROVAL_REQUESTED_TEXT
+        return self._claim_state_change(api, slot, identity, method, effect, host, path)
+
+    def _claim_state_change(self, api, slot, identity, method, effect, host, path):
+        from .api_requests import ApiError
+        from .current_context import redact_known_secrets
         try:
             claim = api._effect_guard(slot, identity, method=method, effect=effect, destination=host)
+            if getattr(api, '_payment_ticket', None):
+                binding, label, ticket = api._payment_ticket
+                self.approvals.payment_autonomy_notice(ticket)
+                try:
+                    self.approvals.payment_autonomy(binding, label, ticket=ticket)
+                except ValueError as exc:
+                    api._release_effect(claim)
+                    return False, str(exc)
         except ApiError as exc:
             return False, str(exc)
         self._claims.append((claim, method, host, redact_known_secrets(self.store, path)))

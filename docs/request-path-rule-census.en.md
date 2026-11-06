@@ -219,3 +219,7 @@ The owner said "I already had lunch at a restaurant" (a statement: "I already ha
 - **A17:** shorten the envelope instead of sending the bare request.
 
 Removal amendment — #657: the owner retired family sharing after deleting all family instances on 2026-10-24. Family setup, site sharing, its Settings/tool surface and the #934 shared-site payment-refusal path are removed. The shared temporary HTTPS link remains for phone sign-in and input. Startup retires only legacy family metadata and handoff secrets with a receipt, retaining owner data. Payment on the owner's Works still uses one deterministic gate and one exact owner confirmation. Historical rules above describe their original scope.
+
+## Payment autonomy amendment — #662
+
+Per-action owner approval remains invariant b's default. An owner-turned-on payment autonomy mode replaces it while on, including unattended Works. Enabling requires the owner's own confirmation, after plain injection/misjudgment risk text, either of an exact conversation Settings draft or in Settings on this computer (`/api/payment-autonomy`, never through a tunnel, bound to the revision shown); the AI cannot enable it by direct request, unattended execution, continuation or replay. Turning off is immediate and allowed by direct owner request. One helper checks the current mode revision at dispatch and records each exact action's authorization and owner notice. Secrets, budgets, dispatch claims, replay/unknown holds and the refusal of third-party payment authority remain unchanged.

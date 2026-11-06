@@ -68,7 +68,7 @@ Requested, attempted, observed, partial, failed and unknown remain distinct. A p
 
 The pilot serves one owner on the owner's machine and accounts. The following distinctions consolidate the later explicit decisions, rather than restating the original 2026-09-26 restrictions as current policy.
 
-**Secrets and payments.** Passwords, tokens, cookies and API keys must not enter a model prompt, log or Evidence. The owner signs in through the dedicated surface; the model receives mediated content and results, not session material. Every payment requires the applicable per-action approval. Non-payment mutations on connected services follow the current pilot and route-specific policy, not a blanket rule that every write asks again.
+**Secrets and payments.** Passwords, tokens, cookies and API keys must not enter a model prompt, log or Evidence. The owner signs in through the dedicated surface; the model receives mediated content and results, not session material. Every payment requires the applicable per-action approval by default; an owner-turned-on payment autonomy mode replaces it while on (#662). Non-payment mutations on connected services follow the current pilot and route-specific policy, not a blanket rule that every write asks again.
 
 **Owner state and scope.** Folder grants and owner isolation still bound reads and writes. Installing, discovering or configuring a route does not create action authority. Owner-AI Memory saves and third-party candidates have different rules in the memory contract. A route's remaining exact approvals and capability limits are not removed by summarizing the pilot as ask-less.
 

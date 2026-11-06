@@ -950,9 +950,25 @@ class BrowserSession:
         """
         self.budget.spend_attempt()
 
-    def _call(self, operation, *args):
+    def _call(self, operation, *args, payment=False):
         try:
-            return operation(*args, self._timeout())
+            timeout = self._timeout()
+            pending = self.__dict__.pop('_autonomy_payment', None) if payment else None
+            if pending:
+                binding, description, ticket = pending
+                authorized = self.approvals.payment_autonomy(binding, description, ticket=ticket, dispatch=True)
+                if not authorized:
+                    from .agent_runtime import not_run
+                    raise not_run(ToolError(msg('payment_autonomy.changed'), 'payment_autonomy_changed'))
+                try:
+                    self.approvals.payment_autonomy(binding, description, ticket=ticket)
+                except ToolError:
+                    # The step does not run: its receipt no longer holds it as replayed (Codex P2 on #668).
+                    release = getattr(self.approvals, 'payment_autonomy_release', None)
+                    if callable(release):
+                        release(authorized)
+                    raise
+            return operation(*args, timeout)
         except ToolError:
             raise
         except TimeoutError as exc:
@@ -1028,12 +1044,19 @@ class BrowserSession:
         """
         record = record if isinstance(record, dict) else {}
         binding = self._submit_binding(record)
-        if depth < 2 and self.approvals.consume(binding):
+        self.__dict__.pop('_autonomy_payment', None)
+        # #662: an exact owner approval is spent first; payment autonomy covers a submit with none.
+        consumed = depth < 2 and self.approvals.consume(binding)
+        mode = getattr(self.approvals, 'payment_autonomy', None)
+        autonomous = depth < 2 and not consumed and callable(mode) and mode(binding, description + cancelled_note(record))
+        if autonomous:
+            self._autonomy_payment = (binding, description + cancelled_note(record), autonomous)
+        if consumed or autonomous:
             release = getattr(self._driver(), 'release_submit', None)
             if not callable(release):
                 raise ToolError(FAILED_TEXT, 'browser_failed')
             try:
-                return self._call(lambda timeout: release(record, timeout))
+                return self._call(lambda timeout: release(record, timeout), payment=True)
             except ToolError as exc:
                 if exc.code != 'approval_required':
                     raise
@@ -1351,7 +1374,7 @@ class BrowserSession:
             raise ValueError('effect는 read, navigate, mutate, payment 중 하나여야 합니다.')
         return effect
 
-    def _guard(self, binding, description, required):
+    def _guard(self, binding, description, required, *, autonomy=True):
         """Refuse a guarded step unless an exact owner approval is consumed now.
 
         ``required`` is Still's own classification of the target, or the
@@ -1364,7 +1387,14 @@ class BrowserSession:
         needs its own approval, even while an approval of a cancelled submit
         is issued: a press can pay by ``fetch`` without any submit (#700 review).
         """
+        self.__dict__.pop('_autonomy_payment', None)
+        # #662: an exact owner approval is spent first; payment autonomy covers a step with none.
         if self.approvals.consume(binding):
+            return True
+        mode = getattr(self.approvals, 'payment_autonomy', None)
+        ticket = mode(binding, description) if required and autonomy and callable(mode) else None
+        if ticket:
+            self._autonomy_payment = (binding, description, ticket)
             return True
         if required:
             self._refuse(binding, description)
@@ -1390,7 +1420,7 @@ class BrowserSession:
         from .agent_runtime import handed_off
         handed_off()
         try:
-            return self._call(operation)
+            return self._call(operation, payment=True)
         except ToolError as exc:
             if exc.code != 'approval_required':
                 raise
@@ -1507,7 +1537,7 @@ class BrowserSession:
         layout = self._layout(parts.hostname, asked or None)
         sent = {'layout': layout} if getattr(driver, 'takes_layout', False) else {}
         try:
-            self._call(lambda timeout: driver.goto(url, timeout, **sent))
+            self._call(lambda timeout: driver.goto(url, timeout, **sent), payment=True)
         except ToolError as exc:
             self._navigation_error = exc.code if exc.code in ('browser_timeout', 'unsupported_navigation') else None
             raise
@@ -1710,7 +1740,7 @@ class BrowserSession:
         description = f"'{element.get('name') or element.get('role')}' 입력란에 입력"
         # Typing presses the field first, so a label forwarding that press is guarded too.
         required = element['payment'] or element.get('forwards_payment') or effect == 'payment'
-        approved = self._guard(binding, description, required)
+        approved = self._guard(binding, description, required, autonomy=not element['guarded'])
         self._spend_step()   # #620: typing held for approval, or into a missing field, spends nothing
         confirm_ok = not page_shows_payment(snapshot)
         try:
