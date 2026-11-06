@@ -2,8 +2,11 @@
 
 Only stdlib, synthetic state and a loopback scripted model. No owner credentials
 or provider requests. A missing observation is a failure, never evidence of safety.
+#673 owner decision: peer admission separately observes instruction exclusion
+and the complete host relay, using only synthetic owner state.
 """
 import json
+from contextlib import ExitStack
 import threading
 import sys
 import time
@@ -177,27 +180,29 @@ def qualification_run(adapter, argv, *, cwd, env, timeout, deadline=None, interr
     return done
 
 
-def _loopback_run(adapter, engine_id, binary, argv, run_dir, model, *, deadline=None, interrupted=None):
+def _loopback_run(adapter, engine_id, binary, argv, run_dir, model, *, deadline=None, interrupted=None, peer=False):
     """Only the scripted loopback model is added to the exact production argv."""
     qualification_timeout(45, deadline=deadline, interrupted=interrupted)
     argv = list(argv)
-    env = adapter.environment(engine_id, binary, run_dir)
-    if engine_id == 'codex':
-        argv[2:2] = ['-c', 'model_provider="fake"', '-c', 'model="fake-model"', '-c',
-            f'model_providers.fake={{name="fake", base_url="http://127.0.0.1:{model.port}/v1", '
-            'wire_api="responses", env_key="AGENTOS_FAKE_MODEL_KEY", request_max_retries=0, stream_max_retries=0}']
-        env['AGENTOS_FAKE_MODEL_KEY'] = 'fake'
-    else:
-        env.update(ANTHROPIC_BASE_URL=f'http://127.0.0.1:{model.port}', ANTHROPIC_API_KEY='fake-key',
-                   CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC='1')
-    done = qualification_run(adapter, argv, cwd=run_dir, env=env, timeout=45,
-                             deadline=deadline, interrupted=interrupted)
-    if done.returncode != 0:
-        raise ValueError('scripted CLI turn failed')
-    adapter._content(engine_id, done.stdout)  # crashes/unparseable output never count as success
-    if not model.requests:
-        raise ValueError('no scripted model request observed')
-    return json.dumps([request['body'] for request in model.requests])
+    with ExitStack() as scope:
+        env = (scope.enter_context(adapter.peer_environment_scope(engine_id, binary, run_dir, interrupted=interrupted, deadline=deadline)) if peer
+               else adapter.environment(engine_id, binary, run_dir))
+        if engine_id == 'codex':
+            argv[2:2] = ['-c', 'model_provider="fake"', '-c', 'model="fake-model"', '-c',
+                f'model_providers.fake={{name="fake", base_url="http://127.0.0.1:{model.port}/v1", '
+                'wire_api="responses", env_key="AGENTOS_FAKE_MODEL_KEY", request_max_retries=0, stream_max_retries=0}']
+            env['AGENTOS_FAKE_MODEL_KEY'] = 'fake'
+        else:
+            env.update(ANTHROPIC_BASE_URL=f'http://127.0.0.1:{model.port}', ANTHROPIC_API_KEY='fake-key',
+                       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC='1')
+        done = qualification_run(adapter, argv, cwd=run_dir, env=env, timeout=45,
+                                 deadline=deadline, interrupted=interrupted)
+        if done.returncode != 0:
+            raise ValueError('scripted CLI turn failed')
+        adapter._content(engine_id, done.stdout)  # crashes/unparseable output never count as success
+        if not model.requests:
+            raise ValueError('no scripted model request observed')
+        return json.dumps([request['body'] for request in model.requests])
 
 
 def _work_bridge_check(adapter, engine_id, binary, root, disabled, *, deadline=None, interrupted=None):
@@ -331,6 +336,124 @@ def surface_checks(adapter, engine_id, binary, root, disabled, *, include_work=T
     return checks
 
 
+def peer_instruction_canaries(root, run_dir, store):
+    """#673 pass 2 owner decision: control only synthetic locations, never real ancestors.
+
+    Fresh HOME is run_dir. All cwd ancestors through root, user/project
+    instructions, rules and settings below it are ours. Ancestors above root
+    and OS-managed settings are not ours and have no documented exclusion in
+    the restricted, non-safe-mode Claude launch. A clean probe cannot certify
+    those uncontrolled inputs.
+    """
+    root, run_dir = Path(root).resolve(), Path(run_dir).resolve()
+    if root != run_dir and root not in run_dir.parents:
+        raise ValueError('instruction canaries require a controlled fixture root')
+    markers = []
+    directory = run_dir
+    while directory == root or root in directory.parents:
+        marker = 'CLAUDE-ANCESTOR-CANARY-673-' + str(len(markers))
+        (directory / 'CLAUDE.md').write_text(marker)
+        hidden = directory / '.claude'
+        hidden.mkdir(exist_ok=True)
+        (hidden / 'CLAUDE.md').write_text(marker + '-HIDDEN')
+        (hidden / 'settings.json').write_text(json.dumps({'env': {'STILL_PROBE_CANARY': marker + '-SETTINGS'}}))
+        (hidden / 'settings.local.json').write_text(json.dumps({'env': {'STILL_PROBE_CANARY': marker + '-LOCAL'}}))
+        (hidden / 'rules').mkdir(exist_ok=True)
+        (hidden / 'rules' / 'canary.md').write_text(marker + '-RULE')
+        markers.append(marker)
+        directory = directory.parent
+    # There is no advertised HOME-relative override for the real platform's
+    # managed settings location. Do not write /Library, /etc, or owner files.
+    (store.root / 'CLAUDE.md').write_text('CLAUDE-STORE-CANARY-673')
+    return markers + ['CLAUDE-STORE-CANARY-673']
+
+
+def peer_surface_checks(adapter, engine_id, binary, root, disabled, *, deadline=None, interrupted=None):
+    """#673 owner decision: observe an auth-only peer launch and the real relay.
+
+    Synthetic homes, store, credentials and scripted loopback model only.
+    Missing MCP, unsupported flags, extra tools or any ambient instruction
+    canary refuse this binary. No saved ordinary strict pass substitutes.
+    """
+    from .bounded_execution import RelayedWorkMcpTools, STRICT_PROFILE
+    from .agent_runtime import Capabilities, WorkBudget
+    from .cli_browser_relay import BrowserRelay
+    from .quickstart_store import QuickStore
+    run_dir = root / 'peer-surface'
+    run_dir.mkdir()
+    store = QuickStore(root / 'peer-store')
+    with store.db() as db:
+        db.execute("INSERT INTO notes VALUES ('private','PEER-PRIVATE-CANARY-673',1)")
+    instruction_markers = peer_instruction_canaries(root, run_dir, store)
+    if engine_id == 'codex':
+        populate_codex_home(adapter.codex_home, store.root)
+        auth = Path(adapter.codex_home) / 'auth.json'
+        auth.write_text('{"OPENAI_API_KEY":"synthetic-not-used"}')
+        auth.chmod(0o600)
+    records, calls = [], []
+    class Scoped(Capabilities):
+        peer_guard = staticmethod(lambda: None)
+        def execute(self, name, args):
+            calls.append(name)
+            return super().execute(name, args)
+    caps = Scoped(store, None, {}, '', 'peer-probe', lambda *row: records.append(row),
+                  allowed_tools={'list_memory'}, delegated=True, budget=WorkBudget(), secret_redactor=lambda text: text)
+    tools = RelayedWorkMcpTools(caps)
+    relay = BrowserRelay(tools, full_surface=True)
+    script = ([{'name': 'exec_command', 'arguments': {'cmd': 'pwd'}},
+               {'name': 'view_image', 'arguments': {'path': str(store.root)}},
+               {'name': 'list_notes', 'namespace': 'mcp__agentos', 'arguments': {}},
+               {'name': 'list_memory', 'namespace': 'mcp__agentos', 'arguments': {}}] if engine_id == 'codex' else
+              [{'tool': 'Bash', 'input': {'command': 'pwd'}},
+               {'tool': 'Read', 'input': {'file_path': str(store.root)}},
+               {'tool': 'mcp__agentos__list_notes', 'input': {}},
+               {'tool': 'mcp__agentos__list_memory', 'input': {}}])
+    model = None
+    try:
+        config = run_dir / 'mcp.json'
+        config.write_text(json.dumps({'mcpServers': {'agentos': {'command': sys.executable,
+            'env': {'PYTHONPATH': str(Path(__file__).resolve().parents[1]), 'CLAUDE_CODE_OAUTH_TOKEN': ''},
+            'args': ['-m', 'personal_agent.mcp_bridge', '--data', str(store.root), '--job', 'peer-probe',
+                     f'--profile={STRICT_PROFILE}', f'--peer-relay={relay.address}']}}}))
+        model = _ScriptedModel('responses' if engine_id == 'codex' else 'anthropic',
+                               [*script, {'message': 'qualification finished'}])
+        argv = adapter.command(engine_id, binary, 'Local peer qualification.', config,
+                               instructions='Answer only from the supplied peer context.',
+                               profile=STRICT_PROFILE, disabled_features=disabled, peer_tools=['list_memory'])
+        context = _loopback_run(adapter, engine_id, binary, argv, run_dir, model, peer=True,
+                                deadline=deadline, interrupted=interrupted)
+        safe, offered = True, False
+        for request in model.requests:
+            for tool in request['body'].get('tools', []):
+                name = tool.get('name') or tool.get('type')
+                if engine_id == 'codex':
+                    safe &= name in STRICT_CODEX_TOOLS
+                    if name == 'mcp__agentos':
+                        names = {item.get('name') for item in tool.get('tools', [])}
+                        safe &= names == {'list_memory'}
+                        offered |= names == {'list_memory'}
+                else:
+                    safe &= name == 'mcp__agentos__list_memory'
+                    offered |= name == 'mcp__agentos__list_memory'
+        forbidden = ('PEER-PRIVATE-CANARY-673', 'AGENTS-MD-CANARY-616', 'AGENTS-OVERRIDE-CANARY-616',
+                     'SKILL-CANARY-616', 'SKILL-BODY-CANARY-616', 'PLUGIN-CANARY-616',
+                     *instruction_markers)
+        results = model.tool_results()
+        denied = 'unsupported call' if engine_id == 'codex' else 'No such tool available'
+        passed = bool(safe and offered and calls == ['list_memory'] and len(results) >= 4
+                      and all(denied in value for value in results[:2])
+                      and all(marker not in context for marker in forbidden))
+        checks = [{'check': 'peer-instructions-and-relay', 'passed': passed}]
+        if engine_id == 'claude-code':
+            checks.append({'check': 'peer-instruction-locations-covered', 'passed': False,
+                           'uncontrolled': ['ancestors-above-fixture', 'platform-managed-settings']})
+        return checks
+    finally:
+        if model is not None:
+            model.close()
+        relay.close()
+
+
 def failure_message(result):
     """Plain owner-facing reason on the existing execution/route failure paths."""
     from .messages import msg
@@ -343,7 +466,7 @@ def failure_message(result):
                  'sandbox' if check in ('turn-directory-readable', 'sibling-turn-denied', 'protected-directory-denied') else
                  'features' if check == 'tool-features-allowlisted' else
                  'surface' if check in ('strict-work-bridge-and-tool-surface', 'strict-tool-surface') else
-                 'instructions' if check.startswith('instruction-files') else
+                 'instructions' if check.startswith(('instruction-files', 'peer-instruction')) else
                  'identity' if check in ('binary-unchanged', 'binding-unchanged', 'native-binary-identified') else 'local')
         labels.append(msg('engine.check_' + label))
     errors = sorted({check['error'] for check in result.get('checks', ()) if check.get('error') and not check.get('passed')})

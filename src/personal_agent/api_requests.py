@@ -29,6 +29,8 @@ needs a key it may never hold) and keeps the invariants an AI must not own:
 Field references use the RFC 9535 JSONPath syntax, only the subset ``$``,
 ``.name``, ``[n]`` and ``[*]``.
 """
+
+from . import work_status as ws
 import email.utils
 import hashlib
 import http.client
@@ -977,8 +979,8 @@ class ApiRequests:
                 chain = WorkLedger.request_chain(db, self.work_id)
             except ValueError:
                 raise ApiError('현재 작업을 확인할 수 없어 실행하지 않았습니다.', 'api_work_inactive') from None
-            if (chain[0]['status'] not in ('queued', 'running')
-                    or any(work['status'] in ('queued', 'running') for work in chain[1:])
+            if (not ws.is_active(chain[0]['status'])
+                    or any(ws.is_active(work['status']) for work in chain[1:])
                     or any(work_stop_requested(self.store, work['id']) for work in chain)
                     or callable(getattr(self.approvals, 'api_effect_current', None))
                        and not self.approvals.api_effect_current()):

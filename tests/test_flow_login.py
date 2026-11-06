@@ -261,6 +261,12 @@ def close_login_windows(test, drivers, profile):
     if thread is not None:
         thread.join(30)
         test.assertFalse(thread.is_alive(), 'the login window thread finished')
+    # #684: a ``browser_status()`` poll starts the off-thread sign-in check (``_owner_signin_view``), whose
+    # ``QuickStore.secret()`` read creates ``private/connections.lock``; it ends before the directory is removed.
+    for thread in threading.enumerate():
+        if thread.name == 'agentos-signin-view':
+            thread.join(30)
+            test.assertFalse(thread.is_alive(), 'the sign-in status check finished')
 
 
 def wait_until(condition, seconds=5.0):
@@ -769,19 +775,6 @@ class InFlowLogin(LoginHarness):
         self.assertEqual(self.state(job_id), 'resumed')
         self.assertEqual(len(self.prompts()), 1)
 
-    def test_a_sign_in_request_for_a_received_share_is_refused_with_no_window_and_no_prompt(self):
-        """#940 through the same service path: a site this instance received from the owner is never signed in to here."""
-        from personal_agent import family_share
-        self.store.put(family_share.SHARED_KEY, {'fixture.test': {'from': 'owner', 'since': time.time()}})
-        self.scripts = self.sign_in_script()
-        job_id = self.receive('계정 페이지 확인해줘')
-        self.assertTrue(self.service.run_one())
-        self.assertTrue(wait_until(lambda: self.state(job_id) in (None, 'unavailable')), self.state(job_id))  # #954 review: refused before any row
-        self.assertEqual([entry for entry in self.driver_log if entry[0] == 'goto'], [], 'no login window')
-        self.assertFalse(self.service.browser_status()['login_window_open'])
-        self.service.deliver_one()
-        self.assertEqual(self.prompts(), [])
-        self.assertIn(self.store.job(job_id)['status'], ('failed', 'partial'), 'the Work keeps its ended state')
 
     def test_telegram_done_closes_the_window_off_the_poll_thread_and_resumes_once(self):
         job_id, _prompt, _buttons, notification = self.login_work()

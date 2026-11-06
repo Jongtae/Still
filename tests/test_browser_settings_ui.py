@@ -57,11 +57,19 @@ const available=(overrides={})=>({available:true,unavailable_reason:null,storage
 const checks=[];
 (async()=>{
  render({available:false,unavailable_reason:'platform',message:'x',sessions:[],pending_steps:[]});
- assert(text().includes('macOS에서만 제공됩니다'));assert(text().includes('사용할 수 없음'));assert(!/Playwright|설치 명령|playwright install/.test(text()));
+ assert(text().includes('macOS와 Linux 데스크톱'));assert(text().includes('사용할 수 없음'));assert(!/Playwright|설치 명령|playwright install/.test(text()));
+ // #34: the Linux desktop's own reasons; a refused sandbox shows the one command, never a no-sandbox switch.
+ render({available:false,unavailable_reason:'dependency',engine:'linux-chromium',sessions:[],pending_steps:[]});assert(text().includes('playwright, secretstorage'));assert(!text().includes('pyobjc'));
+ render({available:false,unavailable_reason:'display',engine:'linux-chromium',sessions:[],pending_steps:[]});assert(text().includes('데스크톱 화면이 있는 세션'));
+ render({available:false,unavailable_reason:'sandbox',engine:'linux-chromium',sandbox_command:'printf x | sudo tee /etc/apparmor.d/still-chromium',sessions:[],pending_steps:[]});
+ assert(text().includes('보호 모드(샌드박스)'));assert(text().includes('sudo tee /etc/apparmor.d/still-chromium'));assert(!text().includes('no-sandbox'));
+ render({available:false,unavailable_reason:'libraries',engine:'linux-chromium',setup_command:'sudo /x/python -m playwright install-deps chromium',sessions:[],pending_steps:[]});
+ assert(text().includes('시스템 라이브러리 일부'));assert(text().includes('install-deps chromium'));
  assert.equal($('browser-login-form').hidden,true);assert.equal($('browser-login-open').hidden,true);assert.equal(buttons().length,0);
  render({available:false,unavailable_reason:'dependency',sessions:[],pending_steps:[]});
  assert(text().includes('pyobjc-framework-WebKit'));
  checks.push('unavailable off macOS or without PyObjC, with no install hint and no login form');
+ render(available({engine:'linux-chromium',storage:{...storage,key:'secret-service'}}));assert(text().includes('데스크톱 키링'));assert(!text().includes('macOS 키체인'));
 
  render(available());
  assert.equal($('browser-login-form').hidden,true,'a supported browser starts with current status, not a login form');

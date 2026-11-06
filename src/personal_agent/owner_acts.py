@@ -34,6 +34,8 @@ cannot answer an item shown after it, expiry, digests, compare-and-set,
 No owner wording is matched here.  Evidence class of the tests: model-free,
 with a scripted judgment; no live model was asked.
 """
+
+from . import work_status as ws
 import logging
 import time
 
@@ -312,7 +314,7 @@ class OwnerActs:
                         row = service.budget_continue_offer(notification['job_id'], db=db)
                         if row.get('nonce') == notification['fingerprint'] and row.get('state') == 'offered':
                             service.store.put('budget_continue:' + notification['job_id'], {**row, 'state': 'declined'}, db=db)
-                    if ((service.store.job(notification['job_id']) or {}).get('status') in ('partial', 'failed')
+                    if (ws.is_resumable_continuation((service.store.job(notification['job_id']) or {}).get('status'))
                             and not service.photo_work_has_pending_resume(notification['job_id'])):
                         service.store.remove_telegram_photo(notification['job_id'])
                 service.store.update_notification(notification['id'], 'budget_continue_answered')

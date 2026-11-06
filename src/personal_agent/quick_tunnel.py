@@ -6,7 +6,7 @@ Cloudflare's own way to put one local port behind a random
 (https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/).
 Its stated limits (testing use, no uptime guarantee, 200 in-flight requests,
 no Server-Sent Events, a new hostname each time) fit Still's links: each is
-one-time, short-lived and uses no SSE.  ``family_setup.start_tunnel`` stays
+one-time, short-lived and uses no SSE.  ``https_tunnel.start_tunnel`` stays
 the one place a tunnel starts; this module only finds the binary and builds
 its command.
 

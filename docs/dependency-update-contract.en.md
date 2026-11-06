@@ -138,7 +138,7 @@ Contributor commands:
 
 ```sh
 uv lock --check
-uv sync --locked --extra mcp-host --extra schema-validation --group dev --no-python-downloads
+uv sync --locked --extra mcp-host --extra schema-validation --extra a2a --group dev --no-python-downloads
 PYTHONPATH=src .venv/bin/python -m pytest -q tests
 ```
 

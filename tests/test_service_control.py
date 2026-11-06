@@ -104,7 +104,7 @@ class ServiceControlTests(unittest.TestCase):
         self.assertTrue(payload["KeepAlive"])
 
     def test_a_named_instance_is_its_own_job_data_and_port_beside_the_owner_service(self):
-        """#893: a family member's agent runs as a separate launchd job."""
+        """#893: a legacy named instance remains manageable as a separate launchd job."""
         owner = self.controller.install()
         self.assertEqual(owner["status"], "running")
         family_launchd = FakeLaunchctl()   # launchd keeps one state per label

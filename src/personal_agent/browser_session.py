@@ -80,7 +80,7 @@ from urllib.parse import parse_qsl, urlsplit, urlunsplit, unquote_plus
 
 from .agent_runtime import BROWSER_ACTIONS, ToolError, WorkBudget, lookup_norm, lookup_text_violations, lookup_words
 from .bounded_execution import SECRET_PATTERN
-from .browser_jar import (JAR_NAME, SERVICE as JAR_SERVICE, CookieJar, JarError, KeychainKey, latest_token_expiry,
+from .browser_jar import (JAR_NAME, SERVICE as JAR_SERVICE, CookieJar, JarError, latest_token_expiry, platform_key,
                           site_marks, store_account, unexpired)
 from .browser_worker import (LAYOUTS, PAYMENT_TOKENS, SECRET_TOKENS, authorization_blocked, authorization_host,
                              authorization_redirect_host, destination_refusal, qr_links, remote_fields)
@@ -724,7 +724,6 @@ def mediate_snapshot(raw, excluded=(), requested_url=None):
         snapshot['elements_capped'] = True
     snapshot['_rows'] = visible
     snapshot['_elements'] = internal
-    # #934: where each form posts, so a step's destination host is known before it runs.
     snapshot['_form_actions'] = {form['id']: form.get('action') for form in raw.get('forms') or []
                                  if isinstance(form, dict) and 'id' in form}
     # Internal only (never returned): the unmediated page reference the
@@ -890,10 +889,6 @@ class BrowserSession:
         # (#698).  Cleared by browser_open and a navigation (#700).
         self._last_input = None
         self._refused_pending = False   # a between-steps refused form post not yet told (#758)
-        # #934 (review P2-1): once this Work landed on a site whose sign-in was received from the
-        # owner, the reason it may not approve anything; it then holds for the rest of the Work.
-        self._refusal = None
-        self._refusal_hosts = set()
         #: #636: this Work's re-sign-in through the provider the owner used for a site (``_provider_hint``):
         #: the site, the provider host, the login reference and window address, the driver's authorization
         #: count when it began, and whether a provider page or request was seen since.  None otherwise.
@@ -1004,7 +999,6 @@ class BrowserSession:
             self.last = None
             raise ToolError(NO_PAGE_TEXT, 'no_page')
         self.last = mediate_snapshot(raw, excluded, requested_url)
-        self._note_refusal((landed_host(self.last.get('url')),))
         if isinstance(raw, dict) and raw.get('refused_submit'):
             # #758: a form post the guard refused between steps, with nothing to hold;
             # the next result the model sees says so (``run``).
@@ -1042,9 +1036,6 @@ class BrowserSession:
         """
         record = record if isinstance(record, dict) else {}
         binding = self._submit_binding(record)
-        # #934: a held payment-form submit in a Work that touched a family-shared site, or whose form
-        # posts to one, is never released or asked about.
-        self._refuse_unapprovable((landed_host(record.get('action')),))
         mode = getattr(self.approvals, 'payment_autonomy', None)
         autonomous = depth < 2 and callable(mode) and mode(binding, description + cancelled_note(record))
         if autonomous:
@@ -1386,11 +1377,6 @@ class BrowserSession:
         is issued: a press can pay by ``fetch`` without any submit (#700 review).
         """
         self.__dict__.pop('_autonomy_payment', None)
-        if required:
-            self._refuse_unapprovable()
-        if self._refusal:
-            # #935 re-review P3-a: on a shared site no approval is consumed, guarded or not.
-            return False
         mode = getattr(self.approvals, 'payment_autonomy', None)
         ticket = mode(binding, description) if required and autonomy and callable(mode) else None
         if ticket:
@@ -1402,46 +1388,6 @@ class BrowserSession:
             self._refuse(binding, description)
         return False
 
-    def _note_refusal(self, hosts):
-        """Remember the first reason ``approvals.refuse(host)`` gives for any of ``hosts`` (#934).
-
-        ``refuse`` (optional) answers the owner-facing reason, or None: on a
-        family instance a site whose sign-in the owner shared lets the family
-        assistant read and add to a cart, but its payment steps are the
-        account owner's alone.  The reason is sticky for the Work: a checkout
-        that hands off to a payment page on another domain (the ordinary
-        gateway hop) stays refused (review P2-1).
-        """
-        self._refusal_hosts.update(host for host in hosts if host)
-        refresh = getattr(self.approvals, 'refresh_refusal', None)
-        if self._refusal is not None and callable(refresh):
-            self._refusal = refresh(self._refusal, self._refusal_hosts)
-        if self._refusal is not None:
-            return
-        refuse = getattr(self.approvals, 'refuse', None)
-        if not callable(refuse):
-            return
-        for host in hosts:
-            if not host:
-                continue
-            try:
-                reason = refuse(host)
-            except Exception:
-                reason = None
-            if reason:
-                self._refusal = str(reason)
-                return
-
-    def _refuse_unapprovable(self, hosts=()):
-        """Refuse a guarded step outright when this Work may not approve anything (#934).
-
-        Neither an approval request nor a consumed approval lets the step
-        through.  ``hosts`` adds hosts the step itself names (a held submit's
-        form action) to the current page's.
-        """
-        self._note_refusal((landed_host((self.last or {}).get('url')), *hosts))
-        if self._refusal:
-            raise ToolError(self._refusal, 'approval_refused')
 
     def _refuse(self, binding, description):
         try:
@@ -1552,10 +1498,6 @@ class BrowserSession:
             from .agent_runtime import not_run
             raise not_run(ToolError(msg('browser.provider_sign_in_off'), 'provider_sign_in_off'))
         self._check()
-        # #934: the requested destination counts before the page is opened: a shared site's payment
-        # deep link is refused here (no approval consumed), and any open of one makes the Work's
-        # refusal sticky.
-        self._note_refusal((parts.hostname,))
         self._guard(step_binding(self.work_id, 'browser_open', url, url, url), f'{_host(parts)} 페이지 열기',
                     effect == 'payment')
         self._last_input = None   # a submit cancelled on the new page is not that step's (#700)
@@ -1739,7 +1681,6 @@ class BrowserSession:
         # declaration are the whole press check; no AI judgment is asked per press.
         required = bool(element['submit_guarded'] or element['commit'] or effect == 'payment')
         binding = step_binding(self.work_id, 'browser_click', snapshot['_page'], key, key, state)
-        self._note_refusal(self._destinations(snapshot, element))
         approved = self._guard(binding, description, required)
         self._spend_step()   # #620: a press held for approval, or on a missing target, spends nothing
         before = page_reference(snapshot.get('url'))
@@ -1785,7 +1726,6 @@ class BrowserSession:
         binding = step_binding(self.work_id, 'browser_type', snapshot['_page'], target_key(element), text,
                                self._state_of(snapshot, element))
         description = f"'{element.get('name') or element.get('role')}' 입력란에 입력"
-        self._note_refusal(self._destinations(snapshot, element))
         # Typing presses the field first, so a label forwarding that press is guarded too.
         required = element['payment'] or element.get('forwards_payment') or effect == 'payment'
         approved = self._guard(binding, description, required, autonomy=not element['guarded'])
@@ -1799,18 +1739,6 @@ class BrowserSession:
             raise self._named_cover(self._observed(exc, approved), snapshot) from None
         return self._with_dialogs(observe_step(self._page_state(), answer, approved), answer)
 
-    @staticmethod
-    def _destinations(snapshot, element):
-        """The hosts a step on ``element`` may navigate to, known before it runs (#934): its link, its form's action."""
-        hosts = []
-        row = next((row for row in snapshot.get('_rows') or () if row.get('n') == element.get('n')), None)
-        if row and row.get('href'):
-            hosts.append(landed_host(row['href']))
-        actions = snapshot.get('_form_actions') or {}
-        for form_id in (element.get('form'), element.get('label_form')):
-            if form_id is not None and actions.get(form_id):
-                hosts.append(landed_host(actions[form_id]))
-        return [host for host in hosts if host]
 
     @staticmethod
     def _state_of(snapshot, element):
@@ -1846,8 +1774,32 @@ class BrowserSession:
 
 #: The typed refusal when this computer cannot run the embedded engine.
 UNAVAILABLE_CODE = 'browser_unavailable_platform'
-PLATFORM_TEXT = ('브라우저 기능은 시범 기간 동안 macOS에서만 제공됩니다. 이 컴퓨터에서는 브라우저가 필요한 단계를 '
-                 '실행하지 않습니다.')
+PLATFORM_TEXT = ('브라우저 기능은 macOS와 Linux 데스크톱(x86_64·arm64)에서 제공됩니다. 이 컴퓨터에서는 브라우저가 '
+                 '필요한 단계를 실행하지 않습니다.')
+#: #34: the Linux desktop worker's own reasons (``chromium_unavailable_reason`` and its first start).
+LINUX_DEPENDENCY_TEXT = ('Linux 브라우저 구성요소(playwright, secretstorage)가 없어 브라우저 기능을 사용할 수 없습니다. '
+                         'Still을 다시 설치한 뒤 다시 시작하세요.')
+DISPLAY_TEXT = ('브라우저 기능은 데스크톱 화면이 있는 세션에서만 동작합니다. 데스크톱에 로그인한 상태에서 Still을 '
+                '시작하세요.')
+DOWNLOAD_TEXT = ('Linux 브라우저용 Chromium을 내려받거나 확인하지 못했습니다. 네트워크를 확인한 뒤 다시 시도하세요. '
+                 '확인되지 않은 파일은 실행하지 않습니다.')
+PREPARING_TEXT = ('브라우저를 처음 쓰기 위해 Chromium(약 200MB)을 내려받아 확인하고 있습니다. 끝나면 브라우저가 필요한 '
+                  '요청을 다시 해 주세요.')
+LIBRARIES_TEXT = ('이 Linux 데스크톱에는 Chromium이 쓰는 시스템 라이브러리 일부가 없어 브라우저를 시작하지 못했습니다. '
+                  '터미널에서 아래 명령을 한 번 실행한 뒤 다시 시도하세요. 관리자 비밀번호가 필요하며, Ubuntu 패키지 '
+                  '관리자로 필요한 라이브러리만 설치합니다.')
+SANDBOX_TEXT = ('Ubuntu 보안 설정 때문에 Still의 Chromium이 보호 모드(샌드박스)로 시작하지 못했습니다. 터미널에서 아래 '
+                '명령을 한 번 실행한 뒤 다시 시도하세요. 관리자 비밀번호가 필요하며, Still의 Chromium 하나에만 사용자 '
+                '네임스페이스를 허용합니다.')
+
+
+def sandbox_text(chrome):
+    """``SANDBOX_TEXT`` with the one command that lets exactly ``chrome`` start its sandbox (#34)."""
+    from . import chromium_runtime
+    try:
+        return SANDBOX_TEXT + '\n\n' + chromium_runtime.apparmor_setup(chrome)
+    except ValueError:
+        return SANDBOX_TEXT
 DEPENDENCY_TEXT = ('macOS 시스템 WebKit 연결 구성요소(pyobjc-framework-WebKit)가 없어 브라우저 기능을 사용할 수 '
                    '없습니다. Still을 다시 설치한 뒤 다시 시작하세요.')
 GOOGLE_NOTE = 'Google 로그인은 내장 브라우저에서 지원되지 않습니다.'
@@ -2011,7 +1963,9 @@ def registrable_domain(host):
 
 #: Environment names a worker inherits: nothing else (no provider keys, tokens
 #: or Still settings).  ``PYTHONPATH`` lets a source checkout find the package.
-WORKER_ENVIRONMENT = ('PATH', 'HOME', 'USER', 'LOGNAME', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE', 'PYTHONPATH')
+#: #34: the Linux worker also needs the desktop session it shows its window and reads the keyring in.
+WORKER_ENVIRONMENT = ('PATH', 'HOME', 'USER', 'LOGNAME', 'TMPDIR', 'LANG', 'LC_ALL', 'LC_CTYPE', 'PYTHONPATH',
+                      'DISPLAY', 'WAYLAND_DISPLAY', 'XAUTHORITY', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS')
 
 
 def worker_environment(base=None):
@@ -2029,6 +1983,8 @@ TARGET_ERRORS = frozenset({'target_missing', 'target_changed', 'target_hidden', 
                            'not_focusable', 'focus_moved', 'target_moved', 'press_missed', 'bad_target',
                            'submit_changed'})
 WORKER_START_SECONDS = 30
+#: #34: how long a failed Chromium download or a refused sandbox keeps the browser shown as unavailable.
+START_RETRY_SECONDS = 60
 WORKER_GRACE_SECONDS = 5
 WORKER_QUIT_SECONDS = 5
 LOGIN_OPEN_SECONDS = 45
@@ -2142,8 +2098,11 @@ def http_refresh(url, rows, *, allowed_origins=(), opener=None, refusal=destinat
         return 'failed', None
     jar = http.cookiejar.CookieJar()
     before = {}
+    # A partitioned cookie (#34, Codex review on #640) belongs to one top-level site's embedded use; this
+    # top-level request never sends it, and it is kept as it was.
+    partitioned = [row for row in rows or () if isinstance(row, dict) and row.get('partition_key')]
     for row in rows or ():
-        if isinstance(row, dict) and row.get('name'):
+        if isinstance(row, dict) and row.get('name') and not row.get('partition_key'):
             before[(str(row['name']), str(row.get('domain') or ''), str(row.get('path') or '/'))] = row
             jar.set_cookie(_cookie_from_row(row))
 
@@ -2167,7 +2126,7 @@ def http_refresh(url, rows, *, allowed_origins=(), opener=None, refusal=destinat
         return 'failed', None
     if status in KEEPALIVE_HTTP_BLOCKED:
         return 'blocked', None
-    return 'refreshed', [_row_from_cookie(cookie, before) for cookie in jar]
+    return 'refreshed', [_row_from_cookie(cookie, before) for cookie in jar] + partitioned
 
 
 def webkit_unavailable_reason(platform=None, find_spec=None):
@@ -2189,16 +2148,72 @@ def webkit_unavailable_reason(platform=None, find_spec=None):
     return None
 
 
-def unavailable_text(reason):
-    return DEPENDENCY_TEXT if reason == 'dependency' else PLATFORM_TEXT
+def chromium_unavailable_reason(find_spec=None, environ=None, machine=None):
+    """None when the Linux Chromium worker (#34) can run here, else ``platform``, ``dependency`` or ``display``.
+
+    Only presence is checked: a pinned build for this machine, the
+    ``playwright`` and ``secretstorage`` packages, and a desktop session.
+    Nothing is downloaded or started here; the Chromium download and the
+    sandbox are checked when the worker first starts.
+    """
+    from . import chromium_runtime
+    find_spec = importlib.util.find_spec if find_spec is None else find_spec
+    if chromium_runtime.pin(system='Linux', machine=machine) is None:
+        return 'platform'
+    for module in ('playwright', 'secretstorage'):
+        try:
+            if find_spec(module) is None:
+                return 'dependency'
+        except (ImportError, ValueError):
+            return 'dependency'
+    environ = os.environ if environ is None else environ
+    # The worker runs Chromium on X11 (``--ozone-platform=x11``, so its window can be parked); a Wayland
+    # desktop provides that through XWayland's DISPLAY (Codex review on #640).
+    if not environ.get('DISPLAY'):
+        return 'display'
+    return None
+
+
+def engine_unavailable_reason(platform=None, find_spec=None, environ=None):
+    """None when this computer's browser engine can run: macOS WebKit, or Chromium on a Linux desktop (#34)."""
+    platform = sys.platform if platform is None else platform
+    if platform == 'darwin':
+        return webkit_unavailable_reason(platform, find_spec)
+    if platform.startswith('linux'):
+        return chromium_unavailable_reason(find_spec, environ)
+    return 'platform'
+
+
+def chromium_worker_command(profile_id, chrome, allowed_origins=()):
+    """The Linux worker's command line for the pinned ``chrome`` (#34); test origins only from a test constructor."""
+    command = [sys.executable, '-P', '-m', 'personal_agent.browser_worker_chromium', '--profile', str(profile_id),
+               '--chromium', str(chrome)]
+    for origin in allowed_origins:
+        command += ['--test-allow-origin', str(origin)]
+    return command
+
+
+def engine_name(platform=None):
+    platform = sys.platform if platform is None else platform
+    return 'linux-chromium' if platform.startswith('linux') else 'macos-webkit'
+
+
+def unavailable_text(reason, platform=None):
+    platform = sys.platform if platform is None else platform
+    if reason == 'dependency':
+        return LINUX_DEPENDENCY_TEXT if platform.startswith('linux') else DEPENDENCY_TEXT
+    return {'display': DISPLAY_TEXT, 'sandbox': SANDBOX_TEXT, 'download': DOWNLOAD_TEXT,
+            'libraries': LIBRARIES_TEXT, 'preparing': PREPARING_TEXT}.get(reason, PLATFORM_TEXT)
 
 
 class WorkerError(RuntimeError):
     """A worker op failed; ``code`` is the worker's Still code, never library or page text."""
 
-    def __init__(self, code):
+    def __init__(self, code, detail=None):
         super().__init__(code)
         self.code = code
+        #: #34: why a worker could not start (its ``unavailable`` event's ``error``), an Still code.
+        self.detail = detail
 
 
 class WebKitWorkerDriver:
@@ -2221,10 +2236,13 @@ class WebKitWorkerDriver:
     """
 
     def __init__(self, profile_id='default', *, seed=None, command=None, start_seconds=WORKER_START_SECONDS,
-                 grace_seconds=WORKER_GRACE_SECONDS, cwd=None, allowed_origins_for_tests=(), intranet=None):
+                 grace_seconds=WORKER_GRACE_SECONDS, cwd=None, allowed_origins_for_tests=(), intranet=None,
+                 before_start=None):
         self.profile_id = str(profile_id)
         #: #209: ``() -> {host:port}``, sent with every command so a change applies from the next one.
         self._intranet = intranet or frozenset
+        #: #34: ``() -> bool``, whether the engine binary may start now; asked before every start.
+        self._before_start = before_start
         self._seed = seed
         # ``-P``: the working directory is never on the worker's import path.
         self._command = list(command) if command else [sys.executable, '-P', '-m', 'personal_agent.browser_worker',
@@ -2253,6 +2271,9 @@ class WebKitWorkerDriver:
 
     # -- process ---------------------------------------------------------------
     def _start(self):
+        # #34: checked before every start, a restart after a crash included (the pinned Chromium's digest).
+        if self._before_start is not None and not self._before_start():
+            raise WorkerError('worker_unavailable', 'chromium_changed')
         self.starts += 1
         proc = subprocess.Popen(self._command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                                 text=True, encoding='utf-8', bufsize=1, close_fds=True, cwd=self._cwd,
@@ -2292,7 +2313,7 @@ class WebKitWorkerDriver:
                 message = None
             if message is None or message.get('event') == 'unavailable':
                 self._kill()
-                raise WorkerError('worker_unavailable')
+                raise WorkerError('worker_unavailable', (message or {}).get('error'))
             if message.get('event') == 'ready':
                 break
         rows = []
@@ -2642,14 +2663,21 @@ class BrowserProfile:
     ``profile_dir`` (under ``store.private``) holds only the encrypted jar.
     """
 
-    def __init__(self, profile_dir, *, launcher=None, headless=True, available=None, clock=time.time, jar=None):
+    def __init__(self, profile_dir, *, launcher=None, headless=True, available=None, clock=time.time, jar=None,
+                 tools_dir=None):
         self.profile_dir = Path(profile_dir)
+        #: #34: where the Linux worker's pinned Chromium is kept (the store's ``tools``, beside Node and cloudflared).
+        self.tools_dir = Path(tools_dir) if tools_dir is not None else self.profile_dir.parent.parent / 'tools'
+        #: #34: why the last start failed on this computer (``sandbox`` / ``download``), until a start succeeds.
+        self._start_blocked = None
+        #: #34: the one background preparation (first Chromium download) and its lock.
+        self._preparing, self._prepare_lock = None, threading.RLock()
         self.jar = jar if jar is not None else CookieJar(self.profile_dir / JAR_NAME,
-                                                         KeychainKey(store_account(self.profile_dir)), clock)
-        self.launcher = launcher or self._launch_webkit
+                                                         platform_key(store_account(self.profile_dir)), clock)
+        self.launcher = launcher or self._launch_engine
         self.headless = headless
         self._available = available if available is not None else (
-            (lambda: webkit_unavailable_reason() is None) if launcher is None else (lambda: True))
+            (lambda: engine_unavailable_reason() is None) if launcher is None else (lambda: True))
         self.clock = clock
         self._lock = threading.Lock()
         self._jar_lock = threading.RLock()
@@ -2677,13 +2705,6 @@ class BrowserProfile:
         self._view = None
         self._view_refreshing = False
         self._allowed_origins = ()
-        # #934: called with the names of the sites whose stored rows may have
-        # changed (None: every site) after a save or delete, outside the jar
-        # lock, never with a value.  The owner's service pushes shared sites.
-        self.on_saved = None
-        #: #950 review P1: ``() -> {site}`` a login window must never load or overwrite (a family
-        #: instance's sites received from the owner); None for none.  Agent sessions are unaffected.
-        self.login_excluded = None
         #: #209: ``() -> {host:port}`` of the owner's declared intranet destinations; None for none.
         self.intranet = None
 
@@ -2723,16 +2744,75 @@ class BrowserProfile:
             self._import_error = str(exc)
             return []
         if self._suppressed:
-            # #950 review P1: a login window never holds a session it must not drive.
             sites = set(sites) - self._suppressed
             rows = [row for row in rows
                     if registrable_domain(str(row.get('domain') or '').lstrip('.')) not in self._suppressed]
         self._imported |= sites
         return rows
 
-    def _launch_webkit(self, profile_dir, headless):
-        return WebKitWorkerDriver(self.profile_dir.name, seed=self._seed, cwd=self.profile_dir,
-                                  allowed_origins_for_tests=self._allowed_origins, intranet=self.intranet_keys)
+    def _launch_engine(self, profile_dir, headless):
+        """The worker for this computer: macOS WebKit, or the pinned Chromium on a Linux desktop (#34)."""
+        command = None
+        if sys.platform.startswith('linux'):
+            from . import chromium_runtime
+            chrome = self._prepared_chromium()
+            if chromium_runtime.missing_libraries(chrome):
+                # Codex review on #640: a desktop without some of Chromium's libraries gets the one command.
+                self._block('libraries', chrome)
+                raise ToolError(LIBRARIES_TEXT + '\n\n' + chromium_runtime.libraries_setup(), UNAVAILABLE_CODE)
+            command = chromium_worker_command(self.profile_dir.name, chrome, self._allowed_origins)
+        before_start = None
+        if command is not None:
+            from . import chromium_runtime
+            before_start = lambda: chromium_runtime.installed(self.tools_dir) == chrome
+        try:
+            driver = WebKitWorkerDriver(self.profile_dir.name, seed=self._seed, cwd=self.profile_dir,
+                                        allowed_origins_for_tests=self._allowed_origins, intranet=self.intranet_keys,
+                                        command=command, before_start=before_start)
+        except WorkerError as exc:
+            if exc.detail == 'sandbox_unavailable':
+                self._block('sandbox', chrome)
+                raise ToolError(sandbox_text(chrome), UNAVAILABLE_CODE) from None
+            raise
+        with self._prepare_lock:
+            self._start_blocked = None
+        return driver
+
+    def _prepared_chromium(self):
+        """The checked Chromium, or a typed refusal while it is prepared in the background (#34).
+
+        Codex review on #640: the first download (about 200 MB) never runs inside the Work that asked
+        for the browser, whose deadline and Stop it would outlast.  It runs once, in its own thread;
+        that Work ends at once with ``PREPARING_TEXT`` and a later use starts the browser.
+        """
+        from . import chromium_runtime
+        try:
+            found = chromium_runtime.installed(self.tools_dir)
+        except OSError:
+            found = None   # an unreadable build is prepared again (and a failure there is the typed refusal)
+        if found:
+            return found
+        with self._prepare_lock:
+            if self._still_blocked() == 'download':
+                raise ToolError(DOWNLOAD_TEXT, UNAVAILABLE_CODE)
+            if self._preparing is None or not self._preparing.is_alive():
+                def prepare():
+                    try:
+                        chromium_runtime.ensure(self.tools_dir)
+                    except (OSError, RuntimeError):
+                        self._block('download')
+                        return
+                    with self._prepare_lock:
+                        if self._start_blocked == 'preparing':
+                            self._start_blocked = None
+                self._preparing = threading.Thread(target=prepare, name='agentos-chromium-prepare', daemon=True)
+                self._start_blocked = 'preparing'
+                self._preparing.start()
+        # The download may already have failed; say that rather than "preparing" (Codex review on #640).
+        self._preparing.join(0.05)
+        if self._still_blocked() == 'download':
+            raise ToolError(DOWNLOAD_TEXT, UNAVAILABLE_CODE)
+        raise ToolError(PREPARING_TEXT, UNAVAILABLE_CODE)
 
     def remove_legacy_profile(self):
         """Delete the pre-#680 Playwright Chromium profile (plaintext cookies) from ``profile_dir``.
@@ -2766,20 +2846,65 @@ class BrowserProfile:
 
     def unavailable_reason(self):
         """None, or ``platform`` / ``dependency`` (the typed refusal ``browser_unavailable_platform``)."""
-        if self.available():
-            return None
-        return webkit_unavailable_reason() or 'platform'
+        if not self.available():
+            return engine_unavailable_reason() or 'platform'
+        return self._still_blocked()
+
+    def _still_blocked(self):
+        """The last start failure while it may still hold (#34, Codex review on #640): a refused sandbox until
+        its profile names this Chromium, a failed download for ``START_RETRY_SECONDS``.  Afterwards the
+        browser shows as available again, so Settings offers the sign-in window that retries the start."""
+        # One lock for every read, expiry and write of the remembered failure (Codex review on #640), so a
+        # reader never clears a failure a Work or the preparing thread has just recorded.
+        with self._prepare_lock:
+            if not self._start_blocked:
+                return None
+            if self._start_blocked == 'preparing':
+                # Until the background download ends; it then clears this, or leaves ``download``.
+                return self._start_blocked if self._preparing is not None and self._preparing.is_alive() else None
+            from . import chromium_runtime
+            if (self._start_blocked == 'sandbox' and chromium_runtime.apparmor_installed(self._chrome_path())) or \
+                    time.monotonic() - getattr(self, '_blocked_at', 0.0) > START_RETRY_SECONDS:
+                # A library check is cheap to repeat at the next start; the profile is retried after the wait too.
+                self._start_blocked = None
+            return self._start_blocked
+
+    def _block(self, reason, chrome=None):
+        """Record why this start failed, under the state lock."""
+        with self._prepare_lock:
+            self._start_blocked, self._blocked_at = reason, time.monotonic()
+            if chrome is not None:
+                self._blocked_chrome = chrome
 
     def unavailable_message(self):
         reason = self.unavailable_reason()
+        if reason == 'sandbox':
+            return sandbox_text(self._chrome_path())
+        if reason == 'libraries':
+            from . import chromium_runtime
+            return LIBRARIES_TEXT + '\n\n' + chromium_runtime.libraries_setup()
         return unavailable_text(reason) if reason else None
+
+    def _chrome_path(self):
+        """The Chromium whose sandbox was refused, else where the pinned one lives (#34)."""
+        from . import chromium_runtime
+        return getattr(self, '_blocked_chrome', None) or str(chromium_runtime.executable(self.tools_dir) or '')
 
     def status(self):
         reason = self.unavailable_reason()
-        status = {'available': reason is None, 'unavailable_reason': reason, 'engine': 'macos-webkit',
-                  'message': unavailable_text(reason) if reason else None,
+        status = {'available': reason is None, 'unavailable_reason': reason, 'engine': engine_name(),
+                  'message': self.unavailable_message() if reason else None,
                   'login_window_open': self._holder == 'login', 'in_use': self._holder is not None and self._holder != 'login',
                   'limitation': LIMITATION_TEXT, 'google_note': GOOGLE_NOTE, 'sessions': []}
+        if reason == 'sandbox':
+            from . import chromium_runtime
+            try:
+                status['sandbox_command'] = status['setup_command'] = chromium_runtime.apparmor_setup(self._chrome_path())
+            except ValueError:
+                pass
+        elif reason == 'libraries':
+            from . import chromium_runtime
+            status['setup_command'] = chromium_runtime.libraries_setup()
         if reason is None:
             state, sessions = self._jar_view()
             status['storage'] = {'what': 'site-sign-in-cookies', 'path': str(self.jar.path),
@@ -2869,7 +2994,7 @@ class BrowserProfile:
                 return False
             sites = {site: rows for site, rows in sites.items() if site not in self._suppressed}
             # #990: cookies that did not change since this holder's last write are not written again
-            # (and nothing is told to on_saved): a close right after the landing save writes nothing.
+            # A close right after the landing save writes nothing.
             mark = _export_mark(sites, hosts, self._imported)
             if mark == self._save_mark:
                 return True
@@ -2882,51 +3007,8 @@ class BrowserProfile:
                 return False
             self._save_mark = mark
             self.save_error = None
-            # Exported sites were replaced; imported sites missing from the export were dropped.
-            touched = set(sites) | set(self._imported)
-        self._saved(touched)
         return True
 
-    def _saved(self, touched):
-        """Tell ``on_saved`` which sites' stored rows may have changed (#934); a failing hook never fails a save."""
-        hook = self.on_saved
-        if hook is None:
-            return
-        try:
-            hook(touched)
-        except Exception as exc:
-            LOG.warning('browser profile: saved hook failed (%s)', type(exc).__name__)
-
-    def import_site(self, site, rows):
-        """Store one site's rows pushed by the owner's instance (#934) and give them to a running worker.
-
-        The site's stored rows are replaced (empty ``rows`` removes them);
-        every other site is untouched.  A running worker drops the site and
-        imports the rows; when it cannot, it is stopped without saving, so
-        the Work's next step starts a fresh worker from the jar.  Returns
-        names and counts only.  Raises ``JarError`` when the jar cannot be
-        read; nothing is then written.  ``on_saved`` is not called: a site
-        received from the owner is never pushed anywhere.
-        """
-        site = str(site or '').strip().lower()
-        rows = [row for row in rows or () if isinstance(row, dict) and row.get('name')]
-        with self._jar_lock:
-            self._save_mark = None
-            self.jar.save_export({site: rows}, imported={site})
-            live = self._live
-            worker = None
-            if live is not None and hasattr(live, 'cookies_import') and _alive(live):
-                try:
-                    if hasattr(live, 'cookies_delete'):
-                        live.cookies_delete(site)
-                    if rows:
-                        live.cookies_import(rows)
-                    self._imported.add(site)
-                    worker = 'imported'
-                except Exception:
-                    self._worker_failed(live)
-                    worker = 'failed'
-        return {'site': site, 'cookies': len(rows), 'running_browser': worker}
 
     def driver_factory(self, work_id):
         """A zero-argument factory a ``BrowserSession`` calls on first use, or None when unavailable."""
@@ -2988,7 +3070,6 @@ class BrowserProfile:
                 removed = self.jar.remove(site)
             except Exception:
                 raise ValueError('저장된 로그인 세션을 읽지 못했습니다. "모두 삭제"로 초기화할 수 있습니다.') from None
-        self._saved({site})
         if worker == 'failed':
             return {'deleted': False, 'site': site, 'removed_from_jar': bool(removed), 'running_browser': 'failed',
                     'message': WORKER_DELETE_FAILED_TEXT}
@@ -3015,7 +3096,6 @@ class BrowserProfile:
             cleared = self.jar.clear()
             legacy = self.remove_legacy_profile()
             self.save_error = None
-        self._saved(None)
         result = {'all': True, 'jar_deleted': cleared['jar_deleted'] or legacy, 'key_deleted': cleared['key_deleted'],
                   'key_error': cleared['key_error'], 'running_browser': worker}
         result['deleted'] = cleared['key_error'] is None and worker != 'failed'
@@ -3031,8 +3111,7 @@ class BrowserProfile:
 
         Under the profile lock (no worker holds older cookies meanwhile), the
         site's stored rows go out with one GET (``http_refresh``); what the
-        site answered replaces that site's rows only, and ``on_saved`` pushes
-        it like any save.  Returns ``{'state': refreshed | unchanged | answered
+        site answered replaces that site's rows only.  Returns ``{'state': refreshed | unchanged | answered
         | blocked | failed | busy}``; ``blocked`` means the site refused a
         non-browser request.  #1269: what the answer did to the session is
         stated as observed, from the site's token cookies (``latest_token_expiry``):
@@ -3061,8 +3140,7 @@ class BrowserProfile:
             with self._jar_lock:
                 self._save_mark = None
                 self.jar.save_export({site: after}, [parts.hostname], imported={site})
-            self._saved({site})
-            before_exp, after_exp = latest_token_expiry(rows), latest_token_expiry(after)
+                before_exp, after_exp = latest_token_expiry(rows), latest_token_expiry(after)
             if before_exp is None and after_exp is None:
                 return {'state': 'answered'}
             if after_exp is not None and (before_exp is None or after_exp > before_exp):
@@ -3109,12 +3187,6 @@ class BrowserProfile:
             self._acquire('login')
         except ToolError:
             return {'state': 'busy', 'message': BUSY_TEXT}
-        try:
-            # #950 review P1: excluded sites are neither loaded into the window nor saved back from it.
-            self._suppressed |= set(self.login_excluded() or ()) if callable(self.login_excluded) else set()
-        except Exception:
-            self._release()
-            raise
         opened = threading.Event()
         window_id = secrets.token_hex(8)
         # The flag a programmatic close sets before it stops the loop, so an

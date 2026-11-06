@@ -342,7 +342,9 @@ class ProfileTests(unittest.TestCase):
             def __init__(self, profile_id, seed=None, **kwargs):
                 super().__init__([cookie('only.test')])
                 self.seeded = seed()
-        with mock.patch.object(bs, 'WebKitWorkerDriver', Worker):
+        # #34: on Linux the default launcher first checks the pinned Chromium; nothing is downloaded here.
+        ensure = mock.patch('personal_agent.chromium_runtime.installed', return_value='/pinned/chrome')
+        with mock.patch.object(bs, 'WebKitWorkerDriver', Worker), ensure:
             profile = bs.BrowserProfile(Path(self.tmp.name), jar=locked, available=lambda: True)
             session = profile.driver_factory('w1')()
             self.assertEqual(session.seeded, [])
@@ -350,7 +352,7 @@ class ProfileTests(unittest.TestCase):
         self.assertEqual(self.jar.path.read_bytes(), before, 'the jar was left as it was')
         self.assertEqual(profile.save_error, 'key_missing')
         # With a readable jar the import is recorded and the save merges.
-        with mock.patch.object(bs, 'WebKitWorkerDriver', Worker):
+        with mock.patch.object(bs, 'WebKitWorkerDriver', Worker), ensure:
             profile = bs.BrowserProfile(Path(self.tmp.name), jar=self.jar, available=lambda: True)
             session = profile.driver_factory('w2')()
             self.assertEqual(len(session.seeded), 2)
@@ -732,6 +734,149 @@ class DriverProtocolTests(unittest.TestCase):
 
 
 # ---------------------------------------------------------------- destinations, output encoding, the UI marker (unit)
+
+class OwnerPopupReturnTests(unittest.TestCase):
+    """#683: real delegate and worker lifecycle with fake Cocoa objects."""
+
+    def setUp(self):
+        from types import SimpleNamespace as NS
+        from unittest import mock
+        from personal_agent import browser_worker as bw
+        self.bw, self.NS = bw, NS
+
+        class Cocoa:
+            def __init_subclass__(cls, protocols=()):
+                super().__init_subclass__()
+
+            @classmethod
+            def alloc(cls):
+                return cls()
+
+            def init(self):
+                return self
+
+            def initWithFrame_configuration_(self, rect, config):
+                self.loads = []
+                return self
+
+            def initWithContentRect_styleMask_backing_defer_(self, *args):
+                return self
+
+            def loadRequest_(self, request):
+                self.loads.append(request)
+
+            def __getattr__(self, name):
+                return lambda *args: None
+
+        foundation = NS(NSObject=Cocoa, NSMakeRect=lambda *a: a, NSMakePoint=lambda *a: a,
+                        NSURL=NS(URLWithString_=lambda s: s), NSURLRequest=NS(requestWithURL_=lambda s: s))
+        webkit = NS(WKWebView=Cocoa, WKNavigationActionPolicyAllow=1, WKNavigationActionPolicyCancel=0,
+                    WKNavigationTypeFormSubmitted=1, WKNavigationTypeFormResubmitted=2)
+        appkit = NS(NSWindow=Cocoa, NSWindowStyleMaskTitled=1, NSWindowStyleMaskClosable=2,
+                    NSWindowStyleMaskResizable=4, NSBackingStoreBuffered=0,
+                    NSWindowCollectionBehaviorTransient=1, NSWindowCollectionBehaviorIgnoresCycle=2)
+        modules = {'Foundation': foundation, 'WebKit': webkit,
+                   'objc': NS(ivar=lambda: None, protocolNamed=lambda name: object())}
+        for patch in (mock.patch.dict(sys.modules, modules), mock.patch.object(bw, '_POPUP_DELEGATE', []),
+                      mock.patch.object(bw, '_DELEGATE', [])):
+            patch.start()
+            self.addCleanup(patch.stop)
+        self.later = []
+        worker = object.__new__(bw.Worker)
+        worker.Foundation, worker.WebKit, worker.AppKit = foundation, webkit, appkit
+        worker.AppHelper = NS(callLater=lambda seconds, fn: self.later.append((seconds, fn)))
+        worker.owner_visible = worker.guard_off = False
+        worker.popups = []
+        worker.login_return = worker.login_return_pending = None
+        worker.main_navigations, worker.landed = 0, 0
+        worker.authorizations, worker.authorization_count = [], 0
+        worker.view = Cocoa().initWithFrame_configuration_(None, None)
+        worker.resolved = {bw.origin_key('https://id.provider.test'): None}
+        worker.blocked, worker.navigation = 0, None
+        worker.emit = lambda event: self.fail(event)
+        worker.pending = {}
+        worker.posted_submits = worker.refused_submits = worker.deciding = 0
+        self.worker = worker
+        self.delegate = bw._delegate_class()()
+        self.delegate.worker = worker
+        self.authorize = 'https://id.provider.test/authorize?response_type=code&client_id=x&redirect_uri=https%3A%2F%2Fsite.test%2Fcallback'
+
+    def action(self, url, kind=0, method='GET', top=True):
+        ns = self.NS
+        native = ns(absoluteString=lambda: url, scheme=lambda: url.split(':', 1)[0]) if url else None
+        return ns(request=lambda: ns(URL=lambda: native, HTTPMethod=lambda: method),
+                  targetFrame=lambda: ns(isMainFrame=lambda: top), navigationType=lambda: kind)
+
+    def create(self, url):
+        return self.delegate.webView_createWebViewWithConfiguration_forNavigationAction_windowFeatures_(
+            self.worker.view, object(), self.action(url), None)
+
+    def test_main_close_returns_once_to_the_latest_owner_window_start(self):
+        self.worker.owner_visible = True
+        self.worker.login_return = (object(), 'https://site.test/start')
+        self.delegate.webViewDidClose_(self.worker.view)
+        self.delegate.webViewDidClose_(self.worker.view)
+        self.assertEqual(self.worker.view.loads, ['https://site.test/start'])
+
+    def test_popup_return_settles_and_yields_to_navigation_or_a_new_show(self):
+        self.worker.owner_visible = self.worker.guard_off = True
+        self.worker.login_return = (object(), 'https://site.test/start')
+        for change in ('none', 'navigation', 'new_show'):
+            with self.subTest(change=change):
+                self.worker.login_return = (object(), 'https://site.test/start')
+                view = self.create(self.authorize)
+                delegate = self.worker.popups[-1][2]
+                delegate.webViewDidClose_(view)
+                seconds, finish = self.later.pop()
+                self.assertEqual(seconds, 2)
+                if change == 'navigation':
+                    self.worker.main_navigations += 1
+                elif change == 'new_show':
+                    self.worker.login_return = (object(), 'https://site.test/start')
+                before = len(self.worker.view.loads)
+                finish()
+                self.assertEqual(len(self.worker.view.loads) - before, int(change == 'none'))
+
+    def test_only_the_latest_scheduled_owner_return_applies(self):
+        self.worker.owner_visible = True
+        self.worker.login_return = (object(), 'https://site.test/start')
+        self.worker.return_from_login(2)
+        first = self.later[-1][1]
+        self.worker.return_from_login(2)
+        latest = self.later[-1][1]
+        first()
+        self.assertFalse(self.worker.view.loads)
+        latest()
+        latest()
+        self.assertEqual(self.worker.view.loads, ['https://site.test/start'])
+
+    def test_main_navigation_cancels_pending_owner_return(self):
+        self.worker.owner_visible = self.worker.guard_off = True
+        self.worker.reading = False
+        self.worker.login_return = (object(), 'https://site.test/start')
+        self.worker.return_from_login(2)
+        finish = self.later[-1][1]
+        action = self.action('https://site.test/elsewhere')
+        action.sourceFrame = lambda: None
+        action.navigationType = lambda: 0
+        self.worker.resolved[self.bw.origin_key('https://site.test')] = None
+        answers = []
+        self.delegate.webView_decidePolicyForNavigationAction_decisionHandler_(
+            self.worker.view, action, answers.append)
+        self.assertEqual(answers, [1])
+        self.assertIsNone(self.worker.login_return_pending)
+        finish()
+        self.assertFalse(self.worker.view.loads)
+
+    def test_work_still_creates_no_popup(self):
+        for guard_off in (False, True):
+            self.worker.guard_off = guard_off
+            for url in (self.authorize, 'https://site.test/', 'about:blank', ''):
+                with self.subTest(guard_off=guard_off, url=url):
+                    self.assertIsNone(self.create(url))
+                    self.assertFalse(self.worker.popups)
+                    self.assertFalse(self.later)
+
 
 class WorkerGuardLogicTests(unittest.TestCase):
     """#700: the worker's own Python side of the submit guard, without WebKit (any platform)."""
@@ -1573,8 +1718,15 @@ QR_PNG = ('iVBORw0KGgoAAAANSUhEUgAAAIQAAACECAYAAABRRIOnAAAAAklEQVR4AewaftIAAARgS
           )
 
 
-def _webkit_ready():
-    return REAL_BROWSER_TESTS and bs.webkit_unavailable_reason() is None and Path('/usr/bin/security').exists()
+#: #34: the same real-engine classes run against the Linux desktop's Chromium worker.
+LINUX = sys.platform.startswith('linux')
+
+
+def _engine_ready():
+    """macOS with WebKit and the real Keychain, or a Linux desktop session with the Chromium worker (#34)."""
+    if not REAL_BROWSER_TESTS or bs.engine_unavailable_reason() is not None:
+        return False
+    return LINUX or Path('/usr/bin/security').exists()
 
 
 class SessionFixtureHandler(FixtureHandler):
@@ -1879,7 +2031,7 @@ class SessionFixtureHandler(FixtureHandler):
         return super().do_GET()
 
 
-@unittest.skipUnless(_webkit_ready(), 'embedded WebKit needs macOS with pyobjc-framework-WebKit')
+@unittest.skipUnless(_engine_ready(), 'the real engine needs macOS WebKit or a Linux desktop with Chromium')
 class WebKitIntegrationTests(unittest.TestCase):
     """Evidence class: model-free integration with the real worker process and system WebKit."""
 
@@ -1905,13 +2057,28 @@ class WebKitIntegrationTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.store = QuickStore(Path(self.tmp.name) / 'data')
         profile_dir = self.store.private / 'browser-profile'
-        # The real Keychain, under a test-only service name this test deletes.
-        self.key = KeychainKey(store_account(profile_dir), service='personal-agentos.browser-jar.test-' + uuid.uuid4().hex[:12])
+        # The real Keychain, under a test-only service name this test deletes.  On Linux (#34) an in-memory
+        # key: CI has no desktop keyring; ``SecretServiceKey`` is covered in tests/test_linux_browser_setup.py.
+        if LINUX:
+            self.key = MemoryKey()
+        else:
+            self.key = KeychainKey(store_account(profile_dir), service='personal-agentos.browser-jar.test-' + uuid.uuid4().hex[:12])
         self.addCleanup(self.key.delete)
+        # #34: the pinned Chromium is downloaded once per machine, not per test.
+        self.tools = Path(os.environ.get('AGENTOS_TEST_TOOLS_DIR') or Path(self.tmp.name) / 'tools')
         self.jar = CookieJar(profile_dir / JAR_NAME, self.key)
-        self.profile = bs.BrowserProfile(profile_dir, jar=self.jar)
+        self.profile = bs.BrowserProfile(profile_dir, jar=self.jar, tools_dir=self.tools)
         # Test-only: the fixture origin (and only it) may be loaded from loopback.
         self.profile.allow_origins_for_tests(self.fixture)
+
+    def worker(self, origins=None):
+        """The real worker for this computer, driven directly: on Linux the Chromium worker (#34)."""
+        origins = (self.fixture,) if origins is None else tuple(origins)
+        command = None
+        if LINUX:
+            from personal_agent import chromium_runtime
+            command = bs.chromium_worker_command('p', chromium_runtime.ensure(self.tools), origins)
+        return bs.WebKitWorkerDriver('p', cwd=self.tmp.name, allowed_origins_for_tests=origins, command=command)
 
     def session(self, work_id):
         return bs.BrowserSession(self.profile.driver_factory(work_id), work_id=work_id, approvals=Approvals(), excluded=lambda: [PASSPORT], allowed_origins_for_tests=(self.fixture,))
@@ -2210,6 +2377,17 @@ class WebKitIntegrationTests(unittest.TestCase):
         sess = self.session('work-1183')
         try:
             page = sess.open({'url': self.origin + '/device', 'effect': 'read'})
+            if LINUX:
+                # #34: Chromium says what it is: Chrome on an Android phone and a phone-width layout; no touch is
+                # advertised, as on macOS, because presses are mouse input (Codex review on #640).
+                agent = page['text'].split('\n', 1)[0]
+                self.assertIn('Android', agent)
+                self.assertIn('Mobile Safari/537.36', agent)
+                self.assertNotIn('iPhone', agent)
+                self.assertIn('터치 0 false 같은UA true', page['text'])
+                width = int(page['text'].split('폭 ', 1)[1].split()[0])
+                self.assertLessEqual(width, 430, page['text'])
+                return
             self.assertIn('iPhone', page['text'])
             self.assertIn('Mobile/', page['text'])
             # #13: the OS token is one a real iPhone with this Safari sends, and the page sees the same phone.
@@ -2270,7 +2448,7 @@ class WebKitIntegrationTests(unittest.TestCase):
             sess.close()
         self.assertEqual(self.agentos.posts, [], 'the stand-in Still received no request')
         # Only the exact test origin was allowed; the worker in production has no allowance at all.
-        worker = bs.WebKitWorkerDriver('p', cwd=self.tmp.name)
+        worker = self.worker(origins=())
         try:
             with self.assertRaises(ToolError) as caught:
                 worker.goto(self.origin + '/product', 10)
@@ -2371,7 +2549,7 @@ class WebKitIntegrationTests(unittest.TestCase):
             sess.close()
         self.assertEqual(self.server.posts, ['/coupon', '/coupon', '/pay', '/pay'])
         # The worker's own guard, without the session's classification: a press on the span is cancelled.
-        worker = bs.WebKitWorkerDriver('p', cwd=self.tmp.name, allowed_origins_for_tests=(self.fixture,))
+        worker = self.worker()
         try:
             worker.goto(page_url, 10)
             page = worker.snapshot()
@@ -2470,7 +2648,7 @@ class WebKitIntegrationTests(unittest.TestCase):
             self.assertEqual(self.server.posts, ['/pay'])
         finally:
             sess.close()
-        worker = bs.WebKitWorkerDriver('p', cwd=self.tmp.name, allowed_origins_for_tests=(self.fixture,))
+        worker = self.worker()
         try:
             # A held submit is recorded, and released, where its submitter's formaction sends it.
             worker.goto(page_url, 10)
@@ -2580,7 +2758,7 @@ class WebKitIntegrationTests(unittest.TestCase):
 
     def test_a_native_submit_from_another_realm_is_refused_as_a_navigation(self):
         """#700 item 2: a fresh iframe's unwrapped ``HTMLFormElement.prototype.submit`` on the payment form."""
-        worker = bs.WebKitWorkerDriver('p', cwd=self.tmp.name, allowed_origins_for_tests=(self.fixture,))
+        worker = self.worker()
         try:
             worker.goto(self.origin + '/checkout-realm', 10)
             index = next(row['index'] for row in worker.snapshot()['elements'] if row['name'] == '다른 창 진행')
@@ -2598,10 +2776,18 @@ class WebKitIntegrationTests(unittest.TestCase):
                 worker.click(index, 10)
             self.assertEqual((caught.exception.code, caught.exception.cancelled_form['dom']), ('approval_required', 2))
             self.assertEqual(self.server.posts, [], 'no POST into the frame either')
-            # An ordinary form submitted the same way still goes.
+            # An ordinary form submitted the same way still goes.  #34: on Linux, Chromium runs no page script
+            # while the request is paused, so a submit the guard never saw is refused first (fail closed).
             worker.goto(self.origin + '/checkout-realm', 10)
             index = next(row['index'] for row in worker.snapshot()['elements'] if row['name'] == '다른 창 쿠폰')
-            worker.click(index, 10)
+            if LINUX:
+                with self.assertRaises(ToolError) as caught:
+                    worker.click(index, 10)
+                self.assertEqual(caught.exception.code, 'submit_refused')
+                self.assertEqual(self.server.posts, [], 'nothing was sent')
+                self.server.posts.append('/coupon')   # the rest of the test reads the macOS sequence
+            else:
+                worker.click(index, 10)
             self.assertEqual(self.server.posts, ['/coupon'])
             # The owner's approval of that form in that state releases the held submit.
             worker.goto(self.origin + '/checkout-realm', 10)
@@ -2615,7 +2801,7 @@ class WebKitIntegrationTests(unittest.TestCase):
 
     def test_a_sign_in_popup_navigating_does_not_end_the_owner_window(self):
         """#1579 (live 2026-10-17): a popup's navigation decision raised inside WebKit and aborted the worker."""
-        worker = bs.WebKitWorkerDriver('p', cwd=self.tmp.name, allowed_origins_for_tests=(self.fixture,))
+        worker = self.worker()
         try:
             worker.show(self.origin + '/popup-open', 10)
             time.sleep(2)   # the popup opens and navigates on its own
@@ -2626,7 +2812,7 @@ class WebKitIntegrationTests(unittest.TestCase):
 
     def test_the_owner_login_window_turns_the_guard_off_and_back_on(self):
         page_url = self.origin + '/checkout-forwarded'
-        worker = bs.WebKitWorkerDriver('p', cwd=self.tmp.name, allowed_origins_for_tests=(self.fixture,))
+        worker = self.worker()
 
         def scripted_pay():
             return next(row['index'] for row in worker.snapshot()['elements'] if row['name'] == '바로 진행')
@@ -2648,7 +2834,7 @@ class WebKitIntegrationTests(unittest.TestCase):
         resize): the frame stays phone-shaped and is drawn at the page's width; the fields are named by kind and
         place; a QR code's link is read; taps (view points) and typing land; the next page starts at zoom 1; the
         session's end restores the window."""
-        worker = bs.WebKitWorkerDriver('p', cwd=self.tmp.name, allowed_origins_for_tests=(self.fixture,))
+        worker = self.worker()
 
         def frame_until(check, seconds=8):
             # The phone polls frames; the worker measures the page after each one.
@@ -2694,13 +2880,19 @@ class WebKitIntegrationTests(unittest.TestCase):
             name = [field for field in frame['fields'] if field['kind'] == 'text']
             self.assertEqual(len(name), 1, frame['fields'])
             self.assertAlmostEqual(name[0]['x'] * frame['width'], 860 * zoom, delta=2)
-            frame = frame_until(lambda frame: frame['links'])
-            links = frame['links']
-            self.assertEqual([link['url'] for link in links], ['https://auth.example/qr?q=596'])
-            # #602: the code's box in the frame holds the code's middle (CSS 98, 158 at this zoom), so a
-            # tap there on the phone opens its link.
-            box, middle = links[0], (98 * zoom / frame['width'], 158 * zoom / frame['height'])
-            self.assertTrue(box['x'] < middle[0] < box['x'] + box['w'] and box['y'] < middle[1] < box['y'] + box['h'], box)
+            if LINUX:
+                # #34: no QR reading on Linux (macOS Vision); the frame never names a link.  Only the QR
+                # assertions are skipped: taps, typing and the zoom and restore checks below run on Linux too.
+                frame = worker.frame()
+                self.assertEqual(frame['links'], [])
+            else:
+                frame = frame_until(lambda frame: frame['links'])
+                links = frame['links']
+                self.assertEqual([link['url'] for link in links], ['https://auth.example/qr?q=596'])
+                # #602: the code's box in the frame holds the code's middle (CSS 98, 158 at this zoom), so a
+                # tap there on the phone opens its link.
+                box, middle = links[0], (98 * zoom / frame['width'], 158 * zoom / frame['height'])
+                self.assertTrue(box['x'] < middle[0] < box['x'] + box['w'] and box['y'] < middle[1] < box['y'] + box['h'], box)
             # The phone maps a tap by the frame's own width and height: view points.
             # #647: inputs target the displayed frame's view, just like the phone client;
             # a missing identity is rejected so a closed popup cannot redirect input.
@@ -2770,7 +2962,13 @@ class WebKitIntegrationTests(unittest.TestCase):
         needle = value.encode()
         home = Path.home() / 'Library'
         hits = []
-        for root in (Path(self.tmp.name), home / 'WebKit', home / 'HTTPStorages'):
+        roots = [Path(self.tmp.name), home / 'WebKit', home / 'HTTPStorages']
+        if LINUX:
+            # #34: Chromium's own profile folders (Playwright's temporary one, a default one) and the cache.
+            # (Not all of ~/.cache: package caches there hold thousands of unrelated files.)
+            roots += [path for path in Path(tempfile.gettempdir()).glob('playwright*')]
+            roots += [Path.home() / '.config' / 'chromium', Path.home() / '.cache' / 'chromium']
+        for root in roots:
             if not root.is_dir():
                 continue
             for folder, _, files in os.walk(root, followlinks=False):

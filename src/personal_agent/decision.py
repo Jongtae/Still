@@ -16,6 +16,8 @@ provider cannot answer; the declared fallback is to say so.
 See docs/decision-layer.en.md.  Vendor SDK types and vocabulary stay out of
 this module: the model adapter is reached only through the repository's
 existing ``ModelAdapter`` tool-call shape.
+#673 owner decision: a peer Work's budget carries its CLI isolation binding
+to judgments; the binding is never rendered as model context.
 """
 import json
 import time
@@ -59,7 +61,11 @@ GAP_INSTRUCTION = ('gap: when the proposition is false, one short sentence, in t
                    'they gave); when they did their part and it still did not happen, say plainly that it did not go '
                    'through and what happens next, without putting it on the owner. An empty string when the reply already '
                    'tells the owner this, or when nothing that failed matters to the owner, including steps the worker corrected or bypassed, '
-                   'and when the proposition is true and no step failed.')
+                   'and when the proposition is true and no step failed.\n'
+                   # #674: the shortfalls the gap and note report, as handles on Still's typed record.
+                   'not_done: what the gap or note reports as not done: the id of each recorded_effects entry it says did not '
+                   'run, was not applied or still waits, and other for anything else, including a recorded call that ran but '
+                   'did something different from what was asked. An empty array when nothing is reported as not done.')
 
 #: ``DecisionConfidence.engine`` of a route that cannot answer ``choose_many``
 #: (the Jev API has no multi-selection type), so callers can say so truthfully.
@@ -84,11 +90,12 @@ class DecisionContext:
     """
 
     __slots__ = ('purpose', 'facts', 'work_id', 'cancelled', 'max_chars', 'admission', 'reserve', 'context_messages',
-                 'strongest', 'timeout', 'refused')
+                 'strongest', 'timeout', 'refused', 'peer_store_root')
 
     def __init__(self, purpose, facts=None, *, work_id=None, cancelled=None, max_chars=MAX_CONTEXT_CHARS,
                  reserve=False, context_messages=None, strongest=False, timeout=None):
         self.context_messages = context_messages
+        self.peer_store_root = None
         # A judgment that asks for the route engine's strongest model (the newest top model its own
         # catalogue lists, never a pinned name) and the longer bound that model may need; an engine
         # that cannot choose one answers with its route model as usual.
@@ -183,10 +190,15 @@ class _Decision:
 
 
 class BinaryDecision(_Decision):
-    __slots__ = ('answer', 'gap', 'note', 'dimensions', 'retry_warranted')
+    __slots__ = ('answer', 'gap', 'note', 'dimensions', 'retry_warranted', 'not_done')
 
-    def __init__(self, outcome, answer=None, confidence=None, gap='', note=None, dimensions=None, retry_warranted=None):
+    def __init__(self, outcome, answer=None, confidence=None, gap='', note=None, dimensions=None, retry_warranted=None,
+                 not_done=None):
         super().__init__(outcome, confidence)
+        #: #674: from ``judge_explained`` only: what the gap and note report as not done (``recorded_effects``
+        #: ids and ``other``); None when the engine did not answer it.
+        self.not_done = (tuple(str(item) for item in not_done) if isinstance(not_done, (list, tuple)) else None) \
+            if outcome == OUTCOME_DECIDED and isinstance(answer, bool) else None
         self.answer = answer if outcome == OUTCOME_DECIDED else None
         self.dimensions = dict(dimensions or {}) if outcome == OUTCOME_DECIDED else {}
         self.retry_warranted = retry_warranted if outcome == OUTCOME_DECIDED and answer is False else False
@@ -319,6 +331,9 @@ class RoutedDecisionEngine(DecisionEngine):
     def _engine(self, context):
         budget = self.work_budget
         if budget is not None:
+            # #673 owner decision: a peer's planning/judgment CLI must also
+            # exclude ambient instructions before it can write a worker brief.
+            context.peer_store_root = getattr(budget, 'peer_store_root', None)
             context.admission = (lambda: budget.spend_turn(reserve=True)) if context.reserve else budget.spend_turn
             cancelled = context.cancelled
 
@@ -520,8 +535,9 @@ class SchemaDecisionEngine(DecisionEngine):
                                                 'properties': {key: {'type': 'string'} for key in dimensions},
                                                 'required': list(dimensions)},
                                  'retry_warranted': {'type': 'boolean'},
+                                 'not_done': {'type': 'array', 'items': {'type': 'string'}},
                                  'confidence': {'type': 'number', 'minimum': 0, 'maximum': 1}},
-                  'required': ['answer', 'gap', 'note', 'dimensions', 'retry_warranted', 'confidence']}
+                  'required': ['answer', 'gap', 'note', 'dimensions', 'retry_warranted', 'not_done', 'confidence']}
         # Older engines can still supply the bare explained verdict (#1451). When supplied,
         # dimension and retry fields must have their declared shapes; no extra judgment follows.
         def valid(data):
@@ -530,13 +546,16 @@ class SchemaDecisionEngine(DecisionEngine):
                     and ('dimensions' not in data or isinstance(data['dimensions'], dict)
                          and set(data['dimensions']) == set(dimensions)
                          and all(isinstance(value, str) for value in data['dimensions'].values()))
-                    and ('retry_warranted' not in data or isinstance(data['retry_warranted'], bool)))
+                    and ('retry_warranted' not in data or isinstance(data['retry_warranted'], bool))
+                    and ('not_done' not in data or isinstance(data['not_done'], list)
+                         and all(isinstance(item, str) for item in data['not_done'])))
         outcome, data, confidence = self._ask(context, 'judge', f'Proposition: {proposition}\n{GAP_INSTRUCTION}\n\n'+prompt('voice'),
                                               schema, valid)
         note = data.get('note')
         return BinaryDecision(outcome, data.get('answer'), confidence, gap=' '.join(str(data.get('gap') or '').split()),
                               note=' '.join(note.split()) if isinstance(note, str) else None,
-                              dimensions=data.get('dimensions'), retry_warranted=data.get('retry_warranted'))
+                              dimensions=data.get('dimensions'), retry_warranted=data.get('retry_warranted'),
+                              not_done=data.get('not_done'))
 
     def choose(self, context, candidates, question):
         options = [*dict.fromkeys(str(c) for c in candidates), NO_CANDIDATE]

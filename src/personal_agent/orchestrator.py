@@ -53,7 +53,7 @@ from . import trust_record
 from .prompt_files import prompt
 from .conversation_projection import earlier_turn_line, earlier_turns_in
 from .agent_runtime import (BUDGET_CODES, BUDGET_TEXTS, CURRENT_CONTEXT_FACT_CHARS, PROFILE_FACT_CHARS, GOAL_CONVERSATION_CHARS,
-                            budget_stop_code, owner_context_fact)
+                            budget_stop_code, owner_context_fact, second_judgment_allowed)
 from .current_context import without_moving_clock
 from .api_requests import CONTEXT_LINE as API_SLOTS_LINE
 from .information_use import BROWSER_SIGNINS_PREFIX
@@ -66,7 +66,8 @@ SECTIONS = ('profile', 'current_context', 'prepared', 'history')
 ALWAYS_SECTIONS = SECTIONS
 #: Re-delegations after the first attempt (so at most three attempts per Work).
 MAX_REDELEGATIONS = 2
-#: An attempt is started only while the Work's deadline leaves at least this.
+#: An attempt is started only while the Work's deadline leaves at least this, and (#671) at least
+#: as long as the longest attempt this Work has already run (``Orchestration.attempt_seconds``).
 MIN_ATTEMPT_SECONDS = 60
 #: Bounds of the plan text Still keeps and forwards.
 MAX_NOTES_CHARS = 1200
@@ -581,6 +582,10 @@ def worker_catalogue(service):
         # action (propose_current_state) is hidden while the owner has current context off
         # (``Capabilities.offered_tools``), so a plan never briefs a tool the worker lacks.
         tools = offered_now(tools)
+        # #651: only registered counterparts and contained API workers can talk.
+        peer_rows=store.config('a2a_peers',{}) or {}
+        if row['kind'] != KIND_API or not any(not peer.get('blocked') and not peer.get('removed') for peer in peer_rows.values()):
+            tools=[tool for tool in tools if host_action.get(tool,tool)!='a2a_message']
         worker['tools'] = sorted(dict.fromkeys(tools))
         worker['model_tiers'] = {model: model_tier(route_id, model, RANKED_MODELS, worker['models'])
                                  for model in worker['models']}
@@ -595,7 +600,9 @@ def worker_catalogue(service):
                         'destination': str(config.get('endpoint') or ''), 'default': True, 'native_search': False,
                         'browser': False, **KIND_TIERS[KIND_API], 'available': ready, 'reason': '' if ready else 'not_verified',
                         'default_model': str(config.get('model') or ''), 'models': [str(config.get('model') or '')],
-                        'model_tiers': {}, 'tools': offered_now([tool for tool in package_tools if tool not in BROWSER_ACTIONS])})
+                        'model_tiers': {}, 'tools': offered_now([tool for tool in package_tools if tool not in BROWSER_ACTIONS
+                            and (host_action.get(tool,tool)!='a2a_message' or any(not peer.get('blocked') and not peer.get('removed')
+                                 for peer in (store.config('a2a_peers',{}) or {}).values()))])})
         routes['other'] = {'kind': KIND_API, 'config': dict(config), 'key': key, 'test': None}
     observations = worker_observations(store)
     for worker in workers:
@@ -974,8 +981,13 @@ class Orchestration:
         #: already says it, None when the judgment did not give one), and the last attempt's.
         self.note = None
         self.terminal_note = None
+        #: #674: the last outcome judgment's record check (``Judgment.record_check``), or None.
+        self.record_check = None
         #: #308 S1: the owner steers a continuation was given, read with the request by the outcome judgment.
         self.steers = ''
+        #: #671: the Work's remaining seconds when each attempt was planned and when it was evaluated
+        #: (None while it runs), by attempt number.
+        self.spans = {}
 
     # -- the plan call --------------------------------------------------------
     def _redact(self, text, private=True):
@@ -1005,11 +1017,39 @@ class Orchestration:
             interrupted = budget.interrupted()
             if interrupted is not None:
                 return interrupted if interrupted in BUDGET_CODES else 'budget_unavailable'
-            if budget.remaining() < MIN_ATTEMPT_SECONDS:
+            if budget.remaining() < self.attempt_seconds():
                 return 'deadline_exceeded'
             return None if getattr(budget, 'turns_used', 0) + calls <= self._turn_limit(reserve) else 'turn_budget'
         except Exception:
             return 'budget_unavailable'
+
+    def attempt_seconds(self):
+        """The time an attempt needs: the longest this Work's attempts have taken, at least ``MIN_ATTEMPT_SECONDS`` (#671).
+
+        Each attempt is measured from its plan to its evaluation, the one still running to now.  Like a
+        per-try timeout under one deadline (gRPC deadlines, Envoy retry budgets): an attempt the time left
+        cannot carry is not started, because the deadline would kill it with its effects unknown and the
+        replies already finished would be lost with it.
+        """
+        try:
+            left = self.budget.remaining()
+        except Exception:
+            return MIN_ATTEMPT_SECONDS
+        return max([MIN_ATTEMPT_SECONDS, *(began - (left if ended is None else ended)
+                                           for began, ended in self.spans.values())])
+
+    def _span(self, number, end=False):
+        """#671: record the time left when attempt ``number`` was planned, or (``end``) evaluated."""
+        if self.budget is None:
+            return
+        try:
+            left = self.budget.remaining()
+        except Exception:
+            return
+        if not end:
+            self.spans[number] = (left, None)
+        elif number in self.spans and self.spans[number][1] is None:
+            self.spans[number] = (self.spans[number][0], left)
 
     def _turn_limit(self, reserve=False):
         limit = getattr(self.budget, 'turn_limit', None)
@@ -1367,6 +1407,7 @@ class Orchestration:
         return f'{worker.get("name") or attempt.worker} · {attempt.model or DEFAULT_MODEL_LABEL}' + (f' · {effort}' if effort else '')
 
     def _planned(self, attempt):
+        self._span(attempt.number)
         self.record(PLANNED, {'attempt': attempt.number, 'worker': attempt.worker, 'model': attempt.model or None,
                               'effort': getattr(attempt, 'effort', '') or None,
                               # #1261: whether this plan was asked while routing ran (first attempt only).
@@ -1490,7 +1531,7 @@ class Orchestration:
             return UNJUDGED
         return NOT_REACHED
 
-    def evaluate_answer(self, answer, observations, failed='', final=False):
+    def evaluate_answer(self, answer, observations, failed='', final=False, effects=()):
         """The one outcome judgment of a CLI attempt (#657, #820).
 
         ``goal_reached`` over the owner's message (whole), the recent
@@ -1502,9 +1543,10 @@ class Orchestration:
         allows another attempt (``NOT_JUDGED``, next step ``budget``), unless
         ``final`` (#752): no attempt can follow and the judgment only decides
         this attempt's outcome, so the Work need only be neither stopped nor
-        past its deadline.
+        past its deadline.  #674: ``effects`` (``agent_runtime.recorded_effects``) are the attempt's
+        calls whose own record shows them completed; a judgment denying one is asked once more (``goal_reached``).
         """
-        self.gap, self.note = '', None
+        self.gap, self.note, self.record_check = '', None, None
         self.retry_warranted = None
         goal_reached = getattr(self.judgments, 'goal_reached', None)
         if goal_reached is None:
@@ -1532,7 +1574,10 @@ class Orchestration:
                                   **({'conversation_messages': self._turns_in(self._redact(self.conversation)[-CONVERSATION_CHARS:])}
                                      if self.turns is not None else {}),
                                   **({'attachments': self.attachments} if getattr(self, 'attachments', '') else {}),
-                                  **({'awaiting_owner': awaiting} if (awaiting := self._work_awaiting()) else {}))
+                                  **({'awaiting_owner': awaiting} if (awaiting := self._work_awaiting()) else {}),
+                                  **({'recorded_effects': tuple(effects),
+                                      'may_rejudge': lambda: second_judgment_allowed(self.judgments, self.budget)}
+                                     if effects else {}))
         except Exception:
             return UNJUDGED
         verdict = getattr(judged, 'outcome', None)
@@ -1542,6 +1587,7 @@ class Orchestration:
             self.budget_stop = judged.refused
             return NOT_JUDGED
         self.retry_warranted = getattr(judged, 'retry_warranted', None)
+        self.record_check = getattr(judged, 'record_check', None)
         if verdict == 'no':
             # #1451: the judgment's own statement of what is missing (already owner-facing text).
             self.gap = self._redact(getattr(judged, 'value', None) or '', private=False)[:GAP_CHARS]
@@ -1586,11 +1632,13 @@ class Orchestration:
         """
         if not self.orchestrated:
             return None
+        self._span(attempt.number, end=True)
         self.history.append((attempt, evaluation, answer, failed))
         short = NOT_REACHED in (evaluation, judged)
         gap, self.gap = (self.gap if short else ''), ''
         # #631: owner-needed stops carry their attempt's judgment too.
         note, self.note = (self.note if (judged or evaluation) in (REACHED, NOT_REACHED) else None), None
+        record_check, self.record_check = getattr(self, 'record_check', None), None
         if gap:
             self.gaps[attempt.number] = gap
         worker = self.catalogue.worker(attempt.worker)
@@ -1646,6 +1694,8 @@ class Orchestration:
                                 **({'code': code} if code else {}),
                                 'invalid': (invalid or None) if not stop or stop == STOP_REPLAN else None,
                                 'gap': gap or None, **({'judged': judged} if judged else {}),
+                                # #674: the judgment denied a recorded-done call, and what the one re-judgment said.
+                                **({'record_check': record_check} if record_check else {}),
                                 'text': ' '.join(part for part in (EVALUATED_TEXT[evaluation], gap, after) if part)})
         if following is not None:
             self.attempts.append(following)
@@ -1669,6 +1719,7 @@ class Orchestration:
         self.steers = str(steers or '')
         self.terminal = None
         self.attempts.append(following)
+        self._span(following.number)
         self.record(STEER_CONTINUED, {'attempt': following.number, 'worker': following.worker,
                                       'model': following.model or None, 'count': int(count),
                                       'text': STEER_CONTINUED_TEXT})

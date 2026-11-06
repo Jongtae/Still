@@ -121,23 +121,13 @@ class Settings(Mode, _Case):
                 with self.assertRaises(ToolError):
                     browser.click({'target': 'Buy now', 'effect': 'payment'})
 
-    def test_enabling_mode_during_an_unattended_browser_session_refreshes_only_the_unattended_refusal(self):
+    def test_enabling_mode_during_an_unattended_browser_session_lets_the_next_payment_step_through(self):
         job = self.scheduled_job()
         browser, driver = self.browser(job)
         self.switch(True)
         browser.click({'target': 'Buy now', 'effect': 'payment'})
         self.assertEqual(driver.approved, [True])
         self.assert_receipt(job['id'], 'browser_click')
-        self.switch(False)
-        from personal_agent import family_share
-        self.store.put(family_share.SHARED_KEY, {'fixture.test': {'from': 'another-owner', 'since': 1000}})
-        job = self.scheduled_job()
-        browser, driver = self.browser(job)
-        self.switch(True)
-        with self.assertRaises(ToolError):
-            browser.click({'target': 'Buy now', 'effect': 'payment'})
-        self.assertEqual(driver.approved, [])
-        self.assertEqual(self.receipts(job['id']), [])
 
     def test_browser_held_submit_and_secret_fields(self):
         self.switch(True)

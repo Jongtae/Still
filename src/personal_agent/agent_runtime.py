@@ -1,4 +1,6 @@
 """Capability registry and a provider-independent, bounded native tool loop."""
+
+from . import work_status as ws
 from .messages import msg
 import hashlib
 import inspect
@@ -412,7 +414,7 @@ SCHEDULE_PREPARATION_ARGUMENTS={
  'every_minutes':('With until (#719): instead of recurrence, repeat every that many minutes (a whole number, 5 to 720) from due until the until time, at most max_runs times - for watching something up to a deadline. One wish is one watch: never add a separate preparation for its first or last check. The result\'s last_check is the last scheduled check; describe the watch by it. '
   'Standing wish (#846): when the owner states a wish about something that changes over time (a price, availability, weather, a delivery, an opening) and wants to know when it comes about, propose one kind prepare watch with delivery when_needed in one question, rather than answering once and stopping: goal states what to check and what counts as news, due is the first check, until is the owner\'s deadline. When a detail you can reasonably assume is missing (the cadence, the deadline), still propose the watch with what is known, say the assumption and ask in the same reply; when the missing detail decides what is checked (which date, which item) and nothing gives it, ask that one question first and propose after the answer (#406). '
   'Default cadence about three checks a day at times fitted to the owner\'s day (morning, afternoon, evening local), so every_minutes around 360 to 480; hourly or closer only when the owner asks for it or the deadline is within hours. After an invalid_window result, correct and retry that same bounded watch; never replace it with separately dated one-shot or daily preparations for the same goal.'),
- 'until':'For every_minutes: RFC3339, within 31 days of due. until is exclusive: no check runs at the until time itself, so to include a check at the owner\'s end time set until just after it (one minute later).',
+ 'until':'For every_minutes: RFC3339, within 31 days of due. Inclusive like RFC 5545 UNTIL: a check falling at until itself runs, none after it, so pass the owner\'s end time as said.',
  'max_runs':'For every_minutes: 1 to 96; default every slot.',
  'delivery':'send (the owner is told each time), keep (the owner is not told; results can be looked up on request), or when_needed (kind prepare: the owner is told only when a result needs them). Choose by when the owner needs to hear: a check whose value is hearing in time needs send or when_needed, not keep. Preserve the owner\'s explicit delivery choice.',
  'title':'For kind prepare, what the owner reads and accepts (#393), apart from goal: a short name in the owner\'s language (at most 60 characters).',
@@ -438,7 +440,7 @@ TELL_OWNER_DESCRIPTION=('Send the owner one short message now, in their paired c
 #: setting (preparations cancel/accept, browser close_login/use_mobile) cannot be missing from the schema.
 from .settings_orchestrator import SETTINGS as _OWNER_SETTINGS
 SETTING_NAMES=list(dict.fromkeys(name for names in _OWNER_SETTINGS.values() for name in names))
-SETTINGS_CATEGORIES=['payment_autonomy','main_ai','judgment_ai','current_context','owner_model','family','skills','ai_connections','api_connections','phone_link','preparations','browser','connections']
+SETTINGS_CATEGORIES=['payment_autonomy','main_ai','judgment_ai','current_context','owner_model','skills','ai_connections','api_connections','phone_link','preparations','browser','connections']
 #: #826: the owner's audit of what an answer used, readable in conversation.
 INFORMATION_USE_DESCRIPTION=('Show which owner information an earlier answer (Work) used and where it went, from Still\'s own records: '
                              'the owner profile keys, memory rows, calendar entries, files, current-context claims and earlier '
@@ -459,7 +461,7 @@ SKILL_RESOURCE_DESCRIPTION=('Read one text file packaged with a skill you loaded
                             'path: the file path relative to the skill, as listed in its resources.')
 SETTINGS_READ_DESCRIPTION=('Read the owner\'s current Still settings: Main AI (route, model), Judgment AI (mode, model), current context (enabled, time zone), owner-model upkeep (enabled, daily call cap) and external connections, each with the values it may take. '
  'Keys, tokens and private endpoints are never included; connection setup may show only credential-free public HTTPS definitions.')
-SETTINGS_READ_ARGUMENTS={'category':'Optional, one of payment_autonomy (enabled, authority revision and risk; enabling always needs owner confirmation of the exact draft, disabling may apply on the owner direct request), api_connections (generic API connection metadata and a contextual secret input page), main_ai, judgment_ai, current_context, owner_model, family (the other assistants on this Mac - family members\' agents and, from a family assistant, the owner\'s own - each with its Telegram name and state, which sites this assistant shares with them, and the sites it is signed in to), skills (whether skills are on, which are installed, and the Still reference skills that can be added by name, listed even while skills are off), phone_link (what a one-time phone link can be sent for now), preparations (the owner\'s reservations - reminders, prepared tasks and watches - with when, how often, the goal and whether each is scheduled, running or waiting for the owner\'s yes; read it when the owner asks what is reserved), browser (what holds the one browser profile now - a login window waiting for the owner, another Work, a short session keep-alive or nothing - the login windows waiting for the owner, each by site and minutes left, and sites kept in desktop version; read it when a browser action was refused as busy), ai_connections (whether Works may use the owner\'s AI-side connected services for reads and general non-payment changes; payments require exact per-action owner approval by default, replaced by owner-enabled payment autonomy while on; the MCP servers the owner configured in each AI and which are on for Works; the owner\'s trust record per connection: each operation\'s class, money-capable marking and trust rung), connections (omit for all).'}
+SETTINGS_READ_ARGUMENTS={'category':'Optional, one of payment_autonomy (enabled, authority revision and risk; enabling always needs owner confirmation of the exact draft, disabling may apply on the owner direct request), api_connections (generic API connection metadata and a contextual secret input page), main_ai, judgment_ai, current_context, owner_model, skills (whether skills are on, which are installed, and the Still reference skills that can be added by name, listed even while skills are off), phone_link (what a one-time phone link can be sent for now), preparations (the owner\'s reservations - reminders, prepared tasks and watches - with when, how often, the goal and whether each is scheduled, running or waiting for the owner\'s yes; read it when the owner asks what is reserved), browser (what holds the one browser profile now - a login window waiting for the owner, another Work, a short session keep-alive or nothing - the login windows waiting for the owner, each by site and minutes left, and sites kept in desktop version; read it when a browser action was refused as busy), ai_connections (whether Works may use the owner\'s AI-side connected services for reads and general non-payment changes; payments require exact per-action owner approval by default, replaced by owner-enabled payment autonomy while on; the MCP servers the owner configured in each AI and which are on for Works; the owner\'s trust record per connection: each operation\'s class, money-capable marking and trust rung), connections (omit for all).'}
 SETTINGS_CHANGE_DESCRIPTION=('Propose one change to an owner setting that the owner asked for. This does NOT change anything: Still creates '
  'a draft and Still asks the owner to confirm it in this conversation (an 적용 button, or a plain yes typed in '
  'reply); never tell the owner a command to send, and nothing applies without that confirmation. Never pass API '
@@ -467,14 +469,7 @@ SETTINGS_CHANGE_DESCRIPTION=('Propose one change to an owner setting that the ow
  'calling it, tell the owner what is waiting for their confirmation, in one sentence.')
 SETTINGS_CHANGE_ARGUMENTS={
  'setting':('category and setting: main_ai route or model, judgment_ai mode or model, current_context enabled or timezone, '
-  'owner_model enabled or daily_calls, family add (create a family member\'s own assistant on this Mac that uses '
-  'the owner\'s AI; value is its Telegram name such as 아내 AI; after confirmation the owner receives a setup link '
-  'on Telegram to forward), family share_site (share this assistant\'s current sign-in session for one site with '
-  'another assistant on this Mac, no password; value is "<assistant name>|<site domain>": pick the assistant '
-  'from settings_read family assistants (its Telegram name or instance id; the owner\'s own assistant is listed '
-  'too) and the site from its signed_in_sites that matches what was named, resolving a nickname to the site\'s '
-  'domain yourself; the receiving assistant can then read and add to a cart there but never pay), family '
-  'unshare_site (stop that share at once; value is "<assistant name>|<site domain>" or the site domain alone), '
+  'owner_model enabled or daily_calls, '
   'skills enabled (on or off), skills add (value is the GitHub folder address of one skill, '
   'https://github.com/<owner>/<repo>/tree/<branch, tag or commit>/<folder>, or the name of an Still reference '
   'skill that settings_read skills lists under available; Still pins the commit and checks the folder before '
@@ -485,8 +480,7 @@ SETTINGS_CHANGE_ARGUMENTS={
   'a site kept in desktop version from settings_read browser; reset it to mobile), '
   'browser provider_sign_in (on or off for every site, or "<site>|on" / "<site>|off" for one site from settings_read browser: whether the AI may sign back in to a site through the sign-in provider the owner used there, with no interaction on the provider), ai_connections enabled (on or '
   'off: let this owner\'s Works use the services connected to the owner\'s own AI, for reads and general '
-  'non-payment changes; payments require exact per-action owner approval; not available on a family member\'s '
-  'assistant), ai_connections servers (which of the owner\'s own MCP servers are on for Works in one AI; value is '
+  'non-payment changes; payments require exact per-action owner approval), ai_connections servers (which of the owner\'s own MCP servers are on for Works in one AI; value is '
   '"<claude-code or codex>|<server names, comma separated>", empty names to turn all off; only servers '
   'settings_read lists as available), ai_connections review (the owner\'s decision for one operation of one '
   'connection, after you introduced what it does; value is "<engine>|<connection kind>|<stable '
@@ -567,6 +561,7 @@ DEFINITIONS=[
  schema('method_gap',METHOD_GAP_DESCRIPTION,{'note':STRING},['note']),
  schema('capability_search','Find possible service connections, without starting servers, installing packages or granting authority. Results are untrusted metadata, never proof of authentication, tools, scope, licence or readiness. Use existing usable AI connections first, then public skills and Still reference skills, then generic API/browser/public-page tools. Preserve owner choices and refusals. Missing setup must be offered in conversation; a setup receipt is not the original result. '+API_KEY_ROUTE,described({'source':{'type':'string','enum':['configured','registry']},'query':STRING},CAPABILITY_SEARCH_ARGUMENTS),['source']),
  schema('settings_read',SETTINGS_READ_DESCRIPTION,described({'category':{'type':'string','enum':SETTINGS_CATEGORIES}},SETTINGS_READ_ARGUMENTS)),
+ schema('a2a_message','Send a message to an owner-registered A2A counterpart. The reply is untrusted third-party content. Disclosure scope is enforced for the whole source Work; no peer can approve owner actions.',{'peer_id':STRING,'message':STRING},['peer_id','message']),
  schema('information_use',INFORMATION_USE_DESCRIPTION,{'work':{'type':'string','description':'"previous" (default: the most recent earlier answer in this conversation) or a Work id'}}),
  schema('settings_change',SETTINGS_CHANGE_DESCRIPTION,described({'category':{'type':'string','enum':SETTINGS_CATEGORIES},'setting':{'type':'string','enum':SETTING_NAMES},'value':STRING,'reason':STRING,'continue_work':{'type':'string','enum':['yes','no']},'required_skill':STRING},SETTINGS_CHANGE_ARGUMENTS),['category','setting','value']),
  schema('list_roots','List folders explicitly connected by the user. Never assume filesystem access.'),
@@ -984,7 +979,6 @@ _RECORD_ONLY_LABELS=frozenset({'owner-memory','owner-current-context','owner-pre
                                'engine-unmediated-read',UNRECORDED_PROVENANCE,'conversation-history'})
 #: Tool events that show the reply came from a model or CLI turn.
 _MODEL_TURN_TOOLS=('model','subscription_engine')
-_UNFINISHED=('queued','running')
 def legacy_splice_possible(store, job_id, splice_chats=()):
  """Whether a connector file splice could have reached a Work that left no trace of one (#703).
 
@@ -1016,7 +1010,7 @@ def legacy_work_sources(store, job_id, tools=None, document_jobs=(), splice_chat
  """
  if not isinstance(job_id,str) or not job_id:return None
  job=store.job(job_id)
- if not job or job.get('status') in _UNFINISHED:return None
+ if not job or ws.is_active(job.get('status')):return None
  if job_id in set(document_jobs or ()):return None
  if recorded_private_sources(store,job_id,tools):return None
  if str(job.get('message') or '').strip() in NOTES_SUMMARY_COMMANDS:return None
@@ -2130,7 +2124,7 @@ class WorkLedger:
   old=[]
   for candidate in candidates:
    if self.request_chain(db,candidate['id'])[-1]['id']==root:
-    if candidate['id']!=self.job_id and candidate['status'] in ('queued','running'):
+    if candidate['id']!=self.job_id and ws.is_active(candidate['status']):
      raise ValueError('legacy request budget is still in use')
     old.append((candidate['id'],self._validate(json.loads(candidate['value']))))
   if old:
@@ -2180,7 +2174,7 @@ class WorkLedger:
    if self.epoch is not None and row['epoch']!=self.epoch:raise LedgerSuperseded('stale work run')
    if row['active_work_id']!=self.job_id:
     if (not fresh or row['active_work_id'] not in {work['id'] for work in chain[1:]}
-        or any(work['status'] in ('queued','running') for work in chain[1:])):
+        or any(ws.is_active(work['status']) for work in chain[1:])):
      raise LedgerSuperseded('request is owned by another run')
     row.update(active_work_id=self.job_id,epoch=row['epoch']+1)
    if fresh and not row['active']:
@@ -2903,14 +2897,32 @@ def trail_steps(rows, tools=None):
    steps.append((tool,action,'exhausted' if data.get('code') in BUDGET_CODES else 'missed' if missed else 'failed',data,reason));continue
   evidence=data.get('evidence') if isinstance(data.get('evidence'),dict) else {}
   gaps=[label for label in evidence.get('qualifiers') or () if label in INCOMPLETE_QUALIFIERS]
+  withheld=recorded_withheld(action,data,completed)
   if memory_proposal(action,evidence):state='proposed'
-  elif evidence.get('refused_because') or (action=='settings_change' and evidence.get('requires_owner_confirmation') and not evidence.get('applied')
-         and evidence.get('draft_id') not in completed):
-   state='withheld'
+  elif withheld:state='withheld'
   elif gaps:state='incomplete'
   else:state='succeeded'
+  # #170: a withheld step waits for the owner; the judgment reads ``AWAITING_OWNER_STEP_FACT``.
   steps.append((tool,action,state,data,' '.join(QUALIFIER_NOTES[label] for label in gaps) if state=='incomplete' else None))
  return steps
+
+def recorded_withheld(action, detail, completed=frozenset()):
+ """The ``Withheld`` of a call recorded as returning normally, from its recorded Evidence, or None (#679).
+
+ The CLI route's bridge records a normal return as ``succeeded`` with the call's Evidence summary
+ (``evidence_summary``), which keeps the typed fields ``withheld_effect`` reads.  The same rule then
+ classifies it as the direct route classifies the result itself: a result that advanced the Work
+ and waits for the owner's decision (a draft, a proposal) is withheld on both routes.  A settings
+ draft whose continuation was queued (``completed``, #1445) no longer waits.  Of the results that
+ advanced nothing, a refused write stays withheld as before; a missing connection or sign-in keeps
+ the CLI route's own owner-prerequisite handling (#709/#981 sign-in, #774 connector, #182 folder),
+ which reads the same records.
+ """
+ detail=detail if isinstance(detail,dict) else {}
+ evidence=detail.get('evidence') if isinstance(detail.get('evidence'),dict) else {}
+ if action=='settings_change' and evidence.get('draft_id') in completed:return None
+ withheld=withheld_effect(action,evidence)
+ return withheld if withheld is not None and (withheld.advanced or evidence.get('refused_because')) else None
 
 def _state_free_actions():
  """The actions ``state_change_short`` never holds against a Work: they change no outside state."""
@@ -3003,6 +3015,78 @@ def failed_steps_text(steps, limit=FAILED_STEPS_CHARS):
   kept.append(entry)
  if len(kept)<len(entries):kept.append(FAILED_STEPS_MORE.format(count=len(entries)-len(kept)))
  return '; '.join(kept)
+
+#: #674: what the outcome judgment reads beside each call Still's own record shows completed in this
+#: Work, and the ``not_done`` entry for a shortfall that is not one of them.
+RECORDED_EFFECT_FACT='done: Still\'s own record of this call of this Work says {receipt}: true'
+NOT_DONE_OTHER='other'
+RECORDED_EFFECTS_LIMIT=12
+#: #674: the explicit completion receipts tools already return (``evidence_summary``): a change applied,
+#: a preparation scheduled, a note or result saved.  Only one of these, true, shows a call completed;
+#: the effect classifier's ``changed`` fallback is continuation safety, not proof of completion.
+COMPLETION_RECEIPTS=('applied','scheduled','saved')
+
+def recorded_effects(steps, limit=RECORDED_EFFECTS_LIMIT):
+ """``[(id, tool, receipt)]``: the calls of ``steps`` Still's own record shows completed (#674).
+
+ ``steps`` are ``(tool, host_action, state, detail, reason)`` in order (``trail_steps``, or the
+ direct route's own attempts), the same steps ``failed_steps_text`` reads.  A call is listed only
+ with positive typed evidence: its trail state is ``succeeded``, its recorded result (``evidence``
+ on the CLI route, the result itself on the direct route) carries a ``COMPLETION_RECEIPTS`` flag
+ that is true, and nothing about it is withheld or waits for the owner (``withheld_effect``,
+ ``owner_decision_record``) or has an unknown effect.  A proposal awaiting acceptance, a draft
+ awaiting confirmation and a call the classifier merely could not rule out are never listed.
+ The ids are the handles the outcome judgment's ``not_done`` refers to (``record_contradictions``).
+ """
+ from .owner_model import owner_decision_record
+ done=[]
+ for tool,action,state,detail,_reason in steps:
+  detail=detail if isinstance(detail,dict) else {}
+  record=detail.get('evidence') if isinstance(detail.get('evidence'),dict) else detail
+  receipt=next((key for key in COMPLETION_RECEIPTS if record.get(key) is True),None)
+  if (state!='succeeded' or receipt is None or unknown_effect(detail) or withheld_effect(action,record) is not None
+      or owner_decision_record(detail) is not None or owner_decision_record(record) is not None):continue
+  done.append((f'e{len(done)+1}',str(tool),receipt))
+ return done[:limit]
+
+def recorded_effects_text(effects):
+ """The outcome judgment's ``recorded_effects`` fact (#674): one line per ``recorded_effects`` entry, or ''."""
+ return '\n'.join(f'{ident} {tool}: '+RECORDED_EFFECT_FACT.format(receipt=receipt) for ident,tool,receipt in effects or ())
+
+#: #674: the fact the one re-judgment reads when the first reported a recorded-done call as not done.
+RECORD_CONTRADICTION_FACT=('Your first reading reported {ids} as not done. Still\'s own record says otherwise: {facts}. '
+                           'Still\'s record stands; judge again with it as a fact.')
+
+def record_contradiction_text(effects, contradicted):
+ """The ``record_contradiction`` fact of the re-judgment (#674): each contradicted id with its recorded receipt."""
+ known={ident:(tool,receipt) for ident,tool,receipt in effects or ()}
+ facts='; '.join(f'{ident} {known[ident][0]} recorded {known[ident][1]}: true' for ident in contradicted if ident in known)
+ return RECORD_CONTRADICTION_FACT.format(ids=', '.join(contradicted),facts=facts)
+
+def record_contradictions(effects, not_done):
+ """The ids a judgment's ``not_done`` reported as not done that Still recorded as done, in order (#674).
+
+ Typed ids only, never wording.  An unknown id or ``NOT_DONE_OTHER`` contradicts nothing, nor does a
+ missing ``not_done`` (an engine that does not report it).
+ """
+ if not isinstance(not_done,(list,tuple)):return ()
+ done={entry[0] for entry in effects or ()}
+ reported=[str(item).strip().lower() for item in not_done if isinstance(item,str) and item.strip()]
+ return tuple(dict.fromkeys(item for item in reported if item in done))
+
+def second_judgment_allowed(judgments, budget):
+ """Whether the one re-judgment (#674) may be asked now, spending its turn when the engine does not.
+
+ The same allowance as any judgment that can only end the Work (``Orchestration.may_judge``): the
+ Work is neither stopped nor past its deadline.  The turn is spent as the first judgment's was: by
+ the engine when it carries this budget, else here (reserved).  Any budget error says no.
+ """
+ if budget is None:return True
+ try:
+  if budget.interrupted() is not None or budget.remaining()<=0:return False
+  if getattr(getattr(judgments,'engine',None),'work_budget',None) is not budget:budget.spend_turn(reserve=True)
+  return True
+ except Exception:return False
 
 #: #151: the outcome judgment's ``read_state`` line - which items this attempt listed, opened and read through.
 READ_STATE_CHARS=600
@@ -3148,14 +3232,18 @@ def outcome_from_events(rows, tools=None):
  order.  A failed call, a withheld effect or an incomplete result keeps the
  outcome down unless ``recovered`` holds; unknown effects are the caller's.
  """
- trail,refusals=event_trail(rows,tools)
+ steps=trail_steps(rows,tools)
+ trail=[(action,state) for _tool,action,state,_detail,_reason in steps]
+ refusals=[(tool,reason) for tool,_action,state,_detail,reason in steps if state in FAILED_CALL_STATES]
  if all(state in SETTLED_STATES for _action,state in trail) or recovered(trail):return 'succeeded',refusals
+ # #679: a withheld call advanced the Work exactly when ``withheld_effect`` says so (a draft or a
+ # proposal waiting for the owner), as on the direct route; a refused write did not.
  advanced=any(state in ('succeeded','incomplete') for _action,state in trail) or any(
-  state=='withheld' and action=='settings_change' for action,state in trail)
+  state=='withheld' and getattr(recorded_withheld(action,detail),'advanced',False) for _tool,action,state,detail,_reason in steps)
  return ('partial' if advanced else 'failed'),refusals
 
 class Capabilities:
- def __init__(self,store,adapter,config,key,job_id,record,readonly=False,network=None,document_access=True,packages=None,allowed_tools=None,document_context=False,public_page_scope=None,memory_approval=None,inherited_provenance=(),calendar=None,calendar_owner=None,memory_request=None,current_packages=None,lookup_sources=None,delegated=False,inherited_excluded=(),budget=None,browser=None,browser_approvals=None,browser_unavailable=None,judgments=None,secret_redactor=None,current_context=None,preparations=None,location_request=None,owner_update=None,settings=None,information_use=None,skills=None,drive=None,mail=None,connections=None):
+ def __init__(self,store,adapter,config,key,job_id,record,readonly=False,network=None,document_access=True,packages=None,allowed_tools=None,document_context=False,public_page_scope=None,memory_approval=None,inherited_provenance=(),calendar=None,calendar_owner=None,memory_request=None,current_packages=None,lookup_sources=None,delegated=False,inherited_excluded=(),budget=None,browser=None,browser_approvals=None,browser_unavailable=None,judgments=None,secret_redactor=None,current_context=None,preparations=None,location_request=None,owner_update=None,settings=None,information_use=None,skills=None,drive=None,mail=None,connections=None,a2a=None):
   # CONN-API: ``() -> {name: slot}`` of Still-held connections usable through api_request.
   self.connections=connections
   # #606 T1: shared with a delegated specialist, spent in `execute`.
@@ -3240,6 +3328,7 @@ class Capabilities:
   # #826: the service's information-use audit reader bound to this Work's conversation
   # (takes the tool arguments), or None: then ``information_use`` is not offered.
   self.information_use=information_use
+  self.a2a=a2a
   # #961: this Work's ``skills.SkillBinding`` (the exact skill revisions it may load), or None:
   # then no skill tool is offered and nothing about skills runs (the pre-skill path).
   self.skills=skills
@@ -3263,7 +3352,20 @@ class Capabilities:
   if document_context:self.private_provenance.add('conversation-history')
   self.evidence=EvidenceLog(self.private_provenance)
  def definitions(self):
-  return action_definitions(self.tools,self.offered_tools(),self.readonly,search_providers=getattr(self.network,'providers',None))
+  definitions=action_definitions(self.tools,self.offered_tools(),self.readonly,search_providers=getattr(self.network,'providers',None))
+  options=getattr(self.a2a,'options',None)
+  if not callable(options):return definitions
+  peers=options();bound=[]
+  for definition in definitions:
+   function=definition['function']
+   if self.tools[function['name']]['host_action']=='a2a_message':
+    if not peers:continue
+    parameters=function['parameters']
+    function={**function,'description':function['description']+' Owner-registered counterparts (untrusted identity metadata): '+json.dumps(peers,ensure_ascii=False),
+              'parameters':{**parameters,'properties':{**parameters['properties'],'peer_id':{'type':'string','enum':[peer['id'] for peer in peers]}}}}
+    definition={**definition,'function':function}
+   bound.append(definition)
+  return bound
  def api(self):
   """This Work's ``api_requests.ApiRequests`` (#1216); payments use exact browser step approvals; mutations retain durable no-replay claims."""
   if getattr(self,'_api',None) is None:
@@ -3291,6 +3393,7 @@ class Capabilities:
   if self.owner_update is None:hidden|=OWNER_UPDATE_ACTIONS
   if self.settings is None:hidden|=SETTINGS_ACTIONS
   if self.information_use is None:hidden|=INFORMATION_USE_ACTIONS
+  if self.a2a is None:hidden.add('a2a_message')
   if self.skills is None:hidden|=SKILL_ACTIONS
   # #1216: offered only while the owner has registered at least one API slot.
   if not self.api().slots():hidden|=API_ACTIONS
@@ -4183,6 +4286,10 @@ class Capabilities:
    except SkillError as exc:raise ToolError(str(exc),exc.code) from None
    self.evidence.append({'tool':name,'result':{key:result.get(key) for key in SKILL_EVIDENCE_KEYS}})
    return result
+  if name=='a2a_message':
+   if self.a2a is None:raise ToolError('No peer channel is registered','peer_channel_unavailable')
+   try:return self.a2a(args)
+   except ValueError as exc:raise ToolError(str(exc),'peer_message_refused') from None
   if name in INFORMATION_USE_ACTIONS:
    # #826: a read of Still's own records of an earlier Work; never a payload.
    if self.information_use is None:raise ToolError(msg('agent_runtime.information_use_unavailable'),'information_use_unavailable')
@@ -4766,7 +4873,7 @@ def withheld_effect(name,result):
  if name=='settings_change' and result.get('applied') is False and result.get('requires_owner_confirmation'):
   # #814: drafted, not applied; real work with the owner's confirmation remaining.
   return Withheld(result.get('next_step') or SETTINGS_PENDING,advanced=True)
- if result.get('outcome') in ('failed','partial'):
+ if ws.has_incomplete_result(result.get('outcome')):
   # A nested run's own typed outcome.  A partly finished specialist report
   # is real work with a step remaining (`partial`); a specialist that
   # accomplished nothing advanced nothing, so a turn whose only call was
@@ -4792,7 +4899,7 @@ def evidence_qualifiers(result):
  if not isinstance(result,dict):return []
  found=[label for key,label in EVIDENCE_QUALIFIER_FLAGS if result.get(key) is True]
  if isinstance(result.get('read_failures'),list) and result['read_failures']:found.append('partial')
- if result.get('outcome') in ('failed','partial') and result['outcome'] not in found:found.append(result['outcome'])
+ if ws.has_incomplete_result(result.get('outcome')) and result['outcome'] not in found:found.append(result['outcome'])
  # #630 review P1: a write that returned normally yet says it wrote nothing and nothing was written
  # before (a detached, missing, changed or unverifiable earlier result) did not do what it was asked.
  if result.get('saved') is False and result.get('already_saved') is False:found.append('not-done')
@@ -5060,7 +5167,7 @@ def _evidence_detail(name,result):
 FALLBACK_UNDESCRIBED=msg('agent_runtime.the_tools_finished_but_i_didn')
 
 #: Results that are another model's prose, not an observed fact.
-UNVERIFIABLE_RESULTS=('delegate_agent',)
+UNVERIFIABLE_RESULTS=('delegate_agent','a2a_message')
 
 def verified_text(name,result):
  """Still's own rendering of what one observed tool result supports, or None.
@@ -5482,6 +5589,8 @@ class GoalVerdict(str):
  #: #1459: the line the owner reads ('' when the reply already says it; None when none was given).
  note=None
  retry_warranted=None
+ #: #674: ``Judgment.record_check`` of the outcome judgment, or None.
+ record_check=None
 
 def goal_verdict(outcome,gap='',note=None,retry_warranted=None):
  verdict=GoalVerdict(outcome);verdict.gap=gap if outcome=='no' else ''
@@ -5507,7 +5616,7 @@ def work_awaiting_owner_text(capabilities):
  try:return awaiting_owner_text(work_awaiting_owner(capabilities.store,capabilities.job_id))[:AWAITING_OWNER_CHARS]
  except Exception:return ''
 
-def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact=None,conversation='',owner_context=None,*,budget=None,attachments='',read_state='',awaiting='',conversation_turns=None):
+def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact=None,conversation='',owner_context=None,*,budget=None,attachments='',read_state='',awaiting='',conversation_turns=None,effects=()):
  """``yes`` / ``no`` / ``unavailable``: did the reply serve the owner's message ``goal``?
 
  The one outcome judgment (#657, #820): one ``ConversationJudgments.goal_reached``
@@ -5517,7 +5626,8 @@ def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact
  worker was given - ``owner_context`` is the turn context's ``profile`` /
  ``current_context`` sections, rendered by ``owner_context_fact``.  #151: ``read_state``
  (``steps_read_state``) says which listed items the run opened and read through.  #240: ``awaiting``
- (``work_awaiting_owner_text``) is what this Work showed for the owner's own approval.  No judgments, an engine error or a non-answer is
+ (``work_awaiting_owner_text``) is what this Work showed for the owner's own approval.  #674: ``effects``
+ (``recorded_effects``) are the calls whose own record shows them completed; a judgment denying one is asked once more.  No judgments, an engine error or a non-answer is
  ``unavailable``, which never yields ``succeeded``.  ``redact(text,
  private)`` (``Capabilities.judgment_text``) runs on every fact before it is
  bounded, so a cut can never leave part of a secret; the owner's request is
@@ -5554,13 +5664,17 @@ def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact
  try:judged=judgments.goal_reached(clean(goal,private=False),observed,failed,work_id=work_id,answer=reply,conversation=recent,
                                    owner_context=owner,**({'conversation_messages':count} if count is not None else {}),
                                    **({'attachments':attachments} if attachments else {}),
-                                   **({'awaiting_owner':clean(awaiting)} if awaiting else {}))
+                                   **({'awaiting_owner':clean(awaiting)} if awaiting else {}),
+                                   **({'recorded_effects':tuple(effects),
+                                       'may_rejudge':lambda:second_judgment_allowed(judgments,budget)} if effects else {}))
  except Exception:return 'unavailable'
  outcome=getattr(judged,'outcome',None)
  if outcome not in ('yes','no'):return goal_verdict('unavailable')
  note=getattr(judged,'note',None)
  note=clean(' '.join(note.split()),private=False)[:GOAL_GAP_CHARS] if isinstance(note,str) else None
- return goal_verdict(outcome,clean(' '.join(str(getattr(judged,'value',None) or '').split()),private=False)[:GOAL_GAP_CHARS],note,getattr(judged,'retry_warranted',None))
+ verdict=goal_verdict(outcome,clean(' '.join(str(getattr(judged,'value',None) or '').split()),private=False)[:GOAL_GAP_CHARS],note,getattr(judged,'retry_warranted',None))
+ verdict.record_check=getattr(judged,'record_check',None) # #674
+ return verdict
 
 def agency_report(goal,verified,failures,unknown,next_step,question=None):
  """The typed owner report of one run: requested / observed / failed / unknown / next.
@@ -5807,7 +5921,8 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
    judgment=goal_judgment(capabilities.judgments,goal,{'evidence_refs':refs,'summary':content},observations,failed_steps_text(steps),
                           capabilities.job_id,getattr(capabilities,'judgment_text',None),conversation,owner_context,budget=budget,
                             attachments=attachment_facts(images=len(images)) if images else '',read_state=steps_read_state(steps),
-                            awaiting=work_awaiting_owner_text(capabilities),conversation_turns=conversation_turns)
+                            awaiting=work_awaiting_owner_text(capabilities),conversation_turns=conversation_turns,
+                            effects=recorded_effects(steps))
   if not _external(trail) and not invalid_calls:
    # Ordinary conversation: no tool ran (or only internal current-state
    # bookkeeping, #627), so there is nothing to observe.
@@ -5842,7 +5957,8 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
    record('model','concluded',json.dumps({'scope':scope,'outcome':result.outcome,
     'claim':None if claim is None else {'status':claim['status'],'evidence_refs':claim['evidence_refs']},
     'judgment':judgment,'alternatives_tried':{'count':len(alternatives),'kinds':kinds},
-    'nudges':nudges,'unknown':len(result.report['unknown'])},ensure_ascii=False))
+    'nudges':nudges,'unknown':len(result.report['unknown']),
+    **({'record_check':judgment.record_check} if getattr(judgment,'record_check',None) else {})},ensure_ascii=False))
   return result
 
  while True:
@@ -5939,7 +6055,8 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
       judgment=goal_judgment(capabilities.judgments,goal,claim,observations,failed_steps_text(steps),capabilities.job_id,
                              getattr(capabilities,'judgment_text',None),conversation,owner_context,budget=budget,
                              attachments=attachment_facts(images=len(images)) if images else '',read_state=steps_read_state(steps),
-                             awaiting=work_awaiting_owner_text(capabilities),conversation_turns=conversation_turns)
+                             awaiting=work_awaiting_owner_text(capabilities),conversation_turns=conversation_turns,
+                            effects=recorded_effects(steps))
       # A "not shown" answer returns the claim once, so the model can take
       # another path; a second one, or no engine, ends the run below.
       if judgment=='no' and getattr(judgment,'retry_warranted',None) is not False and judged<GOAL_JUDGMENTS:reason='goal_not_observed'

@@ -1430,6 +1430,8 @@ class Worker:
         #: the last ``AUTHORIZATIONS_KEPT``), and how many there were in this worker's life.
         self.authorizations = []
         self.authorization_count = 0
+        self.login_return = None   # latest owner-window start; consumed at most once
+        self.login_return_pending = None  # only the latest settle-time return may run
         self.popups = []           # #914: (view, window, delegate) of sign-in popups while the owner signs in
         self.main_navigations = 0  # main-frame navigations allowed so far (#736)
         #: #11: while a ``load_more`` read runs, a main-frame navigation the page starts is
@@ -2447,6 +2449,7 @@ class Worker:
 
     def op_show(self, ident, command, timeout):
         url = command.get('url')
+        self.login_return = (object(), url or (str(self.view.URL().absoluteString()) if self.view.URL() else None))
         # The owner signs in by hand: the guard is off while the window shows (#698).
         self.set_guard_off(True)
         self.owner_visible = True
@@ -2475,6 +2478,7 @@ class Worker:
         view = WebKit.WKWebView.alloc().initWithFrame_configuration_(rect, config)
         delegate = _popup_delegate_class().alloc().init()
         delegate.worker = self
+        delegate.main_at_open = self.main_navigations
         view.setNavigationDelegate_(delegate)
         view.setUIDelegate_(delegate)
         try:
@@ -2496,8 +2500,29 @@ class Worker:
         """Close one popup (by its view or window), or every popup when neither is given."""
         for entry in list(self.popups):
             if (view is None and window is None) or entry[0] is view or entry[1] is window:
-                entry[1].orderOut_(None)
                 self.popups.remove(entry)
+                entry[0].stopLoading()
+                entry[1].orderOut_(None)
+                # Tear down the closed document so hidden scripts cannot keep running.
+                entry[0].loadHTMLString_baseURL_('', None)
+
+    def return_from_login(self, delay=0):
+        """Only the latest start may return, and a later main navigation wins."""
+        reference = getattr(self, 'login_return', None)
+        baseline = self.main_navigations
+        pending = self.login_return_pending = object()
+        def finish():
+            if (not self.owner_visible or not reference or not reference[1] or self.login_return is not reference
+                    or self.login_return_pending is not pending or self.main_navigations != baseline):
+                return
+            self.login_return_pending = None
+            self.login_return = None
+            request = self.Foundation.NSURLRequest.requestWithURL_(self.Foundation.NSURL.URLWithString_(reference[1]))
+            self.view.loadRequest_(request)
+        if delay:
+            self.AppHelper.callLater(delay, finish)
+        else:
+            finish()
 
     def op_hide(self, ident, command, timeout):
         self.end_remote()
@@ -3073,6 +3098,8 @@ def _popup_delegate_class():
         def webViewDidClose_(self, view):
             # The page closed its own popup (window.close()), as a finished sign-in does.
             self.worker.close_popup(view=view)
+            if self.worker.owner_visible and self.worker.main_navigations == self.main_at_open:
+                self.worker.return_from_login(2)
 
         def windowShouldClose_(self, window):
             self.worker.close_popup(window=window)
@@ -3128,6 +3155,7 @@ def _delegate_class():
                     if not allowed:
                         worker.navigation_refused(main_frame, reason or 'blocked_destination')
                     elif main_frame:
+                        worker.login_return_pending = None
                         worker.main_navigations += 1   # a click waits for it to land (#736)
                         worker.note_authorization(url)   # #636: a host, only when the URL is an authorization request
                         try:
@@ -3232,6 +3260,10 @@ def _delegate_class():
                 return None
             view.loadRequest_(request)
             return None
+
+        def webViewDidClose_(self, view):
+            if view is self.worker.view and self.worker.owner_visible:
+                self.worker.return_from_login()
 
         def windowShouldClose_(self, window):
             # Closing the login window hides it; the parent then exports the session.

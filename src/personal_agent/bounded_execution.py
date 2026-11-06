@@ -1,10 +1,15 @@
 """Bounded subscription-engine execution owned by Still.
 
+#673 owner decision: peer Work uses the host's full relay and auth-only homes;
+ordinary Work retains its existing profile launch and tool surface.
+
 This module is deliberately independent of the API-key provider path.  An
 engine gets a fresh, empty working directory and a small MCP tool catalogue;
 it never receives the owner store, a host path, or arbitrary shell access.
 """
 from dataclasses import dataclass
+from contextlib import contextmanager, ExitStack
+from datetime import datetime, timezone
 import json
 import inspect
 import logging
@@ -13,6 +18,7 @@ import os
 from pathlib import Path
 import re
 import signal
+import stat
 import shutil
 import subprocess
 import sys
@@ -63,6 +69,14 @@ _STRICT_QUALIFICATION_LOCK = threading.Lock()
 # Refusal only: at most eight failed identity/binding/scope records, for one minute.
 _STRICT_FAILURES = {}
 _STRICT_FAILURE_BACKOFF_SECONDS = 60
+
+# #673 pass 2, owner decision: serialize the entire auth-copy lifetime, not
+# just the file operations. Ordinary owner CLI processes do not take this lock.
+_PEER_CODEX_AUTH_LOCK = threading.Lock()
+PEER_AUTH_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
+PEER_AUTH_REFRESH_REASON = ('Peer Codex is waiting for the owner login cache to refresh. '
+    'Still can use this CLI again after normal owner Codex use refreshes the cache; '
+    'Still has not started a refresh or asked you to change anything.')
 
 LOG = logging.getLogger('personal_agent.engine')
 ENGINE_NAMES = {'codex': 'Codex', 'claude-code': 'Claude Code'}
@@ -134,6 +148,7 @@ _OWNER_UPDATE = 'owner-telegram-interim-message-served-on-trusted-local-route-on
 _SETTINGS = 'owner-settings-served-on-trusted-local-route-only'
 #: #826: the Work records are held by the service, reached only through its relay.
 _INFORMATION_USE = 'work-information-use-served-on-trusted-local-route-only'
+_A2A = 'peer-conversation-requires-contained-api-worker'
 #: #961: skills are read from the owner store; the isolated profiles never read it (#960 section 3).
 _SKILLS = 'skills-served-on-trusted-local-route-only'
 _SKILL_ACTIONS = ('skill_load', 'skill_resource', 'method_gap')
@@ -172,6 +187,8 @@ TRUSTED_LOCAL_LIMITATION = ('the CLI may read host files outside Still provenanc
 #: `$CODEX_HOME/AGENTS.md` reaches the model context (untracked by Still
 #: provenance).  Codex's `:minimal` baseline keeps OS paths, /tmp and
 #: /private/var/tmp readable to a sandboxed command.
+#: #673 does not change this ordinary-Work limitation. Peer Work instead
+#: requires the separately qualified auth-only home and complete host relay.
 STRICT_ISOLATED_LIMITATION = ('the CLI gets no shell, file or image tool and its sandbox denies the owner store and home; '
                               'Codex still loads $CODEX_HOME/AGENTS.override.md or AGENTS.md (owner-authored, not '
                               'tracked by Still) into '
@@ -220,7 +237,7 @@ CLI_PROFILES = {
                     'public_page_read', 'read_file', 'save_note', 'save_result', 'weather', 'web_search',
                     *_BROWSER_ACTIONS, *_OWNER_STATE_RELAYED, *_SKILL_ACTIONS),
         'unavailable': {
-            'list_agents': _SPECIALISTS, 'delegate_agent': _SPECIALISTS,
+            'list_agents': _SPECIALISTS, 'delegate_agent': _SPECIALISTS, 'a2a_message': _A2A,
         },
         # No Still-mediated live run of this catalog has been observed.
         # Reference versions are the argv shapes recorded from each CLI's own
@@ -240,7 +257,7 @@ CLI_PROFILES = {
             'save_note', 'weather', 'web_search', 'public_page_read',
             'find_files', 'read_file', 'list_roots', 'save_result', 'calendar_query', 'save_memory', 'list_memory', 'search_memory', 'search_conversation', 'forget_record',
             'list_agents', 'delegate_agent', 'propose_current_state', 'schedule_preparation', 'ask_location',
-            'tell_owner', 'settings_read', 'settings_change', 'capability_search', 'information_use', 'drive_search', 'drive_read', 'mail_search', 'mail_read', 'api_request', 'code_run',
+            'tell_owner', 'settings_read', 'settings_change', 'capability_search', 'information_use', 'a2a_message', 'drive_search', 'drive_read', 'mail_search', 'mail_read', 'api_request', 'code_run',
             *_BROWSER_ACTIONS, *_SKILL_ACTIONS)},
                 'runtimes': {'codex': {'pinned_version': '0.153.4', 'live_tested_version': None}},
     },
@@ -271,6 +288,7 @@ CLI_PROFILES = {
             'tell_owner': _OWNER_UPDATE,
             'settings_read': _SETTINGS, 'settings_change': _SETTINGS, 'capability_search': _SETTINGS,
             'information_use': _INFORMATION_USE,
+            'a2a_message': _A2A,
             **{action: _SKILLS for action in _SKILL_ACTIONS},
         },
         # Historical manual observations; admission uses local checks for the installed identity.
@@ -1876,6 +1894,75 @@ class StrictIsolatedAgentOSMcpTools(AgentOSMcpTools):
         return (self.qualification or {}).get('version')
 
 
+class RelayedWorkMcpTools(StrictIsolatedAgentOSMcpTools):
+    """#673 owner decision: the host serves the scoped Work, without profile lists.
+
+    Adapt the API loop's validation, LoopGuard, evidence and worker projection;
+    Capabilities retains disclosure, candidate writes, budget and redaction.
+    The subprocess receives only already-redacted MCP responses.
+    """
+    peer_work = True
+
+    def __init__(self, capabilities):
+        super().__init__(capabilities)
+        from .agent_runtime import LoopGuard
+        self.guard, self.attempts = LoopGuard(), {}
+
+    def _offered(self):
+        return {row['function']['name']: row for row in self.capabilities.definitions()}
+
+    def handle_mcp(self, method, params):
+        """#673 owner decision: discover/call only this Work's host capabilities."""
+        from .agent_runtime import (ToolError, evidence_summary, loop_keys, loop_outcome, not_run,
+                                    outbound_evidence, worker_result)
+        from .mcp_bridge import _with_remaining, tool_error_result, unexpected_error_result
+        import uuid
+        caps = self.capabilities
+        caps.budget.check()
+        caps.peer_guard()
+        if method == 'tools/list':
+            return {'tools': self.definitions()}
+        if method != 'tools/call':
+            raise ExecutionError('Unsupported host relay method.')
+        name = params.get('name') if isinstance(params, dict) else None
+        listed = name if isinstance(name, str) and name in self._offered() else 'unlisted'
+        action = (caps.tools.get(listed) or {}).get('host_action')
+        trace = {'scope': 'a2a-peer', 'call_id': uuid.uuid4().hex, 'host_action': action}
+        keys, dispatched = (), False
+        try:
+            if listed == 'unlisted':
+                raise ToolError('Tool is outside peer disclosure scope', 'peer_tool_denied', ran=False)
+            args, _definition = self._admit(name, params.get('arguments', {}))
+            memo, keys, _attempt, _keyed, read, refusal = loop_keys(caps, self.guard, self.attempts, name, args, action, None)
+            if refusal is not None:
+                raise refusal
+            caps.record(listed, 'running', json.dumps(trace))
+            self.guard.admit(*keys)
+            if not read:
+                self.guard.wrote()
+            dispatched = True
+            value = caps.execute(name, args)
+            caps.peer_guard()
+            caps.budget.check()
+            self.guard.settle('seen', *keys)
+            caps.memo[memo] = value
+            caps.evidence.append({'tool': name, 'result': value})
+            caps.record(listed, 'succeeded', json.dumps({**trace, 'evidence': {
+                **evidence_summary(action, value), **outbound_evidence(caps, action, args, value)}}))
+            result = {'content': [{'type': 'text', 'text': json.dumps(worker_result(action, value), ensure_ascii=False)}]}
+        except Exception as exc:
+            if not dispatched:
+                not_run(exc)
+            result, typed = (tool_error_result(exc, action) if isinstance(exc, (ValueError, TypeError, OSError))
+                             else unexpected_error_result(exc, action))
+            if keys:
+                self.guard.settle(loop_outcome(action, {}, typed), *keys)
+            caps.record(listed, 'failed', json.dumps({**trace, **typed}))
+        _with_remaining(result, caps.budget)
+        # A secret-bearing tool result never crosses the relay transport.
+        return json.loads(caps.secret_redactor(json.dumps(result, ensure_ascii=False)))
+
+
 class BoundedExecutionAdapter:
     """Start an official subscription CLI with no shell and no inherited env.
 
@@ -2080,8 +2167,11 @@ class BoundedExecutionAdapter:
 
     def command(self, engine_id, binary, prompt, mcp_config, instructions='', profile=BOUNDED_PROFILE,
                 disabled_features=(), model=None, native_search=False, tool_timeout=None, image_paths=(),
-                ai_connections=False, owner_mcp_args=(), effort=None, cloud=None):
+                ai_connections=False, owner_mcp_args=(), effort=None, cloud=None, peer_tools=None):
         """The argv of one Work turn.
+
+        #673 owner decision: ``peer_tools`` supplies the host's exact scoped
+        catalogue for a separately qualified strict, auth-only subscription turn.
 
         ``native_search`` (#678) lets the trusted-local turn use the CLI's own
         web search: Codex ``-c web_search="live"`` (``exec`` has no
@@ -2115,6 +2205,8 @@ class BoundedExecutionAdapter:
             model_args += (['-c', f'model_reasoning_effort="{effort}"'] if engine_id == 'codex'
                            else ['--effort', effort] if engine_id == 'claude-code' else [])
         strict = profile == STRICT_PROFILE
+        if peer_tools is not None and (not strict or ai_connections or cloud is not None or image_paths):
+            raise ExecutionError('Peer Work requires a strict subscription launch.', failure_class='isolation-unqualified')
         native_search = bool(native_search) and not strict and cloud is None
         if engine_id == 'codex' and cloud is not None:
             owner_mcp_args = (*cloud.codex_arguments(),
@@ -2140,6 +2232,7 @@ class BoundedExecutionAdapter:
             # the owner's Main AI model choice is passed explicitly (#679).
             return [binary, 'exec', '--json', *sandbox, '--skip-git-repo-check',
                     '--ignore-user-config', '--ephemeral',
+                    *(['-c', 'cli_auth_credentials_store="file"'] if peer_tools is not None else []),
                     '-c', f'mcp_servers.agentos.command={json.dumps(sys.executable)}',
                     '-c', f'mcp_servers.agentos.args={json.dumps(bridge["args"])}',
                     # Live 2026-10-14: Codex starts MCP servers without PYTHONPATH, so the bridge imported
@@ -2200,6 +2293,18 @@ class BoundedExecutionAdapter:
             # exact allow rule is the approval Claude Code's -p mode checks.
             if strict:
                 argv += strict_launch_arguments('claude-code')
+                if peer_tools is not None:
+                    # #673 owner decision; installed 2.1.287 help is authoritative.
+                    # Pass 2: safe mode also disables the explicit relay (owner
+                    # observation). Probe this restricted fresh-HOME candidate;
+                    # admission additionally requires complete instruction-location
+                    # coverage, which current help does not establish.
+                    argv = argv[:argv.index('--allowedTools')]
+                    argv[argv.index('--permission-mode') + 1] = 'dontAsk'
+                    if '--append-system-prompt' in argv:
+                        argv[argv.index('--append-system-prompt')] = '--system-prompt'
+                    argv += ['--setting-sources', '', '--no-session-persistence',
+                             '--allowedTools', *[f'mcp__agentos__{name}' for name in peer_tools]]
             elif cloud is not None:
                 # #211: no Bash (or any other built-in) on a cloud turn; Read only for an attached photo.
                 argv += ['--tools', *(['Read'] if image_paths else ['']),
@@ -2268,6 +2373,191 @@ class BoundedExecutionAdapter:
 
     def _login_profile(self):
         return Path(self.codex_home or os.environ.get('CODEX_HOME', Path.home() / '.codex')).expanduser()
+
+    @staticmethod
+    def _read_peer_auth(path):
+        """#673 owner decision: bounded owner-only bytes, never follow an auth symlink."""
+        path = Path(path)
+        directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+        finally:
+            os.close(directory)
+        with os.fdopen(fd, 'rb') as source:
+            info = os.fstat(source.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
+                raise ValueError('unsafe auth file')
+            value = source.read(1024 * 1024 + 1)
+            if not value or len(value) > 1024 * 1024:
+                raise ValueError('auth file size')
+            return value
+
+    @staticmethod
+    def _check_peer_auth_age(value):
+        """#673 owner decision: leave one day before Codex's roughly eight-day refresh."""
+        data = json.loads(value)
+        if not isinstance(data, dict):
+            raise ValueError('auth shape')
+        if not data.get('tokens') and data.get('OPENAI_API_KEY') and data.get('auth_mode') != 'chatgpt':
+            return  # documented API-key caches have no rotating ChatGPT refresh token
+        try:
+            refreshed = datetime.fromisoformat(data['last_refresh'].replace('Z', '+00:00'))
+            if refreshed.tzinfo is None:
+                raise ValueError('missing timezone')
+            age = time.time() - refreshed.timestamp()
+            valid = 0 <= age < PEER_AUTH_MAX_AGE_SECONDS
+        except (KeyError, TypeError, AttributeError, ValueError, OverflowError):
+            valid = False
+        if not valid:
+            raise ExecutionError(PEER_AUTH_REFRESH_REASON, failure_class='isolation-unqualified',
+                                 reason='peer-auth-refresh-due: ' + PEER_AUTH_REFRESH_REASON)
+
+    def peer_environment(self, engine_id, binary, run_dir, *, _auth_source=None):
+        """#673 owner decision: prepare an auth-only environment inside its locked scope.
+
+        Production callers use peer_environment_scope so refreshes are persisted
+        before temporary cleanup, including failures, cancellation and judgments.
+        """
+        env = self.environment(engine_id, binary, run_dir)
+        if engine_id != 'codex':
+            return env
+        try:
+            value = self._read_peer_auth(self._login_profile() / 'auth.json') if _auth_source is None else _auth_source
+            self._check_peer_auth_age(value)
+            home = Path(run_dir) / 'codex-auth'
+            home.mkdir(mode=0o700)
+            target = os.open(home / 'auth.json', os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(target, 'wb') as destination:
+                if os.fstat(destination.fileno()).st_uid != os.getuid():
+                    raise ValueError('auth copy ownership')
+                destination.write(value)
+            env['CODEX_HOME'] = str(home)
+            return env
+        except ExecutionError:
+            raise
+        except (OSError, ValueError):
+            raise ExecutionError('Peer Work needs an owner-only Codex file login cache; no safe auth-only launch is available.',
+                                 failure_class='isolation-unqualified', reason='peer-auth-only-home-unavailable') from None
+
+    @staticmethod
+    def _peer_auth_event(store_root, work_id, code):
+        """#673 owner decision: fixed credential-maintenance receipt even after block/Stop.
+
+        No peer guard: restoring the owner's login is cleanup, never a peer tool
+        or disclosure. Only fixed codes are persisted; no credential or path.
+        """
+        LOG.warning('peer Codex auth maintenance: %s', code)
+        if store_root is not None and work_id:
+            from .quickstart_store import QuickStore
+            try:
+                with QuickStore(store_root).db() as db:
+                    db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                        (work_id, 'subscription_auth', 'failed', json.dumps({'scope': 'peer-auth', 'code': code}), time.time()))
+            except Exception:
+                LOG.warning('peer Codex auth maintenance receipt unavailable')
+
+    def _persist_peer_auth(self, original, copied, snapshot, store_root, work_id):
+        """#673 owner decision: compare before atomic 0600 replacement; never log bytes."""
+        code, staged = None, None
+        try:
+            refreshed = self._read_peer_auth(copied)
+            if refreshed == snapshot:
+                return
+            # Reject malformed updates without quoting a parser exception.
+            if not isinstance(json.loads(refreshed), dict):
+                raise ValueError('auth shape')
+            # Hold the directory descriptor; replacement cannot follow a final
+            # auth.json symlink, and a moved parent cannot redirect this write.
+            directory = os.open(original.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            try:
+                def current():
+                    try:
+                        fd = os.open('auth.json', os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+                        with os.fdopen(fd, 'rb') as handle:
+                            info = os.fstat(handle.fileno())
+                            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
+                                return None
+                            return handle.read(1024 * 1024 + 1)
+                    except OSError:
+                        return None  # removed/replaced/unsafe original is a conflict
+                if current() != snapshot:
+                    code = 'peer_auth_writeback_conflict'
+                else:
+                    staged = '.auth-peer-' + os.urandom(16).hex()
+                    fd = os.open(staged, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=directory)
+                    with os.fdopen(fd, 'wb') as handle:
+                        if os.fstat(handle.fileno()).st_uid != os.getuid():
+                            raise ValueError('staged auth ownership')
+                        os.fchmod(handle.fileno(), 0o600)
+                        handle.write(refreshed)
+                        handle.flush()
+                        os.fsync(handle.fileno())
+                    # Recheck after staging: concurrent ordinary owner CLI use
+                    # must win. POSIX has no atomic compare-and-replace against
+                    # a writer that does not participate in our lock.
+                    if current() != snapshot:
+                        code = 'peer_auth_writeback_conflict'
+                    else:
+                        os.replace(staged, 'auth.json', src_dir_fd=directory, dst_dir_fd=directory)
+                        staged = None
+                        os.fsync(directory)
+            finally:
+                try:
+                    if staged is not None:
+                        os.unlink(staged, dir_fd=directory)
+                finally:
+                    os.close(directory)
+        except (OSError, ValueError, TypeError):
+            code = 'peer_auth_writeback_unavailable'
+        if code:
+            self._peer_auth_event(store_root, work_id, code)
+
+    @contextmanager
+    def peer_environment_scope(self, engine_id, binary, run_dir, *, store_root=None, work_id=None, interrupted=None, deadline=None):
+        """#673 owner decision: serialize copy/run/write-back across peer workers and judgments."""
+        if engine_id != 'codex':
+            yield self.peer_environment(engine_id, binary, run_dir)
+            return
+        def stop_reason():
+            """#673: the Work's existing Stop/deadline also bounds lock acquisition."""
+            reason = interrupted() if interrupted else None
+            return reason or ('deadline_exceeded' if deadline is not None and time.monotonic() >= deadline else None)
+        while not _PEER_CODEX_AUTH_LOCK.acquire(timeout=STOP_POLL_SECONDS):
+            reason = stop_reason()
+            if reason:
+                raise interruption_error(reason)
+        try:
+            reason = stop_reason()
+            if reason:
+                raise interruption_error(reason)
+            original = self._login_profile() / 'auth.json'
+            try:
+                snapshot = self._read_peer_auth(original)
+            except (OSError, ValueError):
+                raise ExecutionError('No safe auth-only Codex login cache is available.',
+                    failure_class='isolation-unqualified', reason='peer-auth-only-home-unavailable') from None
+            env = self.peer_environment(engine_id, binary, run_dir, _auth_source=snapshot)
+            try:
+                yield env
+            finally:
+                self._persist_peer_auth(original, Path(env['CODEX_HOME']) / 'auth.json', snapshot, store_root, work_id)
+        finally:
+            _PEER_CODEX_AUTH_LOCK.release()
+
+    def cleanup_stale_turns(self):
+        """Reuse bounded turn cleanup for #673 auth-only judgment directories too.
+
+        Owner decision #673: a killed host must not retain a credential copy
+        indefinitely. Only expired, real turn directories under this runtime
+        root are eligible, as in the existing worker cleanup.
+        """
+        stale_before = time.time() - MAX_TIMEOUT_SECONDS - 60
+        for entry in self.runtime_root.glob('turn-*'):
+            try:
+                if entry.is_dir() and not entry.is_symlink() and entry.stat().st_mtime < stale_before:
+                    shutil.rmtree(entry)
+            except OSError:
+                LOG.warning('stale turn directory cleanup failed')
 
     #: codex.js's PLATFORM_PACKAGE_BY_TARGET, keyed by (sys.platform, machine).
     CODEX_NATIVE_PACKAGES = {
@@ -2574,13 +2864,15 @@ class BoundedExecutionAdapter:
         ``tested_versions`` remains a compatibility argument for historical
         manual observations, never an admission gate. Platform and runtime root
         remain gates. No owner credentials, config or model provider is used.
+        #673 owner decision: purpose ``peer`` requires its own observed
+        instruction-exclusion and host-relay surface, independent of ``work``.
         """
         import copy
         from .cli_qualification import surface_checks, qualification_timeout
         bounds = {'deadline': deadline, 'interrupted': interrupted}
         qualification_timeout(45, **bounds)
         declared = CLI_PROFILES[STRICT_PROFILE]['runtimes'].get(engine_id)
-        if declared is None or purpose not in ('work', 'judgment') or (purpose == 'judgment' and engine_id != 'codex'):
+        if declared is None or purpose not in ('work', 'judgment', 'peer') or (purpose == 'judgment' and engine_id != 'codex'):
             return {'engine': engine_id, 'qualified': False, 'version': None, 'checks': [], 'reason': 'unsupported engine'}
         binary = binary or self.finder({'codex': 'codex', 'claude-code': 'claude'}[engine_id])
         if not binary:
@@ -2592,7 +2884,7 @@ class BoundedExecutionAdapter:
             # A failed explicit recheck must not leave an earlier pass usable.
             _STRICT_FAILURES.pop((engine_id, identity, tuple(sorted(binding.items())), purpose), None)
             for key in list(_STRICT_QUALIFICATIONS):
-                if key[:2] == (engine_id, identity):
+                if key[:2] == (engine_id, identity) and (purpose != 'peer' or key[-1] == 'peer'):
                     del _STRICT_QUALIFICATIONS[key]
             _STRICT_OBSERVATIONS.pop((engine_id, identity), None)
         checks = [{'check': 'tested-platform', 'observed': sys.platform,
@@ -2641,10 +2933,18 @@ class BoundedExecutionAdapter:
                             disabled = plan if plan and not remaining else None
                         if all(check['passed'] for check in checks):
                             stage = 'instruction-files-and-tool-surface' if engine_id == 'codex' else 'strict-tool-surface'
-                            observed = surface_checks(local, engine_id, binary, run_dir, disabled,
-                                                      include_work=purpose == 'work', **bounds)
-                            required = {'strict-work-bridge-and-tool-surface'} if purpose == 'work' else set()
-                            if engine_id == 'codex':
+                            if purpose == 'peer':
+                                stage = 'peer-instructions-and-relay'
+                                from .cli_qualification import peer_surface_checks
+                                observed = peer_surface_checks(local, engine_id, binary, run_dir, disabled, **bounds)
+                                required = {'peer-instructions-and-relay'}
+                                if engine_id == 'claude-code':
+                                    required.add('peer-instruction-locations-covered')
+                            else:
+                                observed = surface_checks(local, engine_id, binary, run_dir, disabled,
+                                                          include_work=purpose == 'work', **bounds)
+                                required = {'strict-work-bridge-and-tool-surface'} if purpose == 'work' else set()
+                            if engine_id == 'codex' and purpose != 'peer':
                                 required.update(f'instruction-files-{i}' for i in range(3))
                             if not required <= {check.get('check') for check in observed}:
                                 checks.append({'check': stage, 'passed': False})
@@ -2791,6 +3091,11 @@ class BoundedExecutionAdapter:
         if getattr(tools, 'qualification_allowed', True) is not True:
             raise ExecutionError('저장된 실행 프로필을 확인할 수 없어 실행하지 않았습니다.',
                                  failure_class='isolation-unqualified', reason='unrecognized-profile')
+        peer_work = bool(getattr(tools, 'peer_work', False))
+        if peer_work and (getattr(tools, 'PROFILE', None) != STRICT_PROFILE or not getattr(tools, 'browser_relay', None)
+                          or self.cloud_profile(engine_id, tools) is not None or images):
+            raise ExecutionError('Peer Work requires a strict host relay and subscription login.',
+                                 failure_class='isolation-unqualified', reason='peer-launch-not-contained')
         # #1130: a bridge that cannot start leaves the CLI without Still tools while
         # the turn still exits 0; refuse before launch instead of letting it look like a worker shortfall.
         problem = self.bridge_check()
@@ -2805,14 +3110,8 @@ class BoundedExecutionAdapter:
         # A process killed before TemporaryDirectory's finalizer can leave the
         # per-turn image behind. A turn cannot run longer than MAX_TIMEOUT_SECONDS;
         # only older, real turn directories are considered stale.
-        stale_before=time.time()-MAX_TIMEOUT_SECONDS-60
-        for entry in self.runtime_root.glob('turn-*'):
-            try:
-                if entry.is_dir() and not entry.is_symlink() and entry.stat().st_mtime < stale_before:
-                    shutil.rmtree(entry)
-            except OSError:
-                LOG.warning('stale turn directory cleanup failed')
-        with tempfile.TemporaryDirectory(dir=self.runtime_root, prefix='turn-') as folder:
+        self.cleanup_stale_turns()
+        with tempfile.TemporaryDirectory(dir=self.runtime_root, prefix='turn-') as folder, ExitStack() as auth_scope:
             run_dir = Path(folder)
             image_paths=[]
             for index,image in enumerate(images or ()):
@@ -2849,7 +3148,7 @@ class BoundedExecutionAdapter:
             # #678: a native-search turn's bridge lets the CLI's own search replace its search tools.
             native_search = bool(getattr(tools, 'native_search', False)) and profile == BOUNDED_PROFILE and cloud is None
             # #701: only the trusted-local route is ever given the service's browser relay.
-            relay = getattr(tools, 'browser_relay', None) if profile == BOUNDED_PROFILE else None
+            relay = getattr(tools, 'browser_relay', None) if profile == BOUNDED_PROFILE or peer_work else None
             # #1197: the owner's AI connections, only for Claude Code on the trusted-local
             # route and only with the service relay that decides each connector call.
             # #211: not on a Claude Code cloud turn; those connectors come with the claude.ai login.
@@ -2871,7 +3170,7 @@ class BoundedExecutionAdapter:
                 # The bridge never needs the CLI's own credential (#211: nor a cloud provider's).
                 **({'env': {'CLAUDE_CODE_OAUTH_TOKEN': '', **{name: '' for name in (cloud.withheld() if cloud else ())}}}
                    if engine_id == 'claude-code' else {}),
-                'args': ['-m', 'personal_agent.mcp_bridge', '--data', str(tools.capabilities.store.root), '--job', tools.capabilities.job_id,
+                'args': ['-m', 'personal_agent.mcp_bridge', '--data', str(run_dir if peer_work else tools.capabilities.store.root), '--job', tools.capabilities.job_id,
                          # The bridge is a separate process: hand it this Work's
                          # private-source provenance so its records carry the same
                          # labels as the in-process Capabilities (#826: a record, not a gate).
@@ -2880,7 +3179,7 @@ class BoundedExecutionAdapter:
                          f'--profile={profile}',
                          *(['--native-search'] if native_search else []),
                          *([f'--search-off-reason={search_off}'] if search_off else []),
-                         *([f'--browser-relay={relay}'] if relay else []),
+                         *([f'--peer-relay={relay}' if peer_work else f'--browser-relay={relay}'] if relay else []),
                          *(['--session-steers'] if session_route else []),
                          # #774: the relay serves owner-state tools even when no browser is served.
                          *(['--relay-no-browser'] if relay and not getattr(tools, 'relay_browser', True) else []),
@@ -2893,7 +3192,8 @@ class BoundedExecutionAdapter:
                          *[f'--connection-slot={name}' for name in (connection_slot_names(tools.capabilities)
                                                                     if relay and profile == BOUNDED_PROFILE else ())]],
             }}}, ensure_ascii=False), encoding='utf-8')
-            env = self.environment(engine_id, binary, run_dir, ai_connections=ai_connections, cloud=cloud)
+            env = (None if peer_work
+                   else self.environment(engine_id, binary, run_dir, ai_connections=ai_connections, cloud=cloud))
             owner_args = ()
             definitions=owner_servers
             server_env={}
@@ -2920,6 +3220,7 @@ class BoundedExecutionAdapter:
             if profile == STRICT_PROFILE:
                 try:
                     qualification = self.qualified_identity(engine_id, binary, tools.capabilities.store.root,
+                                                            **({'purpose': 'peer'} if peer_work else {}),
                                                             deadline=deadline, interrupted=interrupted)
                 except EngineInterrupted as exc:
                     raise interruption_error(exc.reason) from None
@@ -2933,6 +3234,10 @@ class BoundedExecutionAdapter:
                     raise ExecutionError('확인 중 CLI가 바뀌어 실행하지 않았습니다.',
                                          failure_class='isolation-unqualified', reason='binary-unchanged')
                 disabled = qualification.get('disabled_features') or ()
+            if peer_work:
+                env = auth_scope.enter_context(self.peer_environment_scope(engine_id, binary, run_dir,
+                    store_root=tools.capabilities.store.root, work_id=tools.capabilities.job_id,
+                    interrupted=interrupted, deadline=deadline))
             # #607 AX-10: the CLI gets at most the Work's remaining shared
             # budget, and the owner's Stop kills its process group mid-run.
             timeout = MAX_TIMEOUT_SECONDS
@@ -2942,13 +3247,14 @@ class BoundedExecutionAdapter:
             LOG.info('engine turn started engine=%s profile=%s', engine_id, profile)
             # #678: the facade says whether this turn may use the CLI's own web search.
             # #729: the bridge tools this turn offers bound Codex's per-call timeout.
-            offered = [action for action in turn_actions(profile, native_search)
-                       if (relay is not None and getattr(tools, 'relay_browser', True)) or action not in _BROWSER_ACTIONS]
+            offered = ([row['name'] for row in tools.definitions()] if peer_work else
+                       [action for action in turn_actions(profile, native_search)
+                        if (relay is not None and getattr(tools, 'relay_browser', True)) or action not in _BROWSER_ACTIONS])
             argv = self.command(engine_id, binary, prompt, config, instructions, profile=profile, disabled_features=disabled,
                                 model=model or None, effort=effort or None, native_search=native_search,
                                 tool_timeout=bridge_tool_timeout(offered, timeout), image_paths=image_paths,
                                 ai_connections=ai_connections and engine_id == 'claude-code', owner_mcp_args=owner_args,
-                                cloud=cloud)
+                                cloud=cloud, **({'peer_tools': [row['name'] for row in tools.definitions()]} if peer_work else {}))
             if session_route and session is None:
                 argv = self._plain_claude_argv(argv, prompt)
             run_meta = {'argv': display_argv(argv, prompt, instructions), 'requested_model': model or None,

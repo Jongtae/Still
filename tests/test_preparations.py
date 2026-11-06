@@ -10,6 +10,7 @@ a fake clock.  No live model, Telegram, calendar or search provider is
 contacted, and none is claimed.
 """
 import json
+import time
 import logging
 import tempfile
 import unittest
@@ -169,6 +170,180 @@ class _Case(unittest.TestCase):
 
     def tick(self, service=None):
         return (service or self.service).run_due_preparation()
+
+
+class PreparationRunFactTests(_Case):
+    def test_window_runs_use_the_recorded_count_next_local_slot_end_and_delivery(self):
+        from personal_agent.agent_runtime import WorkBudget
+        start = datetime(2026, 11, 5, 12, tzinfo=SEOUL).timestamp()
+        end = datetime(2026, 11, 5, 18, tzinfo=SEOUL).timestamp()
+        row = self.service.preparations.create(kind='prepare', goal='정기 확인', due_at=start,
+            timezone='Asia/Seoul', recurrence=None, channel='telegram', created_from='settings',
+            state=prep.STATE_SCHEDULED, window=(3600, end, 6))
+        # Start and settle the real rows: start must not be mistaken for advancing due_at.
+        for number in range(1, 7):
+            self.now = start + (number - 1) * 3600
+            current = self.service.preparations.get(row['id'])
+            work = self.service.preparations.start(current, channel='telegram', chat_id=CHAT, now=self.now)
+            job = self.store.job(work)
+            self.assertEqual(self.service.preparations.get(row['id'])['due_at'], self.now)
+            fact = self.service.preparation_run_fact(job)
+            self.assertIn(f'총 6회 중 {number}번째', fact)
+            self.assertIn('일정 종료: 2026-11-05 18:00 (Thu, Asia/Seoul)', fact)
+            self.assertIn('Work가 끝난 뒤 Still이 답을 telegram 채널로', fact)
+            self.assertIn('이 Work가 직접 보내지 않습니다', fact)
+            if number == 3:
+                self.assertIn('다음 실행 예정: 2026-11-05 15:00 (Thu, Asia/Seoul)', fact)
+                # #692: followed by the line naming the previous run's report.
+                self.assertTrue(self.service.preparation_history(job)[-1]['content'].startswith(job['message'] + '\n\n' + fact))
+                orchestration = self.service.work_orchestration(job, job['message'], [], {}, WorkBudget())
+                self.assertEqual(orchestration.request, job['message'] + '\n\n' + fact)
+                with self.store.db() as db:
+                    db.execute("UPDATE preparations SET delivery_mode='when_needed' WHERE id=?", (row['id'],))
+                needed = self.service.preparation_run_fact(job)
+                self.assertIn('Still이 telegram 채널로 소유자에게 알릴지 판단', needed)
+                self.assertIn('이 Work가 직접 보내지 않습니다', needed)
+                with self.store.db() as db:
+                    db.execute("UPDATE preparations SET delivery_mode='always' WHERE id=?", (row['id'],))
+            if number == 6:
+                self.assertIn('이번이 마지막 실행', fact)
+                self.assertNotIn('다음 실행 예정', fact)
+            with self.store.db() as db:
+                db.execute("UPDATE jobs SET status='succeeded',response='확인',delivery='sent' WHERE id=?", (work,))
+            self.service.preparations.settle(self.service.preparations.get(row['id']), self.now)
+        ordinary = {'id': 'ordinary', 'message': '확인', 'request_key': 'web-ordinary'}
+        self.assertEqual(self.service.preparation_run_fact(ordinary), '')
+        self.assertEqual(self.service.work_orchestration(ordinary, '확인', [], {}, WorkBudget()).request, '확인')
+        self.assertEqual(self.service.preparation_run_fact({**job, 'model': 'preparation'}), '')
+
+    def test_other_schedules_name_the_next_run_from_the_scheduler_or_the_last(self):
+        start = datetime(2026, 11, 5, 12, tzinfo=SEOUL).timestamp()
+        self.now = start
+        cases = [
+            (None, '이번이 마지막 실행'),
+            ('daily', '다음 실행 예정: 2026-11-06 12:00 (Fri, Asia/Seoul)'),
+            ('RRULE:FREQ=DAILY;COUNT=3', '다음 실행 예정: 2026-11-06 12:00 (Fri, Asia/Seoul)'),
+        ]
+        for recurrence, next_text in cases:
+            with self.subTest(recurrence=recurrence):
+                row = self.service.preparations.create(kind='prepare', goal=f'정기 확인 {recurrence}', due_at=start,
+                    timezone='Asia/Seoul', recurrence=recurrence, channel='web', created_from='settings',
+                    state=prep.STATE_SCHEDULED)
+                work = self.service.preparations.start(row, channel='web', chat_id=None, now=start)
+                fact = self.service.preparation_run_fact(self.store.job(work))
+                self.assertIn(next_text, fact)
+                # Only a watch records an end of its own; nothing else is computed here.
+                self.assertNotIn('일정 종료', fact)
+
+    def test_missing_or_unreadable_row_keeps_the_fixed_fallback(self):
+        from unittest.mock import patch
+        import sqlite3
+        job = {'request_key': prep.request_key('missing', self.now)}
+        self.assertEqual(self.service.preparation_run_fact(job), msg('preparations.run_fact'))
+        with patch.object(self.service.preparations, 'get', side_effect=sqlite3.OperationalError('unavailable')):
+            self.assertEqual(self.service.preparation_run_fact(job), msg('preparations.run_fact'))
+        history = self.service.preparation_history({**job, 'id': 'missing', 'message': '확인'})
+        self.assertEqual(history[-1]['content'], '확인\n\n' + msg('preparations.run_fact'))
+
+
+class PreparationEarlierReportTests(_Case):
+    """#692: one attributable delivered report, shared by both workers and judgment."""
+
+    def run_job(self, row, number, *, response=None, status='succeeded', delivery='none',
+                chat_id=None, suffix=''):
+        ident = self.store.enqueue(row['goal_text'], prep.request_key(row['id'], self.now + number) + suffix,
+                                   channel='telegram' if chat_id else 'web', chat_id=chat_id)
+        with self.store.db() as db:
+            db.execute('UPDATE jobs SET created=?,status=?,response=?,delivery=? WHERE id=?',
+                       (self.now + number, status, response, delivery, ident))
+            db.execute('INSERT INTO messages(role,content,channel,created,job_id) VALUES (?,?,?,?,?)',
+                       ('user', row['goal_text'], 'telegram' if chat_id else 'web', self.now + number, ident))
+        return self.store.job(ident)
+
+    def test_latest_earlier_delivered_result_is_selected_structurally(self):
+        row = self.scheduled()
+        first = self.run_job(row, 1, response='First report')
+        self.assertEqual([r['role'] for r in self.service.preparation_history(first)], ['user'])
+        second = self.run_job(row, 2, status='queued')
+        self.assertEqual(self.service.preparation_history(second)[0]['content'], 'First report')
+        latest = self.run_job(row, 3, response='Latest report', status='partial', delivery='sent', chat_id=CHAT,
+                              suffix=prep.CONTINUATION_SEPARATOR + '1')
+        for number, status, delivery, chat_id, response in (
+                (4, 'failed', 'sent', CHAT, 'Failure notice'),
+                (5, 'cancelled', 'sent', CHAT, 'Cancelled notice'),
+                (6, 'succeeded', 'unknown', CHAT, 'Unknown delivery'),
+                (7, 'succeeded', 'none', CHAT, 'Not sent'),
+                (8, 'succeeded', 'none', None, '\t\n ')):
+            self.run_job(row, number, status=status, delivery=delivery, chat_id=chat_id, response=response)
+        current = self.run_job(row, 10, status='queued', response='Current response')
+        self.run_job(row, 11, response='Future response')
+        other = self.scheduled(goal='Unrelated preparation')
+        self.run_job(other, 9, response='Unrelated report')
+        # More than jobs()'s 40-row window must not hide the last result.
+        for number in range(45):
+            self.store.enqueue('Unrelated conversation', f'unrelated-{number}')
+        history = self.service.preparation_history(current)
+        self.assertEqual([r['role'] for r in history], ['assistant', 'user'])
+        self.assertIn(msg('preparations.previous_report', at=prep.local_text(self.now + 3, 'Asia/Seoul')), history[-1]['content'])
+        self.assertEqual(history[0], {'role': 'assistant', 'content': 'Latest report', 'job_id': latest['id'],
+                                     'channel': 'telegram', 'qualifier': None,
+                                     'request_key': self.store.job(latest['id'])['request_key'], 'created': self.now + 3})
+
+    def test_forgotten_report_is_skipped_for_an_earlier_delivered_report(self):
+        from personal_agent.owner_forget import OwnerForget
+        row = self.scheduled()
+        first = self.run_job(row, 1, response='Kept report')
+        forgotten = self.run_job(row, 2, response='Forgotten report')
+        current = self.run_job(row, 3, status='queued')
+        with self.store.db() as db:
+            message_id = db.execute("SELECT id FROM messages WHERE job_id=? AND role='user'",
+                                    (forgotten['id'],)).fetchone()['id']
+        OwnerForget(self.store).forget('local-owner', f'message:{message_id}')
+        history = self.service.preparation_history(current)
+        self.assertEqual(history[0]['job_id'], first['id'])
+        self.assertNotIn('Forgotten report', json.dumps(history))
+        with self.store.db() as db:
+            message_id = db.execute("SELECT id FROM messages WHERE job_id=? AND role='user'",
+                                    (first['id'],)).fetchone()['id']
+        OwnerForget(self.store).forget('local-owner', f'message:{message_id}')
+        self.assertEqual([r['role'] for r in self.service.preparation_history(current)], ['user'])
+
+    def test_report_is_scrubbed_and_bounded_in_both_worker_envelopes_and_judgment(self):
+        from personal_agent.agent_runtime import MESSAGE_CAP_CHARS
+        from personal_agent.conversation_projection import context_message, earlier_turn_line
+        from personal_agent.agent_runtime import WorkBudget
+        from unittest.mock import patch
+        row = self.scheduled()
+        private = 'PRIVATE-SAVED-VALUE-12345678'
+        previous = self.run_job(row, 1, response=f'Report {private} {SECRET} ' + 'x' * 5000)
+        with self.store.db() as db:
+            db.execute('INSERT INTO memory_candidates(id,job_id,memory_key,content,created,state,work_key) '
+                       'VALUES (?,?,?,?,?,?,?)', ('private', None, 'private.fact', private, self.now, 'pending',
+                                                self.store._work_binding(previous['id'])))
+        current = self.run_job(row, 2, status='queued')
+        rows = self.service.history_for_models(self.service.preparation_history(current))
+        self.assertEqual(rows[0]['content'], self.service.scrub_work_text(previous['id'], previous['response']))
+        for route in ('cli', 'api'):
+            context = turn_context([context_message(r, current=i == len(rows)-1) for i, r in enumerate(rows)], route)
+            [report] = context['conversation']
+            self.assertEqual(report['role'], 'assistant')
+            self.assertLessEqual(len(report['content']), MESSAGE_CAP_CHARS + len(' [...]'))
+            rendered = render_turn_prompt(context)
+            self.assertIn('[assistant] Report', rendered)
+            self.assertNotIn(private, rendered)
+            self.assertNotIn(SECRET, rendered)
+            self.assertIn('[assistant, earlier Work 2026-10-14 21:00]', earlier_turn_line(rows[0], report, SEOUL))
+        orchestration = self.service.work_orchestration(current, current['message'], rows, {}, WorkBudget())
+        # The plan's own label carries the host zone's time (none on a zone-less host).
+        self.assertRegex(orchestration.conversation, r'\[assistant, earlier Work[^]]*\] Report')
+        self.assertNotIn(private, orchestration.conversation)
+        with patch('personal_agent.orchestrator.Orchestration.early_plan', autospec=True, return_value=None) as early:
+            self.service.early_work_plan(current, current['message'])
+        self.assertEqual(early.call_args.args[0].conversation, orchestration.conversation)
+        orchestration.evaluate_answer('Current report', '')
+        judged = [item[1] for item in self.judge.asked if item[0] == 'judge' and item[1].purpose == 'goal-reached']
+        self.assertTrue(judged)
+        self.assertRegex(json.dumps(judged[-1].facts, ensure_ascii=False), r'\[assistant, earlier Work[^]]*\] Report')
 
 
 class ReminderTests(_Case):
@@ -637,7 +812,7 @@ class AcceptanceTests(_Case):
         self.assertTrue(self.service.run_one())
         self.service.deliver_one()
         self.assertEqual(len(self.sends()), 3)
-        self.assertTrue(self.sends()[-1]['text'].startswith('미리 준비한 결과입니다 (점심 후보 준비)'))
+        self.assertTrue(self.sends()[-1]['text'].startswith('<b>점심 후보 준비</b>\n\n'))
 
     def test_declining_the_proposal_cancels_it(self):
         self.service.use_decision_engine(engine(preparation=False))
@@ -807,7 +982,7 @@ class SecretTests(_Case):
 
 
 class PreparationScopeTests(_Case):
-    """PR #671 review: a preparation's Work sees its origin and goal only, and
+    """A preparation's Work sees its origin, latest delivered report and goal, and
     persists nothing unscrubbed; a proposal message accepts only what it shows."""
 
     ORIGIN = '매일 점심 후보 준비해 줘 ORIGIN-MARK'
@@ -829,13 +1004,32 @@ class PreparationScopeTests(_Case):
     def test_direct_route_preparation_work_sees_only_its_origin_and_goal(self):
         self.origin_then_unrelated()
         seen = []
-        self.script = [lambda body: seen.append(json.loads(json.dumps(body['messages']))) or {'content': '후보: 국수집'}]
+        self.script = [lambda body: seen.append(json.loads(json.dumps(body['messages']))) or {'content': '후보: 국수집'}] * 2
         self.assertTrue(self.service.run_one())
         sent = json.dumps(seen[0], ensure_ascii=False)
         self.assertIn('ORIGIN-MARK', sent)
         self.assertIn('점심 후보 3곳 준비', sent)
         self.assertNotIn('UNRELATED-MARK', sent)
         self.assertEqual([m['role'] for m in seen[0][1:]], ['user', 'user'])
+        # #671: the run is told Still keeps the schedule and delivers, so its reply is this run's result.
+        [run] = [job for job in self.store.jobs() if prep.preparation_of(job.get('request_key'))]
+        self.assertIn(self.service.preparation_run_fact(run), seen[0][-1]['content'])
+        self.assertIn('다음 실행 예정: 2026-10-15 21:10 (Thu, Asia/Seoul)', seen[0][-1]['content'])
+
+        self.assertTrue(self.tick())  # settle the first web-channel result
+        self.now += 86400
+        self.assertTrue(self.tick())
+        seen.clear()
+        self.script = [lambda body: seen.append(json.loads(json.dumps(body['messages']))) or {'content': '두 번째 후보'}]
+        self.assertTrue(self.service.run_one())
+        self.assertEqual([m['role'] for m in seen[0][1:]], ['user', 'assistant', 'user'])
+        self.assertEqual(seen[0][2], {'role': 'assistant', 'content': '후보: 국수집'})
+        self.assertNotIn('UNRELATED-MARK', json.dumps(seen[0]))
+        # An ordinary Work still reads the ordinary transcript, including unrelated owner turns.
+        seen.clear()
+        self.script = [lambda body: seen.append(body['messages']) or {'content': '일반 답변'}]
+        self.web_turn('일반 요청')
+        self.assertIn('UNRELATED-MARK', json.dumps(seen[0]))
 
     def test_cli_route_preparation_work_sees_only_its_origin_and_goal(self):
         from personal_agent.bounded_execution import ExecutionResult
@@ -855,7 +1049,7 @@ class PreparationScopeTests(_Case):
         origin = self.web_turn(self.ORIGIN)
         self.web_turn(self.UNRELATED)
         row = self.service.preparations.create(kind='prepare', goal='점심 후보 3곳 준비', due_at=self.now + 60,
-                                               timezone='Asia/Seoul', recurrence=None, channel='web', created_from=origin,
+                                               timezone='Asia/Seoul', recurrence='daily', channel='web', created_from=origin,
                                                state=prep.STATE_SCHEDULED, accepted_by=prep.ACCEPTED_OWNER_SETTINGS)
         self.now += 120
         self.assertTrue(self.tick())
@@ -865,7 +1059,18 @@ class PreparationScopeTests(_Case):
         self.assertIn('ORIGIN-MARK', prompt)
         self.assertIn('점심 후보 3곳 준비', prompt)
         self.assertNotIn('UNRELATED-MARK', prompt)
+        self.assertIn(self.service.preparation_run_fact(self.runs(row['id'])[0]), prompt)
+        self.assertIn('다음 실행 예정:', prompt)
         self.assertEqual(len(self.runs(row['id'])), 1)
+        self.assertNotIn('[assistant] 준비했습니다.', prompt)
+        self.assertTrue(self.tick())
+        self.now += 86400
+        self.assertTrue(self.tick())
+        prompts.clear()
+        self.assertTrue(self.service.run_one())
+        [prompt] = prompts
+        self.assertEqual(prompt.count('[assistant] 준비했습니다.'), 1)
+        self.assertNotIn('UNRELATED-MARK', prompt)
 
     def test_a_secret_in_a_preparation_answer_is_never_persisted_or_replayed(self):
         self.origin_then_unrelated()
@@ -989,11 +1194,11 @@ class WindowTests(_WatchCase):
     def test_the_window_is_bounded_by_its_slots_max_runs_and_limits(self):
         due = self.now + 60
         until = lambda seconds: datetime.fromtimestamp(due + seconds, SEOUL).isoformat()
-        self.assertEqual(prep.normalize_window(10, until(3600), None, due, 'Asia/Seoul', self.now), (600, due + 3600, 6), 'slots before the deadline')
+        self.assertEqual(prep.normalize_window(10, until(3600), None, due, 'Asia/Seoul', self.now), (600, due + 3600, 7), 'slots up to and including until (#701)')
         self.assertEqual(prep.normalize_window('10', until(3600), 3, due, 'Asia/Seoul', self.now)[2], 3)
         self.assertEqual(prep.normalize_window(5, until(86400), None, due, 'Asia/Seoul', self.now)[2], prep.MAX_WINDOW_RUNS)
         # #846: about three checks a day up to a deadline weeks away fits the window.
-        self.assertEqual(prep.normalize_window(480, until(30 * 86400), None, due, 'Asia/Seoul', self.now)[2], 90)
+        self.assertEqual(prep.normalize_window(480, until(30 * 86400), None, due, 'Asia/Seoul', self.now)[2], 91)
         for every, span, runs in ((4, 3600, None), (721, 3600, None), (10, 0, None), (10, -600, None),
                                   (10, 31 * 86400 + 60, None), (True, 3600, None), (10, 3600, 0), (10, 3600, 97)):
             with self.assertRaises(prep.PreparationRefusal, msg=(every, span, runs)):
@@ -1017,18 +1222,34 @@ class WindowTests(_WatchCase):
         self.assertEqual([(e['run'], e['max_runs']) for e in events], [(1, 3), (2, 3), (3, 3)])
 
     def test_a_watch_stops_at_its_deadline(self):
-        self.watched = self.watch(span=1800)  # slots at +0, +10, +20 minutes; none at the deadline
+        self.watched = self.watch(span=1800)  # #701: slots at +0, +10, +20 and +30 minutes, the last at until itself
         slots = []
         while self.service.preparations.get(self.watched['id'])['state'] == 'scheduled':
             slots.append(self.service.preparations.get(self.watched['id'])['due_at'])
             row = self.run_slot('아직 괜찮습니다.')
-        end = self.watched['window_end']
-        self.assertEqual(len(slots), 3)
-        self.assertTrue(all(slot < end for slot in slots))
+        end = self.watched['until_at']
+        self.assertEqual(len(slots), 4)
+        self.assertEqual(slots[-1], end, 'a slot at until runs')
+        self.assertTrue(all(slot <= end for slot in slots))
         self.assertEqual(row['state'], 'delivered')
         self.now = end + 7200
         self.assertFalse(self.tick())
-        self.assertEqual(len(self.runs(row['id'])), 3)
+        self.assertEqual(len(self.runs(row['id'])), 4)
+
+    def test_the_last_slot_gets_an_ordinary_runs_time(self):
+        """#701: a check at until is not cut to the seconds left before until; it gets a run's time."""
+        self.watched = self.watch(span=1800)
+        last = self.watched['until_at']
+        with self.store.db() as db:
+            db.execute('UPDATE preparations SET due_at=?,run_count=3 WHERE id=?', (last, self.watched['id']))
+        self.now = last + 1
+        self.assertTrue(self.tick())
+        [run] = self.runs(self.watched['id'])
+        budget = self.service.work_budget(run['id'])
+        self.assertGreater(budget.deadline - time.monotonic(), prep.run_seconds() - 30)
+        self.assertFalse(self.service.work_stopped(run['id']), 'the last check is not stopped at until')
+        self.now = self.watched['window_end']
+        self.assertTrue(self.service.work_stopped(run['id']), 'the run deadline still bounds it')
 
     def test_a_window_missed_while_down_expires_without_running(self):
         self.watched = self.watch(span=1800)
@@ -1262,9 +1483,9 @@ class WatchAcceptanceTests(_WatchCase):
         self.service.deliver_one()
         self.service.deliver_notification()
         proposal = self.sends()[-1]['text']
-        # #393: the window as enforced - before its deadline, at most max_runs - with no repeated date or zone.
-        end = datetime.fromtimestamp(row['window_end'], SEOUL).strftime('%H:%M')
-        self.assertIn(f'{end} 전까지, 10분마다 최대 6번', proposal)
+        # #393: the window as enforced - up to until (#701), at most max_runs - with no repeated date or zone.
+        end = datetime.fromtimestamp(row['until_at'], SEOUL).strftime('%H:%M')
+        self.assertIn(f'{end}까지, 10분마다 최대 6번', proposal)
         self.assertIn('알릴 일이 있을 때만', proposal)
         self.assertNotIn('Asia/Seoul', proposal, 'the owner\'s own zone is not repeated')
         with self.store.db() as db:
@@ -1277,14 +1498,14 @@ class WatchAcceptanceTests(_WatchCase):
                          (10, 6, 0, 'when_needed'))
         self.assertIn('Asia/Seoul', listed['until_local'])
 
-    def test_the_model_is_told_its_last_check_and_until_is_exclusive(self):
-        """#404: a check at the until time never runs; the result names the real last scheduled check."""
+    def test_the_model_is_told_its_last_check_and_until_is_inclusive(self):
+        """#404/#701: a check at the until time runs (RFC 5545 UNTIL); the result names the real last check."""
         _work, row, result = self.propose_watch(preparation=False)
         self.assertEqual(result['last_check'], prep.iso(row['due_at'] + 5 * 600, 'Asia/Seoul'), 'six runs: due + 50 min')
         self.judge = watch_engine([], preparation=False)
         self.service.use_decision_engine(self.judge)
         due = self.now + 600
-        for until, expected in ((due + 3600, due + 3000), (due + 3660, due + 3600)):
+        for until, expected in ((due + 3600, due + 3600), (due + 3540, due + 3000), (due + 3660, due + 3600)):
             self.script = [{'content': None, 'tool_calls': [call('1', 'schedule_preparation', kind='prepare', goal=f'확인 {until}',
                                                                  due=self.due_iso(600), every_minutes='10',
                                                                  until=datetime.fromtimestamp(until, SEOUL).isoformat(),
@@ -1571,8 +1792,8 @@ class OwnerOfferTests(_WatchCase):
         text = sent['text']
         self.assertEqual(sent.get('parse_mode'), 'HTML')
         self.assertTrue(text.startswith(f'<b>{self.TITLE}</b>\n'), text)
-        end = datetime.fromtimestamp(row['window_end'], SEOUL).strftime('%H:%M')
-        self.assertIn(f'{end} 전까지, 5분마다 최대 16번 · 알릴 일이 있을 때만 알려요', text)
+        end = datetime.fromtimestamp(row['until_at'], SEOUL).strftime('%H:%M')
+        self.assertIn(f'{end}까지, 5분마다 최대 16번 · 알릴 일이 있을 때만 알려요', text)
         self.assertIn('한 번에 잃을 수 있는 돈은 1,000원 이하', text)
         brief_at = text.index('<blockquote expandable>')
         self.assertLess(text.index('주문은 하지 않고'), brief_at, 'the offer comes before the folded brief')
@@ -1677,7 +1898,7 @@ class OwnerOfferTests(_WatchCase):
             delivery_mode=prep.DELIVERY_WHEN_NEEDED, title=self.TITLE, offer=self.OFFER)
         shown = prep.schedule_text(self.watched, 'Asia/Seoul')
         end = datetime.fromtimestamp(until, SEOUL).strftime('%H:%M')
-        self.assertIn(f'{end} 전까지, 5분마다 최대 2번', shown)
+        self.assertIn(f'{end}까지, 5분마다 최대 2번', shown)
         self.now = due + 15 * 60  # three slots late
         starts = []
         for _ in range(6):
@@ -1691,7 +1912,7 @@ class OwnerOfferTests(_WatchCase):
                 self.service.run_one()
                 self.tick()
         self.assertEqual(len(starts), 2, 'at most the stated number of runs')
-        self.assertTrue(all(at < until for at in starts), 'never at or after the stated deadline')
+        self.assertTrue(all(at <= until for at in starts), 'never after the stated end')
 
     def test_an_offer_out_of_shape_is_refused_to_the_model_and_a_secret_never_stays(self):
         _work, result = self.propose(title='가' * (prep.TITLE_MAX_CHARS + 1))
@@ -1826,39 +2047,105 @@ class ScheduleTextTests(unittest.TestCase):
                             ('when_needed', {'delivery_mode': 'when_needed'})):
             row = self.row(**extra)
             self.assertTrue(prep.schedule_text(row).endswith(msg('preparations.delivery_' + mode)))
-            with patch.object(prep, 'msg', side_effect=lambda key, **kwargs: msg(key, 'en', **kwargs)):
+            # #689: schedule helpers now pass the language through every catalog call.
+            with patch.object(prep, 'msg', side_effect=lambda key, lang='ko', **kwargs: msg(key, 'en', **kwargs)):
                 self.assertTrue(prep.schedule_text(row).endswith(msg('preparations.delivery_' + mode, 'en')))
+
+    # #689: exercise composed schedules at the real catalog/Telegram seam.
+    def localized_rows(self):
+        rows = [self.row(recurrence=recurrence) for recurrence in (
+            None, 'daily', 'weekdays', 'weekly',
+            'RRULE:FREQ=WEEKLY;BYDAY=MO,TH;COUNT=3',
+            'RRULE:FREQ=MONTHLY;BYMONTHDAY=-1',
+            'RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=1MO',
+            'RRULE:FREQ=MONTHLY;BYDAY=-1FR',
+            'RRULE:FREQ=MONTHLY;BYDAY=1MO,-1FR',
+            'RRULE:FREQ=MONTHLY;BYMONTHDAY=1,15,-1',
+            'RRULE:FREQ=DAILY;UNTIL=20261231',
+            'RRULE:FREQ=MONTHLY;INTERVAL=3;BYMONTHDAY=15',
+        )]
+        rows += [self.window(*args) for args in (
+            (5, (19, 55), 16), (5, (19, 56), 16), (5, (19, 57), 16),
+            (120, (0, 40), None), (5, (19, 0), 1), (90, (23, 0), None),
+            (60, (21, 0), 3),
+        )]
+        rows += [self.row(kind='reminder'), self.row(kind='reminder', recurrence='daily'),
+                 self.row(timezone='Europe/Paris')]
+        return rows
+
+    def test_schedules_and_cards_translate_in_all_owner_languages(self):
+        from personal_agent.telegram_locale import translate
+        for base_row in self.localized_rows():
+            for extra in ({}, {'channel': 'web'}, {'delivery_mode': 'when_needed'}):
+                row = {**base_row, **extra}
+                for home_zone in (None, 'Asia/Seoul', 'Europe/Paris'):
+                    for lang in ('en', 'ja', 'zh'):
+                        with self.subTest(recurrence=row['recurrence'], extra=extra, zone=home_zone, lang=lang):
+                            direct = prep.schedule_text(row, home_zone, lang)
+                            seam = translate(prep.schedule_text(row, home_zone), lang)
+                            self.assertNotRegex(direct, '[가-힣]')
+                            self.assertNotRegex(seam, '[가-힣]')
+                            self.assertEqual(direct, seam)
+                            for offered in (row, {**row, 'title_text': 'Title', 'offer_text': 'Offer'}):
+                                for render in (prep.proposal_text, prep.proposal_html):
+                                    self.assertNotRegex(translate(render([offered], 0, home_zone), lang), '[가-힣]')
+
+    def test_localized_dates_keep_row_time_and_zone_note(self):
+        # #689: calendar fields use the row's zone, independent of process locale.
+        for lang, date in (('ko', '10월 28일(수)'), ('en', 'Wed, 10/28'),
+                           ('ja', '10月28日(水)'), ('zh', '10月28日（周三）')):
+            with self.subTest(lang=lang):
+                self.assertEqual(prep.schedule_text(self.row(kind='reminder'), 'Asia/Seoul', lang), date + ' 18:35')
+                foreign = prep.schedule_text(self.row(kind='reminder', timezone='Europe/Paris'), 'Asia/Seoul', lang)
+                self.assertEqual(foreign, date + ' 10:35 (Europe/Paris)')
+
+    def test_settings_edit_summary_translates_nested_schedules(self):
+        # #689: Settings' actual composer keeps both nested schedule lines translatable.
+        from types import SimpleNamespace
+        from personal_agent.settings_orchestrator import SettingsOrchestrator
+        from personal_agent.telegram_locale import translate
+        with tempfile.TemporaryDirectory() as directory:
+            store = QuickStore(Path(directory))
+            for row in self.localized_rows():
+                row = {**row, 'id': 'schedule', 'title_text': 'Title'}
+                service = SimpleNamespace(
+                    preparations=SimpleNamespace(get=lambda ident: row, clock=lambda: row['due_at'] - 60),
+                    home_zone=lambda: 'Asia/Seoul')
+                orchestrator = SettingsOrchestrator(store, service=service)
+                changes = {'id': row['id'], 'timezone': 'Europe/Paris'}
+                # The legacy biweekly ordinal fixture renders but cannot be saved by normalization.
+                if row['recurrence'] == 'RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=1MO':
+                    changes['recurrence'] = 'weekly'
+                summary = orchestrator._edit_summary(json.dumps(changes))
+                for lang in ('en', 'ja', 'zh'):
+                    with self.subTest(recurrence=row['recurrence'], lang=lang):
+                        self.assertNotRegex(translate(summary, lang), '[가-힣]')
 
     def window(self, minutes, until_hm, runs):
         due = self.row()['due_at']
         until = datetime(2026, 10, 28, *until_hm, tzinfo=SEOUL) if until_hm[0] >= 18 else datetime(2026, 10, 29, *until_hm, tzinfo=SEOUL)
         every, end, max_runs = prep.normalize_window(minutes, until.isoformat(), runs, due, 'Asia/Seoul', due - 60)
-        return self.row(recurrence=prep.RECURRENCE_WINDOW, every_seconds=every, window_end=end, max_runs=max_runs,
-                        delivery_mode=prep.DELIVERY_WHEN_NEEDED)
+        return self.row(recurrence=prep.RECURRENCE_WINDOW, every_seconds=every, until_at=end,
+                        window_end=end + prep.run_seconds(), max_runs=max_runs, delivery_mode=prep.DELIVERY_WHEN_NEEDED)
 
     def test_the_deadline_is_stated_as_enforced(self):
-        """The live case: 18:35 until 19:55 every 5 minutes: nothing runs at 19:55 itself."""
-        self.assertEqual(prep.schedule_text(self.window(5, (19, 55), 16), 'Asia/Seoul'),
-                         '10월 28일(수) 18:35부터 19:55 전까지, 5분마다 최대 16번 · 알릴 일이 있을 때만 알려요')
-
-    def test_an_end_set_one_minute_after_the_last_check_reads_as_that_check(self):
-        """#412: "11시 반까지" is set as until 11:31; the owner reads 11:30까지, which stays exact."""
-        self.assertEqual(prep.schedule_text(self.window(5, (19, 56), 16), 'Asia/Seoul'),
-                         '10월 28일(수) 18:35부터 19:55까지, 5분마다 최대 16번 · 알릴 일이 있을 때만 알려요')
-        row = self.window(5, (19, 56), 16)
+        """#701: 18:35 until 19:55 every 5 minutes reads as said; a check at 19:55 itself may run."""
+        self.assertEqual(prep.schedule_text(self.window(5, (19, 55), None), 'Asia/Seoul'),
+                         '10월 28일(수) 18:35부터 19:55까지, 5분마다 최대 17번 · 알릴 일이 있을 때만 알려요')
+        row = self.window(5, (19, 55), 16)
         self.assertEqual(prep.schedule_text({**row, 'due_at': row['due_at'] + 600}, 'Asia/Seoul'),
                          '10월 28일(수) 18:45부터 19:55까지, 5분마다 최대 16번 · 알릴 일이 있을 때만 알려요',
                          'a later slot of the same watch still names 19:55')
-        self.assertIn('19:57 전까지', prep.schedule_text(self.window(5, (19, 57), 16), 'Asia/Seoul'),
-                      'a deadline whose previous minute is not a slot keeps "전까지"')
+        self.assertIn('19:57까지', prep.schedule_text(self.window(5, (19, 57), 16), 'Asia/Seoul'),
+                      'an end between slots is named as said, never moved')
 
     def test_a_window_past_midnight_names_its_last_day_and_a_foreign_zone_is_named(self):
         self.assertEqual(prep.schedule_text(self.window(120, (0, 40), None), 'Europe/Paris'),
-                         '10월 28일(수) 18:35부터 10월 29일(목) 00:40 전까지 (Asia/Seoul), 2시간마다 최대 4번 · 알릴 일이 있을 때만 알려요')
+                         '10월 28일(수) 18:35부터 10월 29일(목) 00:40까지 (Asia/Seoul), 2시간마다 최대 4번 · 알릴 일이 있을 때만 알려요')
 
     def test_one_run_repetitions_and_delivery(self):
         self.assertEqual(prep.schedule_text(self.window(5, (19, 0), 1), 'Asia/Seoul'),
-                         '10월 28일(수) 18:35부터 19:00 전까지 한 번 · 알릴 일이 있을 때만 알려요')
+                         '10월 28일(수) 18:35부터 19:00까지 한 번 · 알릴 일이 있을 때만 알려요')
         self.assertEqual(prep.schedule_text(self.row(recurrence='daily', channel='web'), 'Asia/Seoul'),
                          '10월 28일(수) 18:35부터 매일 · 결과가 나와도 따로 알리지 않아요')
         self.assertEqual(prep.schedule_text(self.row(kind='reminder'), 'Asia/Seoul'), '10월 28일(수) 18:35')
@@ -2103,9 +2390,26 @@ class PreparationManagementTests(unittest.TestCase):
         row = self.make(window=(300, self.now + 1800, 6))
         until = datetime.fromtimestamp(self.now + 3600, SEOUL).isoformat()
         edited = self.preparations.edit(row['id'], every_minutes=10, until=until, max_runs=3)
-        self.assertEqual((edited['every_seconds'], edited['window_end'], edited['max_runs']), (600, self.now + 3600, 3))
+        self.assertEqual((edited['every_seconds'], edited['until_at'], edited['max_runs']), (600, self.now + 3600, 3))
+        self.assertEqual(edited['window_end'], self.now + 3600 + prep.run_seconds(), '#701: the last slot gets a run\'s time')
         self.refusal('invalid_window', self.preparations.edit, row['id'], every_minutes=1)
         self.refusal('invalid_max_runs', self.preparations.edit, row['id'], max_runs=0)
+
+    def test_editing_a_running_watchs_end_keeps_the_slots_left(self):
+        """#693: a watch at run 7 of 12, its end moved to two more slots, runs exactly those two."""
+        start = self.now
+        row = self.make(window=(3600, start + 12 * 3600, 12))
+        with self.store.db() as db:
+            db.execute('UPDATE preparations SET run_count=7,due_at=? WHERE id=?', (start + 7 * 3600, row['id']))
+        until = datetime.fromtimestamp(start + 8 * 3600 + 600, SEOUL).isoformat()
+        edited = self.preparations.edit(row['id'], until=until)
+        self.assertEqual((edited['run_count'], edited['max_runs']), (7, 9))
+        self.assertEqual(prep.next_window_slot({**edited, 'due_at': start + 7 * 3600, 'run_count': 8}, start + 7 * 3600),
+                         start + 8 * 3600, 'the second slot left still runs')
+        self.assertIsNone(prep.next_window_slot({**edited, 'run_count': 9}, start + 8 * 3600))
+        # A total is a total: at or below the runs done it ends the watch.
+        self.assertEqual(self.preparations.edit(row['id'], max_runs=5)['max_runs'], 5)
+        self.assertEqual(self.preparations.edit(row['id'], max_runs=12)['max_runs'], 9)
 
     def test_run_now_uses_one_atomic_work_and_preserves_schedule_across_restart(self):
         for paused in (False, True):
@@ -2135,6 +2439,28 @@ class PreparationManagementTests(unittest.TestCase):
         row = self.make(window=(300, self.now + 1800, 6))
         self.now = row['window_end']
         self.refusal('resume_expired', self.preparations.run_now, row['id'], channel='web', chat_id=None)
+
+    def test_a_watch_stored_before_until_at_keeps_exactly_its_slots(self):
+        """#701: a legacy exclusive end becomes the inclusive bound one second before it; its last slot gets a run's time."""
+        self.now -= self.now % 60  # stored ends are whole minutes
+        due = self.now + 60
+        # The #412 shape (end one minute after the last check) and an end exactly on a slot (that slot never ran).
+        after = self.make(window=(3600, due + 6 * 3600, 7))
+        on = self.make(window=(3600, due + 6 * 3600, 6))
+        with self.store.db() as db:
+            db.execute('ALTER TABLE preparations DROP COLUMN until_at')
+            db.execute('UPDATE preparations SET window_end=? WHERE id=?', (due + 6 * 3600 + 60, after['id']))
+            db.execute('UPDATE preparations SET window_end=? WHERE id=?', (due + 6 * 3600, on['id']))
+            prep.migrate(db)
+            prep.migrate(db)
+        for row, end, last in ((after, due + 6 * 3600 + 60, due + 6 * 3600), (on, due + 6 * 3600, due + 5 * 3600)):
+            migrated = self.preparations.get(row['id'])
+            self.assertEqual((migrated['until_at'], migrated['window_end']), (end - 1, end - 1 + prep.run_seconds()))
+            self.assertEqual(prep.next_window_slot(migrated, last - 1), last)
+            self.assertIsNone(prep.next_window_slot(migrated, last))
+        last = datetime.fromtimestamp(due + 6 * 3600, SEOUL).strftime('%H:%M')
+        self.assertIn(f'{last}까지', prep.schedule_text(self.preparations.get(after['id']), 'Asia/Seoul'),
+                      'the #412 shape still reads as its last check')
 
     def test_migration_preserves_old_rows_and_adds_nullable_return_state(self):
         row = self.make()

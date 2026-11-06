@@ -2,413 +2,183 @@
 
 ## Current rule index and precedence
 
-This contract contains dated amendments because they are durable decision evidence. **Do not infer the currently selected development goal from this file**; use repository-root [`delivery-plan.yaml`](../delivery-plan.yaml) as described by the [documentation map](README.md). For product policy, newer explicit amendments supersede the older clauses they name. The current reading by concern is:
+This contract defines owner-centered, goal-directed work and the pilot's policy boundaries. “Secretary” is a historical program name and a starting role, not a restriction of Still to one profession. [Professional Roles and Communication](professional-roles-and-communication-contract.en.md) defines the broader role/mandate distinction. A contract is not a claim of shipped or live-verified capability.
 
-| Concern | Current controlling rule | Older text retained only as history where superseded |
-| --- | --- | --- |
-| Secretary self-review | #998 SELF-REVIEW-01 triggers and budget, with the lesson disposition superseded by #19 STEADY-NOTES-01: what it learns revises one bounded working-notes document (versioned, told once, exact undo); blocker remains Evidence | #805 is reused as the upkeep execution seam, not a separate self-review loop; #998's lesson-as-`profile.working.`-Memory rule |
-| Owner AI Memory writes | #918 slice (a): the owner's own AI saves current Memory directly, tells the owner, and offers exact bounded undo; secret-shaped values are refused | #818/#836 ask flow and #597 request-path write gate for the owner's own AI |
-| Third-party/delegated Memory writes | #918 keeps C5: third-party/delegated writers create pending MemoryCandidate; #836/#818 define the one-ask/approval presentation | Owner-AI auto-save does not widen third-party authority |
-| Owner-model upkeep | #805 trigger/budget/evidence mechanics, with Memory disposition superseded by #918 slice (a) and the write structure by #220 (append + invalidate) | #805 candidate/per-fact judgment disposition, #836 owner-AI ask behavior, and #805's rule that an upkeep never ends another key's row |
-| Dream and how memory is told | #402 mechanics, with its sources, endings and telling superseded by #422: only the owner's words, endings that restate or are replaced by the owner's words, quiet consolidation, and a change the owner relies on raised at the next relevant conversation | #402's "one saved-memory notice per dream", which included the daily record |
-| Private context + web search / egress | #826 EGRESS-OPEN-01: private reads and web search may share a turn; public lookups may carry owner values; information-use audit is required | #678 separation and the conflicting #774/#701/#705 native-search/private-read restrictions |
-| Browser/search platform | #677 as subsequently integrated by #701/#826: connected AI native search by default; macOS system WebKit browser; payment approval and browser mediation remain | Naver and separate Playwright-browser direction |
-| Main/Judgment orchestration | #710 plus the current [Decision Layer](decision-layer.en.md): Judgment plans and evaluates; deterministic code enforces authority/effect boundaries | Any older wording that treats deterministic routing rules as the semantic planner |
-| Preparations/watch | #719 on top of #659: bounded accepted watch windows, when-needed notification judgment, owner cancellation | No general background scheduler or unbounded monitoring is implied |
+Current selection belongs to root [delivery-plan.yaml](../delivery-plan.yaml); GitHub owns execution and review status. Nothing on this page activates a program. This 2026-11-05 consolidation uses `6edc3380b613ab0c2897ba7a913ab658150a68f4`; the [original amendment sequence](https://github.com/Jongtae/Still/blob/6edc3380b613ab0c2897ba7a913ab658150a68f4/docs/secretary-agency-contract.en.md) remains available there.
 
-Cross-cutting invariants remain: secrets never enter model prompts, logs or Evidence; payment requires per-action owner approval by default; an owner-turned-on payment autonomy mode replaces it while on (#662); external effects are not replayed and `unknown` remains explicit; folder grants bound file authority; owner-visible claims remain Evidence-qualified. The [Presence Experience Contract](presence-experience-contract.en.md) controls owner-facing projection where it adds presentation rules without changing these authority boundaries.
+| Concern | Current controlling source |
+| --- | --- |
+| Owner-AI and third-party Memory writes; upkeep, dream and working notes | [Memory and learning contract](engineering/contracts/memory.en.md): #918 direct save, C5 candidate boundary, #220/#367 lifecycle, #19 versioned notes, #422 quiet consolidation and later source refinements |
+| Meaning, route planning and outcome judgment | [Decision Layer](decision-layer.en.md); judgment never creates authority or external-effect truth |
+| Work, effects, budgets and recovery | [Assistant Execution](assistant-execution-contract.en.md) and current code/tests |
+| Private context, public lookup and audit | [Pilot posture](#pilot-posture) and [information-use audit](#information-use-audit), consolidating #826 and later audit fixes |
+| Connections, browser mediation and peer delegation | [Connection and Delegation](connection-delegation-contract.en.md); platform coverage is separately recorded |
+| Accepted reminders, preparations and watches | [Attention](#attention-in-this-program), existing preparation state and the owner's acceptance |
+| Owner-facing communication and intervention | [Presence](presence-experience-contract.en.md) and the roles/communication contract |
 
-## Amendment — #422 (2026-10-30): memory is shown in use; consolidation is quiet and reads only the owner's words
-
-Owner direction 2026-10-30, after the first live dream. What it remembered was fine; how it was told and handled was not. One evening push mixed three things:
-- tidy-ups shown as "(전에는 …)";
-- an unrelated fact ended as a "duplicate";
-- a daily record that summarised developer verification requests as the owner's own.
-
-The owner's reference is an assistant that asks at the moment it matters, says why, and then shows what it understood by using it. The evidence behind each rule is recorded in [Memory telling research](research/memory-telling-2026-10-30.ko.md). Implementation is tracked by #423–#426. Until each merges, the code follows #402 and #918 as written for that part.
-
-- **Only the owner's words (#423).** Upkeep, the dream, the daily record and recalled owner words read only Works the owner typed on a conversation surface, or that an API caller declared owner-typed under an owner session. Evals, scripts and verification calls are answered but never become memory. Every dream fact records the turns it rests on, so "how do you know" names the request it came from (OWASP ASI06 source attribution and segmentation).
-- **Endings must be grounded (#424).** An id a dream ends must be cited by the same proposal. It may be ended only for one of three reasons:
-  - the proposal restates the same line (a tidy-up);
-  - a cited owner turn replaces it;
-  - the line itself was never a lasting fact (#429): a request sentence, a passing reaction, one task's condition or a current state kept as lasting.
-
-  Different subjects are never duplicates. An ending the judgment is unsure of is held, not applied. The AI names ids and reasons; Still checks citation and shape only, with no key-name or topic rule (C16). The 25% mass-end cap stays.
-- **Quiet consolidation (#425).**
-  - New facts and tidy-ups from a dream are applied without a message. Every row a dream writes (its facts and the daily record) carries `origin` `dream`. It is never part of the anchor request's own saved-memory notice. 내 기록 lists it with its source and the exact undo.
-  - The daily record is never told and never shown as a remembered fact. It stays a search-only record of owner-typed turns and is never a fact source.
-  - A working-notes revision keeps its own #19 notice. This is the only thing a dream may still tell by itself.
-  - The first dream, like every later one, waits for the owner's night hours.
-- **Raised at the next relevant conversation (#425).**
-  - A dream row that replaced or ended a fact the owner relies on (`changed`), and every held ending (`held`), becomes one open item (`MemoryRaise`).
-  - The item is shown as a note on its own line in the owner's AI's brief, only in a request whose text matches that line (the existing query-first profile selection). A `changed` note says what the line said before. A `held` note gives the reason for the doubt.
-  - The owner's AI mentions a change in passing, or asks once with its reason, only when it matters to that request. It changes Memory only through its own tools, on the owner's answer. No rule in Still decides relevance (C16).
-  - The first Work whose brief shows an item consumes it. Every reader of that Work sees the same line.
-  - An item not raised within seven days expires unchanged; the row stays in 내 기록. The look back sends no saved-memory notice and no push.
-- **Plain kinds in every memory notice (#425).** A foreground #918 notice says what each item is:
-  - the value it replaced under its own key ("전에는 …");
-  - facts it retired under other keys ("함께 정리한 기억: …");
-  - after an undo, the value brought back ("다시 …").
-
-  A retired fact is never shown as the "전에는" of an unrelated fact. The wording lives in `messages.json`. Undo by words can target one item (#424); the exact digest-bound `retract_memory` is unchanged.
-- **Memory shown in use (#426).** When a remembered fact changes what an answer does, the owner's AI mentions it in passing, paraphrased and in the owner's terms, never as a stored line or key. A fact the AI inferred, or one that may be out of date, is offered tentatively. When being wrong would matter, the AI asks one short question with its reason instead. This is general guidance to the owner's AI, never a template or a task-specific rule (C16).
-- **Kept.** These rules stay as they are:
-  - #918 act-then-tell for foreground saves;
-  - #220 append + invalidate;
-  - forget and delete semantics;
-  - secret refusal;
-  - C5 for third parties;
-  - nothing described as remembered before it is.
-
-  Whether the foreground notice should move further toward show-in-use alone is left open for the owner.
-
-## Amendment — #402 (2026-10-30): the once-a-day look back ("dream")
-
-Owner direction 2026-10-29: Still's model of the owner should also improve between conversations, not only right after each request. The design follows OpenClaw dreaming, Claude Code Auto Dream, Letta sleep-time agents and Generative Agents reflection (design review #402). No external runtime or scheduler is adopted.
-
-- **Queue and bounds.** A third run kind, `dream`, on the #805 `owner_model_upkeep` queue. It shares the tick, single flight, owner pause, rolling `daily_calls` cap and deadline, and has its own owner switch `dream` (Settings, 알아 두기 → 밤사이 기억 정리).
-- **When.** The tick asks at most once a minute. A dream is enqueued only when all of these hold:
-  - no upkeep row is pending or in flight, and no Work is queued or running;
-  - at least 20 hours have passed since the last dream;
-  - at least 3 requests that got upkeep have finished since then;
-  - it is the owner's night (01:00–05:59 local), or 36 hours have passed since the last dream.
-
-  Its row belongs to the newest of those requests (the anchor).
-- **What it reads.** The settled requests a worker AI answered since the last dream: at most 7 days back and 40 requests. Each is scrubbed with its own Work's saved private values and bounded in size. It also reads the profile with short ids, the working notes, the previous daily record and the clock.
-  - It leaves out what upkeep never reads: rule or command replies, preparation runs, location continuations, Works where the owner managed what Still keeps, and forgotten requests.
-- **Model.** The dream's one judgment asks for the Judgment AI engine's strongest model, never a pinned name (#420, [Decision Layer](decision-layer.en.md) *Strongest-model judgments*).
-- **Two passes (#416).** A first judgment only finds facts in the turns (up to 10, no endings); what passes Still's checks is saved, and the look back below reads the profile with them. The look back tidies, keeps the notes and the daily record, and adds a fact only when the first pass missed it. Facts carry the situation a preference holds for; the look back ends or rescopes lines that are request sentences, passing reactions, one task's conditions or current states kept as lasting. No call starts after 600 s.
-- **One judgment, then Still's checks.**
-  - **Facts:** each must cite what it rests on: turns it read, or, to tidy what is remembered, the short ids of the profile lines it restates or ends. A proposal citing no turn may only restate or end the lines it names, so no new fact comes from the profile alone. An `inferred` fact needs two separate turns, and a request sentence is never a fact. Facts then pass upkeep's `validate` and its save path (secret, forgotten-value and id checks).
-  - **Mass ending:** naming the line under the proposal's own key is a replacement, not an ending. When the dream's facts would end more than a quarter of the current profile rows (at least one), every proposal that ends a line is refused; pure additions stay.
-  - **Working notes:** a revision must cite two separate turns and passes `validate_review`. One that drops more than half of the current points at once is refused. So is one whose anchor already used its one notes notice, since it would go untold.
-  - **Daily record:** at most 800 characters. A secret shape and the pause stop it.
-- **What it writes.** Everything is attributed to the anchor.
-  - Facts become current Memory (#918 slice a).
-  - Notes become the next version (#19).
-  - The daily record becomes a Memory row `diary.<owner date>`, outside `profile.`, one dated line per event (#442). A Work's brief carries the records of the last two owner days and up to three older ones its request finds, whole, within 4,000 characters, after the owner's earlier words; the owner-model judgments and a preparation's Work do not.
-- **The owner is told.** One saved-memory notice per dream, with undo; the notes keep their own notice. When the anchor's saved notice was already sent, the dream's saves get the separate upkeep notice instead of a late edit.
-- **Evidence.** One `owner_model_dream` event on the anchor: counts, outcomes, digests and the period's size, never text.
-
-**#496 — observed misses for lessons.** Each dream turn carries its observed outcome from Work status and typed correction/retry links. For working notes only, the dream also reads at most 12 eligible missed Works from the 7 days before its period, scrubbed per Work with bounded correction words. A revision may cite two misses on different owner dates, at least one from tonight, alongside the existing two-turn, two-day rule; lessons stay as narrow as what went wrong and what the owner corrected. Earlier `m` refs never support facts, invalidations, suggestions or the diary. Existing revision checks remain; Evidence adds only counts and the rule that kept the notes, never earlier text.
-
-## Amendment — #220 (2026-10-23): append + invalidate
-
-Owner direction: memory is not overwritten or erased. A new fact is added, and the facts it replaces are invalidated. The #205 memory experiment measured this structure (M5) against key rows with a full view (M3). M5 delivered 54% of needed facts against 35%, with 11 stale facts shown as current against 19.
-
-- **What the upkeep reads.** The profile snapshot it reads shows each row's first 8 id characters in brackets. Every reader gets the same selection (#217); only the upkeep sees ids.
-- **Ending earlier facts.** A proposal may name up to 3 earlier facts, under any key, in `invalidates` (id plus a short reason). Still resolves each short id to exactly one current `profile.` row of the owner, excluding working notes.
-  - Any id that matches no such row, or more than one, drops the whole proposal, and nothing is written.
-  - The named rows become `superseded`, with `invalidated_by` (the new row), `invalidation_reason` and `invalidated_at`. They are kept, never deleted.
-  - `supersedes_key` still names only the proposal's own key. #805's rule that the upkeep never retires another key's row is superseded by this explicit, id-named, bounded form.
-- **Facts that end on their own.** A proposal may carry `valid_until`, the last day the fact holds. After that day the row leaves every model snapshot, including literal query matches. It stays current in the store, and the owner's Settings list shows it as ended. A row that ends later reads `until YYYY-MM-DD` in the snapshot.
-- **Notice and undo.** The saved notice names the ended facts after "전에는", as it names a same-key replacement. Undoing the save restores every row it ended (`retract_memory`, exact to the row and its digest).
-- **Forget is invalidation (owner decision 2026-10-28, #367).** Owner "forget" keeps the record that the owner chose to forget an item and is never purged; it stays undoable. Only "delete" erases. Forget and delete also cover transcript messages the owner's AI names (`message:<id>`). Third-party writers still create candidates (C5). No key-name, synonym or category rule decides what ends (C16): the AI names ids, and Still checks and applies them.
-
-## Amendment — #19 STEADY-NOTES-01 (2026-10-20): one bounded, revisable working-notes document
-
-Owner selection 2026-10-20 (program STEADY-01, #132). Lessons about how to work for this owner improve one coherent document instead of adding differently worded `profile.working.` rows, each with its own notice. This supersedes only the lesson disposition of #998 below; its triggers, tick, single flight, pause switch, call cap, blocker handling and Evidence stay.
-- **One document, versioned.** The working notes are versions in one reserved owner-level slot of the procedural version store (`procedures.NOTES_SLOT`, the #1486 `procedure_versions` table; no new memory service or fact namespace). The self-review Judgment reads the current document as its own fact and returns either no change (empty `notes`) or the whole revised document with a one-line `change`. It is told to write in the language of the owner's own words.
-- **Host checks (deterministic, refused whole, never cut).** At most 12 points, one per line, of at most 200 characters each and at most 1,500 characters in all (the inherited design). A revision with the same points as the current document (another marker, spacing, case or order) is no change: no version and no notice. Refused as well: a revision given together with a blocker (a software cause is not a preference about the owner); a revision without a change line; one whose added point is the request sentence or a current `profile.` Memory value (semantic owner facts stay in Memory); a stored secret or credential shape in the notes or the change; a revision equal to a version the owner forgot; a revision of a document the judgment did not see whole (redacted) or that changed during the call. Owner-model upkeep no longer proposes facts under `profile.working.`.
-- **Authority unchanged.** The writer is still the owner's own Judgment AI acting under the #918 slice (a) rule: it saves at once, attributed to the reviewed Work, and the owner is told afterwards. The pause switch read before the write stops it. Third-party writers keep the MemoryCandidate boundary, and Memory semantics are unchanged.
-- **Told once, exact undo.** Each kept revision is the next version and gets one Telegram notice (`working_notes_saved`). The notice is queued in the same transaction as the version, so a crash cannot leave a change untold, and it is sent only while that version is still current. Every brief carries the whole document as one block of the owner profile section, with its version, `procedure:<id>` ref and last change. When the owner does not want a change, their AI calls `forget_record forget procedure:<id>`. The previous version is in use again at once, the forget stays undoable for the existing seven days and is then purged. A content-free digest tombstone (`forgotten_values`) outlives the purge, so the self-review never saves that exact document again; the undo removes it. A version saved after the forget wins over its undo.
-- **Migration with receipts.** Once, at service start (and before a review), the current `profile.working.` Memory rows move into version 1: newest first while the bounds hold, then listed oldest first, with a repeated lesson said once. Each moved row leaves current use under its own `migrate` receipt in `owner_state_receipts`, in the same transaction as the version and a `working_notes_migration` config record (counts, version, receipt ids). Receipts are content-free, listed by `forget_record list` and undone like a forget within seven days. Rows with a stored secret or credential shape, an over-long value, or past the bounds stay in Memory untouched. The move does not run again, so an undone row stays in Memory.
-- **Evidence.** The `self_review` event records the notes outcome as version, ref, previous version, point count and size, never the text. A refused revision is recorded only by its reason.
-
-## Amendment — #998 SELF-REVIEW-01 (2026-10-04): the secretary reviews its own misses
-
-Owner direction 2026-10-04: like a human secretary, the assistant notices when it fell short, works out why from its own records, and does better next time, without the owner operating anything. This adapts the #805 upkeep seam (`src/personal_agent/owner_model.py`): the same durable rows (now keyed by Work and kind), the same idle tick, single flight, pause switch and rolling 24-hour call cap. No new loop, store, scheduler or evaluator; no model call on a request path.
-- **Trigger (typed markers, never text rules).** One `self-review` row per Work, settled in the same transaction: a Work a worker AI answered that ended `failed` (a `BlockedTurn` the owner resolves is a setup need, not a miss; rule/command replies, preparation runs and location continuations are excluded as for upkeep); a Work the next owner turn's continuity judgment linked to it as `correction` or `retry` (the stored `relation_kind`; a refused retry stored as `reference` is not one); and an observation another change hands in through `enqueue_self_review(store, work_id, reason, observation=None)` (for owner reactions, #996). A second trigger for the same Work adds nothing.
-- **Judgment (C16).** The owner's Judgment AI reads, redacted and bounded, the owner's request, the final answer excerpt, the Work's outcome, the orchestrator's recorded verdict texts (#710 `evaluated` Evidence), the owner's follow-up messages the link recorded (or the observation) and the profile snapshot, and returns at most one **lesson** and one **blocker**. Still validates deterministically: a lesson is a `profile.working.<topic>` key with content of at most 200 characters, never the request sentence, never a current profile value again, never a stored secret or credential shape.
-- **Lesson = Memory, by the #918 slice (a) rule.** A kept lesson is saved at once as current Memory attributed to the reviewed Work (`work_key`), and the owner is told with the Work's one `memory_saved` notice and its undo; it shows in 내 기록 and the profile surface under `profile.working.` and is deleted like any other Memory. Because it is a `profile.` row, every later turn context carries it in the owner profile section as background. A same-key lesson supersedes the earlier one, which the undo restores. The pause switch read before the write stops it; no candidate row is written on this path (third-party writers are unchanged).
-- **Blocker = Evidence, nowhere else.** A blocker (a cause only Still code can fix: missing context, a missing tool, wrong routing) is kept only in the `self_review` tool event on the reviewed Work, redacted by the Work's judgment redaction; the service log line says only that one exists. Nothing is filed externally; nothing changes code or authority.
-- **Evidence.** Each run is one `self_review` tool event on the reviewed Work (`recorded`, `unavailable` or `expired`; not a Work step): the reason, decision outcome, route, provider, model, confidence, the input lengths and counts, the lesson's key and outcome, the blocker text, and each dropped note with its reason (a model-chosen key only as a digest). Never the input texts.
-
-## Amendment — #918 slice (a) (2026-10-02): memory saves without an ask
-
-GOV-ASK-LESS-01 records an owner decision of 2026-09-30: "I'll remember that. • Has a spouse — I think things like this should just be handled without asking; asking at every turn is not a good user experience" (recommendations accepted, "all OK, good"). It supersedes, for the owner's own AI only, the #818/#836 ask below and the #597 write gate on the request path. This is the separately reviewed policy that Constitution C5 allows; C5 itself is unchanged for third parties.
-- **The owner's own AI saves directly.** A `save_memory` by the Work's own worker (the direct API loop and the CLI's MCP bridge alike) and a kept #805 upkeep proposal are written at once as current Memory, attributed to the Work (`work_key`). No MemoryCandidate row, no `explicit_memory_request` / `explicit_memory_fact` judgment call, no value-coverage or key-replacement refusal on this path. The #846 rule stays: the owner's request sentence itself is never a value. A same-key save supersedes the previous row (kept as history), never overwrites it.
-- **Stated and inferred alike.** The owner's own example ("has a spouse", an upkeep inference) is exactly what the owner asked to be saved without an ask, so a `stated` and an `inferred` upkeep proposal, and a durable inference the worker draws, are all saved and told with undo; the upkeep Evidence keeps the `kind`. The stated-versus-inferred distinction of #918 item 3 applies to settings and family changes, not to Memory. The prompt and tool texts say so.
-- **Never a secret.** Before any write - worker, third-party candidate or upkeep - key and content pass the deterministic stored-secret and credential-shape pass (`memory_value_has_secret`, the same pass as `redact_known_secrets`); a hit is refused with `secret-shaped-value` and the refusal never echoes the value (the upkeep records only a key digest). `list_memory` rows pass the same filter as `search_memory` rows before the model reads them.
-- **Told, with undo; never untold.** The save holds its notice durably in the same transaction as the Memory row (`telegram_notifications` state `held`, one `memory_saved` row per Work). After the reply is settled - delivered `sent` or `unknown`; the notice cannot duplicate the reply and each undo is exact to its own message - the service releases it (`queued`), and a sweep each tick releases what a crash between the delivery update and the release left `held`. A notice whose own send came back `unknown`, or that a restart found `sending`, is told again at most once (`retells`): a notice may be told twice rather than never. One quiet notice per Work: "기억했어요: <fact>" with a 되돌리기 button; several facts of one Work are one numbered notice with a 되돌리기 per fact and 모두 되돌리기. A fact that superseded a value says so ("(전에는 …)"); a previous or restored value deleted from 내 기록 since is simply not named. The notice shows values only, never a key, bounded, with stored secrets and credential shapes removed; it asks nothing. A fact upkeep saves after the notice was sent joins it by an edit and is bound only when the edit is confirmed, and the notice's undo window restarts at the join; a refused edit, or a notice already settled or lost, gives the upkeep facts a notice of their own (`memory_saved_upkeep`). The web shows the fact in 내 기록 as saved with its source Work, and the approve/reject list no longer lists it; the web's undo is the existing exact delete. Splicing a deleted superseded row on the web rewrites `supersedes`, so a later undo restores the grandparent, which the notice names truthfully.
-- **되돌리기 is exact and bounded.** The notice follows the #659/#818 pattern: this notification, sent, the paired private chat, its generation and message, bound at send time to the Memory ids and content digests it shows, consumed once per fact. A tap calls `QuickStore.retract_memory` with the bound id and digest: the row must still be current with that content, else it is shown as "그 사이 바뀌어 그대로 두었어요" and nothing changes. The retracted row becomes `retracted` (history, never current again); the row it superseded, if still `superseded`, becomes current again; issued approvals against the key are revoked. The notice is edited to "되돌렸어요" ("(다시 …)" when a value was restored). The buttons act for seven days (as the forget undo of #918 option B), then taps are refused and the buttons removed; the sweep closes old notices.
-- **Records.** The `save_memory` tool event records `saved`, `state: current` and `auto_saved: true`; the information-use audit lists the key as "(바로 저장)". An undo is a `memory_undo` event on the Work with status `recorded` (never a Work step), written in the same transaction as the retraction (`retract_memory(record=...)`), listed in the audit as "(되돌림)" and "(되돌림 · 이전 값 복원)" when a value came back. The Work's redaction set (`work_written_values`) keeps every non-`profile.` Memory row attributed to the Work in every state, superseded and retracted included. The upkeep run's Evidence records each applied proposal as `memory` with `auto_saved` and whether it `superseded` a value; the historical refusal reasons stay only in rows written before this amendment.
-- **Worker view.** The worker reads a direct save as `{remembered: true, memory_key, content, replaced_previous, next}` (`worker_result`), with no storage, approval or candidate wording, and is told not to ask whether to remember. The `save_memory` description says it is remembered at once and the owner is told afterwards with an undo. The owner-facing step text is "기억했어요.".
-- **Third parties unchanged (C5).** A package-declared tool whose host action is `save_memory` and a delegated specialist still write a pending MemoryCandidate (`refused_because: third-party-write`), the worker reads it as "not remembered yet", and the #818/#836 ask below is theirs; the web approve/reject path is unchanged. The boundary is decided by the declaration (`Capabilities.third_party_memory_write`), never by a package id a manifest could claim.
-- **Threat note, recorded not resolved.** A worker whose `save_memory` was induced by untrusted page text now writes current Memory; what holds is attribution, the auto-saved record, the notice with undo and exact retraction. Injection and exfiltration defences stay owner-deferred (trifecta proposal parked, 2026-09-28).
-- **Kept.** Secrets never shown or saved (enforced above), per-action payment approval, no replay, folder-grant scope, and nothing described as remembered before it is. No task-specific code (C16): which fact to save is the worker's judgment; Still keeps the write, its attribution and the undo.
-
-## Historical amendment pointer — #836 / #818 Memory ask chain
-
-For the owner's own AI, #918 slice (a) supersedes the #836/#818 ask path. The full historical amendments are preserved in Secretary superseded amendment history.
-
-**Still current for third-party/delegated Memory candidates:** they remain pending under C5; owner-facing candidate approval uses one natural ask per Work, shows values rather than keys, binds approval to exactly what was shown/current, and never presents a candidate as already remembered. The exact current boundary is summarized in the rule index above and in the [Presence Experience Contract](presence-experience-contract.en.md).
-
-## Amendment — #826 (2026-09-28)
-
-EGRESS-OPEN-01 records an owner decision: "giving this information makes a big difference. Instead, an audit showing only which information was used would be enough. Approved." It supersedes the #678 separation stated in the #774, #701 and #705 amendments below. See the [request-path rule census](request-path-rule-census.en.md), class g.
-- **Private reads and web search share a turn.** A CLI turn with its own web search offers every private-read bridge tool (notes, Memory, calendar, connected-folder documents). The bridge's own search tools still step aside for the CLI's own search. Owner material spliced into the turn, or read by an earlier attempt, no longer turns that search off. The plan has no tool subset, and no worker is pinned.
-- **Public lookups.** Still-composed lookups send the worker's words as written, including owner values the Work saved or read. A private context no longer refuses a lookup.
-- **Documents on the CLI.** `find_files`, `read_file`, `list_roots` and `public_page_read` are offered on trusted-local, within the folder grants and the owner's page approval, which the tools check on every call. Earlier document jobs reach a CLI's history.
-- **Search-result page reads (#23).** `public_page_read` also reads a result URL that a `web_search` earlier in the same Work returned, on every route; the reader checks that set again on each redirect. Nothing else enters it: not a URL the worker composes, not a link inside a page it read. This replaces the retired category tool `bounded_public_research`, which read the first three results of its own search. Strict-isolated offers only this scope, never the owner's approved page list. Every outbound `web_search` query passes the credential tripwire (`public_query.validate_public_query`), which is a late warning over surface forms, not provenance.
-- **Kept, each with negative tests:**
-  - secrets never enter a prompt, a log, Evidence or a lookup;
-  - per-action payment approval (`browser_session`, unchanged);
-  - no replay of external effects, and a truthful `unknown`;
-  - #597 Memory authority;
-  - folder-grant scope, with no write, delete, move or send implied by a read grant.
-- **Information-use audit.** Every Work shows which owner information it used, where it went and what came back (`information_use.py`). It covers profile keys, Memory rows, calendar entries, files, current-context claims and the number of conversation turns included. It also covers the worker, route and model, the Judgment AI calls, whether web search ran and the queries, and the tool results. It is derived from `turn_provenance` (new fields `owner_information` and `workers`), `tool_events` and `decision_audit`. It holds references and short labels only, passed through the stored-secret redaction. It appears on the web task detail (이 답변에 쓴 정보), at `GET /api/tasks/<id>/information-use`, and in conversation through the read-only `information_use` tool; no keyword route decides it.
-- **Held values in outbound text (#167, #28 option A, 2026-10-21).** Detection and display only; nothing is blocked, rewritten or delayed, and what is sent does not change.
-  - After an outbound call Still mediates has run, its outbound text is compared with the values Still holds for the owner, using the #605 matcher (`lookup_text_violations`). The calls are `web_search`, `weather`, `public_page_read`, `browser_open`, `browser_type`, `api_request` and the requests a `code_run` sandbox let out.
-  - The held values are the owner's current Memory, whichever Work saved it, plus this Work's own private writes (the #605 set).
-  - The text is the composed query, a URL's path and query (not its fragment, which is not sent), typed browser text, an API request's URL and body, or a code-run request's path, query, body and header values (held only in the runner's memory). The first 1,000 characters of each text are compared, against the newest 500 Memory rows. When a comparison is cut off by either bound, the call's Evidence names it (`outbound_comparison_cut`) and the view says what was not compared (#245).
-  - Each match is recorded on the call's Evidence as `outbound_matches`, with labels only: the source (`memory` with its key, or `work_write`), the tool and the destination host or search provider. The value and the outbound text are never stored; `browser_type` text and `api_request` bodies stay length-only.
-  - A `browser_open` call also records its destination host, and the audit lists those hosts as places data was sent.
-  - A call that failed after it was handed to a transport (a network read, a browser navigation or input step, an API request, a code run's sandbox) is compared from its arguments and its matches are recorded on the failed event; a failed `browser_open` also keeps its destination host there, and the audit lists it. A call the runtime withheld after it returned (a sign-in page, for example) keeps them in its Evidence. The view shows both as a failed attempt that may not have reached the destination. A call Still refused before any hand-off (a page outside the Work's scope, no browser, an API call refused before sending, a code run that never started), or that a transport refused itself before sending (an unavailable search provider, a page host resolving to a private address), records `ran: false` and no attempt (#233). Anything else a transport raises counts as an attempt. A redirect of `public_page_read` or `browser_open` to another host is compared and named as well. A city weather lookup is attributed to the geocoding host it is sent to.
-  - When a worker is recorded, the view says once that the Work's conversation is processed by the chosen AI provider. When a CLI worker ran with its own web search on, it also says that this search does not go through Still and is not compared.
-  - The #605 matcher over-matches by design (a shared span of two or more characters counts). For this view a match must also carry the value rather than an everyday word it shares (#245, `carries_held_value`): a shared digit run, part of an identifier, a span of three or more Hangul, Han or kana characters or several shorter ones, a whole capitalised word of a cased script, or most of the value. The rule uses digits, Unicode script and case only, no vocabulary, so a shared everyday word of three or more such characters still matches; a line therefore says the outbound text carried content that *matches* the value. The measured false-match count on a multilingual fixture is pinned in `tests/test_outbound_held_values.py`.
-  - Mail, file, Drive and calendar contents read during the Work are not compared. Under this matcher their ordinary words and dates would match almost any query.
-  - Blocking (option B) remains a separate owner decision under #28.
-
-## Historical amendment pointer — #818
-
-The owner-AI candidate/ask behavior in #818 was superseded by #836 and then by #918 slice (a). Its full text is preserved with #836 in Secretary superseded amendment history. Third-party/delegated candidate approval remains current as stated above.
-
-## Amendment — #805 phase 1 (2026-09-28)
-
-OWNER-MODEL-03 keeps the owner in mind after each Work, asynchronously and minimised (`src/personal_agent/owner_model.py`). It adds no data source, no monitoring and no task-specific code:
-- **Trigger.** A Work a worker AI answered that ends `succeeded` or `partial` records one pending upkeep (`owner_model_upkeep`, keyed by the Work) in the transaction that settles it. Failed, cancelled and unknown Works, rule/command replies (no worker AI ran), preparation runs and location continuations record none. These are typed markers, not text rules.
-- **When.** The existing service tick claims at most one pending upkeep. The check that no Work is queued or running and the claim are one immediate transaction, serialized with the Work claim. The upkeep then runs off the work thread, one at a time (single-flight). No model call starts after a five-minute deadline, and each call is also bounded by its adapter's own timeout. It never runs on a request path, and owner messages, reminders and notifications never wait on it. Nothing pending is one indexed query and no model call. A claimed upkeep never runs twice, even after a restart. A row still claimed an hour later, left by a crash, expires with an `owner_model` event (`expired`, reason `interrupted`).
-- **Judgment (C16).** The owner's Judgment AI makes one `structured` call. It reads the owner's request (owner words), the final answer excerpt (model-stated), the profile snapshot and the clock. Every fact is redacted first with the judgment redaction, which removes stored secrets and credential shapes, plus the Work's saved private values from the model-stated facts. It proposes at most five facts, each with `category` (identity, place, routine, schedule, preference or plan: a goal, upcoming need or obligation the owner states, #398), `kind` (`stated` or `inferred`), a `profile.` key, content and evidence (each at most 200 characters), and an optional `supersedes_key`. The question is generic. Health, finances, relationships, beliefs, credentials and third parties are proposed only when the owner stated them for a purpose. In phase 1 this sensitive-category rule is in the prompt only; no Still check enforces it, because detecting sensitivity would need a text rule.
-- **Candidates versus canonical (C5, #597).** Still drops a proposal that is out of shape, out of bounds or outside the enum, one without a `profile.` key, and one whose `supersedes_key` is not its own key. It also drops duplicates. A duplicate is the same content as a current `profile.` Memory value under any key, anything the source Work already wrote (the worker's own `save_memory`, as Memory or candidate, under any key), a pending candidate with the same key and content, or another proposal in the same answer. A `stated` fact becomes canonical Memory only on a yes from its own #597 judgment (`explicit_memory_fact`), asked per fact over the owner's message and the proposed key and value. The value-coverage and key-replacement checks that `save_memory` uses must also pass, and the write goes through the same candidate → exact approval → accept path. For both writers, a key is named by the owner only through its fact words: `profile` and the category words (identity, place, routine, schedule, preference, plan and their inflections) never name a key. Otherwise it stays a pending MemoryCandidate. An `inferred` fact is always a candidate. Both are attributed to the source Work. Pending candidates do not decay yet; that is phase 2. An older value under a key the request did not name is never silently superseded. The #804 lookup exclusion applies unchanged: only accepted, owner-stated `profile.` facts are exempt.
-- **Budget and pause.** Config `owner_model_upkeep` = `{enabled, daily_calls}`. Upkeep is enabled by default, and the cap defaults to 20 calls in a rolling 24 hours. The cap counts every model call that reached the Judgment AI's transport: the proposal and each per-fact #597 judgment, so at most six per run. A route that answers before any transport (not configured, invalid, cancelled, structured-unsupported) counts nothing; each adapter reports this as `DecisionConfidence.sent`. The pause switch and the rolling allowance are read again before each later call and each write. A pause stops the run with nothing more written. A spent cap or the deadline stops further calls, and a stated fact left unjudged stays a candidate. Evidence records which of these stopped the run (`stopped`). While paused, nothing is enqueued and nothing runs. The newest pending upkeep runs first, and one older than an hour expires without a call (#876, 2026-09-30: under the cap a backlog drained oldest-first and sent a day-old memory ask after the conversation had moved on). The controls are `GET /api/owner-model` and `POST /api/owner-model/request` (`operation: read | set`); there is no Settings UI in this phase. The Jev route cannot answer `structured`, so its upkeep is recorded as unavailable.
-- **Evidence.** Each run is one `owner_model` tool event on the source Work, with status `recorded`, `unavailable` or `expired`. It holds the decision outcome, the deciding route, provider and model, the confidence, and the input lengths. For each applied proposal it holds the key, category, kind, content length and outcome (memory or candidate, with the refusal reason). For each dropped proposal it holds only a short key digest and the reason, never the model-chosen key. It also holds the per-fact #597 verdicts. It never holds the input texts. The judgments' own audit rows are linked to the source Work, as a Work's are. The event is not a Work step, so outcome, retry and parking logic ignore it; #794 can show it.
-
-## Amendment — #774 (2026-09-28)
-
-The owner-state components the secretary relies on were unreachable from the owner's subscription CLI route. These are Memory and MemoryCandidate (#597), preparations and reminders (#659), and the calendar connector (#606). The trusted-local profile declared them unavailable because the CLI's MCP bridge is a separate process without the service's memory approval, connector or preparation acceptance.
-
-They are now relayed to the service over the existing #701 relay (`cli_browser_relay`), like the browser tools, and run in the service's `Capabilities` under the direct route's unchanged gates:
-- a memory write is a MemoryCandidate unless the owner explicitly asked (#597);
-- a calendar write is a preview until approved (superseded by [#432](https://github.com/Jongtae/Still/issues/432): the worker changes events through the Calendar API connection slot with no per-change approval and no attendee email);
-- a preparation runs only once accepted;
-- `ask_location` asks the owner in the paired Telegram chat to share a current position when a request depends on where the owner is now (the #626 one-time `request_location` prompt). The location that answers the pending request continues the asking Work exactly once: one new Work with the same request and channel, keyed by the consumed request and related to the asking Work as a `reference`, with the reported position bound to it as task-scoped current context. The asking Work is not re-run, an unrequested location still starts no Work, and a continuation never accepts a preparation or issues a memory approval by itself. A Work the owner stopped or cancelled is never continued, and stopping or cancelling it withdraws its pending request. When the asking Work already called an effect tool, the continuation's worker first reads the #730 effect note (tool names, hosts and observed outcomes, never stored as owner text) and checks state before repeating anything. A preparation run's continuation stays that preparation's run (same slot key, isolated history, prefix and scrub); the slot waits for the answer and keeps the continuation's result, or settles from the asking run once the request expires. The tool is offered only to a Work from the paired Telegram chat, on the direct route and through the trusted-local relay alike. The location keyboard is withdrawn as soon as a shared location continues the request (#1305): one short acknowledgement carries Telegram's `ReplyKeyboardRemove`, and the next reply removes it only if that send failed.
-
-The strict-isolated and isolated profiles are unchanged. A bridge without the relay does not offer these tools. The #678 separation still holds: a turn with the CLI's own web search offers no private-store read (Memory, calendar reads), and the orchestrator chooses a no-search subset when a turn needs them (#735).
-
-## Amendment — #677 (2026-09-27)
-
-Owner decisions after re-analysis:
-- **Search.** Web search defaults to the **connected AI's built-in web search**, so the user needs no extra key. Citations are recorded as evidence.
-  - Fallbacks are site-internal search, an optional Brave key, and **Bing RSS as an owner opt-in for personal use**.
-  - **Naver is removed**: its Search API terms ban AI use from 2026-09-07, and its developer keys end on 2027-06-30.
-  - Google results are never scraped; its Terms and spam policy prohibit automated queries.
-- **Browser.** There is no separate browser install. The browser capability uses the **macOS system WebKit inside the app** (SEC-BROWSER-02 #680). Cookies are kept in an Still-encrypted jar whose key is in the macOS Keychain, and Settings lists and deletes sessions per site. Google sign-in is not supported inside the embedded engine. **Platform scope:** during the pilot the browser capability is macOS-only. On Linux and Windows it is reported as unavailable and browser-dependent goals end honestly as partial. The existing Playwright engine is removed only because the owner rejected a separate browser install. A non-macOS backend using the system web engine (WebKitGTK / WebView2, no download) is recorded as #682 and not selected.
-- **Phone identity (#1183, #13).** Pages load as their mobile versions: a phone-sized view and a mobile Safari user agent of the installed Safari's version, still ending in the `Still-Embedded/1` marker that Still's own UI refuses. Its OS token is the frozen value real iPhones send from Safari 26 on (`18_6` for 26.0, `18_6_2` after; Apple's Safari 26.0 and 26.2 release notes, WebKit bugs 298717 and 298473). Pages see `navigator.platform` as `iPhone` in every frame and in the owner's login window. Touch is not claimed (`maxTouchPoints` 0) because presses are native mouse events. Known limit: inside Web Workers the user agent is the phone's, but `navigator.platform` stays `MacIntel`, because WebKit offers no public way to run a script in a worker scope and wrapping the page's worker constructors would break sites. No site is promised to accept the profile.
-- **Judgment AI.** It defaults to the **cheapest qualified model** of the selected route, and the owner can pick a model from a list in Settings. Codex judgments run under the #616 strict-isolated profile (SEC-JUDGE-01 #679).
-
-The Capabilities table below is superseded where it names Naver; its Browser action row is updated for #680. In the pilot posture, Brave remains an optional key and Bing RSS an explicit opt-in.
-
-## Historical amendment pointer — #701 / #705 search separation
-
-The #701/#705 native-search/private-read separation was superseded by #826 EGRESS-OPEN-01. Their full historical text is preserved in Secretary superseded amendment history.
-
-Current CLI/browser mediation, strict-isolated boundaries and turn-record rules are governed by their still-live canonical sections and code/tests; this pointer does not revive the removed search/private-read gate.
-
-## Amendment — #710 (2026-09-27)
-
-ORCH-01 (Constitution C16): for each Work the Judgment AI returns one validated plan choosing the worker (a configured, verified Main AI route) and model, the brief (goal, selected context sections, completion criteria) and optionally a tool subset; after the attempt the existing `goal_reached` judgment evaluates it and the orchestrator may re-delegate at most twice within the Work budget, never after an effect. Without a usable plan the default Main AI runs the raw request as before. The "Roles" below now include this orchestration step; see [Decision Layer — Orchestration](decision-layer.en.md#orchestration-orch-01--710).
-
-## Amendment — #719 (2026-09-28)
-
-SEC-ATTN-02 extends owner-accepted preparations (#659) with two generic capabilities; it adds no scheduler, tool or task-specific code:
-- **Watch window.** A `prepare` preparation may repeat every N minutes (5–720) from `due` until `until` (at most 24 hours later), never more than `max_runs` Works (at most 48) and never at or after `until`. It runs on the existing service tick; a tick with nothing due makes no model call. A window that closed while Still was down ends as `expired` without running. Each run is an ordinary Work under the existing per-Work budget.
-- **Silent unless needed.** With delivery `when_needed`, each run stays in Still (작업 현황). After it finishes, the Judgment AI answers one bounded proposition over the accepted goal, the run's scrubbed result and the last notification: does the owner need this now, and is it new? The typed decision (`notify` / `quiet`) and its reason code are recorded on the preparation and in the run's Evidence. Only `notify` queues one Telegram message, in the same transaction that settles the run. A result identical to the last notification is quiet without a judgment; without an available judgment the result is sent once and later unjudged runs stay quiet.
-- **Owner control.** A watch is proposed and accepted with the #659 flow; the proposal states the interval, deadline, run bound and delivery. It is cancelled in Settings or with the 그만 지켜보기 button on its own notification.
-
-Live-data tools (such as directions or traffic) remain an owner decision recorded on #719; none is added.
+Where older Owner Control or Assistant Execution clauses describe restrictions explicitly removed for the pilot, the pilot posture governs that scope. Other authority, secret, owner-state, exact-effect and recovery invariants remain in force. The two source/text discrepancies found in dream timing and daily-record size are disclosed in the memory contract; this edit does not settle them by changing runtime or policy.
 
 ## Status and purpose
 
-This is the canonical product and execution contract for the **SECRETARY-01** program. Its original activation was recorded by the owner on 2026-09-26 through [GOV-SECRETARY-01 #653](https://github.com/Jongtae/agentos/issues/653); that dated activation is history, not a claim about the repository's currently selected goal. It distills the owner's product specification, preserved as [research](research/secretary-agency-spec-2026-09-26.ko.md), and the owner decisions recorded in #653.
-
-Its 2026-09-26 activation superseded the PRESENCE-01 execution queue at that time. Current goal selection is intentionally not restated here. It does **not** replace the kernel authority model in [Still Architecture](personal-agentos-architecture.en.md), the [Decision Layer](decision-layer.en.md) boundary, Work/Event/Evidence semantics, or the [Goal Execution Contract](goal-execution-contract.en.md). Where the [Owner Control Contract](owner-control-contract.en.md) or the [Assistant Execution Contract](assistant-execution-contract.en.md) conflict with the pilot posture below, this contract governs for the duration of the pilot and the conflicting text is marked as conditional in place.
-
-It does not claim any described behavior is shipped. Capability claims still require merged implementation and named evidence.
+The original SECRETARY-01 activation on 2026-09-26 was a dated owner decision, not today's selection. The source [secretary study](research/secretary-agency-spec-2026-09-26.ko.md) remains a research record. The [historical delivery/resume contract](owner-model-phase3-delivery.en.md) retains its own scope; this reorganization neither resumes it nor declares its closeout complete.
 
 ## Why the program exists
 
-The repository had narrowed the product to a rule-guarded public search path. The decision model was introduced so that the assistant can choose among alternatives and recover when one fails; it was instead used to add per-query blocking judgments. The documented worldview (secretary, personal context and memory, Attention, goal-directed agency, family collaboration, replaceable capabilities) was not what the code did. The owner's problem statement is preserved verbatim in the research document.
-
-This program moves the center of the product from "does each tool work" to "does the assistant reach the owner's goal through whatever path is available, and can it prove it".
+The original problem was a system narrowed to guarded tool calls instead of useful owner outcomes. The durable aim is to use available capabilities, consider alternatives, recover within authority and report what was actually achieved. The model supplies semantic judgment; deterministic code preserves state and exact boundaries. No scenario-specific branch is justified merely because it makes a demonstration pass.
 
 ## Product definition
 
-Still is a **secretary**: one personal agent for one owner that keeps the owner's preferences, situation and history, anticipates what the owner will need, and completes goals through replaceable capabilities while the owner keeps authority over personal state.
+Still serves one owner across conversations, tasks, models and capabilities. Owner facts, current context, permissions, results and open obligations remain independent of the selected worker. Secretary work is one professional perspective among others. A role or mandate is not a permission grant, professional licence or claim that every domain is supported.
 
-Six axes, all of which are part of the product and none of which is optional:
-
-1. **Secretary** — responds to requests with the owner's preferences, situation, family and environment in view.
-2. **Personal context and memory** — durable, attributable owner state: preferences, allergies, locations, schedules, prior results, prior interactions and their evidence. Canonical Memory stays Still-owned; see [Current Context Contract](current-context-contract.en.md) for source-bound current state.
-3. **Attention** — anticipating what the owner will need from time, place, schedule and goals, and preparing it: a reminder before an event, a lunch suggestion ready before the owner asks, a suggested errand. Attention produces candidates and preparations, not consequential effects; it is not deferred in this program.
-4. **Goal-directed agency** — decomposing a stated goal into steps, choosing tools and paths, evaluating results against the goal, re-planning when a path fails, and stopping only on evidence.
-5. **Family and other-agent collaboration** — delegating work that belongs to another person's agent (for example adding an item to a spouse's cart) through an agent-to-agent request rather than by acting with that person's authority. Second phase of this program.
-6. **Capabilities** — web search, page reading, browser action in a logged-in session, calendar, mail and files, shopping. Each is a replaceable module behind a generic interface; providers and sites are chosen by the model at run time, not fixed in code.
+The original program considered personal context/memory, anticipatory preparation, goal-directed action, collaboration with another owner's agent and replaceable capabilities. These are design concerns, not a declaration that all six historical program axes have shipped. For the implemented/released distinction, use [product status](product-status.en.md).
 
 ### Cross-Work Memory recall (OWNER-MEMORY-01 #862)
 
-The profile snapshot is bounded. Its text says when saved profile rows were omitted; the worker may use `search_memory` for a relevant saved fact outside the snapshot. The worker chooses whether to search and which owner words or plausible synonyms to query. Search is owner-scoped, bounded to current Memory rows, and returns each match with its saved time and source Work reference. `list_memory` remains a bounded first-page read; search can find matching rows beyond it. Search uses a rebuildable SQLite FTS5 index over the canonical Memory table where available, with a bounded literal-match fallback; the index is never owner state. Each search, its query terms and returned key, time and source references appear in the per-Work information-use audit. Querying does not change capture, candidate, approval, correction, deletion or egress rules. Temporary today-only situations remain current context, not durable profile facts.
+The [memory contract](engineering/contracts/memory.en.md#9-recall-explanation-and-inspection) owns bounded snapshots, owner-scoped search, source/time attribution and the rebuildable index. Temporary situations remain current context rather than automatic durable profile facts.
 
 ## The agency loop
 
 ### Roles
 
-- **The decision model chooses what to do.** Given the goal, the owner's context and the capability set, it selects the next action: which provider to search, which result to open, which site to act on, whether to ask the owner, whether the goal is reached. It re-plans on failure. Provider, site, query rewriting and recovery choices are model decisions and are expected to vary with the owner's language, location and question category.
-- **The execution environment checks whether it may be done, and does it.** It holds Grants, sessions, secrets and budgets; runs the tool; and returns the observed result with evidence. It does not second-guess the model's semantic choice. It refuses only when the action is outside the allowed set defined below.
-- **Completion is decided from observed environment state**, not from tool success and not from the model's own claim. See "Evidence-based completion".
+The Judgment AI chooses a qualified worker/model and brief, evaluates the result and may re-plan within the Work's limits. The execution AI chooses and uses the tools available to its route. Still checks exact Grants, secrets, approvals, destinations, budgets and effect state, executes permitted calls and retains observations. A model's goal-reached verdict cannot turn an unobserved external effect into a confirmed result.
 
-This is the existing Decision Layer boundary: judgment behind the model, exact invariants in deterministic code. What changes is that deterministic code stops making semantic judgments about ordinary requests.
+The #826 amendment removed the plan-selected tool subset and pinned default worker. Do not recreate `tools_mode`, `tools` or `tools_reason` as current requirements from old #710 prose. Each attempt receives the worker's tools already eligible under policy. Use the Decision Layer for the exact current interface, unavailable-route behavior and re-delegation bounds; this contract does not define a second orchestrator.
 
 ### Alternatives are mandatory
 
-When a path does not produce what the goal needs, the loop must try another path before giving up: rewrite the query (keywords only, alternate spelling, transliteration), switch provider, move from general search to a site's internal search, open a different result, or ask the owner one specific question. The same path with the same input must not be repeated. Only after alternatives are exhausted, or a step needs authority the owner has not given, does the loop stop and report what it found, what it could not do and why, and what it proposes next.
+When a path fails to provide the needed result, consider another query, source, supported route or a decisive question to the owner. Do not repeat an identical unsuccessful attempt. Alternatives remain bounded by cancellation, time/cost limits, authority and external-effect uncertainty. No recovery rule permits replay of an uncertain effect or an action outside the owner's scope.
 
 ### Evidence-based completion
 
-A goal is complete when the environment shows it. Examples of acceptable evidence:
+The result must be supported at the level claimed. A product match needs identity evidence; a reported cart addition needs observed cart state; a reminder needs a durable record with the intended schedule; a prepared recommendation needs attributable inputs and the owner's relevant constraints. “No error was raised” and model confidence are not completion evidence.
 
-- product found: title, author and edition on the product page or API response match the request;
-- item in cart: the cart page or cart API lists that item after the action;
-- reminder set: the reminder exists in the store that will fire it, with the intended time;
-- lunch suggestion ready: the suggestion cites current sources, respects recorded allergies and preferences, and is attached to the owner's context for the expected time.
-
-"No error was raised" is never completion. The final report must match the observed state: if the report says the item was added, the cart must show it; otherwise the report states exactly what was observed. Requested, observed, failed and unknown remain distinct.
+Requested, attempted, observed, partial, failed and unknown remain distinct. A partial result names what is confirmed, what remains and the next possible action. The final answer must not outrank the underlying outcome record.
 
 ### Failure modes
 
-| Situation | Required behavior |
+| Situation | Required response |
 | --- | --- |
-| Login required | Report that the site needs a login in the dedicated browser profile; do not enter credentials; continue with the parts that do not need it. |
-| Page error or unexpected structure | Retry once, then search the page for the intended element, then try another route to the same outcome. |
-| Provider returns irrelevant results | Rewrite the query or switch provider; do not repeat the same query to the same provider. |
-| Action outside allowed set | Stop that action, report "this needs your approval or is outside the pilot boundary", finish the rest. |
-| Partial success | Report what was achieved with evidence, what was not, and a concrete next step. |
+| Login needed | Use the dedicated owner sign-in path, never ask the model to enter credentials; continue unrelated permitted work where useful. |
+| Page error or unexpected structure | The original recovery guidance was a bounded retry, inspection of the intended target, then another route. It never permits an unchecked target, duplicate effect or a task-specific core branch. |
+| Irrelevant search results | Revise the query or source rather than repeating the same unsuccessful input and provider. |
+| Action outside scope | Stop that action, state the missing permission or unsupported boundary, and preserve any independently useful result. |
+| Partial or unknown effect | Report the observed state; verify before considering another external attempt. |
 
 ## Pilot posture
 
-The pilot runs with one owner, on the owner's own machine, using the owner's own accounts and keys. The owner has decided to reduce the request-time protection layer to the smallest set that still protects the owner, and to defer the rest to a separately activated hardening program.
+The pilot serves one owner on the owner's machine and accounts. The following distinctions consolidate the later explicit decisions, rather than restating the original 2026-09-26 restrictions as current policy.
 
-**In force during the pilot:**
+**Secrets and payments.** Passwords, tokens, cookies and API keys must not enter a model prompt, log or Evidence. The owner signs in through the dedicated surface; the model receives mediated content and results, not session material. Every payment requires the applicable per-action approval by default; an owner-turned-on payment autonomy mode replaces it while on (#662). Non-payment mutations on connected services follow the current pilot and route-specific policy, not a blanket rule that every write asks again.
 
-1. Passwords, tokens, cookies and API keys never enter a model prompt, a log or Evidence. Browser sessions live in a dedicated profile owned by the execution environment; the owner logs in there once, manually. The model receives page content and action results, never session material.
-2. Payment requires per-action owner approval by default; an owner-turned-on payment autonomy mode replaces it while on (#662). Cart add, hold and similar non-payment mutations on sites the owner has connected need no approval.
+**Owner state and scope.** Folder grants and owner isolation still bound reads and writes. Installing, discovering or configuring a route does not create action authority. Owner-AI Memory saves and third-party candidates have different rules in the memory contract. A route's remaining exact approvals and capability limits are not removed by summarizing the pilot as ask-less.
 
-**Removed from the request path during the pilot:**
+**Private context and lookup (#826).** Private reads and the connected CLI's native web search may share a turn. Owner context in an earlier attempt does not disable that search, and the plan does not select a private/no-search subset. Still's own search tools step aside when the CLI uses its native search. Still-composed public lookups may carry owner values; the removed private-value/sensitivity gates must not be described as if they still block them. Stored secrets remain redacted. Data use is made inspectable through the information-use audit.
 
-- per-query sensitivity judgments on the owner's own typed request before public lookup (the `uncertain` fail-closed path and its variants);
-- re-asking the owner whether ordinary product, person, place or title terms may be searched;
-- the "initial research slice has no cart authority" rule in the Owner Control Contract, which becomes conditional on this posture;
-- provider or destination gating that requires a separate owner decision per provider once the owner has configured that provider's key.
+This is not a blanket assertion that every document path bypasses an existing sharing grant. Respect the current authority checks of the actual route. Local installation is not local-only model processing, and Still does not control every operation inside a connected external service.
 
-**Unchanged:**
+Per-query sensitivity judgments, routine re-asks for ordinary lookup terms, the original research-only no-cart restriction and additional per-provider decisions after the owner configured that provider were removed for the pilot. Additional hardening remains separately selected work; its deferral is not proof that the corresponding threats are solved.
 
-- saved private values (secrets, identifiers the owner marked private) are still redacted from outgoing text by deterministic code;
-- private documents are not transmitted externally without the existing document-sharing grant;
-- Memory writes from workers remain candidates;
-- Work/Event/Evidence recording, receipts and inspection.
+## Information-use audit
 
-The hardening program is not enumerated by this contract and is not activated by pilot completion. Findings that would justify a protection layer are recorded as issues under a "hardening" label without being implemented in this program, unless the owner selects them.
+The audit is derived from existing `turn_provenance`, `tool_events` and `decision_audit`, not a second truth store. It identifies owner-information references, Memory/profile keys, calendar/file/context sources, included conversation counts, workers/routes/models, judgment calls, search and observed tool results. Store bounded labels and references after secret redaction, not unrestricted input or payload text. The owner can inspect it on task detail, at `GET /api/tasks/<id>/information-use`, or through the read-only `information_use` tool.
 
-## Probe scenarios and the no-scenario-code rule
+The #167/#233/#245 outbound comparison is **detection and display only**. It does not block, rewrite or delay the outgoing call. After a mediated public lookup, browser input/navigation, API request or permitted code-run request, compare bounded outbound text with current owner Memory and the Work's held private writes. The reviewed bounds are the first 1,000 text characters and newest 500 Memory rows. Report a truncated comparison explicitly.
 
-Three scenarios exercise the loop during development. They are **probes**, not the goal.
+Record matches as source/tool/destination labels, not the matched value or full text. A failed attempt handed to a transport is still an attempt; a pre-send refusal records `ran: false`. Preserve redirect destinations and the weather geocoding destination where applicable. An uncertain transport outcome must not become a confirmed delivery claim.
 
-| Probe | Owner request (Telegram) | Capabilities exercised | Completion evidence |
-| --- | --- | --- | --- |
-| A. Book to cart | "put 《리더는 언제 차이를 만들어내는가》 in the cart so I can buy it" | search (model-chosen provider), page read, browser action in logged-in profile, memory (owner's preferred bookstore) | product identity confirmed; cart page lists the item; report matches |
-| B. Schedule reminder | "check tomorrow's schedule and remind me ahead of time" | calendar read, current context/time, Attention preparation, Telegram delivery | reminder stored with correct time; delivered before the event; report matches |
-| C. Lunch suggestion | "what should I eat for lunch?" (with allergies, preferences and location on record) | memory/context read, search (model-chosen provider by location), page read, Attention preparation | suggestion respects allergies/preferences, cites current sources, is ready at the expected time |
-
-A **fourth, held-out scenario** is chosen by the owner at closeout, must not have been used during development, and is run on the closeout head. If the loop fails it for a reason that would have required scenario-specific code, completion is rejected.
-
-**No scenario-specific code.** Decision and runtime code must not branch on a named site, provider, product category or question type. The runtime exposes generic capabilities and grant checks; the model chooses among them. A PR that makes a probe pass by naming that probe's site or provider in code is rejected. Every PR under this program states in its description whether it generalizes the loop or only makes a scenario pass. Since the C16 amendment (#974), site know-how may also exist as explicit, versioned skill content that the model chooses to load. Core code still never branches on it or injects it, and skill content written only to make a probe pass is rejected like such code.
+The existing matcher has known false matches; its Unicode/digit/case refinements and fixture count remain in code/tests. The audit says content *matches* a held value, not that a semantic disclosure was proved. Mail, file, Drive and calendar contents are not added to this comparison. Native CLI search does not pass through this comparison and must be disclosed as such. Blocking such disclosures remains a separate owner decision, not a feature introduced by this document.
 
 ## Capabilities
 
-Each capability is a generic interface with replaceable providers; the model selects the provider through a parameter, and the owner configures which providers exist and their keys in Settings.
+Capabilities are bounded interfaces with replaceable implementations, selected by model judgment. A declaration alone does not prove readiness or live execution.
 
-| Capability | Interface (model-facing) | Providers in this program | Owner setup |
-| --- | --- | --- | --- |
-| Web search | `search(query, provider?, locale?)` returning ranked results with source URLs | the connected AI's own web search (default; OpenAI Responses `web_search`, Anthropic `web_search` server tool, OpenRouter `openrouter:web_search`, or the Codex / Claude Code CLI's own search inside its Work turn); Brave Search API; Bing RSS read as an owner opt-in for personal, non-commercial use (SEC-SEARCH-02 #678; Naver removed by #677) | none by default; optional Brave key; Bing RSS toggle in Settings |
-| Page read | `read_page(url)` returning extracted text and links | existing public page reader; the browser profile for logged-in pages | none |
-| Browser action | `browser.act(site_session, steps)` for navigate, click, type, read within the owner's logged-in profile; output is mediated (see below) | the macOS system WebKit embedded in Still (SEC-BROWSER-02 #680): a PyObjC worker process with an in-memory website data store; sign-in cookies kept per site in an Still-encrypted jar under `store.private` whose key is in the macOS Keychain. No Playwright and no `playwright install`; no browser download. macOS only during the pilot: elsewhere the capability is reported unavailable (`browser_unavailable_platform`); a non-macOS system-engine backend is #682, not selected | owner logs in once per site in the embedded login window (Settings › 브라우저 로그인 세션), where sessions are listed and deleted per site; Google sign-in is not supported in the embedded engine |
-| Calendar | existing calendar read/create/reminder operations | existing Google Calendar connector | existing OAuth |
-| Memory and context | existing Memory, MemoryCandidate and current-context reads/writes | existing stores | owner records preferences, allergies, locations |
-| Delegation (phase 2) | `delegate(peer, task)` per the [A2A delegation contract](mp1-d04-a2a-delegation-contract.en.md) | new adapter: `a2a-sdk` adapted behind the D-04 interface (the earlier `a2a.py` was removed with the retired MP1 compatibility surface; no adapter exists on `main`) | peer configured by the owner |
+| Area | Current reading |
+| --- | --- |
+| Search and page reading | Connected-AI native search is the default route; supported optional search sources and public-page reads retain their own configuration, scope and evidence. Historical provider-selection prose is not a current legal/availability review. |
+| Browser | macOS uses system WebKit. Newer Linux desktop source uses pinned Chromium with a mandatory sandbox and platform keyring; see [platform coverage](guide/platforms.en.md). Do not carry forward the old macOS-only/no-download statement as a universal current rule. |
+| Google, files and other services | Use the actual connected grant and route. [Connections](guide/connections.en.md) distinguishes read, modify/filter and Calendar event changes, and release coverage. |
+| Memory and context | Existing stores and the memory/current-context contracts; no additional graph or canonical store is implied. |
+| Peer delegation | Use the current [Connection and Delegation Contract](connection-delegation-contract.en.md). Do not use the historical statement that no A2A adapter exists as a description of the reviewed main source. |
 
-**Browser output mediation (deterministic, part of pilot boundary 1).** Page content from a logged-in session can itself contain secrets (an account page showing an API key, a password field, a one-time code). Browser read output therefore passes through deterministic mediation before it reaches the model or Evidence: values of `password`-type inputs and of fields whose `autocomplete` names a credential, one-time code or card field are never returned; the existing saved-private-value redactor is applied to page text; the raw DOM and storage state are never returned. A negative test proves a fixture account page with a rendered token does not leak. This is exclusion of session and credential material, not a semantic judgment about the request.
+**Browser output mediation.** Password, credential, one-time-code and card fields are excluded from returned content; saved-secret redaction also applies to page text. Raw DOM/storage and session material are not exposed as model or Evidence payloads. Keep the negative fixture proving that a rendered token does not leak. This is deterministic secret mediation, not a semantic decision that a request is harmless.
 
-**Payment guard is independent of the model's label (pilot boundary 2).** The model declares an effect class on browser actions, and that label can only add an approval requirement, never remove one. Deterministically, typing into a card-number, CVC or one-time-code field, and submitting a form that contains such a field, require an owner approval bound to Work, the page digest and the target element; the runtime verifies the token at execution. A model label of `navigate` or `mutate` on such an action does not lift the guard. Sites that complete purchase without card fields (stored payment methods) are covered by the owner not having connected payment; the pilot does not claim to detect every purchase button, and the owner is told this limitation in Settings. A press whose label or nearby text names a purchase or payment (the fixed `COMMIT_*` floor in `browser_session`) also needs approval. #619 (owner decision 2026-11-03): these deterministic checks are the one payment gate; the per-press Judgment AI question that #174 added beside them is removed. A page's own confirmation question (`confirm()`) during a step is accepted unless it is a payment question or the page shows a payment field; those are accepted only when the owner approved that press. The step's declared effect no longer decides it. A declined question is returned to the worker in the step's `dialogs`. Outside a step nothing is confirmed, and in the owner's own login window the owner answers.
+**Payment guard.** A worker's effect label may add an approval requirement, never remove one. Protected payment fields/form submissions and the existing deterministic purchase/payment floor require exact bound approval. #619 removed the extra per-press Judgment AI question, not that floor. A page confirmation during a step is not accepted as payment without the owner's approval of that press; outside a step nothing is auto-confirmed, and the owner answers in their own sign-in window. Declined dialogs are returned to the worker. The guard is not a universal detector of every payment button or stored-payment flow; retain the explicit limitation rather than claiming complete website coverage.
 
-Reuse governs: each capability issue records its Adopt / Adapt / Build review naming the existing repository symbol, the official SDK or API, and the thin Still glue. Commodity mechanics (HTTP, browser automation, protocol clients) are adopted; Still owns only Grants, sessions, secrets, evidence and the model-facing interface.
+For the supported CLI relay, Memory, preparation, calendar and location actions execute in the service under the same effective gates as their direct counterparts. The removed #678 search/private-read separation is not revived by that relay. Strict-isolated profiles and a bridge without the required relay retain their restrictions.
+
+### Location continuation
+
+A requested Telegram location belongs to the pending owner Work and is task-scoped current context. It creates the existing exactly-once continuation with the original request/channel and a reference relation; it does not rerun the asking Work, accept a preparation or issue a Memory approval. An unrequested location starts no Work. Stopped/cancelled Works do not continue and withdraw their pending request.
+
+Where an effect already occurred, the continuation first receives the recorded effect note and checks state rather than repeating it. A preparation's continuation retains its run/slot, isolated history, prefix and redaction; the slot settles from the continuation or the asking run on expiry. Withdraw the location keyboard on a consumed answer, retrying that UI removal only if its first send failed. The tool is offered only where the paired Telegram surface and supported direct/relay route provide it.
 
 ## Attention in this program
 
-Attention is the anticipatory half of the secretary. In this program it is bounded to:
+Attention prepares for an owner need; it does not create authority. A proposed preparation becomes executable only through the normal request path and the owner's acceptance. Existing durable preparation state supplies the scheduler; no new general monitoring loop follows from this contract.
 
-- preparing what a scheduled or predictable owner request will need (probe C), using current context and Memory;
-- turning a calendar event into a timely reminder (probe B);
-- proposing, not executing: an Attention candidate becomes Work only through the normal request path or an owner-accepted standing preparation.
+### Accepted watch windows
 
-It builds on the merged current-context work and CONTEXT-STATE-01 #627, which is re-parented into this program. Background pattern mining and unsolicited interruptions outside accepted preparations remain out of scope.
+The original #719 watch window repeats an accepted preparation every 5–720 minutes within a period of at most 24 hours and at most 48 runs. A window that elapsed while the service was down expires rather than replaying missed runs. Each run is ordinary bounded Work. The later supported recurring-preparation interface is described by its current implementation and [release coverage](product-status.en.md); do not apply the old watch-window example as the only possible recurrence format.
 
-**Offered preparations (owner direction 2026-11-02, #582, #583).** The owner asked Still to offer a repeating preparation ahead of time and let them choose, instead of waiting for them to ask. Two offers are in scope:
+With `when_needed` delivery, a bounded judgment compares the accepted goal, scrubbed result and last notification. Only a useful new result queues a notice; identical results stay quiet. If judgment is unavailable, the existing fallback sends once, then keeps later unjudged runs quiet. The accept prompt states interval, deadline, run bound and delivery, and the owner can cancel through the supported Settings or notification control.
 
-- **In the reply (#582).** When the owner's current request is plausibly one they would want again on a rhythm, the worker may answer it and propose one preparation for it. The proposal stays `proposed` and never runs until the owner says yes or taps accept. A proposal the owner declined (cancelled without ever being accepted) is not offered again for 30 days (`declined_before`). Identity is the exact goal, or else one Judgment AI call.
-- **From the daily look-back (#583).** When the dream sees the same kind of request on separate days, it may suggest a standing preparation. The suggestion is shown with the owner's next own Work, with no separate push, and follows the same accept and decline rules.
-  - Still keeps at most 2 per look-back, each citing at least two turns the dream read on different local days, and skips one whose goal an active preparation already has or the owner declined (`declined_before`). Each passes the `schedule_preparation` normalisers and is stored `proposed`, created from the dream's anchor Work.
-  - It is offered once, in the existing proposal message with its buttons, bound to exactly its rows; at most one such message a day, and none while upkeep is paused.
-  - One still unanswered after 7 days lapses as `expired`. That is not a decline, so it does not block a later offer.
-- **A one-off from the look-back (owner request 2026-11-05, #638).** When the dream sees that the owner mentioned something specific coming at a definite date or time, and nothing covers it yet, it may suggest a one-off reminder or preparation before it (`recurrence: once`).
-  - It cites at least one turn the dream read; the two-day rule stays for standing suggestions. The limit of 2 per look-back, the normalisers, the active and declined checks and the anchor rule are the same.
-  - A dated need cannot wait for the owner to come back, so a look-back that holds a one-off is offered on the preparations tick without waiting for the next Work, inside the owner's daytime hours (08:00–21:59 local), on the anchor Work's conversation. The daily cap and the pause are the same. Standing-only suggestions still wait for the next Work.
-  - A one-off whose time passes before the owner accepts it lapses as `expired`, not a decline. Nothing is sent when the dream found nothing dated; there is no periodic or digest message.
+### Offered preparations
 
-Neither changes authority. No preparation runs without the owner's acceptance. Habit inference for anything other than offering a preparation stays out of scope.
+Under #582/#583, the worker may answer and propose a plausible repeating preparation, and the daily look-back may suggest one from requests on separate owner days. Proposals remain `proposed` until accepted. A previously declined equivalent goal is not offered for 30 days; identity uses exact goal equality or the existing judgment. Do not substitute a hard-coded category list.
+
+The look-back keeps at most two suggestions, normally supported by at least two read turns on different owner days. It skips an active or declined equivalent goal, uses existing schedule normalizers and attributes the proposal to the anchor. Standing-only suggestions appear with the next owner Work, without a separate push. At most one proposal message is offered per day, bound to its exact rows, and none while paused. Unanswered proposals expire after seven days; expiry is not refusal.
+
+Under #638, a definite dated need can instead support a one-off proposal from at least one read owner turn. It uses the same limit, normalizers, duplicate/decline checks and anchor. A look-back holding such a dated proposal can offer it on the preparation tick during local daytime 08:00–21:59, without waiting for the next owner Work. An unaccepted one-off expires when its time passes. No dated need means no periodic digest or notification. These rules do not authorize general habit mining or execution before acceptance.
 
 ## Family collaboration (phase 2)
 
-A request such as "put laundry detergent in my spouse's cart" is fulfilled by delegating to the spouse's agent, never by acting with the spouse's session. A new delegation adapter implementing the D-04 interface (Agent Card validation, bounded task prompt, status polling, artifact validation, cancellation) is built by adapting `a2a-sdk`; the earlier compatibility adapter was removed from `main` with the retired MP1 surface and is prior art only. It lets a family peer can be configured by the owner and so that the peer's agent runs the same agency loop under its own owner's Grants. Where the peer's owner has not allowed the requested effect, the peer reports that and the requesting assistant reports it truthfully. Phase 2 starts only after the phase 1 completion audit.
+The durable distinction is delegation to another person's agent, not acting with that person's session or Grants. The historical phase-2 program and its closeout obligation remain in their original delivery record; this page does not activate them. Current peer-agent implementation and retirement of the older same-host family setup/share paths are governed by the connection contract and named source changes. Do not revive retired setup instructions or inherit the peer owner's authority.
+
+## Probe scenarios and the no-scenario-code rule
+
+The original book-to-cart, schedule/reminder and contextual lunch examples were observation windows, not hard-coded product cases. The original closeout also reserved an owner-chosen holdout unused in development. Their exact wording and dated observations remain at the pinned pre-consolidation contract.
+
+Decision/runtime code must not branch on a named site, provider, product category or question type to make a probe pass. Explicit versioned skill content can supply generalizable domain/site methods when the AI chooses to load it; core code neither selects a named skill by scenario nor injects probe-specific instructions. Every implementation PR explains whether it generalizes the loop or scripts a case. Reuse review identifies the supported library/API, existing symbol and thin Still-owned policy glue.
 
 ## Completion rule
 
-The program is complete when all of the following hold on one closeout head:
+The original SECRETARY-01 closeout requires one recorded head with: an observed alternative after failure; evidence-grounded completion; truthful requested/observed/failed/unknown reports; negative secret/payment checks and permitted-action positives; no scenario-specific code; the three original owner probes and a held-out owner case; and the separately audited phase-2 scope or an explicit owner decision to close at phase 1 and disposition phase 2. Live checks remain owner-operated and budgeted. A fixture pass does not replace them.
 
-1. **Alternatives observed.** Automated tests with injected model transports and at least one recorded live run show the loop moving to a different provider, query or route after a failed path, without repeating the same path.
-2. **Evidence-based completion enforced.** `succeeded` is never emitted without matching observed state; tests cover a tool that "succeeds" without the goal being reached.
-3. **Reports match observation.** Transcript fixtures and live runs show requested/observed/failed/unknown stated correctly.
-4. **Execution environment enforces only the allowed set.** Negative tests show payment blocked without approval and secrets absent from prompts, logs and Evidence; positive tests show cart add, provider choice and page reads proceed without re-asking.
-5. **No scenario-specific code.** Review confirms no site, provider or category branch in decision/runtime code.
-6. **Probes A, B, C and the held-out scenario** complete on the owner's installation with their evidence recorded. Live runs are owner-operated and budgeted; a fixture pass alone does not satisfy this item.
-7. **Phase 2** delegation completes its own audit, or the owner explicitly closes the program at phase 1 and records phase 2 as the successor.
-
-Completion does not select a successor. The hardening program and any further capability are separate owner activations.
+Those historical obligations are not declared complete, waived or reactivated by this edit. Completion selects no successor. The current selected work and any subsequent re-plan remain in their own authoritative records.
 
 ## Non-goals
 
-- Payment, order submission or any effect the owner has not connected.
-- Background pattern mining, habit inference or unsolicited interruptions beyond accepted preparations, except the offered preparations above (#582, #583, #638).
-- Multiple principals on one installation; the family peer is a separate agent.
-- A new coordinator, planner framework, graph store or evaluation platform.
-- Rewriting merged Presence, Settings, Telegram or current-context work; they are regression inputs.
-- Re-adding request-time sensitivity judgments removed by the pilot posture, unless the hardening program is activated.
+No unaccepted background execution, unbounded monitoring, multiple principals sharing one owner's authority, new canonical state store, arbitrary-code platform or deferred hardening program is introduced. No blanket permission to purchase, send, book or use a new connection follows from a conceptual example. Existing merged behavior is a regression input, not work to reset to an old prototype.
 
 ## Related documents
 
-- [Research: secretary agency specification (ko)](research/secretary-agency-spec-2026-09-26.ko.md)
-- [Decision Layer](decision-layer.en.md) — judgment versus authority
-- [Assistant Execution Contract](assistant-execution-contract.en.md) — loop, capabilities and typed outcomes reused by this program; its egress composition rules are conditional on the pilot posture
-- [Current Context Contract](current-context-contract.en.md) and [implementation](current-context-implementation.en.md)
-- [Owner Control Contract](owner-control-contract.en.md) — effects and approvals; cart rule conditional on the pilot posture
-- [A2A delegation contract](mp1-d04-a2a-delegation-contract.en.md), [calendar contract](mp1-d05-calendar-contract.en.md)
-- [Presence Experience Contract](presence-experience-contract.en.md) — owner-facing experience rules, still applicable
+[Memory and learning](engineering/contracts/memory.en.md), [Current Context](current-context-contract.en.md), [Decision](decision-layer.en.md), [Assistant Execution](assistant-execution-contract.en.md), [Owner Control](owner-control-contract.en.md), [Presence](presence-experience-contract.en.md), [Connection and Delegation](connection-delegation-contract.en.md), and the original [secretary research](research/secretary-agency-spec-2026-09-26.ko.md).
+
+## Earlier section links
+
+The following explicit anchors keep older deep links useful. They lead to the current rule's home, not to a second copy of superseded policy.
+
+<a id="amendment--422-2026-10-30-memory-is-shown-in-use-consolidation-is-quiet-and-reads-only-the-owners-words"></a>
+<a id="amendment--402-2026-10-30-the-once-a-day-look-back-dream"></a>
+<a id="amendment--220-2026-10-23-append--invalidate"></a>
+<a id="amendment--19-steady-notes-01-2026-10-20-one-bounded-revisable-working-notes-document"></a>
+<a id="amendment--998-self-review-01-2026-10-04-the-secretary-reviews-its-own-misses"></a>
+<a id="amendment--918-slice-a-2026-10-02-memory-saves-without-an-ask"></a>
+<a id="amendment--805-phase-1-2026-09-28"></a>
+<a id="historical-amendment-pointer--836--818-memory-ask-chain"></a>
+<a id="historical-amendment-pointer--818"></a>
+Memory, notices, upkeep, notes and dream: [consolidated contract](engineering/contracts/memory.en.md).
+
+<a id="amendment--826-2026-09-28"></a>
+<a id="historical-amendment-pointer--701--705-search-separation"></a>
+Private context and search: [pilot posture](#pilot-posture) and [information-use audit](#information-use-audit).
+
+<a id="amendment--774-2026-09-28"></a>
+<a id="amendment--677-2026-09-27"></a>
+Supported relay, browser and location behavior: [capabilities](#capabilities) and [location continuation](#location-continuation).
+
+<a id="amendment--710-2026-09-27"></a>
+Orchestration: [agency loop](#the-agency-loop) and [Decision Layer](decision-layer.en.md).
+
+<a id="amendment--719-2026-09-28"></a>
+Accepted preparation/watch behavior: [Attention](#attention-in-this-program).

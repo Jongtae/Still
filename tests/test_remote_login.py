@@ -282,6 +282,9 @@ class WorkerOpsWhileParked(unittest.TestCase):
         popup = type(opener)()
         callbacks = []
         popup.takeSnapshotWithConfiguration_completionHandler_ = lambda config, done: callbacks.append(done)
+        # #683: closing a popup also stops and blanks its document.
+        popup.stopLoading = lambda: None
+        popup.loadHTMLString_baseURL_ = lambda html, base: None
         worker.view = opener
         hidden = []
         worker.popups = [(popup, SimpleNamespace(orderOut_=lambda arg: hidden.append(True)), None)]
@@ -1119,27 +1122,6 @@ class RemoteLoginSurface(unittest.TestCase):
         session.finish('done')
         self.assertIn(('remote_end',), self.driver_log, 'ending the session ends the hold')
 
-    def test_a_received_share_refuses_the_window_and_the_phone(self):
-        """#940 hook: a site this instance received (family share, #935) never gets a login window here."""
-        refusals = []
-
-        def refuse(site):
-            refusals.append(site)
-            return '이 사이트는 공유받은 로그인이라 여기서 다시 로그인할 수 없어요' if site == 'fixture.test' else None
-        self.service.refuse_login = refuse
-        for body in ({'url': 'https://www.fixture.test/login'}, {'url': 'https://fixture.test/login', 'phone': True}):
-            with self.assertRaises(ValueError) as caught:
-                self.service.open_browser_for_login(body)
-            self.assertEqual(str(caught.exception), '이 사이트는 공유받은 로그인이라 여기서 다시 로그인할 수 없어요')
-        self.assertEqual(refusals, ['fixture.test', 'fixture.test'], 'asked by registrable site')
-        self.assertEqual(self.drivers, [], 'no window opened')
-        self.assertEqual(self.tunnel.processes, [], 'no tunnel opened')
-        with self.assertRaises(remote_login.RemoteLoginError):
-            self.service.start_remote_login('w', 'fixture.test', lambda reason: None)
-        # Another site is unaffected.
-        receipt = self.service.open_browser_for_login({'url': 'https://other.test/login'})
-        self.assertEqual(receipt['state'], 'opening')
-        self.assertTrue(wait_until(lambda: self.drivers))
 
     def test_done_closes_the_window_saves_the_jar_and_stops_the_tunnel(self):
         session = self.open_window()
@@ -1373,30 +1355,6 @@ class RemoteLoginSurface(unittest.TestCase):
         self.assertEqual(self.request(remote_login.PAGE_PATH + self.code(session), cookie=second)[0], 404)
         self.assertEqual(self.request(remote_login.PAGE_PATH + self.code(session))[0], 404)
 
-    def test_a_family_instance_opens_a_phone_link_for_its_own_sign_in(self):
-        """#949: a family member signs in to their own account from their phone (only a received
-        share is refused, #940); the link goes to that instance's own paired chat."""
-        self.store.put('telegram', {'enabled': True, 'user_id': CHAT, 'generation': GENERATION, 'cursor': 0, 'pair_user_id': CHAT})
-        receipt = self.service.open_browser_for_login({'url': 'https://fixture.test/login', 'phone': True})
-        self.assertEqual(receipt['state'], 'opening')
-        self.assertTrue(wait_until(lambda: self.tunnel.processes), 'the tunnel opens')
-
-    def test_a_received_share_site_is_refused_by_default(self):
-        """#940: the family-share rule applies without any hook set."""
-        from personal_agent import family_share
-        self.store.put(family_share.SHARED_KEY, {'fixture.test': {'from': 'owner', 'since': time.time()}})
-        self.assertIsNone(self.service.refuse_login)
-        for body in ({'url': 'https://www.fixture.test/login'}, {'url': 'https://fixture.test/login', 'phone': True}):
-            with self.assertRaises(ValueError) as caught:
-                self.service.open_browser_for_login(body)
-            self.assertEqual(str(caught.exception), '이 사이트는 공유받은 로그인이라 여기서 다시 로그인할 수 없어요')
-        with self.assertRaises(remote_login.RemoteLoginError) as caught:
-            self.service.start_remote_login('w', 'fixture.test', lambda reason: None)
-        self.assertEqual(str(caught.exception), family_share.LOGIN_REFUSED_TEXT)
-        self.assertEqual(self.drivers, [])
-        self.assertEqual(self.tunnel.processes, [])
-        self.assertEqual(self.service.open_browser_for_login({'url': 'https://other.test/login'})['state'], 'opening')
-
 
 # ---------------------------------------------------------------- the in-flow prompt's button (#709 + #939)
 
@@ -1544,27 +1502,7 @@ class PhoneButton(_flow_harness()):
         self.assertTrue(self.tunnel.processes[0].terminated)
         self.assertEqual(self.store.job(job_id)['status'], 'queued', 'the Work continues once')
 
-    def test_an_in_flow_login_for_a_received_share_shows_no_window_and_no_prompt(self):
-        """#940 hook on the in-flow path: the row is unavailable; no window, no Telegram prompt."""
-        self.service.refuse_login = lambda site: '이 사이트는 공유받은 로그인이라 여기서 다시 로그인할 수 없어요' if site == 'fixture.test' else None
-        self.scripts = self.login_script()
-        job_id = self.receive('계정 페이지 확인해줘')
-        self.assertTrue(self.service.run_one())
-        self.assertTrue(wait_until(lambda: self.state(job_id) in (None, 'unavailable')), self.state(job_id))  # #954 review: refused before any row
-        self.assertEqual(len(self.drivers), 1, 'only the Work\'s own driver; no login window')
-        self.service.deliver_one()
-        self.assertEqual(self.prompts(), [])
 
-    def test_an_in_flow_login_for_a_received_share_is_refused_by_default(self):
-        """#940 on the in-flow path without a hook: the received site gets no window and no prompt."""
-        from personal_agent import family_share
-        self.store.put(family_share.SHARED_KEY, {'fixture.test': {'from': 'owner', 'since': time.time()}})
-        self.scripts = self.login_script()
-        job_id = self.receive('계정 페이지 확인해줘')
-        self.assertTrue(self.service.run_one())
-        self.assertTrue(wait_until(lambda: self.state(job_id) in (None, 'unavailable')), self.state(job_id))  # #954 review: refused before any row
-        self.service.deliver_one()
-        self.assertEqual(self.prompts(), [])
 
     def test_a_tunnel_failure_keeps_the_in_flow_window_and_prompt(self):
         """Review P2-1: the login is still offered; the owner is told to use the Mac window."""

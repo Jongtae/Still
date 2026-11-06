@@ -71,7 +71,8 @@ class ScheduledRequestContext(_Case):
     def test_current_scheduled_work_still_executes_its_exact_accepted_goal(self):
         row, job = self.saved_run()
         sent = self.model_calls[0]['messages']
-        self.assertEqual(sent[-1], {'role': 'user', 'content': self.GOAL})
+        # #671: the exact goal, then the run fact.
+        self.assertEqual(sent[-1], {'role': 'user', 'content': self.GOAL + '\n\n' + self.service.preparation_run_fact(job)})
         self.assertEqual(self.store.job(job['id'])['message'], self.GOAL)
 
     def test_a_real_owner_statement_or_an_unknown_source_is_not_reclassified(self):

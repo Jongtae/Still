@@ -28,7 +28,7 @@ from personal_agent.quickstart_store import QuickStore
 from personal_agent import preparations as prep
 from conftest import SERVICE_THREAD_JOIN_SECONDS
 from personal_agent.settings_orchestrator import (CREDENTIAL_VALUE_MESSAGE, FOLLOW_REQUESTED_MESSAGE,
-                                                  NOT_OWNER_TYPED_MESSAGE, SettingsError,
+                                                  NOT_OWNER_TYPED_MESSAGE, STALE_MESSAGE, SettingsError,
                                                   canonical_timezone)
 
 CHAT, GENERATION = 77, 'gen-1'
@@ -93,146 +93,6 @@ class _Case(unittest.TestCase):
         return self.service.context_observations.settings()
 
 
-class FamilyAssistantConversation(_Case):
-    """#912: "create a spouse's assistant" is a confirmed draft, never a command the owner types."""
-
-    def setUp(self):
-        super().setUp()
-        self.started = []
-        self.service.start_family_setup = lambda display_name, name=None, notify=None: self.started.append(display_name) or {'state': 'requested'}
-        # #962: no other assistant on "this Mac" unless a test adds one (never the real machine's).
-        from unittest import mock
-        patcher = mock.patch('personal_agent.family_share.instances', return_value={})
-        patcher.start()
-        self.addCleanup(patcher.stop)
-
-    def test_a_family_assistant_is_drafted_then_started_only_after_confirmation(self):
-        draft = self.draft('family', 'add', ' 아내   비서 ')
-        self.assertEqual((draft['state'], draft['applied'], draft['after']), ('awaiting-confirmation', False, '아내 비서'))
-        self.assertIn("가족 비서 '아내 비서'를 만듭니다", draft['response'])
-        self.assertIn('확인해야 적용됩니다', draft['response'])
-        self.assertEqual(self.started, [], 'a draft starts nothing')
-        result = self.settings.confirm('owner', 'http', draft['draft_id'], draft['digest'])
-        self.assertEqual(result['state'], 'requested')
-        self.assertIn('설정 링크', result['response'])
-        self.assertEqual(self.started, ['아내 비서'])
-        with self.assertRaisesRegex(SettingsError, '이미 적용'):
-            self.settings.confirm('owner', 'http', draft['draft_id'], draft['digest'])
-        self.assertEqual(self.started, ['아내 비서'], 'confirmed once, started once')
-
-    def test_bad_names_and_credential_shapes_create_nothing(self):
-        for value in ('', '   ', 'x' * 65, '아내\n비서'):
-            with self.assertRaises(SettingsError):
-                self.draft('family', 'add', value)
-        with self.assertRaises(SettingsError):
-            self.draft('family', 'add', TELEGRAM_SECRET)
-        self.assertEqual(self.started, [])
-
-    def test_the_tool_offers_family_add(self):
-        from personal_agent.agent_runtime import DEFINITIONS, model_facing_text
-        change = next(row['function'] for row in DEFINITIONS if row['function']['name'] == 'settings_change')
-        self.assertIn('family', change['parameters']['properties']['category']['enum'])
-        self.assertIn('add', change['parameters']['properties']['setting']['enum'])
-        self.assertIn('family add', model_facing_text(change))
-
-
-class FamilySetupInTheService(_Case):
-    """#912: after confirmation the service runs the setup and reports on Telegram."""
-
-    def run_setup(self, prepare, watch=None, notify=None):
-        from personal_agent import family_setup
-        originals = (family_setup.prepare_family_setup, family_setup.watch_family_setup, family_setup.pick_instance_name)
-        family_setup.prepare_family_setup = prepare
-        family_setup.watch_family_setup = watch or (lambda handle, store, on_state: on_state('paired'))
-        family_setup.pick_instance_name = lambda home=None: 'family-2'
-        try:
-            receipt = self.service.start_family_setup('아내 비서', notify=notify) if notify else self.service.start_family_setup('아내 비서')
-            self.service._family_setup_thread.join(5)
-            return receipt
-        finally:
-            family_setup.prepare_family_setup, family_setup.watch_family_setup, family_setup.pick_instance_name = originals
-
-    def sent(self):
-        return [body['text'] for method, body in self.telegram if method == 'sendMessage']
-
-    def test_the_link_then_the_outcome_reach_the_owner(self):
-        calls = []
-
-        def prepare(owner_store, name, display_name, **kwargs):
-            calls.append((name, display_name))
-            return {'display_name': display_name, 'link': 'https://abc.ngrok-free.app/family-setup?code=c'}
-        receipt = self.run_setup(prepare)
-        self.assertEqual(receipt, {'state': 'requested', 'instance': 'family-2'})
-        self.assertEqual(calls, [('family-2', '아내 비서')], 'the next free instance name')
-        texts = self.sent()
-        self.assertIn('https://abc.ngrok-free.app/family-setup?code=c', texts[0])
-        self.assertIn('연결이 끝났어요', texts[1])
-
-    def test_a_setup_that_cannot_start_tells_the_owner_why(self):
-        from personal_agent.family_setup import SetupError
-
-        def prepare(*args, **kwargs):
-            raise SetupError("BotFather 미니앱에서 Bot Management Mode를 켜 주세요.")
-        self.run_setup(prepare)
-        self.assertEqual(self.sent(), ["BotFather 미니앱에서 Bot Management Mode를 켜 주세요."])
-
-    def test_the_link_and_outcome_go_to_the_confirming_conversation(self):
-        """#913 review P2-1."""
-        heard = []
-
-        def prepare(owner_store, name, display_name, **kwargs):
-            return {'display_name': display_name, 'link': 'https://abc.ngrok-free.app/family-setup?code=c'}
-        self.run_setup(prepare, notify=heard.append)
-        self.assertIn('https://abc.ngrok-free.app/family-setup?code=c', heard[0])
-        self.assertIn('연결이 끝났어요', heard[1])
-        self.assertEqual(self.sent(), [], 'not duplicated to another chat')
-
-    def test_an_undelivered_link_closes_the_setup_at_once(self):
-        """#913 review P1: no public link stays open when the owner never got it."""
-        from personal_agent import family_setup
-        closed, watched = [], []
-
-        def prepare(owner_store, name, display_name, **kwargs):
-            return {'display_name': display_name, 'link': 'https://abc.ngrok-free.app/family-setup?code=c'}
-
-        def refuse(text):
-            raise OSError('telegram down')
-        original = family_setup.close_family_setup
-        family_setup.close_family_setup = lambda handle, store: closed.append(handle['link'])
-        try:
-            self.run_setup(prepare, watch=lambda handle, store, on_state: watched.append(1), notify=refuse)
-        finally:
-            family_setup.close_family_setup = original
-        self.assertEqual(closed, ['https://abc.ngrok-free.app/family-setup?code=c'])
-        self.assertEqual(watched, [], 'no wait for a pairing that cannot come')
-
-    def test_nothing_starts_when_the_link_could_reach_nobody(self):
-        self.store.put('telegram', {'enabled': True, 'generation': GENERATION, 'cursor': 0})
-        with self.assertRaisesRegex(ValueError, '보낼 곳이 없어요'):
-            self.service.start_family_setup('아내 비서')
-        self.assertIsNone(self.service.__dict__.get('_family_setup_thread'))
-
-    def test_one_setup_at_a_time(self):
-        import threading
-        gate = threading.Event()
-
-        def prepare(owner_store, name, display_name, **kwargs):
-            gate.wait(5)
-            return {'display_name': display_name, 'link': 'https://x/family-setup?code=c'}
-        from personal_agent import family_setup
-        originals = (family_setup.prepare_family_setup, family_setup.watch_family_setup)
-        family_setup.prepare_family_setup = prepare
-        family_setup.watch_family_setup = lambda handle, store, on_state: None
-        try:
-            self.service.start_family_setup('아내 비서', name='spouse')
-            with self.assertRaisesRegex(ValueError, '이미 가족 비서를 만드는 중'):
-                self.service.start_family_setup('엄마 비서', name='mom')
-        finally:
-            gate.set()
-            self.service._family_setup_thread.join(5)
-            family_setup.prepare_family_setup, family_setup.watch_family_setup = originals
-
-
 class OrchestratorCategories(_Case):
     def test_read_is_redacted_and_names_the_allowed_values(self):
         self.connect_two_api_routes()
@@ -242,7 +102,7 @@ class OrchestratorCategories(_Case):
         for secret in (TELEGRAM_SECRET, OPENAI_KEY, OPENROUTER_KEY, 'decision-owner-key-value-0003'):
             self.assertNotIn(secret, text)
         self.assertNotIn('https://', text, 'no endpoint is reported')
-        self.assertEqual(set(read['settings']), {'payment_autonomy', 'current_context', 'judgment_ai', 'main_ai', 'owner_model', 'family', 'skills', 'phone_link', 'ai_connections', 'api_connections', 'preparations', 'browser'})
+        self.assertEqual(set(read['settings']), {'payment_autonomy', 'current_context', 'judgment_ai', 'main_ai', 'owner_model', 'skills', 'phone_link', 'ai_connections', 'api_connections', 'preparations', 'browser'})
         self.assertEqual([o['value'] for o in read['settings']['main_ai']['route']['options']], ['openai', 'openrouter'])
         self.assertEqual(read['settings']['current_context']['enabled']['value'], 'off')
         self.assertIn('기본 AI · 경로: OpenRouter', read['response'])
@@ -844,7 +704,7 @@ class ReviewRemediation(ConversationConfirmation):
         self.assertIn('바뀌었', outcomes[second['draft_id']])
         self.assertEqual(self.context()['timezone'], 'Asia/Seoul')
         states = {key: row['state'] for key, row in self.store.config('settings_change_drafts').items()}
-        self.assertEqual((states[first['draft_id']], states[second['draft_id']]), ('applied', 'failed'))
+        self.assertEqual((states[first['draft_id']], states[second['draft_id']]), ('applied', 'superseded'))
 
     def test_the_off_thread_apply_holds_the_category_lock_until_it_commits(self):
         self.service.main_ai.save_key({'provider': 'openai', 'key': OPENAI_KEY})
@@ -1188,6 +1048,29 @@ class PreparationManagementConversation(_Case):
                          (prep.STATE_RUNNING, self.row['due_at'], 'weekly'))
         self.assertIsNotNone(current['last_run_job_id'])
 
+    def test_an_applied_reservation_operation_says_what_it_did(self):
+        """#701: the receipt is the done operation, never the draft's question with "(으)로 바꿨습니다" appended."""
+        watch = self.service.preparations.create(
+            kind='prepare', goal='주식 현황 알림', due_at=self.clock[0] + 600, timezone='Asia/Seoul', recurrence=None,
+            channel='web', created_from=None, state=prep.STATE_PROPOSED, title='국내 주식 현황 알림',
+            window=(3600, self.clock[0] + 600 + 6 * 3600, 7))
+        until = datetime.fromtimestamp(self.clock[0] + 600 + 7 * 3600, prep.zone('Asia/Seoul')).isoformat()
+        receipts = {}
+        for operation, value in (('edit', json.dumps({'id': watch['id'], 'until': until, 'max_runs': 8})),
+                                 ('accept', watch['id']), ('pause', watch['id']), ('resume', watch['id']),
+                                 ('cancel', watch['id'])):
+            draft = self.settings.propose('owner', 'http', 'preparations', operation, value)
+            receipts[operation] = self.settings.handle_text('owner', 'http', 'confirm ' + draft['draft_id'],
+                                                            owner_typed=True)['response']
+        edited = self.service.preparations.get(watch['id'])
+        self.assertEqual(receipts['edit'], '예약 일정을 바꿨습니다: 국내 주식 현황 알림\n  '
+                         + prep.schedule_text({**edited, 'state': prep.STATE_PROPOSED}, self.service.home_zone()))
+        self.assertEqual(receipts['cancel'], '예약을 취소했습니다: 국내 주식 현황 알림')
+        for operation, receipt in receipts.items():
+            self.assertNotIn('(으)로', receipt, operation)
+            self.assertNotIn('할까요', receipt, operation)
+            self.assertIn('국내 주식 현황 알림', receipt, operation)
+
     def test_an_edit_draft_reads_as_the_schedule_now_and_after_never_the_drafts_json(self):
         """The owner confirms a schedule edit by its name and both schedules, not ``{"id": ...}``."""
         watch = self.service.preparations.create(
@@ -1204,6 +1087,113 @@ class PreparationManagementConversation(_Case):
         self.assertNotEqual(prep.schedule_text(watch), prep.schedule_text(edited))
         for leaked in ('{', watch['id'], 'max_runs', 'bound_timezone'):
             self.assertNotIn(leaked, text)
+
+    def test_new_owner_requested_edit_supersedes_only_alternatives_of_the_same_preparation(self):
+        other = self.service.preparations.create(kind='prepare', goal='Example second report', due_at=self.clock[0] + 3600,
+                                                  timezone='Asia/Seoul', recurrence='daily', channel='web',
+                                                  created_from=None, state=prep.STATE_SCHEDULED)
+        def edit(ident, recurrence, work=None):
+            return self.settings.propose('owner', 'http', 'preparations', 'edit',
+                                         json.dumps({'id': ident, 'recurrence': recurrence}), work_id=work)
+        old = edit(self.row['id'], 'weekly', 'example-work')
+        offered = self.settings.pending_for_work('example-work')
+        notification = {'job_id': 'example-work', 'fingerprint': self.settings.drafts_digest(offered)}
+        self.assertEqual(len(self.service.offered_settings_drafts(notification)), 1)
+        expired = edit(self.row['id'], 'weekly')
+        self.settings._settle(expired['draft_id'], 'expired', 'expired')
+        different = edit(other['id'], 'weekly')
+        context = self.settings.propose('owner', 'http', 'current_context', 'enabled', 'on')
+        newer = edit(self.row['id'], 'weekdays')
+        self.assertTrue(self.settings._apply_owner_request('owner', 'http', newer, lambda summary: True)['applied'])
+        for draft in (old, expired):
+            self.assertEqual(self.settings._drafts()[draft['draft_id']]['state'], 'superseded')
+            self.assertTrue(any(row['draft_ref'] == draft['draft_id'] and row['terminal'] == 'superseded'
+                                for row in self.store.config('settings_audit')))
+            with self.assertRaises(SettingsError) as caught:
+                self.settings.confirm('owner', 'http', draft['draft_id'], draft['digest'])
+            self.assertEqual(str(caught.exception), STALE_MESSAGE)
+            with self.assertRaises(SettingsError):
+                self.settings._renew('owner', 'http', self.settings._drafts()[draft['draft_id']])
+            self.assertTrue(self.settings.cancel('owner', 'http', draft['draft_id'])['idempotent'])
+        self.assertEqual(self.settings.pending_for_work('example-work'), [])
+        self.assertEqual(self.service.offered_settings_drafts(notification), [])
+        self.assertEqual(self.settings.renew_expired('owner', 'http', 'example-work', notification['fingerprint']), [])
+        self.assertEqual(self.settings.settle_pending('owner', 'http', offered, False)['state'], 'superseded')
+        self.assertEqual(self.settings.settle_pending('owner', 'http', [self.settings._drafts()[expired['draft_id']]], False)['state'], 'superseded')
+        self.assertEqual(self.service.preparations.get(self.row['id'])['recurrence'], 'weekdays')
+        self.assertEqual({row['id'] for row in self.settings.pending_drafts()}, {different['draft_id'], context['draft_id']})
+        for draft in (different, context):
+            self.assertEqual(self.settings._drafts()[draft['draft_id']]['state'], 'awaiting-confirmation')
+            self.assertEqual(self.settings.confirm('owner', 'http', draft['draft_id'], draft['digest'])['state'], 'applied')
+
+    def test_pending_read_supersedes_only_definitively_stale_bindings(self):
+        draft = self.settings.propose('owner', 'http', 'current_context', 'timezone', 'Europe/Paris')
+        self.service.set_current_context({'timezone': 'America/New_York'})
+        with mock.patch.object(self.settings, '_snapshot', side_effect=RuntimeError('example unavailable')):
+            self.assertEqual([row['id'] for row in self.settings.pending_drafts()], [draft['draft_id']])
+        self.assertEqual(self.settings._drafts()[draft['draft_id']]['state'], 'awaiting-confirmation')
+        with mock.patch.object(self.service, 'set_current_context', side_effect=AssertionError('read must not apply')):
+            self.assertEqual(self.settings.pending_drafts(), [])
+            self.assertEqual(self.settings.read('owner')['pending_changes'], [])
+        self.assertEqual(self.settings._drafts()[draft['draft_id']]['state'], 'superseded')
+        audit = [row for row in self.store.config('settings_audit') if row['draft_ref'] == draft['draft_id']]
+        self.assertEqual([row['terminal'] for row in audit], ['drafted', 'superseded'])
+        self.assertEqual(audit[-1]['error_class'], 'stale')
+
+    def test_pending_read_checks_normalized_changes_and_explicit_stale_without_reviving_terminals(self):
+        draft = self.settings.propose('owner', 'http', 'current_context', 'enabled', 'on')
+        with mock.patch.object(self.settings, '_normalized', return_value=('off', {})):
+            self.assertEqual(self.settings.pending_drafts(), [])
+        self.assertEqual(self.settings._drafts()[draft['draft_id']]['state'], 'superseded')
+        second = self.settings.propose('owner', 'http', 'current_context', 'enabled', 'on')
+        with mock.patch.object(self.settings, '_normalized', side_effect=SettingsError(STALE_MESSAGE)):
+            self.assertEqual(self.settings.pending_drafts(), [])
+        self.assertEqual(self.settings._drafts()[second['draft_id']]['state'], 'superseded')
+        self.assertFalse(self.context()['enabled'])
+
+    def test_requested_outcome_also_supersedes_another_change_from_the_same_prior_state(self):
+        zone = self.context()['timezone']
+        old = self.settings.propose('owner', 'http', 'current_context', 'timezone', 'Europe/Paris')
+        same = self.settings.propose('owner', 'http', 'current_context', 'timezone', 'Asia/Tokyo')
+        new = self.settings.propose('owner', 'http', 'current_context', 'timezone', 'Asia/Tokyo')
+        with mock.patch.object(self.settings, '_apply', return_value='requested'):
+            self.assertEqual(self.settings.confirm('owner', 'http', new['draft_id'], new['digest'])['state'], 'requested')
+        audit = {row['draft_ref']: row for row in self.store.config('settings_audit') if row['terminal'] == 'superseded'}
+        self.assertEqual(self.settings._drafts()[old['draft_id']]['state'], 'superseded')
+        self.assertEqual(audit[old['draft_id']]['error_class'], 'superseded-by:' + new['draft_id'])
+        # #675: the same change asked again keeps its own path.
+        self.assertEqual(self.settings._drafts()[same['draft_id']]['state'], 'awaiting-confirmation')
+        self.assertEqual(self.context()['timezone'], zone)
+
+    def test_watch_edit_card_uses_local_times_and_catalog_languages_through_renewal(self):
+        from personal_agent.telegram_locale import translate
+        self.service.set_current_context({'timezone': 'America/New_York'})
+        watch = self.service.preparations.create(
+            kind='prepare', goal='Example window report', title='Example watch', due_at=self.clock[0] + 600,
+            timezone='Asia/Seoul', recurrence=None, channel='web', created_from=None, state=prep.STATE_SCHEDULED,
+            window=(3600, self.clock[0] + 86400, 24))
+        local = datetime.fromtimestamp(self.clock[0] + 86400, prep.zone('Asia/Seoul')).replace(hour=20, minute=10, second=0)
+        draft = self.settings.propose('owner', 'http', 'preparations', 'edit',
+                                      json.dumps({'id': watch['id'], 'until': local.isoformat(), 'max_runs': 9}))
+        row = self.settings._drafts()[draft['draft_id']]
+        for current in (row, self.settings._renew('owner', 'http', row)):
+            text = self.settings.confirmation_text([current])
+            for part in ('Example watch', '20:10', '9'):
+                self.assertIn(part, text)
+            for leaked in ('{', watch['id'], 'max_runs', 'bound_timezone', '+09:00'):
+                self.assertNotIn(leaked, text)
+                self.assertNotIn(leaked, self.settings.short_label(current))
+            self.assertIn("Change the reservation's schedule", translate(text, 'en'))
+            self.assertIn('予約の予定を変更しますか', translate(text, 'ja'))
+
+    def test_preparation_descriptions_never_fall_back_to_internal_values(self):
+        for operation in ('cancel', 'accept', 'pause', 'resume', 'run_now', 'edit'):
+            with self.subTest(operation=operation):
+                value = json.dumps({'id': self.row['id'], 'recurrence': 'weekly'}) if operation == 'edit' else self.row['id']
+                text = self.settings._describe('preparations', operation, value, {operation: {'options': []}})
+                self.assertIn(prep.owner_title(self.row), text)
+                self.assertNotIn(self.row['id'], text)
+                self.assertNotIn('{', text)
 
     def test_rule_edit_uses_the_same_owner_confirmation(self):
         """Rules remain schedule edits with the existing confirmation boundary (#580)."""

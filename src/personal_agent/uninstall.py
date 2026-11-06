@@ -14,8 +14,8 @@ import sys
 from pathlib import Path
 
 from .api_credentials import KEY_SERVICE as API_KEY_SERVICE
-from .browser_jar import SERVICE as JAR_SERVICE, KeychainKey, store_account
-from .family_setup import family_instances
+from .browser_jar import SERVICE as JAR_SERVICE, JarError, platform_key, store_account
+from .service_control import installed_instances
 from .first_run import Terminal, terminal_language
 from .messages import msg
 from .service_control import DEFAULT_DATA_RELATIVE, DEFAULT_INSTANCES_RELATIVE, LABEL, service_action
@@ -24,10 +24,10 @@ PACKAGE = 'personal-agentos'
 
 
 def services(home):
-    """The installed background services: None for the owner's, then family instance names."""
+    """The installed background services: None for the owner's, then named instances."""
     agents = Path(home) / 'Library/LaunchAgents'
     owner = [None] if (agents / f'{LABEL}.plist').is_file() else []
-    return owner + family_instances(home)
+    return owner + installed_instances(home)
 
 
 def data_folders(home, env):
@@ -65,8 +65,9 @@ def program_remover(prefix, home, which=shutil.which):
     return None, None
 
 
-def delete_keys(folder, key_factory=KeychainKey):
-    """Delete the Keychain keys that encrypt this data folder's secrets; return how many existed."""
+def delete_keys(folder, key_factory=platform_key):
+    """Delete the keys that encrypt this data folder's secrets (the macOS Keychain, or the desktop keyring on
+    Linux, #34); return how many existed."""
     from .quickstart import GOOGLE_OAUTH_KEY_SERVICE
     folder = Path(folder)
     keys = ((folder, API_KEY_SERVICE), (folder, GOOGLE_OAUTH_KEY_SERVICE),
@@ -75,7 +76,7 @@ def delete_keys(folder, key_factory=KeychainKey):
 
 
 def run(term, *, home, env, platform, prefix, assume_yes=False, delete_data=False,
-        action=service_action, runner=subprocess.run, key_factory=KeychainKey, which=shutil.which):
+        action=service_action, runner=subprocess.run, key_factory=platform_key, which=shutil.which):
     """Return 0 when done or cancelled, 1 when a step could not be completed."""
     mac = platform == 'darwin'
     jobs = services(home) if mac else []
@@ -108,8 +109,15 @@ def run(term, *, home, env, platform, prefix, assume_yes=False, delete_data=Fals
         return 1
     for folder in folders:
         if delete_data:
-            if mac:
-                delete_keys(folder, key_factory)
+            # #34: on Linux the keys live in the desktop keyring (Codex review on #640); a key that could not be
+            # deleted is said, and the removal is reported incomplete.
+            if mac or platform.startswith('linux'):
+                try:
+                    delete_keys(folder, lambda account, service: key_factory(account, service, platform=platform)
+                                if key_factory is platform_key else key_factory(account, service))
+                except (JarError, ValueError):
+                    term.say('   ' + msg('uninstall.keys_failed'))
+                    ok = False
             shutil.rmtree(folder)
             term.say('   ' + msg('uninstall.data_deleted', path=str(folder)))
         else:

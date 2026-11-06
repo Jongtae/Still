@@ -29,6 +29,8 @@ exactly as before the move, so authority checks, approvals, budgets and database
 semantics are unchanged.  The constants these methods share with the rest of
 the service are still defined in ``quickstart_service``.
 """
+
+from . import work_status as ws
 from .telegram_locale import ai_text
 
 import hashlib
@@ -219,7 +221,7 @@ class TelegramSurface(ConversationSurface):
                     and chat.get('id')==cfg.get('user_id') and isinstance(draft_id,int)):
                 return None
             with service.store.db() as db:
-                rows=db.execute("SELECT * FROM jobs WHERE channel=? AND chat_id=? AND status IN ('queued','running')",
+                rows=db.execute(f"SELECT * FROM jobs WHERE channel=? AND chat_id=? AND status IN {ws.sql_in(ws.ACTIVE)}",
                                 (f"telegram:{generation}",chat['id'])).fetchall()
             # #518: the draft id changes after each message the Work sent; any of them stops it.
             job=next((dict(row) for row in rows
@@ -975,19 +977,7 @@ class TelegramSurface(ConversationSurface):
             private=chat.get('type')=='private' and isinstance(sender,int) and chat.get('id')==sender
             authorized=private and sender==cfg.get('user_id')
             paired=False
-            # #897: a family bot pairs only with the Telegram user who created it.
-            creator=cfg.get('pair_user_id')
-            creator_bound=isinstance(creator,int) and not isinstance(creator,bool)
-            if private and creator_bound and sender==creator and not isinstance(cfg.get('user_id'),int) \
-                    and isinstance(text,str) and text:
-                # #927: Telegram attests the creator, so their first message pairs the
-                # bot; Telegram's own bot-creation screen sends a plain /start.
-                cfg.update(user_id=sender,pair_code='',pair_expires=0)
-                authorized=True
-                paired=True
-                if text.split(' ',1)[0]=='/start':text='/start'
-            elif private and isinstance(text,str) and text.startswith('/start ') and cfg.get('pair_code') and time.time()<cfg.get('pair_expires',0) \
-                    and (not creator_bound or sender==creator):
+            if private and isinstance(text,str) and text.startswith('/start ') and cfg.get('pair_code') and time.time()<cfg.get('pair_expires',0):
                 if hmac.compare_digest(text[7:].strip().encode(),cfg['pair_code'].encode()):
                     cfg.update(user_id=sender,pair_code='',pair_expires=0)
                     authorized=True
@@ -1050,7 +1040,7 @@ class TelegramSurface(ConversationSurface):
                                 db.execute("UPDATE jobs SET status='awaiting_context' WHERE id=? AND status='queued'",(task_id,))
                                 guided_context=True
                             service.store.telegram.touch_album(db,task_id,caption)
-                            db.execute("UPDATE jobs SET message=? WHERE id=? AND status IN ('queued','awaiting_context')",
+                            db.execute(f"UPDATE jobs SET message=? WHERE id=? AND status IN {ws.sql_in(ws.QUEUED_CONTEXT)}",
                                        (caption or '[사진 첨부]',task_id))
                             service.store.attach_telegram_photo(task_id,photo_file_id,db=db)
                             service.store.mark_telegram_photo_attached(task_id,db=db)
@@ -1221,9 +1211,6 @@ class TelegramSurface(ConversationSurface):
             elif isinstance(update.get('stopped_message_generation'),dict):
                 # #581: the owner pressed Stop on a draft.
                 control=lambda:service.ingest_stop(update['stopped_message_generation'],cfg['generation'])
-            elif isinstance(update.get('managed_bot'),dict):
-                # #897: a family member created their bot through this bot's Managed Bots link.
-                control=lambda:service.ingest_managed_bot(update['managed_bot'])
             elif isinstance(update.get('message_reaction'),dict):
                 # #996: the owner's emoji on an assistant message.
                 control=lambda:service.ingest_reaction(update['message_reaction'],cfg['generation'])
@@ -1237,7 +1224,6 @@ class TelegramSurface(ConversationSurface):
                         current['cursor']=update['update_id']+1
                         service.store.put('telegram',current)
             else:service.ingest_update(update,cfg['generation'])
-        service.retry_family_handovers()
         service.settle_expired_telegram_photo_albums()
 
     def _notification_since(self, notification):

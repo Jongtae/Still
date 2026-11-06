@@ -69,6 +69,7 @@ HOST_TOOLS={
     'settings_change': HostTool(True, False, True, None, False, None),
     'capability_search': HostTool(False, True, True, 'settings', True, None),
     # #826: which owner information an earlier answer used and where it went (read-only).
+    'a2a_message': HostTool(True, False, False, None, False, 'message'),
     'information_use': HostTool(False, True, True, 'records', False, None),
     # #961: read one pinned skill this Work may load, or one of its packaged text files.
     'skill_load': HostTool(False, True, False, None, False, None),

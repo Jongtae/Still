@@ -15,7 +15,11 @@ for platform in x86_64-apple-darwin aarch64-apple-darwin x86_64-unknown-linux-gn
                 aarch64-unknown-linux-gnu; do
   # Resolve as an owner's install does, then require wheels for exactly those
   # versions: --no-build alone would quietly fall back to an older release.
-  if uv --no-config pip compile pyproject.toml --extra mcp-host --python-version "$python" \
+  # #34: glibc Linux installs also take the linux-browser extra (scripts/install.sh).
+  extras="--extra mcp-host"
+  case "$platform" in *-linux-gnu) extras="$extras --extra linux-browser" ;; esac
+  # shellcheck disable=SC2086
+  if uv --no-config pip compile pyproject.toml $extras --python-version "$python" \
        --python-platform "$platform" --quiet -o "$out/requirements.txt" &&
      uv --no-config pip compile "$out/requirements.txt" --python-version "$python" \
        --python-platform "$platform" --no-build --quiet -o "$out/wheels.txt"; then

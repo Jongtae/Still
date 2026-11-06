@@ -1,4 +1,6 @@
 """Private, single-owner persistence for the quickstart."""
+
+from . import work_status as ws
 from .messages import msg
 from contextlib import contextmanager
 from functools import cached_property
@@ -7,6 +9,8 @@ import fcntl
 import hashlib
 import hmac
 import json
+import logging
+
 import math
 import os
 import re
@@ -19,6 +23,8 @@ import unicodedata
 import uuid
 
 from .conversation_projection import qualify_transcript, turn_qualifier
+
+LOG = logging.getLogger(__name__)
 
 #: #367: the transcript rows the owner forgot; every AI reader of ``messages`` leaves them out.
 FORGOTTEN_MESSAGE_IDS='SELECT message_id FROM forgotten_messages'
@@ -124,6 +130,7 @@ class QuickStore:
         self.secret_lock = _SECRET_STATE_LOCK
         self.memory_search_available = False
         with self._schema_transaction() as db:
+            #664: trigger mirrors ws.is_terminal and ws.is_resumable_continuation; keep SQL literal.
             db.executescript('''
             CREATE TABLE IF NOT EXISTS auth(id INTEGER PRIMARY KEY CHECK(id=1), salt TEXT, password TEXT);
             CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY, expires REAL);
@@ -299,7 +306,7 @@ class QuickStore:
             if 'answered_at' not in {row['name'] for row in db.execute('PRAGMA table_info(work_steers)')}:
                 db.execute('ALTER TABLE work_steers ADD COLUMN answered_at REAL')
                 db.execute("UPDATE work_steers SET answered_at=delivered_at WHERE delivered_at IS NOT NULL AND job_id IN "
-                           "(SELECT id FROM jobs WHERE status IN ('succeeded','partial'))")
+                           f"(SELECT id FROM jobs WHERE status IN {ws.sql_in(ws.DELIVERED_RESULT)})")
             memory_columns={row['name'] for row in db.execute('PRAGMA table_info(memories)')}
             # #220: append + invalidate: which save ended a row, why and when; and the last day a fact holds.
             for name,kind in (('owner_key','TEXT'),('work_key','TEXT'),('content_digest','TEXT'),('candidate_id','TEXT'),
@@ -327,9 +334,61 @@ class QuickStore:
                 db.execute('UPDATE memory_candidates SET job_id=NULL,owner_key=?,work_key=?,content_digest=? WHERE id=?',
                            (row['owner_key'] or default_owner,row['work_key'] or self._memory_binding(row['job_id'] or 'legacy-work'),
                             row['content_digest'] or self.memory_digest(row['memory_key'],row['content']),row['id']))
+            # #657: retain old records as inert history, never as active sharing authority.
+            retired = dict(self.config('retired_family_657', {}, db=db) or {})
+            changed = 0
+            for key in ('family_setups', 'family_shared_sites', 'shared_sites'):
+                row = db.execute('SELECT value FROM config WHERE key=?', (key,)).fetchone()
+                if row:
+                    retired.setdefault(key, row['value'])
+                    db.execute('DELETE FROM config WHERE key=?', (key,))
+                    changed += 1
+            drafts = self.config('settings_change_drafts', {}, db=db)
+            if isinstance(drafts, dict):
+                family_drafts = {key: row for key, row in drafts.items()
+                                 if isinstance(row, dict) and row.get('category') == 'family'}
+                if family_drafts:
+                    retired.setdefault('settings_change_drafts', {}).update(family_drafts)
+                    self.put('settings_change_drafts', {key: row for key, row in drafts.items()
+                                                       if key not in family_drafts}, db=db)
+                    changed += len(family_drafts)
+            telegram = self.config('telegram', {}, db=db)
+            if isinstance(telegram, dict) and 'pair_user_id' in telegram:
+                retired.setdefault('pair_user_id', telegram.pop('pair_user_id'))
+                self.put('telegram', telegram, db=db)
+                changed += 1
+            if changed:
+                self.put('retired_family_657', retired, db=db)
+                LOG.info('family sharing retired (#657): config records=%s; owner data retained', changed)
+            self._retire_family_files()
         self.path.chmod(0o600)
         if not self.claimed() and not self.bootstrap.exists():
             self.write_private(self.bootstrap, secrets.token_urlsafe(32))
+
+    def _retire_family_files(self):
+        """Retire only the removed feature's secrets/files, restart-safe (#657).
+
+        Owner sessions, original instance directories, Work and conversation records stay.
+        Hard-link before unlink avoids overwriting an archive if startup is interrupted.
+        """
+        removed = sum(self.remove_secret(key) for key in self.secret_items('family_handoff.'))
+        moved = 0
+        for name in ('family-setup.json', 'owner-link.secret'):
+            path = self.private / name
+            archive = self.private / (name + '.retired-657')
+            if not path.exists():
+                continue
+            try:
+                os.link(path, archive, follow_symlinks=False)
+            except FileExistsError:
+                # A previous startup may have linked it but not yet removed the active name.
+                if not os.path.samestat(path.lstat(), archive.lstat()):
+                    LOG.warning('family retirement archive conflict (#657); both files retained')
+                    continue
+            path.unlink()
+            moved += 1
+        if removed or moved:
+            LOG.info('family sharing retired (#657): secrets=%s files=%s; owner data retained', removed, moved)
 
     @contextmanager
     def _schema_transaction(self):
@@ -668,7 +727,7 @@ class QuickStore:
             if old['message']!=message or old['channel']!=channel or old['chat_id']!=chat_id or old['workspace_id']!=workspace_id:
                 raise ValueError('같은 요청 식별자를 다른 메시지에 사용할 수 없습니다.')
             return old['id']
-        if db.execute("SELECT count(*) FROM jobs WHERE status IN ('queued','running')").fetchone()[0]>=100:
+        if db.execute(f"SELECT count(*) FROM jobs WHERE status IN {ws.sql_in(ws.ACTIVE)}").fetchone()[0]>=100:
             raise ValueError('대기 중인 작업이 많습니다. 잠시 후 다시 시도하세요.')
         task_id=str(uuid.uuid4())
         db.execute('INSERT INTO jobs(id,request_key,message,channel,chat_id,status,response,error,delivery,provider,model,created,workspace_id,owner_typed,owner_words) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',(task_id,request_key,message,channel,chat_id,'queued',None,None,'none',None,None,time.time(),workspace_id,1 if owner_typed is True else None,1 if owner_typed is True and owner_words is True else None))
@@ -1935,7 +1994,7 @@ class QuickStore:
         workspace=self.workspace(workspace_id)
         if not workspace:raise ValueError(msg('quickstart_service.workspace_missing'))
         with self.db() as db:
-            job=db.execute("SELECT * FROM jobs WHERE id=? AND status IN ('succeeded','partial')",(job_id,)).fetchone()
+            job=db.execute(f"SELECT * FROM jobs WHERE id=? AND status IN {ws.sql_in(ws.DELIVERED_RESULT)}",(job_id,)).fetchone()
             if not job:raise ValueError('저장할 완료 결과를 찾을 수 없습니다.')
             detail=db.execute("SELECT detail FROM tool_events WHERE job_id=? AND tool!='model' AND status='succeeded' ORDER BY id DESC LIMIT 8",(job_id,)).fetchall()
             evidence=json.dumps([row['detail'][:500] for row in detail],ensure_ascii=False)

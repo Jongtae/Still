@@ -4,6 +4,8 @@ The host-only MCP SDK owns stdio framing and JSON-RPC response correlation.
 Still retains handshake negotiation, the supported method/tool profiles,
 serialized execution and Work/Grant/secret/effect/Event/Evidence callbacks.
 The isolated engine bridge keeps its separate envelope contract.
+#673 owner decision: peer Work returns before opening a store; its MCP
+discovery and calls are served exclusively by the scoped host relay.
 """
 import argparse
 import json
@@ -449,7 +451,7 @@ def bridge_secret_redactor(store, relay):
 
 def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROFILE, browser_relay=None,
           search_off_reason='', relay_browser=True, skills=(), ai_connections=False, connection_slots=(),
-          session_steers=False):
+          session_steers=False, peer_relay=None):
     """Serve one Work's Still tools over stdio for the route profile the host named (#701).
 
     ``profile`` is ``trusted-local`` or ``strict-isolated``; anything else
@@ -460,7 +462,27 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
     ``package/name@digest`` refs of the host Work's skill binding; without any
     no skill tool is offered.  ``session_steers`` (#308 S2): the host writes the
     owner's steers to the CLI session's stdin, so tool results carry none.
+    #673 owner decision: ``peer_relay`` bypasses all of that local setup and
+    proxies discovery and calls to the host without opening the supplied store.
     """
+    if peer_relay is not None:
+        # #673 owner decision: return before opening even a supplied store
+        # path. The host owns discovery, execution, records and redaction.
+        if profile != STRICT_PROFILE or not peer_relay:
+            raise ExecutionError('Peer Work requires a strict host relay.')
+        relay = RelayClient(peer_relay)
+        def handle_peer(method, params):
+            """#673 owner decision: protocol framing here, all tool handling in the host."""
+            if method == 'initialize':
+                offered = params.get('protocolVersion') if isinstance(params, dict) else None
+                return {'protocolVersion': negotiated_protocol_version(offered), 'capabilities': {'tools': {}},
+                        'serverInfo': {'name': 'agentos', 'version': '1'}}
+            if method == 'notifications/initialized':
+                return {}
+            if method in ('tools/list', 'tools/call'):
+                return relay.call(method, params)
+            raise _Rejected(-32601, 'Method not found.')
+        return _serve_stdio(handle_peer, None)
     profile = profile if profile in HOST_CLI_PROFILES else STRICT_PROFILE
     relay = RelayClient(browser_relay) if browser_relay and profile == BOUNDED_PROFILE else None
     store = QuickStore(data)
@@ -640,6 +662,7 @@ if __name__ == '__main__':
     parser.add_argument('--profile',default=BOUNDED_PROFILE)
     parser.add_argument('--search-off-reason',default='')
     parser.add_argument('--browser-relay',default=None)
+    parser.add_argument('--peer-relay',default=None)
     parser.add_argument('--relay-no-browser',action='store_true')
     parser.add_argument('--skill',action='append',default=[])
     parser.add_argument('--ai-connections',action='store_true')
@@ -650,4 +673,4 @@ if __name__ == '__main__':
     serve(args.data, args.job, args.provenance, native_search=args.native_search, profile=args.profile,
           browser_relay=args.browser_relay, search_off_reason=args.search_off_reason,
           relay_browser=not args.relay_no_browser, skills=args.skill, ai_connections=args.ai_connections,
-          connection_slots=args.connection_slot, session_steers=args.session_steers)
+          connection_slots=args.connection_slot, session_steers=args.session_steers, peer_relay=args.peer_relay)

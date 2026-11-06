@@ -147,8 +147,7 @@ def browser_signin_claims(text):
         for item in line.split(':', 1)[1].split(', '):
             site = item.split(' (', 1)[0].strip()
             if site and len(claims) < 20:
-                shared = ' (공유받은 로그인)' if "shared with you" in item else ''
-                claims.append({'ref': f'browser:{_text(site, 60)}', 'label': f'로그인한 사이트: {_text(site, 60)}{shared}'})
+                claims.append({'ref': f'browser:{_text(site, 60)}', 'label': f'로그인한 사이트: {_text(site, 60)}'})
     return claims
 
 
@@ -388,6 +387,7 @@ def work_information_use(store, job_id, redact=None):
         add('spliced', [f'Telegram 사진 {photo_count}개'])
     lookups, results, started, connections = [], [], {}, {}
     attempts = []
+    peers = []
     # #167 (#28 option A): labels of held values outbound calls carried, and the hosts the browser opened.
     matches, opened, cuts = [], [], {}
     # #636: sites the AI signed back in to through the provider the owner used (site and provider host only).
@@ -403,6 +403,12 @@ def work_information_use(store, job_id, redact=None):
         if tool in _NOT_TOOLS or not isinstance(trace, dict):
             continue
         action = trace.get('host_action') or tool
+        if action == 'a2a_message' and trace.get('peer_id'):
+            peers.append({'peer_id':label(trace.get('peer_id'),80),
+                'destination':label(trace.get('destination'),200),
+                'direction':label(trace.get('direction'),20),'status':status,
+                'sections':list(trace.get('sections') or []),'tools':list(trace.get('tools') or [])})
+            continue
         if action == 'connection_setup':
             # Both requested and terminal attempts are honest even after a crash.
             # Registration is local; SDK/login attempts do not reveal OAuth redirects.
@@ -503,6 +509,7 @@ def work_information_use(store, job_id, redact=None):
                              'earlier_exchanges':[{'purpose':row.get('purpose'),'exchanges':row['earlier_exchanges']} for row in judgments if row.get('earlier_exchanges')]},
              'web_search_ran': bool(lookups), 'lookups': lookups[:MAX_ITEMS]}
     # #167: places the signed-in browser opened (a URL carries data to its host), and held-value matches.
+    if peers:sent_to['peers'] = peers[-MAX_ITEMS:]
     sent_to['browser_destinations'] = opened
     sent_to['held_value_matches'] = matches
     if resigned:
@@ -596,6 +603,8 @@ def render_korean(audit):
     for connection in sent.get('connections') or ():
         lines.append(f"- 연결 준비 시도({connection['engine']}, {connection['phase']}): "
                      f"{connection['destination']} · {connection['state']} (원격 수신·OAuth 이동 주소는 미확인)")
+    for peer in sent.get('peers') or ():
+        lines.append(f"- A2A peer {peer['peer_id']}: {peer['destination']} ({peer['direction']}, {peer['status']})")
     judgment = sent.get('judgment_ai') or {}
     if judgment.get('calls'):
         models = ', '.join(judgment.get('models') or ()) or '판단 AI'

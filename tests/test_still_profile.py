@@ -186,15 +186,6 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(self.store.config('telegram_profile', {}), {}, 'a later connect can try again')
         self.assertEqual(self.store.config('telegram')['bot_name'], 'My helper')
 
-    def test_family_instances_keep_their_own_profile(self):
-        from personal_agent.family_setup import setup_path
-        self.store.write_private(setup_path(self.store), json.dumps({'instance': 'mom', 'finished': 1}))
-        self.connect()
-        self.assertIsNone(self.service.apply_still_profile())
-        self.assertEqual(self.json_calls, [])
-        route = (Path(__file__).resolve().parents[1] / 'src/personal_agent/quickstart.py').read_text(encoding='utf-8')
-        self.assertIn('target=service.apply_still_profile', route)
-
 
 class WelcomeTests(unittest.TestCase):
     def test_welcome_follows_the_owner_language_and_defaults_to_english(self):

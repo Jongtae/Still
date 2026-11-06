@@ -317,6 +317,127 @@ Rules:
 - **Revoking a mandate stops new calls; it does not undo effects already made** (Owner Control Contract, OC-05).
 - **Phase-2 family delegation** keeps its own contract (A2A D-04, Secretary Agency Contract §Family collaboration).
 
+## 5a. A2A counterparts (#651)
+
+An inbound peer is a **counterpart asking a question**, not the owner and not
+an outbound delegate. Registration authorizes conversation only. The optional
+`a2a` extra adapts the official `a2a-sdk` 1.3.0; its card validation, protobuf,
+client, server routes and task machinery remain upstream-owned. The retired
+`compatibility-a2a-peer` stays retired. MP1 D-04's minimum-context, untrusted
+result and terminal-state principles apply without reviving its fixture.
+
+The authenticated owner-local Settings/API can review a card from JSON/file
+contents or a URL, confirm its digest, choose disclosure and limits, and block
+or remove the peer. Each peer has an independently issued inbound bearer and
+an optional outbound bearer in encrypted local storage. The inbound bearer is
+shown once. The listener starts only on the literal address `127.0.0.1`; this
+slice supplies no public address, tunnel, discovery or automatic listener start.
+
+Inbound authentication precedes Work/model admission. Peer Work has a distinct
+channel and claim state, and never enters owner intent/act routing or settlement.
+The default exposes no owner profile, Memory, context, folders or accounts.
+Explicit scope can add bounded sections and selected existing read tools;
+settings, approvals, preparation tools, external mutations and nested delegation
+remain unreachable. Memory writes use the existing third-party candidate path.
+The existing orchestration/model loop answers through the owner's configured
+Main AI. Under the owner's #673 decision, subscription CLI peer Work requires
+the **strict-isolated** profile and a separate, current `peer` qualification.
+The bridge is a pure MCP relay: both `tools/list` and `tools/call` reach the host's
+`PeerCapabilities`, with host validation, shared budget, loop guard, redaction
+and Evidence. It opens no store and executes no tool locally, even if supplied
+a store path. The host offers exactly the peer's tools, including candidate-only
+`save_memory` and review-only `tell_owner`; no bridge profile tool list applies.
+
+The peer launch also excludes ambient instructions. Codex receives a fresh
+per-turn `CODEX_HOME` containing only a regular, owner-only copy of the existing
+`auth.json` (directory 0700, file 0600), using documented file credential storage.
+No instruction, config, skill, hook or session file is imported. Before copying,
+Still reads Codex's `last_refresh` and refuses a ChatGPT token cache at seven
+days old or with an unknown/future refresh time. The seven-day cutoff leaves
+about one day before Codex's roughly eight-day scheduled refresh threshold,
+well beyond a bounded turn. A future request may use the CLI after ordinary
+owner Codex use refreshes that cache; Still starts no maintenance model call
+and asks for no new setup action. Missing, unsafe or keyring-only caches are
+also refused. File API-key caches have no rotating ChatGPT refresh token.
+
+A process-wide lock serializes the entire copy/run/write-back interval across
+peer workers and peer planning/judgment calls. Before deleting a temporary copy,
+every normal exit path (including failure, exception, cancellation and block)
+compares it to the copied bytes. A changed copy is staged as an owner-owned 0600
+file in the original's directory, flushed and fsynced, and atomically replaced
+with `os.replace` only after the original still matches the copied bytes.
+The original is checked again after staging; final auth-file symlinks are never
+followed. A concurrent change preserves the original and records a fixed,
+content-free conflict receipt, even after the peer Work was cancelled. A failed
+write-back records a fixed failure receipt. Credential bytes never enter a
+prompt, argv, log or Evidence. Temporary copies are removed after this cleanup;
+killed-host remnants follow bounded stale-turn cleanup.
+
+This is not cross-process serialization with the owner's independently running
+Codex or other Still processes. An unexpected refresh-on-401 remains possible.
+POSIX `os.replace` is atomic replacement, not an atomic compare-and-swap against
+an external writer: an uncooperative writer can race the final comparison.
+If the host is killed after refresh but before write-back, rotated credentials
+may be lost and the owner's cache may hold an already-used refresh token.
+Conflict/failure receipts do not prove that a usable login was preserved, and
+stale-directory cleanup does not reconstruct that lost refresh.
+
+Claude Code remains refused. The owner observed on 2.1.287 that `--safe-mode`
+disables the explicitly configured relay too. The alternate diagnostic candidate
+uses fresh HOME, empty setting sources, an explicit system prompt, no built-in
+tools, restricted mode, disabled slash commands and strict MCP configuration,
+without safe mode. The probe plants canaries in HOME's `.claude/`, cwd and every
+ancestor inside its controlled fixture, user/project settings and rules, and
+the store. It inspects every fake-model request and requires a real relay call.
+But ancestors above the fixture and platform-managed settings are uncontrolled;
+the installed help does not promise their instruction files are excluded
+(`--restricted` explicitly retains managed settings). A separate failed coverage
+check therefore refuses admission even if the controlled prompt and relay checks
+pass. No unsupported instruction-exclusion flag or API fallback is substituted.
+Subscription planning/judgment calls for peer Work require the same qualification
+and auth lifecycle, so ambient data cannot enter a brief.
+
+Qualification uses synthetic homes, canaries, the real bridge/relay and a
+scripted loopback model, and is bound to CLI identity, platform and paths through
+the existing #346 mechanism. No missing observation counts as a pass. An ordinary
+strict qualification does not qualify peer Work. Unqualified launches and
+trusted-local peer Work remain refused without an API fallback; safe refusal
+reasons remain visible in the Settings conversation record. Ordinary strict and
+trusted-local CLI Work retain their existing behavior and limitations. In
+particular the ordinary strict Codex route still loads global AGENTS files.
+
+A request needing an owner decision becomes an item visible on the owner's own
+surface and in Settings. The fixed notice uses the registered display name,
+quotes the other agent's words and says nothing was done. It uses the owner's
+language, never a model call. The owner may acknowledge or decline in Settings;
+conversation notices create no `owner_acts.open_items` entry and a reply to them
+cannot approve the peer's request as an effect. The peer can poll only its own
+task's decision-state metadata. Acknowledgment grants
+no action authority and does not queue privileged Work from peer text. Actual
+consequential execution remains a separate owner instruction with the existing
+exact action/payment gates; automatic effect continuation is not established.
+
+Outbound `a2a_message` is an owner-Work tool. Its response is third-party prose,
+not verified effect evidence. A Work already exposed to out-of-scope or unknown
+owner context cannot send a message to that peer, including a paraphrase.
+It remains unavailable on CLI routes as in #651: the peer relay contains inbound
+Work, but ordinary CLI Work may already carry ambient context outside that scope.
+Registered cards are revalidated before dispatch; changed endpoint, auth or
+skills require exact owner digest confirmation. Redirects and alternate
+endpoints cannot carry the credential. The audit records peer destinations and
+observed disclosure sections/read tools. Owner conversation records retain both
+questions and answers. Message/task admission is durable and at most once;
+limits apply per peer, blocking revokes credentials and cancels unfinished peer
+Work, and interrupted exchanges end explicitly without replay. Portable copies
+retain records but discard peer authority and quarantine unfinished state.
+
+Evidence is model-free fixture/local transport evidence, including the SDK's
+real Starlette serializer through ASGI. Real-loopback variants are supplied for
+execution where socket binding is permitted. This is not evidence of any real
+external agent, public-network operation, live model quality or browser visual
+acceptance. Network, credential and recipient changes require the issue's
+exact-final-head escalated Codex review before the owner's merge.
+
 ## 6. Trust ladder and trust record
 
 One ladder for every third-party hand, skill or agent:
@@ -788,7 +909,7 @@ The following are proposed for a separate governance issue once real use support
 ## Non-goals
 
 - Changing the pilot posture, or adding request-time sensitivity judgments.
-- Copying AI-vendor credentials, syncing web-account connectors the CLI cannot reach, or importing plugin hooks and slash commands.
+- Importing AI-vendor credential stores beyond the per-turn auth-only copy in §5a, syncing web-account connectors the CLI cannot reach, or importing plugin hooks and slash commands.
 - An Still skill marketplace or skill commerce.
 - AI-authored owner skills generated from scratch (§2). Experience-verified function libraries (§2, #1486) are in scope.
 - Task-, site-, provider- or category-specific core code.

@@ -292,7 +292,11 @@ class TelegramFromConversation(TerminalCase):
             term.answer(text)
         shown = ''.join(text for _style, text in menus[0].__pt_formatted_text__())
         self.assertIn(first_run.msg('settings_orchestrator.connect_chat_summary', 'en'), shown)
-        self.assertIn('Reason: Connect Telegram so you can chat with Still there.', shown)
+        # Rich may wrap a long terminal line differently by release or
+        # platform. The owner-facing English wording, not its display-width
+        # line break, is the contract under test.
+        self.assertIn('Reason: Connect Telegram so you can chat with Still there.',
+                      ' '.join(shown.split()))
         self.assertNotRegex(shown, '[가-힣]')
         self.assertIn(first_run.msg('settings_orchestrator.connect_chat_opened', 'en'), out.getvalue())
         self.assertNotRegex(out.getvalue(), '[가-힣]')

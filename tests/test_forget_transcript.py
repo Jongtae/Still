@@ -171,11 +171,15 @@ class ForgetTranscript(unittest.TestCase):
         origin, ids = self.exchange('매일 아침 엄마 생신 선물 챙겨줘', '매일 아침 챙길게요')
         service = AgentService(self.store)
         run = {'id': 'prep-work', 'message': '오늘 준비', 'request_key': 'preparation:p1', 'channel': 'web', 'created': 20}
-        with mock.patch.object(service.preparations, 'get', return_value={'created_from': origin}):
+        with mock.patch.object(service.preparations, 'get', return_value={'created_from': origin, 'run_count': 1, 'due_at': 1_800_000_000,
+            'updated_at': 1_800_000_000, 'timezone': 'Asia/Seoul', 'channel': 'web'}):
             self.assertEqual(len(service.preparation_history(run)), 2, 'before the forget the origin is shown')
             self.forget.forget(MEMORY_OWNER, self.refs(ids[:1]))
             history = service.preparation_history(run)
-        self.assertEqual([row['content'] for row in history], ['오늘 준비'])
+            fact = service.preparation_run_fact(run)
+            self.assertIn('1번째 실행', fact)
+            self.assertIn('이번이 마지막 실행', fact)
+        self.assertEqual([row['content'] for row in history], ['오늘 준비\n\n' + fact])
         retry = self.store.enqueue('다시 해줘', 'retry')
         with self.store.db() as db:
             db.execute("UPDATE jobs SET relation_kind='retry',related_job_id=? WHERE id=?", (origin, retry))
