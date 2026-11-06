@@ -162,7 +162,8 @@ class ScheduledLocation(unittest.TestCase):
             kind='prepare', goal='Prepare the requested result using my current position',
             due_at=case.now, timezone='UTC', recurrence=None, channel='telegram', created_from='settings',
             state=prep.STATE_SCHEDULED, accepted_by=prep.ACCEPTED_OWNER_SETTINGS,
-            window=(600, case.now + 300, 1))
+            # #701: the run deadline is one run's time after until; it still passes before the location expires.
+            window=(600, case.now + 60, 1))
         case.tick()
         [work] = case.runs(row['id'])
         case.script = [{'tool_calls': [call('loc', 'ask_location', reason='Please share your current position.')]},
