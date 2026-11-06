@@ -143,8 +143,17 @@ class Settings(Mode, _Case):
             with self.assertRaises(ToolError) as refused:
                 browser.type({'target': field, 'text': value, 'effect': 'payment'})
             self.assertEqual(refused.exception.code, 'approval_required')
-            # Codex P2 on #668: the field kept out of the mode waits on a real request the owner can approve.
-            self.assertEqual((self.service._browser_request(job['id']) or {}).get('state'), 'requested')
+            # Codex P2 on #668: the field kept out of the mode waits on a real request the owner can approve,
+            # and the owner's approval of it lets exactly that typing through, with the mode still on.
+            pending = self.service._browser_request(job['id'])
+            self.assertEqual((pending or {}).get('state'), 'requested')
+            with self.store.db() as db:
+                db.execute("UPDATE jobs SET status='partial' WHERE id=?", (job['id'],))
+            self.assertTrue(self.service._decide_browser_step(job['id'], True, pending['offer_digest'])['approved'])
+            with self.store.db() as db:
+                db.execute("UPDATE jobs SET status='running' WHERE id=?", (job['id'],))
+            browser.type({'target': field, 'text': value, 'effect': 'payment'})
+            self.assertIsNone(self.service._browser_request(job['id']), 'the token is spent')
         self.assertEqual(len(self.receipts(job['id'])), 1)
 
     def test_api_money_owner_and_unattended_and_off_before_dispatch(self):
@@ -361,7 +370,7 @@ class NoticesAndWaits(Mode, _Case):
             row = db.execute("SELECT channel FROM messages WHERE job_id=? AND role='assistant'", (job['id'],)).fetchone()
         self.assertEqual(row['channel'], job['channel'])
 
-    def test_an_old_payment_prompt_settled_in_mode_does_not_issue_a_token(self):
+    def test_an_old_payment_prompt_approved_in_mode_issues_its_exact_token_once(self):
         job = self.store.job(self.store.enqueue('pay', 'old-prompt', owner_typed=True))
         binding = bs.step_binding(job['id'], 'browser_click', 'https://pay.test/', 'pay', 'pay', 'exact')
         self.service._request_browser_step(job, binding, 'Pay exact amount')
@@ -370,12 +379,12 @@ class NoticesAndWaits(Mode, _Case):
             db.execute("UPDATE jobs SET status='partial' WHERE id=?", (job['id'],))
         self.switch(True)
         result = self.service._decide_browser_step(job['id'], True, pending['offer_digest'])
-        self.assertEqual(result['authorized_by'], 'payment-autonomy')
-        self.assertTrue(result['resumed'])
-        self.assertNotIn('token', self.service._browser_request(job['id']))
+        self.assertTrue(result['approved'] and result['resumed'])
+        self.assertEqual(self.service._browser_request(job['id'])['state'], 'issued')
         self.switch(False)
-        self.assertFalse(self.service._consume_browser_step(job, binding))
-        self.assertEqual(self.receipts(job['id']), [], 'no dispatch, no payment receipt')
+        self.assertTrue(self.service._consume_browser_step(job, binding), "the owner's own approval stands")
+        self.assertFalse(self.service._consume_browser_step(job, binding), 'spent once')
+        self.assertEqual(self.receipts(job['id']), [], 'an owner-approved step is not a payment-autonomy receipt')
 
 
 class WebSettings(unittest.TestCase):

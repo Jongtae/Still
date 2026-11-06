@@ -1036,11 +1036,14 @@ class BrowserSession:
         """
         record = record if isinstance(record, dict) else {}
         binding = self._submit_binding(record)
+        self.__dict__.pop('_autonomy_payment', None)
+        # #662: an exact owner approval is spent first; payment autonomy covers a submit with none.
+        consumed = depth < 2 and self.approvals.consume(binding)
         mode = getattr(self.approvals, 'payment_autonomy', None)
-        autonomous = depth < 2 and callable(mode) and mode(binding, description + cancelled_note(record))
+        autonomous = depth < 2 and not consumed and callable(mode) and mode(binding, description + cancelled_note(record))
         if autonomous:
             self._autonomy_payment = (binding, description + cancelled_note(record), autonomous)
-        if depth < 2 and (autonomous or self.approvals.consume(binding)):
+        if consumed or autonomous:
             release = getattr(self._driver(), 'release_submit', None)
             if not callable(release):
                 raise ToolError(FAILED_TEXT, 'browser_failed')
@@ -1377,12 +1380,13 @@ class BrowserSession:
         is issued: a press can pay by ``fetch`` without any submit (#700 review).
         """
         self.__dict__.pop('_autonomy_payment', None)
+        # #662: an exact owner approval is spent first; payment autonomy covers a step with none.
+        if self.approvals.consume(binding):
+            return True
         mode = getattr(self.approvals, 'payment_autonomy', None)
         ticket = mode(binding, description) if required and autonomy and callable(mode) else None
         if ticket:
             self._autonomy_payment = (binding, description, ticket)
-            return True
-        if self.approvals.consume(binding):
             return True
         if required:
             self._refuse(binding, description)

@@ -9036,18 +9036,8 @@ class AgentService:
                 if not self.photo_work_has_pending_resume(work_id):self.store.remove_telegram_photo(work_id)
                 return result
             result={'approved':False,'resumed':False,'work_id':work_id}
-            with self.store.db() as db:
-                db.execute('BEGIN IMMEDIATE')
-                autonomy=self._authorize_payment_autonomy(job,None,None,db=db)
-                if autonomy:
-                    requests=self.store.config(BROWSER_REQUESTS_KEY,{},db=db)
-                    if requests.get(work_id)!=row:return result
-                    authorized={**row,'state':'payment-autonomy','mode_revision':autonomy['revision']}
-                    requests[work_id]=authorized
-                    self.store.put(BROWSER_REQUESTS_KEY,requests,db=db)
-                    result.update(approved=True,authorized_by='payment-autonomy',mode_revision=autonomy['revision'])
-                    result['resumed']=self._queue_action_continuation(db,job,authorized)
-                    return result
+            # #662 (Codex P2 on #668): the owner's approval issues the exact token in either mode; a
+            # step the mode leaves to the owner (a card, password or one-time-code field) needs it.
             def commit(db,approval):
                 config=db.execute('SELECT value FROM config WHERE key=?',(BROWSER_REQUESTS_KEY,)).fetchone()
                 requests=json.loads(config['value']) if config else {}
