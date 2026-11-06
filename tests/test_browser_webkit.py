@@ -1735,6 +1735,9 @@ class SessionFixtureHandler(FixtureHandler):
     def do_GET(self):
         path = urlsplit(self.path).path
         value = self.server.cookie_value
+        if path == '/phone-layout':
+            mode = 'mobile' if 'iPhone' in self.headers.get('User-Agent', '') else 'desktop'
+            return self._send(f'<html><head><title>{mode}</title><meta name="viewport" content="width=device-width"></head><body>{mode}</body></html>')
         if path == '/plain-contenteditable':
             return self._send('''<html><head><title>Editable fields</title></head><body>
               <div contenteditable aria-label="Bare memo" id="bare" style="min-height:40px;border:1px solid"></div>
@@ -2843,6 +2846,24 @@ class WebKitIntegrationTests(unittest.TestCase):
                 worker.click(scripted_pay(), 10)
             self.assertEqual(caught.exception.code, 'approval_required', 'armed again once the window is hidden')
             self.assertEqual(self.server.posts, ['/pay'])
+        finally:
+            worker.close()
+
+    @unittest.skipUnless(sys.platform == 'darwin', 'real WebKit on macOS')
+    def test_phone_binding_and_layout_toggle_reload_the_current_page(self):
+        worker = self.worker()
+        try:
+            worker.show(self.origin + '/phone-layout', 15, layout='desktop')
+            self.assertEqual(worker.snapshot()['title'], 'desktop')
+            worker.remote_begin()
+            worker.remote_bind()
+            self.assertEqual(worker.snapshot()['title'], 'mobile')
+            self.assertEqual(worker.frame()['layout'], 'mobile')
+            worker.remote_input('layout', layout='desktop', view_id=worker.frame()['view_id'])
+            self.assertEqual(worker.snapshot()['title'], 'desktop')
+            self.assertEqual(worker.frame()['layout'], 'desktop')
+            worker.remote_bind()
+            self.assertEqual(worker.snapshot()['title'], 'desktop')
         finally:
             worker.close()
 

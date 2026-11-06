@@ -52,7 +52,7 @@ INPUT_PATH = '/api/remote-login/input'
 DONE_PATH = '/api/remote-login/done'
 PUBLIC_PATHS = frozenset({PAGE_PATH, FRAME_PATH, INPUT_PATH, DONE_PATH})
 COOKIE_NAME = 'agentos_remote_login'
-INPUT_KINDS = ('tap', 'text', 'key', 'nav', 'dialog')
+INPUT_KINDS = ('tap', 'text', 'key', 'nav', 'dialog', 'layout')
 DIALOG_ANSWERS = ('ok', 'cancel')
 KEYS = ('Enter', 'Backspace', 'Tab')
 NAV_ACTIONS = ('back', 'reload')
@@ -131,6 +131,9 @@ def validate_input(body):
     elif kind == 'nav':
         if body.get('action') in NAV_ACTIONS:
             return 'nav', {'action': body['action']}
+    elif kind == 'layout':
+        if isinstance(body.get('layout'), str) and body['layout'] in ('mobile', 'desktop'):
+            return 'layout', {'layout': body['layout']}
     elif kind == 'dialog':
         if body.get('answer') in DIALOG_ANSWERS:
             return 'dialog', {'answer': body['answer']}
@@ -301,6 +304,7 @@ class RemoteLogin:
                 issued = self._issued_match(cookie)
                 if issued is None:
                     return False
+                self.profile.login_window_bind(self.window)
                 self.bound_client, self._issued = issued, []
                 LOG.info('remote login bound site=%s', self.site)
                 return True
@@ -320,7 +324,7 @@ class RemoteLogin:
         if not isinstance(frame, dict):
             return None
         digest = hashlib.sha256(json.dumps([frame.get('jpeg'), frame.get('width'), frame.get('height'), frame.get('dialog'),
-                                            frame.get('focus'), frame.get('fields'), frame.get('links'), frame.get('view_id')],
+                                            frame.get('layout'), frame.get('focus'), frame.get('fields'), frame.get('links'), frame.get('view_id')],
                                            sort_keys=True).encode()).hexdigest()
         if not full and digest == self._last_frame:
             return {'unchanged': True}
@@ -335,7 +339,7 @@ class RemoteLogin:
         if checked is None:
             return False
         kind, fields = checked
-        if kind in ('tap', 'text', 'key', 'nav'):
+        if kind in ('tap', 'text', 'key', 'nav', 'layout'):
             fields['view_id'] = body.get('view_id')
         return bool(self.profile.login_window_input(self.window, kind, **fields))
 
@@ -372,6 +376,7 @@ margin-top:6px;overflow-wrap:anywhere}}
 <div id="live"><div id="dialog" class="hidden"><p class="note">Mac의 로그인 창이 이 질문에 답하기를 기다리고 있어요.</p><p id="dialog-text"></p>
 <div class="row"><button id="dialog-ok" class="main wide">확인</button><button id="dialog-cancel" class="wide">취소</button></div></div>
 <div id="qr" class="hidden"><p class="note">Mac 창에 QR 코드가 보여요. 화면의 QR 코드나 아래 링크를 누르면 카메라로 찍은 것처럼 그 주소가 이 휴대폰에서 열려요.</p><div id="qr-links"></div></div>
+<div class="row" aria-label="화면 선택"><button id="layout-mobile" aria-pressed="false">모바일 화면</button><button id="layout-desktop" aria-pressed="false">PC 화면</button></div>
 <div id="screen"><img id="shot" alt="Mac의 로그인 창"><input id="keys" type="password" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="Mac 창의 선택한 칸에 바로 입력"></div>
 <div id="compose" class="hidden"><p class="note">누른 칸에 넣을 내용을 여기에 쓰고 [넣기]를 누르세요. 한글도 이 휴대폰 키보드 그대로 써져요. 넣으면 그 칸의 원래 내용은 바뀌어요.</p>
 <div class="row"><input id="line" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done" maxlength="{TEXT_LIMIT}" aria-label="누른 칸에 넣을 내용"><button id="put" class="main">넣기</button></div></div>
@@ -395,6 +400,7 @@ async function frame(){{if(ended||busy)return;busy=true;const t0=Date.now();try{
 if(r.status===404){{end('이 링크는 닫혔어요.');return}}
 if(r.status===204){{full=false;if(t0>=checkAfter)applyFocus();return}}
 if(r.ok){{const d=await r.json();full=false;viewId=d.view_id;W=d.width;H=d.height;$('shot').src='data:image/jpeg;base64,'+d.jpeg;dialog(d.dialog);
+for(const mode of ['mobile','desktop']){{const b=$('layout-'+mode);b.classList.toggle('main',d.layout===mode);b.setAttribute('aria-pressed',String(d.layout===mode))}}
 F=d.focus||null;FS=Array.isArray(d.fields)?d.fields:[];qr(d.links);if(t0>=checkAfter){{applyFocus();if(F==='text')$('compose').classList.remove('hidden')}}}}}}catch(e){{}}finally{{busy=false}}}}
 // #293: typing goes straight into the Mac window.  A tap focuses the invisible #keys over the image in
 // the same gesture (iOS opens the keyboard only then); each change to it is read against a sentinel
@@ -462,6 +468,7 @@ $('keys').addEventListener('keydown',e=>{{if(e.key!=='Enter'||composing||e.isCom
 function dialog(d){{const box=$('dialog');if(!d){{box.classList.add('hidden');return}}$('dialog-text').textContent=d.text||'';$('dialog-cancel').classList.toggle('hidden',d.kind!=='confirm');box.classList.remove('hidden')}}
 $('dialog-ok').onclick=()=>post('{INPUT_PATH}',{{type:'dialog',answer:'ok'}}).then(()=>setTimeout(frame,150));
 $('dialog-cancel').onclick=()=>post('{INPUT_PATH}',{{type:'dialog',answer:'cancel'}}).then(()=>setTimeout(frame,150));
+for(const mode of ['mobile','desktop'])$('layout-'+mode).onclick=()=>moving({{type:'layout',layout:mode}});
 setInterval(frame,{REFRESH_MS});frame();
 // #602: a tap on a plain text field opens the visible input box (#line): an ordinary text input, so the
 // phone's own keyboard and IME (Korean included) work as anywhere else, and nothing is sent while

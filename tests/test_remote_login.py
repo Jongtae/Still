@@ -193,7 +193,7 @@ class WorkerOpsWhileParked(unittest.TestCase):
         worker.handle({'id': 9, 'op': 'frame'})
         self.assertEqual(worker.replies[-1], {'id': 9, 'ok': True, 'jpeg': 'AAAA', 'width': 1280.0, 'height': 900.0,
                                               'dialog': {'kind': 'confirm', 'text': 'delete?'}, 'focus': None,
-                                              'fields': [], 'links': [{'url': 'https://auth.example/qr?q=1'}], 'view_id': worker.remote_view()[1]},
+                                              'fields': [], 'links': [{'url': 'https://auth.example/qr?q=1'}], 'view_id': worker.remote_view()[1], 'layout': 'mobile'},
                          'nothing can be typed now; the last frame\'s QR links stay')
 
     def test_a_page_dialog_is_held_for_the_phone_only_during_a_phone_session(self):
@@ -344,7 +344,7 @@ class WorkerOpsWhileParked(unittest.TestCase):
                     self.assertEqual(worker.scripts, [browser_worker.REMOTE_FOCUS_SCRIPT])
                     self.assertEqual(worker.replies[-1], {'id': 11, 'ok': True, 'jpeg': 'anBn', 'width': 390.0, 'height': 844.0,
                                                           'dialog': None, 'focus': expected, 'fields': [], 'links': [],
-                                                          'view_id': worker.remote_view()[1]})
+                                                          'view_id': worker.remote_view()[1], 'layout': 'mobile'})
 
     def test_a_frame_names_the_editable_fields_by_kind_and_place_only(self):
         """#596: where the text and password fields are, as fractions of the viewport; anything else is dropped."""
@@ -1808,10 +1808,10 @@ class Element{
  setSelectionRange(){} getBoundingClientRect(){return {left:0,top:0,width:390,height:844};}
 }
 for(const id of ['live','end','keys','shot','dialog','dialog-text','dialog-ok','dialog-cancel','typing-failed','enter','tab','back',
- 'nav-back','reload','done','expire','cred','user','pass','qr','qr-links','compose','line','put'])new Element(id);
+ 'layout-mobile','layout-desktop','nav-back','reload','done','expire','cred','user','pass','qr','qr-links','compose','line','put'])new Element(id);
 ids.get('keys').type='password';ids.get('qr').classList.add('hidden');ids.get('compose').classList.add('hidden');let made=0;const clicks=[];
 const document={getElementById:id=>ids.get(id),get activeElement(){return active;},createElement:tag=>Object.assign(new Element('made-'+(++made)),{tag})};
-const posts=[];let frameAnswer={status:200,body:{jpeg:'AAAA',width:390,height:844,dialog:null,focus:null}};
+const posts=[];let frameAnswer={status:200,body:{layout:'mobile',jpeg:'AAAA',width:390,height:844,dialog:null,focus:null}};
 let inputAnswer=()=>({ok:true});const holds=[];
 const respond=(status,body)=>({status,ok:status>=200&&status<300,json:async()=>body});
 async function fetch(url,opts={}){
@@ -1833,6 +1833,12 @@ const tap=(x,y)=>$('shot').fire('click',{clientX:x,clientY:y});
 const type=(value,event={})=>{keys.value=value;keys.fire('input',event);};
 (async()=>{
  await tick();assert.equal(keys.value,S,'the sentinel is set at load');
+ assert.equal($('layout-mobile').attrs['aria-pressed'],'true');
+ $('layout-desktop').onclick();await tick();
+ assert.deepEqual(sent(),[{type:'layout',layout:'desktop'}]);
+ frameAnswer.body={...frameAnswer.body,layout:'desktop'};await ctx.frame();
+ assert.equal($('layout-desktop').attrs['aria-pressed'],'true');
+ assert.equal($('layout-mobile').attrs['aria-pressed'],'false');
  // A tap presses the point and opens the keyboard in the same gesture, as a password input until a frame says text.
  tap(195,422);
  assert.equal(active,keys,'focused inside the tap');assert.equal(keys.type,'password');assert.equal(keys.style.top,'422px');
@@ -2094,3 +2100,93 @@ class PhonePageTyping(unittest.TestCase):
         self.assertNotIn('id="send"', html)
         self.assertIn('<input id="keys" type="password"', html, 'a password input until the window says plain text')
         self.assertIn('<details id="autofill">', html)
+
+
+class PhoneLayoutSwitch(unittest.TestCase):
+    def worker(self):
+        from types import SimpleNamespace
+        worker = browser_worker.Worker.__new__(browser_worker.Worker)
+        worker.owner_visible = True
+        worker.pending, worker.popups, worker.replies = {}, [], []
+        worker.emit = worker.replies.append
+        worker.layout = 'desktop'
+        worker.view = SimpleNamespace(URL=lambda: SimpleNamespace(absoluteString=lambda: 'https://site.test/current'))
+        worker.loads = []
+        def navigate(ident, command, timeout, view=None):
+            worker.loads.append((command, view))
+            worker.layout = command['layout']
+            worker.phone_navigated()
+            worker.reply(ident)
+        worker.op_navigate = navigate
+        return worker
+
+    def test_binding_defaults_once_and_later_choice_survives_rebinding(self):
+        worker = self.worker()
+        worker.handle({'id': 1, 'op': 'remote_bind'})
+        self.assertEqual(worker.loads, [({'url': 'https://site.test/current', 'layout': 'mobile'}, worker.view)])
+        worker.handle({'id': 2, 'op': 'remote_bind'})
+        self.assertEqual(len(worker.loads), 1)
+        worker.phone_focus = True
+        worker.handle({'id': 3, 'op': 'remote_layout', 'layout': 'desktop', 'view_id': worker.remote_view()[1]})
+        self.assertEqual(worker.layout, 'desktop')
+        self.assertFalse(worker.phone_focus, 'a new page permits #707 centring again')
+        worker.handle({'id': 4, 'op': 'remote_bind'})
+        self.assertEqual(len(worker.loads), 2)
+        self.assertEqual(worker.layout, 'desktop')
+
+    def test_layout_reload_uses_existing_navigation_and_keeps_the_view(self):
+        from types import SimpleNamespace as NS
+        worker = self.worker()
+        del worker.op_navigate
+        agents, requests = [], []
+        view = worker.view
+        view.setCustomUserAgent_ = agents.append
+        view.stopLoading = lambda: None
+        view.loadRequest_ = lambda request: requests.append(request) or 'navigation'
+        worker.Foundation = NS(NSURL=NS(URLWithString_=lambda url: url),
+                               NSURLRequest=NS(requestWithURL_=lambda url: url))
+        worker.mobile_restore = object()  # phone-sized, regardless of the site's layout
+        worker.deadline = lambda *args, **kwargs: None
+        worker.handle({'id': 1, 'op': 'remote_bind'})
+        self.assertEqual(requests, ['https://site.test/current'])
+        self.assertEqual(agents, [browser_worker.user_agent_for('mobile')])
+        self.assertIs(worker.view, view)
+        self.assertEqual(worker.layout, 'mobile')
+        worker.handle({'id': 2, 'op': 'remote_layout', 'layout': 'desktop', 'view_id': worker.remote_view()[1]})
+        self.assertEqual(requests, ['https://site.test/current'] * 2)
+        self.assertEqual(agents[-1], browser_worker.user_agent_for('desktop'))
+
+    def test_mobile_bind_needs_no_reload_and_invalid_or_stale_input_is_refused(self):
+        worker = self.worker()
+        worker.layout = 'mobile'
+        worker.handle({'id': 1, 'op': 'remote_bind'})
+        self.assertEqual(worker.loads, [])
+        for value in ('tablet', '', None, False, [], {}):
+            self.assertIsNone(remote_login.validate_input({'type': 'layout', 'layout': value}))
+            worker.handle({'id': 2, 'op': 'remote_layout', 'layout': value, 'view_id': worker.remote_view()[1]})
+            self.assertEqual(worker.replies[-1]['error'], 'bad_layout')
+        worker.handle({'id': 3, 'op': 'remote_layout', 'layout': 'desktop', 'view_id': 'old'})
+        self.assertEqual(worker.replies[-1]['error'], 'stale_view')
+        self.assertEqual(worker.loads, [])
+
+    def test_authenticated_binding_and_input_reach_only_the_login_driver(self):
+        from types import SimpleNamespace
+        worker = self.worker()
+        profile = bs.BrowserProfile.__new__(bs.BrowserProfile)
+        profile._work_layouts = {'work': 'desktop'}
+        driver = SimpleNamespace(remote_bind=lambda: worker.handle({'id': 1, 'op': 'remote_bind'}),
+                                 remote_input=lambda kind, **fields: worker.handle({'id': 2, 'op': 'remote_' + kind, **fields}))
+        profile.login_window_driver = lambda window: driver
+        session = remote_login.RemoteLogin.__new__(remote_login.RemoteLogin)
+        session.profile, session.window, session.site = profile, 'login', 'site.test'
+        session._lock = threading.RLock()
+        session.bound_client, session._issued = None, ['cookie']
+        session.alive = lambda: True
+        self.assertFalse(session.client_ok('wrong'))
+        self.assertEqual(worker.loads, [])
+        self.assertTrue(session.client_ok('cookie'))
+        self.assertTrue(session.client_ok('cookie'))
+        self.assertEqual(len(worker.loads), 1)
+        self.assertTrue(session.input({'type': 'layout', 'layout': 'desktop', 'view_id': worker.remote_view()[1]}))
+        self.assertEqual(worker.layout, 'desktop')
+        self.assertEqual(profile._work_layouts, {'work': 'desktop'})

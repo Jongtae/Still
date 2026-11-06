@@ -2115,7 +2115,8 @@ class Worker:
         except Exception:
             self.fail(ident, 'worker_error')
 
-    def op_navigate(self, ident, command, timeout):
+    def op_navigate(self, ident, command, timeout, view=None):
+        view = self.view if view is None else view
         layout = command.get('layout')
         if layout is None:
             layout = self.layout
@@ -2125,15 +2126,17 @@ class Worker:
         if urlsplit(url).scheme not in ('http', 'https'):
             return self.fail(ident, 'bad_url')
         if layout != self.layout:
-            self.view.setCustomUserAgent_(user_agent_for(layout))
+            for target in [self.view] + [entry[0] for entry in self.popups]:
+                target.setCustomUserAgent_(user_agent_for(layout))
             if getattr(self, 'mobile_restore', None) is None:
                 size = DESKTOP_SIZE if layout == 'desktop' else MOBILE_SIZE
                 self.window.setContentSize_(self.Foundation.NSMakeSize(*size))
             self.layout = layout
         request = self.Foundation.NSURLRequest.requestWithURL_(self.Foundation.NSURL.URLWithString_(url))
-        self.deadline(ident, timeout, on_timeout=self.view.stopLoading)
+        self.deadline(ident, timeout, on_timeout=view.stopLoading)
+        self.navigation_view = view
         self.navigation = (ident, None)
-        navigation = self.view.loadRequest_(request)
+        navigation = view.loadRequest_(request)
         if self.navigation is not None and self.navigation[0] == ident:
             self.navigation = (ident, navigation)
 
@@ -2183,7 +2186,8 @@ class Worker:
             return
         if error is not None:
             return self.fail(ident, navigation_error_code(error))
-        self.reply(ident, url=str(self.view.URL().absoluteString()) if self.view.URL() else '', layout=self.layout)
+        view = getattr(self, 'navigation_view', self.view)
+        self.reply(ident, url=str(view.URL().absoluteString()) if view.URL() else '', layout=self.layout)
 
     def op_snapshot(self, ident, command, timeout):
         self.deadline(ident, timeout)
@@ -2656,7 +2660,7 @@ class Worker:
             # Its scripts are blocked too, so no focus is asked: nothing can be typed now.
             return self.reply(ident, jpeg=last[0], width=last[1], height=last[2],
                               dialog={'kind': held['kind'], 'text': held['text']}, focus=None, fields=[], links=last[3],
-                              view_id=view_id)
+                              view_id=view_id, layout=getattr(self, 'layout', 'mobile'))
         size = view.frame().size
         width, height = float(size.width), float(size.height)
         config = self.WebKit.WKSnapshotConfiguration.alloc().init()
@@ -2688,7 +2692,7 @@ class Worker:
                 dialog = {'kind': held['kind'], 'text': held['text']} if held is not None else None
                 self.reply(ident, jpeg=encoded, width=width, height=height, dialog=dialog,
                            focus=kind if kind in REMOTE_FOCUS_KINDS else None, fields=remote_fields(answer.get('fields')),
-                           links=links, view_id=view_id)
+                           links=links, view_id=view_id, layout=getattr(self, 'layout', 'mobile'))
                 self.fit_phone_page()   # #254: the next frame shows a wide page whole
             if self.held_dialog is not None:
                 return focused(None, 'held')
@@ -2772,6 +2776,32 @@ class Worker:
         else:
             view.reload()
         self.reply(ident)
+
+    def op_remote_bind(self, ident, command, timeout):
+        """Default to mobile once per login window, only when the phone actually binds."""
+        if not self._remote_allowed(ident):
+            return
+        if getattr(self, 'phone_bound', False):
+            return self.reply(ident)
+        self.phone_bound = True
+        if self.layout != 'mobile':
+            return self.reload_layout(ident, 'mobile', timeout)
+        self.reply(ident)
+
+    def op_remote_layout(self, ident, command, timeout):
+        if not self._remote_input_allowed(ident, command):
+            return
+        layout = command.get('layout')
+        if not isinstance(layout, str) or layout not in LAYOUTS:
+            return self.fail(ident, 'bad_layout')
+        return self.reload_layout(ident, layout, timeout)
+
+    def reload_layout(self, ident, layout, timeout):
+        # Reuse navigation's UA/size selection on the same view and cookie store.
+        view = self.front_view()
+        url = str(view.URL().absoluteString()) if view.URL() else ''
+        self.phone_navigated()   # #707: this reload starts a new page's centring
+        return self.op_navigate(ident, {'url': url, 'layout': layout}, timeout, view=view)
 
     def op_remote_begin(self, ident, command, timeout):
         """A phone session starts: page dialogs are held for its answer (``hold_dialog``)."""
@@ -3182,6 +3212,15 @@ def _popup_delegate_class():
                 for entry in self.worker.popups:
                     if entry[0] is view:
                         entry[1].setTitle_(f'Still · 로그인 · {host}')
+
+        def webView_didFinishNavigation_(self, view, navigation):
+            self.worker.navigation_finished(navigation)
+
+        def webView_didFailNavigation_withError_(self, view, navigation, error):
+            self.worker.navigation_finished(navigation, error)
+
+        def webView_didFailProvisionalNavigation_withError_(self, view, navigation, error):
+            self.worker.navigation_finished(navigation, error)
 
         def webViewDidClose_(self, view):
             # The page closed its own popup (window.close()), as a finished sign-in does.
