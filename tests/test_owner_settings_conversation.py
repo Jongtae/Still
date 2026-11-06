@@ -9,6 +9,7 @@ qualification suite is replaced by a pass for the one model-change case.  No
 live model or Telegram is contacted, and none is claimed.
 """
 import json
+from unittest.mock import patch
 from datetime import datetime
 import tempfile
 import threading
@@ -1107,6 +1108,7 @@ class PreparationManagementConversation(_Case):
         self.assertEqual((current['state'], current['max_runs'], current['accepted_by']), (prep.STATE_PROPOSED, 5, None),
                          'changed, still waiting for the owner\'s one yes')
         self.assertEqual(self.settings.pending_for_work('work-a'), [], 'nothing left waiting')
+        self.assertIn('예약 일정을 바꿨습니다', result['response'])
 
         other = edit('work-b', own, 4)  # another Work's edit of it
         offered_row = watch('work-c')
@@ -1114,8 +1116,18 @@ class PreparationManagementConversation(_Case):
         offered = edit('work-c', offered_row, 4)  # already offered to the owner
         accepted = watch('work-d', prep.STATE_SCHEDULED)
         scheduled = edit('work-d', accepted, 4)  # already accepted
+        # Codex P1 on #704: the owner accepts in web Settings right after the eligibility check.
+        racing = watch('work-e')
+        offered_check = self.store.notification_of
+
+        def accept_then_check(job_id, kind):
+            if job_id == 'work-e':
+                self.service.preparations.accept(racing['id'], prep.ACCEPTED_OWNER_SETTINGS)
+            return offered_check(job_id, kind)
+        with patch.object(self.store, 'notification_of', side_effect=accept_then_check):
+            raced = edit('work-e', racing, 4)
         for name, waiting, row in (('other work', other, own), ('offered', offered, offered_row),
-                                   ('scheduled', scheduled, accepted)):
+                                   ('scheduled', scheduled, accepted), ('accepted meanwhile', raced, racing)):
             with self.subTest(name):
                 self.assertEqual((waiting['applied'], waiting['requires_owner_confirmation']), (False, True))
                 self.assertNotEqual(self.service.preparations.get(row['id'])['max_runs'], 4)
