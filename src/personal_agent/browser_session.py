@@ -956,10 +956,18 @@ class BrowserSession:
             pending = self.__dict__.pop('_autonomy_payment', None) if payment else None
             if pending:
                 binding, description, ticket = pending
-                if not self.approvals.payment_autonomy(binding, description, ticket=ticket, dispatch=True):
+                authorized = self.approvals.payment_autonomy(binding, description, ticket=ticket, dispatch=True)
+                if not authorized:
                     from .agent_runtime import not_run
                     raise not_run(ToolError(msg('payment_autonomy.changed'), 'payment_autonomy_changed'))
-                self.approvals.payment_autonomy(binding, description, ticket=ticket)
+                try:
+                    self.approvals.payment_autonomy(binding, description, ticket=ticket)
+                except ToolError:
+                    # The step does not run: its receipt no longer holds it as replayed (Codex P2 on #668).
+                    release = getattr(self.approvals, 'payment_autonomy_release', None)
+                    if callable(release):
+                        release(authorized)
+                    raise
             return operation(*args, timeout)
         except ToolError:
             raise

@@ -8805,14 +8805,27 @@ class AgentService:
             from .agent_runtime import unknown_effect_targets
             if unknown_effect_targets(self.store,job['id']):
                 raise not_run(ToolError(msg('payment_autonomy.held'),'effect_unknown'))
-            for old in db.execute("SELECT detail FROM tool_events WHERE job_id=? AND tool='payment_autonomy'",(job['id'],)):
+            # A receipt released because its step was stopped before dispatch holds no replay (Codex P2 on #668).
+            for old in db.execute("SELECT detail FROM tool_events WHERE job_id=? AND tool='payment_autonomy' AND status='authorized'",(job['id'],)):
                 if json.loads(old['detail']).get('evidence',{}).get('digest')==keys['digest']:
                     raise not_run(ToolError(msg('payment_autonomy.held'),'payment_replayed'))
-        db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+        receipt=db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                    (job['id'],'payment_autonomy','authorized',json.dumps({'scope':'payment','effect':'none',
-                    'evidence':authorization},ensure_ascii=False),time.time()))
+                    'evidence':authorization},ensure_ascii=False),time.time())).lastrowid
         self.record_conversation_notice(msg('payment_autonomy.notice',label=label),job=job,db=db)
-        return authorization
+        return {**authorization,'receipt':receipt}
+
+    def _release_payment_autonomy(self, job, authorization):
+        """Mark a mode receipt ``not_run`` when the final recheck stopped its step before dispatch.
+
+        The record stays; only an ``authorized`` receipt is a replay hold, so the owner turning
+        the mode off and on again does not leave that exact step refused (Codex P2 on #668).
+        """
+        receipt=(authorization or {}).get('receipt')
+        if receipt is None:return
+        with self.store.db() as db:
+            db.execute("UPDATE tool_events SET status='not_run' WHERE id=? AND job_id=? AND tool='payment_autonomy' "
+                       "AND status='authorized'",(receipt,job['id']))
 
     def _deliver_payment_autonomy_notice(self, job, authorization):
         surface=self.surface_of(job)
@@ -8829,6 +8842,7 @@ class AgentService:
                 return service._authorize_payment_autonomy(job,binding,description,**kwargs)
             def request(self,binding,description):return service._request_browser_step(job,binding,description)
             def payment_autonomy_notice(self,ticket):return service._deliver_payment_autonomy_notice(job,ticket)
+            def payment_autonomy_release(self,authorization):return service._release_payment_autonomy(job,authorization)
             def api_effect_current(self):return not service.work_stopped(job['id'])
             # #709: a login page during this Work asks the owner in-flow.
             def login_required(self,url,explicit=False,*,window_url=None):return service._request_browser_login(job,url,explicit,window_url=window_url)

@@ -129,6 +129,31 @@ class Settings(Mode, _Case):
         self.assertEqual(driver.approved, [True])
         self.assert_receipt(job['id'], 'browser_click')
 
+    def test_a_step_stopped_by_the_final_recheck_is_not_held_as_replayed(self):
+        # Codex P2 on #668: the owner turns the mode off while its notice is being delivered.
+        self.switch(True)
+        job = self.store.job(self.store.enqueue('pay', 'recheck', owner_typed=True))
+        browser, driver = self.browser(job)
+        deliver = self.service._deliver_payment_autonomy_notice
+        def off_during_notice(job_, authorization):
+            deliver(job_, authorization)
+            self.switch(False)
+        with mock.patch.object(self.service, '_deliver_payment_autonomy_notice', off_during_notice):
+            with self.assertRaises(ToolError) as stopped:
+                browser.click({'target': 'Buy now', 'effect': 'payment'})
+        self.assertEqual(stopped.exception.code, 'payment_autonomy_changed')
+        self.assertEqual(driver.approved, [], 'nothing was dispatched')
+        with self.store.db() as db:
+            statuses = [row['status'] for row in db.execute(
+                "SELECT status FROM tool_events WHERE job_id=? AND tool='payment_autonomy'", (job['id'],))]
+        self.assertEqual(statuses, ['not_run'], 'the record stays, released')
+        self.switch(True)
+        browser.click({'target': 'Buy now', 'effect': 'payment'})
+        self.assertEqual(driver.approved, [True], 'the same step runs once the mode is on again')
+        with self.assertRaises(ToolError):
+            browser.click({'target': 'Buy now', 'effect': 'payment'})
+        self.assertEqual(driver.approved, [True], 'a dispatched step is still held as replayed')
+
     def test_browser_held_submit_and_secret_fields(self):
         self.switch(True)
         job = self.store.job(self.store.enqueue('pay', 'submit', owner_typed=True))
