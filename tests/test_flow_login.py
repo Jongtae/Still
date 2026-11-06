@@ -1121,7 +1121,8 @@ class InFlowLogin(LoginHarness):
             pass
         self.assertFalse([body for method, body in self.calls if 'p7l:' in flat(body or {})])
         self.assertEqual(self.state(job_id), 'unavailable')
-        self.assertEqual(self.store.job(job_id)['status'], 'failed')
+        # #690: the page still needs the owner's sign-in (through Settings): waiting for the owner, not failed.
+        self.assertEqual(self.store.job(job_id)['status'], 'partial')
 
     def test_a_long_public_link_in_the_report_reaches_the_owner_whole(self):
         link = 'https://example.org/items/' + 'x' * 230 + '?page=2'

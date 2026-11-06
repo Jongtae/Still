@@ -1685,7 +1685,8 @@ class LoopTests(unittest.TestCase):
                         {'content': '장바구니에 담았습니다.'})
         caps = self.caps(script, FakeDriver())
         result = run_agent(caps.adapter, CFG, '', [{'role': 'user', 'content': '담아줘'}], '', caps, self.record)
-        self.assertEqual(result.outcome, 'failed')
+        # #690: never a success claim; waiting for the owner's sign-in is partial, not failed (both routes).
+        self.assertEqual(result.outcome, 'partial')
         failed = [json.loads(d) for t, s, d in self.events if s == 'failed' and t == 'browser_open']
         self.assertEqual(failed[0]['error'], bs.LOGIN_REQUIRED_TEXT)
         # #1269: the sign-in page was read from the session, so the Work's context names that source.
@@ -1697,7 +1698,8 @@ class LoopTests(unittest.TestCase):
                         {'content': '장바구니를 확인했습니다.'})
         caps = self.caps(script, FakeDriver())
         result = run_agent(caps.adapter, CFG, '', [{'role': 'user', 'content': '확인해줘'}], '', caps, self.record)
-        self.assertEqual(result.outcome, 'failed')
+        # #690: never a success claim; waiting for the owner's sign-in is partial, not failed (both routes).
+        self.assertEqual(result.outcome, 'partial')
         failed = [json.loads(d) for t, s, d in self.events if s == 'failed' and t == 'browser_sign_in']
         self.assertEqual(failed[0]['error'], bs.LOGIN_REQUIRED_TEXT)
         running = [json.loads(d) for t, s, d in self.events if s == 'running' and t == 'browser_sign_in']

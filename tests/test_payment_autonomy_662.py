@@ -140,8 +140,11 @@ class Settings(Mode, _Case):
         self.assert_receipt(job['id'], 'browser_submit')
         browser.open({'url': ORIGIN + '/checkout', 'effect': 'navigate'})
         for field, value in (('카드번호', '4242424242424242'), ('CVC', '123')):
-            with self.assertRaises(ToolError):
+            with self.assertRaises(ToolError) as refused:
                 browser.type({'target': field, 'text': value, 'effect': 'payment'})
+            self.assertEqual(refused.exception.code, 'approval_required')
+            # Codex P2 on #668: the field kept out of the mode waits on a real request the owner can approve.
+            self.assertEqual((self.service._browser_request(job['id']) or {}).get('state'), 'requested')
         self.assertEqual(len(self.receipts(job['id'])), 1)
 
     def test_api_money_owner_and_unattended_and_off_before_dispatch(self):
