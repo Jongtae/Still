@@ -9,11 +9,11 @@ RESUMABLE_ACTION | failed, partial, interrupted, succeeded | Can an action conti
 RESUMABLE_ACTION_DECISION | running, failed, partial, interrupted, succeeded | Can an action decision attach to this Work? | quickstart_service.py:_decide_browser_step.commit
 RESUMABLE_LOGIN_EXPLICIT | failed, partial, succeeded | Can an explicit login request continue this Work? | quickstart_service.py:_settle_browser_login
 RESUMABLE_INTERRUPTED | partial, failed, interrupted | Can recovery update the stopped Work cause? | quickstart_service.py:resume_action_work
-INCOMPLETE_RESULT | failed, partial | Did the Work return an incomplete result for judgment or look-back? | agent_runtime.py:withheld_effect; agent_runtime.py:evidence_qualifiers; owner_model.py:turn_outcome; quickstart_service.py:orchestration_step
+INCOMPLETE_RESULT | failed, partial | Did the Work return an incomplete result for judgment or look-back? | agent_runtime.py:withheld_effect; agent_runtime.py:evidence_qualifiers; owner_model.py:turn_outcome; quickstart_service.py:orchestration_step; work_status.py:ended_abnormally (an unresumed owner wait, #690)
 DELIVERED_RESULT | succeeded, partial | Did the Work deliver a usable result? | preparations.py:run_outcome; preparations.py:settle; quickstart.py:do_GET; quickstart_service.py:_owner_model_run; quickstart_service.py:fold_delivered_steer; quickstart_service.py:owner_model_eligible; quickstart_service.py:run_due_preparation; quickstart_store.py:__init__; quickstart_store.py:save_workspace_result
 AVAILABLE_RESULT | succeeded, partial, failed | Is a result available for inspection or look-back? | owner_model.py:dream_works; quickstart_service.py:task_progress
 REVIEWABLE_RESULT | succeeded, partial, failed, unknown | Can the Work be self-reviewed? | owner_model.py:REVIEWABLE_STATUSES; quickstart_service.py:_owner_model_run
-ABNORMAL_END | failed, interrupted | Did execution fail or get interrupted? | quickstart_service.py:reply_controls; quickstart_service.py:safe_retry
+ABNORMAL_END | failed, interrupted | Did execution fail or get interrupted (or, #690, end partial on an owner wait nothing resumes)? | quickstart_service.py:reply_controls; quickstart_service.py:safe_retry
 NEEDS_ATTENTION | failed, partial, interrupted, unknown | Does the ended Work need attention? | quickstart_service.py:_progress_status; quickstart_service.py:task_progress
 OBSERVED_STOP | failed, interrupted, cancelled | Is a stopped route outcome observable? | quickstart_service.py:_observed_route.outcome
 STEER_FAILED | failed, interrupted, cancelled, unsupported | Did the steered Work fail to apply the steer? | quickstart_service.py:steer_disposition_notice
@@ -121,9 +121,17 @@ def has_reviewable_result(status: str | None) -> bool:
     """Can the Work be self-reviewed?"""
     return status in REVIEWABLE_RESULT
 
-def ended_abnormally(status: str | None) -> bool:
-    """Did execution fail or get interrupted?"""
-    return status in ABNORMAL_END
+def ended_abnormally(status: str | None, unresumed_owner_wait: bool = False) -> bool:
+    """Did execution fail or get interrupted?
+
+    The retry consumers' status rule (``safe_retry``, ``reply_controls``).  #690: a Work that waits
+    for the owner ends ``partial``, not ``failed``; when it ended on such a wait that no automatic
+    path resumes (``unresumed_owner_wait``: not a sign-in the in-flow login re-queues, not a Work
+    parked for a connection or a folder, which is not ended), it may be retried as a failed one
+    could, so the status change never loses the owner's way back.  Every other retry guard
+    (unknown or unaccounted effects, a mutation, unsafe replay inputs) still applies.
+    """
+    return status in ABNORMAL_END or (unresumed_owner_wait and status in INCOMPLETE_RESULT)
 
 def needs_attention(status: str | None) -> bool:
     """Does the ended Work need attention?"""

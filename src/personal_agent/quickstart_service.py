@@ -4306,7 +4306,7 @@ class AgentService:
         _ok,blocker=self.may_continue(previous['id'],'retry')
         if blocker in ('unknown','unaccounted'):
             return False,UNKNOWN_EFFECT_RETRY_REFUSAL
-        if not ws.ended_abnormally(previous.get('status')):
+        if not ws.ended_abnormally(previous.get('status'),self.unresumed_owner_wait(previous['id'])):
             return False,msg('quickstart_service.retry_not_failed')
         # #730 review: a Work that itself ran as a refused retry is part of a retry
         # chain; its retry attempt was already spent, so it is not retried again.
@@ -6425,6 +6425,31 @@ class AgentService:
             rows=db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=? AND id>? ORDER BY id',(job_id,since or 0)).fetchall()
         return outcome_from_events([(row['tool'],row['status'],row['detail']) for row in rows],tools)
 
+    def unresumed_owner_wait(self, job_id):
+        """Whether this Work ended on a wait for the owner's own step that no automatic path resumes (#690).
+
+        Read from either route's records (``owner_wait_steps``).  A Work whose in-flow login can still
+        resume it (a login waiting for the owner, or an expired one its prompt may reopen) is re-queued
+        by the owner's sign-in (``_settle_browser_login``), and a Work parked for a connection or a
+        folder is ``awaiting_connection``, not ended; neither needs a retry.  Any other recorded owner
+        wait (a missing connection that did not park, a login that can no longer resume the Work)
+        leaves the owner only the retry (``ended_abnormally``).
+        """
+        from .agent_runtime import owner_wait_steps
+        if not isinstance(job_id,str) or not job_id:return False
+        login=(self._browser_login(job_id) or {}).get('state')
+        if login in (*BROWSER_LOGIN_PENDING_STATES,'resuming') or self._login_reopenable(job_id):return False
+        with self.store.db() as db:
+            rows=db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=? ORDER BY id',(job_id,)).fetchall()
+        return bool(owner_wait_steps([(row['tool'],row['status'],row['detail']) for row in rows]))
+
+    def cli_owner_waits(self, job_id, tools, since=0):
+        """``[(tool, reason)]`` of this CLI attempt's calls that wait for the owner's own step (#690)."""
+        from .agent_runtime import owner_wait_steps
+        with self.store.db() as db:
+            rows=db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=? AND id>? ORDER BY id',(job_id,since or 0)).fetchall()
+        return owner_wait_steps([(row['tool'],row['status'],row['detail']) for row in rows],tools)
+
     # -- ORCH-01 (#710): the Judgment AI orchestrates each Work -----------------
     #: Durable orchestration state: only whether it last worked, for the
     #: once-said fallback notice.
@@ -7937,7 +7962,7 @@ class AgentService:
         status=job.get('status')
         # Owner direction 2026-09-30: no 상세 button.  It read an in-memory turn
         # record, so after a restart it did nothing; the reply itself says what happened.
-        if ws.ended_abnormally(status) and not blocked:
+        if ws.ended_abnormally(status,self.unresumed_owner_wait(job.get('id'))) and not blocked:
             allowed,_reason=self.safe_retry(job)
             return (CONTROL_RETRY,) if allowed else ()
         # Never a retry for an unknown effect: the owner checks first.
@@ -13161,8 +13186,12 @@ class AgentService:
         # request was satisfied; the Work's own events decide.
         run.outcome,cli_refusals=self.cli_work_outcome(job['id'],run.capabilities.tools,since=run.attempt_start)
         run.refusals.extend(cli_refusals)
+        # #690: a wait only the owner can resolve (a sign-in, a missing connection) names the owner's
+        # next step, as the direct route's withheld record does (``record`` in ``_run_worker_attempts``).
+        waits=self.cli_owner_waits(job['id'],run.capabilities.tools,since=run.attempt_start)
+        run.refusals.extend(waits);run.owner_steps.extend(reason for _tool,reason in waits)
         # #981: the worker asked for the owner's sign-in, so this attempt waits for the owner:
-        # no goal judgment can call it reached, and #709 below keeps it unfinished.
+        # no goal judgment can call it reached (#690: its recorded wait already keeps it partial).
         run.waits_for_sign_in=self.sign_in_requested(job['id'],since=run.attempt_start)
         # #774 review: a relayed calendar read with no connection parks the Work
         # for the connector handoff and resumes it once, as on the direct route.
@@ -13432,7 +13461,9 @@ class AgentService:
                        ('assistant',run.response,job['channel'],time.time(),job.get('workspace_id'),job['id'],
                         'system' if run.system_response else None))
             # #709: a run that reached a login page did not finish its request -
-            # unless (#752) the goal judgment saw it met another way.
+            # unless (#752) the goal judgment saw it met another way.  #690: a recorded sign-in wait
+            # already keeps either route partial (``withheld_partial``); this is the floor for a login
+            # still pending that no recorded step of this attempt shows (a cut-off call, an earlier attempt).
             if run.outcome=='succeeded' and ((self._browser_login(job['id']) or {}).get('state')=='requested' or run.waits_for_sign_in) \
                     and not (run.orchestration is not None and run.orchestration.terminal==REACHED):
                 run.outcome='partial';run.resolved_blocker=False

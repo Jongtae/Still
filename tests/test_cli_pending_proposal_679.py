@@ -71,9 +71,11 @@ class RecordedStepState(unittest.TestCase):
         completed = ('settings_continuation', 'queued', json.dumps({'draft_ids': ['d1']}))
         self.assertEqual(outcome_from_events([bridge_event(draft, 'settings_change'), completed]), ('succeeded', []))
 
-    def test_a_missing_sign_in_keeps_the_cli_routes_own_owner_wait(self):
-        # #709/#981 own a sign-in page on this route (they keep the Work partial and offer the login).
-        self.assertEqual(trail_steps([bridge_event({'state': 'login_required'}, 'browser_open')])[0][2], 'succeeded')
+    def test_a_missing_sign_in_is_read_by_the_same_rule(self):
+        # #690: a sign-in page is withheld on this route too, and waiting for the owner keeps the Work partial.
+        event = bridge_event({'state': 'login_required'}, 'browser_open')
+        self.assertEqual(trail_steps([event])[0][2], 'withheld')
+        self.assertEqual(outcome_from_events([event]), ('partial', []))
 
 
 class ProposalRoutes(_Case):

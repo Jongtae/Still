@@ -2906,23 +2906,52 @@ def trail_steps(rows, tools=None):
   steps.append((tool,action,state,data,' '.join(QUALIFIER_NOTES[label] for label in gaps) if state=='incomplete' else None))
  return steps
 
-def recorded_withheld(action, detail, completed=frozenset()):
- """The ``Withheld`` of a call recorded as returning normally, from its recorded Evidence, or None (#679).
+def recorded_evidence(detail):
+ """The Evidence summary of one recorded call, with ``needs_setup`` restored from its qualifier (#690).
 
- The CLI route's bridge records a normal return as ``succeeded`` with the call's Evidence summary
- (``evidence_summary``), which keeps the typed fields ``withheld_effect`` reads.  The same rule then
- classifies it as the direct route classifies the result itself: a result that advanced the Work
- and waits for the owner's decision (a draft, a proposal) is withheld on both routes.  A settings
- draft whose continuation was queued (``completed``, #1445) no longer waits.  Of the results that
- advanced nothing, a refused write stays withheld as before; a missing connection or sign-in keeps
- the CLI route's own owner-prerequisite handling (#709/#981 sign-in, #774 connector, #182 folder),
- which reads the same records.
+ ``evidence_summary`` records a setup-required result as the ``setup-required`` qualifier (the one
+ ``evidence_qualifiers`` derives from ``needs_setup``), so restoring the flag is lossless and lets
+ ``withheld_effect`` read the record exactly as it reads the result.
  """
  detail=detail if isinstance(detail,dict) else {}
  evidence=detail.get('evidence') if isinstance(detail.get('evidence'),dict) else {}
+ return {**evidence,'needs_setup':True} if owner_wait(evidence) else evidence
+
+def recorded_withheld(action, detail, completed=frozenset()):
+ """The ``Withheld`` of a call recorded as returning normally, from its recorded Evidence, or None (#679, #690).
+
+ The CLI route's bridge records a normal return as ``succeeded`` with the call's Evidence summary
+ (``evidence_summary``), which keeps the typed fields ``withheld_effect`` reads.  The same rule then
+ classifies it as the direct route classifies the result itself, for every shape it covers: a draft
+ or a proposal waiting for the owner's decision, a refused write, and (#690) a wait only the owner
+ can resolve (``owner_wait``: a sign-in, a missing connection).  A settings draft whose continuation
+ was queued (``completed``, #1445) no longer waits.
+ """
+ evidence=recorded_evidence(detail)
  if action=='settings_change' and evidence.get('draft_id') in completed:return None
- withheld=withheld_effect(action,evidence)
- return withheld if withheld is not None and (withheld.advanced or evidence.get('refused_because')) else None
+ return withheld_effect(action,evidence)
+
+def owner_wait(result):
+ """Whether a tool result (or its recorded Evidence summary) is setup-required and names what it requires (#690).
+
+ The typed shape of a result that stops for the owner's own step, whatever the tool: ``needs_setup``
+ naming what it ``requires`` (a sign-in, a connection, a folder grant).  Its recorded summary
+ carries the same as the ``setup-required`` qualifier with ``requires``.
+ """
+ if not isinstance(result,dict):return False
+ qualifiers=result.get('qualifiers')
+ setup=result.get('needs_setup') is True or (isinstance(qualifiers,(list,tuple)) and 'setup-required' in qualifiers)
+ return setup and isinstance(result.get('requires'),str) and bool(result['requires'])
+
+def withheld_partial(withheld):
+ """Whether a withheld call keeps its Work ``partial`` rather than ``failed`` (#659, #690), on both routes.
+
+ It advanced the Work (a draft, a proposal: ``advanced``), or it waits for a step only the owner can
+ take (a sign-in, a connection: ``owner_step``): a failed header would misread a Work that is
+ waiting for the owner, whether or not another step advanced first.  A refused write or a
+ specialist that accomplished nothing waits for nothing the owner can do, so it stays ``failed``.
+ """
+ return withheld is not None and (withheld.advanced or withheld.owner_step)
 
 def _state_free_actions():
  """The actions ``state_change_short`` never holds against a Work: they change no outside state."""
@@ -3236,11 +3265,34 @@ def outcome_from_events(rows, tools=None):
  trail=[(action,state) for _tool,action,state,_detail,_reason in steps]
  refusals=[(tool,reason) for tool,_action,state,_detail,reason in steps if state in FAILED_CALL_STATES]
  if all(state in SETTLED_STATES for _action,state in trail) or recovered(trail):return 'succeeded',refusals
- # #679: a withheld call advanced the Work exactly when ``withheld_effect`` says so (a draft or a
- # proposal waiting for the owner), as on the direct route; a refused write did not.
+ # #679, #690: a withheld call keeps the Work partial exactly as on the direct route
+ # (``withheld_partial``): a draft or a proposal, or a wait the owner can resolve; a refused write does not.
  advanced=any(state in ('succeeded','incomplete') for _action,state in trail) or any(
-  state=='withheld' and getattr(recorded_withheld(action,detail),'advanced',False) for _tool,action,state,detail,_reason in steps)
+  state=='withheld' and withheld_partial(recorded_withheld(action,detail)) for _tool,action,state,detail,_reason in steps)
  return ('partial' if advanced else 'failed'),refusals
+
+def owner_wait_steps(rows, tools=None):
+ """``[(tool, reason)]`` of the recorded calls that wait for a step only the owner can take (#690).
+
+ The CLI route's counterpart of the direct route's withheld records: there the reason (the
+ owner's next step) is the step's refusal and owner step; here the bridge recorded the call as
+ returning normally, so the same ``withheld_effect`` reason is read back from its Evidence.
+ The direct route's own withheld records (``failed`` with ``state: withheld``) are read too, so a
+ Work of either route can tell that it ended on such a wait (``AgentService.unresumed_owner_wait``).
+ """
+ rows=list(rows);waits=[]
+ for tool,action,state,detail,_reason in trail_steps(rows,tools):
+  withheld=recorded_withheld(action,detail) if state=='withheld' else None
+  if withheld is not None and withheld.owner_step:waits.append((tool,withheld.reason))
+ for tool,status,detail in rows:
+  if status!='failed':continue
+  try:data=detail if isinstance(detail,dict) else json.loads(detail or '{}')
+  except (TypeError,ValueError):continue
+  if not isinstance(data,dict) or data.get('state')!='withheld':continue
+  action=data.get('host_action') or (tools or {}).get(tool,{}).get('host_action') or tool
+  withheld=withheld_effect(action,recorded_evidence(data))
+  if withheld is not None and withheld.owner_step:waits.append((tool,withheld.reason))
+ return waits
 
 class Capabilities:
  def __init__(self,store,adapter,config,key,job_id,record,readonly=False,network=None,document_access=True,packages=None,allowed_tools=None,document_context=False,public_page_scope=None,memory_approval=None,inherited_provenance=(),calendar=None,calendar_owner=None,memory_request=None,current_packages=None,lookup_sources=None,delegated=False,inherited_excluded=(),budget=None,browser=None,browser_approvals=None,browser_unavailable=None,judgments=None,secret_redactor=None,current_context=None,preparations=None,location_request=None,owner_update=None,settings=None,information_use=None,skills=None,drive=None,mail=None,connections=None,a2a=None):
@@ -4808,9 +4860,10 @@ def mail_rejection(status):
  if isinstance(status,int) and status>=500:return ToolError(msg('agent_runtime.mail_unavailable'),'mail_unavailable')
  return ToolError(msg('agent_runtime.mail_rejected'),'mail_rejected')
 
-#: An effect a tool declined or deferred, and whether the call still advanced
-#: this Work.  See ``withheld_effect``.
-Withheld=namedtuple('Withheld','reason advanced')
+#: An effect a tool declined or deferred, whether the call still advanced
+#: this Work, and (#690) whether it waits for a step only the owner can take
+#: (a sign-in, a connection).  See ``withheld_effect``.
+Withheld=namedtuple('Withheld','reason advanced owner_step',defaults=(False,))
 
 #: #659: a preparation the owner has not accepted yet.
 PREPARATION_PROPOSED=msg('agent_runtime.preparation_proposed')
@@ -4846,20 +4899,25 @@ def withheld_effect(name,result):
  completed is the same unobserved claim one level down.  A settings draft
  and a partly finished specialist report are real, inspectable work with a
  step remaining, which is what ``partial`` already means.
+
+ ``owner_step`` (#690): a missing connection or a page that needs the owner's
+ sign-in advanced nothing either, but it waits for a step only the owner can
+ take, so its Work is ``partial`` (waiting for the owner), never ``failed``
+ (``withheld_partial``), on both routes.
  """
  if not isinstance(result,dict):return None
  # #818: a pending MemoryCandidate is a proposal the owner confirms, not a withheld effect.
  if memory_proposal(name,result):return None
  if name=='calendar_query' and result.get('needs_setup') is True:
   # #606 T5: nothing was read, so a model's schedule claim is unsupported.
-  return Withheld(result.get('next_step') or CALENDAR_UNCONFIGURED,advanced=False)
+  return Withheld(result.get('next_step') or CALENDAR_UNCONFIGURED,advanced=False,owner_step=True)
  if name in DRIVE_ACTIONS and result.get('needs_setup') is True:
-  return Withheld(result.get('next_step') or DRIVE_UNCONNECTED,advanced=False)
+  return Withheld(result.get('next_step') or DRIVE_UNCONNECTED,advanced=False,owner_step=True)
  if name in MAIL_ACTIONS and result.get('needs_setup') is True:
-  return Withheld(result.get('next_step') or MAIL_UNCONNECTED,advanced=False)
+  return Withheld(result.get('next_step') or MAIL_UNCONNECTED,advanced=False,owner_step=True)
  if name in BROWSER_ACTIONS and result.get('state')=='login_required':
   # #656: the profile holds no session for this page; nothing was acted on.
-  return Withheld(result.get('next_step') or msg('agent_runtime.this_page_needs_a_sign_in'),advanced=False)
+  return Withheld(result.get('next_step') or msg('agent_runtime.this_page_needs_a_sign_in'),advanced=False,owner_step=True)
  if result.get('refused_because'):
   return Withheld(MEMORY_REFUSALS.get(result['refused_because'],
                                       msg('agent_runtime.memory_confirmation_required')),
@@ -5884,6 +5942,8 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
  sources=[];executions=[];failed=False;successful=0;invalid_calls=set()
  # #818: memory proposals recorded; they neither advance nor fail the Work (as in outcome_from_events).
  proposals=0
+ # #690: withheld calls that keep the Work partial (``withheld_partial``), as ``outcome_from_events`` reads them.
+ held_partial=0
  # (tool, note) for calls that ran but whose own Evidence says they are incomplete.
  incomplete=[]
  # Still-rendered text for calls whose result was observed (#598 H1).
@@ -5931,7 +5991,7 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
   # outranks a state change that fell short.
   elif (claim is None or claim['status']=='done') and judgment=='yes' and not invalid_calls and not state_change_short(steps):
    result.outcome='succeeded'
-  else:result.outcome='partial' if successful else 'failed'
+  else:result.outcome='partial' if successful or held_partial else 'failed'
   unknown=[]
   if _external(trail) and result.outcome!='succeeded':
    if judgment=='no':unknown.append(getattr(judgment,'gap','') or GOAL_NOT_SHOWN)
@@ -6129,6 +6189,7 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
      if withheld:
       failed=True;trail.append((action,'withheld'));failures.append((name,withheld.reason))
       if withheld.advanced:successful+=1
+      held_partial+=withheld_partial(withheld)
       # 'error' is the field the owner-visible cause is built from; without it
       # the turn would report a failure it could not explain.
       record(name,'failed',json.dumps({**trace,'state':'withheld','error':withheld.reason},ensure_ascii=False))
