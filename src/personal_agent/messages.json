@@ -10420,6 +10420,42 @@
   "ja": "予約の予定を変更しますか: {title}\n  現在: {before}\n  変更後: {after}",
   "zh": "要更改预约的计划吗：{title}\n  现在：{before}\n  更改后：{after}"
  },
+ "settings_orchestrator.preparation_edit_receipt": {
+  "ko": "예약 일정을 바꿨습니다: {title}\n  {after}",
+  "en": "Changed the reservation's schedule: {title}\n  {after}",
+  "ja": "予約の予定を変更しました: {title}\n  {after}",
+  "zh": "已更改预约的计划：{title}\n  {after}"
+ },
+ "settings_orchestrator.preparation_receipt_cancel": {
+  "ko": "예약을 취소했습니다: {reservation}",
+  "en": "Cancelled the reservation: {reservation}",
+  "ja": "予約を取り消しました: {reservation}",
+  "zh": "已取消预约：{reservation}"
+ },
+ "settings_orchestrator.preparation_receipt_accept": {
+  "ko": "예약을 수락했습니다: {reservation}",
+  "en": "Accepted the reservation: {reservation}",
+  "ja": "予約を承認しました: {reservation}",
+  "zh": "已接受预约：{reservation}"
+ },
+ "settings_orchestrator.preparation_receipt_pause": {
+  "ko": "예약을 일시 정지했습니다: {reservation}",
+  "en": "Paused the reservation: {reservation}",
+  "ja": "予約を一時停止しました: {reservation}",
+  "zh": "已暂停预约：{reservation}"
+ },
+ "settings_orchestrator.preparation_receipt_resume": {
+  "ko": "예약을 다시 시작했습니다: {reservation}",
+  "en": "Resumed the reservation: {reservation}",
+  "ja": "予約を再開しました: {reservation}",
+  "zh": "已恢复预约：{reservation}"
+ },
+ "settings_orchestrator.preparation_receipt_run_now": {
+  "ko": "지금 한 번 실행을 시작했습니다: {reservation}",
+  "en": "Started a run now: {reservation}",
+  "ja": "今すぐ1回の実行を開始しました: {reservation}",
+  "zh": "已立即开始运行一次：{reservation}"
+ },
  "settings_orchestrator.preparation_edit_format": {
   "ko": "id와 바꿀 due, timezone, recurrence 또는 watch의 every_minutes, until, max_runs를 JSON으로 주세요. 목표는 바꿀 수 없습니다.",
   "en": "Provide JSON with id and due, timezone, recurrence, or watch every_minutes, until, max_runs. The goal cannot be edited.",
@@ -10851,6 +10887,18 @@
   "en": "before {w}, {m}/{d} {t} ({zone})",
   "ja": "{m}月{d}日({w}) {t}より前 ({zone})",
   "zh": "{m}月{d}日（{w}） {t}之前 ({zone})"
+ },
+ "preparations.schedule_datetime_until": {
+  "ko": "{m}월 {d}일({w}) {t}까지",
+  "en": "until {w}, {m}/{d} {t}",
+  "ja": "{m}月{d}日({w}) {t}まで",
+  "zh": "截至{m}月{d}日（{w}） {t}"
+ },
+ "preparations.schedule_datetime_until_zone": {
+  "ko": "{m}월 {d}일({w}) {t}까지 ({zone})",
+  "en": "until {w}, {m}/{d} {t} ({zone})",
+  "ja": "{m}月{d}日({w}) {t}まで ({zone})",
+  "zh": "截至{m}月{d}日（{w}） {t} ({zone})"
  },
  "preparations.schedule_every_weekday": {
   "ko": "평일마다",

@@ -951,6 +951,19 @@ class SettingsOrchestrator:
                    title=redact_known_secrets(self.store, prep.owner_title(current)),
                    before=prep.schedule_text(current, home_zone), after=prep.schedule_text(edited, home_zone))
 
+    def _preparation_receipt(self, setting, after):
+        """#701: what an applied reservation operation did, in the owner's words, never its question."""
+        from . import preparations as prep
+        from .current_context import redact_known_secrets
+        current = self.service.preparations.get(json.loads(after)['id'] if setting == 'edit' else after)
+        if not current:
+            return None
+        title = redact_known_secrets(self.store, prep.owner_title(current))
+        if setting == 'edit':
+            return msg('settings_orchestrator.preparation_edit_receipt', title=title,
+                       after=prep.schedule_text(current, self.service.home_zone()))
+        return msg('settings_orchestrator.preparation_receipt_' + setting, reservation=title)
+
     @staticmethod
     def _digest(row):
         body = {key: row.get(key) for key in ("id", "owner", "channel", "category", "setting", "before", "after", "expires_at")}
@@ -1192,6 +1205,7 @@ class SettingsOrchestrator:
             self.service.preparation_request({"operation": setting, **({k: v for k, v in json.loads(after).items()
                                                                         if k != BOUND_TIMEZONE} if setting == "edit"
                                                                        else {"id": after})})
+            self.__dict__.setdefault("_apply_text", {})[row["id"]] = self._preparation_receipt(setting, after)
         elif category == "skills":
             # #961: the service's own setters; adding returns the installed identity as the answer.
             receipt = self.service.apply_skill_setting(setting, after)

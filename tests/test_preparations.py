@@ -10,6 +10,7 @@ a fake clock.  No live model, Telegram, calendar or search provider is
 contacted, and none is claimed.
 """
 import json
+import time
 import logging
 import tempfile
 import unittest
@@ -1193,11 +1194,11 @@ class WindowTests(_WatchCase):
     def test_the_window_is_bounded_by_its_slots_max_runs_and_limits(self):
         due = self.now + 60
         until = lambda seconds: datetime.fromtimestamp(due + seconds, SEOUL).isoformat()
-        self.assertEqual(prep.normalize_window(10, until(3600), None, due, 'Asia/Seoul', self.now), (600, due + 3600, 6), 'slots before the deadline')
+        self.assertEqual(prep.normalize_window(10, until(3600), None, due, 'Asia/Seoul', self.now), (600, due + 3600, 7), 'slots up to and including until (#701)')
         self.assertEqual(prep.normalize_window('10', until(3600), 3, due, 'Asia/Seoul', self.now)[2], 3)
         self.assertEqual(prep.normalize_window(5, until(86400), None, due, 'Asia/Seoul', self.now)[2], prep.MAX_WINDOW_RUNS)
         # #846: about three checks a day up to a deadline weeks away fits the window.
-        self.assertEqual(prep.normalize_window(480, until(30 * 86400), None, due, 'Asia/Seoul', self.now)[2], 90)
+        self.assertEqual(prep.normalize_window(480, until(30 * 86400), None, due, 'Asia/Seoul', self.now)[2], 91)
         for every, span, runs in ((4, 3600, None), (721, 3600, None), (10, 0, None), (10, -600, None),
                                   (10, 31 * 86400 + 60, None), (True, 3600, None), (10, 3600, 0), (10, 3600, 97)):
             with self.assertRaises(prep.PreparationRefusal, msg=(every, span, runs)):
@@ -1221,18 +1222,34 @@ class WindowTests(_WatchCase):
         self.assertEqual([(e['run'], e['max_runs']) for e in events], [(1, 3), (2, 3), (3, 3)])
 
     def test_a_watch_stops_at_its_deadline(self):
-        self.watched = self.watch(span=1800)  # slots at +0, +10, +20 minutes; none at the deadline
+        self.watched = self.watch(span=1800)  # #701: slots at +0, +10, +20 and +30 minutes, the last at until itself
         slots = []
         while self.service.preparations.get(self.watched['id'])['state'] == 'scheduled':
             slots.append(self.service.preparations.get(self.watched['id'])['due_at'])
             row = self.run_slot('아직 괜찮습니다.')
-        end = self.watched['window_end']
-        self.assertEqual(len(slots), 3)
-        self.assertTrue(all(slot < end for slot in slots))
+        end = self.watched['until_at']
+        self.assertEqual(len(slots), 4)
+        self.assertEqual(slots[-1], end, 'a slot at until runs')
+        self.assertTrue(all(slot <= end for slot in slots))
         self.assertEqual(row['state'], 'delivered')
         self.now = end + 7200
         self.assertFalse(self.tick())
-        self.assertEqual(len(self.runs(row['id'])), 3)
+        self.assertEqual(len(self.runs(row['id'])), 4)
+
+    def test_the_last_slot_gets_an_ordinary_runs_time(self):
+        """#701: a check at until is not cut to the seconds left before until; it gets a run's time."""
+        self.watched = self.watch(span=1800)
+        last = self.watched['until_at']
+        with self.store.db() as db:
+            db.execute('UPDATE preparations SET due_at=?,run_count=3 WHERE id=?', (last, self.watched['id']))
+        self.now = last + 1
+        self.assertTrue(self.tick())
+        [run] = self.runs(self.watched['id'])
+        budget = self.service.work_budget(run['id'])
+        self.assertGreater(budget.deadline - time.monotonic(), prep.run_seconds() - 30)
+        self.assertFalse(self.service.work_stopped(run['id']), 'the last check is not stopped at until')
+        self.now = self.watched['window_end']
+        self.assertTrue(self.service.work_stopped(run['id']), 'the run deadline still bounds it')
 
     def test_a_window_missed_while_down_expires_without_running(self):
         self.watched = self.watch(span=1800)
@@ -1466,9 +1483,9 @@ class WatchAcceptanceTests(_WatchCase):
         self.service.deliver_one()
         self.service.deliver_notification()
         proposal = self.sends()[-1]['text']
-        # #393: the window as enforced - before its deadline, at most max_runs - with no repeated date or zone.
-        end = datetime.fromtimestamp(row['window_end'], SEOUL).strftime('%H:%M')
-        self.assertIn(f'{end} 전까지, 10분마다 최대 6번', proposal)
+        # #393: the window as enforced - up to until (#701), at most max_runs - with no repeated date or zone.
+        end = datetime.fromtimestamp(row['until_at'], SEOUL).strftime('%H:%M')
+        self.assertIn(f'{end}까지, 10분마다 최대 6번', proposal)
         self.assertIn('알릴 일이 있을 때만', proposal)
         self.assertNotIn('Asia/Seoul', proposal, 'the owner\'s own zone is not repeated')
         with self.store.db() as db:
@@ -1481,14 +1498,14 @@ class WatchAcceptanceTests(_WatchCase):
                          (10, 6, 0, 'when_needed'))
         self.assertIn('Asia/Seoul', listed['until_local'])
 
-    def test_the_model_is_told_its_last_check_and_until_is_exclusive(self):
-        """#404: a check at the until time never runs; the result names the real last scheduled check."""
+    def test_the_model_is_told_its_last_check_and_until_is_inclusive(self):
+        """#404/#701: a check at the until time runs (RFC 5545 UNTIL); the result names the real last check."""
         _work, row, result = self.propose_watch(preparation=False)
         self.assertEqual(result['last_check'], prep.iso(row['due_at'] + 5 * 600, 'Asia/Seoul'), 'six runs: due + 50 min')
         self.judge = watch_engine([], preparation=False)
         self.service.use_decision_engine(self.judge)
         due = self.now + 600
-        for until, expected in ((due + 3600, due + 3000), (due + 3660, due + 3600)):
+        for until, expected in ((due + 3600, due + 3600), (due + 3540, due + 3000), (due + 3660, due + 3600)):
             self.script = [{'content': None, 'tool_calls': [call('1', 'schedule_preparation', kind='prepare', goal=f'확인 {until}',
                                                                  due=self.due_iso(600), every_minutes='10',
                                                                  until=datetime.fromtimestamp(until, SEOUL).isoformat(),
@@ -1775,8 +1792,8 @@ class OwnerOfferTests(_WatchCase):
         text = sent['text']
         self.assertEqual(sent.get('parse_mode'), 'HTML')
         self.assertTrue(text.startswith(f'<b>{self.TITLE}</b>\n'), text)
-        end = datetime.fromtimestamp(row['window_end'], SEOUL).strftime('%H:%M')
-        self.assertIn(f'{end} 전까지, 5분마다 최대 16번 · 알릴 일이 있을 때만 알려요', text)
+        end = datetime.fromtimestamp(row['until_at'], SEOUL).strftime('%H:%M')
+        self.assertIn(f'{end}까지, 5분마다 최대 16번 · 알릴 일이 있을 때만 알려요', text)
         self.assertIn('한 번에 잃을 수 있는 돈은 1,000원 이하', text)
         brief_at = text.index('<blockquote expandable>')
         self.assertLess(text.index('주문은 하지 않고'), brief_at, 'the offer comes before the folded brief')
@@ -1881,7 +1898,7 @@ class OwnerOfferTests(_WatchCase):
             delivery_mode=prep.DELIVERY_WHEN_NEEDED, title=self.TITLE, offer=self.OFFER)
         shown = prep.schedule_text(self.watched, 'Asia/Seoul')
         end = datetime.fromtimestamp(until, SEOUL).strftime('%H:%M')
-        self.assertIn(f'{end} 전까지, 5분마다 최대 2번', shown)
+        self.assertIn(f'{end}까지, 5분마다 최대 2번', shown)
         self.now = due + 15 * 60  # three slots late
         starts = []
         for _ in range(6):
@@ -1895,7 +1912,7 @@ class OwnerOfferTests(_WatchCase):
                 self.service.run_one()
                 self.tick()
         self.assertEqual(len(starts), 2, 'at most the stated number of runs')
-        self.assertTrue(all(at < until for at in starts), 'never at or after the stated deadline')
+        self.assertTrue(all(at <= until for at in starts), 'never after the stated end')
 
     def test_an_offer_out_of_shape_is_refused_to_the_model_and_a_secret_never_stays(self):
         _work, result = self.propose(title='가' * (prep.TITLE_MAX_CHARS + 1))
@@ -2108,32 +2125,27 @@ class ScheduleTextTests(unittest.TestCase):
         due = self.row()['due_at']
         until = datetime(2026, 10, 28, *until_hm, tzinfo=SEOUL) if until_hm[0] >= 18 else datetime(2026, 10, 29, *until_hm, tzinfo=SEOUL)
         every, end, max_runs = prep.normalize_window(minutes, until.isoformat(), runs, due, 'Asia/Seoul', due - 60)
-        return self.row(recurrence=prep.RECURRENCE_WINDOW, every_seconds=every, window_end=end, max_runs=max_runs,
-                        delivery_mode=prep.DELIVERY_WHEN_NEEDED)
+        return self.row(recurrence=prep.RECURRENCE_WINDOW, every_seconds=every, until_at=end,
+                        window_end=end + prep.run_seconds(), max_runs=max_runs, delivery_mode=prep.DELIVERY_WHEN_NEEDED)
 
     def test_the_deadline_is_stated_as_enforced(self):
-        """The live case: 18:35 until 19:55 every 5 minutes: nothing runs at 19:55 itself."""
-        self.assertEqual(prep.schedule_text(self.window(5, (19, 55), 16), 'Asia/Seoul'),
-                         '10월 28일(수) 18:35부터 19:55 전까지, 5분마다 최대 16번 · 알릴 일이 있을 때만 알려요')
-
-    def test_an_end_set_one_minute_after_the_last_check_reads_as_that_check(self):
-        """#412: "11시 반까지" is set as until 11:31; the owner reads 11:30까지, which stays exact."""
-        self.assertEqual(prep.schedule_text(self.window(5, (19, 56), 16), 'Asia/Seoul'),
-                         '10월 28일(수) 18:35부터 19:55까지, 5분마다 최대 16번 · 알릴 일이 있을 때만 알려요')
-        row = self.window(5, (19, 56), 16)
+        """#701: 18:35 until 19:55 every 5 minutes reads as said; a check at 19:55 itself may run."""
+        self.assertEqual(prep.schedule_text(self.window(5, (19, 55), None), 'Asia/Seoul'),
+                         '10월 28일(수) 18:35부터 19:55까지, 5분마다 최대 17번 · 알릴 일이 있을 때만 알려요')
+        row = self.window(5, (19, 55), 16)
         self.assertEqual(prep.schedule_text({**row, 'due_at': row['due_at'] + 600}, 'Asia/Seoul'),
                          '10월 28일(수) 18:45부터 19:55까지, 5분마다 최대 16번 · 알릴 일이 있을 때만 알려요',
                          'a later slot of the same watch still names 19:55')
-        self.assertIn('19:57 전까지', prep.schedule_text(self.window(5, (19, 57), 16), 'Asia/Seoul'),
-                      'a deadline whose previous minute is not a slot keeps "전까지"')
+        self.assertIn('19:57까지', prep.schedule_text(self.window(5, (19, 57), 16), 'Asia/Seoul'),
+                      'an end between slots is named as said, never moved')
 
     def test_a_window_past_midnight_names_its_last_day_and_a_foreign_zone_is_named(self):
         self.assertEqual(prep.schedule_text(self.window(120, (0, 40), None), 'Europe/Paris'),
-                         '10월 28일(수) 18:35부터 10월 29일(목) 00:40 전까지 (Asia/Seoul), 2시간마다 최대 4번 · 알릴 일이 있을 때만 알려요')
+                         '10월 28일(수) 18:35부터 10월 29일(목) 00:40까지 (Asia/Seoul), 2시간마다 최대 4번 · 알릴 일이 있을 때만 알려요')
 
     def test_one_run_repetitions_and_delivery(self):
         self.assertEqual(prep.schedule_text(self.window(5, (19, 0), 1), 'Asia/Seoul'),
-                         '10월 28일(수) 18:35부터 19:00 전까지 한 번 · 알릴 일이 있을 때만 알려요')
+                         '10월 28일(수) 18:35부터 19:00까지 한 번 · 알릴 일이 있을 때만 알려요')
         self.assertEqual(prep.schedule_text(self.row(recurrence='daily', channel='web'), 'Asia/Seoul'),
                          '10월 28일(수) 18:35부터 매일 · 결과가 나와도 따로 알리지 않아요')
         self.assertEqual(prep.schedule_text(self.row(kind='reminder'), 'Asia/Seoul'), '10월 28일(수) 18:35')
@@ -2378,7 +2390,8 @@ class PreparationManagementTests(unittest.TestCase):
         row = self.make(window=(300, self.now + 1800, 6))
         until = datetime.fromtimestamp(self.now + 3600, SEOUL).isoformat()
         edited = self.preparations.edit(row['id'], every_minutes=10, until=until, max_runs=3)
-        self.assertEqual((edited['every_seconds'], edited['window_end'], edited['max_runs']), (600, self.now + 3600, 3))
+        self.assertEqual((edited['every_seconds'], edited['until_at'], edited['max_runs']), (600, self.now + 3600, 3))
+        self.assertEqual(edited['window_end'], self.now + 3600 + prep.run_seconds(), '#701: the last slot gets a run\'s time')
         self.refusal('invalid_window', self.preparations.edit, row['id'], every_minutes=1)
         self.refusal('invalid_max_runs', self.preparations.edit, row['id'], max_runs=0)
 
@@ -2426,6 +2439,28 @@ class PreparationManagementTests(unittest.TestCase):
         row = self.make(window=(300, self.now + 1800, 6))
         self.now = row['window_end']
         self.refusal('resume_expired', self.preparations.run_now, row['id'], channel='web', chat_id=None)
+
+    def test_a_watch_stored_before_until_at_keeps_exactly_its_slots(self):
+        """#701: a legacy exclusive end becomes the inclusive bound one second before it; its last slot gets a run's time."""
+        self.now -= self.now % 60  # stored ends are whole minutes
+        due = self.now + 60
+        # The #412 shape (end one minute after the last check) and an end exactly on a slot (that slot never ran).
+        after = self.make(window=(3600, due + 6 * 3600, 7))
+        on = self.make(window=(3600, due + 6 * 3600, 6))
+        with self.store.db() as db:
+            db.execute('ALTER TABLE preparations DROP COLUMN until_at')
+            db.execute('UPDATE preparations SET window_end=? WHERE id=?', (due + 6 * 3600 + 60, after['id']))
+            db.execute('UPDATE preparations SET window_end=? WHERE id=?', (due + 6 * 3600, on['id']))
+            prep.migrate(db)
+            prep.migrate(db)
+        for row, end, last in ((after, due + 6 * 3600 + 60, due + 6 * 3600), (on, due + 6 * 3600, due + 5 * 3600)):
+            migrated = self.preparations.get(row['id'])
+            self.assertEqual((migrated['until_at'], migrated['window_end']), (end - 1, end - 1 + prep.run_seconds()))
+            self.assertEqual(prep.next_window_slot(migrated, last - 1), last)
+            self.assertIsNone(prep.next_window_slot(migrated, last))
+        last = datetime.fromtimestamp(due + 6 * 3600, SEOUL).strftime('%H:%M')
+        self.assertIn(f'{last}까지', prep.schedule_text(self.preparations.get(after['id']), 'Asia/Seoul'),
+                      'the #412 shape still reads as its last check')
 
     def test_migration_preserves_old_rows_and_adds_nullable_return_state(self):
         row = self.make()
