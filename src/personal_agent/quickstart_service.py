@@ -7889,7 +7889,7 @@ class AgentService:
             return None
         _text,approval=draft_step(self.store.task_events(job['id']),self.live_steps.get(job['id']))
         if approval:return None
-        if not self.store.config('developer_mode',False):return NO_STEP_LINE
+        if not self.developer_mode():return NO_STEP_LINE
         # #458/#477: with /dev on, the bubble names the launched worker, never a per-tool step.
         line=self.live_workers.get(job['id']) or NO_STEP_LINE
         # #460: the worker's sub-agents at work, by the description it gave them.
@@ -11494,6 +11494,14 @@ class AgentService:
         LOG.info('work mode %s',('on' if current['enabled'] else 'off'))
         return self.work_mode_status()
 
+    def developer_mode(self):
+        """Whether the waiting line names the launched AI and model (#477)."""
+        return bool(self.store.config('developer_mode',False))
+
+    def set_developer_mode(self, enabled):
+        """#705: the one setter of developer mode, for ``/dev on|off`` and a confirmed settings change."""
+        self.store.put('developer_mode',bool(enabled))
+
     def set_current_context(self, body):
         """Owner privacy control for current context (#626): use/timezone/clear only."""
         self.context_observations.set_controls(body)
@@ -12425,7 +12433,7 @@ class AgentService:
             run.system_response=run.decision.authority==AUTHORITY_RULE
         elif run.decision.intent==INTENT_GREETING:
             run.response=__import__('personal_agent.still_profile',fromlist=['welcome']).welcome(
-                self.store.config('telegram',{}).get('owner_language'))
+                self.store.config('telegram',{}).get('owner_language'),commands=run.decision.argument=='commands')
         elif run.decision.intent==INTENT_KNOWLEDGE:
             # The owner's explicit ``/knowledge <query>`` asks for the matching
             # saved items themselves (#173: no keyword rule reaches here).
@@ -12480,8 +12488,8 @@ class AgentService:
             run.work_sources.add('owner-settings')
             argument=run.decision.argument
             if argument in ('on','off'):
-                self.store.put('developer_mode',argument=='on')
-            enabled=self.store.config('developer_mode',False)
+                self.set_developer_mode(argument=='on')
+            enabled=self.developer_mode()
             run.response=msg('service.developer_mode_on' if enabled else 'service.developer_mode_off')
             if argument not in ('on','off'):
                 run.response+='\n'+msg('service.developer_mode_usage')

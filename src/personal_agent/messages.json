@@ -10923,5 +10923,77 @@
   "en": "<blockquote expandable>What each run is asked to do\n{goal}</blockquote>",
   "ja": "<blockquote expandable>毎回の実行で任せる内容\n{goal}</blockquote>",
   "zh": "<blockquote expandable>每次运行时交代的内容\n{goal}</blockquote>"
+ },
+ "developer_mode.category_line": {
+  "ko": "개발자 모드 · {details}",
+  "en": "Developer mode · {details}",
+  "ja": "開発者モード · {details}",
+  "zh": "开发者模式 · {details}"
+ },
+ "developer_mode.label_enabled": {
+  "ko": "개발자 모드 사용",
+  "en": "Developer mode · Use",
+  "ja": "開発者モード · 使う",
+  "zh": "开发者模式 · 使用"
+ },
+ "developer_mode.note": {
+  "ko": "켜 두면 작업을 기다리는 동안 실행 중인 AI와 모델(예: Codex · gpt-6.1-sol · medium)을 보여 드려요. 대화에서 /dev on, /dev off로도 바꿀 수 있어요.",
+  "en": "While on, the AI and model running a Work (for example Codex · gpt-6.1-sol · medium) appear while you wait. /dev on and /dev off in the conversation switch it too.",
+  "ja": "オンにすると、作業を待つ間に実行中の AI とモデル（例: Codex · gpt-6.1-sol · medium）を表示します。会話で /dev on、/dev off と入力しても切り替えられます。",
+  "zh": "开启后，等待工作时会显示正在运行的 AI 和模型（例如 Codex · gpt-6.1-sol · medium）。也可以在对话中输入 /dev on、/dev off 切换。"
+ },
+ "owner_commands.heading": {
+  "ko": "바로 쓸 수 있는 명령:",
+  "en": "Commands you can type:",
+  "ja": "そのまま使えるコマンド:",
+  "zh": "可以直接输入的命令："
+ },
+ "owner_commands.ai": {
+  "ko": "/ai — 지금 쓰는 AI를 보거나 바꿔요 (/ai <AI 이름> [모델])",
+  "en": "/ai — see or switch the AI I think with (/ai <AI name> [model])",
+  "ja": "/ai — 今使っている AI を確認・切り替えます (/ai <AI 名> [モデル])",
+  "zh": "/ai — 查看或更换我使用的 AI（/ai <AI 名称> [模型]）"
+ },
+ "owner_commands.settings": {
+  "ko": "/settings — 지금 설정을 보여 드려요",
+  "en": "/settings — show your current settings",
+  "ja": "/settings — 現在の設定を表示します",
+  "zh": "/settings — 显示当前设置"
+ },
+ "owner_commands.dev": {
+  "ko": "/dev on · /dev off — 기다리는 동안 실행 중인 AI와 모델을 보이거나 숨겨요 (/dev: 지금 상태)",
+  "en": "/dev on · /dev off — show or hide the AI and model running while you wait (/dev: current state)",
+  "ja": "/dev on · /dev off — 待機中に実行中の AI とモデルを表示・非表示にします (/dev: 現在の状態)",
+  "zh": "/dev on · /dev off — 等待时显示或隐藏正在运行的 AI 和模型（/dev：当前状态）"
+ },
+ "owner_commands.note": {
+  "ko": "/note <내용> — 메모를 남겨요",
+  "en": "/note <text> — save a note",
+  "ja": "/note <内容> — メモを残します",
+  "zh": "/note <内容> — 保存一条笔记"
+ },
+ "owner_commands.notes": {
+  "ko": "/notes — 남긴 메모를 보여 드려요",
+  "en": "/notes — list your saved notes",
+  "ja": "/notes — 保存したメモを表示します",
+  "zh": "/notes — 列出已保存的笔记"
+ },
+ "owner_commands.knowledge": {
+  "ko": "/knowledge <검색어> — 저장해 둔 자료에서 찾아요",
+  "en": "/knowledge <words> — search the items you saved",
+  "ja": "/knowledge <検索語> — 保存した資料から探します",
+  "zh": "/knowledge <关键词> — 在已保存的资料中搜索"
+ },
+ "owner_commands.workspace_search": {
+  "ko": "/workspace-search <검색어> — 연결한 폴더의 파일에서 찾아요",
+  "en": "/workspace-search <words> — search files in your connected folders",
+  "ja": "/workspace-search <検索語> — 接続したフォルダのファイルから探します",
+  "zh": "/workspace-search <关键词> — 在已连接文件夹的文件中搜索"
+ },
+ "owner_commands.help": {
+  "ko": "/help — 이 안내를 다시 보여 드려요",
+  "en": "/help — show this guide again",
+  "ja": "/help — この案内をもう一度表示します",
+  "zh": "/help — 再次显示本说明"
  }
 }

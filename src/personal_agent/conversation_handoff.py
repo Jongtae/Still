@@ -533,6 +533,25 @@ INTENT_LABELS = {
     INTENT_UNSUPPORTED: msg('conversation_handoff.unsupported'),
 }
 
+#: #705: the exact commands ``IntentClassifier.explicit`` takes, each with its
+#: owner-facing usage line.  The /help reply and a full ``settings_read`` both
+#: list these, so the owner and the owner's AI see the same commands.
+OWNER_COMMANDS = (
+    ('/ai', 'owner_commands.ai'),
+    ('/settings', 'owner_commands.settings'),
+    ('/dev', 'owner_commands.dev'),
+    ('/note', 'owner_commands.note'),
+    ('/notes', 'owner_commands.notes'),
+    ('/knowledge', 'owner_commands.knowledge'),
+    ('/workspace-search', 'owner_commands.workspace_search'),
+    ('/help', 'owner_commands.help'),
+)
+
+
+def owner_commands(lang='ko'):
+    """``[{command, usage}]`` for every exact owner command, in ``lang`` (#705)."""
+    return [{'command': command, 'usage': msg(message_id, lang)} for command, message_id in OWNER_COMMANDS]
+
 #: Capabilities an owner may reasonably ask for that this conversation does
 #: not offer.  They are declared so the DecisionEngine can *choose* one and
 #: the reply can state the actual boundary instead of running the nearest
@@ -1493,7 +1512,8 @@ class IntentClassifier:
     # deliberately fall through to ordinary routing.
     def explicit(self, text):
         if text in ('/start', '/help'):
-            return IntentDecision(INTENT_GREETING, AUTHORITY_OWNER)
+            # #705: /help also lists the exact commands; /start stays the plain welcome.
+            return IntentDecision(INTENT_GREETING, AUTHORITY_OWNER, argument='commands' if text == '/help' else None)
         if text.startswith('/knowledge '):
             return IntentDecision(INTENT_KNOWLEDGE, AUTHORITY_OWNER, argument=text[len('/knowledge '):].strip())
         if text.startswith('/settings '):

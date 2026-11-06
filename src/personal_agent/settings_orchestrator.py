@@ -100,7 +100,8 @@ def next_action(row):
 CATEGORY_LABELS = {"connections": msg('label.external_connections'), "current_context": msg('label.current_context'), "judgment_ai": msg('label.judgment_ai'), "main_ai": msg('label.main_ai'),
                    "owner_model": msg('settings_orchestrator.owner_model_label'), "skills": msg('settings_orchestrator.skills_label'),
                    "phone_link": msg('settings_orchestrator.phone_link_label'), "ai_connections": msg('settings_orchestrator.ai_connections_label'), "api_connections": msg('settings_orchestrator.api_connections_label'),
-                   "preparations": msg('settings_orchestrator.preparations_label'), "browser": msg('settings_orchestrator.browser_label')}
+                   "preparations": msg('settings_orchestrator.preparations_label'), "browser": msg('settings_orchestrator.browser_label'),
+                   "developer_mode": msg('conversation_handoff.developer_mode')}
 SETTINGS = {"current_context": ("enabled", "timezone"), "judgment_ai": ("mode", "model"), "main_ai": ("route", "model"),
             # #805 owner-model upkeep: its pause switch and rolling 24-hour call cap.
             # #402: the once-a-day look back over recent requests has its own switch.
@@ -114,6 +115,8 @@ SETTINGS = {"current_context": ("enabled", "timezone"), "judgment_ai": ("mode", 
             # #1572: close one exact login window that holds the browser while the owner will not sign in.
             # #636: signing back in through the provider the owner used (every site, or one site).
             "browser": ("close_login", "use_mobile", "provider_sign_in"),
+            # #477/#705: whether the waiting line names the launched AI and model (also ``/dev on|off``).
+            "developer_mode": ("enabled",),
             # #1197: Works may use the owner's AI-side connections (claude.ai connectors), read-only.
             # #1297: which of the owner's MCP servers load, and the owner's trust record per connection.
             "ai_connections": ("enabled", "connect", "servers", "review", "money", "rung", "undo", "forget", "restore"),
@@ -142,6 +145,7 @@ _CATEGORY_LINE_IDS = {
     'api_connections': 'settings_orchestrator.category_line_api_connections',
     'preparations': 'settings_orchestrator.category_line_preparations',
     'browser': 'settings_orchestrator.category_line_browser',
+    'developer_mode': 'developer_mode.category_line',
 }
 # Catalog ids for whole setting/value pairs; unknown labels retain their original rendering.
 _SETTING_VALUE_IDS = {
@@ -206,6 +210,7 @@ _CHANGE_LABELS = {
     ('ai_connections', 'restore'): msg('settings_orchestrator.label_ai_connections_restore'),
     ('connections', 'disconnect'): msg('settings_orchestrator.label_connections_disconnect'),
     ('connections', 'connect_chat'): msg('settings_orchestrator.label_connections_connect_chat'),
+    ('developer_mode', 'enabled'): msg('developer_mode.label_enabled'),
 }
 #: #1297: trust values include "<engine>|<kind>|<stable identity>|..." so a
 #: decision cannot cross engines or connection kinds.
@@ -268,7 +273,9 @@ DIRECT_REQUEST_SETTINGS = frozenset({
     ('owner_model', 'enabled'), ('owner_model', 'daily_calls'), ('owner_model', 'dream'),
     ('main_ai', 'model'), ('skills', 'remove'),
     *(('preparations', operation) for operation in ('cancel', 'accept', 'pause', 'resume', 'edit', 'run_now')),
-    ('browser', 'close_login'), ('browser', 'use_mobile'), ('connections', 'disconnect')})
+    ('browser', 'close_login'), ('browser', 'use_mobile'), ('connections', 'disconnect'),
+    # #705: a presentation preference only.
+    ('developer_mode', 'enabled')})
 #: #619: what the worker reads when a scheduled run (no owner present) asks for a settings change.
 UNATTENDED_SETTINGS_TEXT = ('No owner is present in this scheduled run, so no settings change was proposed and '
                             'nothing waits for the owner. Say in your answer what you found and the change you would '
@@ -436,7 +443,10 @@ class SettingsOrchestrator:
             work = {"enabled": on, "label": msg('work_mode.label'),
                     "value_label": msg('label.on' if on else 'label.off'), "changeable": False}
             lines.append(msg('work_mode.read_line', state=work["value_label"]))
-            return {**result, "settings": settings, "work_mode": work, "response": "\n".join(lines)}
+            # #705: the exact commands the owner can type, from the parser's own list.
+            from .conversation_handoff import owner_commands
+            return {**result, "settings": settings, "work_mode": work, "owner_commands": owner_commands(),
+                    "response": "\n".join(lines)}
         return {**result, "settings": settings, "response": "\n".join(lines)}
 
     # -- #814 owner settings ------------------------------------------------------
@@ -488,6 +498,11 @@ class SettingsOrchestrator:
                 "daily_calls": self._row("daily_calls", cap, msg('settings_orchestrator.call_count', value=cap), None,
                                          format=msg('settings_orchestrator.daily_calls_format', limit=MAX_DAILY_CALLS))}
 
+
+    def _developer_mode(self):
+        enabled = "on" if self.service.developer_mode() else "off"
+        return {"enabled": self._row("enabled", enabled, VALUE_LABELS[enabled], self._options(("on", "off")),
+                                     note=msg('developer_mode.note'))}
 
     def _ai_connections(self):
         """#1197: whether Works may use the owner's AI-side connections."""
@@ -1168,6 +1183,8 @@ class SettingsOrchestrator:
                 return 'applied'
             self.__dict__.setdefault('_apply_text', {})[row['id']] = start(self.service, row)
             return 'awaiting-input'
+        elif category == "developer_mode":
+            self.service.set_developer_mode(after == "on")
         elif category == "current_context":
             self.service.set_current_context({"enabled": after == "on"} if setting == "enabled" else {"timezone": after})
         elif (category, setting) in TRUST_SETTINGS:
