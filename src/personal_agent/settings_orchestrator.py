@@ -1748,6 +1748,9 @@ class SettingsOrchestrator:
                 return {"state": "not_proposed", "unattended": True, "category": args.get("category"),
                         "setting": args.get("setting"), "after": after, "applied": False,
                         "next_step": UNATTENDED_SETTINGS_TEXT}
+            own = self._own_proposal_edit(args, work_id)
+            if own is not None:
+                return own
             draft = self.propose(owner, channel, args.get("category"), args.get("setting"), args.get("value"),
                                  args.get("reason"), work_id, continue_work=args.get("continue_work") == "yes", required_skill=args.get("required_skill"))
             if (callable(owner_request) and args.get("continue_work", "no") == "no"
@@ -1760,6 +1763,38 @@ class SettingsOrchestrator:
             return {**{key: value for key, value in draft.items() if key not in ("digest", "response", "expires_at")},
                     "next_step": f"{draft['summary']} 변경은 소유자 확인을 기다립니다. {how} 확인 전에는 아무것도 바뀌지 않았습니다."}
         return call
+
+    def _own_proposal_edit(self, args, work_id):
+        """#702: apply a schedule edit of a reservation this Work proposed and has not offered yet, or None.
+
+        Nothing the owner has read or accepted changes: the reservation never runs before the owner's
+        yes, and its one proposal (bound to its digest) is offered only when the Work ends.  The edit
+        itself is limited to a still-proposed row in its own transaction, so an owner's accept landing
+        after this check leaves the change as an owner-confirmed draft instead (Codex P1 on #704).
+        """
+        from . import preparations as prep
+        if (args.get("category"), args.get("setting")) != ("preparations", "edit") or not work_id or self.service is None:
+            return None
+        after, _row = self._normalized("preparations", "edit", args.get("value"))
+        changes = json.loads(after)
+        row = self.service.preparations.get(changes["id"])
+        if not (row and row["state"] == prep.STATE_PROPOSED and row.get("created_from") == work_id
+                and self.service.store.notification_of(work_id, "preparation_proposed") is None):
+            return None
+        requested = {key: value for key, value in changes.items() if key not in ("id", BOUND_TIMEZONE)}
+        try:
+            self.service.preparations.edit(row["id"], states=(prep.STATE_PROPOSED,), **requested)
+        except prep.PreparationRefusal as exc:
+            if exc.code == "invalid_state":
+                return None
+            raise SettingsError(str(exc)) from None
+        self._audit({"id": "own-proposal:" + row["id"], "target": "preparations.edit", "before": None, "after": after},
+                    "own-proposal")
+        return {"state": "applied", "category": "preparations", "setting": "edit", "after": after,
+                "applied": True, "own_proposal": True, "response": self._preparation_receipt("edit", after),
+                "next_step": ("This reservation is still this Work's own proposal and the owner has not been shown it, so "
+                              "Still applied the edit directly. The owner accepts the reservation once, as it now reads; "
+                              "do not ask them to confirm the edit separately.")}
 
     def _apply_owner_request(self, owner, channel, draft, owner_request):
         """Apply a draft the owner's own typed message asked for exactly (#619), or None to leave it waiting.

@@ -972,12 +972,15 @@ class Preparations:
                        (STATE_SCHEDULED, following, now, row['id']))
         return self.get(preparation_id)
 
-    def edit(self, preparation_id, **changes):
-        """Validate schedule changes without accepting a proposal or changing its goal (#575)."""
+    def edit(self, preparation_id, *, states=(STATE_PROPOSED, STATE_SCHEDULED, STATE_PAUSED), **changes):
+        """Validate schedule changes without accepting a proposal or changing its goal (#575).
+
+        ``states`` narrows which states may be edited, checked in the same transaction (#702).
+        """
         now = self.clock()
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
-            row = self._editable(db, preparation_id, (STATE_PROPOSED, STATE_SCHEDULED, STATE_PAUSED))
+            row = self._editable(db, preparation_id, states)
             updates = self.edit_values(row, changes, now)
             updates['updated_at'] = now
             db.execute(f"UPDATE preparations SET {','.join(k + '=?' for k in updates)} WHERE id=?",
