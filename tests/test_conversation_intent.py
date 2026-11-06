@@ -138,7 +138,7 @@ class ExplicitFormTests(unittest.TestCase):
     def test_every_slash_form_keeps_its_route_and_its_argument(self):
         cases = (
             ('/start', INTENT_GREETING, None),
-            ('/help', INTENT_GREETING, None),
+            ('/help', INTENT_GREETING, 'commands'),  # #705: /help also lists the commands
             ('/knowledge aurora', INTENT_KNOWLEDGE, 'aurora'),
             ('/settings Drive pause', INTENT_SETTINGS, 'Drive pause'),
             ('/settings', INTENT_SETTINGS, '/settings'),

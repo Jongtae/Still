@@ -13,6 +13,8 @@ import json
 import logging
 from pathlib import Path
 
+from .messages import msg
+
 LOG = logging.getLogger(__name__)
 
 #: Seconds each best-effort Bot API call may take.
@@ -124,7 +126,17 @@ WELCOME = {
 }
 
 
-def welcome(language_code=None):
-    """Still's welcome in the owner's Telegram language; English when unknown."""
+def welcome(language_code=None, *, commands=False):
+    """Still's welcome in the owner's Telegram language; English when unknown.
+
+    ``commands`` (the /help reply, #705) adds the exact commands before the closing line.
+    """
     lang = str(language_code or '').lower().split('-')[0]
-    return WELCOME.get(lang, WELCOME['en'])
+    lang = lang if lang in WELCOME else 'en'
+    if not commands:
+        return WELCOME[lang]
+    # #705: the exact commands, from the parser's own list.
+    from .conversation_handoff import owner_commands
+    listed = '\n'.join('· ' + row['usage'] for row in owner_commands(lang))
+    body, closing = WELCOME[lang].rsplit('\n\n', 1)
+    return f"{body}\n\n{msg('owner_commands.heading', lang)}\n{listed}\n\n{closing}"
