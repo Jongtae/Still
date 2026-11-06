@@ -2,583 +2,235 @@
 
 ## Current rule index and precedence
 
-This contract defines **semantic judgment and orchestration**, not authority. Current development selection lives in repository-root [`delivery-plan.yaml`](../delivery-plan.yaml); this document does not activate work. Newer explicit amendments control where older sections conflict.
+Still owns the judgment interface, its callers and the validation of their answers. A provider supplies inference; it does not acquire authority over owner state or external actions. This document consolidates the adopted rules rather than requiring readers to replay amendments.
 
-| Concern | Current controlling rule | Superseded/history note |
-| --- | --- | --- |
-| DecisionEngine role | Model-backed semantic judgment for language, intent, relevance, reference, routing, recovery choice and projection; deterministic code keeps exact authority/protocol/effect invariants | Request-time semantic blocker trees are not the architecture |
-| Orchestration plan | #826: `{worker, model, brief: {notes}, reason}`; every attempt receives the worker's full toolset already eligible under policy | #710's plan-selected `tools_mode` / `tools` / `tools_reason`, pinned default worker and private/no-search subset reasons are historical |
-| Goal evaluation | #657/#710 `goal_reached` judgment may evaluate whether the request is met and drive bounded re-delegation | A judgment cannot mark an effect true, mint authority or override deterministic failure/unknown evidence |
-| Private context + search | #826 removes the semantic tool-subset separation; Decision does not recreate the older private/search gate | #605 lookup sensitivity caller was removed by #654; #678-style separation is historical under the Secretary pilot |
-| Authority boundary | Decision output is advisory/validated judgment only: no Grant widening, approval minting, effect truth, Work completion truth or destination expansion | Provider/model confidence never becomes authority |
-| Provider routing | Provider-neutral `DecisionEngine` / routed engines with explicit unavailable/failure outcomes and qualification | `gpt-4o-mini` is an initial/default implementation choice, not a kernel invariant |
-| Qualification | Current versioned qualification suite and route-specific isolation/binding checks govern activation; synthetic probes do not prove product outcomes | Earlier suite versions remain historical evidence only |
+| Responsibility | Controlling rule |
+| --- | --- |
+| Semantic judgment | Use model-backed interpretation for language, intent, reference, relevance, planning and recovery. Keep exact authority, protocol and effect checks deterministic. |
+| Planning | Preserve the owner's request and the full policy-eligible toolset. Supplementary notes may help the worker; they do not replace the request. |
+| Outcome | Evaluate the answer against the request and recorded observations. A favorable judgment cannot override a pending approval, an unresolved state-changing failure or an unknown effect. |
+| Routing | Distinguish the Work executor from the Judgment AI. Configuration, activation, qualification and observed operation are separate states. |
+| Qualification | Bind checks to the actual route, model, operation and installed runtime. A historical version list or a passing typed probe is not qualification for every role. |
+| Recovery | Preserve the Work budget, owner corrections and no-replay boundary. An unavailable judgment is not permission for a different provider or a semantic keyword fallback. |
 
-The [Secretary Agency Contract](secretary-agency-contract.en.md) controls the current pilot's Memory/egress policy; the [Assistant Execution Contract](assistant-execution-contract.en.md) controls execution/effect/recovery truth. Where this document describes older callers or plan fields that a later amendment removed, treat them as retained design history rather than current interface requirements.
-
-## Pilot posture — #653 (2026-09-26)
-
-Under SECRETARY-01 the DecisionEngine is the gate that lets the assistant choose and change paths (provider, site, query, recovery, goal-reached judgment), not a request-time blocker. The `lookup_term_sensitivity` judgment and its qualification case are removed by SEC-PILOT-01 #654; SEC-LOOP-01 #657 adds a `goal_reached` judgment. See the [Secretary Agency Contract](secretary-agency-contract.en.md).
-
-## Amendment — #826 (2026-09-28)
-
-EGRESS-OPEN-01 (owner decision) removes the plan's tool subset (`tools_mode`, `tools`, `tools_reason`) and the pinned default worker. The subset existed only to keep private reads and web search apart, and that separation is removed; see the [request-path rule census](request-path-rule-census.en.md), class g. The plan is `{worker, model, brief: {notes}, reason}`. Every attempt keeps the worker's full toolset, and an identical attempt is refused on worker, effective model, effort and brief/context digests (#202); a changed brief or context may revise on the same route. The "Tools per request" bullet below, the `pinned` rule and the `private_turn`, `orchestrated_private_tools` and `orchestrated_no_search` reasons are historical.
-
-## Amendment — #710 (2026-09-27)
-
-ORCH-01 makes the DecisionEngine the **orchestrator** of each Work under Constitution C16: per request it chooses the AI worker and model, writes the brief and the tool subset, and re-delegates when the goal is not shown. It still never acts and never grants authority; see "Orchestration (ORCH-01 / #710)" below.
+The [Secretary Agency Contract](secretary-agency-contract.en.md) controls the pilot's egress policy; the [Memory contract](engineering/contracts/memory.en.md) controls writers, notices and correction. The [execution contract](assistant-execution-contract.en.md) controls effect and recovery truth; [Presence](presence-experience-contract.en.md) controls the owner-facing experience. Development selection remains in [delivery-plan.yaml](../delivery-plan.yaml).
 
 ## Status and purpose
 
-This document defines the intended **Still-owned decision boundary** for bounded judgment such as Attention relevance, capability/runtime selection, result scoring, and “do we need another reasoning/evidence step?” routing.
-
-It is an architecture contract, not a claim that the runtime interface is already implemented. On 2026-09-24 the owner selected this boundary as the semantic foundation for PRESENCE-01: production semantic decisions should be model-backed by default, initially through OpenAI `gpt-4o-mini`, while the interface remains provider-neutral. Current support still depends on merged code and named acceptance evidence.
-
-The owner decisions recorded in [#415](https://github.com/Jongtae/agentos/issues/415) are:
-
-> **Absorb the decision-layer interface and engineering principle; do not make Jev a required dependency.**
->
-> **Minimize rule-based product logic. Use a model-backed DecisionEngine for ordinary semantic judgment, initially `gpt-4o-mini`, while keeping exact security/authority/truth/protocol invariants deterministic.**
-
-The durable rule is:
-
-> **Core depends on contracts/capabilities, never providers. Still owns the decision contract; providers only implement it.**
+This is an implementation and acceptance contract, not proof that every route works on an owner's account. The editorial baseline is `99fad1598b75837cf4428cfa43ad810266e5dff7`. The [pre-consolidation text](https://github.com/Jongtae/Still/blob/99fad1598b75837cf4428cfa43ad810266e5dff7/docs/decision-layer.en.md) preserves dated decisions, diagnostics and original evidence. References to predecessor issues keep their original repository meaning.
 
 ## Why this boundary exists
 
-Many agent loops use a general LLM for both generative reasoning and small repeated judgments: relevance, routing, confidence, completion checks, reference resolution or candidate selection. Still should not replace those semantic judgments with an accumulating rule engine merely because a keyword/regex branch is easy to add. Ordinary semantic product behavior is model-backed by default; deterministic logic is reserved for exact invariants and test fixtures.
+Choosing a relevant fact, resolving a correction and deciding whether an answer served a request are semantic judgments. They should not accumulate into request-specific keyword trees. Conversely, permission, approval binding and observed external effects must not become whatever a model finds plausible.
 
-Still must be able to change that implementation without changing owner authority, canonical state, or the meaning of Work.
-
-The decision layer therefore separates:
-
-1. **judgment/inference** — a bounded answer plus uncertainty/evidence;
-2. **policy/authority** — deterministic Still rules that decide what may happen;
-3. **execution** — capability/runtime invocation under current Grants.
-
-A provider can help answer “which candidate looks relevant?” It cannot answer “what authority does this Work have?” in a binding way.
-
-## Neutral Still vocabulary
-
-Core contracts use provider-neutral names. The conceptual model includes:
-
-- **DecisionContext** — minimal, attributable Work-scoped state supplied for a bounded question.
-- **SelectionDecision<T>** — selection among declared candidates.
-- **SelectionSetDecision<T>** — zero or more of the declared candidates (`choose_many`). Its first caller, the #605 lookup sensitivity judgment, was removed by SEC-PILOT-01 #654; the envelope remains. An engine that cannot answer one returns an explicit non-answer; the Jev route does not offer it and answers unavailable.
-- **ScoreDecision** — evaluation against a declared scale or rubric.
-- **BinaryDecision** — bounded yes/no judgment with confidence/probability.
-- **DecisionConfidence** — confidence/probability (calibration is measured per provider, not assumed) plus available provenance/telemetry.
-- **DecisionEngine** — provider-independent judgment interface.
-- **DecisionPolicy** — Still-owned deterministic thresholds, escalation/fallback rules and authority checks.
-
-Illustrative shape only:
-
-```ts
-interface DecisionEngine {
-  choose<T>(
-    context: DecisionContext,
-    candidates: readonly T[],
-    question: string,
-  ): Promise<SelectionDecision<T>>;
-
-  score(
-    context: DecisionContext,
-    question: string,
-    scale: DecisionScale,
-  ): Promise<ScoreDecision>;
-
-  judge(
-    context: DecisionContext,
-    proposition: string,
-  ): Promise<BinaryDecision>;
-
-  choose_many<T>(
-    context: DecisionContext,
-    candidates: readonly T[],
-    question: string,
-  ): Promise<SelectionSetDecision<T>>;
-}
-```
-
-Exact runtime types require a separately activated implementation design. Provider SDK types and vendor terms do not leak into these core contracts.
+The boundary separates judgment, authority and execution while allowing the judgment provider to change. It does not require a new Context store, Work lifecycle, BDI runtime or multi-agent framework. The conceptual rationale is in [Judgment and execution](concepts/judgment-and-execution.ko.md).
 
 ## Decision is not authority
 
-A decision provider returns bounded judgment. Still policy determines what may happen next.
+A decision cannot mint or widen a Grant, issue an approval, create an external destination, rewrite Evidence or certify an unobserved effect. Confidence is not permission. A proposal to remember something still passes the applicable writer and Memory rules; this does not reintroduce a per-fact judgment for the owner's direct-save path.
 
-Example:
+Deterministic enforcement keeps exact resource/action/scope checks, approval digests, revocation, idempotency, protocol validation and effect truth. The model chooses among already eligible options. Missing evidence remains missing even when the answer is fluent.
 
-```text
-DecisionEngine
-  merge_ready = true
-  confidence = 0.93
+## Neutral Still vocabulary
 
-DecisionPolicy / Still authority
-  current Grant covers requested action?
-  current approval covers target/parameters/destination?
-  confidence threshold satisfied?
-  consequence class requires human approval regardless?
-  evidence/fallback requirement satisfied?
-```
+The concrete Python interfaces are in [decision.py](../src/personal_agent/decision.py), not a separate illustrative TypeScript API.
 
-A model or decision provider must never:
+| Interface | Purpose |
+| --- | --- |
+| `DecisionContext` | Bounded attributable caller input, including the applicable admission/budget context. |
+| `BinaryDecision`, `SelectionDecision`, `SelectionSetDecision`, `ScoreDecision` | A typed answer to the declared question, with confidence and explicit non-answer outcomes. |
+| `StructuredDecision` | A caller-schema answer, validated before use. |
+| `DecisionEngine` | Provider-neutral judgment interface. |
+| `DecisionPolicy` | Still-owned acceptance of the returned shape, candidates and confidence; never delegated authority. |
+| `RoutedDecisionEngine` | Resolves the configured judgment route without adding private context of its own. |
 
-- mint, widen or inherit a Grant;
-- bypass a denial or covering approval requirement;
-- authorize new data egress or a new external destination;
-- directly mutate canonical Memory because its confidence is high;
-- rewrite sealed Evidence;
-- self-certify final Work completion;
-- turn an Attention candidate into accepted Work without the normal boundary.
-
-Deterministic code is reserved for distinctions that must be exact and mechanically enforced: Grants/authority, approval binding, idempotency, effect/Evidence qualification, cancellation/revocation, schema/protocol validation and similarly strict invariants. Language, intent, relevance, reference, routing, recovery choice and conversational projection should normally remain behind the model-backed decision boundary. A new natural phrasing should not normally require a new code branch.
+`provider_unavailable`, `timeout`, `malformed`, `context_rejected` and `cancelled` are explicit outcomes. A low-confidence `decided` answer can still be reduced to unknown by policy. A fixture engine is for tests, not the production fallback for language understanding.
 
 ## Replaceable implementations
 
-The intended dependency direction is:
-
-```text
-Still Core
-        |
-        +-- DecisionEngine contract
-              |
-              +-- default OpenAI adapter: gpt-4o-mini
-              +-- owner-selected AI adapter
-              +-- local/small-model implementation
-              +-- Jev adapter (optional / experimental)
-              +-- deterministic/mock fixture implementation
-              +-- future provider adapters
-```
-
-`gpt-4o-mini` is the initial production default, not part of the kernel contract. A later owner-selected AI, local model, Jev or another adapter may replace it without changing callers. Provider failure/removal must produce an explicit unavailable/unknown/clarification or other safe-stop outcome; it must not silently fall back to a growing phrase/regex rule tree.
-
-## Candidate uses
-
-The contract is intended to be introduced incrementally at bounded judgment points, including:
-
-1. **Attention relevance/prioritization** — select or score authorized candidate facts, observations, memories or pending outcomes.
-2. **Capability / skill / runtime routing** — choose among candidates that are already eligible under Still policy.
-3. **Retrieval/result scoring** — estimate relevance/quality while retaining source/evidence provenance.
-4. **Reasoning escalation** — decide whether a cheap/deterministic path is insufficient and a stronger reasoning path is needed.
-5. **Completion/quality confidence** — contribute to validation, never replace actual requirement-to-evidence checks.
-6. **Risk/ambiguity classification** — inform deterministic policy, never act as the sole authorization gate.
-
-The interface is not a requirement to route exact protocol or authority invariants through a learned model. For ordinary semantic product judgment, however, model-backed inference is the default and rule-based branching is the exception.
-
-## Relationship to Attention and BDI-inspired design
-
-Attention is a product/design mechanism for focusing on what is relevant now: owner outcome, current state, permitted context, urgency, unresolved decisions and possible next work.
-
-A DecisionEngine may help evaluate Attention candidates. It does not replace the higher-level product concept and does not make a BDI state machine mandatory.
-
-Likewise, the decision layer does not create:
-
-- a second Context or Memory store;
-- a new source of owner authority;
-- a new Work lifecycle;
-- a privileged hidden reasoning log;
-- a mandatory distributed/multi-agent system.
-
-The existing Owner, Context, Memory, Artifact, Capability, Runtime, Grant, Work, Event and Evidence responsibilities remain authoritative.
-
-## External-provider boundary
-
-An external decision provider is subject to the same owner-control rules as any other external runtime/provider:
-
-- build the smallest useful Work-scoped DecisionContext;
-- send only data covered for that destination and purpose;
-- do not send private owner material merely because it may improve routing accuracy;
-- preserve source/provenance where decisions depend on retrieved evidence;
-- record configured provider/model and observed/provider-reported identity truthfully when available;
-- retain decision result, confidence and relevant redacted metadata without hidden chain-of-thought;
-- apply time, cost, resource and cancellation bounds;
-- treat timeout, malformed output, unavailable telemetry and provider failure as explicit states;
-- use a declared fallback or safe stop rather than widening authority.
-
-## Jev adapter boundary
-
-Jev is one possible implementation of the neutral contract, not the contract itself.
-
-If a Jev adapter is later authorized, its provider concepts map at the adapter boundary:
-
-| Jev concept | Still contract |
-| --- | --- |
-| `Choice` | `SelectionDecision` |
-| `Score` | `ScoreDecision` |
-| `Noul` | `BinaryDecision` |
-
-Jev/TypeSafe-specific request types, SDK objects and terminology must remain outside Still core types.
-
-Jev is currently:
-
-- **not** a mandatory dependency;
-- **not** the current default provider (`gpt-4o-mini` is the initial default behind the neutral interface);
-- **not** required for Still startup or normal operation;
-- **not** evidence that a System-One architecture is already implemented;
-- **not** exempt from normal data/egress/Grant controls.
-
-A future adapter or provider promotion requires separately authorized implementation and comparable Still-side evidence.
-
-DECISION-ROUTE-01 / [#580](https://github.com/Jongtae/agentos/issues/580) authorized and added an optional Jev adapter (`decision_adapters.JevDecisionEngine`) over TypeSafe AI's documented HTTP API. It remains optional, off unless the owner saves a TypeSafe key **and** explicitly activates it, not a startup dependency and not the default. The mapping above is implemented at the adapter boundary only: `noul` → `BinaryDecision` (answer `noul ≥ 0.5`, probability of the chosen side), `choice` → `SelectionDecision` (criteria are the declared candidates plus `none-of-these`, Jev's `confidence` kept), `score` → `ScoreDecision` (five evenly spaced levels of the Still scale, mapped back). TypeSafe documents English as its strongest language; Korean accuracy is an owner-visible caveat and is exactly what the qualification suite below measures.
+Core depends on the neutral interface. Provider SDK types and provider-specific vocabulary stay inside adapters. A route receives only the context the caller supplied, bounded by the applicable caller/adapter limit; it does not add history, Memory, files or connector content on its own.
 
 ## DecisionEngine routes (#580)
 
-The DecisionEngine route is a **third role**, distinct from (1) the Still assistant identity and (2) the Work-execution route owned by [#504](https://github.com/Jongtae/agentos/issues/504). A provider or subscription may technically back more than one role; the roles stay separate in configuration, policy, telemetry and Evidence.
-
 ### Routes
 
-| Route | Adapter | Destination | Credential | Model identity |
-| --- | --- | --- | --- | --- |
-| `direct_api` | `ModelDecisionEngine` over the existing `ModelAdapter` tool call | `api.openai.com` (initial default `gpt-4o-mini`; other `decision_model` providers as before) | a decision-only OpenAI key, or the Work OpenAI key when the owner's Work API is already OpenAI (#417 default) | requested = configured model; observed = the response `model`, else `not reported` |
-| `jev` | `JevDecisionEngine` over the existing bounded `request_json` transport | `api.typesafe.ai` (`POST /v1/systemone`) | owner's TypeSafe API key (`decision_jev_key` secret) | requested = `jev-latest` or an owner-entered pinned id; observed = the response's versioned `model` |
-| `subscription_cli` | `SubscriptionCliDecisionEngine` over `BoundedExecutionAdapter` isolation | the subscription account's provider (OpenAI for Codex, Anthropic for Claude Code) | the CLI's own official login (Codex `CODEX_HOME`; Claude Code `CLAUDE_CODE_OAUTH_TOKEN` from #571), or the engine's owner-set cloud provider profile (#211: Amazon Bedrock / Microsoft Foundry for Claude Code, Azure OpenAI for Codex; documented variable names only, counted against the profile's daily cap) | requested per model policy; observed only when the CLI reports it (Claude Code `modelUsage`), otherwise `not reported` (Codex `exec --json` reports none) |
-| `off` | `UnavailableDecisionEngine` | none | none | none |
+| Route | Implementation and boundary |
+| --- | --- |
+| `direct_api` | `ModelDecisionEngine` uses the existing model adapter. The selected configuration determines provider, model and key. The historical default is not an architectural requirement. |
+| `subscription_cli` | `SubscriptionCliDecisionEngine` uses the bounded CLI path, with the no-tool Judgment profile and runtime qualification below. |
+| `jev` | Optional `JevDecisionEngine`; explicitly configured and activated, never a startup dependency or implicit fallback. |
+| `off` | `UnavailableDecisionEngine`; no provider call. |
 
-When no route has been chosen, the #417 default applies unchanged. Every route receives exactly the `DecisionContext` the caller built (bounded by `MAX_CONTEXT_CHARS`); no route adds conversation history, Memory, files or connector content, and callers never branch on the route (`RoutedDecisionEngine`).
-
-CONNECT-01 #1301 binds foreground judgments to the request's existing WorkBudget.
-`RoutedDecisionEngine` attaches host admission to `DecisionContext`; every supported
-provider adapter calls `context.admit()` once immediately before the HTTP/model or
-CLI request. Configuration, unsupported-operation and size preflight failures do
-not spend a provider-call allowance. A dispatched failure does. Admission failure
-returns a non-answer without calling the provider; it never grants authority.
-The service opens the scope before routing, propagates it to joined early tasks,
-and preserves it through connection/approval continuation and canonical request
-migration. Work-owned reaction threads capture an existing-only ledger bridge;
-late callbacks cannot spend a resumed run's allowance or open a fresh one.
-Since #1418 those reaction judgments spend the row's own `presentation` counter
-(`WORK_PRESENTATION_TURNS`), never the work `turns`. The last work turn is held
-for the outcome judgment (`WORK_JUDGMENT_RESERVE`, `DecisionContext.reserve`).
-Plans, workers and reactions cannot leave an answer unjudged, and a re-plan is
-asked only while it, the worker it briefs and that judgment still fit. A location
-continuation runs on the asking Work's kept conversation route (digest-checked)
-without judging the replayed message's capability again.
-A completed delivery retains its truth-gated default reaction without reopening
-the already paused Work for an optional model choice. Planning and completion
-callers avoid a second charge when the routed engine owns the same budget. A source Work ID on background upkeep or qualification
-is attribution only and does not grant or reset foreground execution time.
-
+Main AI, Judgment AI and the assistant's speaking identity are distinct roles, not necessarily distinct providers. The Work route and decision route retain separate configuration and Evidence. A cloud profile remains limited to the engine's documented variable allowlist and its daily call cap; Work and Judgment calls both count.
 
 ### Configuration and owner actions
 
-- `decision_route` (config row) is the **active** route. It is written by a passing explicit owner activation or the automatic update qualification described below; it is never written by saving a key or by a login check. The legacy Work-route calls `select_ai_route` / `connect_subscription_engine` never write it, and decision-route activation never writes `subscription_engine` or `model`.
-- **Follow mode (PRESENCE-SETTINGS-02 / #619).** The Judgment AI has three modes: `follow_main` (the default for a fresh install and for owners with no `decision_route` row), explicit (a #580 route chosen under 판단 AI › 고급) and `off`. A `follow_main` row names the Main AI it was resolved for (`main`) and the model chosen from that Main AI's ranked list (`decision_routes.FOLLOW_CANDIDATES` over `RANKED_MODELS`, SEC-JUDGE-01 #679, chosen by `fastest_qualified` since #472; see *Judgment model policy* below): OpenAI API → `gpt-4o-mini`, then `gpt-6-luna`; Anthropic API → `claude-haiku-4-5`; OpenRouter → `openai/gpt-4o-mini`, each over `direct_api` with **the Main AI's own probed Work key** (`model_key`, read live and used only while that provider is the current Main AI; a newly saved but not yet confirmed provider key is never used); Claude Code → `subscription_cli`, `haiku` then `sonnet`; Codex → `subscription_cli` under the strict profile (below), `gpt-6-luna`, `gpt-5.6-luna`, `gpt-5.6-terra` filtered by the installed binary's bundled model listing. Every follow resolution runs `fastest_qualified` (#472): every candidate through the full qualification suite, the fastest that passes is used, none passing leaves the row needing attention. A Main AI outside the chooser cannot be followed; the reason is shown and nothing is substituted. The **only** Work-route action that writes `decision_route` is the Main AI switch **확인하고 사용** (`/api/main-ai/activate`), and only while the mode is `follow_main`: after the Main AI probe passed and the Main AI was committed, the switch queues a background qualification job and returns immediately (#685). The job is one `decision_qualification_jobs` row per follow route (at most one open per route; a newer Main AI switch supersedes an older open job), claimed by the existing service work loop and run off that thread so owner Work is not blocked. Settings shows it as 확인 중 with its progress (model, case n/total), then passed, or failed/cancelled with the reason, and offers 확인 취소 (a queued job stops at once, a running one at its next case). The `decision_route` row changes only when the qualification passes: a failed, cancelled or superseded job leaves the previous row exactly as it was. That previous row never falls back to another route, key or account: a `follow_main` row resolved for the previous Main AI stays unavailable (below), and the #417 default keeps its said-out-loud `fallback` state. A job cut off by a restart is requeued once while its Main AI is still current and still followed; otherwise it ends `failed: interrupted`. An explicit or `off` Judgment AI is never changed by a Main AI switch. A `follow_main` row whose `main` differs from the current Main AI (for example after a legacy switch) answers `provider_unavailable` until it is re-resolved. Choosing 기본 AI 따라가기 explicitly (`/api/decision-route/activate` with `transport: follow_main`, from 판단 AI › 확인 or 고급 › 따라가기 사용) queues the same background job and returns at once (#760), even while the Judgment AI is `off` or explicitly chosen. Refusals that need no call (no Main AI, a Main AI that cannot be followed) stay synchronous. Each job records the `decision_route` revision it was queued against, and any other owner choice made before it runs or commits supersedes it. The previous route stays until the job passes, and a job that ends without passing is shown next to the unchanged off/explicit sentence.
-- Saving a key (`/api/decision-route/credential`) stores **only the key** and does **not** activate a route or start egress. `decision_model` (which the #417 resolver treats as a configured provider) is written only by a successful `direct_api` activation. With no `decision_route` row the pre-#580 default behaviour is unchanged. Removing a decision-only key after activation leaves the chosen route needing attention (`available: false`); it does not fall back to the Work OpenAI key.
-- One activation runs at a time; a concurrent activation is refused ("already checking").
-- Activation (`/api/decision-route/activate`) sends synthetic judgments (no owner content) through the candidate route: the full qualification suite for every model choice (`fastest_qualified`, `lowest_qualified` and `explicit`, including a direct API model, #679), one probe judgment for `engine_default`, Jev and `off`-adjacent checks; only a passing check commits. Any failure raises, records a content-free check, and leaves the previous route unchanged.
-- Opening Settings reads configuration only: no subprocess, no model or HTTP call.
-- There is **no cross-route fallback**. An unavailable active route answers `provider_unavailable`; it never falls back to another provider, account, subscription engine or the engine default.
-- **Honest display (#679).** `DecisionRoutes.status()['effective']` names what answers the next judgment and why, as a translatable template: `active` ("기본 AI(Codex)를 따라가는 중 — gpt-5.6-luna, 검증됨"), `fallback`, `attention` or `off`. With no `decision_route` row the #417 default OpenAI API still answers when an OpenAI Work key exists; that is shown as a fallback with its reason ("구독 판단을 쓸 수 없어 OpenAI API(gpt-4o-mini)를 쓰는 중: …", with 확인 to resolve the follow route) instead of reading as "follow Main AI". Before #679 every recorded judgment of the owner's store ran on that default while Settings said "follow Main AI".
+Saving a credential stores only the credential. A login check or model listing is not activation. `decision_route` changes only after the applicable successful activation/qualification; removing an active decision-only key leaves the route needing attention rather than borrowing a Work key.
+
+There is **no cross-route fallback** for an unavailable active Judgment route. Legacy default resolution when no route row exists must be displayed as the effective fallback with its reason, not misleadingly as a working subscription or follow route. `DecisionRoutes.status()['effective']` distinguishes active, fallback, attention and off.
+
+Follow mode is the default preference for a fresh installation. A follow row identifies the Main AI for which it was qualified. A row bound to an earlier Main AI remains unavailable until successfully resolved for the new one. An explicit or off Judgment choice is not changed by a Main AI switch.
+
+After the owner's Main AI activation passes its own probe and commits, follow-mode qualification is queued through `decision_qualification_jobs`. Explicitly choosing follow mode queues the same process. Unsupported/no-Main preflight refusals make no provider call. There is at most one open job per follow route; a newer switch supersedes an older job. Jobs bind the route revision and chosen Main AI, run off the foreground work thread, and check those bindings again before committing. Failure, cancellation or supersession leaves the prior row unchanged. A queued cancellation stops immediately; a running one stops at its next case. An interrupted job is requeued once only while its Main AI is still current and followed; otherwise it ends interrupted.
+
+Concurrent explicit activation is refused. Opening Settings only reads configuration; it does not launch a process, qualify a model or contact a provider. A model-refresh action is an owner-session, same-Origin POST; missing or cross-origin Origin is refused. Model lists and credentials are not placed in prompts merely to render Settings.
 
 ### Subscription model policy
 
-- `engine_default` — no model flag; the isolated CLI answers with its own default. Because the owner's user configuration is ignored, this is not a user-configured default. Offered, never preselected (for Claude Code it is Opus).
-- `explicit` — offered only when the installed CLI's own `--help` declares `--model` (checked on explicit owner action, recorded in `decision_cli_capabilities`). The owner-entered or listed identifier is then run through the **full qualification suite** on the owner's account (#679; a single probe before); a refusal is recorded as `model-not-verified`, a model that answers but does not qualify as `not-qualified`, never emulated through owner configuration, and the previous route stays.
-- `fastest_qualified` — **the default in follow and separate mode (#472, owner direction 2026-10-31: choose by speed and quality, not price)**. Candidates are the same as for `lowest_qualified`. **Every** candidate runs the qualification suite, each case timed (`qualify(timer=…)`, monotonic clock), and a case that answered but failed is run again (below). Among the candidates that pass, `decision_routes.pick_fastest` uses the lowest median (p50) latency; a candidate whose p95 is above 1.5× the best qualified p95 ranks behind every candidate within that guard; p50s within 10% of the fastest count as the same speed, and among them the higher pass rate, then score, then the ranked order decides. The ranked order is the only place price still appears, as the last tie-break. If none passes, the result is the same `no-qualified-candidate` failure as below. The committed route's `qualification` record adds `p50_seconds`, `p95_seconds`, `pass_rate` and, when more than one candidate ran, `compared` (each candidate's model, pass/fail, p50/p95 and first failed case); each candidate row adds `p50_seconds`, `p95_seconds`, `pass_rate`, `retried` (case, runs, passes) and `selected` on the one used. Settings names the chosen model as the fastest qualified one with its median and p95 and the candidates it was compared with. All of it is model names, numbers and synthetic case ids, so it stays content free.
-  - **Borderline cases (#470).** With `fastest_qualified`, a case that passes on its first run passes. A case whose engine answered but Still policy rejected the answer is run again, up to 3 runs, and passes only when 2 of them passed; it stops as soon as two runs agree. One unlucky answer therefore neither excludes nor admits a model by chance. An engine failure (`last_failure`: timeout, auth, rejected model, guard) is not variance and is not repeated. A qualified candidate that needed a repeat has a pass rate below 1 and loses a speed tie. `lowest_qualified` and `explicit` keep one run per case.
-  - **Calls.** A fully passing candidate costs 11 calls, so a follow qualification costs 11 × the number of candidates (Codex: up to 33 with `gpt-6-luna`, `gpt-5.6-luna` and `gpt-5.6-terra` bundled; Claude Code: 22) plus at most 2 repeats per candidate. It runs as the existing background job (#685), never on the request path. Latency here is the whole judgment call as Still waits for it, including process start (#469: about 0.3 s for Codex, about 4 s for Claude Code), which is the same for every model of one engine.
-  - **Existing routes.** A stored route is not rewritten and no qualification starts by itself. A follow row's policy is the follow default rather than an owner choice, so its next qualification uses the current default: a Main AI switch, the owner's 기본 AI 따라가기, or the automatic CLI-update requalification (#346). Until then, Settings marks a follow row chosen under an earlier policy and offers **다시 확인**, which queues the same background job. A separately chosen `lowest_qualified` or `explicit` route keeps its policy through CLI updates.
-- `lowest_qualified` — the #679 default, still selectable. Candidates are the owner's 1–3 (lightest first) or, when none are given, the route's ranked cheapest-first list. Each candidate in order runs the qualification suite; the first that passes is activated. If none passes the route is not changed and the failure is `no-qualified-candidate`; no stronger/different model or route is tried. Each tried candidate's content-free row keeps its score and cases run; a failed one also names the first failed case (`failed_case`), its outcome, and the declared answer and confidence the engine gave there, with `failure` set to the engine's failure code or `case-failed` when the engine answered but Still policy rejected the answer (#470).
+| Policy | Selection rule |
+| --- | --- |
+| `fastest_qualified` | Default for follow and separate selection since Still #472. Run every candidate through the suite and choose among those that pass using the bounded latency/quality rule below. |
+| `lowest_qualified` | Retained explicit option. Try the ranked candidates in order and use the first that passes. It is no longer the default policy. |
+| `explicit` | Use the owner's offered/entered model only after the full applicable suite. A missing model flag, refused model or failed qualification leaves the previous route unchanged. |
+| `engine_default` | Send no model flag. This means the isolated CLI's default, not the owner's ignored configuration file. It is offered, not silently preselected. |
+
+For `fastest_qualified`, measure complete judgment-call latency with a monotonic clock. A qualified candidate whose p95 exceeds 1.5 times the best qualified p95 ranks behind candidates within that guard. Compare p50 next; within 10% of the fastest p50, use pass rate, then score, then the recorded rank as tie-breaks. Price influences that last rank, not a separate request-time routing rule.
+
+A semantic case that receives an answer but fails policy can run up to three times, stopping when two runs agree. A timeout, authentication error, rejected model or guard failure is not semantic variance and is not repeated by this rule. `lowest_qualified` and `explicit` retain one run per case. Record actual calls and retries; do not advertise a fixed total that ignores repeated cases. Qualification runs outside the request path under the existing job controls.
+
+Stored routes are not silently rewritten by an editorial or candidate-list change. A follow preference uses the current follow policy on its next authorized/automatic qualification; an explicit policy remains explicit. A legacy follow result can be shown as needing a fresh check rather than falsely described as selected by today's policy.
 
 ### Judgment model policy (SEC-JUDGE-01 / #679)
 
-- **Ranked candidates are data** (`decision_routes.RANKED_MODELS`, each with its source URL and check date in a comment; no new component; the order is cheapest first, which `fastest_qualified` uses only as its last tie-break, #472): Codex `gpt-6-luna`, `gpt-5.6-luna`, `gpt-5.6-terra`; Claude Code `haiku`, `sonnet`; OpenAI API `gpt-4o-mini`, `gpt-6-luna`; Anthropic API `claude-haiku-4-5`. Codex's list is filtered by what the installed binary bundles; codex-cli 0.153.4 does not bundle `gpt-6-luna` (`-m gpt-6-luna` warns "Model metadata … not found"), so on it the effective cheapest candidate is `gpt-5.6-luna`, and a newer CLI that bundles `gpt-6-luna` makes it first after requalification. `gpt-4o-mini` stays first for the OpenAI API because `gpt-6-luna` over Chat Completions (the `ModelAdapter` transport) is unverified; it is promoted only after an owner live check in which an explicit `gpt-6-luna` choice passed the full qualification on the owner's key, recorded here.
-- **Strongest-model judgments (#420, owner direction 2026-10-30).** A judgment may ask for the route engine's strongest model (`DecisionContext(strongest=True)`); the once-a-day dream (#402) does, everything else keeps the route model above. No model name is pinned: Codex uses the first model its installed catalogue lists (`codex debug models --bundled`, sorted by the CLI's own priority and cached per binary, so a CLI update brings a newer top model), Claude Code its documented top alias `opus`, which the CLI resolves to the newest version. Only where the installed CLI accepts a model flag, never on a cloud provider profile; effort `high` when that model declares it. A model the account refuses (`request-rejected`) falls back once to the route model, and the audit names the model that answered. Such a judgment may carry its own longer bound (the dream: 240 s inside its 300 s run deadline). The strict launch, tool surface, guard and qualification are unchanged; only the model flag differs.
-- **Model lists.** Settings fills a model list only on the owner's explicit **모델 목록 새로고침** (`POST /api/decision-route/models` with `{route}`, never on page open, the #609 pattern). Because it runs a CLI or sends a saved key to its provider it is a POST that needs an owner session and this page's own `Origin`; a cross-origin or Origin-less request is refused with 403 (#679 review P2-2): Codex `codex debug models --bundled` only (the catalogue compiled into the binary, no network, run with an empty per-call `CODEX_HOME`; the plain `codex debug models` rewrites the shared `$CODEX_HOME/models_cache.json` and is never run); Claude Code the documented aliases (`haiku`, `sonnet`, `opus`; the CLI has no machine-readable list); OpenAI and Anthropic the provider's official `GET /v1/models` with the key that route would use, narrowed to the ranked candidates (any other id can still be typed); Jev (DECISION-JEV-VERIFY-01 / #609) TypeSafe's official `GET https://api.typesafe.ai/v1/models` (the typesafe-sdk-js `client.models.list()` surface, `{"models": [{name, description, release_date}]}`) with the saved `decision_jev_key` as `Authorization: Bearer`, offering **every** provider-listed name unranked with `jev-latest` kept as the default alias and description/release date kept as secondary technical fields. Every entry is labelled **목록에 있음(검증 전)**: a listing is not account support. Choosing one is an ordinary activation (the full qualification on the API and subscription routes, the single probe on Jev); on failure the previous route is kept and the reason shown. For Jev, **모델 저장** (`/api/decision-route/credential` with `{transport: jev, model}` and no key) only stores the configured model: it does not activate Jev, and an already active Jev route keeps its activated `requested_model` until 사용 is pressed again. While Jev is active, a saved model that differs from the active one is offered as **저장한 모델 사용**, the same checked activation. Unlike the other routes, Jev activation sends **one probe judgment**, not the qualification suite, and records no `qualification`/`suite_version` (Settings shows it as 확인됨, not 검증됨); the Jev picker says so. A failed Jev listing stores nothing and leaves the active route and the configured Jev model unchanged. The Jev states stay distinct: *model discovered* (listed, 검증 전) → *route configured* (key + model saved) → *route activated* (probe passed, `decision_route` committed) → *qualification result* (not recorded by Jev activation; a suite run is a separate claim) → *owner-live observed* (a real judgment with the owner's key through `RoutedDecisionEngine → JevDecisionEngine`, requested vs observed model). Only discovery, configuration and probe activation have deterministic-test evidence; owner-live Jev verification remains owner-operated.
-- **Effort.** A judgment asks for low reasoning effort where the model supports it: Codex `-c model_reasoning_effort="low"` checked against that model's `supported_reasoning_levels` in the bundled listing, Claude Code `--effort low` for `sonnet`/`opus` (Haiku 4.5 takes no effort setting, so none is sent), and only when the installed CLI's own `--help` declares `--effort`; otherwise nothing is sent and the route records `effort_note: effort-flag-missing`, shown in Settings (#679 review P2-3). The owner may pick another supported level with an explicit model; an unsupported level is refused before any call.
-- **Work route model.** The Work route runs each CLI with the owner's user configuration ignored (Codex `--ignore-user-config`), so a model in `~/.codex/config.toml` never reached Work. The Main AI chooser now records an explicit model per subscription CLI (`subscription_engine_models`; empty is the CLI's own default) and `BoundedExecutionAdapter.command()` passes it as the CLI's `--model`, recorded as the turn's `requested_model`. Settings shows it and states that the Codex config model is not used. The isolated sidecar deployment keeps its closed request contract (prompt, engine, bearer, task id; `isolated_engine_sidecar._validate` rejects any other field) and takes no model: there the setting is hidden, a non-empty model is refused, and a Work model stored before isolation was configured makes the Work fail with a named reason instead of silently running the CLI default (확인하고 사용 clears it).
-- Every subscription route (including `engine_default`) is tied to the CLI binary fingerprint (resolved path, size, mtime) and version recorded at activation, because the isolation-flag check, the Codex tool-surface plan and any verified model describe that binary. A changed binary makes the route answer `provider_unavailable` with `requalification-needed`, and Settings shows it as needing a re-check, until the owner re-activates.
+Ranked candidates, aliases and current model descriptions are data in [decision_routes.py](../src/personal_agent/decision_routes.py). Do not maintain a competing list of contemporary model names in this contract. Availability in a catalogue is not proof that the account can run the model.
 
-### Qualification suite
+Codex discovery uses the installed binary's bundled catalogue with an empty per-call `CODEX_HOME`, never the command that updates the owner's shared model cache. Claude Code uses its supported aliases. Direct-provider discovery uses that route's saved credential and official model-list path on explicit action. An owner can still enter a model identifier where the route supports it; it must pass the applicable check. Listing failure preserves both configured and active choices.
 
-`decision_qualification.py`, `SUITE_VERSION = decision-qualification/4` (the same 11 cases as `/3`, with synthetic previous requests, replies and relative times supplied to the four follow-up cases, matching the production caller after #173; earlier qualifications retain their historical scope), all cases must pass. Cases run through the production caller (`ConversationJudgments`) or `DecisionEngine.choose` + `DecisionPolicy`: retry after failed Work, correction, reference, a new topic is not a follow-up, an ambiguous referent abstains, declared-candidate selection, no invented candidate, parked-request withdrawal, and failed/partial/unknown projections that must not be upgraded. Contexts are synthetic. A provider failure is a failed case, never a pass. Changing any case requires a new suite version.
+Low effort is requested only where the model and installed CLI declare support. A missing flag is reported, not emulated with owner configuration; an unsupported explicit effort is refused before a call. Work-model selection is separate: the selected subscription Work model is passed explicitly and recorded. An isolated sidecar whose closed request contract has no model field refuses a non-empty unsupported setting rather than silently using another model.
 
-### Authority and threat model
+<a id="strongest-model-judgments"></a>
+**Strongest-model judgments.** A caller such as dream may request `DecisionContext(strongest=True)`. Resolve the strongest supported model from the route engine, not a pinned model name. Use a model flag only when supported and not for a cloud profile; request high effort only where supported. A provider rejection of that model may fall back once to the route's own model, with the answering model recorded. This is not permission to switch providers or accounts. The same isolation, admission and output checks apply. Dream's run window and the documented timing discrepancies belong in the [Memory contract](engineering/contracts/memory.en.md).
 
-- **Data sent.** Only the caller-built `DecisionContext` (short attributable facts such as the current short utterance plus prior intent/status) and the question/schema; the existing caller-side guards (for example, locally handled note/private-search requests are never sent) apply identically to every route. Probes and qualification send synthetic text only.
-- **Destinations.** Exactly the active route's destination above, shown in Settings before activation. Switching routes is the owner's explicit destination decision; nothing switches implicitly. With `follow_main` (#619) the Judgment AI destination can change as a consequence of the owner's Main AI switch; the Main AI chooser lists **both** destinations (Main AI and the following Judgment AI) for the selected row before 확인하고 사용, inside the same explicit action. The follow candidate always goes to the same provider/account as the new Main AI.
-- **Subscription isolation.** Each judgment runs in a fresh empty per-call directory that is also `HOME`, with `PATH=/usr/bin:/bin` (+ the CLI's own directory for Codex), no inherited environment, no shell, in its own process group (a timeout kills the whole group, including the native binary behind Codex's `codex.js` wrapper). The Still MCP bridge is **not** attached: a judgment has no Still tools. Activation refuses a CLI whose `--help` lacks the isolation flags (whole-flag match).
-  - **Codex (#679: strict-isolated).** A Codex judgment launches with the #616 strict profile's own arguments (`bounded_execution.strict_launch_arguments`, reused unchanged): the `agentos-strict-isolated` permissions profile (platform `:minimal` and the per-call directory read-only, no network for sandboxed commands) **replaces** `--sandbox read-only`, whose policy could read the home folder and the store (`TRUSTED_LOCAL_LIMITATION`); `--ignore-rules`; and one `--disable` per non-allowlisted feature from the verified plan. Activation additionally runs the #616 no-model qualification (`BoundedExecutionAdapter.qualify_strict`): tested platform (macOS) and CLI version (0.153.4), an engine runtime root outside the baseline-readable paths, Codex's own sandbox runner under the exact profile **denying the home folder, the login profile, the owner store and a sibling turn directory** while the turn directory stays readable, and the strict feature plan. A failure refuses activation (`strict-profile-unqualified`) and keeps the previous route; a stored Codex route without a strict record for this platform answers `provider_unavailable`. The route stores the complete qualification record (binding: platform, resolved launcher and native binary with fingerprints, home, engine runtime root, owner store, `CODEX_HOME`; launcher and native sha256 digests; version), and **before every judgment** the guard applies exactly the strict Work route's checks (`strict_binding_mismatch`, both digests, and the version the CLI reports for `--version` in the Still environment, one local model-free subprocess): any mismatch answers `provider_unavailable` with `requalification-needed` and makes no call (#679 review P1). Settings shows the binding mismatch from local stats only. The feature allowlist is `strict_allowed_features()`: `unified_exec` may stay listed as enabled (it cannot be disabled on 0.153.4 or 0.158) because `shell_tool` is disabled, so no command tool is offered, and the permissions profile would still confine a command. The full argv is `exec --json <strict arguments> --skip-git-repo-check --ignore-user-config --ephemeral --output-schema <file> [-c model_reasoning_effort=…] [--model …]`, no MCP servers, plus official `-c` overrides `web_search="disabled"`, `project_doc_max_bytes=0` (no project docs; see the global-instruction limitation below), `skills.include_instructions=false`, `include_environment_context=false`, `include_permissions_instructions=false`, `include_collaboration_mode_instructions=false`, `include_apps_instructions=false`, `tools.update_plan.enabled=false`. Tool-bearing features are handled as an **allowlist**: at activation Still reads `codex features list` (local, no model call) with an empty `CODEX_HOME` (the defaults `--ignore-user-config` runs with), disables **every** listed, non-removed feature outside a small non-tool allowlist, whatever its default in that listing (so a feature that is off there but on under the owner's profile is still disabled; this covers `memories`, `multi_agent*`, `web_search_*`, `external_agent_memory_import`, `chronicle`), re-reads the listing with those disables, and refuses activation unless only allowlisted features remain; unknown stages/lines fail closed, and the CLI itself rejects an unknown feature name. Observed on the installed Codex CLI 0.153.4 (local listing only, 2026-09-25): `unified_exec` (command execution) still lists as enabled after `--disable unified_exec`; under the #580 decision allowlist that failed closed and Codex could not be activated. Since #679 the strict allowlist accepts it (above), and the no-model process test `tests/test_strict_isolation.py::CodexDecisionInstructionFiles::test_a_judgment_under_the_strict_profile_cannot_read_the_home_folder` (opt-in `AGENTOS_CLI_QUALIFICATION=1`, real codex-cli 0.153.4, loopback scripted model, synthetic `CODEX_HOME`) observed that the exact judgment argv offers no command tool and that, with the shell re-offered by a test-only argv edit, reads of a home canary and a store canary were denied ("Operation not permitted"). Claude Code and the API/Jev routes are unaffected. The same exposure exists on the separate Work-execution route and is out of #580's scope. **Historical limitation before #346:** `codex debug prompt-input` shows messages, not tool definitions. The #346 loopback qualifier now observes the offered tool list directly; it still shows a `multi_agent_role` developer message after `--disable multi_agent`, so "no tools" for Codex is a best-effort configuration, not a verified empty tool surface. Residual: `CODEX_HOME` stays the owner's real profile because Codex reads (and refreshes) its official login there and Still does not read or copy it; with `--ignore-user-config` and the overrides above its `config.toml`, project docs and skill instructions are not loaded, but files such as bundled system skills may still be written there by the CLI. `--ignore-rules` (activation requires it in `codex exec --help`) keeps `$CODEX_HOME/rules` execpolicy rules from allowing a command outside the sandbox, reusing the #616 review P1 finding.
-  - **Codex global instruction files (#624, observed limitation).** `project_doc_max_bytes=0` limits project docs only. **The global `$CODEX_HOME/AGENTS.override.md`, or when it is absent `$CODEX_HOME/AGENTS.md`, still reaches the Codex model context as a `# AGENTS.md instructions` user message under the full decision argv above.** Observed on Codex CLI 0.153.4 (2026-09-26) with `codex debug prompt-input` (no model call) and with the exact `SubscriptionCliDecisionEngine` argv against the real `codex exec`, a synthetic populated `CODEX_HOME` and a loopback scripted model (`tests/test_strict_isolation.py::CodexDecisionInstructionFiles`, opt-in `AGENTOS_CLI_QUALIFICATION=1`; no owner profile, account or live model). With neither file present no instruction-file content from `CODEX_HOME` reaches the prompt (Codex still reads its login there). No official option stops it: `codex exec --help` offers `--ignore-user-config` (config.toml only) and `--ignore-rules` (execpolicy only), and `-c instructions=...`, `project_doc_fallback_filenames=[]`, `project_root_markers=[]` did not remove it. A separate synthetic `CODEX_HOME` per judgment would stop it, but Codex keeps its login there (file or keyring store, refreshed by the CLI), so it would require Still to copy or link the owner's credential, which this route does not do; that was rejected. Therefore that file's content is treated as **owner-authored, untracked, untrusted input** to a Codex judgment: Still does not read, record or attribute it, a judgment remains advisory under the rules above (validated schema, closed options, no authority), and it goes to the same destination the route already names (OpenAI via the owner's Codex account). **Since #346, admission uses the local runtime qualification in `cli_qualification.py`, including the same three instruction-file states, rather than membership in `CODEX_INSTRUCTION_FILES_QUALIFIED`.** That constant records manual observations only. A missing or failed observation refuses admission; a stored route without instruction-file evidence stays unavailable until automatic or explicit qualification passes. Activation still checks only the **size** of the owner's global instruction files (a stat, never their content) and shows the existing Settings warning (`instruction_files_present`, `instruction_files`). This finding is about Codex only; the Claude Code controls above are unchanged and their instruction-file effect remains as stated there.
-  - **Claude Code:** `-p … --output-format json --json-schema … --tools "" --restricted --strict-mcp-config` (no `--mcp-config`) `--setting-sources ""`; `--restricted` (listed by the installed CLI's `--help`; its compatibility with the structured-output call was checked from `--help` only, not by a run) removes code-running tools and WebFetch unless `--tools` names them; (no user/project/local settings files) `--no-session-persistence --system-prompt …`, with `CLAUDE_CODE_DISABLE_CLAUDE_MDS=1` and `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` so no CLAUDE.md is discovered up from the working directory and no auto-memory is used. These env names were read from the 2.1.280 binary; their effect was not run-verified.
-  - Residual risk: each CLI still reads its own official login profile, and Codex's strict permissions profile (Seatbelt on macOS; bubblewrap on Linux and WSL2, which needs unprivileged user namespaces and otherwise fails qualification closed, #450) is enforced by Codex itself; its `:minimal` baseline keeps OS paths, /tmp and /private/var/tmp readable (`STRICT_ISOLATED_LIMITATION`), and the strict qualification is bound to the exact locally checked binary identity, observed version and tested platform.
-- **Credentials.** Keys are stored in the local secret store, never returned by the read model, and redacted from provenance (`decision_jev_key` added to the redaction list). Subscription logins are the CLI's own; Still reads no credential file.
-- **Authority.** Decisions remain judgment only: no route can mint/widen a Grant, add a destination for Work, mark Work complete, change effect/Evidence truth, or change the Work route. `DecisionPolicy` thresholds are unchanged.
-- **Failure paths.** `timeout`, `provider_unavailable` (with `failure` = `auth`, `usage-limit`, `request-rejected`, `not-configured`, `cli-not-found`, `requalification-needed`, …), `malformed`, `context_rejected`, `cancelled` are explicit and tested; cancelled/oversized contexts make no call. A subscription CLI that exits non-zero (#797) adds `exit_code`, the provider's structured `provider_status` when one was reported, and `error_source` (`provider-error`, `stderr` or `none`) to its audit row, never any CLI text, and writes one `decision call failed …` warning line whose reason is the engine path's own `failure_details`/`redact_reason` output after the stored Claude Code token is removed (a reason that echoes the prompt is withheld). Classification, retries and fallback are unchanged.
-- **Provenance.** Each audit row records `route`, `engine`, `model_policy`, `requested_model` and `observed_model` (`not reported` when absent); the developer trace shows them apart from the Work executor.
+## Qualification suite
 
-### Verified capability sources
+The recorded suite is `decision-qualification/4` in [decision_qualification.py](../src/personal_agent/decision_qualification.py): eleven synthetic cases covering follow-up retry, correction, reference, a new topic, ambiguous abstention, declared-candidate selection, no invented candidate, withdrawal and truthful failed/partial/unknown projection. Cases use the production judgment seam or the declared selection/policy boundary. Every required case must pass; provider failure is not a pass. Changes to cases require a suite-version change.
 
-Recorded from the installed tools' own help and the provider's documentation on 2026-09-25 (and 2026-09-27 for #679), not from live runs: Codex CLI 0.153.4 (`codex exec --help`, `codex features list`, `codex debug models --bundled`, `-c model_reasoning_effort`); Claude Code 2.1.280 `--effort`/`--model`; Claude Code 2.1.280 (`claude --help`; the result record's `structured_output` field for `--json-schema`); TypeSafe HTTP API reference (`docs.typesafe.ai/api`, `/models`). Evidence class for #580: deterministic unit and DOM tests with fixture transports/runners shaped after those sources. In addition, one synthetic development-time local observation per CLI (outside Still and outside the per-call isolated `HOME`, on the developer's own login) confirmed the argv shapes: Claude Code returned `structured_output` with `--tools ""` and reported `modelUsage`; Codex returned the schema answer as its last `agent_message` and reported no model; an unknown `--model` was refused by Codex with a structured `status: 400` and by Claude Code with `is_error` plus a `[claude-code:unrecognized_model]` stderr tag. **No Still-mediated live Jev, OpenAI or subscription-CLI judgment was observed**, and no claim is made that a given account accepts a given model.
+This suite covers **judge and choose**, not arbitrary structured planning or score calibration. Passing it does not qualify a route for those untested operations. Explicit direct-API/subscription model activation uses the full suite; the existing engine-default initial probe is narrower. Automatic update requalification uses the full suite even for engine-default. Keep these evidence levels visible.
 
-## Orchestration (ORCH-01 / #710)
+## Authority and threat model
 
-Owner direction 2026-09-27 and Constitution C16: the owner's AI tools do the work; the decision model **orchestrates**. It is not a rule engine and it does not execute the task. `src/personal_agent/orchestrator.py` adapts the existing seams (decision `Adapt`, no framework):
+Only the caller-built, redacted context and question/schema go to the configured destination. Follow mode may change the Judgment destination as part of the owner's explicit Main AI switch; that action must disclose both roles' destinations. No successful plan can add a new destination or bypass the current pilot's information-use audit.
 
-- **ARCH-THIN-01 (#820): thin orchestration.** This amendment supersedes any conflicting text in the bullets below. See the [request-path rule census](request-path-rule-census.en.md).
-  - **Plan.** The plan returns `{worker, model, brief: {notes}, tools_mode, tools, tools_reason, reason}`. `brief.goal`, `brief.context` and `brief.completion_criteria` are gone. The notes are optional supplementary text, rendered under `agent_runtime.BRIEF_HEADING` ("Orchestration notes … never replace or narrow the owner's request"). They never restate, narrow or extend the owner's message.
-  - **Sections.** Every attempt receives the owner's message verbatim with the recent conversation, the profile, the current context and the prepared answers (`orchestrator.ALWAYS_SECTIONS == SECTIONS`).
-  - **Outcome.** One outcome judgment (`goal_reached`) decides the Work outcome on either route. It reads the owner's message, the recent conversation, the reply (model-stated) and the recorded tool results, and asks whether the reply served the message. A needed question to the owner serves it, and claims of actions and current facts must be supported by the tool results. The whole reply is judged, up to the delivered answer's cap. `owner_input_needed` and the #767 criteria re-check are removed. #1451: the judgment also states its **gap** when it says no (`judge_explained`, still one `judge` call; the audit record keeps the boolean, never the text). The gap is one owner-facing sentence naming what the reply left unserved. It briefs the next plan call, is recorded on the `evaluated` event, and closes a Work that stayed short instead of a generic step count; with no gap and no failed step the closing line says only that the answer could not be confirmed. The observations the judgment reads are bounded by the caller (16000 characters, page and `code_run` text at least 12000) rather than the general context bound, so an answer drawn from a long tool output is judged against that output.
-  - **Direct route.** A plain reply after tools is judged the same way as a `finish` claim. A tool-less run, which asked no judgment, gets the one judgment during orchestration, as a CLI attempt does; only a `no` changes its outcome.
-  - **Delivery.** The AI's answer is always delivered: `answer_withheld` is removed, and an interrupted Work shows its answer under its header. The only exception is the `unknown` external-effect statement.
+Keys remain in the private credential store and are omitted from read models, prompts, logs and Evidence. The CLI owns its official login. Still does not copy a Codex login file to make a separate decision profile. Secret redaction remains mandatory even where earlier private-read/search separation was explicitly removed.
 
-- **Structured answer on the same contract.** `DecisionEngine.structured(context, question, schema, valid)` returns a `StructuredDecision` (object plus the usual confidence and non-answer outcomes). `SchemaDecisionEngine` implements it for the direct-API and subscription-CLI routes through their existing `_ask` (tool call, `--output-schema`, `--json-schema`); the adapter adds `confidence` to the caller's schema. Jev, `UnavailableDecisionEngine` and an unscripted `FixtureDecisionEngine` answer `provider_unavailable` (`structured-unsupported`). `DecisionPolicy.structured` applies the selection threshold. The audit row keeps no part of the answer (it may carry owner-derived text).
-- **Worker catalogue (data).** Built per Work from stored configuration and recorded observations only: every Main AI route (`main_ai`) with its kind, destination, whether it is the default, its models (the owner's configured model, `decision_routes.known_models`: ranked cheapest-first candidates, documented aliases and the last explicit 모델 목록 새로고침 listing; an API route offers only its tool-call-verified model), a cost tier per model (rank in the cheapest-first list) and per route kind (subscription usage vs metered API; agent CLI vs direct API latency), the #701 agency (own web search, browser tools) and the Still tools of that route (the host CLI profile's bridge actions plus `web_search`, or the package tools on the direct route), with private-read tools marked. A route other than the current Main AI is **available** only when the owner already passed 확인하고 사용 for it and nothing observed since says it cannot run: a CLI must be installed and not signed out (the isolated deployment serves only its own engine; a strict-isolated CLI needs its own qualification); an API route must still hold the key that passed the tool-call probe (the probe's content-free fields are kept with the route's check by 확인하고 사용 and by a passing 확인 recheck while the probed key is the route's saved key). #473 adds per-model observed attempt count, median wall time and min–max range from the newest 200 terminal `subscription_engine` events across workers (`WORKER_OBSERVATION_WINDOW`), including failures. A single bounded store read pairs each terminal event with its preceding running event in the same job; duration is terminal minus running `created`. New running events record the resolved model and effort. Older events use only an explicit model in the newest preceding `orchestrator` planned event for the same worker; an empty historical default or otherwise unattributable attempt is skipped. #498 puts the task size next to the time, because a model that gets the big Works otherwise reads as slow: the median CLI-reported tool calls per attempt and the median seconds per tool call (each attempt's duration over its own count, attempts with at least one call). A partial count is not a reported count; when only some attempts report, the line says how many (`reported in N of M`); when none does, it says **not reported**. Still does not adjust, rank or judge speed from these facts; the decision model does. Each model (including the worker default) also lists medians of up to three CLI-reported numeric usage keys, preferring input/output tokens and `num_turns`, preserving the CLI's key names. Missing keys are omitted from their medians, never treated as zero. These are observations, not task-selection rules or forecasts. No attributable duration renders **not measured**; no reported usage renders **not reported**. API model events do not establish comparable per-attempt durations and remain not measured. Subscription cost describes the owner's finite plan allowance, with no per-token bill and the CLI stopping at the limit until reset. Credentials are never part of the catalogue a model sees.
-- **Current plan.** Before a Work runs, one `structured` call receives the owner's request, bounded recent conversation, redacted owner profile/current context, worker catalogue, Work budget and earlier-attempt summaries. Under #826 it returns `{worker, model, brief: {notes}, reason}`. Deterministic code validates that the worker is offered/available, the model is default or listed, and budget permits the attempt. Since #1431 (owner decision 2026-10-12) the catalogue offers only the owner's Main AI worker while it can run, so a plan varies its model, not the vendor; other connected workers are offered when it is unavailable or its own run failed in this Work. Since #1434 the plan also returns `effort` ("" = the model's own default). The catalogue lists the levels the installed CLI declares for each model (Codex `supported_reasoning_levels` from the cached `--bundled` listing; Claude Code's documented per-alias levels). An undeclared level runs at the default, and the worker argv passes the chosen one through the CLI's own setting (`-c model_reasoning_effort`, `--effort`). Effort is part of the repeat signature, so a re-plan may retry the same model more carefully. Since #1439 the Codex catalogue follows the installed CLI's own `--bundled` listing: its order (`priority`) and each model's own description. Claude Code aliases are described as the newest model of that family the installed CLI knows. Codex's own `exec --json` web search reports only the query and action, never results (#854, rechecked on codex-cli 0.153.4 for #1419: no flag adds them). So the native-search turn guidance tells the worker to open and read a page it needs through the recorded agentos browser tools before saying it could not be checked. Cost tiers rank only the ranked models the worker can actually run, so a ranked model the CLI does not list cannot leave every runnable model `higher-cost`. The owner's request remains verbatim and takes precedence over optional orchestration notes. The removed context-selection/tool-subset/pinned-worker interface is preserved in Decision superseded orchestration history.
-- **Asking for the owner's position first (#1293).** On a Work from the paired Telegram chat that is not itself a location continuation, the first plan call is also offered `ask_location` (the question, in the owner's language, or `""`) and `location_button`. When the plan judges that a useful reply needs where the owner is now and the current context has no position for this Work, Still sends that question through the same #774 `ask_location` path before any worker starts, and the Work ends with the question as its only reply (`delivery='none'`, 👀 cleared as for any reply awaiting the owner). The owner's location then continues the request once, as before. A re-plan is never offered the field, and a send that fails runs the planned worker, which keeps the tool. When the #1261 early plan is not reused, the planned (or fallback) event names the plan inputs that changed (`early_missed`, names only).
-- **Unseen native-search results (#1308).** A CLI reports only the queries of its own web search, not the results. The CLI goal judgment's observation line says the search ran and Still cannot see its results (never `result_count: 0`), and `GOAL_REACHED_PROPOSITION` treats what the reply presents as found there as looked up but unverified, never as proof of a saved, booked, sent or changed effect. The current-context `as_of` has minute precision like `local_time`, so the #1261 early plan's inputs match within the minute.
-- **Evaluate and re-delegate.** Direct route: the run's own #657 completion judgment (`run_agent` now exposes it as `result.judgment`). CLI route: one `goal_reached` judgment over the final answer and the tool evidence Still recorded for that attempt, with what its mediated pages showed, its code_run printed and its effect-free owner-state reads returned (memory only; #1282, #1451, #1466); when it says no, one `owner_input_needed` judgment (#740) over the request, the recent conversation and the answer decides whether the answer asks the owner for input the request needs and the conversation does not provide. An attempt whose steps left it partial or failed is judged even after an effect (only a known effect; no re-delegation follows), and a `reached` verdict makes the Work succeeded: the goal decides, not the steps (#752). It does not while an owner approval is pending or when a state-changing action fell short without later succeeding. Yes is `owner_needed`: no re-delegation, and the answer is the reply; as the direct route's `needs_owner` finish, an attempt that called no tool outside Still-internal state keeps its outcome, and otherwise it is stored `partial` when a tool result was observed and `failed` when none was, with the answer as the report's question; an attempt already short (for example a failed tool) keeps its outcome and still carries the question (#753). Conversation and answer are redacted before they are cut. The Telegram draft announces a re-delegated attempt only as `한 번 더 확인하고 있어요` (#1280 softened wording; #1466 so a re-check does not read as failing) and attempt 1 closes any earlier step's line; the plan's worker, model and reason stay in the Work's Evidence. On `not_reached` or a raised worker failure the orchestrator is asked again with the earlier attempts listed and may change the brief or model (#1431: within the owner's Main AI while its worker can run; another connected worker only after it is unavailable or its own run failed); at most `MAX_REDELEGATIONS = 2` re-delegations, within the Work's one shared `WorkBudget`. No re-delegation after an attempt that ran any action outside the effect-free reads or left an unknown effect (C8), after an owner question/approval need, or when the evaluation is unavailable. The Work's deadline and turns are checked before every plan and `goal_reached` call; when they no longer allow another attempt neither call is made and the next step is recorded as `budget`. A later attempt inherits the private-store labels this Work's earlier attempts recorded (`recorded_private_sources`): they close Still-composed egress, keep its local envelope to size and digest. Since #1440 the `goal_reached` proposition also reads a reply whose answer is that it could not find, open or confirm what was asked as not serving it, even after an attempt. It likewise rejects a reply that settles a specific day, time or case on a usual or standing fact, so such a reply is re-planned within the budget rather than marked reached. A CLI attempt that ends judged `not_reached` or unjudged without a further attempt (limit, budget or no new plan) is never stored as succeeded: not reached is `partial` when the attempt observed a successful tool result and `failed` otherwise, unjudged is `partial`, each with the #657 unknown statement. 
-- **Fallback.** When the Judgment AI cannot answer (`judgment_unavailable`) or its plan is malformed, unconfident or invalid, the owner's default Main AI runs the raw request exactly as before #710, with no brief or model change, and never re-delegates. Why is recorded once per Work. When orchestration had been working and the Judgment AI becomes unavailable, the reply says so once (`orchestrator.NOTICE_ONCE`); an installation where it never worked sees no change.
-- **Evidence.** `orchestrator` tool events per Work: `planned` (attempt, worker, model, brief digest, one-line reason, owner text), `fallback` (code, owner text) and `evaluated` (outcome, next: `redelegate` or `stop` with the reason). The brief text itself is not stored; the digest identifies it. These statuses are not attempts of the Work's trail (`event_trail` reads only `succeeded`/`failed`).
-- **No task-specific code.** The question text is generic; no request, site, provider or category is named. `tests/test_no_scenario_code.py` scans `orchestrator.py`.
-- **ORCH-02 (#729): learning from failed attempts.** The next plan call reads a factual summary of earlier attempts: tools called, typed failures/incomplete calls, native searches with no source URL, evaluation/reason and the answer excerpt labelled model-stated. Under #202 repeat refusal is based on worker, effective model, effort and brief/context digests: a changed brief or context can revise on the same route; an identical repeat is refused. The former tool-set dimension is historical. Bridge timeout, incomplete-call and goal-evidence rules below remain current.
-  - **Bridge tool timeout.** Codex's per-MCP-server `tool_timeout_sec` (verified on codex-cli 0.153.4: present in the binary's `RawMcpServerConfig` fields next to `startup_timeout_sec`, and a parse-only `codex -c mcp_servers.agentos.tool_timeout_sec=300 mcp get agentos --json` with an empty `CODEX_HOME` reports `"tool_timeout_sec": 300.0`; a string is refused at config load, an unknown key is ignored) is set for the `agentos` server only: the longest own bound of the bridge tools the turn offers (`bounded_execution.bridge_tool_bound`: a browser step the relay's `CALL_SECONDS`, bounded research one search plus its page reads, a search the slower of a provider search and a native search, which may send `search_providers.NATIVE_MAX_REQUESTS` sequential requests (the first plus each `pause_turn` continuation) of `NATIVE_TIMEOUT_SECONDS` each, weather its two requests; others Codex's own 60 s) plus 30 s, never beyond the turn's own time (the Work's remaining budget; `MAX_TIMEOUT_SECONDS` is 600 since #733). With the current constants: a search 4 × 45 = 180 s, bounded research 180 + 3 × 12 = 216 s, a browser step 300 s, so a turn without browser tools gets 246 s and one with them 330 s, each lowered by a shorter remaining budget. Unset, Codex cancelled a bounded research call at its 60 s default.
-  - A bridge call that went `running` and has no result when the CLI turn ends is recorded as a typed `tool_incomplete` failure (transient); its effect is `unknown` unless the action is an effect-free read, so it is never repeated blindly.
-  - A CLI attempt's `goal_reached` input includes the worker's final answer labelled *model-stated, not an observation*, next to the recorded tool results, including a native search that reported no URLs.
-- **ORCH-03 (#735): runtime guardrails from Work a8e6aa7b.** The former tool-subset validation rule is historical under #826 and is preserved in the archived orchestration history.
-  - **Runnable models only.** A Codex worker offers only the models the installed binary bundles and lists (`DecisionRoutes.bundled_models`: `codex debug models --bundled` with an empty per-call `CODEX_HOME`, cached per binary fingerprint, a failed listing included; never the plain `codex debug models`); without a listing it offers only its default. A model is remembered as refused only on the CLI's own unsupported-model signal, classified at the execution boundary (`bounded_execution.unsupported_model`: Codex's `The '<model>' model is not supported` message, Claude Code's `[claude-code:unrecognized_model]` stderr tag), never on a generic rejection that mentions the model; the route and model are kept in `route_model_refusals` (no refusal text, offered again after 7 days) and dropped from later catalogues and from the rest of the same Work. When the refused model is the route's configured default, `model: ""` resolves to the next runnable model (the catalogue records `default_refused`, and the attempt runs the substitute explicitly); with no runnable model left the worker is unavailable (`default_model_refused`).
-  - **Bridge research failure (root cause).** The page reader resolves each host in an expendable child process (`local_tools._bounded_system_resolver`) that was started with `fork` even on macOS, where Python's own default is `spawn` because system libraries are not fork-safe. A resolver child that ended without answering made `recv()` raise `EOFError`, which no layer maps (the page reader, research, `Capabilities` and the bridge catch `OSError`/`ValueError`/...), so the MCP bridge process exited mid-call: Codex saw the connection close and Still recorded only a `running` call (`tool_incomplete`). Now the resolver uses `spawn` on macOS (`fork` elsewhere), a child that ends without an answer is an `OSError` (a failed page read the research already reports), and the bridge answers any other unexpected exception in one call with a typed `tool_failed` result (effect `unknown` unless an effect-free read) and keeps serving. `tool_incomplete` stays for genuine cutoffs.
+### Subscription isolation
 
-Authority: the plan chooses among destinations the owner already configured and verified; it cannot add a destination, a Grant or a tool, and approvals bound to a destination (document sharing, page approvals, context attachments) are evaluated for the chosen worker's own config. Which configured AI receives owner context therefore becomes a per-request choice, which is why independent review applies. Evidence class: deterministic tests with a scripted `FixtureDecisionEngine`, a fixture HTTP transport and a fake CLI (`tests/test_orchestrator.py`), plus the real `mcp_bridge.serve` where applicable. No live orchestration with the owner's accounts was observed; the four owner live checks named in #710 remain.
+A judgment runs in a fresh per-call directory used as its HOME, with a restricted environment and path, no shell launch by Still, a separate process group and a timeout that ends that group. The Still tool bridge is not attached to the Judgment turn. Required CLI flags are checked as complete flags rather than by substring.
 
-## Provider comparison and selection reassessment (2026-10-10, #609)
+Codex uses the strict permissions profile, not the broadly readable trusted-local Work profile. Its feature plan disables every non-removed feature outside the verified allowlist, including unknown/default-enabled tool-bearing features; an unparseable plan fails closed. User configuration, exec-policy rules, project documents, web search and optional tool/context features are suppressed by the qualified launch. Feature names alone are not proof of an empty tool surface: the local runtime observation below is required. The strict sandbox still has its declared minimal OS/tmp read surface and is enforced by the CLI itself.
 
-**Decision:** Keep the provider-neutral DecisionEngine and existing Jev adapter. Defer Jev owner-live validation as open + `status:deferred`, rather than treating it as completed. Compare the already implemented general-model routes with newer specialized decision APIs before promoting or removing a provider. This is an evaluation policy, not authorization to change production routing.
+Claude Code's no-tool launch uses the restricted, strict-MCP, empty settings-source and no-session-persistence path, with the documented instruction/auto-memory exclusions. A historical help listing or environment-variable name is not a new run observation. Preserve the exact launch and tests in [bounded_execution.py](../src/personal_agent/bounded_execution.py) and the qualification implementation.
 
-### Capability compatibility
-
-| Still requirement | Existing general-model API / subscription CLI | Jev / TypeSafe System One | OpenAI Decisions (public beta) |
-| --- | --- | --- | --- |
-| `judge` | Typed model-backed answer | `noul` | `predicate` |
-| `choose` | Typed model-backed answer | `choice` | `choice` |
-| `score` | Typed model-backed answer | `score` | `score` |
-| `structured` arbitrary schema | Supported on schema-capable routes | Unsupported | Not a substitute for arbitrary structured generation |
-| Owner-account live qualification | Must be demonstrated per model/route | Outstanding under #609 | Not implemented or qualified in Still |
-
-**Critical distinction:** The orchestrator's plan `{worker, model, brief: {notes}, reason}` requires `structured()`, followed by evidence-aware goal evaluation and bounded re-delegation. Neither a successful Jev typed probe nor OpenAI's predicate/choice/score interface proves this role. Preserve the existing structured-capable orchestration route; never narrow the assistant's agency to fit a specialized API.
-
-### Alternatives and evidence classification
-
-- **OpenAI Decisions:** Public-beta `POST /v1/decisions` supports predicate, choice and score, directly overlapping Jev's bounded operations. Its advertised price and speed are provider claims, not measured Jev comparisons or Still live evidence. https://developers.openai.com/api/docs/guides/decisions ; https://community.openai.com/t/decisions-api-is-now-available-in-public-beta/1403877
-- **Claude:** Structured output / tool schema capabilities can implement typed judgments and structured plans through general models; the existing Claude Code subscription decision route already exists. Do not claim a separately verified Decisions-equivalent endpoint. https://docs.anthropic.com/en/docs/build-with-claude/structured-outputs
-- **Gemini and local models (e.g. Ollama):** Structured output options to track for portability and privacy, but not yet qualified Still decision routes. https://ai.google.dev/gemini-api/docs/structured-output ; https://docs.ollama.com/capabilities/structured-outputs
-- **Jev:** Optional `JevDecisionEngine` and explicit official model discovery were implemented in #580/#772. Preserve them. Owner-live evidence remains missing; any published pricing benefit is not sufficient to claim Korean reliability, latency or orchestration suitability. https://api.typesafe.ai/docs
-
-### Comparison protocol and promotion gate
-
-**Current coverage:** `decision-qualification/4` exercises `judge` and `choose`, not `score` or `structured`. The capability table describes interface mappings, not measured qualification. Until versioned score cases with a declared scale/rubric, expected mapping and failure behavior are frozen and run against the compared routes, `score` remains unqualified; passing the current suite cannot qualify or promote a provider for scoring.
-
-1. Establish the baseline using the current qualified API/subscription route and versioned `decision_qualification.py` cases; record exact route/model, suite version, case IDs, covered operations, and whether evidence is fixture, synthetic or owner-live.
-2. Evaluate specialized providers only for the supported `judge` and `choose` operations exercised by the same frozen cases, including Korean correction, reference resolution, ambiguous abstention, withdrawal, topic change and recovery. Include Jev live only after explicit owner choice. Do not report `score` compatibility from these results.
-3. Qualify `structured` orchestration separately: plan schema, worker/model eligibility, goal-reached evidence, bounded re-delegation and explicit unavailable behavior. A specialized API with no arbitrary schema support does not pass planner qualification.
-4. Compare end-to-end task latency (p50/p95), number of decision calls, Korean semantic accuracy, false decisions/abstention, malformed/timeouts, cost when usage is observed, confidence calibration, credential/egress/maintenance overhead and provider removal cost. Do not equate uncalibrated confidence scores or compare marketing latency claims as measured results.
-5. Preserve Still authority: judgment never creates Grants, approvals, effect truth or completion truth. No silent cross-route fallback, no task-specific semantic rule tree, and no unverified provider promotion.
-6. Promote a provider only for the operations and roles actually covered by comparable real account/model evidence, with role compatibility, a practical advantage and explicit owner approval. A `judge`/`choose` pass is not full DecisionEngine qualification.
-
-**#609 resume condition:** The owner chooses a Jev trial, a controlled comparison identifies a compelling Jev-specific advantage, or sustained volume makes its economics material. Keep its existing live acceptance criteria: official model listing, routed typed judgment, Korean case, requested-versus-observed model, no secret leakage and no cross-route fallback. GitHub has native open/closed states; `status:deferred` distinguishes postponed *open* work from active work, and is not the same as closed/not_planned.
-
-Related: [#415](https://github.com/Jongtae/agentos/issues/415), [#580](https://github.com/Jongtae/agentos/issues/580), [#609](https://github.com/Jongtae/agentos/issues/609), [#679](https://github.com/Jongtae/agentos/issues/679), [#710](https://github.com/Jongtae/agentos/issues/710), [#772](https://github.com/Jongtae/agentos/pull/772).
-
-## Provider evaluation
-
-A provider should not become default because of vendor benchmark claims or novelty. Evaluate providers on a fixed Still task set using the same contract and declared environment.
-
-At minimum compare:
-
-- decision accuracy against the frozen expected behavior;
-- confidence calibration;
-- false-positive/false-negative behavior where relevant;
-- latency and tail latency;
-- request/token/cost characteristics where observable;
-- failure/timeout/degraded-mode behavior;
-- data/egress requirements;
-- deployment/availability dependency;
-- provider lock-in and removal cost;
-- maintenance/security/licence/provenance fit.
-
-The evaluation must distinguish deterministic tests, synthetic fixtures, local model tests and live external-provider observations.
-
-## Reuse-first implementation rule
-
-This architecture follows the repository's **Adopt → Adapt → Build** direction:
-
-1. adopt official/mature provider mechanics when they satisfy the non-sovereign need;
-2. adapt them behind the Still-owned decision contract;
-3. build only the policy/contract glue or missing mechanics that must remain under Still control.
-
-An implementation Existing Solutions Review should consider at least:
-
-- the repository's existing LLM/provider paths;
-- deterministic/mock fixtures and exact-invariant checks (not a general production semantic rule engine);
-- suitable local/small-model options;
-- Jev/System-One-style decision providers;
-- maintained libraries that solve commodity classification/routing mechanics.
-
-The review must preserve Still sovereignty over Grants, approvals, canonical Context/Memory, Work/Event/Evidence, Artifact provenance, egress policy, recovery and revocation.
-
-## Implementation status
-
-PRESENCE-DEC-01 / [#417](https://github.com/Jongtae/agentos/issues/417) introduced the first code boundary in `src/personal_agent/decision.py`: `DecisionContext`, `DecisionConfidence`, `BinaryDecision` / `SelectionDecision` / `ScoreDecision` with explicit non-answer outcomes (`provider_unavailable`, `timeout`, `malformed`, `context_rejected`, `cancelled`; a low-confidence answer is `decided` and reduced to unknown by policy), the `DecisionEngine` interface, `UnavailableDecisionEngine` and `FixtureDecisionEngine` for tests, `DecisionPolicy` thresholds, and `ModelDecisionEngine`, which adapts the repository's existing `ModelAdapter` tool-call shape so one `decide` tool call yields a typed answer on every supported provider. The first integration point is the conversation's parked-request withdrawal and bare-추천 capability-recommendation judgments (`conversation_handoff.ConversationJudgments`). Provider selection is service configuration (`decision_model` / `decision_model_key`; otherwise `gpt-4o-mini` on the OpenAI endpoint when the owner's configured model provider is OpenAI); with nothing configured no call is made and the judgment is unavailable. Evidence class: deterministic tests and recorded provider response shapes only; no live-provider calibration or availability is claimed. DECISION-ROUTE-01 / #580 makes the route owner-selectable among direct API, Jev and subscription AI; see "DecisionEngine routes (#580)" above.
-
-PRESENCE-INTENT-01 / [#597](https://github.com/Jongtae/agentos/issues/597) (from #512 findings D1/J1) adds two judgment points on the same seam and route:
-
-- **Capability need** (`ConversationJudgments.capability_need`, purpose `capability-need`): every turn of at most 500 characters that is not an exact slash command or a judged answer that settled an open item (#172; before it, a literal approve/cancel answer to pending calendar drafts, #22) is asked which declared capability it needs (`CAPABILITY_NEEDS`: `mail-search`, `calendar-create`, `drive-read`, `several-tasks` plus the declared-unsupported mail actions). The context is the one owner utterance, with stored secret values and credential shapes removed first; every `ConversationJudgments` context is built by one redacting builder, and non-owner facts also lose the current Work's saved private values (#672 review). A turn a local rule claimed (notes, settings, private searches, workspace, mail) is asked too: when the judgment selects a capability the rules did not find, or `several-tasks`, the turn is mixed and nothing runs; the owner is told which parts it holds and asked for one at a time, so no part is done while another is silently dropped. A Work parked for a connection after a judged `calendar-create` or `drive-read` keeps that judgment (capability id, the Work whose message is the utterance, and a digest - never the text) and runs it on resume without a second judgment. Since #672 `calendar-create` and `drive-read` are selected only here, never by request words: a selected `calendar-create` takes the owner's words to the worker, whose calendar draft tools only propose; Still renders the exact preview of the Work's drafts and only the owner's judged approval of that preview executes (#22, #172; write-connector handoff first when missing and no AI route can run), and a selected `drive-read` reads the owner's Picker-selected Drive files into that turn or parks a Telegram Work as `awaiting_drive` with the Drive connection offer. Public web research has no routing rule: the Work model loop chooses `web_search` and `public_page_read` itself. A selected `mail-search` parks the Work for a missing Gmail connection exactly like a cue-bearing request; the Gmail query is a quoted phrase, or one of the owner's own words selected by a second content-free judgment (`mail-query-term`, index labels only); with no selection the owner is asked what to look for, and the whole question is never sent as a query. Unavailable, unsure or `none-of-these` keeps the ordinary conversation route, so no handoff is invented. Cue-bearing mail requests keep the existing local cue path and its unsupported-action judgment over a minimized cue summary, which avoids sending the raw mail query.
-- **Explicit remember request** (`ConversationJudgments.explicit_memory_request`, purpose `explicit-memory-request`): replaces the `explicit_memory_request` regex. **Off the owner-worker request path since GOV-ASK-LESS-01 / [#918](https://github.com/Jongtae/agentos/issues/918) slice (a) (2026-10-02):** the owner's own worker saves directly and the owner is told with an undo, so no judgment is asked for its `save_memory`; the per-fact `explicit_memory_fact` judgment of the #805 upkeep is likewise no longer called. The judgment and the coverage rule remain available code. Historically it was asked at most once per Work and only when a `save_memory` write was actually proposed. A yes lets Still issue the existing message-bound owner-request approval; the deterministic value-coverage and key-replacement checks still decide canonical write versus MemoryCandidate. No or unavailable issues nothing, so the write stays a pending candidate and the turn reports it truthfully. The old regex survived as `memory_followup_prefilter`, which kept memory-looking turns away from the follow-up judge (#557); RULES-OUT-01 [#173](https://github.com/Jongtae/Still/issues/173) slice B removed it, so such a turn is judged like any other.
-
-RULES-OUT-01 [#173](https://github.com/Jongtae/Still/issues/173) slice B (owner direction 2026-10-21) changes two judgment points on the same seam:
-
-- **Follow-up relation** (`ConversationJudgments.followup_relation`, purpose `conversation-followup`): no correction or continuation word list (`아니`, `말고`, `계속`, ...) and no lexical skip (memory-save and file-save word checks) decides any more whether a short turn retries, refers to, cancels or corrects the focused Work. The judgment now reads, besides the message and the focused Work's intent and status, that Work's request and last reply (each bounded to 600 characters and redacted by the one builder: secrets removed, and the reply's saved private values too), when each was made (relative: "N minutes ago"), and the kinds of the items still waiting for the owner (`owner_acts.open_items`; kinds only, no content). No call is added: it was already asked for every eligible short turn with a focused Work, now also for the turns the lexical skips used to exclude.
-- **Capability need** gains the declared `saved-context` key: when the owner asks to use their own saved context items, the judgment selects it and Still holds the Telegram Work behind the existing owner-only choice keyboard (the `p7x`/`p7n` callbacks are unchanged), keeping the judgment for the resumed run (`RESUMABLE_JUDGED_INTENTS`), so the Work makes one `capability-need` call in all. It replaces the 컨텍스트/저장한 기록 + 함께/참고/사용/포함 keyword trigger.
-- **Same preparation goal** (`ConversationJudgments.same_preparation_goal`, purpose `same-preparation-goal`, binary): replaces `preparations.same_goal`'s particle and filler tables in the #860 guard that keeps a watch refused for lacking a window from fanning out into dated one-time preparations. The exact refused goal text needs no judgment; any other goal scheduled without a window in that Work is judged. Unavailable keeps the guard closed (the worker can always add the window). Asked only on that path, never per turn.
-
-Evidence class for #597: deterministic tests with fixture DecisionEngines. The decision-qualification suite is unchanged (`decision-qualification/1`); no live-provider accuracy for these judgments is claimed.
-
-AGENCY-EGRESS-01 / #605 added a third judgment point, **lookup term sensitivity** (`ConversationJudgments.lookup_term_sensitivity`, purpose `public-lookup-sensitivity`, the `choose_many` envelope), asked before a public lookup that carried words of the owner's current message. **Removed by SEC-PILOT-01 / [#654](https://github.com/Jongtae/agentos/issues/654)** under the pilot posture: no per-request judgment precedes a public lookup on either route, and the qualification case that probed it is gone (`decision-qualification/3`). Deterministic redaction of saved private values remains in `agent_runtime`.
-
-SEC-ATTN-01 / #659 adds **explicit preparation request** (`ConversationJudgments.explicit_preparation_request`, purpose `explicit-preparation-request`, the `judge` envelope). It is asked only when the model calls `schedule_preparation` in a Work whose prompt is the owner's own stored message and which no preparation started; the context is that message and a one-line summary of the proposed preparation (kind, local due time, repetition, goal). A yes schedules the preparation as accepted by the owner's request; no or unavailable keeps it a proposal the owner accepts with the Telegram button or in Settings. It never authorizes an effect beyond the Grants the preparation's Work has when it runs. Evidence class: deterministic tests with a fixture DecisionEngine (`tests/test_preparations.py`); no live-provider accuracy is claimed.
-
-SEC-JUDGE-01 / #679 changes which model answers, not what is asked: cheapest-first `lowest_qualified` defaults per route, strict-isolated Codex judgments, explicit model lists, effort and the effective-route display (see *Judgment model policy*). Evidence class: deterministic unit and DOM tests with fake CLIs, transports and the #616 qualification runner, plus the opt-in no-model process test against the real codex-cli 0.153.4 and a loopback scripted model named above. **No live judgment with the owner's accounts was observed**: which ranked model an account actually qualifies, `gpt-6-luna` over Chat Completions, and a real `GET /v1/models` response remain owner live checks.
-
-#472 changes which qualified model is used, not what is asked or where it goes: `fastest_qualified` measures every ranked candidate on the same route and account and uses the fastest that passes, with majority repeats for a case that answered wrong (see *Subscription model policy*). The destinations, keys, strict launch, guard and suite (`decision-qualification/4`) are unchanged; `lowest_qualified`, `explicit` and `engine_default` behave as before. Evidence class: deterministic unit and DOM tests with a fake clock, the fixture transport and fake CLIs (`tests/test_judgment_speed_policy.py`, `tests/test_decision_route_ui.py`). **No live latency or qualification with the owner's accounts was observed for this change**: which model is fastest on an account, and whether `gpt-5.6-luna` passes case 3 on a majority of runs, remain owner live checks.
-
-## Staged implementation
-
-### Stage A — contract (done in #417)
-
-Define neutral types, errors, confidence/provenance fields, fallback semantics and test doubles. No Jev dependency is required.
-
-### Stage B — narrow integration (first point done in #417)
-
-Choose one existing semantic judgment point with low authority risk and measurable behavior. Integrate the model-backed adapter (initial default `gpt-4o-mini`) through the neutral interface, keep a deterministic/mock adapter for tests, and prove provider replacement does not change caller policy/authority code.
-
-### Stage C — provider experiments
-
-Run optional providers, including Jev if authorized, behind the same contract and benchmark cases. No provider becomes mandatory during experimentation.
-
-### Stage D — evidence-based promotion
-
-Promoting a provider to a recommended/default implementation is a separate decision based on current Still-side evidence, owner-control impact and operational risk.
-
-## Non-goals
-
-This contract does not authorize:
-
-- Jev installation or dependency changes;
-- a broad hand-authored semantic rule engine or phrase/regex fallback;
-- replacement of current Grant/approval checks;
-- hidden autonomous action based on confidence;
-- a mandatory System-One model;
-- a new BDI runtime;
-- benchmark or performance claims that have not been observed in Still.
-
-## Related work
-
-- [#415 — ARCH-DECISION-01](https://github.com/Jongtae/agentos/issues/415)
-- [#383 — scoped Attention / personal-assistant design](https://github.com/Jongtae/agentos/issues/383)
-- [PR #384 — draft Attention design](https://github.com/Jongtae/agentos/pull/384)
-- [#412 — reuse-first engineering governance](https://github.com/Jongtae/agentos/issues/412)
-- [PR #414 — reuse-first engineering governance](https://github.com/Jongtae/agentos/pull/414)
-
-
-### Historical Codex 0.162.1 compatibility — #1561 (2026-10-15)
-
-The installed Codex 0.162.1 was outside the earlier 0.153.4-only compatibility
-list, independently of the console initialization omission corrected by #1558.
-The same strict permissions, tool-feature allowlist, binary/path bindings and
-per-install denial probes apply; this is an exact-version compatibility addition,
-not a broader runtime permission. The no-tool Judgment route uses its existing
-instruction-qualified version set for this probe. The strict Work route retains
-its separate 0.153.4-only list: its MCP behavior on 0.162.1 did not pass the
-existing process fixture, so this patch does not advertise that Work route.
-At that time, unknown Judgment versions failed closed; #346 replaces that version gate with local qualification.
-
-The existing opt-in `test_strict_isolation.py` process harness now selects a
-version from the declared qualified set instead of skipping every version other
-than 0.153.4. It runs the actual installed CLI against a scripted loopback model
-endpoint and synthetic CODEX_HOME, without live providers or owner credentials.
-On macOS with 0.162.1, the sandbox denial probe and decision instruction-file
-checks passed: home and store reads were denied, the unedited decision route
-offered no shell, and the documented global AGENTS file residual remained.
-Historical 0.153.4 evidence above retains its original scope; no live model or
-account operation is established by these compatibility tests.
-
-### Historical Codex 0.164.0 compatibility — #344 (2026-10-26)
-
-The installed Codex 0.164.0 is added to the no-tool Judgment route's existing
-instruction-qualified version set, following #1561. The same strict permissions,
-tool-feature allowlist, binary/path bindings and per-install denial probes apply;
-this is an exact-version compatibility addition. The strict Work route keeps its
-separate 0.153.4-only list. At that time, unknown Judgment versions failed closed; #346 replaces that version gate with local qualification.
-
-The existing opt-in process harness (`AGENTOS_CLI_QUALIFICATION=1
-tests/test_strict_isolation.py`) selected the installed 0.164.0 from the declared
-qualified set and ran it against a scripted loopback model endpoint and a
-synthetic CODEX_HOME, without live providers or owner credentials. On macOS on
-2026-10-26, the three `CodexDecisionInstructionFiles` probes passed: the strict
-sandbox qualification passed unchanged, a judgment under the strict profile
-could not read the home folder, and the unedited decision route loaded no skill
-or plugin canary while the documented global AGENTS file residual remained. The
-strict Work route's process tests were skipped as untested for 0.164.0, which
-is why that route is not advertised. Historical evidence retains its original
-scope; no live model or account operation is established by these tests.
-
+**Codex global instruction residual.** `project_doc_max_bytes=0` does not establish that global instruction files are absent. The recorded `$CODEX_HOME/AGENTS.override.md`, or otherwise `$CODEX_HOME/AGENTS.md`, can reach the model under the qualified launch. Treat this as owner-authored, untracked, untrusted input at the already selected destination. `--ignore-rules` limits exec-policy rules, not these instruction files. Still checks file presence/size for the warning, not content. A schema-valid judgment still cannot grant authority. The `CodexDecisionInstructionFiles` qualification retains the override, regular and absent-file states; do not erase this residual while shortening the historical observation.
 
 ### Automatic installed-CLI qualification — #346
 
-An installed Codex or Claude Code update no longer requires a source-code
-allowlist change or a Settings click. `tested_versions` and
-`CODEX_INSTRUCTION_FILES_QUALIFIED` are historical manual observations only.
-`tested_platforms` and the runtime-root exclusion remain admission gates.
+Installed updates are admitted by the local qualifier, not membership in a source-code version allowlist. `tested_versions` and `CODEX_INSTRUCTION_FILES_QUALIFIED` retain manual observations only. Tested platform and runtime-root exclusion remain admission gates.
 
-**Local isolation checks (no provider/account contact).** `qualify_strict`
-adapts the existing #616 sandbox/feature checks and the process-test harness,
-now shared from `personal_agent.cli_qualification`. Each run uses temporary
-synthetic HOME/CODEX_HOME, a synthetic store, canaries and a scripted model bound
-only to 127.0.0.1, under the same strict launch flags. It checks the turn-directory
-control, denial of protected and sibling directories, the feature disable plan,
-absence of host tools, a real local MCP bridge round trip, and (Codex) override,
-AGENTS.md-only and no-global-instruction states with no skill/plugin canary leak.
-A nonzero exit without an observed permission denial, crash, timeout, bind failure,
-missing request or unparseable output refuses admission. No owner credential,
-configuration content or provider model is used for these local checks.
+The local isolation check uses synthetic HOME/CODEX_HOME, a synthetic store, canaries and a scripted model on loopback. It checks readable turn space, denied protected/sibling space, feature exclusions, absence of host tools, the applicable real local MCP round trip, and Codex's override/regular/no-global-instruction states without skill/plugin canary leakage. A crash, timeout, missing request, bind error, unparseable output or a nonzero exit without an observed permission denial refuses admission. These checks use no owner credential or external provider.
 
-`qualified_identity` keeps at most eight successful local records in process.
-Each key includes the route scope (Work or no-tool Judgment), the resolved launcher and native binary path, size, nanosecond
-mtime, inode and device, plus the platform/runtime/store/home/profile path binding.
-The record includes both sha256 digests, fingerprints, observed version, checks
-and verified disable plan; identity and digests must remain unchanged throughout
-the probes. Failures are never memoized for admission. The existing L7 residual
-remains: replacement preserving all identity fields is detected on restart,
-not on every cache hit. A Work pass can cover the narrower Judgment checks; a Judgment pass never qualifies the Work MCP bridge. A Work checks its current identity before strict launch;
-it never downgrades to trusted-local. Settings reads the current successful
-record without running probes. Failure uses the existing execution error and
-route-status surfaces, naming the failed check and saying that the earlier
-qualified route is unavailable.
+Successful `qualified_identity` records are bounded to eight in-process entries. They bind route scope, resolved launcher/native identities, size, nanosecond mtime, inode/device and platform/runtime/store/home/profile paths, with both digests and observed version. Identity must remain stable through qualification. Failures are not memoized as admission. A Work qualification may cover narrower Judgment checks; a Judgment pass never qualifies the Work bridge. A strict Work never silently downgrades to trusted-local. The recorded residual for a replacement preserving all cache identity fields remains detection on restart, not every cache hit.
 
-**Judgment behavior checks (production uses the chosen engine).** A changed CLI
-fingerprint/native identity or cloud profile queues one automatic attempt through
-`decision_qualification_jobs`; the existing service loop runs it in the background.
-Judgments stay unavailable until every `decision-qualification/4` case passes.
-This includes `engine_default` on automatic requalification. Follow mode retains
-its candidate policy; explicit mode retains its requested model. No other engine,
-account or trust profile substitutes for a failure. The job binds the active route
-revision and target identity, checked again before commit. Repeated judgments
-coalesce into the same job. A failed identity remains failed across restarts until
-the identity changes or the owner explicitly retries. Settings shows checking and,
-only on failure, the existing failure status/reason. Successful requalification
-quietly replaces the stale record. This behavior suite intentionally calls the
-owner's chosen engine in production; it is distinct from the local scripted-model
-isolation check and is injected in unit tests.
+A changed binary/native identity or cloud profile also queues one production behavior qualification through the existing job mechanism. Judgment stays unavailable until the applicable suite passes. Follow mode keeps its policy and explicit mode its model; no other engine/account/profile substitutes for a failure. The job binds route revision and target identity, checked again before commit. Calls coalesce into that job. A failed identity stays failed across restart until identity changes or the owner explicitly retries. Settings can read a result without running probes; successful requalification quietly replaces the stale record.
 
-**Claude stream input.** A fast nonzero usage error naming `--input-format` or
-`--replay-user-messages`, without any result or assistant/tool-work record, retries
-that turn with plain `-p <prompt>` input. The rejected capability is remembered only
-for that binary identity. An unacknowledged steer is released for the existing S1
-finish guard; the plain-input bridge does not consume it. Slow failures, provider
-errors and errors after a result/tool record never replay. Codex has no stream-input
-session Work route to adapt; its existing one-shot path remains in use.
+The production behavior suite calls the chosen engine and may consume its allowance. It is different from the local loopback isolation check. Unit tests inject it; installed-CLI observations require the opt-in process harness and their own recorded revision.
 
-Opt-in process tests run installed versions even when absent from the historical
-observation list, with a warning naming the version and the runtime qualifier.
-Fixture passes are model-free evidence only; real installed-CLI behavior must be
-observed separately with `AGENTOS_CLI_QUALIFICATION=1`.
+Claude's stream-input compatibility retry is limited to a fast nonzero usage error naming the unsupported input flags, before any result or assistant/tool-work record. Retry plain input once and remember the limitation only for that binary. Slow/provider errors and errors after work do not replay. An unacknowledged steer returns to the existing continuation guard. Codex's one-shot path is not converted into a stream session by this rule.
+
+## Orchestration (ORCH-01 / #710)
+
+### Plan and worker context
+
+The common plan fields are worker, model, effort, supplementary `brief.notes` and reason. The production schema may also carry bounded professional-lens, first-plan preview and location-handoff metadata where offered; use [orchestrator.py](../src/personal_agent/orchestrator.py) for the exact fields and bounds. The compact shape is not a second schema.
+
+The owner message reaches the worker verbatim with the profile, current context, recent conversation and prepared answers. `ALWAYS_SECTIONS == SECTIONS`: the plan does not select away those sections. Notes must not restate, narrow or extend the request. The removed `brief.goal`, `brief.context`, `brief.completion_criteria` and tool-subset fields are not current interface requirements.
+
+The catalogue is built from configured routes and recorded observations, without credentials. Only already connected, verified and currently runnable choices are offered. While the owner's Main AI can run, vary its model rather than choosing another vendor; another connected worker is offered when the Main AI is unavailable or its run failed in the Work. This is distinct from the older permanently pinned-worker rule.
+
+Each attempt retains the worker's full toolset eligible under policy. The plan cannot invent a tool or use the former private-read/search split to remove tools. Model/effort choices are validated against the actual catalogue. A specific unsupported-model refusal is recorded without its text and expires after seven days; a generic failure mentioning a model is not such a refusal. A refused configured default resolves to an explicit runnable substitute, or the worker becomes unavailable.
+
+Observed catalogue timings come from attributable terminal CLI events, including failures, paired with their matching start. Keep sample size, task-size/tool-call counts and reported usage alongside latency. Missing or unattributable data is not zero. These observations inform model judgment; they are not a deterministic task/category routing rule or a promised completion time.
+
+### Owner intervention
+
+An eligible first plan can ask for missing current location through the existing owner-input path before starting the worker. It is not offered on a location continuation or a re-plan. Failure to send the question does not create a fictional handoff. A successful continuation retains its bound route and is resumed once without re-judging the same capability.
+
+A long-work preview is sent once when the model selects it, before the worker starts. The worker and steer judgment see what the owner saw. Mid-work corrections must reach later plans, briefs and evaluation, not only the running tool loop. Preserve actual delivered/undelivered steer state and the bounded continuation rules; receiving a correction is not evidence that the worker applied it. Presentation is governed by [Presence](presence-experience-contract.en.md).
+
+### Evaluation and bounded revision
+
+One outcome judgment evaluates whether the answer served the request, using the owner's words, recent conversation, owner corrections and recorded tool observations. A necessary question can serve a request without pretending the external task is complete. The superseded second `owner_input_needed` call and criteria-recheck chain are not restored.
+
+The final answer is labelled model-stated, not an observation. Evaluate it within the delivered-answer bound, against bounded recorded evidence. The CLI path includes mediated page text, code output and supported effect-free read results; the caller preserves room for substantive observations rather than letting step labels crowd them out. A native search that exposes only its query is looked up but not independently verified. It never proves a saved, booked, sent or changed effect.
+
+A negative explained judgment can supply one short gap sentence to the next plan and the owner-facing closing note. The judgment audit keeps the boolean rather than the answer text; the Work's evaluated event carries the bounded explanation. An unsupported claim is not made true by a favorable score. Pending approval, unresolved state-changing failure and unknown-effect checks continue to constrain final status.
+
+The normal loop allows at most `MAX_REDELEGATIONS = 2` after the first attempt, within one WorkBudget. No re-delegation follows an effect-bearing or unknown attempt, an owner-input/approval wait, an unavailable evaluation, insufficient budget or the existing terminal steer-continuation guard. The next plan reads factual earlier-attempt summaries and failures; model answer excerpts remain labelled. Identical worker/effective-model/effort/brief-and-context signatures are refused. A changed brief or context can revise on the same route; that does not authorize replaying an external action.
+
+An attempt that remains not reached is not stored as succeeded merely because no attempts remain. Preserve the observed partial/failed/unknown distinctions and the current result projection. A bridge call left running without a result becomes `tool_incomplete`; its effect is unknown unless it was an effect-free read. Unexpected bridge exceptions return a typed failure without fabricating completion. Tool deadlines are bounded by the Work's remaining time and the offered tools' actual bounds, not an unqualified old timeout example.
+
+### Fallback and delivery
+
+When a plan is unavailable, malformed, unconfident or invalid, the existing fallback sends the raw request to the owner's default Main AI without an invented brief/model choice or re-delegation. Record why. If working orchestration becomes unavailable, say so once; do not announce a false outage on an installation where it never worked. This fallback is **not** a silent change of the active Judgment provider, account or destination.
+
+An available AI answer is delivered with its truth-qualified outcome; uncertainty is not hidden by fluent wording. The explicit unknown-external-effect statement takes precedence. The [execution contract](assistant-execution-contract.en.md) owns the terminal-state rules, including conditions where further judgment or action cannot run.
+
+## Work budget and provenance
+
+`RoutedDecisionEngine` attaches host admission to `DecisionContext`. A supported adapter calls `context.admit()` once immediately before dispatch. Configuration/shape/size/unsupported preflight failures do not spend a provider-call allowance; a dispatched failure does. Failed admission makes no provider call.
+
+Scope follows joined early tasks, connection/approval continuation and canonical request migration. Reaction threads use the existing-only ledger bridge and cannot open a new allowance or spend a resumed run's budget. Presentation judgments use the separate presentation counter. Reserve the final work turn for outcome judgment; a re-plan starts only when its plan, worker and evaluation can fit. Caller and routed engine do not charge the same call twice. A background source Work ID is attribution, not a new foreground budget.
+
+`planned`, `fallback` and `evaluated` events identify attempts, validated worker/model choices, brief digests, bounded reasons and stop/redelegate disposition. Brief text is not persisted merely because it was sent. These are orchestration records, not additional executed tool steps. Route audits distinguish requested from observed model identity and say not reported when absent. CLI failures may record exit/provider status and a redacted reason, never unrestricted CLI text or a prompt echo. Hidden reasoning is not an audit requirement.
+
+## Jev adapter boundary
+
+Jev remains an optional adapter, not a kernel vocabulary or orchestration dependency. Its typed operations map at the boundary: `noul` to a binary answer and chosen-side probability, `choice` to declared candidates plus none-of-these, and `score` to the declared scale mapping. Unsupported selection-set/structured operations return unavailable rather than pretending compatibility.
+
+Explicit Jev discovery uses the saved key and the provider's model-list interface; a listed name is unverified. Saving a model does not replace an already activated choice. Jev activation performs its existing one-probe check and records no full-suite qualification. Display that distinction. Owner-account operation, Korean quality and comparative latency remain separate observations, not consequences of implementing the adapter.
+
+## Provider evaluation
+
+Compare only operations and roles both candidates actually support. Freeze the relevant question/rubric, expected behavior, suite version and environment before comparison. Record accuracy, abstention/errors, confidence calibration, p50/p95, observed usage/cost, failures and practical credential/egress/maintenance costs. Vendor speed or price claims are not Still measurements; confidence scales are not automatically comparable.
+
+A judge/choose pass does not qualify score or arbitrary structured planning. New score cases need their own declared scale and expected mapping; structured orchestration needs eligibility, schema, recovery and evidence checks. Do not narrow the assistant's agency to fit a specialized endpoint. Promotion or removal requires the relevant owner decision and evidence for the claimed role. Live trials are opt-in and budgeted under the repository's verification policy, not triggered by reading this document.
+
+## Reuse-first implementation rule
+
+Adopt maintained provider mechanics where suitable, adapt them behind the existing neutral interface, and build only the missing Still-owned boundary. Keep Grants, Memory, Work, Evidence, egress and revocation outside the dependency's authority. A new semantic phrasing should not require another product-rule branch.
+
+## Implementation status
+
+Relevant implementation sources are [decision.py](../src/personal_agent/decision.py), [decision_routes.py](../src/personal_agent/decision_routes.py), [decision_adapters.py](../src/personal_agent/decision_adapters.py), [decision_qualification.py](../src/personal_agent/decision_qualification.py), [cli_qualification.py](../src/personal_agent/cli_qualification.py), [conversation_handoff.py](../src/personal_agent/conversation_handoff.py) and [orchestrator.py](../src/personal_agent/orchestrator.py). A symbol's existence is not a live-quality result.
+
+Historical capability-routing rules, Calendar draft examples, per-fact owner-memory judgments, private-search separation, old model defaults and manually qualified CLI versions are not a current request-path specification. Current call sites and scoped regression evidence must be inspected when changing those areas. The explicit preparation-acceptance and same-goal judgments retain their applicable authority/no-window protections; no wording change in this document grants a schedule or external action.
+
+## Non-goals
+
+This consolidation installs no provider, changes no runtime or permission, selects no delivery goal and makes no new performance claim. It does not introduce a semantic rule engine, additional state store, mandatory System-One provider or BDI state machine.
+
+## Historical references
+
+The old text remains at the pinned baseline above rather than being copied into another active archive. The following legacy anchors lead here so old issue and guide links remain navigable. They identify historical sections, not instructions to reactivate them.
+
+<a id="pilot-posture--653-2026-09-26"></a>
+<a id="amendment--826-2026-09-28"></a>
+<a id="amendment--710-2026-09-27"></a>
+<a id="candidate-uses"></a>
+<a id="relationship-to-attention-and-bdi-inspired-design"></a>
+<a id="external-provider-boundary"></a>
+<a id="verified-capability-sources"></a>
+<a id="provider-comparison-and-selection-reassessment-2026-10-10-609"></a>
+<a id="capability-compatibility"></a>
+<a id="alternatives-and-evidence-classification"></a>
+<a id="comparison-protocol-and-promotion-gate"></a>
+<a id="staged-implementation"></a>
+<a id="stage-a--contract-done-in-417"></a>
+<a id="stage-b--narrow-integration-first-point-done-in-417"></a>
+<a id="stage-c--provider-experiments"></a>
+<a id="stage-d--evidence-based-promotion"></a>
+<a id="related-work"></a>
+<a id="historical-codex-01621-compatibility--1561-2026-10-15"></a>
+<a id="historical-codex-01640-compatibility--344-2026-10-26"></a>
+
+[Original decisions and observations](https://github.com/Jongtae/Still/blob/99fad1598b75837cf4428cfa43ad810266e5dff7/docs/decision-layer.en.md) · [Documentation map](README.md)

@@ -1,103 +1,114 @@
-# Still: what works today, what still has friction, and where it is going
+# Still product status
 
-This is the evidence and boundary page behind the [README](../README.md). It separates the newest published release from newer `main` implementation, and distinguishes synthetic/fixture, installed-smoke, owner-live and product-direction evidence.
+[Quick start](QUICKSTART.md) · [Operating guides](guide/operations.en.md) · [한국어](product-status.ko.md)
+
+This page distinguishes **release coverage**, **newer source changes**, and **what was actually observed**. The current-status review below is dated 2026-11-05 and uses source revision `6edc3380b613ab0c2897ba7a913ab658150a68f4`. It is not an end-to-end test report.
 
 ## How to read the evidence
 
-- **Published release:** the release manifest records installed-smoke and synthetic journey evidence for that build.
-- **Current main:** merged code and deterministic/fixture checks support newer contracts; they do not establish the complete experience in live services.
-- **Owner pilot:** selected owner-supplied recordings have their own provenance and visible-observation scope. Revision-specific repeatability and release validation remain separate.
-- **README demo and screens:** the README's demo GIF and everyday-use image are edited from and cut out of real sessions recorded on 2026-10-11 (Korean interface). Neither is release-specific validation.
-- **Product direction:** the README's architecture figure, its "next" coffee example and the example below describe the intended experience, not one observed run or shipped shopping integrations.
-- **Predecessor records:** links to `Jongtae/agentos` issues cite evidence recorded in Still's private predecessor repository before the 2026-10-17 import. They are kept as historical provenance and are not publicly readable; current work is tracked in this repository's issues. See the [name compatibility map](still-name-compatibility.en.md).
+The [release manifest](release-manifest.json) records which changes a published build carries, the publication/package checks and the observations it does not claim. A merged implementation or passing fixture is not evidence of a live account operation. An owner recording establishes only what that recording shows, in its own environment and period. A design illustration establishes neither implementation nor operation.
+
+Some original observations belong to the private predecessor `Jongtae/agentos`. Their links and issue numbers retain that provenance; they are not public Still issues with the same number. See [name compatibility](still-name-compatibility.en.md).
 
 <!-- readme-section:demo-recording -->
-## README demo
+## What the README recordings show
 
-The README demo is edited from seven Telegram and browser screen recordings made on 2026-10-11 and selected for public use on 2026-10-12 ([#1383](https://github.com/Jongtae/agentos/issues/1383)). It shows a remembered coffee taste, an F1 model search continued on Amazon, beans that fit that taste, and the chosen beans in the cart after sign-in. [The demo record](assets/readme/demo/README.md) keeps the source digests and segments.
+The main demo is edited from seven Telegram/browser recordings made on 2026-10-11 and selected for public use on 2026-10-12. It shows coffee preferences, an F1 model search continued on Amazon, a recommendation and a post-login cart reply. The [demo record](assets/readme/demo/README.md) preserves source digests and selected segments.
 
-This is **edited screen-recording evidence**: the screens show the PA's replies, not an independent trace of the account, tool calls or checkout, and the recordings name no application revision or model. It does not show an AI switch, completed payment or a repeatability check of the published release. The historical synthetic audit and reconstructed illustrations below keep their original evidence class.
+These are **edited screen recordings**, not an independent account-state or payment trace. They do not identify a build and model or establish release-wide repeatability. The separate [AI-switch recording manifest](assets/readme/ai-switch/manifest.json) documents conversation continuity across worker changes; that is not independent verification of every reported cart effect.
 
 <!-- readme-section:status -->
-## What works, what still has friction
+## Current coverage and remaining limits
 
-The v1 journey table below is backed by the synthetic first-user audit [#472](https://github.com/Jongtae/agentos/issues/472), with injected transports; **live provider operation was not run**, so fixture success is not live-service proof. The current release tag includes later Presence/Decision/execution source work, but this historical table does not validate the combined experience in live services. Current contracts and merged tests describe that later work at their own evidence levels.
+### In the published 0.5.0 release line
 
-| Area | Current evidence |
+The table summarizes the manifest's recorded source coverage, including changes carried forward from earlier Still releases. **Included code is not the same as a verified live-service journey.**
+
+| Capability | Recorded release coverage | Evidence and limits |
+| --- | --- | --- |
+| Install and first conversation | One-line installer or Apple silicon Homebrew; terminal setup leads into conversation. Telegram is optional. | Archive integrity and macOS formula installation/test are recorded. A clean installation on every supported platform and unattended operation after reboot are not established by those checks. |
+| AI choice and conversation | Subscription CLIs or direct model connections; Telegram, Slack and Mattermost; mid-work corrections and an independent question while a Work runs. | Coverage is recorded from 0.3.0 onward. Route qualification and fixture checks do not prove equal behavior across models. Messenger observations have their own dated scope. |
+| Memory | Attributable saved facts, stated/inferred provenance, correction and undo, and quiet daily consolidation. | The [memory experiments](research/memory-and-dream-experiments-2026-10-22-to-11-05.ko.md) are mostly offline replay with model judgments, not an overall live accuracy score. Later experiments and source changes are not automatically in this release. |
+| Google services | Drive and Gmail reads; separately authorized Gmail organizing and filters; Calendar event changes through the API. | Gmail sending and forwarding filters are not supported. Calendar changes use a separate write connection and force no attendee email. The older draft/per-change approval flow was removed in 0.3.0; do not use the historical illustrations below as current instructions. |
+| Scheduled preparations | Edit, pause, resume and run now; bounded recurring schedules and offered preparations. | Release coverage does not establish a preparation firing correctly over real days on an owner's machine. A proposal is not a running schedule until accepted. |
+| Browser and phone sign-in | macOS WebKit, signed-in sessions, desktop-site choice and phone-input handoff improvements. | No universal shopping, inventory, checkout or website-compatibility claim. The release does not claim a live phone sign-in after the latest included changes. Linux Chromium support belongs to newer source. |
+| Company use | Work mode, declared intranet hosts, cloud AI configuration and owner-confirmed MCP servers. | Company-network, cloud-provider and company-server operation are not established by the fixture/local checks. Work mode is not an air gap. |
+
+Source: the `carries`, `observed` and `not_claimed` fields in the [manifest](release-manifest.json). Use [connections](guide/connections.en.md), [workplace](guide/workplace.en.md) and [platforms](guide/platforms.en.md) for the procedure and its scope, not the old issue chronology.
+
+### Newer main source, not a new release
+
+At the reviewed revision, main includes a Linux desktop Chromium browser path, peer-agent work under the current connection/delegation design, retirement of the old same-host family setup/sharing paths, and additional result/recovery fixes. These changes must not be advertised as included in the published build. The source version `0.5.1` is a placeholder, not a published tag or a selection of the next release version.
+
+The [Linux platform guide](guide/platforms.en.md#browser-on-a-linux-desktop) states display, sandbox and keyring requirements and separates CI evidence from an owner's desktop session. For peer delegation, use the [current connection contract](connection-delegation-contract.en.md), not a retired family setup prompt. Current support still depends on the exact route, configuration and named tests or observations.
+
+### Historical first-user audit — not today's capability list
+
+The following table preserves the predecessor synthetic first-user audit [#472](https://github.com/Jongtae/agentos/issues/472), with injected transports; **live provider operation was not run**. Its failures and successes describe that earlier audit, not the latest release. Later fixes do not retroactively upgrade its evidence class, and old open-item wording is not an assertion that the same defect remains open today.
+
+| Area | Evidence recorded in that audit |
 | --- | --- |
-| Install/start/restart | Local deterministic first-use path passed; real clean-machine Homebrew/launchd validation is a separate operating gate. |
-| Files | Synthetic **pass-with-friction**: summary, workspace save and restart/reuse work with the quoted wording; natural “save that as a file” phrasing still misses (#481). |
-| Mail | Synthetic **pass-with-friction**: connect, re-auth, search and resume work; reading a found mail from the conversation does not yet (#473, #478). |
-| Calendar | Synthetic **pass-with-friction**: create, draft, correct, cancel and approve work; a calendar query still needs a Settings row, and cancel or update drafts the model prepares have no approval path from the conversation (#475, #482, #483). |
-| Research | Synthetic **pass-with-friction**: sourced known/unknown output works; “recommend” phrasing and requests right after a file read misroute (#448, #474). |
-| Memory | Synthetic **pass-with-friction**: remember, inspect, correct and held candidates work; delete is web-only (#479). |
-| Honest results | Merged on `main`: Telegram no longer delivers a failed or partial turn as the model's answer (#476) and a refused save no longer reports success (#488). The web view and wholly failed delegations still need the same treatment (#489, #490, #493, #494). |
-| Agent distribution | v0.1 package schemas and contracts exist; third-party package execution and a public Marketplace are **not** current claims. |
+| Install/start/restart | Local deterministic first-use path passed; clean-machine Homebrew/launchd operation was a separate gate. |
+| Files | Synthetic **pass-with-friction**: quoted summary/save/reuse wording worked; natural save phrasing missed (#481). |
+| Mail | Synthetic **pass-with-friction**: connect, re-auth, search and resume worked; reading a found mail in conversation remained a gap (#473, #478). |
+| Calendar | Synthetic **pass-with-friction**: draft/create/correct/cancel/approve paths were tested; query and draft-approval gaps remained (#475, #482, #483). This is the historical draft design. |
+| Research | Synthetic **pass-with-friction**: sourced known/unknown output worked; recommendation wording and post-file requests misrouted (#448, #474). |
+| Memory | Synthetic **pass-with-friction**: remember, inspect, correct and held candidates worked; deletion was web-only (#479). |
+| Honest results | The recorded Telegram/save fixes and remaining web/delegation gaps belonged to predecessor issues #476, #488, #489, #490, #493 and #494. |
+| Agent distribution | Schemas and contracts existed; arbitrary third-party package execution and a public marketplace were not demonstrated. |
 
 There is **no current claim** of autonomous purchasing, arbitrary computer use, universal web verification, live inventory/checkout verification, arbitrary third-party package execution or a public agent marketplace.
 
 <!-- readme-section:release-illustrations -->
-## Published-release journey illustrations
+<a id="published-release-journey-illustrations"></a>
+## Historical journey illustrations
 
-These reconstructed, condensed v1 calendar and file scenes explain synthetic journeys with stand-in services. They are not screenshots of live accounts or a promise that every journey is reachable in the published build. Replies are translated from Korean; release-specific limits are recorded in the [release manifest](release-manifest.json).
+These reconstructed v1 file and calendar scenes explain journeys with simulated services. They are not live-account screenshots or current setup instructions. In particular, the depicted Calendar draft/approval flow predates the API-based path described above.
 
-![Reconstructed synthetic v1 calendar and file journeys](assets/readme/hero.en.png)
+![Historical reconstructed synthetic v1 calendar and file journeys](assets/readme/hero.en.png)
 
-![Synthetic first-user journeys: files, mail, calendar, Memory, research and restart reuse](assets/readme/scenes.en.png)
+![Historical synthetic first-user journeys](assets/readme/scenes.en.png)
 
 <!-- readme-section:everyday-scene -->
-## Where this is going
+## Product direction
 
 <!-- capability:illustrative-product-direction -->
 
 > **Product direction — not a current capability claim.**
 
-> **You:** “We’re almost out of detergent and paper towels. Find the usual products or good alternatives, compare price and delivery cost, and prepare the purchase. Ask me before placing the order.”
+> **You:** “Find our usual detergent or a suitable alternative, compare the full cost, and prepare the purchase. Ask before placing the order.”
 >
 > **Still:** gathers the allowed context, researches the options, separates what is known from what still needs verification, prepares the next step, and stops at the approval boundary.
 
-**This scene is illustrative product direction, not a claim that autonomous shopping or checkout is shipped today.** Booking a haircut, preparing a trip list from what you approved, or a purchase that waits for your yes all have the same shape: the annoying part is delegated, the decision stays with you. Reservation, payment and outbound messages will be described as available only when the implementation and evidence support them.
+**This scene is illustrative product direction, not a claim that autonomous shopping or checkout is shipped today.** A plausible conversation or a successful isolated action is not proof of the whole purchasing journey.
 
 <!-- readme-section:delegation-flow -->
-## What just happened
+## Control during delegated work
 
-In the synthetic v1 journeys above, this is the intended delegation pattern. Exact reachability and friction are recorded in the evidence table and release manifest; the README’s everyday-use image is cut from real owner-pilot sessions, not release-specific validation.
-
-**Delegate the work. Keep the control.**
-
-- It used only what you allowed: that folder, that mailbox, that calendar.
-- It stopped at the line that matters. Nothing was created, sent or changed outside until you said approve.
-- It kept the result, the memory you accepted and a record of what actually ran, so next week you continue from the result, not from a chat log, with whichever model you like.
-- When a step fails or only half-happens, you get the observed outcome, not the model's wording.
+The intended pattern is useful work under the owner's authority, followed by an honest account of the result. Current policy does **not** require the same confirmation before every write: owner-AI memory saves, authorized Calendar changes, third-party memory proposals and payments have different rules. The [Secretary Agency](secretary-agency-contract.en.md), [Owner Control](owner-control-contract.en.md) and [execution](assistant-execution-contract.en.md) documents define those distinctions. A requirement in a contract is not proof that every integration enforces it.
 
 <!-- readme-section:chatbot-difference -->
-## Why this is different
+## The design choice, without a market-wide comparison
 
-| | A hosted assistant | A notes and tasks workspace with AI | Still |
-| --- | --- | --- | --- |
-| Where it runs | The vendor's servers | Wherever your notes live | Your machine; the model can be local or remote |
-| Who decides what it can touch | The vendor | You organise goals, tasks and knowledge for it | You, per folder, account and tool |
-| Before a consequential action | On the vendor's terms | Not its job | Stops and asks you |
-| What remains afterwards | A chat log in their account | Notes and tasks | Results, memory and the record of what ran, all yours, reusable with another model |
-| When a step fails | The model's wording | Not its job | The observed outcome, marked failed or partial (Telegram today; web view in progress) |
-
-A workspace organises work *for* an AI. Still is the environment the AI works *in*: it decides what the AI may access, what it may do, what actually happened, and what stays yours when you swap the model.
+Still aims to keep owner state independent of the AI doing the work. Evaluate that claim by asking whether a model change preserves the relevant memory, open work and permissions; whether the user can inspect and correct them; and whether reported effects match what happened. This is a testable design goal, not a claim that all hosted assistants retain only chat logs or that other products lack these capabilities.
 
 <!-- readme-section:under-the-hood -->
-## Under the hood, briefly
+## Architecture and ownership
 
-Your personal AI should not be identical to one model, one vendor or one agent, so the layer you own is kept separate from the workers you can swap:
+The architecture separates these responsibilities:
 
 `Owner · Context · Memory · Artifact · Capability · Runtime · Grant · Work · Event · Evidence`
 
-Models, coding agents, connectors and delegated runtimes request capabilities; you and your policy decide. The [owner-control contract](owner-control-contract.en.md) spells out six things you can always do: inspect what a worker is and asks for, choose the data it may use, see where your information goes, bound actions separately from installing or connecting, stop and revoke with honest reporting, and keep and move your state when a worker is replaced. Owner state exports and restores with integrity checks through the backup and restore scripts; credentials, sessions and folder permissions are deliberately excluded and must be reconnected.
+The [owner-control contract](owner-control-contract.en.md) defines inspection, data and destination choice, bounded actions, revocation and portable owner state. Backup/restore excludes credentials, sign-in sessions and folder grants; those must be reconnected. Local installation does not mean external AI processing or remote service retention is under local control.
 
-For installable agents the same rule holds: `downloaded != installed != enabled != connected != authorized-for-action`. Installing a package never grants it anything, updates that widen data or actions need fresh approval, and removal revokes the package's authority while keeping your outputs. The full picture, including the five-plane architecture and the BDI-inspired attention lens (a design lens, not a shipped state machine), is in the [concept page](VISION.md), [architecture](personal-agentos-architecture.en.md), [platform foundation](agent-distribution-platform-foundation.en.md) and [roadmap](roadmap.md).
+For future installable agents, `downloaded != installed != enabled != connected != authorized-for-action`. Package and marketplace designs remain subject to implementation and isolation evidence. Read the [concepts](concepts/README.md), [architecture](personal-agentos-architecture.en.md) and [platform foundation](agent-distribution-platform-foundation.en.md) for the rationale and requirements, not a list of shipped integrations.
 
 <!-- readme-section:release -->
-## The Homebrew release
+## The published release
 
-**The Homebrew package installs the newest published release, `v0.5.0` (2026-11-02), from its tagged main commit.** The [release manifest](release-manifest.json) records source coverage and local installed checks. Those checks establish package installation and foreground operation, not live Telegram, Google or shopping use, or the complete README demo scenes. The README’s everyday-use image is cut from real owner-pilot sessions, not release-specific validation.
+**The Homebrew package installs the newest published release, `v0.5.0` (2026-11-02), from its tagged main commit.** The [release manifest](release-manifest.json) records source coverage and local installed checks.
+
+The recorded tag commit is `6d26edfdaeb2f1204dc877d62fa9f9e25cf3059b`. Its archive digest and macOS formula checks do not establish live Google, messenger, shopping or reboot behavior. The owner-installed upgrade is not recorded for this release. See [Quick start](QUICKSTART.md) for the one-line installer, or use Homebrew on Apple silicon:
 
 ```sh
 brew tap jongtae/still https://github.com/Jongtae/Still
@@ -105,14 +116,14 @@ brew install jongtae/still/agentos
 agentos start
 ```
 
-The [release procedure](release.en.md) tracks publication.
+Publication follows the [release procedure](release.en.md); this page does not publish a build.
 
 <!-- readme-section:license -->
 ## License
 
-The code is [AGPL-3.0-only](../LICENSE): run it, change it and share it; if you distribute a modified version or run one as a network service, make your modified source available to its users. The “Still” name and logo are covered by the [trademark notice](TRADEMARKS.md), not by the code licence. Contributions are accepted under the same licence; there is no CLA.
+The code uses [AGPL-3.0-only](../LICENSE). The name and logo follow the [trademark notice](TRADEMARKS.md). Consult those texts for their terms.
 
 <!-- readme-section:development -->
-## How it is built
+## Development and verification
 
-This is **not a coding harness, swarm framework, host kernel or replacement for macOS/Linux**. The GitHub/Codex delivery automation in this repository builds Still; it is not the product. To contribute, start with [CONTRIBUTING.md](../.github/CONTRIBUTING.md). Contributors follow [AGENTS.md](../AGENTS.md), the [Development Constitution](development-constitution.en.md) and the [Goal Execution Contract](goal-execution-contract.en.md). Product completion needs useful-outcome evidence and denial/recovery evidence; green CI alone is not a product claim.
+Repository issue/branch/PR automation builds Still; it is not an end-user runtime capability. Start with [contributor onboarding](contributor-onboarding.en.md) and [CONTRIBUTING](../.github/CONTRIBUTING.md). CI establishes the checks it ran on its recorded revision, not the success of an unobserved owner task. Update this page from named implementation and evidence records, and update the Korean edition in the same change.

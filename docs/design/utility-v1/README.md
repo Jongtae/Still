@@ -1,23 +1,17 @@
-# Still Utility UI — historical prototype and current handoff
+# Retired utility-v1 study
 
-## Current decision: management-only local web (2026-09-20)
+This directory is a compatibility entry for a superseded offline UI study. It is not a current screen specification, runtime feature or coding handoff.
 
-Read the [Local Web Management Contract](../../web-management-contract.en.md), [Korean summary](../../web-management-contract.ko.md), and implementation issue **#382 / WEB-ADMIN-01** before using any prototype in this folder. The design record remains #379 / PR #380.
+The prototype's conversation/top-level-project navigation, synthetic model identities, instant stop and simulated controls were never proof of current Still behavior. The later management-only prescription was itself followed by the Presence contract's Pages direction. Read [Presence](../../presence-experience-contract.en.md), the applicable [web contract](../../web-management-contract.en.md), and [Presence and collaboration](../../concepts/presence-and-collaboration.ko.md) instead of implementing an old mockup.
 
-The owner no longer wants the local web to continue conversations or mirror Telegram. Default destinations were **작업 현황 / 내 기록 / 설정**; on 2026-09-24 the owner removed the generic **내 기록** destination (#562), so the current default is **작업 현황 / 설정** with exact-item deep links (see the contract's section 3). Projects are optional secondary grouping. Telegram is the current conversation channel, while Still retains history, memory, work, results and authority. This is a product decision and implementation specification, not already-shipped behavior or automatic Codex activation.
+## Original material
 
-The new [CODEX_PROMPT.txt](CODEX_PROMPT.txt) replaces the earlier chat-first handoff. It directs a later owner-invoked coding session to the scoped issue, current main and the contract. Do not start a second preparation program, automatically activate #381 or silently merge overlapping settings PR #373.
+The HTML, CSS, JavaScript, original README and original implementation prompt remain together at the [pre-cleanup revision](https://github.com/Jongtae/Still/tree/fda6e41591d69100d2155d24b08e955a98858fac/docs/design/utility-v1). They were removed or shortened in the active tree, not retroactively changed in that revision.
 
-## Historical visual study — not the current navigation specification
+The old nine offline Chromium checks remain historical prototype observations. They do not verify current polling, real providers, a user study, or the owner's current installation. This cleanup performs no new browser observation.
 
-`prototype.html`, `utility.css`, and `utility.js` remain the original offline utility-v1 study. **Their conversation and top-level-project destinations are superseded.** Their synthetic model identities, instant stop behavior and simulated controls are not runtime capabilities. Opening this old prototype does not show the new management-only design.
+## What remains useful
 
-The original full v1 brief is preserved at [the pre-supersession commit](https://github.com/Jongtae/personal-agentos/blob/30af263f10156ea572d2a39178cc7fecaa1a641e/docs/design/utility-v1/README.md). No original private owner screenshots or font files are stored here. The original prototype files are retained unchanged for comparison.
+Keep the purpose of the surviving ideas: a stable draft, a test of that exact draft before applying it, honest configured/connected/effective states, and contextual results with inspectable evidence. Their live requirements belong in the current contracts, not another executable demo or session-specific prompt.
 
-Patterns still useful when consistent with the new contract: compact neutral utility styling, aligned setting rows, one active pane, exact-draft test/apply, preserved form/search state and request list/detail. Rejected patterns: generic web composer/transcript as default, mandatory projects, marketing/dashboard panels and permanent onboarding.
-
-## Evidence boundary
-
-The prior proposal recorded nine offline Chromium interaction checks on synthetic state. Those are historical prototype checks, not new tests of the management-only contract, actual Still polling, a real provider, a user study or current owner installation. This documentation update does not repeat or expand that evidence.
-
-Implementation acceptance is A1-A8 in #382: actual navigation, task/results, route-state accuracy, draft survival, type-correct record actions, preserved Telegram/API/history and desktop/mobile browser evidence. Runtime code, private state, delivery-plan activation and provider configuration are not changed by this design record.
+No runtime, data, Grant, approval, delivery selection or acceptance evidence changes here. The old `CODEX_PROMPT.txt` path is retained only because an existing contract points to it; it now routes away from the retired handoff.
