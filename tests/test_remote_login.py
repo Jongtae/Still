@@ -557,6 +557,113 @@ class PhoneWindowFitsThePage(unittest.TestCase):
             with self.subTest(args=args):
                 self.assertEqual(fit(*args), expected)
 
+    def test_region_zoom_and_document_centre(self):
+        target = browser_worker.phone_region_target
+        measured = {'page': 1200, 'inner': 390,
+                    'regions': [{'x': 680, 'y': 700, 'width': 480, 'height': 300}]}
+        self.assertEqual(target(measured, 1), (0.7625, (920, 850)))
+        # Same result when measured after whole-page fitting; inner is in CSS pixels.
+        measured['inner'] = 1200
+        self.assertEqual(target(measured, 0.325, 1200), (0.7625, (920, 850)))
+
+    def test_region_cap_absence_and_zoom_clamps(self):
+        target = browser_worker.phone_region_target
+        measured = {'page': 1200, 'inner': 390, 'regions': []}
+        self.assertEqual(target(measured, 1), (0.325, None))
+        measured['regions'] = [{'x': 0, 'y': 0, 'width': 601, 'height': 200}]
+        self.assertEqual(target(measured, 1), (0.325, None), 'oversized containers keep fit behavior')
+        measured['regions'][0]['width'] = 100
+        self.assertEqual(target(measured, 1), (1, (50, 100)), 'never beyond natural size')
+        measured.update(page=400, inner=390)
+        measured['regions'][0]['width'] = 600
+        self.assertEqual(target(measured, 1), (0.975, (300, 100)), 'never below fit zoom')
+        measured['regions'][0]['width'] = float('nan')
+        self.assertEqual(target(measured, 1), (0.975, None))
+
+    def test_region_framing_happens_once_and_resets_on_navigation(self):
+        measurement = {'page': 1200, 'inner': 390,
+                       'regions': [{'x': 680, 'y': 700, 'width': 480, 'height': 300}]}
+        worker, _ = self.worker([measurement, {}, measurement, {}])
+        worker.handle({'id': 1, 'op': 'remote_begin'})
+        worker.fit_phone_page()
+        self.assertEqual(worker.view.zoom, 0.7625)
+        self.assertEqual(worker.scripts[-1][0], browser_worker.PHONE_CENTER_SCRIPT)
+        count = len(worker.scripts)
+        worker.fit_phone_page()
+        self.assertEqual(len(worker.scripts), count)
+        worker.phone_navigated()
+        self.assertEqual(worker.view.zoom, 1)
+        worker.fit_phone_page()
+        self.assertEqual(len(worker.scripts), count + 2)
+
+    def test_region_probe_and_centre_use_geometry_and_yield_to_owner_scroll(self):
+        import shutil
+        import subprocess
+        node = shutil.which('node')
+        if not node:
+            self.skipTest('node is not installed')
+        harness = r"""
+const assert = require('node:assert/strict');
+const probe = new Function(%s), centre = new Function('x', 'y', 'beforeX', 'beforeY', %s);
+const listeners = {}, scrolls = [];
+global.window = {innerWidth: 390, innerHeight: 844, scrollX: 0, scrollY: 0,
+  addEventListener: (kind, fn) => { listeners[kind] = fn; }, scrollTo: p => scrolls.push(p)};
+global.getComputedStyle = el => ({visibility: el.hidden ? 'hidden' : 'visible', display: 'block'});
+function box(x, y, width, height) {
+  return {getBoundingClientRect: () => ({left:x, top:y, width, height}), contains: () => false};
+}
+const field = box(700, 750, 400, 40), hidden = box(0, 0, 400, 40);
+hidden.hidden = true;
+const form = box(680, 700, 480, 180), section = box(680, 700, 480, 300);
+const page = box(0, 0, 1200, 2000), button = box(680, 900, 480, 60);
+field.closest = () => form; field.parentElement = form;
+form.parentElement = section; section.parentElement = page;
+section.querySelectorAll = () => [button];
+global.document = {scrollingElement: {scrollWidth:1200}, body: page,
+  querySelectorAll: () => [hidden, field], activeElement: null};
+let result = JSON.parse(probe());
+assert.deepEqual(result.regions, [{x:680, y:700, width:480, height:300}]);
+assert.equal(result.interacted, false);
+window.innerWidth = 390 / 0.7625; window.innerHeight = 844 / 0.7625;
+centre(920, 850, 0, 0);
+assert.equal(scrolls.length, 1);
+assert.equal(scrolls[0].left, 920 - window.innerWidth / 2);
+listeners.scroll();
+centre(920, 850, 0, 0);
+assert.equal(scrolls.length, 1, 'owner scroll cancels queued centring');
+assert.equal(JSON.parse(probe()).interacted, true);
+// An ancestor wider than the cap cannot swallow the adjacent button.
+section.getBoundingClientRect = () => ({left:680, top:700, width:800, height:300});
+assert.deepEqual(JSON.parse(probe()).regions, [{x:680, y:700, width:480, height:180}]);
+// No password: only the focused text input can nominate a region.
+document.querySelectorAll = () => [];
+assert.deepEqual(JSON.parse(probe()).regions, []);
+field.matches = () => true; document.activeElement = field;
+assert.equal(JSON.parse(probe()).regions.length, 1);
+""" % (json.dumps(browser_worker.PAGE_WIDTH_SCRIPT), json.dumps(browser_worker.PHONE_CENTER_SCRIPT))
+        result = subprocess.run([node, '-e', harness], capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_owner_interaction_and_navigation_cancel_pending_framing(self):
+        measurement = {'page': 1200, 'inner': 390,
+                       'regions': [{'x': 680, 'y': 700, 'width': 480, 'height': 300}]}
+        for action in ('input', 'navigation', 'scroll'):
+            with self.subTest(action=action):
+                worker, _ = self.worker([])
+                worker.handle({'id': 1, 'op': 'remote_begin'})
+                callbacks = []
+                worker.run = lambda body, args, done: callbacks.append(done)
+                worker.fit_phone_page()
+                if action == 'navigation':
+                    worker.phone_navigated()
+                elif action == 'input':
+                    worker.press = lambda *args: None
+                    worker.handle({'id': 2, 'op': 'remote_tap', 'x': 10, 'y': 10,
+                                   'view_id': worker.remote_view()[1]})
+                callbacks[0](dict(measurement, interacted=action == 'scroll'), None)
+                self.assertEqual(worker.view.zoom, 1)
+                self.assertEqual(len(callbacks), 1, 'no scroll scheduled')
+
     def worker(self, measures):
         """A shown worker with a fake window and view (no PyObjC); ``measures`` are ``PAGE_WIDTH_SCRIPT`` answers."""
         worker = browser_worker.Worker.__new__(browser_worker.Worker)
