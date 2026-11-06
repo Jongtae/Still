@@ -9,6 +9,7 @@ qualification suite is replaced by a pass for the one model-change case.  No
 live model or Telegram is contacted, and none is claimed.
 """
 import json
+from unittest.mock import patch
 from datetime import datetime
 import tempfile
 import threading
@@ -102,7 +103,7 @@ class OrchestratorCategories(_Case):
         for secret in (TELEGRAM_SECRET, OPENAI_KEY, OPENROUTER_KEY, 'decision-owner-key-value-0003'):
             self.assertNotIn(secret, text)
         self.assertNotIn('https://', text, 'no endpoint is reported')
-        self.assertEqual(set(read['settings']), {'payment_autonomy', 'current_context', 'judgment_ai', 'main_ai', 'owner_model', 'skills', 'phone_link', 'ai_connections', 'api_connections', 'preparations', 'browser'})
+        self.assertEqual(set(read['settings']), {'payment_autonomy', 'current_context', 'judgment_ai', 'main_ai', 'owner_model', 'developer_mode', 'skills', 'phone_link', 'ai_connections', 'api_connections', 'preparations', 'browser'})
         self.assertEqual([o['value'] for o in read['settings']['main_ai']['route']['options']], ['openai', 'openrouter'])
         self.assertEqual(read['settings']['current_context']['enabled']['value'], 'off')
         self.assertIn('기본 AI · 경로: OpenRouter', read['response'])
@@ -1087,6 +1088,49 @@ class PreparationManagementConversation(_Case):
         self.assertNotEqual(prep.schedule_text(watch), prep.schedule_text(edited))
         for leaked in ('{', watch['id'], 'max_runs', 'bound_timezone'):
             self.assertNotIn(leaked, text)
+
+    def test_an_edit_of_this_works_unoffered_proposal_applies_without_a_second_ask(self):
+        """#702: the Work corrects its own proposal before the owner sees it; anything else stays a confirmed draft."""
+        def watch(work, state=prep.STATE_PROPOSED):
+            return self.service.preparations.create(
+                kind='prepare', goal='주식 현황 ' + work, due_at=self.clock[0] + 600, timezone='Asia/Seoul', recurrence=None,
+                channel='web', created_from=work, state=state, window=(3600, self.clock[0] + 600 + 6 * 3600, 7))
+
+        def edit(work, row, runs):
+            tools = self.settings.work_tools('owner', 'http', work)
+            return tools('settings_change', {'category': 'preparations', 'setting': 'edit',
+                                             'value': json.dumps({'id': row['id'], 'max_runs': runs})})
+
+        own = watch('work-a')
+        result = edit('work-a', own, 5)
+        self.assertEqual((result['applied'], result.get('own_proposal')), (True, True))
+        current = self.service.preparations.get(own['id'])
+        self.assertEqual((current['state'], current['max_runs'], current['accepted_by']), (prep.STATE_PROPOSED, 5, None),
+                         'changed, still waiting for the owner\'s one yes')
+        self.assertEqual(self.settings.pending_for_work('work-a'), [], 'nothing left waiting')
+        self.assertIn('예약 일정을 바꿨습니다', result['response'])
+
+        other = edit('work-b', own, 4)  # another Work's edit of it
+        offered_row = watch('work-c')
+        self.store.queue_notification('work-c', 1, 'g', 'preparation_proposed')
+        offered = edit('work-c', offered_row, 4)  # already offered to the owner
+        accepted = watch('work-d', prep.STATE_SCHEDULED)
+        scheduled = edit('work-d', accepted, 4)  # already accepted
+        # Codex P1 on #704: the owner accepts in web Settings right after the eligibility check.
+        racing = watch('work-e')
+        offered_check = self.store.notification_of
+
+        def accept_then_check(job_id, kind):
+            if job_id == 'work-e':
+                self.service.preparations.accept(racing['id'], prep.ACCEPTED_OWNER_SETTINGS)
+            return offered_check(job_id, kind)
+        with patch.object(self.store, 'notification_of', side_effect=accept_then_check):
+            raced = edit('work-e', racing, 4)
+        for name, waiting, row in (('other work', other, own), ('offered', offered, offered_row),
+                                   ('scheduled', scheduled, accepted), ('accepted meanwhile', raced, racing)):
+            with self.subTest(name):
+                self.assertEqual((waiting['applied'], waiting['requires_owner_confirmation']), (False, True))
+                self.assertNotEqual(self.service.preparations.get(row['id'])['max_runs'], 4)
 
     def test_new_owner_requested_edit_supersedes_only_alternatives_of_the_same_preparation(self):
         other = self.service.preparations.create(kind='prepare', goal='Example second report', due_at=self.clock[0] + 3600,

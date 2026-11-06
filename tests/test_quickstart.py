@@ -1263,6 +1263,16 @@ finally:
         self.service.run_one()
         self.assertNotIn('/note',self.store.jobs()[0]['response'])
 
+    def test_help_response_lists_the_exact_commands(self):
+        # #705: /help shows every exact command; /start (above) stays the plain welcome.
+        generation=self.pair()
+        self.service.run_one();self.service.deliver_one()
+        self.service.ingest_update({'update_id':11,'message':{'from':{'id':42},'chat':{'id':42,'type':'private'},'text':'/help'}},generation)
+        self.service.run_one()
+        response=self.store.jobs()[0]['response']
+        for command in ('/ai','/settings','/dev on','/note','/notes','/knowledge','/workspace-search','/help'):
+            self.assertIn(command,response)
+
     def test_actual_router_model_and_free_catalog(self):
         from unittest.mock import patch
         from personal_agent.providers import ModelAdapter

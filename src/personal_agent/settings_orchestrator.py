@@ -100,7 +100,8 @@ def next_action(row):
 CATEGORY_LABELS = {"payment_autonomy": msg("payment_autonomy.label"), "connections": msg('label.external_connections'), "current_context": msg('label.current_context'), "judgment_ai": msg('label.judgment_ai'), "main_ai": msg('label.main_ai'),
                    "owner_model": msg('settings_orchestrator.owner_model_label'), "skills": msg('settings_orchestrator.skills_label'),
                    "phone_link": msg('settings_orchestrator.phone_link_label'), "ai_connections": msg('settings_orchestrator.ai_connections_label'), "api_connections": msg('settings_orchestrator.api_connections_label'),
-                   "preparations": msg('settings_orchestrator.preparations_label'), "browser": msg('settings_orchestrator.browser_label')}
+                   "preparations": msg('settings_orchestrator.preparations_label'), "browser": msg('settings_orchestrator.browser_label'),
+                   "developer_mode": msg('conversation_handoff.developer_mode')}
 SETTINGS = {"payment_autonomy": ("enabled",), "current_context": ("enabled", "timezone"), "judgment_ai": ("mode", "model"), "main_ai": ("route", "model"),
             # #805 owner-model upkeep: its pause switch and rolling 24-hour call cap.
             # #402: the once-a-day look back over recent requests has its own switch.
@@ -114,6 +115,8 @@ SETTINGS = {"payment_autonomy": ("enabled",), "current_context": ("enabled", "ti
             # #1572: close one exact login window that holds the browser while the owner will not sign in.
             # #636: signing back in through the provider the owner used (every site, or one site).
             "browser": ("close_login", "use_mobile", "provider_sign_in"),
+            # #477/#705: whether the waiting line names the launched AI and model (also ``/dev on|off``).
+            "developer_mode": ("enabled",),
             # #1197: Works may use the owner's AI-side connections (claude.ai connectors), read-only.
             # #1297: which of the owner's MCP servers load, and the owner's trust record per connection.
             "ai_connections": ("enabled", "connect", "servers", "review", "money", "rung", "undo", "forget", "restore"),
@@ -143,6 +146,7 @@ _CATEGORY_LINE_IDS = {
     'api_connections': 'settings_orchestrator.category_line_api_connections',
     'preparations': 'settings_orchestrator.category_line_preparations',
     'browser': 'settings_orchestrator.category_line_browser',
+    'developer_mode': 'developer_mode.category_line',
 }
 # Catalog ids for whole setting/value pairs; unknown labels retain their original rendering.
 _SETTING_VALUE_IDS = {
@@ -207,6 +211,7 @@ _CHANGE_LABELS = {("payment_autonomy", "enabled"): msg("payment_autonomy.label")
     ('ai_connections', 'restore'): msg('settings_orchestrator.label_ai_connections_restore'),
     ('connections', 'disconnect'): msg('settings_orchestrator.label_connections_disconnect'),
     ('connections', 'connect_chat'): msg('settings_orchestrator.label_connections_connect_chat'),
+    ('developer_mode', 'enabled'): msg('developer_mode.label_enabled'),
 }
 #: #1297: trust values include "<engine>|<kind>|<stable identity>|..." so a
 #: decision cannot cross engines or connection kinds.
@@ -269,7 +274,9 @@ DIRECT_REQUEST_SETTINGS = frozenset({
     ('owner_model', 'enabled'), ('owner_model', 'daily_calls'), ('owner_model', 'dream'),
     ('main_ai', 'model'), ('skills', 'remove'), ('payment_autonomy', 'enabled', 'off'),
     *(('preparations', operation) for operation in ('cancel', 'accept', 'pause', 'resume', 'edit', 'run_now')),
-    ('browser', 'close_login'), ('browser', 'use_mobile'), ('connections', 'disconnect')})
+    ('browser', 'close_login'), ('browser', 'use_mobile'), ('connections', 'disconnect'),
+    # #705: a presentation preference only.
+    ('developer_mode', 'enabled')})
 #: #619: what the worker reads when a scheduled run (no owner present) asks for a settings change.
 UNATTENDED_SETTINGS_TEXT = ('No owner is present in this scheduled run, so no settings change was proposed and '
                             'nothing waits for the owner. Say in your answer what you found and the change you would '
@@ -437,7 +444,10 @@ class SettingsOrchestrator:
             work = {"enabled": on, "label": msg('work_mode.label'),
                     "value_label": msg('label.on' if on else 'label.off'), "changeable": False}
             lines.append(msg('work_mode.read_line', state=work["value_label"]))
-            return {**result, "settings": settings, "work_mode": work, "response": "\n".join(lines)}
+            # #705: the exact commands the owner can type, from the parser's own list.
+            from .conversation_handoff import owner_commands
+            return {**result, "settings": settings, "work_mode": work, "owner_commands": owner_commands(),
+                    "response": "\n".join(lines)}
         return {**result, "settings": settings, "response": "\n".join(lines)}
 
     # -- #814 owner settings ------------------------------------------------------
@@ -495,6 +505,11 @@ class SettingsOrchestrator:
                 "daily_calls": self._row("daily_calls", cap, msg('settings_orchestrator.call_count', value=cap), None,
                                          format=msg('settings_orchestrator.daily_calls_format', limit=MAX_DAILY_CALLS))}
 
+
+    def _developer_mode(self):
+        enabled = "on" if self.service.developer_mode() else "off"
+        return {"enabled": self._row("enabled", enabled, VALUE_LABELS[enabled], self._options(("on", "off")),
+                                     note=msg('developer_mode.note'))}
 
     def _ai_connections(self):
         """#1197: whether Works may use the owner's AI-side connections."""
@@ -1185,6 +1200,8 @@ class SettingsOrchestrator:
                 return 'applied'
             self.__dict__.setdefault('_apply_text', {})[row['id']] = start(self.service, row)
             return 'awaiting-input'
+        elif category == "developer_mode":
+            self.service.set_developer_mode(after == "on")
         elif category == "current_context":
             self.service.set_current_context({"enabled": after == "on"} if setting == "enabled" else {"timezone": after})
         elif (category, setting) in TRUST_SETTINGS:
@@ -1765,6 +1782,9 @@ class SettingsOrchestrator:
                 return {"state": "not_proposed", "unattended": True, "category": args.get("category"),
                         "setting": args.get("setting"), "after": after, "applied": False,
                         "next_step": UNATTENDED_SETTINGS_TEXT}
+            own = self._own_proposal_edit(args, work_id)
+            if own is not None:
+                return own
             draft = self.propose(owner, channel, args.get("category"), args.get("setting"), args.get("value"),
                                  args.get("reason"), work_id, continue_work=args.get("continue_work") == "yes", required_skill=args.get("required_skill"))
             if (callable(owner_request) and args.get("continue_work", "no") == "no"
@@ -1777,6 +1797,38 @@ class SettingsOrchestrator:
             return {**{key: value for key, value in draft.items() if key not in ("digest", "response", "expires_at")},
                     "next_step": f"{draft['summary']} 변경은 소유자 확인을 기다립니다. {how} 확인 전에는 아무것도 바뀌지 않았습니다."}
         return call
+
+    def _own_proposal_edit(self, args, work_id):
+        """#702: apply a schedule edit of a reservation this Work proposed and has not offered yet, or None.
+
+        Nothing the owner has read or accepted changes: the reservation never runs before the owner's
+        yes, and its one proposal (bound to its digest) is offered only when the Work ends.  The edit
+        itself is limited to a still-proposed row in its own transaction, so an owner's accept landing
+        after this check leaves the change as an owner-confirmed draft instead (Codex P1 on #704).
+        """
+        from . import preparations as prep
+        if (args.get("category"), args.get("setting")) != ("preparations", "edit") or not work_id or self.service is None:
+            return None
+        after, _row = self._normalized("preparations", "edit", args.get("value"))
+        changes = json.loads(after)
+        row = self.service.preparations.get(changes["id"])
+        if not (row and row["state"] == prep.STATE_PROPOSED and row.get("created_from") == work_id
+                and self.service.store.notification_of(work_id, "preparation_proposed") is None):
+            return None
+        requested = {key: value for key, value in changes.items() if key not in ("id", BOUND_TIMEZONE)}
+        try:
+            self.service.preparations.edit(row["id"], states=(prep.STATE_PROPOSED,), **requested)
+        except prep.PreparationRefusal as exc:
+            if exc.code == "invalid_state":
+                return None
+            raise SettingsError(str(exc)) from None
+        self._audit({"id": "own-proposal:" + row["id"], "target": "preparations.edit", "before": None, "after": after},
+                    "own-proposal")
+        return {"state": "applied", "category": "preparations", "setting": "edit", "after": after,
+                "applied": True, "own_proposal": True, "response": self._preparation_receipt("edit", after),
+                "next_step": ("This reservation is still this Work's own proposal and the owner has not been shown it, so "
+                              "Still applied the edit directly. The owner accepts the reservation once, as it now reads; "
+                              "do not ask them to confirm the edit separately.")}
 
     def _apply_owner_request(self, owner, channel, draft, owner_request):
         """Apply a draft the owner's own typed message asked for exactly (#619), or None to leave it waiting.
