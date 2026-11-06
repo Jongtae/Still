@@ -1764,6 +1764,23 @@ class SessionFixtureHandler(FixtureHandler):
                               ' navigator.maxTouchPoints + " " + ("ontouchstart" in window) + " 같은UA " +'
                               f' (navigator.userAgent === {json.dumps(agent)});</script>'
                               '</body></html>')
+        if path == '/desktop-region':
+            return self._send('''<html><head><meta name="viewport" content="width=device-width"></head>
+              <body style="margin:0"><main style="width:1200px;height:2000px;position:relative">
+              <section style="position:absolute;left:680px;top:700px;width:480px;height:300px">
+                <form style="margin:0;height:180px">
+                  <input aria-label="Account" style="width:400px;height:40px">
+                  <input type="password" aria-label="Password" style="width:400px;height:40px">
+                  <button type="button">Continue</button>
+                </form>
+                <button id="provider" style="margin-top:20px;width:480px;height:60px"
+                  onclick="document.getElementById('result').textContent='Provider pressed'">Another sign-in</button>
+              </section><p id="result">Waiting</p></main>
+              <script>function geometry() {
+                const r = document.getElementById('provider').getBoundingClientRect();
+                document.title = JSON.stringify([innerWidth, innerHeight, r.left, r.top, r.width, r.height,
+                                                 scrollX, scrollY]);
+              } geometry(); setInterval(geometry, 50);</script></body></html>''')
         if path == '/desktop-only':
             # #254: a desktop-only page: laid out 1000 px wide whatever the viewport (#321: inside the 1024-px
             # screen of the CI macOS runners, since the window never grows past its screen), with its
@@ -2927,6 +2944,47 @@ class WebKitIntegrationTests(unittest.TestCase):
             after = worker.frame()
             self.assertEqual((after['width'], after['height']), (before['width'], before['height']))
             self.assertFalse(zoomed(after), 'zoom 1: the far-right field is off the phone-wide view again')
+        finally:
+            worker.close()
+
+    @unittest.skipIf(LINUX, 'the region framing regression exercises real WKWebView pageZoom')
+    def test_phone_centres_and_enlarges_the_form_including_an_adjacent_provider_button(self):
+        worker = self.worker()
+        try:
+            worker.show(self.origin + '/desktop-region', 10)
+            # A work/non-phone window keeps natural zoom and scroll.
+            before = json.loads(worker.snapshot()['title'])
+            self.assertEqual(before[6:], [0, 0])
+            worker.remote_begin()
+            deadline = time.monotonic() + 8
+            while True:
+                frame = worker.frame()
+                geometry = json.loads(worker.snapshot()['title'])
+                inner, height, left, top, width, button_height, sx, sy = geometry
+                zoom = frame['width'] / inner
+                enlarged = any(field['kind'] == 'password' and field['w'] > 0.7 for field in frame['fields'])
+                if sx > 0 and sy > 0 and enlarged and width * zoom > frame['width'] * 0.8:
+                    break
+                if time.monotonic() > deadline:
+                    self.fail(f'form was not enlarged and centred: {geometry}, zoom={zoom}')
+                time.sleep(0.15)
+            self.assertGreater(zoom, bw.phone_fit_zoom(1200, 390, 1, None))
+            self.assertLessEqual(zoom, 1)
+            self.assertAlmostEqual((left + width / 2) * zoom, frame['width'] / 2, delta=3)
+            self.assertAlmostEqual((850 - sy) * zoom, frame['height'] / 2, delta=3)
+            # Frame coordinates are native view points, including both pageZoom and scroll.
+            x = (left + width / 2) / inner * frame['width']
+            y = (top + button_height / 2) / height * frame['height']
+            self.assertTrue(0 < y < frame['height'])
+            worker.remote_input('tap', view_id=frame['view_id'], x=x, y=y)
+            deadline = time.monotonic() + 5
+            while 'Provider pressed' not in (text := worker.snapshot()['text']) and time.monotonic() < deadline:
+                time.sleep(0.2)
+            self.assertIn('Provider pressed', text)
+            for _ in range(3):
+                worker.frame()
+            after = json.loads(worker.snapshot()['title'])
+            self.assertEqual(after, geometry, 'later frames do not reframe after owner input')
         finally:
             worker.close()
 
