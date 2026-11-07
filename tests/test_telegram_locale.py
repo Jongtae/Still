@@ -32,9 +32,9 @@ class TranslateTests(unittest.TestCase):
     def test_fixed_lines_templates_and_draft_dots(self):
         self.assertEqual(loc.translate('요청을 처리했어요.', 'en'), 'Done.')
         self.assertEqual(loc.translate('ssg.com에서 찾아보고 있어요 · · ·', 'en'), 'Searching ssg.com · · ·')
-        self.assertEqual(loc.translate('이 요청은 취소됨 상태입니다.', 'ja'), 'この依頼は「キャンセル済み」です。')
+        self.assertEqual(loc.translate('이 요청은 취소됨 상태예요.', 'ja'), 'この依頼は「キャンセル済み」です。')
         self.assertEqual(loc.translate('기억했어요: Ethiopia Guji', 'zh'), '记住了：Ethiopia Guji')
-        self.assertEqual(loc.translate('일부 단계만 완료했습니다.\nThe cart was updated.\n시도한 단계: search', 'en'),
+        self.assertEqual(loc.translate('일부 단계만 완료했어요.\nThe cart was updated.\n시도한 단계: search', 'en'),
                          'Only some steps were completed.\nThe cart was updated.\nSteps tried: search')
 
     def test_a_value_named_twice_must_be_the_same_both_times(self):
@@ -75,11 +75,11 @@ class ChannelTests(unittest.TestCase):
 
         language = ['ja']
         channel = TelegramChannel(lambda: transport, lambda: 'T', language_source=lambda: language[0])
-        channel.send_message(1, '요청을 받았습니다. 곧 시작할게요.')
+        channel.send_message(1, '요청을 받았어요. 곧 시작할게요.')
         language[0] = 'ko'
-        channel.send_message(1, '요청을 받았습니다. 곧 시작할게요.')
+        channel.send_message(1, '요청을 받았어요. 곧 시작할게요.')
         self.assertEqual(sent[0]['text'], '受け取りました。すぐに始めます。')
-        self.assertEqual(sent[1]['text'], '요청을 받았습니다. 곧 시작할게요.')
+        self.assertEqual(sent[1]['text'], '요청을 받았어요. 곧 시작할게요.')
 
     def test_a_broken_language_source_never_blocks_a_send(self):
         sent = []

@@ -151,7 +151,7 @@ class FirstRunTest(unittest.TestCase):
         term = ScriptedTerminal(asks=['y', '4', ''], secrets=['short', PASSWORD, 'typo ' + PASSWORD, PASSWORD, PASSWORD])
         self.assertTrue(self.run_wizard(FakeService(), term))
         self.assertIn('12자 이상으로 입력하세요.', term.text())
-        self.assertIn('두 비밀번호가 다릅니다', term.text())
+        self.assertIn('두 비밀번호가 달라요', term.text())
         self.assertEqual(self.store.config('local_access'), False)
         self.assertTrue(self.store.login(PASSWORD))
 
@@ -205,7 +205,7 @@ class FirstRunTest(unittest.TestCase):
         term = ScriptedTerminal(asks=['', '1', '', 'b', '4', ''])
         self.assertTrue(self.run_wizard(service, term))
         self.assertIn('Codex', term.text())
-        self.assertIn('아직 설치된 Codex CLI가 보이지 않습니다', term.text())
+        self.assertIn('아직 설치된 Codex CLI가 보이지 않아요', term.text())
         self.assertEqual(term.commands, [])
         self.assertEqual(service.calls, [])
 
@@ -241,7 +241,7 @@ class FirstRunTest(unittest.TestCase):
         service = FakeService()
         term = ScriptedTerminal(asks=['', '3', '1', '', '', ''], secrets=['sk-key'])
         self.assertTrue(self.run_wizard(service, term))
-        self.assertIn('쓴 만큼 요금이 나옵니다', term.text())
+        self.assertIn('쓴 만큼 요금이 나와요', term.text())
         self.assertEqual(term.opened, ['https://platform.openai.com/api-keys'])
         self.assertIn(('save_model', 'openai', 'https://api.openai.com/v1', 'gpt-4o-mini', 'sk-key'), service.calls)
         self.assertIn(('select_route', 'direct-api'), service.calls)

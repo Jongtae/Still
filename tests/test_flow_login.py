@@ -1106,7 +1106,7 @@ class InFlowLogin(LoginHarness):
         self.assertEqual(self.settle(job_id), 'not_logged_in')
         self.assertTrue(self.window().closed)
         self.assertEqual(self.store.job(job_id)['status'], self.ended)
-        self.assertEqual(BROWSER_LOGIN_RESULT_TEXT['no_session'], '로그인 세션이 저장되지 않아 요청을 이어서 처리하지 않았습니다.')
+        self.assertEqual(BROWSER_LOGIN_RESULT_TEXT['no_session'], '로그인 세션이 저장되지 않아 요청을 이어서 처리하지 않았어요.')
         self.assertEqual(self.edits()[-1]['text'], BROWSER_LOGIN_RESULT_TEXT['no_session'])
         # The row keeps a keyed digest of the site's cookies, never a cookie value.
         self.assertNotIn('session-', flat(self.service._browser_login(job_id)))
@@ -1170,7 +1170,7 @@ class LoginWindowHolder(LoginHarness):
         draft = self.service.settings_tools(follow)('settings_change', {'category': 'browser', 'setting': 'close_login',
                                                                          'value': value})
         row = settings._drafts()[draft['draft_id']]
-        self.assertIn('로그인 창을 닫습니다: fixture.test 로그인 창', row['effect'])
+        self.assertIn('로그인 창을 닫아요: fixture.test 로그인 창', row['effect'])
         self.assertEqual(self.state(job_id), 'offered', 'a draft closes nothing')
         result = settings.confirm(self.service.settings_owner(follow), follow['channel'], draft['draft_id'], row['digest'])
         self.assertIn('닫고 있어요', result['response'])
@@ -1355,7 +1355,7 @@ class LoginPromptAndThreads(LoginHarness):
 
     def test_a_window_that_lands_where_it_was_asked_shows_no_move(self):
         _job_id, prompt, _buttons, _notification = self.login_work()
-        self.assertNotIn('이동했습니다', prompt['text'])
+        self.assertNotIn('이동했어요', prompt['text'])
 
     def test_a_legacy_row_with_no_window_id_expires_and_is_never_re_queued(self):
         job_id = self.store.enqueue('계정 페이지 확인해줘', 'web-legacy')

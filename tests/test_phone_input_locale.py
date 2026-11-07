@@ -20,12 +20,12 @@ DRAFTS = [None, {}, {'oauth': True}, {
                {'name': 'OLD', 'label': 'Old', 'use': 'in_code'}],
     'hosts': ['example.org'],
 }]
-# Renderings of the pre-change page with the fixed code, nonce and drafts below.
+# Korean renderings with the fixed code, nonce and drafts below (#198 register update).
 KOREAN_HASHES = [
     '16bde030a0f5ec7aeddb62fa54b212214debb802751aaee91850ef63aaba6384',
-    '617b4b57845ab80eeb108c48079c89eb4dcab098012d288771cbb4b83822590c',
-    '267f4eecd2ee5a9d3108980f32205d4900a483d26a51c21bdbf96226c4d9dbd4',
-    '776227212f6a4dd3f0bf576e48a89a09dac3bf74fe3f3dccea3ea0617d61b6a1',
+    'b7f2b7237d7497b3aa98c709a27980b4c67dbaa0d1b94cfc0083703c06584b9f',
+    '199888e717a8b45d2f1843dd47a3811715f89c2ac938c6c5f247e1e6bd280ebe',
+    'f5521ea83285da8703857799f5aaccf6ca47d6c7a94ed2052770b73a7a033fb3',
 ]
 
 

@@ -190,7 +190,7 @@ class DriveWebOAuthTests(unittest.TestCase):
         service.ingest_update({"update_id": 1, "message": {"from": {"id": 42}, "chat": {"id": 42, "type": "private"}, "text": "내 구글 드라이브에서 자료를 찾아줘"}}, "g")
         self.assertTrue(service.run_one())
         sent = next(body for _url, body in calls if "reply_markup" in body and "Google Drive 연결하기" in str(body["reply_markup"]))
-        self.assertEqual(sent["text"], "Google Drive 연결이 필요합니다. 선택한 파일만 읽을 수 있으며 전체 Drive 검색은 하지 않습니다.")
+        self.assertEqual(sent["text"], "Google Drive 연결이 필요해요. 선택한 파일만 읽을 수 있으며 전체 Drive 검색은 하지 않아요.")
         self.assertTrue(sent["reply_markup"]["inline_keyboard"][0][0]["url"].startswith("https://"))
 
     def test_callback_publishes_redacted_connected_and_denied_recovery_messages(self):
@@ -201,11 +201,11 @@ class DriveWebOAuthTests(unittest.TestCase):
         service = AgentService(self.store, telegram_transport=transport, drive_web_oauth=self.flow)
         offer, state = self.begin()
         service.complete_drive_web_oauth({"state": state, "code": "code"}, 42, lambda _request: {"access_token": "access-secret", "scope": DRIVE_FILE})
-        self.assertIn("연결되었습니다", calls[-1][1]["text"])
+        self.assertIn("연결되었어요", calls[-1][1]["text"])
         _offer, state = self.begin()
         with self.assertRaises(DriveWebOAuthError):
             service.complete_drive_web_oauth({"state": state, "error": "access_denied"}, 42, lambda _request: {})
-        self.assertIn("허용되지 않았습니다", calls[-1][1]["text"])
+        self.assertIn("허용되지 않았어요", calls[-1][1]["text"])
         self.assertNotIn("access-secret", str(calls))
 
     def test_failed_exchange_is_consumed_and_publishes_recovery(self):
@@ -216,7 +216,7 @@ class DriveWebOAuthTests(unittest.TestCase):
         with self.assertRaises(DriveWebOAuthError):
             service.complete_drive_web_oauth({"state": state, "code": "code"}, 42, lambda _request: (_ for _ in ()).throw(RuntimeError("offline")))
         self.assertEqual(self.flow.status()["state"], "callback-failed")
-        self.assertIn("완료하지 못했습니다", calls[-1]["text"])
+        self.assertIn("완료하지 못했어요", calls[-1]["text"])
 
     def test_telegram_notification_failure_does_not_fail_completed_oauth(self):
         self.store.secret("telegram_token", "test-token")

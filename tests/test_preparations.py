@@ -191,7 +191,7 @@ class PreparationRunFactTests(_Case):
             self.assertIn(f'총 6회 중 {number}번째', fact)
             self.assertIn('일정 종료: 2026-11-05 18:00 (Thu, Asia/Seoul)', fact)
             self.assertIn('Work가 끝난 뒤 Still이 답을 telegram 채널로', fact)
-            self.assertIn('이 Work가 직접 보내지 않습니다', fact)
+            self.assertIn('이 Work가 직접 보내지 않아요', fact)
             if number == 3:
                 self.assertIn('다음 실행 예정: 2026-11-05 15:00 (Thu, Asia/Seoul)', fact)
                 # #692: followed by the line naming the previous run's report.
@@ -202,7 +202,7 @@ class PreparationRunFactTests(_Case):
                     db.execute("UPDATE preparations SET delivery_mode='when_needed' WHERE id=?", (row['id'],))
                 needed = self.service.preparation_run_fact(job)
                 self.assertIn('Still이 telegram 채널로 소유자에게 알릴지 판단', needed)
-                self.assertIn('이 Work가 직접 보내지 않습니다', needed)
+                self.assertIn('이 Work가 직접 보내지 않아요', needed)
                 with self.store.db() as db:
                     db.execute("UPDATE preparations SET delivery_mode='always' WHERE id=?", (row['id'],))
             if number == 6:
@@ -1291,7 +1291,7 @@ class SilentDeliveryTests(_WatchCase):
         self.service.use_decision_engine(self.judge)
 
     def notifications(self):
-        return [text for text in self.texts() if text.startswith('지켜보던 일에서 알려 드립니다')]
+        return [text for text in self.texts() if text.startswith('지켜보던 일에서 알려 드려요')]
 
     def test_quiet_runs_send_nothing_and_notify_sends_once_per_new_decision(self):
         self.use([False, True, True])
@@ -1880,8 +1880,8 @@ class OwnerOfferTests(_WatchCase):
         self.assertNotIn('마다 최대', run_prompt, 'no schedule line re-rendered from the advanced due time')
         [asked] = [item[1] for item in self.judge.asked if item[0] == 'judge' and item[1].purpose == 'watch-notification']
         self.assertIn('1,000원 이하', asked.facts['accepted_offer'])
-        [told] = [text for text in self.texts() if text.startswith('지켜보던 일에서 알려 드립니다')]
-        self.assertTrue(told.startswith(f'지켜보던 일에서 알려 드립니다 ({self.TITLE}).'), told)
+        [told] = [text for text in self.texts() if text.startswith('지켜보던 일에서 알려 드려요')]
+        self.assertTrue(told.startswith(f'지켜보던 일에서 알려 드려요 ({self.TITLE}).'), told)
         listed = self.service.preparations_status()['preparations'][0]
         self.assertEqual((listed['title'], listed['offer']), (self.TITLE, self.OFFER))
 

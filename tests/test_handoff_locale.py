@@ -89,10 +89,10 @@ class ConnectorHandoffLines(unittest.TestCase):
 
     def test_korean_owners_read_the_same_guidance_as_before(self):
         _case, _job, bubble = self.park(None)
-        self.assertEqual(bubble, 'Gmail 연결이 아직 없어 이 요청을 실행하지 않았습니다. 지금 필요한 다음 단계는 하나입니다: '
-                                 'Gmail을 연결해 주세요. 연결이 확인되면 방금 요청을 한 번만 이어서 처리합니다.')
+        self.assertEqual(bubble, 'Gmail 연결이 아직 없어 이 요청을 실행하지 않았어요. 지금 필요한 다음 단계는 하나예요: '
+                                 'Gmail을 연결해 주세요. 연결이 확인되면 방금 요청을 한 번만 이어서 처리해요.')
         _case, _job, bubble = self.park(None, url=CONNECT_URL)
-        self.assertTrue(bubble.endswith(f'처리합니다. Still이 실행 중인 PC(Mac)의 브라우저에서 {CONNECT_URL} 주소를 열어 연결해 주세요. 중요한 설정이라 휴대폰에서는 열리지 않습니다.'))
+        self.assertTrue(bubble.endswith(f'처리해요. Still이 실행 중인 PC(Mac)의 브라우저에서 {CONNECT_URL} 주소를 열어 연결해 주세요. 중요한 설정이라 휴대폰에서는 열리지 않아요.'))
 
     def test_each_unmet_connection_is_said_in_the_owner_language(self):
         scopes = connector_case.GMAIL_SCOPES
@@ -213,12 +213,12 @@ class FolderPermissionLines(unittest.TestCase):
         case = harness(self, local_case.HandoffTestCase, None)
         _job, bubbles = case.park_read()
         self.assertEqual(bubbles, [
-            '이 요청에는 이 Mac의 폴더를 읽는 권한이 필요해 아직 파일을 찾지 않았습니다. 지금 필요한 다음 단계는 하나입니다: '
+            '이 요청에는 이 Mac의 폴더를 읽는 권한이 필요해 아직 파일을 찾지 않았어요. 지금 필요한 다음 단계는 하나예요: '
             'Mac에서 계속 — Mac에서 Still을 열고 설정 → 파일 · 권한에서 폴더를 선택해 주세요. '
-            f'(Mac의 브라우저에서 {self.LOCAL_URL} 주소를 열어도 됩니다.) 선택한 폴더 하나를 읽기만 허용합니다. '
-            '파일을 바꾸거나 지우지 않고, 이 허용만으로 파일 내용을 외부 AI에 보내지 않습니다. '
-            '휴대폰이나 다른 기기에서는 Mac 폴더 권한을 줄 수 없으며, 요청은 그대로 기다립니다. '
-            '허용하면 방금 요청을 한 번만 이어서 처리합니다.'])
+            f'(Mac의 브라우저에서 {self.LOCAL_URL} 주소를 열어도 돼요.) 선택한 폴더 하나를 읽기만 허용해요. '
+            '파일을 바꾸거나 지우지 않고, 이 허용만으로 파일 내용을 외부 AI에 보내지 않아요. '
+            '휴대폰이나 다른 기기에서는 Mac 폴더 권한을 줄 수 없으며, 요청은 그대로 기다려요. '
+            '허용하면 방금 요청을 한 번만 이어서 처리해요.'])
 
     def test_a_file_request_parked_in_a_whole_turn_is_guided_in_the_owner_language(self):
         for owner in LANGS:

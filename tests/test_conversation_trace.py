@@ -189,12 +189,12 @@ class TaskReadModel(unittest.TestCase):
         search = AgentService._progress_event({"id": 2, "job_id": "w", "tool": "web_search", "status": "succeeded", "created": 2,
                                                "trace": {"scope": "public-web", "evidence": {"urls": ["https://example.invalid/private-query"]}}})
         self.assertEqual(search["details"], {"scope": "public-web", "evidence": True}, "evidence is a flag, never its content")
-        self.assertEqual(search["summary"], "근거를 확인했습니다.")
+        self.assertEqual(search["summary"], "근거를 확인했어요.")
         # Review finding (PR #590): a setup-required read consulted nothing, as in evidence_summary().
         parked = AgentService._progress_event({"id": 3, "job_id": "w", "tool": "find_files", "status": "succeeded", "created": 3,
                                                "trace": {"evidence": {"qualifiers": ["setup-required"], "count": 0}}})
         self.assertEqual(parked["details"], {"setup_required": True})
-        self.assertNotEqual(parked["summary"], "근거를 확인했습니다.")
+        self.assertNotEqual(parked["summary"], "근거를 확인했어요.")
 
 
 if __name__ == "__main__":

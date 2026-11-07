@@ -349,7 +349,7 @@ class TelegramConfirmTests(TelegramHarness):
         self.tap(f"p7m:{row['id']}:a:accept", row['message_id'])
         self.assertEqual([(m['memory_key'], m['content']) for m in self.store.memories()], [(KEY, VALUE)])
         self.assertEqual(self.notification(job_id)[0]['state'], 'memory_decided')
-        self.assertEqual(self.edits()[-1]['text'], f'말씀하신 것만 기억해 둘게요.\n• {VALUE}')
+        self.assertEqual(self.edits()[-1]['text'], f'말한 것만 기억해 둘게요.\n• {VALUE}')
 
     def test_a_web_work_offers_nothing_on_telegram(self):
         job_id = self.turn(channel=False)

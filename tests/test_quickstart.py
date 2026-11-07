@@ -397,7 +397,7 @@ class QuickstartTests(unittest.TestCase):
         self.assertEqual(saved['results'][0]['job_id'],job)
         restarted=QuickStore(self.temp.name).workspace_detail(workspace['id'])
         self.assertEqual(restarted['messages'][0]['workspace_id'] if 'workspace_id' in restarted['messages'][0] else workspace['id'],workspace['id'])
-        self.assertEqual(restarted['results'][0]['content'],'메모를 저장했습니다. /notes로 확인하거나 /summarize로 정리할 수 있습니다.')
+        self.assertEqual(restarted['results'][0]['content'],'메모를 저장했어요. /notes로 확인하거나 /summarize로 정리할 수 있어요.')
 
     def test_personal_space_redacts_context_and_deletes_only_owner_items(self):
         self.store.enqueue('/note private memory','space-note');self.service.run_one()
@@ -888,7 +888,7 @@ finally:
                 self.assertEqual(len(self.store.jobs()),before,'no verification Work or provider call is created')
                 status=self.store.config('telegram_status')
                 self.assertEqual(status['state'],'connected')
-                self.assertIn('직접 확인하세요',status['message'])
+                self.assertIn('직접 확인해 주세요',status['message'])
 
     def test_real_pairing_flow_reports_connected_without_a_search(self):
         self.pair()
@@ -902,7 +902,7 @@ finally:
         self.assertIn('Codex 경로에서만',self.store.config('telegram_status')['message'])
         self.store.put('subscription_engine',{'id':'codex'})
         self.service.mark_telegram_connected()
-        self.assertEqual(self.store.config('telegram_status')['message'],'개인 Telegram 계정이 연결되어 있습니다.')
+        self.assertEqual(self.store.config('telegram_status')['message'],'개인 Telegram 계정이 연결되어 있어요.')
 
     def test_unpaired_verification_request_does_not_touch_status(self):
         self.store.put('telegram_status',{'state':'connected','message':'unchanged'})
@@ -1095,7 +1095,7 @@ finally:
         self.assertEqual(self.store.context_attachment(job['id'])['event_ids'],[item['id']])
         # #958: the choice is confirmed on its own message; no task card follows.
         self.assertIsNone(self.store.task_card(job['id']))
-        self.assertFalse(any(c[0].endswith('/sendMessage') and c[1].get('text','').startswith('요청을 받았습니다.') for c in self.calls))
+        self.assertFalse(any(c[0].endswith('/sendMessage') and c[1].get('text','').startswith('요청을 받았어요.') for c in self.calls))
 
     def test_telegram_context_is_explicit_source_evidenced_and_per_job_approved(self):
         generation=self.pair()
@@ -1200,9 +1200,9 @@ finally:
         self.service.ingest_callback({'id':'recovery-progress','from':{'id':42},'message':{'chat':{'id':42,'type':'private'},'message_id':card['message_id']},'data':f"p7v:{job['id']}"},generation)
         progress=[c for c in self.calls if c[0].endswith('/answerCallbackQuery') and c[1].get('text','').startswith('작업 상태:')][-1][1]['text']
         self.assertIn('중단됨',progress)
-        self.assertIn('자동으로 다시 실행하지 않았습니다.',progress)
-        self.assertIn('전달 여부를 확인할 수 없습니다.',progress)
-        self.assertIn('자동으로 다시 보내지 않았습니다.',progress)
+        self.assertIn('자동으로 다시 실행하지 않았어요.',progress)
+        self.assertIn('전달 여부를 확인할 수 없어요.',progress)
+        self.assertIn('자동으로 다시 보내지 않았어요.',progress)
         self.assertNotIn('private recovery request',progress)
         self.assertNotIn(job['id'],progress)
 
@@ -1630,7 +1630,7 @@ class GmailConnectorWiringTests(unittest.TestCase):
         self.assertTrue(service.run_one())
         job=self.store.job(job_id)
         self.assertEqual(job['status'],'failed')
-        self.assertIn('구성되어 있지 않습니다',job['error'])
+        self.assertIn('구성되어 있지 않아요',job['error'])
         self.assertIsNone(self.store.config(CONNECTOR_STATE_KEY,None))
 
     # -- the callback route -----------------------------------------------
@@ -1767,7 +1767,7 @@ class GmailConnectorWiringTests(unittest.TestCase):
         self.assertTrue(service.run_one())
         job=self.store.job(job_id)
         self.assertEqual(job['status'],'failed')
-        self.assertIn('구성되어 있지 않습니다',job['error'])
+        self.assertIn('구성되어 있지 않아요',job['error'])
         base=self.serve(service)
         for path in ('/oauth/gmail/callback?code=c&state=s','/google-gmail'):
             with self.assertRaises(HTTPError) as error:

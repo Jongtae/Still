@@ -26,7 +26,7 @@ from test_no_scenario_code import scenario_tokens
 from test_preparations import CHAT, GENERATION, _Case, call
 
 #: What the owner is told when the offered change was applied (the settings path's own words).
-APPLIED = '바꿨습니다'
+APPLIED = '바꿨어요'
 #: The offered change, as its shown text names it.
 OFFERED_EFFECT = '현재 맥락 사용'
 
