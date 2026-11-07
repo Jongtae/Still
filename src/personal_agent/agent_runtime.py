@@ -6009,6 +6009,8 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
   result.alternatives=list(alternatives)
   # #710: the completion judgment this run concluded with (yes/no/unavailable, or None when none was asked).
   result.judgment=judgment
+  # #632: the goal part of this conclusion, without the #630 floor: a yes over a call that could not be made is no.
+  result.goal_judgment='no' if judgment=='yes' and invalid_calls else judgment
   question=claim['summary'] if claim is not None and claim['status']=='needs_owner' and result.outcome!='succeeded' else None
   result.report=agency_report(goal,verified,[*failures,*stated],unknown,(claim or {}).get('next') or None,question)
   if result.outcome!='succeeded' and judgment in ('yes','no'):

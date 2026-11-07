@@ -6333,11 +6333,40 @@ class AgentService:
         except Exception:
             return None
 
-    def work_steps(self, job_id):
-        """The ordered ``trail_steps`` of one Work's tool events: each call with its recorded detail (#630)."""
+    def work_effect_state(self, job_id, claimed_at=None):
+        """#632: the effect fact from Still's own call records only, using the existing continuation and success-floor rules.
+
+        ``unknown`` and ``applied`` are read over the whole Work (an unknown effect never clears).
+        ``withheld`` is the #630 floor over the run that sets the status (its calls recorded at or
+        after ``claimed_at``) plus the owner steps still pending now: an earlier run's sign-in
+        wait the owner already resolved, which is why this run exists, does not hold this run.
+        """
+        reasons=self.continuation_reasons(job_id,'retry')
+        unknown='unknown' in reasons
+        since=0
+        if claimed_at is not None:
+            with self.store.db() as db:
+                row=db.execute('SELECT MAX(id) FROM tool_events WHERE job_id=? AND created<?',(job_id,claimed_at)).fetchone()
+            since=(row[0] if row else None) or 0
+        return ws.effect_state_of(unknown=unknown,withheld=not unknown and not self.goal_upgrade_allowed(job_id,since=since),
+                                  applied='effect' in reasons)
+
+    @staticmethod
+    def run_goal_outcome(run):
+        """#632: the final judgment of either worker route, without changing its status."""
+        orchestration=getattr(run,'orchestration',None)
+        terminal=getattr(orchestration,'terminal',None)
+        orchestrated=bool(getattr(orchestration,'orchestrated',False))
+        result=getattr(run,'result',None)
+        # The direct run's own conclusion of its judgment (``goal_judgment``: a yes with an invalid call is no).
+        judgment=None if (getattr(run,'subscription',None) or {}).get('id') else getattr(result,'goal_judgment',getattr(result,'judgment',None))
+        return ws.goal_outcome_of(terminal,judgment,orchestrated)
+
+    def work_steps(self, job_id, since=0):
+        """The ordered ``trail_steps`` of one Work's tool events (after event id ``since``): each call with its recorded detail (#630)."""
         from .agent_runtime import trail_steps
         with self.store.db() as db:
-            rows=db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=? ORDER BY id',(job_id,)).fetchall()
+            rows=db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=? AND id>? ORDER BY id',(job_id,since or 0)).fetchall()
         tools={tool['id']:tool for package in self.runtime_packages() for tool in package['tools']}
         return trail_steps([(row['tool'],row['status'],row['detail']) for row in rows],tools)
 
@@ -6364,17 +6393,19 @@ class AgentService:
             return row
         return [view(row) for row in messages]
 
-    def goal_upgrade_allowed(self, job_id):
+    def goal_upgrade_allowed(self, job_id, since=0):
         """Whether a ``reached`` goal verdict may make a partial/failed CLI Work succeeded (#752 review).
 
         Not while an owner approval for this Work is pending (a guarded browser
         step: approving it resumes only a failed/partial Work, C14), and not
         when a state-changing action fell short: the verdict never outranks it.
+        ``since`` (an event id, #632) limits the recorded calls and sign-in requests to one run;
+        the pending approval and sign-in rows are read as they are now.
         """
         from .agent_runtime import state_change_short
-        if (self._browser_request(job_id) or {}).get('state')=='requested' or self.sign_in_requested(job_id):
+        if (self._browser_request(job_id) or {}).get('state')=='requested' or self.sign_in_requested(job_id,since=since):
             return False
-        return not state_change_short(self.work_steps(job_id))
+        return not state_change_short(self.work_steps(job_id,since=since))
 
     def sign_in_requested(self, job_id, since=0):
         """Whether this Work's worker itself asked for the owner's sign-in (#981).
@@ -13625,8 +13656,9 @@ class AgentService:
             if run.outcome in ('failed','partial') and self._budget_boundary(self._attempt_stop_codes(db.execute(
                     'SELECT status,detail FROM tool_events WHERE job_id=? AND created>=?',(job['id'],run.claimed_at)).fetchall())):
                 self.store.put('budget_continue:'+job['id'],{'state':'pending'},db=db)
-            db.execute("UPDATE jobs SET status=?,response=?,error=?,provider=?,model=?,delivery=?,owner_cause=?,owner_verified=?,owner_note=? WHERE id=?",
-                       (run.outcome,run.response,cause,run.provider,run.model,'pending' if job['chat_id'] else 'none',spoken,observed,note,job['id']))
+            goal_outcome,effect_state=self.run_goal_outcome(run),self.work_effect_state(job['id'],run.claimed_at)
+            db.execute("UPDATE jobs SET status=?,response=?,error=?,provider=?,model=?,delivery=?,owner_cause=?,owner_verified=?,owner_note=?,goal_outcome=?,effect_state=? WHERE id=?",
+                       (run.outcome,run.response,cause,run.provider,run.model,'pending' if job['chat_id'] else 'none',spoken,observed,note,goal_outcome,effect_state,job['id']))
             # #308 S1: the steers the attempt whose reply this is had in hand are answered by it.
             if run.outcome in ('succeeded','partial') and run.attempt_started_at is not None:
                 self.store.answer_steers(job['id'],run.attempt_started_at,db)
@@ -13685,8 +13717,9 @@ class AgentService:
                 run.outcome,report='unknown',None
                 transcript=run.reply_notice+msg('compose.i_couldn_t_complete_this_request', reason=run.response)
             db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id,delivery_projection) VALUES (?,?,?,?,?,?,?)',('assistant',transcript,job['channel'],time.time(),job.get('workspace_id'),job['id'],'blocked-turn' if isinstance(exc,BlockedTurn) else None))
-            db.execute("UPDATE jobs SET status=?,error=?,delivery=?,owner_cause=COALESCE(?,owner_cause) WHERE id=?",
-                       (run.outcome,run.response,'pending' if job['chat_id'] else 'none',report,job['id']))
+            goal_outcome,effect_state=self.run_goal_outcome(run),self.work_effect_state(job['id'],run.claimed_at)
+            db.execute("UPDATE jobs SET status=?,error=?,delivery=?,owner_cause=COALESCE(?,owner_cause),goal_outcome=?,effect_state=? WHERE id=?",
+                       (run.outcome,run.response,'pending' if job['chat_id'] else 'none',report,goal_outcome,effect_state,job['id']))
             # #998: a worker attempt failed and nothing followed: one self-review, settled with the Work.
             # A blocker the owner resolves (BlockedTurn) is a setup need, not a miss.
             if (run.outcome=='failed' and not isinstance(exc,BlockedTurn) and self.self_review_eligible(job,run.outcome,None)

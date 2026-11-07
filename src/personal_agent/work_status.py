@@ -38,6 +38,26 @@ UNFINISHED_PORTION | partial, interrupted | Can the reply describe a verified po
 UNSPECIFIED_OR_SUCCEEDED | None, succeeded | May the reply use normal AI-answer rendering? | conversation_projection.py:terminal_text
 INSPECTABLE_ANSWER | succeeded, partial, failed, interrupted, unknown | Can the owner inspect this finished answer and its information use? | quickstart_service.py:INFORMATION_USE_STATES; quickstart_service.py:information_use_tool.read
 UNVERIFIED_RESULT | failed, partial, interrupted, unknown | Must stored assistant text carry an unverified-result qualifier? | conversation_projection.py:UNVERIFIED_OUTCOMES; conversation_projection.py:turn_qualifier; conversation_projection.py:context_message
+
+Stored facts (#632 phase 2)
+--------------------------
+Goal ``reached`` / ``not_reached``: the outcome judgment said the reply served /
+did not serve the request. ``owner_needed``: a recorded owner prerequisite
+(approval, sign-in, draft or missing connection) stopped the Work. ``not_judged``:
+a judgment was due but unavailable, the budget/deadline ended, or the worker failed.
+``none``: no judgment applies (an unjudged direct fallback, a CLI Work without
+orchestration, or a failure before judgment without orchestration).
+Effect ``unknown``: a call has no definite answer, as in ``_work_has_unknown_effect``.
+``withheld``: the #630 success floor (``goal_upgrade_allowed``) refuses for the run
+that sets the status: one of its calls fell short (failed write, withheld
+draft/proposal, incomplete change) or asked for the owner's sign-in, or a
+browser-step approval or sign-in is still pending now.
+``applied``: a call changed something outside the owner. ``none``: no call did.
+Precedence: unknown > withheld > applied > none; only Still's own records count.
+Both NULL: legacy, or a status written outside a worker run's end (cancel before
+running, restart interruption, parking, built-in answer or peer Work). Readers
+interpret NULL as "fact not recorded; read the status as before".
+
 """
 
 RESUMABLE_CONTINUATION = frozenset(('partial', 'failed'))
@@ -76,6 +96,32 @@ UNFINISHED_PORTION = frozenset(('partial', 'interrupted'))
 UNSPECIFIED_OR_SUCCEEDED = frozenset((None, 'succeeded'))
 INSPECTABLE_ANSWER = frozenset(('succeeded', 'partial', 'failed', 'interrupted', 'unknown'))
 UNVERIFIED_RESULT = frozenset(('failed', 'partial', 'interrupted', 'unknown'))
+
+GOAL_REACHED, GOAL_NOT_REACHED, GOAL_OWNER_NEEDED, GOAL_NOT_JUDGED, GOAL_NONE = (
+    'reached', 'not_reached', 'owner_needed', 'not_judged', 'none')
+GOAL_OUTCOMES = frozenset((GOAL_REACHED, GOAL_NOT_REACHED, GOAL_OWNER_NEEDED, GOAL_NOT_JUDGED, GOAL_NONE))
+EFFECT_NONE, EFFECT_APPLIED, EFFECT_WITHHELD, EFFECT_UNKNOWN_STATE = 'none', 'applied', 'withheld', 'unknown'
+EFFECT_STATES = frozenset((EFFECT_NONE, EFFECT_APPLIED, EFFECT_WITHHELD, EFFECT_UNKNOWN_STATE))
+
+def goal_outcome_of(terminal, judgment=None, orchestrated=False):
+    """The terminal judgment, independent of the recorded effect floor (#632)."""
+    if orchestrated and terminal is not None and terminal=='owner_needed':return GOAL_OWNER_NEEDED
+    if judgment=='yes':return GOAL_REACHED
+    if judgment=='no':return GOAL_NOT_REACHED
+    if judgment=='unavailable':return GOAL_NOT_JUDGED
+    if orchestrated and terminal is not None:
+        if terminal=='reached':return GOAL_REACHED
+        if terminal=='not_reached':return GOAL_NOT_REACHED
+        return GOAL_NOT_JUDGED
+    return GOAL_NONE
+
+def effect_state_of(unknown, withheld, applied):
+    """The strongest fact Still's own call records show (#632)."""
+    return EFFECT_UNKNOWN_STATE if unknown else EFFECT_WITHHELD if withheld else EFFECT_APPLIED if applied else EFFECT_NONE
+
+def facts_recorded(goal_outcome, effect_state):
+    """Whether both facts were recorded, rather than a legacy status alone."""
+    return goal_outcome is not None and effect_state is not None
 
 def is_resumable_continuation(status: str | None) -> bool:
     """Can a stopped Work continue at a budget/login boundary?"""
