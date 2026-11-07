@@ -23,10 +23,10 @@ class Mode:
         draft = settings.propose('owner', 'http', 'payment_autonomy', 'enabled', 'on' if enabled else 'off')
         return settings.confirm('owner', 'http', draft['draft_id'], draft['digest'])
 
-    def scheduled_job(self, key='scheduled'):
+    def scheduled_job(self, key='scheduled', accepted_by=None, origin=None):
         row = self.service.preparations.create(kind='prepare', goal='pay', due_at=1000, timezone='UTC',
                                               recurrence='daily', channel='web', created_from=None,
-                                              state=prep.STATE_SCHEDULED)
+                                              state=prep.STATE_SCHEDULED, accepted_by=accepted_by, origin=origin)
         work = self.store.enqueue('pay', prep.request_key(row['id'], 1000))
         with self.store.db() as db:
             db.execute("UPDATE preparations SET state=?,last_run_job_id=? WHERE id=?", (prep.STATE_RUNNING, work, row['id']))
@@ -287,6 +287,71 @@ class Settings(Mode, _Case):
             child.execute('api_request', {'slot': 'money', 'url': 'https://pay.test/pay', 'method': 'POST', 'effect': 'payment'})
         self.assertEqual(self.receipts(job['id']), [])
 
+
+
+class SelfSetRuns(Mode, _Case):
+    """#717: a scheduled run of what the owner's AI or the look back set up on its own never pays, even in the mode."""
+
+    SELF_SET = ((prep.ACCEPTED_OWNER_WORK, None), (prep.ACCEPTED_DREAM, prep.ORIGIN_DREAM))
+    ASKED = (prep.ACCEPTED_OWNER_REQUEST, prep.ACCEPTED_OWNER_BUTTON, prep.ACCEPTED_OWNER_SETTINGS)
+
+    def binding(self, job):
+        return bs.step_binding(job['id'], 'api_request', 'https://pay.test/', 'pay 10', argument='', state='s')
+
+    def test_the_mode_never_covers_a_self_set_run_but_covers_one_the_owner_asked_for(self):
+        self.switch(True)
+        for accepted_by, origin in self.SELF_SET:
+            with self.subTest(accepted_by=accepted_by):
+                job = self.scheduled_job(accepted_by=accepted_by, origin=origin)
+                self.assertTrue(self.service.self_set_run(job))
+                self.assertIsNone(self.service._authorize_payment_autonomy(job, None, 'pay'))
+                self.assertIsNone(self.service._authorize_payment_autonomy(job, self.binding(job), 'pay 10'))
+                self.assertIsNone(self.service._authorize_payment_autonomy(job, self.binding(job), 'pay 10', dispatch=True))
+                self.assertEqual(self.receipts(job['id']), [])
+        for accepted_by in self.ASKED:
+            with self.subTest(accepted_by=accepted_by):
+                job = self.scheduled_job(accepted_by=accepted_by)
+                self.assertFalse(self.service.self_set_run(job))
+                self.assertTrue(self.service._authorize_payment_autonomy(job, None, 'pay')['enabled'])
+                authorized = self.service._authorize_payment_autonomy(job, self.binding(job), 'pay 10')
+                self.assertEqual(authorized['authorized_by'], 'payment-autonomy')
+
+    def test_a_held_ticket_of_a_self_set_run_is_refused_at_dispatch(self):
+        self.switch(True)
+        job = self.scheduled_job(accepted_by=prep.ACCEPTED_OWNER_WORK)
+        ticket = {'revision': 1, 'digest': self.service._browser_step_keys(self.binding(job))['digest']}
+        with self.assertRaises(ToolError) as refused:
+            self.service._authorize_payment_autonomy(job, self.binding(job), 'pay 10', ticket=ticket, dispatch=True)
+        self.assertEqual(refused.exception.code, 'payment_autonomy_changed')
+        self.assertIs(refused.exception.ran, False)
+        self.assertEqual(self.receipts(job['id']), [])
+
+    def test_a_self_set_runs_api_payment_is_never_sent(self):
+        self.switch(True)
+        save_slot(self.store, 'money', ['pay.test'], 'secret-key-value-123456789', money=True)
+        args = {'slot': 'money', 'url': 'https://pay.test/pay', 'method': 'POST', 'body': '{"amount":"10"}', 'effect': 'payment'}
+        for accepted_by, sends in ((prep.ACCEPTED_DREAM, 0), (prep.ACCEPTED_OWNER_REQUEST, 1)):
+            with self.subTest(accepted_by=accepted_by):
+                job = self.scheduled_job(accepted_by=accepted_by)
+                sent = []
+                api = ApiRequests(self.store, job['id'], approvals=self.service.browser_approvals_for(job),
+                                  transport=lambda *a, **k: sent.append(a) or (200, {}, b'{}'))
+                if sends:
+                    api.call(args)
+                    self.assert_receipt(job['id'], 'api_request')
+                else:
+                    # Without the mode an unattended run cannot ask the owner either (#619).
+                    with self.assertRaises(ToolError) as refused:
+                        api.call(args)
+                    self.assertEqual(refused.exception.code, 'unattended_run')
+                    self.assertEqual(self.receipts(job['id']), [])
+                self.assertEqual(len(sent), sends)
+
+    def test_an_owner_typed_work_is_unaffected(self):
+        self.switch(True)
+        job = self.store.job(self.store.enqueue('pay', 'owner-pay', owner_typed=True))
+        self.assertFalse(self.service.self_set_run(job))
+        self.assertTrue(self.service._authorize_payment_autonomy(job, None, 'pay')['enabled'])
 
 
 class CodePayments(Mode, unittest.TestCase):

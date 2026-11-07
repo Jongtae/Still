@@ -130,7 +130,7 @@ DREAM_GATHER_PURPOSE = 'owner-model-dream-gather'
 DREAM_GATHER_LIMIT = 10
 #: #583: at most this many standing preparations one look back may suggest, and how many active
 #: preparations it is shown so it does not suggest them again.
-DREAM_SUGGESTIONS = 2
+DREAM_SUGGESTIONS = 3
 DREAM_PREPARATIONS_SHOWN = 20
 DREAM_PREPARATIONS_CHARS = 2000
 #: #402: one dream may end at most this share of the current profile rows (at least one);
@@ -536,17 +536,16 @@ def dream_shape(data):
 def validate_suggestions(suggestions, refs, turn_days, limit=DREAM_SUGGESTIONS):
     """``(kept, dropped)`` of a look back's preparation suggestions (#583, deterministic).
 
-    A standing suggestion rests on a repetition: at least two turns the dream read (``refs``), from
-    different owner dates (``turn_days``; an undated turn dates nothing) - the same two-occasion rule a
-    pattern fact follows.  #638: a one-off (``SUGGESTION_ONCE``) cannot repeat; it rests on at least one
-    turn the dream read, where the owner said what is coming.  At most ``limit`` are kept.  What the
+    A standing suggestion (a rhythm or, #717, a standing interest) rests on at least two turns the dream
+    read (``refs``); #717 dropped the different-owner-dates rule, so an interest shown on one busy day
+    counts.  #638: a one-off (``SUGGESTION_ONCE``) cannot repeat; it rests on at least one turn the
+    dream read, where the owner said what is coming.  At most ``limit`` are kept.  What the
     suggestion asks for is the AI's (C16); its fields are validated where it is stored, by
     ``schedule_preparation``'s own normalisers.  A dropped entry names its position and reason, never its text.
     """
     kept, dropped = [], []
     for index, item in enumerate(suggestions if isinstance(suggestions, list) else []):
         named = dream_refs(item.get('sources'), refs) if isinstance(item, dict) else None
-        days = {turn_days.get(ref) for ref in named or ()} - {None}
         reason = None
         if not isinstance(item, dict):
             reason = 'shape'
@@ -556,8 +555,6 @@ def validate_suggestions(suggestions, refs, turn_days, limit=DREAM_SUGGESTIONS):
             pass  # #638: one cited turn is the evidence of a dated need
         elif len(named) < 2:
             reason = 'one-occasion'
-        elif len(days) < 2:
-            reason = 'one-day'
         if reason is None and len(kept) >= limit:
             reason = 'limit'
         if reason:

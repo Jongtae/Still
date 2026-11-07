@@ -894,12 +894,27 @@ class AgentService:
         """
         return self.settings_orchestrator.work_tools(self.settings_owner(job),job['channel'],job['id'],
                                                      telegram=answerable_work(job),unattended=self.unattended_work(job),
-                                                     owner_request=self.owner_settings_request(job))
+                                                     owner_request=self.owner_settings_request(job),
+                                                     own_preparation=prep.preparation_of(job.get('request_key')))
 
     @staticmethod
     def unattended_work(job):
         """#619: a Work no owner is present for: a scheduled preparation run (or its continuation)."""
         return prep.preparation_of((job or {}).get('request_key')) is not None
+
+    def self_set_run(self, job):
+        """Whether this scheduled run's preparation was set up by the owner's AI or the look back, not asked for (#717)."""
+        row=self.preparations.get(prep.preparation_of((job or {}).get('request_key')))
+        return bool(row and row.get('accepted_by') in prep.SELF_SET)
+
+    def owner_typed_work(self, job):
+        """Whether the owner's own typed message started ``job`` (#619, #717).
+
+        Not a scheduled run, a continuation, a retry or a replayed turn.
+        """
+        return bool(job.get('owner_typed')==1 and not self.unattended_work(job)
+                    and continuation_request(job.get('request_key')) is None
+                    and isinstance(job.get('message'),str) and job['message'].strip())
 
     def owner_settings_request(self, job):
         """``summary -> bool``: does the owner's own typed message that started ``job`` ask for exactly this change (#619)?
@@ -909,9 +924,7 @@ class AgentService:
         retry or a replayed turn (the same own-request test as a preparation, #659).  The judgment
         reads that message and Still's exact preview; None when it cannot apply.
         """
-        if (job.get('owner_typed')!=1 or self.unattended_work(job)
-                or continuation_request(job.get('request_key')) is not None
-                or not isinstance(job.get('message'),str) or not job['message'].strip()):
+        if not self.owner_typed_work(job):
             return None
         def asked(summary):
             judged=self.decision_judge.explicit_settings_request(job['message'],summary,self.preparation_conversation(job),
@@ -1855,11 +1868,14 @@ class AgentService:
     def preparation_scheduler(self, job, prompt):
         """The ``schedule_preparation`` handler bound to one Work (#659).
 
-        The row is ``scheduled`` only when the owner's own message for this
-        Work is judged (DecisionEngine) to ask for exactly this preparation.
-        Otherwise - no engine, a no, a retried or replayed prompt, or a Work
-        that a preparation itself started - it stays ``proposed`` until the
-        owner accepts it with the Telegram button or in Settings.
+        #717 (owner direction 2026-11-07): what the owner's AI sets up inside a Work the owner's own
+        typed message started is ``scheduled`` at once - the owner asked for it or the AI judged it
+        serves them - and the owner gets the existing message with a cancel button (act, then tell,
+        as C5's ask-less memory policy).  A prepared run still cannot take an approval-requiring
+        step (#619), so this schedules reading and reporting only.  A goal the owner declined
+        before is scheduled only when the owner's own message asks for it again (judged); otherwise
+        it is refused, as before.  A Work the owner did not type - a continuation, a retry, a
+        replayed turn - still only proposes; a scheduled run proposes nothing.
         """
         def schedule(args):
             if self.unattended_work(job):
@@ -1879,25 +1895,28 @@ class AgentService:
                                            'every_seconds':window and window[0],'until_at':window and window[1],
                                            'max_runs':window and window[2],'delivery_mode':delivery_mode,
                                            'channel':channel,'title_text':title,'offer_text':offer},self.home_zone())
-            own_request=(isinstance(prompt,str) and prompt==job.get('message')
-                         and prep.preparation_of(job.get('request_key')) is None
-                         # #774: a location continuation re-runs an earlier message; the owner's own
-                         # latest message was the location, so it never accepts a preparation.
-                         and continuation_request(job.get('request_key')) is None)
-            accepted=own_request and self.decision_judge.explicit_preparation_request(
-                prompt,summary,self.preparation_conversation(job)).outcome==JUDGMENT_YES
+            # #717: the owner's own typed Work (the same test as a direct settings request, #619);
+            # #774: a location continuation re-runs an earlier message, so it is not one.
+            owner_work=self.owner_typed_work(job)
+            # #717: the judgment no longer decides whether it is scheduled, only who asked: a run the
+            # owner asked for keeps what the owner's payment autonomy allows (``self_set_run``).
+            asked=bool(owner_work and self.decision_judge.explicit_preparation_request(
+                job['message'],summary,self.preparation_conversation(job)).outcome==JUDGMENT_YES)
+            accepted_by=(prep.ACCEPTED_OWNER_REQUEST if asked else
+                         prep.ACCEPTED_OWNER_WORK if owner_work else None)
+            accepted=accepted_by is not None
             try:
-                # #582: an offer the owner did not ask for is never repeated after they declined it.
-                if not accepted and self.declined_before(job['id'],goal,now):
+                # #582: a goal the owner declined is not set up again unless they ask for it again.
+                if not asked and self.declined_before(job['id'],goal,now):
                     raise prep.PreparationRefusal('declined_before')
                 row=self.preparations.create(kind=kind,goal=goal,due_at=due_at,timezone=timezone,recurrence=recurrence,
                                              channel=channel,created_from=job['id'],
                                              state=prep.STATE_SCHEDULED if accepted else prep.STATE_PROPOSED,
-                                             accepted_by=prep.ACCEPTED_OWNER_REQUEST if accepted else None,
+                                             accepted_by=accepted_by,
                                              window=window,delivery_mode=delivery_mode,title=title,offer=offer)
-                # #574: another Work's identical proposal is this one; the owner's own request accepts it.
+                # #574: another Work's identical proposal is this one; the owner's own Work accepts it.
                 already=bool(row.get('already_proposed'))
-                if already and accepted:row=self.preparations.accept(row['id'],prep.ACCEPTED_OWNER_REQUEST)
+                if already and accepted:row=self.preparations.accept(row['id'],accepted_by)
             except prep.PreparationRefusal as exc:
                 raise ToolError(str(exc),exc.code) from None
             LOG.info('preparation %s id=%s work=%s kind=%s already_proposed=%s',row['state'],row['id'],job['id'],kind,already)
@@ -2412,24 +2431,26 @@ class AgentService:
         if rows:self.queue_notification(job,'preparation_proposed',fingerprint=prep.digest(prep.proposal_page(rows)[0]))
         with self.store.db() as db:
             scheduled=[row['id'] for row in db.execute("SELECT id FROM preparations WHERE created_from=? AND state='scheduled' "
-                                                      "AND accepted_by=? ORDER BY created_at",(job['id'],prep.ACCEPTED_OWNER_REQUEST))]
+                                                      "AND accepted_by IN (?,?) ORDER BY created_at",(job['id'],prep.ACCEPTED_OWNER_REQUEST,prep.ACCEPTED_OWNER_WORK))]
         if scheduled:self.queue_notification(job,'preparation_scheduled',fingerprint=PREPARED_IDS_PREFIX+','.join(scheduled))
 
     def suggest_preparations(self, anchor_id, items, judgments=None):
-        """Store the look-back's suggestions (#583) as ``proposed`` rows of its anchor Work; ``(outcomes, calls)``.
+        """Schedule the look-back's preparations (#583, #717) as rows of its anchor Work; ``(outcomes, calls)``.
 
-        ``items`` passed ``om.validate_suggestions`` (two cited turns on different days, or one for a
-        one-off, #638).  Each is then
-        validated by ``schedule_preparation``'s own normalisers and skipped when a preparation with the
-        same goal is active or the owner declined it recently (``declined_before``, whose judgment is the
-        only model call here, counted in ``calls`` and asked only while the upkeep budget has one left).
-        A suggestion never runs: only the owner's yes schedules it.  The anchor's one proposal message
-        carries them, so an anchor that already had one gets none.  Outcomes hold ids and reasons, no text.
+        ``items`` passed ``om.validate_suggestions`` (two cited turns, or one for a one-off, #638).  Each
+        is then validated by ``schedule_preparation``'s own normalisers and skipped when a preparation
+        with the same goal is active or the owner declined it recently (``declined_before``, whose
+        judgment is the only model call here, counted in ``calls`` and asked only while the upkeep
+        budget has one left).  #717 (owner direction 2026-11-07): it is scheduled at once
+        (``ACCEPTED_DREAM``, never paying, ``self_set_run``); the owner is told once, in waking hours, with
+        a cancel button (``queue_preparation_suggestion``).  An anchor that already had a proposal or a
+        scheduled notice gets none.  Outcomes hold ids and reasons, no text.
         """
         now=self.preparations.clock()
         anchor=self.store.job(anchor_id)
         if (not anchor or self.preparations.proposed_from(anchor_id)
-                or self.store.notification_of(anchor_id,'preparation_proposed')):
+                or self.store.notification_of(anchor_id,'preparation_proposed')
+                or self.store.notification_of(anchor_id,'preparation_scheduled')):
             return [{'reason':'anchor-offered'} for _item in items],0
         outcomes,calls=[],0
         for item in items:
@@ -2455,7 +2476,7 @@ class AgentService:
                 row=self.preparations.create(kind=fields['kind'],goal=goal,due_at=fields['due_at'],timezone=fields['timezone'],
                                              recurrence=fields['recurrence'],
                                              channel=self.preparation_channel(anchor,fields['kind'],args['delivery']),
-                                             created_from=anchor_id,state=prep.STATE_PROPOSED,
+                                             created_from=anchor_id,state=prep.STATE_SCHEDULED,accepted_by=prep.ACCEPTED_DREAM,
                                              delivery_mode=fields['delivery_mode'],title=fields['title'],offer=fields['offer'],
                                              origin=prep.ORIGIN_DREAM)
             except prep.PreparationRefusal as exc:
@@ -2465,11 +2486,14 @@ class AgentService:
                 outcomes.append({'reason':'active'})
                 continue
             outcomes.append({'preparation_id':row['id'],'kind':row['kind'],'recurrence':row['recurrence']})
-            LOG.info('preparation suggested id=%s work=%s kind=%s',row['id'],anchor_id,row['kind'])
+            LOG.info('preparation scheduled by look back id=%s work=%s kind=%s',row['id'],anchor_id,row['kind'])
         return outcomes,calls
 
     def queue_preparation_suggestion(self, job, one_off=False):
-        """With the owner's own Work, offer once the look-back's suggestions not offered yet (#583).
+        """With the owner's own Work, tell once what the look back set up (#583, #717), or offer what it proposed.
+
+        #717: scheduled rows get one ``preparation_scheduled`` message with a cancel button; rows still
+        proposed from before get the proposal message below.
 
         One ``preparation_proposed`` message on ``job``'s conversation, with the usual accept/decline
         buttons, bound (digest) to exactly the suggestions of one look back and recorded on their anchor
@@ -2488,13 +2512,21 @@ class AgentService:
         if not rows:return None
         job=job or self.store.job(anchor)
         if not job:return None
-        shown=prep.proposal_page(rows)[0]
-        self.queue_notification({**job,'id':anchor},'preparation_proposed',fingerprint=prep.digest(shown))
-        # A surface queues it only for its current paired conversation (and not every surface returns the row).
-        notification=self.store.notification_of(anchor,'preparation_proposed')
+        scheduled=[row for row in rows if row['state']==prep.STATE_SCHEDULED]
+        if scheduled:
+            # #717: what the look back set up is told with a cancel button; it is not asked about.
+            rows=scheduled
+            self.queue_notification({**job,'id':anchor},'preparation_scheduled',
+                                    fingerprint=PREPARED_IDS_PREFIX+','.join(row['id'] for row in rows))
+            notification=self.store.notification_of(anchor,'preparation_scheduled')
+        else:
+            rows=prep.proposal_page(rows)[0]
+            self.queue_notification({**job,'id':anchor},'preparation_proposed',fingerprint=prep.digest(rows))
+            # A surface queues it only for its current paired conversation (and not every surface returns the row).
+            notification=self.store.notification_of(anchor,'preparation_proposed')
         if notification is None:return None
         self.preparations.mark_offered(rows,now)
-        LOG.info('preparation suggestion offered work=%s anchor=%s count=%s',job['id'],anchor,len(shown))
+        LOG.info('preparation suggestion told work=%s anchor=%s count=%s',job['id'],anchor,len(rows))
         return notification
 
     def offer_one_off_suggestion(self, now=None):
@@ -8824,6 +8856,10 @@ class AgentService:
             if result:self._deliver_payment_autonomy_notice(job,result)
             return result
         mode=self.payment_autonomy_settings(db=db)
+        if self.unattended_work(job) and self.self_set_run(job):
+            # #717: a run the owner's AI or the look back set up on its own never pays, even in the mode.
+            if ticket:raise not_run(ToolError(msg('payment_autonomy.changed'),'payment_autonomy_changed'))
+            return None
         if binding is None:return mode if mode['enabled'] and not self.work_stopped(job['id']) else None
         keys=self._browser_step_keys(binding)
         if ticket is not None and (not mode['enabled'] or ticket['revision']!=mode['revision']

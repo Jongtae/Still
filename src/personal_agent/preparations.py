@@ -105,6 +105,13 @@ SUGGESTION_OFFER_HOURS = range(8, 22)
 ACCEPTED_OWNER_REQUEST, ACCEPTED_OWNER_BUTTON, ACCEPTED_OWNER_SETTINGS = 'owner-request', 'owner-button', 'owner-settings'
 #: #172: the owner's reply or reaction to the proposal message, judged a plain yes to it.
 ACCEPTED_OWNER_ANSWER = 'owner-answer'
+#: #717: set up by the owner's AI inside a Work the owner's own typed message started; the owner
+#: is told with a cancel button.  ``ACCEPTED_DREAM``: set up by the nightly look back, told the same way.
+ACCEPTED_OWNER_WORK, ACCEPTED_DREAM = 'owner-work', 'dream'
+#: #717: set up without the owner asking; such a run never uses the owner's payment autonomy.
+SELF_SET = (ACCEPTED_OWNER_WORK, ACCEPTED_DREAM)
+#: #717: the states of a look-back's preparation the owner may not have been told about yet.
+UNTOLD_STATES = ('proposed', 'scheduled')
 
 GOAL_MAX_CHARS = 500
 #: #393: a ``prepare`` goal is the run's brief, which the owner no longer reads
@@ -851,7 +858,7 @@ class Preparations:
         ``window`` is ``(every_seconds, until_at, max_runs)`` from
         ``normalize_window`` (#719); it replaces ``recurrence``.  Its run
         deadline ``window_end`` is one run's time after ``until_at`` (#701).  ``origin``
-        ``ORIGIN_DREAM`` marks a look-back suggestion (#583); it only ever starts proposed.
+        ``ORIGIN_DREAM`` marks a look-back suggestion (#583); #717: it starts scheduled (``ACCEPTED_DREAM``).
         """
         if kind not in KINDS:
             raise PreparationRefusal('invalid_kind')
@@ -869,8 +876,8 @@ class Preparations:
             recurrence = RECURRENCE_WINDOW
         if state not in (STATE_PROPOSED, STATE_SCHEDULED):
             raise ValueError('a preparation starts proposed or scheduled')
-        if origin not in (None, ORIGIN_DREAM) or (origin and state != STATE_PROPOSED):
-            raise ValueError('a suggestion starts proposed')
+        if origin not in (None, ORIGIN_DREAM):
+            raise ValueError('unknown origin')
         now = self.clock()
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
@@ -1046,12 +1053,15 @@ class Preparations:
     def declined_goals(self, now, limit=DECLINED_GOALS_LIMIT):
         """Goals of proposals the owner declined or let lapse in the last ``DECLINED_SECONDS`` (#582).
 
-        A declined proposal is a row cancelled without ever being accepted; newest first.
+        A declined proposal is a row cancelled without ever being accepted; newest first.  #717: so is
+        a row set up without the owner asking (``SELF_SET``) that was then cancelled - its cancel button
+        is the owner's no.
         """
         with self.store.db() as db:
             return [row['goal_text'] for row in db.execute(
-                "SELECT goal_text FROM preparations WHERE state=? AND accepted_by IS NULL AND updated_at>=? "
-                'ORDER BY updated_at DESC LIMIT ?', (STATE_CANCELLED, now - DECLINED_SECONDS, int(limit)))]
+                "SELECT goal_text FROM preparations WHERE state=? AND (accepted_by IS NULL OR accepted_by IN (?,?)) "
+                'AND updated_at>=? ORDER BY updated_at DESC LIMIT ?',
+                (STATE_CANCELLED, *SELF_SET, now - DECLINED_SECONDS, int(limit)))]
 
     def proposed_from(self, work_id, suggestions=True):
         """The proposals ``work_id`` created; ``suggestions`` False leaves out the look-back's (#583)."""
@@ -1084,11 +1094,13 @@ class Preparations:
     def has_unoffered_one_off(self):
         """Whether a look back holds a one-off suggestion not offered yet (#638; one read)."""
         with self.store.db() as db:
-            return db.execute('SELECT 1 FROM preparations WHERE state=? AND origin=? AND offered_at IS NULL '
-                              'AND recurrence IS NULL LIMIT 1', (STATE_PROPOSED, ORIGIN_DREAM)).fetchone() is not None
+            return db.execute('SELECT 1 FROM preparations WHERE state IN (?,?) AND origin=? AND offered_at IS NULL '
+                              'AND recurrence IS NULL LIMIT 1', (*UNTOLD_STATES, ORIGIN_DREAM)).fetchone() is not None
 
     def unoffered_suggestions(self, now, one_off=False):
-        """The oldest look-back's suggestions not offered yet, ``(work_id, rows)``, or ``(None, [])``.
+        """The oldest look-back's suggestions the owner was not told about yet, ``(work_id, rows)``, or ``(None, [])``.
+
+        #717: scheduled ones (told with a cancel button) and any still proposed from before.
 
         A first slot that has passed meanwhile moves to the recurrence's next slot,
         so the message shows the schedule an acceptance would keep; a one-off whose
@@ -1098,9 +1110,9 @@ class Preparations:
             db.execute('BEGIN IMMEDIATE')
             db.execute(f'UPDATE preparations SET state=?,updated_at=? WHERE {self._LAPSED_ONE_OFF}',
                        (STATE_EXPIRED, now, STATE_PROPOSED, ORIGIN_DREAM, now))
-            anchor = db.execute('SELECT created_from FROM preparations WHERE origin=? AND state=? AND offered_at IS NULL '
+            anchor = db.execute('SELECT created_from FROM preparations WHERE origin=? AND state IN (?,?) AND offered_at IS NULL '
                                 + ('AND recurrence IS NULL ' if one_off else '')
-                                + 'ORDER BY created_at LIMIT 1', (ORIGIN_DREAM, STATE_PROPOSED)).fetchone()
+                                + 'ORDER BY created_at LIMIT 1', (ORIGIN_DREAM, *UNTOLD_STATES)).fetchone()
             if anchor is None:
                 return None, []
             for row in db.execute('SELECT * FROM preparations WHERE created_from=? AND origin=? AND state=? AND due_at<=?',
@@ -1108,7 +1120,10 @@ class Preparations:
                 following = next_due(row['due_at'], row['timezone'], row['recurrence'], now)
                 if following is not None:
                     db.execute('UPDATE preparations SET due_at=?,updated_at=? WHERE id=?', (following, now, row['id']))
-        return anchor[0], self.proposed_from(anchor[0])
+            rows = [dict(row) for row in db.execute('SELECT * FROM preparations WHERE created_from=? AND origin=? '
+                                                    'AND state IN (?,?) AND offered_at IS NULL ORDER BY created_at',
+                                                    (anchor[0], ORIGIN_DREAM, *UNTOLD_STATES))]
+        return anchor[0], rows
 
     def mark_offered(self, rows, now):
         """The rows one suggestion message offered: never offered again."""
