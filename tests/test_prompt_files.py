@@ -129,6 +129,28 @@ class ConsolidatedPromptTests(unittest.TestCase):
         self.assertIn('never infer', PROFILE_KEY_GUIDANCE)
         self.assertIn('other facts', PROFILE_KEY_GUIDANCE)
 
+    def test_calibration_leaves_the_cli_conversation_budget_intact(self):
+        from personal_agent.agent_runtime import (CORE_INSTRUCTIONS, CLI_TOOL_GUIDANCE,
+                                                  CLI_NATIVE_SEARCH_GUIDANCE, CONTEXT_BUDGET_BYTES)
+        from personal_agent.memory_service import PROFILE_SNAPSHOT_BYTES, OWNER_WORDS_BYTES
+        from personal_agent.owner_model import NOTES_CHARS
+        # Same worst-case fixed sections as the owner-profile regression, without
+        # requiring its HTTP fixture just to measure the instruction byte budget.
+        fixed = (len((CORE_INSTRUCTIONS + CLI_TOOL_GUIDANCE + CLI_NATIVE_SEARCH_GUIDANCE).encode())
+                 + PROFILE_SNAPSHOT_BYTES + OWNER_WORDS_BYTES + len(('가' * NOTES_CHARS + 'x' * 600).encode()))
+        self.assertLess(fixed, CONTEXT_BUDGET_BYTES - 4000)
+
+    def test_calibration_guidance_keeps_explicit_owner_control(self):
+        from personal_agent.agent_runtime import CORE_INSTRUCTIONS
+        from personal_agent.memory_service import VOICE_PREFERENCE_KEY
+        guidance = prompt_files.prompt('voice_calibration')
+        self.assertEqual(CORE_INSTRUCTIONS.count(guidance), 1)
+        for boundary in (VOICE_PREFERENCE_KEY, 'save_memory', 'undo', 'redo', 'A/B',
+                         'do not save partial', 're-offer unprompted', 'Ask no tastes',
+                         'Voice', "Memory's preference rules"):
+            with self.subTest(boundary=boundary):
+                self.assertIn(boundary, guidance)
+
     def test_every_worker_route_and_its_status_generation_share_one_voice(self):
         from personal_agent.agent_runtime import (DEFINITIONS, action_definitions, context_sections,
                                                   render_turn_prompt, turn_context)
@@ -140,6 +162,7 @@ class ConsolidatedPromptTests(unittest.TestCase):
             with self.subTest(route=route, native_search=native_search):
                 self.assertEqual(assembled.count(voice), 1)
                 self.assertEqual(assembled.count('## Voice'), 1)
+                self.assertEqual(assembled.count(prompt_files.prompt('voice_calibration')), 1)
                 self.assertNotIn("in the owner's language and register", assembled)
         # Status is written by this same worker, with this same context; the schema
         # refers to the shared instructions rather than repeating a separate register.
