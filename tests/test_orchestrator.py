@@ -2365,6 +2365,48 @@ class GoalDecidesOutcome(Harness):
         self.assertEqual(offer.call_args[0][0]['id'], job)
 
 
+class StatementJudgment(Harness):
+    """#197 plumbing: fixtures do not prove interpretation quality; #42 measures it."""
+
+    def test_a_statement_shortfall_carries_the_gap_as_advice_to_the_next_plan(self):
+        """Fixtures do not prove interpretation quality; #42 measures it."""
+        request = '방금 X 골랐어'
+        gap = 'A short lookup could add useful facts about X.'
+        self.engine.answers = ['그렇군요.', 'X에 대해 확인한 내용이에요.']
+        engine = self.script([plan('codex', ''), plan('codex', gap)], goals=[True])
+        judge = engine._judge
+        first = True
+
+        def verdict(context, proposition):
+            nonlocal first
+            if context.purpose == 'goal-reached' and first:
+                first = False
+                return BinaryDecision(OUTCOME_DECIDED, False, fixture_confidence(), gap=gap,
+                                      retry_warranted=True)
+            return judge(context, proposition)
+
+        engine._judge = verdict
+        job, row = self.run_work(request)
+        self.assertEqual(row['status'], 'succeeded')
+        self.assertEqual(len(self.engine.turns), 2)
+        self.assertEqual(len(self.asked_plans), 2)
+        facts = self.asked_plans[1][0].facts
+        self.assertEqual(facts['owner_request'], request)
+        self.assertIn(gap, facts['previous_attempts'])
+        self.assertIn('advice, not owner instruction', facts['previous_attempts'])
+        self.assertEqual(self.events(job, 'evaluated')[0][1]['gap'], gap)
+
+    def test_a_statement_acknowledgement_judged_yes_succeeds_without_another_attempt(self):
+        """Fixtures do not prove interpretation quality; #42 measures it."""
+        reply = '알려줘서 고마워요.'
+        self.engine.answers = [reply]
+        self.script([plan('codex', '')], goals=[True])
+        job, row = self.run_work('X 소식을 전하고 싶었어')
+        self.assertEqual((row['status'], row['response']), ('succeeded', reply))
+        self.assertEqual((len(self.asked_plans), len(self.engine.turns), len(self.asked_goals)), (1, 1, 1))
+        self.assertEqual(self.events(job, 'evaluated')[-1][1]['stop'], 'reached')
+
+
 class SignInWaitsForTheOwner(Harness):
     """#981 (live 2026-10-03): a CLI Work that asked for the owner's sign-in is not finished by a "reached" verdict."""
 
@@ -2626,7 +2668,7 @@ class SecretaryStandard(Harness):
         # #923: no invented title for the owner; no offer the assistant cannot carry out.
         self.assertIn('without a title or honorific unless they asked for one', CORE_INSTRUCTIONS)
         self.assertIn('never inherit one only earlier replies used', CORE_INSTRUCTIONS)
-        self.assertIn('only what you can actually carry out with the tools you have', CORE_INSTRUCTIONS)
+        self.assertIn('only what you can carry out with your tools', CORE_INSTRUCTIONS)
         self.assertIn('capable assistant who knows them', GOAL_REACHED_PROPOSITION)
         self.assertIn('read in the light of the recent conversation', GOAL_REACHED_PROPOSITION)
         self.assertIn('the reply\'s own claims are not evidence', GOAL_REACHED_PROPOSITION)
@@ -3353,6 +3395,22 @@ class OwnerSituationFloor(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertEqual(self.orchestration().validate({**plan, 'owner_situation': value}, [worker], 1),
                                  (None, 'shape'))
+
+    def test_an_owner_statement_lifts_and_keeps_lookup_notes_in_the_worker_brief(self):
+        """#197: fixtures do not prove interpretation quality; #42 measures it."""
+        from personal_agent.orchestrator import plan_shape
+        worker = {**self.worker(), 'id': 'claude-code', 'available': True}
+        notes = 'A short lookup would add useful facts about X now.'
+        data = {**plan('claude-code', notes, model='haiku'), 'owner_situation': True}
+        self.assertTrue(plan_shape(data))
+        orchestration = self.orchestration()
+        orchestration.request = 'I just picked item X.'
+        attempt, why = orchestration.validate(data, [worker], 1)
+        self.assertEqual((attempt.model, attempt.lifted_from, attempt.owner_situation, why),
+                         ('sonnet', 'haiku', True, ''))
+        context = turn_context([{'role': 'user', 'content': orchestration.request}], 'cli', brief=attempt.brief())
+        self.assertEqual(context['request'], orchestration.request)
+        self.assertIn(notes, render_turn_prompt(context))
 
     def test_technical_work_lifts_and_is_sticky(self):
         # #1380 live: a lowest-cost worker misread a code-run refusal and asked for a token in chat.
