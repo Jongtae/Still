@@ -19,6 +19,7 @@ from types import SimpleNamespace
 import hashlib
 from urllib.parse import urlsplit
 from .messages import LANGUAGES, msg
+from .drive_web_oauth import DriveWebOAuthError
 from .telegram_locale import ai_text, owner_language
 from .prompt_files import prompt
 from .local_tools import LocalTools, normalize_public_url
@@ -11270,7 +11271,8 @@ class AgentService:
         if not self.drive_web_oauth:
             raise ValueError('Google Drive capability is not configured locally. Local Drive setup is required before connecting.')
         telegram_owner=job.get('chat_id')
-        if self.drive_web_oauth.status()['state'] != 'connected':
+        # #721: recorded connection state can outlive the access token.
+        if self.drive_web_oauth.effective_status()['state'] != 'connected':
             if not isinstance(telegram_owner,int):
                 raise ValueError(msg('quickstart_service.drive_reconnect_required'))
             with self.store.db() as db:
@@ -11375,6 +11377,11 @@ class AgentService:
                     raise ValueError(msg('quickstart_service.drive_read_failed'))
                 text=bytes(raw).decode('utf-8',errors='replace').strip()
                 excerpts.append(f"[선택 파일: {item.get('name') or item['id']}]\n{text[:24000]}")
+        except DriveWebOAuthError as exc:
+            # #721: expiry can occur after the prerequisite; preserve selection errors.
+            if self.drive_web_oauth.effective_status()['state'] != 'connected':
+                raise ValueError(msg('quickstart_service.drive_read_reconnect')) from exc
+            raise
         except OSError as exc:
             if getattr(exc,'code',None) in (401,403):
                 self.drive_web_oauth.mark_reauthentication_required()

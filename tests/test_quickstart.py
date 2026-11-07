@@ -17,7 +17,8 @@ from urllib.parse import urlsplit, parse_qs
 from personal_agent.quickstart_store import QuickStore
 from personal_agent.quickstart_service import AgentService, TELEGRAM_RESULT_PREVIEW_CHARS
 from personal_agent.quickstart import make_handler, configured_service, local_drive_secret_values
-from personal_agent.drive_web_oauth import DriveWebOAuthHandoff, EncryptedDriveSecretStore
+from personal_agent.drive_web_oauth import DriveWebOAuthHandoff, DriveScopeError, EncryptedDriveSecretStore
+from personal_agent.messages import msg
 from personal_agent.connector_contract import CONNECTOR_STATE_KEY, PENDING_WORK_KEY, ConnectorState
 from personal_agent.conversation_handoff import CONVERSATION_RESUME_KEY, INTENT_CALENDAR_CREATE, INTENT_DRIVE_READ
 from personal_agent.decision import (OUTCOME_DECIDED, BinaryDecision, FixtureDecisionEngine, SelectionDecision,
@@ -372,6 +373,84 @@ class QuickstartTests(unittest.TestCase):
         self.assertNotIn('private selected Drive plan body',json.dumps(self.store.recent_tool_events()))
         model_call=next(body for url,body,_headers in self.calls if url.endswith('/api/chat'))
         self.assertIn('private selected Drive plan body',str(model_call))
+
+    def expiring_selected_drive(self):
+        # #721: a stored refresh token must never renew this connection.
+        clock=[1000.0]
+        drive=DriveWebOAuthHandoff(EncryptedDriveSecretStore(self.store,Fernet.generate_key()),'client',
+            'http://localhost:8787/oauth/google/callback','http://localhost:8787',
+            allow_localhost=True,local_only=True,now=lambda:clock[0])
+        offer=drive.begin(123); state=parse_qs(urlsplit(offer['button']['url']).query)['state'][0]
+        exchanges=[]
+        def exchange(request):
+            exchanges.append(request)
+            self.assertEqual(len(exchanges),1,'authorization must not be renewed')
+            return {'access_token':'server-token','refresh_token':'unused-refresh-token',
+                    'scope':'https://www.googleapis.com/auth/drive.file','expires_in':3599}
+        drive.complete({'state':state,'code':'code'},123,exchange)
+        drive.select_files(123,[{'id':'picked','name':'plan.txt'}])
+        self.service.drive_web_oauth=drive
+        return drive,clock,exchanges
+
+    def test_expired_selected_drive_request_offers_connection_on_first_request(self):
+        drive,clock,exchanges=self.expiring_selected_drive()
+        self.model(); self.assertTrue(self.service.test_model()['ok']); self.calls.clear()
+        self.service.use_decision_engine(capability_need_engine({'구글 드라이브 파일을 요약해줘':INTENT_DRIVE_READ}))
+        reads=[]; messages=[]
+        def read(url,body,headers):
+            reads.append((url,body,headers))
+            return b'selected file body'
+        self.service.drive_read=read
+        self.service.telegram.send_message=lambda *args:messages.append(args)
+        before=self.store.enqueue('구글 드라이브 파일을 요약해줘','drive-before-expiry',channel='telegram:g',chat_id=123)
+        self.assertTrue(self.service.run_one())
+        self.assertEqual(self.store.job(before)['status'],'succeeded')
+        self.assertEqual(len(reads),1)
+        clock[0]+=3600
+        self.assertEqual(drive.status()['state'],'connected')
+        reads.clear(); messages.clear(); self.calls.clear()
+        expired=self.store.enqueue('구글 드라이브 파일을 요약해줘','drive-after-expiry',channel='telegram:g',chat_id=123)
+        self.assertTrue(self.service.run_one())
+        job=self.store.job(expired)
+        self.assertEqual(job['status'],'awaiting_drive')
+        self.assertIsNone(job['error'])
+        self.assertFalse(any(row['status']=='failed' for row in self.store.jobs()))
+        self.assertEqual(reads,[])
+        self.assertEqual(len(exchanges),1)
+        self.assertEqual(self.calls,[])
+        self.assertEqual(len(messages),1)
+        owner,text,markup=messages[0]
+        self.assertEqual(owner,123)
+        self.assertTrue(text)
+        self.assertEqual(len(markup['inline_keyboard']),1)
+        self.assertEqual(len(markup['inline_keyboard'][0]),1)
+        self.assertTrue(markup['inline_keyboard'][0][0]['url'].startswith('http://localhost:8787/'))
+
+    def test_selected_drive_expiry_after_prerequisite_has_localized_recovery(self):
+        drive,clock,exchanges=self.expiring_selected_drive()
+        self.service.drive_read=lambda *_:self.fail('expired credentials must not reach a transport')
+        self.assertIsNone(self.service.drive_read_prerequisite({'chat_id':123}))
+        clock[0]+=3600
+        with self.assertRaises(ValueError) as error:
+            self.service.selected_drive_context(123)
+        self.assertEqual(str(error.exception),msg('quickstart_service.drive_read_reconnect'))
+        self.assertEqual(drive.status()['state'],'reauth-required')
+        self.assertEqual(len(exchanges),1)
+        self.assertEqual(self.calls,[])
+
+    def test_selected_drive_selection_errors_are_preserved(self):
+        drive,_clock,exchanges=self.expiring_selected_drive()
+        self.service.drive_read=lambda *_:self.fail('unselected files must not reach a transport')
+        with self.assertRaises(ValueError) as error:
+            self.service.selected_drive_context(456)
+        self.assertEqual(str(error.exception),msg('quickstart_service.select_drive_files'))
+        read_selected=drive.read_selected
+        with patch.object(drive,'read_selected',side_effect=lambda owner,_file,transport:read_selected(owner,'unpicked',transport)):
+            with self.assertRaises(DriveScopeError) as error:
+                self.service.selected_drive_context(123)
+        self.assertEqual(str(error.exception),'Choose this file in Google Picker before reading it.')
+        self.assertEqual(drive.effective_status()['state'],'connected')
+        self.assertEqual(len(exchanges),1)
 
     def test_rejected_drive_read_requires_reauthentication(self):
         key=Fernet.generate_key()
