@@ -1,15 +1,8 @@
-"""#16 slice 1: independent public reads of one model turn run at the same time.
+"""#16 slice 1: overlap by a call's effect class (concurrent_read), as on the CLI route.
 
-``run_agent`` still admits, records, judges and answers a turn's calls one by
-one, in order.  Only the network requests of consecutive public reads
-(``NETWORK_READS``) that the loop would send are started together.  Effects,
-private reads, a page read that may depend on a search in the same turn, and
-anything the Work budget could not cover stay sequential.
-
-Evidence class: model-free.  A scripted model transport and a fake public
-network (with a barrier that only concurrent requests can pass) replace only
-the provider and the wire; ``run_agent`` and ``Capabilities`` run unchanged.
-No live model or network is contacted.
+The real loop and Capabilities execute against gated clients/store methods.
+Results, records, Evidence, budgets and interruption retain call-order semantics.
+Evidence class: model-free; no live model or network is contacted.
 """
 import json
 import tempfile
@@ -18,8 +11,10 @@ import time
 import unittest
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
+from unittest.mock import patch
+from types import SimpleNamespace
 
-from personal_agent.agent_runtime import CONCURRENT_READ_LIMIT, Capabilities, ReadOverlap, WorkBudget, run_agent
+from personal_agent.agent_runtime import CONCURRENT_READ_LIMIT, Capabilities, ReadOverlap, WorkBudget, LoopGuard, run_agent
 from personal_agent.providers import ModelAdapter, ProviderError
 from personal_agent.quickstart_store import QuickStore
 from test_agency_loop import CFG, Script, call, finish, judgments
@@ -77,10 +72,10 @@ class ConcurrentReadTests(unittest.TestCase):
     def record(self, tool, status, detail):
         self.events.append((tool, status, json.loads(detail) if isinstance(detail, str) else detail))
 
-    def run_turn(self, calls, wire, budget=None, after=None):
+    def run_turn(self, calls, wire=None, budget=None, after=None, **kwargs):
         script = Script({'tool_calls': calls}, *(after or [finish('f', *[c['id'] for c in calls], summary='끝')]))
         caps = Capabilities(self.store, ModelAdapter(script), CFG, '', 'job', self.record, network=wire,
-                            judgments=judgments(True), **({'budget': budget} if budget is not None else {}))
+                            judgments=kwargs.pop('judgments', judgments(True)), **kwargs, **({'budget': budget} if budget is not None else {}))
         result = run_agent(caps.adapter, CFG, '', [{'role': 'user', 'content': '찾아줘'}], '', caps, self.record)
         return result, script, caps
 
@@ -145,9 +140,10 @@ class ConcurrentReadTests(unittest.TestCase):
         shown = [json.loads(m['content']) for m in script.bodies[1]['messages'] if m.get('role') == 'tool']
         self.assertEqual([(row['ref'], row['query']) for row in shown], list(zip(map(str, range(6)), queries)))
 
-    def _interrupt_in_flight_group(self, reason):
+    def _interrupt_in_flight_group(self, reason, private=False):
         queries = ['alpha', 'beta', 'gamma', 'delta', 'epsilon', 'zeta']
-        calls = [call(str(i), 'web_search', query=q) for i, q in enumerate(queries)]
+        action = 'drive_search' if private else 'web_search'
+        calls = [call(str(i), action, query=q) for i, q in enumerate(queries)]
         stopped = threading.Event()
         wall = [0.0]
         budget = WorkBudget(turns=30, attempts=20, seconds=10, clock=lambda: wall[0], stop=stopped.is_set)
@@ -167,7 +163,7 @@ class ConcurrentReadTests(unittest.TestCase):
         wire = Wire(gate=gate)
 
         def run_and_snapshot():
-            result = self.run_turn(calls, wire, budget)
+            result = self.run_turn(calls, wire, budget, **({'drive': SimpleNamespace(search=lambda query: wire.execute({'tool': 'drive_search', 'query': query}))} if private else {}))
             return result, list(self.events)
 
         with ThreadPoolExecutor(max_workers=1) as worker:
@@ -194,8 +190,8 @@ class ConcurrentReadTests(unittest.TestCase):
         self.assertCountEqual([q for event, q in wire.log if event == 'start'], queries[:4])
         self.assertCountEqual([q for event, q in wire.log if event == 'end'], queries[:4])
         self.assertEqual(self.tool_events(), [event for i in range(6) for event in
-                         [('web_search', 'running', str(i), 'main'),
-                          ('web_search', 'succeeded' if i < 4 else 'failed', str(i), 'main')]])
+                         [(action, 'running', str(i), 'main'),
+                          (action, 'succeeded' if i < 4 else 'failed', str(i), 'main')]])
         refused = [detail['code'] for tool, status, detail in self.events if tool != 'model' and status == 'failed']
         self.assertEqual(refused, [reason, reason])
         self.assertEqual([(status, detail.get('code')) for tool, status, detail in self.events
@@ -297,6 +293,192 @@ class ConcurrentReadTests(unittest.TestCase):
         _result, _script, caps = self.run_turn([call('1', 'web_search', query='alpha'),
                                                 call('2', 'web_search', query='beta')], wire)
         self.assertEqual(caps.record, self.record)
+
+    def test_private_reads_and_mixed_reads_overlap(self):
+        for mixed in (False, True):
+            with self.subTest(mixed=mixed):
+                self.events.clear()
+                barrier = threading.Barrier(2, timeout=5)
+                def read(query):
+                    barrier.wait()
+                    return {'files': [], 'messages': [], 'query': query}
+                wire = Wire(barrier=barrier)
+                calls = [call('1', 'drive_search', query='alpha'),
+                         call('2', 'web_search' if mixed else 'mail_search', query='beta')]
+                result, _, _ = self.run_turn(calls, wire, drive=SimpleNamespace(search=read),
+                                             mail=SimpleNamespace(search=read))
+                self.assertEqual(result.outcome, 'succeeded')
+
+    def test_private_effect_boundaries_and_api_effect_floor(self):
+        caps = Capabilities(self.store, None, CFG, '', 'job', self.record)
+        specs = {d['function']['name']: d['function']['parameters'] for d in caps.definitions()}
+        # The API definition is normally hidden without a registered slot.
+        from personal_agent.agent_runtime import DEFINITIONS
+        specs.update({d['function']['name']: d['function']['parameters'] for d in DEFINITIONS
+                      if d['function']['name'] == 'api_request'})
+        overlap = ReadOverlap(caps, specs)
+        for middle in (call('2', 'save_note', content='note'),
+                       call('2', 'api_request', slot='test', method='POST', url='https://example.com/', effect='read')):
+            calls = [call('1', 'drive_search', query='alpha'), middle,
+                     call('3', 'mail_search', query='beta')]
+            self.assertEqual([row[0] for row in overlap.group(calls, 0, {}, LoopGuard())], ['1'])
+        calls[1] = call('2', 'api_request', slot='test', method='GET', url='https://example.com/', effect='read')
+        self.assertEqual([row[0] for row in overlap.group(calls, 0, {}, LoopGuard())], ['1', '2', '3'])
+
+    def test_private_evidence_and_records_replay_in_one_order(self):
+        from personal_agent.agent_runtime import EvidenceLog
+        second_done = threading.Event()
+        original = self.store.memories
+        original_search = self.store.search_memories
+        observed = []
+        caps_box = []
+        def memories(*args, **kwargs):
+            self.assertTrue(second_done.wait(5))
+            caps_box[0].record('inside', 'succeeded', {'first': True})
+            return original(*args, **kwargs)
+        def search(*args, **kwargs):
+            caps_box[0].record('inside', 'succeeded', {'first': False})
+            return original_search(*args, **kwargs)
+        original_append = EvidenceLog.append
+        def append(log, item):
+            held = getattr(log._hold, 'held', None)
+            original_append(log, item)
+            if held is None:
+                observed.append(('evidence', item['tool']))
+        original_start = ReadOverlap.start
+        def start(overlap, *args):
+            original_start(overlap, *args)
+            if '2' in overlap.started:
+                overlap.started['2'][0].add_done_callback(lambda _: second_done.set())
+        def record(tool, status, detail):
+            self.record(tool, status, detail)
+            if tool == 'inside':
+                observed.append(('record', detail['first']))
+        script = Script({'tool_calls': [call('1', 'list_memory'), call('2', 'search_memory', query='coffee')]},
+                        finish('f', '1', '2', summary='done'))
+        caps = Capabilities(self.store, ModelAdapter(script), CFG, '', 'job', record, judgments=judgments(True))
+        caps_box.append(caps)
+        with patch.object(self.store, 'memories', memories), patch.object(self.store, 'search_memories', search), patch.object(EvidenceLog, 'append', append), patch.object(ReadOverlap, 'start', start):
+            run_agent(caps.adapter, CFG, '', [], '', caps, record)
+        tools = [item['tool'] for item in caps.evidence]
+        self.assertLess(tools.index('list_memory'), tools.index('search_memory'))
+        self.assertEqual(observed[0], ('record', True))
+        self.assertLess(observed.index(('evidence', 'list_memory')), observed.index(('record', False)))
+        self.assertIsNone(caps.evidence._hold)
+        self.assertIn('owner-memory', caps.private_provenance)
+
+    def test_private_failure_keeps_other_result_and_call_order(self):
+        from personal_agent.google_drive_read import DriveHTTPError
+        barrier = threading.Barrier(2, timeout=5)
+        def drive(query):
+            barrier.wait()
+            raise DriveHTTPError(500)
+        def mail(query):
+            barrier.wait()
+            return {'messages': [], 'query': query}
+        facts = []
+        result, script, _ = self.run_turn([call('1', 'drive_search', query='alpha'),
+                                          call('2', 'mail_search', query='beta')],
+                                         drive=SimpleNamespace(search=drive), mail=SimpleNamespace(search=mail),
+                                         judgments=judgments(lambda f: facts.append(f) or True))
+        self.assertIn('drive_search', facts[0]['failed_steps'])
+        self.assertEqual([(t, s, i) for t, s, i, _ in self.tool_events()],
+                         [('drive_search', 'running', '1'), ('drive_search', 'failed', '1'),
+                          ('mail_search', 'running', '2'), ('mail_search', 'succeeded', '2')])
+        self.assertIn('drive_unavailable', json.dumps(self.events))
+        shown = [json.loads(m['content']) for m in script.bodies[1]['messages'] if m.get('role') == 'tool']
+        self.assertEqual(shown[1]['query'], 'beta')
+
+    def test_private_attempt_budget_needs_no_retry_reserve(self):
+        caps = Capabilities(self.store, None, CFG, '', 'job', self.record, budget=WorkBudget(attempts=2))
+        overlap = ReadOverlap(caps, {})
+        private = [('1', 'drive_search', {}, 'drive_search'), ('2', 'mail_search', {}, 'mail_search')]
+        self.assertTrue(overlap.covered(private))
+        self.assertFalse(overlap.covered([private[0], ('2', 'web_search', {}, 'web_search')]))
+        barrier = threading.Barrier(2, timeout=5)
+        def read(query):
+            barrier.wait()
+            return {'files': [], 'messages': []}
+        self.run_turn([call('1', 'drive_search', query='alpha'), call('2', 'mail_search', query='beta')],
+                      budget=caps.budget, drive=SimpleNamespace(search=read), mail=SimpleNamespace(search=read))
+        self.assertEqual(caps.budget.attempts_used, 2)
+
+    def test_private_stop_mid_group(self):
+        self._interrupt_in_flight_group('stopped', private=True)
+
+    def test_conversation_budget_is_shared_while_evidence_is_held(self):
+        # A transport boundary gate on a third read proves the two recall calls
+        # are in an overlapping group; recall's own lock serializes its budget.
+        from test_conversation_recall import ConversationRecall
+        for query in ('alpha', 'beta'):
+            for i in range(3):
+                ConversationRecall.exchange(self, owner=f'{query} coffee {i}')
+        ConversationRecall.age(self)
+        entered = threading.Event()
+        seen_limits = []
+        original = self.store.search_conversation
+        def search(query, **kwargs):
+            self.assertTrue(entered.wait(5))
+            seen_limits.append(kwargs['limit'])
+            return original(query, **kwargs)
+        def drive(query):
+            entered.set()
+            return {'files': []}
+        with patch.object(self.store, 'search_conversation', search):
+            _, _, caps = self.run_turn([call('1', 'search_conversation', query='alpha', limit=2),
+                                       call('2', 'search_conversation', query='beta', limit=2),
+                                       call('3', 'drive_search', query='gamma')], drive=SimpleNamespace(search=drive))
+        rows = [item for item in caps.evidence if item['tool'] == 'search_conversation']
+        self.assertEqual(sum(len(item['result']['exchanges']) for item in rows), 3)
+        self.assertEqual(seen_limits, [2, 1])
+
+    def test_non_evidence_log_keeps_reads_sequential(self):
+        caps = Capabilities(self.store, None, CFG, '', 'job', self.record)
+        caps.evidence = []
+        specs = {d['function']['name']: d['function']['parameters'] for d in caps.definitions()}
+        overlap = ReadOverlap(caps, specs)
+        overlap.start([call('1', 'list_memory'), call('2', 'list_notes')], 0, {}, LoopGuard())
+        self.assertEqual(overlap.started, {})
+        self.assertEqual(caps.record, self.record)
+
+    def test_api_reads_overlap_at_the_transport(self):
+        from personal_agent.api_requests import ApiRequests, save_slot
+        save_slot(self.store, 'test', ['example.com'], 'test-only-key')
+        barrier = threading.Barrier(2, timeout=5)
+        def transport(method, url, headers, body, timeout):
+            barrier.wait()
+            return 200, {}, json.dumps({'url': url}).encode()
+        script = Script({'tool_calls': [call(str(i), 'api_request', slot='test', method='GET',
+                                             url=f'https://example.com/{i}', effect='read') for i in range(2)]},
+                        finish('f', '0', '1', summary='done'))
+        caps = Capabilities(self.store, ModelAdapter(script), CFG, '', 'job', self.record, judgments=judgments(True))
+        caps._api = ApiRequests(self.store, 'job', transport=transport)
+        run_agent(caps.adapter, CFG, '', [], '', caps, self.record)
+        self.assertEqual([item['result']['data']['url'] for item in caps.evidence],
+                         ['https://example.com/0', 'https://example.com/1'])
+
+    def test_saved_result_setup_status_does_not_leak_between_reads(self):
+        from personal_agent.file_workspace import FileWorkspace
+        failed_done = threading.Event()
+        original_start = ReadOverlap.start
+        def start(overlap, *args):
+            original_start(overlap, *args)
+            if '2' in overlap.started:
+                overlap.started['2'][0].add_done_callback(lambda _: failed_done.set())
+        def current_results(workspace, *, path=None, **kwargs):
+            if path == 'unavailable':
+                raise OSError('folder unavailable')
+            self.assertTrue(failed_done.wait(5))
+            return [{'path': path, 'content': 'saved content'}]
+        calls = [call('1', 'read_file', root_id='saved-results', path='available'),
+                 call('2', 'read_file', root_id='saved-results', path='unavailable')]
+        with patch.object(FileWorkspace, 'current_results', current_results), \
+             patch.object(FileWorkspace, 'has_file_results', return_value=True), \
+             patch.object(ReadOverlap, 'start', start):
+            _, script, _ = self.run_turn(calls)
+        shown = [json.loads(m['content']) for m in script.bodies[1]['messages'] if m.get('role') == 'tool']
+        self.assertEqual(shown[0]['content'], 'saved content')
+        self.assertTrue(shown[1]['needs_setup'])
 
 
 if __name__ == '__main__':
