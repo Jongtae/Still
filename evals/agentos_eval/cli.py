@@ -74,9 +74,9 @@ def resolve_seed(value):
     return path
 
 
-def git_head():
+def git_head(repo=REPO):
     try:
-        return subprocess.run(['git', '-C', str(REPO), 'rev-parse', '--short', 'HEAD'], capture_output=True,
+        return subprocess.run(['git', '-C', str(repo), 'rev-parse', '--short', 'HEAD'], capture_output=True,
                               text=True, timeout=10).stdout.strip() or None
     except (OSError, subprocess.TimeoutExpired):
         return None
@@ -199,6 +199,17 @@ def cmd_report(args):
     _write(log, run)
 
 
+def cmd_judgments(args):
+    from . import judgments
+    if args.action == 'plan':
+        print(json.dumps(judgments.plan(judgments.load_cases(args.cases)), indent=2))
+    elif args.action == 'compare':
+        print(judgments.compare_markdown(judgments.compare(
+            json.loads(Path(args.baseline).read_text()), json.loads(Path(args.head).read_text()))))
+    else:
+        judgments.live_run(args)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog='agentos_eval', description=__doc__.split('\n\n')[0])
     sub = parser.add_subparsers(dest='command', required=True)
@@ -229,9 +240,27 @@ def main(argv=None):
     rep = sub.add_parser('report', help='rebuild the trend report from an Inspect log')
     rep.add_argument('--log', required=True)
     sub.add_parser('budget', help="show today's judge spend")
+    judgments = sub.add_parser('judgments', help='measure shipped judgments (#42)')
+    actions = judgments.add_subparsers(dest='action', required=True)
+    from .judgments import DEFAULT_CASES
+    planning = actions.add_parser('plan', help='print maximum calls without calling a model')
+    planning.add_argument('--cases', type=Path, default=DEFAULT_CASES)
+    running = actions.add_parser('run', help='opt-in live route measurement on a sanitized seed')
+    running.add_argument('--seed', required=True)
+    running.add_argument('--cases', type=Path, default=DEFAULT_CASES)
+    from .paths import SRC
+    running.add_argument('--src', type=Path, default=SRC)
+    running.add_argument('--roles', default='')
+    running.add_argument('--max-calls', type=int)
+    running.add_argument('--trials', type=int, default=1)
+    running.add_argument('--keep-text', action='store_true')
+    running.add_argument('--out', type=Path)
+    comparison = actions.add_parser('compare')
+    comparison.add_argument('baseline')
+    comparison.add_argument('head')
     args = parser.parse_args(argv)
     handler = {'snapshot': cmd_snapshot, 'scenarios': cmd_scenarios, 'sweep': cmd_sweep, 'report': cmd_report,
-               'budget': cmd_budget}[args.command]
+               'budget': cmd_budget, 'judgments': cmd_judgments}[args.command]
     return handler(args) or 0
 
 
