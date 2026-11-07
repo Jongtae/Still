@@ -270,7 +270,7 @@ class SteeringReachesTheRunningWork(_SteerCase):
     def test_no_continuation_once_the_budget_is_spent(self):
         self.script = [self.remark_then_finish, REPLY]
         self.typed(FIRST)
-        with mock.patch.object(quickstart_service, 'MIN_ATTEMPT_SECONDS', 10 ** 9):
+        with mock.patch('personal_agent.work_executor.MIN_ATTEMPT_SECONDS', 10 ** 9):
             self.assertTrue(self.service.run_one())
         self.assert_runs_as_its_own_work('budget')
 

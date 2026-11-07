@@ -27,7 +27,6 @@ import test_conversation_connector_handoff as connector_case
 from scripted_capability_need import capability_need_engine
 
 from personal_agent import remote_login
-from personal_agent import quickstart_service
 from personal_agent.connector_contract import ConnectorRegistry, ConnectorResult, ConnectorResultKind, RecoveryAction
 from personal_agent.conversation_handoff import (LOCAL_FOLDER_READ, LOCAL_REFERENCE_READ, LOCAL_RESULT_WRITE,
                                                  RESUME_REFUSALS, LOCAL_REFUSALS, SEVERAL_TASKS, ConnectorHandoff,
@@ -311,7 +310,7 @@ class WorkFailureLines(unittest.TestCase):
     def test_an_album_over_the_size_limit(self):
         def prepare(case, job_id):
             case.store.attach_telegram_photo(job_id, 'file-1')
-            return mock.patch.object(quickstart_service, 'TELEGRAM_WORK_PHOTO_BYTES_LIMIT', 0)
+            return mock.patch('personal_agent.work_executor.TELEGRAM_WORK_PHOTO_BYTES_LIMIT', 0)
         for owner in OWNERS:
             with self.subTest(owner=owner):
                 lang = lang_of(owner)

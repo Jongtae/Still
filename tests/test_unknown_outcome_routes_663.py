@@ -40,7 +40,7 @@ class DirectRouteUnknownOutcomeTests(unittest.TestCase):
     def run_work(self, outcome, detail):
         service, store = self.service(loop.Script(), loop.Network())
         job = store.enqueue('update the example board', f'direct-{outcome}', channel='telegram:g', chat_id=77)
-        with mock.patch('personal_agent.quickstart_service.run_agent', fake_run_agent(outcome, detail)):
+        with mock.patch('personal_agent.work_executor.run_agent', fake_run_agent(outcome, detail)):
             self.assertTrue(service.run_one())
         return service, store, store.job(job)
 

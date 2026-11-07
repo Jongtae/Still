@@ -146,7 +146,8 @@ The existing local implementation uses named modules rather than a new framework
 | Boundary | Existing responsibility |
 | --- | --- |
 | `quickstart_service.AgentService` | Composition root for the store, connectors, orchestrators, surfaces and queue worker. |
-| `work_execution.WorkRun` and the service's execution phases | Claim, route, prepare, execute, settle and finish/fail one Work, including judgment/budget settlement and post-work handling. The extraction does not create another state owner. |
+| `work_execution.WorkRun` | State carried between one Work's execution phases. |
+| `work_executor.WorkExecutor` via `AgentService.work_executor` | Claim, route, prepare, execute, settle and finish/fail one Work, including judgment/budget settlement and post-work handling. The extraction does not create another state owner. |
 | `browser_signin.BrowserSignin` | Browser sign-in windows, provider sign-in records and exact step approvals, with forwarding service entry points over the same owner state. |
 | `orchestrator` and `settings_orchestrator` | Typed work planning/evaluation and bound setting drafts on existing state. |
 | `google_connections.GoogleConnections` | Google OAuth connection and saved-client lifecycle, revocation, status rows and Drive Picker helpers over the service's existing state, with forwarding service entry points. |
