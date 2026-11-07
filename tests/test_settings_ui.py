@@ -533,7 +533,11 @@ class Element {
 let focused=null;
 function descendants(node){return node.children.flatMap(child=>typeof child==='string'?[]:[child,...descendants(child)]);}
 for(const id of ['root-list','roots-feedback','root-path-input','roots-form','file-workspace-list','file-workspace-form','workspace-reference-list','workspace-reference-input','workspace-reference-add','file-workspace-path','file-workspace-feedback','file-workspace-cancel','document-boundary','document-boundary-feedback'])new Element('div').id=id;
-const $=id=>ids.get(id),document={getElementById:$,createElement:tag=>new Element(tag)};
+// #390 U6: the static folder picker buttons are bound once alongside the forms.
+const pickerButtons=['read','reference','result'].map(kind=>{const button=new Element('button');button.dataset.folderPick=kind;button.dataset.folderInput={read:'root-path-input',reference:'workspace-reference-input',result:'file-workspace-path'}[kind];button.hidden=true;return button;});
+const $=id=>ids.get(id),document={getElementById:$,createElement:tag=>new Element(tag),
+ querySelectorAll:selector=>selector==='[data-folder-pick]'?pickerButtons:[],
+ querySelector:selector=>pickerButtons.find(button=>selector==='[data-folder-pick="'+button.dataset.folderPick+'"]')||null};
 const part=(start,end)=>app.slice(app.indexOf(start),app.indexOf(end));
 const source=part('const LANGUAGES=','function normalizeEndpoint(')+part('function element(', 'function focusSettingsTarget(')+part('let savedRoots=', 'function renderTelegram(');
 const calls=[];let refreshes=0,refuse=null,refuseReason=null,revisions=0,gate=null;
