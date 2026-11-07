@@ -13567,29 +13567,36 @@ class AgentService:
     def _settle_worker_outcome(self, run):
         """Phase 6: the worker's outcome after the last attempt - goal judgment, workspace result, context sources."""
         job=run.job
-        # #752: the goal decides, not the steps.  A CLI attempt whose steps left it
-        # partial or failed (a truncated read, a failure it worked around) succeeded
-        # when the goal judgment saw the request met; the steps stay in Evidence.
-        if run.subscription.get('id') and run.outcome in ('partial','failed') and run.orchestration is not None \
-                and run.orchestration.terminal==REACHED and not (run.approval_needed[0] or run.context_approval_needed[0]) \
-                and self.goal_upgrade_allowed(job['id']):
-            run.outcome='succeeded';run.refusals.clear();run.owner_steps.clear();run.resolved_blocker=True
+        goal=self.run_goal_outcome(run)
+        effect=self.work_effect_state(job['id'],run.claimed_at)
+        steps=run.outcome
+        shortfall,shortfall_report='partial',None
+        login_pending=(self._browser_login(job['id']) or {}).get('state')=='requested' or run.waits_for_sign_in
         # #710 review P1 (#767: either route): an attempt the one outcome judgment found short and
         # that was not re-delegated (limit, budget, no new plan) is never stored as succeeded.
         # #820: its reply is still delivered, under the truthful header.
-        if run.outcome=='succeeded' and run.orchestration is not None and run.orchestration.terminal in (NOT_REACHED,UNJUDGED,NOT_JUDGED):
-            run.outcome,run.agency_report=self.cli_shortfall(job['id'],run.attempt_start,run.prompt,run.orchestration.terminal,
+        if run.orchestration is not None and run.orchestration.terminal in (NOT_REACHED,UNJUDGED,NOT_JUDGED):
+            shortfall,shortfall_report=self.cli_shortfall(job['id'],run.attempt_start,run.prompt,run.orchestration.terminal,
                                                      run.orchestration.terminal_gap,run.orchestration.terminal_note,
                                                      run.orchestration.terminal_code)
+        run.goal_outcome,run.effect_state=goal,effect
+        run.outcome=ws.derive_status(goal,effect,steps,shortfall=shortfall,
+                                     owner_gate=run.approval_needed[0] or run.context_approval_needed[0],login_pending=login_pending)
+        # #752: the reached goal recovers the steps, on either route; Evidence keeps the calls.
+        if run.outcome=='succeeded' and steps!='succeeded':
+            run.refusals.clear();run.owner_steps.clear();run.resolved_blocker=True
+        if run.outcome!='succeeded' and steps=='succeeded':
             run.resolved_blocker=False
+            if goal in (ws.GOAL_NOT_REACHED,ws.GOAL_NOT_JUDGED) and shortfall_report is not None:
+                run.agency_report=shortfall_report
+            if login_pending and not ws.goal_reached(goal):
+                run.refusals.append(('browser_open',msg('agent_runtime.this_page_needs_a_sign_in')));run.owner_steps.append(msg('agent_runtime.this_page_needs_a_sign_in'))
         # #14: a CLI attempt its steps left unfinished that the outcome judgment also found short says why
         # in the judgment's words, as the direct route does; a failed step a later call made up for is
         # dropped from the refusals below (``unrecovered_refusals``), so it is no longer given as the cause.
         if run.subscription.get('id') and run.outcome in ('partial','failed') and run.agency_report is None and run.orchestration is not None \
                 and run.orchestration.terminal in (NOT_REACHED,UNJUDGED,NOT_JUDGED):
-            run.agency_report=self.cli_shortfall(job['id'],run.attempt_start,run.prompt,run.orchestration.terminal,
-                                             run.orchestration.terminal_gap,run.orchestration.terminal_note,
-                                             run.orchestration.terminal_code)[1]
+            run.agency_report=shortfall_report
         # #631: a judged CLI stop can leave the Work partial on either verdict.
         if run.subscription.get('id') and run.outcome in ('partial','failed') and run.agency_report is None and run.orchestration is not None \
                 and run.orchestration.terminal in (REACHED,OWNER_NEEDED) and isinstance(run.orchestration.terminal_note,str):
@@ -13639,6 +13646,8 @@ class AgentService:
     def _finish_work(self, run):
         """Phase 7: the answer, its disclosures and the Work row, written once."""
         job=run.job
+        goal=run.goal_outcome if hasattr(run,'goal_outcome') else self.run_goal_outcome(run)
+        effect=run.effect_state if hasattr(run,'effect_state') else self.work_effect_state(job['id'],run.claimed_at)
         run.response=run.reply_notice+run.response
         # #659: a preparation's answer is kept and replayed into later
         # turns, so it is scrubbed before it is persisted anywhere.
@@ -13648,8 +13657,7 @@ class AgentService:
         # on every route and whatever the outcome; a line the answer already carries is not repeated.
         run.response=self._with_disclosures(job['id'],run.response)
         # #1486: a Work judged to have reached its outcome saves the function libraries it proposed.
-        run.response=self._settle_procedures(job['id'],run.response,run.outcome=='succeeded' and run.orchestration is not None
-                                         and run.orchestration.terminal==REACHED)
+        run.response=self._settle_procedures(job['id'],run.response,ws.request_met(run.outcome,goal) and goal=='reached')
         self.record_work_sources(job['id'],run.work_sources)
         with self.store.db() as db:
             db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id,delivery_projection) VALUES (?,?,?,?,?,?,?)',
@@ -13692,9 +13700,8 @@ class AgentService:
             if run.outcome in ('failed','partial') and self._budget_boundary(self._attempt_stop_codes(db.execute(
                     'SELECT status,detail FROM tool_events WHERE job_id=? AND created>=?',(job['id'],run.claimed_at)).fetchall())):
                 self.store.put('budget_continue:'+job['id'],{'state':'pending'},db=db)
-            goal_outcome,effect_state=self.run_goal_outcome(run),self.work_effect_state(job['id'],run.claimed_at)
             db.execute("UPDATE jobs SET status=?,response=?,error=?,provider=?,model=?,delivery=?,owner_cause=?,owner_verified=?,owner_note=?,goal_outcome=?,effect_state=? WHERE id=?",
-                       (run.outcome,run.response,cause,run.provider,run.model,'pending' if job['chat_id'] else 'none',spoken,observed,note,goal_outcome,effect_state,job['id']))
+                       (run.outcome,run.response,cause,run.provider,run.model,'pending' if job['chat_id'] else 'none',spoken,observed,note,goal,effect,job['id']))
             # #308 S1: the steers the attempt whose reply this is had in hand are answered by it.
             if run.outcome in ('succeeded','partial') and run.attempt_started_at is not None:
                 self.store.answer_steers(job['id'],run.attempt_started_at,db)
