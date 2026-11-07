@@ -21,6 +21,9 @@ PRESERVED_KOREAN_ROLE_IDS = frozenset({
 
 # Every retained literal is input syntax, stored identity, or guidance for the model.
 MIGRATED_MODULES = {
+    'browser_signin.py': {
+        '[가림]',  # Redaction sentinel recognized in later comparisons.
+    },
     'quickstart_service.py': {
         '(?:api[ _-]?key|password|token|secret|비밀번호|토큰|키)',  # Recognizes credential-shaped input; never emitted.
         '이 페이지는 로그인이 필요해요. 이 실행이 끝나면 Still이 이 Mac에 로그인 창을 열고 소유자에게 로그인을 요청합니다. 소유자가 로그인하고 창을 닫으면 이 요청을 한 번 이어서 처리합니다. 비밀번호는 입력하지 말고, 지금까지 확인한 내용으로 이번 답을 마치세요.',  # Model-only browser sign-in instructions.
@@ -41,7 +44,6 @@ MIGRATED_MODULES = {
         '이번 요청에서는 이미 충분히 알렸어요. 남은 내용은 답에 담아 주세요.',  # Model-only tool result or next_step guidance.
         '지금은 대화로 메시지를 보낼 수 없어요. 답에 담아 주세요.',  # Model-only tool result or next_step guidance.
         '메시지를 보내지 못했어요. 답에 담아 주세요.',  # Model-only tool result or next_step guidance.
-        '[가림]',  # Redaction sentinel recognized in later comparisons.
         'Still이 이 도구 사용을 허용하지 않았습니다. 실행하지 않았습니다.',  # Model-only tool result or next_step guidance.
         '이 요청의 실행 한도에 도달해 다음 동작은 실행하지 않았습니다.',  # Model-only tool result or next_step guidance.
         '비밀 입력은 도구 인자나 승인 카드로 전달하지 않습니다. 연결의 비밀 입력 경로를 사용하세요. 이 동작은 실행하지 않았습니다.',  # Model-only tool result or next_step guidance.
