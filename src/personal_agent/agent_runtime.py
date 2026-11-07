@@ -4605,7 +4605,8 @@ class Capabilities:
 #: #1272: the closing style sentences follow the contract's *Conversation style* section (#1266).
 #: #1508 step 2: Markdown sections (## level: a CLI prompt nests them under "# Still instructions")
 #: with one stated priority order; the change table with each sentence's origin is in the #1508 PR.
-CORE_INSTRUCTIONS=prompt('worker_core')+'\n\n'+prompt('voice')
+# #202: one ask-vs-assume rule shared with the planner and the judgment.
+CORE_INSTRUCTIONS=prompt('worker_core')+'\n\n'+prompt('ask_or_assume')+'\n\n'+prompt('voice')
 # Tool guidance for the direct-API route.
 API_TOOL_GUIDANCE=prompt('worker_tools_api')
 # Tool guidance for a subscription CLI turn: the CLI sees only the Still MCP bridge.

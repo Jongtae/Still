@@ -800,7 +800,7 @@ WATCH_NOTIFY_PROPOSITION = ('The owner accepted a standing watch with the goal s
 #: SEC-LOOP-01 (#657), ARCH-THIN-01 (#820): the one outcome judgment of a Work -
 #: did the reply serve the owner's message, given the conversation?  Step
 #: bookkeeping is evidence for it, never a verdict of its own.
-GOAL_REACHED_PROPOSITION = prompt('goal_reached')
+GOAL_REACHED_PROPOSITION = prompt('goal_reached') + '\n\n' + prompt('ask_or_assume')
 #: #1451: the outcome judgment's gap sentence, as kept.
 GOAL_GAP_CHARS = 300
 #: #674: what became of the one re-judgment asked after the outcome judgment denied a recorded-done call.
