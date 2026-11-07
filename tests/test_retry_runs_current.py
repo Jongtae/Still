@@ -74,7 +74,7 @@ class RetryRunsCurrent(projection.ProjectionTestCase):
         self.assertFalse(trace['executed'])
         self.assertIn('중개하지 않은 엔진 작업', trace['reason'], 'the refusal reason is Evidence')
         self.assertEqual([text for _kind, text in bubbles][-1], '처리했습니다.')
-        self.assertFalse(any('자동으로 다시 실행하지 않았습니다' in text for _kind, text in bubbles))
+        self.assertFalse(any('자동으로 다시 실행하지 않았어요' in text for _kind, text in bubbles))
 
     def test_a_safe_retry_still_replays_the_canonical_request_exactly_once(self):
         second, _ = self.turn(CURRENT)

@@ -885,7 +885,7 @@ class ServiceRouteSelectionTests(ServiceFixture):
                 with self.assertRaises(DecisionRouteError) as raised:
                     service.activate_decision_route({'transport': 'subscription_cli', 'engine': 'codex',
                                                      'model_policy': policy, **extra})
-                self.assertIn('모델 지정을 지원하지 않습니다', str(raised.exception))
+                self.assertIn('모델 지정을 지원하지 않아요', str(raised.exception))
                 self.assertEqual(self.store.config('decision_route'), before)
         codex = next(e for e in service.settings()['decision_route']['subscription_cli'] if e['id'] == 'codex')
         self.assertEqual(codex['model_selection'], 'unsupported')
@@ -998,7 +998,7 @@ class ServiceRouteSelectionTests(ServiceFixture):
         with self.assertRaises(DecisionRouteError) as raised:
             service.activate_decision_route({'transport': 'subscription_cli', 'engine': 'codex',
                                              'model_policy': 'explicit', 'model': 'gpt-imaginary'})
-        self.assertIn('확인하지 못했습니다', str(raised.exception))
+        self.assertIn('확인하지 못했어요', str(raised.exception))
         self.assertIsNone(self.store.config('decision_route'))
         check = service.settings()['decision_route']['subscription_cli'][0]['check']
         self.assertEqual((check['failure'], check['requested_model']), ('model-not-verified', 'gpt-imaginary'))
@@ -1383,7 +1383,7 @@ class JudgmentModelTests(ServiceFixture):
         self.main('claude-code')
         effective = service.settings()['decision_route']['effective']
         self.assertEqual(effective['state'], 'attention')
-        self.assertIn('다른 경로로 자동 전환하지 않습니다', effective['text'])
+        self.assertIn('다른 경로로 자동 전환하지 않아요', effective['text'])
         service.activate_decision_route({'transport': 'off'})
         self.assertEqual(service.settings()['decision_route']['effective']['state'], 'off')
 
@@ -1392,7 +1392,7 @@ class JudgmentModelTests(ServiceFixture):
         self.main('codex')
         effective = service.settings()['decision_route']['effective']
         self.assertEqual(effective['state'], 'attention')
-        self.assertIn('건너뜁니다', effective['text'])
+        self.assertIn('건너뛰어요', effective['text'])
 
     # -- model lists (explicit refresh only) ------------------------------------
     def test_codex_model_list_uses_only_the_bundled_catalogue_in_an_empty_codex_home(self):

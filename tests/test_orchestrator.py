@@ -28,6 +28,7 @@ from personal_agent.decision import (OUTCOME_DECIDED, OUTCOME_MALFORMED, OUTCOME
                                      ModelDecisionEngine, RoutedDecisionEngine, StructuredDecision,
                                      UnavailableDecisionEngine, audit_record, fixture_confidence)
 from personal_agent.decision_adapters import JevDecisionEngine
+from personal_agent.memory_service import VOICE_PREFERENCE_KEY
 from personal_agent.orchestrator import (ATTEMPTS_CHARS, CONVERSATION_CHARS, EVENT_TOOL, OBSERVATION_CHARS, PAGE_TEXT_FLOOR_CHARS, PAGE_TEXT_HEADER,
                                          observations_with_pages, FALLBACK_TEXT, MAX_REDELEGATIONS, NOTICE_ONCE,
                                          PURPOSE, QUESTION, SECTIONS, Attempt, Catalogue, Orchestration, plan_schema,
@@ -2797,7 +2798,7 @@ class OwnerModelAlwaysOn(Harness):
         from personal_agent.prompt_files import prompt
         preference = '일할 땐 짧게, 힘든 얘기엔 다정하게 말해 줘'
         MemoryService(self.store, private_read_sink=MemoryService.NO_EGRESS_GUARD).remember_profile(
-            MEMORY_OWNER, 'settings', 'profile.preference.communication', preference)
+            MEMORY_OWNER, 'settings', VOICE_PREFERENCE_KEY, preference)
         self.script([plan('codex', 'Answer.'), plan('openai', 'Answer.')], goals=[True, True])
         cli_job, _ = self.run_work('안녕')
         cli = self.engine.turns[-1]['prompt']

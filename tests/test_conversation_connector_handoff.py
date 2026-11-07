@@ -46,7 +46,7 @@ GMAIL_SCOPES = (GMAIL_READONLY_SCOPE,)
 MAIL_REQUEST = '메일에서 예산 관련 내용 찾아줘'
 CALENDAR_REQUEST = '내일 오후 3시에 팀 회의 일정 잡아줘'
 #: #22: a calendar request is the worker's; with no AI route configured, this is what the owner is told.
-NO_AI_ROUTE = '설정에서 모델 또는 구독 엔진을 먼저 연결하세요.'
+NO_AI_ROUTE = '설정에서 모델 또는 구독 엔진을 먼저 연결해 주세요.'
 #: #672: a calendar create is selected by the DecisionEngine's
 #: ``capability-need`` judgment, scripted here for exactly these requests.
 CALENDAR_REQUESTS = (CALENDAR_REQUEST, '내일 오후 3시에 치과 일정 잡아줘')
@@ -296,7 +296,7 @@ class NegativeResumeTests(HandoffTestCase):
         self.assertEqual(self.drain(), 0)
         self.assertEqual(self.searches(), 0)
         # The refusal is stated to the owner rather than silently swallowed.
-        self.assertTrue(any('이어서 처리하지 않았습니다' in str(body.get('text', ''))
+        self.assertTrue(any('이어서 처리하지 않았어요' in str(body.get('text', ''))
                             for body in self.sent))
 
     def test_an_expired_handoff_cannot_resume_the_work(self):
@@ -879,7 +879,7 @@ class PrerequisiteAndGuidanceTests(HandoffTestCase):
         guidance = self.store.job(job_id)['response']
         self.assertIn('Gmail', guidance)
         self.assertIn('연결해 주세요', guidance)
-        self.assertIn('실행하지 않았습니다', guidance)
+        self.assertIn('실행하지 않았어요', guidance)
         for lie in ('연결되었습니다', '완료했습니다', '찾았습니다', '검색했습니다'):
             self.assertNotIn(lie, guidance)
         # Never fabricate tool execution: no provider call was made at all.
@@ -906,7 +906,7 @@ class PrerequisiteAndGuidanceTests(HandoffTestCase):
         job_id = self.park(CALENDAR_REQUEST)
         guidance = self.store.job(job_id)['response']
         self.assertIn('Google Calendar', guidance)
-        self.assertIn('실행하지 않았습니다', guidance)
+        self.assertIn('실행하지 않았어요', guidance)
         # A read grant never became a write grant on the way through.
         self.assertEqual(self.registry.status('local-owner', CALENDAR_SPEC.connector_id).granted_scopes,
                          CALENDAR_SPEC.required_scopes)

@@ -1832,7 +1832,7 @@ class ServiceTests(unittest.TestCase):
         self.assertIn('카드번호', pending[0]['label'])
         self.assertTrue(self.drivers[0].closed, 'the session closes with the run')
         self.assertTrue(self.service.deliver_notification())
-        prompt = [body for body in self.sends() if '결제 단계는 승인이 필요합니다' in str(body.get('text'))][-1]
+        prompt = [body for body in self.sends() if '결제 단계는 승인이 필요해요' in str(body.get('text'))][-1]
         self.assertIn('카드번호', prompt['text'])
         self.assertNotIn('4111', prompt['text'])
         # #1472 (owner choice): no buttons; the owner answers with a reaction or a reply.

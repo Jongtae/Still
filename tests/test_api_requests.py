@@ -517,7 +517,7 @@ class ReviewFixes(Base):
             self.assertEqual(react(77, '👍'), 'owner_act')
         self.assertEqual(service._browser_request(self.job_id)['state'], 'issued')
         self.assertTrue(said[-1].startswith('승인'))
-        self.assertNotIn('이어서 처리합니다', said[-1])
+        self.assertNotIn('이어서 처리해요', said[-1])
         self.assertEqual(seen[-1][0], 'reaction: 👍')
         self.assertEqual([item['kind'] for item in seen[-1][1]], ['action-approval'])
         self.assertIn('a reaction on', seen[-1][2])

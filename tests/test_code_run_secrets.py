@@ -461,12 +461,12 @@ class InputPage(PhoneInputServiceCase):
             'category': 'api_connections', 'setting': 'connect', 'value': json.dumps(CODE_SET), 'continue_work': 'yes'})
         row = self.settings._drafts()[draft['draft_id']]
         self.assertEqual(row['effect'].split('\n'), [
-            f'API 연결 example-broker: {HOST}에만 보냅니다',
+            f'API 연결 example-broker: {HOST}에만 보내요',
             '입력할 값: App key, App secret, Account number',
             '· App key, App secret: AI가 만든 코드에도 보이지 않고, 보낼 때만 채워요',
             '· Account number: 코드가 직접 써요',
             f'승인 없이 보내는 조회 요청: POST {HOST}/oauth2/token',
-            '돈이 오가는 연결이라 주문·이체 같은 변경은 매번 직접 승인해야 보냅니다'])
+            '돈이 오가는 연결이라 주문·이체 같은 변경은 매번 직접 승인해야 보내요'])
         from personal_agent.telegram_locale import translate
         self.assertNotRegex(translate(row['effect'], 'en'), '[가-힣]', 'every line is a catalog line')
         with self.store.db() as db:
@@ -567,7 +567,7 @@ class InputPage(PhoneInputServiceCase):
         self.assertEqual(result['state'], 'applying')
         self.assertEqual(result['response'], 'API 연결 example-broker 변경을 확인하고 있어요. 끝나면 결과를 알려드릴게요.')
         self.assertTrue(done.wait(10))
-        self.assertTrue(told[0].startswith('API 연결 example-broker 변경을 적용하지 못했습니다: '), told[0])
+        self.assertTrue(told[0].startswith('API 연결 example-broker 변경을 적용하지 못했어요: '), told[0])
         for line in (result['response'], told[0]):
             self.assertNotIn('입력할 값', line)
             self.assertNotIn('\n', line)

@@ -73,7 +73,7 @@ class UninstallTest(unittest.TestCase):
     def test_cancel_changes_nothing(self):
         term = ScriptedTerminal(asks=[''])
         self.assertEqual(self.run_uninstall(term), 0)
-        self.assertIn('취소했습니다', term.text())
+        self.assertIn('취소했어요', term.text())
         self.assertEqual((self.actions, self.commands), ([], []))
         self.assertTrue(self.owner.is_dir())
 

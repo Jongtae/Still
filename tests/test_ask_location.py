@@ -486,7 +486,7 @@ class Continuation(_LocationCase):
         work = self.ask()
         cancelled, text = self.service.cancel_focused_work(self.store.job(work), None)
         self.assertTrue(cancelled)
-        self.assertIn('위치를 보내도 이어서 처리하지 않습니다', text)
+        self.assertIn('위치를 보내도 이어서 처리하지 않아요', text)
         self.assertEqual(self.pending(), [])
         self.now += 30
         self.location()

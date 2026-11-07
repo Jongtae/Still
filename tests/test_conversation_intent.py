@@ -249,7 +249,7 @@ class ConsequentialEffectTests(unittest.TestCase):
         decision = several_tasks_classifier().classify(SEVERAL)
         self.assertEqual(decision.intent, INTENT_AMBIGUOUS)
         self.assertFalse(decision.executes)
-        self.assertIn('아무 작업도 실행하지 않았습니다', decision.clarification)
+        self.assertIn('아무 작업도 실행하지 않았어요', decision.clarification)
 
 
 class ModelAuthorityTests(unittest.TestCase):
@@ -374,7 +374,7 @@ class CorrectionAndTopicChangeTests(unittest.TestCase):
 class ServiceRoutingTests(unittest.TestCase):
     """The queued conversation worker honours the classifier's decision."""
 
-    MODEL_ROUTE_ERROR = '설정에서 모델 또는 구독 엔진을 먼저 연결하세요.'
+    MODEL_ROUTE_ERROR = '설정에서 모델 또는 구독 엔진을 먼저 연결해 주세요.'
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -401,10 +401,10 @@ class ServiceRoutingTests(unittest.TestCase):
     # -- supported slash commands still work --------------------------------
     def test_slash_commands_still_route_after_the_prefix_chain_is_replaced(self):
         self.assertIn("Hi, I'm Still", self.run_one('/start')['response'])
-        self.assertIn('메모를 저장했습니다', self.run_one('/note 금요일 출시 검토')['response'])
+        self.assertIn('메모를 저장했어요', self.run_one('/note 금요일 출시 검토')['response'])
         self.assertIn('금요일 출시 검토', self.run_one('/notes')['response'])
         self.assertEqual(self.run_one('/workspace-search aurora')['response'],
-                         '현재 원본과 일치하는 저장 결과를 찾지 못했습니다.')
+                         '현재 원본과 일치하는 저장 결과를 찾지 못했어요.')
 
     def test_the_explicit_settings_command_reads_and_drafts_no_retired_change(self):
         # #173: the command's free text is never re-read for a phrase; it reads.
@@ -439,7 +439,7 @@ class ServiceRoutingTests(unittest.TestCase):
         self.service.use_decision_engine(capability_need_engine({SEVERAL: SEVERAL_TASKS}))
         job = self.run_one(SEVERAL)
         self.assertEqual(job['status'], 'succeeded')
-        self.assertIn('아무 작업도 실행하지 않았습니다', job['response'])
+        self.assertIn('아무 작업도 실행하지 않았어요', job['response'])
         self.assertEqual(self.store.config('personal_assistant_evidence', []), [])
         self.assertEqual(self.store.config('settings_change_drafts', {}), {})
 
@@ -453,7 +453,7 @@ class ServiceRoutingTests(unittest.TestCase):
             with self.subTest(text=text):
                 job = self.run_one(text)
                 self.assertEqual(job['status'], 'failed')
-                self.assertIn('설정에서 모델 또는 구독 엔진을 먼저 연결하세요', job['error'])
+                self.assertIn('설정에서 모델 또는 구독 엔진을 먼저 연결해 주세요', job['error'])
         self.assertEqual(self.store.config('personal_assistant_evidence', []), [])
 
     def test_natural_delegation_never_reaches_the_orchestrator(self):

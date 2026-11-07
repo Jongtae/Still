@@ -217,8 +217,8 @@ class DirectMemoryWriteTests(RefusedWriteTestCase):
         job, bubble = self.ask('오늘 점심 뭐 먹을까?')
         self.assertIn('기억했어요', bubble, '#918: said as the secretary; it was saved')
         self.assertNotIn('후보', bubble)
-        self.assertNotIn('모델이 답변을 반환하지 않았습니다', bubble)
-        self.assertNotIn('모델이 답변을 반환하지 않았습니다', job['error'] or '')
+        self.assertNotIn('모델이 답변을 반환하지 않았어요', bubble)
+        self.assertNotIn('모델이 답변을 반환하지 않았어요', job['error'] or '')
 
     def test_a_write_that_errored_still_fails_the_turn(self):
         """#818 keeps #488 for a real failure: nothing was proposed or written."""

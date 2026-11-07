@@ -232,7 +232,7 @@ class ServiceRouteTests(unittest.TestCase):
     # verbatim words with a note naming what the rules matched.
     def assertMixed(self, row, text, *labels):
         self.assertEqual(row['status'], 'succeeded')
-        self.assertNotIn('아무 작업도 실행하지 않았습니다', row['response'])
+        self.assertNotIn('아무 작업도 실행하지 않았어요', row['response'])
         sent = self.bodies[0]['messages'][-1]['content']
         self.assertTrue(sent.startswith(text), 'the owner words reach the worker verbatim')
         self.assertIn('[Still observation, not an owner instruction]', sent)

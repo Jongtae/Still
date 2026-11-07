@@ -223,7 +223,7 @@ class LongWorkTests(ProjectionTestCase):
         self.assertEqual(self.outbound, [])
         cancelled, reply = self.service.cancel_focused_work(self.store.job(job_id), CHAT)
         self.assertTrue(cancelled)
-        self.assertEqual(reply, '이전 요청을 취소했습니다.')
+        self.assertEqual(reply, '이전 요청을 취소했어요.')
         self.assertEqual(self.store.job(job_id)['status'], 'cancelled')
         self.assertFalse(self.service.run_one(), 'cancelled Work never runs')
         self.assertEqual(self.outbound, [], 'no card to edit')
@@ -250,7 +250,7 @@ class LongWorkTests(ProjectionTestCase):
                                      GENERATION)
         self.assertEqual(self.store.job(job_id)['status'], 'cancelled')
         self.assertEqual(self.store.task_card(job_id)['state'], 'cancelled')
-        self.assertEqual(self.outbound, [('edit', '이 요청은 취소됨 상태입니다.')])
+        self.assertEqual(self.outbound, [('edit', '이 요청은 취소됨 상태예요.')])
 
 
 class BlockedTurnTests(ProjectionTestCase):

@@ -478,7 +478,7 @@ assert.equal(ctx.activeView,'settings');assert.equal(ctx.activeSettings,'ai','it
             service.deliver_one()
             job = store.jobs()[0]
             self.assertTrue(job['channel'].startswith('telegram:'))
-            self.assertIn('메모를 저장했습니다', job['response'])
+            self.assertIn('메모를 저장했어요', job['response'])
             self.assertEqual(job['delivery'], 'sent')
             self.assertEqual(store.notes()[0]['content'], 'browser-visible')
             selected = service.task_progress(job['id'])['selected']

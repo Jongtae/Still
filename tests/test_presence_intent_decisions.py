@@ -81,7 +81,7 @@ class CapabilityNeedTests(unittest.TestCase):
         decision = classifier(engine).classify('tell the landlord I agree')
         self.assertEqual(decision.intent, INTENT_UNSUPPORTED)
         self.assertFalse(decision.executes)
-        self.assertIn('보내지 않았습니다', decision.clarification)
+        self.assertIn('보내지 않았어요', decision.clarification)
 
     def test_unavailable_unsure_or_none_of_these_stays_ordinary_conversation(self):
         text = 'did the landlord write back to me?'

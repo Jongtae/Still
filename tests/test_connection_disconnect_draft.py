@@ -66,7 +66,7 @@ class ConnectionDisconnectDraftTests(RevocationTestCase):
         self.assertEqual((draft['state'], draft['requires_owner_confirmation'], draft['applied']),
                          ('awaiting-confirmation', True, False))
         self.assertIn('Google Gmail', draft['summary'])
-        self.assertIn('연결을 해제합니다', draft['summary'])
+        self.assertIn('연결을 해제해요', draft['summary'])
         self.assertEqual(draft['note'], DISCONNECT_NOTE)
         self.assertNotIn('digest', draft, 'the worker cannot confirm its own draft')
         # Nothing changed: still connected, still usable, nothing sent to Google.
@@ -77,7 +77,7 @@ class ConnectionDisconnectDraftTests(RevocationTestCase):
         row = self.draft_row(draft['draft_id'])
         result = self.settings.confirm(OWNER, CHANNEL, row['id'], row['digest'])
         self.assertEqual(result['state'], 'applied')
-        self.assertIn('Gmail 연결을 해제했습니다', result['response'])
+        self.assertIn('Gmail 연결을 해제했어요', result['response'])
         self.assertIs(self.gmail_state(), ConnectorState.DISCONNECTED)
         with self.assertRaises(GmailError):
             self.gmail.search(TOKEN_OWNER, 'budget')
