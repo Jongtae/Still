@@ -119,6 +119,16 @@ class ConsolidatedPromptTests(unittest.TestCase):
         self.assertIn("for a change in the run that asks the owner's approval", GOAL_FIRST_GUIDANCE)
         self.assertIn('A saved function never carries an approval', GOAL_FIRST_GUIDANCE)
 
+    def test_voice_preference_key_and_axes_are_explicit(self):
+        from personal_agent.memory_service import PROFILE_KEY_GUIDANCE, VOICE_PREFERENCE_KEY
+        voice = prompt_files.prompt('voice')
+        self.assertIn(VOICE_PREFERENCE_KEY, voice)
+        for axis in ('register', 'warmth', 'enthusiasm', 'length', 'emoji', 'humour', 'lists and headers', 'initiative'):
+            self.assertIn(axis, voice)
+        self.assertIn(VOICE_PREFERENCE_KEY, PROFILE_KEY_GUIDANCE)
+        self.assertIn('never infer', PROFILE_KEY_GUIDANCE)
+        self.assertIn('other facts', PROFILE_KEY_GUIDANCE)
+
     def test_every_worker_route_and_its_status_generation_share_one_voice(self):
         from personal_agent.agent_runtime import (DEFINITIONS, action_definitions, context_sections,
                                                   render_turn_prompt, turn_context)

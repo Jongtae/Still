@@ -76,6 +76,91 @@ class SaveAndTell(TelegramHarness):
 
     # --- save directly, tell with undo --------------------------------------------
 
+    def test_voice_save_replace_and_owner_undo_reach_every_generator(self):
+        from unittest import mock
+        from personal_agent.memory_service import VOICE_PREFERENCE_KEY
+        from personal_agent.prompt_files import prompt
+        from personal_agent.decision import StructuredDecision
+        from test_orchestrator import Harness, plan
+        from test_self_review import SelfReview, review
+
+        preference = '반말로 해줘'
+        # The real worker tool, notice and owner undo action; no direct Memory edits.
+        job, _notice, first = self.told(message='앞으로는 반말로 해줘. 기억해 둬.',
+            plan=[('save_memory', {'memory_key': VOICE_PREFERENCE_KEY, 'content': preference})])
+        telegram = self.store.config('telegram')
+
+        def readers(expected, stage):
+            # Reuse the route and self-review harnesses against the same canonical store.
+            workers = Harness()
+            self.addCleanup(workers.doCleanups)
+            with mock.patch('test_orchestrator.QuickStore', return_value=self.store):
+                workers.setUp()
+            workers.script([plan('codex', 'Answer.'), plan('openai', 'Answer.')], goals=[True, True])
+            cli_job, _ = workers.run_work('안녕', key=stage + '-cli')
+            cli = workers.engine.turns[-1]['prompt']
+            instructions = self.store.turn_provenance(cli_job)['instructions']
+            workers.use_main('openai')
+            workers.run_work('고마워', key=stage + '-api')
+            system = workers.transport.bodies[-1]['messages'][0]['content']
+            profiles = [cli, system]
+            self.assertIn(prompt('voice'), instructions)
+            self.assertIn(prompt('voice'), system)
+            for context, question, _schema in workers.asked_plans:
+                profiles.append(context.facts['owner_profile'])
+                self.assertIn(prompt('voice'), question)
+            self.assertEqual(len(workers.asked_goals), 2)
+            profiles.extend(context.facts['owner_context'] for context in workers.asked_goals)
+
+            reviewer = SelfReview()
+            self.addCleanup(reviewer.doCleanups)
+            with mock.patch('test_orchestrator.QuickStore', return_value=self.store):
+                reviewer.setUp()
+            reviewer.missed('검토해 줘')
+            reviewer.answers = [review()]
+            self.assertTrue(reviewer.service.run_owner_model_upkeep())
+            context, question, _schema = reviewer.facts[-1]
+            profiles.append(context.facts['owner_profile'])
+            self.assertIn(prompt('voice'), question)
+
+            side_calls = []
+            def side_reply(context, question, schema):
+                side_calls.append((context, question))
+                return StructuredDecision(OUTCOME_DECIDED, {'answered': True, 'reply': '안녕'}, fixture_confidence())
+            self.service.side_answer_engine_factory = lambda: FixtureDecisionEngine(structured=side_reply)
+            running = self.store.enqueue('다른 일', stage + '-running')
+            side = self.store.enqueue('삼각형이 뭐야?', stage + '-side')
+            self.service._side_answer(self.store.job(running), self.store.job(side))
+            [(context, question)] = side_calls
+            self.assertIn(prompt('voice'), question)
+            profiles.append(context.facts.get('owner_voice_preference', ''))
+            keys = self.store.turn_provenance(side)['owner_information']['profile_keys']
+            self.assertEqual(keys, [VOICE_PREFERENCE_KEY] if expected else [])
+            for supplied in profiles:
+                with self.subTest(stage=stage, supplied=supplied[:80]):
+                    if expected:
+                        self.assertIn(VOICE_PREFERENCE_KEY + ': ' + expected, supplied)
+                    else:
+                        self.assertNotIn(VOICE_PREFERENCE_KEY + ':', supplied)
+                        self.assertNotIn(preference, supplied)
+            # These were context-only inputs, not queued worker tasks.
+            with self.store.db() as db:
+                db.execute("UPDATE jobs SET status='succeeded' WHERE id=?", (running,))
+            self.store.put('telegram', telegram)
+
+        second_preference = '반말로 해줘. 이모지는 빼줘'
+        _job, _notice, second = self.told(message='이모지는 빼줘. 말투 설정도 바꿔 둬.',
+            plan=[('save_memory', {'memory_key': VOICE_PREFERENCE_KEY, 'content': second_preference})])
+        rows = [row for row in self.store.memories() if row['memory_key'] == VOICE_PREFERENCE_KEY]
+        self.assertEqual([row['content'] for row in rows], [second_preference])
+        readers(second_preference, 'replaced')
+        self.tap(f"p7u:{second['id']}:1", second['message_id'])
+        self.assertEqual([row['content'] for row in self.store.memories() if row['memory_key'] == VOICE_PREFERENCE_KEY], [preference])
+        readers(preference, 'restored')
+        self.tap(f"p7u:{first['id']}:1", first['message_id'])
+        self.assertEqual([row for row in self.store.memories() if row['memory_key'] == VOICE_PREFERENCE_KEY], [])
+        readers(None, 'undone')
+
     def test_the_owner_worker_save_is_current_at_once_and_the_owner_is_told_with_undo(self):
         job, notice, row = self.told()
         self.assertEqual(job['status'], 'succeeded', job.get('error'))

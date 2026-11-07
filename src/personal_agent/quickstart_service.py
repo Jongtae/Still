@@ -56,7 +56,7 @@ from .service_control import build_identity
 from .isolated_mcp_proxy import IsolatedMcpProxy, TaskCapabilityRegistry
 from .settings_orchestrator import SettingsOrchestrator, SettingsError
 from .personal_knowledge import PersonalKnowledgeOrchestrator
-from .memory_service import MemoryService
+from .memory_service import MemoryService, VOICE_PREFERENCE_KEY
 from .file_workspace import FileWorkspace
 from . import connection_slots
 from . import folder_grants
@@ -12016,7 +12016,8 @@ class AgentService:
     def _side_answer(self, running, job):
         """One tool-less Main AI call and a queued-only atomic reply commit (#17).
 
-        No owner-item settlement, capabilities, Memory, upkeep or worker phases.
+        No owner-item settlement, capabilities, upkeep or worker phases.
+        Only the voice preference from Memory accompanies the conversation.
         A declined attempt pauses the same ledger the eventual worker resumes.
         """
         task_id=job['id'];budget=None
@@ -12041,10 +12042,15 @@ class AgentService:
             # Each text is redacted before serialization: JSON escaping would hide a stored secret's literal value.
             history=[{**message,'content':self._redact_known_secrets(message['content'])} if isinstance(message.get('content'),str)
                      else message for message in map(context_message,rows)]
+            memory=MemoryService(self.store,private_read_sink=MemoryService.NO_EGRESS_GUARD)
+            snapshot=memory.profile_snapshot(MEMORY_OWNER)
+            voice=(self._redact_known_secrets(snapshot['text'].split('\n',1)[0])
+                   if snapshot['entries'] and snapshot['entries'][0]['memory_key']==VOICE_PREFERENCE_KEY else '')
             context=self.decision_judge._context('side-answer',
                 {'owner_message':job['message'], 'another_task_in_progress':running.get('message') or '',
-                 'conversation':json.dumps(history,ensure_ascii=False)},
-                uncut=('owner_message','another_task_in_progress','conversation'),work_id=task_id)
+                 'conversation':json.dumps(history,ensure_ascii=False),
+                 **({'owner_voice_preference':voice} if voice else {})},
+                uncut=('owner_message','another_task_in_progress','conversation')+(('owner_voice_preference',) if voice else ()),work_id=task_id)
             budget=self.work_budget(task_id)
             context.admission=budget.spend_turn
             context.cancelled=lambda:bool(budget.interrupted())
@@ -12067,7 +12073,7 @@ class AgentService:
             audit={'route':'subscription_cli' if subscription.get('id') else 'direct_api',
                    'engine':subscription.get('id'), 'provider':provider,
                    'requested_model':model,'context_messages':len(history),
-                   'owner_information':information_use.section_references(spliced=[
+                   'owner_information':information_use.section_references(profile=voice,spliced=[
                        {'kind':msg('quickstart_service.conversation_label'),'ref':running['id'],'label':msg('quickstart_service.other_running_request')}]),
                    'workers':[{'route':'subscription_cli' if subscription.get('id') else 'direct_api',
                                'engine':subscription.get('id'),'provider':provider,
