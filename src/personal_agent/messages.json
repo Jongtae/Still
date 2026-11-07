@@ -1,4 +1,10 @@
 {
+ "still_profile.voice_offer": {
+  "ko": "제 말투가 편한지 두세 번만 골라 볼까요? 원하면 시작하고, 아니면 바로 필요한 일을 이야기해 주세요.",
+  "en": "Would you like to choose between a few short replies to find a voice you like? We can start if you want, or you can tell me what you need.",
+  "ja": "短い返事を二、三回選んで、話し方を合わせてみませんか？希望があれば始めますし、そのまま頼みたいことを話しても大丈夫です。",
+  "zh": "想选两三次简短回复，找到你喜欢的语气吗？愿意的话我们就开始，也可以直接告诉我你需要什么。"
+ },
  "api_input.phone_link_unavailable": {
   "ko": "{reason}\n대신 Still이 실행 중인 Mac에서 아래 화면을 열어 API 인증 정보를 입력해 주세요. 확인되면 원래 작업을 이어가요.\n{link}",
   "en": "{reason}\nInstead, open the page below on the Mac where Still is running and enter the API credentials there. Once they check out, the original task continues.\n{link}",

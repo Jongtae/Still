@@ -12608,8 +12608,19 @@ class AgentService:
             run.response=run.decision.clarification
             run.system_response=run.decision.authority==AUTHORITY_RULE
         elif run.decision.intent==INTENT_GREETING:
+            language=self.store.config('telegram',{}).get('owner_language')
+            commands=run.decision.argument=='commands'
+            voice_offer=False
+            if not commands:
+                # #348: one offer per installation, independent of bot generation.
+                # Bind it to this Work so a retry retains its original welcome.
+                with self.store.db() as db:
+                    db.execute('INSERT INTO config(key,value) VALUES (?,?) ON CONFLICT(key) DO NOTHING',
+                               ('voice_calibration',json.dumps({'offered':time.time(),'job_id':job['id']})))
+                    offered=self.store.config('voice_calibration',{},db=db)
+                voice_offer=offered.get('job_id')==job['id']
             run.response=__import__('personal_agent.still_profile',fromlist=['welcome']).welcome(
-                self.store.config('telegram',{}).get('owner_language'),commands=run.decision.argument=='commands')
+                language,commands=commands,voice_offer=voice_offer)
         elif run.decision.intent==INTENT_KNOWLEDGE:
             # The owner's explicit ``/knowledge <query>`` asks for the matching
             # saved items themselves (#173: no keyword rule reaches here).

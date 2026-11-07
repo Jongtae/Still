@@ -908,11 +908,11 @@ finally:
         self.assertEqual(self.store.jobs()[0]['delivery'],'unknown')
         self.assertFalse(self.service.run_one())
 
-    def pair(self):
+    def pair(self,language_code=None):
         link=self.service.connect_telegram({'token':'123456:TEST_TOKEN'})['url']
         code=parse_qs(urlsplit(link).query)['start'][0]
         cfg=self.store.config('telegram')
-        self.service.ingest_update({'update_id':10,'message':{'from':{'id':42},'chat':{'id':42,'type':'private'},'text':'/start '+code}},cfg['generation'])
+        self.service.ingest_update({'update_id':10,'message':{'from':{'id':42,'language_code':language_code},'chat':{'id':42,'type':'private'},'text':'/start '+code}},cfg['generation'])
         return cfg['generation']
 
     def test_botfather_token_is_local_only_and_never_appears_in_public_state(self):
@@ -1341,6 +1341,51 @@ finally:
         self.service.ingest_update({'update_id':11,'message':{'from':{'id':42},'chat':{'id':42,'type':'private'},'text':'/start'}},generation)
         self.service.run_one()
         self.assertNotIn('/note',self.store.jobs()[0]['response'])
+
+    def test_voice_calibration_offer_survives_restart_without_reoffering(self):
+        from personal_agent.still_profile import welcome
+        generation=self.pair(language_code='ja-JP')
+        self.service.run_one();self.service.deliver_one()
+        first=self.store.jobs()[0]
+        self.assertEqual(first['response'],welcome('ja-JP')+'\n\n'+msg('still_profile.voice_offer','ja'))
+        self.assertEqual([body['text'] for url,body,_ in self.calls if url.endswith('/sendMessage')][-1],first['response'])
+        marker=self.store.config('voice_calibration')
+        self.assertEqual(marker['job_id'],first['id'])
+        self.assertIsInstance(marker['offered'],float)
+        # Ignoring the offer changes no voice. Later starts/help and re-pairing
+        # on a fresh service/store object cannot reset the installation marker.
+        self.assertEqual(self.store.memories(),[])
+        self.service=AgentService(QuickStore(self.temp.name),ModelAdapter(self.transport),self.transport)
+        for update,command in enumerate(('/start','/help'),11):
+            self.service.ingest_update({'update_id':update,'message':{'from':{'id':42},'chat':{'id':42,'type':'private'},'text':command}},generation)
+            self.service.run_one();self.service.deliver_one()
+            self.assertEqual(self.store.jobs()[0]['response'],welcome('ja-JP',commands=command=='/help'))
+        self.pair()
+        self.service.run_one()
+        self.assertNotIn(msg('still_profile.voice_offer','ja'),self.store.jobs()[0]['response'])
+        self.assertEqual(self.store.config('voice_calibration'),marker)
+        self.assertEqual(self.store.memories(),[])
+
+    def test_retrying_the_first_welcome_retains_its_voice_offer(self):
+        job=self.store.enqueue('/start','retry-first-welcome')
+        self.service.run_one()
+        response=self.store.job(job)['response']
+        marker=self.store.config('voice_calibration')
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='queued' WHERE id=?",(job,))
+        self.service.run_one()
+        self.assertEqual(self.store.job(job)['response'],response)
+        self.assertIn(msg('still_profile.voice_offer','en'),response)
+        self.assertEqual(self.store.config('voice_calibration'),marker)
+
+    def test_help_before_start_does_not_consume_the_voice_offer(self):
+        from personal_agent.still_profile import welcome
+        self.store.enqueue('/help','help-before-start')
+        self.service.run_one()
+        self.assertIsNone(self.store.config('voice_calibration'))
+        self.store.enqueue('/start','first-start')
+        self.service.run_one()
+        self.assertEqual(self.store.jobs()[0]['response'],welcome()+'\n\n'+msg('still_profile.voice_offer','en'))
 
     def test_help_response_lists_the_exact_commands(self):
         # #705: /help shows every exact command; /start (above) stays the plain welcome.

@@ -4607,7 +4607,7 @@ class Capabilities:
 #: #1508 step 2: Markdown sections (## level: a CLI prompt nests them under "# Still instructions")
 #: with one stated priority order; the change table with each sentence's origin is in the #1508 PR.
 # #202: one ask-vs-assume rule shared with the planner and the judgment.
-CORE_INSTRUCTIONS=prompt('worker_core')+'\n\n'+prompt('ask_or_assume')+'\n\n'+prompt('voice')
+CORE_INSTRUCTIONS=prompt('worker_core')+'\n\n'+prompt('ask_or_assume')+'\n\n'+prompt('voice')+'\n\n'+prompt('voice_calibration')
 # Tool guidance for the direct-API route.
 API_TOOL_GUIDANCE=prompt('worker_tools_api')
 # Tool guidance for a subscription CLI turn: the CLI sees only the Still MCP bridge.
@@ -4624,7 +4624,7 @@ POLICY=CORE_INSTRUCTIONS+'\n\n'+API_TOOL_GUIDANCE
 # Bounded recent conversation shared by every route: the last 16 messages,
 # newest first until the byte budget is spent, never cutting the current request.
 CONTEXT_MESSAGES=16
-CONTEXT_BUDGET_BYTES=40_000
+CONTEXT_BUDGET_BYTES=42_000
 MESSAGE_CAP_CHARS=4_000
 
 #: #658: the owner profile section every route carries when profile.* Memory

@@ -126,15 +126,16 @@ WELCOME = {
 }
 
 
-def welcome(language_code=None, *, commands=False):
+def welcome(language_code=None, *, commands=False, voice_offer=False):
     """Still's welcome in the owner's Telegram language; English when unknown.
 
     ``commands`` (the /help reply, #705) adds the exact commands before the closing line.
+    ``voice_offer`` appends the calibration invitation; the service owns its once-only state.
     """
     lang = str(language_code or '').lower().split('-')[0]
     lang = lang if lang in WELCOME else 'en'
     if not commands:
-        return WELCOME[lang]
+        return WELCOME[lang] + ('\n\n' + msg('still_profile.voice_offer', lang) if voice_offer else '')
     # #705: the exact commands, from the parser's own list.
     from .conversation_handoff import owner_commands
     listed = '\n'.join('· ' + row['usage'] for row in owner_commands(lang))

@@ -76,6 +76,22 @@ class SaveAndTell(TelegramHarness):
 
     # --- save directly, tell with undo --------------------------------------------
 
+    def test_calibrated_voice_uses_the_existing_notice_and_undo(self):
+        from personal_agent.memory_service import VOICE_PREFERENCE_KEY
+        previous = '짧게 말해 줘'
+        self.told(message='말투는 짧게 해 줘. 기억해 둬.',
+                  plan=[('save_memory', {'memory_key': VOICE_PREFERENCE_KEY, 'content': previous})])
+        preference = '짧게, 이모지 없이. 힘든 이야기는 다정하게'
+        job, notice, row = self.told(message='B가 좋아. 힘든 이야기에는 다정하게 해 줘.',
+            plan=[('save_memory', {'memory_key': VOICE_PREFERENCE_KEY, 'content': preference})])
+        self.assertEqual(job['status'], 'succeeded', job.get('error'))
+        self.assertIn(preference, notice['text'])
+        self.assertEqual([(m['memory_key'], m['content']) for m in self.store.memories()],
+                         [(VOICE_PREFERENCE_KEY, preference)])
+        self.tap(f"p7u:{row['id']}:1", row['message_id'])
+        self.assertEqual([(m['memory_key'], m['content']) for m in self.store.memories()],
+                         [(VOICE_PREFERENCE_KEY, previous)])
+
     def test_voice_save_replace_and_owner_undo_reach_every_generator(self):
         from unittest import mock
         from personal_agent.memory_service import VOICE_PREFERENCE_KEY
