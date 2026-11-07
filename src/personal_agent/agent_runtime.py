@@ -4259,7 +4259,8 @@ class Capabilities:
     if exc.reason=='invalid_message_id':raise ToolError(msg('agent_runtime.mail_invalid_id'),'mail_invalid_id') from None
     if exc.reason=='provider_rejected':raise mail_rejection(getattr(exc,'status',None)) from None
     raise ToolError(msg('agent_runtime.mail_unavailable'),'mail_unavailable') from None
-   return self._from_private('owner-mail',result)
+   # #720: name the fields returned by the search, as for other shortcut reads.
+   return self._from_private('owner-mail',self._shortcut_read(name,result,'messages'))
   if name=='calendar_query':
    # Calendar contents are owner-private.  Changes go through api_request's
    # google-calendar slot (#432), so this is the one calendar tool; it uses

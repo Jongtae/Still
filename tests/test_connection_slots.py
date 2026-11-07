@@ -225,7 +225,57 @@ class ShortcutReads(unittest.TestCase):
         self.assertEqual(len(shortcuts), len(set(shortcuts)))
         self.assertTrue(set(shortcuts) <= names)
         self.assertEqual(connection_slots.shortcut_slot('calendar_query'), 'google-calendar')
+        self.assertEqual(connection_slots.shortcut_slot('mail_search'), 'gmail')
         self.assertIsNone(connection_slots.shortcut_slot('read_file'))
+
+    def mail_search(self, connections=None):
+        class Mail:
+            def search(self, query):
+                return {'messages': [{'message_id': 'm1', 'subject': 'First'},
+                                     {'message_id': 'm2', 'sender': 'sender@example.test'}], 'truncated': True}
+
+        capabilities = Capabilities(self.store, None, {}, '', self.job, lambda *a: None,
+                                    mail=Mail(), connections=connections)
+        return capabilities.execute('mail_search', {'query': 'in:inbox'})
+
+    def test_mail_search_names_the_message_fields_and_available_slot_first(self):
+        result = self.mail_search(lambda: {'gmail': connection_slots._slot('gmail', lambda: TOKEN)})
+        self.assertEqual(result['read_fields'], ['message_id', 'sender', 'subject'])
+        self.assertIn('api_request slot "gmail"', result['unread'])
+        self.assertEqual(list(result)[:2], ['read_fields', 'unread'])
+        self.assertEqual(result['messages'], [{'message_id': 'm1', 'subject': 'First'},
+                                              {'message_id': 'm2', 'sender': 'sender@example.test'}])
+        self.assertTrue(result['truncated'])
+
+    def test_mail_search_without_the_slot_names_only_the_read_fields_first(self):
+        for connections in (None, lambda: {'google-calendar': calendar_slot()}):
+            with self.subTest(connections=connections):
+                result = self.mail_search(connections)
+                self.assertEqual(result['read_fields'], ['message_id', 'sender', 'subject'])
+                self.assertEqual(next(iter(result)), 'read_fields')
+                self.assertNotIn('unread', result)
+
+    def test_mail_read_and_unconnected_search_are_unchanged(self):
+        from personal_agent.agent_runtime import MAIL_UNCONNECTED
+        from personal_agent.gmail import GMAIL_CONNECTOR_ID, GmailError
+
+        body = {'message_id': 'm1', 'content': 'Decoded body', 'truncated': False}
+
+        class Mail:
+            def read(self, message_id):
+                return body
+
+            def search(self, query):
+                raise GmailError('connection_required')
+
+        for mail in (None, Mail()):
+            capabilities = Capabilities(self.store, None, {}, '', self.job, lambda *a: None,
+                                        mail=mail, connections=lambda: {'gmail': connection_slots._slot('gmail', lambda: TOKEN)})
+            self.assertEqual(capabilities.execute('mail_search', {'query': 'in:inbox'}),
+                             {'needs_setup': True, 'requires': GMAIL_CONNECTOR_ID,
+                              'messages': [], 'next_step': MAIL_UNCONNECTED})
+            if mail is not None:
+                self.assertEqual(capabilities.execute('mail_read', {'message_id': 'm1'}), body)
 
 
 class CliBridge(unittest.TestCase):
