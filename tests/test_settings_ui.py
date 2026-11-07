@@ -570,13 +570,14 @@ const press=async(id,label)=>{const button=buttons(id).find(node=>node.textConte
  assert.equal(focused,$('root-path-input'),'focus returns to the refused input');
  assert.equal($('roots-feedback').dataset.error,'1','an ordinary refusal is shown as an error');
  // #779: a phone on the tunnel may not add a folder; that is a next step on the Mac, in the owner's language.
- const macOnly='Mac에서 계속: 폴더 추가와 변경은 이 Mac에서 Still을 열어 진행합니다. 연결된 폴더를 빼는 것은 여기서도 할 수 있습니다.';
+ const catalog=JSON.parse(fs.readFileSync(require('node:path').join(process.argv[1],'..','..','messages.json'),'utf8'));
+ const macOnlyMessage=catalog['service.continue_on_the_mac_adding_or'],macOnly=macOnlyMessage.ko;
  refuse=macOnly;refuseReason='owner_local_surface';vm.runInContext("setLanguage('en')",ctx);
  await $('roots-form').onsubmit({preventDefault(){},submitter:new Element('button')});
  assert.equal($('roots-feedback').textContent,'Continue on the Mac: adding or changing a folder happens in Still opened on this Mac. You can still remove a connected folder here.','an off-Mac add is a translated next step');
  assert.equal($('roots-feedback').dataset.error,undefined,'an off-Mac add is not shown as an error');
  assert.equal($('root-path-input').value,'/Users/me','the draft is kept for the Mac');
- for(const language of ['zh-CN','ja']){vm.runInContext(`setLanguage('${language}')`,ctx);assert.notEqual(ctx.t(macOnly),macOnly,`${language} translates the off-Mac refusal`);}
+ for(const [language,locale] of [['zh-CN','zh'],['ja','ja']]){vm.runInContext(`setLanguage('${language}')`,ctx);assert.equal(ctx.t(macOnly),macOnlyMessage[locale],`${language} translates the off-Mac refusal`);}
  vm.runInContext("setLanguage('ko')",ctx);refuseReason=null;
  refuse=null;const before=calls.length;
  await press('root-list','제거');
