@@ -1771,7 +1771,7 @@ class LoginThroughTheCliBridge(_BridgeHarness):
         self.assertNotIn('_elements', result)
         job = self.store.job(self.job)
         self.assertEqual(job['status'], 'partial', 'a zero exit with a login page is not a finished request')
-        self.assertIn('로그인이 필요합니다', job['owner_cause'])
+        self.assertIn(msg('agent_runtime.this_page_needs_a_sign_in'), job['owner_cause'])
         self.assertTrue(self.profile.status()['login_window_open'])
         self.assertTrue(self.drivers[0].closed, 'the turn released the profile before the window opened')
         self.assertTrue(wait_until(lambda: (self.service._browser_login(self.job) or {}).get('state') == 'offered'))

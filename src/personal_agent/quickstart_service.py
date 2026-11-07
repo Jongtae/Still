@@ -464,19 +464,19 @@ BROWSER_LOGIN_REOPENS=2
 #: settles as not closed.  Nothing waits for it; the Work is never re-queued before it finished.
 BROWSER_LOGIN_CLOSE_SECONDS=60
 #: What the model reads for a login_required page when the owner will be asked in-flow.
-BROWSER_LOGIN_OFFERED_TEXT=('이 페이지는 로그인이 필요합니다. 이 실행이 끝나면 Still이 이 Mac에 로그인 창을 열고 소유자에게 '
+BROWSER_LOGIN_OFFERED_TEXT=('이 페이지는 로그인이 필요해요. 이 실행이 끝나면 Still이 이 Mac에 로그인 창을 열고 소유자에게 '
                             '로그인을 요청합니다. 소유자가 로그인하고 창을 닫으면 이 요청을 한 번 이어서 처리합니다. '
                             '비밀번호는 입력하지 말고, 지금까지 확인한 내용으로 이번 답을 마치세요.')
 #: #1269 (SESSION-KEEP-05): a sign-in page the worker reached (not one it asked for with
 #: ``browser_sign_in``): before ending, it may continue with an account the owner is already signed in to.
-BROWSER_LOGIN_PAGE_OFFERED_TEXT=('이 페이지는 로그인이 필요합니다. 이 페이지에 소유자가 이미 쓰는 다른 계정으로 계속하는 선택지(계정 '
+BROWSER_LOGIN_PAGE_OFFERED_TEXT=('이 페이지는 로그인이 필요해요. 이 페이지에 소유자가 이미 쓰는 다른 계정으로 계속하는 선택지(계정 '
                                  '제공자의 로그인 버튼)가 있으면 눌러 보세요. 그 계정에 로그인되어 있으면 비밀번호 없이 로그인되고, '
                                  '그대로 요청을 이어서 처리하면 됩니다. 그런 선택지가 없거나 비밀번호·추가 인증을 요구하면 입력하지 '
                                  '말고, 지금까지 확인한 내용으로 이번 답을 마치세요. 그러면 이 실행이 끝난 뒤 Still이 이 Mac에 '
                                  '로그인 창을 열고 소유자에게 로그인을 요청하며, 소유자가 로그인하고 창을 닫으면 이 요청을 한 번 '
                                  '이어서 처리합니다.')
 #: #1006: a second site's login page while this Work's login for another site is still pending.
-BROWSER_LOGIN_OTHER_PENDING_TEXT=('이 페이지는 로그인이 필요합니다. 이 요청은 이미 다른 사이트의 로그인을 기다리고 있어 이 사이트의 로그인은 '
+BROWSER_LOGIN_OTHER_PENDING_TEXT=('이 페이지는 로그인이 필요해요. 이 요청은 이미 다른 사이트의 로그인을 기다리고 있어 이 사이트의 로그인은 '
                                   '지금 요청되지 않습니다. 비밀번호는 입력하지 말고, 지금까지 확인한 내용으로 답을 마치면서 이 사이트에도 '
                                   '로그인이 필요하다고 말하세요.')
 #: #716: the site (registrable domain) leads the prompt, so a lookalike host

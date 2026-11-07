@@ -567,7 +567,7 @@ class InputPage(PhoneInputServiceCase):
         self.assertEqual(result['state'], 'applying')
         self.assertEqual(result['response'], 'API 연결 example-broker 변경을 확인하고 있어요. 끝나면 결과를 알려드릴게요.')
         self.assertTrue(done.wait(10))
-        self.assertTrue(told[0].startswith('API 연결 example-broker 변경을 적용하지 못했습니다: '), told[0])
+        self.assertTrue(told[0].startswith('API 연결 example-broker 변경을 적용하지 못했어요: '), told[0])
         for line in (result['response'], told[0]):
             self.assertNotIn('입력할 값', line)
             self.assertNotIn('\n', line)
