@@ -66,7 +66,7 @@ SRC = Path(__file__).resolve().parents[1] / 'src' / 'personal_agent'
 #: #805 owner-model upkeep; ``skills.py`` the #961 skill-supply glue.
 SCANNED_MODULES = ('agent_runtime.py', 'conversation_handoff.py', 'current_context.py', 'browser_session.py',
                    'browser_worker.py', 'browser_jar.py', 'browser_worker_chromium.py', 'chromium_runtime.py', 'browser_signin.py',
-                   'preparations.py', 'local_tools.py', 'quickstart_service.py', 'google_connections.py', 'orchestrator.py', 'owner_model.py',
+                   'preparations.py', 'local_tools.py', 'quickstart_service.py', 'google_connections.py', 'work_executor.py', 'orchestrator.py', 'owner_model.py',
                    # SKILL-SUPPLY-02 (#961): the skill-supply glue stays free of site/category branches;
                    # skill content is data in packages, not scanned (#960 section 8).
                    'skills.py',
@@ -216,7 +216,7 @@ CLASSIFIED_TABLES = {
         'adapter', "the stage column of the Codex CLI's `features list` output"),
     ('decision_adapters.py', '_FEATURE_LINE'): (
         'adapter', "one line of the Codex CLI's `features list` output"),
-    ('quickstart_service.py', 'AgentService._run_cli_attempt'): (
+    ('work_executor.py', 'WorkExecutor._run_cli_attempt'): (
         'adapter', "the subscription CLI's own stdin diagnostic, read to record whether a photo was sent"),
     ('preparations.py', 'COLUMN_MIGRATIONS'): (
         'adapter', 'SQL column definitions of the preparations store migration'),

@@ -79,7 +79,7 @@ class DirectFacts(unittest.TestCase):
             if raises:raise ValueError('fixture worker failed')
             return SimpleNamespace(outcome=outcome,content='Example reply',provider=config['provider'],model=config['model'],
                                    incomplete=[],verified=[],report=None,alternatives=[],judgment=judgment)
-        with mock.patch('personal_agent.quickstart_service.run_agent',worker):
+        with mock.patch('personal_agent.work_executor.run_agent',worker):
             self.assertTrue(service.run_one())
         return store.job(job)
 

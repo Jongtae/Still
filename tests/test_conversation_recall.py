@@ -218,7 +218,7 @@ class ConversationRecall(audit_helpers._ServiceBase):
         service=audit_helpers.CliRouteAudit.service(self,call)
         # The sandbox forbids Unix socket listeners too. Inject only relay
         # construction; the CLI facade still executes the real service tools.
-        with mock.patch('personal_agent.quickstart_service.BrowserRelay') as relay:
+        with mock.patch('personal_agent.work_executor.BrowserRelay') as relay:
             relay.return_value.address='/fixture-relay'
             work=self.turn(service,'이전 대화 확인')
         self.assertEqual(len(replies[0]['exchanges']),2)
@@ -300,7 +300,7 @@ class CliRecallJudgment(orchestration_helpers.Harness):
                         'host_action':'search_conversation','evidence':agent_runtime.evidence_summary('search_conversation',result)}))
                 self.engine.before=read if tool else None
                 self.script([orchestration_helpers.plan('codex','Read the supplied source history.')],goals=[True])
-                with mock.patch('personal_agent.quickstart_service.BrowserRelay') as relay:
+                with mock.patch('personal_agent.work_executor.BrowserRelay') as relay:
                     relay.return_value.address='/fixture-relay'
                     work,row=self.run_work(request)
                 self.assertEqual(row['status'],'succeeded')

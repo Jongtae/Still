@@ -129,7 +129,7 @@ class ProposalRoutes(_Case):
         self.service.use_decision_engine(engine(preparation=preparation))
         self.service.connect_subscription_engine({'engine': 'codex', 'officially_authenticated': True})
         # The sandbox forbids Unix socket listeners; only the relay's construction is replaced.
-        with mock.patch('personal_agent.quickstart_service.BrowserRelay') as relay:
+        with mock.patch('personal_agent.work_executor.BrowserRelay') as relay:
             relay.return_value.address = '/fixture-relay'
             return self.receive(REQUEST)
 

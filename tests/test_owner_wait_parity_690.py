@@ -154,7 +154,7 @@ class RouteHarness(LoginHarness):
         if route == 'cli':
             self.cli_service()
             # The sandbox forbids Unix socket listeners; only the relay's construction is replaced.
-            with mock.patch('personal_agent.quickstart_service.BrowserRelay') as relay:
+            with mock.patch('personal_agent.work_executor.BrowserRelay') as relay:
                 relay.return_value.address = '/fixture-relay'
                 job_id = self.receive(REQUEST)
                 self.assertTrue(self.service.run_one())

@@ -181,7 +181,7 @@ class RouteParity(orch.Harness):
             settle(run)
             self.assertTrue(run.resolved_blocker)
             self.assertEqual((run.refusals,run.owner_steps),([],[]))
-        with mock.patch('personal_agent.quickstart_service.run_agent',worker), \
+        with mock.patch('personal_agent.work_executor.run_agent',worker), \
                 mock.patch.object(self.service,'_settle_worker_outcome',side_effect=capture):
             _job,row=self.run_work('Example request')
         self.assertEqual((row['status'],row['goal_outcome'],row['effect_state']),('succeeded','reached','none'))
