@@ -65,7 +65,7 @@ SRC = Path(__file__).resolve().parents[1] / 'src' / 'personal_agent'
 #: ORCH-01 (#710) orchestration step and its worker catalogue; ``owner_model.py`` the
 #: #805 owner-model upkeep; ``skills.py`` the #961 skill-supply glue.
 SCANNED_MODULES = ('agent_runtime.py', 'conversation_handoff.py', 'current_context.py', 'browser_session.py',
-                   'browser_worker.py', 'browser_jar.py', 'browser_worker_chromium.py', 'chromium_runtime.py',
+                   'browser_worker.py', 'browser_jar.py', 'browser_worker_chromium.py', 'chromium_runtime.py', 'browser_signin.py',
                    'preparations.py', 'local_tools.py', 'quickstart_service.py', 'orchestrator.py', 'owner_model.py',
                    # SKILL-SUPPLY-02 (#961): the skill-supply glue stays free of site/category branches;
                    # skill content is data in packages, not scanned (#960 section 8).
@@ -199,7 +199,7 @@ CLASSIFIED_TABLES = {
     ('quickstart_service.py', 'AgentService._redact_provenance'): (
         'enforcement', 'redaction: the labels the path mask writes in place of the data and turn folders; '
                        'substituted for a path, not matched against owner text'),
-    ('quickstart_service.py', 'AgentService._request_browser_login'): (
+    ('browser_signin.py', 'BrowserSignin._request_browser_login'): (
         'enforcement', "redaction: a URL carrying Still's [가림] mark is never opened as is, only its origin"),
     ('quickstart_service.py', 'AgentService.failed_preparation_watch_goals'): (
         'enforcement', 'redaction: a goal Still masked ([가림: ...]) is never reused as a goal'),

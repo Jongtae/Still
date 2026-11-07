@@ -147,6 +147,7 @@ The existing local implementation uses named modules rather than a new framework
 | --- | --- |
 | `quickstart_service.AgentService` | Composition root for the store, connectors, orchestrators, surfaces and queue worker. |
 | `work_execution.WorkRun` and the service's execution phases | Claim, route, prepare, execute, settle and finish/fail one Work, including judgment/budget settlement and post-work handling. The extraction does not create another state owner. |
+| `browser_signin.BrowserSignin` | Browser sign-in windows, provider sign-in records and exact step approvals, with forwarding service entry points over the same owner state. |
 | `orchestrator` and `settings_orchestrator` | Typed work planning/evaluation and bound setting drafts on existing state. |
 | `conversation_handoff` and `conversation_surface` | Contextual continuation and the shared owner pairing, ingestion, delivery and presence interface. |
 | `telegram_surface.TelegramSurface` | Telegram-specific ingestion, callbacks and delivery, with forwarding service entry points; it does not own a second store. |
