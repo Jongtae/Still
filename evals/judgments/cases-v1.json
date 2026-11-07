@@ -1,0 +1,1078 @@
+{
+  "version": "judgment-validation/1",
+  "catalogue": {
+    "workers": [
+      {
+        "id": "default-worker",
+        "name": "default-worker",
+        "kind": "api",
+        "available": true,
+        "default": true,
+        "default_model": "model-standard",
+        "models": [
+          "model-standard",
+          "model-advanced"
+        ],
+        "model_tiers": {
+          "model-standard": "lowest-cost",
+          "model-advanced": "higher-cost"
+        },
+        "tools": [],
+        "native_search": true,
+        "browser": false,
+        "cost": "synthetic",
+        "latency": "synthetic"
+      },
+      {
+        "id": "other-worker",
+        "name": "other-worker",
+        "kind": "api",
+        "available": true,
+        "default": false,
+        "default_model": "model-standard",
+        "models": [
+          "model-standard",
+          "model-advanced"
+        ],
+        "model_tiers": {
+          "model-standard": "lowest-cost",
+          "model-advanced": "higher-cost"
+        },
+        "tools": [],
+        "native_search": true,
+        "browser": false,
+        "cost": "synthetic",
+        "latency": "synthetic"
+      }
+    ],
+    "routes": {},
+    "default": "default-worker"
+  },
+  "cases": [
+    {
+      "id": "followup-retry-ko",
+      "role": "followup_relation",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "follow-up",
+      "input": {
+        "utterance": "한 번 더 시도해 줘",
+        "previous_intent": "comparison",
+        "previous_status": "failed",
+        "previous_request": "후보들의 차이를 정리해 줘",
+        "previous_reply": "비교 자료를 불러오지 못해서 작업이 실패했어요.",
+        "previous_request_at": "just now",
+        "previous_reply_at": "just now"
+      },
+      "expect": {
+        "outcome": "yes",
+        "value": "retry"
+      }
+    },
+    {
+      "id": "followup-correction-ko",
+      "role": "followup_relation",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "correction",
+      "input": {
+        "utterance": "시간은 다섯 시로 바꿔",
+        "previous_intent": "appointment",
+        "previous_status": "succeeded",
+        "previous_request": "약속을 세 시로 잡아 줘",
+        "previous_reply": "약속을 세 시로 잡았어요.",
+        "previous_request_at": "just now",
+        "previous_reply_at": "just now"
+      },
+      "expect": {
+        "outcome": "yes",
+        "value": "correction"
+      }
+    },
+    {
+      "id": "followup-reference-ko",
+      "role": "followup_relation",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "short-reference",
+      "input": {
+        "utterance": "그거",
+        "previous_intent": "comparison",
+        "previous_status": "succeeded",
+        "previous_request": "이 비교를 요약해 줘",
+        "previous_reply": "비교 요약 하나를 만들었어요.",
+        "previous_request_at": "just now",
+        "previous_reply_at": "just now"
+      },
+      "expect": {
+        "outcome": "yes",
+        "value": "reference"
+      }
+    },
+    {
+      "id": "followup-topic-ko",
+      "role": "followup_relation",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "topic-change",
+      "input": {
+        "utterance": "식물에 물은 얼마나 줘?",
+        "previous_intent": "comparison",
+        "previous_status": "succeeded",
+        "previous_request": "후보들의 차이를 정리해 줘",
+        "previous_reply": "후보 하나는 저렴하고 다른 하나는 오래 사용할 수 있어요.",
+        "previous_request_at": "just now",
+        "previous_reply_at": "just now"
+      },
+      "expect": {
+        "outcome": "no"
+      }
+    },
+    {
+      "id": "followup-ambiguous-ko",
+      "role": "followup_relation",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "ambiguous-reference",
+      "input": {
+        "utterance": "그걸로 해",
+        "previous_intent": "comparison",
+        "previous_status": "succeeded",
+        "previous_request": "후보들의 차이를 정리해 줘",
+        "previous_reply": "후보 하나는 저렴하고 다른 하나는 오래 사용할 수 있어요.",
+        "previous_request_at": "just now",
+        "previous_reply_at": "just now"
+      },
+      "expect": {
+        "abstain": true
+      }
+    },
+    {
+      "id": "steer-correction-ko",
+      "role": "steers_running_work",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "steer",
+      "input": {
+        "running_request": "세 시에 약속 잡아 줘",
+        "utterance": "시간은 다섯 시로 바꿔"
+      },
+      "expect": {
+        "outcome": "yes"
+      }
+    },
+    {
+      "id": "steer-unrelated-ko",
+      "role": "steers_running_work",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "steer",
+      "input": {
+        "running_request": "세 시에 약속 잡아 줘",
+        "utterance": "식물에 물은 얼마나 줘?"
+      },
+      "expect": {
+        "outcome": "no"
+      }
+    },
+    {
+      "id": "open-question-true-ko",
+      "role": "answers_open_question",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "open-question",
+      "input": {
+        "earlier_request": "공책 하나 골라 줘",
+        "earlier_reply": "어떤 색이 좋으세요?",
+        "utterance": "파란색"
+      },
+      "expect": {
+        "outcome": "yes"
+      }
+    },
+    {
+      "id": "open-question-false-ko",
+      "role": "answers_open_question",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "open-question",
+      "input": {
+        "earlier_request": "공책 하나 골라 줘",
+        "earlier_reply": "어떤 색이 좋으세요?",
+        "utterance": "식물에 물은 얼마나 줘?"
+      },
+      "expect": {
+        "outcome": "no"
+      }
+    },
+    {
+      "id": "withdrawal-true-ko",
+      "role": "parked_work_withdrawn",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "withdrawal",
+      "input": {
+        "utterance": "메일 찾는 건 그만해"
+      },
+      "expect": {
+        "outcome": "yes"
+      }
+    },
+    {
+      "id": "withdrawal-false-ko",
+      "role": "parked_work_withdrawn",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "withdrawal",
+      "input": {
+        "utterance": "연결되면 계속 찾아줘"
+      },
+      "expect": {
+        "outcome": "no"
+      }
+    },
+    {
+      "id": "followup-retry-en",
+      "role": "followup_relation",
+      "class": "bounded",
+      "lang": "en",
+      "category": "follow-up",
+      "input": {
+        "utterance": "Please try once more",
+        "previous_intent": "comparison",
+        "previous_status": "failed",
+        "previous_request": "Compare the options",
+        "previous_reply": "The comparison failed.",
+        "previous_request_at": "just now",
+        "previous_reply_at": "just now"
+      },
+      "expect": {
+        "outcome": "yes",
+        "value": "retry"
+      }
+    },
+    {
+      "id": "followup-correction-en",
+      "role": "followup_relation",
+      "class": "bounded",
+      "lang": "en",
+      "category": "correction",
+      "input": {
+        "utterance": "Move it to five instead",
+        "previous_intent": "appointment",
+        "previous_status": "succeeded",
+        "previous_request": "Set the appointment for three",
+        "previous_reply": "The appointment is set for three.",
+        "previous_request_at": "just now",
+        "previous_reply_at": "just now"
+      },
+      "expect": {
+        "outcome": "yes",
+        "value": "correction"
+      }
+    },
+    {
+      "id": "followup-reference-en",
+      "role": "followup_relation",
+      "class": "bounded",
+      "lang": "en",
+      "category": "short-reference",
+      "input": {
+        "utterance": "that one",
+        "previous_intent": "comparison",
+        "previous_status": "succeeded",
+        "previous_request": "Summarize this comparison",
+        "previous_reply": "Here is the single comparison summary.",
+        "previous_request_at": "just now",
+        "previous_reply_at": "just now"
+      },
+      "expect": {
+        "outcome": "yes",
+        "value": "reference"
+      }
+    },
+    {
+      "id": "followup-topic-en",
+      "role": "followup_relation",
+      "class": "bounded",
+      "lang": "en",
+      "category": "topic-change",
+      "input": {
+        "utterance": "How often should a plant be watered?",
+        "previous_intent": "comparison",
+        "previous_status": "succeeded",
+        "previous_request": "Compare the options",
+        "previous_reply": "One option costs less; the other lasts longer.",
+        "previous_request_at": "just now",
+        "previous_reply_at": "just now"
+      },
+      "expect": {
+        "outcome": "no"
+      }
+    },
+    {
+      "id": "followup-ambiguous-en",
+      "role": "followup_relation",
+      "class": "bounded",
+      "lang": "en",
+      "category": "ambiguous-reference",
+      "input": {
+        "utterance": "Use that",
+        "previous_intent": "comparison",
+        "previous_status": "succeeded",
+        "previous_request": "Compare the options",
+        "previous_reply": "One option costs less; the other lasts longer.",
+        "previous_request_at": "just now",
+        "previous_reply_at": "just now"
+      },
+      "expect": {
+        "abstain": true
+      }
+    },
+    {
+      "id": "steer-correction-en",
+      "role": "steers_running_work",
+      "class": "bounded",
+      "lang": "en",
+      "category": "steer",
+      "input": {
+        "running_request": "Arrange an appointment at three",
+        "utterance": "Move it to five instead"
+      },
+      "expect": {
+        "outcome": "yes"
+      }
+    },
+    {
+      "id": "steer-unrelated-en",
+      "role": "steers_running_work",
+      "class": "bounded",
+      "lang": "en",
+      "category": "steer",
+      "input": {
+        "running_request": "Arrange an appointment at three",
+        "utterance": "How often should a plant be watered?"
+      },
+      "expect": {
+        "outcome": "no"
+      }
+    },
+    {
+      "id": "open-question-true-en",
+      "role": "answers_open_question",
+      "class": "bounded",
+      "lang": "en",
+      "category": "open-question",
+      "input": {
+        "earlier_request": "Choose a notebook",
+        "earlier_reply": "Which color would you like?",
+        "utterance": "Blue"
+      },
+      "expect": {
+        "outcome": "yes"
+      }
+    },
+    {
+      "id": "open-question-false-en",
+      "role": "answers_open_question",
+      "class": "bounded",
+      "lang": "en",
+      "category": "open-question",
+      "input": {
+        "earlier_request": "Choose a notebook",
+        "earlier_reply": "Which color would you like?",
+        "utterance": "How often should a plant be watered?"
+      },
+      "expect": {
+        "outcome": "no"
+      }
+    },
+    {
+      "id": "withdrawal-true-en",
+      "role": "parked_work_withdrawn",
+      "class": "bounded",
+      "lang": "en",
+      "category": "withdrawal",
+      "input": {
+        "utterance": "Stop looking for the message"
+      },
+      "expect": {
+        "outcome": "yes"
+      }
+    },
+    {
+      "id": "withdrawal-false-en",
+      "role": "parked_work_withdrawn",
+      "class": "bounded",
+      "lang": "en",
+      "category": "withdrawal",
+      "input": {
+        "utterance": "Continue when connected"
+      },
+      "expect": {
+        "outcome": "no"
+      }
+    },
+    {
+      "id": "effect-read",
+      "role": "connector_effect",
+      "class": "bounded",
+      "lang": "en",
+      "category": "effect-class",
+      "input": {
+        "tool_name": "fetch_entry",
+        "argument_names": [
+          "entry"
+        ],
+        "owner_request": "Show the entry"
+      },
+      "expect": {
+        "value": "read"
+      }
+    },
+    {
+      "id": "effect-mutate",
+      "role": "connector_effect",
+      "class": "bounded",
+      "lang": "en",
+      "category": "effect-class",
+      "input": {
+        "tool_name": "update_entry",
+        "argument_names": [
+          "entry",
+          "label"
+        ],
+        "owner_request": "Rename the entry"
+      },
+      "expect": {
+        "value": "mutate"
+      }
+    },
+    {
+      "id": "effect-payment",
+      "role": "connector_effect",
+      "class": "bounded",
+      "lang": "en",
+      "category": "effect-class",
+      "input": {
+        "tool_name": "pay_invoice",
+        "argument_names": [
+          "invoice"
+        ],
+        "owner_request": "Pay this invoice"
+      },
+      "expect": {
+        "value": "payment"
+      }
+    },
+    {
+      "id": "effect-abstain",
+      "role": "connector_effect",
+      "class": "bounded",
+      "lang": "en",
+      "category": "abstention",
+      "input": {
+        "tool_name": "perform_operation",
+        "argument_names": [
+          "input"
+        ],
+        "owner_request": "Handle this operation"
+      },
+      "expect": {
+        "abstain": true
+      }
+    },
+    {
+      "id": "projection-failed",
+      "role": "status_projection",
+      "class": "bounded",
+      "lang": "en",
+      "category": "status-projection",
+      "input": {
+        "facts": {
+          "owner_message": "Is the result ready?",
+          "observed_status": "failed",
+          "observed_detail": "The requested export returned an error and no file."
+        }
+      },
+      "expect": {
+        "value": "failed"
+      }
+    },
+    {
+      "id": "projection-partial",
+      "role": "status_projection",
+      "class": "bounded",
+      "lang": "en",
+      "category": "status-projection",
+      "input": {
+        "facts": {
+          "owner_message": "Is the result ready?",
+          "observed_status": "partial",
+          "observed_detail": "The introduction is ready; the conclusion is missing."
+        }
+      },
+      "expect": {
+        "value": "partial"
+      }
+    },
+    {
+      "id": "projection-unknown",
+      "role": "status_projection",
+      "class": "bounded",
+      "lang": "en",
+      "category": "status-projection",
+      "input": {
+        "facts": {
+          "owner_message": "Is the result ready?",
+          "observed_status": "unknown",
+          "observed_detail": "The update was submitted but its result was not confirmed."
+        }
+      },
+      "expect": {
+        "value": "unknown"
+      }
+    },
+    {
+      "id": "owner-act-approve",
+      "role": "owner_act_answer",
+      "class": "bounded",
+      "lang": "en",
+      "category": "owner-act",
+      "input": {
+        "act": "Please send it",
+        "items": [
+          {
+            "kind": "approval",
+            "id": "draft-one",
+            "shown_text": "Send the prepared draft?",
+            "shown_at": "just now",
+            "expires_at": "later",
+            "answers": [
+              "approve",
+              "decline"
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "item": "draft-one",
+        "answer": "approve"
+      }
+    },
+    {
+      "id": "owner-act-decline",
+      "role": "owner_act_answer",
+      "class": "bounded",
+      "lang": "en",
+      "category": "owner-act",
+      "input": {
+        "act": "Do not send it",
+        "items": [
+          {
+            "kind": "approval",
+            "id": "draft-one",
+            "shown_text": "Send the prepared draft?",
+            "shown_at": "just now",
+            "expires_at": "later",
+            "answers": [
+              "approve",
+              "decline"
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "item": "draft-one",
+        "answer": "decline"
+      }
+    },
+    {
+      "id": "owner-act-none",
+      "role": "owner_act_answer",
+      "class": "bounded",
+      "lang": "en",
+      "category": "owner-act",
+      "input": {
+        "act": "What is the draft about?",
+        "items": [
+          {
+            "kind": "approval",
+            "id": "draft-one",
+            "shown_text": "Send the prepared draft?",
+            "shown_at": "just now",
+            "expires_at": "later",
+            "answers": [
+              "approve",
+              "decline"
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "item": "none",
+        "answer": "unrelated"
+      }
+    },
+    {
+      "id": "goal-served",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "completion",
+      "input": {
+        "request": "Explain why leaves look green",
+        "observations": "Reference: leaves reflect green light.",
+        "answer": "Leaves reflect green light.",
+        "conversation": ""
+      },
+      "expect": {
+        "outcome": "yes"
+      }
+    },
+    {
+      "id": "goal-failed",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "false-completion",
+      "input": {
+        "request": "Export the summary",
+        "observations": "Export failed: file could not be written.",
+        "answer": "The summary was exported.",
+        "conversation": ""
+      },
+      "expect": {
+        "outcome": "no"
+      }
+    },
+    {
+      "id": "goal-partial",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "partial",
+      "input": {
+        "request": "Compare price and durability",
+        "observations": "Only price was retrieved.",
+        "answer": "Here is the price comparison.",
+        "conversation": ""
+      },
+      "expect": {
+        "outcome": "no"
+      }
+    },
+    {
+      "id": "goal-unknown",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "unknown-effect",
+      "input": {
+        "request": "Save the draft",
+        "observations": "Save result could not be confirmed.",
+        "answer": "The draft is saved.",
+        "conversation": ""
+      },
+      "expect": {
+        "outcome": "no"
+      }
+    },
+    {
+      "id": "goal-repeat-question",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "completion",
+      "input": {
+        "request": "Find the opening hours",
+        "observations": "none",
+        "answer": "Which branch do you mean?",
+        "conversation": "Owner: Use the west branch."
+      },
+      "expect": {
+        "outcome": "no"
+      }
+    },
+    {
+      "id": "goal-legitimate-question",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "completion",
+      "input": {
+        "request": "Choose a cover I will enjoy",
+        "observations": "none",
+        "answer": "Which color do you personally prefer?",
+        "conversation": ""
+      },
+      "expect": {
+        "outcome": "yes"
+      }
+    },
+    {
+      "id": "goal-unsupported-figure",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "false-completion",
+      "input": {
+        "request": "How long will the trip take?",
+        "observations": "Only a route description was returned; no duration.",
+        "answer": "The trip takes twenty minutes.",
+        "conversation": ""
+      },
+      "expect": {
+        "outcome": "no"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "goal-curiosity",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "owner-situation",
+      "input": {
+        "request": "I am heading to the library this afternoon.",
+        "observations": "none",
+        "answer": "What are you hoping to read?",
+        "conversation": ""
+      },
+      "expect": {
+        "outcome": "no"
+      },
+      "targets": [
+        "#197"
+      ]
+    },
+    {
+      "id": "goal-served-ko",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "completion",
+      "input": {
+        "request": "하늘은 왜 파랗게 보여?",
+        "observations": "자료: 짧은 파장의 빛이 공기에서 더 많이 산란된다.",
+        "answer": "짧은 파장의 파란빛이 공기 중에서 더 많이 흩어져서 하늘이 파랗게 보여요.",
+        "conversation": ""
+      },
+      "expect": {
+        "outcome": "yes"
+      }
+    },
+    {
+      "id": "goal-failed-ko",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "false-completion",
+      "input": {
+        "request": "요약본을 파일로 저장해 줘",
+        "observations": "저장 실패: 파일을 쓸 수 없었다.",
+        "answer": "요약본을 파일로 저장했어요.",
+        "conversation": ""
+      },
+      "expect": {
+        "outcome": "no"
+      }
+    },
+    {
+      "id": "goal-partial-ko",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "partial",
+      "input": {
+        "request": "두 제품의 가격과 무게를 비교해 줘",
+        "observations": "가격만 확인되었다. 무게 정보는 없다.",
+        "answer": "가격 비교는 이래요: 첫 번째가 더 저렴해요.",
+        "conversation": ""
+      },
+      "expect": {
+        "outcome": "no"
+      }
+    },
+    {
+      "id": "goal-unknown-ko",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "unknown-effect",
+      "input": {
+        "request": "초안을 보내 줘",
+        "observations": "전송 요청은 했지만 결과를 확인하지 못했다.",
+        "answer": "초안을 보냈어요.",
+        "conversation": ""
+      },
+      "expect": {
+        "outcome": "no"
+      }
+    },
+    {
+      "id": "goal-repeat-question-ko",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "completion",
+      "input": {
+        "request": "영업시간 알려 줘",
+        "observations": "none",
+        "answer": "어느 지점 말씀이세요?",
+        "conversation": "Owner: 서쪽 지점으로 알려 줘."
+      },
+      "expect": {
+        "outcome": "no"
+      }
+    },
+    {
+      "id": "goal-legitimate-question-ko",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "completion",
+      "input": {
+        "request": "내가 좋아할 만한 표지 골라 줘",
+        "observations": "none",
+        "answer": "평소에 어떤 색을 좋아하세요?",
+        "conversation": ""
+      },
+      "expect": {
+        "outcome": "yes"
+      }
+    },
+    {
+      "id": "goal-unsupported-figure-ko",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "false-completion",
+      "input": {
+        "request": "거기까지 얼마나 걸려?",
+        "observations": "경로 설명만 받았다. 소요 시간은 없다.",
+        "answer": "약 이십 분 걸려요.",
+        "conversation": ""
+      },
+      "expect": {
+        "outcome": "no"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "goal-curiosity-ko",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "owner-situation",
+      "input": {
+        "request": "오늘 오후에 새로 생긴 동네 미술관에 가 보려고 해",
+        "observations": "none",
+        "answer": "오, 좋네요! 어떤 전시가 기대돼요?",
+        "conversation": ""
+      },
+      "expect": {
+        "outcome": "no"
+      },
+      "targets": [
+        "#197"
+      ]
+    },
+    {
+      "id": "plan-plain-en",
+      "role": "orchestration_plan",
+      "class": "structured-plan",
+      "lang": "en",
+      "category": "completion",
+      "input": {
+        "request": "Why does ice float?"
+      },
+      "expect": {
+        "fallback": false,
+        "account_change": false,
+        "owner_situation": false,
+        "technical_work": false,
+        "tier": "any"
+      }
+    },
+    {
+      "id": "plan-plain-ko",
+      "role": "orchestration_plan",
+      "class": "structured-plan",
+      "lang": "ko",
+      "category": "completion",
+      "input": {
+        "request": "얼음은 왜 물에 떠?"
+      },
+      "expect": {
+        "fallback": false,
+        "account_change": false,
+        "owner_situation": false,
+        "technical_work": false,
+        "tier": "any"
+      }
+    },
+    {
+      "id": "plan-password",
+      "role": "orchestration_plan",
+      "class": "structured-plan",
+      "lang": "en",
+      "category": "account-change",
+      "input": {
+        "request": "Change my password"
+      },
+      "expect": {
+        "fallback": false,
+        "account_change": true,
+        "owner_situation": false,
+        "technical_work": false,
+        "tier": "higher"
+      }
+    },
+    {
+      "id": "plan-forwarding",
+      "role": "orchestration_plan",
+      "class": "structured-plan",
+      "lang": "ko",
+      "category": "account-change",
+      "input": {
+        "request": "메일 자동 전달 설정을 바꿔 줘"
+      },
+      "expect": {
+        "fallback": false,
+        "account_change": true,
+        "owner_situation": false,
+        "technical_work": false,
+        "tier": "higher"
+      }
+    },
+    {
+      "id": "plan-subscription",
+      "role": "orchestration_plan",
+      "class": "structured-plan",
+      "lang": "en",
+      "category": "account-change",
+      "input": {
+        "request": "Cancel my subscription"
+      },
+      "expect": {
+        "fallback": false,
+        "account_change": true,
+        "owner_situation": false,
+        "technical_work": false,
+        "tier": "higher"
+      }
+    },
+    {
+      "id": "plan-schedule",
+      "role": "orchestration_plan",
+      "class": "structured-plan",
+      "lang": "en",
+      "category": "owner-situation",
+      "input": {
+        "request": "Can I fit a walk before my next appointment?"
+      },
+      "expect": {
+        "fallback": false,
+        "account_change": false,
+        "owner_situation": true,
+        "technical_work": false,
+        "tier": "higher"
+      }
+    },
+    {
+      "id": "plan-location",
+      "role": "orchestration_plan",
+      "class": "structured-plan",
+      "lang": "ko",
+      "category": "owner-situation",
+      "input": {
+        "request": "지금 내 위치에서 가까운 도서관 찾아줘"
+      },
+      "expect": {
+        "fallback": false,
+        "account_change": false,
+        "owner_situation": true,
+        "technical_work": false,
+        "tier": "higher"
+      }
+    },
+    {
+      "id": "plan-technical",
+      "role": "orchestration_plan",
+      "class": "structured-plan",
+      "lang": "en",
+      "category": "technical-work",
+      "input": {
+        "request": "Inspect the project, repair the failing parser and verify it"
+      },
+      "expect": {
+        "fallback": false,
+        "account_change": false,
+        "owner_situation": false,
+        "technical_work": true,
+        "tier": "higher"
+      }
+    },
+    {
+      "id": "plan-statement",
+      "role": "orchestration_plan",
+      "class": "structured-plan",
+      "lang": "ko",
+      "category": "owner-situation",
+      "input": {
+        "request": "오늘 오후에 도서관 가려고 해"
+      },
+      "expect": {
+        "fallback": false,
+        "account_change": false,
+        "owner_situation": true,
+        "technical_work": false,
+        "tier": "higher"
+      },
+      "targets": [
+        "#197"
+      ]
+    },
+    {
+      "id": "escalation-en",
+      "role": "orchestration_escalation",
+      "class": "structured-plan",
+      "lang": "en",
+      "category": "escalation",
+      "input": {
+        "request": "Compare both options using price and durability",
+        "answer": "I could not compare them.",
+        "observations": "No comparison was obtained.",
+        "failed": "The lookup failed."
+      },
+      "expect": {
+        "evaluation": "not_reached",
+        "redelegate": true,
+        "escalated": true
+      }
+    },
+    {
+      "id": "escalation-ko",
+      "role": "orchestration_escalation",
+      "class": "structured-plan",
+      "lang": "ko",
+      "category": "escalation",
+      "input": {
+        "request": "두 후보의 가격과 내구성을 비교해 줘",
+        "answer": "비교하지 못했어요.",
+        "observations": "비교 결과를 얻지 못했어요.",
+        "failed": "조회가 실패했어요."
+      },
+      "expect": {
+        "evaluation": "not_reached",
+        "redelegate": true,
+        "escalated": true
+      }
+    }
+  ]
+}
