@@ -82,7 +82,9 @@ class SameRuleBothRoutes(unittest.TestCase):
             return result
         caps.execute = observed
         direct = run_agent(caps.adapter, CFG, '', [{'role': 'user', 'content': REQUEST}], '', caps, record)
-        rows = bridge_rows(results)
+        # #16: independent reads of one turn may finish in any order; the bridge records them in call order.
+        order = [item['function']['name'] for item in calls]
+        rows = bridge_rows(sorted(results, key=lambda row: order.index(row[0])))
         return direct.outcome, outcome_from_events(rows)[0], rows
 
     def test_each_wait_is_partial_on_both_routes_whether_or_not_another_step_advanced_first(self):
