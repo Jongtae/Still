@@ -26,17 +26,6 @@ from personal_agent.settings_orchestrator import RETIRED_CONTROL_MESSAGE, Settin
 from personal_agent.quickstart import make_handler
 
 
-class FakeDrive:
-    def __init__(self, state):
-        self.state = state
-
-    def status(self):
-        return {"state": self.state, "audit": []}
-
-    def effective_status(self):
-        return self.status()
-
-
 class FakeGoogle:
     """Answers the pure local credential check and fails any network use."""
 
@@ -68,8 +57,7 @@ class SettingsOrchestratorTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(); self.store = QuickStore(self.temp.name); self.clock = [1000]
         self.rows = [{'id': 'telegram', 'service': 'Telegram', 'state': 'connected'},
                      {'id': 'google-gmail-read', 'service': 'Google Gmail', 'state': 'reauth_required', 'connectable': True},
-                     {'id': 'google-drive-read', 'service': 'Google Drive', 'state': 'disconnected', 'connectable': False,
-                      'connect_hint': 'Telegram에서 Google Drive 파일을 요청하면 연결 링크를 보냅니다.'},
+                     {'id': 'google-drive', 'service': 'Google Drive', 'state': 'disconnected', 'connectable': True},
                      {'id': 'mystery', 'service': 'Mystery', 'state': 'strange'}]
         self.settings = SettingsOrchestrator(self.store, now=lambda: self.clock[0], connections=lambda: self.rows)
         # A historical enabled registry row must neither be read nor changed.
@@ -86,11 +74,11 @@ class SettingsOrchestratorTests(unittest.TestCase):
         self.assertNotIn('capabilities', read)
         labels = {row['id']: row['state_label'] for row in read['connections']}
         self.assertEqual(labels, {'telegram': '연결됨', 'google-gmail-read': '다시 인증 필요',
-                                  'google-drive-read': '연결 안 됨', 'mystery': '확인 필요'})
+                                  'google-drive': '연결 안 됨', 'mystery': '확인 필요'})
         self.assertIn('Google Gmail · 다시 인증 필요', read['response'])
         self.assertNotIn('google-gmail-read', read['response'], 'chat summary uses owner names, not IDs')
-        drive = next(row for row in read['connections'] if row['id'] == 'google-drive-read')
-        self.assertIn('Telegram', drive['next_action'])
+        drive = next(row for row in read['connections'] if row['id'] == 'google-drive')
+        self.assertIn('설정', drive['next_action'])
         self.assertEqual(self.store.config('capability_registry'), self.history)
         with self.assertRaises(SettingsError): self.settings.read('owner', 'runtime')
 
@@ -137,23 +125,6 @@ class ServiceSettingsProjectionTests(unittest.TestCase):
 
     def tearDown(self): self.temp.cleanup()
 
-    def test_settings_rows_come_from_connector_registry_drive_handoff_and_telegram(self):
-        service = AgentService(self.store, connector_registry=ConnectorRegistry(self.store, (GMAIL_CONNECTOR,)),
-                               drive_web_oauth=FakeDrive('reauth-required'))
-        google = service.settings()['connectors']
-        self.assertEqual([(row['connector_id'], row['state']) for row in google],
-                         [('google-gmail-read', 'disconnected'), ('google-drive-read', 'reauth_required')])
-        self.assertNotIn('conversation_settings', service.settings())
-        drive = google[-1]
-        self.assertEqual((drive['connect_path'], drive['detail_state']), ('', 'reauth-required'))
-        rows = {row['id']: row['state'] for row in service.settings_connection_rows()}
-        self.assertEqual(rows, {'telegram': 'disconnected', 'google-gmail-read': 'disconnected',
-                                'google-drive-read': 'reauth_required'})
-        self.store.put('telegram', {'enabled': True})
-        self.assertEqual(service.settings_connection_rows()[0]['state'], 'pending')
-        for raw, state in (('connected', 'connected'), ('expired', 'disconnected'), ('denied', 'disconnected')):
-            service.drive_web_oauth = FakeDrive(raw)
-            self.assertEqual(service.drive_connection_row()['state'], state)
 
     def connected_gmail_service(self, current):
         registry = ConnectorRegistry(self.store, (GMAIL_CONNECTOR,))

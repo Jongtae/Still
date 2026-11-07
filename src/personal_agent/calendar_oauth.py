@@ -263,7 +263,7 @@ def _finite_now(now: Callable[[], float]) -> float:
     return float(value)
 
 
-# The REUSE-R1b (#427) Existing Solutions Review recorded in ``drive_web_oauth``
+# The REUSE-R1b (#427) Existing Solutions Review
 # governs this decision too: ``oauthlib`` is adopted for authorization-request
 # and PKCE construction only. The token exchange stays an injected callable and
 # ``_validated_tokens`` below enforces the granted scope itself, because

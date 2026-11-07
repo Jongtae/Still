@@ -1,7 +1,7 @@
 """Owner decision #651: two-way A2A conversation; a counterpart is never the owner.
 
 Adapt (C15): a2a-sdk 1.3.0 owns cards, protobuf and HTTP. QuickStore owns
-atomic admission/Work/Evidence; EncryptedDriveSecretStore owns Fernet storage.
+atomic admission/Work/Evidence; EncryptedSecretStore owns Fernet storage.
 MP1 D-04 supplies minimum disclosure and terminal-state principles, not its
 retired fixture peer. No peer name, skill or message decides authority here.
 The owner's AI writes the answers; this module keeps identity and containment.
@@ -18,10 +18,49 @@ import threading
 import time
 from urllib.parse import urlsplit
 
-from .drive_web_oauth import EncryptedDriveSecretStore
+from cryptography.fernet import Fernet, InvalidToken
+
 from .messages import msg
 from .work_mode import WorkModeRefused
 from .telegram_locale import ai_text, owner_language
+
+
+class EncryptedSecretStore:
+    """Encrypt owner-local secrets with a local-runtime key kept outside storage.
+
+    The caller supplies the key from its local secret/keychain boundary.  The
+    key is never persisted by this class, so copying the local data directory
+    alone cannot reveal OAuth tokens or PKCE state.
+    """
+    encrypted_secrets = True
+
+    def __init__(self, store, key):
+        if not isinstance(key, (str, bytes)):
+            raise ValueError("A local encryption key is required for encrypted secrets.")
+        try:
+            self.cipher = Fernet(key.encode() if isinstance(key, str) else key)
+        except (ValueError, TypeError) as exc:
+            raise ValueError("A valid local encryption key is required for encrypted secrets.") from exc
+        self.store = store
+
+    def secret(self, key, value=None):
+        if value is not None:
+            payload = json.dumps(value, separators=(",", ":")).encode()
+            self.store.secret("encrypted:" + key, self.cipher.encrypt(payload).decode())
+        raw = self.store.secret("encrypted:" + key)
+        if not raw:
+            return ""
+        try:
+            return json.loads(self.cipher.decrypt(str(raw).encode()).decode())
+        except (InvalidToken, ValueError, TypeError, json.JSONDecodeError) as exc:
+            raise ValueError("Encrypted credentials cannot be read locally.") from exc
+
+    def put(self, key, value):
+        self.store.put(key, value)
+
+    def config(self, key, default=None):
+        return self.store.config(key, default)
+
 
 REGISTRY = 'a2a_peers'
 SECTIONS = frozenset({'profile', 'memory', 'current_context', 'folders', 'accounts'})
@@ -99,7 +138,7 @@ class PeerSecrets:
                             key = holder.create()
                 if not key:
                     raise PeerError('peer_secret_key_unavailable')
-                self._encrypted = EncryptedDriveSecretStore(self.store, key)
+                self._encrypted = EncryptedSecretStore(self.store, key)
             return self._encrypted
 
     def get(self, peer_id):

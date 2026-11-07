@@ -94,7 +94,7 @@ assert.equal(off(nodes['mattermost-status'].rows[0]),false,'a connected channel 
 // #535: one row per service; a service leaves the pane only when no grant is live and no AI-side route is known.
 const level=(connector_id,state,name)=>({connector_id,state,connect_path:'/c',level:name||'read'});
 const services=[{service:'gmail',name:'Gmail',levels:[level('google-gmail-read','connected')],ai_routes:[]},
- {service:'google-drive',name:'Google Drive',levels:[level('google-drive-read','disconnected','picked')],ai_routes:[]},
+ {service:'google-drive',name:'Google Drive',levels:[level('google-drive','disconnected','read')],ai_routes:[]},
  {service:'google-calendar',name:'Google Calendar',levels:[level('google-calendar','disconnected')],ai_routes:[]},
  {service:'google-calendar-write',name:'Google Calendar',levels:[level('google-calendar-write','reauth_required','create')],ai_routes:[]},
  {service:'x',name:'x',levels:[{connector_id:'x',state:'new-state'}],ai_routes:[]},

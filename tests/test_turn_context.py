@@ -402,7 +402,6 @@ class RoutesReceiveTheSameContext(unittest.TestCase):
         self.assertIn('ordinary follow-up', call['prompt'])
 
 
-
 class _ProbingEngine:
     """Records the egress taint the CLI tools would see, and tries web_search."""
     def __init__(self):
@@ -456,7 +455,6 @@ class CrossTurnEgressGuard(unittest.TestCase):
         # #654: the lookup goes out anyway (minus excluded values, none here).
         self.assertEqual(self.engine.web_search_error, [])
         self.assertEqual(self.network.plans, [{'tool': 'web_search', 'query': 'today news'}])
-
 
 
 class BridgeProcessEgressGuard(unittest.TestCase):
@@ -528,69 +526,6 @@ class BridgeProcessEgressGuard(unittest.TestCase):
         self.assertEqual(provenance, [])
         self.assertIn('result', reply)
         self.assertEqual(len(network_calls), 1)
-
-
-
-class _EchoEngine:
-    """Answers with a marker when Drive content was in its prompt, and records every call."""
-    def __init__(self):
-        self.calls = []
-
-    def execute(self, engine, prompt, tools, **kwargs):
-        self.calls.append({'prompt': prompt, 'context': kwargs.get('context')})
-        answer = 'derived from DRIVE-SECRET' if 'DRIVE-SECRET' in prompt else 'plain answer'
-        return ExecutionResult(answer, engine, 0)
-
-
-class DestinationScopedHistory(unittest.TestCase):
-    """Automated review on #574: Drive / context-inbox answers are approved for one destination only."""
-
-    def setUp(self):
-        from types import SimpleNamespace
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        self.store = QuickStore(Path(self.tmp.name) / 'state')
-        self.engine = _EchoEngine()
-        self.service = AgentService(self.store, adapter=ModelAdapter(lambda *a: {'choices': [{'message': {'content': 'x'}}]}),
-                                    subscription_engines=SubscriptionEngines(finder=lambda _: '/runtime/cli', clock=lambda: 1),
-                                    execution_adapter=self.engine,
-                                    drive_web_oauth=SimpleNamespace(effective_status=lambda: {'state': 'connected'}))
-        # #672: the Drive need is the DecisionEngine's judgment, scripted for this request.
-        self.service.use_decision_engine(capability_need_engine({'summarize my drive file': INTENT_DRIVE_READ}))
-        self.service.selected_drive_context = lambda chat_id: 'DRIVE-SECRET contents'
-        self.service.connect_subscription_engine({'engine': 'codex', 'officially_authenticated': True})
-
-    def _run(self, text, key):
-        self.store.enqueue(text, key, channel='telegram:1', chat_id=1)
-        self.assertTrue(self.service.run_one())
-
-    def test_a_drive_answer_is_carried_into_a_later_cli_turn(self):
-        """#826 (owner decision): the earlier Drive answer is part of the conversation a later CLI worker sees."""
-        self._run('summarize my drive file', 'd1')
-        self.assertIn('DRIVE-SECRET', self.engine.calls[-1]['prompt'], 'the Drive turn itself used the content')
-        self._run('what should I do today', 'k2')
-        later = self.engine.calls[-1]
-        self.assertIn('derived from DRIVE-SECRET', json.dumps(later['context'], ensure_ascii=False))
-        # ...and the later turn's record says an earlier Work carried a Drive file.
-        record = self.store.turn_provenance(self.store.jobs()[0]['id'])
-        self.assertIn('connected-drive-file', record.get('prompt_withheld') or [])
-
-
-class OversizeRequestKeepsWorking(DestinationScopedHistory):
-    """Automated review on #574: a request that fit before must not start failing because of the envelope."""
-
-    def test_a_near_limit_prepared_request_keeps_the_developer_instructions(self):
-        # The standing instructions no longer consume the prompt's byte budget.
-        self.service.selected_drive_context = lambda chat_id: 'DRIVE-SECRET ' + 'd' * 46_600
-        self._run('summarize my drive file', 'big')
-        call = self.engine.calls[-1]
-        self.assertLessEqual(len(call['prompt'].encode()), 48_000)
-        self.assertNotIn('# Still instructions', call['prompt'])
-        self.assertIsNotNone(call['context'])
-        self.assertTrue(call['context']['instructions'].startswith(CORE_INSTRUCTIONS))
-        self.assertEqual(call['prompt'], render_turn_prompt(call['context'], include_instructions=False))
-        job = self.store.jobs()[0]
-        self.assertEqual(job['status'], 'succeeded')
 
 
 # -- AGENCY-BASE-01 (#603, AX-11): no-model baseline reproducers ---------------

@@ -19,7 +19,6 @@ from types import SimpleNamespace
 import hashlib
 from urllib.parse import urlsplit
 from .messages import LANGUAGES, msg
-from .drive_web_oauth import DriveWebOAuthError
 from .telegram_locale import ai_text, owner_language
 from .prompt_files import prompt
 from .local_tools import LocalTools, normalize_public_url
@@ -66,7 +65,7 @@ from . import work_mode
 from .connector_contract import ConnectorContractError, ConnectorResultKind, _owner_key
 from .calendar_oauth import GMAIL_FILTERS_GRANT, GMAIL_MODIFY_GRANT
 from .gmail import GMAIL_FILTERS_CONNECTOR_ID, GMAIL_CONNECTOR_ID, GMAIL_MODIFY_CONNECTOR_ID, GmailError
-from .connector_revocation import (GoogleConnectionRevoker, RevocationError, drive_connection,
+from .connector_revocation import (GoogleConnectionRevoker, RevocationError,
                                    google_revoke_transport, registry_connection)
 from .calendar import CALENDAR_CONNECTOR_ID, CALENDAR_WRITE_CONNECTOR_ID
 from .google_drive_read import DRIVE_CONNECTOR_ID
@@ -640,7 +639,7 @@ class AgentService:
 
     def __init__(self, store, adapter=None, telegram_transport=None, subscription_engines=None, execution_adapter=None,
                  isolated_engine_adapter=None, isolated_mcp_registry=None,
-                 drive_web_oauth=None, connector_registry=None, gmail=None, calendar=None, calendar_oauth=None, calendar_factory=None,
+                 connector_registry=None, gmail=None, calendar=None, calendar_oauth=None, calendar_factory=None,
                  browser_profile=None, telegram_file_transport=None, drive_oauth=None, drive_reader_factory=None, gmail_modify_oauth=None):
         self.store=store
         # #656/#680: the one browser profile this installation owns (its encrypted session jar),
@@ -754,8 +753,7 @@ class AgentService:
         self.conversation_focus=ConversationFocus(store)
         # This is injected only by an owner-local deployment which supplies an
         # encrypted secret store and its local key.  It is never auto-enabled.
-        self.drive_web_oauth=drive_web_oauth
-        # Connector prerequisite/handoff/resume.  Like `drive_web_oauth` this
+        # Connector prerequisite/handoff/resume. This
         # is injected by an owner-local deployment and is never auto-enabled:
         # with no registry there are no declared connectors, so no ordinary
         # request can be parked waiting for one.
@@ -794,8 +792,6 @@ class AgentService:
         # endpoint.  None means the production transport; tests inject a fake.
         self.google_revoke_transport=None
         self.google_revocation_clock=time.time
-        self.drive_read=None
-        self.drive_picker_config=None
         self.lock=threading.RLock()
         #: #340: full login addresses never enter config, Evidence or owner/model text.
         self._browser_login_window_urls={}
@@ -5751,16 +5747,14 @@ class AgentService:
     def legacy_splice_chats(self):
         """Chats a pre-#570 connector file splice could have reached (#703).
 
-        The Drive handoff spliced the owner's Picker-selected files into a turn
+        The removed Drive handoff spliced the owner's selected files into a turn
         of the chat it was offered to, and before #570 left no trace of it.
         Its durable state names that chat (the offer's owner and the
         selection's owner) and survives disconnect.  Connector state only; no
         message text is read.
         """
-        from .drive_web_oauth import SELECTED_FILES_KEY, STATUS_KEY
         chats=set()
-        for key in (STATUS_KEY,SELECTED_FILES_KEY):
-            value=self.store.config(key,{})
+        for value in self.store.config('retired_drive_739',{}).values():
             owner=value.get('owner') if isinstance(value,dict) else None
             if isinstance(owner,int) and not isinstance(owner,bool):chats.add(owner)
         return frozenset(chats)
@@ -6310,11 +6304,9 @@ class AgentService:
                                                       or self.connector_handoff.known(GMAIL_CONNECTOR_ID))
                   else 'Gmail is not available in this install.')
         elif decision.intent==INTENT_DRIVE_READ:
-            # Likewise no worker tool reads Drive: a configured Drive keeps its
-            # connection offer and reads the selected files into the loop below.
             # #1172: with the full-Drive connector the worker has drive_search /
             # drive_read itself, and a missing connection parks the Work there.
-            fact=None if (self.drive_oauth or self.drive_web_oauth) else 'Google Drive is not available in this install.'
+            fact=None if self.drive_oauth else 'Google Drive is not available in this install.'
         else:
             # Conversation and research already run in the model loop.  #173: no
             # keyword rule produces a knowledge, saved-result, settings or note
@@ -7036,17 +7028,7 @@ class AgentService:
         return {**representative,'connector_id':connector_id,'resumed':resumed,'refused':refused}
 
     def _fail_waiting_work(self, work_id, text, *, status='failed'):
-        """Commit a truthful terminal result only if the original Work still waits."""
-        with self.store.db() as db:
-            db.execute('BEGIN IMMEDIATE')
-            changed=db.execute("UPDATE jobs SET status=?,error=?,response=?, "
-                               "delivery=CASE WHEN delivery='pending' THEN 'cancelled' ELSE delivery END "
-                               "WHERE id=? AND status='awaiting_connection'",(status,text,text,work_id)).rowcount==1
-            if changed:
-                job=db.execute('SELECT channel,workspace_id FROM jobs WHERE id=?',(work_id,)).fetchone()
-                db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id) VALUES (?,?,?,?,?,?)',
-                           ('assistant',text,job['channel'],time.time(),job['workspace_id'],work_id))
-        return changed
+        return self.store.fail_waiting_work(work_id, text, status=status)
 
     def _abandon_parked_work(self, work_id, reason):
         changed=self._fail_waiting_work(work_id,ConnectorHandoff.refusal_text(reason))
@@ -8129,8 +8111,6 @@ class AgentService:
                          'connect_path':(urlsplit(self.connector_connect_url(connector.connector_id)).path+(('?'+urlsplit(self.connector_connect_url(connector.connector_id)).query) if urlsplit(self.connector_connect_url(connector.connector_id)).query else '')) if self.connector_connect_url(connector.connector_id) else ''})
         return rows
 
-    def drive_connection_row(self):
-        return self.google_connections.drive_connection_row()
 
     def connector_credential_current(self, connector_id):
         """Read-only: would the connector's next request accept its stored credential?
@@ -8180,7 +8160,7 @@ class AgentService:
         {'service':'google-calendar','name':'Google Calendar','ai_names':('google calendar','gcal'),
          'levels':((CALENDAR_CONNECTOR_ID,'read'),(CALENDAR_WRITE_CONNECTOR_ID,'create'))},
         {'service':'google-drive','name':'Google Drive','ai_names':('google drive','gdrive'),
-         'levels':((DRIVE_CONNECTOR_ID,'read'),('google-drive-read','picked'))},
+         'levels':((DRIVE_CONNECTOR_ID,'read'),)},
     )
     #: How long the AI CLIs' configured server names are reused between Settings polls (they are file reads).
     AI_ROUTES_CACHE_SECONDS=30
@@ -8253,7 +8233,7 @@ class AgentService:
         return self.google_connections.google_service_rows(connections, routes)
 
     CONNECTION_NAMES={GMAIL_FILTERS_CONNECTOR_ID:msg('handoff.gmail_filters'), GMAIL_MODIFY_CONNECTOR_ID:msg('handoff.modify_gmail'), 'google-gmail-read':'Google Gmail','google-calendar':'Google Calendar',
-                      'google-calendar-write':msg('handoff.create_google_calendar_events'),'google-drive-read':'Google Drive',
+                      'google-calendar-write':msg('handoff.create_google_calendar_events'),
                       DRIVE_CONNECTOR_ID:'Google Drive'}
 
     def settings_snapshot(self):
@@ -9978,29 +9958,6 @@ class AgentService:
                                 cues=('judgment:capability-need','resumed-judgment'))
         return prompt,row['prompt_work_id'],decision
 
-    def drive_read_prerequisite(self, job):
-        return self.google_connections.drive_read_prerequisite(job)
-
-    def offer_drive_connection(self, telegram_owner_id, pending_job_id=None):
-        return self.google_connections.offer_drive_connection(telegram_owner_id, pending_job_id)
-
-    def publish_drive_connection_status(self, telegram_owner_id):
-        return self.google_connections.publish_drive_connection_status(telegram_owner_id)
-
-    def complete_drive_web_oauth(self, callback, telegram_owner_id, exchange):
-        return self.google_connections.complete_drive_web_oauth(callback, telegram_owner_id, exchange)
-
-    def select_drive_files(self, telegram_owner_id, files):
-        return self.google_connections.select_drive_files(telegram_owner_id, files)
-
-    def select_drive_picker_files(self, grant, files):
-        return self.google_connections.select_drive_picker_files(grant, files)
-
-    def selected_drive_files(self, telegram_owner_id):
-        return self.google_connections.selected_drive_files(telegram_owner_id)
-
-    def selected_drive_context(self, telegram_owner_id):
-        return self.google_connections.selected_drive_context(telegram_owner_id)
 
     def connect_telegram(self, body):
         token=body.get('token','')

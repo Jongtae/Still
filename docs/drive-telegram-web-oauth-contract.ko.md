@@ -1,5 +1,9 @@
 # DRIVE-TG-01 — Telegram Drive 웹 OAuth 계약
 
+> 과거 계약: 아래 커넥터는 Still #739에서 제거되었습니다. 현재 Drive는 기존
+> 전체 Drive 연결을 사용합니다. 아래 내용은 당시 범위와 증거를 보존한 것이며
+> 현재 설정 안내가 아닙니다.
+
 > **과거 참고용 한국어 번역본.** 내부 개발 기준은 [영어 원본](drive-telegram-web-oauth-contract.en.md)을 따른다.
 
 ## 사용자 흐름

@@ -357,7 +357,6 @@ const matrix=[
  [{connector_id:'gmail-modify',label:'Gmail 메일 정리',state:'disconnected',required_scopes:['gmail.modify'],connect_path:'/gmail-modify'},'Gmail 메일 정리','연결 안 됨','neutral','연결','연결'],
  [{connector_id:'fixture-blocked',label:'Blocked',state:'blocked',required_scopes:[],connect_path:'/blocked'},'Blocked','차단됨','attention',null,null],
  [{connector_id:'fixture-unknown',label:'Unknown',state:'surprising',required_scopes:[],connect_path:'/unknown'},'Unknown','확인 필요','attention',null,null],
- [{connector_id:'google-drive-read',label:'Google Drive',state:'disconnected',required_scopes:['drive.file'],connect_path:'',connect_hint:'Telegram에서 Google Drive 파일을 요청하면 연결 링크를 보냅니다.',detail_state:'expired'},'Google Drive','연결 안 됨','neutral',null,null],
 ];
 for(const [connector,name,label,kind,action,levelAction] of matrix){
  ctx.renderConnectors([svc([{...connector,level:'read'}])]);const row=$('connector-controls').children[0];
@@ -407,7 +406,6 @@ for(const [connector,name,label,kind,action,levelAction] of matrix){
  const details=detailsOf(row);assert(details.textContent.includes('Google에서 권한이 취소되는 것은 아닙니다'),'disconnecting there is not provider revocation');
  assert(details.textContent.includes('claude.ai 커넥터'),'the route kind is named');assert.equal(descendants(details).filter(node=>node.tag==='button').length,0,'Still offers no disconnect for an AI-side route');
  ctx.renderConnectors([svc([{connector_id:'google-gmail-read',label:'Gmail',state:'disconnected',required_scopes:[],connect_path:'/google-gmail',level:'read'}],[],'Gmail')]);assert(Object.hasOwn($('connector-controls').children[0].dataset,'inactive'),'nothing connected and no AI route: only in the add dialog');}
-ctx.renderConnectors([svc([{...matrix.find(row=>row[0].connector_id==='google-drive-read')[0],level:'picked'}])]);assert($('connector-controls').textContent.includes('Telegram에서 Google Drive'),'Drive explains where a connection starts');assert($('connector-controls').textContent.includes('세부 상태: expired'),'the raw Drive handoff state stays inspectable');
 ctx.renderConnectors([]);assert($('connector-controls').textContent.includes('연결할 수 있는 Google 서비스가 없습니다'));
 assert(app.includes("'ArrowLeft','ArrowRight'"),'settings tabs handle horizontal arrow keys');
 console.log('settings DOM regressions passed');

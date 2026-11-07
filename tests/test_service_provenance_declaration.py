@@ -1,7 +1,7 @@
 """Each private-material splice in the job worker must declare its provenance.
 
-`AgentService.run_one` edits `history[-1]` in four places -- an approved
-reference-folder summary, a Picker-selected Google Drive file, the owner
+`AgentService.run_one` edits `history[-1]` in three places -- an approved
+reference-folder summary, the owner
 context inbox and `/summarize` notes -- and hands the result straight to the
 model or the subscription engine.  None of those branches leaves a
 `Capabilities.evidence` entry and none of them marks the current job as a
@@ -33,7 +33,6 @@ from cryptography.fernet import Fernet
 
 from personal_agent.agent_runtime import work_sources
 from personal_agent.bounded_execution import ExecutionError, ExecutionResult
-from personal_agent.drive_web_oauth import DriveWebOAuthHandoff, EncryptedDriveSecretStore
 from personal_agent.providers import ModelAdapter
 from personal_agent.quickstart_service import AgentService
 from personal_agent.quickstart_store import QuickStore
@@ -43,13 +42,12 @@ from scripted_capability_need import capability_need_engine
 
 # Every outgoing query below is this one laundered string.  It shares no token
 # with any private material in this file, so a lexical scan of the outgoing
-# text would let all four through: what is under test is the routing-site
+# text would let all three through: what is under test is the routing-site
 # declaration, not a filter over the query.
 LAUNDERED = 'average compensation for a senior engineer in Seoul'
 REFUSAL = '웹 검색어로 전송할 수 없습니다'
 
 WORKSPACE_SECRET = 'Aurora 합병 대금은 420억 원으로 확정되었습니다.'
-DRIVE_SECRET = '드라이브 원본: 이혼 조정 기일은 3월 9일입니다.'
 CONTEXT_SECRET = '인박스 원본: 건강검진 결과 재검 통보를 받았습니다.'
 NOTE_SECRET = '개인 메모: 병원 예약은 목요일 오후 3시입니다.'
 
@@ -138,35 +136,7 @@ class WorkerProvenanceDeclarationTests(unittest.TestCase):
         self.assertEqual(self.failed(job, 'web_search'), [])
         self.assertEqual(self.egress.plans, [{'tool': 'web_search', 'query': LAUNDERED}])
 
-    # -- 2. the Picker-selected Drive file --------------------------------
 
-    def test_drive_file_turn_declares_connected_drive_file(self):
-        """`turn_provenance.add('connected-drive-file')` in the Drive branch.
-
-        Drive content is deliberately never persisted to jobs, messages or
-        evidence, so there is no other record of it in the turn at all.
-        """
-        drive = DriveWebOAuthHandoff(EncryptedDriveSecretStore(self.store, Fernet.generate_key()),
-                                     'client', 'http://localhost:8787/oauth/google/callback',
-                                     'http://localhost:8787', allow_localhost=True, local_only=True)
-        offer = drive.begin(123)
-        state = parse_qs(urlsplit(offer['button']['url']).query)['state'][0]
-        drive.complete({'state': state, 'code': 'code'}, 123,
-                       lambda _: {'access_token': 'server-token',
-                                  'scope': 'https://www.googleapis.com/auth/drive.file'})
-        drive.select_files(123, [{'id': 'picked', 'name': 'plan.txt'}])
-        self.service.drive_web_oauth = drive
-        self.service.drive_read = lambda _url, _body, _headers: DRIVE_SECRET.encode('utf-8')
-        # #672: the Drive need is the DecisionEngine's judgment, scripted here.
-        self.service.use_decision_engine(capability_need_engine({'구글 드라이브 파일을 요약해줘': INTENT_DRIVE_READ}))
-        job = self.store.enqueue('구글 드라이브 파일을 요약해줘', 'drive-provenance',
-                                 channel='telegram:g', chat_id=123)
-        self.assertTrue(self.service.run_one())
-        self.assertIn(DRIVE_SECRET, self.prompt_text())
-        self.assertIn('connected-drive-file', work_sources(self.store, job))
-        self.assertTrue(self.searched, 'the model never attempted a public search')
-        self.assertEqual(self.failed(job, 'web_search'), [])
-        self.assertEqual(self.egress.plans, [{'tool': 'web_search', 'query': LAUNDERED}])
 
     # -- 3. the owner context inbox ---------------------------------------
 
