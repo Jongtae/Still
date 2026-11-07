@@ -569,7 +569,7 @@ class Redelegation(Harness):
         digests = [detail['brief_digest'] for status, detail in self.events(job, 'planned')]
         self.assertNotEqual(digests[0], digests[1])
 
-    def test_at_most_two_redelegations(self):
+    def test_at_most_max_redelegations(self):
         # #729: each re-plan must change the worker, model or tools.
         self.script([plan('codex', f'Try path {n}.', model=model)
                      for n, model in enumerate(('', 'gpt-5.6-luna', 'gpt-5.6-terra', 'haiku', 'sonnet'))],
@@ -578,7 +578,7 @@ class Redelegation(Harness):
         self.assertEqual(len(self.engine.turns), 1 + MAX_REDELEGATIONS)
         self.assertEqual(len(self.asked_plans), 1 + MAX_REDELEGATIONS)
         last = self.events(job, 'evaluated')[-1][1]
-        self.assertEqual((last['attempt'], last['next'], last['stop']), (3, 'stop', 'limit'))
+        self.assertEqual((last['attempt'], last['next'], last['stop']), (1 + MAX_REDELEGATIONS, 'stop', 'limit'))
         self.assertEqual(row['response'], 'cli answer')
         # Review P1: judged short and not re-delegated is never stored as succeeded;
         # no tool result was observed, so it failed.
@@ -599,7 +599,7 @@ class Redelegation(Harness):
             return spent
         self.service.work_budget = budget
         self.script([plan('codex', f'Try path {n}.', model=model)
-                     for n, model in enumerate(('', 'gpt-5.6-luna', 'gpt-5.6-terra'))], goals=[False] * 3)
+                     for n, model in enumerate(('', 'gpt-5.6-luna', 'gpt-5.6-terra', 'haiku'))], goals=[False] * 4)
         job, _row = self.run_work('끝까지 해줘')
         self.assertEqual(len(self.engine.turns), 1 + MAX_REDELEGATIONS)
         last = self.events(job, 'evaluated')[-1][1]
