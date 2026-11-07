@@ -1029,6 +1029,12 @@ class RemoteLoginSurface(unittest.TestCase):
         thread = self.profile._login_thread
         if thread is not None:
             thread.join(5)
+        # #681: ``session.alive()`` turns False before the watcher runs the end hook, which reads the store
+        # under ``data/private``; the sign-in status check (#684) reads it too. Both end before the directory goes.
+        for thread in threading.enumerate():
+            if thread.name in ('agentos-remote-login', 'agentos-signin-view'):
+                thread.join(30)
+                self.assertFalse(thread.is_alive(), f'{thread.name} finished')
 
     def request(self, path, method='GET', body=None, tunneled=True, cookie=None):
         headers = {}
