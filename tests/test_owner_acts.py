@@ -85,6 +85,9 @@ class OwnerActCase(_Case):
         self.service.deliver_one()
         self.assertTrue(self.service.deliver_notification())
         with self.store.db() as db:
+            # #719: delivery and owner messages use the same fixture clock.
+            db.execute("UPDATE telegram_notifications SET sent_at=? WHERE job_id=? "
+                       "AND kind='settings_change_proposed'", (self.now, work))
             return db.execute("SELECT message_id FROM telegram_notifications WHERE job_id=? "
                               "AND kind='settings_change_proposed'", (work,)).fetchone()[0]
 
