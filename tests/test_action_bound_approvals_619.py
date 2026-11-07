@@ -458,16 +458,99 @@ class UnattendedRuns(_Case):
             created_from=None, state=prep.STATE_SCHEDULED)
         self.run = self.store.job(self.store.enqueue('매일 확인', prep.request_key(self.preparation['id'], self.clock[0])))
         self.owned = self.store.job(self.store.enqueue('직접 요청', 'owner-1', owner_typed=True))
+        #: Another preparation, not the one this run belongs to.
+        self.other = self.service.preparations.create(
+            kind='prepare', goal='주간 확인', due_at=self.clock[0] + 3600, timezone='UTC', recurrence='weekly', channel='web',
+            created_from=None, state=prep.STATE_SCHEDULED)
 
-    def test_a_scheduled_run_drafts_nothing_and_asks_no_judgment(self):
+    def change(self, setting, value, run=None):
+        """``settings_change`` from a scheduled run; no owner is ever asked about it."""
         with mock.patch.object(self.service.decision_judge, 'explicit_settings_request',
                                side_effect=AssertionError('no owner to ask about')):
-            result = self.service.settings_tools(self.run)('settings_change', {
-                'category': 'preparations', 'setting': 'cancel', 'value': self.preparation['id']})
+            return self.service.settings_tools(run or self.run)('settings_change', {
+                'category': 'preparations', 'setting': setting, 'value': value})
+
+    def started_run(self):
+        """A preparation whose run is in progress, as the tick leaves it: the row ``running``, its Work running."""
+        now = self.service.preparations.clock()
+        row = self.service.preparations.create(kind='prepare', goal='매시 확인', due_at=now - 1, timezone='UTC',
+                                               recurrence='daily', channel='web', created_from=None,
+                                               state=prep.STATE_SCHEDULED, accepted_by=prep.ACCEPTED_OWNER_SETTINGS)
+        work = self.service.preparations.start(row, channel='web', chat_id=None, now=now)
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='running' WHERE id=?", (work,))
+        self.assertEqual(self.service.preparations.get(row['id'])['state'], prep.STATE_RUNNING)
+        return row, self.store.job(work)
+
+    def test_a_scheduled_run_drafts_nothing_and_asks_no_judgment(self):
+        result = self.change('cancel', self.other['id'])
         self.assertEqual((result['state'], result['applied']), ('not_proposed', False))
         self.assertEqual(self.settings._drafts(), {})
+        self.assertEqual(self.service.preparations.get(self.other['id'])['state'], prep.STATE_SCHEDULED)
         self.assertEqual(self.service.preparations.get(self.preparation['id'])['state'], prep.STATE_SCHEDULED)
         self.assertEqual(self.service.work_waits_for_owner(self.run), ())
+
+    def audit_terminals(self, result=None):
+        return [e['terminal'] for e in self.store.config('settings_audit', [])
+                if result is None or e.get('draft_ref') == result['draft_id']]
+
+    def test_it_cancels_its_own_preparation_itself(self):
+        """#717: stopping what it belongs to only narrows what runs; it applies at once, audited ``own-run``."""
+        row, run = self.started_run()
+        result = self.change('cancel', row['id'], run)
+        self.assertEqual((result['state'], result['applied'], result['own_run']), ('applied', True, True), result)
+        self.assertEqual(self.service.preparations.get(row['id'])['state'], prep.STATE_CANCELLED)
+        self.assertIn('own-run', self.audit_terminals(result))
+        self.assertEqual(self.settings.pending_drafts(), [], 'nothing waits for the owner')
+        self.assertEqual(self.service.work_waits_for_owner(run), ())
+        self.assertEqual(self.service.preparations.get(self.other['id'])['state'], prep.STATE_SCHEDULED)
+        self.assertEqual(self.service.preparations.declined_goals(self.service.preparations.clock()), [],
+                         'a row the owner set up is not a decline when its run stops it')
+
+    @unittest.expectedFailure
+    def test_it_pauses_its_own_preparation_itself(self):
+        """#717 gap: during its run the own row is ``running``, which neither the pause choices nor
+        ``Preparations.pause`` (``already_running``) accept, so a run's own pause never applies."""
+        row, run = self.started_run()
+        result = self.change('pause', row['id'], run)
+        self.assertEqual((result['state'], result['applied'], result['own_run']), ('applied', True, True), result)
+        self.assertEqual(self.service.preparations.get(row['id'])['state'], prep.STATE_PAUSED)
+
+    def test_cancelling_another_preparation_still_drafts_nothing(self):
+        row, run = self.started_run()
+        result = self.change('cancel', self.other['id'], run)
+        self.assertEqual((result['state'], result['applied']), ('not_proposed', False), result)
+        self.assertNotIn('own_run', result)
+        self.assertEqual(self.service.preparations.get(self.other['id'])['state'], prep.STATE_SCHEDULED)
+        self.assertEqual(self.service.preparations.get(row['id'])['state'], prep.STATE_RUNNING)
+        self.assertEqual(self.settings._drafts(), {})
+
+    def test_it_cannot_resume_edit_accept_or_run_its_own_preparation(self):
+        """#717: only narrowing applies; anything else on its own preparation drafts and applies nothing."""
+        row, run = self.started_run()
+        edit = json.dumps({'id': row['id'], 'recurrence': 'weekly'})
+        for setting, value in (('resume', row['id']), ('edit', edit), ('accept', row['id']), ('run_now', row['id'])):
+            with self.subTest(setting=setting):
+                try:
+                    result = self.change(setting, value, run)
+                except (SettingsError, prep.PreparationRefusal):
+                    continue  # refused by the choices or the running row: nothing changed either
+                self.assertEqual((result['state'], result['applied']), ('not_proposed', False), result)
+                self.assertNotIn('own_run', result)
+        current = self.service.preparations.get(row['id'])
+        self.assertEqual((current['state'], current['recurrence']), (prep.STATE_RUNNING, 'daily'))
+        self.assertEqual(self.settings._drafts(), {})
+        self.assertNotIn('own-run', self.audit_terminals())
+
+    def test_an_owner_work_may_not_use_the_own_run_path(self):
+        """The narrowing applies only in a scheduled run; the owner's own Work keeps the ordinary draft."""
+        with mock.patch.object(self.service.decision_judge, 'explicit_settings_request',
+                               return_value=Judgment(JUDGMENT_NO)):
+            result = self.service.settings_tools(self.owned)('settings_change', {
+                'category': 'preparations', 'setting': 'cancel', 'value': self.preparation['id']})
+        self.assertNotIn('own_run', result)
+        self.assertTrue(result['requires_owner_confirmation'])
+        self.assertEqual(self.service.preparations.get(self.preparation['id'])['state'], prep.STATE_SCHEDULED)
 
     def test_a_scheduled_run_records_no_step_approval(self):
         binding = bs.step_binding(self.run['id'], 'browser_click', 'https://shop.test/', 'pay', 'pay', 'state')
@@ -482,7 +565,8 @@ class UnattendedRuns(_Case):
         """#618: what Still refused or drafted nothing for changed nothing outside, so it never blocks continuing."""
         from personal_agent.agent_runtime import EFFECT_NONE, _evidence_detail, record_effect
         result = self.service.settings_tools(self.run)('settings_change', {
-            'category': 'preparations', 'setting': 'cancel', 'value': self.preparation['id']})
+            'category': 'preparations', 'setting': 'cancel', 'value': self.other['id']})
+        self.assertEqual(result['state'], 'not_proposed')
         self.assertEqual(record_effect('settings_change', {'evidence': _evidence_detail('settings_change', result)},
                                        'succeeded'), EFFECT_NONE)
         with self.assertRaises(ToolError) as caught:

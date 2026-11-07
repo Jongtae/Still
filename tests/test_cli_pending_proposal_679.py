@@ -97,12 +97,13 @@ class ProposalRoutes(_Case):
     def arguments(self):
         return {'kind': 'prepare', 'goal': GOAL, 'due': self.due_iso(1800), 'recurrence': 'daily', 'delivery': 'send'}
 
-    def direct(self):
+    def direct(self, owner_typed=False):
+        """``owner_typed`` False (#717): a Work the owner did not type, where the call only proposes."""
         self.script = [{'content': None, 'tool_calls': [call('1', 'schedule_preparation', **self.arguments())]},
                        finish('f', '1', summary=REPLY)]
-        return self.receive(REQUEST)
+        return self.receive(REQUEST, owner_typed=owner_typed)
 
-    def cli(self, preparation=False):
+    def cli(self, preparation=False, owner_typed=False):
         test = self
 
         class Cli:
@@ -131,7 +132,7 @@ class ProposalRoutes(_Case):
         # The sandbox forbids Unix socket listeners; only the relay's construction is replaced.
         with mock.patch('personal_agent.quickstart_service.BrowserRelay') as relay:
             relay.return_value.address = '/fixture-relay'
-            return self.receive(REQUEST)
+            return self.receive(REQUEST, owner_typed=owner_typed)
 
     def finish_work(self, work):
         before = len(self.sends())
@@ -180,8 +181,21 @@ class ProposalRoutes(_Case):
                 self.accept(work, preparation)
         self.assertEqual(statuses, {'direct': 'partial', 'cli': 'partial'})
 
+    def test_what_the_owners_typed_work_sets_up_ends_it_succeeded_on_both_routes(self):
+        """#717: in the owner's own typed Work the preparation is scheduled (``owner-work``), not left waiting."""
+        for route in ('direct', 'cli'):
+            with self.subTest(route=route):
+                with self.store.db() as db:
+                    db.execute('DELETE FROM preparations')
+                work = getattr(self, route)(owner_typed=True)
+                row, _texts = self.finish_work(work)
+                [preparation] = self.rows()
+                self.assertEqual((preparation['state'], preparation['accepted_by']),
+                                 (prep.STATE_SCHEDULED, prep.ACCEPTED_OWNER_WORK))
+                self.assertEqual(row['status'], 'succeeded')
+
     def test_an_accepted_preparation_is_unchanged_on_the_cli_route(self):
-        work = self.cli(preparation=True)
+        work = self.cli(preparation=True, owner_typed=True)
         row, _texts = self.finish_work(work)
         [preparation] = self.rows()
         self.assertEqual(preparation['state'], prep.STATE_SCHEDULED)

@@ -114,7 +114,9 @@ Where an effect already occurred, the continuation first receives the recorded e
 
 ## Attention in this program
 
-Attention prepares for an owner need; it does not create authority. A proposed preparation becomes executable only through the normal request path and the owner's acceptance. Existing durable preparation state supplies the scheduler; no new general monitoring loop follows from this contract.
+Attention prepares for an owner need; it does not create authority. Existing durable preparation state supplies the scheduler; no new general monitoring loop follows from this contract.
+
+**Act, then tell (#717, owner direction 2026-11-07).** A preparation the owner's AI sets up inside a Work the owner's own typed message started is `scheduled` at once, whether the owner asked for it or the AI judged it serves them. So is one the daily look back sets up. The owner is told once with a cancel button, the same pattern as C5's ask-less memory policy (#918). The `explicit_preparation_request` judgment no longer decides scheduling. It records who asked: `owner-request`, or `owner-work` / `dream` for one the AI set up on its own. A run of a self-set preparation never uses payment autonomy. No scheduled run takes a step that needs the owner's approval (#619). A scheduled run may cancel or pause its own preparation, and nothing else, without leaving a draft. A Work the owner did not type (a continuation, retry or replay) still only proposes. A goal the owner declined is set up again only when the owner asks for it again.
 
 ### Accepted watch windows
 
@@ -124,9 +126,9 @@ With `when_needed` delivery, a bounded judgment compares the accepted goal, scru
 
 ### Offered preparations
 
-Under #582/#583, the worker may answer and propose a plausible repeating preparation, and the daily look-back may suggest one from requests on separate owner days. Proposals remain `proposed` until accepted. A previously declined equivalent goal is not offered for 30 days; identity uses exact goal equality or the existing judgment. Do not substitute a hard-coded category list.
+Under #582/#583, the worker may answer and propose a plausible repeating preparation, and the daily look-back may suggest one from requests on separate owner days. Proposals remained `proposed` until accepted; #717 replaced that with act-then-tell (above). A previously declined equivalent goal is not offered for 30 days; identity uses exact goal equality or the existing judgment. Do not substitute a hard-coded category list.
 
-The look-back keeps at most two suggestions, normally supported by at least two read turns on different owner days. It skips an active or declined equivalent goal, uses existing schedule normalizers and attributes the proposal to the anchor. Standing-only suggestions appear with the next owner Work, without a separate push. At most one proposal message is offered per day, bound to its exact rows, and none while paused. Unanswered proposals expire after seven days; expiry is not refusal.
+The look-back kept at most two suggestions, supported by at least two read turns on different owner days. Since #717 it keeps at most three: a rhythm, or a standing interest the turns show, needs at least two read turns on any days. It skips an active or declined equivalent goal, uses existing schedule normalizers and attributes the proposal to the anchor. Standing-only suggestions appear with the next owner Work, without a separate push. At most one proposal message is offered per day, bound to its exact rows, and none while paused. Unanswered proposals expire after seven days; expiry is not refusal.
 
 Under #638, a definite dated need can instead support a one-off proposal from at least one read owner turn. It uses the same limit, normalizers, duplicate/decline checks and anchor. A look-back holding such a dated proposal can offer it on the preparation tick during local daytime 08:00–21:59, without waiting for the next owner Work. An unaccepted one-off expires when its time passes. No dated need means no periodic digest or notification. These rules do not authorize general habit mining or execution before acceptance.
 
