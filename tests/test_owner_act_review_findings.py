@@ -84,6 +84,66 @@ class PromptShownWhenSent(Base):
         self.assertEqual(self.asked, [])
 
 
+class SettingsShownWhenSent(OwnerActCase):
+    """#719: settings confirmations use completed delivery time, including an unsent notice."""
+
+    def setUp(self):
+        super().setUp()
+        self.offered()
+        drafts = self.settings._drafts()
+        draft = drafts[self.offered_draft]
+        self.drafted = self.now - 60
+        draft['created_at'] = self.drafted
+        self.store.put('settings_change_drafts', drafts)
+        self.work = self.job(draft['work_id'])
+        self.notice = self.store.notification_of(draft['work_id'], 'settings_change_proposed')
+        self.rule = lambda act, items: (items[0]['id'], 'approve', '')
+
+    def delivery(self, state, sent_at, message_id=77):
+        with self.store.db() as db:
+            db.execute('UPDATE telegram_notifications SET state=?,sent_at=?,message_id=? WHERE id=?',
+                       (state, sent_at, message_id, self.notice['id']))
+
+    def test_an_act_between_creation_and_send_is_not_judged_but_one_after_can_approve(self):
+        self.delivery('sent', self.drafted + 30)
+        self.assertIsNone(self.service.owner_acts.read(self.work, '응', before=self.drafted + 10))
+        self.assertEqual(self.acts, [], 'the confirmation was not yet shown')
+        self.assertEqual(self.offered_state(), 'awaiting-confirmation')
+        answer = self.service.owner_acts.read(self.work, '응', before=self.drafted + 31)
+        self.assertEqual((answer['item']['kind'], answer['approve']), (KIND_SETTINGS, True))
+        self.assertEqual(answer['item']['shown_at'], self.drafted + 30)
+        self.assertEqual([item['kind'] for item in self.acts[-1][1]], [KIND_SETTINGS])
+        self.service.owner_acts.settle(answer, self.work)
+        self.assertEqual(self.applies, [{'enabled': True}])
+        self.assertEqual(self.offered_state(), 'applied')
+
+    def test_an_unsent_confirmation_is_listed_but_cannot_answer_a_dated_act(self):
+        self.settings_item()
+        for state in ('queued', 'sending'):
+            with self.subTest(state=state):
+                self.delivery(state, None, message_id=None)
+                self.assertIsNone(self.service.owner_acts.read(self.work, '응', before=self.drafted + 10))
+                self.assertEqual(self.acts, [])
+                self.assertEqual(self.offered_state(), 'awaiting-confirmation')
+                items = self.service.owner_acts.open_items(self.work)
+                self.assertEqual(len(items), 2, 'sorting tolerates both a timestamp and None')
+                self.assertIsNone(items[-1]['shown_at'])
+                self.assertIsNone(items[-1]['message_id'])
+                self.assertEqual(owner_acts._ago(self.now, items[-1]['shown_at']), 'unknown')
+
+    def test_a_legacy_sent_confirmation_keeps_creation_time(self):
+        self.delivery('sent', None)
+        answer = self.service.owner_acts.read(self.work, '응', before=self.drafted + 10)
+        self.assertEqual((answer['item']['kind'], answer['approve']), (KIND_SETTINGS, True))
+        self.assertEqual(answer['item']['shown_at'], self.drafted)
+        self.assertEqual([item['kind'] for item in self.acts[-1][1]], [KIND_SETTINGS])
+
+    def test_a_send_before_creation_does_not_move_the_item_backwards(self):
+        self.delivery('sent', self.drafted - 30)
+        [item] = self.service.owner_acts.open_items(self.work)
+        self.assertEqual(item['shown_at'], self.drafted)
+
+
 class RestIsNotTheRequest(OwnerActCase):
     """4342876260: a compound answer runs the owner's own message; the judgment's ``rest`` is never the request."""
 
