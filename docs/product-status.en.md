@@ -106,7 +106,7 @@ For future installable agents, `downloaded != installed != enabled != connected 
 <!-- readme-section:release -->
 ## The published release
 
-**The Homebrew package installs the newest published release, `v0.5.0` (2026-11-02), from its tagged main commit.** The [release manifest](release-manifest.json) records source coverage and local installed checks.
+**The Homebrew package installs the newest published release, `v0.6.0` (2026-11-07), from its tagged main commit.** The [release manifest](release-manifest.json) records source coverage and local installed checks.
 
 The recorded tag commit is `6d26edfdaeb2f1204dc877d62fa9f9e25cf3059b`. Its archive digest and macOS formula checks do not establish live Google, messenger, shopping or reboot behavior. The owner-installed upgrade is not recorded for this release. See [Quick start](QUICKSTART.md) for the one-line installer, or use Homebrew on Apple silicon:
 
