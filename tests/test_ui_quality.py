@@ -205,7 +205,7 @@ def ui_source_keys():
     keys = set(m.group(1) for m in re.finditer(r"\bt\('((?:[^'\\]|\\.)*)'", body) if HANGUL.search(m.group(1)))
     for table in ("TOOL_NAMES", "RELATION_TEXT", "RELATION_LATER_TEXT", "DECISION_ROLE", "OFFLINE_MESSAGE", "providers", "providerNames",
                   "CONNECTOR_STATES", "CONNECTOR_NAMES", "CONNECTOR_PURPOSE", "CONNECTOR_LEVELS", "AI_ROUTE_STATES", "AI_ROUTE_KINDS",
-                  "ENGINE_IDLE_STATE"):
+                  "ENGINE_IDLE_STATE", "SETUP_GUIDES"):
         line = body[body.index("const " + table + "="):]
         line = line[:line.index("\n")]
         keys |= {v for v in re.findall(r"'([^']*)'", line) if HANGUL.search(v)}

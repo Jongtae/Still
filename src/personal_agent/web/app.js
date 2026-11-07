@@ -186,6 +186,118 @@ Object.assign(I18N["ja"],{"읽기": "読み取り", "정리": "整理", "필터"
 Object.assign(I18N["en"],{"Still로 직접 연결": "Connect Still directly", "{level}에 포함됨": "Included in {level}", "{name} 연결이 이 권한을 포함합니다.": "The {name} connection includes this permission.", "작업에서 AI에 연결된 서비스와 확인한 MCP 서버를 씁니다.": "Tasks use the services connected to your AI and the MCP servers you confirmed.", "소유자가 연결한 AI 서비스와 확인한 MCP 서버를 사용합니다. 읽기와 일반 변경은 요청 범위에서 실행하고 결과를 알립니다. 결제·송금 등 돈이 오가는 동작은 매번 정확한 실행 내용을 확인받으며, 거절한 동작은 실행하지 않습니다.": "Uses the AI services you connected and the MCP servers you confirmed. Reads and ordinary changes run within the request, and you are told the result. Actions that move money, such as payments and transfers, need your confirmation of the exact action every time, and refused actions do not run."});
 Object.assign(I18N["zh-CN"],{"Still로 직접 연결": "让 Still 直接连接", "{level}에 포함됨": "已包含在{level}中", "{name} 연결이 이 권한을 포함합니다.": "{name} 连接已包含此权限。", "작업에서 AI에 연결된 서비스와 확인한 MCP 서버를 씁니다.": "任务会使用连接到 AI 的服务和你确认的 MCP 服务器。", "소유자가 연결한 AI 서비스와 확인한 MCP 서버를 사용합니다. 읽기와 일반 변경은 요청 범위에서 실행하고 결과를 알립니다. 결제·송금 등 돈이 오가는 동작은 매번 정확한 실행 내용을 확인받으며, 거절한 동작은 실행하지 않습니다.": "使用你连接的 AI 服务和你确认的 MCP 服务器。读取和一般更改在请求范围内执行并告知结果。付款、转账等涉及资金的操作每次都需要你确认确切的执行内容，被拒绝的操作不会执行。"});
 Object.assign(I18N["ja"],{"Still로 직접 연결": "Still から直接接続", "{level}에 포함됨": "{level}に含まれる", "{name} 연결이 이 권한을 포함합니다.": "{name} の接続にこの権限が含まれています。", "작업에서 AI에 연결된 서비스와 확인한 MCP 서버를 씁니다.": "作業で AI に接続されたサービスと確認済みの MCP サーバーを使います。", "소유자가 연결한 AI 서비스와 확인한 MCP 서버를 사용합니다. 읽기와 일반 변경은 요청 범위에서 실행하고 결과를 알립니다. 결제·송금 등 돈이 오가는 동작은 매번 정확한 실행 내용을 확인받으며, 거절한 동작은 실행하지 않습니다.": "接続した AI サービスと確認済みの MCP サーバーを使います。読み取りと通常の変更はリクエストの範囲内で実行し、結果をお知らせします。支払い・送金などお金が動く操作は毎回正確な実行内容の確認を受け、拒否した操作は実行しません。"});
+// #317: guided setup and connected credential state.
+Object.assign(I18N["en"],{
+ "API 키 열기": "Open API keys",
+ "결제 열기": "Open Billing",
+ "OpenAI 플랫폼의 API 키(API keys) 화면에서 새 비밀 키 만들기(Create new secret key)를 누르고 이름을 넣어 만듭니다.": "On the OpenAI platform API keys page, select Create new secret key, enter a name, and create it.",
+ "표시된 키(sk-로 시작)를 바로 복사해 아래에 붙여 넣습니다. 이 창을 닫으면 키를 다시 볼 수 없습니다.": "Copy the displayed key (starting with sk-) and paste it below now. You cannot view it again after closing this window.",
+ "API 사용에는 결제(Billing)에 크레딧이나 결제 수단이 있어야 합니다.": "API use requires credits or a payment method in Billing.",
+ "Claude Console의 API 키(API keys) 화면에서 키 만들기(Create Key)를 누르고 이름과 워크스페이스를 정해 만듭니다.": "On the Claude Console API keys page, select Create Key, choose a name and workspace, and create it.",
+ "표시된 키(sk-ant-로 시작)를 바로 복사해 아래에 붙여 넣습니다. 이 창을 닫으면 키를 다시 볼 수 없습니다.": "Copy the displayed key (starting with sk-ant-) and paste it below now. You cannot view it again after closing this window.",
+ "API 사용에는 결제(Billing)에 크레딧이 있어야 합니다.": "API use requires credits in Billing.",
+ "가장 쉬운 방법은 아래 계정 연결을 눌러 OpenRouter에 로그인하는 것입니다. 키를 Still이 바로 받아 저장합니다.": "The easiest way is to select Connect account below and sign in to OpenRouter. Still receives and saves the key directly.",
+ "직접 넣으려면 OpenRouter의 키(API Keys) 화면에서 API 키 만들기(Create API Key)를 누르고 이름과 사용 한도를 정해 만든 뒤, 표시된 키(sk-or-로 시작)를 복사해 붙여 넣습니다.": "To enter a key manually, open OpenRouter API Keys, select Create API Key, set a name and usage limit, then copy and paste the displayed key (starting with sk-or-).",
+ "키 화면 열기": "Open keys page",
+ "Brave Search API 대시보드에 가입하고 로그인합니다.": "Sign up and sign in to the Brave Search API dashboard.",
+ "대시보드 열기": "Open dashboard",
+ "요금제(Plans)에서 요금제 하나를 고릅니다. 무료 요금제도 카드 등록을 요구할 수 있습니다.": "Choose a plan in Plans. Even a free plan may require a payment card.",
+ "API 키(API Keys)에서 API 키 추가(Add API Key)를 누르고 이름을 넣어 만든 뒤, 키를 복사해 아래 칸에 붙여 넣습니다.": "In API Keys, select Add API Key, enter a name and create it, then copy the key and paste it below.",
+ "키 받는 방법": "How to get a key",
+ "Telegram에서 BotFather를 열고 /newbot을 보냅니다.": "Open BotFather in Telegram and send /newbot.",
+ "BotFather 열기": "Open BotFather",
+ "봇 이름을 보내고, 이어서 bot으로 끝나는 사용자 이름을 보냅니다.": "Send a bot name, then a username ending in bot.",
+ "BotFather 답장에 있는 HTTP API 토큰(숫자:영문 형태)을 복사해 아래에 붙여 넣습니다. 이미 만든 봇이면 BotFather에서 /mybots → 봇 선택 → API Token으로 다시 볼 수 있습니다.": "Copy the HTTP API token (digits:letters) from the BotFather reply and paste it below. For an existing bot, use /mybots → select the bot → API Token in BotFather to view it again.",
+ "봇 토큰 받는 방법": "How to get a bot token",
+ "관리자가 시스템 콘솔(System Console) → 통합(Integrations) → 봇 계정(Bot Accounts)에서 봇 계정 만들기 허용(Enable Bot Account Creation)을 true로 둡니다. 관리자가 아니면 관리자에게 요청하세요.": "An administrator sets Enable Bot Account Creation to true in System Console → Integrations → Bot Accounts. If you are not an administrator, ask one.",
+ "제품 메뉴(Product menu) → 통합(Integrations) → 봇 계정(Bot Accounts) → 봇 계정 추가(Add Bot Account)에서 봇 사용자 이름을 넣고 봇 계정 만들기(Create Bot Account)를 누릅니다.": "Go to Product menu → Integrations → Bot Accounts → Add Bot Account, enter a bot username, and select Create Bot Account.",
+ "설정 완료(Setup Successful) 화면의 토큰을 완료(Done)를 누르기 전에 복사해 아래 봇 토큰 칸에 붙여 넣습니다. 화면을 닫으면 토큰을 다시 볼 수 없습니다.": "On Setup Successful, copy the token before selecting Done and paste it into the bot token field below. You cannot view it again after closing the screen.",
+ "서버 주소는 브라우저에서 Mattermost를 열 때의 주소이고, 내 사용자 이름은 프로필 사진 → 프로필(Profile)에 보이는 @ 뒤의 이름입니다.": "The server address is the address you use to open Mattermost in a browser. Your username is the name after @ under your profile picture → Profile.",
+ "자세한 안내:": "More information:",
+ "Mattermost 봇 계정 안내": "Mattermost bot account guide",
+ "Slack 앱 관리 화면에서 새 앱 만들기(Create New App) → 매니페스트로(From a manifest)를 고르고 워크스페이스를 고른 뒤, 아래 manifest를 붙여 넣어 만듭니다.": "On the Slack app management page, select Create New App → From a manifest, choose a workspace, and paste the manifest below to create the app.",
+ "Slack 앱 열기": "Open Slack apps",
+ "왼쪽 OAuth & Permissions에서 Install to Workspace를 누르고 허용합니다. 같은 화면의 OAuth Tokens에 나오는 Bot User OAuth Token(xoxb-)이 봇 토큰입니다.": "Select OAuth & Permissions on the left, then Install to Workspace and allow access. The Bot User OAuth Token (xoxb-) under OAuth Tokens on the same page is the bot token.",
+ "Basic Information → App-Level Tokens에서 Generate Token and Scopes를 누르고 Add Scope로 connections:write를 더한 뒤 Generate를 누릅니다. 나온 토큰(xapp-)이 앱 토큰입니다.": "In Basic Information → App-Level Tokens, select Generate Token and Scopes, use Add Scope to add connections:write, then select Generate. The resulting token (xapp-) is the app token.",
+ "멤버 ID: Slack에서 내 프로필 사진 → 프로필(Profile) → ⋮ → 멤버 ID 복사(Copy member ID). U로 시작합니다.": "Member ID: in Slack, open your profile picture → Profile → ⋮ → Copy member ID. It starts with U.",
+ "기존 앱은 매니페스트(App Manifest)에 아래 manifest를 다시 붙여 넣고 OAuth & Permissions에서 앱을 재설치하세요. 봇 토큰이 바뀌었으면 새 토큰을 Still에 입력하세요. Agent Experience를 켜는 것만으로 기존 토큰 권한이 바뀌지는 않습니다.": "For an existing app, paste the manifest below into App Manifest again and reinstall the app in OAuth & Permissions. If the bot token changed, enter the new token in Still. Enabling Agent Experience alone does not change the permissions of an existing token.",
+ "연결하면 봇이 1:1 대화로 인사를 보냅니다.": "Once connected, the bot greets you in a direct message.",
+ "저장된 토큰은 다시 표시하지 않습니다. 설정을 바꾸려면 토큰을 다시 넣으세요.": "Saved tokens are never displayed again. To change settings, enter the tokens again."
+});
+Object.assign(I18N["zh-CN"],{
+ "API 키 열기": "打开 API keys",
+ "결제 열기": "打开 Billing",
+ "OpenAI 플랫폼의 API 키(API keys) 화면에서 새 비밀 키 만들기(Create new secret key)를 누르고 이름을 넣어 만듭니다.": "在 OpenAI 平台的 API keys 页面，点击 Create new secret key，输入名称并创建。",
+ "표시된 키(sk-로 시작)를 바로 복사해 아래에 붙여 넣습니다. 이 창을 닫으면 키를 다시 볼 수 없습니다.": "立即复制显示的密钥（以 sk- 开头）并粘贴到下方。关闭此窗口后将无法再次查看密钥。",
+ "API 사용에는 결제(Billing)에 크레딧이나 결제 수단이 있어야 합니다.": "使用 API 需要在 Billing 中有余额或付款方式。",
+ "Claude Console의 API 키(API keys) 화면에서 키 만들기(Create Key)를 누르고 이름과 워크스페이스를 정해 만듭니다.": "在 Claude Console 的 API keys 页面，点击 Create Key，设置名称和工作区并创建。",
+ "표시된 키(sk-ant-로 시작)를 바로 복사해 아래에 붙여 넣습니다. 이 창을 닫으면 키를 다시 볼 수 없습니다.": "立即复制显示的密钥（以 sk-ant- 开头）并粘贴到下方。关闭此窗口后将无法再次查看密钥。",
+ "API 사용에는 결제(Billing)에 크레딧이 있어야 합니다.": "使用 API 需要在 Billing 中有余额。",
+ "가장 쉬운 방법은 아래 계정 연결을 눌러 OpenRouter에 로그인하는 것입니다. 키를 Still이 바로 받아 저장합니다.": "最简单的方法是点击下方的连接账户并登录 OpenRouter。Still 会直接接收并保存密钥。",
+ "직접 넣으려면 OpenRouter의 키(API Keys) 화면에서 API 키 만들기(Create API Key)를 누르고 이름과 사용 한도를 정해 만든 뒤, 표시된 키(sk-or-로 시작)를 복사해 붙여 넣습니다.": "如需手动输入，在 OpenRouter 的 API Keys 页面点击 Create API Key，设置名称和使用限额后创建，再复制显示的密钥（以 sk-or- 开头）并粘贴。",
+ "키 화면 열기": "打开密钥页面",
+ "Brave Search API 대시보드에 가입하고 로그인합니다.": "注册并登录 Brave Search API 控制台。",
+ "대시보드 열기": "打开控制台",
+ "요금제(Plans)에서 요금제 하나를 고릅니다. 무료 요금제도 카드 등록을 요구할 수 있습니다.": "在 Plans 中选择一个套餐。免费套餐也可能要求登记银行卡。",
+ "API 키(API Keys)에서 API 키 추가(Add API Key)를 누르고 이름을 넣어 만든 뒤, 키를 복사해 아래 칸에 붙여 넣습니다.": "在 API Keys 中点击 Add API Key，输入名称并创建，然后复制密钥并粘贴到下方输入框。",
+ "키 받는 방법": "如何获取密钥",
+ "Telegram에서 BotFather를 열고 /newbot을 보냅니다.": "在 Telegram 中打开 BotFather 并发送 /newbot。",
+ "BotFather 열기": "打开 BotFather",
+ "봇 이름을 보내고, 이어서 bot으로 끝나는 사용자 이름을 보냅니다.": "发送机器人名称，然后发送以 bot 结尾的用户名。",
+ "BotFather 답장에 있는 HTTP API 토큰(숫자:영문 형태)을 복사해 아래에 붙여 넣습니다. 이미 만든 봇이면 BotFather에서 /mybots → 봇 선택 → API Token으로 다시 볼 수 있습니다.": "复制 BotFather 回复中的 HTTP API 令牌（数字:字母格式）并粘贴到下方。已有的机器人可在 BotFather 中通过 /mybots → 选择机器人 → API Token 再次查看。",
+ "봇 토큰 받는 방법": "如何获取机器人令牌",
+ "관리자가 시스템 콘솔(System Console) → 통합(Integrations) → 봇 계정(Bot Accounts)에서 봇 계정 만들기 허용(Enable Bot Account Creation)을 true로 둡니다. 관리자가 아니면 관리자에게 요청하세요.": "管理员在 System Console → Integrations → Bot Accounts 中将 Enable Bot Account Creation 设为 true。如果您不是管理员，请联系管理员。",
+ "제품 메뉴(Product menu) → 통합(Integrations) → 봇 계정(Bot Accounts) → 봇 계정 추가(Add Bot Account)에서 봇 사용자 이름을 넣고 봇 계정 만들기(Create Bot Account)를 누릅니다.": "前往 Product menu → Integrations → Bot Accounts → Add Bot Account，输入机器人用户名并点击 Create Bot Account。",
+ "설정 완료(Setup Successful) 화면의 토큰을 완료(Done)를 누르기 전에 복사해 아래 봇 토큰 칸에 붙여 넣습니다. 화면을 닫으면 토큰을 다시 볼 수 없습니다.": "在 Setup Successful 页面点击 Done 之前复制令牌，并粘贴到下方的机器人令牌栏。关闭页面后将无法再次查看令牌。",
+ "서버 주소는 브라우저에서 Mattermost를 열 때의 주소이고, 내 사용자 이름은 프로필 사진 → 프로필(Profile)에 보이는 @ 뒤의 이름입니다.": "服务器地址是您在浏览器中打开 Mattermost 时使用的地址。您的用户名是头像 → Profile 中 @ 后面的名称。",
+ "자세한 안내:": "详细说明：",
+ "Mattermost 봇 계정 안내": "Mattermost 机器人账户指南",
+ "Slack 앱 관리 화면에서 새 앱 만들기(Create New App) → 매니페스트로(From a manifest)를 고르고 워크스페이스를 고른 뒤, 아래 manifest를 붙여 넣어 만듭니다.": "在 Slack 应用管理页面选择 Create New App → From a manifest，选择工作区后，粘贴下方 manifest 创建应用。",
+ "Slack 앱 열기": "打开 Slack 应用",
+ "왼쪽 OAuth & Permissions에서 Install to Workspace를 누르고 허용합니다. 같은 화면의 OAuth Tokens에 나오는 Bot User OAuth Token(xoxb-)이 봇 토큰입니다.": "在左侧 OAuth & Permissions 中点击 Install to Workspace 并授权。同一页面 OAuth Tokens 下的 Bot User OAuth Token（xoxb-）就是机器人令牌。",
+ "Basic Information → App-Level Tokens에서 Generate Token and Scopes를 누르고 Add Scope로 connections:write를 더한 뒤 Generate를 누릅니다. 나온 토큰(xapp-)이 앱 토큰입니다.": "在 Basic Information → App-Level Tokens 中点击 Generate Token and Scopes，通过 Add Scope 添加 connections:write，再点击 Generate。生成的令牌（xapp-）就是应用令牌。",
+ "멤버 ID: Slack에서 내 프로필 사진 → 프로필(Profile) → ⋮ → 멤버 ID 복사(Copy member ID). U로 시작합니다.": "成员 ID：在 Slack 中选择自己的头像 → Profile → ⋮ → Copy member ID。它以 U 开头。",
+ "기존 앱은 매니페스트(App Manifest)에 아래 manifest를 다시 붙여 넣고 OAuth & Permissions에서 앱을 재설치하세요. 봇 토큰이 바뀌었으면 새 토큰을 Still에 입력하세요. Agent Experience를 켜는 것만으로 기존 토큰 권한이 바뀌지는 않습니다.": "对于已有应用，请将下方 manifest 重新粘贴到 App Manifest，并在 OAuth & Permissions 中重新安装应用。如果机器人令牌已更改，请在 Still 中输入新令牌。仅启用 Agent Experience 不会改变现有令牌的权限。",
+ "연결하면 봇이 1:1 대화로 인사를 보냅니다.": "连接后，机器人会通过私信向您问候。",
+ "저장된 토큰은 다시 표시하지 않습니다. 설정을 바꾸려면 토큰을 다시 넣으세요.": "已保存的令牌不会再次显示。如需更改设置，请重新输入令牌。"
+});
+Object.assign(I18N["ja"],{
+ "API 키 열기": "API keys を開く",
+ "결제 열기": "Billing を開く",
+ "OpenAI 플랫폼의 API 키(API keys) 화면에서 새 비밀 키 만들기(Create new secret key)를 누르고 이름을 넣어 만듭니다.": "OpenAI プラットフォームの API keys 画面で Create new secret key を押し、名前を入力して作成します。",
+ "표시된 키(sk-로 시작)를 바로 복사해 아래에 붙여 넣습니다. 이 창을 닫으면 키를 다시 볼 수 없습니다.": "表示されたキー（sk- で始まる）をすぐにコピーして下に貼り付けます。この画面を閉じるとキーは再表示できません。",
+ "API 사용에는 결제(Billing)에 크레딧이나 결제 수단이 있어야 합니다.": "API の利用には Billing にクレジットまたは支払い方法が必要です。",
+ "Claude Console의 API 키(API keys) 화면에서 키 만들기(Create Key)를 누르고 이름과 워크스페이스를 정해 만듭니다.": "Claude Console の API keys 画面で Create Key を押し、名前とワークスペースを指定して作成します。",
+ "표시된 키(sk-ant-로 시작)를 바로 복사해 아래에 붙여 넣습니다. 이 창을 닫으면 키를 다시 볼 수 없습니다.": "表示されたキー（sk-ant- で始まる）をすぐにコピーして下に貼り付けます。この画面を閉じるとキーは再表示できません。",
+ "API 사용에는 결제(Billing)에 크레딧이 있어야 합니다.": "API の利用には Billing にクレジットが必要です。",
+ "가장 쉬운 방법은 아래 계정 연결을 눌러 OpenRouter에 로그인하는 것입니다. 키를 Still이 바로 받아 저장합니다.": "下のアカウント接続から OpenRouter にログインするのが最も簡単です。Still がキーを直接受け取って保存します。",
+ "직접 넣으려면 OpenRouter의 키(API Keys) 화면에서 API 키 만들기(Create API Key)를 누르고 이름과 사용 한도를 정해 만든 뒤, 표시된 키(sk-or-로 시작)를 복사해 붙여 넣습니다.": "手動で入力するには、OpenRouter の API Keys 画面で Create API Key を押し、名前と利用上限を指定して作成し、表示されたキー（sk-or- で始まる）をコピーして貼り付けます。",
+ "키 화면 열기": "キー画面を開く",
+ "Brave Search API 대시보드에 가입하고 로그인합니다.": "Brave Search API ダッシュボードに登録してログインします。",
+ "대시보드 열기": "ダッシュボードを開く",
+ "요금제(Plans)에서 요금제 하나를 고릅니다. 무료 요금제도 카드 등록을 요구할 수 있습니다.": "Plans でプランを選びます。無料プランでもカード登録が必要な場合があります。",
+ "API 키(API Keys)에서 API 키 추가(Add API Key)를 누르고 이름을 넣어 만든 뒤, 키를 복사해 아래 칸에 붙여 넣습니다.": "API Keys で Add API Key を押して名前を入力し、作成したキーをコピーして下の欄に貼り付けます。",
+ "키 받는 방법": "キーの取得方法",
+ "Telegram에서 BotFather를 열고 /newbot을 보냅니다.": "Telegram で BotFather を開き、/newbot を送信します。",
+ "BotFather 열기": "BotFather を開く",
+ "봇 이름을 보내고, 이어서 bot으로 끝나는 사용자 이름을 보냅니다.": "ボット名を送り、続けて bot で終わるユーザー名を送ります。",
+ "BotFather 답장에 있는 HTTP API 토큰(숫자:영문 형태)을 복사해 아래에 붙여 넣습니다. 이미 만든 봇이면 BotFather에서 /mybots → 봇 선택 → API Token으로 다시 볼 수 있습니다.": "BotFather の返信にある HTTP API トークン（数字:英字の形式）をコピーして下に貼り付けます。作成済みのボットは BotFather の /mybots → ボットを選択 → API Token で再表示できます。",
+ "봇 토큰 받는 방법": "ボットトークンの取得方法",
+ "관리자가 시스템 콘솔(System Console) → 통합(Integrations) → 봇 계정(Bot Accounts)에서 봇 계정 만들기 허용(Enable Bot Account Creation)을 true로 둡니다. 관리자가 아니면 관리자에게 요청하세요.": "管理者が System Console → Integrations → Bot Accounts で Enable Bot Account Creation を true にします。管理者でない場合は管理者に依頼してください。",
+ "제품 메뉴(Product menu) → 통합(Integrations) → 봇 계정(Bot Accounts) → 봇 계정 추가(Add Bot Account)에서 봇 사용자 이름을 넣고 봇 계정 만들기(Create Bot Account)를 누릅니다.": "Product menu → Integrations → Bot Accounts → Add Bot Account でボットのユーザー名を入力し、Create Bot Account を押します。",
+ "설정 완료(Setup Successful) 화면의 토큰을 완료(Done)를 누르기 전에 복사해 아래 봇 토큰 칸에 붙여 넣습니다. 화면을 닫으면 토큰을 다시 볼 수 없습니다.": "Setup Successful 画面で Done を押す前にトークンをコピーし、下のボットトークン欄に貼り付けます。画面を閉じるとトークンは再表示できません。",
+ "서버 주소는 브라우저에서 Mattermost를 열 때의 주소이고, 내 사용자 이름은 프로필 사진 → 프로필(Profile)에 보이는 @ 뒤의 이름입니다.": "サーバーアドレスはブラウザーで Mattermost を開くときのアドレスです。ユーザー名はプロフィール画像 → Profile に表示される @ の後の名前です。",
+ "자세한 안내:": "詳しい案内：",
+ "Mattermost 봇 계정 안내": "Mattermost ボットアカウントの案内",
+ "Slack 앱 관리 화면에서 새 앱 만들기(Create New App) → 매니페스트로(From a manifest)를 고르고 워크스페이스를 고른 뒤, 아래 manifest를 붙여 넣어 만듭니다.": "Slack のアプリ管理画面で Create New App → From a manifest を選び、ワークスペースを選択して、下の manifest を貼り付けて作成します。",
+ "Slack 앱 열기": "Slack アプリを開く",
+ "왼쪽 OAuth & Permissions에서 Install to Workspace를 누르고 허용합니다. 같은 화면의 OAuth Tokens에 나오는 Bot User OAuth Token(xoxb-)이 봇 토큰입니다.": "左の OAuth & Permissions で Install to Workspace を押して許可します。同じ画面の OAuth Tokens にある Bot User OAuth Token（xoxb-）がボットトークンです。",
+ "Basic Information → App-Level Tokens에서 Generate Token and Scopes를 누르고 Add Scope로 connections:write를 더한 뒤 Generate를 누릅니다. 나온 토큰(xapp-)이 앱 토큰입니다.": "Basic Information → App-Level Tokens で Generate Token and Scopes を押し、Add Scope で connections:write を追加して Generate を押します。生成されたトークン（xapp-）がアプリトークンです。",
+ "멤버 ID: Slack에서 내 프로필 사진 → 프로필(Profile) → ⋮ → 멤버 ID 복사(Copy member ID). U로 시작합니다.": "メンバー ID：Slack で自分のプロフィール画像 → Profile → ⋮ → Copy member ID。U で始まります。",
+ "기존 앱은 매니페스트(App Manifest)에 아래 manifest를 다시 붙여 넣고 OAuth & Permissions에서 앱을 재설치하세요. 봇 토큰이 바뀌었으면 새 토큰을 Still에 입력하세요. Agent Experience를 켜는 것만으로 기존 토큰 권한이 바뀌지는 않습니다.": "既存のアプリは App Manifest に下の manifest を再度貼り付け、OAuth & Permissions で再インストールしてください。ボットトークンが変わった場合は新しいトークンを Still に入力してください。Agent Experience を有効にするだけでは既存のトークンの権限は変わりません。",
+ "연결하면 봇이 1:1 대화로 인사를 보냅니다.": "接続するとボットがダイレクトメッセージで挨拶します。",
+ "저장된 토큰은 다시 표시하지 않습니다. 설정을 바꾸려면 토큰을 다시 넣으세요.": "保存済みのトークンは再表示しません。設定を変更するにはトークンを再入力してください。"
+});
 // I18N-CATALOG-END
 let currentLanguage='en',TIME_MINUTE,TIME_CLOCK,TIME_ABSOLUTE,TIME_RELATIVE,TIME_DAY,TIME_YEAR;
 // #662: same catalog text as the exact Settings draft.
@@ -492,6 +604,9 @@ async function api(path,body,method){
 }
 
 function element(tag,text,className){const node=document.createElement(tag);if(text!==undefined)node.textContent=text;if(className)node.className=className;return node;}
+const SETUP_GUIDES={'openai':[['OpenAI 플랫폼의 API 키(API keys) 화면에서 새 비밀 키 만들기(Create new secret key)를 누르고 이름을 넣어 만듭니다.','https://platform.openai.com/api-keys','API 키 열기'],['표시된 키(sk-로 시작)를 바로 복사해 아래에 붙여 넣습니다. 이 창을 닫으면 키를 다시 볼 수 없습니다.','',''],['API 사용에는 결제(Billing)에 크레딧이나 결제 수단이 있어야 합니다.','https://platform.openai.com/settings/organization/billing/overview','결제 열기']],'anthropic':[['Claude Console의 API 키(API keys) 화면에서 키 만들기(Create Key)를 누르고 이름과 워크스페이스를 정해 만듭니다.','https://platform.claude.com/settings/keys','API 키 열기'],['표시된 키(sk-ant-로 시작)를 바로 복사해 아래에 붙여 넣습니다. 이 창을 닫으면 키를 다시 볼 수 없습니다.','',''],['API 사용에는 결제(Billing)에 크레딧이 있어야 합니다.','https://platform.claude.com/settings/billing','결제 열기']],'openrouter':[['가장 쉬운 방법은 아래 계정 연결을 눌러 OpenRouter에 로그인하는 것입니다. 키를 Still이 바로 받아 저장합니다.','',''],['직접 넣으려면 OpenRouter의 키(API Keys) 화면에서 API 키 만들기(Create API Key)를 누르고 이름과 사용 한도를 정해 만든 뒤, 표시된 키(sk-or-로 시작)를 복사해 붙여 넣습니다.','https://openrouter.ai/settings/keys','키 화면 열기']],'brave':[['Brave Search API 대시보드에 가입하고 로그인합니다.','https://api-dashboard.search.brave.com/','대시보드 열기'],['요금제(Plans)에서 요금제 하나를 고릅니다. 무료 요금제도 카드 등록을 요구할 수 있습니다.','',''],['API 키(API Keys)에서 API 키 추가(Add API Key)를 누르고 이름을 넣어 만든 뒤, 키를 복사해 아래 칸에 붙여 넣습니다.','','']]};
+function setupStepList(steps){const list=element('ol',undefined,'settings-steps');for(const [text,url,label] of steps){const item=element('li',t(text));if(url){const link=element('a',t(label),'settings-step-link');link.href=url;link.target='_blank';link.rel='noreferrer';item.append(' ',link);}list.append(item);}return list;}
+function setupGuide(summaryText,steps,open){const details=element('details',undefined,'settings-disclosure');details.open=open;details.append(element('summary',summaryText),setupStepList(steps));return details;}
 function settingsRow(title,description,state,stateKind='neutral',action=null,disclosure=null){const row=element('div',undefined,'settings-row'),main=element('div',undefined,'settings-row-main');main.append(element('strong',title,'settings-row-title'));if(description)main.append(typeof description==='string'?element('span',description,'settings-row-description'):description);row.append(main,element('span',state,'settings-state '+stateKind));const actionNodes=[].concat(action||[]).filter(Boolean);if(actionNodes.length){const actions=element('div',undefined,'settings-row-actions');actions.append(...actionNodes);row.append(actions);}if(disclosure)row.append(disclosure);return row;}
 function settingsAction(label,onClick,extraClass=''){const button=element('button',label,'settings-row-action'+(extraClass?' '+extraClass:''));button.type='button';button.onclick=event=>onClick(event||{currentTarget:button});return button;}
 // #474: a row for something not set up yet. A pane shows only what is on; the add dialog shows the rest.
@@ -776,7 +891,7 @@ function chooserAccount(route){
    if(aiKeyRemoving===route.id){panel.append(element('p',t('다시 누르면 {name} 키를 지웁니다.',{name:route.name}),'field-hint'),settingsAction(t('지우기 확인'),event=>chooserAction(event.currentTarget,async()=>{await api('/api/main-ai/key',{provider:route.id,key:''});return {resetPanel:true,message:t('{name} 키를 지웠습니다. 다른 AI로 자동 전환하지 않습니다.',{name:route.name})};}),'destructive'),settingsAction(t('취소'),()=>{aiKeyRemoving='';aiAccountNode=null;renderAiChooser();}));}
    else panel.append(settingsAction(t('바꾸기'),()=>{if(aiKeyEditing===route.id){aiAccountNode.querySelector('input')?.focus();return;}aiKeyEditing=route.id;aiAccountNode=null;renderAiChooser();aiAccountNode.querySelector('input')?.focus();}),settingsAction(t('지우기'),()=>chooserDiscard(()=>{aiKeyRemoving=route.id;aiKeyEditing='';aiAccountNode=null;renderAiChooser();},chooserSecretDirty()),'destructive'));
   }
-  if(!route.key?.saved||aiKeyEditing===route.id)panel.append(chooserKeyForm(route));
+  if(!route.key?.saved||aiKeyEditing===route.id){if(SETUP_GUIDES[route.id])panel.append(setupGuide(t('키 받는 방법'),SETUP_GUIDES[route.id],!route.key?.saved));panel.append(chooserKeyForm(route));}
   if(route.id==='openrouter')panel.append(settingsAction(typeof openRouterFlowPending==='function'&&openRouterFlowPending()?t('연결 이어가기'):t('계정 연결'),()=>startOpenRouter()));
  }
  return panel;
@@ -1437,12 +1552,12 @@ async function saveCurrentContext(body,message){try{await api('/api/current-cont
 $('current-context-enabled').onchange=event=>{const on=event.currentTarget.checked;void saveCurrentContext({enabled:on},on?'현재 맥락을 켰습니다.':'현재 맥락을 껐습니다.');};
 $('current-context-timezone').oninput=()=>{currentContextTimezoneDirty=true;};
 // #213: Mattermost, connected and switched here on this Mac only (the server refuses it through a tunnel).
-function renderMattermost(status){if(!status)return;const list=$('mattermost-status');list.replaceChildren();const state=!status.connected?[t('연결되지 않음'),'neutral']:!status.usable?[t('회사 모드로 멈춤'),'attention']:status.state==='error'?[t('확인 필요'),'attention']:[t('받는 중'),'run'];list.append(inactive(settingsRow(status.connected?t('연결됨: {owner} (봇 {bot})',{owner:status.owner_username,bot:status.bot_username}):'Mattermost',status.server_url||'',state[0],state[1]),!status.connected));if(status.message)list.append(element('p',t(status.message),'field-hint'));$('mattermost-disconnect').hidden=!status.connected;$('mattermost-setup-summary').textContent=status.connected?t('연결 다시 설정'):t('Mattermost 연결 설정');$('mattermost-company').hidden=!status.connected;const toggle=$('mattermost-company-approved');if(!toggle.disabled)toggle.checked=!!status.company_approved;}
+function renderMattermost(status){if(!status)return;const list=$('mattermost-status');list.replaceChildren();const state=!status.connected?[t('연결되지 않음'),'neutral']:!status.usable?[t('회사 모드로 멈춤'),'attention']:status.state==='error'?[t('확인 필요'),'attention']:[t('받는 중'),'run'];list.append(inactive(settingsRow(status.connected?t('연결됨: {owner} (봇 {bot})',{owner:status.owner_username,bot:status.bot_username}):'Mattermost',status.server_url||'',state[0],state[1]),!status.connected));if(status.message)list.append(element('p',t(status.message),'field-hint'));$('mattermost-disconnect').hidden=!status.connected;$('mattermost-setup-summary').textContent=status.connected?t('연결 다시 설정'):t('Mattermost 연결 설정');const hint=$('mattermost-token-hint');if(hint?.hidden!=null)hint.hidden=!status.connected;if(status.connected&&!$('mattermost-setup')?.open){const server=$('mattermost-server');if(server?.value!=null)server.value=status.server_url||'';const owner=$('mattermost-owner');if(owner?.value!=null)owner.value=status.owner_username||'';}$('mattermost-company').hidden=!status.connected;const toggle=$('mattermost-company-approved');if(!toggle.disabled)toggle.checked=!!status.company_approved;}
 $('mattermost-form').onsubmit=event=>{event.preventDefault();const body={server_url:$('mattermost-server').value.trim(),token:$('mattermost-token').value.trim(),owner_username:$('mattermost-owner').value.trim()};if(!body.server_url||!body.token||!body.owner_username){setFeedback('mattermost-feedback',t('서버 주소, 봇 토큰, 사용자 이름을 모두 입력하세요.'));return;}busy(event.submitter,async()=>{try{await api('/api/mattermost/connect',body);$('mattermost-token').value='';$('mattermost-setup').open=false;setFeedback('mattermost-feedback',t('Mattermost를 연결했습니다. 1:1 대화를 확인하세요.'));}catch(error){setError('mattermost-feedback',error);}await refresh();});};
 $('mattermost-disconnect').onclick=event=>busy(event.currentTarget,async()=>{try{await api('/api/mattermost/disconnect',{});setFeedback('mattermost-feedback',t('Mattermost 연결을 해제했습니다.'));}catch(error){setError('mattermost-feedback',error);}await refresh();});
 $('mattermost-company-approved').onchange=event=>{const toggle=event.currentTarget,on=toggle.checked;toggle.disabled=true;void (async()=>{try{const status=await api('/api/mattermost/company-approved',{approved:on});toggle.checked=!!status?.company_approved;setFeedback('mattermost-feedback',toggle.checked?t('회사 모드에서도 Mattermost를 씁니다.'):t('회사 모드에서는 Mattermost를 멈춥니다.'));}catch(error){toggle.checked=!on;setError('mattermost-feedback',error);}finally{toggle.disabled=false;}await refresh();})();};
 // #214: Slack, connected and switched here on this Mac only (the server refuses it through a tunnel).
-function renderSlack(status){if(!status)return;const list=$('slack-status');list.replaceChildren();const state=!status.connected?[t('연결되지 않음'),'neutral']:!status.usable?[t('회사 모드로 멈춤'),'attention']:status.state==='error'?[t('확인 필요'),'attention']:[t('받는 중'),'run'];list.append(inactive(settingsRow(status.connected?t('연결됨: {owner} ({team})',{owner:status.owner_user_id,team:status.team}):'Slack','',state[0],state[1]),!status.connected));if(status.message)list.append(element('p',t(status.message),'field-hint'));if(status.manifest)$('slack-manifest').textContent=JSON.stringify(status.manifest,null,2);$('slack-disconnect').hidden=!status.connected;$('slack-setup-summary').textContent=status.connected?t('연결 다시 설정'):t('Slack 연결 설정');$('slack-company').hidden=!status.connected;const toggle=$('slack-company-approved');if(!toggle.disabled)toggle.checked=!!status.company_approved;}
+function renderSlack(status){if(!status)return;const list=$('slack-status');list.replaceChildren();const state=!status.connected?[t('연결되지 않음'),'neutral']:!status.usable?[t('회사 모드로 멈춤'),'attention']:status.state==='error'?[t('확인 필요'),'attention']:[t('받는 중'),'run'];list.append(inactive(settingsRow(status.connected?t('연결됨: {owner} ({team})',{owner:status.owner_user_id,team:status.team}):'Slack','',state[0],state[1]),!status.connected));if(status.message)list.append(element('p',t(status.message),'field-hint'));if(status.manifest)$('slack-manifest').textContent=JSON.stringify(status.manifest,null,2);$('slack-disconnect').hidden=!status.connected;$('slack-setup-summary').textContent=status.connected?t('연결 다시 설정'):t('Slack 연결 설정');const hint=$('slack-token-hint');if(hint?.hidden!=null)hint.hidden=!status.connected;if(status.connected&&!$('slack-setup')?.open){const owner=$('slack-owner');if(owner?.value!=null)owner.value=status.owner_user_id||'';}$('slack-company').hidden=!status.connected;const toggle=$('slack-company-approved');if(!toggle.disabled)toggle.checked=!!status.company_approved;}
 $('slack-form').onsubmit=event=>{event.preventDefault();const body={bot_token:$('slack-bot-token').value.trim(),app_token:$('slack-app-token').value.trim(),owner_user_id:$('slack-owner').value.trim()};if(!body.bot_token||!body.app_token||!body.owner_user_id){setFeedback('slack-feedback',t('봇 토큰, 앱 토큰, 멤버 ID를 모두 입력하세요.'));return;}busy(event.submitter,async()=>{try{await api('/api/slack/connect',body);$('slack-bot-token').value='';$('slack-app-token').value='';$('slack-setup').open=false;setFeedback('slack-feedback',t('Slack을 연결했습니다. 1:1 대화를 확인하세요.'));}catch(error){setError('slack-feedback',error);}await refresh();});};
 $('slack-disconnect').onclick=event=>busy(event.currentTarget,async()=>{try{await api('/api/slack/disconnect',{});setFeedback('slack-feedback',t('Slack 연결을 해제했습니다.'));}catch(error){setError('slack-feedback',error);}await refresh();});
 $('slack-company-approved').onchange=event=>{const toggle=event.currentTarget,on=toggle.checked;toggle.disabled=true;void (async()=>{try{const status=await api('/api/slack/company-approved',{approved:on});toggle.checked=!!status?.company_approved;setFeedback('slack-feedback',toggle.checked?t('회사 모드에서도 Slack을 씁니다.'):t('회사 모드에서는 Slack을 멈춥니다.'));}catch(error){toggle.checked=!on;setError('slack-feedback',error);}finally{toggle.disabled=false;}await refresh();})();};
@@ -1549,7 +1664,7 @@ let searchKeyEditing='',searchKeyRemoving='',searchKeySaving=false;
 function searchFeedback(text,error=false){const node=$('search-providers-feedback');if(!node)return;node.textContent=text||'';node.classList.toggle('error',Boolean(error));}
 function searchDraftDirty(){return [...$('search-providers').querySelectorAll('input')].some(input=>input.type==='password'&&input.value); }
 async function searchKeyRequest(button,fn){if(searchKeySaving)return;searchKeySaving=true;const form=$('search-providers').querySelector('form'),controls=form?[...form.querySelectorAll('input'),...form.querySelectorAll('button')]:[],previous=controls.map(node=>[node,Boolean(node.disabled)]);for(const node of controls)node.disabled=true;try{return await busy(button,fn);}finally{searchKeySaving=false;for(const [node,disabled] of previous)node.disabled=disabled;}}
-function searchKeyForm(provider){const form=element('form',undefined,'engine-token');form.dataset.provider=provider.id;form.append(element('span',t(provider.setup||''),'settings-technical-line'));const inputs={};
+function searchKeyForm(provider){const form=element('form',undefined,'engine-token');form.dataset.provider=provider.id;form.append(SETUP_GUIDES[provider.id]?setupGuide(t('키 받는 방법'),SETUP_GUIDES[provider.id],true):element('span',t(provider.setup||''),'settings-technical-line'));const inputs={};
  for(const field of provider.fields||[]){const input=element('input');input.type='password';input.name='search-'+provider.id+'-'+field.id;input.dataset.focusKey=input.name;input.autocomplete='off';input.spellcheck=false;input.setAttribute('aria-label',provider.name+' '+field.label);input.placeholder=field.label;inputs[field.id]=input;form.append(input);}
  const save=element('button',t('키 저장'),'small');save.type='submit';const cancel=settingsAction(t('취소'),()=>{if(searchKeySaving)return;searchKeyEditing='';$('search-providers').dataset.state='';renderSearchProviders(aiSettings?.search_providers);});form.append(save,cancel);
  form.onsubmit=event=>{event.preventDefault();if(searchKeySaving)return;const body={provider:provider.id};for(const [id,input] of Object.entries(inputs)){if(!input.value.trim()){searchFeedback(t('모든 키 값을 붙여 넣은 뒤 저장하세요.'),true);input.focus();return;}body[id]=input.value;}
@@ -1656,7 +1771,7 @@ const GOOGLE_CLIENT_STEPS=[
  ['내려받은 JSON 파일을 아래에서 고르거나 내용을 붙여 넣고 저장합니다.','',''],
 ];
 let googleClientGuideOpen=null;
-function googleClientGuide(openByDefault){const details=element('details',undefined,'settings-disclosure');details.open=googleClientGuideOpen===null?openByDefault:googleClientGuideOpen;details.ontoggle=()=>{googleClientGuideOpen=details.open;};details.append(element('summary',t('client 만드는 방법')));const list=element('ol',undefined,'settings-steps');for(const [text,url,label] of GOOGLE_CLIENT_STEPS){const item=element('li',t(text));if(url){const link=element('a',t(label),'settings-step-link');link.href=url;link.target='_blank';link.rel='noreferrer';item.append(' ',link);}list.append(item);}details.append(list,element('span',t('연결할 때 Google에서 확인되지 않은 앱 경고가 나오면 고급(Advanced)을 눌러 계속 진행하세요. 내가 만든 앱이라 나만 사용합니다. 권한 체크박스가 나오면 모두 체크해야 연결됩니다.'),'settings-technical-line'));return details;}
+function googleClientGuide(openByDefault){const details=setupGuide(t('client 만드는 방법'),GOOGLE_CLIENT_STEPS,googleClientGuideOpen===null?openByDefault:googleClientGuideOpen);details.ontoggle=()=>{googleClientGuideOpen=details.open;};details.append(element('span',t('연결할 때 Google에서 확인되지 않은 앱 경고가 나오면 고급(Advanced)을 눌러 계속 진행하세요. 내가 만든 앱이라 나만 사용합니다. 권한 체크박스가 나오면 모두 체크해야 연결됩니다.'),'settings-technical-line'));return details;}
 let googleClientRemoving=false;
 const GOOGLE_KEY_PROBLEMS={unavailable:'Still이 이 Mac의 키체인에서 Google 연결 암호화 키를 읽지 못했습니다. 키체인 잠금을 풀거나 접근을 허용한 뒤 다시 시도하세요. 저장된 연결은 그대로 있습니다.',invalid:'키체인의 Google 연결 암호화 키가 올바른 키가 아니어서 저장된 Google 연결을 읽을 수 없습니다. 연결 정보는 지우지 않았습니다.'};
 function renderGoogleClient(info){const box=$('google-client');if(!box)return;const view=info||{},fingerprint=JSON.stringify([view,googleClientEditing,googleClientRemoving]);if(box.dataset.state===fingerprint)return;box.dataset.state=fingerprint;box.replaceChildren();if(!view.available&&!view.configured)return;
@@ -1709,7 +1824,8 @@ $('google-disconnect-cancel').onclick=()=>{if(!googleDisconnect?.inFlight)$('goo
 $('google-disconnect').oncancel=event=>{if(googleDisconnect?.inFlight)event.preventDefault();};
 $('google-disconnect-confirm').onclick=event=>confirmGoogleDisconnect(event.currentTarget);
 $('google-disconnect-retry').onclick=event=>retryGoogleDisconnect(event.currentTarget);
-$('telegram-change').onclick=()=>{telegramDraftOpen=$('telegram-form').hidden;$('telegram-form').hidden=!telegramDraftOpen;if(telegramDraftOpen)$('telegram-token').focus();};
+// #317: the BotFather steps open by default only while no bot is set up (the disconnect button is shown once one is).
+$('telegram-change').onclick=()=>{telegramDraftOpen=$('telegram-form').hidden;$('telegram-form').hidden=!telegramDraftOpen;if(telegramDraftOpen){$('telegram-guide').open=$('disconnect').hidden;$('telegram-token').focus();}};
 $('telegram-form-cancel').onclick=()=>{telegramDraftOpen=false;$('telegram-form').hidden=true;$('telegram-token').value='';setFeedback('telegram-feedback','');$('telegram-change').focus();};
 $('telegram-pair-dismiss').onclick=()=>{$('telegram-pair').hidden=true;$('new-pair').focus();};
 function showPair(data){$('pair-link').href=data.url;$('telegram-pair').hidden=false;$('telegram-token').value='';}

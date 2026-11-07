@@ -269,8 +269,8 @@ assert(descendants($('active-ai')).find(node=>node.dataset.disclosure==='technic
  assert.equal(models().length,1);assert.equal(model().parentNode.parentNode,$('ai-chooser-list'),'selected model sits below provider groups');
  model().value='draft-model';model().oninput();model().focus();model().setSelectionRange(2,5);const firstModel=model();
  ctx.renderAiChooser();assert.equal(model(),firstModel);assert.equal(document.activeElement,firstModel);assert.equal(firstModel.selectionStart,2);assert.equal(firstModel.selectionEnd,5);
- ctx.chooserPanel('openai');assert.equal(accounts().length,1);const password=accounts()[0].querySelector('input[type="password"]');password.value='synthetic-unsaved';password.focus();password.setSelectionRange(3,7);
- ctx.renderAiChooser();assert.equal(accounts()[0].querySelector('input[type="password"]'),password);assert.equal(document.activeElement,password);assert.equal(password.selectionStart,3);assert.equal(password.selectionEnd,7);
+ ctx.chooserPanel('openai');assert.equal(accounts().length,1);const setupGuide=accounts()[0].querySelector('details');assert.equal(setupGuide.open,true);setupGuide.open=false;const password=accounts()[0].querySelector('input[type="password"]');password.value='synthetic-unsaved';password.focus();password.setSelectionRange(3,7);
+ ctx.renderAiChooser();assert.equal(accounts()[0].querySelector('details'),setupGuide);assert.equal(setupGuide.open,false,'polling preserves the API guide disclosure');assert.equal(accounts()[0].querySelector('input[type="password"]'),password);assert.equal(document.activeElement,password);assert.equal(password.selectionStart,3);assert.equal(password.selectionEnd,7);
  radio('claude-code').onchange();assert.equal(accounts()[0].querySelector('input[type="password"]'),password,'radio selection preserves independent account draft');
  radio('codex').onchange();assert.equal(model().value,'draft-model','per-route model draft survives switching');
  ctx.chooserPanel('anthropic');assert.equal($('ai-chooser-discard').hidden,false);assert.equal(accounts()[0].dataset.route,'openai');keepDiscard();assert.equal(password.value,'synthetic-unsaved');
