@@ -7289,6 +7289,18 @@ class AgentService:
     def folder_picker_available(self):
         return bool(self.folder_picker) or local_folder_picker.available()
 
+    def pick_settings_folder(self, body):
+        """Return a validated Settings draft path without saving or granting it."""
+        prompts={'read':LOCAL_FOLDER_READ,'reference':LOCAL_REFERENCE_READ,'result':LOCAL_RESULT_WRITE}
+        kind=body.get('kind')
+        if not isinstance(kind,str) or kind not in prompts:
+            raise ValueError(msg('quickstart_service.invalid_folder_kind'))
+        picker=self.folder_picker or local_folder_picker.choose_folder
+        value=picker(self.LOCAL_PICKER_PROMPTS[prompts[kind]])
+        if value is None:return {'state':'cancelled'}
+        path=folder_grants.validate(value,self.store)
+        return {'state':'selected','name':path.name,'path':str(path)}
+
     def local_authority_requests(self):
         """Pending folder requests for the owner-local approval surface."""
         requests=[]

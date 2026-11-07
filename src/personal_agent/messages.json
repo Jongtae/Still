@@ -7954,6 +7954,12 @@
   "ja": "先にモデルを選んでください。",
   "zh": "请先选择模型。"
  },
+ "quickstart_service.invalid_folder_kind": {
+  "ko": "고를 폴더 종류를 확인하세요.",
+  "en": "Check the folder kind to pick.",
+  "ja": "選択するフォルダの種類を確認してください。",
+  "zh": "请确认要选择的文件夹类型。"
+ },
  "quickstart_service.pick_read_folder": {
   "ko": "Still이 읽기만 할 폴더를 선택하세요.",
   "en": "Select a folder for Still to read only.",

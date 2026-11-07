@@ -317,6 +317,7 @@ details.technical details>summary{color:var(--muted)}
 /* folder settings */
 .folder-add{display:grid;gap:6px;margin:0;padding-top:var(--sp-4)}
 .folder-add>label,.folder-edit-group>label{font-size:var(--fs-2);font-weight:600;color:var(--ink-2)}
+.folder-pick{justify-self:start;max-width:100%;white-space:normal}
 .folder-add-row{display:flex;gap:var(--sp-2);align-items:center;min-width:0}
 .folder-add-row input{flex:1 1 auto}
 .folder-add-row button{flex:0 0 auto}

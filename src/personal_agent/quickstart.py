@@ -1328,6 +1328,10 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                     return self.reply(200,service.list_decision_models(body.get('route','')))
                 if path=='/api/openrouter/models':return self.reply(200,service.free_models())
                 if path=='/api/ollama/models':return self.reply(200,service.local_models())
+                if path=='/api/files/pick-folder':
+                    if not self.owner_local_surface():
+                        return self.reply(403,{'error':msg('quickstart.folder_continue_on_mac'),'reason':'owner_local_surface'})
+                    return self.reply(200,service.pick_settings_folder(body))
                 if path in ('/api/folder-requests/select','/api/folder-requests/approve','/api/folder-requests/deny'):
                     # #505: choosing and approving a Mac folder happens only on this
                     # Mac.  Declining removes authority, so any owner session may.
