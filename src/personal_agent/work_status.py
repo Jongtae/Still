@@ -123,6 +123,33 @@ def facts_recorded(goal_outcome, effect_state):
     """Whether both facts were recorded, rather than a legacy status alone."""
     return goal_outcome is not None and effect_state is not None
 
+def goal_reached(goal_outcome) -> bool:
+    return goal_outcome==GOAL_REACHED
+
+def effect_floor_clean(effect_state) -> bool:
+    return effect_state in (EFFECT_NONE,EFFECT_APPLIED)
+
+def request_met(status, goal_outcome) -> bool:
+    """Whether the request was met, falling back to status for legacy rows."""
+    return is_succeeded(status) and (goal_outcome is None or goal_outcome in (GOAL_REACHED,GOAL_NONE))
+
+def derive_status(goal_outcome, effect_state, steps, *, shortfall='partial', owner_gate=False, login_pending=False):
+    """The one status rule for a worker run's end (#632 phase 3).
+
+    Never succeeded unless the effect floor (Still's own records) is clean.
+    The judgment never sets effect_state.
+    """
+    if effect_state==EFFECT_UNKNOWN_STATE or steps=='unknown':return 'unknown'
+    if goal_reached(goal_outcome) and effect_floor_clean(effect_state) and not owner_gate:return 'succeeded'
+    if steps in ('partial','failed'):return steps
+    if steps=='succeeded':
+        if goal_outcome in (GOAL_NOT_REACHED,GOAL_NOT_JUDGED):return shortfall
+        if goal_outcome in (GOAL_REACHED,GOAL_OWNER_NEEDED):return 'partial'
+        if goal_outcome in (GOAL_NONE,None):
+            return 'partial' if effect_state==EFFECT_WITHHELD or login_pending or owner_gate else 'succeeded'
+        return 'partial'
+    return steps
+
 def is_resumable_continuation(status: str | None) -> bool:
     """Can a stopped Work continue at a budget/login boundary?"""
     return status in RESUMABLE_CONTINUATION

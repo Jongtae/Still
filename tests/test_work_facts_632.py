@@ -112,10 +112,12 @@ class DirectFacts(unittest.TestCase):
         self.assertEqual(AgentService.run_goal_outcome(run),'not_reached')
 
     def test_direct_judgment(self):
-        for judgment,expected in (('yes','reached'),(None,'none'),('no','not_reached'),('unavailable','not_judged')):
+        # #632 phase 3: a run whose own judgment said no or could not judge is never stored succeeded.
+        for judgment,expected,status in (('yes','reached','succeeded'),(None,'none','succeeded'),
+                                         ('no','not_reached','partial'),('unavailable','not_judged','partial')):
             with self.subTest(judgment=judgment):
                 row=self.run_work(judgment=judgment)
-                self.assertEqual((row['status'],row['goal_outcome'],row['effect_state']),('succeeded',expected,'none'))
+                self.assertEqual((row['status'],row['goal_outcome'],row['effect_state']),(status,expected,'none'))
 
     def test_worker_failure_records_facts(self):
         for unknown in (False,True):
