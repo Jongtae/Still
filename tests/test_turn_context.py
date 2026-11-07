@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from personal_agent.agent_runtime import (ATTACHMENT_NONE_NOTE, ATTACHMENTS_HEADING, CLI_TOOL_GUIDANCE, CONTEXT_BUDGET_BYTES,
+from personal_agent.agent_runtime import (WORK_DEADLINE_SECONDS, WORK_JUDGMENT_RESERVE, WORK_MODEL_TURNS, ATTACHMENT_NONE_NOTE, ATTACHMENTS_HEADING, CLI_TOOL_GUIDANCE, CONTEXT_BUDGET_BYTES,
                                           CORE_INSTRUCTIONS, MESSAGE_CAP_CHARS, POLICY, PROFILE_HEADING, attachment_facts,
                                           attachments_section, context_sections, profile_section, render_turn_prompt,
                                           turn_context, work_sources, WorkBudget, WorkLedger)
@@ -40,7 +40,9 @@ class TurnContextBuilder(unittest.TestCase):
         for _ in range(2):
             budget.spend_turn()
         now[0] += 61.5
-        line = 'Allowance left in this Work: 187 of 200 tool calls, 12 of 14 model turns, 538 seconds.'
+        turns = WORK_MODEL_TURNS - WORK_JUDGMENT_RESERVE
+        line = (f'Allowance left in this Work: 187 of 200 tool calls, {turns - 2} of {turns} model turns, '
+                f'{int(WORK_DEADLINE_SECONDS - 61.5)} seconds.')
         for route in ('cli', 'api'):
             with self.subTest(route=route):
                 context = turn_context([{'role': 'user', 'content': 'request'}], route,
@@ -74,9 +76,10 @@ class TurnContextBuilder(unittest.TestCase):
         budget = WorkBudget(clock=lambda: now[0])
         budget.attempts_used = budget.attempts
         budget.turns_used = budget.turns
-        now[0] += 601
+        now[0] += WORK_DEADLINE_SECONDS + 1
         context = turn_context([{'role': 'user', 'content': 'request'}], 'api', work_budget=budget)
-        self.assertIn('0 of 200 tool calls, 0 of 14 model turns, 0 seconds.', context_sections(context))
+        self.assertIn(f'0 of 200 tool calls, 0 of {WORK_MODEL_TURNS - WORK_JUDGMENT_RESERVE} model turns, 0 seconds.',
+                      context_sections(context))
 
     def test_every_route_shares_the_core_instructions(self):
         api = turn_context([{'role': 'user', 'content': 'hi'}], 'api')
