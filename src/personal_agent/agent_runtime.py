@@ -1844,11 +1844,15 @@ def check_arguments(parameters,args):
 # the deadline.
 #: #601: a plan, a worker run and an outcome judgment per attempt, for every attempt
 #: ``MAX_REDELEGATIONS`` allows after a Work's opening judgments; a runaway guard, not a quality bound.
-WORK_MODEL_TURNS=15
+#: #717: 15 left a fourth attempt no room; 24 carries every attempt with room for the opening judgments.
+WORK_MODEL_TURNS=24
 #: #353: a click, a typed field or an API call is one attempt, so browser and API Works
 #: need many; the deadline and model turns still bound a runaway Work.
 WORK_TOOL_ATTEMPTS=200
-WORK_DEADLINE_SECONDS=600
+#: #717: a subscription CLI attempt takes minutes, so 600 s let one re-delegation at most;
+#: the owner can ask other things while a Work runs (#17), and a CLI turn stays at most
+#: ``bounded_execution.MAX_TIMEOUT_SECONDS``.
+WORK_DEADLINE_SECONDS=1500
 #: #1418: one turn of a request's allowance is held for the outcome judgment, so the
 #: worker, a plan or a reaction can never leave the last answer unjudged.
 WORK_JUDGMENT_RESERVE=1

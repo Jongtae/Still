@@ -64,8 +64,8 @@ SECTIONS = ('profile', 'current_context', 'prepared', 'history')
 #: #804, #820: every attempt carries every section - the owner model, the prepared
 #: answers and the recent conversation.  A plan no longer selects or drops any.
 ALWAYS_SECTIONS = SECTIONS
-#: Re-delegations after the first attempt (so at most three attempts per Work).
-MAX_REDELEGATIONS = 2
+#: Re-delegations after the first attempt (so at most four attempts per Work; #717 raised it from two).
+MAX_REDELEGATIONS = 3
 #: An attempt is started only while the Work's deadline leaves at least this, and (#671) at least
 #: as long as the longest attempt this Work has already run (``Orchestration.attempt_seconds``).
 MIN_ATTEMPT_SECONDS = 60

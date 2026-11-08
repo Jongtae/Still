@@ -2,7 +2,7 @@
 import unittest
 from unittest import mock
 
-from personal_agent.agent_runtime import WorkBudget, WorkLedger
+from personal_agent.agent_runtime import WORK_DEADLINE_SECONDS, WorkBudget, WorkLedger
 from personal_agent.quickstart_service import AgentService
 import test_ask_location as location_cases
 from test_agency_recovery import _store
@@ -38,13 +38,13 @@ class RequestBudget(unittest.TestCase):
         self.now += 3600
         resumed = self.ledger(child)
         self.assertEqual([resumed.used(k) for k in ('attempts', 'turns', 'nudges')], [1, 1, 1])
-        self.assertEqual(resumed.remaining(), 550)
+        self.assertEqual(resumed.remaining(), WORK_DEADLINE_SECONDS - 50)
         bridge = self.ledger(child, fresh=False)
         self.assertTrue(bridge.spend(40))
         self.assertEqual(resumed.used(), 2)
         self.assertFalse(parent.spend(40))
         parent.pause()
-        self.assertEqual(resumed.remaining(), 550)
+        self.assertEqual(resumed.remaining(), WORK_DEADLINE_SECONDS - 50)
         self.assertFalse(self.ledger(self.parent, fresh=False).spend(40), 'a new old-parent bridge cannot join the child')
         self.assertTrue(self.ledger(self.parent).expired(), 'a late parent host cannot take back the request')
 
