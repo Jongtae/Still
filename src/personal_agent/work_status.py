@@ -41,6 +41,7 @@ UNVERIFIED_RESULT | failed, partial, interrupted, unknown | Must stored assistan
 
 Stored facts (#632 phase 2)
 --------------------------
+Goal ``answered_by_plan``: the plan wrote the reply, without a separate goal judgment.
 Goal ``reached`` / ``not_reached``: the outcome judgment said the reply served /
 did not serve the request. ``owner_needed``: a recorded owner prerequisite
 (approval, sign-in, draft or missing connection) stopped the Work. ``not_judged``:
@@ -99,7 +100,9 @@ UNVERIFIED_RESULT = frozenset(('failed', 'partial', 'interrupted', 'unknown'))
 
 GOAL_REACHED, GOAL_NOT_REACHED, GOAL_OWNER_NEEDED, GOAL_NOT_JUDGED, GOAL_NONE = (
     'reached', 'not_reached', 'owner_needed', 'not_judged', 'none')
-GOAL_OUTCOMES = frozenset((GOAL_REACHED, GOAL_NOT_REACHED, GOAL_OWNER_NEEDED, GOAL_NOT_JUDGED, GOAL_NONE))
+# #749: answered by the plan, without a separate outcome judgment.
+GOAL_PLAN_ANSWERED = 'answered_by_plan'
+GOAL_OUTCOMES = frozenset((GOAL_PLAN_ANSWERED, GOAL_REACHED, GOAL_NOT_REACHED, GOAL_OWNER_NEEDED, GOAL_NOT_JUDGED, GOAL_NONE))
 EFFECT_NONE, EFFECT_APPLIED, EFFECT_WITHHELD, EFFECT_UNKNOWN_STATE = 'none', 'applied', 'withheld', 'unknown'
 EFFECT_STATES = frozenset((EFFECT_NONE, EFFECT_APPLIED, EFFECT_WITHHELD, EFFECT_UNKNOWN_STATE))
 
@@ -131,7 +134,7 @@ def effect_floor_clean(effect_state) -> bool:
 
 def request_met(status, goal_outcome) -> bool:
     """Whether the request was met, falling back to status for legacy rows."""
-    return is_succeeded(status) and (goal_outcome is None or goal_outcome in (GOAL_REACHED,GOAL_NONE))
+    return is_succeeded(status) and (goal_outcome is None or goal_outcome in (GOAL_REACHED,GOAL_PLAN_ANSWERED,GOAL_NONE))
 
 def derive_status(goal_outcome, effect_state, steps, *, shortfall='partial', owner_gate=False, login_pending=False):
     """The one status rule for a worker run's end (#632 phase 3).
@@ -142,6 +145,8 @@ def derive_status(goal_outcome, effect_state, steps, *, shortfall='partial', own
     if effect_state==EFFECT_UNKNOWN_STATE or steps=='unknown':return 'unknown'
     if goal_reached(goal_outcome) and effect_floor_clean(effect_state) and not owner_gate:return 'succeeded'
     if steps in ('partial','failed'):return steps
+    if goal_outcome==GOAL_PLAN_ANSWERED:
+        return 'succeeded' if effect_state==EFFECT_NONE and not owner_gate and not login_pending else 'partial'
     if steps=='succeeded':
         if goal_outcome in (GOAL_NOT_REACHED,GOAL_NOT_JUDGED):return shortfall
         if goal_outcome in (GOAL_REACHED,GOAL_OWNER_NEEDED):return 'partial'

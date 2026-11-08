@@ -48,7 +48,7 @@ class StoredFacts(unittest.TestCase):
                 elif judgment is None:expected=terminal if terminal in ('reached','not_reached') else 'not_judged'
             with self.subTest(orchestrated=orchestrated,terminal=terminal,judgment=judgment):
                 self.assertEqual(ws.goal_outcome_of(terminal,judgment,orchestrated),expected)
-        self.assertEqual(ws.GOAL_OUTCOMES,{'reached','not_reached','owner_needed','not_judged','none'})
+        self.assertEqual(ws.GOAL_OUTCOMES,{'answered_by_plan','reached','not_reached','owner_needed','not_judged','none'})
         self.assertEqual((ws.GOAL_REACHED,ws.GOAL_NOT_REACHED,ws.GOAL_OWNER_NEEDED,ws.GOAL_NOT_JUDGED),
                          (orch.REACHED,orch.NOT_REACHED,orch.OWNER_NEEDED,orch.NOT_JUDGED))
         self.assertEqual((orch.UNJUDGED,orch.WORKER_FAILED),('unjudged','worker_failed'))

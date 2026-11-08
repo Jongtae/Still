@@ -211,7 +211,7 @@ class _PreviewCase(_Case):
         def structured(context, question, schema):
             self.schemas.append(schema)
             offered = 'preview' in schema['properties']
-            data = {'worker': schema['properties']['worker']['enum'][0], 'model': '', 'brief': {'notes': ''},
+            data = {'reply': '', 'worker': schema['properties']['worker']['enum'][0], 'model': '', 'brief': {'notes': ''},
                     'reason': 'fits', 'account_change': False, 'owner_situation': False,
                     **({'preview': self.preview} if offered else {})}
             return StructuredDecision(OUTCOME_DECIDED, data, fixture_confidence())
@@ -417,3 +417,26 @@ class TellOwnerService(_PreviewCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class PlanReplyDelivery749(_PreviewCase):
+    def test_direct_plan_reply_uses_the_shared_delivery_and_reaction_path(self):
+        base = self.judge
+        def structured(context, question, schema):
+            data = {'reply': '이미 주신 내용으로 답할 수 있어요.',
+                    'worker': schema['properties']['worker']['enum'][0], 'model': '',
+                    'brief': {'notes': ''}, 'reason': 'Given facts suffice.',
+                    'account_change': False, 'owner_situation': False, 'technical_work': False,
+                    'preview': dict(EMPTY)}
+            return StructuredDecision(OUTCOME_DECIDED, data, fixture_confidence())
+        self.service.use_decision_engine(FixtureDecisionEngine(judge=base._judge, structured=structured))
+        work = self.receive(self.REQUEST)
+        row = self.store.job(work)
+        self.assertEqual((row['status'], row['goal_outcome'], row['effect_state'], row['delivery']),
+                         ('succeeded', 'answered_by_plan', 'none', 'pending'))
+        self.assertEqual(self.model_calls, [])
+        self.assertEqual(self.sends(), [])
+        self.service.deliver_one()
+        self.assertEqual(self.store.job(work)['delivery'], 'sent')
+        self.assertEqual(self.texts(), [row['response']])
+        self.assertTrue(any(method == 'setMessageReaction' for method, _body in self.telegram))

@@ -33,6 +33,7 @@ class Derivation(unittest.TestCase):
                 (False,True),(False,True),('partial','failed')):
             cases={
                 'reached': 'reached_clean' if effect in ('none','applied') and not gate else 'reached_held',
+                'answered_by_plan': 'none_clear' if effect=='none' and not gate and not login else 'none_held',
                 'owner_needed': 'owner_needed',
                 'none': 'none_held' if effect=='withheld' or gate or login else 'none_clear',
                 None: 'none_held' if effect=='withheld' or gate or login else 'none_clear',
@@ -51,7 +52,7 @@ class Derivation(unittest.TestCase):
         for goal in (*ws.GOAL_OUTCOMES,None):
             self.assertEqual(ws.goal_reached(goal),goal=='reached')
             for status in ('succeeded','partial','failed','unknown',None):
-                self.assertEqual(ws.request_met(status,goal),status=='succeeded' and goal in ('reached','none',None))
+                self.assertEqual(ws.request_met(status,goal),status=='succeeded' and goal in ('reached','answered_by_plan','none',None))
         for effect in (*ws.EFFECT_STATES,None):
             self.assertEqual(ws.effect_floor_clean(effect),effect in ('none','applied'))
 
