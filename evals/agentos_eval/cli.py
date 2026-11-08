@@ -253,6 +253,8 @@ def main(argv=None):
     running.add_argument('--roles', default='')
     running.add_argument('--max-calls', type=int)
     running.add_argument('--trials', type=int, default=1)
+    running.add_argument('--requalify', action='store_true',
+                         help='run the shipped CLI update qualification first, sharing --max-calls with measured cases')
     running.add_argument('--keep-text', action='store_true')
     running.add_argument('--out', type=Path)
     comparison = actions.add_parser('compare')
