@@ -155,7 +155,7 @@ The existing local implementation uses named modules rather than a new framework
 | `telegram_delivery.TelegramDelivery` via `AgentService.telegram_delivery` | Telegram connection lifecycle, callback authorization and task-card/result helpers, receive-failure logging, and delivery coordination across the existing surfaces, with service forwarding entry points and no additional state owner. |
 | `telegram_surface.TelegramSurface` | Telegram-specific ingestion, callbacks and delivery, with forwarding service entry points; it does not own a second store. |
 | `conversation_projection` and `telegram_presence` | Truth-qualified owner-facing output and best-effort transient signals. |
-| `telegram_store.TelegramStore` via `QuickStore.telegram` | Telegram tables in the owner's existing SQLite database, preserving caller transaction participation and recovery boundaries. |
+| `telegram_store.TelegramStore` via `QuickStore.telegram` | Telegram tables in the owner's existing SQLite database, including send-state reads, notice cancellation and recovery task-card queries, preserving caller transaction participation and recovery boundaries. |
 
 `SurfaceCapabilities` declares reactions, typing, live drafts, buttons and native stop. Core presentation follows capabilities rather than a named-channel branch. Existing adapters and terminal/browser entry points retain their actual support limits; [Presence](presence-experience-contract.en.md) and [onboarding](contributor-onboarding.en.md) provide the behavior and code map. Sharing a conversation boundary is not evidence that all surfaces support identical widgets.
 
