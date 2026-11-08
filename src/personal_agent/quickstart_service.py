@@ -9205,7 +9205,7 @@ class AgentService:
             resumed=self._queue_action_continuation(db,job,{'action':'budget_continue','digest':binding,
                 'offer_digest':binding,'progress':row['progress']})
             self.store.put('budget_continue:'+work_id,{**row,'state':'resumed' if resumed else 'withheld'},db=db)
-            db.execute("UPDATE telegram_notifications SET state='budget_continue_answered' WHERE job_id=? AND kind='budget_continue' AND fingerprint=?",(work_id,row['nonce']))
+            self.store.telegram.answer_budget_continue(db,work_id,row['nonce'])
         if not resumed and not self.photo_work_has_pending_resume(work_id):self.store.remove_telegram_photo(work_id)
         return {'resumed':resumed,'response':msg('budget_continue.resumed' if resumed else 'budget_continue.stale')}
 
@@ -10794,14 +10794,10 @@ class AgentService:
         """
         prefixes=[surface.channel_prefix for surface in self.surfaces if surface.channel_prefix]
         with self.store.db() as db:
-            running=[row['id'] for row in db.execute(
-                "SELECT j.id FROM jobs j WHERE j.status='running' AND ("+(' OR '.join(['substr(j.channel,1,?)=?']*len(prefixes)) or '0')
-                +") AND j.delivery='none' "
-                "AND NOT EXISTS (SELECT 1 FROM telegram_task_cards c WHERE c.job_id=j.id AND c.state!='deleting')",
-                [value for prefix in prefixes for value in (len(prefix),prefix)])]
+            running=self.store.telegram.running_without_task_cards(db,prefixes)
         self.store.recover()
         with self.store.db() as db:
-            db.execute("DELETE FROM telegram_task_cards WHERE state='deleting' AND job_id IN (SELECT id FROM jobs WHERE status='interrupted')")
+            self.store.telegram.delete_interrupted_task_cards(db)
             for work_id in running:
                 db.execute("UPDATE jobs SET delivery='pending' WHERE id=? AND status='interrupted' AND delivery='none'",(work_id,))
         return running

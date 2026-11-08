@@ -219,8 +219,7 @@ class TelegramDelivery:
             replies=db.execute("UPDATE jobs SET delivery='cancelled' WHERE delivery='pending' AND NOT ("
                                +(' OR '.join(['substr(channel,1,?)=?']*len(prefixes)) or '0')+')',
                                [value for prefix in prefixes for value in (len(prefix),prefix)]).rowcount
-            notices=db.execute("UPDATE telegram_notifications SET state='cancelled' WHERE state='queued' AND surface NOT IN ("
-                               +(','.join('?'*len(names)) or "''")+')',names).rowcount
+            notices=service.store.telegram.cancel_orphan_notifications(db,names)
         return bool(replies or notices)
 
     @staticmethod

@@ -310,7 +310,7 @@ class TelegramSurface(ConversationSurface):
             # #208 review: the row was read before the lock; a switch to work mode may have cancelled
             # it since (``cancel_pending_deliveries`` holds the same lock), so a cancelled row stays cancelled.
             with service.store.db() as db:
-                state=db.execute('SELECT state FROM telegram_notifications WHERE id=?',(notification['id'],)).fetchone()
+                state=service.store.telegram.notification_state(db,notification['id'])
             if state is None or state['state']=='cancelled':return True
             cfg=service.store.config('telegram',{})
             allowed=(cfg.get('enabled') and notification['generation']==cfg.get('generation')
@@ -1244,8 +1244,7 @@ class TelegramSurface(ConversationSurface):
             db.execute('BEGIN IMMEDIATE')
             replies=db.execute("UPDATE jobs SET delivery='cancelled' WHERE delivery='pending' AND substr(channel,1,?)=?",
                                (len(self.channel_prefix),self.channel_prefix)).rowcount
-            notices=db.execute("UPDATE telegram_notifications SET state='cancelled' WHERE state='queued' AND surface=?",
-                               (self.name,)).rowcount
+            notices=service.store.telegram.cancel_pending_notifications(db,self.name)
         return replies,notices
 
     def settle_expired_telegram_photo_albums(self, now=None):
