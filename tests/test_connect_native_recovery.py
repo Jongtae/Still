@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from test_conversation_connector_handoff import (HandoffTestCase as NativeCase,
     OWNER, GENERATION, GMAIL_CONNECTOR_ID, GMAIL_SCOPES)
-from personal_agent.agent_runtime import WorkLedger, WORK_STOP_KEY
+from personal_agent.agent_runtime import WorkLedger, WORK_DEADLINE_SECONDS, WORK_STOP_KEY
 from personal_agent.connector_contract import ConnectorState, ConnectorContractError, PENDING_WORK_KEY
 from personal_agent.conversation_handoff import (ConnectorHandoff, ConversationHandoffError, LOCAL_FOLDER_READ)
 from personal_agent.quickstart_service import AgentService
@@ -153,7 +153,7 @@ class ReadyNativeRecovery(NativeCase):
         work=self.park()
         now=[time.time()]
         budget=WorkLedger(self.store,work,fresh=True,wall=lambda:now[0])
-        now[0]+=601
+        now[0]+=WORK_DEADLINE_SECONDS+1
         budget.pause()
         self.connect_gmail()
         self.restart()

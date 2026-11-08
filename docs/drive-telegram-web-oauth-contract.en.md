@@ -1,5 +1,9 @@
 # DRIVE-TG-01 — Telegram Drive Web OAuth Contract
 
+> Historical contract: the connector described below was removed by Still #739.
+> Drive now uses the existing full-Drive connection. This preserved contract
+> records the earlier scope and evidence; it is not a current setup guide.
+
 ## Owner journey
 
 When paired Telegram requests need Drive context and no connection exists, Still sends an HTTPS `Google Drive 연결하기` button. The owner opens it in a normal browser, signs in and consents directly with Google, and returns to Telegram for a redacted connection result. A browser embedded in Telegram is not an OAuth trust boundary.

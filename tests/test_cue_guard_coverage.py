@@ -17,7 +17,6 @@ EXCLUDED = {
     'connector_revocation.py': 'OAuth revoke endpoint hostname is provider protocol syntax.',
     'context_inbox.py': 'Sensitive-data filtering regex is security policy, not owner intent.',
     'conversation_projection.py': 'Hangul range comparisons implement grammatical particles.',
-    'drive_web_oauth.py': 'Drive scopes, MIME types and connection-status text need classification.',
     'folder_grants.py': 'Sensitive host directories are filesystem authority exclusions.',
     'intranet.py': 'Metadata hostname denylist enforces network authority.',
     'isolated_engine_gateway.py': 'Fixed worker-error sanitization strings need protocol classification.',

@@ -310,10 +310,8 @@ class BackfillSpanAndDriveSplices(unittest.TestCase):
         return job
 
     def drive_set_up_for(self, chat=CHAT):
-        """Durable Drive handoff state as an offer and a Picker selection leave it (connector state, not text)."""
-        from personal_agent.drive_web_oauth import SELECTED_FILES_KEY, STATUS_KEY
-        self.store.put(STATUS_KEY, {'state': 'disconnected', 'owner': chat, 'audit': ['connection-offered']})
-        self.store.put(SELECTED_FILES_KEY, {})
+        """Durable Drive handoff state as an offer and a historical file selection leave it (connector state, not text)."""
+        self.store.put('retired_drive_739', {'status': {'state': 'disconnected', 'owner': chat, 'audit': ['connection-offered']}, 'selected_files': {}})
 
     def test_a_chat_the_drive_handoff_served_keeps_its_untraced_works_unknown(self):
         self.drive_set_up_for()

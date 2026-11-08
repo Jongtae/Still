@@ -55,7 +55,7 @@ let previews=0;
 answers['/api/connections/google/revocations']={pending_provider_revocations:[]};
 (async()=>{
  // Only a connected or reauth_required row offers 연결 해제, next to its existing reconnect link.
- const rows=[gmail,{...gmail,connector_id:'google-calendar-write',state:'reauth_required'},{...gmail,connector_id:'google-calendar',state:'disconnected'},{...gmail,connector_id:'google-drive-read',state:'blocked'},{...gmail,connector_id:'google-drive-read',state:'surprising'}];
+ const rows=[gmail,{...gmail,connector_id:'google-calendar-write',state:'reauth_required'},{...gmail,connector_id:'google-calendar',state:'disconnected'},{...gmail,connector_id:'google-drive',state:'blocked'},{...gmail,connector_id:'google-drive',state:'surprising'}];
  for(const row of rows){ctx.renderConnectors(svc(row));assert.equal(Boolean(button('연결 해제')),['connected','reauth_required'].includes(row.state),`${row.state}: disconnect offered only for a live connection`);}
  ctx.renderConnectors(svc(gmail));const opener=button('연결 해제');assert(opener.className.includes('destructive'),'destructive grammar');
  assert(descendants($('connector-controls')).some(node=>node.tag==='a'&&node.textContent==='다시 연결'),'the reconnect link stays');
@@ -71,7 +71,6 @@ answers['/api/connections/google/revocations']={pending_provider_revocations:[]}
  assert(!$('google-disconnect-confirm').disabled);assert.equal(text('google-disconnect-title'),'Google Gmail 연결 해제');
  const effectsText=text('google-disconnect-effects');
  for(const phrase of ['멈추는 것','바로 쓰지 않습니다','인증 정보를 삭제합니다','Google(oauth2.googleapis.com)에 권한 취소를 요청합니다','남는 것','결과물과 작업 기록은 지우지 않습니다','Google에 있는 메일, 일정, 파일은 삭제하지 않습니다'])assert(effectsText.includes(phrase),'preview names: '+phrase);
- assert(!effectsText.includes('Picker'),'the Drive-only effect is not claimed for Gmail');
 
  // Confirm sends exactly the preview's confirmation once and shows the receipt's own words.
  // While the request is out the dialog cannot be dismissed (취소 disabled, Esc prevented), so the receipt is never discarded.
@@ -126,12 +125,12 @@ answers['/api/connections/google/revocations']={pending_provider_revocations:[]}
  dialog.close();
 
  // Unexpected effects are not paraphrased: the server's own statement is shown.
- answers['/api/connections/google/disconnect/preview']={connector_id:'google-drive-read',confirmation:'x',effects:{...effects,remote_data_deletion:'request'},message:'server preview text'};
- ctx.renderConnectors(svc({...gmail,connector_id:'google-drive-read'}));button('연결 해제').onclick({currentTarget:button('연결 해제')});await new Promise(resolve=>setTimeout(resolve,0));
+ answers['/api/connections/google/disconnect/preview']={connector_id:'google-drive',confirmation:'x',effects:{...effects,remote_data_deletion:'request'},message:'server preview text'};
+ ctx.renderConnectors(svc({...gmail,connector_id:'google-drive'}));button('연결 해제').onclick({currentTarget:button('연결 해제')});await new Promise(resolve=>setTimeout(resolve,0));
  assert.equal(text('google-disconnect-effects'),'server preview text');dialog.close();
- answers['/api/connections/google/disconnect/preview']={connector_id:'google-drive-read',confirmation:'y',effects,message:''};
- ctx.renderConnectors(svc({...gmail,connector_id:'google-drive-read'}));button('연결 해제').onclick({currentTarget:button('연결 해제')});await new Promise(resolve=>setTimeout(resolve,0));
- assert(text('google-disconnect-effects').includes('Google Picker에서 골라 둔 파일 선택도 지웁니다'),'Drive preview names the file selection');dialog.close();
+ answers['/api/connections/google/disconnect/preview']={connector_id:'google-drive',confirmation:'y',effects,message:''};
+ ctx.renderConnectors(svc({...gmail,connector_id:'google-drive'}));button('연결 해제').onclick({currentTarget:button('연결 해제')});await new Promise(resolve=>setTimeout(resolve,0));
+ assert(!text('google-disconnect-effects').includes('파일 선택'),'Drive has no per-file selection to remove');dialog.close();
 
  // A still-unconfirmed revocation stays on the row; retry is offered only while not reconnected.
  answers['/api/connections/google/revocations']={pending_provider_revocations:[{connector_id:'google-gmail-read',label:'Gmail',since:1}]};

@@ -54,7 +54,7 @@ def reported(calls, end='turn.completed'):
 
 def plan(worker, notes, *, model='', reason='fits', effort=None):
     """One plan (#820, #826): worker, model and optional notes; it never selects context, criteria or a tool subset."""
-    return {'worker': worker, 'model': model, 'brief': {'notes': notes}, 'reason': reason,
+    return {'reply': '', 'worker': worker, 'model': model, 'brief': {'notes': notes}, 'reason': reason,
             **({'effort': effort} if effort is not None else {})}
 
 
@@ -570,7 +570,7 @@ class Redelegation(Harness):
         digests = [detail['brief_digest'] for status, detail in self.events(job, 'planned')]
         self.assertNotEqual(digests[0], digests[1])
 
-    def test_at_most_two_redelegations(self):
+    def test_at_most_max_redelegations(self):
         # #729: each re-plan must change the worker, model or tools.
         self.script([plan('codex', f'Try path {n}.', model=model)
                      for n, model in enumerate(('', 'gpt-5.6-luna', 'gpt-5.6-terra', 'haiku', 'sonnet'))],
@@ -579,7 +579,7 @@ class Redelegation(Harness):
         self.assertEqual(len(self.engine.turns), 1 + MAX_REDELEGATIONS)
         self.assertEqual(len(self.asked_plans), 1 + MAX_REDELEGATIONS)
         last = self.events(job, 'evaluated')[-1][1]
-        self.assertEqual((last['attempt'], last['next'], last['stop']), (3, 'stop', 'limit'))
+        self.assertEqual((last['attempt'], last['next'], last['stop']), (1 + MAX_REDELEGATIONS, 'stop', 'limit'))
         self.assertEqual(row['response'], 'cli answer')
         # Review P1: judged short and not re-delegated is never stored as succeeded;
         # no tool result was observed, so it failed.
@@ -600,7 +600,7 @@ class Redelegation(Harness):
             return spent
         self.service.work_budget = budget
         self.script([plan('codex', f'Try path {n}.', model=model)
-                     for n, model in enumerate(('', 'gpt-5.6-luna', 'gpt-5.6-terra'))], goals=[False] * 3)
+                     for n, model in enumerate(('', 'gpt-5.6-luna', 'gpt-5.6-terra', 'haiku'))], goals=[False] * 4)
         job, _row = self.run_work('끝까지 해줘')
         self.assertEqual(len(self.engine.turns), 1 + MAX_REDELEGATIONS)
         last = self.events(job, 'evaluated')[-1][1]
@@ -893,7 +893,7 @@ class ToolsAndReplan(Harness):
         self.assertIn('weather', turn['offered'], 'the full offered toolset, not a subset')
         context, _question, schema = self.asked_plans[0]
         self.assertEqual(set(schema['required']), {'worker', 'model', 'effort', 'brief', 'reason', 'account_change',
-                                                   'owner_situation', 'technical_work'})
+                                                   'owner_situation', 'technical_work', 'reply'})
         descriptions = context.facts['tool_descriptions']
         self.assertIn('- public_page_read: ', descriptions)
         self.assertIn('- list_notes: ', descriptions)
@@ -2142,7 +2142,7 @@ class OrchestrationUnit(unittest.TestCase):
         self.assertEqual(schema['properties']['worker']['enum'], ['a', 'b'])
         self.assertEqual(set(schema['required']), set(schema['properties']))
         self.assertEqual(set(schema['properties']['brief']['required']), set(schema['properties']['brief']['properties']))
-        self.assertIn('you do not do the work yourself', QUESTION)
+        self.assertIn('except for the direct reply below, you delegate the work', QUESTION)
 
     def test_the_plan_context_carries_the_request_whole_and_bounds_the_rest(self):
         request = '긴 요청 ' * 2000
@@ -3326,7 +3326,7 @@ class AccountChangeFloor(unittest.TestCase):
         worker = {**self.worker(), 'id': 'claude-code', 'available': True}
         orchestration = Orchestration(None, None, request='')
         orchestration.failed, orchestration.budget_allows = set(), (lambda: True)
-        plan = {'worker': 'claude-code', 'model': 'haiku', 'brief': {'notes': ''}, 'reason': 'r'}
+        plan = {'reply': '', 'worker': 'claude-code', 'model': 'haiku', 'brief': {'notes': ''}, 'reason': 'r'}
         attempt, why = orchestration.validate({**plan, 'account_change': True}, [worker], 1)
         self.assertEqual((attempt.model, attempt.lifted_from, attempt.account_change, why), ('sonnet', 'haiku', True, ''))
         for other in ({**plan, 'account_change': False}, plan):
@@ -3341,7 +3341,7 @@ class AccountChangeFloor(unittest.TestCase):
         worker = {**self.worker(), 'id': 'claude-code', 'available': True}
         orchestration = Orchestration(None, None, request='')
         orchestration.failed, orchestration.budget_allows = set(), (lambda: True)
-        plan = {'worker': 'claude-code', 'model': 'haiku', 'brief': {'notes': ''}, 'reason': 'r'}
+        plan = {'reply': '', 'worker': 'claude-code', 'model': 'haiku', 'brief': {'notes': ''}, 'reason': 'r'}
         orchestration.validate({**plan, 'account_change': True}, [worker], 1)
         attempt, _ = orchestration.validate({**plan, 'account_change': False}, [worker], 2)
         self.assertEqual((attempt.model, attempt.account_change), ('sonnet', True), 'a replan saying false keeps the floor')
@@ -3360,7 +3360,7 @@ class AccountChangeFloor(unittest.TestCase):
         orchestration = Orchestration(None, None, request='')
         orchestration.failed, orchestration.budget_allows, orchestration.attempts = set(), (lambda: True), []
         orchestration.catalogue, orchestration.notice, orchestration.account_change = catalogue, None, False
-        orchestration._ask = lambda candidates: ({'worker': 'nope', 'model': 'haiku', 'brief': {'notes': ''},
+        orchestration._ask = lambda candidates: ({'reply': '', 'worker': 'nope', 'model': 'haiku', 'brief': {'notes': ''},
                                                   'reason': 'r', 'account_change': True}, '')
         orchestration._set_state = lambda value: {}
         orchestration.record = lambda *args, **kwargs: None
@@ -3382,7 +3382,7 @@ class OwnerSituationFloor(unittest.TestCase):
 
     def test_owner_situation_lifts_is_sticky_and_false_keeps_the_low_cost_choice(self):
         worker = {**self.worker(), 'id': 'claude-code', 'available': True}
-        plan = {'worker': 'claude-code', 'model': 'haiku', 'brief': {'notes': ''}, 'reason': 'r', 'account_change': False}
+        plan = {'reply': '', 'worker': 'claude-code', 'model': 'haiku', 'brief': {'notes': ''}, 'reason': 'r', 'account_change': False}
         orchestration = self.orchestration()
         attempt, why = orchestration.validate({**plan, 'owner_situation': True}, [worker], 1)
         self.assertEqual((attempt.model, attempt.lifted_from, attempt.owner_situation, attempt.account_change, why),
@@ -3417,7 +3417,7 @@ class OwnerSituationFloor(unittest.TestCase):
         # #1380 live: a lowest-cost worker misread a code-run refusal and asked for a token in chat.
         from personal_agent.orchestrator import QUESTION
         worker = {**self.worker(), 'id': 'claude-code', 'available': True}
-        plan = {'worker': 'claude-code', 'model': 'haiku', 'brief': {'notes': ''}, 'reason': 'r',
+        plan = {'reply': '', 'worker': 'claude-code', 'model': 'haiku', 'brief': {'notes': ''}, 'reason': 'r',
                 'account_change': False, 'owner_situation': False}
         orchestration = self.orchestration()
         attempt, why = orchestration.validate({**plan, 'technical_work': True}, [worker], 1)
@@ -3436,7 +3436,7 @@ class OwnerSituationFloor(unittest.TestCase):
                                            'worker': lambda self, wid: worker if wid == 'claude-code' else None})()
         orchestration = self.orchestration()
         orchestration.attempts, orchestration.catalogue, orchestration.notice = [], catalogue, None
-        orchestration._ask = lambda candidates: ({'worker': 'nope', 'model': 'haiku', 'brief': {'notes': ''},
+        orchestration._ask = lambda candidates: ({'reply': '', 'worker': 'nope', 'model': 'haiku', 'brief': {'notes': ''},
                                                   'reason': 'r', 'account_change': False, 'owner_situation': True}, '')
         orchestration._set_state = lambda value: {}
         orchestration.record = lambda *args, **kwargs: None
@@ -3450,7 +3450,7 @@ class OwnerSituationFloor(unittest.TestCase):
         api = {'id': 'openai', 'available': True, 'models': ['gpt-4o-mini'], 'model_tiers': {'gpt-4o-mini': TIER_LOWEST},
                'default_model': 'gpt-4o-mini'}
         cli = {**self.worker(), 'id': 'claude-code', 'available': True}
-        plan = {'worker': 'openai', 'model': '', 'brief': {'notes': ''}, 'reason': 'r', 'account_change': False,
+        plan = {'reply': '', 'worker': 'openai', 'model': '', 'brief': {'notes': ''}, 'reason': 'r', 'account_change': False,
                 'owner_situation': True}
         self.assertEqual(self.orchestration().validate(plan, [api, cli], 1), (None, 'floor'))
         attempt, why = self.orchestration().validate(plan, [api], 1)
@@ -3767,3 +3767,131 @@ class CliClosingJudgment631(Harness):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class PlanDirectReply749(Harness):
+    """Injected engines, real Work executor and finish/delivery, temporary owner store."""
+
+    def test_given_facts_reply_finishes_without_worker_or_goal_judgment(self):
+        from personal_agent.agent_runtime import MEMORY_OWNER
+        from personal_agent.memory_service import MemoryService
+        MemoryService(self.store, private_read_sink=MemoryService.NO_EGRESS_GUARD).remember_profile(
+            MEMORY_OWNER, 'settings', VOICE_PREFERENCE_KEY, 'Use a brief voice.')
+        data = {**plan('codex', ''), 'reply': 'The facts already given answer this.',
+                'brief': {'notes': '', 'lens': ''}, 'effort': '', 'account_change': False,
+                'owner_situation': False, 'technical_work': False, 'confidence': 0.9}
+        fixture = self.script([data])
+        from test_decision_engine import OPENAI, openai_tool_reply
+        from personal_agent.orchestrator import plan_shape
+        model = ModelDecisionEngine(ModelAdapter(lambda *args, **kwargs: openai_tool_reply(data)),
+                                    lambda: (OPENAI, OPENAI_KEY), audit=self.service.record_decision, now=self.clock)
+        scripted = fixture._structured
+        def structured(context, question, schema):
+            result = scripted(context, question, schema)
+            return model.structured(context, question, schema, plan_shape) if context.purpose == PURPOSE else result
+        fixture._structured = structured
+        with mock.patch('personal_agent.work_executor.time.time', self.clock):
+            job, row = self.run_work('What did I already tell you?', owner_words=True)
+        self.assertEqual((row['status'], row['response'], row['goal_outcome'], row['effect_state']),
+                         ('succeeded', 'The facts already given answer this.', 'answered_by_plan', 'none'))
+        self.assertEqual(self.engine.turns, [])
+        self.assertEqual(self.transport.bodies, [])
+        self.assertEqual(self.asked_goals, [])
+        self.assertEqual(len(self.asked_plans), 1)
+        self.assertIn('Use a brief voice.', self.asked_plans[0][0].facts['owner_profile'])
+        routes = [r for r in self.store.work_decisions(job) if r.get('kind') == 'route']
+        self.assertEqual([(r['route'], r['outcome']) for r in routes], [('plan_reply', 'answered_by_plan')])
+        self.assertGreaterEqual(routes[0]['elapsed_seconds'], 0)
+        audit = self.service.work_information_use(job)
+        self.assertEqual(audit['sent_to']['workers'], [])
+        self.assertEqual(audit['sent_to']['judgment_ai']['calls'], 1)
+        self.assertTrue(any(VOICE_PREFERENCE_KEY in str(item) for item in audit['used']))
+        self.assertEqual(self.store.history()[-1]['content'], row['response'])
+        with self.store.db() as db:
+            self.assertIsNotNone(db.execute('SELECT 1 FROM owner_model_upkeep WHERE job_id=?', (job,)).fetchone())
+
+    def test_blockers_delegate_through_the_real_executor(self):
+        # Inject only input state after real preparation. Worker execution and settlement stay real.
+        for blocker in ('photo', 'attachment', 'account_change', 'owner_situation', 'technical_work',
+                        'ask_location', 'preview', 'steer', 'continuation', 'later_attempt', 'empty'):
+            with self.subTest(blocker=blocker):
+                self.script([{**plan('codex', ''), 'reply': '' if blocker == 'empty' else 'DIRECT'}], goals=[True])
+                prepare = self.service._prepare_worker_turn
+                def prepared(run):
+                    step = prepare(run)
+                    if blocker == 'photo':run.photo_file_ids = ['photo']
+                    elif blocker == 'attachment':run.turn_provenance.add('owner-context-inbox')
+                    elif blocker in ('account_change', 'owner_situation', 'technical_work'):
+                        setattr(run.attempt, blocker, True)
+                    elif blocker == 'ask_location':run.attempt.ask_location = 'Where?'
+                    elif blocker == 'preview':run.attempt.preview = {'understanding': 'Preview', 'steps': []}
+                    elif blocker == 'steer':run.attempt.steer = True
+                    elif blocker == 'continuation':run.continued = {'work_id': 'earlier'}
+                    elif blocker == 'later_attempt':run.attempt.number = 2
+                    return step
+                before = len(self.engine.turns)
+                with mock.patch.object(self.service, '_prepare_worker_turn', side_effect=prepared):
+                    job, row = self.run_work('Request with ' + blocker)
+                self.assertEqual(len(self.engine.turns), before + 1)
+                self.assertEqual(len(self.asked_goals), 1)
+                self.assertNotEqual(row['response'], 'DIRECT')
+                self.assertEqual(row['goal_outcome'], 'reached')
+                self.assertFalse(any(r.get('route') == 'plan_reply' for r in self.store.work_decisions(job)))
+
+    def test_redelegation_reply_is_not_used(self):
+        self.script([plan('codex', ''), {**plan('codex', 'Correct the observed gap.'), 'reply': 'DIRECT'}],
+                    goals=[False, True])
+        self.engine.answers = ['first', 'second']
+        _job, row = self.run_work('Please answer the request.')
+        self.assertEqual(len(self.engine.turns), 2)
+        self.assertEqual(row['response'], 'second')
+        self.assertEqual(len(self.asked_goals), 2)
+
+    def test_reply_is_required_typed_and_bounded(self):
+        from personal_agent.orchestrator import REPLY_CHARS, plan_shape
+        data = plan('codex', '')
+        self.assertIn('reply', plan_schema([{'id': 'codex'}])['required'])
+        for value in (None, 1, True, [], {}):
+            self.assertFalse(plan_shape({**data, 'reply': value}))
+        missing = dict(data)
+        missing.pop('reply')
+        self.assertFalse(plan_shape(missing))
+        self.script([{**data, 'reply': 'x' * (REPLY_CHARS + 1)}])
+        _job, row = self.run_work('Answer from the facts.')
+        self.assertEqual(row['response'], 'x' * REPLY_CHARS)
+        self.assertEqual(self.engine.turns, [])
+
+    def test_malformed_reply_is_a_malformed_plan(self):
+        from test_decision_engine import OPENAI, ScriptedTransport, openai_tool_reply
+        data = {**plan('codex', ''), 'brief': {'notes': '', 'lens': ''}, 'effort': '',
+                'account_change': False, 'owner_situation': False, 'technical_work': False,
+                'reply': [], 'confidence': 0.9}
+        engine = ModelDecisionEngine(ModelAdapter(lambda *args, **kwargs: openai_tool_reply(data)),
+                                     lambda: (OPENAI, OPENAI_KEY), audit=self.service.record_decision)
+        self.service.use_decision_engine(engine)
+        job, row = self.run_work('Answer from the facts if possible.')
+        self.assertEqual(len(self.engine.turns), 1)
+        self.assertEqual(self.events(job, 'fallback')[0][1]['code'], 'plan_malformed')
+
+    def test_changed_inputs_discard_the_speculative_reply(self):
+        calls = []
+        def make(request, reply):
+            def structured(context, question, schema):
+                calls.append(context.facts['owner_request'])
+                return decided({**plan('a', ''), 'reply': reply})
+            return Orchestration(ConversationJudgments(FixtureDecisionEngine(structured=structured)),
+                                 OrchestrationUnit.catalogue(self), request=request)
+        speculative = make('Old request', 'STALE').early_plan()
+        final = make('Changed request', 'CURRENT').first(early=EarlyPlan.future(speculative))
+        self.assertEqual(final.reply, 'CURRENT')
+        self.assertEqual(calls, ['Old request', 'Changed request'])
+
+    def test_unoffered_location_question_or_preview_still_blocks_the_reply(self):
+        for extra in ({'ask_location': 'Where?'},
+                      {'preview': {'understanding': 'A preview', 'approach': '', 'steps': []}}):
+            with self.subTest(extra=extra):
+                self.script([{**plan('codex', ''), 'reply': 'DIRECT', **extra}], goals=[True])
+                before = len(self.engine.turns)
+                _job, row = self.run_work('Please handle this.', key='raw-blocker-' + str(extra))
+                self.assertEqual(len(self.engine.turns), before + 1)
+                self.assertNotEqual(row['response'], 'DIRECT')

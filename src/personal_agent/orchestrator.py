@@ -64,8 +64,8 @@ SECTIONS = ('profile', 'current_context', 'prepared', 'history')
 #: #804, #820: every attempt carries every section - the owner model, the prepared
 #: answers and the recent conversation.  A plan no longer selects or drops any.
 ALWAYS_SECTIONS = SECTIONS
-#: Re-delegations after the first attempt (so at most three attempts per Work).
-MAX_REDELEGATIONS = 2
+#: Re-delegations after the first attempt (so at most four attempts per Work; #717 raised it from two).
+MAX_REDELEGATIONS = 3
 #: An attempt is started only while the Work's deadline leaves at least this, and (#671) at least
 #: as long as the longest attempt this Work has already run (``Orchestration.attempt_seconds``).
 MIN_ATTEMPT_SECONDS = 60
@@ -739,11 +739,12 @@ def plan_schema(workers, ask_location=False, preview=False):
                             'properties': {'notes': {'type': 'string'}, 'lens': {'type': 'string'}},
                             'required': ['notes', 'lens']},
                   'reason': {'type': 'string'},
+                  'reply': {'type': 'string'},
                   'account_change': {'type': 'boolean'},
                   'owner_situation': {'type': 'boolean'},
                   'technical_work': {'type': 'boolean'}},
               'required': ['worker', 'model', 'effort', 'brief', 'reason', 'account_change', 'owner_situation',
-                           'technical_work']}
+                           'technical_work', 'reply']}
     if ask_location:
         # #1293: required with "" for none, as strict structured outputs need every property listed.
         schema['properties'].update(ask_location={'type': 'string'}, location_button={'type': 'string'})
@@ -769,6 +770,7 @@ def plan_shape(data):
             and isinstance(data.get('account_change', False), bool)
             and isinstance(data.get('owner_situation', False), bool)
             and isinstance(data.get('technical_work', False), bool)
+            and isinstance(data.get('reply'), str)
             and isinstance(data.get('effort', ''), str)
             and isinstance(data.get('ask_location', ''), str) and isinstance(data.get('location_button', ''), str)
             and preview_shape(data.get('preview')))
@@ -818,7 +820,7 @@ class Attempt:
     __slots__ = ('number', 'worker', 'model', 'notes', 'lens', 'sections', 'reason', 'planned',
                  'fallback', 'digest', 'signature', 'account_change', 'owner_situation', 'technical_work',
                  'lifted_from', 'ask_location', 'location_button', 'effort', 'unlisted_model', 'steer', 'context_digest',
-                 'preview', 'shown_preview', 'corrections', 'told')
+                 'preview', 'shown_preview', 'corrections', 'told', 'reply')
 
     def __init__(self, number, worker, *, model='', notes='', reason='', planned=False, fallback='', effort='', lens=''):
         self.number, self.worker, self.model = number, worker, model
@@ -844,6 +846,7 @@ class Attempt:
         self.steer = False
         #: #407: the first plan's owner-facing preview (``plan_preview``), or None.
         self.preview = None
+        self.reply = ''
         #: #407: the preview text the owner was actually sent, which the brief then names, or "".
         self.shown_preview = ''
         #: #428: the owner's own words that steered this Work before the attempt was planned.
@@ -1326,6 +1329,9 @@ class Orchestration:
             return None, 'budget'
         attempt = Attempt(number, worker['id'], model=model, notes=notes, reason=one_line(data['reason'], MAX_REASON_CHARS),
                           planned=True, effort=effort, lens=lens)
+        attempt.reply = (self._redact(data['reply'], private=False).strip()[:REPLY_CHARS]
+                         if number == 1 and not data.get('ask_location', '').strip()
+                         and not plan_preview(data.get('preview')) else '')
         attempt.unlisted_model = unlisted
         attempt.account_change, attempt.lifted_from = account_change, lifted_from
         attempt.owner_situation = owner_situation

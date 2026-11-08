@@ -41,7 +41,7 @@ class SmokeSetupTests(unittest.TestCase):
 
     def test_inherited_state_and_integration_refused_before_writing(self):
         with tempfile.TemporaryDirectory() as tmp:
-            for key in ("AGENTOS_DATA", "AGENTOS_DRIVE_LOCAL_ONLY", "AGENTOS_ISOLATED_ENGINE_URL", "AGENTOS_PUBLIC_ACCESS_TOKEN"):
+            for key in ("AGENTOS_DATA", "AGENTOS_ISOLATED_ENGINE_URL", "AGENTOS_PUBLIC_ACCESS_TOKEN"):
                 with self.subTest(key=key):
                     root = Path(tmp) / key
                     with self.assertRaises(ValueError) as caught:
@@ -63,7 +63,6 @@ class SmokeSetupTests(unittest.TestCase):
             root = Path(tmp) / "link"; root.symlink_to(target, target_is_directory=True)
             with self.assertRaises(FileExistsError): smoke.prepare(root, 8788, {})
             self.assertEqual(list(target.iterdir()), [])
-
 
 
 # --- SEC-EVAL-01 (#660): probe evidence records -------------------------------

@@ -493,7 +493,8 @@ def work_information_use(store, job_id, redact=None):
     workers = [{key: (label(value, 80) if isinstance(value, str) else value) for key, value in row.items()} for row in workers]
     if workers and record.get('reported_model'):
         workers[-1]['reported_model'] = label(record['reported_model'], 80)
-    judgments = store.work_decisions(job_id)
+    # Route receipts are local decisions, not additional Judgment AI calls (#749).
+    judgments = [row for row in store.work_decisions(job_id) if row.get('kind') != 'route']
     judgment_models = sorted({label(row.get('observed_model') or row.get('model') or row.get('engine') or row.get('provider'), 80)
                               for row in judgments} - {''})
     judgment_contexts=[{'purpose':row.get('purpose'), 'context_messages':row['context_messages']}

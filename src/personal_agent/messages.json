@@ -1,4 +1,10 @@
 {
+ "quickstart_store.drive_connection_retired": {
+  "ko": "이 요청이 기다리던 이전 Drive 연결이 제거되어 요청을 완료하지 못했어요. 설정 > 외부 연결에서 Google Drive를 연결한 뒤 다시 요청해 주세요.",
+  "en": "This request could not finish because the old Drive connection it was waiting for has been removed. Connect Google Drive in Settings > External connections, then ask again.",
+  "ja": "この依頼が待っていた以前の Drive 接続が削除されたため、依頼を完了できませんでした。設定 > 外部接続で Google Drive を接続してから、もう一度依頼してください。",
+  "zh": "此请求等待的旧 Drive 连接已移除，因此未能完成。请在设置 > 外部连接中连接 Google Drive，然后重新提出请求。"
+ },
  "still_profile.voice_offer": {
   "ko": "제 말투가 편한지 두세 번만 골라 볼까요? 원하면 시작하고, 아니면 바로 필요한 일을 이야기해 주세요.",
   "en": "Would you like to choose between a few short replies to find a voice you like? We can start if you want, or you can tell me what you need.",
@@ -418,36 +424,6 @@
   "en": "OpenAI (Codex subscription account)",
   "ja": "OpenAI（Codex サブスクリプションアカウント）",
   "zh": "OpenAI（Codex 订阅账户）"
- },
- "drive_web_oauth.connect_google_drive": {
-  "ko": "Google Drive 연결하기",
-  "en": "Connect Google Drive",
-  "ja": "Google Drive をつなぐ",
-  "zh": "连接 Google Drive"
- },
- "drive_web_oauth.google_drive_access_was_not_allowed": {
-  "ko": "Google Drive 권한이 허용되지 않았어요. 필요할 때 다시 연결해 주세요.",
-  "en": "Google Drive access was not allowed. Connect again when you need it.",
-  "ja": "Google Drive の権限が許可されませんでした。必要なときにもう一度接続してください。",
-  "zh": "未允许 Google Drive 权限。需要时请重新连接。"
- },
- "drive_web_oauth.google_drive_is_connected_i_can": {
-  "ko": "Google Drive가 연결되었어요. Google Picker에서 선택한 파일만 읽을 수 있어요.",
-  "en": "Google Drive is connected. I can read only files you choose in Google Picker.",
-  "ja": "Google Drive が接続されました。Google Picker で選んだファイルだけを読めます。",
-  "zh": "Google Drive 已连接。只能读取你在 Google Picker 中选择的文件。"
- },
- "drive_web_oauth.google_drive_needs_to_be_connected": {
-  "ko": "Google Drive 연결이 필요해요. 선택한 파일만 읽을 수 있으며 전체 Drive 검색은 하지 않아요.",
-  "en": "Google Drive needs to be connected. I can read only files you choose, and I never search your whole Drive.",
-  "ja": "Google Drive の接続が必要です。選んだファイルだけを読み、Drive 全体は検索しません。",
-  "zh": "需要连接 Google Drive。只能读取你选择的文件，不会搜索整个 Drive。"
- },
- "drive_web_oauth.i_couldn_t_finish_connecting_google": {
-  "ko": "Google Drive 연결을 완료하지 못했어요. Telegram에서 새 연결 링크를 요청해 주세요.",
-  "en": "I couldn't finish connecting Google Drive. Ask for a new connection link in Telegram.",
-  "ja": "Google Drive の接続を完了できませんでした。Telegram で新しい接続リンクを依頼してください。",
-  "zh": "没能完成 Google Drive 连接。请在 Telegram 中请求新的连接链接。"
  },
  "settings_orchestrator.not_connected": {
   "ko": "연결 안 됨",
@@ -2099,12 +2075,6 @@
   "ja": "接続した文書を外部モデルに送るには承認が必要です。文書の内容は送信していません。",
   "zh": "将已连接文档发送给外部模型需要批准，尚未发送文档内容。"
  },
- "service.ask_for_a_google_drive_file": {
-  "ko": "Telegram에서 Google Drive 파일을 요청하면 연결 링크를 보내요.",
-  "en": "Ask for a Google Drive file in Telegram to receive a connection link.",
-  "ja": "Telegram で Google Drive のファイルを頼むと接続リンクが届きます。",
-  "zh": "在 Telegram 中请求 Google Drive 文件时会发送连接链接。"
- },
  "service.check_the_telegram_connection_receiving_will": {
   "ko": "Telegram 연결을 확인해 주세요. 수신을 다시 시도해요.",
   "en": "Check the Telegram connection. Receiving will be retried.",
@@ -2374,12 +2344,6 @@
   "en": "The previous request's external outcome is uncertain, so it was not run again. Please check the actual result to avoid duplicates. This message was handled as a new request.",
   "ja": "前の依頼の外部での結果が不明なため、再実行していません。重複作成の可能性があるので、実際の結果を確認してください。今回のメッセージは新しい依頼として処理しました。",
   "zh": "上一次请求的外部结果不确定，因此没有重新执行。为避免重复创建，请检查实际结果。本条消息已作为新请求处理。"
- },
- "service.the_selected_google_drive_files_are": {
-  "ko": "선택한 Google Drive 파일을 준비했어요. 원래 요청을 계속해요.",
-  "en": "The selected Google Drive files are ready. The original request will continue.",
-  "ja": "選択したGoogle Driveのファイルを準備しました。元の依頼を続けます。",
-  "zh": "已准备好所选 Google Drive 文件，将继续原请求。"
  },
  "service.the_sign_in_request_timed_out": {
   "ko": "로그인 요청 시간이 지나 창을 닫았어요. 요청은 지금까지의 결과로 마쳐요.",
@@ -8236,42 +8200,6 @@
   "ja": "カレンダーの接続範囲を確認してください。",
   "zh": "请确认日历连接范围。"
  },
- "quickstart_service.drive_reconnect_required": {
-  "ko": "Google Drive 연결 또는 재연결이 필요해요. Telegram에서 Google Drive 연결을 요청해 주세요.",
-  "en": "Connect or reconnect Google Drive. Request a Google Drive connection in Telegram.",
-  "ja": "Google Driveの接続か再接続が必要です。TelegramでGoogle Driveの接続をリクエストしてください。",
-  "zh": "需要连接或重新连接Google Drive。请在Telegram中请求连接Google Drive。"
- },
- "quickstart_service.drive_telegram_only": {
-  "ko": "Google Drive 파일은 연결한 Telegram 대화에서만 읽을 수 있어요.",
-  "en": "Google Drive files can only be read in the connected Telegram conversation.",
-  "ja": "Google Driveのファイルは接続したTelegramの会話でのみ読めます。",
-  "zh": "只能在已连接的Telegram对话中读取Google Drive文件。"
- },
- "quickstart_service.drive_files_ready": {
-  "ko": "선택한 Google Drive 파일을 준비했어요. 요청을 계속해요.",
-  "en": "The selected Google Drive files are ready. Continuing the request.",
-  "ja": "選択したGoogle Driveファイルを準備しました。リクエストを続行します。",
-  "zh": "已准备好所选Google Drive文件。正在继续请求。"
- },
- "quickstart_service.select_drive_files": {
-  "ko": "Google Picker에서 요약할 파일을 먼저 선택해 주세요.",
-  "en": "Select files to summarize in Google Picker first.",
-  "ja": "先にGoogle Pickerで要約するファイルを選んでください。",
-  "zh": "请先在Google Picker中选择要总结的文件。"
- },
- "quickstart_service.drive_read_failed": {
-  "ko": "선택한 Google Drive 파일을 읽지 못했어요.",
-  "en": "Could not read the selected Google Drive files.",
-  "ja": "選択したGoogle Driveファイルを読めませんでした。",
-  "zh": "无法读取所选Google Drive文件。"
- },
- "quickstart_service.drive_read_reconnect": {
-  "ko": "선택한 Google Drive 파일을 읽지 못했어요. Telegram에서 다시 연결해 주세요.",
-  "en": "Could not read the selected Google Drive files. Reconnect in Telegram.",
-  "ja": "選択したGoogle Driveファイルを読めませんでした。Telegramで再接続してください。",
-  "zh": "无法读取所选Google Drive文件。请在Telegram中重新连接。"
- },
  "quickstart_service.enter_bot_token": {
   "ko": "BotFather에서 발급한 봇 토큰을 입력하세요.",
   "en": "Enter the bot token issued by BotFather.",
@@ -10263,96 +10191,6 @@
   "en": "{name} is connected. You can close this window. I also posted a {name} connection notice in the conversation.",
   "ja": "{name}に接続しました。このウィンドウを閉じても構いません。会話にも{name}の接続完了をお知らせしました。",
   "zh": "{name} 已连接。您可以关闭此窗口，已在对话中通知您 {name} 连接完成。"
- },
- "quickstart.picker_title": {
-  "ko": "Google Drive 파일 선택",
-  "en": "Choose Google Drive files",
-  "ja": "Google Driveのファイルを選択",
-  "zh": "选择 Google Drive 文件"
- },
- "quickstart.picker_preparing": {
-  "ko": "Google Drive Picker를 준비하고 있어요.",
-  "en": "Preparing Google Drive Picker.",
-  "ja": "Google Drive Pickerを準備しています。",
-  "zh": "正在准备 Google Drive Picker。"
- },
- "quickstart.picker_open": {
-  "ko": "파일 선택 열기",
-  "en": "Open file picker",
-  "ja": "ファイル選択を開く",
-  "zh": "打开文件选择器"
- },
- "quickstart.picker_reopen": {
-  "ko": "다시 열기",
-  "en": "Open again",
-  "ja": "もう一度開く",
-  "zh": "重新打开"
- },
- "quickstart.picker_init_error": {
-  "ko": "Google Picker 초기화 오류: {error}",
-  "en": "Google Picker initialization error: {error}",
-  "ja": "Google Pickerの初期化エラー：{error}",
-  "zh": "Google Picker 初始化错误：{error}"
- },
- "quickstart.picker_script_failed": {
-  "ko": "{source} 스크립트를 불러오지 못했어요.",
-  "en": "Could not load the {source} script.",
-  "ja": "{source}のスクリプトを読み込めませんでした。",
-  "zh": "无法加载 {source} 脚本。"
- },
- "quickstart.picker_script_blocked": {
-  "ko": "브라우저에서 스크립트를 차단했어요.",
-  "en": "The browser blocked the script.",
-  "ja": "ブラウザーがスクリプトをブロックしました。",
-  "zh": "浏览器已阻止此脚本。"
- },
- "quickstart.picker_selection_saved": {
-  "ko": "파일 선택을 저장했어요. Telegram에서 결과를 확인해 주세요.",
-  "en": "File selection saved. Check Telegram for the result.",
-  "ja": "ファイルの選択を保存しました。Telegramで結果を確認してください。",
-  "zh": "已保存文件选择，请在 Telegram 中查看结果。"
- },
- "quickstart.picker_selection_failed": {
-  "ko": "파일 선택을 저장하지 못했어요. Telegram에서 새 연결을 요청해 주세요.",
-  "en": "Could not save the file selection. Request a new connection in Telegram.",
-  "ja": "ファイルの選択を保存できませんでした。Telegramで新しい接続をリクエストしてください。",
-  "zh": "无法保存文件选择，请在 Telegram 中请求新连接。"
- },
- "quickstart.picker_load_failed": {
-  "ko": "Google Picker를 불러오지 못했어요.",
-  "en": "Could not load Google Picker.",
-  "ja": "Google Pickerを読み込めませんでした。",
-  "zh": "无法加载 Google Picker。"
- },
- "quickstart.picker_permission_required": {
-  "ko": "Google Drive 권한이 필요해요. 다시 시도해 주세요.",
-  "en": "Google Drive permission is required. Please try again.",
-  "ja": "Google Driveの権限が必要です。もう一度お試しください。",
-  "zh": "需要 Google Drive 权限，请重试。"
- },
- "quickstart.picker_cancelled": {
-  "ko": "파일 선택을 취소했어요. Telegram에서 새 연결을 요청해 주세요.",
-  "en": "File selection cancelled. Request a new connection in Telegram.",
-  "ja": "ファイルの選択をキャンセルしました。Telegramで新しい接続をリクエストしてください。",
-  "zh": "已取消文件选择，请在 Telegram 中请求新连接。"
- },
- "quickstart.picker_ready": {
-  "ko": "준비되었어요. 아래 버튼을 눌러 파일을 선택해 주세요.",
-  "en": "Ready. Use the button below to select files.",
-  "ja": "準備ができました。下のボタンでファイルを選択してください。",
-  "zh": "已准备就绪，请点击下方按钮选择文件。"
- },
- "quickstart.picker_check_settings": {
-  "ko": "Google Picker를 불러오지 못했어요. API 및 브라우저 설정을 확인해 주세요.",
-  "en": "Could not load Google Picker. Check your API and browser settings.",
-  "ja": "Google Pickerを読み込めませんでした。APIとブラウザーの設定を確認してください。",
-  "zh": "无法加载 Google Picker，请检查 API 和浏览器设置。"
- },
- "quickstart.picker_load_timeout": {
-  "ko": "Google Picker 로딩 시간이 초과되었어요. 다시 열어 보세요.",
-  "en": "Google Picker took too long to load. Try opening it again.",
-  "ja": "Google Pickerの読み込みがタイムアウトしました。もう一度開いてください。",
-  "zh": "Google Picker 加载超时，请重新打开。"
  },
  "preparations.already_running": {
   "ko": "지금 실행 중인 준비예요. 실행이 끝난 뒤 다시 해 주세요.",

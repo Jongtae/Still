@@ -158,6 +158,10 @@ class ScheduledLocation(unittest.TestCase):
         case = location_cases._LocationCase(methodName='runTest')
         case.setUp()
         self.addCleanup(case.doCleanups)
+        # #717: a run is longer than a location request lives; this case needs the run deadline first.
+        patcher = mock.patch.object(prep, 'run_seconds', return_value=600)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         row = case.service.preparations.create(
             kind='prepare', goal='Prepare the requested result using my current position',
             due_at=case.now, timezone='UTC', recurrence=None, channel='telegram', created_from='settings',

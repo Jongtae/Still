@@ -31,7 +31,7 @@ adopts the repository's own ``connector_http.contained_opener`` so the token
 can only ever reach the revocation host, across redirects too.
 
 *Rejected*: ``google-auth`` has no revocation helper for these hand-held
-tokens and is not a dependency (see ``drive_web_oauth`` REUSE-R1b #427);
+tokens and is not a dependency (see REUSE-R1b #427);
 ``requests``/``httpx`` would be a new runtime dependency for one POST
 (``connector_http`` records the same decision). ``oauthlib`` does not send
 requests, so the transport and the outcome classification are Still-owned.
@@ -291,28 +291,6 @@ def registry_connection(connector_id, label, holder, owners, *, write=None, gran
     )
     connection.residual = residual
     connection.lifecycle = lambda: holder.oauth_lock
-    return connection
-
-
-def drive_connection(label, drive):
-    """Adapter for the Drive web-OAuth handoff, which has no registry row."""
-
-    def disconnect(stash):
-        job = drive.disconnect(stash)
-        return [job] if job else []
-
-    from .drive_web_oauth import LIFECYCLE_LOCK
-
-    connection = _Connection(
-        "google-drive-read",
-        label,
-        drive.store,
-        lambda: drive.effective_status().get("state"),
-        drive.revision_marker,
-        disconnect,
-    )
-    connection.lifecycle = lambda: LIFECYCLE_LOCK
-    connection.authorizing = drive.authorization_in_progress
     return connection
 
 

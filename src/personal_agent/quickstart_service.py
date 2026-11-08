@@ -19,7 +19,6 @@ from types import SimpleNamespace
 import hashlib
 from urllib.parse import urlsplit
 from .messages import LANGUAGES, msg
-from .drive_web_oauth import DriveWebOAuthError
 from .telegram_locale import ai_text, owner_language
 from .prompt_files import prompt
 from .local_tools import LocalTools, normalize_public_url
@@ -66,7 +65,7 @@ from . import work_mode
 from .connector_contract import ConnectorContractError, ConnectorResultKind, _owner_key
 from .calendar_oauth import GMAIL_FILTERS_GRANT, GMAIL_MODIFY_GRANT
 from .gmail import GMAIL_FILTERS_CONNECTOR_ID, GMAIL_CONNECTOR_ID, GMAIL_MODIFY_CONNECTOR_ID, GmailError
-from .connector_revocation import (GoogleConnectionRevoker, RevocationError, drive_connection,
+from .connector_revocation import (GoogleConnectionRevoker, RevocationError,
                                    google_revoke_transport, registry_connection)
 from .calendar import CALENDAR_CONNECTOR_ID, CALENDAR_WRITE_CONNECTOR_ID
 from .google_drive_read import DRIVE_CONNECTOR_ID
@@ -640,7 +639,7 @@ class AgentService:
 
     def __init__(self, store, adapter=None, telegram_transport=None, subscription_engines=None, execution_adapter=None,
                  isolated_engine_adapter=None, isolated_mcp_registry=None,
-                 drive_web_oauth=None, connector_registry=None, gmail=None, calendar=None, calendar_oauth=None, calendar_factory=None,
+                 connector_registry=None, gmail=None, calendar=None, calendar_oauth=None, calendar_factory=None,
                  browser_profile=None, telegram_file_transport=None, drive_oauth=None, drive_reader_factory=None, gmail_modify_oauth=None):
         self.store=store
         # #656/#680: the one browser profile this installation owns (its encrypted session jar),
@@ -754,8 +753,7 @@ class AgentService:
         self.conversation_focus=ConversationFocus(store)
         # This is injected only by an owner-local deployment which supplies an
         # encrypted secret store and its local key.  It is never auto-enabled.
-        self.drive_web_oauth=drive_web_oauth
-        # Connector prerequisite/handoff/resume.  Like `drive_web_oauth` this
+        # Connector prerequisite/handoff/resume. This
         # is injected by an owner-local deployment and is never auto-enabled:
         # with no registry there are no declared connectors, so no ordinary
         # request can be parked waiting for one.
@@ -794,8 +792,6 @@ class AgentService:
         # endpoint.  None means the production transport; tests inject a fake.
         self.google_revoke_transport=None
         self.google_revocation_clock=time.time
-        self.drive_read=None
-        self.drive_picker_config=None
         self.lock=threading.RLock()
         #: #340: full login addresses never enter config, Evidence or owner/model text.
         self._browser_login_window_urls={}
@@ -1022,56 +1018,19 @@ class AgentService:
         if rows:self.queue_notification(job,'settings_change_proposed',fingerprint=self.settings_orchestrator.drafts_digest(rows))
 
     def mcp_setup_value(self, value):
-        from .mcp_setup import setup_value
-        value=setup_value(value,self._redact_known_secrets,self.intranet_declared)
-        data=json.loads(value)
-        if not self._connector_input_safe(data):raise ValueError(msg('quickstart_service.credentials_secret_input_only'))
-        definition=self.mcp_setup_definition(data)
-        if definition is not None and definition!={'type':'http','url':data['url']}:
-            raise ValueError(msg('quickstart_service.server_name_conflict'))
-        target=trust_record.connection(data['engine'],'owner-mcp',data['name'])
-        record=trust_record.hand(self.store,target)
-        if record['state']=='forgotten':raise ValueError(msg('trust_record.restore_confirmation'))
-        if record['revision'] and (record['money']!=data['money'] or
-                any(record['operations'].get(op) not in (None,'read') for op in data['read_tools'])):
-            raise ValueError(msg('quickstart_service.preserve_operation_decisions'))
-        return value
+        return self.settings_continuation_service.mcp_setup_value(value)
 
     def mcp_setup_definition(self, data):
-        home=getattr(self,'mcp_setup_home',None) or Path.home()
-        return owner_mcp.claude_definitions(home,[data['name']]).get(data['name'])
+        return self.settings_continuation_service.mcp_setup_definition(data)
 
     def mcp_setup_before(self, value):
-        data=json.loads(value)
-        target=trust_record.connection(data['engine'],'owner-mcp',data['name'])
-        record=trust_record.hand(self.store,target)
-        return self.connector_input_digest('connection-setup-authority',{
-            'connections':self.store.config(self.AI_CONNECTIONS_KEY,{}),
-            'servers':self.store.config(owner_mcp.CONFIRMED_KEY,{}),
-            'trust_revision':record['revision'],'trust_epoch':record['epoch'],'state':record['state']})
+        return self.settings_continuation_service.mcp_setup_before(value)
 
     def mcp_setup_guard(self, draft):
-        job=self.store.job(draft.get('work_id')) if draft.get('work_id') else None
-        if (not job or self.settings_owner(job)!=draft['owner'] or job['channel']!=draft['channel']
-                or self.work_stopped(job['id']) or draft.get('recovery_of') and draft.get('continuation') and ws.is_succeeded(job['status'])):
-            raise ValueError(msg('quickstart_service.check_connection_work_owner'))
-        # #213: a Work from a conversation surface is held to that surface's current pairing.
-        surface=self.surface_claiming(job)
-        if surface is not None and not surface.owns(job):
-            raise ValueError(msg('quickstart_service.connection_owner_changed'))
-        data=json.loads(draft['after'])
-        target=trust_record.connection(data['engine'],'owner-mcp',data['name'])
-        return {'generation':self._owner_generation(self.issuer_owner_id(job)),
-                'trust_epoch':trust_record.hand(self.store,target)['epoch']}
+        return self.settings_continuation_service.mcp_setup_guard(draft)
 
     def mcp_setup_client(self, draft, interrupted):
-        factory=getattr(self,'mcp_setup_factory',None)
-        if factory is not None:return factory(draft,interrupted)
-        from .mcp_setup import RemoteMcpSetup
-        binary=self.subscription_engines.finder('claude')
-        if not binary:raise ValueError(msg('quickstart_service.claude_missing'))
-        return RemoteMcpSetup(binary,getattr(self,'mcp_setup_home',None) or Path.home(),
-                              interrupted=interrupted,redact=self._redact_known_secrets,declared=self.intranet_declared)
+        return self.settings_continuation_service.mcp_setup_client(draft, interrupted)
 
     def mcp_setup_call(self, draft, client, phase):
         """Record the bounded CLI attempt, never credentials or raw auth output.
@@ -1079,125 +1038,23 @@ class AgentService:
         An attempted endpoint is not a claim that the remote accepted it. The
         CLI owns any OAuth destination; those redirects remain unobserved here.
         """
-        data=json.loads(draft['after'])
-        detail={'draft_id':draft['id'],'engine':data['engine'],'phase':phase,
-                'destination':data['url'] if phase!='register' else 'local CLI profile',
-                'scope':'connection-setup','remote_receipt':'unknown'}
-        def record(status, state):
-            with self.store.db() as db:
-                db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
-                    (draft['work_id'],'connection_setup',status,json.dumps({**detail,'state':state}),time.time()))
-        record('running','requested')
-        try:
-            result=getattr(client,phase)(data['engine'],data['name'],data['url'])
-        except Exception:
-            record('failed','unknown')
-            from .mcp_setup import SetupFailure
-            raise SetupFailure(phase,'unknown') from None
-        from .mcp_setup import STATES
-        state=result.get('state') if isinstance(result,dict) else None
-        state=state if state in STATES|{'registration-returned','already-present','login-returned'} else 'unknown'
-        record('succeeded' if state in ('connected','registration-returned','already-present','login-returned') else 'failed',state)
-        return {**(result if isinstance(result,dict) else {}),'state':state}
+        return self.settings_continuation_service.mcp_setup_call(draft, client, phase)
 
     def apply_mcp_setup(self, draft):
         """Exact owner draft → official setup → atomic authority/receipt settlement."""
-        from .mcp_setup import SetupFailure
-        data=json.loads(draft['after'])
-        expected={'type':'http','url':data['url']}
-        def interrupted():
-            current=self.settings_orchestrator._drafts().get(draft['id']) or {}
-            if (current.get('state')!='applying' or current.get('digest')!=draft['digest']
-                    or self.settings_orchestrator._digest(current)!=draft['digest']):return 'setup-no-longer-current'
-            try:
-                if self.mcp_setup_guard(draft)!=draft.get('setup_guard'):return 'owner-changed'
-            except ValueError:return 'work-stopped'
-            if self.mcp_setup_before(draft['after'])!=draft['before']:return 'authority-changed'
-            return None
-        if interrupted():raise ValueError(msg('quickstart_service.setup_authority_changed'))
-        client=self.mcp_setup_client(draft,interrupted)
-        if self.mcp_setup_definition(data) is None and draft.get('observe_only'):
-            raise SetupFailure('observe','unknown')
-        if self.mcp_setup_definition(data) is None:
-            registered=self.mcp_setup_call(draft,client,'register')
-            if registered.get('state') not in ('registration-returned','already-present'):
-                raise SetupFailure('register',registered.get('state'))
-        if interrupted() or self.mcp_setup_definition(data)!=expected:
-            raise ValueError(msg('quickstart_service.server_configuration_changed'))
-        observed=self.mcp_setup_call(draft,client,'observe')
-        if observed.get('state')=='needs-auth' and not draft.get('observe_only'):
-            if interrupted():raise ValueError(msg('quickstart_service.login_authority_changed'))
-            login=self.mcp_setup_call(draft,client,'login')
-            if login.get('state')!='login-returned':
-                raise SetupFailure('login',login.get('state'))
-            observed=self.mcp_setup_call(draft,client,'observe')
-        if (observed.get('state')!='connected' or not isinstance(observed.get('tools'),list)
-                or not set(data['required_tools'])<=set(observed['tools'])):
-            raise SetupFailure('observe',observed.get('state'))
-        with self.store.db() as db:
-            db.execute('BEGIN IMMEDIATE')
-            if interrupted() or self.mcp_setup_definition(data)!=expected:
-                raise ValueError(msg('quickstart_service.connection_authority_changed'))
-            target=trust_record.connection(data['engine'],'owner-mcp',data['name'])
-            before=trust_record.hand(self.store,target)
-            record=trust_record.introduce_connection(self.store,target,data['read_tools'],data['money'],
-                        expected_revision=before['revision'],transaction=db)
-            names=owner_mcp.confirmed(self.store,data['engine'])
-            if data['name'] not in names:names.append(data['name'])
-            owner_mcp.set_confirmed(self.store,data['engine'],names,transaction=db)
-            if not self.ai_connections_enabled():
-                db.execute('INSERT INTO config VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
-                           (self.AI_CONNECTIONS_KEY,json.dumps({'enabled':True,'changed_at':time.time(),'revision':secrets.token_hex(16)})))
-            rows=json.loads(db.execute("SELECT value FROM config WHERE key='settings_change_drafts'").fetchone()['value'])
-            row=rows[draft['id']]
-            row.update(state='applied',setup_receipt={'state':'connected','tools':list(observed['tools']),
-                       'observed_at':time.time(),'trust_revision':record['revision'],
-                       'authentication':'unknown','account':'unknown','granted_scopes':'unknown','input_schemas':'unknown'})
-            db.execute("UPDATE config SET value=? WHERE key='settings_change_drafts'",(json.dumps(rows),))
-        return {'response':msg('quickstart_service.mcp_setup_receipt', name=data['name'], result=msg('quickstart_service.mcp_ready_resume') if draft.get('continuation') else msg('quickstart_service.mcp_settings_applied'))}
+        return self.settings_continuation_service.apply_mcp_setup(draft)
 
     def mcp_setup_recoverable(self, draft):
         """Retry known failures, or observe unknown setup without repeating mutations."""
-        try:
-            job=self.store.job(draft.get('work_id'))
-            return (job is not None and (not draft.get('continuation') or ws.is_resumable_settings(job['status']))
-                    and (draft.get('state')=='unknown' or draft.get('state')=='failed' and draft.get('setup_failure',{}).get('retryable') is True)
-                    and (draft.get('category'),draft.get('setting'))==('ai_connections','connect')
-                    and 0<=self.settings_orchestrator.now()-float(draft.get('settled_at') or 0)<=self.settings_orchestrator.RENEW_GRACE_SECONDS
-                    and not draft.get('trust_revoked') and draft.get('digest')==self.settings_orchestrator._digest(draft)
-                    and self.mcp_setup_guard(draft)==draft.get('setup_guard')
-                    and self.mcp_setup_before(draft['after'])==draft['before']
-                    and self.may_continue(draft['work_id'],'resume')[0]
-                    and self.mcp_setup_attempts(draft['work_id'])<3)
-        except (ValueError,KeyError,TypeError):
-            return False
+        return self.settings_continuation_service.mcp_setup_recoverable(draft)
 
     def mcp_setup_attempts(self, work_id):
         """Durable admissions across replacement drafts, before any CLI dispatch."""
-        return sum(1 for row in self.settings_orchestrator._drafts().values()
-                   if isinstance(row,dict) and row.get('work_id')==work_id
-                   and (row.get('category'),row.get('setting'))==('ai_connections','connect')
-                   and 'applying_at' in row)
+        return self.settings_continuation_service.mcp_setup_attempts(work_id)
 
     def mcp_setup_ready(self, draft):
         """The observed setup and current local authority must still cover the request."""
-        try:
-            data=json.loads(draft['after'])
-            if not self.ai_connections_enabled() or self.mcp_setup_definition(data)!={'type':'http','url':data['url']}:return False
-            if data['name'] not in owner_mcp.confirmed(self.store,data['engine']):return False
-            record=trust_record.hand(self.store,trust_record.connection(data['engine'],'owner-mcp',data['name']))
-            if record['state']!='active' or record['money']!=data['money']:return False
-            guard=draft.get('setup_guard') or {}
-            if 'trust_epoch' in guard and guard['trust_epoch']!=record['epoch']:return False
-            if not all(record['operations'].get(op)=='read' for op in data['read_tools']):return False
-            source=draft
-            if draft.get('setup_from'):
-                source=self.mcp_covering_setup(draft,draft['setup_from'])
-                if source is None:return False
-            receipt=source.get('setup_receipt') or {}
-            return (receipt.get('state')=='connected' and receipt.get('trust_revision')==record['revision']
-                    and set(data['required_tools'])<=set(receipt.get('tools',[])))
-        except (ValueError,TypeError,KeyError):return False
+        return self.settings_continuation_service.mcp_setup_ready(draft)
 
     def mcp_covering_setup(self, draft, source_id=None):
         """Reuse a current applied setup, never another Work's action authority.
@@ -1205,27 +1062,7 @@ class AgentService:
         A reference keeps the original observation attributable. It neither
         refreshes its timestamp nor copies credentials, grants or tool effects.
         """
-        try:
-            requested=json.loads(draft['after'])
-            target=trust_record.connection(requested['engine'],'owner-mcp',requested['name'])
-            guard=draft.get('setup_guard') or {}
-            if 'trust_epoch' not in guard or guard['trust_epoch']!=trust_record.hand(self.store,target)['epoch']:return None
-            for source in self.settings_orchestrator._drafts().values():
-                if (source.get('id')==draft['id'] or source_id is not None and source.get('id')!=source_id
-                        or source.get('state')!='applied' or source.get('trust_revoked') or source.get('setup_from')
-                        or (source.get('category'),source.get('setting'))!=('ai_connections','connect')
-                        or source.get('owner')!=draft['owner'] or source.get('channel')!=draft['channel']
-                        or source.get('setup_guard')!=draft.get('setup_guard')
-                        or source.get('digest')!=self.settings_orchestrator._digest(source)):
-                    continue
-                offered=json.loads(source['after'])
-                if (any(requested[key]!=offered[key] for key in ('engine','name','url','source','publisher','licence','money'))
-                        or not set(requested['read_tools'])<=set(offered['read_tools'])
-                        or not set(requested['required_tools'])<=set((source.get('setup_receipt') or {}).get('tools',[]))):
-                    continue
-                if self.mcp_setup_ready(source):return source
-        except (ValueError,TypeError,KeyError):pass
-        return None
+        return self.settings_continuation_service.mcp_covering_setup(draft, source_id)
 
     def satisfy_admitted_mcp_setup(self, draft):
         """At the serialized apply boundary, reuse setup completed while queued.
@@ -1233,21 +1070,7 @@ class AgentService:
         This runs before any CLI action for this draft. A recovered unknown
         apply cannot enter here through confirmation, and is never retried.
         """
-        with self.store.db() as db:
-            db.execute('BEGIN IMMEDIATE')
-            found=db.execute("SELECT value FROM config WHERE key='settings_change_drafts'").fetchone()
-            rows=json.loads(found['value']) if found else {}
-            current=rows.get(draft['id']) or {}
-            if (current.get('state')!='applying' or current.get('trust_revoked')
-                    or current.get('digest')!=draft['digest']
-                    or self.settings_orchestrator._digest(current)!=draft['digest']):return False
-            if self.mcp_setup_guard(current)!=current.get('setup_guard'):return False
-            source=self.mcp_covering_setup(current)
-            if source is None:return False
-            current.update(state='satisfied',setup_from=source['id'])
-            db.execute("UPDATE config SET value=? WHERE key='settings_change_drafts'",(json.dumps(rows),))
-        self.settings_orchestrator._audit(current,'satisfied')
-        return True
+        return self.settings_continuation_service.satisfy_admitted_mcp_setup(draft)
 
     def settings_continuation(self, draft):
         """Bind a prerequisite to its original Work, never to a confirmation reply.
@@ -1256,32 +1079,7 @@ class AgentService:
         prerequisite is an explicit decision-model choice on the exact owner
         draft; a setup-only change leaves continue_work false.
         """
-        job=self.store.job(draft.get('work_id')) if draft.get('work_id') else None
-        if not job or self.settings_owner(job)!=draft.get('owner') or job['channel']!=draft.get('channel'):return None
-        if draft.get('continue_work') is True and (draft.get('category'),draft.get('setting'))==('api_connections','connect'):
-            return {'kind':'api-setting','generation':self._owner_generation(self.issuer_owner_id(job)),
-                    'prerequisite':'settings:'+draft['id']}
-        if draft.get('continue_work') is True and (draft.get('category'),draft.get('setting'))==('ai_connections','connect'):
-            return {'kind':'mcp-setting','generation':self._owner_generation(self.issuer_owner_id(job)),
-                    'prerequisite':'settings:'+draft['id']}
-        if draft.get('continue_work') is True and draft.get('category')=='skills':
-            if draft.get('setting')=='add' or draft.get('setting')=='enabled' and draft.get('after')=='on':
-                return {'kind':'skill-setting','generation':self._owner_generation(self.issuer_owner_id(job)),
-                        'prerequisite':'settings:'+draft['id'], 'skill':draft.get('required_skill')}
-        if draft.get('category')!='ai_connections' or draft.get('setting')!='review':return None
-        parts=str(draft.get('after') or '').split('|')
-        if len(parts)!=5 or parts[-1]!='read':return None
-        with self.store.db() as db:
-            rows=db.execute("SELECT id,detail FROM tool_events WHERE job_id=? AND tool='connector_permission' AND status='denied' ORDER BY id DESC",
-                            (job['id'],)).fetchall()
-        for event in rows:
-            try:evidence=json.loads(event['detail'])['evidence']
-            except (TypeError,ValueError,KeyError):continue
-            if [evidence.get(key) for key in ('engine','kind','identity','operation')]==parts[:4]:
-                before=str(draft.get('before') or '').split(':')
-                return {'permission_event':event['id'],'generation':self._owner_generation(self.issuer_owner_id(job)),
-                        'trust_epoch':before[2] if len(before)==3 else ''}
-        return None
+        return self.settings_continuation_service.settings_continuation(draft)
 
     # -- the one continuation rule (#618 E2) ------------------------------------------------
     #: What a continuation is asked for.  ``redelegate``: another attempt of this request by a
@@ -1321,100 +1119,15 @@ class AgentService:
         ``since`` (an event id) limits the calls and owner waits to one attempt.  The reasons come in
         ``CONTINUE_REASONS`` order and read as ``CONTINUE_TEXT``; an empty tuple means the Work may continue.
         """
-        from .agent_runtime import (EFFECT_CHANGED, EFFECT_FREE_READS, EFFECT_LEDGER_TOOLS, EFFECT_UNKNOWN, INTERNAL_STATE_ACTIONS,
-                                    MAX_CONTINUATIONS, call_effects, continuation_count, keyed_change)
-        if purpose not in self.CONTINUE_PURPOSES:raise ValueError(purpose)
-        reasons=[]
-        def add(reason):
-            if reason not in reasons:reasons.append(reason)
-        carry=purpose=='resume'
-        observed,claims=self.connector_effect_progress(work_id)
-        observed_api=set()
-        with self.store.db() as db:
-            rows=db.execute('SELECT id,tool,status,detail FROM tool_events WHERE job_id=? ORDER BY id',(work_id,)).fetchall()
-            if carry and continuation_count(db,work_id)>=MAX_CONTINUATIONS:add('limit')
-            if carry:
-                # Retry/input continuation dispatches are stored on the canonical original Work;
-                # only this Work's host-attributed observed dispatches are accounted.
-                try:root=WorkLedger.request_chain(db,work_id)[-1]['id']
-                except ValueError:root=None;add('unknown')
-                for row in db.execute("SELECT id,detail FROM tool_events WHERE job_id=? AND tool='api_dispatch' AND status='observed'",
-                                      (root,)) if root else ():
-                    try:evidence=json.loads(row['detail']).get('evidence')
-                    except (TypeError,ValueError,AttributeError):evidence=None
-                    if not isinstance(evidence,dict):add('unknown');continue
-                    if evidence.get('work_id')==work_id:observed_api.add(row['id'])
-        if claims:add('unknown')
-        calls,scoped,engine_running=[],[],False
-        for row in rows:
-            try:detail=json.loads(row['detail'] or '{}')
-            except (TypeError,ValueError):detail=None
-            if not isinstance(detail,dict):
-                add('unknown');continue
-            tool=row['tool']
-            if tool in EFFECT_LEDGER_TOOLS|self.CONTINUATION_EVENTS:continue
-            if tool in self.LOCAL_NON_TOOL_EVENTS or tool=='subscription_engine':
-                # Still's own records are no calls; an unknown outcome one of them carries still counts.
-                if self._unknown_effect(detail):add('unknown')
-                if tool=='subscription_engine' and carry:
-                    # A CLI turn's own actions are accounted only when its record says so.
-                    if row['status']=='running':
-                        if engine_running:add('unaccounted')
-                        engine_running=True
-                    else:
-                        if detail.get('continuation_read_only') is not True and detail.get('continuation_accounted') is not True:
-                            add('unaccounted')
-                        engine_running=False
-                continue
-            if row['status'] not in ('running','succeeded','failed'):
-                # A record with no call outcome (a preflight's ``unavailable``): only an unknown it carries counts.
-                if self._unknown_effect(detail):add('unknown')
-                continue
-            calls.append((tool,row['status'],detail))
-            if since is None or row['id']>since:scoped.append((tool,row['status'],detail))
-        if engine_running or unaccounted:add('unaccounted')
-        def cut_off(action,status,detail):
-            # A call (paired by its id) with no terminal record got no definite answer, unless it only
-            # reads or stays with the owner; a navigation or input step may have acted on the page.
-            return (status=='running' and bool(detail.get('call_id'))
-                    and action not in (EFFECT_FREE_READS-{'browser_open'})|OWNER_LOCAL_ACTIONS|INTERNAL_STATE_ACTIONS)
-        for action,effect,status,detail in call_effects(calls,with_detail=True):
-            # E1: unknown is that call's own.
-            if effect==EFFECT_UNKNOWN or cut_off(action,status,detail):add('unknown')
-        # #170: a recorded draft or proposal; #366: a connection only the owner can make.
-        if (owner_waits or (purpose in ('redelegate','steer') and awaiting_owner_rows(scoped))
-                or (purpose=='redelegate' and self.missing_connection_rows(scoped))):
-            add('owner')
-        if observed and not carry:add('effect')
-        for action,effect,status,detail in call_effects(scoped,with_detail=True):
-            if (effect==EFFECT_CHANGED and not cut_off(action,status,detail)
-                    and not (carry and keyed_change(action,detail,status,observed_api))):add('effect')
-        return tuple(sorted(reasons,key=CONTINUE_REASONS.index))
+        return self.settings_continuation_service.continuation_reasons(work_id, purpose, since=since, owner_waits=owner_waits, unaccounted=unaccounted)
 
     def may_continue(self, work_id, purpose, **kwargs):
         """``(ok, reason)`` of the one continuation rule (#618 E2): ``reason`` is the strongest, or None."""
-        reasons=self.continuation_reasons(work_id,purpose,**kwargs)
-        return (not reasons,reasons[0] if reasons else None)
+        return self.settings_continuation_service.may_continue(work_id, purpose, **kwargs)
 
     def settings_review_ready(self, draft):
         """Current readiness for the exact prerequisite, never just a setter receipt."""
-        if (draft.get('continuation') or {}).get('kind')=='api-setting':
-            from .api_input import ready
-            return ready(self, draft)
-        if (draft.get('continuation') or {}).get('kind')=='mcp-setting':
-            return self.mcp_setup_ready(draft)
-        if (draft.get('continuation') or {}).get('kind')=='skill-setting':
-            return self.settings_skill_ready(draft)
-        parts=str(draft.get('after') or '').split('|')
-        if len(parts)!=5 or parts[-1]!='read':return False
-        engine,kind,identity,operation,_cls=parts
-        try:target=trust_record.connection(engine,kind,identity)
-        except ValueError:return False
-        binding=draft.get('continuation')
-        if binding and trust_record.hand(self.store,target)['epoch']!=binding.get('trust_epoch',''):return False
-        return (self.ai_connections_enabled()
-                and (kind!='owner-mcp' or identity in owner_mcp.confirmed(self.store,engine))
-                and trust_record.is_read(self.store,target,operation))
+        return self.settings_continuation_service.settings_review_ready(draft)
 
     def settings_skill_ready(self, draft):
         """A pinned skill must be available in the resumed catalogue and intact.
@@ -1422,45 +1135,11 @@ class AgentService:
         Inspect content without loading it into any model; only skill_load may
         do that. The original running worker keeps its old immutable binding.
         """
-        from .skills import parse_source
-        try:
-            library=self.skill_library()
-            entries=library.catalogue()
-            if not entries:return False
-            if draft.get('setting')=='add':
-                source=parse_source(draft['after'])
-                package_ids={row['id'] for row in library.installed()
-                             if all(row.get('source',{}).get(key)==source.get(key) for key in ('repo','revision','path'))}
-                entries=[entry for entry in entries if entry['package'] in package_ids]
-                if not entries:return False
-            elif draft.get('setting')=='enabled' and draft.get('after')=='on':
-                ref=(draft.get('continuation') or {}).get('skill')
-                entries=[entry for entry in entries if entry['skill']+'@'+entry['digest']==ref]
-                if not entries:return False
-            else:return False
-            for entry in entries:
-                if not library.current(entry,verify_content=True):return False
-            return True
-        except (OSError,ValueError,KeyError,TypeError):
-            return False
+        return self.settings_continuation_service.settings_skill_ready(draft)
 
     def settings_prerequisites_observed(self, job, drafts):
         """The still-running worker may have used the new read and finished already."""
-        if not ws.is_succeeded(job['status']):return False
-        with self.store.db() as db:
-            rows=db.execute("SELECT id,detail FROM tool_events WHERE job_id=? AND tool='connector_read' AND status='succeeded'",
-                            (job['id'],)).fetchall()
-        completed=set()
-        for event in rows:
-            try:detail=json.loads(event['detail']);evidence=detail['evidence']
-            except (ValueError,TypeError,KeyError):continue
-            if detail.get('effect')!='none':continue
-            for draft in drafts:
-                if (draft['continuation'].get('kind') not in ('skill-setting','mcp-setting','api-setting')
-                        and event['id']>draft['continuation']['permission_event']
-                        and [evidence.get(k) for k in ('engine','kind','identity','operation')]==draft['after'].split('|')[:4]):
-                    completed.add(draft['id'])
-        return all(row['id'] in completed for row in drafts)
+        return self.settings_continuation_service.settings_prerequisites_observed(job, drafts)
 
     def resume_settings_work(self):
         """Reconcile prerequisite waits using existing drafts, events and jobs.
@@ -1471,141 +1150,7 @@ class AgentService:
         while each host run inherits the original Work's durable counters and
         remaining active time through WorkBudget.
         """
-        orchestrator=self.settings_orchestrator
-        with orchestrator._confirming:
-            from .api_input import reconcile, published as api_published
-            reconcile(self)
-            groups={}
-            for draft in orchestrator._drafts().values():
-                if isinstance(draft,dict) and draft.get('continuation') and draft.get('state')!='renewed':
-                    groups.setdefault(draft.get('work_id'),[]).append(draft)
-            for work_id,drafts in groups.items():
-                job=self.store.job(work_id) if work_id else None
-                if not job or ws.is_active(job['status']):continue
-                with self.store.db() as db:
-                    prior=db.execute("SELECT detail FROM tool_events WHERE job_id=? AND tool IN ('settings_continuation','action_continuation')",(work_id,)).fetchall()
-                receipts=[json.loads(row['detail']) for row in prior]
-                used={ref for row in receipts for ref in row.get('draft_ids',[])}
-                drafts=[row for row in drafts if row['id'] not in used]
-                if not drafts:continue
-                valid=all(row.get('digest')==orchestrator._digest(row)
-                          and row.get('owner')==self.settings_owner(job) and row.get('channel')==job['channel']
-                          and row['continuation'].get('generation')==self._owner_generation(self.issuer_owner_id(job))
-                          for row in drafts)
-                stopped=self.work_stopped(work_id) or not ws.is_resumable_settings_settlement(job['status'])
-                surface=self.surface_claiming(job)
-                if surface is not None:
-                    stopped=stopped or not surface.paired_owner(job['chat_id'])
-                # A second Work waiting on the same operation uses the first
-                # owner's persisted classification; it never re-applies a setter.
-                changed_during_settlement=False
-                for row in drafts:
-                    if valid and not stopped and row['state']=='awaiting-confirmation':
-                        if row['continuation'].get('kind') in ('skill-setting','mcp-setting','api-setting'):
-                            if orchestrator.expired(row):
-                                row.update(orchestrator._settle(row['id'],'expired','expired'))
-                            elif row['continuation'].get('kind')=='mcp-setting':
-                                data=json.loads(row['after'])
-                                target=trust_record.connection(data['engine'],'owner-mcp',data['name'])
-                                guard=row.get('setup_guard') or {}
-                                if 'trust_epoch' in guard and guard['trust_epoch']!=trust_record.hand(self.store,target)['epoch']:
-                                    row.update(orchestrator._settle(row['id'],'cancelled','cancelled',trust_revoked=True))
-                                    continue
-                                source=self.mcp_covering_setup(row)
-                                if source is not None:
-                                    try:
-                                        row.update(orchestrator._settle(row['id'],'satisfied','satisfied',
-                                                   expected={'state':'awaiting-confirmation','digest':row['digest']},
-                                                   setup_from=source['id']))
-                                    except SettingsError:
-                                        # A concurrent cancellation/forget/confirmation wins.
-                                        changed_during_settlement=True
-                                        break
-                            continue  # a shared receipt applies no setting or setup action
-                        parts=row['after'].split('|')
-                        target=trust_record.connection(*parts[:3])
-                        if trust_record.hand(self.store,target)['epoch']!=row['continuation'].get('trust_epoch',''):
-                            row.update(orchestrator._settle(row['id'],'cancelled','cancelled',trust_revoked=True))
-                        elif orchestrator.expired(row):
-                            row.update(orchestrator._settle(row['id'],'expired','expired'))
-                        elif self.settings_review_ready(row):
-                            row.update(orchestrator._settle(row['id'],'satisfied','satisfied'))
-                if changed_during_settlement:continue
-                waiting=any(row['state'] in ('awaiting-confirmation','awaiting-input','applying')
-                            or row['continuation'].get('kind')=='api-setting'
-                            and row['state'] in ('unknown','applied') and api_published(self,row)
-                            and not self.settings_review_ready(row) for row in drafts)
-                # #627: the continuation count withholds the resume itself (below), never the wait.
-                safe=not [blocker for blocker in self.continuation_reasons(work_id,'resume') if blocker!='limit']
-                if valid and not stopped and waiting and safe:
-                    with self.store.db() as db:
-                        db.execute("UPDATE jobs SET status='awaiting_connection' WHERE id=? AND status=?",(work_id,job['status']))
-                    continue
-                completed=self.settings_prerequisites_observed(job,drafts)
-                ready=(valid and not stopped and safe and not waiting and not completed
-                       and all(row['state'] in ('applied','satisfied') and self.settings_review_ready(row) for row in drafts))
-                reason=('work-stopped' if stopped else 'original-completed' if completed else 'effect-or-unobserved-action' if not safe else
-                        'prerequisite-ready' if ready and any(row['continuation'].get('kind') in ('skill-setting','mcp-setting','api-setting') for row in drafts) else
-                        'read-review-applied' if ready else 'review-not-current')
-                with self.store.db() as db:
-                    db.execute('BEGIN IMMEDIATE')
-                    found=db.execute("SELECT value FROM config WHERE key='settings_change_drafts'").fetchone()
-                    latest=json.loads(found['value']) if found else {}
-                    if any((latest.get(row['id']) or {}).get('trust_revoked') for row in drafts):
-                        ready,reason=False,'trust-forgotten'
-                    if ready and any(not latest.get(row['id']) or
-                            latest[row['id']].get('state')!=row['state'] or
-                            latest[row['id']].get('digest')!=row['digest'] or
-                            latest[row['id']].get('setup_from')!=row.get('setup_from') or
-                            orchestrator._digest(latest[row['id']])!=row['digest'] for row in drafts):
-                        ready,reason=False,'review-not-current'
-                    if ready and not all(self.settings_review_ready(row) for row in drafts):
-                        ready,reason=False,'review-not-current'
-                    if ready:
-                        for row in drafts:
-                            if row['continuation'].get('kind')=='mcp-setting':
-                                try:
-                                    current_guard=self.mcp_setup_guard(row)
-                                    expected_guard=row.get('setup_guard') or {}
-                                    if 'trust_epoch' not in expected_guard and not row.get('setup_from'):
-                                        current_guard.pop('trust_epoch',None)  # pre-sharing applied receipt
-                                    if current_guard!=expected_guard:
-                                        ready,reason=False,'owner-or-authority-changed'
-                                except ValueError:
-                                    ready,reason=False,'work-stopped'
-                    current=db.execute("SELECT detail FROM tool_events WHERE job_id=? AND tool IN ('settings_continuation','action_continuation')",(work_id,)).fetchall()
-                    receipts=[json.loads(row['detail']) for row in current]
-                    consumed=[row['id'] for row in drafts]
-                    permissions=[row['continuation'].get('permission_event',row['continuation'].get('prerequisite')) for row in drafts]
-                    if any(set(consumed)&set(row.get('draft_ids',[])) for row in receipts):continue
-                    # A withheld expiry receipt settles its draft, but does not
-                    # consume execution. The owner's explicit renewal may resume;
-                    # an actually queued continuation still consumes the wait.
-                    if any(row.get('resumed') is True and set(permissions)&set(row.get('permission_events',[]))
-                           for row in receipts):ready,reason=False,'wait-already-consumed'
-                    # #627: the one continuation count, read through the one continuation rule.
-                    if ready and 'limit' in self.continuation_reasons(work_id,'resume'):
-                        ready,reason=False,CONTINUE_RECEIPT_REASON['limit']
-                    refusal=self.preparations.run_refusal(db,work_id,self.preparations.clock())
-                    if refusal and not completed:
-                        ready,reason=False,refusal
-                        self.preparations.refuse_run(db,work_id,self.preparations.clock(),refusal)
-                    if ready:
-                        changed=db.execute("UPDATE jobs SET status='queued',error=NULL,delivery='none' WHERE id=? AND status=?",
-                                           (work_id,job['status'])).rowcount
-                        if not changed:continue
-                        if reason=='prerequisite-ready':
-                            # #1445: the owner completed the setup this Work proposed; its remaining work
-                            # starts with a fresh allowance, not the turns spent finding it (#627: bounded by
-                            # the one continuation count this resume is counted in).
-                            from .agent_runtime import renew_for_owner_prerequisite
-                            renew_for_owner_prerequisite(db,work_id)
-                    elif job['status']=='awaiting_connection':
-                        db.execute("UPDATE jobs SET status='partial',error=? WHERE id=? AND status='awaiting_connection'",
-                                   (msg('quickstart_service.settings_resume_failed', reason=reason),work_id))
-                    detail={'draft_ids':consumed,'permission_events':permissions,'resumed':ready,'reason':reason}
-                    db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
-                               (work_id,'settings_continuation','queued' if ready else 'withheld',json.dumps(detail),time.time()))
+        return self.settings_continuation_service.resume_settings_work()
 
     def offered_settings_drafts(self, notification):
         """The exact drafts a confirmation message shows, or [] if they changed or expired (#814)."""
@@ -2558,368 +2103,83 @@ class AgentService:
                 +'\n'+msg('notice.preparation_cancel_hint'))
 
     def pending_memory_candidates(self, job_id):
-        """``(shown, remaining)``: this Work's pending MemoryCandidates, oldest first (#818).
-
-        At most ``MEMORY_CANDIDATES_SHOWN`` are shown; the rest are only
-        counted (the owner decides them in 내 기록).
-        """
-        rows=sorted(self.store.memory_candidates(MEMORY_OWNER,job_id,limit=101),key=lambda row:(row['created'],row['id']))
-        return rows[:MEMORY_CANDIDATES_SHOWN],max(0,len(rows)-MEMORY_CANDIDATES_SHOWN)
+        return self.memory_prompts.pending_memory_candidates(job_id)
 
     def pending_candidate_works(self):
-        """A test for "this Work id has a pending MemoryCandidate" (#818 review).
-
-        Candidates carry the Work only as its opaque binding (``work_ref``),
-        so a Work id is compared through ``QuickStore._work_binding``.
-        """
-        keys,offset=set(),0
-        while True:
-            page=self.store.memory_candidates(MEMORY_OWNER,limit=101,offset=offset)
-            keys|={row['work_ref'][len('workref:'):] for row in page}
-            if len(page)<101:break
-            offset+=101
-        return lambda work_id:bool(keys) and isinstance(work_id,str) and self.store._work_binding(work_id) in keys
+        return self.memory_prompts.pending_candidate_works()
 
     def queue_memory_candidates(self, job):
-        """Ask the paired owner about this Work's pending MemoryCandidates: one ask per Work (#818, #836).
-
-        Queued only after the reply was delivered ``sent``; it is bound when it
-        is sent to every candidate of the Work still pending then, whoever
-        proposed it (the worker or #805 upkeep).
-        """
-        shown,more=self.pending_memory_candidates(job['id'])
-        if shown:self.queue_notification(job,MEMORY_CANDIDATES_KIND,fingerprint=json.dumps(
-            {'candidates':[[row['id'],row['content_digest']] for row in shown],'more':more}))
+        return self.memory_prompts.queue_memory_candidates(job)
 
     def queue_upkeep_memory_candidates(self, work_id):
-        """After #805 upkeep: its candidates join the Work's one ask (#836).
-
-        Only for a Telegram Work whose reply was delivered ``sent``; before
-        that, the reply's own ask is bound at send time to everything pending.
-        No ask yet: this is the first.  An ask still queued binds them when it
-        is sent.  An ask sent, listed or answered: ``join_memory_prompt``.  An
-        ask whose buttons expired or whose delivery is unknown leaves them to
-        내 기록.  Under ``self.lock``, like the taps and the sends.
-        """
-        with self.lock:
-            job=self.store.job(work_id)
-            if not job or job.get('delivery')!='sent':return
-            row=self.store.notification_of(work_id,MEMORY_CANDIDATES_KIND)
-            if row is None:
-                self.queue_memory_candidates(job)
-                return
-            state=row['state']
-            if state=='cancelled':
-                # Nothing was left to ask when the reply's ask was due: this is the Work's first ask.
-                shown,more=self.pending_memory_candidates(work_id)
-                if shown:self.store.update_notification(row['id'],'queued',fingerprint=json.dumps(
-                    {'candidates':[[item['id'],item['content_digest']] for item in shown],'more':more}))
-                return
-            binding=self.memory_binding(row)
-            if state in ('sent','memory_listed','memory_decided') and binding and 'sent' in binding:
-                self.join_memory_prompt(row,binding)
+        return self.memory_prompts.queue_upkeep_memory_candidates(work_id)
 
     @staticmethod
     def memory_binding(notification):
-        """A memory prompt's recorded binding (queued ids, or the send-time binding with ``sent``), or None (#818)."""
-        try:binding=json.loads((notification or {}).get('fingerprint') or '')
-        except (TypeError,ValueError):return None
-        return binding if isinstance(binding,dict) and isinstance(binding.get('candidates'),list) else None
+        from .memory_prompts import MemoryPrompts
+        return MemoryPrompts.memory_binding(notification)
 
     def memory_candidate_still(self, job_id, candidate_id, content_digest):
-        """The candidate while it is still pending with exactly that content, else None (#818)."""
-        row=self.store.memory_candidate(candidate_id,MEMORY_OWNER,job_id) if isinstance(candidate_id,str) else None
-        return row if row and row['state']=='pending' and hmac.compare_digest(str(row['content_digest']),str(content_digest)) else None
+        return self.memory_prompts.memory_candidate_still(job_id, candidate_id, content_digest)
 
     def current_memory_ref(self, memory_key):
-        """``[id, content_digest]`` of the current Memory under ``memory_key``, or None (#818)."""
-        current=self.store.current_memory(memory_key,MEMORY_OWNER)
-        return [current['id'],current['content_digest']] if current else None
+        return self.memory_prompts.current_memory_ref(memory_key)
 
     def memory_display(self, text, limit):
-        """``(shown, complete)``: ``text`` as a prompt shows it, and whether that is the whole value unchanged (#818 review).
-
-        Whitespace is collapsed, stored secrets and credential shapes are
-        removed and the result is bounded; only when none of that changed the
-        text does the owner see exactly the value a tap would approve.
-        """
-        text=str(text or '')
-        shown=self._redact_known_secrets(' '.join(text.split()))
-        complete=shown==text and len(shown)<=limit
-        return (shown if len(shown)<=limit else shown[:limit-1]+'…'),complete
+        return self.memory_prompts.memory_display(text, limit)
 
     def memory_fact(self, text, limit, key=None):
-        """``(shown, complete)``: one fact as the owner reads it in the ask, never a memory key (#836).
-
-        The ask shows the value only.  A value that *is* the candidate's own
-        memory key (``food_preference.rolls_and_rolls_sushi``) is shown as its
-        words and is never complete, so it cannot be tapped: the owner would
-        otherwise accept a stored value they were not shown (#838 review).
-        Anything else - including ordinary dotted values such as
-        ``amazon.com`` - is shown as ``memory_display``.  Presentation only.
-        """
-        text=str(text or '')
-        stripped=text.strip()
-        keys={str(key or ''),str(key or '').removeprefix('profile.')}-{''}
-        if stripped in keys and MEMORY_KEY_SHAPED.fullmatch(stripped):
-            return self.memory_display(stripped.rsplit('.',1)[-1].replace('_',' '),limit)[0],False
-        return self.memory_display(text,limit)
+        return self.memory_prompts.memory_fact(text, limit, key)
 
     def memory_prompt_item(self, row):
-        """One candidate as an ask binds it (#818, #836).
-
-        Its id, content digest and key, the current Memory under the key (a
-        yes must still find it), and ``tap``: set only when the ask shows the
-        value complete and unchanged (#818 review); the key is never shown.
-        """
-        return {'id':row['id'],'digest':row['content_digest'],'key':row['memory_key'],
-                'current':self.current_memory_ref(row['memory_key']),
-                'tap':bool(self.memory_fact(row['content'],MEMORY_CANDIDATE_CHARS,row['memory_key'])[1])}
+        return self.memory_prompts.memory_prompt_item(row)
 
     def bind_memory_prompt(self, notification, now):
-        """What a memory ask shows, bound at send time; None when nothing is pending (#818, #836).
-
-        The Work's one ask binds every candidate of the Work still pending
-        when it is sent, oldest first, up to ``MEMORY_CANDIDATES_SHOWN``.  (A
-        former upkeep prompt, #818 review, binds only its queued ids.)
-        """
-        queued=self.memory_binding(notification)
-        if not queued or 'sent' in queued:return None
-        shown,more=self.pending_memory_candidates(notification['job_id'])
-        if notification['kind']!=MEMORY_CANDIDATES_KIND:
-            ids=[item for item in queued['candidates'] if isinstance(item,list) and len(item)==2]
-            shown,more=[row for row in shown if [row['id'],row['content_digest']] in ids],int(queued.get('more') or 0)
-        candidates=[self.memory_prompt_item(row) for row in shown]
-        if not candidates:return None
-        return {'candidates':candidates,'more':more,'sent':now,'done':{}}
+        return self.memory_prompts.bind_memory_prompt(notification, now)
 
     @staticmethod
     def memory_open(binding):
-        """The 1-based indices of the tappable candidates not yet decided (#818)."""
-        return [index for index,item in enumerate(binding['candidates'],1) if item.get('tap') and item['id'] not in binding['done']]
+        from .memory_prompts import MemoryPrompts
+        return MemoryPrompts.memory_open(binding)
 
     @staticmethod
     def memory_answered(binding):
-        """The owner's one answer to an ask whose every tappable fact is decided, or None (#836).
-
-        ``accepted`` or ``rejected`` when every decision was the same; None
-        while a fact is open, when nothing was decided, or for mixed answers.
-        """
-        # #838 review: every bound fact must be decided, tappable or not, before the answer
-        # can settle what follows; an untappable fact left open keeps the ask open.
-        if not binding['done'] or any(item['id'] not in binding['done'] for item in binding['candidates']):return None
-        answers={status for status in binding['done'].values() if status in MEMORY_CANDIDATES_SETTLED}
-        return answers.pop() if len(answers)==1 else None
+        from .memory_prompts import MemoryPrompts
+        return MemoryPrompts.memory_answered(binding)
 
     def memory_prompt_text(self, job_id, binding, footer=None):
-        """The ask in the owner's words: each fact as a short line, never a key (#818, #836).
-
-        Open: "기억해 둘까요?" with each fact, the value it would replace and
-        each decision so far.  Answered: a settled first line ("기억해 둘게요." /
-        "기억하지 않을게요.") with what is kept.  Bounded; stored secrets and
-        credential shapes removed.  A fact the ask cannot show complete is
-        left to 내 기록.
-        """
-        items,done=binding['candidates'],binding['done']
-        finished=bool(done) and not self.memory_open(binding)
-        decided={status for status in done.values() if status in MEMORY_CANDIDATES_SETTLED}
-        numbered=len(items)>1 and not finished
-        if not finished:lines=[MEMORY_CANDIDATES_HEADER]
-        elif decided:lines=[MEMORY_CANDIDATES_SETTLED[decided.pop() if len(decided)==1 else 'mixed']]
-        else:lines=[MEMORY_CANDIDATES_OUTDATED_TEXT]
-        for index,item in enumerate(items,1):
-            status=done.get(item['id'])
-            prefix=f'{index}. ' if numbered else '• '
-            if status=='rejected':
-                # A no erases the candidate's value; only its place in the numbered list stays.
-                if numbered:lines.append(prefix+MEMORY_CANDIDATE_STATUS['rejected'])
-                continue
-            row=self.store.memory_candidate(item['id'],MEMORY_OWNER,job_id) or {}
-            line=prefix+self.memory_fact(row.get('content'),MEMORY_CANDIDATE_CHARS,row.get('memory_key'))[0]
-            if status=='accepted':
-                if numbered:line+=' → '+MEMORY_CANDIDATE_STATUS['accepted']
-            elif status:line+=' → '+MEMORY_CANDIDATE_STATUS[status]
-            else:
-                old=self.store.memory(item['current'][0],MEMORY_OWNER,current_only=False) if item.get('current') else None
-                if old:line=msg('quickstart_service.memory_current_line', fact=line, current=self.memory_fact(old['content'],60,old.get('memory_key'))[0])
-                if not item.get('tap'):line=msg('quickstart_service.memory_in_records_line', fact=line)
-            lines.append(line)
-        if binding.get('more'):lines.append(msg('quickstart_service.memory_more', count=binding['more']))
-        if footer and footer not in lines:lines.append(footer)
-        return '\n'.join(lines)
+        return self.memory_prompts.memory_prompt_text(job_id, binding, footer)
 
     @classmethod
     def memory_prompt_markup(cls, notification_id, binding):
-        """Per tappable candidate [👍] [👎], plus both for all when more than one is open (#818).
-
-        #881: emoji buttons, not message reactions - the Bot API delivers a
-        reaction change only where the bot is a chat administrator, which a
-        private chat has none of, so a reaction could not decide a fact.
-        Each button still names exactly one fact (or all) in its callback.
-        """
-        def pair(target,accept,reject):
-            return [{'text':accept,'callback_data':f'p7m:{notification_id}:{target}:accept'},
-                    {'text':reject,'callback_data':f'p7m:{notification_id}:{target}:reject'}]
-        open_=cls.memory_open(binding)
-        yes,no=MEMORY_BUTTON_YES,MEMORY_BUTTON_NO
-        if len(binding['candidates'])==1:return {'inline_keyboard':[pair(1,yes,no)] if open_ else []}
-        rows=[pair(index,f'{index} {yes}',f'{index} {no}') for index in open_]
-        if len(open_)>1:rows.append(pair('a',msg('quickstart_service.all_button', label=yes),msg('quickstart_service.all_button', label=no)))
-        return {'inline_keyboard':rows}
+        from .memory_prompts import MemoryPrompts
+        return MemoryPrompts.memory_prompt_markup.__func__(cls, notification_id, binding)
 
     def decide_memory_item(self, job_id, item, accept):
-        """One bound candidate decided: ``accepted``, ``rejected`` or ``outdated`` (#818).
-
-        It must still be pending with the shown content and, for a yes, the
-        current Memory under its key must still be the one the ask bound;
-        otherwise it is ``outdated`` and nothing is written.  A yes is the
-        existing owner approval path (exact approval bound to owner, Work,
-        candidate and content digest, then accept); a no is the existing reject.
-        """
-        if not self.memory_candidate_still(job_id,item['id'],item['digest']) or (
-                accept and self.current_memory_ref(item['key'])!=item.get('current')):
-            return 'outdated'
-        try:
-            if accept:
-                approval=self.store.issue_candidate_memory_approval(MEMORY_OWNER,job_id,item['id'],item['digest'])
-                self.store.accept_memory_candidate(MEMORY_OWNER,job_id,item['id'],item['digest'],approval['approval_token'])
-                return 'accepted'
-            self.store.reject_memory_candidate(MEMORY_OWNER,job_id,item['id'],item['digest'])
-            return 'rejected'
-        except ValueError as exc:
-            LOG.info('memory candidate %s refused work=%s kind=%s',('accept' if accept else 'reject'),job_id,type(exc).__name__)
-            return 'outdated'
+        return self.memory_prompts.decide_memory_item(job_id, item, accept)
 
     def decide_memory_prompt(self, job_id, binding, targets, accept):
-        """Apply one tap to the open ``targets`` (1-based) of a bound prompt; returns the ids it decided (#818)."""
-        decided=[]
-        for index in targets:
-            item=binding['candidates'][index-1]
-            binding['done'][item['id']]=self.decide_memory_item(job_id,item,accept);decided.append(item['id'])
-        return decided
+        return self.memory_prompts.decide_memory_prompt(job_id, binding, targets, accept)
 
     def join_memory_prompt(self, notification, binding, now=None):
-        """A candidate proposed after the Work's ask was sent joins that same ask (#836).
-
-        Owner feedback 2026-09-28: one ask per owner message, and answering it
-        settles what follows.  While the ask is open (or only a list), a new
-        candidate is added by editing the message, and it is bound only when
-        the edit is confirmed, so a tap never covers a fact the owner was not
-        shown.  Once the owner answered every fact with one answer, that
-        answer covers what they said in that message: a no rejects the new
-        candidate; a yes accepts it through the owner approval path when the
-        ask can show it complete and it replaces no current Memory (otherwise
-        it reopens the ask).  A candidate settled this way is recorded in the
-        binding under ``by_answer`` (provenance: the owner's answer to this
-        Work's ask), and the edit shows it.  Mixed answers reopen the ask.
-        Past ``MEMORY_CANDIDATES_SHOWN`` a candidate stays in 내 기록.
-        """
-        now=time.time() if now is None else now
-        job_id=notification['job_id']
-        listed={item['id'] for item in binding['candidates']}
-        new=[row for row in sorted(self.store.memory_candidates(MEMORY_OWNER,job_id,limit=101),
-                                   key=lambda row:(row['created'],row['id'])) if row['id'] not in listed]
-        if not new:return
-        answer=self.memory_answered(binding)
-        settled,opened,beyond=[],[],0
-        for row in new:
-            if len(binding['candidates'])+len(opened)>=MEMORY_CANDIDATES_SHOWN:
-                beyond+=1
-                continue
-            item=self.memory_prompt_item(row)
-            if answer=='rejected' or (answer=='accepted' and item['tap'] and item['current'] is None):
-                binding['candidates'].append(item)
-                binding['done'][item['id']]=self.decide_memory_item(job_id,item,answer=='accepted')
-                binding.setdefault('by_answer',[]).append(item['id'])
-                settled.append(item['id'])
-            else:
-                opened.append(item)
-        # #838 review: ``new`` already holds every unbound candidate, including those hidden before.
-        binding['more']=beyond
-        shown={**binding,'candidates':binding['candidates']+opened}
-        if binding['done'] and not self.memory_open(binding) and self.memory_open(shown):
-            shown['sent']=now   # an answered ask reopened: its buttons get their own time
-        edited=False
-        if isinstance(notification.get('message_id'),int):
-            try:
-                self.telegram.edit_message_text(notification['chat_id'],notification['message_id'],
-                                                self.memory_prompt_text(job_id,shown),
-                                                self.memory_prompt_markup(notification['id'],shown))
-                edited=True
-            except ProviderError:
-                pass
-        final=shown if edited else binding
-        state=('sent' if self.memory_open(final) else 'memory_decided' if final['done'] else 'memory_listed')
-        # #188 (Codex on #200): a confirmed edit that shows new open candidates is a new showing; an owner
-        # message dated before it cannot answer what it added.
-        self.store.update_notification(notification['id'],state,fingerprint=json.dumps(final),
-                                       delivered=edited and bool(opened))
-        LOG.info('memory candidates joined the ask work=%s settled_by_answer=%s added=%s edited=%s',
-                 job_id,len(settled),len(opened) if edited else 0,edited)
+        return self.memory_prompts.join_memory_prompt(notification, binding, now)
 
     def answer_memory_prompt(self, notification, binding, targets, accept, by='button'):
-        """The owner's yes or no to the open ``targets`` of one sent memory prompt (#818; #172 judged answers).
-
-        The button's path, shared with a judged reply or reaction: past its TTL
-        the prompt expires and nothing is decided; otherwise each target is
-        decided against what the message showed, the binding is stored and the
-        message is edited.  Returns ``{'expired', 'outdated', 'text'}``.
-        """
-        if time.time()-float(binding['sent'])>MEMORY_CANDIDATES_TTL_SECONDS:
-            self.expire_memory_prompt(notification,binding)
-            return {'expired':True,'outdated':False,'text':MEMORY_CANDIDATES_EXPIRED_TEXT}
-        decided=self.decide_memory_prompt(notification['job_id'],binding,targets,accept)
-        finished=not self.memory_open(binding)
-        self.store.update_notification(notification['id'],'memory_decided' if finished else 'sent',
-                                       fingerprint=json.dumps(binding))
-        outdated=any(binding['done'][item]=='outdated' for item in decided)
-        LOG.info('memory candidates %s by owner %s work=%s decided=%s outdated=%s','accept' if accept else 'reject',
-                 by,notification['job_id'],len(decided),outdated)
-        text=self.memory_prompt_text(notification['job_id'],binding,MEMORY_CANDIDATES_OUTDATED_TEXT if outdated else None)
-        if isinstance(notification.get('message_id'),int):
-            try:self.telegram.edit_message_text(notification['chat_id'],notification['message_id'],text,
-                                                self.memory_prompt_markup(notification['id'],binding))
-            except ProviderError:pass
-        return {'expired':False,'outdated':outdated,'text':text}
+        return self.memory_prompts.answer_memory_prompt(notification, binding, targets, accept, by)
 
     def expire_memory_prompt(self, notification, binding):
-        """Refuse further taps on one memory prompt and remove its buttons (#818)."""
-        self.store.update_notification(notification['id'],'expired')
-        if isinstance(notification.get('message_id'),int):
-            try:self.telegram.edit_message_text(notification['chat_id'],notification['message_id'],
-                                                self.memory_prompt_text(notification['job_id'],binding,MEMORY_CANDIDATES_EXPIRED_TEXT),
-                                                {'inline_keyboard':[]})
-            except ProviderError:pass
+        return self.memory_prompts.expire_memory_prompt(notification, binding)
 
     def expire_memory_prompts(self, now=None):
-        """Close memory prompts older than ``MEMORY_CANDIDATES_TTL_SECONDS`` (#818) and saved notices older
-        than ``MEMORY_SAVED_TTL_SECONDS`` (#918); at most once a minute."""
-        now=time.time() if now is None else now
-        if now-getattr(self,'_memory_prompt_sweep',0)<MEMORY_CANDIDATES_SWEEP_SECONDS:return
-        self._memory_prompt_sweep=now
-        rows=self.store.telegram.notifications_in_state(MEMORY_PROMPT_KINDS+MEMORY_SAVED_KINDS,'sent')
-        for row in rows:
-            if row['kind'] in MEMORY_SAVED_KINDS:
-                binding=self.memory_saved_binding(row)
-                if binding and 'sent' in binding and now-float(binding['sent'])>MEMORY_SAVED_TTL_SECONDS:
-                    self.expire_memory_saved(row,binding)
-                continue
-            binding=self.memory_binding(row)
-            if binding and 'sent' in binding and now-float(binding['sent'])>MEMORY_CANDIDATES_TTL_SECONDS:
-                self.expire_memory_prompt(row,binding)
+        return self.memory_prompts.expire_memory_prompts(now)
 
     # -- #918 slice (a): saved at once, told afterwards, with undo ---------------
 
     def work_saved_memories(self, job_id):
-        """``(shown, remaining)``: the current Memory rows this Work wrote, oldest first (#918)."""
-        rows=self.store.work_memories(MEMORY_OWNER,job_id,limit=101)
-        return rows[:MEMORY_CANDIDATES_SHOWN],max(0,len(rows)-MEMORY_CANDIDATES_SHOWN)
+        return self.memory_prompts.work_saved_memories(job_id)
 
     def queue_memory_saved(self, job):
-        """Tell the paired owner what this Work remembered, once (#918); the notice a save did not hold."""
-        shown,more=self.work_saved_memories(job['id'])
-        if shown:self.queue_notification(job,MEMORY_SAVED_KIND,fingerprint=json.dumps(
-            {'items':[[row['id'],row['content_digest']] for row in shown],'more':more}))
+        return self.memory_prompts.queue_memory_saved(job)
 
     #: Delivery states after which a Work's reply is no longer awaited: its saved-notice may go out.
     DELIVERY_SETTLED=QuickStore.DELIVERY_SETTLED
@@ -2927,32 +2187,7 @@ class AgentService:
     MEMORY_SAVED_RETELLS=1
 
     def release_memory_saved(self, job):
-        """The one entry point once this Work's reply is settled: tell what is current and unlisted (#918 review).
-
-        ``held`` (the save held the row in its own transaction) or missing (a
-        Work saved before this head): queued, bound at send time to every
-        current row of the Work.  Otherwise - a retried or resumed Work that
-        saved again after its notice was already told (re-review P2): a
-        bound notice still ``sent`` gets the new facts by an edit
-        (``join_memory_saved``); a settled or lost one gives them a notice of
-        their own (``_queue_separate_saved_notice``); one still queued binds
-        them when it is sent.  Caller holds ``self.lock``.
-        """
-        rows=self._saved_notice_rows(job['id'])
-        row=rows.get(MEMORY_SAVED_KIND)
-        if row is None:
-            self.queue_memory_saved(job);return
-        if row['state'] in (self.store.NOTICE_HELD,'cancelled'):
-            shown,more=self.work_saved_memories(job['id'])
-            if shown:self.store.update_notification(row['id'],'queued',fingerprint=json.dumps(
-                {'items':[[item['id'],item['content_digest']] for item in shown],'more':more}))
-            elif row['state']==self.store.NOTICE_HELD:self.store.update_notification(row['id'],'cancelled')
-            return
-        if row['state']=='queued':return
-        binding=self.memory_saved_binding(row)
-        if row['state']=='sent' and binding and 'sent' in binding:
-            self.join_memory_saved(row,binding);return
-        self._queue_separate_saved_notice(job,rows)
+        return self.memory_prompts.release_memory_saved(job)
 
     def release_working_notes(self, work_id):
         """Queue this Work's held working-notes notice once its reply is settled (#233 Codex review).
@@ -2965,270 +2200,57 @@ class AgentService:
             if row['state']==self.store.NOTICE_HELD:self.store.update_notification(row['id'],'queued')
 
     def release_memory_saved_notices(self, now=None):
-        """Release saved-notices a crash or an unknown send left behind (#918 review); at most once a minute.
-
-        ``held`` rows whose Work's reply is settled (``sent``, ``unknown`` or
-        ``cancelled``) are queued; the release in ``deliver_one`` may have been
-        cut off between the delivery update and the queue.  A notice whose own
-        send came back ``unknown`` (or that a restart found ``sending``) is
-        told again, at most ``MEMORY_SAVED_RETELLS`` times: a notice may be
-        told twice rather than never, and each undo is exact to its own
-        message.  A store without ``jobs`` for the row is left alone.
-        """
-        now=time.time() if now is None else now
-        if now-getattr(self,'_memory_saved_release_sweep',0)<MEMORY_CANDIDATES_SWEEP_SECONDS:return
-        self._memory_saved_release_sweep=now
-        with self.lock:
-            for row in self.store.held_notifications(MEMORY_SAVED_KIND):
-                if row.get('job_delivery') not in self.DELIVERY_SETTLED:continue
-                job=self.store.job(row['job_id'])
-                if job:self.release_memory_saved(job)
-            # #233: a working-notes notice held behind a reply that has since settled.
-            for row in self.store.held_notifications(WORKING_NOTES_KIND):
-                if row.get('job_delivery') in self.DELIVERY_SETTLED:self.release_working_notes(row['job_id'])
-            lost=self.store.telegram.notifications_in_state(MEMORY_SAVED_KINDS,'unknown')
-            for row in lost:
-                binding=self.memory_saved_binding(row) or {}
-                retells=int(binding.get('retells') or 0)
-                if retells>=self.MEMORY_SAVED_RETELLS or now-float(row['created'])>MEMORY_SAVED_TTL_SECONDS:continue
-                items=[item if isinstance(item,list) else [item['id'],item['digest']] for item in binding.get('items',())
-                       if isinstance(item,(list,dict))]
-                self.store.update_notification(row['id'],'queued',fingerprint=json.dumps(
-                    {'items':items,'more':int(binding.get('more') or 0),'retells':retells+1}))
-                LOG.info('memory saved notice told again work=%s kind=%s',row['job_id'],row['kind'])
-            # #19 review P1: a working-notes notice whose send came back unknown is told again on the same
-            # bounded terms; it is sent only while its revision is still current (``working_notes_notice_text``).
-            for row in self.store.telegram.notifications_in_state((WORKING_NOTES_KIND,),'unknown'):
-                try:bound=json.loads(row.get('fingerprint') or '')
-                except (TypeError,ValueError):continue
-                if not isinstance(bound,dict):continue
-                retells=int(bound.get('retells') or 0)
-                if retells>=self.MEMORY_SAVED_RETELLS or now-float(row['created'])>MEMORY_SAVED_TTL_SECONDS:continue
-                self.store.update_notification(row['id'],'queued',fingerprint=json.dumps({**bound,'retells':retells+1}))
-                LOG.info('working notes notice told again work=%s',row['job_id'])
+        return self.memory_prompts.release_memory_saved_notices(now)
 
     def queue_upkeep_memory_saved(self, work_id):
-        """After #805 upkeep saved facts: they join the Work's one notice, or get their own (#918).
-
-        Only once the Telegram Work's reply is settled (sent, unknown or
-        cancelled); before that the save held the notice, which is bound at
-        send time to everything saved.  No notice (a Work saved before this
-        head) or one cancelled because nothing was saved: this is the first.
-        One held or queued binds them when it is sent.  One sent: the facts
-        are added by editing it (``join_memory_saved``).  One already settled
-        (undone, expired) or lost: a separate upkeep notice bound to these
-        facts only, so a save is never silent.  Under ``self.lock``, like the
-        taps and the sends.
-        """
-        with self.lock:
-            job=self.store.job(work_id)
-            if not job or job.get('delivery') not in self.DELIVERY_SETTLED:return
-            self.release_memory_saved(job)
+        return self.memory_prompts.queue_upkeep_memory_saved(work_id)
 
     def _saved_notice_rows(self, work_id):
-        return {row['kind']:row for row in self.store.telegram.notifications_of_kinds(work_id,MEMORY_SAVED_KINDS)}
+        return self.memory_prompts._saved_notice_rows(work_id)
 
     def _queue_separate_saved_notice(self, job, rows):
-        """A notice of its own for the saved facts no notice of this Work showed (#918)."""
-        listed=set()
-        for kind_row in rows.values():
-            bound=self.memory_saved_binding(kind_row)
-            listed|={item['id'] for item in (bound or {}).get('items',()) if isinstance(item,dict)}
-            listed|={item[0] for item in (bound or {}).get('items',()) if isinstance(item,list) and item}
-        upkeep=rows.get(MEMORY_SAVED_UPKEEP_KIND)
-        if upkeep and upkeep['state'] not in ('cancelled',):return
-        fresh=[item for item in self.store.work_memories(MEMORY_OWNER,job['id'],limit=101) if item['id'] not in listed]
-        if not fresh:return
-        fingerprint=json.dumps({'items':[[item['id'],item['content_digest']] for item in fresh[:MEMORY_CANDIDATES_SHOWN]],
-                                'more':max(0,len(fresh)-MEMORY_CANDIDATES_SHOWN)})
-        if upkeep:self.store.update_notification(upkeep['id'],'queued',fingerprint=fingerprint)
-        else:self.queue_notification(job,MEMORY_SAVED_UPKEEP_KIND,fingerprint=fingerprint)
+        return self.memory_prompts._queue_separate_saved_notice(job, rows)
 
     @staticmethod
     def memory_saved_binding(notification):
-        """A saved notice's recorded binding (queued ids, or the send-time binding with ``sent``), or None (#918)."""
-        try:binding=json.loads((notification or {}).get('fingerprint') or '')
-        except (TypeError,ValueError):return None
-        return binding if isinstance(binding,dict) and isinstance(binding.get('items'),list) else None
+        from .memory_prompts import MemoryPrompts
+        return MemoryPrompts.memory_saved_binding(notification)
 
     def memory_saved_item(self, row):
-        """One saved fact as the notice binds it: id, content digest, key and what it superseded (#918)."""
-        previous=self.store.memory(row['supersedes'],MEMORY_OWNER,current_only=False) if row.get('supersedes') else None
-        return {'id':row['id'],'digest':row['content_digest'],'key':row['memory_key'],
-                'previous':[previous['id'],previous['content_digest']] if previous else None,
-                # #220: the earlier facts this save ended under other keys, so the notice names them too.
-                'ended':[[item['id'],item['content_digest']] for item in self.store.ended_by(MEMORY_OWNER,row['id'])]}
+        return self.memory_prompts.memory_saved_item(row)
 
     def bind_memory_saved(self, notification, now):
-        """What a saved notice shows, bound at send time; None when the Work has nothing current (#918).
-
-        The Work's notice binds every current Memory row of the Work when it
-        is sent, oldest first, up to ``MEMORY_CANDIDATES_SHOWN``; an upkeep
-        notice binds only its queued ids.
-        """
-        queued=self.memory_saved_binding(notification)
-        if not queued or 'sent' in queued:return None
-        shown,more=self.work_saved_memories(notification['job_id'])
-        if notification['kind']!=MEMORY_SAVED_KIND:
-            ids=[item for item in queued['items'] if isinstance(item,list) and len(item)==2]
-            shown,more=[row for row in shown if [row['id'],row['content_digest']] in ids],int(queued.get('more') or 0)
-        items=[self.memory_saved_item(row) for row in shown]
-        if not items:return None
-        return {'items':items,'more':more,'sent':now,'done':{},'restored':{},'retells':int(queued.get('retells') or 0)}
+        return self.memory_prompts.bind_memory_saved(notification, now)
 
     @staticmethod
     def memory_saved_open(binding):
-        """The 1-based indices of the saved facts whose undo is still open (#918)."""
-        return [index for index,item in enumerate(binding['items'],1) if item['id'] not in binding['done']]
+        from .memory_prompts import MemoryPrompts
+        return MemoryPrompts.memory_saved_open(binding)
 
     def memory_saved_text(self, binding, footer=None):
-        """The notice in the owner's words: "기억했어요: <fact>" and, once undone, "되돌렸어요" (#918).
-
-        Values only, never a key; bounded; stored secrets and credential
-        shapes removed (``memory_fact``).  A fact that superseded a value
-        says so ("전에는 …"), and an undo that restored it says so ("다시 …"),
-        so a replacement is never silent.  It asks nothing.
-        """
-        items,done,restored=binding['items'],binding['done'],binding.get('restored') or {}
-        def fact_of(memory_id):
-            row=self.store.memory(memory_id,MEMORY_OWNER,current_only=False) or {}
-            return self.memory_fact(row.get('content'),MEMORY_CANDIDATE_CHARS,row.get('memory_key'))[0]
-        def line_of(item):
-            status=done.get(item['id'])
-            text=fact_of(item['id'])
-            # Review P3: a previous or restored row deleted from 내 기록 since has no text; nothing empty is shown.
-            if status=='retracted':
-                again=[restored.get(item['id'])] if restored.get(item['id']) else []
-                again+=list((binding.get('restored_ended') or {}).get(item['id']) or ())
-                back=', '.join(fact for fact in (fact_of(memory_id) for memory_id in again) if fact)
-                return text+(f' ({MEMORY_SAVED_AGAIN.format(facts=back)})' if back else '')
-            if status=='outdated':return text
-            # #425: the value this fact replaced under its own key, then the other facts it retired, each named so.
-            before=fact_of(item['previous'][0]) if item.get('previous') else ''
-            ended=', '.join(fact for fact in (fact_of(pair[0]) for pair in item.get('ended') or ()
-                                             if isinstance(pair,list) and pair) if fact)
-            notes=[*([MEMORY_SAVED_BEFORE.format(facts=before)] if before else []),
-                   *([MEMORY_SAVED_ENDED.format(facts=ended)] if ended else [])]
-            return text+(f" ({'; '.join(notes)})" if notes else '')
-        single=len(items)==1
-        all_done=bool(done) and not self.memory_saved_open(binding)
-        every_retracted=all_done and all(done.get(item['id'])=='retracted' for item in items)
-        if single:
-            item=items[0];status=done.get(item['id'])
-            head=MEMORY_SAVED_UNDONE if status=='retracted' else MEMORY_SAVED_HEADER
-            lines=[f'{head}: {line_of(item)}']
-            if status=='outdated':lines[0]+=' → '+MEMORY_SAVED_STATUS['outdated']
-        else:
-            lines=[MEMORY_SAVED_UNDONE if every_retracted else MEMORY_SAVED_HEADER]
-            for index,item in enumerate(items,1):
-                status=done.get(item['id'])
-                line=f'{index}. '+line_of(item)
-                if status:line+=' → '+MEMORY_SAVED_STATUS[status]
-                lines.append(line)
-        if binding.get('more'):lines.append(MEMORY_SAVED_MORE.format(count=binding['more']))
-        if footer and footer not in lines:lines.append(footer)
-        return '\n'.join(lines)
+        return self.memory_prompts.memory_saved_text(binding, footer)
 
     @classmethod
     def memory_saved_markup(cls, notification_id, binding):
-        """No buttons (#996): the owner answers a saved notice in words or with a reaction.
-
-        A notice sent before #996 keeps its [되돌리기] taps working
-        (``legacy_memory_saved_markup`` and the ``p7u`` callback), and an
-        edit of such a notice removes its buttons.
-        """
-        return {'inline_keyboard':[]}
+        from .memory_prompts import MemoryPrompts
+        return MemoryPrompts.memory_saved_markup.__func__(cls, notification_id, binding)
 
     @classmethod
     def legacy_memory_saved_markup(cls, notification_id, binding):
-        """One [되돌리기] per open fact (numbered when several), plus 모두 when more than one is open (#918)."""
-        open_=cls.memory_saved_open(binding)
-        if len(binding['items'])==1:
-            return {'inline_keyboard':[[{'text':MEMORY_UNDO_BUTTON,'callback_data':f'p7u:{notification_id}:1'}]] if open_ else []}
-        rows=[[{'text':f'{index} {MEMORY_UNDO_BUTTON}','callback_data':f'p7u:{notification_id}:{index}'}] for index in open_]
-        if len(open_)>1:rows.append([{'text':msg('quickstart_service.all_button', label=MEMORY_UNDO_BUTTON),'callback_data':f'p7u:{notification_id}:a'}])
-        return {'inline_keyboard':rows}
+        from .memory_prompts import MemoryPrompts
+        return MemoryPrompts.legacy_memory_saved_markup.__func__(cls, notification_id, binding)
 
     def undo_memory_item(self, job_id, item):
-        """Retract one bound fact: ``retracted`` (previous value restored when one was superseded) or ``outdated`` (#918).
-
-        Exact: the row must still be current with the bound content digest
-        (``retract_memory`` fails closed otherwise).  The undo is recorded on
-        the Work as a ``memory_undo`` event for its information-use audit and
-        Evidence.  Returns ``(status, restored_id)``.
-        """
-        # #918 review P2: the retraction and its Evidence row are one transaction (``record``), so an
-        # undo is never durable without the event the audit promises.
-        record={'job_id':job_id,'tool':MEMORY_UNDO_TOOL,'status':'recorded',
-                'detail':{'host_action':MEMORY_UNDO_TOOL,'evidence':{'id':item['id'],'memory_key':item.get('key'),'auto_saved':True}}}
-        try:
-            receipt=self.store.retract_memory(MEMORY_OWNER,item['id'],item['digest'],record=record)
-        except ValueError as exc:
-            LOG.info('memory undo refused work=%s kind=%s',job_id,type(exc).__name__)
-            return 'outdated',None,[]
-        # #220 (Codex review): also the rows under other keys the save had ended and the undo made current again.
-        # Codex review: a row whose last day passed meanwhile is not "back in use"; the notice leaves it out.
-        holding={row['id'] for row in MemoryService(self.store,private_read_sink=MemoryService.NO_EGRESS_GUARD).holding(
-            [self.store.memory(memory_id,MEMORY_OWNER,current_only=False) or {'id':None}
-             for memory_id in [(receipt.get('restored') or {}).get('id'),*(receipt.get('restored_ended') or ())] if memory_id])}
-        restored=(receipt.get('restored') or {}).get('id')
-        return ('retracted',restored if restored in holding else None,
-                [memory_id for memory_id in receipt.get('restored_ended') or () if memory_id in holding])
+        return self.memory_prompts.undo_memory_item(job_id, item)
 
     def undo_memory_saved(self, job_id, binding, targets):
-        """Apply one tap to the open ``targets`` (1-based) of a bound notice; returns the ids it decided (#918)."""
-        decided=[]
-        for index in targets:
-            item=binding['items'][index-1]
-            status,restored,ended=self.undo_memory_item(job_id,item)
-            binding['done'][item['id']]=status
-            if restored:binding.setdefault('restored',{})[item['id']]=restored
-            if ended:binding.setdefault('restored_ended',{})[item['id']]=ended
-            decided.append(item['id'])
-        return decided
+        return self.memory_prompts.undo_memory_saved(job_id, binding, targets)
 
     def join_memory_saved(self, notification, binding, now=None):
-        """Facts upkeep saved after the Work's notice was sent join it by an edit (#918, as #836 joins the ask).
-
-        Bound only when the edit is confirmed, so an undo button never covers
-        a fact the owner was not shown; the notice's undo window restarts at
-        the join (review P3), so a joined fact is undoable for the full week.
-        A refused edit falls back to a notice of its own for the new facts
-        (review P3), so they are never left untold.  Past
-        ``MEMORY_CANDIDATES_SHOWN`` a fact is only counted.
-        """
-        now=time.time() if now is None else now
-        job_id=notification['job_id']
-        listed={item['id'] for item in binding['items']}
-        new=[row for row in self.store.work_memories(MEMORY_OWNER,job_id,limit=101) if row['id'] not in listed]
-        if not new:return
-        room=max(0,MEMORY_CANDIDATES_SHOWN-len(binding['items']))
-        added=[self.memory_saved_item(row) for row in new[:room]]
-        shown={**binding,'items':binding['items']+added,'more':len(new)-len(added),'sent':now}
-        edited=False
-        if isinstance(notification.get('message_id'),int):
-            try:
-                self.telegram.edit_message_text(notification['chat_id'],notification['message_id'],
-                                                self.memory_saved_text(shown),self.memory_saved_markup(notification['id'],shown))
-                edited=True
-            except ProviderError:
-                pass
-        final=shown if edited else binding
-        # #188 (Codex on #200): a confirmed edit that added facts is a new showing of the notice.
-        self.store.update_notification(notification['id'],'sent' if self.memory_saved_open(final) else 'memory_undone',
-                                       fingerprint=json.dumps(final),delivered=edited and bool(added))
-        LOG.info('memory saved notice joined work=%s added=%s edited=%s',job_id,len(added) if edited else 0,edited)
-        if not edited:
-            job=self.store.job(job_id)
-            if job:self._queue_separate_saved_notice(job,self._saved_notice_rows(job_id))
+        return self.memory_prompts.join_memory_saved(notification, binding, now)
 
     def expire_memory_saved(self, notification, binding):
-        """Refuse further undo taps on one saved notice and remove its buttons (#918)."""
-        self.store.update_notification(notification['id'],'expired')
-        if isinstance(notification.get('message_id'),int):
-            try:self.telegram.edit_message_text(notification['chat_id'],notification['message_id'],
-                                                self.memory_saved_text(binding,MEMORY_SAVED_EXPIRED_TEXT),{'inline_keyboard':[]})
-            except ProviderError:pass
+        return self.memory_prompts.expire_memory_saved(notification, binding)
 
     def offered_proposals(self, notification):
         """The exact proposals a proposal message shows, or [] if they changed (#659).
@@ -5787,16 +4809,14 @@ class AgentService:
     def legacy_splice_chats(self):
         """Chats a pre-#570 connector file splice could have reached (#703).
 
-        The Drive handoff spliced the owner's Picker-selected files into a turn
+        The removed Drive handoff spliced the owner's selected files into a turn
         of the chat it was offered to, and before #570 left no trace of it.
         Its durable state names that chat (the offer's owner and the
         selection's owner) and survives disconnect.  Connector state only; no
         message text is read.
         """
-        from .drive_web_oauth import SELECTED_FILES_KEY, STATUS_KEY
         chats=set()
-        for key in (STATUS_KEY,SELECTED_FILES_KEY):
-            value=self.store.config(key,{})
+        for value in self.store.config('retired_drive_739',{}).values():
             owner=value.get('owner') if isinstance(value,dict) else None
             if isinstance(owner,int) and not isinstance(owner,bool):chats.add(owner)
         return frozenset(chats)
@@ -5969,6 +4989,18 @@ class AgentService:
         return {'ok':record['ok'],'text_ok':record['text_ok'],'tools_ok':record['tools_ok'],
                 'response':response,'error':record.get('error',''),'model':record['model'],
                 'test_proof':proof}
+
+    @cached_property
+    def memory_prompts(self):
+        """Memory candidate prompts and saved notices over existing service state (#21)."""
+        from .memory_prompts import MemoryPrompts
+        return MemoryPrompts(self)
+
+    @cached_property
+    def settings_continuation_service(self):
+        """MCP setup and Settings Work continuation over existing service state (#21)."""
+        from .settings_continuation import SettingsContinuation
+        return SettingsContinuation(self)
 
     @cached_property
     def google_connections(self):
@@ -6349,11 +5381,9 @@ class AgentService:
                                                       or self.connector_handoff.known(GMAIL_CONNECTOR_ID))
                   else 'Gmail is not available in this install.')
         elif decision.intent==INTENT_DRIVE_READ:
-            # Likewise no worker tool reads Drive: a configured Drive keeps its
-            # connection offer and reads the selected files into the loop below.
             # #1172: with the full-Drive connector the worker has drive_search /
             # drive_read itself, and a missing connection parks the Work there.
-            fact=None if (self.drive_oauth or self.drive_web_oauth) else 'Google Drive is not available in this install.'
+            fact=None if self.drive_oauth else 'Google Drive is not available in this install.'
         else:
             # Conversation and research already run in the model loop.  #173: no
             # keyword rule produces a knowledge, saved-result, settings or note
@@ -7075,17 +6105,7 @@ class AgentService:
         return {**representative,'connector_id':connector_id,'resumed':resumed,'refused':refused}
 
     def _fail_waiting_work(self, work_id, text, *, status='failed'):
-        """Commit a truthful terminal result only if the original Work still waits."""
-        with self.store.db() as db:
-            db.execute('BEGIN IMMEDIATE')
-            changed=db.execute("UPDATE jobs SET status=?,error=?,response=?, "
-                               "delivery=CASE WHEN delivery='pending' THEN 'cancelled' ELSE delivery END "
-                               "WHERE id=? AND status='awaiting_connection'",(status,text,text,work_id)).rowcount==1
-            if changed:
-                job=db.execute('SELECT channel,workspace_id FROM jobs WHERE id=?',(work_id,)).fetchone()
-                db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id) VALUES (?,?,?,?,?,?)',
-                           ('assistant',text,job['channel'],time.time(),job['workspace_id'],work_id))
-        return changed
+        return self.store.fail_waiting_work(work_id, text, status=status)
 
     def _abandon_parked_work(self, work_id, reason):
         changed=self._fail_waiting_work(work_id,ConnectorHandoff.refusal_text(reason))
@@ -8168,8 +7188,6 @@ class AgentService:
                          'connect_path':(urlsplit(self.connector_connect_url(connector.connector_id)).path+(('?'+urlsplit(self.connector_connect_url(connector.connector_id)).query) if urlsplit(self.connector_connect_url(connector.connector_id)).query else '')) if self.connector_connect_url(connector.connector_id) else ''})
         return rows
 
-    def drive_connection_row(self):
-        return self.google_connections.drive_connection_row()
 
     def connector_credential_current(self, connector_id):
         """Read-only: would the connector's next request accept its stored credential?
@@ -8219,7 +7237,7 @@ class AgentService:
         {'service':'google-calendar','name':'Google Calendar','ai_names':('google calendar','gcal'),
          'levels':((CALENDAR_CONNECTOR_ID,'read'),(CALENDAR_WRITE_CONNECTOR_ID,'create'))},
         {'service':'google-drive','name':'Google Drive','ai_names':('google drive','gdrive'),
-         'levels':((DRIVE_CONNECTOR_ID,'read'),('google-drive-read','picked'))},
+         'levels':((DRIVE_CONNECTOR_ID,'read'),)},
     )
     #: How long the AI CLIs' configured server names are reused between Settings polls (they are file reads).
     AI_ROUTES_CACHE_SECONDS=30
@@ -8292,7 +7310,7 @@ class AgentService:
         return self.google_connections.google_service_rows(connections, routes)
 
     CONNECTION_NAMES={GMAIL_FILTERS_CONNECTOR_ID:msg('handoff.gmail_filters'), GMAIL_MODIFY_CONNECTOR_ID:msg('handoff.modify_gmail'), 'google-gmail-read':'Google Gmail','google-calendar':'Google Calendar',
-                      'google-calendar-write':msg('handoff.create_google_calendar_events'),'google-drive-read':'Google Drive',
+                      'google-calendar-write':msg('handoff.create_google_calendar_events'),
                       DRIVE_CONNECTOR_ID:'Google Drive'}
 
     def settings_snapshot(self):
@@ -10021,29 +9039,6 @@ class AgentService:
                                 cues=('judgment:capability-need','resumed-judgment'))
         return prompt,row['prompt_work_id'],decision
 
-    def drive_read_prerequisite(self, job):
-        return self.google_connections.drive_read_prerequisite(job)
-
-    def offer_drive_connection(self, telegram_owner_id, pending_job_id=None):
-        return self.google_connections.offer_drive_connection(telegram_owner_id, pending_job_id)
-
-    def publish_drive_connection_status(self, telegram_owner_id):
-        return self.google_connections.publish_drive_connection_status(telegram_owner_id)
-
-    def complete_drive_web_oauth(self, callback, telegram_owner_id, exchange):
-        return self.google_connections.complete_drive_web_oauth(callback, telegram_owner_id, exchange)
-
-    def select_drive_files(self, telegram_owner_id, files):
-        return self.google_connections.select_drive_files(telegram_owner_id, files)
-
-    def select_drive_picker_files(self, grant, files):
-        return self.google_connections.select_drive_picker_files(grant, files)
-
-    def selected_drive_files(self, telegram_owner_id):
-        return self.google_connections.selected_drive_files(telegram_owner_id)
-
-    def selected_drive_context(self, telegram_owner_id):
-        return self.google_connections.selected_drive_context(telegram_owner_id)
 
     def connect_telegram(self, body):
         return self.telegram_delivery.connect_telegram(body)

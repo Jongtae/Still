@@ -66,7 +66,7 @@ SRC = Path(__file__).resolve().parents[1] / 'src' / 'personal_agent'
 #: #805 owner-model upkeep; ``skills.py`` the #961 skill-supply glue.
 SCANNED_MODULES = ('agent_runtime.py', 'conversation_handoff.py', 'current_context.py', 'browser_session.py',
                    'browser_worker.py', 'browser_jar.py', 'browser_worker_chromium.py', 'chromium_runtime.py', 'browser_signin.py',
-                   'preparations.py', 'local_tools.py', 'quickstart_service.py', 'google_connections.py', 'work_executor.py', 'telegram_delivery.py', 'telegram_store.py', 'orchestrator.py', 'owner_model.py',
+                   'preparations.py', 'local_tools.py', 'quickstart_service.py', 'settings_continuation.py', 'memory_prompts.py', 'google_connections.py', 'work_executor.py', 'telegram_delivery.py', 'telegram_store.py', 'orchestrator.py', 'owner_model.py',
                    # SKILL-SUPPLY-02 (#961): the skill-supply glue stays free of site/category branches;
                    # skill content is data in packages, not scanned (#960 section 8).
                    'skills.py',
@@ -135,12 +135,6 @@ CLASSIFIED = {
     ('local_tools.py', 'metadata.google.internal'): (
         'enforcement', 'SSRF denylist of cloud metadata hosts (DENIED_PUBLIC_HOSTS); a security boundary that '
                        'refuses every request to that host, not a site the model may choose'),
-    ('quickstart_service.py', 'google-drive-read'): (
-        'adapter', 'connector registry identity of the owner-connected Drive capability (read grant/handoff); '
-                   'capability dispatch by connector id, not a site or provider chosen for a request'),
-    ('google_connections.py', 'google-drive-read'): (
-        'adapter', 'connector registry identity of the owner-connected Drive capability (read grant/handoff); '
-                   'capability dispatch by connector id, not a site or provider chosen for a request'),
     ('quickstart_service.py', 'google-gmail-read'): (
         'adapter', 'connector registry identity of the owner-connected Gmail capability'),
     ('quickstart_service.py', 'google-calendar'): (

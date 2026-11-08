@@ -365,6 +365,38 @@ class QuickStore:
                 self.put('retired_family_657', retired, db=db)
                 LOG.info('family sharing retired (#657): config records=%s; owner data retained', changed)
             self._retire_family_files()
+            # #739: removed connector records are inert history; credentials are removed.
+            prefix = '_'.join(('drive', 'web', 'oauth')) + '_'
+            retired = dict(self.config('retired_drive_739', {}, db=db) or {})
+            changed = 0
+            for suffix in ('pending', 'tokens', 'status', 'selected_files', 'picker_grant'):
+                key = prefix + suffix
+                row = db.execute('SELECT value FROM config WHERE key=?', (key,)).fetchone()
+                if row:
+                    # Only lifecycle/selection metadata is historical evidence, never credentials.
+                    if suffix in ('status', 'selected_files'):
+                        retired.setdefault(suffix, json.loads(row['value']))
+                    db.execute('DELETE FROM config WHERE key=?', (key,))
+                    changed += 1
+            # Every legacy selected-file wait lost its continuation, including
+            # ones stranded by an earlier retirement or overwritten handoff.
+            settled = 0
+            for row in db.execute("SELECT id FROM jobs WHERE status='awaiting_drive'").fetchall():
+                settled += self.fail_waiting_work(row['id'], msg('quickstart_store.drive_connection_retired'),
+                                                 waiting_status='awaiting_drive', db=db)
+            removed = sum(self.remove_secret(key) for key in self.secret_items('encrypted:' + prefix))
+            files_removed = 0
+            for name in ('drive-localhost-cert.pem', 'drive-localhost-key.pem'):
+                path = self.private / name
+                try:
+                    path.unlink()
+                except FileNotFoundError:
+                    continue
+                files_removed += 1
+            if changed or removed or files_removed or settled:
+                self.put('retired_drive_739', retired, db=db)
+                LOG.info('removed Drive connector retired (#739): config=%s secrets=%s files=%s settled_work=%s; owner data retained',
+                         changed, removed, files_removed, settled)
         self.path.chmod(0o600)
         if not self.claimed() and not self.bootstrap.exists():
             self.write_private(self.bootstrap, secrets.token_urlsafe(32))
@@ -940,6 +972,25 @@ class QuickStore:
         with self.db() as db:
             row=db.execute('SELECT * FROM jobs WHERE id=?',(job_id,)).fetchone()
             return dict(row) if row else None
+
+    def fail_waiting_work(self, work_id, text, *, status='failed', waiting_status='awaiting_connection', db=None):
+        """Commit a truthful terminal result only if the original Work still waits.
+
+        The native-handoff settlement path also serves startup retirement inside
+        its existing transaction; the expected waiting status pins the transition.
+        """
+        if db is None:
+            with self.db() as conn:
+                conn.execute('BEGIN IMMEDIATE')
+                return self.fail_waiting_work(work_id, text, status=status, waiting_status=waiting_status, db=conn)
+        changed=db.execute("UPDATE jobs SET status=?,error=?,response=?, "
+                           "delivery=CASE WHEN delivery='pending' THEN 'cancelled' ELSE delivery END "
+                           "WHERE id=? AND status=?",(status,text,text,work_id,waiting_status)).rowcount==1
+        if changed:
+            job=db.execute('SELECT channel,workspace_id FROM jobs WHERE id=?',(work_id,)).fetchone()
+            db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id) VALUES (?,?,?,?,?,?)',
+                       ('assistant',text,job['channel'],time.time(),job['workspace_id'],work_id))
+        return changed
 
     def link_work_relation(self, job_id, related_job_id, relation_kind, db=None):
         """Bind one Work to an earlier Work without copying either request.

@@ -148,9 +148,11 @@ The existing local implementation uses named modules rather than a new framework
 | `quickstart_service.AgentService` | Composition root for the store, connectors, orchestrators, surfaces and queue worker. |
 | `work_execution.WorkRun` | State carried between one Work's execution phases. |
 | `work_executor.WorkExecutor` via `AgentService.work_executor` | Claim, route, prepare, execute, settle and finish/fail one Work, including judgment/budget settlement and post-work handling. The extraction does not create another state owner. |
+| `memory_prompts.MemoryPrompts` via `AgentService.memory_prompts` | Memory candidate prompts and saved notices, including binding, decisions, undo and expiry, with service forwarding entry points over the same state and unchanged approval, delivery and recovery semantics. |
+| `settings_continuation.SettingsContinuation` via `AgentService.settings_continuation_service` | MCP setup and Settings prerequisite readiness/Work continuation over existing service state, with forwarding entry points and unchanged authority, approval, budget, recovery and transaction semantics. |
 | `browser_signin.BrowserSignin` | Browser sign-in windows, provider sign-in records and exact step approvals, with forwarding service entry points over the same owner state. |
 | `orchestrator` and `settings_orchestrator` | Typed work planning/evaluation and bound setting drafts on existing state. |
-| `google_connections.GoogleConnections` | Google OAuth connection and saved-client lifecycle, revocation, status rows and Drive Picker helpers over the service's existing state, with forwarding service entry points. |
+| `google_connections.GoogleConnections` | Google OAuth connection and saved-client lifecycle, revocation and status rows over the service's existing state, with forwarding service entry points. |
 | `conversation_handoff` and `conversation_surface` | Contextual continuation and the shared owner pairing, ingestion, delivery and presence interface. |
 | `telegram_delivery.TelegramDelivery` via `AgentService.telegram_delivery` | Telegram connection lifecycle, callback authorization and task-card/result helpers, receive-failure logging, and delivery coordination across the existing surfaces, with service forwarding entry points and no additional state owner. |
 | `telegram_surface.TelegramSurface` | Telegram-specific ingestion, callbacks and delivery, with forwarding service entry points; it does not own a second store. |
