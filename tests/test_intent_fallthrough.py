@@ -51,7 +51,7 @@ class IntentFallthroughTests(_Case):
         work = self.receive(REMINDER)
         job = self.store.job(work)
         self.assertEqual(job['status'], 'succeeded', job.get('error'))
-        self.assertNotIn('구성되어 있지 않습니다', job.get('error') or '')
+        self.assertNotIn('구성되어 있지 않아요', job.get('error') or '')
         sent = self.worker_message()
         self.assertTrue(sent.startswith(REMINDER), 'the owner words reach the worker verbatim')
         self.assertIn(NOTE, sent)
@@ -95,7 +95,7 @@ class IntentFallthroughTests(_Case):
         work = self.receive(AMBIGUOUS)
         job = self.store.job(work)
         self.assertEqual(job['status'], 'succeeded', job.get('error'))
-        self.assertNotIn('아무 작업도 실행하지 않았습니다', job['response'])
+        self.assertNotIn('아무 작업도 실행하지 않았어요', job['response'])
         self.assertEqual(self.worker_message(), AMBIGUOUS)
         self.assertEqual(self.store.notes(), [], 'no rule ran one part of the turn')
 
@@ -105,7 +105,7 @@ class IntentFallthroughTests(_Case):
         work = self.receive(SEVERAL)
         job = self.store.job(work)
         self.assertEqual(job['status'], 'succeeded', job.get('error'))
-        self.assertNotIn('아무 작업도 실행하지 않았습니다', job['response'])
+        self.assertNotIn('아무 작업도 실행하지 않았어요', job['response'])
         sent = self.worker_message()
         self.assertTrue(sent.startswith(SEVERAL))
         self.assertIn(NOTE, sent)
@@ -130,7 +130,7 @@ class IntentFallthroughTests(_Case):
         self.store.put('model', {})
         work = self.receive(SEVERAL)
         job = self.store.job(work)
-        self.assertIn('아무 작업도 실행하지 않았습니다', job['response'])
+        self.assertIn('아무 작업도 실행하지 않았어요', job['response'])
         self.assertEqual(self.model_calls, [])
 
 

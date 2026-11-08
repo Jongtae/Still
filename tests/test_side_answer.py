@@ -63,7 +63,30 @@ class SideAnswerTests(_SteerCase):
         self.assertEqual(question.count(prompt('voice')), 1)
         [context] = self.side_calls
         self.assertEqual(set(context.facts), {'owner_message', 'another_task_in_progress', 'conversation'})
-        self.assertNotIn(preference, context.render(), 'the tool-less lane still excludes Memory')
+        self.assertNotIn(preference, context.render(), 'other Memory stays out')
+        self.assertNotIn('owner_voice_preference', context.facts)
+        self.assertEqual(self.store.turn_provenance(side['id'])['owner_information']['profile_keys'], [])
+
+    def test_side_reply_carries_only_the_redacted_voice_preference_and_audits_its_key(self):
+        from personal_agent.agent_runtime import MEMORY_OWNER
+        from personal_agent.memory_service import VOICE_PREFERENCE_KEY
+        from personal_agent.prompt_files import prompt
+        self.store.secret('model_key', 'stored-secret-198')
+        self.store.save_memory(VOICE_PREFERENCE_KEY, '반말로 해줘 stored-secret-198 sk-proj-abcdefghijklmnopqrstuvwxyz123456', MEMORY_OWNER)
+        self.store.save_memory('profile.preference.communication', 'unrelated-private-fact', MEMORY_OWNER)
+        running, side = self.pair()
+        self.service._side_answer(running, side)
+        [context] = self.side_calls
+        self.assertEqual(set(context.facts), {'owner_message', 'another_task_in_progress', 'conversation', 'owner_voice_preference'})
+        line = context.facts['owner_voice_preference']
+        self.assertTrue(line.startswith(VOICE_PREFERENCE_KEY + ': 반말로 해줘'))
+        self.assertIn('[redacted]', line)
+        for private in ('stored-secret-198', 'sk-proj-abcdefghijklmnopqrstuvwxyz123456', 'unrelated-private-fact', 'profile.preference.communication'):
+            self.assertNotIn(private, context.render())
+        self.assertIn(prompt('voice'), self.side_questions[0])
+        audit = self.store.turn_provenance(side['id'])['owner_information']
+        self.assertEqual(audit['profile_keys'], [VOICE_PREFERENCE_KEY])
+        self.assertNotIn('반말로 해줘', json.dumps(audit, ensure_ascii=False))
 
     def test_delivers_side_reply_while_real_worker_is_blocked_then_worker_finishes(self):
         entered, release = threading.Event(), threading.Event()

@@ -486,7 +486,7 @@ class C_RetryContinuity(PresenceEval):
         reply_id = self.service.telegram_turns.get(failed['id'])['reply_message_id']
         start = len(self.wire)
         self.tap(f"p7r:{failed['id']}", reply_id, callback_id='late')
-        self.assertIn('이미 한 번 다시 시도했습니다', self.callback_answers(start)[-1]['text'])
+        self.assertIn('이미 한 번 다시 시도했어요', self.callback_answers(start)[-1]['text'])
         self.assertEqual(len(self.model_bodies), calls)
 
     def test_retry_control_and_conversation_share_one_owner_bound_idempotent_gate(self):
@@ -614,7 +614,7 @@ class G_LongResearch(PresenceEval):
         notice, answer = self.bubbles()
         self.assertEqual(notice['text'], AgentService.STOP_RUNNING_TEXT)
         self.assertNotIn('취소했', notice['text'])
-        self.assertIn('멈춤을 요청해 다음 단계를 실행하지 않았습니다', answer['text'], 'the real result is still delivered once')
+        self.assertIn('멈춤을 요청해 다음 단계를 실행하지 않았어요', answer['text'], 'the real result is still delivered once')
         self.assertNotIn('의자 A가 가볍습니다.', answer['text'])
 
     def test_stop_on_queued_work_cancels_it_through_the_state_machine(self):
@@ -741,7 +741,7 @@ class D_MissingGmail(LocalHttp, PresenceEval):
                                  'a received-reaction, then exactly one guidance bubble')
                 [guidance] = self.texts(start)
                 self.assertIn('Gmail', guidance)
-                self.assertIn('실행하지 않았습니다', guidance)
+                self.assertIn('실행하지 않았어요', guidance)
                 self.assertIn(f'http://127.0.0.1:{self.port}/google-gmail', guidance)
                 for lie in ('연결되었습니다', '찾았습니다', '검색했습니다'):
                     self.assertNotIn(lie, guidance)
@@ -749,7 +749,7 @@ class D_MissingGmail(LocalHttp, PresenceEval):
                 self.assertEqual(self.searches(), searches, 'no mailbox call before the connection')
                 # The owner connects on this Mac (fixture OAuth token exchange).
                 status, page, _ = self.connect_through_the_browser()
-                self.assertEqual((status, page), (200, 'Gmail 연결이 완료되었습니다. 이 창을 닫아도 됩니다. 대화에도 알려 드렸습니다. / Gmail connected. You can close this window.'))
+                self.assertEqual((status, page), (200, 'Gmail 연결이 완료되었어요. 이 창을 닫아도 돼요. 대화에도 알려 드렸어요. / Gmail connected. You can close this window.'))
                 self.assertEqual(self.store.job(job['id'])['status'], 'queued')
                 # The ORIGINAL Work resumes once and answers once in the same conversation.
                 resumed_at = len(self.wire)
@@ -861,7 +861,7 @@ class D_MissingGmail(LocalHttp, PresenceEval):
         job, _ = self.turn('tell the landlord I agree')
         sent = self.model_bodies[bodies]['messages'][-1]['content']
         self.assertTrue(sent.startswith('tell the landlord I agree'))
-        self.assertIn('메일 보내기나 답장은 제공하지 않습니다', sent)
+        self.assertIn('메일 보내기나 답장은 제공하지 않아요', sent)
         self.assertNotEqual(job['status'], 'awaiting_connection')
         self.assertEqual(self.searches(), 0)
         # Positive: every phrasing parks with one contextual next action.
@@ -875,7 +875,7 @@ class D_MissingGmail(LocalHttp, PresenceEval):
             # the guidance is always the turn's last bubble.
             guidance = self.texts(start)[-1]
             self.assertIn('Gmail', guidance)
-            self.assertIn('실행하지 않았습니다', guidance)
+            self.assertIn('실행하지 않았어요', guidance)
         # Every phrasing is ingested before asserting, so each gap would be observed.
         self.assertEqual({phrase: job['status'] for phrase, job in observed.items()},
                          {phrase: 'awaiting_connection' for phrase in mail})
@@ -969,7 +969,7 @@ class E_MissingFolder(LocalHttp, PresenceEval):
                 self.assertEqual(self.roots(), [str(self.folder.resolve())])
                 self.assertIsNone(self.store.config('file_workspace', {}).get('workspace'), 'read is not write')
                 self.assertEqual(self.methods(notice_at), ['sendMessage'])
-                self.assertEqual(self.texts(notice_at), ['선택한 폴더를 읽기로 허용했습니다. 방금 요청을 이어서 처리합니다.'])
+                self.assertEqual(self.texts(notice_at), ['선택한 폴더를 읽기로 허용했어요. 방금 요청을 이어서 처리해요.'])
                 # Exactly-once resume of the ORIGINAL Work.
                 self.script = [('tool', 'find_files', {'query': '계약서'})]
                 self.claim = True
@@ -1109,7 +1109,7 @@ class CalendarParticleFinding(CalendarEval):
         guidance = ConnectorHandoff.guidance(result)
         self.assertNotIn('을(를)', guidance)
         self.assertIn('Google Calendar 일정 만들기를 연결해 주세요', guidance)
-        self.assertIn('실행하지 않았습니다', guidance, 'the truthful not-executed statement is unchanged')
+        self.assertIn('실행하지 않았어요', guidance, 'the truthful not-executed statement is unchanged')
 
 
 # =============================================================================
@@ -1592,8 +1592,8 @@ class ExtendedRegressions(PresenceEval):
         self.text = ''
         job, _ = self.turn('모레 일정 뭐 있어?')
         for text in [job['response'] or '', job['error'] or '', *self.texts()]:
-            self.assertNotIn('완료했습니다', text)
-            self.assertNotIn('처리했습니다', text)
+            self.assertNotIn('완료했어요', text)
+            self.assertNotIn('처리했어요', text)
 
     def test_1389_an_explicit_command_asks_no_parked_work_withdrawal(self):
         self.connect_model()
@@ -1649,6 +1649,6 @@ class ExtendedRegressions(PresenceEval):
         self.assertEqual(restarted.recover_interrupted_work(), [job_id])
         restarted.deliver_one()
         [reply] = self.bubbles()
-        self.assertTrue(reply['text'].startswith('이 요청은 중단되었습니다. 자동으로 다시 실행하지 않았습니다.'))
+        self.assertTrue(reply['text'].startswith('이 요청은 중단되었어요. 자동으로 다시 실행하지 않았어요.'))
         self.assertEqual(reply['reply_parameters']['message_id'], source)
         self.assertFalse(restarted.run_one())

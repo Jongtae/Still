@@ -131,7 +131,7 @@ class TelegramChannelTests(unittest.TestCase):
         channel = TelegramChannel(lambda: transport, lambda: 'BOT:TOKEN')
         with self.assertRaises(ProviderError) as caught:
             channel.send_message(42, 'hello')
-        self.assertEqual(str(caught.exception), 'Telegram 요청이 실패했습니다. 봇 설정을 확인하세요.')
+        self.assertEqual(str(caught.exception), 'Telegram 요청이 실패했어요. 봇 설정을 확인해 주세요.')
         self.assertNotIn('Unauthorized', str(caught.exception))
 
     def test_reply_markup_key_is_absent_unless_supplied(self):

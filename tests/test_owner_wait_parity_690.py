@@ -82,7 +82,9 @@ class SameRuleBothRoutes(unittest.TestCase):
             return result
         caps.execute = observed
         direct = run_agent(caps.adapter, CFG, '', [{'role': 'user', 'content': REQUEST}], '', caps, record)
-        rows = bridge_rows(results)
+        # #16: independent reads of one turn may finish in any order; the bridge records them in call order.
+        order = [item['function']['name'] for item in calls]
+        rows = bridge_rows(sorted(results, key=lambda row: order.index(row[0])))
         return direct.outcome, outcome_from_events(rows)[0], rows
 
     def test_each_wait_is_partial_on_both_routes_whether_or_not_another_step_advanced_first(self):
@@ -152,7 +154,7 @@ class RouteHarness(LoginHarness):
         if route == 'cli':
             self.cli_service()
             # The sandbox forbids Unix socket listeners; only the relay's construction is replaced.
-            with mock.patch('personal_agent.quickstart_service.BrowserRelay') as relay:
+            with mock.patch('personal_agent.work_executor.BrowserRelay') as relay:
                 relay.return_value.address = '/fixture-relay'
                 job_id = self.receive(REQUEST)
                 self.assertTrue(self.service.run_one())

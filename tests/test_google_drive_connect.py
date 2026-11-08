@@ -733,7 +733,7 @@ class ConnectionNoticeTest(unittest.TestCase):
         self.complete_drive()
         rows = self.assistant_rows()
         self.assertEqual(len(rows), 1)
-        self.assertIn('Google Drive 연결이 완료되었습니다', rows[0]['content'])
+        self.assertIn('Google Drive 연결이 완료되었어요', rows[0]['content'])
         self.assertEqual(rows[0]['channel'], 'web')
         self.assertEqual(self.sent, [])
 
@@ -770,7 +770,7 @@ class ParkedConnectionNoticeTest(ConnectionNoticeTest):
         self.complete_drive()
         rows = self.assistant_rows()
         self.assertEqual(len(rows), 1)
-        self.assertIn('기다리던 요청을 이어서 처리합니다', rows[0]['content'])
+        self.assertIn('기다리던 요청을 이어서 처리해요', rows[0]['content'])
 
 
 class SettingsWebNoticeTest(unittest.TestCase):
@@ -792,7 +792,7 @@ class SettingsWebNoticeTest(unittest.TestCase):
         before = self.service.settings_snapshot()
         self.service.save_google_client({'client_json': OwnClientFromSettingsTest.CLIENT})
         text = self.service.notify_settings_web_change('자체 Google client', before)
-        self.assertIn('설정 화면에서 자체 Google client을(를) 바꿨습니다.', text)
+        self.assertIn('설정 화면에서 자체 Google client을(를) 바꿨어요.', text)
         self.assertIn('자체 Google client: 설정 안 됨 → 설정됨', text)
         self.assertIn('Google Drive: 연결 안 됨', text)
         self.assertNotIn('GOCSPX', text)
@@ -861,7 +861,7 @@ class SettingsWebNoticeOverHttpTest(unittest.TestCase):
             request('/api/google/client', {'client_json': OwnClientFromSettingsTest.CLIENT})
             # Recorded before the success is exposed: no wait needed.
             self.assertEqual(len(notices()), 1)
-            self.assertIn('설정 화면에서 자체 Google client을(를) 저장했습니다.', notices()[0])
+            self.assertIn('설정 화면에서 자체 Google client을(를) 저장했어요.', notices()[0])
             # Re-submitting the current value of a setting the read model shows says nothing.
             current = service.current_state.status()
             request('/api/current-context', {'enabled': bool(current.get('enabled'))})

@@ -566,7 +566,7 @@ class ExplicitFollowJobTests(JobFixture):
         job = status['qualification']
         self.assertEqual((job['state'], job['explicit']), (JOB_QUEUED, True))
         self.assertEqual(status['effective']['state'], 'checking')
-        self.assertIn('건너뜁니다', status['effective']['text'], 'off answers nothing meanwhile')
+        self.assertIn('건너뛰어요', status['effective']['text'], 'off answers nothing meanwhile')
         again = service.activate_decision_route({'transport': MODE_FOLLOW})['qualification']
         self.assertEqual(again['id'], job['id'], 'one job per route')
         self.assertTrue(service.run_due_qualification())
@@ -582,7 +582,7 @@ class ExplicitFollowJobTests(JobFixture):
         before = self.store.config('decision_route')
         status = service.activate_decision_route({'transport': MODE_FOLLOW})
         self.assertEqual(status['effective']['state'], 'checking')
-        self.assertIn('그대로 씁니다', status['effective']['text'])
+        self.assertIn('그대로 써요', status['effective']['text'])
         rows, answers = [], []
         original = service.decision_routes._job_checkpoint
 

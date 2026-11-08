@@ -557,7 +557,7 @@ class DestinationScopedHistory(unittest.TestCase):
         self.service = AgentService(self.store, adapter=ModelAdapter(lambda *a: {'choices': [{'message': {'content': 'x'}}]}),
                                     subscription_engines=SubscriptionEngines(finder=lambda _: '/runtime/cli', clock=lambda: 1),
                                     execution_adapter=self.engine,
-                                    drive_web_oauth=SimpleNamespace(status=lambda: {'state': 'connected'}))
+                                    drive_web_oauth=SimpleNamespace(effective_status=lambda: {'state': 'connected'}))
         # #672: the Drive need is the DecisionEngine's judgment, scripted for this request.
         self.service.use_decision_engine(capability_need_engine({'summarize my drive file': INTENT_DRIVE_READ}))
         self.service.selected_drive_context = lambda chat_id: 'DRIVE-SECRET contents'

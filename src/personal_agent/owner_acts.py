@@ -130,11 +130,17 @@ class OwnerActs:
                     deadline += settings.RENEW_GRACE_SECONDS
             notice = service.store.notification_of(work_id, 'settings_change_proposed') if conversation_of else None
             bound = (notice and notice.get('surface', 'telegram') == conversation_of[0].name
-                     and notice['chat_id'] == conversation_of[1] and notice['generation'] == conversation_of[2]
-                     and notice.get('message_id') is not None)
+                     and notice['chat_id'] == conversation_of[1] and notice['generation'] == conversation_of[2])
+            shown_at = min(float(draft.get('created_at') or 0) for draft in rows)
+            # #719: a conversation's settings confirmation is shown when its send completes.
+            if bound:
+                if notice.get('sent_at') is not None:
+                    shown_at = max(shown_at, float(notice['sent_at']))
+                elif notice['state'] in ('queued', 'sending'):
+                    shown_at = None
             items.append({'kind': KIND_SETTINGS, 'shown_text': settings.confirmation_text(rows),
-                          'shown_at': min(float(draft.get('created_at') or 0) for draft in rows),
-                          'expires_at': deadline, 'message_id': notice['message_id'] if bound else None,
+                          'shown_at': shown_at,
+                          'expires_at': deadline, 'message_id': notice.get('message_id') if bound else None,
                           'ref': {'owner': owner, 'channel': channel, 'rows': rows,
                                   'work_id': work_id if any(draft.get('work_id') for draft in rows) else None}})
         if conversation_of:
@@ -148,7 +154,7 @@ class OwnerActs:
             items = [item for item in items if item['shown_at'] and int(item['shown_at']) <= int(float(before))]
         if target is not None:
             items = [item for item in items if item['message_id'] == target]
-        items.sort(key=lambda item: item['shown_at'], reverse=True)
+        items.sort(key=lambda item: item['shown_at'] or 0, reverse=True)
         items = items[:ITEM_LIMIT]
         for index, item in enumerate(items, 1):
             item['id'] = f'item-{index}'

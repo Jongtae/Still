@@ -761,7 +761,7 @@ const $=id=>ids.get(id),document={getElementById:$,createElement:tag=>new Elemen
 const part=(start,end)=>app.slice(app.indexOf(start),app.indexOf(end)),line=start=>{const at=app.indexOf(start);return app.slice(at,app.indexOf('\n',at)+1);};
 const source=part('const LANGUAGES=','function normalizeEndpoint(')+line('function formatTimeParts(')+part('function element(','function setError(')+
  'let ownerProfile=null,ownerProfileLoadSequence=0,ownerProfileEdit=null,ownerProfileDeletePending=null,savedMemory=null;function __setSaved(rows){savedMemory=rows;}\n'+
- part('function memoryOriginLabel(','// Reload the list on the existing poll')+part('const PROFILE_PREFIX=','function rememberWorkspaceResultSummary(');
+ part('function memoryOriginLabel(','// Reload the list on the existing poll')+part('async function loadOwnerProfile','function rememberWorkspaceResultSummary(');
 const calls=[];let refreshes=0;
 const ctx={document,$,console,calls,
  api:async(path,body,method)=>{calls.push({path,body,method:method||(body===undefined?'GET':'POST')});if(path==='/api/personal-space/profile')return {memories:ctx.profileRows};return {deleted:true};},
@@ -780,7 +780,7 @@ const buttons=node=>descendants(node).filter(n=>n.tag==='button').map(n=>n.textC
  // Rows: title without the namespace, content with the saved time, the 프로필 state, and 수정/삭제/열기.
  ctx.profileRows=[{id:'m1',memory_key:'profile.allergy.peanut',content:'땅콩 알러지',created:1700000000},{id:'m2',memory_key:'profile.place.home',content:'서울 마포구',created:1700000000}];
  await ctx.loadOwnerProfile();
- assert.deepEqual(rows().map(r=>texts(r,'settings-row-title')[0]),['allergy.peanut','place.home']);
+ assert.deepEqual(rows().map(r=>texts(r,'settings-row-title')[0]),['allergy · peanut','place · home']);
  assert(texts(rows()[0],'settings-row-description')[0].startsWith('땅콩 알러지 · '));
  assert.deepEqual(rows().map(r=>texts(r,'settings-state neutral')[0]),['프로필','프로필']);
  assert.deepEqual(buttons(rows()[0]),['수정','삭제']);

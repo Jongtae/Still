@@ -142,7 +142,7 @@ class OrchestratorCategories(_Case):
         self.assertEqual({option['value'] for option in read['cancel']['options']}, {scheduled['id'], proposed['id']})
         self.assertEqual([option['value'] for option in read['accept']['options']], [proposed['id']])
         draft = self.settings.propose('owner', 'http', 'preparations', 'cancel', scheduled['id'])
-        self.assertIn('예약을 취소합니다: [미리 준비]', draft['summary'])
+        self.assertIn('예약을 취소해요: [미리 준비]', draft['summary'])
         self.assertEqual(self.service.preparations.get(scheduled['id'])['state'], prep.STATE_SCHEDULED, 'a draft changes nothing')
         self.settings.confirm('owner', 'http', draft['draft_id'], draft['digest'])
         self.assertEqual(self.service.preparations.get(scheduled['id'])['state'], prep.STATE_CANCELLED)
@@ -239,14 +239,14 @@ class OrchestratorCategories(_Case):
         self.connect_two_api_routes()
         before = self.store.config('settings_change_drafts', {})
         for category, setting, value, message in (
-                ('main_ai', 'api_key', 'x', '대화로 바꿀 수 있는 설정이 아닙니다'),
-                ('main_ai', 'endpoint', 'https://evil.example', '대화로 바꿀 수 있는 설정이 아닙니다'),
-                ('secrets', 'route', 'openai', '대화로 바꿀 수 있는 설정이 아닙니다'),
+                ('main_ai', 'api_key', 'x', '대화로 바꿀 수 있는 설정이 아니에요'),
+                ('main_ai', 'endpoint', 'https://evil.example', '대화로 바꿀 수 있는 설정이 아니에요'),
+                ('secrets', 'route', 'openai', '대화로 바꿀 수 있는 설정이 아니에요'),
                 ('main_ai', 'route', 'sk-proj-abcdefghijklmnopqrstuvwxyz0123456789', CREDENTIAL_VALUE_MESSAGE),
                 ('main_ai', 'model', OPENAI_KEY, CREDENTIAL_VALUE_MESSAGE),
                 ('current_context', 'timezone', TELEGRAM_SECRET, CREDENTIAL_VALUE_MESSAGE),
                 ('current_context', 'enabled', 'maybe', '다음 중 하나'),
-                ('connections', 'telegram', 'off', '일시 정지하거나 다시 시작하는 기능은 아직 없습니다')):
+                ('connections', 'telegram', 'off', '일시 정지하거나 다시 시작하는 기능은 아직 없어요')):
             with self.subTest(setting=setting, value=value[:12]):
                 with self.assertRaises(SettingsError) as caught:
                     self.draft(category, setting, value)
@@ -359,7 +359,7 @@ class ConversationConfirmation(_Case):
         self.assertEqual(self.applies, [{'enabled': True}], 'applied exactly once')
         self.assertTrue(self.context()['enabled'])
         edits = [body for method, body in self.telegram if method == 'editMessageText']
-        self.assertIn('바꿨습니다', edits[0]['text'])
+        self.assertIn('바꿨어요', edits[0]['text'])
         self.assertEqual(edits[-1]['text'], '이미 적용했어요.', 'a repeated tap shows the settled state, not an error')
 
     def test_a_tap_after_the_draft_timed_out_still_applies_the_exact_shown_change(self):
@@ -399,7 +399,7 @@ class ConversationConfirmation(_Case):
         self.tap(f"p7s:{notification['id']}:cancel", notification['message_id'])
         self.assertEqual(self.applies, [])
         answers = [body['text'] for method, body in self.telegram if method == 'answerCallbackQuery']
-        self.assertEqual(answers[-1], '바꾸지 않았습니다.')
+        self.assertEqual(answers[-1], '바꾸지 않은 상태예요.')
 
     def test_a_stale_digest_or_a_cancel_applies_nothing(self):
         self.change_turn()
@@ -484,7 +484,7 @@ class ReviewRemediation(ConversationConfirmation):
         follow = self.draft('judgment_ai', 'mode', 'follow_main')
         result = self.settings.confirm('owner', 'http', follow['draft_id'], follow['digest'])
         self.assertEqual((result['state'], result['response']), ('requested', FOLLOW_REQUESTED_MESSAGE))
-        self.assertNotIn('바꿨습니다', result['response'])
+        self.assertNotIn('바꿨어요', result['response'])
         self.assertEqual(self.store.config('settings_change_drafts')[follow['draft_id']]['state'], 'requested')
         self.assertEqual(self.store.config('settings_audit')[-1]['terminal'], 'requested')
         self.assertIsNotNone(self.service.decision_routes.qualification('openai'), 'only a qualification was queued')
@@ -527,7 +527,7 @@ class ReviewRemediation(ConversationConfirmation):
         release.set(); self.settings.thread.join(5)
         self.assertEqual(self.service.main_ai.current(), 'openai')
         self.assertEqual(len(told), 1)
-        self.assertIn('바꿨습니다', told[0])
+        self.assertIn('바꿨어요', told[0])
         self.assertEqual(self.store.config('settings_change_drafts')[route['draft_id']]['state'], 'applied')
 
     def two_api_routes_and_a_direct_judgment_route(self):
@@ -585,7 +585,7 @@ class ReviewRemediation(ConversationConfirmation):
         drafts = self.store.config('settings_change_drafts')
         self.assertEqual((drafts[first['draft_id']]['state'], drafts[second['draft_id']]['state']), ('applied', 'failed'))
         told = [body['text'] for method, body in self.telegram if method == 'sendMessage'][-2:]
-        self.assertIn('바꿨습니다', told[0]); self.assertIn('바뀌었', told[1])
+        self.assertIn('바꿨어요', told[0]); self.assertIn('바뀌었', told[1])
         self.assertEqual(self.settings.pending_for_work(work), [], 'nothing is left awaiting a consumed message')
 
     def test_p3_a_worker_that_cannot_start_fails_its_draft_and_releases_everything(self):
@@ -597,7 +597,7 @@ class ReviewRemediation(ConversationConfirmation):
         real = orchestrator.threading.Thread
         orchestrator.threading.Thread = Refused
         try:
-            with self.assertRaisesRegex(SettingsError, '시작하지 못했습니다'):
+            with self.assertRaisesRegex(SettingsError, '시작하지 못했어요'):
                 self.settings.confirm('owner', 'http', route['draft_id'], route['digest'], notify=lambda text: None)
         finally:
             orchestrator.threading.Thread = real
@@ -643,7 +643,7 @@ class ReviewRemediation(ConversationConfirmation):
         self.assertEqual(self.service.main_ai.current(), 'openai')
         followup = [body for method, body in self.telegram if method == 'sendMessage']
         self.assertEqual(len(followup), 1)
-        self.assertIn('바꿨습니다', followup[0]['text'])
+        self.assertIn('바꿨어요', followup[0]['text'])
 
     def test_a_draft_cut_off_mid_apply_by_a_restart_is_in_doubt_not_failed(self):
         """Codex P2 (restart): the setter may or may not have committed; the owner is told to check."""
@@ -800,7 +800,7 @@ class TypedConfirmation(ReviewRemediation):
         job = self.owner_turn('응, 그렇게 바꿔')
         self.assertEqual(self.applies, [{'enabled': True}])
         self.assertTrue(self.context()['enabled'])
-        self.assertIn('바꿨습니다', job['response'])
+        self.assertIn('바꿨어요', job['response'])
         self.assertEqual(self.store.config('settings_change_drafts')[draft['id']]['state'], 'applied')
         [(message, items, *_rest)] = [call.args for call in judged.call_args_list]
         self.assertEqual(message, '응, 그렇게 바꿔')
@@ -875,7 +875,7 @@ class TypedConfirmation(ReviewRemediation):
         self.assertEqual(len(self.applies), 1)
         result = self.settings.settle_pending(owner, 'web', offered, False)
         self.assertEqual(result['state'], 'failed')
-        self.assertNotIn('아무것도 바꾸지 않았습니다', result['response'])
+        self.assertNotIn('아무것도 바꾸지 않았어요', result['response'])
         self.assertEqual(self.settings._drafts()[first['id']]['state'], 'renewed')
 
     def test_cancellation_during_judgment_cannot_renew_an_expired_snapshot(self):
@@ -909,7 +909,7 @@ class TypedConfirmation(ReviewRemediation):
         job = self.owner_turn('아니')
         self.assertEqual(self.applies, [])
         self.assertEqual(self.store.config('settings_change_drafts')[draft['id']]['state'], 'canceled')
-        self.assertIn('취소했습니다', job['response'])
+        self.assertIn('취소했어요', job['response'])
 
     def test_an_unrelated_or_unjudged_message_leaves_the_draft_pending_and_is_a_normal_turn(self):
         work, draft = self.web_draft()
@@ -994,14 +994,14 @@ class TypedConfirmation(ReviewRemediation):
         continuity.assert_not_called()
         cancel_work.assert_not_called()
         self.assertEqual(self.store.config('settings_change_drafts')[draft['id']]['state'], 'canceled')
-        self.assertIn('취소했습니다', job['response'])
+        self.assertIn('취소했어요', job['response'])
 
     def test_review_p2_the_web_receipt_outlives_the_buttons(self):
         work, draft = self.web_draft()
         result = self.service.work_settings_draft(work, {'action': 'confirm'})
         self.assertEqual(self.service.task_progress(work)['selected']['settings_drafts'], [])
         self.assertIn(result['response'], self.store.job(work)['response'])
-        self.assertIn('바꿨습니다', self.store.job(work)['response'])
+        self.assertIn('바꿨어요', self.store.job(work)['response'])
 
     def test_the_web_cancel_button_and_a_second_press_apply_nothing(self):
         work, draft = self.web_draft()
@@ -1064,9 +1064,9 @@ class PreparationManagementConversation(_Case):
             receipts[operation] = self.settings.handle_text('owner', 'http', 'confirm ' + draft['draft_id'],
                                                             owner_typed=True)['response']
         edited = self.service.preparations.get(watch['id'])
-        self.assertEqual(receipts['edit'], '예약 일정을 바꿨습니다: 국내 주식 현황 알림\n  '
+        self.assertEqual(receipts['edit'], '예약 일정을 바꿨어요: 국내 주식 현황 알림\n  '
                          + prep.schedule_text({**edited, 'state': prep.STATE_PROPOSED}, self.service.home_zone()))
-        self.assertEqual(receipts['cancel'], '예약을 취소했습니다: 국내 주식 현황 알림')
+        self.assertEqual(receipts['cancel'], '예약을 취소했어요: 국내 주식 현황 알림')
         for operation, receipt in receipts.items():
             self.assertNotIn('(으)로', receipt, operation)
             self.assertNotIn('할까요', receipt, operation)
@@ -1108,7 +1108,7 @@ class PreparationManagementConversation(_Case):
         self.assertEqual((current['state'], current['max_runs'], current['accepted_by']), (prep.STATE_PROPOSED, 5, None),
                          'changed, still waiting for the owner\'s one yes')
         self.assertEqual(self.settings.pending_for_work('work-a'), [], 'nothing left waiting')
-        self.assertIn('예약 일정을 바꿨습니다', result['response'])
+        self.assertIn('예약 일정을 바꿨어요', result['response'])
 
         other = edit('work-b', own, 4)  # another Work's edit of it
         offered_row = watch('work-c')

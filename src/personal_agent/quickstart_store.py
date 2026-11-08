@@ -301,6 +301,10 @@ class QuickStore:
             # #423: 1 only for an API Work whose caller declared the message the owner's own words (an eval
             # playing the owner); NULL otherwise.  See ``OWNER_WORDS_SQL``.
             if 'owner_words' not in columns: db.execute('ALTER TABLE jobs ADD COLUMN owner_words INTEGER')
+            # #632: nullable Work facts; legacy rows stay unrecorded.
+            # Only worker-run endings write them, with no backfill.
+            if 'goal_outcome' not in columns: db.execute('ALTER TABLE jobs ADD COLUMN goal_outcome TEXT')
+            if 'effect_state' not in columns: db.execute('ALTER TABLE jobs ADD COLUMN effect_state TEXT')
             # #308 S1: a steer is answered only when a reply its Work delivered was made after the
             # worker was handed it; a steer handed over before this column folded as it did then.
             if 'answered_at' not in {row['name'] for row in db.execute('PRAGMA table_info(work_steers)')}:

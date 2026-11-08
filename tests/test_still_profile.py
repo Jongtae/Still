@@ -188,6 +188,17 @@ class ServiceTests(unittest.TestCase):
 
 
 class WelcomeTests(unittest.TestCase):
+    def test_voice_offer_uses_the_welcome_locale_and_never_appears_in_help(self):
+        from personal_agent.messages import msg
+        for code, lang in (('ko', 'ko'), ('en', 'en'), ('ja-JP', 'ja'),
+                           ('zh-hans', 'zh'), ('de', 'en'), (None, 'en')):
+            with self.subTest(code=code):
+                offered = still_profile.welcome(code, voice_offer=True)
+                self.assertEqual(offered, still_profile.WELCOME[lang] + '\n\n' + msg('still_profile.voice_offer', lang))
+                self.assertLessEqual(len(offered), 4096)
+                self.assertEqual(still_profile.welcome(code, commands=True, voice_offer=True),
+                                 still_profile.welcome(code, commands=True))
+
     def test_welcome_follows_the_owner_language_and_defaults_to_english(self):
         self.assertTrue(still_profile.welcome('ko').startswith('안녕하세요, Still이에요'))
         self.assertTrue(still_profile.welcome('ja-JP').startswith('こんにちは、Still です'))

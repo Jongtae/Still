@@ -7,13 +7,15 @@
 /___/ /_/ /___/____/____/
 </pre>
 
-**Your personal agent, on your own machine.<br>Change the AI underneath; keep its memory, open work and permissions.**
+**Change your AI. Keep your assistant.**
 
-[![CI](https://github.com/Jongtae/Still/actions/workflows/validate.yml/badge.svg?branch=main)](https://github.com/Jongtae/Still/actions/workflows/validate.yml) [![Full test suite](https://github.com/Jongtae/Still/actions/workflows/full-validate.yml/badge.svg?branch=main)](https://github.com/Jongtae/Still/actions/workflows/full-validate.yml) [![Latest release](https://img.shields.io/github/v/release/Jongtae/Still?sort=semver&label=release)](https://github.com/Jongtae/Still/releases) [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](pyproject.toml) [![macOS | Linux | WSL2 limited](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20WSL2%20limited-555)](docs/QUICKSTART.md) [![License: AGPL 3.0](https://img.shields.io/badge/license-AGPL--3.0--only-blue)](LICENSE)
+An open-source personal assistant on your own computer.
+
+[![Latest release](https://img.shields.io/github/v/release/Jongtae/Still?sort=semver&label=release)](https://github.com/Jongtae/Still/releases) [![CI](https://github.com/Jongtae/Still/actions/workflows/validate.yml/badge.svg?branch=main)](https://github.com/Jongtae/Still/actions/workflows/validate.yml) [![macOS | Linux | WSL2 limited](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20WSL2%20limited-555)](docs/QUICKSTART.md) [![License: AGPL 3.0](https://img.shields.io/badge/license-AGPL--3.0--only-blue)](LICENSE)
 
 [English](README.md) | [한국어](docs/i18n/README.ko.md) | [简体中文](docs/i18n/README.zh-CN.md) | [日本語](docs/i18n/README.ja.md)
 
-[What it does](#what-it-does-today) · [Quick start](#quick-start) · [What stays yours](#what-stays-yours) · [Docs](#documentation) · [Engineering](https://jongtae.github.io/Still/engineering/index.html)
+[Try it](#quick-start) · [What it does](#what-it-does-today) · [Your data](#what-stays-yours) · [Give feedback](#documentation) · [Engineering](https://jongtae.github.io/Still/engineering/index.html)
 
 </div>
 
@@ -21,52 +23,62 @@
 
 <!-- readme-section:hero -->
 
-## Your AI can change. Your assistant stays.
+## Why start over with every new AI?
 
-Most of us won't own the AI models we use; their makers can change prices, rules and availability at any time. Still is an open-source assistant you install on your own computer. It keeps what it knows about you, your unfinished work and your permissions there, while the AI doing the work, the one you already subscribe to, can change.
+Your preferences. Yesterday's conversation. The work you haven't finished. Changing the AI that helps you shouldn't mean starting from scratch.
+
+**Still keeps your memory, ongoing work and permissions on your computer, separate from the AI doing the work.** Connect Codex, Claude Code, a model API or Ollama. The worker can change; the assistant's context stays with you.
 
 <p align="center">
-  <img src="docs/assets/readme/demo/demo-v5.en.gif" width="800" alt="Real recorded conversations: remembered coffee taste, F1 model research continued on Amazon, a bean recommendation and post-login cart confirmation.">
+  <img src="docs/assets/readme/demo/demo-v5.en.gif" width="800" alt="Edited real conversations: remembered coffee preferences, an F1 model search continued on Amazon, a bean recommendation and a post-login cart reply.">
 </p>
-<p align="center"><sub>Edited from real recordings.</sub></p>
+<p align="center"><sub>Edited from real Telegram and browser recordings. <a href="docs/assets/readme/demo/README.md">Recording notes</a>.</sub></p>
 
 <!-- readme-section:ai-switch -->
 
 ## A conversation that continues when the AI changes
 
+In the recorded session below, the user switches to Claude Code and asks about yesterday's shopping conversation. Later, after switching to Codex, they say “take the Spam out.” Still follows the same conversation instead of asking them to explain it again.
+
+<details>
+<summary>See the actual model-switch conversation</summary>
+
 <p align="center">
-  <img src="docs/assets/readme/ai-switch/ai-switch-conversation.png" alt="Three cropped Telegram screenshots in Korean. 1: after switching to Claude Code, the owner asks whether the Spam was added or taken out yesterday; the PA recalls the earlier cart conversation and asks to sign in. 2: after signing in, it reports one CJ Spam Classic 200 g in the cart and says some steps could not be checked. 3: after switching to Codex, the owner says to take the Spam out; the PA reports it removed and 22 items remaining.">
+  <img src="docs/assets/readme/ai-switch/ai-switch-conversation.png" alt="Three Korean Telegram excerpts: after switching to Claude Code, the assistant recalls the previous cart conversation and asks for sign-in; it then reports one CJ Spam Classic 200 g and some unverified steps; after switching to Codex, it reports removing the Spam and leaving 22 items.">
 </p>
-<p align="center"><sub>Excerpts from a real conversation (Telegram, Korean UI). The sign-in link is cropped out and the name is blurred. · <a href="docs/assets/readme/ai-switch/ai-switch-conversation.png">Open full size</a></sub></p>
 
-After switching to Claude Code, the PA picks up yesterday's shopping conversation and checks the cart. After switching to Codex, “take the Spam out” works in the same conversation.
+The sign-in link is cropped out and the name is blurred. [Open full size](docs/assets/readme/ai-switch/ai-switch-conversation.png) · [Recording manifest](docs/assets/readme/ai-switch/manifest.json).
 
-*Recorded owner session; edited, Korean interface. This shows conversation continuity, not independent verification of cart effects or release-wide validation.* [Sources](https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/manifest.json)
+</details>
 
-<!-- readme-section:capabilities -->
-
-## What it does today
-
-- **Works with the AI you already pay for.** Your ChatGPT plan through Codex or your Claude plan through Claude Code does the work; an API key or [Ollama](https://ollama.com) also works. Switch with `/ai` in the middle of a conversation and it carries on.
-- **Chat in the terminal, browser or messenger.** In the terminal and the browser, on Telegram, and in a Slack or Mattermost direct message.
-- **Uses earlier conversations to help with later requests.** What you told it last week comes back when it matters. Once a day it looks back over recent requests to tidy its memory, and each fact says whether it rests on your own words or on an inference. Every save can be undone.
-- **Uses the folders and services you connect.** Folders you connect (read-only unless you say otherwise), Gmail search and, if you allow it, mailbox organising (it never sends), Google Calendar and Drive, and websites you sign in to, even from your phone.
-- **Accepts questions and corrections while a task runs.** It tells you its plan and which AI is on it before a long task. Ask something else while it runs, or correct it halfway.
-- **Requires your approval for every payment and protects secrets.** Every payment needs your yes. [Secrets](.github/SECURITY.md) never reach a prompt or a log. Each task lists which of your information it used and where it went.
-
-Some of this still has rough edges; [product status](docs/product-status.en.md) says which.
+*This is an edited owner session, in Korean. It shows conversation continuity, not independent verification of cart changes or release-wide repeatability.*
 
 <!-- readme-section:try-today -->
 
 ## Quick start
 
-You need a Mac, Linux or Windows with [WSL2](docs/QUICKSTART.md#windows-wsl2) (some limits), and one AI: a ChatGPT plan with the [Codex CLI](https://github.com/openai/codex), a Claude plan with [Claude Code](https://code.claude.com/docs/en/setup), an API key, or Ollama. One command installs and starts Still, with no Homebrew, Python or Docker needed:
+You need **macOS, Linux or Windows with [WSL2](docs/QUICKSTART.md#windows-wsl2)**, plus one configured AI connection: Codex, Claude Code, an API or an already running Ollama server. Subscription routes need the appropriate CLI access and sign-in; AI subscriptions, API usage and model downloads are separate from Still. See [AI setup](docs/QUICKSTART.md#connect-an-ai).
+
+Inspect the [pinned installer](https://github.com/Jongtae/Still/blob/17fe561e271f033e660e13edd2c272acfcee2347/scripts/install.sh), then run this in a macOS or Linux terminal, or inside Ubuntu on WSL2:
 
 ```sh
 curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/17fe561e271f033e660e13edd2c272acfcee2347/scripts/install.sh | sh
 ```
 
-[Inspect the script](https://github.com/Jongtae/Still/blob/17fe561e271f033e660e13edd2c272acfcee2347/scripts/install.sh) first; it verifies everything it downloads. On Windows, run `wsl --install` in PowerShell, restart, and run the command in Ubuntu. With [Homebrew](https://brew.sh) on an Apple silicon Mac instead (Homebrew no longer builds packages for Intel Macs, so use the command above there):
+No preinstalled Python, Homebrew or Docker is needed. The installer supplies its Python environment and checks the release archive against the recorded SHA-256.
+
+Choose your AI in terminal setup. Then talk to Still in that terminal or open [http://127.0.0.1:8787/](http://127.0.0.1:8787/) on the same computer. **You do not need to connect email, a calendar or a messenger to start.**
+
+### Try one small conversation
+
+Paste a short, non-sensitive paragraph and ask: **“Summarize this in three sentences.”** Follow with **“Make it shorter, but keep the important dates.”** These are suggested first requests, not a recorded test result. Check the answer and whether the follow-up uses the same context. Once that works, try a low-risk task you actually want help with.
+
+For Telegram, say “connect Telegram” and follow the pairing steps. Enter the bot token only in the dedicated hidden input, never in an ordinary message.
+
+Keep `agentos start` running and the computer awake for remote requests and scheduled work. On macOS, `agentos service install` can register a background login service; installation alone does not do this. [Running and restarting](docs/guide/operations.en.md#background-service-macos).
+
+<details>
+<summary>Prefer Homebrew on an Apple silicon Mac?</summary>
 
 ```sh
 brew tap jongtae/still https://github.com/Jongtae/Still
@@ -74,42 +86,62 @@ brew install jongtae/still/agentos
 agentos start
 ```
 
-1. Setup runs in the terminal: an optional password, then your AI (a signed-in one is preselected). Talk to Still right there, or on the Still screen at [http://127.0.0.1:8787](http://127.0.0.1:8787/). Keep `agentos start` running while you talk, or on a Mac run `agentos service install` once to keep it running in the background ([details](docs/QUICKSTART.md#background-service-macos)).
-2. For Telegram, say “connect Telegram”, paste your @BotFather token into the hidden prompt, open the pairing link and press Start.
-3. Ask for something real: **“My cat has been off her food lately. What should I try?”** Days later, **“Find me a robot vacuum under $500.”** It remembers the cat.
+For Intel Macs, use the one-line installer above. The command is still called `agentos` for compatibility; it starts Still.
 
-Every setting, Windows details and uninstalling (`agentos uninstall` keeps your data unless you choose otherwise) are in [QUICKSTART](docs/QUICKSTART.md).
+</details>
 
-**Release status:** both installers install **v0.6.0** (2026-11-07), built from the tagged main commit. The demo and the everyday-use image come from real sessions and are not release-specific end-to-end validation; the architecture figure is product direction. The [release manifest](docs/release-manifest.json) records what each release covers, and [product status](docs/product-status.en.md) separates shipped behavior, test evidence and direction.
+**Release status:** both installers install **v0.6.0** (2026-11-07), built from the tagged main commit. The demo and the everyday-use image come from real sessions and are not release-specific end-to-end validation; the architecture figure is product direction. See the [release manifest](docs/release-manifest.json) for the release's exact coverage and evidence limits.
+
+Setup, Windows limitations, updates and removal: [QUICKSTART](docs/QUICKSTART.md).
+
+<!-- readme-section:capabilities -->
+
+## What it does today
+
+| What you want | What Still provides |
+| --- | --- |
+| Continue without explaining everything again | Saved memory and earlier context for later requests; inspect and correct what it remembers. |
+| Use a different AI | Switch the connected AI with `/ai` while keeping Still's memory and work records. |
+| Work with your own information | Connected folders, Google Drive, Gmail search and separately authorized mailbox organization, and Google Calendar. Gmail sending is not supported. |
+| Get help on a website | Browser tools for sites you sign in to. Compatibility and sign-in requirements vary by site and platform. |
+| Change your mind while it works | Ask an independent question or correct a request during an ongoing task. |
+| Talk where you prefer | Terminal, browser, Telegram, and Slack or Mattermost direct messages. |
+
+Still is in active development. Start with a small task and add connections when you need them. Model choice, permissions, service setup and website behavior affect the result; this is not a promise that every workflow works on every model or site. [Product status](docs/product-status.en.md) separates implementation, observed use and product direction; use the release manifest above for exact release scope.
 
 <!-- readme-section:ownership -->
 
 ## What stays yours
 
-| Can change | Stays with you |
-| --- | --- |
-| The model and its provider | Memory and context about you |
-| The CLI agent or API doing the work | Open work and its next step |
-| Tools and connectors | Permissions and approvals |
-| | The record of what actually ran |
+The AI does the work. Still keeps the state that should not disappear when you change it: **memory and context, unfinished work, permissions and approvals, and the record of what ran.** Keeping that state does not guarantee identical answers or tool support across models.
 
-When a better AI appears, you switch the worker, not the agent. Local-first is not local-only: your subscription AI runs at OpenAI or Anthropic, so the context used for a request is sent to that provider. Five principles guide the project: presence, portable memory, model independence, execution and owner control ([why](docs/VISION.md)).
+**Local-first is not local-only.** When you use an external AI, the conversation and context needed for the request are sent to that provider. Connecting a remote service does not put that service's data retention under Still's control. Start with non-sensitive material and connect only the folders and accounts you intend to use.
+
+### Permissions and payments
+
+Connected folders are read-only unless you grant write access. Authorization rules differ by action; connecting a service does not mean every change has a separate confirmation. Still keeps an information-use record for each task. Use dedicated credential inputs, not chat messages, for passwords and tokens. See [security and secret handling](.github/SECURITY.md).
+
+**Payments require per-action approval by default. Payment autonomy is off by default.** If you explicitly turn it on, your AI may make payments and money movements without asking each time, including from scheduled work. While enabled, this mode currently has **no amount, period or per-connection caps**. Leave it off for a first trial. Its inclusion in the release is not evidence of a verified live payment or securities-order journey. See the [release manifest](docs/release-manifest.json) before using it.
 
 <!-- readme-section:presence -->
 
 ## How it works
 
+Still separates the assistant's durable state from the AI executing a request. The aim is one continuing conversation—not a different assistant every time a worker or tool changes.
+
+You do not need to understand the internal architecture to try it. The [engineering guide](https://jongtae.github.io/Still/engineering/index.html) explains the design, implementation and evidence separately.
+
 <details>
-<summary>Architecture and supporting screens</summary>
+<summary>Explore the architecture and product direction</summary>
 
 <picture>
   <source media="(max-width: 600px)" srcset="docs/assets/readme/presence-overview.en.narrow.svg">
-  <img src="docs/assets/readme/presence-overview.en.svg" alt="Concept diagram: the owner relationship (goals, memory, preferences, commitments, authority) informs Assistant, Finance and Research professional lenses; domain, role, mandate and authority feed the Decision Model; Unified Presence keeps one relationship, and your interventions during the work feed back into decisions. Illustrative product direction, not shipped implementation.">
+  <img src="docs/assets/readme/presence-overview.en.svg" alt="Product-direction diagram: owner goals, memory, preferences and permissions inform professional perspectives and the decision model, while one assistant relationship continues across the work.">
 </picture>
 
-</details>
+This figure describes the intended design, not an observed run or a claim that every illustrated role is a shipped specialist agent. [Architecture](docs/personal-agentos-architecture.en.md) · [Presence](docs/presence-experience-contract.en.md) · [Why Still exists](docs/VISION.md).
 
-Still keeps one relationship with you (your goals, memory, preferences and permissions), reads each request through the role it calls for, and decides whether to answer, act, ask or report back. What you say while it works changes the work in progress. The figure shows the intended design, not an observed run: [architecture](docs/personal-agentos-architecture.en.md) · [Presence](docs/presence-experience-contract.en.md).
+</details>
 
 <!-- readme-section:conversation -->
 
@@ -117,36 +149,38 @@ Still keeps one relationship with you (your goals, memory, preferences and permi
 
 *Excerpts from real Telegram sessions (Korean interface), arranged with short scene notes.*
 
+The recordings show a coffee preference used in a later recommendation, an F1 model search continued on Amazon, and a post-login reply about the selected beans in the cart. A cart reply is not an independent account-state check; adding to a cart and paying are different actions.
+
 <details>
-<summary>Architecture and supporting screens</summary>
+<summary>See more real conversation excerpts</summary>
 
 <picture>
   <source media="(max-width: 600px)" srcset="docs/assets/readme/readme-examples-v4.en.png">
-  <img src="docs/assets/readme/readme-examples-v4.en.png" alt="Real screen excerpts: remembered taste, an F1 search continued on Amazon, and Jardin Espresso Blend 500 g, quantity 1, confirmed in the cart.">
+  <img src="docs/assets/readme/readme-examples-v4.en.png" alt="Real Telegram excerpts with scene notes: remembered coffee taste, an F1 search continued on Amazon, and a reply reporting Jardin Espresso Blend 500 g, quantity one, in the cart.">
 </picture>
 
 </details>
-
-A latte you mentioned earlier comes back when you choose beans; an F1 model search continues on Amazon without being restated; the chosen beans show up in the signed-in cart. Adding to a cart and paying stay different actions.
 
 <!-- readme-section:engineering -->
 
 ## Engineering
 
-Explore how Still keeps memory and work, makes decisions, and handles user permissions. The guide separates implemented features, what has been verified, and future design, with links to the source documents and code.
-
-[Why this design?](https://jongtae.github.io/Still/engineering/index.html) · [Research & Evidence](https://jongtae.github.io/Still/engineering/index.html#research)
+Interested in what makes continuity possible? Start with [Engineering](https://jongtae.github.io/Still/engineering/index.html) and [Research & Evidence](https://jongtae.github.io/Still/engineering/index.html#research). They cover memory, decisions, execution and owner control, with links to the underlying code and experiments. Designs, automated tests and observed live sessions are not interchangeable evidence.
 
 <!-- readme-section:more -->
 
 ## Documentation
 
-[QUICKSTART](docs/QUICKSTART.md) (install, connections, Telegram, Slack, running from source) · [Product status](docs/product-status.en.md) · [Why this exists](docs/VISION.md) · [Architecture](docs/personal-agentos-architecture.en.md) · [Documentation map](docs/README.md) · [Acknowledgements](docs/acknowledgements.en.md)
+[QUICKSTART](docs/QUICKSTART.md) · [Product status](docs/product-status.en.md) · [Documentation map](docs/README.md) · [Contributing](.github/CONTRIBUTING.md) · [Contributor onboarding](docs/contributor-onboarding.en.md) · [Acknowledgements](docs/acknowledgements.en.md)
 
-**Contributing.** Issues and pull requests are welcome: start with [CONTRIBUTING](.github/CONTRIBUTING.md) and the [contributor onboarding guide](docs/contributor-onboarding.en.md). Tried it? Tell us what worked through the [feedback form](https://github.com/Jongtae/Still/issues/new?template=feedback.yml) or [Discussions](https://github.com/Jongtae/Still/discussions).
+### Try it on something that matters to you
+
+Still is looking for useful real-world feedback, not just a successful demo. Try one low-risk task and tell us: **Where did you get stuck? What did you have to explain twice? What would you ask it to do again tomorrow?**
+
+Use the [feedback form](https://github.com/Jongtae/Still/issues/new?template=feedback.yml) or [Discussions](https://github.com/Jongtae/Still/discussions). Include your platform, Still version, AI connection and a redacted example. Do not post credentials, private documents or sign-in links. Report security issues through [SECURITY.md](.github/SECURITY.md), not a public issue.
 
 <!-- readme-section:license -->
 
 ## License
 
-[AGPL-3.0-only](LICENSE). The Still name and logo follow the [trademark notice](docs/TRADEMARKS.md).
+[AGPL-3.0-only](LICENSE). The Still name and logo follow [TRADEMARKS.md](docs/TRADEMARKS.md).

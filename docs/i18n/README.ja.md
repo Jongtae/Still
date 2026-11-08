@@ -7,13 +7,15 @@
 /___/ /_/ /___/____/____/
 </pre>
 
-**自分のコンピューターで動く、自分のパーソナルエージェント。<br>下で働く AI を替えても、記憶と進行中の仕事と権限はそのまま残ります。**
+**AI を替えても、あなたのアシスタントはそのまま。**
 
-[![CI](https://github.com/Jongtae/Still/actions/workflows/validate.yml/badge.svg?branch=main)](https://github.com/Jongtae/Still/actions/workflows/validate.yml) [![Full test suite](https://github.com/Jongtae/Still/actions/workflows/full-validate.yml/badge.svg?branch=main)](https://github.com/Jongtae/Still/actions/workflows/full-validate.yml) [![Latest release](https://img.shields.io/github/v/release/Jongtae/Still?sort=semver&label=release)](https://github.com/Jongtae/Still/releases) [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](../../pyproject.toml) [![macOS | Linux | WSL2 limited](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20WSL2%20limited-555)](../../docs/QUICKSTART.md) [![License: AGPL 3.0](https://img.shields.io/badge/license-AGPL--3.0--only-blue)](../../LICENSE)
+自分のコンピューターにインストールする、オープンソースのパーソナルアシスタント。
+
+[![Latest release](https://img.shields.io/github/v/release/Jongtae/Still?sort=semver&label=release)](https://github.com/Jongtae/Still/releases) [![CI](https://github.com/Jongtae/Still/actions/workflows/validate.yml/badge.svg?branch=main)](https://github.com/Jongtae/Still/actions/workflows/validate.yml) [![macOS | Linux | WSL2 limited](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20WSL2%20limited-555)](../../docs/QUICKSTART.md) [![License: AGPL 3.0](https://img.shields.io/badge/license-AGPL--3.0--only-blue)](../../LICENSE)
 
 [English](../../README.md) | [한국어](README.ko.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md)
 
-[いまできること](#いまできること) · [クイックスタート](#クイックスタート) · [自分に残るもの](#自分に残るもの) · [ドキュメント](#ドキュメント) · [Engineering](https://jongtae.github.io/Still/engineering/ja.html)
+[試してみる](#クイックスタート) · [いまできること](#いまできること) · [データと権限](#自分に残るもの) · [フィードバック](#ドキュメント) · [Engineering](https://jongtae.github.io/Still/engineering/ja.html)
 
 </div>
 
@@ -21,52 +23,62 @@
 
 <!-- readme-section:hero -->
 
-## AI が変わっても、あなたのアシスタントは続きます。
+## AI を替えるたびに、自分のことを説明し直しますか？
 
-私たちの多くは、使う AI モデルを所有することはありません。価格もルールも提供状況も、作り手がいつでも変えられます。Still は、自分のコンピューターにインストールするオープンソースのアシスタントです。あなたについて知っていること、終わっていない仕事、任せた権限はそこに残し、実際に働く AI（すでに契約しているもの）は替えられます。
+自分の好み。昨日の会話。まだ終わっていない仕事。より良い AI を使うために、すべてを最初からやり直す必要はないはずです。
+
+**Still は、記憶、進行中の仕事、権限を、実際に働く AI から切り離して自分のコンピューターに残します。** Codex、Claude Code、モデル API、Ollama を接続できます。働く AI が変わっても、アシスタントが引き継ぐ文脈は手元に残ります。
 
 <p align="center">
-  <img src="../../docs/assets/readme/demo/demo-v5.ja.gif" width="800" alt="実際の会話記録：コーヒーの好み、Amazonへ続くF1モデル検索、豆のおすすめとログイン後のカート確認。">
+  <img src="../../docs/assets/readme/demo/demo-v5.ja.gif" width="800" alt="編集した実際の会話：コーヒーの好み、Amazon に続く F1 モデル検索、豆のおすすめとログイン後のカートについての返答。">
 </p>
-<p align="center"><sub>実際の録画を編集。</sub></p>
+<p align="center"><sub>実際の Telegram とブラウザーの録画を編集しました。<a href="../../docs/assets/readme/demo/README.md">録画の記録</a>。</sub></p>
 
 <!-- readme-section:ai-switch -->
 
 ## AI を替えても続く会話
 
+下の記録では、ユーザーが Claude Code に切り替えて昨日の買い物の会話を尋ねます。その後 Codex に切り替えて「スパムを抜いて」と頼みます。Still は最初からの説明を求めず、同じ会話の文脈を引き継ぎます。
+
+<details>
+<summary>実際に AI を切り替えた会話を見る</summary>
+
 <p align="center">
-  <img src="../../docs/assets/readme/ai-switch/ai-switch-conversation.png" alt="韓国語の Telegram 画面 3 枚を切り出した画像。1: Claude Code に切り替えたあと、昨日スパムを入れたか抜いたかを尋ねると、PA が前のカートの会話を引き継ぎ、ログインを求めます。2: ログイン後、CJ スパム クラシック 200g が 1 個カートにあると答え、一部の手順は確認できなかったと伝えます。3: Codex に切り替えてスパムを抜くよう頼むと、抜いたこと、残り 22 点はそのままであることを伝えます。">
+  <img src="../../docs/assets/readme/ai-switch/ai-switch-conversation.png" alt="韓国語の Telegram 画面 3 枚。Claude Code に切り替えると前のカートの会話を思い出してログインを求め、CJ スパム クラシック 200g が 1 個あると答えつつ未確認の手順を伝えます。Codex に切り替えた後は、スパムを削除し 22 点残ったと返答します。">
 </p>
-<p align="center"><sub>実際の会話から抜き出した画面です（Telegram、韓国語 UI）。ログインリンクは切り取り、名前はぼかしています。 · <a href="../../docs/assets/readme/ai-switch/ai-switch-conversation.png">原寸で見る</a></sub></p>
 
-Claude Code に切り替えたあと、PA は昨日の買い物の会話を引き継いでカートを確認します。Codex に切り替えたあとも、同じ会話の中で「スパムを抜いて」が通じます。
+ログインリンクは切り取り、名前はぼかしています。[原寸で見る](../../docs/assets/readme/ai-switch/ai-switch-conversation.png) · [録画マニフェスト](../../docs/assets/readme/ai-switch/manifest.json)。
 
-*実際の利用セッションを編集した韓国語画面です。会話の継続を示しますが、カート変更の独立検証やリリース全体の検証ではありません。* [原文](https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/manifest.json)
+</details>
 
-<!-- readme-section:capabilities -->
-
-## いまできること
-
-- **契約中の AI がそのまま働く。** ChatGPT のプランは Codex で、Claude のプランは Claude Code で実際の仕事をします。API キーや [Ollama](https://ollama.com) も使えます。会話の途中で `/ai` で切り替えても、そのまま続きます。
-- **ターミナル・ブラウザー・メッセンジャーで話せます。** ターミナルとブラウザー、Telegram、そして Slack や Mattermost のダイレクトメッセージで。
-- **以前の会話を次の依頼に活かします。** 先週話したことが、必要なときに戻ってきます。1 日 1 回、最近の依頼を振り返って記憶を整理し、それぞれの事実があなた自身の言葉にもとづくのか、推測にもとづくのかを示します。保存はすべて取り消せます。
-- **接続したフォルダーやサービスを使います。** 接続したフォルダー（指定しない限り読み取り専用）、Gmail の検索と、許可すればメールボックスの整理（送信はしません）、Google カレンダーとドライブ、そしてログインした Web サイト。スマートフォンからでも使えます。
-- **作業中も質問や依頼の変更ができます。** 長い仕事の前に、計画とどの AI が担当するかを伝えます。実行中に別のことを聞いたり、途中で訂正したりできます。
-- **支払いの承認を求め、パスワードやトークンを保護します。** 支払いには毎回あなたの承諾が必要です。[秘密情報](../../.github/SECURITY.md)はプロンプトにもログにも入りません。仕事ごとに、どの情報を使い、どこへ送ったかを示します。
-
-まだ荒削りなところもあります。どれがそうかは[製品の状況](../../docs/product-status.en.md)にあります。
+*韓国語で行った実際の利用セッションを編集した記録です。会話の継続を示すもので、カート変更の独立検証やリリース全体の再現性を証明するものではありません。*
 
 <!-- readme-section:try-today -->
 
 ## クイックスタート
 
-Mac、Linux、または [WSL2](../../docs/QUICKSTART.md#windows-wsl2) を入れた Windows（一部制限あり）と、AI を一つ用意してください。ChatGPT のプランと [Codex CLI](https://github.com/openai/codex)、Claude のプランと [Claude Code](https://code.claude.com/docs/en/setup)、API キー、または Ollama です。コマンド一つで Still をインストールして起動します。Homebrew、Python、Docker は不要です。
+**macOS、Linux、または [WSL2](../../docs/QUICKSTART.md#windows-wsl2) を使う Windows** と、設定済みの AI 接続が一つ必要です。Codex、Claude Code、API、または起動済みの Ollama を使えます。サブスクリプション経由では、対応する CLI を利用できるプランとサインインが必要です。AI の契約、API 利用、モデルのダウンロードは Still とは別です。[AI 接続の案内](../../docs/QUICKSTART.md#connect-an-ai)を参照してください。
+
+[固定リビジョンのインストーラー](https://github.com/Jongtae/Still/blob/17fe561e271f033e660e13edd2c272acfcee2347/scripts/install.sh)を確認し、macOS・Linux のターミナル、または WSL2 の Ubuntu 内で実行します。
 
 ```sh
 curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/17fe561e271f033e660e13edd2c272acfcee2347/scripts/install.sh | sh
 ```
 
-実行前に[スクリプトを確認](https://github.com/Jongtae/Still/blob/17fe561e271f033e660e13edd2c272acfcee2347/scripts/install.sh)できます。スクリプトはダウンロードするものをすべて検証します。Windows では PowerShell で `wsl --install` を実行して再起動し、Ubuntu でこのコマンドを実行してください。Apple シリコンの Mac で [Homebrew](https://brew.sh) を使う場合は次のとおりです（Homebrew は Intel Mac 向けのパッケージをビルドしなくなったため、Intel Mac では上のコマンドを使ってください）：
+Python、Homebrew、Docker を事前に入れる必要はありません。インストーラーが Python 環境を用意し、リリースアーカイブの SHA-256 を記録された値と照合します。
+
+ターミナルの初期設定で AI を選びます。そのまま話しかけるか、同じコンピューターで [http://127.0.0.1:8787/](http://127.0.0.1:8787/) を開いてください。**最初からメール、カレンダー、メッセンジャーをすべて接続する必要はありません。**
+
+### 小さな会話から始める
+
+機密情報を含まない短い文章を貼り付け、**「これを 3 文で要約して」**と頼んでみてください。続けて**「重要な日付を残して、もっと短くして」**と頼みます。これは最初に試す依頼の例であり、実際の検証結果を引用した会話ではありません。内容が正しいか、前の文脈を引き継ぐかを確認し、その後で実際に助けてほしい低リスクの仕事を試してください。
+
+Telegram を使うには「Telegram を接続して」と伝え、ペアリング手順に従います。ボットトークンは専用の非表示入力欄だけに入れ、通常のメッセージには書かないでください。
+
+遠隔からの依頼や予約作業には、`agentos start` を動かしたままにし、コンピューターをスリープさせない必要があります。macOS では `agentos service install` でログイン時に起動するバックグラウンドサービスを登録できます。インストールだけでは登録されません。[起動と再起動](../../docs/guide/operations.en.md#background-service-macos)。
+
+<details>
+<summary>Apple シリコンの Mac で Homebrew を使う</summary>
 
 ```sh
 brew tap jongtae/still https://github.com/Jongtae/Still
@@ -74,42 +86,62 @@ brew install jongtae/still/agentos
 agentos start
 ```
 
-1. 設定はターミナルで進みます。アクセスパスワード（任意）、次に AI です（ログイン済みの AI はあらかじめ選ばれています）。そのままターミナルで Still と話すか、[http://127.0.0.1:8787](http://127.0.0.1:8787/) の Still の画面で話せます。会話中は `agentos start` を起動したままにしてください。Mac では `agentos service install` を一度実行すると、ターミナルなしでバックグラウンドで動き続け、ログインのたびに再び起動します（[詳細](../../docs/QUICKSTART.md#background-service-macos)）。
-2. Telegram を使うには「Telegram をつないで」と言い、@BotFather のトークンを非表示の入力欄に貼り付け、ペアリングリンクを開いて Start を押してください。
-3. 必要なことを聞いてみてください。**「最近、猫がごはんをあまり食べない。どうしたらいい？」** 数日後に **「5万円以下のロボット掃除機を選んで。」** 猫のことを覚えています。
+Intel Mac では上の 1 行インストーラーを使ってください。互換性のためコマンド名は引き続き `agentos` ですが、起動するのは Still です。
 
-すべての設定、Windows の詳細、アンインストール（`agentos uninstall` は、削除を選ばない限りデータを残します）は [QUICKSTART](../../docs/QUICKSTART.md) にあります。
+</details>
 
-**リリース状況：** どちらのインストール方法でも、タグを付けた main コミットの **v0.6.0**（2026-11-07）が入ります。デモと日常利用の画面は実際の利用セッションにもとづくもので、この版の一連の動作を検証したものではありません。構成図は製品の方向性を示す例です。[release manifest](../../docs/release-manifest.json) は各リリースの範囲を記録し、[製品の状況](../../docs/product-status.en.md) は提供中の機能・テストの根拠・方向性を区別しています。
+**リリース状況：** どちらのインストール方法でも、タグを付けた main コミットの **v0.6.0**（2026-11-07）が入ります。デモと日常利用の画面は実際の利用セッションにもとづくもので、この版の一連の動作を検証したものではありません。構成図は製品の方向性を示す例です。正確なリリース範囲と検証の限界は [release manifest](../../docs/release-manifest.json) を参照してください。
+
+設定、Windows の制限、更新と削除：[QUICKSTART](../../docs/QUICKSTART.md)。
+
+<!-- readme-section:capabilities -->
+
+## いまできること
+
+| やりたいこと | Still が提供するもの |
+| --- | --- |
+| 同じ説明を繰り返さず続ける | 保存した記憶と以前の文脈を後の依頼に活用。記憶した内容は確認・訂正できます。 |
+| 別の AI を使う | `/ai` で接続先を替えながら、Still の記憶と作業記録を保持します。 |
+| 自分の資料を使う | 接続したフォルダー、Google Drive、Gmail 検索と別途許可したメールボックス整理、Google Calendar。Gmail の送信は非対応です。 |
+| Web サイトで助けてもらう | ログインしたサイトでブラウザーツールを使用。互換性や認証要件はサイト・プラットフォームごとに異なります。 |
+| 作業中に依頼を変える | 実行中に別の質問をしたり、進行中の依頼を訂正したりできます。 |
+| 好きな場所で話す | ターミナル、ブラウザー、Telegram、Slack・Mattermost のダイレクトメッセージ。 |
+
+Still は開発中です。小さな仕事から始め、必要になった接続を追加してください。結果はモデル、権限、サービス設定、サイトの動作に左右されます。すべてのモデルやサイトですべての作業ができるという約束ではありません。[製品の状況](../../docs/product-status.en.md)は実装、観察された利用、製品の方向性を区別しています。各リリースの正確な範囲は上記の release manifest を確認してください。
 
 <!-- readme-section:ownership -->
 
 ## 自分に残るもの
 
-| 替えられるもの | 自分に残るもの |
-| --- | --- |
-| モデルと提供元 | 自分についての記憶と文脈 |
-| 仕事をする CLI エージェントや API | 進行中の仕事と次の一歩 |
-| ツールとコネクター | 権限と承認 |
-| | 実際に実行されたことの記録 |
+実際に働くのは AI です。Still が保持するのは、それを替えても失いたくない状態です。**自分についての記憶と文脈、未完了の仕事、権限と承認、実行記録。** 状態が残ることは、モデル間で同じ答えやツール対応が得られる保証ではありません。
 
-より良い AI が現れたら、替えるのはエージェントではなく働く AI です。ローカルファースト（local-first）はローカル限定（local-only）ではありません。サブスクリプションの AI は OpenAI や Anthropic 側で動くため、リクエストに使う文脈はその提供元へ送られます。このプロジェクトは五つの原則に導かれています。いつもそばにいること、持ち運べる記憶、モデルからの独立、実行、オーナーによる管理です（[理由](../../docs/VISION.md)）。
+**ローカルファースト（local-first）はローカル限定（local-only）ではありません。** 外部 AI を使うと、依頼に必要な会話と文脈はその提供元へ送られます。外部サービスを接続しても、そのサービスのデータ保管を Still が管理するわけではありません。機密性のない資料から始め、使う予定のフォルダーとアカウントだけを接続してください。
+
+### 権限と支払い
+
+接続したフォルダーは、書き込みを許可しなければ読み取り専用です。行動ごとに権限の規則が異なるため、接続後のすべての変更で個別の確認を求めるわけではありません。Still は仕事ごとに情報利用の記録を残します。パスワードとトークンはチャットではなく専用入力欄に入れてください。[セキュリティと秘密情報の扱い](../../.github/SECURITY.md)を参照してください。
+
+**支払いは既定で 1 件ごとの承認が必要で、自律決済モードはオフです。** 自分でオンにすると、予約作業も含め、AI は毎回尋ねずに支払いや資金移動を実行できます。有効な間、現在は**金額・期間・接続先ごとの上限がありません。** 初めて試すときはオフのままにしてください。リリースへの収録は、実際の支払いや証券注文の一連の動作を検証した証拠ではありません。利用前に [release manifest](../../docs/release-manifest.json) を確認してください。
 
 <!-- readme-section:presence -->
 
 ## 仕組み
 
+Still は、アシスタントが保持する状態と、依頼を実行する AI を分離します。目指すのは、働く AI やツールが替わるたびに別のアシスタントに会うのではなく、一つの会話を続けることです。
+
+試すために内部構造を理解する必要はありません。[Engineering](https://jongtae.github.io/Still/engineering/ja.html) では、設計、実装、検証の根拠を分けて説明しています。
+
 <details>
-<summary>構成図と補足画面を開く</summary>
+<summary>アーキテクチャと製品の方向性を見る</summary>
 
 <picture>
   <source media="(max-width: 600px)" srcset="../../docs/assets/readme/presence-overview.ja.narrow.svg">
-  <img src="../../docs/assets/readme/presence-overview.ja.svg" alt="概念図：あなたとの関係（目的・記憶・好み・約束・権限）が Assistant・Finance・Research の専門的視点につながり、ドメイン・役割・委任範囲・権限が Decision Model に入ります。Unified Presence は一つの関係を保ち、作業中のあなたの介入を判断に戻します。提供済みの機能ではなく、製品の方向性の例です。">
+  <img src="../../docs/assets/readme/presence-overview.ja.svg" alt="製品の方向性を示す概念図：オーナーの目標・記憶・好み・権限が専門的な視点と判断モデルに反映され、作業全体で一つのアシスタントとの関係を維持します。">
 </picture>
 
-</details>
+この図は意図した設計です。観察された実行記録ではなく、図中のすべての役割が専門エージェントとして提供済みという意味でもありません。[アーキテクチャ](../../docs/personal-agentos-architecture.en.md) · [Presence](../../docs/presence-experience-contract.en.md) · [Still を作る理由](../../docs/VISION.md)。
 
-Still はあなたとの一つの関係（目的、記憶、好み、権限）を保ち、依頼ごとに必要な役割の視点で読み解いて、答えるか、実行するか、尋ねるか、あとで知らせるかを判断します。作業中にあなたが言ったことは、進行中の仕事を変えます。図は設計の方向性であり、観測された実行ではありません：[アーキテクチャ](../../docs/personal-agentos-architecture.en.md) · [Presence](../../docs/presence-experience-contract.en.md)。
+</details>
 
 <!-- readme-section:conversation -->
 
@@ -117,36 +149,38 @@ Still はあなたとの一つの関係（目的、記憶、好み、権限）�
 
 *実際の Telegram の会話画面（韓国語）を抜き出し、短い場面説明とともに並べました。*
 
+コーヒーの好みを次のおすすめに活かし、F1 モデルの検索を Amazon で続け、ログイン後に選んだ豆のカート状態を返答する場面です。カートについての返答はアカウント状態の独立検証ではなく、カートへの追加と支払いは別の行動です。
+
 <details>
-<summary>構成図と補足画面を開く</summary>
+<summary>実際の会話をもっと見る</summary>
 
 <picture>
   <source media="(max-width: 600px)" srcset="../../docs/assets/readme/readme-examples-v4.ja.png">
-  <img src="../../docs/assets/readme/readme-examples-v4.ja.png" alt="実際の画面抜粋：好みの記憶、Amazonへ続くF1検索、カートで確認したJardin Espresso Blend 500g 1点。">
+  <img src="../../docs/assets/readme/readme-examples-v4.ja.png" alt="場面説明付きの実際の Telegram 会話：コーヒーの好み、Amazon に続く F1 検索、Jardin Espresso Blend 500 g が 1 点カートにあると伝える返答。">
 </picture>
 
 </details>
-
-以前話したラテの好みは、豆を選ぶときにまた戻ってきます。F1 モデルの検索は言い直さなくても Amazon へ続き、選んだ豆はログインしたカートに入ります。カートへの追加と支払いは別の行動です。
 
 <!-- readme-section:engineering -->
 
 ## Engineering
 
-記憶や作業を保つ仕組み、AI の判断、利用者の権限を扱う設計を説明します。実装済みの機能、検証した範囲、今後の設計を区別し、元の文書やコードを案内します。
-
-[この設計を選ぶ理由](https://jongtae.github.io/Still/engineering/ja.html) · [Research & Evidence](https://jongtae.github.io/Still/engineering/ja.html#research)
+継続性を支える仕組みを知りたい方は、[Engineering](https://jongtae.github.io/Still/engineering/ja.html) と [Research & Evidence](https://jongtae.github.io/Still/engineering/ja.html#research) からどうぞ。記憶、判断、実行、オーナーによる管理を扱い、コードと実験にリンクしています。設計、自動テスト、実際の利用観察は、それぞれ異なる種類の根拠です。
 
 <!-- readme-section:more -->
 
 ## ドキュメント
 
-[QUICKSTART](../../docs/QUICKSTART.md)（インストール、接続、Telegram、Slack、ソースからの実行） · [製品の状況](../../docs/product-status.en.md) · [なぜ作るのか](../../docs/VISION.md) · [アーキテクチャ](../../docs/personal-agentos-architecture.en.md) · [ドキュメントマップ](../../docs/README.md) · [謝辞](../../docs/acknowledgements.en.md)
+[QUICKSTART](../../docs/QUICKSTART.md) · [製品の状況](../../docs/product-status.en.md) · [ドキュメント一覧](../../docs/README.md) · [貢献の案内](../../.github/CONTRIBUTING.md) · [貢献者向け入門](../../docs/contributor-onboarding.en.md) · [謝辞と参考](../../docs/acknowledgements.en.md)
 
-**コントリビュート。** Issue と Pull Request を歓迎します。まず [CONTRIBUTING](../../.github/CONTRIBUTING.md) と[コントリビューター向けオンボーディングガイド](../../docs/contributor-onboarding.en.md)（英語）をご覧ください。試したら、[フィードバックフォーム](https://github.com/Jongtae/Still/issues/new?template=feedback.yml) か [Discussions](https://github.com/Jongtae/Still/discussions) で、よかった点を教えてください。
+### 自分の仕事を一つ試して、教えてください
+
+Still が知りたいのは、デモの見栄えより、実際にまた使いたくなるかです。リスクの小さい仕事を一つ試し、教えてください。**どこでつまずきましたか？ 何を二度説明しましたか？ 明日もまた任せたい仕事は何ですか？**
+
+[フィードバックフォーム](https://github.com/Jongtae/Still/issues/new?template=feedback.yml)または [Discussions](https://github.com/Jongtae/Still/discussions) を利用してください。プラットフォーム、Still のバージョン、AI 接続方式、個人情報を伏せた例が役立ちます。認証情報、個人の文書、ログインリンクは公開しないでください。セキュリティの問題は公開 Issue ではなく [SECURITY.md](../../.github/SECURITY.md) の手順で報告してください。
 
 <!-- readme-section:license -->
 
 ## ライセンス
 
-[AGPL-3.0-only](../../LICENSE)。Still の名称とロゴは [商標について](../../docs/TRADEMARKS.md) に従います。
+[AGPL-3.0-only](../../LICENSE)。Still の名前とロゴには [TRADEMARKS.md](../../docs/TRADEMARKS.md) が適用されます。

@@ -42,7 +42,7 @@ SLOT_SPECS = {
     'gmail': {'hosts': ('gmail.googleapis.com',), 'paths': ('/gmail/v1/users/me/',),
               'note': "the owner's Gmail, read-only (Gmail API v1, users/me); message bodies come "
                       "base64url-encoded, so read one with mail_read to get its text",
-              'shortcuts': (), 'write_requires': 'gmail-modify',
+              'shortcuts': ('mail_search',), 'write_requires': 'gmail-modify',
               'write_note': "the owner's Gmail (Gmail API v1, users/me); can modify message/thread labels, "
                             "trash/untrash messages and threads, create/update/delete labels, and "
                             "create/delete mail filters (settings/filters) with the owner's separate 'gmail-filters' connection; "

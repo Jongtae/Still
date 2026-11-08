@@ -217,7 +217,7 @@ EVALUATION_REASON = {
 #: message, which the worker always receives verbatim with the conversation.
 QUESTION = prompt('planner')+'\n\n'+prompt('voice')
 #: #1293: offered only when this Work can ask the paired chat for a position (``can_ask_location``).
-LOCATION_QUESTION = '\n' + prompt('planner_location')
+LOCATION_QUESTION = '\n' + prompt('planner_location') + '\n\n' + prompt('ask_or_assume')
 #: Bounds of the location question and its button label (Telegram keyboard text stays short).
 MAX_LOCATION_QUESTION_CHARS = 300
 MAX_LOCATION_BUTTON_CHARS = 40

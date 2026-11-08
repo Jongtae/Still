@@ -429,7 +429,7 @@ class FirstUseEndToEndAcceptance(unittest.TestCase):
         """#832: no Calendar in this install is a note to the worker, not a failure."""
         job = (store or self.store).job(job_id)
         self.assertNotEqual(job['status'], 'failed', job.get('error'))
-        self.assertNotIn('구성되어 있지 않습니다', job.get('error') or '')
+        self.assertNotIn('구성되어 있지 않아요', job.get('error') or '')
         sent = [str(message.get('content', '')) for _url, body in self.model_calls()
                 for message in (body or {}).get('messages', []) if message.get('role') == 'user']
         # This install registers no Calendar connector at all, so the note says it is not available.
@@ -530,7 +530,7 @@ class FirstUseEndToEndAcceptance(unittest.TestCase):
             self.assertEqual([row['content'] for row in self.store.notes()],
                              ['출장 준비물은 여권, 어댑터, 보조 배터리'])
             # Owner-visible on both surfaces, from the same durable Work.
-            self.assertIn('메모를 저장했습니다', self.store.job(note)['response'])
+            self.assertIn('메모를 저장했어요', self.store.job(note)['response'])
             self.assertEqual(self.card(note)['status_label'], '완료')
             self.assertIn('여권', json.dumps(self.web('/api/personal-space'), ensure_ascii=False))
 

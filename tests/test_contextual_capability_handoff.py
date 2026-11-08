@@ -195,7 +195,7 @@ class ReadHandoffTests(HandoffTestCase):
         self.assertEqual(requests[0]['authority'], 'read')
         self.assertEqual(requests[0]['preview'], LOCAL_AUTHORITY_PREVIEWS[LOCAL_FOLDER_READ])
         self.assertIn('읽기만', requests[0]['preview'])
-        self.assertIn('외부 AI에 보내지 않습니다', requests[0]['preview'])
+        self.assertIn('외부 AI에 보내지 않아요', requests[0]['preview'])
         self.assertIsNone(requests[0]['selection'])
 
         contracts = self.folder('contracts', {'renewal.txt': '계약서 갱신일: 10월 1일'})
@@ -217,7 +217,7 @@ class ReadHandoffTests(HandoffTestCase):
         self.assertEqual(self.store.config('document_sharing'), {})
         self.assertEqual(self.job(job_id)['status'], 'queued')
         notice = self.sent[before:]
-        self.assertEqual(notice, ['선택한 폴더를 읽기로 허용했습니다. 방금 요청을 이어서 처리합니다.'])
+        self.assertEqual(notice, ['선택한 폴더를 읽기로 허용했어요. 방금 요청을 이어서 처리해요.'])
         self.assert_telegram_safe(notice[0])
 
         # The original Work resumes, once; #657: its answer is a judged completion claim.
@@ -571,7 +571,7 @@ class HostedModelDocumentApprovalTests(HandoffTestCase):
         job_id, notification, _ = self.stop_at_sharing()
         cancelled, text = self.service.cancel_focused_work(self.job(job_id), OWNER)
         self.assertTrue(cancelled)
-        self.assertIn('문서 공유를 승인해도 이어서 처리하지 않습니다', text)
+        self.assertIn('문서 공유를 승인해도 이어서 처리하지 않아요', text)
         self.callback(notification, 'approve')
         self.assertEqual(self.job(job_id)['status'], 'failed')
 

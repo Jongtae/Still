@@ -166,7 +166,6 @@ class ConnectionPreferences(Harness):
     def test_an_over_limit_cli_brief_cuts_optional_tails_and_keeps_the_profile_head(self):
         """Codex review on #223: fixed sections past the CLI byte limit are cut, least needed first,
         instead of the request-only fallback dropping the profile, the context and the instructions."""
-        from personal_agent import quickstart_service
         import os
         import tomllib
         from personal_agent.agent_runtime import CUT_TO_FIT_MARKER
@@ -178,7 +177,7 @@ class ConnectionPreferences(Harness):
             f'OPTIONAL-BRIEF-{index} ' + 'b' * 180 for index in range(4))
         self.script([plan('codex', brief)], goals=[True])
         limit = 6000
-        with mock.patch.object(quickstart_service, 'MAX_PROMPT_BYTES', limit):
+        with mock.patch('personal_agent.work_executor.MAX_PROMPT_BYTES', limit):
             job, result = self.run_work('Read the Unseen record.', key='over-limit')
         self.assertEqual(result['status'], 'succeeded')
         prompt = self.engine.turns[-1]['prompt']

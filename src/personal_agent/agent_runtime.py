@@ -1746,8 +1746,11 @@ class EvidenceLog(list):
  unrecognised one is an unreviewed source, not a safe one.
  """
  def __init__(self,provenance):
-  super().__init__();self.provenance=provenance
+  super().__init__();self.provenance=provenance;self._hold=None
  def append(self,item):
+  held=getattr(self._hold,'held',None)
+  if held is not None:
+   held.append((self.append,(item,),{}));return
   super().append(item)
   self.provenance.add(PRIVATE_PROVENANCE.get(item.get('tool') if isinstance(item,dict) else None,UNATTRIBUTED_PROVENANCE))
  def extend(self,items):
@@ -3307,6 +3310,9 @@ class Capabilities:
  def __init__(self,store,adapter,config,key,job_id,record,readonly=False,network=None,document_access=True,packages=None,allowed_tools=None,document_context=False,public_page_scope=None,memory_approval=None,inherited_provenance=(),calendar=None,calendar_owner=None,memory_request=None,current_packages=None,lookup_sources=None,delegated=False,inherited_excluded=(),budget=None,browser=None,browser_approvals=None,browser_unavailable=None,judgments=None,secret_redactor=None,current_context=None,preparations=None,location_request=None,owner_update=None,settings=None,information_use=None,skills=None,drive=None,mail=None,connections=None,a2a=None):
   # CONN-API: ``() -> {name: slot}`` of Still-held connections usable through api_request.
   self.connections=connections
+  self._api_lock=threading.Lock();self._context_lock=threading.Lock()
+  self._conversation_lock=threading.Lock();self._conversation_refs=[]
+  self._read_local=threading.local()
   # #606 T1: shared with a delegated specialist, spent in `execute`.
   # Without an injected budget (the MCP bridge process) the durable Stop
   # request is the stop signal.
@@ -3429,10 +3435,11 @@ class Capabilities:
   return bound
  def api(self):
   """This Work's ``api_requests.ApiRequests`` (#1216); payments use exact browser step approvals; mutations retain durable no-replay claims."""
-  if getattr(self,'_api',None) is None:
-   from .api_requests import ApiRequests
-   self._api=ApiRequests(self.store,self.job_id,approvals=self.browser_approvals,connections=getattr(self,'connections',None))
-  return self._api
+  with self._api_lock:
+   if getattr(self,'_api',None) is None:
+    from .api_requests import ApiRequests
+    self._api=ApiRequests(self.store,self.job_id,approvals=self.browser_approvals,connections=getattr(self,'connections',None))
+   return self._api
  def code_runner(self):
   """This Work's ``code_run.CodeRunner`` (#1380): sandboxed runs whose every request this process decides."""
   if getattr(self,'_code_runner',None) is None:
@@ -3467,10 +3474,11 @@ class Capabilities:
   return {tool_id for tool_id in self.allowed_tools if (self.tools.get(tool_id) or {}).get('host_action') not in hidden}
  def current_context(self):
   """This Work's view of the owner's current context (#627)."""
-  if self._current_context is None:
-   from .current_context import CurrentContext
-   self._current_context=CurrentContext(self.store)
-  return self._current_context
+  with self._context_lock:
+   if self._current_context is None:
+    from .current_context import CurrentContext
+    self._current_context=CurrentContext(self.store)
+   return self._current_context
  def withdrawn_context(self):
   """Exact location strings this Work was shown whose source is no longer valid (#627).
 
@@ -3649,6 +3657,15 @@ class Capabilities:
   except (OSError,ValueError):return []
   return [{'id':WORKSPACE_REFERENCE_PREFIX+ref['id'],'path':ref['path']} for ref in references
           if isinstance(ref,dict) and isinstance(ref.get('id'),str) and ref['id']]
+ # Saved-result scan status belongs to the calling read, including concurrent file reads.
+ @property
+ def saved_results_stopped(self):return getattr(self._read_local,'saved_results_stopped',False)
+ @saved_results_stopped.setter
+ def saved_results_stopped(self,value):self._read_local.saved_results_stopped=value
+ @property
+ def saved_results_unavailable(self):return getattr(self._read_local,'saved_results_unavailable',False)
+ @saved_results_unavailable.setter
+ def saved_results_unavailable(self,value):self._read_local.saved_results_unavailable=value
  def saved_results(self,path=None,deadline=None,terms=None):
   """#182: the saved results the worker may read, newest first: ``[{path, content, title}]``.
 
@@ -4246,7 +4263,8 @@ class Capabilities:
     if exc.reason=='invalid_message_id':raise ToolError(msg('agent_runtime.mail_invalid_id'),'mail_invalid_id') from None
     if exc.reason=='provider_rejected':raise mail_rejection(getattr(exc,'status',None)) from None
     raise ToolError(msg('agent_runtime.mail_unavailable'),'mail_unavailable') from None
-   return self._from_private('owner-mail',result)
+   # #720: name the fields returned by the search, as for other shortcut reads.
+   return self._from_private('owner-mail',self._shortcut_read(name,result,'messages'))
   if name=='calendar_query':
    # Calendar contents are owner-private.  Changes go through api_request's
    # google-calendar slot (#432), so this is the one calendar tool; it uses
@@ -4495,22 +4513,25 @@ class Capabilities:
    self.evidence.append({'tool':name,'result':evidence_summary(name,result)}); return result
   if name=='search_conversation':
    from .memory_service import conversation_refs
-   sent=[]
-   for event in self.store.task_events(self.job_id):
-    trace=event.get('trace') or {}
-    if event.get('status')=='succeeded' and (trace.get('host_action') or event.get('tool'))==name:
-     sent.extend((trace.get('evidence') or {}).get('exchange_refs') or [])
-   sent.extend(ref for item in self.evidence if item.get('tool')==name for ref in conversation_refs(item.get('result',{}).get('exchanges') or []))
-   remaining=max(0,3-len({tuple(ref['message_ids']) for ref in sent}))
-   try:
-    limit=args.get('limit',3)
-    if isinstance(limit,bool) or not isinstance(limit,int) or not 1<=limit<=3:raise ValueError('Invalid conversation limit')
-    # Validate even when the Work's result budget is exhausted.
-    rows=self.store.search_conversation(args.get('query',''),before=args.get('before'),after=args.get('after'),limit=min(limit,remaining) if remaining else 1)
-   except ValueError as exc:raise ToolError(str(exc),'invalid_arguments') from None
-   result={'exchanges':rows if remaining else [],'budget_exhausted':not remaining,
-           'label':'earlier exchanges; may or may not be relevant; assistant lines are model-stated, not facts or commitments'}
-   self.evidence.append({'tool':name,'result':result});return result
+   # Held Evidence has not reached the log yet; reserve returned refs under the same lock as the search.
+   with self._conversation_lock:
+    sent=list(self._conversation_refs)
+    for event in self.store.task_events(self.job_id):
+     trace=event.get('trace') or {}
+     if event.get('status')=='succeeded' and (trace.get('host_action') or event.get('tool'))==name:
+      sent.extend((trace.get('evidence') or {}).get('exchange_refs') or [])
+    sent.extend(ref for item in self.evidence if item.get('tool')==name for ref in conversation_refs(item.get('result',{}).get('exchanges') or []))
+    remaining=max(0,3-len({tuple(ref['message_ids']) for ref in sent}))
+    try:
+     limit=args.get('limit',3)
+     if isinstance(limit,bool) or not isinstance(limit,int) or not 1<=limit<=3:raise ValueError('Invalid conversation limit')
+     # Validate even when the Work's result budget is exhausted.
+     rows=self.store.search_conversation(args.get('query',''),before=args.get('before'),after=args.get('after'),limit=min(limit,remaining) if remaining else 1)
+    except ValueError as exc:raise ToolError(str(exc),'invalid_arguments') from None
+    result={'exchanges':rows if remaining else [],'budget_exhausted':not remaining,
+            'label':'earlier exchanges; may or may not be relevant; assistant lines are model-stated, not facts or commitments'}
+    self._conversation_refs.extend(conversation_refs(result['exchanges']))
+    self.evidence.append({'tool':name,'result':result});return result
   if name=='search_memory':
    from .memory_service import MemoryService
    marker_sink=lambda item:self.evidence.append({'tool':name,'result':item.get('result',{})})
@@ -4589,7 +4610,8 @@ class Capabilities:
 #: #1272: the closing style sentences follow the contract's *Conversation style* section (#1266).
 #: #1508 step 2: Markdown sections (## level: a CLI prompt nests them under "# Still instructions")
 #: with one stated priority order; the change table with each sentence's origin is in the #1508 PR.
-CORE_INSTRUCTIONS=prompt('worker_core')+'\n\n'+prompt('voice')
+# #202: one ask-vs-assume rule shared with the planner and the judgment.
+CORE_INSTRUCTIONS=prompt('worker_core')+'\n\n'+prompt('ask_or_assume')+'\n\n'+prompt('voice')+'\n\n'+prompt('voice_calibration')
 # Tool guidance for the direct-API route.
 API_TOOL_GUIDANCE=prompt('worker_tools_api')
 # Tool guidance for a subscription CLI turn: the CLI sees only the Still MCP bridge.
@@ -4606,7 +4628,7 @@ POLICY=CORE_INSTRUCTIONS+'\n\n'+API_TOOL_GUIDANCE
 # Bounded recent conversation shared by every route: the last 16 messages,
 # newest first until the byte budget is spent, never cutting the current request.
 CONTEXT_MESSAGES=16
-CONTEXT_BUDGET_BYTES=40_000
+CONTEXT_BUDGET_BYTES=42_000
 MESSAGE_CAP_CHARS=4_000
 
 #: #658: the owner profile section every route carries when profile.* Memory
@@ -5785,7 +5807,7 @@ def _external(trail):
  return [row for row in trail if row[0] not in INTERNAL_STATE_ACTIONS and row[1]!='proposed']
 
 
-#: #16 slice 1: at most this many public reads of one model turn run at the same time.
+#: #16 slice 1: at most this many reads admitted by concurrent_read (as on the CLI route) run together.
 CONCURRENT_READ_LIMIT=4
 
 #: #386: the calls a CLI route may have in flight together: effect-free reads, without the page
@@ -5809,42 +5831,26 @@ def reads_search_results(action):
  return action=='public_page_read'
 
 class ReadOverlap:
- """The independent public reads of one model turn, run at the same time (#16 slice 1).
+ """Independent reads of one model turn, by the call's effect class (#16 slice 1).
 
- ``run_agent`` still walks a turn's calls one by one and records, judges and
- answers each in that order.  What changes is when a read's network request is
- made: when the walk reaches the first of two or more consecutive calls that
- are public network reads (``NETWORK_READS``) the loop would admit and send,
- their requests start together and each call then takes its own result in its
- place.  Admission is predicted with the loop's own checks (argument schema,
- ``duplicate_call``, ``repeat_path``, the memo) on copies of its state, so a
- call the loop would refuse is never sent.  Not overlapped:
+ Admission uses ``concurrent_read``, the same predicate as the CLI route, and
+ the loop's schema, duplicate, repeat and memo checks on copies of its state.
+ Effects, stateful calls and ``finish`` close a group. Reads whose scope uses
+ search results wait for earlier searches. The Work budget must cover every
+ attempt, including a transient retry only for ``NETWORK_READS`` and two turns
+ per native search. Stop and deadline are checked per read in ``execute``.
 
- * anything that is not a public network read (effects, private reads, browser
-   steps, owner-state actions) - it closes the group, so nothing after it starts
-   before it has run;
- * a page read after a search in the same group, since the search's results may
-   be what admits that page (``search_result_urls``);
- * anything after a ``finish`` claim in the turn, which may end the run;
- * a group the Work budget could not cover in the worst case (one transient
-   retry per read, and two model turns per search for a native search
-   provider, whose request and retry each spend one),
-   or a Work already stopped or past its deadline - that turn runs one by one.
-
- Records stay in the turn's order: a record a read makes while it runs (a
- transient-retry failure) is held and written when the walk reaches that call,
- between its ``running`` and result records, exactly as when calls ran one by
- one.  The budget, Stop and deadline are checked by each read as before
- (``Capabilities.execute``); a Stop that arrives while the group runs refuses
- every later model turn and tool call, and lets reads already sent finish, as a
- step already under way always did.
+ Results, records and Evidence are replayed in call order. Each read thread
+ holds records and Evidence appends in one ordered list until the walk reaches
+ that call; Evidence provenance is labelled by the real append on replay.
+ Already-sent reads finish on interruption; queued reads still check Stop.
  """
  def __init__(self,capabilities,specs):
   self.capabilities,self.specs=capabilities,specs
   self.started={};self.reached=set();self.sink=None;self.local=threading.local()
 
  def admitted(self,call,attempts,guard):
-  """``(name, args)`` when the loop would send this call as a public read, else None.
+  """``(name, args)`` when the loop would send this call as an effect-free read, else None.
 
   The same checks, in the same order, as ``run_agent``; ``attempts`` and
   ``guard`` (``LoopGuard``) are copies the prediction advances as the loop would.
@@ -5861,29 +5867,30 @@ class ReadOverlap:
   except (ValueError,TypeError,AttributeError):return None
   tool=self.capabilities.tools.get(name) or {}
   action=tool.get('host_action')
-  if action not in NETWORK_READS:return None
+  if not concurrent_read(action,args):return None
   cache_key,guarded,_attempt,_keyed,_read,refusal=loop_keys(self.capabilities,guard,attempts,name,args,action,None)
   if refusal is not None or cache_key in self.capabilities.memo:return None
   guard.admit(*guarded)
   return name,args,action
 
  def group(self,calls,index,attempts,guard):
-  """The consecutive public reads from ``index`` the loop would send, as ``(call_id, name, args)``."""
+  """The consecutive effect-free reads from ``index`` the loop would send, as ``(call_id, name, args)``."""
   attempts,guard=dict(attempts),guard.copy();members=[];searched=False
   for call in calls[index:]:
    plan=self.admitted(call,attempts,guard)
    if plan is None:break
    name,args,action=plan
-   if action=='public_page_read' and searched:break
+   if reads_search_results(action) and searched:break
    searched=searched or action in SEARCH_BACKED_ACTIONS
    members.append((call['id'],name,args,action))
   return members
 
  def covered(self,members):
-  """Whether the Work budget covers this group even if every read retries once."""
+  """Whether the Work budget covers each read and every possible transient retry."""
   budget=getattr(self.capabilities,'budget',None)
   if budget is None or budget.interrupted():return False
-  if budget.attempts-budget.attempts_used<2*len(members):return False
+  need=sum(2 if action in NETWORK_READS else 1 for _id,_name,_args,action in members)
+  if budget.attempts-budget.attempts_used<need:return False
   # A native search provider spends a model turn per request, and its transient retry another.
   searches=sum(1 for _id,_name,_args,action in members if action in SEARCH_BACKED_ACTIONS)
   return budget.turn_limit()-budget.turns_used>=2*searches
@@ -5893,14 +5900,16 @@ class ReadOverlap:
   if index in self.reached:return
   members=self.group(calls,index,attempts,guard)
   self.reached.update(range(index,index+max(1,len(members))))
-  if len(members)<2 or not self.covered(members):return
+  if len(members)<2 or not isinstance(self.capabilities.evidence,EvidenceLog) or not self.covered(members):return
   if self.sink is None:
    self.sink=self.capabilities.record
+   self.evidence=self.capabilities.evidence;self.evidence_hold=self.evidence._hold
+   self.evidence._hold=self.local
    local,sink=self.local,self.sink
    def routed(*args,**kwargs):
     held=getattr(local,'held',None)
     if held is None:return sink(*args,**kwargs)
-    held.append((args,kwargs))
+    held.append((sink,args,kwargs))
    self.capabilities.record=routed
   def run(name,args,held):
    self.local.held=held
@@ -5922,7 +5931,7 @@ class ReadOverlap:
   future,held,_name,_args=started
   try:return future.result()
   finally:
-   for args_,kwargs in held:self.sink(*args_,**kwargs)
+   for sink,args_,kwargs in held:sink(*args_,**kwargs)
 
  def _discard(self,started):
   try:started[0].exception()
@@ -5934,6 +5943,7 @@ class ReadOverlap:
   self.started.clear()
   if self.sink is not None:
    self.capabilities.record=self.sink;self.sink=None
+   self.evidence._hold=self.evidence_hold
 
 def run_agent(adapter,config,key,history,system,capabilities,record,scope='main',owner_context=None,images=None,judgment_history=None):
  """The direct-API tool loop.  ``owner_context`` (#833) is the turn context whose
@@ -6013,6 +6023,8 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
   result.alternatives=list(alternatives)
   # #710: the completion judgment this run concluded with (yes/no/unavailable, or None when none was asked).
   result.judgment=judgment
+  # #632: the goal part of this conclusion, without the #630 floor: a yes over a call that could not be made is no.
+  result.goal_judgment='no' if judgment=='yes' and invalid_calls else judgment
   question=claim['summary'] if claim is not None and claim['status']=='needs_owner' and result.outcome!='succeeded' else None
   result.report=agency_report(goal,verified,[*failures,*stated],unknown,(claim or {}).get('next') or None,question)
   if result.outcome!='succeeded' and judgment in ('yes','no'):
