@@ -19,7 +19,7 @@ from agentos_eval import cli, judgments as j
 s = j.load_still(ROOT / 'src')
 d = s.decision
 from personal_agent.providers import ModelAdapter, ProviderError
-from test_decision_routes import oracle, parse_prompt, schema_answer
+from test_decision_routes import ServiceFixture, oracle, parse_prompt, schema_answer
 
 
 class Clock:
@@ -182,6 +182,30 @@ class JudgmentTests(unittest.TestCase):
         rows = j.run(selected, s.conversation_handoff.ConversationJudgments(unavailable), unavailable)
         self.assertFalse(any(r['semantic_correct'] for r in rows))
 
+    def test_unavailable_route_is_not_run_and_accuracy_is_unmeasured(self):
+        routed = d.RoutedDecisionEngine(lambda: d.UnavailableDecisionEngine())
+        rows = j.run(self.cases, s.conversation_handoff.ConversationJudgments(routed), routed)
+        self.assertTrue(all(r['outcome'] == 'not_run' for r in rows))
+        self.assertTrue(all(r['semantic_correct'] is None and r['routing_correct'] is None for r in rows))
+        result = j.report(rows, {}, {'active': {'available': False}})
+        self.assertEqual(result['summary']['total']['calls'], 0)
+        self.assertEqual(result['summary']['total']['answered'], 0)
+        text = j.markdown(result)
+        self.assertIn('Route unavailable', text)
+        self.assertIn('Model calls: 0', text)
+        self.assertIn('No answered cases', text)
+        self.assertNotIn('0.0%', text)
+
+    def test_failures_and_budget_refusals_do_not_dilute_answer_accuracy(self):
+        cap = j.CallCap(1)
+        rows, _, _ = self.measure(cap=cap)
+        self.assertEqual(j.summarize(rows)['total']['semantic_accuracy'], 1)
+        self.assertEqual(j.summarize(rows)['total']['answered'], 1)
+        failed, _, _ = self.measure(mode='timeout')
+        self.assertIsNone(j.summarize(failed)['total']['semantic_accuracy'])
+        self.assertIsNone(j.summarize(failed)['total']['routing_accuracy'])
+        self.assertEqual(j.compare(j.report(rows, {}, {}), j.report(failed, {}, {}))['changes'], [])
+
     def test_exception_is_never_pass(self):
         def fail(*_):
             raise RuntimeError('PRIVATE exception')
@@ -330,14 +354,71 @@ class JudgmentTests(unittest.TestCase):
                 created.append((data, transport))
                 return service
             with patch.dict(os.environ, {'AGENTOS_EVAL_HOME': str(root / 'home')}), patch.object(j, 'service_factory', factory), redirect_stdout(io.StringIO()) as out:
-                cli.main(['judgments', 'run', '--seed', str(seed), '--roles', 'goal_reached', '--out', str(root / 'reports')])
+                cli.main(['judgments', 'run', '--seed', str(seed), '--requalify', '--roles', 'goal_reached', '--out', str(root / 'reports')])
             saved = json.loads(next((root / 'reports').glob('*.json')).read_text())
             self.assertEqual(saved['evidence_class'], 'fixture')
             self.assertTrue(all(r['semantic_correct'] for r in saved['rows']))
             self.assertEqual(saved['summary']['total']['calls'], 16)
+            self.assertEqual(saved['requalification'], dict(attempted=False, calls=0))
+            self.assertEqual(saved['call_budget']['admitted'], 16)
             self.assertFalse(created[0][0].exists())
             self.assertTrue(seed.exists())
             self.assertIn('report:', out.getvalue())
+
+
+class RequalificationTests(ServiceFixture):
+    """Real update job and suite; fixture CLI transport, no sockets or models."""
+
+    def stale_service(self):
+        service = self.service()
+        service.activate_decision_route({'transport': 'subscription_cli', 'engine': 'codex',
+                                         'model_policy': 'explicit', 'model': 'gpt-5.6-terra'})
+        route = service.decision_routes.active()
+        # Same binary/version/suite/score, but the sandbox moved the store.
+        route['strict_profile']['binding']['store'] = '/previous-owner-store'
+        self.store.put('decision_route', route)
+        self.assertTrue(service.decision_routes.status()['active']['requalification_needed'])
+        self.assertEqual(route['qualification']['score'], 1)
+        return service
+
+    def model_calls(self):
+        return sum('--output-schema' in c['argv'] for c in self.runner.calls)
+
+    def test_shipped_update_job_requalifies_relocated_store_and_counts_calls(self):
+        service = self.stale_service()
+        start = self.model_calls()
+        cap = j.CallCap(12)
+        result = j.requalify_route(service, cap)
+        self.assertEqual(result['state'], 'passed')
+        self.assertTrue(result['available'])
+        self.assertEqual(result['calls'], len(s.decision_qualification.CASES))
+        self.assertEqual(cap.used, result['calls'])
+        self.assertEqual(self.model_calls() - start, result['calls'])
+        report = j.report([], {}, j.effective_runtime(service))
+        report['requalification'] = result
+        self.assertIn('Model calls: 11 (requalification: 11)', j.markdown(report))
+        cases = subset(j.load_cases(), 'projection-failed')
+        rows = j.run(cases, service.decision_judge, service.decision_engine,
+                     roles=['qualification-suite'], cap=cap, scope=service.work_decision_scope)
+        self.assertEqual(sum(len(r['calls']) for r in rows), 1)
+        self.assertEqual(cap.used, 12)
+        self.assertTrue(cap.refused)
+        self.assertEqual(j.requalify_route(service, cap), dict(attempted=False, calls=0))
+
+    def test_budget_exhaustion_cannot_qualify_or_launch_excess_calls(self):
+        for limit in (0, 3):
+            with self.subTest(limit=limit):
+                service = self.stale_service()
+                old = service.decision_routes.active()
+                start = self.model_calls()
+                cap = j.CallCap(limit)
+                result = j.requalify_route(service, cap)
+                self.assertEqual(result['state'], 'failed')
+                self.assertFalse(result['available'])
+                self.assertEqual(result['calls'], limit)
+                self.assertEqual(self.model_calls() - start, limit)
+                self.assertTrue(cap.refused)
+                self.assertEqual(service.decision_routes.active(), old)
 
 
 if __name__ == '__main__':

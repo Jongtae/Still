@@ -275,7 +275,7 @@ def _score(case, observed, outcome):
     if outcome != 'decided':
         error = 'budget_refused' if outcome == 'budget_refused' else (
             'invalid_plan' if role.startswith('orchestration_') and outcome == 'malformed' else 'engine_failure')
-        return False, False if routing else None, error
+        return (False, False if routing else None, error) if outcome == 'malformed' else (None, None, error)
     if role == 'qualification-suite':
         ok = observed['passed']
         return ok, None, 'none' if ok else 'wrong_choice'
@@ -418,6 +418,8 @@ def run(cases, judgments, engine, *, policy=None, timer=time.monotonic, audit=No
             startup = [t.get('first_event_s') if t.get('first_event_s') is not None else t.get('spawn_s')
                        for t in timings]
             startup = [v for v in startup if isinstance(v, (int, float)) and not isinstance(v, bool)]
+            if not sent and outcome not in ('budget_refused',) and not outcome.startswith('error:'):
+                outcome, ok, routing, error = 'not_run', None, None, 'engine_failure'
             row.update(outcome=outcome, observed=observed, semantic_correct=ok, routing_correct=routing, error=error,
                        schema_valid=outcome == 'decided' and error != 'invalid_plan', calls=sent,
                        timeouts=sum(r.get('outcome') == 'timeout' for r in records),
@@ -446,12 +448,14 @@ def effective_runtime(service, audit=()):
 
 def _summary(rows):
     measured = [r for r in rows if r['outcome'] != 'not_run']
-    routing = [r for r in measured if r['routing_correct'] is not None]
+    answered = [r for r in measured if r['semantic_correct'] is not None]
+    routing = [r for r in answered if r['routing_correct'] is not None]
     latency = still().decision_qualification.latency
     usage = [r['usage'] for row in measured for r in row['calls'] if type(r.get('usage')) in (int, float)]
-    return dict(n=len(rows), ran=len(measured), semantic_accuracy=sum(r['semantic_correct'] for r in measured) / len(measured) if measured else None,
+    return dict(n=len(rows), ran=len(measured), answered=len(answered), not_run=len(rows) - len(measured),
+                semantic_accuracy=sum(r['semantic_correct'] for r in answered) / len(answered) if answered else None,
                 routing_accuracy=sum(r['routing_correct'] for r in routing) / len(routing) if routing else None,
-                errors=dict(Counter(r['error'] for r in measured)), schema_valid_rate=sum(r['schema_valid'] for r in measured) / len(measured) if measured else None,
+                errors=dict(Counter(r['error'] for r in rows)), schema_valid_rate=sum(r['schema_valid'] for r in measured) / len(measured) if measured else None,
                 abstentions=sum(r['error'] == 'abstained' for r in measured), calls=sum(len(r['calls']) for r in measured),
                 timeouts=sum(r['timeouts'] for r in measured), retries=sum(r['retries'] for r in measured),
                 decision_latency=latency([r['decision_seconds'] for r in measured]),
@@ -487,6 +491,11 @@ def report(rows, run_meta, runtime):
 def markdown(result):
     lines = [f"# Judgment validation — {result['evidence_class']}", '',
              f"Cases: {result['case_set_version']}; head: {result['git_head']}", '',
+             ('Route unavailable. ' if result['runtime'].get('active', {}).get('available') is False else '') +
+             f"Model calls: {result['summary']['total']['calls'] + result.get('requalification', {}).get('calls', 0)} "
+             f"(requalification: {result.get('requalification', {}).get('calls', 0)}). " +
+             (f"Answered cases: {result['summary']['total']['answered']}." if result['summary']['total']['answered'] else
+              'No answered cases; semantic and routing accuracy are not measured.'), '',
              '| Role / class | n | semantic | routing | FP/FN/abstained/invalid/false-completion/unsafe | decision p50/p95 | end-to-end p50/p95 | calls |',
              '|---|---:|---:|---:|---|---|---|---:|']
     def percent(v):
@@ -532,7 +541,7 @@ def compare(baseline, head):
     changes = []
     for key in sorted(set(before) & set(after)):
         a, b = before[key], after[key]
-        if a['outcome'] == 'not_run' or b['outcome'] == 'not_run':
+        if a['semantic_correct'] is None or b['semantic_correct'] is None:
             continue
         va, vb = bool(verdict(a)), bool(verdict(b))
         change = 'fixed' if vb and not va else 'regressed' if va and not vb else 'unchanged-fail' if not vb else None
@@ -565,6 +574,45 @@ def service_factory(data):
 
 _production_service_factory = service_factory
 
+def requalify_route(service, cap):
+    """Adapt #346's update job to a synchronous sandbox run with capped calls.
+
+    The shipped job still performs isolation checks, the complete candidate
+    suite and guarded commit. Only its scheduler and engine admission are
+    adapted here; no copied qualification is trusted or rewritten.
+    """
+    routes = service.decision_routes
+    before = effective_runtime(service)
+    if not before['active'].get('requalification_needed'):
+        return dict(attempted=False, calls=0)
+    audit = []
+    original_engine, original_spawn = routes._cli_engine, routes.spawn
+
+    def make_engine(engine_id, model, policy, audit_callback, *args, **kwargs):
+        def capture(record):
+            if audit_callback:
+                audit_callback(record)
+            audit.append(dict(record))
+        inner = original_engine(engine_id, model, policy, capture, *args, **kwargs)
+        routed = still().decision.RoutedDecisionEngine(lambda: inner, budget=lambda: cap)
+        return _MeasuredEngine(routed, audit)
+
+    try:
+        routes._cli_engine = make_engine
+        routes.spawn = lambda task: task()
+        # Store relocation can stale the strict binding without changing the
+        # CLI fingerprint, so explicitly queue the same update job in that case.
+        route = routes.active()
+        routes._queue_cli_update(route)
+        started = routes.run_due_qualification()
+        job = routes._jobs().get(f"update:{route['engine']}") or {}
+    finally:
+        routes._cli_engine, routes.spawn = original_engine, original_spawn
+    return dict(attempted=bool(started), calls=sum(r.get('sent') is True for r in audit),
+                state=job.get('state'), budget_refused=cap.refused,
+                available=effective_runtime(service)['active'].get('available'))
+
+
 def live_run(args, factory=None):
     from .cli import git_head, resolve_seed
     from .sandbox import Sandbox
@@ -587,6 +635,8 @@ def live_run(args, factory=None):
             audit.append(dict(record))
 
         service.record_decision = capture
+        qualification = (requalify_route(service, cap) if getattr(args, 'requalify', False)
+                         else dict(attempted=False, calls=0))
         rows = run(cases, service.decision_judge, service.decision_engine, audit=audit, cap=cap,
                    scope=service.work_decision_scope, roles=selected, trials=args.trials, keep_text=args.keep_text)
         runtime = effective_runtime(service, audit)
@@ -595,6 +645,8 @@ def live_run(args, factory=None):
                     evidence_class=('live-route:' + runtime['active'].get('transport', 'unknown')
                                     if (factory or service_factory) is _production_service_factory else 'fixture'))
         result = report(rows, meta, runtime)
+        result['requalification'] = qualification
+        result['call_budget'] = dict(max_calls=cap.max_calls, admitted=cap.used, refused=cap.refused)
         paths = write_report(result, args.out)
         print(markdown(result))
         print(f'report: {paths[0]}')
