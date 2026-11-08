@@ -268,3 +268,33 @@ Refresh the seed (`snapshot --overwrite`) before a sweep when the owner's profil
 - Sandboxes use the real clock. Clock notes are context for the judge only.
 - Telegram, Google connectors, folder grants and the embedded browser are disabled in sandboxes. Scenarios that need them measure the "not connected" path. Outward actions are measured only against a simulated world (`sweep --world`, evidence class `sandbox-world`).
 - Opening issues automatically from new clusters is not part of this first slice. The report lists clusters for an agent or the owner to file.
+
+## Judgment validation (#42)
+
+This stdlib harness measures semantic correctness, routing, failures and latency through Still's shipped judgment and orchestration callers. It uses a frozen synthetic Korean/English case set and the existing qualification suite. Injected-engine tests are `fixture` evidence; an opted-in configured route run is `live-route:<transport>`, never `owner-live`. Wording and voice quality (#198) are not scored.
+
+From the repository root:
+
+```sh
+PYTHONPATH=evals .venv/bin/python -m agentos_eval judgments plan
+PYTHONPATH=evals .venv/bin/python -m agentos_eval judgments run --seed sanitized-seed --out /tmp/judgment-baseline
+PYTHONPATH=evals .venv/bin/python -m agentos_eval judgments compare /tmp/judgment-baseline/report.json /tmp/judgment-head/report.json
+```
+
+Use the generated `judgments-*.json` filenames in the comparison command. A **live run is opt-in and spends real model calls**: `plan` prints the maximum (74 for the bundled set: 70 cases, two escalation cases take up to three calls); `--max-calls N`, `--roles a,b` and `--trials N` bound/filter/repeat measurements. Trials are separate rows, not best-of-N passes. The default cap is the selected plan's maximum times trials. After a cap refusal the remaining cases are `not_run`. JSON and Markdown reports are owner-only files in the eval home's `reports/` folder or `--out`. Gap/note text is excluded unless `--keep-text` is set; note presence alone is recorded.
+
+Unavailable or unsent judgments have no semantic/routing score (`not_run`, or an engine/budget failure); accuracy uses answered cases only. Zero answers means unmeasured, never 0% correct. Reports show answer and model-call counts, and explicitly flag an unavailable route. Malformed answers remain measured failures.
+
+A copied seed's Codex qualification is bound to the original store/runtime paths as well as its CLI identity; the same version and stored score do not qualify a new sandbox. Add `--requalify` to run the shipped #346 CLI-update qualification job synchronously before measurement. It retains the isolation probes, candidate suite and guarded activation; only a passing suite qualifies the sandbox. Qualification calls and measured calls share `--max-calls` (the default cap is unchanged). Allow room for the candidate suites/retries as well as the selected cases; exhausting the cap can leave the route unavailable or cases unrun. JSON records `requalification` and `call_budget`; the Markdown header includes qualification calls. Local isolation probes use the shipped scripted model, not live provider calls. A failed job does not admit the route. No seed or live owner configuration is changed.
+
+To measure an older checkout using this harness, first create it with `git worktree add /tmp/still-v0.6.0 v0.6.0`, then run:
+
+```sh
+PYTHONPATH=evals .venv/bin/python -m agentos_eval judgments run --seed sanitized-seed --src /tmp/still-v0.6.0/src --out /tmp/judgment-baseline
+```
+
+Run each checkout in a fresh process; `--src` selects its production imports, Git head and prompt digests. The seed must be a sanitized snapshot with `private/quickstart.db`; each run uses a fresh `Sandbox.prepare()` copy and removes it afterward. No server or worker is started. Use the same seed, roles, trial count and runtime settings for both measurements. Comparison refuses different case-set versions and flags changed runtime conditions; fixtures do not establish live availability or model quality.
+
+Reuse decision: **Adapt** the existing eval package. Standard-library JSON, argparse, hashing, file permissions and timing cover serialization/CLI/report needs; the shipped `ModelAdapter`, decision policy, orchestration and qualification runners cover the measured boundary. Existing sandbox, seed resolution, Git-head and report-folder conventions supply the thin eval glue. No new dependency, licence, runtime authority, data destination or production component is introduced (Still remains AGPL-3.0-only).
+
+#42 unavailable-route follow-up reuse review: **Adapt** the shipped `DecisionRoutes._queue_cli_update` / `run_due_qualification` job and `RoutedDecisionEngine` admission with the harness's `CallCap` and `_MeasuredEngine`. Search evidence: `decision_routes.py` qualification jobs, `decision_qualification.qualify`, `bounded_execution.strict_binding_mismatch`, and `Sandbox.prepare`. Platform/stdlib facilities cover copying, counting and reporting. Provider SDKs and external evaluation frameworks cannot replace Still's qualification/activation contract; no new component or dependency is needed. This reuses the repository's current maintained path and official CLI boundary; no external release/version claim or network research is made in this offline fix. Licence remains AGPL-3.0-only; platform compatibility, destinations and authority remain those of the shipped route. The thin glue supplies synchronous scheduling and call admission, avoiding a second qualification implementation.

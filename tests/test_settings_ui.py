@@ -269,8 +269,8 @@ assert(descendants($('active-ai')).find(node=>node.dataset.disclosure==='technic
  assert.equal(models().length,1);assert.equal(model().parentNode.parentNode,$('ai-chooser-list'),'selected model sits below provider groups');
  model().value='draft-model';model().oninput();model().focus();model().setSelectionRange(2,5);const firstModel=model();
  ctx.renderAiChooser();assert.equal(model(),firstModel);assert.equal(document.activeElement,firstModel);assert.equal(firstModel.selectionStart,2);assert.equal(firstModel.selectionEnd,5);
- ctx.chooserPanel('openai');assert.equal(accounts().length,1);const password=accounts()[0].querySelector('input[type="password"]');password.value='synthetic-unsaved';password.focus();password.setSelectionRange(3,7);
- ctx.renderAiChooser();assert.equal(accounts()[0].querySelector('input[type="password"]'),password);assert.equal(document.activeElement,password);assert.equal(password.selectionStart,3);assert.equal(password.selectionEnd,7);
+ ctx.chooserPanel('openai');assert.equal(accounts().length,1);const setupGuide=accounts()[0].querySelector('details');assert.equal(setupGuide.open,true);setupGuide.open=false;const password=accounts()[0].querySelector('input[type="password"]');password.value='synthetic-unsaved';password.focus();password.setSelectionRange(3,7);
+ ctx.renderAiChooser();assert.equal(accounts()[0].querySelector('details'),setupGuide);assert.equal(setupGuide.open,false,'polling preserves the API guide disclosure');assert.equal(accounts()[0].querySelector('input[type="password"]'),password);assert.equal(document.activeElement,password);assert.equal(password.selectionStart,3);assert.equal(password.selectionEnd,7);
  radio('claude-code').onchange();assert.equal(accounts()[0].querySelector('input[type="password"]'),password,'radio selection preserves independent account draft');
  radio('codex').onchange();assert.equal(model().value,'draft-model','per-route model draft survives switching');
  ctx.chooserPanel('anthropic');assert.equal($('ai-chooser-discard').hidden,false);assert.equal(accounts()[0].dataset.route,'openai');keepDiscard();assert.equal(password.value,'synthetic-unsaved');
@@ -533,7 +533,11 @@ class Element {
 let focused=null;
 function descendants(node){return node.children.flatMap(child=>typeof child==='string'?[]:[child,...descendants(child)]);}
 for(const id of ['root-list','roots-feedback','root-path-input','roots-form','file-workspace-list','file-workspace-form','workspace-reference-list','workspace-reference-input','workspace-reference-add','file-workspace-path','file-workspace-feedback','file-workspace-cancel','document-boundary','document-boundary-feedback'])new Element('div').id=id;
-const $=id=>ids.get(id),document={getElementById:$,createElement:tag=>new Element(tag)};
+// #390 U6: the static folder picker buttons are bound once alongside the forms.
+const pickerButtons=['read','reference','result'].map(kind=>{const button=new Element('button');button.dataset.folderPick=kind;button.dataset.folderInput={read:'root-path-input',reference:'workspace-reference-input',result:'file-workspace-path'}[kind];button.hidden=true;return button;});
+const $=id=>ids.get(id),document={getElementById:$,createElement:tag=>new Element(tag),
+ querySelectorAll:selector=>selector==='[data-folder-pick]'?pickerButtons:[],
+ querySelector:selector=>pickerButtons.find(button=>selector==='[data-folder-pick="'+button.dataset.folderPick+'"]')||null};
 const part=(start,end)=>app.slice(app.indexOf(start),app.indexOf(end));
 const source=part('const LANGUAGES=','function normalizeEndpoint(')+part('function element(', 'function focusSettingsTarget(')+part('let savedRoots=', 'function renderTelegram(');
 const calls=[];let refreshes=0,refuse=null,refuseReason=null,revisions=0,gate=null;
@@ -566,13 +570,14 @@ const press=async(id,label)=>{const button=buttons(id).find(node=>node.textConte
  assert.equal(focused,$('root-path-input'),'focus returns to the refused input');
  assert.equal($('roots-feedback').dataset.error,'1','an ordinary refusal is shown as an error');
  // #779: a phone on the tunnel may not add a folder; that is a next step on the Mac, in the owner's language.
- const macOnly='Mac에서 계속: 폴더 추가와 변경은 이 Mac에서 Still을 열어 진행합니다. 연결된 폴더를 빼는 것은 여기서도 할 수 있습니다.';
+ const catalog=JSON.parse(fs.readFileSync(require('node:path').join(process.argv[1],'..','..','messages.json'),'utf8'));
+ const macOnlyMessage=catalog['service.continue_on_the_mac_adding_or'],macOnly=macOnlyMessage.ko;
  refuse=macOnly;refuseReason='owner_local_surface';vm.runInContext("setLanguage('en')",ctx);
  await $('roots-form').onsubmit({preventDefault(){},submitter:new Element('button')});
  assert.equal($('roots-feedback').textContent,'Continue on the Mac: adding or changing a folder happens in Still opened on this Mac. You can still remove a connected folder here.','an off-Mac add is a translated next step');
  assert.equal($('roots-feedback').dataset.error,undefined,'an off-Mac add is not shown as an error');
  assert.equal($('root-path-input').value,'/Users/me','the draft is kept for the Mac');
- for(const language of ['zh-CN','ja']){vm.runInContext(`setLanguage('${language}')`,ctx);assert.notEqual(ctx.t(macOnly),macOnly,`${language} translates the off-Mac refusal`);}
+ for(const [language,locale] of [['zh-CN','zh'],['ja','ja']]){vm.runInContext(`setLanguage('${language}')`,ctx);assert.equal(ctx.t(macOnly),macOnlyMessage[locale],`${language} translates the off-Mac refusal`);}
  vm.runInContext("setLanguage('ko')",ctx);refuseReason=null;
  refuse=null;const before=calls.length;
  await press('root-list','제거');

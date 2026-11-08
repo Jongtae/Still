@@ -7,13 +7,15 @@
 /___/ /_/ /___/____/____/
 </pre>
 
-**在你自己电脑上运行的个人智能体。<br>底层 AI 可以更换，记忆、进行中的工作和权限都会保留。**
+**更换 AI，留下你的助手。**
 
-[![CI](https://github.com/Jongtae/Still/actions/workflows/validate.yml/badge.svg?branch=main)](https://github.com/Jongtae/Still/actions/workflows/validate.yml) [![Full test suite](https://github.com/Jongtae/Still/actions/workflows/full-validate.yml/badge.svg?branch=main)](https://github.com/Jongtae/Still/actions/workflows/full-validate.yml) [![Latest release](https://img.shields.io/github/v/release/Jongtae/Still?sort=semver&label=release)](https://github.com/Jongtae/Still/releases) [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](../../pyproject.toml) [![macOS | Linux | WSL2 limited](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20WSL2%20limited-555)](../../docs/QUICKSTART.md) [![License: AGPL 3.0](https://img.shields.io/badge/license-AGPL--3.0--only-blue)](../../LICENSE)
+安装在自己电脑上的开源个人助手。
+
+[![Latest release](https://img.shields.io/github/v/release/Jongtae/Still?sort=semver&label=release)](https://github.com/Jongtae/Still/releases) [![CI](https://github.com/Jongtae/Still/actions/workflows/validate.yml/badge.svg?branch=main)](https://github.com/Jongtae/Still/actions/workflows/validate.yml) [![macOS | Linux | WSL2 limited](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20WSL2%20limited-555)](../../docs/QUICKSTART.md) [![License: AGPL 3.0](https://img.shields.io/badge/license-AGPL--3.0--only-blue)](../../LICENSE)
 
 [English](../../README.md) | [한국어](README.ko.md) | [简体中文](README.zh-CN.md) | [日本語](README.ja.md)
 
-[目前能做什么](#目前能做什么) · [快速开始](#快速开始) · [留给你的东西](#留给你的东西) · [文档](#文档) · [Engineering](https://jongtae.github.io/Still/engineering/zh-CN.html)
+[试试看](#快速开始) · [目前能做什么](#目前能做什么) · [数据与权限](#留给你的东西) · [提供反馈](#文档) · [Engineering](https://jongtae.github.io/Still/engineering/zh-CN.html)
 
 </div>
 
@@ -21,52 +23,62 @@
 
 <!-- readme-section:hero -->
 
-## AI 可以更换，你的助手始终延续。
+## 每换一个 AI，都要重新介绍自己吗？
 
-我们大多数人并不拥有自己使用的 AI 模型；模型的提供方随时可能改变价格、规则和可用性。Still 是一个安装在你自己电脑上的开源助手。它把关于你的了解、尚未完成的工作和你交付的权限都保存在那里，而真正干活的 AI，也就是你已经订阅的那个，可以更换。
+你的偏好、昨天的对话、还没做完的事。想用更好的 AI，不应该意味着一切都要从头开始。
+
+**Still 将记忆、进行中的工作和权限保存在你的电脑上，与实际执行任务的 AI 分开。** 你可以连接 Codex、Claude Code、模型 API 或 Ollama。干活的 AI 可以换，助手需要延续的上下文仍然留在你手里。
 
 <p align="center">
-  <img src="../../docs/assets/readme/demo/demo-v5.zh-CN.gif" width="800" alt="真实对话记录：记住咖啡喜好、在亚马逊继续搜索F1模型、推荐咖啡豆及登录后确认购物车。">
+  <img src="../../docs/assets/readme/demo/demo-v5.zh-CN.gif" width="800" alt="经过剪辑的真实对话：记住咖啡偏好、在亚马逊继续搜索 F1 模型、推荐咖啡豆，以及登录后关于购物车的回复。">
 </p>
-<p align="center"><sub>由真实录屏剪辑而成。</sub></p>
+<p align="center"><sub>由真实的 Telegram 和浏览器录屏剪辑而成。<a href="../../docs/assets/readme/demo/README.md">录制说明</a>。</sub></p>
 
 <!-- readme-section:ai-switch -->
 
 ## 换了 AI，对话照样继续
 
+下面的记录中，用户切换到 Claude Code 后，询问昨天的购物对话。之后换成 Codex，再说“把午餐肉拿掉”。Still 延续了同一段对话，而不是要求用户从头解释。
+
+<details>
+<summary>查看实际切换 AI 的对话</summary>
+
 <p align="center">
-  <img src="../../docs/assets/readme/ai-switch/ai-switch-conversation.png" alt="三张裁剪后的韩语 Telegram 截图。1：切换到 Claude Code 后，主人问昨天的午餐肉最后放进去了还是拿出来了，PA 接上之前的购物车对话并请求登录。2：登录后，它回答购物车里有 1 罐 CJ 经典午餐肉 200g，并说明有些步骤未能确认。3：切换到 Codex 后，主人让它把午餐肉拿掉，PA 回复已删除，其余 22 件商品仍在。">
+  <img src="../../docs/assets/readme/ai-switch/ai-switch-conversation.png" alt="三张韩语 Telegram 截图：切换到 Claude Code 后，助手回忆之前的购物车对话并请求登录；随后回复有一罐 CJ 经典午餐肉 200g，同时说明部分步骤未能确认；换成 Codex 后，回复已移除午餐肉并剩余 22 件商品。">
 </p>
-<p align="center"><sub>截取自真实对话（Telegram，韩语界面）。登录链接已裁掉，姓名已模糊处理。 · <a href="../../docs/assets/readme/ai-switch/ai-switch-conversation.png">查看大图</a></sub></p>
 
-切换到 Claude Code 后，PA 接上昨天的购物对话并查看购物车。切换到 Codex 后，“把午餐肉拿掉”在同一段对话里照样有效。
+登录链接已裁掉，姓名已模糊处理。[查看大图](../../docs/assets/readme/ai-switch/ai-switch-conversation.png) · [录制清单](../../docs/assets/readme/ai-switch/manifest.json)。
 
-*经过剪辑的真实用户会话，界面为韩语。它展示对话延续，并非购物车操作的独立验证或整个发行版的验证。* [原文](https://github.com/Jongtae/Still/blob/main/docs/assets/readme/ai-switch/manifest.json)
+</details>
 
-<!-- readme-section:capabilities -->
-
-## 目前能做什么
-
-- **用你已经付费的 AI。** ChatGPT 订阅通过 Codex、Claude 订阅通过 Claude Code 完成实际工作；也可以用 API 密钥或 [Ollama](https://ollama.com)。在对话中用 `/ai` 切换，对话会照常继续。
-- **在终端、浏览器或聊天应用中对话。** 终端和浏览器、Telegram，以及 Slack 或 Mattermost 的私信。
-- **参考之前的对话来处理后续请求。** 你上周说过的事，会在需要时再次用上。它每天回顾一次最近的请求来整理记忆，每条事实都会标明依据是你本人的话还是推断。每次保存都可以撤销。
-- **使用你连接的文件夹和服务。** 你连接的文件夹（除非你另行允许，否则只读）、Gmail 搜索以及在你允许时整理邮箱（从不发送邮件）、Google 日历和云端硬盘，以及你登录过的网站，即使在手机上也可以。
-- **任务进行中也能提问或修改请求。** 长任务开始前，它会告诉你计划和由哪个 AI 负责。运行期间你可以问别的事，也可以中途纠正它。
-- **付款需要你批准，并保护密码和令牌。** 每笔付款都需要你同意。[密钥](../../.github/SECURITY.md)不会进入提示词或日志。每项任务都会列出用了你的哪些信息、发送到了哪里。
-
-其中一些功能仍不够完善；[产品状态](../../docs/product-status.en.md)说明了是哪些。
+*这是经过剪辑的真实用户会话，界面为韩语。它展示对话延续，不是购物车变更的独立验证，也不能证明整个发行版的可重复性。*
 
 <!-- readme-section:try-today -->
 
 ## 快速开始
 
-你需要一台 Mac、Linux 电脑或装有 [WSL2](../../docs/QUICKSTART.md#windows-wsl2) 的 Windows（有一些限制），以及一个 AI：ChatGPT 订阅加 [Codex CLI](https://github.com/openai/codex)、Claude 订阅加 [Claude Code](https://code.claude.com/docs/en/setup)、API 密钥或 Ollama。一条命令即可安装并启动 Still，无需 Homebrew、Python 或 Docker：
+你需要 **macOS、Linux 或使用 [WSL2](../../docs/QUICKSTART.md#windows-wsl2) 的 Windows**，以及一个配置好的 AI 连接：Codex、Claude Code、API，或已经运行的 Ollama。订阅方式需要相应的 CLI 使用资格和登录；AI 订阅、API 使用和模型下载与 Still 分开。详见 [AI 连接说明](../../docs/QUICKSTART.md#connect-an-ai)。
+
+先检查[固定提交的安装脚本](https://github.com/Jongtae/Still/blob/17fe561e271f033e660e13edd2c272acfcee2347/scripts/install.sh)，再在 macOS、Linux 的终端或 WSL2 的 Ubuntu 内运行：
 
 ```sh
 curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/17fe561e271f033e660e13edd2c272acfcee2347/scripts/install.sh | sh
 ```
 
-运行前可以先[检查脚本](https://github.com/Jongtae/Still/blob/17fe561e271f033e660e13edd2c272acfcee2347/scripts/install.sh)；它会校验所下载的每一个文件。在 Windows 上，请在 PowerShell 中运行 `wsl --install` 并重启，然后在 Ubuntu 中运行这条命令。如果你在 Apple 芯片的 Mac 上使用 [Homebrew](https://brew.sh)，也可以这样安装（Homebrew 已不再为 Intel Mac 构建软件包，Intel Mac 请使用上面的命令）：
+不必预先安装 Python、Homebrew 或 Docker。安装脚本会准备 Python 环境，并将发行归档的 SHA-256 与记录值核对。
+
+在终端设置中选择 AI，随后直接对话，或在同一台电脑上打开 [http://127.0.0.1:8787/](http://127.0.0.1:8787/)。**无需一开始就连接邮箱、日历和聊天应用。**
+
+### 先试一段小对话
+
+贴入一段不含敏感信息的短文，问：**“用三句话概括这段内容。”** 接着说：**“保留重要日期，再短一点。”** 这些是建议的首次请求，不是引用实际测试结果的对话。检查回答是否正确、后续请求是否沿用了同一上下文，再尝试一件你确实需要帮助的低风险任务。
+
+使用 Telegram 时，说“帮我连接 Telegram”，并按照配对步骤操作。机器人令牌只应输入专用的隐藏输入框，不能发在普通聊天消息中。
+
+处理远程请求和定时任务时，需要保持 `agentos start` 运行，并让电脑保持唤醒。macOS 可用 `agentos service install` 注册登录时启动的后台服务；仅安装程序并不会自动注册服务。[运行与重启说明](../../docs/guide/operations.en.md#background-service-macos)。
+
+<details>
+<summary>在 Apple 芯片的 Mac 上使用 Homebrew</summary>
 
 ```sh
 brew tap jongtae/still https://github.com/Jongtae/Still
@@ -74,42 +86,62 @@ brew install jongtae/still/agentos
 agentos start
 ```
 
-1. 设置在终端中进行：先是可选的访问密码，然后选择你的 AI（已登录的 AI 会预先选中）。可以直接在终端里和 Still 对话，也可以在 [http://127.0.0.1:8787](http://127.0.0.1:8787/) 的 Still 界面中对话。对话期间请保持 `agentos start` 运行。在 Mac 上运行一次 `agentos service install`，Still 就会在没有终端的情况下在后台持续运行，并在每次登录时重新启动（[详情](../../docs/QUICKSTART.md#background-service-macos)）。
-2. 使用 Telegram 时，说“帮我连接 Telegram”，把 @BotFather 的令牌粘贴到隐藏输入框中，然后打开配对链接并点击 Start。
-3. 问你真正需要的事：**“我家猫最近不怎么吃饭，该怎么办？”** 几天后再说 **“帮我挑一台 3000 元以内的扫地机器人。”** 它会记得你的猫。
+Intel Mac 请使用上面的一行安装命令。为保持兼容性，命令仍叫 `agentos`，启动的就是 Still。
 
-所有设置、Windows 说明以及卸载方法（除非你另行选择，`agentos uninstall` 会保留你的数据）请见 [QUICKSTART](../../docs/QUICKSTART.md)。
+</details>
 
-**发布状态：** 两种安装方式安装的都是从已打标签的 main 提交构建的 **v0.6.0**（2026-11-07）。演示和日常使用画面来自真实使用会话，并非该发行版本的端到端验证；架构图属于产品方向。[release manifest](../../docs/release-manifest.json) 记录每个版本的覆盖范围，[产品状态](../../docs/product-status.en.md) 区分已提供的功能、测试依据和发展方向。
+**发布状态：** 两种安装方式安装的都是从已打标签的 main 提交构建的 **v0.6.0**（2026-11-07）。演示和日常使用画面来自真实使用会话，并非该发行版本的端到端验证；架构图属于产品方向。准确的发行范围与验证边界见 [release manifest](../../docs/release-manifest.json)。
+
+设置、Windows 限制、更新与卸载：[QUICKSTART](../../docs/QUICKSTART.md)。
+
+<!-- readme-section:capabilities -->
+
+## 目前能做什么
+
+| 你想做的事 | Still 提供的能力 |
+| --- | --- |
+| 不再重复解释，直接继续 | 将保存的记忆和之前的上下文用于后续请求；记住的内容可以查看和纠正。 |
+| 换一个 AI | 用 `/ai` 切换已连接的 AI，同时保留 Still 的记忆和工作记录。 |
+| 使用自己的资料 | 已连接的文件夹、Google Drive、Gmail 搜索和单独授权的邮箱整理，以及 Google Calendar。不支持 Gmail 发信。 |
+| 在网站上获得帮助 | 在你登录的网站上使用浏览器工具。兼容性和登录要求因网站、平台而异。 |
+| 工作中改变主意 | 任务进行时提出独立问题，或纠正正在处理的请求。 |
+| 在习惯的地方对话 | 终端、浏览器、Telegram，以及 Slack、Mattermost 私信。 |
+
+Still 仍在积极开发。先从小任务开始，需要时再添加连接。结果会受到模型、权限、服务配置和网站行为影响；这里并不保证所有任务都能在所有模型或网站上运行。[产品状态](../../docs/product-status.en.md)区分实现情况、观察到的使用结果和产品方向。准确的发行范围请以上面的 release manifest 为准。
 
 <!-- readme-section:ownership -->
 
 ## 留给你的东西
 
-| 可以更换的 | 始终属于你的 |
-| --- | --- |
-| 模型及其提供方 | 关于你的记忆和上下文 |
-| 干活的 CLI 智能体或 API | 进行中的工作及下一步 |
-| 工具和连接器 | 权限与批准 |
-| | 实际执行过的记录 |
+AI 负责实际工作。Still 保存那些不该因更换 AI 而丢失的状态：**关于你的记忆和上下文、未完成的工作、权限与批准，以及执行记录。** 保留这些状态，不代表不同模型会给出相同答案或支持相同工具。
 
-出现更好的 AI 时，你更换的是干活的 AI，而不是智能体本身。本地优先（local-first）不等于只在本地（local-only）：订阅的 AI 运行在 OpenAI 或 Anthropic，因此请求所用的上下文会发送给该提供方。指导这个项目的有五条原则：陪伴（presence）、可迁移记忆、模型独立、执行和所有者控制（[原因](../../docs/VISION.md)）。
+**本地优先（local-first）不等于只在本地（local-only）。** 使用外部 AI 时，请求需要的对话和上下文会发送给该提供方。连接远程服务，也不意味着 Still 能控制该服务的数据保留方式。先使用非敏感资料，只连接你打算使用的文件夹和账号。
+
+### 权限与付款
+
+连接的文件夹在未授予写入权限时保持只读。不同操作适用不同授权规则，因此连接服务后，并非每次变更都会再次单独确认。Still 为每项任务记录信息使用情况。密码和令牌应输入专用字段，而不是聊天消息。详见[安全与密钥处理](../../.github/SECURITY.md)。
+
+**默认情况下，每笔付款都需要单独批准，自主付款模式默认关闭。** 主动开启后，AI 可以不再逐次询问就执行付款和资金转移，包括定时任务中的操作。启用期间，目前**没有金额、时间周期或各连接的额度上限**。首次试用请保持关闭。功能被收录进发行版，并不是已经验证真实付款或证券订单完整流程的证据。使用前请阅读 [release manifest](../../docs/release-manifest.json)。
 
 <!-- readme-section:presence -->
 
 ## 工作原理
 
+Still 将助手需要长期保持的状态与执行请求的 AI 分开。目标是始终延续同一段对话，而不是每换一个执行者或工具，就变成另一个助手。
+
+不必先理解内部架构才能试用。[Engineering](https://jongtae.github.io/Still/engineering/zh-CN.html) 分别说明设计、实现和验证依据。
+
 <details>
-<summary>展开架构和补充画面</summary>
+<summary>了解架构与产品方向</summary>
 
 <picture>
   <source media="(max-width: 600px)" srcset="../../docs/assets/readme/presence-overview.zh-CN.narrow.svg">
-  <img src="../../docs/assets/readme/presence-overview.zh-CN.svg" alt="概念图：与你的关系（目标、记忆、偏好、承诺、权限）连接 Assistant、Finance、Research 三种专业视角；领域、角色、委托范围与权限进入 Decision Model。Unified Presence 维持同一段关系，并把你在工作进行中的介入反馈给判断。这是产品方向示例，并非已发布的功能。">
+  <img src="../../docs/assets/readme/presence-overview.zh-CN.svg" alt="产品方向概念图：所有者的目标、记忆、偏好和权限影响专业视角与决策模型，同时在工作全过程中维持同一个助手关系。">
 </picture>
 
-</details>
+此图描述预期设计，不是实际运行记录，也不表示图中的每种角色都已作为专业智能体发布。[架构](../../docs/personal-agentos-architecture.en.md) · [Presence](../../docs/presence-experience-contract.en.md) · [为什么做 Still](../../docs/VISION.md)。
 
-Still 与你保持同一段关系（你的目标、记忆、偏好和权限），按每个请求所需的角色来解读它，并决定是回答、执行、询问还是回头汇报。它工作时你说的话，会改变进行中的工作。此图展示的是预期设计，并非已观测的运行：[架构](../../docs/personal-agentos-architecture.en.md) · [Presence](../../docs/presence-experience-contract.en.md)。
+</details>
 
 <!-- readme-section:conversation -->
 
@@ -117,36 +149,38 @@ Still 与你保持同一段关系（你的目标、记忆、偏好和权限）�
 
 *节选自真实的 Telegram 对话画面（韩语界面），并配有简短的场景说明。*
 
+这些记录展示了将咖啡偏好用于后续推荐、在亚马逊继续搜索 F1 模型，以及登录后回复所选咖啡豆的购物车状态。关于购物车的回复不是对账号状态的独立验证；加入购物车与付款是两种不同的操作。
+
 <details>
-<summary>展开架构和补充画面</summary>
+<summary>查看更多真实对话片段</summary>
 
 <picture>
   <source media="(max-width: 600px)" srcset="../../docs/assets/readme/readme-examples-v4.zh-CN.png">
-  <img src="../../docs/assets/readme/readme-examples-v4.zh-CN.png" alt="真实画面节选：记住喜好、在亚马逊继续搜索F1模型、购物车中确认有一件Jardin Espresso Blend 500克咖啡豆。">
+  <img src="../../docs/assets/readme/readme-examples-v4.zh-CN.png" alt="附有场景说明的真实 Telegram 对话：记住咖啡偏好、在亚马逊继续搜索 F1 模型，以及回复购物车中有一件 Jardin Espresso Blend 500g 咖啡豆。">
 </picture>
 
 </details>
-
-之前提到的拿铁口味，会在挑选咖啡豆时再次用上；F1 模型的搜索无需重新说明就延续到亚马逊；选定的咖啡豆出现在已登录的购物车里。加入购物车和付款仍是两种不同的行动。
 
 <!-- readme-section:engineering -->
 
 ## Engineering
 
-了解 Still 如何保留记忆和工作、做出判断，以及管理用户权限。指南区分已实现的功能、验证过的范围和未来设计，并提供原始文档与代码链接。
-
-[为什么这样设计？](https://jongtae.github.io/Still/engineering/zh-CN.html) · [Research & Evidence](https://jongtae.github.io/Still/engineering/zh-CN.html#research)
+想了解这种延续性如何实现，可以从 [Engineering](https://jongtae.github.io/Still/engineering/zh-CN.html) 和 [Research & Evidence](https://jongtae.github.io/Still/engineering/zh-CN.html#research) 开始。它们介绍记忆、判断、执行和所有者控制，并链接到代码与实验。设计、自动化测试和实际使用观察是不同类型的证据，不能互相替代。
 
 <!-- readme-section:more -->
 
 ## 文档
 
-[QUICKSTART](../../docs/QUICKSTART.md)（安装、连接、Telegram、Slack、从源码运行） · [产品状态](../../docs/product-status.en.md) · [为什么做这个项目](../../docs/VISION.md) · [架构](../../docs/personal-agentos-architecture.en.md) · [文档地图](../../docs/README.md) · [致谢与参考](../../docs/acknowledgements.en.md)
+[QUICKSTART](../../docs/QUICKSTART.md) · [产品状态](../../docs/product-status.en.md) · [文档地图](../../docs/README.md) · [贡献指南](../../.github/CONTRIBUTING.md) · [贡献者入门](../../docs/contributor-onboarding.en.md) · [致谢与参考](../../docs/acknowledgements.en.md)
 
-**参与贡献。** 欢迎提交 Issue 和 Pull Request：请先阅读 [CONTRIBUTING](../../.github/CONTRIBUTING.md) 和[贡献者入门指南](../contributor-onboarding.en.md)（英文）。用过之后，欢迎通过[反馈表单](https://github.com/Jongtae/Still/issues/new?template=feedback.yml)或 [Discussions](https://github.com/Jongtae/Still/discussions) 告诉我们哪些好用。
+### 试一件你自己的事，再告诉我们
+
+Still 想知道的不只是演示能否成功，而是你会不会再用它。试一个低风险任务，告诉我们：**你在哪里卡住了？什么内容需要解释两遍？明天还想让它做什么？**
+
+请使用[反馈表单](https://github.com/Jongtae/Still/issues/new?template=feedback.yml)或 [Discussions](https://github.com/Jongtae/Still/discussions)。平台、Still 版本、AI 连接方式和去除个人信息的例子会很有帮助。不要公开凭据、私人文档或登录链接。安全问题请按 [SECURITY.md](../../.github/SECURITY.md) 的说明报告，不要提交公开 Issue。
 
 <!-- readme-section:license -->
 
 ## 许可证
 
-[AGPL-3.0-only](../../LICENSE)。Still 的名称和标志遵循[商标说明](../../docs/TRADEMARKS.md)。
+[AGPL-3.0-only](../../LICENSE)。Still 的名称和标识适用 [TRADEMARKS.md](../../docs/TRADEMARKS.md)。

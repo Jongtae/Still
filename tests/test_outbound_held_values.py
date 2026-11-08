@@ -174,8 +174,8 @@ class ComparisonCut(unittest.TestCase):
             self.assertEqual(audit['sent_to']['held_value_matches'], [])
             self.assertEqual(audit['sent_to']['held_value_comparison_cut'], [memory_cut, text_cut])
             text = information_use.render_korean(audit)
-            self.assertIn('- 보관 정보 비교는 최근 기억 500개까지만 했습니다.', text)
-            self.assertIn('- 밖으로 나간 내용은 건마다 앞 1,000자까지만 보관 정보와 비교했습니다.', text)
+            self.assertIn('- 보관 정보 비교는 최근 기억 500개까지만 했어요.', text)
+            self.assertIn('- 밖으로 나간 내용은 건마다 앞 1,000자까지만 보관 정보와 비교했어요.', text)
             other = store.enqueue('다른 작업', 'plain')
             self.assertNotIn('held_value_comparison_cut', information_use.work_information_use(store, other)['sent_to'])
 
@@ -338,7 +338,7 @@ class BrowserRoute(unittest.TestCase):
             {'source': 'memory', 'key': 'member-number', 'tool': 'browser_type', 'destination': 'fixture.test',
              'status': 'succeeded'}])
         text = information_use.render_korean(audit)
-        self.assertIn("- browser_type → fixture.test: 기억 'member-number'의 값과 겹치는 내용이 들어 있었습니다", text)
+        self.assertIn("- browser_type → fixture.test: 기억 'member-number'의 값과 겹치는 내용이 들어 있었어요", text)
         self.assertIn('- 브라우저로 연 곳: fixture.test', text)
         # Negative: no persisted row and no Evidence holds the value or the typed text.
         with self.store.db() as db:
@@ -379,8 +379,8 @@ class ApiRoute(_ServiceBase):
         self.assertEqual(audit['sent_to']['held_value_matches'], [
             {'source': 'memory', 'key': 'member-number', 'tool': 'web_search', 'destination': 'brave', 'status': 'succeeded'}])
         text = information_use.render_korean(audit)
-        self.assertIn("- web_search → brave: 기억 'member-number'의 값과 겹치는 내용이 들어 있었습니다", text)
-        self.assertEqual(text.count('선택한 AI 제공자가 처리합니다'), 1, 'said once')
+        self.assertIn("- web_search → brave: 기억 'member-number'의 값과 겹치는 내용이 들어 있었어요", text)
+        self.assertEqual(text.count('선택한 AI 제공자가 처리해요'), 1, 'said once')
         self.assertNotIn('AI CLI가 스스로 하는 웹 검색', text, 'no CLI worker in this Work')
         with self.store.db() as db:
             rows = [json.loads(row['detail']) for row in db.execute(
@@ -410,7 +410,7 @@ class FailedAfterDispatch(ApiRoute):
         audit = service.work_information_use(job)
         self.assertEqual(audit['sent_to']['held_value_matches'], [
             {'source': 'memory', 'key': 'member-number', 'tool': 'web_search', 'destination': '', 'status': 'failed'}])
-        self.assertIn("- web_search: 실패한 시도에 기억 'member-number'의 값과 겹치는 내용이 들어 있었습니다(상대에게 닿았는지는 알 수 없습니다)",
+        self.assertIn("- web_search: 실패한 시도에 기억 'member-number'의 값과 겹치는 내용이 들어 있었어요(상대에게 닿았는지는 알 수 없어요)",
                       information_use.render_korean(audit))
         with self.store.db() as db:
             details = [row['detail'] for row in db.execute("SELECT detail FROM tool_events WHERE job_id=? AND status='failed'", (job,))]
@@ -782,11 +782,11 @@ class ProviderNotes(unittest.TestCase):
         def text(own):
             return information_use.render_korean({'recorded': True, 'used': [], 'sent_to': {'workers': [
                 {'route': 'subscription', 'engine': 'codex', 'own_web_search': own}]}})
-        self.assertIn('AI CLI가 스스로 하는 웹 검색은 Still을 거치지 않습니다', text(True))
+        self.assertIn('AI CLI가 스스로 하는 웹 검색은 Still을 거치지 않아요', text(True))
         self.assertNotIn('AI CLI가 스스로 하는 웹 검색', text(False), 'a CLI without its own search has no such blind spot')
-        self.assertEqual(text(False).count('선택한 AI 제공자가 처리합니다'), 1)
+        self.assertEqual(text(False).count('선택한 AI 제공자가 처리해요'), 1)
         unrecorded = information_use.render_korean({'recorded': False, 'used': [], 'sent_to': {'workers': []}})
-        self.assertNotIn('선택한 AI 제공자가 처리합니다', unrecorded, 'no recorded worker: no provider claim')
+        self.assertNotIn('선택한 AI 제공자가 처리해요', unrecorded, 'no recorded worker: no provider claim')
 
 
 class WebView(unittest.TestCase):

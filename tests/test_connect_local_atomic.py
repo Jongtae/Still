@@ -95,7 +95,7 @@ class LocalApprovalCommit(HandoffTestCase):
             with self.assertRaises(ConversationHandoffError) as error:
                 self.service.approve_local_folder({'handoff_id':row['handoff_id']})
         self.assertEqual(error.exception.reason,'work_already_completed')
-        self.assertFalse(any('허용했습니다' in text for text in self.sent))
+        self.assertFalse(any('허용했어요' in text for text in self.sent))
         self.assertEqual(self.store.job(work)['status'],'cancelled')
         self.assert_no_grant()
         self.assertNotIn(work,self.store.config(LOCAL_RESUMED_KEY,[]))

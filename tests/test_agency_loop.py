@@ -376,7 +376,7 @@ class OwnerEntryPointTests(unittest.TestCase):
                 self.assertLessEqual(self._store.config('work_budget:' + row['id'])['turns'], WORK_MODEL_TURNS)
                 self.assertGreaterEqual(len(failed), 6)
                 with_messages = [m for m in self._messages(row['id'])]
-                self.assertTrue(with_messages[-1].startswith('이 요청은 완료하지 못했습니다'))
+                self.assertTrue(with_messages[-1].startswith('이 요청은 완료하지 못했어요'))
 
     def _messages(self, job_id):
         store = self._store
@@ -588,7 +588,7 @@ class AlternativesAndCompletionTests(unittest.TestCase):
         self.assertEqual(result.report['question'], '여권 번호를 어디에 적어 두셨나요?')
         # requested / observed / failed / unknown stay separate fields of one typed report.
         self.assertEqual(result.report['requested'], self.REQUEST[0]['content'])
-        self.assertEqual(result.report['observed'], ['저장된 메모 0개를 확인했습니다.'])
+        self.assertEqual(result.report['observed'], ['저장된 메모 0개를 확인했어요.'])
         self.assertEqual(result.report['failed'], [])
         self.assertIn('확인이 필요한 질문: 여권 번호를 어디에 적어 두셨나요?', report_statement(result.report))
 

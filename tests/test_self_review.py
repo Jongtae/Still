@@ -23,6 +23,7 @@ from personal_agent import owner_model as om
 from personal_agent.agent_runtime import MEMORY_OWNER
 from personal_agent.conversation_handoff import FOLLOWUP_CORRECTION, FOLLOWUP_REFERENCE, FOLLOWUP_RETRY
 from personal_agent.decision import OUTCOME_DECIDED, BinaryDecision, FixtureDecisionEngine, StructuredDecision, fixture_confidence
+from personal_agent.memory_service import VOICE_PREFERENCE_KEY
 from personal_agent.quickstart_service import RETRY_REFUSED_RAN_CURRENT, AgentService
 
 from test_orchestrator import Harness
@@ -196,7 +197,7 @@ class Run(SelfReview):
         from personal_agent.prompt_files import prompt
         preference = '일할 땐 짧게, 힘든 얘기엔 다정하게 말해 줘'
         self.store.save_memory('profile.place.home', '분당', work_id='w0')
-        self.store.save_memory('profile.preference.communication', preference, work_id='w0')
+        self.store.save_memory(VOICE_PREFERENCE_KEY, preference, work_id='w0')
         job = self.settled('그거 찾아줘', answer='사진이 없어 찾지 못했습니다')
         self.evaluated(job, 'The goal was not reached; the worker asked for a photo.', 'Not reached; stopped.')
         self.corrected(job, '사진이 아니라 아까 말한 책 말이야')

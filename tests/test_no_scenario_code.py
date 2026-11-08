@@ -65,8 +65,8 @@ SRC = Path(__file__).resolve().parents[1] / 'src' / 'personal_agent'
 #: ORCH-01 (#710) orchestration step and its worker catalogue; ``owner_model.py`` the
 #: #805 owner-model upkeep; ``skills.py`` the #961 skill-supply glue.
 SCANNED_MODULES = ('agent_runtime.py', 'conversation_handoff.py', 'current_context.py', 'browser_session.py',
-                   'browser_worker.py', 'browser_jar.py', 'browser_worker_chromium.py', 'chromium_runtime.py',
-                   'preparations.py', 'local_tools.py', 'quickstart_service.py', 'orchestrator.py', 'owner_model.py',
+                   'browser_worker.py', 'browser_jar.py', 'browser_worker_chromium.py', 'chromium_runtime.py', 'browser_signin.py',
+                   'preparations.py', 'local_tools.py', 'quickstart_service.py', 'google_connections.py', 'work_executor.py', 'telegram_delivery.py', 'telegram_store.py', 'orchestrator.py', 'owner_model.py',
                    # SKILL-SUPPLY-02 (#961): the skill-supply glue stays free of site/category branches;
                    # skill content is data in packages, not scanned (#960 section 8).
                    'skills.py',
@@ -138,6 +138,9 @@ CLASSIFIED = {
     ('quickstart_service.py', 'google-drive-read'): (
         'adapter', 'connector registry identity of the owner-connected Drive capability (read grant/handoff); '
                    'capability dispatch by connector id, not a site or provider chosen for a request'),
+    ('google_connections.py', 'google-drive-read'): (
+        'adapter', 'connector registry identity of the owner-connected Drive capability (read grant/handoff); '
+                   'capability dispatch by connector id, not a site or provider chosen for a request'),
     ('quickstart_service.py', 'google-gmail-read'): (
         'adapter', 'connector registry identity of the owner-connected Gmail capability'),
     ('quickstart_service.py', 'google-calendar'): (
@@ -199,7 +202,7 @@ CLASSIFIED_TABLES = {
     ('quickstart_service.py', 'AgentService._redact_provenance'): (
         'enforcement', 'redaction: the labels the path mask writes in place of the data and turn folders; '
                        'substituted for a path, not matched against owner text'),
-    ('quickstart_service.py', 'AgentService._request_browser_login'): (
+    ('browser_signin.py', 'BrowserSignin._request_browser_login'): (
         'enforcement', "redaction: a URL carrying Still's [가림] mark is never opened as is, only its origin"),
     ('quickstart_service.py', 'AgentService.failed_preparation_watch_goals'): (
         'enforcement', 'redaction: a goal Still masked ([가림: ...]) is never reused as a goal'),
@@ -213,7 +216,7 @@ CLASSIFIED_TABLES = {
         'adapter', "the stage column of the Codex CLI's `features list` output"),
     ('decision_adapters.py', '_FEATURE_LINE'): (
         'adapter', "one line of the Codex CLI's `features list` output"),
-    ('quickstart_service.py', 'AgentService._run_cli_attempt'): (
+    ('work_executor.py', 'WorkExecutor._run_cli_attempt'): (
         'adapter', "the subscription CLI's own stdin diagnostic, read to record whether a photo was sent"),
     ('preparations.py', 'COLUMN_MIGRATIONS'): (
         'adapter', 'SQL column definitions of the preparations store migration'),

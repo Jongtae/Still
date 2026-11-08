@@ -273,7 +273,7 @@ class OwnerAddsAReferenceSkillByName(_Shop):
     def test_adding_by_name_pins_the_commit_and_switches_skills_on_once_confirmed(self):
         draft = self.settings.propose('owner', 'web', 'skills', 'add', SHOPPING)
         self.assertEqual(draft['after'], f'https://github.com/{REPO}/tree/{COMMIT}/skills/{SHOPPING}')
-        self.assertIn('함께 켭니다', draft['summary'])
+        self.assertIn('함께 켜요', draft['summary'])
         self.assertIsNone(self.service.skill_binding(), 'nothing changes before the owner confirms')
         applied = self.settings.confirm('owner', 'web', draft['draft_id'], draft['digest'])
         self.assertIn('스킬 사용도 켰어요', applied['response'])

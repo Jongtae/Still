@@ -17,7 +17,8 @@ from urllib.parse import urlsplit, parse_qs
 from personal_agent.quickstart_store import QuickStore
 from personal_agent.quickstart_service import AgentService, TELEGRAM_RESULT_PREVIEW_CHARS
 from personal_agent.quickstart import make_handler, configured_service, local_drive_secret_values
-from personal_agent.drive_web_oauth import DriveWebOAuthHandoff, EncryptedDriveSecretStore
+from personal_agent.drive_web_oauth import DriveWebOAuthHandoff, DriveScopeError, EncryptedDriveSecretStore
+from personal_agent.messages import msg
 from personal_agent.connector_contract import CONNECTOR_STATE_KEY, PENDING_WORK_KEY, ConnectorState
 from personal_agent.conversation_handoff import CONVERSATION_RESUME_KEY, INTENT_CALENDAR_CREATE, INTENT_DRIVE_READ
 from personal_agent.decision import (OUTCOME_DECIDED, BinaryDecision, FixtureDecisionEngine, SelectionDecision,
@@ -373,6 +374,84 @@ class QuickstartTests(unittest.TestCase):
         model_call=next(body for url,body,_headers in self.calls if url.endswith('/api/chat'))
         self.assertIn('private selected Drive plan body',str(model_call))
 
+    def expiring_selected_drive(self):
+        # #721: a stored refresh token must never renew this connection.
+        clock=[1000.0]
+        drive=DriveWebOAuthHandoff(EncryptedDriveSecretStore(self.store,Fernet.generate_key()),'client',
+            'http://localhost:8787/oauth/google/callback','http://localhost:8787',
+            allow_localhost=True,local_only=True,now=lambda:clock[0])
+        offer=drive.begin(123); state=parse_qs(urlsplit(offer['button']['url']).query)['state'][0]
+        exchanges=[]
+        def exchange(request):
+            exchanges.append(request)
+            self.assertEqual(len(exchanges),1,'authorization must not be renewed')
+            return {'access_token':'server-token','refresh_token':'unused-refresh-token',
+                    'scope':'https://www.googleapis.com/auth/drive.file','expires_in':3599}
+        drive.complete({'state':state,'code':'code'},123,exchange)
+        drive.select_files(123,[{'id':'picked','name':'plan.txt'}])
+        self.service.drive_web_oauth=drive
+        return drive,clock,exchanges
+
+    def test_expired_selected_drive_request_offers_connection_on_first_request(self):
+        drive,clock,exchanges=self.expiring_selected_drive()
+        self.model(); self.assertTrue(self.service.test_model()['ok']); self.calls.clear()
+        self.service.use_decision_engine(capability_need_engine({'구글 드라이브 파일을 요약해줘':INTENT_DRIVE_READ}))
+        reads=[]; messages=[]
+        def read(url,body,headers):
+            reads.append((url,body,headers))
+            return b'selected file body'
+        self.service.drive_read=read
+        self.service.telegram.send_message=lambda *args:messages.append(args)
+        before=self.store.enqueue('구글 드라이브 파일을 요약해줘','drive-before-expiry',channel='telegram:g',chat_id=123)
+        self.assertTrue(self.service.run_one())
+        self.assertEqual(self.store.job(before)['status'],'succeeded')
+        self.assertEqual(len(reads),1)
+        clock[0]+=3600
+        self.assertEqual(drive.status()['state'],'connected')
+        reads.clear(); messages.clear(); self.calls.clear()
+        expired=self.store.enqueue('구글 드라이브 파일을 요약해줘','drive-after-expiry',channel='telegram:g',chat_id=123)
+        self.assertTrue(self.service.run_one())
+        job=self.store.job(expired)
+        self.assertEqual(job['status'],'awaiting_drive')
+        self.assertIsNone(job['error'])
+        self.assertFalse(any(row['status']=='failed' for row in self.store.jobs()))
+        self.assertEqual(reads,[])
+        self.assertEqual(len(exchanges),1)
+        self.assertEqual(self.calls,[])
+        self.assertEqual(len(messages),1)
+        owner,text,markup=messages[0]
+        self.assertEqual(owner,123)
+        self.assertTrue(text)
+        self.assertEqual(len(markup['inline_keyboard']),1)
+        self.assertEqual(len(markup['inline_keyboard'][0]),1)
+        self.assertTrue(markup['inline_keyboard'][0][0]['url'].startswith('http://localhost:8787/'))
+
+    def test_selected_drive_expiry_after_prerequisite_has_localized_recovery(self):
+        drive,clock,exchanges=self.expiring_selected_drive()
+        self.service.drive_read=lambda *_:self.fail('expired credentials must not reach a transport')
+        self.assertIsNone(self.service.drive_read_prerequisite({'chat_id':123}))
+        clock[0]+=3600
+        with self.assertRaises(ValueError) as error:
+            self.service.selected_drive_context(123)
+        self.assertEqual(str(error.exception),msg('quickstart_service.drive_read_reconnect'))
+        self.assertEqual(drive.status()['state'],'reauth-required')
+        self.assertEqual(len(exchanges),1)
+        self.assertEqual(self.calls,[])
+
+    def test_selected_drive_selection_errors_are_preserved(self):
+        drive,_clock,exchanges=self.expiring_selected_drive()
+        self.service.drive_read=lambda *_:self.fail('unselected files must not reach a transport')
+        with self.assertRaises(ValueError) as error:
+            self.service.selected_drive_context(456)
+        self.assertEqual(str(error.exception),msg('quickstart_service.select_drive_files'))
+        read_selected=drive.read_selected
+        with patch.object(drive,'read_selected',side_effect=lambda owner,_file,transport:read_selected(owner,'unpicked',transport)):
+            with self.assertRaises(DriveScopeError) as error:
+                self.service.selected_drive_context(123)
+        self.assertEqual(str(error.exception),'Choose this file in Google Picker before reading it.')
+        self.assertEqual(drive.effective_status()['state'],'connected')
+        self.assertEqual(len(exchanges),1)
+
     def test_rejected_drive_read_requires_reauthentication(self):
         key=Fernet.generate_key()
         drive=DriveWebOAuthHandoff(EncryptedDriveSecretStore(self.store,key),'client',
@@ -397,7 +476,7 @@ class QuickstartTests(unittest.TestCase):
         self.assertEqual(saved['results'][0]['job_id'],job)
         restarted=QuickStore(self.temp.name).workspace_detail(workspace['id'])
         self.assertEqual(restarted['messages'][0]['workspace_id'] if 'workspace_id' in restarted['messages'][0] else workspace['id'],workspace['id'])
-        self.assertEqual(restarted['results'][0]['content'],'메모를 저장했습니다. /notes로 확인하거나 /summarize로 정리할 수 있습니다.')
+        self.assertEqual(restarted['results'][0]['content'],'메모를 저장했어요. /notes로 확인하거나 /summarize로 정리할 수 있어요.')
 
     def test_personal_space_redacts_context_and_deletes_only_owner_items(self):
         self.store.enqueue('/note private memory','space-note');self.service.run_one()
@@ -829,11 +908,11 @@ finally:
         self.assertEqual(self.store.jobs()[0]['delivery'],'unknown')
         self.assertFalse(self.service.run_one())
 
-    def pair(self):
+    def pair(self,language_code=None):
         link=self.service.connect_telegram({'token':'123456:TEST_TOKEN'})['url']
         code=parse_qs(urlsplit(link).query)['start'][0]
         cfg=self.store.config('telegram')
-        self.service.ingest_update({'update_id':10,'message':{'from':{'id':42},'chat':{'id':42,'type':'private'},'text':'/start '+code}},cfg['generation'])
+        self.service.ingest_update({'update_id':10,'message':{'from':{'id':42,'language_code':language_code},'chat':{'id':42,'type':'private'},'text':'/start '+code}},cfg['generation'])
         return cfg['generation']
 
     def test_botfather_token_is_local_only_and_never_appears_in_public_state(self):
@@ -888,7 +967,7 @@ finally:
                 self.assertEqual(len(self.store.jobs()),before,'no verification Work or provider call is created')
                 status=self.store.config('telegram_status')
                 self.assertEqual(status['state'],'connected')
-                self.assertIn('직접 확인하세요',status['message'])
+                self.assertIn('직접 확인해 주세요',status['message'])
 
     def test_real_pairing_flow_reports_connected_without_a_search(self):
         self.pair()
@@ -902,7 +981,7 @@ finally:
         self.assertIn('Codex 경로에서만',self.store.config('telegram_status')['message'])
         self.store.put('subscription_engine',{'id':'codex'})
         self.service.mark_telegram_connected()
-        self.assertEqual(self.store.config('telegram_status')['message'],'개인 Telegram 계정이 연결되어 있습니다.')
+        self.assertEqual(self.store.config('telegram_status')['message'],'개인 Telegram 계정이 연결되어 있어요.')
 
     def test_unpaired_verification_request_does_not_touch_status(self):
         self.store.put('telegram_status',{'state':'connected','message':'unchanged'})
@@ -1095,7 +1174,7 @@ finally:
         self.assertEqual(self.store.context_attachment(job['id'])['event_ids'],[item['id']])
         # #958: the choice is confirmed on its own message; no task card follows.
         self.assertIsNone(self.store.task_card(job['id']))
-        self.assertFalse(any(c[0].endswith('/sendMessage') and c[1].get('text','').startswith('요청을 받았습니다.') for c in self.calls))
+        self.assertFalse(any(c[0].endswith('/sendMessage') and c[1].get('text','').startswith('요청을 받았어요.') for c in self.calls))
 
     def test_telegram_context_is_explicit_source_evidenced_and_per_job_approved(self):
         generation=self.pair()
@@ -1200,9 +1279,9 @@ finally:
         self.service.ingest_callback({'id':'recovery-progress','from':{'id':42},'message':{'chat':{'id':42,'type':'private'},'message_id':card['message_id']},'data':f"p7v:{job['id']}"},generation)
         progress=[c for c in self.calls if c[0].endswith('/answerCallbackQuery') and c[1].get('text','').startswith('작업 상태:')][-1][1]['text']
         self.assertIn('중단됨',progress)
-        self.assertIn('자동으로 다시 실행하지 않았습니다.',progress)
-        self.assertIn('전달 여부를 확인할 수 없습니다.',progress)
-        self.assertIn('자동으로 다시 보내지 않았습니다.',progress)
+        self.assertIn('자동으로 다시 실행하지 않았어요.',progress)
+        self.assertIn('전달 여부를 확인할 수 없어요.',progress)
+        self.assertIn('자동으로 다시 보내지 않았어요.',progress)
         self.assertNotIn('private recovery request',progress)
         self.assertNotIn(job['id'],progress)
 
@@ -1262,6 +1341,51 @@ finally:
         self.service.ingest_update({'update_id':11,'message':{'from':{'id':42},'chat':{'id':42,'type':'private'},'text':'/start'}},generation)
         self.service.run_one()
         self.assertNotIn('/note',self.store.jobs()[0]['response'])
+
+    def test_voice_calibration_offer_survives_restart_without_reoffering(self):
+        from personal_agent.still_profile import welcome
+        generation=self.pair(language_code='ja-JP')
+        self.service.run_one();self.service.deliver_one()
+        first=self.store.jobs()[0]
+        self.assertEqual(first['response'],welcome('ja-JP')+'\n\n'+msg('still_profile.voice_offer','ja'))
+        self.assertEqual([body['text'] for url,body,_ in self.calls if url.endswith('/sendMessage')][-1],first['response'])
+        marker=self.store.config('voice_calibration')
+        self.assertEqual(marker['job_id'],first['id'])
+        self.assertIsInstance(marker['offered'],float)
+        # Ignoring the offer changes no voice. Later starts/help and re-pairing
+        # on a fresh service/store object cannot reset the installation marker.
+        self.assertEqual(self.store.memories(),[])
+        self.service=AgentService(QuickStore(self.temp.name),ModelAdapter(self.transport),self.transport)
+        for update,command in enumerate(('/start','/help'),11):
+            self.service.ingest_update({'update_id':update,'message':{'from':{'id':42},'chat':{'id':42,'type':'private'},'text':command}},generation)
+            self.service.run_one();self.service.deliver_one()
+            self.assertEqual(self.store.jobs()[0]['response'],welcome('ja-JP',commands=command=='/help'))
+        self.pair()
+        self.service.run_one()
+        self.assertNotIn(msg('still_profile.voice_offer','ja'),self.store.jobs()[0]['response'])
+        self.assertEqual(self.store.config('voice_calibration'),marker)
+        self.assertEqual(self.store.memories(),[])
+
+    def test_retrying_the_first_welcome_retains_its_voice_offer(self):
+        job=self.store.enqueue('/start','retry-first-welcome')
+        self.service.run_one()
+        response=self.store.job(job)['response']
+        marker=self.store.config('voice_calibration')
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='queued' WHERE id=?",(job,))
+        self.service.run_one()
+        self.assertEqual(self.store.job(job)['response'],response)
+        self.assertIn(msg('still_profile.voice_offer','en'),response)
+        self.assertEqual(self.store.config('voice_calibration'),marker)
+
+    def test_help_before_start_does_not_consume_the_voice_offer(self):
+        from personal_agent.still_profile import welcome
+        self.store.enqueue('/help','help-before-start')
+        self.service.run_one()
+        self.assertIsNone(self.store.config('voice_calibration'))
+        self.store.enqueue('/start','first-start')
+        self.service.run_one()
+        self.assertEqual(self.store.jobs()[0]['response'],welcome()+'\n\n'+msg('still_profile.voice_offer','en'))
 
     def test_help_response_lists_the_exact_commands(self):
         # #705: /help shows every exact command; /start (above) stays the plain welcome.
@@ -1630,7 +1754,7 @@ class GmailConnectorWiringTests(unittest.TestCase):
         self.assertTrue(service.run_one())
         job=self.store.job(job_id)
         self.assertEqual(job['status'],'failed')
-        self.assertIn('구성되어 있지 않습니다',job['error'])
+        self.assertIn('구성되어 있지 않아요',job['error'])
         self.assertIsNone(self.store.config(CONNECTOR_STATE_KEY,None))
 
     # -- the callback route -----------------------------------------------
@@ -1767,7 +1891,7 @@ class GmailConnectorWiringTests(unittest.TestCase):
         self.assertTrue(service.run_one())
         job=self.store.job(job_id)
         self.assertEqual(job['status'],'failed')
-        self.assertIn('구성되어 있지 않습니다',job['error'])
+        self.assertIn('구성되어 있지 않아요',job['error'])
         base=self.serve(service)
         for path in ('/oauth/gmail/callback?code=c&state=s','/google-gmail'):
             with self.assertRaises(HTTPError) as error:

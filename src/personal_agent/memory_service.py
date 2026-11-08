@@ -56,6 +56,7 @@ from .prompt_files import prompt
 #: fact - the model (or the owner in Settings) chooses the key; deterministic
 #: code validates only the key shape.
 PROFILE_PREFIX = 'profile.'
+VOICE_PREFERENCE_KEY = 'profile.preference.voice'
 #: ``profile.`` followed by one or more dot-separated, whitespace-free segments.
 _PROFILE_KEY = re.compile(r'profile\.[^\s.]+(?:\.[^\s.]+)*')
 #: Default byte-agnostic character budget for a prompt snapshot; one line per
@@ -297,9 +298,9 @@ class MemoryService:
         """A bounded, attributable snapshot of ``profile.*`` rows for a turn prompt.
 
         ``text`` is one line per row - ``key: value (saved YYYY-MM-DD)`` - in
-        key order, with current profile matches from an optional bounded literal
-        query first, never longer than ``limit_chars`` characters nor
-        ``limit_bytes`` UTF-8 bytes; a value longer than
+        key order, with the holding voice preference first, then current profile
+        matches from an optional bounded literal query, never longer than
+        ``limit_chars`` characters nor ``limit_bytes`` UTF-8 bytes; a value longer than
         ``line_chars`` is clipped with a marker rather than dropped.  Rows
         that did not fit are counted in ``omitted_count`` so the caller can
         say the snapshot is partial instead of pretending it is complete.
@@ -327,7 +328,8 @@ class MemoryService:
             raise MemoryServiceError('profile snapshot line size is invalid')
         if isinstance(limit_bytes, bool) or not isinstance(limit_bytes, int) or limit_bytes < 1:
             raise MemoryServiceError('profile snapshot byte size is invalid')
-        rows = self._profile_rows(owner_id, holding_on=self._today())
+        today = self._today()
+        rows = self._profile_rows(owner_id, holding_on=today)
         annotations = annotations if isinstance(annotations, dict) else {}
         found = set()
         if query is not None:
@@ -335,6 +337,10 @@ class MemoryService:
                        if self.is_profile_key(row.get('memory_key'))]
             found = {row['id'] for row in matched}
             rows = matched + [row for row in rows if row['id'] not in found]
+        # The candidate window is bounded too; an older voice fact must survive it.
+        voice = self.store.current_memory(VOICE_PREFERENCE_KEY, owner_id)
+        rows = ([voice] if voice and self.holds(voice, today) else []) + [
+            row for row in rows if row['memory_key'] != VOICE_PREFERENCE_KEY]
         lines, entries, used, used_bytes = [], [], 0, 0
         for row in rows:
             content = ' '.join(str(row.get('content') or '').split())

@@ -219,7 +219,7 @@ class PartialTurnTests(TerminalResultTestCase):
         self.assertEqual(job['status'], 'partial', job.get('error'))
         self.assertNotIn('처리가 끝났습니다', bubble)
         # #847: the answer first, then the one note; the old header is gone.
-        self.assertNotIn('일부 단계만 완료했습니다', bubble)
+        self.assertNotIn('일부 단계만 완료했어요', bubble)
         self.assertTrue(bubble.endswith('\n\n일부 단계는 끝내지 못했어요.'), bubble)
 
     def test_a_partial_turn_delivers_a_claim_of_an_action_that_did_not_run_after_the_truth(self):
@@ -377,7 +377,7 @@ class SurfaceConsistencyTests(TerminalResultTestCase):
         self.assertTrue(self.cards, 'the card was never updated')
         # Exact, not a substring: '일부 단계만 완료했습니다. 아래 결과를 확인하세요.'
         # would satisfy a loose assertion while re-making the claim.
-        self.assertEqual(self.cards[-1], '일부 단계만 완료했습니다. 아래 안내를 확인하세요.')
+        self.assertEqual(self.cards[-1], '일부 단계만 완료했어요. 아래 안내를 확인해 주세요.')
         # #847: the bubble is the answer, then the note.
         self.assertTrue(bubble.startswith(self.text), bubble)
 
@@ -411,7 +411,7 @@ class SurfaceConsistencyTests(TerminalResultTestCase):
         # mutate the expectation along with the code and pin nothing. The whole
         # bubble is compared because the header itself must not re-make the
         # web-record claim that the trailing line no longer makes.
-        self.assertEqual(text, '이 요청은 중단되었습니다. 자동으로 다시 실행하지 않았습니다.'
+        self.assertEqual(text, '이 요청은 중단되었어요. 자동으로 다시 실행하지 않았어요.'
                          '\n\n중단됨\n\nStill 웹에서 실행 기록과 다음 단계를 확인하세요.')
 
     def test_a_partial_turn_with_no_text_points_at_no_web_record_either(self):
@@ -424,7 +424,7 @@ class SurfaceConsistencyTests(TerminalResultTestCase):
         for response in ('', '   ', None):
             with self.subTest(response=response):
                 text = AgentService.telegram_result_text(response, '원인', 'partial')
-                self.assertEqual(text, '일부 단계만 완료했습니다.\n\n원인'
+                self.assertEqual(text, '일부 단계만 완료했어요.\n\n원인'
                                  '\n\nStill 웹에서 실행 기록과 다음 단계를 확인하세요.')
 
     def test_the_failure_bubble_offers_a_next_action_only_without_an_answer(self):
@@ -432,7 +432,7 @@ class SurfaceConsistencyTests(TerminalResultTestCase):
         for response in ('', None):
             with self.subTest(response=response):
                 text = AgentService.telegram_result_text(response, '원인', 'failed')
-                self.assertEqual(text, '이 요청은 완료하지 못했습니다.\n\n원인'
+                self.assertEqual(text, '이 요청은 완료하지 못했어요.\n\n원인'
                                  '\n\nStill 웹에서 실행 기록과 다음 단계를 확인하세요.')
         self.plan = [('calendar_query', {'start': '2026-09-24T00:00:00+09:00',
                                                     'end': '2026-09-25T00:00:00+09:00',
@@ -497,9 +497,9 @@ class UnsupportedTextNeverTerminalTests(TerminalResultTestCase):
                     AgentService.telegram_result_text(self.CLAIM, 'x', status), self.CLAIM)
 
     def test_an_empty_response_still_reports_the_failure(self):
-        self.assertIn('완료하지 못했습니다',
+        self.assertIn('완료하지 못했어요',
                       AgentService.telegram_result_text('', 'cause', 'failed'))
-        self.assertIn('완료하지 못했습니다',
+        self.assertIn('완료하지 못했어요',
                       AgentService.telegram_result_text('', 'cause', None))
 
 

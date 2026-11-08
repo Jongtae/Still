@@ -40,6 +40,7 @@ import re
 import socket
 import ssl
 import time
+import threading
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -864,7 +865,7 @@ def _work_mode_guarded(store, transport, resolver=None, pins=None):
 
     def send(method, url, headers, body, timeout):
         refuse_in_work_mode(store, url)
-        addresses = pins.pop(url, None) or intranet_addresses(store, url, resolver)
+        addresses = (pins() if callable(pins) else pins).pop(url, None) or intranet_addresses(store, url, resolver)
         if addresses is not None and transport is http_request:
             return pinned_http_request(method, url, headers, body, timeout, addresses)
         return transport(method, url, headers, body, timeout)
@@ -881,11 +882,17 @@ class ApiRequests:
         #: #209: resolves a declared intranet host before its request (a test seam).
         self.resolver = resolver or _bounded_system_resolver
         #: #209: ``{url: addresses}`` a call checked before handing off, for the transport to connect to.
-        self._pins = {}
-        self.transport = _work_mode_guarded(store, transport or http_request, self.resolver, self._pins)
+        self._local = threading.local()
+        self.transport = _work_mode_guarded(store, transport or http_request, self.resolver, lambda: self._pins)
         self.clock, self.sleep = clock, sleep
         #: CONN-API: ``() -> {name: slot}`` of Still-held connections (``connection_slots.build``).
         self.connections = connections
+
+    @property
+    def _pins(self):
+        if not hasattr(self._local, 'pins'):
+            self._local.pins = {}
+        return self._local.pins
 
     def slots(self):
         """Owner-registered slots, plus Still-held connections; an owner slot of the same name wins."""

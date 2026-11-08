@@ -26,7 +26,7 @@ from test_no_scenario_code import scenario_tokens
 from test_preparations import CHAT, GENERATION, _Case, call
 
 #: What the owner is told when the offered change was applied (the settings path's own words).
-APPLIED = '바꿨습니다'
+APPLIED = '바꿨어요'
 #: The offered change, as its shown text names it.
 OFFERED_EFFECT = '현재 맥락 사용'
 
@@ -85,6 +85,9 @@ class OwnerActCase(_Case):
         self.service.deliver_one()
         self.assertTrue(self.service.deliver_notification())
         with self.store.db() as db:
+            # #719: delivery and owner messages use the same fixture clock.
+            db.execute("UPDATE telegram_notifications SET sent_at=? WHERE job_id=? "
+                       "AND kind='settings_change_proposed'", (self.now, work))
             return db.execute("SELECT message_id FROM telegram_notifications WHERE job_id=? "
                               "AND kind='settings_change_proposed'", (work,)).fetchone()[0]
 

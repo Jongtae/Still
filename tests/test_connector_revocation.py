@@ -197,7 +197,7 @@ class FormerTelegramOwnerTests(RevocationTestCase):
         self.unpair()
         receipt = self.disconnect()
         self.assertEqual(receipt['local_access'], 'incomplete')
-        self.assertIn('모두 해제하지 못했습니다', receipt['message'])
+        self.assertIn('모두 해제하지 못했어요', receipt['message'])
         audit = self.store.config(revocation.AUDIT_KEY, [])
         self.assertEqual(audit[-1]['local_access'], 'incomplete')
         self.assertTrue(self.gmail.credential_current('unrecorded-owner'))
@@ -212,7 +212,7 @@ class UnreachableGoogleTests(RevocationTestCase):
         self.assertEqual(receipt['provider_revocation'], 'unconfirmed')
         self.assertEqual(receipt['provider_request'], 'unknown')
         self.assertTrue(receipt['retry_available'])
-        self.assertIn('확인되지 않았습니다', receipt['message'])
+        self.assertIn('확인되지 않았어요', receipt['message'])
         self.assertNotIn('Google에서도 권한 취소를 확인', receipt['message'])
         self.assertIs(self.gmail_state(), ConnectorState.DISCONNECTED)
         with self.assertRaises(GmailError):
@@ -224,7 +224,7 @@ class UnreachableGoogleTests(RevocationTestCase):
         self.assertEqual(retried['provider_revocation'], 'revoked')
         self.assertEqual(self.google.requests[-1]['body']['token'], ['fixture-refresh'])
         self.assertEqual(self.service.google_revocations()['pending_provider_revocations'], [])
-        with self.assertRaisesRegex(ValueError, '다시 취소를 요청할 항목이 없습니다'):
+        with self.assertRaisesRegex(ValueError, '다시 취소를 요청할 항목이 없어요'):
             self.service.retry_google_revocation({'connector_id': GMAIL_CONNECTOR_ID})
 
     def test_provider_rejection_is_failed_not_revoked(self):
@@ -324,15 +324,15 @@ class ConfirmationTests(RevocationTestCase):
         self.connect_gmail()
         expired = self.preview()['confirmation']
         self.clock[0] += revocation.CONFIRMATION_TTL_SECONDS + 1
-        with self.assertRaisesRegex(ValueError, '확인 시간이 지났습니다'):
+        with self.assertRaisesRegex(ValueError, '확인 시간이 지났어요'):
             self.confirm(expired)
         changed = self.preview()['confirmation']
         self.gmail.mark_reauthentication_required(TOKEN_OWNER)
-        with self.assertRaisesRegex(ValueError, '연결 상태가 바뀌었습니다'):
+        with self.assertRaisesRegex(ValueError, '연결 상태가 바뀌었어요'):
             self.confirm(changed)
-        with self.assertRaisesRegex(ValueError, '올바르지 않습니다'):
+        with self.assertRaisesRegex(ValueError, '올바르지 않아요'):
             self.confirm('forged')
-        with self.assertRaisesRegex(ValueError, '찾지 못했습니다'):
+        with self.assertRaisesRegex(ValueError, '찾지 못했어요'):
             self.service.google_disconnect_preview({'connector_id': 'google-unknown'}, SESSION)
 
 

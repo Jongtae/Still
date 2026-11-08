@@ -825,7 +825,7 @@ class OwnClientSettingsTest(unittest.TestCase):
         service = configured_service(self.store, self.env)
         with self.assertRaises(ValueError) as caught:
             service.remove_google_client()
-        self.assertIn('저장돼 있지 않습니다', str(caught.exception))
+        self.assertIn('저장돼 있지 않아요', str(caught.exception))
         path = self.root / 'client.json'
         path.write_text(self.CLIENT)
         pinned = configured_service(self.store, {**self.env, 'AGENTOS_GOOGLE_CLIENT_FILE': str(path)})
@@ -862,7 +862,7 @@ class OwnClientSettingsTest(unittest.TestCase):
             self.assertEqual((result['configured'], result['saved']), (False, False))
             with self.store.db() as db:
                 notices = [row['content'] for row in db.execute("SELECT content FROM messages WHERE role='assistant'")]
-            self.assertIn('설정 화면에서 자체 Google client을(를) 지웠습니다.', notices[-1])
+            self.assertIn('설정 화면에서 자체 Google client을(를) 지웠어요.', notices[-1])
         finally:
             server.shutdown()
             thread.join()

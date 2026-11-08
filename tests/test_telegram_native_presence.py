@@ -636,13 +636,13 @@ class FailedTurnTests(NativePresenceTestCase):
         self.assertEqual(self.store.turn_provenance(job['id'])['usage_limit_recovery_selected'],'codex')
         self.assertEqual(len(self.store.jobs()),1,'route selection does not replay the failed Work')
         with mock.patch.object(self.service,'check_engine_login',return_value={'state':'signed-in'}):
-            with self.assertRaisesRegex(ValueError,'이미 처리되었거나 더 이상 유효하지 않습니다'):
+            with self.assertRaisesRegex(ValueError,'이미 처리되었거나 더 이상 유효하지 않아요'):
                 self.service.connect_subscription_engine(body)
         self.store.put('subscription_engine',{'id':'claude-code'})
         self.store.put_turn_provenance(job['id'],{**self.store.turn_provenance(job['id']),
                                                    'usage_limit_recovery_selected':None})
         stale={**body,'engine':'claude-code'}
-        with self.assertRaisesRegex(ValueError,'선택할 수 있는 로그인된 AI 연결이 아니거나 현재 선택이 바뀌었습니다'):
+        with self.assertRaisesRegex(ValueError,'선택할 수 있는 로그인된 AI 연결이 아니거나 현재 선택이 바뀌었어요'):
             self.service.connect_subscription_engine(stale)
 
     def test_usage_limit_without_an_alternate_points_to_ai_settings(self):
@@ -660,7 +660,7 @@ class FailedTurnTests(NativePresenceTestCase):
         self.assertNotIn('usage_limit_recovery_selected',self.store.turn_provenance(job['id']))
         answer=[body for method,body in self.calls if method=='answerCallbackQuery'][-1]
         self.assertTrue(answer['show_alert'])
-        self.assertIn('로그인 상태를 확인하지 못해 전환하지 않았습니다',answer['text'])
+        self.assertIn('로그인 상태를 확인하지 못해 전환하지 않았어요',answer['text'])
 
     def test_retry_control_is_owner_bound_exact_message_and_idempotent(self):
         job, source = self.failed_turn()
@@ -717,7 +717,7 @@ class FailedTurnTests(NativePresenceTestCase):
         [continuity] = [e for e in self.store.task_events(typed) if e['tool'] == 'conversation_continuity']
         self.assertEqual(continuity['trace']['relation'], 'retry-refused-ran-current')
         self.assertFalse(continuity['trace']['executed'])
-        self.assertIn('이미 한 번 다시 시도했습니다', continuity['trace']['reason'])
+        self.assertIn('이미 한 번 다시 시도했어요', continuity['trace']['reason'])
         # The tapped retry itself still runs once.
         self.model_error = None
         self.service.run_one()
@@ -735,7 +735,7 @@ class FailedTurnTests(NativePresenceTestCase):
         self.tap(f"p7r:{job['id']}", reply_id, callback_id='late')
         self.assertEqual(len(self.store.jobs()), count)
         answer = [body for method, body in self.calls if method == 'answerCallbackQuery'][-1]
-        self.assertIn('이미 한 번 다시 시도했습니다', answer['text'])
+        self.assertIn('이미 한 번 다시 시도했어요', answer['text'])
 
     def test_disabled_button_rejection_falls_back_to_removing_the_used_control(self):
         job, _ = self.failed_turn()
@@ -913,7 +913,7 @@ class RestartRecoveryTests(NativePresenceTestCase):
         restarted.deliver_one()
         replies = self.sends()
         self.assertEqual(len(replies), 2)
-        expected='이 요청은 중단되었습니다. 자동으로 다시 실행하지 않았습니다.\n\n'
+        expected='이 요청은 중단되었어요. 자동으로 다시 실행하지 않았어요.\n\n'
         expected+='실행 중 재시작되었습니다. 자동으로 재호출하지 않습니다.\n\n'
         expected+='Still 웹에서 실행 기록과 다음 단계를 확인하세요.'
         self.assertEqual({reply['reply_parameters']['message_id'] for reply in replies}, {source,deleting_source})
@@ -1663,7 +1663,7 @@ class TelegramErrorEnvelopeTests(unittest.TestCase):
         stub, _ = self.stub(self.response(200, b'{"ok": true, "result": "' + b'x' * 2_000_001 + b'"}'))
         with stub, self.assertRaises(ProviderError) as caught:
             telegram_request_json('https://api.telegram.org/botX/getUpdates', {})
-        self.assertIn('너무 큽니다', str(caught.exception))
+        self.assertIn('너무 커요', str(caught.exception))
 
     def test_the_http_status_not_the_body_error_code_classifies_a_refusal(self):
         """#594 item 3: a body claiming 400 on another 4xx status is not an entity-parse refusal."""

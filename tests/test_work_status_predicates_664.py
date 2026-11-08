@@ -81,8 +81,9 @@ def test_exact_legacy_membership(status, expected):
 
 
 def test_all_constants_and_predicates_are_pinned():
-    assert {name for name, value in vars(ws).items() if isinstance(value, frozenset)} == {name for name, _ in QUESTIONS}
-    assert {name for name, value in vars(ws).items() if callable(value) and value.__module__ == ws.__name__ and name != "sql_in"} == {name for _, name in QUESTIONS}
+    # #632: stored-fact vocabularies and helpers are pinned in test_work_facts_632.
+    assert {name for name, value in vars(ws).items() if isinstance(value, frozenset)} == {name for name, _ in QUESTIONS} | {"GOAL_OUTCOMES", "EFFECT_STATES"}
+    assert {name for name, value in vars(ws).items() if callable(value) and value.__module__ == ws.__name__ and name not in {"sql_in", "goal_outcome_of", "effect_state_of", "facts_recorded", "goal_reached", "effect_floor_clean", "request_met", "derive_status"}} == {name for _, name in QUESTIONS}
     for column, (name, _) in enumerate(QUESTIONS):
         assert getattr(ws, name) == frozenset(status for status, row in EXPECTED if row[column] == "1")
 

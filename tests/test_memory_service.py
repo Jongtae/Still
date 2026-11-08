@@ -916,6 +916,40 @@ class ProfileFactTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.store.memories("owner-a", key_prefix="")
 
+    def test_voice_precedes_unrelated_matches_in_a_full_snapshot(self):
+        from personal_agent.memory_service import VOICE_PREFERENCE_KEY
+        for i in range(80):
+            self.service.remember_profile('owner-a', 'w', f'profile.fact.{i:03}', 'unrelated ' + 'x' * 150)
+        voice = self.service.remember_profile('owner-a', 'w', VOICE_PREFERENCE_KEY, '반말로 해줘')
+        snapshot = self.service.profile_snapshot('owner-a', query='unrelated', limit_chars=600, limit_bytes=600)
+        self.assertTrue(snapshot['text'].startswith(VOICE_PREFERENCE_KEY + ': 반말로 해줘'))
+        self.assertEqual(snapshot['entries'][0]['id'], voice['id'])
+        self.assertGreater(snapshot['omitted_count'], 0)
+        self.assertEqual(snapshot['omitted_count'], 81 - len(snapshot['entries']))
+        self.assertLessEqual(len(snapshot['text'].encode()), 600)
+        self.assertLessEqual(len(snapshot['text']), 600)
+
+    def test_voice_older_than_the_profile_candidate_window_is_still_first(self):
+        from unittest import mock
+        from personal_agent.memory_service import VOICE_PREFERENCE_KEY
+        voice = self.service.remember_profile('owner-a', 'w', VOICE_PREFERENCE_KEY, '반말로 해줘')
+        for i in range(102):
+            self.service.remember_profile('owner-a', 'w', f'profile.fact.{i:03}', 'unrelated')
+        with mock.patch('personal_agent.memory_service._PROFILE_ROWS_CAP', 100):
+            snapshot = self.service.profile_snapshot('owner-a', query='unrelated')
+        self.assertTrue(snapshot['text'].startswith(VOICE_PREFERENCE_KEY + ': 반말로 해줘'))
+        self.assertEqual(snapshot['entries'][0]['id'], voice['id'])
+        self.assertEqual(sum(e['memory_key'] == VOICE_PREFERENCE_KEY for e in snapshot['entries']), 1)
+
+    def test_without_a_holding_voice_query_matches_still_precede_key_order(self):
+        from personal_agent.memory_service import VOICE_PREFERENCE_KEY
+        self.service.remember_profile('owner-a', 'w', 'profile.a', 'first')
+        self.service.remember_profile('owner-a', 'w', 'profile.z', 'matching')
+        self.store.save_memory(VOICE_PREFERENCE_KEY, 'expired voice', owner_id='owner-a', valid_until='1969-12-31')
+        snapshot = self.service.profile_snapshot('owner-a', query='matching')
+        self.assertEqual([e['memory_key'] for e in snapshot['entries']], ['profile.z', 'profile.a'])
+        self.assertEqual(snapshot['omitted_count'], 0)
+
     def test_snapshot_is_ordered_bounded_and_attributable(self):
         rows = {
             "profile.allergy.peanut": "땅콩 알러지",

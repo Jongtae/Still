@@ -589,7 +589,7 @@ class OwnerConfirmedSettings(_Store):
         applied = self.confirm(draft)
         self.assertIn('internal-comms', applied['response'])
         self.assertIn('스킬 사용도 켰어요', applied['response'])  # #963: adding a skill switches skills on
-        self.assertIn('함께 켭니다', draft['summary'])
+        self.assertIn('함께 켜요', draft['summary'])
         self.assertEqual(self.service.skill_library().installed()[0]['source']['revision'], COMMIT)
         with self.assertRaises(Exception):
             self.settings.propose('owner', 'web', 'skills', 'add', ADDRESS)
