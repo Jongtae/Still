@@ -152,6 +152,7 @@ The existing local implementation uses named modules rather than a new framework
 | `orchestrator` and `settings_orchestrator` | Typed work planning/evaluation and bound setting drafts on existing state. |
 | `google_connections.GoogleConnections` | Google OAuth connection and saved-client lifecycle, revocation, status rows and Drive Picker helpers over the service's existing state, with forwarding service entry points. |
 | `conversation_handoff` and `conversation_surface` | Contextual continuation and the shared owner pairing, ingestion, delivery and presence interface. |
+| `telegram_delivery.TelegramDelivery` via `AgentService.telegram_delivery` | Telegram connection lifecycle, callback authorization and task-card/result helpers, receive-failure logging, and delivery coordination across the existing surfaces, with service forwarding entry points and no additional state owner. |
 | `telegram_surface.TelegramSurface` | Telegram-specific ingestion, callbacks and delivery, with forwarding service entry points; it does not own a second store. |
 | `conversation_projection` and `telegram_presence` | Truth-qualified owner-facing output and best-effort transient signals. |
 | `telegram_store.TelegramStore` via `QuickStore.telegram` | Telegram tables in the owner's existing SQLite database, preserving caller transaction participation and recovery boundaries. |
