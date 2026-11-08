@@ -19,7 +19,7 @@ from agentos_eval import cli, judgments as j
 s = j.load_still(ROOT / 'src')
 d = s.decision
 from personal_agent.providers import ModelAdapter, ProviderError
-from test_decision_routes import ServiceFixture, oracle, parse_prompt, schema_answer
+from test_decision_routes import ServiceFixture, careless, oracle, parse_prompt, schema_answer
 
 
 class Clock:
@@ -157,7 +157,7 @@ class JudgmentTests(unittest.TestCase):
         rows, _, _ = self.measure(selected, mode='careless')
         selected_rows = rows[:7]
         self.assertEqual(j.summarize(selected_rows)['total']['errors'],
-                         {'guessed': 1, 'false_positive': 1, 'unsafe_misroute': 3, 'false_completion': 2})
+                         {'wrong_choice': 1, 'false_positive': 1, 'unsafe_misroute': 3, 'false_completion': 2})
         # A confident no on a positive binary is a false negative, not abstention.
         rows, _, _ = self.measure(subset(self.cases, 'steer-correction-en'), scripted=[{'answer': False, 'gap': ''}])
         self.assertEqual(rows[0]['error'], 'false_negative')
@@ -181,6 +181,30 @@ class JudgmentTests(unittest.TestCase):
         unavailable = d.RoutedDecisionEngine(lambda: d.UnavailableDecisionEngine())
         rows = j.run(selected, s.conversation_handoff.ConversationJudgments(unavailable), unavailable)
         self.assertFalse(any(r['semantic_correct'] for r in rows))
+
+    def test_account_outcome_can_need_preparation_without_relaxing_routing(self):
+        selected = subset(self.cases, 'plan-password', 'plan-forwarding', 'plan-subscription')
+        for case in selected['cases']:
+            with self.subTest(case=case['id']):
+                for technical in (False, True):
+                    reply = planned(case['expect'], model='model-advanced')
+                    reply['technical_work'] = technical
+                    rows, _, _ = self.measure(subset(selected, case['id']), scripted=[reply])
+                    self.assertTrue(rows[0]['semantic_correct'])
+                reply = planned(case['expect'], model='model-advanced')
+                reply['account_change'] = False
+                rows, _, _ = self.measure(subset(selected, case['id']), scripted=[reply])
+                self.assertFalse(rows[0]['semantic_correct'])
+                reply = planned(case['expect'])
+                rows, _, _ = self.measure(subset(selected, case['id']), scripted=[reply])
+                self.assertTrue(rows[0]['routing_correct'])
+                self.assertEqual(rows[0]['observed']['tier'], 'higher')
+                # The existing planner promotes a declared account change.
+                # Omitting that flag must still fail even if it evades promotion.
+                reply['account_change'] = False
+                rows, _, _ = self.measure(subset(selected, case['id']), scripted=[reply])
+                self.assertFalse(rows[0]['routing_correct'])
+                self.assertEqual(rows[0]['error'], 'unsafe_misroute')
 
     def test_unavailable_route_is_not_run_and_accuracy_is_unmeasured(self):
         routed = d.RoutedDecisionEngine(lambda: d.UnavailableDecisionEngine())
@@ -353,9 +377,15 @@ class JudgmentTests(unittest.TestCase):
                 service.decision_routes = SimpleNamespace(status=lambda: {'active': {'transport': 'fixture'}})
                 created.append((data, transport))
                 return service
-            with patch.dict(os.environ, {'AGENTOS_EVAL_HOME': str(root / 'home')}), patch.object(j, 'service_factory', factory), redirect_stdout(io.StringIO()) as out:
-                cli.main(['judgments', 'run', '--seed', str(seed), '--requalify', '--roles', 'goal_reached', '--out', str(root / 'reports')])
+            with patch.dict(os.environ, {'AGENTOS_EVAL_HOME': str(root / 'home')}), patch.object(j, 'service_factory', factory), \
+                    patch.object(j, 'pin_model') as pin, redirect_stdout(io.StringIO()) as out:
+                cli.main(['judgments', 'run', '--seed', str(seed), '--model', 'fixture-model', '--requalify',
+                          '--roles', 'goal_reached', '--out', str(root / 'reports')])
+            pin.assert_called_once()
+            self.assertEqual(pin.call_args.args[1], 'fixture-model')
             saved = json.loads(next((root / 'reports').glob('*.json')).read_text())
+            self.assertEqual(saved['pinned_model'], 'fixture-model')
+            self.assertIn('Pinned model: fixture-model', out.getvalue())
             self.assertEqual(saved['evidence_class'], 'fixture')
             self.assertTrue(all(r['semantic_correct'] for r in saved['rows']))
             self.assertEqual(saved['summary']['total']['calls'], 16)
@@ -383,6 +413,66 @@ class RequalificationTests(ServiceFixture):
 
     def model_calls(self):
         return sum('--output-schema' in c['argv'] for c in self.runner.calls)
+
+    def test_pin_qualifies_only_the_requested_model_despite_a_follow_route(self):
+        service = self.stale_service()
+        route = service.decision_routes.active()
+        route.update(mode='follow', main='codex', model_policy='fastest_qualified',
+                     declared_candidates=['gpt-5.6-terra', 'gpt-5.6-luna'])
+        self.store.put('decision_route', route)
+        service.decision_routes.queue_qualification('codex')
+        start = len(self.runner.calls)
+        j.pin_model(service, 'gpt-5.6-luna')
+        pinned = service.decision_routes.active()
+        self.assertEqual(pinned['model_policy'], 'explicit')
+        self.assertNotIn('mode', pinned)
+        self.assertNotIn('qualification', pinned)
+        self.assertFalse(j.effective_runtime(service)['active']['available'])
+        result = j.requalify_route(service, j.CallCap(20))
+        self.assertEqual(result['state'], 'passed')
+        self.assertTrue(result['available'])
+        active = service.decision_routes.active()
+        self.assertEqual(active['qualification']['model'], 'gpt-5.6-luna')
+        self.assertEqual(active['qualification']['score'], 1)
+        cases = subset(j.load_cases(), 'projection-failed')
+        rows = j.run(cases, service.decision_judge, service.decision_engine, roles=['status_projection'])
+        self.assertTrue(all(r['semantic_correct'] for r in rows))
+        calls = [c['argv'] for c in self.runner.calls[start:] if '--output-schema' in c['argv']]
+        self.assertEqual(len(calls), len(s.decision_qualification.CASES) + 1)
+        self.assertEqual({argv[argv.index('--model') + 1] for argv in calls}, {'gpt-5.6-luna'})
+
+    def test_a_failed_pin_never_measures_or_falls_back_to_a_good_model(self):
+        service = self.stale_service()
+        self.runner.judges['gpt-5.6-luna'] = careless
+        start = len(self.runner.calls)
+        j.pin_model(service, 'gpt-5.6-luna')
+        result = j.requalify_route(service, j.CallCap(20))
+        self.assertEqual(result['state'], 'failed')
+        self.assertFalse(result['available'])
+        runtime = j.effective_runtime(service)
+        self.assertEqual(runtime['active']['requested_model'], 'gpt-5.6-luna')
+        cases = subset(j.load_cases(), 'projection-failed')
+        rows = j.run(cases, service.decision_judge, service.decision_engine, roles=['status_projection'])
+        self.assertTrue(all(r['outcome'] == 'not_run' and not r['calls'] for r in rows))
+        self.assertIsNone(j.summarize(rows)['total']['semantic_accuracy'])
+        report = j.report(rows, {}, runtime)
+        report.update(pinned_model='gpt-5.6-luna', requalification=result)
+        self.assertIn('Requalification: failed.', j.markdown(report))
+        self.assertIn('Route unavailable.', j.markdown(report))
+        calls = [c['argv'] for c in self.runner.calls[start:] if '--output-schema' in c['argv']]
+        self.assertEqual({argv[argv.index('--model') + 1] for argv in calls}, {'gpt-5.6-luna'})
+        self.assertNotIn('qualification', service.decision_routes.active())
+
+    def test_pin_without_requalification_cannot_reuse_copied_proof(self):
+        service = self.stale_service()
+        start = self.model_calls()
+        j.pin_model(service, 'gpt-5.6-terra')
+        cases = subset(j.load_cases(), 'projection-failed')
+        rows = j.run(cases, service.decision_judge, service.decision_engine, roles=['status_projection'])
+        self.assertEqual(self.model_calls(), start)
+        self.assertTrue(all(r['outcome'] == 'not_run' for r in rows))
+        with self.assertRaises(j.CaseError):
+            j.pin_model(service, 'invalid model id')
 
     def test_shipped_update_job_requalifies_relocated_store_and_counts_calls(self):
         service = self.stale_service()

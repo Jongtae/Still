@@ -18,7 +18,7 @@ from types import SimpleNamespace
 from .paths import REPO, SRC, eval_home
 
 HARNESS_VERSION = 'judgment-harness/1'
-CASE_VERSION = 'judgment-validation/1'
+CASE_VERSION = 'judgment-validation/3'
 DEFAULT_CASES = REPO / 'evals/judgments/cases-v1.json'
 FLAGS = ('account_change', 'owner_situation', 'technical_work')
 MODEL_FIELDS = ('route', 'engine', 'provider', 'requested_model', 'observed_model', 'model_policy')
@@ -491,6 +491,10 @@ def report(rows, run_meta, runtime):
 def markdown(result):
     lines = [f"# Judgment validation — {result['evidence_class']}", '',
              f"Cases: {result['case_set_version']}; head: {result['git_head']}", '',
+             *([f"Pinned model: {result['pinned_model']} (explicit selection; no fallback).", '']
+               if result.get('pinned_model') else []),
+             *([f"Requalification: {result['requalification'].get('state') or 'not started'}.", '']
+               if result.get('requalification', {}).get('attempted') else []),
              ('Route unavailable. ' if result['runtime'].get('active', {}).get('available') is False else '') +
              f"Model calls: {result['summary']['total']['calls'] + result.get('requalification', {}).get('calls', 0)} "
              f"(requalification: {result.get('requalification', {}).get('calls', 0)}). " +
@@ -574,6 +578,29 @@ def service_factory(data):
 
 _production_service_factory = service_factory
 
+def pin_model(service, model):
+    """Pin only the sandbox's copied CLI route, invalidating copied proof.
+
+    Adopt the shipped explicit policy and update-job guard. Removing follow mode
+    prevents the update job from restoring its candidate-selection default.
+    Nothing here qualifies the model; only the shipped job can restore the
+    fingerprint after its suite and isolation checks pass.
+    """
+    from personal_agent.decision_adapters import valid_model_id
+    if not valid_model_id(model):
+        raise CaseError('Invalid pinned model id')
+    routes = service.decision_routes
+    route = routes.active()
+    if not route or route.get('transport') != still().decision.ROUTE_SUBSCRIPTION_CLI:
+        raise CaseError('--model requires a subscription CLI judgment route in the seed')
+    route = {k: v for k, v in route.items()
+             if k not in ('mode', 'main', 'declared_candidates', 'qualification')}
+    route.update(requested_model=model, model_policy='explicit', fingerprint='', activated_at=time.time())
+    routes.store.put('decision_route', route)
+    # Copied pending jobs must not run the seed's former candidate policy.
+    routes._put_jobs({})
+
+
 def requalify_route(service, cap):
     """Adapt #346's update job to a synchronous sandbox run with capped calls.
 
@@ -635,6 +662,9 @@ def live_run(args, factory=None):
             audit.append(dict(record))
 
         service.record_decision = capture
+        pinned_model = getattr(args, 'model', None)
+        if pinned_model is not None:
+            pin_model(service, pinned_model)
         qualification = (requalify_route(service, cap) if getattr(args, 'requalify', False)
                          else dict(attempted=False, calls=0))
         rows = run(cases, service.decision_judge, service.decision_engine, audit=audit, cap=cap,
@@ -645,6 +675,8 @@ def live_run(args, factory=None):
                     evidence_class=('live-route:' + runtime['active'].get('transport', 'unknown')
                                     if (factory or service_factory) is _production_service_factory else 'fixture'))
         result = report(rows, meta, runtime)
+        if pinned_model is not None:
+            result['pinned_model'] = pinned_model
         result['requalification'] = qualification
         result['call_budget'] = dict(max_calls=cap.max_calls, admitted=cap.used, refused=cap.refused)
         paths = write_report(result, args.out)
