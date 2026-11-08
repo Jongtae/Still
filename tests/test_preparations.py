@@ -2100,6 +2100,24 @@ class CrossWorkProposalTests(_Case):
         [asked] = [item[1] for item in self.judge.asked if item[1].purpose == 'explicit-preparation-request']
         self.assertEqual(asked.facts['owner_message'], typed['message'], 'the judgment reads the owner message, not the prompt')
 
+    def test_an_executed_retry_only_proposes_although_the_owner_typed_it(self):
+        """#717: "다시 해봐" replays the earlier request; the Work keeps owner_typed but is linked as a retry
+        after it was loaded, so the gate reads the stored relation.  A refused retry ran the new message
+        itself (stored as a reference) and still sets it up."""
+        self.judge = engine(preparation=False)
+        self.service.use_decision_engine(self.judge)
+        earlier = self.store.enqueue('매일 아침 일정 정리해 줘', 'web-earlier', owner_typed=True)
+        for index, (relation, state) in enumerate((('retry', prep.STATE_PROPOSED), ('reference', prep.STATE_SCHEDULED))):
+            with self.subTest(relation):
+                work = self.store.enqueue('다시 해봐', f'web-again-{relation}', owner_typed=True)
+                job = self.store.job(work)
+                with self.store.db() as db:
+                    db.execute('UPDATE jobs SET related_job_id=?,relation_kind=? WHERE id=?', (earlier, relation, work))
+                result = self.service.preparation_scheduler(job, '매일 아침 일정 정리해 줘')(
+                    {'kind': 'prepare', 'goal': f'아침 일정 정리 again {index}', 'due': self.due_iso(600), 'recurrence': 'daily'})
+                self.assertEqual(result['state'], state)
+                self.assertEqual(self.service.owner_typed_work(job), relation != 'retry')
+
     def test_a_too_long_goal_refusal_states_the_kinds_limit_and_one_retry(self):
         job = {'id': 'work-1', 'message': '알려줘'}
         scheduler = self.service.preparation_scheduler(job, job['message'])

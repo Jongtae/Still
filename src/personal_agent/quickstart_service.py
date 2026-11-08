@@ -911,11 +911,16 @@ class AgentService:
     def owner_typed_work(self, job):
         """Whether the owner's own typed message started ``job`` (#619, #717).
 
-        Not a scheduled run, a continuation, a retry or a replayed turn.
+        Not a scheduled run, a continuation, a retry or a replayed turn.  An executed
+        conversational retry keeps the owner's typed marker but replays the earlier request;
+        its stored relation is read now, since it is linked after the Work was loaded.
         """
-        return bool(job.get('owner_typed')==1 and not self.unattended_work(job)
-                    and continuation_request(job.get('request_key')) is None
-                    and isinstance(job.get('message'),str) and job['message'].strip())
+        if not (job.get('owner_typed')==1 and not self.unattended_work(job)
+                and continuation_request(job.get('request_key')) is None
+                and isinstance(job.get('message'),str) and job['message'].strip()):
+            return False
+        current=self.store.job(job['id']) if job.get('id') else None
+        return (current or job).get('relation_kind')!=FOLLOWUP_RETRY
 
     def owner_settings_request(self, job):
         """``summary -> bool``: does the owner's own typed message that started ``job`` ask for exactly this change (#619)?
