@@ -10,7 +10,7 @@ from urllib.parse import parse_qs, urlparse
 from personal_agent.quickstart_store import QuickStore
 
 # Retired by REUSE-R1c / #440: the drive.readonly design is superseded by the
-# drive.file + Picker handoff in drive_web_oauth.py, which ships.  The module
+# historical selected-file handoff. The module
 # is preserved outside the installed package and still exercised here, loaded
 # by path the same way the repository already tests other scripts/ modules.
 _LEGACY = Path(__file__).resolve().parents[1] / "scripts" / "legacy" / "drive-readonly" / "google_drive.py"
@@ -82,7 +82,7 @@ class DriveTests(unittest.TestCase):
     def test_pkce_challenge_is_a_real_s256_transform_and_scope_is_not_widened(self):
         """SEC-DRIVE-SCOPE-01 / #432 items 4 and 5.
 
-        ``_pkce_pair`` now uses oauthlib, like gmail.py and drive_web_oauth.py.
+        ``_pkce_pair`` now uses oauthlib, like gmail.py and calendar_oauth.py.
         Asserting the advertised method alone is not enough: oauthlib's
         ``create_code_challenge`` silently returns the verifier unchanged -- a
         plain challenge -- when the method argument is omitted, so a URL can

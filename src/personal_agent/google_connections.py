@@ -15,14 +15,12 @@ from .agent_runtime import MEMORY_OWNER
 from .calendar import CALENDAR_CONNECTOR_ID, CALENDAR_WRITE_CONNECTOR_ID
 from .calendar_oauth import GMAIL_FILTERS_GRANT, GMAIL_MODIFY_GRANT
 from .connector_contract import ConnectorContractError
-from .connector_revocation import (GoogleConnectionRevoker, RevocationError, drive_connection,
+from .connector_revocation import (GoogleConnectionRevoker, RevocationError,
                                    google_revoke_transport, registry_connection)
 from .conversation_handoff import ConnectorHandoff, ConversationHandoffError
-from .drive_web_oauth import DriveWebOAuthError
 from .gmail import GMAIL_FILTERS_CONNECTOR_ID, GMAIL_CONNECTOR_ID, GMAIL_MODIFY_CONNECTOR_ID, GmailError
 from .google_drive_read import DRIVE_CONNECTOR_ID
 from .messages import msg
-from .providers import ProviderError
 from .quickstart_service import GMAIL_PROVEN_CALLBACK_REASONS
 
 
@@ -32,26 +30,6 @@ class GoogleConnections:
     def __init__(self, service):
         self.service = service
 
-    def drive_connection_row(self):
-        """Google Drive as Settings sees it, from the Drive OAuth handoff.
-
-        Drive is not a `ConnectorRegistry` connector: its credential and
-        state live in `drive_web_oauth`, and a connection is started from a
-        paired Telegram request, so Settings reports the state and offers no
-        connect link it could not complete.  An install without the handoff
-        reports no Drive row at all.
-        """
-        service=self.service
-        if not service.drive_web_oauth:
-            return None
-        # effective_status checks a recorded `connected` against the stored
-        # credential's local expiry/scope; it records, refreshes and sends nothing.
-        raw=service.drive_web_oauth.effective_status().get('state','disconnected')
-        state={'connected':'connected','reauth-required':'reauth_required','scope-rejected':'reauth_required'}.get(raw,'disconnected')
-        return {'connector_id':'google-drive-read','label':'Google Drive','state':state,
-                'required_scopes':['https://www.googleapis.com/auth/drive.file'],'connect_path':'',
-                'connect_hint':msg('service.ask_for_a_google_drive_file'),
-                'detail_state':raw}
 
     def google_connection_rows(self):
         """Every Google connection row Settings shows, each from its own authority."""
@@ -67,9 +45,6 @@ class GoogleConnections:
                 elif current is None:
                     row={**row,'state':'unknown','detail_state':'connected-credential-unverified'}
             rows.append(row)
-        drive=service.drive_connection_row()
-        if drive:
-            rows.append(drive)
         # #1172: which connections run on the owner's own Google client.
         own={cid for cid,holder in ((GMAIL_CONNECTOR_ID,service.gmail),(CALENDAR_CONNECTOR_ID,service.calendar_oauth),
                                      (CALENDAR_WRITE_CONNECTOR_ID,service.calendar_oauth),(DRIVE_CONNECTOR_ID,service.drive_oauth),
@@ -158,8 +133,6 @@ class GoogleConnections:
         if service.drive_oauth:
             connections.append(registry_connection(DRIVE_CONNECTOR_ID,'Google Drive',service.drive_oauth,
                                                    service._connector_owner_candidates))
-        if service.drive_web_oauth:
-            connections.append(drive_connection('Google Drive',service.drive_web_oauth))
         transport=service.google_revoke_transport or google_revoke_transport()
         return GoogleConnectionRevoker(service.store,connections,transport,now=service.google_revocation_clock,
                                        on_disconnected=service._withdraw_disconnected_work)
@@ -174,7 +147,7 @@ class GoogleConnections:
         """
         service=self.service
         work_ids=list(parked or [])
-        if service.connector_handoff and connector_id!='google-drive-read':
+        if service.connector_handoff:
             work_ids+=service.connector_handoff.supersede(connector_id=connector_id)
         text=service.GOOGLE_DISCONNECTED_WORK_TEXT
         with service.store.db() as db:
@@ -618,143 +591,3 @@ class GoogleConnections:
             return {**result,'resume_refused':exc.reason}
         return {**result,'work_id':resumed['work_id'],'scheduled':resumed['scheduled'],
                 'resumed':resumed['resumed'],'resume_refusals':resumed['refused']}
-
-    def drive_read_prerequisite(self, job):
-        """Check the Drive connection for one ``drive-read`` Work; park it when missing.
-
-        Whether a turn needs Drive is the DecisionEngine's ``capability-need``
-        judgment (#672), not a word match at ingest.  A Telegram Work whose
-        Drive is not connected is parked as ``awaiting_drive`` and offered the
-        connection; ``select_drive_files`` resumes exactly that Work once.
-        Returns True when parked, None when the Work may read its selected
-        files now, and raises the same owner-facing reasons as before.
-        """
-        service=self.service
-        if not service.drive_web_oauth:
-            raise ValueError('Google Drive capability is not configured locally. Local Drive setup is required before connecting.')
-        telegram_owner=job.get('chat_id')
-        # #721: recorded connection state can outlive the access token.
-        if service.drive_web_oauth.effective_status()['state'] != 'connected':
-            if not isinstance(telegram_owner,int):
-                raise ValueError(msg('quickstart_service.drive_reconnect_required'))
-            with service.store.db() as db:
-                db.execute("UPDATE jobs SET status='awaiting_drive',response=NULL,error=NULL,delivery='none' WHERE id=?",(job['id'],))
-            try:
-                service.offer_drive_connection(telegram_owner, job['id'])
-            except (ValueError, ProviderError):
-                # The durable work item remains; no OAuth detail or
-                # token is exposed through Telegram or logs.
-                pass
-            return True
-        if not isinstance(telegram_owner,int):
-            raise ValueError(msg('quickstart_service.drive_telegram_only'))
-        return None
-
-    def offer_drive_connection(self, telegram_owner_id, pending_job_id=None):
-        service=self.service
-        if not service.drive_web_oauth:
-            return False
-        offer = service.drive_web_oauth.begin(telegram_owner_id, pending_job_id)
-        service.telegram.send_message(telegram_owner_id, offer['message'],
-                                   {'inline_keyboard': [[offer['button']]]})
-        return True
-
-    def publish_drive_connection_status(self, telegram_owner_id):
-        """Send only a redacted Drive lifecycle message to the paired owner."""
-        service=self.service
-        if not service.drive_web_oauth:
-            return False
-        service.telegram.send_message(telegram_owner_id, service.drive_web_oauth.telegram_status_message())
-        return True
-
-    def complete_drive_web_oauth(self, callback, telegram_owner_id, exchange):
-        """Owner-local callback seam; neither callback code nor tokens are retained here."""
-        service=self.service
-        if not service.drive_web_oauth:
-            raise ValueError('Google Drive web OAuth is not configured.')
-        try:
-            result = service.drive_web_oauth.complete(callback, telegram_owner_id, exchange)
-        except ValueError:
-            try:service.publish_drive_connection_status(telegram_owner_id)
-            except ProviderError:pass
-            raise
-        try:service.publish_drive_connection_status(telegram_owner_id)
-        except ProviderError:pass
-        return result
-
-    def select_drive_files(self, telegram_owner_id, files):
-        service=self.service
-        if not service.drive_web_oauth:
-            raise ValueError('Google Drive web OAuth is not configured.')
-        result = service.drive_web_oauth.select_files(telegram_owner_id, files)
-        job_id = service.drive_web_oauth.consume_pending_job(telegram_owner_id)
-        if job_id:
-            with service.store.db() as db:
-                db.execute("UPDATE jobs SET status='queued', error=NULL, delivery='none' WHERE id=? AND status='awaiting_drive'", (job_id,))
-        service.telegram.send_message(telegram_owner_id,
-                                   msg('service.the_selected_google_drive_files_are'))
-        return result
-
-    def select_drive_picker_files(self, grant, files):
-        """Accept one browser Picker result without treating the browser as a session.
-
-        The opaque grant identifies an already OAuth-connected paired owner;
-        it is consumed by the Drive capability before this method resumes the
-        exact pending Telegram job.  No file content is persisted here.
-        """
-        service=self.service
-        if not service.drive_web_oauth:
-            raise ValueError('Google Drive web OAuth is not configured.')
-        owner, result=service.drive_web_oauth.select_files_for_grant(grant, files)
-        job_id=service.drive_web_oauth.consume_pending_job(owner)
-        if job_id:
-            with service.store.db() as db:
-                db.execute("UPDATE jobs SET status='queued', error=NULL, delivery='none' WHERE id=? AND status='awaiting_drive'", (job_id,))
-        try:
-            service.telegram.send_message(owner,
-                                       msg('quickstart_service.drive_files_ready'))
-        except ProviderError:
-            # The capability state and queued job stay valid even when a
-            # transient Telegram notification cannot be delivered.
-            pass
-        return result
-
-    def selected_drive_files(self, telegram_owner_id):
-        """The owner's Picker-selected Drive files (id and name only), as ``selected_drive_context`` reads them."""
-        service=self.service
-        try:
-            selected=service.drive_web_oauth.store.config('drive_web_oauth_selected_files', {})
-        except Exception:
-            return []
-        files=selected.get('files', []) if isinstance(selected,dict) and selected.get('owner')==telegram_owner_id else []
-        return [item for item in files[:20] if isinstance(item,dict)]
-
-    def selected_drive_context(self, telegram_owner_id):
-        """Read only Picker-authorized files into this one in-memory turn."""
-        service=self.service
-        if not service.drive_web_oauth or not callable(service.drive_read):
-            raise ValueError('Google Drive capability is not configured locally. Ask the owner to complete local Drive setup.')
-        selected=service.drive_web_oauth.store.config('drive_web_oauth_selected_files', {})
-        files=selected.get('files', []) if selected.get('owner')==telegram_owner_id else []
-        if not files:
-            raise ValueError(msg('quickstart_service.select_drive_files'))
-        excerpts=[]
-        try:
-            for item in files[:20]:
-                raw=service.drive_web_oauth.read_selected(telegram_owner_id,item['id'],service.drive_read)
-                if not isinstance(raw,(bytes,bytearray)):
-                    raise ValueError(msg('quickstart_service.drive_read_failed'))
-                text=bytes(raw).decode('utf-8',errors='replace').strip()
-                excerpts.append(f"[선택 파일: {item.get('name') or item['id']}]\n{text[:24000]}")
-        except DriveWebOAuthError as exc:
-            # #721: expiry can occur after the prerequisite; preserve selection errors.
-            if service.drive_web_oauth.effective_status()['state'] != 'connected':
-                raise ValueError(msg('quickstart_service.drive_read_reconnect')) from exc
-            raise
-        except OSError as exc:
-            if getattr(exc,'code',None) in (401,403):
-                service.drive_web_oauth.mark_reauthentication_required()
-            raise ValueError(msg('quickstart_service.drive_read_reconnect')) from exc
-        # The assembled content is returned to the caller only.  It is never
-        # written to jobs, messages, evidence, status, or tool-event records.
-        return '\n\n'.join(excerpts)[:60000]

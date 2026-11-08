@@ -41,7 +41,7 @@ from personal_agent.decision import (OUTCOME_DECIDED, BinaryDecision, FixtureDec
                                      fixture_confidence)
 from personal_agent.gmail import GMAIL_CONNECTOR_ID, GMAIL_READONLY_SCOPE
 from personal_agent.providers import ModelAdapter
-from personal_agent.quickstart import (configured_service, drive_config_main, gmail_config_main,
+from personal_agent.quickstart import (configured_service, gmail_config_main,
                                        make_handler)
 from personal_agent.quickstart_service import GMAIL_CONNECT_PATH
 from personal_agent.quickstart_store import QuickStore
@@ -128,9 +128,6 @@ class GmailConfigCommandTest(unittest.TestCase):
         self.assertEqual(sorted(written), ['client_id', 'client_secret', 'encryption_key'])
         self.assertEqual(written['client_id'], 'web-client-id')
         self.assertEqual(written['client_secret'], self.CLIENT_SECRET)
-        # No Picker key: Gmail has no browser-visible key to leak, and the
-        # loader would reject an extra required value it cannot find.
-        self.assertNotIn('picker_api_key', written)
         self.assertEqual(stat.S_IMODE(os.stat(self.secret_file).st_mode), 0o600)
         self.assertEqual(stat.S_IMODE(os.stat(os.path.dirname(self.secret_file)).st_mode), 0o700)
 
@@ -206,59 +203,6 @@ class GmailConfigCommandTest(unittest.TestCase):
         with self.assertRaises(SystemExit):
             self.run_config(['--oauth-client-json', installed, '--secret-file', self.secret_file])
         self.assertFalse(os.path.exists(self.secret_file))
-
-
-class DriveConfigUnchangedTest(unittest.TestCase):
-    """The shared writer must not have weakened or reordered ``drive-config``.
-
-    ``gmail-config`` reuses Drive's path check, client reader and 0600
-    exclusive create.  Sharing them is only safe if Drive still behaves
-    exactly as it did, including *when* it refuses - a refactor that moved the
-    absolute-path check after the Picker prompt would prompt the owner for a
-    restricted API key before rejecting the path they typed.
-    """
-
-    def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
-        self.external = tempfile.TemporaryDirectory(); self.addCleanup(self.external.cleanup)
-        self.store = QuickStore(self.temp.name)
-
-    def test_drive_config_still_writes_the_picker_key_and_loads_back(self):
-        source = write_client_json(self.external.name, client_id='drive-client',
-                                   client_secret='drive-secret')
-        target = os.path.join(self.external.name, 'drive.json')
-        with patch('sys.stdin', io.StringIO('restricted-picker-key\n')), patch('sys.stdout', io.StringIO()):
-            drive_config_main(['--oauth-client-json', source, '--secret-file', target,
-                               '--picker-key-stdin'])
-        written = json.loads(Path(target).read_text())
-        self.assertEqual(sorted(written),
-                         ['client_id', 'client_secret', 'encryption_key', 'picker_api_key'])
-        self.assertEqual(written['picker_api_key'], 'restricted-picker-key')
-        self.assertEqual(stat.S_IMODE(os.stat(target).st_mode), 0o600)
-        service = configured_service(self.store, {'AGENTOS_DRIVE_LOCAL_ONLY': '1',
-                                                  'AGENTOS_DRIVE_SECRET_FILE': target})
-        self.assertIsNotNone(service.drive_web_oauth)
-        self.assertEqual(service.drive_picker_config['developer_key'], 'restricted-picker-key')
-
-    def test_drive_config_refuses_a_relative_path_before_reading_the_picker_key(self):
-        source = write_client_json(self.external.name)
-        stdin = io.StringIO('restricted-picker-key\n')
-        with patch('sys.stdin', stdin), patch('sys.stdout', io.StringIO()):
-            with self.assertRaises(SystemExit):
-                drive_config_main(['--oauth-client-json', source, '--secret-file', 'drive.json',
-                                   '--picker-key-stdin'])
-        # Nothing was read from standard input, so the owner was never asked
-        # for a restricted key that was about to be thrown away.
-        self.assertEqual(stdin.tell(), 0)
-
-    def test_drive_config_still_requires_a_picker_key(self):
-        source = write_client_json(self.external.name)
-        target = os.path.join(self.external.name, 'drive.json')
-        with patch('sys.stdin', io.StringIO('   \n')), patch('sys.stdout', io.StringIO()):
-            with self.assertRaises(SystemExit):
-                drive_config_main(['--oauth-client-json', source, '--secret-file', target,
-                                   '--picker-key-stdin'])
-        self.assertFalse(os.path.exists(target))
 
 
 class GmailRouteReachabilityTest(unittest.TestCase):

@@ -39,7 +39,7 @@ class FakeServiceAction:
 
 
 def start_args(**overrides):
-    values = {'host': '127.0.0.1', 'port': 8787, 'drive_handoff_port': None, 'public_tunnel_host': [],
+    values = {'host': '127.0.0.1', 'port': 8787, 'public_tunnel_host': [],
               'data': '/owner/data'}
     return SimpleNamespace(**{**values, **overrides})
 
@@ -102,7 +102,7 @@ class LoginServiceOfferTest(unittest.TestCase):
                 self.assertEqual(self.action.calls, [])
 
     def test_a_start_the_service_would_not_reproduce_never_asks(self):
-        for override in ({'port': 8797}, {'host': '0.0.0.0'}, {'drive_handoff_port': 9000},
+        for override in ({'port': 8797}, {'host': '0.0.0.0'},
                          {'public_tunnel_host': ['still.example.org']}):
             with self.subTest(**{key: str(value) for key, value in override.items()}):
                 self.assertIsNone(login_service_status(start_args(**override), platform='darwin',

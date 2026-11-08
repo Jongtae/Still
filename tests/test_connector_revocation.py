@@ -15,7 +15,6 @@ from personal_agent.calendar import CALENDAR_CONNECTOR_ID, CALENDAR_READ_SCOPE, 
 from personal_agent.calendar_oauth import CalendarOAuth, EncryptedCalendarSecretStore
 from personal_agent.connector_contract import ConnectorState
 from personal_agent.conversation_handoff import ConversationHandoffError
-from personal_agent.drive_web_oauth import DRIVE_FILE, DriveWebOAuthError, DriveWebOAuthHandoff, EncryptedDriveSecretStore
 from personal_agent.gmail import GMAIL_CONNECTOR_ID, GmailError
 
 from test_conversation_connector_handoff import GMAIL_SCOPES, OWNER, HandoffTestCase
@@ -53,10 +52,6 @@ class RevocationTestCase(HandoffTestCase):
                                       'https://connect.example.test/calendar/callback',
                                       registry=self.registry, now=lambda: self.clock[0])
         self.service.calendar_oauth = self.calendar
-        self.drive = DriveWebOAuthHandoff(EncryptedDriveSecretStore(self.store, Fernet.generate_key()),
-                                          'drive-client', 'https://connect.example.test/oauth/callback',
-                                          'https://connect.example.test', now=lambda: self.clock[0])
-        self.service.drive_web_oauth = self.drive
 
     def connect_calendar(self, write=False, access='cal-access', refresh='cal-refresh'):
         offer = self.calendar.begin_oauth(TOKEN_OWNER, write=write)
@@ -65,13 +60,6 @@ class RevocationTestCase(HandoffTestCase):
             'access_token': access, 'refresh_token': refresh, 'expires_in': 3600,
             'scope': CALENDAR_WRITE_SCOPE if write else " ".join(CALENDAR_SPEC.required_scopes)})
 
-    def connect_drive(self):
-        offer = self.drive.begin(42)
-        state = parse_qs(urlsplit(offer['button']['url']).query)['state'][0]
-        self.drive.complete({'state': state, 'code': 'c'}, 42, lambda request: {
-            'access_token': 'drive-access', 'refresh_token': 'drive-refresh', 'scope': DRIVE_FILE,
-            'expires_in': 3600})
-        self.drive.select_files(42, [{'id': 'f1', 'name': 'a.txt', 'mime_type': 'text/plain'}])
 
     def disconnect(self, connector_id=GMAIL_CONNECTOR_ID, session=SESSION):
         preview = self.service.google_disconnect_preview({'connector_id': connector_id}, session)
@@ -257,29 +245,6 @@ class UnreachableGoogleTests(RevocationTestCase):
 class CodexRaceTests(RevocationTestCase):
     """Codex review on #644: in-flight callback and retry/reconnect races."""
 
-    def test_a_drive_callback_mid_exchange_cannot_reconnect_after_disconnect(self):
-        offer = self.drive.begin(42)
-        state = parse_qs(urlsplit(offer['button']['url']).query)['state'][0]
-
-        def exchange(request):
-            self.disconnect('google-drive-read')  # owner disconnects while Google answers
-            return {'access_token': 'late-access', 'refresh_token': 'late-refresh',
-                    'scope': DRIVE_FILE, 'expires_in': 3600}
-
-        with self.assertRaises(DriveWebOAuthError):
-            self.drive.complete({'state': state, 'code': 'c'}, 42, exchange)
-        self.assertEqual(self.drive.effective_status()['state'], 'disconnected')
-        self.assertNotIn('late-access', json.dumps(self.drive.store.secret('drive_web_oauth_tokens')))
-
-    def test_drive_retry_is_refused_while_an_authorization_is_in_flight(self):
-        self.connect_drive()
-        self.google.answers = [OSError('down')]
-        self.disconnect('google-drive-read')
-        self.drive.begin(42)
-        sent = len(self.google.requests)
-        with self.assertRaisesRegex(ValueError, '새 연결까지 끊길 수'):
-            self.service.retry_google_revocation({'connector_id': 'google-drive-read'})
-        self.assertEqual(len(self.google.requests), sent)
 
     def test_retry_holds_the_connector_authorization_lock_while_sending(self):
         self.connect_gmail()
@@ -373,24 +338,6 @@ class ParkedWorkAndArtifactTests(RevocationTestCase):
         self.disconnect()
         after = self.store.job(job_id)
         self.assertEqual((after['status'], after['response']), (before['status'], before['response']))
-
-
-class DriveDisconnectTests(RevocationTestCase):
-    def test_drive_credential_and_file_grant_are_removed_and_waiting_work_ends(self):
-        self.connect_drive()
-        self.assertTrue(self.drive.assert_selected(42, 'f1'))
-        job_id = self.enqueue('드라이브 파일 요약해줘')
-        with self.store.db() as db:
-            db.execute("UPDATE jobs SET status='awaiting_drive' WHERE id=?", (job_id,))
-        self.drive._record('drive-job-pending', pending_job_id=job_id)
-        receipt = self.disconnect('google-drive-read')
-        self.assertEqual(receipt['provider_revocation'], 'revoked')
-        self.assertEqual(self.google.requests[0]['body']['token'], ['drive-refresh'])
-        self.assertEqual(receipt['state'], 'disconnected')
-        with self.assertRaises(DriveWebOAuthError):
-            self.drive.read_selected(42, 'f1', lambda *a: self.fail('Drive was called'))
-        self.assertEqual(self.store.job(job_id)['status'], 'failed')
-        self.assertIsNone(self.drive.consume_pending_job(42))
 
 
 if __name__ == '__main__':

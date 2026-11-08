@@ -16,8 +16,7 @@ from urllib.error import HTTPError
 from urllib.parse import urlsplit, parse_qs
 from personal_agent.quickstart_store import QuickStore
 from personal_agent.quickstart_service import AgentService, TELEGRAM_RESULT_PREVIEW_CHARS
-from personal_agent.quickstart import make_handler, configured_service, local_drive_secret_values
-from personal_agent.drive_web_oauth import DriveWebOAuthHandoff, DriveScopeError, EncryptedDriveSecretStore
+from personal_agent.quickstart import make_handler, configured_service
 from personal_agent.messages import msg
 from personal_agent.connector_contract import CONNECTOR_STATE_KEY, PENDING_WORK_KEY, ConnectorState
 from personal_agent.conversation_handoff import CONVERSATION_RESUME_KEY, INTENT_CALENDAR_CREATE, INTENT_DRIVE_READ
@@ -230,242 +229,18 @@ class QuickstartTests(unittest.TestCase):
         self.assertEqual(home['state'],'working')
         self.assertEqual(home['active_jobs'],1)
 
-    def test_local_drive_configuration_is_explicit_and_never_exposes_secret(self):
-        disabled=configured_service(self.store, {'AGENTOS_DRIVE_LOCAL_ONLY':'1','AGENTOS_DRIVE_CLIENT_ID':'client','AGENTOS_DRIVE_ENCRYPTION_KEY':Fernet.generate_key().decode()})
-        self.assertIsNone(disabled.drive_web_oauth)
-        configured=configured_service(self.store, {
-            'AGENTOS_DRIVE_LOCAL_ONLY':'1', 'AGENTOS_DRIVE_CLIENT_ID':'client',
-            'AGENTOS_DRIVE_ENCRYPTION_KEY':Fernet.generate_key().decode(), 'AGENTOS_DRIVE_LOCAL_PORT':'9123',
-            'AGENTOS_DRIVE_CLIENT_SECRET':'never-return-this', 'AGENTOS_DRIVE_PICKER_API_KEY':'restricted-key',
-        })
-        self.assertEqual(configured.drive_web_oauth.redirect_uri,'http://localhost:9123/oauth/google/callback')
-        self.assertTrue(configured.drive_web_oauth.begin(42)['button']['url'].startswith('https://agentos.localhost:9124/'))
-        self.assertNotIn('never-return-this',json.dumps(configured.settings()))
-
-    def test_local_drive_requires_a_complete_picker_configuration(self):
-        env={'AGENTOS_DRIVE_LOCAL_ONLY':'1','AGENTOS_DRIVE_CLIENT_ID':'client',
-             'AGENTOS_DRIVE_ENCRYPTION_KEY':Fernet.generate_key().decode(),
-             'AGENTOS_DRIVE_CLIENT_SECRET':'secret'}
-        self.assertIsNone(configured_service(self.store,env).drive_web_oauth)
-        with tempfile.TemporaryDirectory() as external:
-            path=Path(external)/'drive.json'
-            path.write_text(json.dumps({'client_id':'client'}));path.chmod(0o600)
-            with self.assertRaisesRegex(ValueError,'every required'):
-                configured_service(self.store,{**env,'AGENTOS_DRIVE_SECRET_FILE':str(path)})
-
-    def test_owner_only_drive_secret_file_configures_without_environment_secrets(self):
-        with tempfile.TemporaryDirectory() as external:
-            path=os.path.join(external,'drive-secrets.json')
-            values={'client_id':'client','client_secret':'secret-not-exposed','picker_api_key':'restricted-key',
-                    'encryption_key':Fernet.generate_key().decode()}
-            with open(path,'w') as output: json.dump(values,output)
-            os.chmod(path,0o600)
-            configured=configured_service(self.store,{'AGENTOS_DRIVE_LOCAL_ONLY':'1','AGENTOS_DRIVE_SECRET_FILE':path})
-            self.assertEqual(configured.drive_web_oauth.client_id,'client')
-            self.assertEqual(configured.drive_picker_config['developer_key'],'restricted-key')
-            self.assertNotIn('secret-not-exposed',json.dumps(configured.settings()))
-            with self.assertRaises(ValueError):
-                local_drive_secret_values(self.store,{'AGENTOS_DRIVE_SECRET_FILE':str(self.store.root/'inside.json')})
-
-    def test_drive_status_is_authenticated_and_redacted(self):
-        self.store.claim(self.store.bootstrap.read_text(),'long-password-test')
-        server=ThreadingHTTPServer(('127.0.0.1',0),make_handler(self.service));thread=threading.Thread(target=server.serve_forever);thread.start()
-        client=build_opener(HTTPCookieProcessor(CookieJar()));base='http://127.0.0.1:'+str(server.server_port)
-        try:
-            with self.assertRaises(HTTPError) as error: client.open(base+'/api/drive/status',timeout=3)
-            self.assertEqual(error.exception.code,401)
-            request=Request(base+'/api/login',data=json.dumps({'password':'long-password-test'}).encode(),headers={'Content-Type':'application/json'})
-            client.open(request,timeout=3).read()
-            with client.open(base+'/api/drive/status',timeout=3) as response: result=json.load(response)
-            self.assertEqual(result,{'configured':False,'local_only':False,'state':'not-configured'})
-        finally:
-            server.shutdown();thread.join();server.server_close()
-
-    def test_local_drive_handoff_rejects_bad_callback_without_login(self):
-        key=Fernet.generate_key()
-        drive=DriveWebOAuthHandoff(EncryptedDriveSecretStore(self.store,key),'client',
-            'http://localhost:8787/oauth/google/callback','http://localhost:8787',allow_localhost=True,local_only=True)
-        service=AgentService(self.store,ModelAdapter(self.transport),self.transport,drive_web_oauth=drive)
-        offer=drive.begin(123)
-        server=ThreadingHTTPServer(('127.0.0.1',0),make_handler(service));thread=threading.Thread(target=server.serve_forever);thread.start()
-        try:
-            base='http://127.0.0.1:'+str(server.server_port)
-            with self.assertRaises(HTTPError) as error:
-                build_opener().open(base+'/oauth/google/callback?state=not-valid',timeout=3)
-            self.assertEqual(error.exception.code,400)
-            self.assertNotIn(offer['state'], error.exception.read().decode())
-        finally:
-            server.shutdown();thread.join();server.server_close()
-
-    def test_loopback_alias_is_accepted_for_the_tls_drive_handoff(self):
-        server=ThreadingHTTPServer(('127.0.0.1',0),make_handler(self.service));thread=threading.Thread(target=server.serve_forever);thread.start()
-        try:
-            url='http://127.0.0.1:'+str(server.server_port)
-            with build_opener().open(Request(url+'/api/status',headers={'Host':'agentos.localhost:'+str(server.server_port)}),timeout=3) as response:
-                self.assertIn('claimed',json.load(response))
-        finally:
-            server.shutdown();thread.join();server.server_close()
-
-    def test_local_picker_page_uses_one_time_grant_without_server_oauth_token(self):
-        key=Fernet.generate_key()
-        drive=DriveWebOAuthHandoff(EncryptedDriveSecretStore(self.store,key),'web-client',
-            'http://localhost:8787/oauth/google/callback','http://localhost:8787',allow_localhost=True,local_only=True)
-        offer=drive.begin(123); state=parse_qs(urlsplit(offer['button']['url']).query)['state'][0]
-        drive.complete({'state':state,'code':'short-code'},123,lambda _:{'access_token':'server-only-token','scope':'https://www.googleapis.com/auth/drive.file'})
-        grant=drive.create_picker_grant(123)
-        service=AgentService(self.store,ModelAdapter(self.transport),self.transport,drive_web_oauth=drive)
-        service.drive_picker_config={'client_id':'web-client','developer_key':'restricted-browser-key','app_id':'123'}
-        server=ThreadingHTTPServer(('127.0.0.1',0),make_handler(service));thread=threading.Thread(target=server.serve_forever);thread.start()
-        try:
-            url='http://127.0.0.1:'+str(server.server_port)
-            with build_opener().open(url+'/google-drive-picker?grant='+grant,timeout=3) as response:
-                page=response.read().decode()
-                csp=response.headers['Content-Security-Policy']
-            self.assertIn('restricted-browser-key',page)
-            self.assertNotIn('server-only-token',page)
-            self.assertIn("/api/drive/picker-selection",page)
-            self.assertIn("'nonce-",csp)
-            self.assertNotIn("script-src 'self' 'unsafe-inline'",csp)
-            self.assertIn('<script nonce="',page)
-        finally:
-            server.shutdown();thread.join();server.server_close()
-
-    def test_drive_request_without_local_capability_never_falls_through_to_model(self):
-        self.model(); self.assertTrue(self.service.test_model()['ok']); self.calls.clear()
-        # #672: the Drive need is the DecisionEngine's judgment, scripted here.
-        self.service.use_decision_engine(capability_need_engine({'구글 드라이브 연결해 보자':INTENT_DRIVE_READ}))
-        self.store.enqueue('구글 드라이브 연결해 보자','drive-not-configured',channel='telegram:g',chat_id=123)
-        self.assertTrue(self.service.run_one())
-        job=self.store.jobs()[0]
-        self.assertEqual(job['status'],'failed')
-        self.assertIn('not configured locally',job['error'])
-        self.assertFalse(any(url.endswith('/api/chat') for url, _body, _headers in self.calls))
 
     def test_drive_request_with_full_drive_connector_runs_in_the_model_loop(self):
         """#1172: with the full-Drive connector the worker reads Drive with its own tools."""
         self.model(); self.assertTrue(self.service.test_model()['ok']); self.calls.clear()
         self.service.drive_oauth=object()
         self.service.drive_reader_factory=lambda _owner:object()
-        self.service.drive_read_prerequisite=lambda _job:self.fail('the drive.file handoff must not run')
         self.service.use_decision_engine(capability_need_engine({'구글 드라이브 파일을 요약해줘':INTENT_DRIVE_READ}))
         job_id=self.store.enqueue('구글 드라이브 파일을 요약해줘','drive-full',channel='telegram:g',chat_id=123)
         self.assertTrue(self.service.run_one())
         self.assertNotIn('not configured locally',self.store.job(job_id).get('error') or '')
         self.assertTrue(any(url.endswith('/api/chat') for url, _body, _headers in self.calls))
 
-    def test_selected_drive_content_is_only_in_memory_for_the_model_turn(self):
-        key=Fernet.generate_key()
-        drive=DriveWebOAuthHandoff(EncryptedDriveSecretStore(self.store,key),'client',
-            'http://localhost:8787/oauth/google/callback','http://localhost:8787',allow_localhost=True,local_only=True)
-        offer=drive.begin(123); state=parse_qs(urlsplit(offer['button']['url']).query)['state'][0]
-        drive.complete({'state':state,'code':'code'},123,lambda _:{'access_token':'server-token','scope':'https://www.googleapis.com/auth/drive.file'})
-        drive.select_files(123,[{'id':'picked','name':'plan.txt'}])
-        service=AgentService(self.store,ModelAdapter(self.transport),self.transport,drive_web_oauth=drive)
-        service.drive_read=lambda _url,_body,_headers:b'private selected Drive plan body'
-        service.save_model({'provider':'ollama','endpoint':'http://127.0.0.1:11434','model':'test-model'})
-        self.assertTrue(service.test_model()['ok']); self.calls.clear()
-        service.use_decision_engine(capability_need_engine({'구글 드라이브 파일을 요약해줘':INTENT_DRIVE_READ}))
-        job_id=self.store.enqueue('구글 드라이브 파일을 요약해줘','selected-drive',channel='telegram:g',chat_id=123)
-        self.assertTrue(service.run_one())
-        self.assertEqual(self.store.job(job_id)['status'],'succeeded')
-        self.assertNotIn('private selected Drive plan body',json.dumps(self.store.history()))
-        self.assertNotIn('private selected Drive plan body',json.dumps(self.store.jobs()))
-        self.assertNotIn('private selected Drive plan body',json.dumps(self.store.recent_tool_events()))
-        model_call=next(body for url,body,_headers in self.calls if url.endswith('/api/chat'))
-        self.assertIn('private selected Drive plan body',str(model_call))
-
-    def expiring_selected_drive(self):
-        # #721: a stored refresh token must never renew this connection.
-        clock=[1000.0]
-        drive=DriveWebOAuthHandoff(EncryptedDriveSecretStore(self.store,Fernet.generate_key()),'client',
-            'http://localhost:8787/oauth/google/callback','http://localhost:8787',
-            allow_localhost=True,local_only=True,now=lambda:clock[0])
-        offer=drive.begin(123); state=parse_qs(urlsplit(offer['button']['url']).query)['state'][0]
-        exchanges=[]
-        def exchange(request):
-            exchanges.append(request)
-            self.assertEqual(len(exchanges),1,'authorization must not be renewed')
-            return {'access_token':'server-token','refresh_token':'unused-refresh-token',
-                    'scope':'https://www.googleapis.com/auth/drive.file','expires_in':3599}
-        drive.complete({'state':state,'code':'code'},123,exchange)
-        drive.select_files(123,[{'id':'picked','name':'plan.txt'}])
-        self.service.drive_web_oauth=drive
-        return drive,clock,exchanges
-
-    def test_expired_selected_drive_request_offers_connection_on_first_request(self):
-        drive,clock,exchanges=self.expiring_selected_drive()
-        self.model(); self.assertTrue(self.service.test_model()['ok']); self.calls.clear()
-        self.service.use_decision_engine(capability_need_engine({'구글 드라이브 파일을 요약해줘':INTENT_DRIVE_READ}))
-        reads=[]; messages=[]
-        def read(url,body,headers):
-            reads.append((url,body,headers))
-            return b'selected file body'
-        self.service.drive_read=read
-        self.service.telegram.send_message=lambda *args:messages.append(args)
-        before=self.store.enqueue('구글 드라이브 파일을 요약해줘','drive-before-expiry',channel='telegram:g',chat_id=123)
-        self.assertTrue(self.service.run_one())
-        self.assertEqual(self.store.job(before)['status'],'succeeded')
-        self.assertEqual(len(reads),1)
-        clock[0]+=3600
-        self.assertEqual(drive.status()['state'],'connected')
-        reads.clear(); messages.clear(); self.calls.clear()
-        expired=self.store.enqueue('구글 드라이브 파일을 요약해줘','drive-after-expiry',channel='telegram:g',chat_id=123)
-        self.assertTrue(self.service.run_one())
-        job=self.store.job(expired)
-        self.assertEqual(job['status'],'awaiting_drive')
-        self.assertIsNone(job['error'])
-        self.assertFalse(any(row['status']=='failed' for row in self.store.jobs()))
-        self.assertEqual(reads,[])
-        self.assertEqual(len(exchanges),1)
-        self.assertEqual(self.calls,[])
-        self.assertEqual(len(messages),1)
-        owner,text,markup=messages[0]
-        self.assertEqual(owner,123)
-        self.assertTrue(text)
-        self.assertEqual(len(markup['inline_keyboard']),1)
-        self.assertEqual(len(markup['inline_keyboard'][0]),1)
-        self.assertTrue(markup['inline_keyboard'][0][0]['url'].startswith('http://localhost:8787/'))
-
-    def test_selected_drive_expiry_after_prerequisite_has_localized_recovery(self):
-        drive,clock,exchanges=self.expiring_selected_drive()
-        self.service.drive_read=lambda *_:self.fail('expired credentials must not reach a transport')
-        self.assertIsNone(self.service.drive_read_prerequisite({'chat_id':123}))
-        clock[0]+=3600
-        with self.assertRaises(ValueError) as error:
-            self.service.selected_drive_context(123)
-        self.assertEqual(str(error.exception),msg('quickstart_service.drive_read_reconnect'))
-        self.assertEqual(drive.status()['state'],'reauth-required')
-        self.assertEqual(len(exchanges),1)
-        self.assertEqual(self.calls,[])
-
-    def test_selected_drive_selection_errors_are_preserved(self):
-        drive,_clock,exchanges=self.expiring_selected_drive()
-        self.service.drive_read=lambda *_:self.fail('unselected files must not reach a transport')
-        with self.assertRaises(ValueError) as error:
-            self.service.selected_drive_context(456)
-        self.assertEqual(str(error.exception),msg('quickstart_service.select_drive_files'))
-        read_selected=drive.read_selected
-        with patch.object(drive,'read_selected',side_effect=lambda owner,_file,transport:read_selected(owner,'unpicked',transport)):
-            with self.assertRaises(DriveScopeError) as error:
-                self.service.selected_drive_context(123)
-        self.assertEqual(str(error.exception),'Choose this file in Google Picker before reading it.')
-        self.assertEqual(drive.effective_status()['state'],'connected')
-        self.assertEqual(len(exchanges),1)
-
-    def test_rejected_drive_read_requires_reauthentication(self):
-        key=Fernet.generate_key()
-        drive=DriveWebOAuthHandoff(EncryptedDriveSecretStore(self.store,key),'client',
-            'http://localhost:8787/oauth/google/callback','http://localhost:8787',allow_localhost=True,local_only=True)
-        offer=drive.begin(123); state=parse_qs(urlsplit(offer['button']['url']).query)['state'][0]
-        drive.complete({'state':state,'code':'code'},123,lambda _:{'access_token':'server-token','scope':'https://www.googleapis.com/auth/drive.file'})
-        drive.select_files(123,[{'id':'picked','name':'plan.txt'}])
-        service=AgentService(self.store,ModelAdapter(self.transport),self.transport,drive_web_oauth=drive)
-        def rejected(_url,_body,_headers):
-            raise HTTPError('https://www.googleapis.com/drive/v3/files/picked',401,'rejected',None,None)
-        service.drive_read=rejected
-        with self.assertRaisesRegex(ValueError,'다시 연결'):
-            service.selected_drive_context(123)
-        self.assertEqual(drive.status()['state'],'reauth-required')
 
     def test_workspace_is_opt_in_and_saved_results_survive_restart(self):
         workspace=self.service.create_workspace({'title':'UX 개선','purpose':'대화 경험 정리'})
@@ -1657,8 +1432,7 @@ class GmailConnectorWiringTests(unittest.TestCase):
         self.assertEqual(service.gmail.redirect_uri,'http://localhost:8787/oauth/gmail/callback')
         self.assertIs(service.gmail.registry,service.connector_registry)
         self.assertIsNotNone(service.connector_handoff)
-        # The deployment supplies its own token-exchange transport, the way it
-        # supplies `drive_token_exchange`; the connector never holds the secret.
+        # The deployment supplies the token-exchange transport; the connector never holds the secret.
         self.assertTrue(callable(service.gmail_token_exchange))
         self.assertNotIn(self.CLIENT_SECRET,json.dumps(service.settings()))
         with self.assertRaisesRegex(ValueError,'valid TCP port'):
@@ -1682,34 +1456,6 @@ class GmailConnectorWiringTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'every required'):
                 configured_service(self.store,{'AGENTOS_GMAIL_LOCAL_ONLY':'1','AGENTOS_GMAIL_SECRET_FILE':incomplete})
 
-    def test_drive_and_gmail_token_exchanges_keep_their_own_client_secrets(self):
-        """Both exchanges are closures over `configured_service` locals.
-
-        Reusing one variable name for both client secrets would send the
-        Gmail secret to the Drive token endpoint - one external destination
-        receiving another connector's secret - and no other test would
-        notice, because each connector is correct in isolation.
-        """
-        env={**self.env,'AGENTOS_DRIVE_LOCAL_ONLY':'1','AGENTOS_DRIVE_CLIENT_ID':'drive-client',
-             'AGENTOS_DRIVE_CLIENT_SECRET':'drive-only-secret','AGENTOS_DRIVE_PICKER_API_KEY':'picker-key',
-             'AGENTOS_DRIVE_ENCRYPTION_KEY':Fernet.generate_key().decode(),
-             'AGENTOS_DRIVE_LOCAL_PORT':'8787'}
-        service=configured_service(self.store,env)
-        posted=[]
-        class Response:
-            def __enter__(inner):return inner
-            def __exit__(inner,*args):return False
-            def read(inner):return b'{"access_token":"fixture"}'
-        def fake_urlopen(request,timeout=None):
-            posted.append(request.data.decode())
-            return Response()
-        with patch('personal_agent.quickstart.urlopen',fake_urlopen):
-            service.drive_token_exchange({'code':'drive-code'})
-            service.gmail_token_exchange({'code':'gmail-code'})
-        self.assertIn('client_secret=drive-only-secret',posted[0])
-        self.assertNotIn(self.CLIENT_SECRET,posted[0])
-        self.assertIn('client_secret='+self.CLIENT_SECRET,posted[1])
-        self.assertNotIn('drive-only-secret',posted[1])
 
     # -- registration is not authorization --------------------------------
     def test_registering_gmail_declares_a_capability_and_grants_nothing(self):

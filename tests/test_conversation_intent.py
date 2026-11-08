@@ -462,14 +462,18 @@ class ServiceRoutingTests(unittest.TestCase):
                 self.assertConversationRoute(self.run_one(text))
         self.assertEqual(self.store.config('personal_assistant_evidence', []), [])
 
-    def test_drive_prose_keeps_reaching_the_shipped_picker_path(self):
-        # The Drive preflight answers, exactly as it did before this unit,
-        # once the DecisionEngine judges the turn a Drive read (#672).  The
-        # orchestrator's unwired Drive seam - the WU4 subject - is not reached.
+    def test_drive_prose_without_a_connection_reaches_normal_worker_setup(self):
+        from personal_agent.quickstart import configured_service
+
+        self.service = configured_service(self.store, {})
+        # #739: the worker owns Drive requests; an unconnected install offers
+        # ordinary AI/client setup instead of the removed selected-file preflight.
         self.service.use_decision_engine(capability_need_engine({'구글 드라이브 파일을 요약해줘': INTENT_DRIVE_READ}))
-        job = self.run_one('구글 드라이브 파일을 요약해줘')
-        self.assertEqual(job['status'], 'failed')
-        self.assertIn('Google Drive capability is not configured locally', job['error'])
+        self.assertIsNone(self.service.drive_oauth)
+        self.assertConversationRoute(self.run_one('구글 드라이브 파일을 요약해줘'))
+        self.assertFalse(self.service.google_client_status()['configured'])
+        setup = self.service.conversation_settings_request({'operation': 'read', 'category': 'connections'})
+        self.assertIn('설정 > 외부 연결 > 자체 Google client', setup['response'])
         self.assertEqual(self.store.config('personal_assistant_evidence', []), [])
 
     def test_the_worker_never_supplies_a_model_suggestion_to_the_classifier(self):

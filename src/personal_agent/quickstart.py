@@ -3,10 +3,8 @@
 from . import work_status as ws
 from .messages import msg
 import argparse
-import datetime
 import fcntl
 import getpass
-import ipaddress
 import json
 import logging
 import logging.handlers
@@ -15,7 +13,6 @@ from pathlib import Path
 import signal
 import secrets
 import shlex
-import ssl
 import stat
 import sys
 import threading
@@ -43,7 +40,6 @@ from .conversation_handoff import ConnectorHandoff, ConversationHandoffError, lo
 from .plugins import PluginRegistry
 from .providers import ProviderError
 from .isolated_engine_gateway import IsolatedEngineGateway
-from .drive_web_oauth import DriveWebOAuthHandoff, EncryptedDriveSecretStore, DriveWebOAuthError
 from .connector_contract import ConnectorRegistry
 from . import remote_login
 from . import phone_input
@@ -52,10 +48,6 @@ from .connector_http import contained_opener
 from .gmail import (GMAIL_CONNECTOR, EncryptedGmailSecretStore, GmailConnector,
                     GmailError)
 from cryptography.fernet import Fernet
-from cryptography import x509
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.x509.oid import NameOID
 
 WEB=Path(__file__).parent/'web'
 ISOLATED_MCP_PATH='/internal/isolated-engine/mcp'
@@ -293,12 +285,6 @@ def google_oauth_key(store):
     return provider
 
 
-def local_drive_secret_values(store, environ):
-    """Owner-local Drive credentials: OAuth client, Fernet key, Picker key."""
-    return local_oauth_secret_values(store,environ.get('AGENTOS_DRIVE_SECRET_FILE',''),
-                                     ('client_id','client_secret','encryption_key','picker_api_key'),'Drive')
-
-
 #: Gmail REST hosts this transport may contact. A bearer token must never
 #: leave the host it was minted for, so the destination is an allowlist and
 #: not "whatever URL the caller built".
@@ -402,99 +388,9 @@ def local_calendar_secret_values(store, environ):
 
 
 def local_gmail_secret_values(store, environ):
-    """Owner-local Gmail credentials: OAuth client and Fernet key, no Picker."""
+    """Owner-local Gmail credentials: OAuth client and Fernet key."""
     return local_oauth_secret_values(store,environ.get('AGENTOS_GMAIL_SECRET_FILE',''),
                                      ('client_id','client_secret','encryption_key'),'Gmail')
-
-
-def localhost_tls_context(store):
-    """Create a private, local-only TLS identity for Telegram browser links.
-
-    Telegram validates inline keyboard URLs and rejects ``http://localhost``.
-    This certificate gives the local entry point an HTTPS URL; it is never a
-    public endpoint and contains no OAuth credential.  A browser may ask the
-    owner to trust the first self-signed localhost visit.
-    """
-    cert_path=store.private/'drive-localhost-cert.pem'
-    key_path=store.private/'drive-localhost-key.pem'
-    regenerate=not cert_path.exists() or not key_path.exists()
-    if not regenerate:
-        try:
-            names=x509.load_pem_x509_certificate(cert_path.read_bytes()).extensions.get_extension_for_class(x509.SubjectAlternativeName).value
-            regenerate='agentos.localhost' not in names.get_values_for_type(x509.DNSName)
-        except (ValueError, x509.ExtensionNotFound, OSError):
-            regenerate=True
-    if regenerate:
-        key=rsa.generate_private_key(public_exponent=65537,key_size=2048)
-        subject=x509.Name([x509.NameAttribute(NameOID.COMMON_NAME,'localhost')])
-        certificate=(x509.CertificateBuilder().subject_name(subject).issuer_name(subject)
-            .public_key(key.public_key()).serial_number(x509.random_serial_number())
-            .not_valid_before(datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(minutes=1))
-            .not_valid_after(datetime.datetime.now(datetime.timezone.utc)+datetime.timedelta(days=30))
-            .add_extension(x509.SubjectAlternativeName([x509.DNSName('localhost'),x509.DNSName('agentos.localhost'),x509.IPAddress(ipaddress.ip_address('127.0.0.1'))]),critical=False)
-            .sign(key,hashes.SHA256()))
-        cert_path.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
-        key_path.write_bytes(key.private_bytes(serialization.Encoding.PEM,serialization.PrivateFormat.TraditionalOpenSSL,serialization.NoEncryption()))
-        cert_path.chmod(0o600); key_path.chmod(0o600)
-    context=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-    context.load_cert_chain(cert_path,key_path)
-    return context
-
-
-def picker_page(config, grant, nonce):
-    """Return the local, no-store page that hosts the Google Picker.
-
-    Only the OAuth client id and a referrer-restricted Picker developer key
-    reach this page.  OAuth codes, access tokens, refresh tokens, and the
-    server-side selection grant never appear in JavaScript configuration.
-    """
-    safe_config=json.dumps(config, separators=(',', ':')).replace('<','\\u003c')
-    safe_grant=json.dumps(grant).replace('<','\\u003c')
-    # Keep the emitted JavaScript byte-identical: the template values carry
-    # its existing concatenation expressions, rather than adding runtime formatting.
-    script_error=msg('quickstart.picker_script_failed',source="source+'")+"'"
-    picker_error=msg('quickstart.picker_init_error',error=(
-        "'+(event.message|| (source ? "+script_error+" : '"+
-        msg('quickstart.picker_script_blocked')+"')).slice(0,160)"))
-    return f'''<!doctype html><html lang="ko"><meta charset="utf-8">
-<meta name="referrer" content="no-referrer"><title>{msg('quickstart.picker_title')}</title>
-<main><h1>{msg('quickstart.picker_title')}</h1><p id="status">{msg('quickstart.picker_preparing')}</p><button id="retry" disabled>{msg('quickstart.picker_open')}</button></main>
-<script src="https://apis.google.com/js/api.js"></script><script src="https://accounts.google.com/gsi/client"></script>
-<script nonce="{nonce}">
-const pickerConfig={safe_config}; const selectionGrant={safe_grant};
-const status=document.getElementById('status'), retry=document.getElementById('retry');
-let pickerReady=false;
-function fail(message) {{ status.textContent=message; retry.hidden=false; retry.disabled=false; retry.textContent='{msg('quickstart.picker_reopen')}'; }}
-window.addEventListener('error',event=>{{
-  const source=event.target && event.target.src ? new URL(event.target.src).hostname : '';
-  fail('{picker_error});
-}},true);
-function sendSelection(documents) {{
-  const files=documents.map(d=>({{id:d.id,name:d.name||'',mime_type:d.mimeType||''}}));
-  fetch('/api/drive/picker-selection',{{method:'POST',headers:{{'Content-Type':'application/json'}},
-    body:JSON.stringify({{grant:selectionGrant,files}})}}).then(async response=>{{
-      if(!response.ok) throw new Error('selection rejected');
-      status.textContent='{msg('quickstart.picker_selection_saved')}';
-    }}).catch(()=>fail('{msg('quickstart.picker_selection_failed')}'));
-}}
-function openPicker() {{
-  retry.disabled=true;
-  if(!pickerReady || !window.google || !google.accounts) return fail('{msg('quickstart.picker_load_failed')}');
-  const tokenClient=google.accounts.oauth2.initTokenClient({{client_id:pickerConfig.client_id,
-    scope:'https://www.googleapis.com/auth/drive.file', callback:token=>{{
-      if(token.error) return fail('{msg('quickstart.picker_permission_required')}');
-      const picker=new google.picker.PickerBuilder().setDeveloperKey(pickerConfig.developer_key)
-        .setAppId(pickerConfig.app_id).setOAuthToken(token.access_token)
-        .setCallback(data=>{{if(data.action===google.picker.Action.PICKED) sendSelection(data.docs||[]);
-          else if(data.action===google.picker.Action.CANCEL) status.textContent='{msg('quickstart.picker_cancelled')}';}})
-        .build(); picker.setVisible(true);
-    }}}}); tokenClient.requestAccessToken({{prompt:''}});
-}}
-gapi.load('picker',{{callback:()=>{{pickerReady=true; status.textContent='{msg('quickstart.picker_ready')}'; retry.disabled=false;}},
-  onerror:()=>fail('{msg('quickstart.picker_check_settings')}'),
-  timeout:7000, ontimeout:()=>fail('{msg('quickstart.picker_load_timeout')}')}});
-retry.addEventListener('click',openPicker);
-</script></html>'''.encode()
 
 
 def configured_service(store, environ=None):
@@ -509,49 +405,9 @@ def configured_service(store, environ=None):
     isolated_engines=(SubscriptionEngines(
         finder=lambda command: '/isolated-engine/codex' if command=='codex' else None
     ) if isolated_engine else None)
-    drive=None
-    drive_exchange=None
-    drive_read=None
-    picker_config=None
-    if environ.get('AGENTOS_DRIVE_LOCAL_ONLY')=='1':
-        secret_values=local_drive_secret_values(store,environ)
-        from_secret_file=bool(environ.get('AGENTOS_DRIVE_SECRET_FILE'))
-        client_id=secret_values.get('client_id') if from_secret_file else environ.get('AGENTOS_DRIVE_CLIENT_ID','')
-        key=secret_values.get('encryption_key') if from_secret_file else environ.get('AGENTOS_DRIVE_ENCRYPTION_KEY','')
-        client_secret=secret_values.get('client_secret') if from_secret_file else environ.get('AGENTOS_DRIVE_CLIENT_SECRET','')
-        picker_key=secret_values.get('picker_api_key') if from_secret_file else environ.get('AGENTOS_DRIVE_PICKER_API_KEY','')
-        port=environ.get('AGENTOS_DRIVE_LOCAL_PORT','8787')
-        handoff_port=environ.get('AGENTOS_DRIVE_HANDOFF_PORT',str(int(port)+1))
-        if client_id and key and client_secret and picker_key:
-            callback_base=f'http://localhost:{port}'
-            handoff_base=f'https://agentos.localhost:{handoff_port}'
-            drive=DriveWebOAuthHandoff(EncryptedDriveSecretStore(store,key),client_id,
-                callback_base+'/oauth/google/callback',handoff_base,allow_localhost=True,local_only=True)
-            def drive_exchange(payload):
-                body=urlencode({**payload,'client_secret':client_secret,'grant_type':'authorization_code'}).encode()
-                with urlopen(Request('https://oauth2.googleapis.com/token',body,{'Content-Type':'application/x-www-form-urlencoded'}),timeout=15) as response:
-                    return json.loads(response.read())
-            def drive_read(url, body, headers):
-                # This is the sole owner-local transport for selected Drive
-                # bytes. Reject oversized responses before retaining them.
-                with urlopen(Request(url, body, headers), timeout=20) as response:
-                    result=response.read(1_000_001)
-                if len(result)>1_000_000:
-                    raise DriveWebOAuthError('Selected Google Drive file exceeds the local 1 MB text limit.')
-                return result
-            # Google Picker requires a browser-visible, referrer-restricted
-            # developer key. It is not included in status/settings APIs.
-            picker_config={'client_id':client_id,'developer_key':picker_key,
-                           'app_id':client_id.split('-',1)[0]}
     connector_registry=None
     gmail=None
     gmail_exchange=None
-    # Every name below is Gmail-prefixed on purpose.  `drive_exchange` above
-    # is a closure over this function's locals and reads `client_secret` when
-    # it is *called*, so reusing that name here would send the Gmail client
-    # secret to the Drive token endpoint - one external destination receiving
-    # another connector's secret - while both connectors still looked correct
-    # in isolation.
     if environ.get('AGENTOS_GMAIL_LOCAL_ONLY')=='1':
         gmail_values=local_gmail_secret_values(store,environ)
         gmail_from_file=bool(environ.get('AGENTOS_GMAIL_SECRET_FILE'))
@@ -643,13 +499,10 @@ def configured_service(store, environ=None):
             # nothing observable, which is how the mutation found it.
             connector_registry=calendar_registry
     service=AgentService(store,subscription_engines=isolated_engines,
-                         isolated_engine_adapter=isolated_engine,drive_web_oauth=drive,
+                         isolated_engine_adapter=isolated_engine,
                          connector_registry=connector_registry,gmail=gmail,gmail_modify_oauth=gmail_modify_oauth,
                          calendar_factory=calendar_factory,calendar_oauth=calendar_oauth)
     service.calendar_token_exchange=calendar_exchange
-    service.drive_token_exchange=drive_exchange
-    service.drive_read=drive_read
-    service.drive_picker_config=picker_config
     service.gmail_token_exchange=gmail_exchange
     service.gmail_modify_token_exchange=gmail_exchange
     # --- The owner's own Google client (#1172) ---------------------------
@@ -816,7 +669,7 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                 self.reply(403,{'error':msg('quickstart.embedded_browser_refused')})
                 return False
             if self.server.server_address[0] not in ('127.0.0.1', '::1'):return True
-            allowed={f'127.0.0.1:{self.server.server_port}',f'localhost:{self.server.server_port}',f'agentos.localhost:{self.server.server_port}',f'[::1]:{self.server.server_port}'}
+            allowed={f'127.0.0.1:{self.server.server_port}',f'localhost:{self.server.server_port}',f'[::1]:{self.server.server_port}'}
             if self.headers.get('Host','').lower() in allowed | public_hosts:return True
             self.reply(403,{'error':msg('quickstart.open_local_address')})
             return False
@@ -1011,22 +864,6 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                     if accepted:pairing_available=False
                 if accepted:return self.redirect('/',self.cookie(store.local_session()))
             if path=='/healthz':return self.reply(200 if service.healthy() else 503,{'ok':service.healthy()})
-            if path=='/google-drive':
-                try:return self.redirect(service.drive_web_oauth.authorization_url_for_state(parse_qs(parts.query).get('state',[''])[0]))
-                except (AttributeError, DriveWebOAuthError):return self.reply(400,b'Google Drive connection link is invalid or expired.','text/plain; charset=utf-8')
-            if path=='/oauth/google/callback':
-                try:
-                    callback={key: values[0] for key,values in parse_qs(parts.query).items()}
-                    owner=service.drive_web_oauth.callback_owner(callback.get('state'))
-                    if not callable(getattr(service,'drive_token_exchange',None)):
-                        raise DriveWebOAuthError('Local OAuth configuration is unavailable.')
-                    service.complete_drive_web_oauth(callback,owner,service.drive_token_exchange)
-                    if getattr(service,'drive_picker_config',None):
-                        grant=service.drive_web_oauth.create_picker_grant(owner)
-                        return self.redirect('/google-drive-picker?'+urlencode({'grant':grant}))
-                    return self.reply(200,b'Google Drive connected. Return to Telegram.','text/plain; charset=utf-8')
-                except (AttributeError, DriveWebOAuthError, OSError, ValueError):
-                    return self.reply(400,b'Google Drive connection could not be completed. Return to Telegram and request a new link.','text/plain; charset=utf-8')
             if path==GMAIL_CONNECT_PATH:
                 # The owner-authenticated half.  Starting an authorization is
                 # a state change for this owner's connector row, so unlike the
@@ -1121,24 +958,12 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                 except (AttributeError, ValueError, OSError):
                     return self.reply(400,b'Gmail modify connection could not be completed. Start the connection again from Still.','text/plain; charset=utf-8')
                 return self.reply(200,connected_page('Gmail modify'),'text/plain; charset=utf-8')
-            if path=='/google-drive-picker':
-                grant=parse_qs(parts.query).get('grant',[''])[0]
-                if not (getattr(service,'drive_picker_config',None) and service.drive_web_oauth.picker_grant_active(grant)):
-                    return self.reply(400,b'Google Drive file-selection link is invalid or expired. Return to Telegram and request a new link.','text/plain; charset=utf-8')
-                nonce=secrets.token_urlsafe(18)
-                csp=f"default-src 'self'; script-src 'self' 'nonce-{nonce}' 'unsafe-eval' https://apis.google.com https://accounts.google.com https://*.gstatic.com; style-src 'self' 'unsafe-inline' https://accounts.google.com https://*.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://*.google.com https://*.googleapis.com https://*.gstatic.com; frame-src https://*.google.com https://*.googleapis.com https://*.gstatic.com; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
-                return self.reply(200,picker_page(service.drive_picker_config,grant,nonce),'text/html; charset=utf-8',csp=csp)
             if path in ('/','/app.js','/style.css'):
                 filename={'/':'index.html','/app.js':'app.js','/style.css':'style.css'}[path]
                 mime={'/':'text/html; charset=utf-8','/app.js':'text/javascript; charset=utf-8','/style.css':'text/css; charset=utf-8'}[path]
                 return self.reply(200,(WEB/filename).read_bytes(),mime)
             if path=='/api/status':
                 return self.reply(200,{'claimed':store.claimed(),'authenticated':store.session(self.token()),'local_access':self.local_setup() and store.config('local_access',False)})
-            if path=='/api/drive/status':
-                if not self.auth():return
-                handoff=service.drive_web_oauth
-                return self.reply(200,{'configured':bool(handoff),'local_only':bool(handoff),
-                                       'state':handoff.status()['state'] if handoff else 'not-configured'})
             if not self.auth():return
             if path=='/api/a2a':
                 return self.reply(200,{**service.a2a_peers.status(),**service.a2a_peers.conversations()})
@@ -1252,9 +1077,6 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                         return self.reply(403,{'error':msg('quickstart.login_required')})
                     token=store.local_session()
                     return self.reply(200,{'ok':True},cookie=f'agentos_session={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400')
-                if path=='/api/drive/picker-selection':
-                    result=service.select_drive_picker_files(body.get('grant'),body.get('files'))
-                    return self.reply(200,{'state':result['state']})
                 if path in ('/api/claim','/api/login'):
                     with attempts_lock:
                         attempts[:]=[t for t in attempts if t>time.time()-60]
@@ -1583,33 +1405,8 @@ def browser_login_main(argv):
     return 0 if receipt.get('state') in ('opened','closed') else 1
 
 
-def drive_config_main(argv):
-    """Create a local-only Drive secret file without printing its contents."""
-    parser=argparse.ArgumentParser(description='Create an owner-only local Google Drive credential file.')
-    parser.add_argument('--oauth-client-json',required=True)
-    parser.add_argument('--secret-file',required=True)
-    parser.add_argument('--picker-key-stdin',action='store_true',help='Read the restricted Picker API key from standard input.')
-    args=parser.parse_args(argv)
-    source=Path(args.oauth_client_json).expanduser().resolve(strict=True)
-    target=_local_oauth_secret_target(parser,args.secret_file)
-    client_id,client_secret=_local_oauth_client(parser,source)
-    picker_key=sys.stdin.read().strip() if args.picker_key_stdin else getpass.getpass('Restricted Google Picker API key: ').strip()
-    if not picker_key:
-        parser.error('A restricted Google Picker API key is required.')
-    values={'client_id':client_id,'client_secret':client_secret,'picker_api_key':picker_key,
-            'encryption_key':Fernet.generate_key().decode()}
-    _write_local_oauth_secret_file(parser,target,values,'Drive')
-
-
 def gmail_config_main(argv):
     """Create a local-only Gmail secret file without printing its contents.
-
-    Deliberately the same shape as ``drive-config`` above: the same two
-    arguments, the same absolute-path refusal, the same locally generated
-    Fernet key, the same 0600 exclusive create, the same refusal to replace an
-    existing file.  The one difference is that Gmail has no browser-visible
-    Picker key to collect, so the file holds exactly the three values
-    ``local_gmail_secret_values`` requires and nothing more.
 
     Writing this file is not a Grant and connects nothing.  It only lets the
     installation *offer* Gmail; the connector row stays DISCONNECTED until the
@@ -1697,7 +1494,7 @@ def login_service_status(args, *, platform=None, interactive=None, environ=None,
     """
     if (platform or sys.platform)!='darwin':return None
     if not (sys.stdin.isatty() if interactive is None else interactive):return None
-    if (args.host!='127.0.0.1' or args.port!=SERVICE_PORT or args.drive_handoff_port is not None
+    if (args.host!='127.0.0.1' or args.port!=SERVICE_PORT
             or args.public_tunnel_host):return None
     env=os.environ if environ is None else environ
     if any(name.startswith('AGENTOS_') and name not in SERVICE_REPRODUCED_ENVIRONMENT for name in env):return None
@@ -1771,15 +1568,13 @@ COMMANDS_HELP="""other commands (each has its own --help):
   agentos guide         show onboarding and recovery guidance
   agentos browser-login open the embedded browser window for manual login
   agentos plugins       manage local plugin manifests
-  agentos gmail-config | calendar-config | drive-config
+  agentos gmail-config | calendar-config
                         create an owner-only local Google credential file"""
 
 
 def main():
     if len(sys.argv)>1 and sys.argv[1]=='plugins':
         return plugins_main(sys.argv[2:])
-    if len(sys.argv)>1 and sys.argv[1]=='drive-config':
-        return drive_config_main(sys.argv[2:])
     if len(sys.argv)>1 and sys.argv[1]=='calendar-config':
         return calendar_config_main(sys.argv[2:])
     if len(sys.argv)>1 and sys.argv[1]=='gmail-config':
@@ -1802,7 +1597,6 @@ def main():
     parser.add_argument('action',nargs='?',choices=['start'],default='start')
     parser.add_argument('--host',default='127.0.0.1')
     parser.add_argument('--port',type=int,default=8787)
-    parser.add_argument('--drive-handoff-port',type=int,default=None,help='Local HTTPS entry port for Telegram Drive buttons (default: port + 1).')
     parser.add_argument('--data',default=os.environ.get('AGENTOS_DATA',str(Path.home()/'.local/share/agentos')))
     parser.add_argument('--no-browser',action='store_true',help='Do not open the browser when Still starts.')
     parser.add_argument('--public-tunnel-host',action='append',default=[],help='Allow one exact HTTPS tunnel host for mobile access.')
@@ -1817,9 +1611,7 @@ def main():
         return handle
     instance_lock=lock()
     configure_logging(store)
-    handoff_port=args.drive_handoff_port or args.port+1
-    if handoff_port==args.port:parser.exit(2,'Drive handoff port must differ from the HTTP callback port.\n')
-    env=dict(os.environ);env['AGENTOS_DRIVE_LOCAL_PORT']=str(args.port);env['AGENTOS_DRIVE_HANDOFF_PORT']=str(handoff_port)
+    env=dict(os.environ)
     # The Gmail callback is served by this same HTTP listener, so the redirect
     # URI must name the port actually bound rather than a separately guessed one.
     env['AGENTOS_GMAIL_LOCAL_PORT']=str(args.port)
@@ -1836,22 +1628,13 @@ def main():
         try:server=ThreadingHTTPServer((args.host,args.port),make_handler(service,public_hosts,public_token))
         except OSError as exc:parser.exit(1,f'Cannot start: {exc}\nChoose another port with --port.\n')
         service.local_server_port=server.server_port
-        handoff_server=None
-        if service.drive_web_oauth:
-            try:
-                handoff_server=ThreadingHTTPServer((args.host,handoff_port),make_handler(service))
-                handoff_server.socket=localhost_tls_context(store).wrap_socket(handoff_server.socket,server_side=True)
-            except (OSError, ValueError, ssl.SSLError) as exc:
-                server.server_close()
-                parser.exit(1,f'Google Drive local HTTPS handoff could not start: {exc}\n')
-        return server,handoff_server
-    server,handoff_server=listen()
+        return server
+    server=listen()
     # #1445 part 5: a tunnel a killed earlier server left running blocks the next phone link.
     from .https_tunnel import reclaim_orphan_tunnels
     reclaim_orphan_tunnels(server.server_port)
     def close_listeners():
         server.server_close()
-        if handoff_server:handoff_server.server_close()
     # #438: the browser a terminal setup opens starts in the terminal's language.
     browser_language,term='',None
     # #510: the installer's </dev/tty is reopened on the terminal device, so the setup's questions can be read.
@@ -1873,12 +1656,10 @@ def main():
                 if not args.no_browser:webbrowser.open(with_language(home,browser_language))
                 return 0
             instance_lock=lock()
-            server,handoff_server=listen()
+            server=listen()
     service.start()
     # #1541: a bot connected in the terminal gets Still's profile, and a failed photo is retried.
     threading.Thread(target=service.apply_still_profile,name='still-profile',daemon=True).start()
-    if handoff_server:
-        threading.Thread(target=handoff_server.serve_forever,daemon=True).start()
     # One source for the address Still advertises, so the banner, the setup
     # link, the browser Still opens and any connector connect link that has
     # to land on the owner's existing session can never name different hosts.
@@ -1897,7 +1678,6 @@ def main():
     def shutdown(signum,frame):
         service.stop.set()
         threading.Thread(target=server.shutdown,daemon=True).start()
-        if handoff_server:threading.Thread(target=handoff_server.shutdown,daemon=True).start()
     if chat:
         if not browser_language:term.banner(first_run.version())   # the setup already drew it on a first start
         serving=threading.Thread(target=server.serve_forever,name='still-http',daemon=True)
@@ -1921,7 +1701,6 @@ def main():
         # #1380: a tunnel must not outlive its server (it blocks the next link).
         service.end_tunnel_sessions('closed')
         server.server_close()
-        if handoff_server:handoff_server.server_close()
         for thread in service.threads:thread.join(timeout=2)
 
 

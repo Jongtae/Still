@@ -152,7 +152,7 @@ The existing local implementation uses named modules rather than a new framework
 | `settings_continuation.SettingsContinuation` via `AgentService.settings_continuation_service` | MCP setup and Settings prerequisite readiness/Work continuation over existing service state, with forwarding entry points and unchanged authority, approval, budget, recovery and transaction semantics. |
 | `browser_signin.BrowserSignin` | Browser sign-in windows, provider sign-in records and exact step approvals, with forwarding service entry points over the same owner state. |
 | `orchestrator` and `settings_orchestrator` | Typed work planning/evaluation and bound setting drafts on existing state. |
-| `google_connections.GoogleConnections` | Google OAuth connection and saved-client lifecycle, revocation, status rows and Drive Picker helpers over the service's existing state, with forwarding service entry points. |
+| `google_connections.GoogleConnections` | Google OAuth connection and saved-client lifecycle, revocation and status rows over the service's existing state, with forwarding service entry points. |
 | `conversation_handoff` and `conversation_surface` | Contextual continuation and the shared owner pairing, ingestion, delivery and presence interface. |
 | `telegram_delivery.TelegramDelivery` via `AgentService.telegram_delivery` | Telegram connection lifecycle, callback authorization and task-card/result helpers, receive-failure logging, and delivery coordination across the existing surfaces, with service forwarding entry points and no additional state owner. |
 | `telegram_surface.TelegramSurface` | Telegram-specific ingestion, callbacks and delivery, with forwarding service entry points; it does not own a second store. |

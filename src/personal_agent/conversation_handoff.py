@@ -484,8 +484,7 @@ INTENT_MAIN_AI = 'main-ai'
 INTENT_DEVELOPER_MODE = 'developer-mode'
 INTENT_CALENDAR_CREATE = 'calendar-create'
 INTENT_MAIL_SEARCH = 'mail-search'
-#: Read the owner's Picker-selected Google Drive files into this turn, or
-#: hand off the Drive connection first (#672: judged, not matched on words).
+#: The judged need for Drive, served by the worker's connected tools (#1172).
 INTENT_DRIVE_READ = 'drive-read'
 #: #173 slice B: the owner wants to use their own saved context items for this
 #: request; Still offers the existing owner-only choice (judged, not keyword-matched).
@@ -1646,9 +1645,7 @@ class IntentClassifier:
 #     exactly as ``ingest_update`` and ``poll_telegram`` already refuse an
 #     update from a superseded generation.
 #
-# The compare-and-set on the parked job row is modelled on the shipped Drive
-# resume (``select_drive_files`` -> ``UPDATE jobs ... WHERE id=? AND
-# status='awaiting_drive'``), generalised from one connector to the contract.
+# The parked job uses a compare-and-set to resume only its waiting Work.
 import secrets as _secrets
 import threading
 import uuid
@@ -1717,8 +1714,8 @@ CONVERSATION_RESUME_KEY = 'conversation_pending_resume'
 
 RESUME_TTL_SECONDS = 900
 
-#: Mirrors the process-wide locks in ``connector_contract`` and
-#: ``drive_web_oauth``: the index may be reconstructed by another handoff
+#: Mirrors the process-wide locks in ``connector_contract``:
+#: the index may be reconstructed by another handoff
 #: instance in the same runtime, so the lock must not be instance-local.
 _RESUME_LOCK = threading.RLock()
 

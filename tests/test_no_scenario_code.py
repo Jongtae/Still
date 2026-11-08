@@ -135,12 +135,6 @@ CLASSIFIED = {
     ('local_tools.py', 'metadata.google.internal'): (
         'enforcement', 'SSRF denylist of cloud metadata hosts (DENIED_PUBLIC_HOSTS); a security boundary that '
                        'refuses every request to that host, not a site the model may choose'),
-    ('quickstart_service.py', 'google-drive-read'): (
-        'adapter', 'connector registry identity of the owner-connected Drive capability (read grant/handoff); '
-                   'capability dispatch by connector id, not a site or provider chosen for a request'),
-    ('google_connections.py', 'google-drive-read'): (
-        'adapter', 'connector registry identity of the owner-connected Drive capability (read grant/handoff); '
-                   'capability dispatch by connector id, not a site or provider chosen for a request'),
     ('quickstart_service.py', 'google-gmail-read'): (
         'adapter', 'connector registry identity of the owner-connected Gmail capability'),
     ('quickstart_service.py', 'google-calendar'): (

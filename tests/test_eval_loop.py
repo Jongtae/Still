@@ -678,7 +678,7 @@ class SandboxTest(unittest.TestCase):
         (private / 'setup-link.txt').write_text('http://127.0.0.1:8787/#setup=secret')
         (private / 'browser-profile').mkdir()
         (private / 'connections.json').write_text(json.dumps({
-            'telegram_token': 'T', 'encrypted:drive_web_oauth_tokens': 'D', 'claude_code_token': 'C',
+            'telegram_token': 'T', 'encrypted:calendar_oauth_tokens': 'D', 'claude_code_token': 'C',
             'model_key': 'M', 'api_key:openai': 'O', 'decision_model_key': 'J', 'search_key:brave': 'B'}))
         db = sqlite3.connect(private / 'quickstart.db')
         db.execute('CREATE TABLE config(key TEXT PRIMARY KEY, value TEXT)')
@@ -728,11 +728,11 @@ class SandboxTest(unittest.TestCase):
 
     def test_sandbox_environment_is_minimal_and_blocks_pyobjc(self):
         env = sandbox.sandbox_environment('/tmp/box', base={'HOME': '/Users/o', 'PATH': '/usr/bin',
-                                                            'AGENTOS_DRIVE_LOCAL_ONLY': '1', 'OPENAI_API_KEY': 'k',
+                                                            'AGENTOS_GMAIL_LOCAL_ONLY': '1', 'OPENAI_API_KEY': 'k',
                                                             'TELEGRAM': 'x'}, src='/repo/src')
         self.assertEqual(env['PYTHONPATH'], f'{SANDBOX_SITE}{os.pathsep}/repo/src')
         self.assertEqual(env['AGENTOS_ENGINE_RUNS'], '/tmp/box/engine-runs')
-        self.assertFalse({'AGENTOS_DRIVE_LOCAL_ONLY', 'OPENAI_API_KEY', 'TELEGRAM'} & set(env))
+        self.assertFalse({'AGENTOS_GMAIL_LOCAL_ONLY', 'OPENAI_API_KEY', 'TELEGRAM'} & set(env))
         self.assertIn('/opt/homebrew/bin', env['PATH'].split(os.pathsep))
         probe = ('import importlib.util\n'
                  'for name in ("WebKit", "AppKit", "objc"):\n'

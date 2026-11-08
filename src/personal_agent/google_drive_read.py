@@ -12,10 +12,7 @@ re-resolves, refreshes and revision-pins it on every call and refuses any
 destination outside :data:`DRIVE_API`.  That mirrors the Calendar split
 (``google_calendar`` data plane, ``calendar_oauth`` credential transport).
 
-The connector is the ``drive.readonly`` successor that #440 retired with the
-``drive.file`` + Picker handoff (``drive_web_oauth``) as the narrower option;
-the owner chose full-Drive read on 2026-10-08 (#1172).  That handoff is left
-unchanged and is a different connector id.
+The owner chose full-Drive read on 2026-10-08 (#1172).
 """
 import json
 import os

@@ -98,33 +98,6 @@ class JudgedCapabilityTests(unittest.TestCase):
                 self.assertEqual(decision.authority, AUTHORITY_DEFAULT)
 
 
-class _DriveOffer:
-    """The Drive handoff seam: records the offer it makes and resumes the parked Work."""
-
-    def __init__(self):
-        self.begun = []
-        self.state = 'disconnected'
-        self.pending = None
-
-    def status(self):
-        return {'state': self.state}
-
-    effective_status = status
-
-    def begin(self, owner, job_id):
-        self.begun.append((owner, job_id))
-        self.pending = job_id
-        return {'message': 'Google Drive 연결이 필요합니다.',
-                'button': {'text': 'Google Drive 연결하기', 'url': 'https://connect.example.test/drive'}}
-
-    def select_files(self, owner, files):
-        return {'state': 'files-selected', 'files': files}
-
-    def consume_pending_job(self, owner):
-        job_id, self.pending = self.pending, None
-        return job_id
-
-
 class ServiceRouteTests(unittest.TestCase):
     """Through the worker: the loop searches, a judged Drive request parks, "book" drafts nothing."""
 
@@ -160,9 +133,8 @@ class ServiceRouteTests(unittest.TestCase):
                         'results': [{'title': 'USD/KRW', 'url': 'https://rates.example/usd-krw', 'snippet': '1,380'}],
                         'sources': ['https://rates.example/usd-krw']}
 
-        self.drive = _DriveOffer()
         self.store.secret('telegram_token', 'test-token')
-        self.service = AgentService(self.store, ModelAdapter(transport), transport, drive_web_oauth=self.drive)
+        self.service = AgentService(self.store, ModelAdapter(transport), transport)
         self.service.local_tools = Network()
         self.service.save_model({'provider': 'ollama', 'endpoint': 'http://127.0.0.1:11434',
                                  'model': 'test-model', 'api_key': ''})
@@ -193,38 +165,14 @@ class ServiceRouteTests(unittest.TestCase):
         self.assertEqual(self.plans[0]['query'], 'USD KRW exchange rate today')
         self.assertIn('web_search', [tool['function']['name'] for tool in self.bodies[0]['tools']])
         self.assertIn('1,380', row['response'])
-        self.assertEqual(self.drive.begun, [])
 
-    def test_a_judged_drive_request_parks_for_the_drive_connection(self):
-        row = self.run_turn(DRIVE_REQUEST, {DRIVE_REQUEST: INTENT_DRIVE_READ})
-        self.assertEqual(row['status'], 'awaiting_drive')
-        self.assertEqual(self.drive.begun, [(42, row['id'])])
-        offer = next(body for body in self.telegram if 'reply_markup' in body)
-        self.assertEqual(offer['reply_markup']['inline_keyboard'][0][0]['text'], 'Google Drive 연결하기')
-        self.assertEqual(self.bodies, [], 'no model turn runs before the connection')
 
     def test_the_words_google_drive_alone_do_not_park_anything(self):
         self.script += [{'content': 'Google Drive는 클라우드 저장 서비스입니다.'}] * 2
         row = self.run_turn('구글 드라이브가 뭐야?')
         self.assertEqual(row['status'], 'succeeded')
-        self.assertEqual(self.drive.begun, [])
         self.assertFalse(any('reply_markup' in body for body in self.telegram))
 
-
-    # -- #672 review: a parked Drive Work keeps its judgment ---------------------
-    def test_a_resumed_drive_work_reads_its_files_without_a_second_judgment(self):
-        row = self.run_turn(DRIVE_REQUEST, {DRIVE_REQUEST: INTENT_DRIVE_READ})
-        self.assertEqual(row['status'], 'awaiting_drive')
-        # After parking the engine is unavailable; the resumed Work must not need it.
-        self.service.use_decision_engine(UnavailableDecisionEngine())
-        self.drive.state = 'connected'
-        self.service.selected_drive_context = lambda owner: '[선택 파일: 회의 자료]\nDRIVE-BODY 예산 3억'
-        self.service.select_drive_files(42, [{'id': 'picked'}])
-        self.assertEqual(self.store.job(row['id'])['status'], 'queued')
-        self.script += [{'content': '회의 자료 요약입니다.'}] * 2
-        self.assertTrue(self.service.run_one())
-        self.assertEqual(self.store.job(row['id'])['status'], 'succeeded')
-        self.assertIn('DRIVE-BODY', self.bodies[0]['messages'][-1]['content'])
 
     # -- #672 review: mixed turns never drop a part silently --------------------
     # #832 (ARCH-THIN-02): no rule runs one part of a mixed turn, and the turn is
@@ -255,30 +203,7 @@ class ServiceRouteTests(unittest.TestCase):
         row = self.run_turn(text, {text: INTENT_CALENDAR_CREATE})
         self.assertMixed(row, text, 'Google Calendar is not connected')
 
-    def test_a_drive_part_next_to_a_note_part_parks_the_whole_message(self):
-        # #173: the judged Drive read parks the Work for its connection; the
-        # resumed Work runs the owner's whole message, and no rule wrote a note.
-        text = '구글 드라이브 파일 요약해서 메모해줘'
-        row = self.run_turn(text, {text: INTENT_DRIVE_READ})
-        self.assertEqual(row['status'], 'awaiting_drive')
-        self.assertEqual(row['message'], text)
-        self.assertEqual(self.drive.begun, [(42, row['id'])])
-        self.assertEqual(self.store.notes(), [], 'no rule ran a part of the turn')
-        self.assertEqual(self.bodies, [], 'no model turn runs before the connection')
 
-    def test_summarize_my_drive_file_and_save_the_result_reaches_the_loop_with_both_parts(self):
-        # No local rule claims it; the judged Drive read routes the whole turn to
-        # the Work loop with the selected file, where the save tools are offered.
-        text = 'summarize my Drive file and save the result'
-        self.drive.state = 'connected'
-        self.service.selected_drive_context = lambda owner: '[선택 파일: plan]\nDRIVE-BODY plan'
-        self.script += [{'content': '요약했습니다.'}] * 2
-        row = self.run_turn(text, {text: INTENT_DRIVE_READ})
-        self.assertEqual(row['status'], 'succeeded')
-        sent = self.bodies[0]['messages'][-1]['content']
-        self.assertIn('save the result', sent)
-        self.assertIn('DRIVE-BODY', sent)
-        self.assertIn('save_note', [tool['function']['name'] for tool in self.bodies[0]['tools']])
 
     # -- #672 review: owner text is redacted before any judgment ---------------
     def test_a_stored_secret_in_a_calendar_request_never_reaches_the_engine(self):

@@ -8,7 +8,7 @@ owner could be told a capability was stopped while Still could still call it.
 
 This object therefore reads connection state only from the authoritative
 boundaries the owning service supplies (Telegram pairing, ``ConnectorRegistry``
-status for Gmail/Calendar, the Drive OAuth handoff), and it offers no lifecycle
+status for Gmail/Calendar/Drive), and it offers no lifecycle
 mutation whose backend would not actually change the represented authority.
 It never accepts credentials, OAuth artifacts, arbitrary setting names, or a
 provider endpoint.  HTTP, Telegram, and the local companion view call this same
@@ -648,7 +648,6 @@ class SettingsOrchestrator:
                                  note=SKILL_ADD_NOTE, available=available),
                 "remove": self._row("remove", "", ", ".join(removable) or msg('label.none'), None, format=msg('settings_orchestrator.skill_name_format'),
                                     installed=removable)}
-
 
 
     def _model_lists(self):

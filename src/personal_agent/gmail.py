@@ -328,7 +328,7 @@ def _finite_now(now: Callable[[], float]) -> float:
     return float(value)
 
 
-# See the REUSE-R1b (#427) Existing Solutions Review in ``drive_web_oauth`` for
+# See the REUSE-R1b (#427) Existing Solutions Review for
 # why ``google-auth``/``google-auth-oauthlib`` are rejected, why ``oauthlib`` is
 # adopted for authorization-request construction only, and in particular why
 # ``prepare_request_body``/``parse_request_body_response`` must NOT be adopted
