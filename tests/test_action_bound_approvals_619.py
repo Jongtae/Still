@@ -399,7 +399,7 @@ class ModelDraftBinding(_Case):
         self.service.activate_main_ai = lambda body: self.applied.append(dict(body))
         self.row = {'route': {'value': self.route[0]}, 'model': {'value': ''}}
         self.settings._snapshot = lambda category: self.row if category == 'main_ai' else {}
-        self.settings._normalized = lambda category, setting, value: (value, self.row)
+        self.settings._normalized = lambda category, setting, value, **kwargs: (value, self.row)
 
     def test_a_route_switch_before_confirming_makes_the_model_draft_stale(self):
         draft = self.settings.propose('owner', 'http', 'main_ai', 'model', 'model-x')
@@ -507,14 +507,38 @@ class UnattendedRuns(_Case):
         self.assertEqual(self.service.preparations.declined_goals(self.service.preparations.clock()), [],
                          'a row the owner set up is not a decline when its run stops it')
 
-    @unittest.expectedFailure
     def test_it_pauses_its_own_preparation_itself(self):
-        """#717 gap: during its run the own row is ``running``, which neither the pause choices nor
-        ``Preparations.pause`` (``already_running``) accept, so a run's own pause never applies."""
+        """Pausing the current slot leaves its Work running; it settles normally and then stays paused."""
         row, run = self.started_run()
         result = self.change('pause', row['id'], run)
         self.assertEqual((result['state'], result['applied'], result['own_run']), ('applied', True, True), result)
-        self.assertEqual(self.service.preparations.get(row['id'])['state'], prep.STATE_PAUSED)
+        self.assertEqual(self.service.preparations.get(row['id'])['state'], prep.STATE_RUNNING,
+                         'the run still owns its slot until it settles')
+        self.assertEqual(self.store.job(run['id'])['status'], 'running')
+        self.assertFalse(self.service.work_stopped(run['id']))
+        self.assertIn('own-run', self.audit_terminals(result))
+        self.assertEqual(self.settings.pending_drafts(), [])
+        future = self.service.preparations.clock() + 2 * 86400
+        self.assertNotIn(row['id'], [item['id'] for item in self.service.preparations.due(future)])
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='succeeded',delivery='none' WHERE id=?", (run['id'],))
+        self.service.preparations.settle({**row, 'last_run_job_id': run['id']}, future)
+        settled = self.service.preparations.get(row['id'])
+        self.assertEqual(settled['state'], prep.STATE_PAUSED)
+        self.assertIsNotNone(settled['last_outcome'], 'the paused run still records its outcome')
+        self.assertNotIn(row['id'], [item['id'] for item in self.service.preparations.due(future + 7 * 86400)])
+
+    def test_it_cannot_pause_another_running_preparation(self):
+        row, run = self.started_run()
+        other, _other_run = self.started_run()
+        with self.assertRaises(SettingsError):
+            self.change('pause', other['id'], run)
+        with self.assertRaises(prep.PreparationRefusal):
+            self.service.preparations.pause(other['id'], work_id=run['id'])
+        with self.assertRaises(prep.PreparationRefusal):
+            self.service.preparations.pause(row['id'])
+        self.assertEqual(self.service.preparations.get(other['id'])['state'], prep.STATE_RUNNING)
+        self.assertEqual(self.settings._drafts(), {})
 
     def test_cancelling_another_preparation_still_drafts_nothing(self):
         row, run = self.started_run()

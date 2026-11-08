@@ -326,6 +326,33 @@ class SelfSetRuns(Mode, _Case):
         self.assertIs(refused.exception.ran, False)
         self.assertEqual(self.receipts(job['id']), [])
 
+    def test_deleted_self_set_preparation_never_gains_payment_autonomy(self):
+        self.switch(True)
+        for accepted_by, origin in self.SELF_SET:
+            with self.subTest(accepted_by=accepted_by):
+                now = self.service.preparations.clock()
+                row = self.service.preparations.create(
+                    kind='prepare', goal='pay', due_at=now - 1, timezone='UTC',
+                    recurrence='daily', channel='web', created_from=None,
+                    state=prep.STATE_SCHEDULED, accepted_by=accepted_by, origin=origin)
+                work = self.service.preparations.start(row, channel='web', chat_id=None, now=now)
+                with self.store.db() as db:
+                    db.execute("UPDATE jobs SET status='running' WHERE id=?", (work,))
+                job = self.store.job(work)
+                self.service.preparations.cancel(row['id'])
+                self.service.preparations.delete(row['id'])
+                self.assertIsNone(self.service.preparations.get(row['id']))
+                self.assertFalse(self.service.work_stopped(work))
+                self.assertTrue(self.service.self_set_run(job))
+                self.assertIsNone(self.service._authorize_payment_autonomy(job, None, 'pay'))
+                self.assertIsNone(self.service._authorize_payment_autonomy(job, self.binding(job), 'pay 10'))
+                self.assertIsNone(self.service._authorize_payment_autonomy(job, self.binding(job), 'pay 10', dispatch=True))
+                ticket = {'revision': 1, 'digest': self.service._browser_step_keys(self.binding(job))['digest']}
+                with self.assertRaises(ToolError) as refused:
+                    self.service._authorize_payment_autonomy(job, self.binding(job), 'pay 10', ticket=ticket, dispatch=True)
+                self.assertEqual(refused.exception.code, 'payment_autonomy_changed')
+                self.assertEqual(self.receipts(work), [])
+
     def test_a_self_set_runs_api_payment_is_never_sent(self):
         self.switch(True)
         save_slot(self.store, 'money', ['pay.test'], 'secret-key-value-123456789', money=True)

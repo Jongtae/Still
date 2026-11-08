@@ -904,9 +904,13 @@ class AgentService:
         return prep.preparation_of((job or {}).get('request_key')) is not None
 
     def self_set_run(self, job):
-        """Whether this scheduled run's preparation was set up by the owner's AI or the look back, not asked for (#717)."""
-        row=self.preparations.get(prep.preparation_of((job or {}).get('request_key')))
-        return bool(row and row.get('accepted_by') in prep.SELF_SET)
+        """Self-set scheduled run, or one whose preparation provenance is unavailable (#717)."""
+        preparation_id=prep.preparation_of((job or {}).get('request_key'))
+        if preparation_id is None:return False
+        row=self.preparations.get(preparation_id)
+        # The Work retains its preparation request key after cancellation/deletion.
+        # Missing consent provenance must never widen payment authority.
+        return row is None or row.get('accepted_by') in prep.SELF_SET
 
     def owner_typed_work(self, job):
         """Whether the owner's own typed message started ``job`` (#619, #717).

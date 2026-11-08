@@ -706,7 +706,7 @@ class SettingsOrchestrator:
         line = msg(_CATEGORY_LINE_IDS[category], details=' · '.join(parts))
         return msg(_CATEGORY_LINE_IDS[category] + '_effective', details=' · '.join(parts), effective=row['effective']) if row.get('effective') else line
 
-    def _normalized(self, category, setting, value):
+    def _normalized(self, category, setting, value, *, work_id=None):
         """The canonical allowed value, or a fail-closed ``SettingsError`` (#814)."""
         if not isinstance(category, str) or not isinstance(setting, str):
             raise SettingsError(UNKNOWN_SETTING_MESSAGE)
@@ -789,6 +789,10 @@ class SettingsOrchestrator:
                 raise SettingsError(msg('settings_orchestrator.invalid_daily_calls', limit=MAX_DAILY_CALLS))
             return str(int(value)), row
         allowed = [option["value"] for option in row[setting]["options"] or ()]
+        if (category, setting) == ('preparations', 'pause') and work_id:
+            preparations = self.service.preparations
+            if preparations.owns_running(preparations.get(value), self.store.job(work_id)):
+                allowed.append(value)
         if value not in allowed:
             listed = ", ".join(allowed) or msg('settings_orchestrator.none_available_now')
             raise SettingsError(msg('settings_orchestrator.invalid_choice', label=_CHANGE_LABELS[category, setting], listed=listed))
@@ -1021,7 +1025,7 @@ class SettingsOrchestrator:
                 category == "skills" and (setting == "add" or setting == "enabled" and value == "on")
                 or setting == 'connect' and category in ('ai_connections', 'api_connections'))):
             raise SettingsError(msg('settings_orchestrator.resume_unsupported'))
-        after, row = self._normalized(category, setting, value)
+        after, row = self._normalized(category, setting, value, work_id=work_id)
         if category == 'payment_autonomy' and after == 'on' and work_id:
             job = self.store.job(work_id) or {}
             if self.service.owner_settings_request(job) is None:
@@ -1238,9 +1242,13 @@ class SettingsOrchestrator:
         elif category == "preparations":
             # #1455: the same operations as the Settings list (#659), confirmed by the owner in the conversation.
             # #619: only the owner's requested fields reach the edit; the bound timezone was checked above.
-            self.service.preparation_request({"operation": setting, **({k: v for k, v in json.loads(after).items()
-                                                                        if k != BOUND_TIMEZONE} if setting == "edit"
-                                                                       else {"id": after})})
+            if setting == 'pause' and self.service.preparations.owns_running(
+                    self.service.preparations.get(after), self.store.job(row.get('work_id'))):
+                self.service.preparations.pause(after, work_id=row.get('work_id'))
+            else:
+                self.service.preparation_request({"operation": setting, **({k: v for k, v in json.loads(after).items()
+                                                                            if k != BOUND_TIMEZONE} if setting == "edit"
+                                                                           else {"id": after})})
             self.__dict__.setdefault("_apply_text", {})[row["id"]] = self._preparation_receipt(setting, after)
         elif category == "skills":
             # #961: the service's own setters; adding returns the installed identity as the answer.
@@ -1444,7 +1452,7 @@ class SettingsOrchestrator:
 
     def _current_before(self, row):
         """The target's ``before`` now when it still covers ``row``, else None; read-only (#675)."""
-        after, current = self._normalized(row["category"], row["setting"], row["after"])
+        after, current = self._normalized(row["category"], row["setting"], row["after"], work_id=row.get('work_id'))
         if after != row["after"]:
             return None
         before = self._before(row["category"], row["setting"], after, current)
@@ -1785,7 +1793,7 @@ class SettingsOrchestrator:
             if args.get("continue_work", "no") not in ("yes", "no"):
                 raise SettingsError(msg('settings_orchestrator.invalid_continue_work_option'))
             if unattended:
-                after, _row = self._normalized(args.get("category"), args.get("setting"), args.get("value"))
+                after, _row = self._normalized(args.get("category"), args.get("setting"), args.get("value"), work_id=work_id)
                 if (own_preparation and (args.get("category"), args.get("setting")) in SELF_NARROWING
                         and after == own_preparation):
                     return self._apply_own_run(owner, channel, work_id, args)

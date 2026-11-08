@@ -939,13 +939,30 @@ class Preparations:
             raise PreparationRefusal('not_found')
         return {**row, 'changed': bool(changed)}
 
-    def pause(self, preparation_id):
-        """Keep a schedule without allowing the tick to run it (#575)."""
+    @staticmethod
+    def owns_running(row, job):
+        """Only the current slot's Work may pause its running, repeating preparation (#717)."""
+        return bool(row and job and row['state'] == STATE_RUNNING and row['recurrence']
+                    and row['last_run_job_id'] == job['id']
+                    and preparation_of(job['request_key']) == row['id'])
+
+    def pause(self, preparation_id, *, work_id=None):
+        """Keep a schedule without allowing the tick to run it (#575).
+
+        A run pausing its own preparation keeps the row ``running`` so the run
+        settles normally; ``settle`` then returns it as paused (#717).
+        """
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
-            row = self._editable(db, preparation_id, (STATE_SCHEDULED, STATE_PAUSED))
-            db.execute('UPDATE preparations SET state=?,updated_at=? WHERE id=?',
-                       (STATE_PAUSED, self.clock(), row['id']))
+            row = db.execute('SELECT * FROM preparations WHERE id=?', (preparation_id,)).fetchone()
+            job = db.execute('SELECT id,request_key FROM jobs WHERE id=?', (work_id,)).fetchone() if work_id else None
+            if self.owns_running(row, job):
+                db.execute('UPDATE preparations SET run_return_state=?,updated_at=? WHERE id=? AND state=?',
+                           (STATE_PAUSED, self.clock(), row['id'], STATE_RUNNING))
+            else:
+                row = self._editable(db, preparation_id, (STATE_SCHEDULED, STATE_PAUSED))
+                db.execute('UPDATE preparations SET state=?,updated_at=? WHERE id=?',
+                           (STATE_PAUSED, self.clock(), row['id']))
         return self.get(preparation_id)
 
     @staticmethod
