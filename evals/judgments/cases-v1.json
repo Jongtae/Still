@@ -1,5 +1,5 @@
 {
-  "version": "judgment-validation/1",
+  "version": "judgment-validation/3",
   "catalogue": {
     "workers": [
       {
@@ -144,7 +144,8 @@
         "previous_reply_at": "just now"
       },
       "expect": {
-        "abstain": true
+        "outcome": "yes",
+        "value": "reference"
       }
     },
     {
@@ -326,7 +327,8 @@
         "previous_reply_at": "just now"
       },
       "expect": {
-        "abstain": true
+        "outcome": "yes",
+        "value": "reference"
       }
     },
     {
@@ -742,7 +744,7 @@
         "conversation": ""
       },
       "expect": {
-        "outcome": "no"
+        "outcome": "yes"
       },
       "targets": [
         "#197"
@@ -928,9 +930,8 @@
       "expect": {
         "fallback": false,
         "account_change": true,
-        "owner_situation": false,
-        "technical_work": false,
-        "tier": "higher"
+        "tier": "higher",
+        "owner_situation": false
       }
     },
     {
@@ -945,9 +946,8 @@
       "expect": {
         "fallback": false,
         "account_change": true,
-        "owner_situation": false,
-        "technical_work": false,
-        "tier": "higher"
+        "tier": "higher",
+        "owner_situation": false
       }
     },
     {
@@ -962,9 +962,8 @@
       "expect": {
         "fallback": false,
         "account_change": true,
-        "owner_situation": false,
-        "technical_work": false,
-        "tier": "higher"
+        "tier": "higher",
+        "owner_situation": false
       }
     },
     {
@@ -1051,9 +1050,7 @@
         "failed": "The lookup failed."
       },
       "expect": {
-        "evaluation": "not_reached",
-        "redelegate": true,
-        "escalated": true
+        "evaluation": "not_reached"
       }
     },
     {
@@ -1069,9 +1066,7 @@
         "failed": "조회가 실패했어요."
       },
       "expect": {
-        "evaluation": "not_reached",
-        "redelegate": true,
-        "escalated": true
+        "evaluation": "not_reached"
       }
     }
   ]

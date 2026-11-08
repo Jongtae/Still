@@ -18,8 +18,8 @@ for each moved method, so its callers and test patch targets are unchanged.
 The Telegram surface and ``AgentService`` reach these tables only through this
 interface.  A few statements still touch them from elsewhere, each because it
 belongs to another owner's transaction or join: restart recovery
-(``QuickStore.recover`` and ``AgentService.recover_interrupted_work``, joined
-with ``jobs``), the held Memory notice written with the Memory row
+(``QuickStore.recover``, joined with ``jobs``), the held Memory notice written
+with the Memory row
 (``QuickStore.save_memory``), preparation delivery
 (``preparations``), context-observation photo cleanup
 (``context_observations``) and the terminal-status photo trigger in the schema.
@@ -353,3 +353,39 @@ class TelegramStore:
     def album_open(db, job_id):
         """Whether this Work is still a photo album collecting updates, in the caller's transaction."""
         return db.execute('SELECT 1 FROM telegram_photo_albums WHERE job_id=?',(job_id,)).fetchone()
+
+    @staticmethod
+    def notification_state(db, notification_id):
+        """Read the send claim's current state in the caller's transaction."""
+        return db.execute('SELECT state FROM telegram_notifications WHERE id=?',(notification_id,)).fetchone()
+
+    @staticmethod
+    def cancel_pending_notifications(db, surface):
+        """Cancel this surface's queued notices with its pending replies."""
+        return db.execute("UPDATE telegram_notifications SET state='cancelled' WHERE state='queued' AND surface=?",
+                          (surface,)).rowcount
+
+    @staticmethod
+    def cancel_orphan_notifications(db, names):
+        """Cancel notices no composed surface claims, with orphan replies."""
+        return db.execute("UPDATE telegram_notifications SET state='cancelled' WHERE state='queued' AND surface NOT IN ("
+                          +(','.join('?'*len(names)) or "''")+')',names).rowcount
+
+    @staticmethod
+    def answer_budget_continue(db, work_id, nonce):
+        """Mark the notice answered in the continuation's existing transaction."""
+        db.execute("UPDATE telegram_notifications SET state='budget_continue_answered' WHERE job_id=? AND kind='budget_continue' AND fingerprint=?",(work_id,nonce))
+
+    @staticmethod
+    def running_without_task_cards(db, prefixes):
+        """Running surface Works awaiting a recovery reply, before store recovery."""
+        return [row['id'] for row in db.execute(
+            "SELECT j.id FROM jobs j WHERE j.status='running' AND ("+(' OR '.join(['substr(j.channel,1,?)=?']*len(prefixes)) or '0')
+            +") AND j.delivery='none' "
+            "AND NOT EXISTS (SELECT 1 FROM telegram_task_cards c WHERE c.job_id=j.id AND c.state!='deleting')",
+            [value for prefix in prefixes for value in (len(prefix),prefix)])]
+
+    @staticmethod
+    def delete_interrupted_task_cards(db):
+        """Clear confirmed deletion intents in the post-recovery transaction."""
+        db.execute("DELETE FROM telegram_task_cards WHERE state='deleting' AND job_id IN (SELECT id FROM jobs WHERE status='interrupted')")
