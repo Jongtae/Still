@@ -126,20 +126,28 @@ class _Case(unittest.TestCase):
     def due_iso(self, seconds):
         return datetime.fromtimestamp(self.now + seconds, SEOUL).isoformat(timespec='seconds')
 
-    def receive(self, text):
-        """The owner's Telegram message, run through the ordinary worker."""
+    def receive(self, text, owner_typed=True):
+        """The owner's Telegram message, run through the ordinary worker.
+
+        ``owner_typed`` False stands for a Work the owner did not type (#717: a replayed or continued
+        turn), where the owner's AI only proposes a preparation.
+        """
         self.update_id += 1
         self.message_id += 1
         self.service.ingest_update({'update_id': self.update_id, 'message': {
             'message_id': self.message_id, 'from': {'id': CHAT}, 'chat': {'id': CHAT, 'type': 'private'},
             'text': text, 'date': int(self.now)}}, GENERATION)
         job_id = self.store.jobs()[0]['id']
+        if not owner_typed:
+            with self.store.db() as db:
+                db.execute('UPDATE jobs SET owner_typed=NULL WHERE id=?', (job_id,))
         self.assertTrue(self.service.run_one())
         return job_id
 
-    def web_turn(self, text):
+    def web_turn(self, text, owner_typed=False):
+        """A web Work; ``owner_typed`` is the local web chat's own typed message (a bare API request is not)."""
         self.message_id += 1
-        job_id = self.store.enqueue(text, f'web-{self.message_id}')
+        job_id = self.store.enqueue(text, f'web-{self.message_id}', owner_typed=owner_typed)
         self.assertTrue(self.service.run_one())
         return job_id
 
@@ -673,53 +681,94 @@ class AcceptanceContextTests(_Case):
         self.assertIn('이전 질문 5', conversation)
         self.assertLessEqual(len(conversation), PREPARATION_CONVERSATION_CHARS)
 
-    def test_a_no_keeps_the_proposal_waiting_for_the_owner(self):
+    def test_a_no_sets_it_up_but_not_as_the_owners_request(self):
+        """#717: in the owner's own typed Work a no only records that the AI set it up (it never pays)."""
         self.judge = engine(preparation=False)
         self.service.use_decision_engine(self.judge)
         self.script = [{'content': '좋아요.'}]
         self.receive('나 한 시간 뒤에 출발해')
         self.remind_at_that_time()
         [row] = self.rows()
-        self.assertEqual((row['state'], row['accepted_by']), ('proposed', None))
+        self.assertEqual((row['state'], row['accepted_by']), ('scheduled', prep.ACCEPTED_OWNER_WORK))
+        self.assertEqual(len(self.asked()), 1, 'the judgment still reads the owner message')
 
 
 class DeclinedOfferTests(_Case):
     """#582: the worker may offer a preparation; one the owner declined is not offered again."""
 
-    def offer(self, goal='아침 요약 준비', text='오늘 아침 요약해줘'):
+    def offer(self, goal='아침 요약 준비', text='오늘 아침 요약해줘', owner_typed=True):
         self.script = [{'content': None, 'tool_calls': [call('1', 'schedule_preparation', kind='prepare', goal=goal,
                                                              due=self.due_iso(86400), recurrence='weekdays', delivery='send')]},
-                       {'content': '요약했어요. 평일 아침마다 준비해 둘까요?'}]
-        work = self.receive(text)
+                       {'content': '요약했어요. 평일 아침마다 준비해 둘게요.'}]
+        work = self.receive(text, owner_typed=owner_typed)
         results = [json.loads(m['content']) for m in self.model_calls[-1]['messages'] if m['role'] == 'tool']
         return work, results[-1]
 
     def declined_asked(self):
         return [item[1] for item in self.judge.asked if item[0] == 'judge' and item[1].purpose == 'declined-preparation-goal']
 
-    def test_an_offer_waits_for_the_owner_and_never_runs(self):
-        self.judge = engine(preparation=False)
+    def test_an_offer_outside_the_owners_typed_work_waits_for_the_owner_and_never_runs(self):
+        """#717: only a Work the owner did not type (a replayed or continued turn) still just proposes."""
+        self.judge = engine(preparation=True)
         self.service.use_decision_engine(self.judge)
-        _work, result = self.offer()
+        _work, result = self.offer(owner_typed=False)
         [row] = self.rows()
         self.assertEqual((row['state'], row['accepted_by']), ('proposed', None))
         self.assertTrue(result['requires_owner_acceptance'])
+        self.assertFalse([item for item in self.judge.asked if item[1].purpose == 'explicit-preparation-request'],
+                         'no owner message to judge')
         self.now += 2 * 86400
         self.assertFalse(self.tick())
         self.assertEqual(self.runs(row['id']), [])
         self.assertEqual(self.declined_asked(), [], 'no declined proposal, no extra judgment')
 
-    def test_a_declined_offer_is_refused_the_second_time(self):
+    def test_in_the_owners_typed_work_it_is_set_up_and_told_with_a_cancel_button(self):
+        """#717: a no from the judgment schedules it as ``owner-work``; the owner is told with a cancel button."""
         self.judge = engine(preparation=False)
         self.service.use_decision_engine(self.judge)
-        self.offer()
+        work, result = self.offer()
         [row] = self.rows()
-        self.service.cancel_preparation(row['id'])
-        self.now += 86400
-        _work, result = self.offer(text='오늘도 아침 요약해줘')
-        self.assertEqual(result.get('code'), 'declined_before', result)
-        self.assertEqual([r['id'] for r in self.rows()], [row['id']], 'no second proposal')
-        self.assertEqual(self.declined_asked(), [], 'the same goal text needs no judgment')
+        self.assertEqual((row['state'], row['accepted_by'], row['created_from']),
+                         ('scheduled', prep.ACCEPTED_OWNER_WORK, work))
+        self.assertEqual((result['state'], result['requires_owner_acceptance']), ('scheduled', False))
+        self.service.deliver_one()
+        self.service.deliver_notification()
+        with self.store.db() as db:
+            kinds = [r['kind'] for r in db.execute('SELECT kind FROM telegram_notifications WHERE job_id=?', (work,))]
+        self.assertEqual(kinds, ['preparation_scheduled'], 'told, not asked')
+        notice = self.sends()[-1]
+        self.assertIn('아침 요약 준비', notice['text'])
+        [[button]] = notice['reply_markup']['inline_keyboard']
+        self.assertTrue(button['callback_data'].endswith(':cancel'))
+        self.tap(button['callback_data'], self.store.notification_of(work, 'preparation_scheduled')['message_id'])
+        self.assertEqual(self.service.preparations.get(row['id'])['state'], prep.STATE_CANCELLED)
+        self.assertEqual(self.service.preparations.declined_goals(self.now), ['아침 요약 준비'],
+                         'cancelling what the AI set up is the owner\'s no')
+
+    def test_in_the_owners_typed_work_a_yes_is_the_owners_request(self):
+        self.judge = engine(preparation=True)
+        self.service.use_decision_engine(self.judge)
+        _work, result = self.offer(text='평일 아침마다 요약 준비해줘')
+        [row] = self.rows()
+        self.assertEqual((row['state'], row['accepted_by']), ('scheduled', prep.ACCEPTED_OWNER_REQUEST))
+        self.assertEqual(result['accepted_by'], prep.ACCEPTED_OWNER_REQUEST)
+
+    def test_a_declined_offer_is_refused_the_second_time(self):
+        """#717: what the AI set up and the owner cancelled, or a proposal the owner declined, is not set up again."""
+        self.judge = engine(preparation=False)
+        self.service.use_decision_engine(self.judge)
+        for owner_typed in (True, False):
+            with self.subTest(first_offer_owner_typed=owner_typed):
+                self.offer(owner_typed=owner_typed)
+                [row] = [r for r in self.rows() if r['state'] in prep.ACTIVE_STATES]
+                self.service.cancel_preparation(row['id'])
+                self.now += 86400
+                _work, result = self.offer(text='오늘도 아침 요약해줘')
+                self.assertEqual(result.get('code'), 'declined_before', result)
+                self.assertEqual([r['state'] for r in self.rows()].count('scheduled'), 0, 'not set up again')
+                self.assertEqual(self.declined_asked(), [], 'the same goal text needs no judgment')
+                with self.store.db() as db:
+                    db.execute('DELETE FROM preparations')
 
     def test_a_reworded_offer_is_judged_and_a_different_one_is_allowed(self):
         def judge(context, proposition):
@@ -740,7 +789,21 @@ class DeclinedOfferTests(_Case):
         [asked] = self.declined_asked()
         self.assertIn('아침 날씨 요약', asked.facts['declined_goals'])
         _work, result = self.offer(goal='주간 일정 정리')
-        self.assertEqual(result.get('state'), 'proposed', result)
+        self.assertEqual((result.get('state'), result.get('accepted_by')), ('scheduled', prep.ACCEPTED_OWNER_WORK), result)
+
+    def test_a_declined_goal_is_refused_on_a_no_and_set_up_when_the_owner_asks_again(self):
+        """#717: the decline still holds against the AI's own set-up; only the owner's own ask lifts it."""
+        self.judge = engine(preparation=False)
+        self.service.use_decision_engine(self.judge)
+        self.offer(owner_typed=False)
+        [row] = self.rows()
+        self.service.cancel_preparation(row['id'])
+        _work, result = self.offer(text='오늘도 아침 요약해줘')
+        self.assertEqual(result.get('code'), 'declined_before', result)
+        self.judge = engine(preparation=True)
+        self.service.use_decision_engine(self.judge)
+        _work, result = self.offer(text='평일 아침마다 요약 준비해줘')
+        self.assertEqual((result.get('state'), result.get('accepted_by')), ('scheduled', prep.ACCEPTED_OWNER_REQUEST), result)
 
     def test_the_owners_own_request_is_never_blocked_by_an_earlier_decline(self):
         self.judge = engine(preparation=False)
@@ -765,21 +828,22 @@ class DeclinedOfferTests(_Case):
         self.now += prep.DECLINED_SECONDS + 60
         self.assertEqual(self.service.preparations.declined_goals(self.now), [])
         _work, result = self.offer()
-        self.assertEqual(result.get('state'), 'proposed', result)
+        self.assertEqual((result.get('state'), result.get('accepted_by')), ('scheduled', prep.ACCEPTED_OWNER_WORK), result)
 
 
 class AcceptanceTests(_Case):
-    def propose(self, text='점심 메뉴 추천해줘'):
+    def propose(self, text='점심 메뉴 추천해줘', owner_typed=True):
+        """``owner_typed`` False (#717): a Work the owner did not type, where the preparation only waits for a yes."""
         self.script = [{'content': None, 'tool_calls': [call('1', 'schedule_preparation', kind='prepare', goal='점심 후보 준비',
                                                              due=self.due_iso(1800), recurrence='daily', delivery='send')]},
                        {'content': '매일 점심 후보를 준비해 둘까요? 수락하면 예약합니다.'}]
-        work = self.receive(text)
+        work = self.receive(text, owner_typed=owner_typed)
         [row] = self.rows()
         return work, row
 
     def test_no_message_is_sent_except_from_an_accepted_preparation(self):
         self.service.use_decision_engine(engine(preparation=False))
-        work, row = self.propose()
+        work, row = self.propose(owner_typed=False)
         self.assertEqual((row['state'], row['accepted_by']), ('proposed', None))
         [result] = [json.loads(m['content']) for m in self.model_calls[-1]['messages'] if m['role'] == 'tool']
         self.assertTrue(result['requires_owner_acceptance'])
@@ -816,7 +880,7 @@ class AcceptanceTests(_Case):
 
     def test_declining_the_proposal_cancels_it(self):
         self.service.use_decision_engine(engine(preparation=False))
-        work, row = self.propose()
+        work, row = self.propose(owner_typed=False)
         self.service.deliver_one()
         self.service.deliver_notification()
         with self.store.db() as db:
@@ -830,14 +894,15 @@ class AcceptanceTests(_Case):
         self.now += 3600
         self.assertFalse(self.tick())
 
-    def test_without_a_decision_engine_the_owner_is_asked(self):
+    def test_without_a_decision_engine_it_is_never_taken_as_the_owners_request(self):
+        """#717: an unavailable judgment still sets it up in the owner's typed Work, but never as ``owner-request``."""
         self.service.use_decision_engine(engine(preparation=None))
         _work, row = self.propose('매일 11시 반에 점심 후보 준비해 둬')
-        self.assertEqual(row['state'], 'proposed')
+        self.assertEqual((row['state'], row['accepted_by']), ('scheduled', prep.ACCEPTED_OWNER_WORK))
 
     def test_settings_accept_cancel_and_delete(self):
         self.service.use_decision_engine(engine(preparation=False))
-        _work, row = self.propose()
+        _work, row = self.propose(owner_typed=False)
         status = self.service.preparation_request({'operation': 'accept', 'id': row['id']})
         [listed] = status['preparations']
         self.assertEqual((listed['state'], listed['accepted_by'], listed['recurrence']), ('scheduled', 'owner-settings', 'daily'))
@@ -923,7 +988,7 @@ class SecretTests(_Case):
         self.script = [{'content': None, 'tool_calls': [call('1', 'schedule_preparation', kind='reminder',
                                                              goal=f'토큰 {SECRET} 갱신하기', due=self.due_iso(600))]},
                        finish('f', '1', summary='예약했습니다.')]
-        self.web_turn(f'10분 뒤에 토큰 {SECRET} 갱신하라고 알려줘')
+        self.web_turn(f'10분 뒤에 토큰 {SECRET} 갱신하라고 알려줘', owner_typed=True)
         prepared = self.scheduled(goal='점심 후보 준비', seconds=30)
         self.now += 700
         self.tick()
@@ -992,7 +1057,7 @@ class PreparationScopeTests(_Case):
         self.script = [{'content': None, 'tool_calls': [call('1', 'schedule_preparation', kind='prepare', goal='점심 후보 3곳 준비',
                                                              due=self.due_iso(600), recurrence='daily')]},
                        finish('f', '1', summary='매일 준비할게요.')]
-        origin = self.web_turn(self.ORIGIN)
+        origin = self.web_turn(self.ORIGIN, owner_typed=True)
         [row] = self.rows()
         self.assertEqual((row['state'], row['created_from']), ('scheduled', origin))
         self.script = [{'content': '그랬군요.'}]
@@ -1462,7 +1527,7 @@ class SilentDeliveryTests(_WatchCase):
 
 
 class WatchAcceptanceTests(_WatchCase):
-    def propose_watch(self, preparation):
+    def propose_watch(self, preparation, owner_typed=True):
         self.judge = watch_engine([], preparation=preparation)
         self.service.use_decision_engine(self.judge)
         self.script = [{'content': None, 'tool_calls': [call('1', 'schedule_preparation', kind='prepare',
@@ -1470,13 +1535,13 @@ class WatchAcceptanceTests(_WatchCase):
                                                              every_minutes='10', until=self.due_iso(600 + 7200), max_runs='6',
                                                              delivery='when_needed')]},
                        {'content': '7시부터 10분마다 확인하고 필요할 때만 알려 드릴게요.'}]
-        work = self.receive('9시 전에 출발 시간 당겨야 하면 알려줘')
+        work = self.receive('9시 전에 출발 시간 당겨야 하면 알려줘', owner_typed=owner_typed)
         [row] = self.rows()
         [result] = [json.loads(m['content']) for m in self.model_calls[-1]['messages'] if m['role'] == 'tool']
         return work, row, result
 
     def test_a_watch_is_proposed_and_accepted_with_the_existing_flow(self):
-        work, row, result = self.propose_watch(preparation=False)
+        work, row, result = self.propose_watch(preparation=False, owner_typed=False)
         self.assertEqual((row['state'], row['recurrence'], row['every_seconds'], row['max_runs'], row['delivery_mode']),
                          ('proposed', prep.RECURRENCE_WINDOW, 600, 6, 'when_needed'))
         self.assertEqual((result['every_minutes'], result['max_runs'], result['delivery']), (10, 6, 'when_needed'))
@@ -1515,7 +1580,7 @@ class WatchAcceptanceTests(_WatchCase):
             [result] = [json.loads(m['content']) for m in self.model_calls[-1]['messages'] if m['role'] == 'tool']
             self.assertEqual(result['last_check'], prep.iso(expected, 'Asia/Seoul'))
 
-    def test_a_three_a_day_watch_until_a_deadline_is_accepted_as_a_proposal(self):
+    def test_a_three_a_day_watch_until_a_deadline_is_accepted(self):
         """#846: the guidance's default cadence (every_minutes ~420 with until) is within the validated window."""
         self.judge = watch_engine([], preparation=False)
         self.service.use_decision_engine(self.judge)
@@ -1527,7 +1592,8 @@ class WatchAcceptanceTests(_WatchCase):
         self.receive('바뀌면 알려줘')
         [row] = self.rows()
         [result] = [json.loads(m['content']) for m in self.model_calls[-1]['messages'] if m['role'] == 'tool']
-        self.assertEqual((row['state'], row['every_seconds'], row['delivery_mode']), ('proposed', 420 * 60, 'when_needed'))
+        self.assertEqual((row['state'], row['accepted_by'], row['every_seconds'], row['delivery_mode']),
+                         ('scheduled', prep.ACCEPTED_OWNER_WORK, 420 * 60, 'when_needed'))
         self.assertEqual((result['every_minutes'], result['delivery']), (420, 'when_needed'))
         self.assertNotIn('refused_because', json.dumps(result))
 
@@ -1538,7 +1604,7 @@ class WatchAcceptanceTests(_WatchCase):
 
     def test_a_watch_accepted_after_its_window_ended_is_not_started(self):
         """#395: a late yes never reads as a running watch."""
-        work, row, _result = self.propose_watch(preparation=False)
+        work, row, _result = self.propose_watch(preparation=False, owner_typed=False)
         self.service.deliver_one()
         self.service.deliver_notification()
         notification = self.proposal_notification(work)
@@ -1653,13 +1719,15 @@ class WatchAcceptanceTests(_WatchCase):
         self.assertEqual(len(rows), 1, ([(row['goal_text'], row['state'], row['recurrence'], row['every_seconds']) for row in rows], results))
         [row] = rows
         self.assertEqual((row['goal_text'], row['state'], row['recurrence'], row['every_seconds'], row['delivery_mode']),
-                         (goal, 'proposed', prep.RECURRENCE_WINDOW, 420 * 60, prep.DELIVERY_WHEN_NEEDED))
-        self.assertEqual(len(results), 8)  # includes the final finish-tool receipt
+                         (goal, 'scheduled', prep.RECURRENCE_WINDOW, 420 * 60, prep.DELIVERY_WHEN_NEEDED))
+        # #717: in the owner's typed Work the corrected watch is scheduled, so the finish citing it is
+        # accepted and the loop asks the model nothing more (no finish receipt in the last call).
+        self.assertEqual(len(results), 7)
         self.assertIn('invalid_window', json.dumps(results[0]))
         self.assertTrue(all('window_retry_required' in json.dumps(result) for result in results[1:6]))
         self.assertEqual(results[6]['preparation_id'], row['id'])
-        self.assertTrue(results[6]['requires_owner_acceptance'])
-        self.assertEqual(results[7]['code'], 'failed_ref', 'a proposal is not an accepted schedule')
+        self.assertEqual((results[6]['state'], results[6]['requires_owner_acceptance']), ('scheduled', False))
+        self.assertNotIn('failed_ref', json.dumps(results), 'a scheduled watch is an accepted schedule')
 
     def test_failed_watch_guard_is_rebuilt_from_tool_events_after_work_resume(self):
         """#860 review P2: the guard survives a resumable Work and service restart."""
@@ -1738,7 +1806,7 @@ class WatchAcceptanceTests(_WatchCase):
         self.receive('가격 변동을 마감까지 살펴보고 별도로 약속도 알려줘')
 
         [row] = self.rows()
-        self.assertEqual((row['goal_text'], row['kind'], row['state']), ('다른 약속 알림', 'reminder', 'proposed'))
+        self.assertEqual((row['goal_text'], row['kind'], row['state']), ('다른 약속 알림', 'reminder', 'scheduled'))
         results = [json.loads(message['content']) for message in self.model_calls[-1]['messages']
                    if message['role'] == 'tool']
         self.assertEqual([result['preparation_id'] for result in results if 'preparation_id' in result], [row['id']])
@@ -1769,7 +1837,8 @@ class OwnerOfferTests(_WatchCase):
         args.update(extra)
         self.script = [{'content': None, 'tool_calls': [call('1', 'schedule_preparation', **args)]},
                        {'content': '이렇게 지켜볼까요?'}]
-        work = self.receive('오늘 저녁 반등 매수 타이밍 봐줘')
+        # #717: a Work the owner did not type, so the offer is the proposal message these tests read.
+        work = self.receive('오늘 저녁 반등 매수 타이밍 봐줘', owner_typed=False)
         [result] = [json.loads(m['content']) for m in self.model_calls[-1]['messages'] if m['role'] == 'tool']
         return work, result
 
@@ -1976,8 +2045,8 @@ class CrossWorkProposalTests(_Case):
         self.assertNotEqual(self.propose('work-6', window=shorter)['id'], others[-1]['id'], 'a different window is new')
         self.assertEqual(self.propose('work-7', window=window)['id'], others[-1]['id'], 'the same window is the same watch')
 
-    def schedule(self, work, message):
-        job = {'id': work, 'message': message}
+    def schedule(self, work, message, owner_typed=None):
+        job = {'id': work, 'message': message, 'owner_typed': owner_typed}
         return self.service.preparation_scheduler(job, message)(
             {'kind': 'prepare', 'goal': '매일 아침 일정 정리', 'due': self.due_iso(600), 'recurrence': 'daily'})
 
@@ -2000,7 +2069,7 @@ class CrossWorkProposalTests(_Case):
         first = self.schedule('work-1', '아침마다 일정 정리해 줄래?')
         self.judge = engine(preparation=True)
         self.service.use_decision_engine(self.judge)
-        again = self.schedule('work-2', '매일 아침 일정 정리 예약해 줘')
+        again = self.schedule('work-2', '매일 아침 일정 정리 예약해 줘', owner_typed=1)
         self.assertEqual(again['preparation_id'], first['preparation_id'])
         self.assertTrue(again['already_proposed'])
         self.assertTrue(again['scheduled'])
@@ -2008,6 +2077,46 @@ class CrossWorkProposalTests(_Case):
         [row] = self.rows()
         self.assertEqual((row['state'], row['accepted_by'], row['created_from']),
                          (prep.STATE_SCHEDULED, prep.ACCEPTED_OWNER_REQUEST, 'work-1'))
+
+    def test_only_the_owners_own_typed_work_sets_it_up_at_once(self):
+        """#717: a continuation, a Work without owner_typed or with no message only proposes, and nothing is judged."""
+        from personal_agent.context_observations import CONTINUATION_KEY_PREFIX
+        self.judge = engine(preparation=True)
+        self.service.use_decision_engine(self.judge)
+        cases = (('continued', {'owner_typed': 1, 'request_key': CONTINUATION_KEY_PREFIX + 'r1'}),
+                 ('not-typed', {'owner_typed': None}), ('empty', {'owner_typed': 1, 'message': ' '}))
+        for index, (name, extra) in enumerate(cases):
+            with self.subTest(name):
+                job = {'id': f'work-{name}', 'message': '매일 아침 일정 정리 예약해 줘', **extra}
+                result = self.service.preparation_scheduler(job, job['message'])(
+                    {'kind': 'prepare', 'goal': f'아침 일정 정리 {index}', 'due': self.due_iso(600), 'recurrence': 'daily'})
+                self.assertEqual((result['state'], result['requires_owner_acceptance']), (prep.STATE_PROPOSED, True))
+                self.assertIsNone(self.service.preparations.get(result['preparation_id'])['accepted_by'])
+        self.assertFalse([item for item in self.judge.asked if item[1].purpose == 'explicit-preparation-request'])
+        typed = {'id': 'work-typed', 'message': '매일 아침 일정 정리 예약해 줘', 'owner_typed': 1}
+        result = self.service.preparation_scheduler(typed, 'a run prompt that is not the owner message')(
+            {'kind': 'prepare', 'goal': '아침 일정 정리 typed', 'due': self.due_iso(600), 'recurrence': 'daily'})
+        self.assertEqual((result['state'], result['accepted_by']), (prep.STATE_SCHEDULED, prep.ACCEPTED_OWNER_REQUEST))
+        [asked] = [item[1] for item in self.judge.asked if item[1].purpose == 'explicit-preparation-request']
+        self.assertEqual(asked.facts['owner_message'], typed['message'], 'the judgment reads the owner message, not the prompt')
+
+    def test_an_executed_retry_only_proposes_although_the_owner_typed_it(self):
+        """#717: "다시 해봐" replays the earlier request; the Work keeps owner_typed but is linked as a retry
+        after it was loaded, so the gate reads the stored relation.  A refused retry ran the new message
+        itself (stored as a reference) and still sets it up."""
+        self.judge = engine(preparation=False)
+        self.service.use_decision_engine(self.judge)
+        earlier = self.store.enqueue('매일 아침 일정 정리해 줘', 'web-earlier', owner_typed=True)
+        for index, (relation, state) in enumerate((('retry', prep.STATE_PROPOSED), ('reference', prep.STATE_SCHEDULED))):
+            with self.subTest(relation):
+                work = self.store.enqueue('다시 해봐', f'web-again-{relation}', owner_typed=True)
+                job = self.store.job(work)
+                with self.store.db() as db:
+                    db.execute('UPDATE jobs SET related_job_id=?,relation_kind=? WHERE id=?', (earlier, relation, work))
+                result = self.service.preparation_scheduler(job, '매일 아침 일정 정리해 줘')(
+                    {'kind': 'prepare', 'goal': f'아침 일정 정리 again {index}', 'due': self.due_iso(600), 'recurrence': 'daily'})
+                self.assertEqual(result['state'], state)
+                self.assertEqual(self.service.owner_typed_work(job), relation != 'retry')
 
     def test_a_too_long_goal_refusal_states_the_kinds_limit_and_one_retry(self):
         job = {'id': 'work-1', 'message': '알려줘'}
@@ -2163,7 +2272,8 @@ class SurfaceTests(unittest.TestCase):
         schema = next(d for d in action_definitions({'schedule_preparation': {'host_action': 'schedule_preparation'}},
                                                     {'schedule_preparation'}))
         self.assertEqual(schema['function']['parameters']['required'], ['kind', 'goal', 'due'])
-        self.assertIn('proposal the owner accepts', schema['function']['description'])
+        # #717: it is set up at once in the owner's Work and told with a cancel button.
+        self.assertIn('cancel button', schema['function']['description'])
         # Scrubbed with the Work's redactor; without one, only the length.
         scrub = lambda text: text.replace('token-1', '[redacted]')
         self.assertEqual(recorded_arguments('schedule_preparation', {'goal': '갱신 token-1', 'kind': 'reminder'}, scrub)['goal'],

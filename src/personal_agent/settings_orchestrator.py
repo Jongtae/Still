@@ -277,6 +277,8 @@ DIRECT_REQUEST_SETTINGS = frozenset({
     ('browser', 'close_login'), ('browser', 'use_mobile'), ('connections', 'disconnect'),
     # #705: a presentation preference only.
     ('developer_mode', 'enabled')})
+#: #717: what a scheduled run may do to its own preparation: only stop or pause it.
+SELF_NARROWING = frozenset({("preparations", "cancel"), ("preparations", "pause")})
 #: #619: what the worker reads when a scheduled run (no owner present) asks for a settings change.
 UNATTENDED_SETTINGS_TEXT = ('No owner is present in this scheduled run, so no settings change was proposed and '
                             'nothing waits for the owner. Say in your answer what you found and the change you would '
@@ -703,7 +705,7 @@ class SettingsOrchestrator:
         line = msg(_CATEGORY_LINE_IDS[category], details=' · '.join(parts))
         return msg(_CATEGORY_LINE_IDS[category] + '_effective', details=' · '.join(parts), effective=row['effective']) if row.get('effective') else line
 
-    def _normalized(self, category, setting, value):
+    def _normalized(self, category, setting, value, *, work_id=None):
         """The canonical allowed value, or a fail-closed ``SettingsError`` (#814)."""
         if not isinstance(category, str) or not isinstance(setting, str):
             raise SettingsError(UNKNOWN_SETTING_MESSAGE)
@@ -786,6 +788,10 @@ class SettingsOrchestrator:
                 raise SettingsError(msg('settings_orchestrator.invalid_daily_calls', limit=MAX_DAILY_CALLS))
             return str(int(value)), row
         allowed = [option["value"] for option in row[setting]["options"] or ()]
+        if (category, setting) == ('preparations', 'pause') and work_id:
+            preparations = self.service.preparations
+            if preparations.owns_running(preparations.get(value), self.store.job(work_id)):
+                allowed.append(value)
         if value not in allowed:
             listed = ", ".join(allowed) or msg('settings_orchestrator.none_available_now')
             raise SettingsError(msg('settings_orchestrator.invalid_choice', label=_CHANGE_LABELS[category, setting], listed=listed))
@@ -1018,7 +1024,7 @@ class SettingsOrchestrator:
                 category == "skills" and (setting == "add" or setting == "enabled" and value == "on")
                 or setting == 'connect' and category in ('ai_connections', 'api_connections'))):
             raise SettingsError(msg('settings_orchestrator.resume_unsupported'))
-        after, row = self._normalized(category, setting, value)
+        after, row = self._normalized(category, setting, value, work_id=work_id)
         if category == 'payment_autonomy' and after == 'on' and work_id:
             job = self.store.job(work_id) or {}
             if self.service.owner_settings_request(job) is None:
@@ -1235,9 +1241,13 @@ class SettingsOrchestrator:
         elif category == "preparations":
             # #1455: the same operations as the Settings list (#659), confirmed by the owner in the conversation.
             # #619: only the owner's requested fields reach the edit; the bound timezone was checked above.
-            self.service.preparation_request({"operation": setting, **({k: v for k, v in json.loads(after).items()
-                                                                        if k != BOUND_TIMEZONE} if setting == "edit"
-                                                                       else {"id": after})})
+            if setting == 'pause' and self.service.preparations.owns_running(
+                    self.service.preparations.get(after), self.store.job(row.get('work_id'))):
+                self.service.preparations.pause(after, work_id=row.get('work_id'))
+            else:
+                self.service.preparation_request({"operation": setting, **({k: v for k, v in json.loads(after).items()
+                                                                            if k != BOUND_TIMEZONE} if setting == "edit"
+                                                                           else {"id": after})})
             self.__dict__.setdefault("_apply_text", {})[row["id"]] = self._preparation_receipt(setting, after)
         elif category == "skills":
             # #961: the service's own setters; adding returns the installed identity as the answer.
@@ -1441,7 +1451,7 @@ class SettingsOrchestrator:
 
     def _current_before(self, row):
         """The target's ``before`` now when it still covers ``row``, else None; read-only (#675)."""
-        after, current = self._normalized(row["category"], row["setting"], row["after"])
+        after, current = self._normalized(row["category"], row["setting"], row["after"], work_id=row.get('work_id'))
         if after != row["after"]:
             return None
         before = self._before(row["category"], row["setting"], after, current)
@@ -1751,7 +1761,8 @@ class SettingsOrchestrator:
                 lines.append("  " + msg('settings_orchestrator.draft_reason', reason=row['reason']))
         return "\n".join(lines)
 
-    def work_tools(self, owner, channel, work_id, telegram=False, *, unattended=False, owner_request=None):
+    def work_tools(self, owner, channel, work_id, telegram=False, *, unattended=False, owner_request=None,
+                   own_preparation=None):
         """``settings_read`` / ``settings_change`` bound to one Work (#814).
 
         A change is only a draft bound to this conversation; the model gets
@@ -1765,6 +1776,10 @@ class SettingsOrchestrator:
         (``summary -> bool``, the service's judgment over the owner's own
         typed message) lets a ``DIRECT_REQUEST_SETTINGS`` change apply at once
         through the same ``confirm`` path (digest, stale check, audit, receipt).
+
+        #717: ``own_preparation`` is the preparation a scheduled run belongs to; that run may cancel or
+        pause it (it only narrows what runs) through the same ``confirm`` path, instead of leaving a draft
+        for an owner who is not there.
         """
         def call(action, args):
             args = args if isinstance(args, dict) else {}
@@ -1777,7 +1792,10 @@ class SettingsOrchestrator:
             if args.get("continue_work", "no") not in ("yes", "no"):
                 raise SettingsError(msg('settings_orchestrator.invalid_continue_work_option'))
             if unattended:
-                after, _row = self._normalized(args.get("category"), args.get("setting"), args.get("value"))
+                after, _row = self._normalized(args.get("category"), args.get("setting"), args.get("value"), work_id=work_id)
+                if (own_preparation and (args.get("category"), args.get("setting")) in SELF_NARROWING
+                        and after == own_preparation):
+                    return self._apply_own_run(owner, channel, work_id, args)
                 return {"state": "not_proposed", "unattended": True, "category": args.get("category"),
                         "setting": args.get("setting"), "after": after, "applied": False,
                         "next_step": UNATTENDED_SETTINGS_TEXT}
@@ -1796,6 +1814,20 @@ class SettingsOrchestrator:
             return {**{key: value for key, value in draft.items() if key not in ("digest", "response", "expires_at")},
                     "next_step": f"{draft['summary']} 변경은 소유자 확인을 기다립니다. {how} 확인 전에는 아무것도 바뀌지 않았습니다."}
         return call
+
+    def _apply_own_run(self, owner, channel, work_id, args):
+        """#717: a scheduled run cancels or pauses its own preparation through ``confirm`` (audit ``own-run``)."""
+        draft = self.propose(owner, channel, args.get("category"), args.get("setting"), args.get("value"),
+                             args.get("reason"), work_id)
+        result = self.confirm(owner, channel, draft["draft_id"], draft["digest"])
+        self._audit({"id": draft["draft_id"], "target": f"{draft['category']}.{draft['setting']}",
+                     "before": draft["before"], "after": draft["after"]}, "own-run")
+        state = result.get("state")
+        return {"state": state, "draft_id": draft["draft_id"], "category": draft["category"],
+                "setting": draft["setting"], "after": draft["after"], "applied": state == "applied",
+                "own_run": True, "response": result.get("response"),
+                "next_step": ("This scheduled run belongs to that preparation, so Still applied the change itself. "
+                              "Say in your answer what changed.")}
 
     def _own_proposal_edit(self, args, work_id):
         """#702: apply a schedule edit of a reservation this Work proposed and has not offered yet, or None.
