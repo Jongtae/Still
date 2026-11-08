@@ -32,7 +32,7 @@ class Clock:
 
 def planned(expect=None, model='model-standard', **extra):
     expect = expect or {}
-    return dict(worker='default-worker', model=model, effort='', brief={'notes': '', 'lens': ''}, reason='fixture',
+    return dict(worker='default-worker', model=model, effort='', brief={'notes': '', 'lens': ''}, reason='fixture', reply='',
                 **{k: expect.get(k, False) for k in j.FLAGS}, **extra)
 
 

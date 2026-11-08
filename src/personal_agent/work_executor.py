@@ -97,7 +97,7 @@ class WorkExecutor:
                     for phase in (service._prepare_worker_turn,service._run_worker_attempts):
                         step=phase(run)
                         if step is not PROCEED:return step
-                    service._settle_worker_outcome(run)
+                    if not run.handled:service._settle_worker_outcome(run)
                 service._finish_work(run)
             except (ValueError,ProviderError,ExecutionError,OSError) as exc:
                 service._fail_work(run,exc)
@@ -689,6 +689,11 @@ class WorkExecutor:
         early_plan,service._early_plan=getattr(service,'_early_plan',None),None
         run.attempt=run.orchestration.first(early=early_plan) if run.orchestration else None
         if not run.orchestration:service.settle_early_judgment(early_plan)
+        elif getattr(run.orchestration,'context_sent',False):
+            # The final plan may differ from the speculative one; audit exactly what it received.
+            service.record_turn_provenance(job['id'],
+                owner_information=service.owner_information_refs(run.orchestration.sent_sections),
+                plan_context_messages=run.orchestration.sent_turns)
         if run.attempt is not None and run.attempt.ask_location and service.plan_asked_location(job,run.attempt,run.claimed_at,run.decision):
             return True
         if run.attempt is not None:service.show_plan_preview(job,run.orchestration,run.attempt)
@@ -698,6 +703,29 @@ class WorkExecutor:
         """Phase 5: the orchestrated attempts, re-delegated within the Work's bounds until the plan ends."""
         service=self.service
         job=run.job
+        attempt=run.attempt
+        # #749: the final validated plan alone can answer; no worker or goal judgment ran.
+        if (attempt is not None and attempt.planned and attempt.reply and attempt.number==1
+                and not attempt.steer and not run.steer_note and not run.continued
+                and not job.get('response') and job.get('goal_outcome') is None and not run.retry_note
+                and not service.store.work_steer_texts(job['id'])
+                and not run.photo_file_ids and not run.image_inputs
+                and not service.store.context_attachment(job['id']) and not run.turn_provenance
+                and not attempt.account_change and not attempt.owner_situation and not attempt.technical_work
+                and not attempt.ask_location and not attempt.preview):
+            run.handled=True
+            run.response=attempt.reply
+            run.provider='decision'
+            run.model=''
+            run.goal_outcome=ws.GOAL_PLAN_ANSWERED
+            run.effect_state=service.work_effect_state(job['id'],run.claimed_at)
+            run.outcome=ws.derive_status(run.goal_outcome,run.effect_state,'succeeded')
+            service.record_decision({'purpose':'plan-direct-reply','kind':'route','route':'plan_reply',
+                                     'outcome':run.goal_outcome,'work_id':job['id'],
+                                     'at':time.time(),'elapsed_seconds':round(time.time()-run.claimed_at,3)})
+            service.record_stage(job['id'],'plan_reply',run.claimed_at)
+            service.record_turn_provenance(job['id'],route='plan_reply',status=run.outcome)
+            return PROCEED
         while True:
             run.config,run.key,run.subscription,run.attempt_test=service.attempt_route(run.orchestration,run.attempt,run.base_config,run.base_key,run.route_snapshot)
             run.brief=run.attempt.brief(adjusted=run.attempt.number>1 and not run.attempt.steer) if run.attempt is not None else None

@@ -692,7 +692,7 @@ class PlanAsksLocation(_LocationCase):
         def structured(context, question, schema):
             self.schemas.append(schema)
             offered = 'ask_location' in schema['properties']
-            data = {'worker': schema['properties']['worker']['enum'][0], 'model': '', 'brief': {'notes': ''},
+            data = {'reply': '', 'worker': schema['properties']['worker']['enum'][0], 'model': '', 'brief': {'notes': ''},
                     'reason': 'fits', 'account_change': False, 'owner_situation': True,
                     **({'ask_location': self.QUESTION, 'location_button': '현재 위치 보내기'} if offered else {})}
             return StructuredDecision(OUTCOME_DECIDED, data, fixture_confidence())

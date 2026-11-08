@@ -539,7 +539,7 @@ def peer_decisions(verdicts, plans=()):
             notes = next(plans, None)
             if notes:
                 return StructuredDecision(OUTCOME_DECIDED,
-                    {'worker': 'codex', 'model': '', 'brief': {'notes': notes}, 'reason': 'fits'},
+                    {'reply': '', 'worker': 'codex', 'model': '', 'brief': {'notes': notes}, 'reason': 'fits'},
                     fixture_confidence())
     return FixtureDecisionEngine(judge=judge, structured=structured)
 
