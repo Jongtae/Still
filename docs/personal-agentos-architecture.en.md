@@ -146,6 +146,7 @@ The existing local implementation uses named modules rather than a new framework
 | Boundary | Existing responsibility |
 | --- | --- |
 | `quickstart_service.AgentService` | Composition root for the store, connectors, orchestrators, surfaces and queue worker. |
+| `preparations_service.PreparationsService` | Preparation scheduling, suggestions, watch results, proposals and management over the service's existing state, with forwarding service entry points; `preparations.Preparations` retains persistence. |
 | `work_execution.WorkRun` | State carried between one Work's execution phases. |
 | `work_executor.WorkExecutor` via `AgentService.work_executor` | Claim, route, prepare, execute, settle and finish/fail one Work, including judgment/budget settlement and post-work handling. The extraction does not create another state owner. |
 | `memory_prompts.MemoryPrompts` via `AgentService.memory_prompts` | Memory candidate prompts and saved notices, including binding, decisions, undo and expiry, with service forwarding entry points over the same state and unchanged approval, delivery and recovery semantics. |

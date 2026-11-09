@@ -32,15 +32,6 @@ MIGRATED_MODULES = {
         '이름만 확인했습니다. 서버 실행·인증·도구 준비 여부는 검증하지 않았습니다. AI 제공 연결은 현재 작업의 도구 목록에서 별도로 확인하세요.',  # Model-only tool result or next_step guidance.
         'configured 또는 registry를 선택하세요.',  # Model-only tool result or next_step guidance.
         '공개 서버 이름의 일부로 찾은 메타데이터입니다. 인증·도구·범위·라이선스는 별도 확인이 필요합니다. 결과가 없거나 조회가 실패하면 기존 스킬과 일반 도구 경로를 검토하세요. 설치하거나 연결하지 않았습니다.',  # Model-only tool result or next_step guidance.
-        '[가림:',  # Redaction sentinel recognized in later comparisons.
-        '알림',  # Model-only tool result or next_step guidance.
-        '준비',  # Model-only tool result or next_step guidance.
-        '에 ',  # Model-only tool result or next_step guidance.
-        '을 예약했습니다. 취소 버튼이 담긴 메시지가 따로 가고, 대화로 취소를 요청해도 됩니다.',  # Model-only tool result or next_step guidance.
-        '을 제안했습니다. 소유자가 수락해야 예약됩니다(Telegram의 수락 버튼이나 대화로 수락).',  # Model-only tool result or next_step guidance.
-        '이미 제안되어 있던 ',  # Model-only tool result or next_step guidance (#574).
-        '을 소유자의 요청대로 예약했습니다. 대화로 취소를 요청할 수 있습니다.',  # Model-only tool result or next_step guidance (#574).
-        '은 이미 제안되어 있어 새로 만들지 않았습니다. 소유자가 그 제안을 수락해야 예약됩니다(Telegram의 수락 버튼이나 대화로 수락).',  # Model-only tool result or next_step guidance (#574).
         '이번 요청에서는 이미 충분히 알렸어요. 남은 내용은 답에 담아 주세요.',  # Model-only tool result or next_step guidance.
         '지금은 대화로 메시지를 보낼 수 없어요. 답에 담아 주세요.',  # Model-only tool result or next_step guidance.
         '메시지를 보내지 못했어요. 답에 담아 주세요.',  # Model-only tool result or next_step guidance.
@@ -58,6 +49,17 @@ MIGRATED_MODULES = {
         ')에서 허용되지 않아 실행하지 않았습니다. 거절된 동작을 다른 경로로 실행하지 마세요.',  # Model-only tool result or next_step guidance.
         '은(는) 소유자가 아직 검토하지 않은 동작이라 실행하지 않았습니다. 소유자에게 이 동작이 무엇을 하는지(무엇을 읽거나 바꾸는지) 한두 문장으로 소개하고, 읽기만 한다면 settings_change로 ai_connections review "',  # Model-only tool result or next_step guidance.
         '|read" 확인을 요청하세요. 변경이나 결제 동작이라면 그 효과와 필요한 입력을 설명하고, 같은 설정 확인 경로로 mutate 또는 payment 분류를 요청하세요. 분류 확인은 결제 실행 승인이 아닙니다.',  # Model-only tool result or next_step guidance.
+    },
+    'preparations_service.py': {
+        '[가림:',  # Redaction sentinel recognized in later comparisons.
+        '알림',  # Model-only tool result or next_step guidance.
+        '준비',  # Model-only tool result or next_step guidance.
+        '에 ',  # Model-only tool result or next_step guidance.
+        '을 예약했습니다. 취소 버튼이 담긴 메시지가 따로 가고, 대화로 취소를 요청해도 됩니다.',  # Model-only tool result or next_step guidance.
+        '을 제안했습니다. 소유자가 수락해야 예약됩니다(Telegram의 수락 버튼이나 대화로 수락).',  # Model-only tool result or next_step guidance.
+        '이미 제안되어 있던 ',  # Model-only tool result or next_step guidance (#574).
+        '을 소유자의 요청대로 예약했습니다. 대화로 취소를 요청할 수 있습니다.',  # Model-only tool result or next_step guidance (#574).
+        '은 이미 제안되어 있어 새로 만들지 않았습니다. 소유자가 그 제안을 수락해야 예약됩니다(Telegram의 수락 버튼이나 대화로 수락).',  # Model-only tool result or next_step guidance (#574).
     },
     'work_executor.py': {
         '사진 자료를 포함한 요청을 선택된 AI 작업자에게 전달합니다.',  # Model-only fallthrough instruction.
