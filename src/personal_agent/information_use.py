@@ -453,7 +453,9 @@ def work_information_use(store, job_id, redact=None):
                 if host and host not in opened and len(opened) < MAX_ITEMS:
                     opened.append(host)
         signed = evidence.get('provider_sign_in') if status == 'succeeded' and action.startswith('browser_') else None
-        if isinstance(signed, dict) and signed.get('state') == 'signed_in':
+        # #757: the owner's provider account was used whenever the browser came back through it (``returned``;
+        # ``signed_in`` in Evidence recorded before #757).
+        if isinstance(signed, dict) and signed.get('state') in ('returned', 'signed_in'):
             row = {'site': label(signed.get('site'), 80), 'provider': label(signed.get('provider'), 120)}
             if isinstance(signed.get('chain'), list):
                 row['chain'] = [label(host, 120) for host in signed['chain']]

@@ -131,19 +131,21 @@ class RecordsOnly(unittest.TestCase):
             self.assertEqual(audit['sent_to']['lookups'][0]['sources'], ['https://example.org/?token=[redacted]'])
 
     def test_a_federated_sign_in_preserves_every_provider_in_the_rendered_audit(self):
-        with tempfile.TemporaryDirectory() as folder:
-            store = QuickStore(Path(folder) / 'state')
-            job = store.enqueue('내역 확인', 'records-provider-chain')
-            chain = ['id.provider.test', 'login.upstream.test']
-            self.events(store, job, [('browser_click', 'succeeded', {'host_action': 'browser_click', 'evidence': {
-                'provider_sign_in': {'state': 'signed_in', 'site': 'site.test', 'provider': chain[0],
-                                     'chain': chain}}})])
-            audit = information_use.work_information_use(store, job)
-            [signed] = audit['sent_to']['browser_provider_sign_ins']
-            self.assertEqual(signed['chain'], chain)
-            text = information_use.render_korean(audit)
-            for host in chain:
-                self.assertIn(host, text)
+        # #757: ``returned`` now; Evidence recorded before #757 says ``signed_in`` and stays in the audit.
+        for state in ('returned', 'signed_in'):
+            with self.subTest(state=state), tempfile.TemporaryDirectory() as folder:
+                store = QuickStore(Path(folder) / 'state')
+                job = store.enqueue('내역 확인', 'records-provider-chain')
+                chain = ['id.provider.test', 'login.upstream.test']
+                self.events(store, job, [('browser_click', 'succeeded', {'host_action': 'browser_click', 'evidence': {
+                    'provider_sign_in': {'state': state, 'site': 'site.test', 'provider': chain[0],
+                                         'chain': chain}}})])
+                audit = information_use.work_information_use(store, job)
+                [signed] = audit['sent_to']['browser_provider_sign_ins']
+                self.assertEqual(signed['chain'], chain)
+                text = information_use.render_korean(audit)
+                for host in chain:
+                    self.assertIn(host, text)
 
     def test_a_failed_preflight_query_is_recovered_from_its_running_event(self):
         """#826 review P2: the /search preflight records its query in the running event; its success

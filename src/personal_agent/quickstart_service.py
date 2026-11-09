@@ -592,8 +592,8 @@ BROWSER_LOGIN_RESULT_TEXT={'resumed':msg('service.closing_the_sign_in_window_and
                            'no_session':msg('service.the_login_session_was_not_saved'),
                            'close_failed':(msg('service.i_could_not_confirm_that_the'))}
 #: #709: a Work whose last login ended this way may be asked again at the next login page.
-#: #636: ``resolved``: the Work's own re-sign-in through the owner's provider completed with evidence before
-#: the window was shown; a later login page of the same Work may ask again.
+#: #636: ``resolved``: a row from before #757, when a Work's re-sign-in through the owner's provider settled
+#: the request on cookie evidence alone; a later login page of the same Work may ask again.
 BROWSER_LOGIN_REASK_STATES=('expired','unavailable','not_logged_in','resolved')
 #: #1006: a login not yet settled; another login page in the same Work joins it.
 BROWSER_LOGIN_PENDING_STATES=('requested','opening','offered','closing')
@@ -7679,7 +7679,6 @@ class AgentService:
             def provider_sign_in_enabled(self,url):return service.browser_provider_signin_enabled(url)
             def provider_signin_settings(self):return service.provider_signin_settings()
             # #636 (Codex P2 on #637): a confirmed re-sign-in settles this Work's own login request for that site.
-            def login_resolved(self,url):return service.resolve_browser_login(job,url)
             # #636 (Codex P1 on #637): the hosts whose pages no AI step may press or type on.
             def provider_hosts(self):return service.browser_provider_hosts()
         return Approvals()
@@ -7894,9 +7893,6 @@ class AgentService:
 
     def _request_browser_login(self, job, url, explicit=False, *, window_url=None):
         return self.browser_signin._request_browser_login(job, url, explicit, window_url=window_url)
-
-    def resolve_browser_login(self, job, url):
-        return self.browser_signin.resolve_browser_login(job, url)
 
     def offer_browser_login(self, job):
         return self.browser_signin.offer_browser_login(job)

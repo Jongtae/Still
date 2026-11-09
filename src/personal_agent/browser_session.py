@@ -1152,16 +1152,6 @@ class BrowserSession:
                         'seen': bool(current and current['seen'])}
         return self._resign
 
-    def _login_resolved(self, url):
-        """#636: settle this Work's pending login request for ``url``'s site (``approvals.login_resolved``)."""
-        resolve = getattr(self.approvals, 'login_resolved', None)
-        if not callable(resolve):
-            return False
-        try:
-            return resolve(url) is True
-        except Exception:
-            return False
-
     def _site_cookies(self, site):
         """#636: the digests of the site's unexpired cookies in this Work's browser now (``browser_jar.site_marks``,
         the jar's own rule), or None when the browser cannot say.  Values are only hashed, in memory."""
@@ -1177,8 +1167,11 @@ class BrowserSession:
         return unexpired(site_marks(grouped, site), time.time())
 
     def _sign_in_evidence(self, snapshot):
-        """#636: whether the re-sign-in affirmatively completed: the redirect carried no OAuth error and the
-        site holds a session cookie that is new or renewed since the re-sign-in began.  Unknown is not proof."""
+        """#636: whether the browser came back from the provider: the redirect carried no OAuth error and a
+        site cookie is new or renewed since the re-sign-in began.  Unknown is not proof.
+
+        #757: this is not proof of a sign-in.  A site whose scripts rotate cookie values on every load
+        passes it signed in or not, so the page decides (the owner's AI reads it)."""
         try:
             names = {name for name, _value in parse_qsl(urlsplit(snapshot.get('_window_url') or '').query,
                                                         keep_blank_values=True)}
@@ -1195,14 +1188,14 @@ class BrowserSession:
         if not self._resign:
             return
         resign = self._resign
-        signed = self._sign_in_evidence(snapshot)
-        receipt = self._receipt('signed_in' if signed else 'unconfirmed')
-        next_step = None
+        returned = self._sign_in_evidence(snapshot)
+        # #757: ``returned`` says what Still observed, not that the site is signed in; the Work's login
+        # request stays as it is, so the owner is still asked when the Work cannot go on.
+        receipt = self._receipt('returned' if returned else 'unconfirmed')
         if snapshot['login_required']:
             next_step = msg('browser.provider_not_returned', provider=resign['provider']) + ' ' + self._hand_off()
-        elif signed:
-            if self._login_resolved(resign['reference']):
-                receipt['login_request'] = 'resolved'
+        elif returned:
+            next_step = msg('browser.provider_returned', provider=resign['provider'])
         else:
             next_step = msg('browser.provider_unconfirmed', provider=resign['provider']) + ' ' + self._hand_off()
         self._pending_provider_sign_in = {'receipt': receipt, 'next_step': next_step}
