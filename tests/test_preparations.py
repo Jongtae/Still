@@ -1874,12 +1874,14 @@ class OwnerOfferTests(_WatchCase):
         plain = prep.proposal_text([row], 0, 'Asia/Seoul')
         self.assertLess(plain.index(self.OFFER.splitlines()[-1]), plain.index(prep.BRIEF_LABEL))
 
-    def test_ai_offer_supplies_the_only_question_in_text_and_html(self):
-        work, _ = self.propose(offer='조건에 맞는 결과가 있으면 알려 드릴까요?')
+    def test_statement_offer_keeps_a_continuation_proposed_with_acceptance_buttons(self):
+        """#755: a statement needs no setup question; a continuation still waits for acceptance."""
+        work, result = self.propose(offer='수락하면 조건에 맞는 새 결과가 있을 때만 알려 드려요.')
+        self.assertEqual((result['state'], result['scheduled']), ('proposed', False))
         [row] = self.rows()
         for render in (prep.proposal_text, prep.proposal_html):
             text = render([row], 0)
-            self.assertEqual(text.count('?'), 1, text)
+            self.assertEqual(text.count('?'), 0, text)
             self.assertIn(row['offer_text'], text)
             self.assertNotIn(prep.PROPOSAL_QUESTION, text)
         _, sent = self.proposal_message(work)

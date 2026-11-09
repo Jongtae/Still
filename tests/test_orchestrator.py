@@ -2658,7 +2658,7 @@ class SecretaryStandard(Harness):
         self.assertIn('only links a lookup actually returned', CORE_INSTRUCTIONS)
         for guidance in (API_TOOL_GUIDANCE, CLI_TOOL_GUIDANCE):
             self.assertIn('ordinary conversation that needs no current facts', guidance)
-        # #846: a standing wish is proposed as a watch; #1508: its method and cadence are stated once,
+        # #846, #755: a standing wish is set up as a watch; #1508: its method and cadence are stated once,
         # in the schedule_preparation description, not repeated in the core prompt.
         from personal_agent.agent_runtime import DEFINITIONS, model_facing_text
         [preparation] = [tool['function'] for tool in DEFINITIONS if tool['function']['name'] == 'schedule_preparation']
@@ -2683,7 +2683,7 @@ class SecretaryStandard(Harness):
         self.assertIn('offers to look it up, check it or do it', GOAL_REACHED_PROPOSITION)
         self.assertIn('when the observations show no attempt to find it', GOAL_REACHED_PROPOSITION)
 
-    def test_the_guidance_puts_the_source_next_to_a_looked_up_fact_and_proposes_a_watch_despite_a_missing_detail(self):
+    def test_the_guidance_puts_the_source_next_to_a_looked_up_fact_and_sets_up_a_watch_despite_an_assumable_detail(self):
         """#854: a looked-up changing fact carries its link or is called unsourced; an assumable missing detail never
         blocks a watch (#406: only one that decides what is checked is asked first)."""
         from personal_agent.agent_runtime import (CLI_NATIVE_SEARCH_GUIDANCE, CORE_INSTRUCTIONS, DEFINITIONS,
@@ -2698,11 +2698,27 @@ class SecretaryStandard(Harness):
         self.assertIn('before saying it could not be checked', CLI_NATIVE_SEARCH_GUIDANCE)
         by_name = {tool['function']['name']: model_facing_text(tool['function']) for tool in DEFINITIONS}
         for text in (by_name['schedule_preparation'],):
-            self.assertIn('still propose the watch with what is known, say the assumption and ask in the same reply', text)
-            self.assertIn('when the missing detail decides what is checked (which date, which item) and nothing gives it, '
-                          'ask that one question first', text)
+            self.assertIn('set up the watch with that assumption', text)
+            self.assertIn('the owner can change or cancel it', text)
+            self.assertIn('Ask one question first only when the missing detail decides what is checked '
+                          '(which date, which item) and only the owner can give it', text)
         for text in (CORE_INSTRUCTIONS, CLI_NATIVE_SEARCH_GUIDANCE, by_name['schedule_preparation']):
             self.assertEqual(scenario_tokens(text), [])
+
+    def test_preparation_guidance_acts_then_tells_without_a_setup_question(self):
+        """#755: exported tool guidance matches #717 without changing proposal/run boundaries."""
+        from personal_agent.agent_runtime import DEFINITIONS, model_facing_text
+        [tool] = [t['function'] for t in DEFINITIONS if t['function']['name'] == 'schedule_preparation']
+        text = model_facing_text(tool)
+        for stale in ('propose one kind prepare watch', 'ask in the same reply',
+                      'asking whether to set it up', 'reads and accepts'):
+            self.assertNotIn(stale, text)
+        self.assertIn('when it runs, how the owner hears and that it can be cancelled', text)
+        self.assertIn('If a required value is missing, ask one question and do not claim the watch is scheduled', text)
+        offer = tool['parameters']['properties']['offer']['description']
+        self.assertIn('state what is set up and that it can be cancelled', offer)
+        self.assertIn('describe what would run after acceptance without claiming it is set up', offer)
+        self.assertIn('Ask nothing', offer)
 
     def test_a_tool_less_direct_reply_gets_the_one_judgment_and_stays_on_the_main_ai_when_short(self):
         """#820 review P1: a direct run that asked no judgment (no external tool) is judged once, like a CLI attempt.
