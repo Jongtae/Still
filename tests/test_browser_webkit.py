@@ -994,6 +994,89 @@ class OwnerPopupReturnTests(unittest.TestCase):
         self.assertIn(('stopLoading', ()), view.events)
         self.assertNotIn(('stopLoading', ()), old.events)
 
+    def test_promotion_transfers_pending_navigation_until_finish_or_failure(self):
+        for failed in (False, True):
+            with self.subTest(failed=failed):
+                self.prepare_work()
+                self.worker.layout = 'desktop'
+                self.worker.warming = None
+                self.worker.op_navigate(7, {'url': 'https://site.test/start'}, 5)
+                old = self.worker.view
+                old_navigation, promoted_navigation = object(), object()
+                self.worker.navigation = (7, old_navigation)
+                view = self.create('https://site.test/document')
+                popup_delegate = self.worker.popups[-1][2]
+                view.URL = lambda: self.NS(absoluteString=lambda: 'https://site.test/document', scheme=lambda: 'https')
+                replies, failures = [], []
+                self.worker.reply = lambda ident, **fields: replies.append((ident, fields))
+                self.worker.fail = lambda ident, code: failures.append((ident, code))
+                # Stopping the opener may synchronously deliver its cancellation.
+                old.stopLoading = lambda: self.worker.navigation_finished(
+                    self.NS(isEqual_=lambda expected: expected is old_navigation), self.NS(code=lambda: -999))
+                popup_delegate.webView_didCommitNavigation_(view, promoted_navigation)
+                self.assertEqual(self.worker.navigation, (7, promoted_navigation))
+                self.assertFalse(replies)
+                self.assertFalse(failures)
+                # A late opener callback cannot answer the transferred operation.
+                stale = self.NS(isEqual_=lambda expected: False)
+                self.worker.navigation_finished(stale)
+                self.assertFalse(replies)
+                if failed:
+                    error = self.NS(code=lambda: -1001)
+                    self.delegate.webView_didFailNavigation_withError_(view, promoted_navigation, error)
+                    self.assertEqual(failures, [(7, self.bw.navigation_error_code(error))])
+                else:
+                    self.delegate.webView_didFinishNavigation_(view, promoted_navigation)
+                    self.assertEqual(replies, [(7, {'url': 'https://site.test/document', 'layout': 'desktop'})])
+                self.assertIsNone(self.worker.navigation)
+
+    def test_read_hold_cancels_candidate_at_policy_answer_or_commit(self):
+        for phase in ('policy', 'answer', 'commit'):
+            with self.subTest(phase=phase):
+                self.prepare_work()
+                old = self.worker.view
+                self.worker.reading, self.worker.read_navigations = phase == 'policy', 0
+                view = self.create('https://site.test/document')
+                if phase == 'answer':
+                    checks = []
+                    original = self.worker.decide
+                    self.worker.decide = lambda url, top, then: checks.append(then)
+                    answers = self.popup_navigate(view, 'https://site.test/document')
+                    self.assertFalse(answers)
+                    self.worker.reading = True
+                    checks.pop()(True)
+                    self.worker.decide = original
+                elif phase == 'policy':
+                    answers = self.popup_navigate(view, 'https://site.test/document')
+                else:
+                    self.assertEqual(self.popup_navigate(view, 'https://site.test/document'), [1])
+                    self.worker.reading = True
+                    self.commit(view, 'https://site.test/document')
+                    answers = []
+                self.assertEqual(answers, [] if phase == 'commit' else [0])
+                self.assertEqual(self.worker.read_navigations, 1)
+                self.assertIs(self.worker.view, old)
+                self.assertFalse(self.worker.popups)
+                self.assertIsNone(self.worker.work_popup)
+                self.assertEqual((self.worker.main_navigations, self.worker.landed, self.worker.blocked), (0, 0, 0))
+                self.assertFalse(getattr(self.worker, 'popup_results', []))
+                self.assertIn(('stopLoading', ()), view.events)
+                self.assertIn(('loadHTMLString_baseURL_', ('', None)), view.events)
+                self.worker.reading = False
+
+    def test_promotion_resets_phone_fit_and_cancels_pending_return(self):
+        self.prepare_work()
+        self.worker.phone_fit = 2.0
+        self.worker.mobile_restore = object()
+        self.worker.login_return_pending = object()
+        zooms = []
+        self.worker.set_page_zoom = lambda zoom: zooms.append((self.worker.view, zoom))
+        view = self.create('https://site.test/document')
+        self.commit(view, 'https://site.test/document')
+        self.assertEqual(zooms, [(view, 1.0)])
+        self.assertIsNone(self.worker.phone_fit)
+        self.assertIsNone(self.worker.login_return_pending)
+
     def test_work_popup_parks_and_renders_without_focus(self):
         self.prepare_work()
         view = self.create('about:blank')
@@ -2113,6 +2196,17 @@ class SessionFixtureHandler(FixtureHandler):
               <p id="result">Waiting</p></body></html>''')
         if path == '/popup-document-start':
             return self._send("""<html><body><button onclick="window.open('/popup-document')">Open document</button></body></html>""")
+        if path == '/popup-pending-start':
+            # Keep the opener's navigate pending while its candidate commits.
+            return self._send("""<html><body><img src="/popup-slow-resource">
+              <script>window.open('/popup-document')</script></body></html>""")
+        if path == '/popup-slow-resource':
+            time.sleep(2)
+            return self._send('resource finished')
+        if path == '/popup-read-start':
+            return self._send("""<html><body style="height:4000px">Original list
+              <script>window.addEventListener('scroll', () => window.open('/popup-document'), {once:true})</script>
+              </body></html>""")
         if path == '/popup-document':
             self.server.document_requests += 1
             text = 'Single-use document' if self.server.document_requests == 1 else 'Document expired'
@@ -3236,6 +3330,39 @@ class WebKitIntegrationTests(unittest.TestCase):
                 worker.click(index, 10)
             self.assertEqual(worker.release_submit(caught.exception.cancelled_form, 10), {'navigated': True, 'posted': True})
             self.assertEqual(self.server.posts, ['/coupon', '/pay'])
+        finally:
+            worker.close()
+
+    @unittest.skipUnless(sys.platform == 'darwin', 'Work popups require WebKit')
+    def test_work_popup_promotion_completes_pending_navigate(self):
+        self.server.document_requests = 0
+        worker = self.worker()
+        worker.set_provider_sign_in_policy(lambda: {
+            'enabled': True, 'protected_hosts': [],
+            'popup_sites': [bs.registrable_domain(bs.landed_host(self.origin))]})
+        try:
+            result = worker._request('navigate', 10, url=self.origin + '/popup-pending-start', layout='mobile')
+            self.assertEqual((result['url'], result['layout']), (self.origin + '/popup-document', 'mobile'))
+            self.assertIn('Single-use document', worker.snapshot()['text'])
+            self.assertEqual(self.server.document_requests, 1)
+        finally:
+            worker.close()
+
+    @unittest.skipUnless(sys.platform == 'darwin', 'Work popups require WebKit')
+    def test_work_popup_load_is_held_during_load_more(self):
+        self.server.document_requests = 0
+        worker = self.worker()
+        worker.set_provider_sign_in_policy(lambda: {
+            'enabled': True, 'protected_hosts': [],
+            'popup_sites': [bs.registrable_domain(bs.landed_host(self.origin))]})
+        try:
+            worker.goto(self.origin + '/popup-read-start', 10)
+            result = worker.load_more(1, 5, 10)
+            self.assertEqual(result['navigation_refused'], 1)
+            self.assertEqual(self.server.document_requests, 0)
+            page = worker.snapshot()
+            self.assertEqual(page['url'], self.origin + '/popup-read-start')
+            self.assertIn('Original list', page['text'])
         finally:
             worker.close()
 

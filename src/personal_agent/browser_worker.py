@@ -2601,6 +2601,10 @@ class Worker:
         popup = getattr(self, 'work_popup', None)
         if not popup or popup['view'] is not view:
             return then(False)
+        if top and self.hold_read_navigation():
+            then(False)
+            self.close_popup(view=view, record=False)
+            return
         if top and urlsplit(url).scheme in ('data', 'blob'):
             then(False)
             self.fail_work_popup()
@@ -2618,6 +2622,10 @@ class Worker:
         def checked(allowed, reason=None):
             if getattr(self, 'work_popup', None) is not popup:
                 return then(False)
+            if allowed and top and self.hold_read_navigation():
+                then(False)
+                self.close_popup(view=view, record=False)
+                return
             if not allowed and top:
                 # A refused popup destination is the step's refusal, as when it loaded in the main view.
                 then(False)
@@ -2638,7 +2646,14 @@ class Worker:
                 self.fail_work_popup()
         self.decide(url, False, checked)
 
-    def work_popup_committed(self, view):
+    def hold_read_navigation(self):
+        """Apply the same main-document navigation hold at every entry point."""
+        if getattr(self, 'reading', False):
+            self.read_navigations += 1
+            return True
+        return False
+
+    def work_popup_committed(self, view, navigation=None):
         popup = getattr(self, 'work_popup', None)
         if not popup or popup['view'] is not view:
             return
@@ -2646,6 +2661,9 @@ class Worker:
         if _blank(view.URL()):
             return  # a reservation is decided by its first real navigation
         if not popup['hosts']:
+            if self.hold_read_navigation():
+                self.close_popup(view=view, record=False)
+                return
             # Keep the committed document: replaying its request could consume a
             # single-use URL twice. The supplied configuration already carries
             # the main view's guard scripts, message handler and content worlds.
@@ -2653,12 +2671,14 @@ class Worker:
             entry = next(entry for entry in self.popups if entry[0] is view)
             self.popups.remove(entry)
             self.work_popup = None
+            if getattr(self, 'navigation_view', None) is old:
+                self.navigation_view = view
+                if self.navigation is not None:
+                    self.navigation = (self.navigation[0], navigation)
             old.setNavigationDelegate_(None)
             old.setUIDelegate_(None)
             old.stopLoading()
             self.view = view
-            if getattr(self, 'navigation_view', None) is old:
-                self.navigation_view = view
             self.controller = view.configuration().userContentController()
             view.setNavigationDelegate_(self.delegate)
             view.setUIDelegate_(self.delegate)
@@ -2672,6 +2692,10 @@ class Worker:
             self._remote_view = None
             self.login_return_pending = None
             self.main_navigations += 1
+            try:
+                self.phone_navigated(committed=False)
+            except Exception:
+                pass
             # Reuse commit bookkeeping (landed, hosts, title and phone state).
             self.delegate.webView_didCommitNavigation_(view, None)
         elif _host(url) in getattr(self, 'provider_sign_in_policy', {}).get('protected_hosts', ()):
@@ -3399,7 +3423,7 @@ def _popup_delegate_class():
             return None
 
         def webView_didCommitNavigation_(self, view, navigation):
-            self.worker.work_popup_committed(view)
+            self.worker.work_popup_committed(view, navigation)
             url = view.URL()
             host = _host(url.absoluteString()) if url is not None else ''
             if host:
@@ -3467,15 +3491,13 @@ def _delegate_class():
                 url = str(request.URL().absoluteString()) if request is not None and request.URL() is not None else ''
                 frame = action.targetFrame()
                 main_frame = frame is None or bool(frame.isMainFrame())
-                if main_frame and worker.reading:
-                    worker.read_navigations += 1
+                if main_frame and worker.hold_read_navigation():
                     return handler(WebKit.WKNavigationActionPolicyCancel)
 
                 def decision(allowed, reason=None):
                     # #11 review: a destination check that finishes after a load-more read
                     # began is held to the read, like a navigation that starts during it.
-                    if allowed and main_frame and worker.reading:
-                        worker.read_navigations += 1
+                    if allowed and main_frame and worker.hold_read_navigation():
                         return handler(WebKit.WKNavigationActionPolicyCancel)
                     # Record the typed refusal before cancellation can synchronously
                     # report a generic navigation failure through WebKit's delegate.
