@@ -973,6 +973,7 @@ class BrowserSession:
             raise
         except TimeoutError as exc:
             error = ToolError(TIMEOUT_TEXT, 'browser_timeout')
+            error.work_popup_origin = getattr(exc, 'work_popup_origin', None)
             if isinstance(getattr(exc, 'posted', None), bool):
                 error.posted = exc.posted   # #1496: the click/type step's observation, completed by ``_observed``
             raise error from exc
@@ -1007,6 +1008,8 @@ class BrowserSession:
             self.last = None
             raise ToolError(NO_PAGE_TEXT, 'no_page')
         self.last = mediate_snapshot(raw, excluded, requested_url)
+        if isinstance(raw, dict):
+            self._popup_results = getattr(self, '_popup_results', []) + list(raw.get('work_popup_results') or [])
         if isinstance(raw, dict) and raw.get('refused_submit'):
             # #758: a form post the guard refused between steps, with nothing to hold;
             # the next result the model sees says so (``run``).
@@ -1179,6 +1182,9 @@ class BrowserSession:
             return False
         if 'error' in names:
             return False
+        if self._resign.get('popup_failed') or (self._resign.get('popup') and
+                registrable_domain(landed_host(snapshot.get('_page'))) != self._resign['site']):
+            return False
         before = self._resign.get('cookies')
         after = self._site_cookies(self._resign['site'])
         return before is not None and after is not None and bool(after - before)
@@ -1192,7 +1198,7 @@ class BrowserSession:
         # #757: ``returned`` says what Still observed, not that the site is signed in; the Work's login
         # request stays as it is, so the owner is still asked when the Work cannot go on.
         receipt = self._receipt('returned' if returned else 'unconfirmed')
-        if snapshot['login_required']:
+        if snapshot['login_required'] or resign.get('popup_failed'):
             next_step = msg('browser.provider_not_returned', provider=resign['provider']) + ' ' + self._hand_off()
         elif returned:
             next_step = msg('browser.provider_returned', provider=resign['provider'])
@@ -1228,9 +1234,15 @@ class BrowserSession:
         """Work-only policy data; the worker evaluates each URL, including redirects."""
         settings = getattr(self.approvals, 'provider_signin_settings', None)
         settings = settings() if callable(settings) else {}
+        enabled, off_sites = settings.get('enabled', True), sorted(settings.get('off_sites', ()))
+        # #696: the sites whose own pages may open a provider sign-in popup in a Work (a recorded provider,
+        # not switched off); a popup on any other site loads in the main view as before.
+        sites = settings.get('sites') if isinstance(settings.get('sites'), dict) else {}
+        popup_sites = sorted(site for site in sites if enabled and site not in off_sites) if enabled else []
         return {'protected_hosts': sorted(self._protected_hosts()),
-                'enabled': settings.get('enabled', True),
-                'off_sites': sorted(settings.get('off_sites', ()))}
+                'enabled': enabled,
+                'off_sites': off_sites,
+                'popup_sites': popup_sites}
 
     def _origin(self, url):
         """The origin reference and in-memory session baseline before entering a provider window."""
@@ -1239,7 +1251,7 @@ class BrowserSession:
                 'cookies': self._site_cookies(site), 'mark': self._authorization_mark()}
 
     def _new_authorizations(self):
-        """#636: the hosts of the authorization requests the browser sent since last looked at (its main frame)."""
+        """#636: the hosts of the authorization requests the browser sent since last looked at (main frame and sign-in popups)."""
         answer = _authorizations(self.driver) if self.driver is not None else None
         if not answer:
             return ()
@@ -1270,6 +1282,30 @@ class BrowserSession:
         host = ascii_host(landed_host(snapshot.get('_page')) or '')
         protected = self._protected_hosts()
         hops = tuple(ascii_host(hop) for hop in self._new_authorizations() if ascii_host(hop) in protected)
+        # Closed popup results carry their opener address from creation, never whichever
+        # explicit navigation happened to be observed next. They cannot certify sign-in.
+        results, self._popup_results = getattr(self, '_popup_results', []), []
+        for popup in results:
+            chain = tuple(dict.fromkeys(h for h in popup.get('hosts', ()) if h in protected))
+            # Popup authorizations are disclosed separately from the main-frame window.
+            remaining = list(hops)
+            for h in popup.get('hosts', ()):
+                if h in remaining:
+                    remaining.remove(h)
+            hops = tuple(remaining)
+            failed = bool(popup.get('needs_owner') or popup.get('oauth_error'))
+            if not chain and not failed:
+                continue
+            url = popup.get('origin') or ''
+            site = registrable_domain(landed_host(url))
+            if not site:
+                continue
+            origin = next((o for o in (self._requested_origin, self._outside)
+                           if o and o.get('window_url') == login_window_url(url)), None)
+            self._resign = {'site': site, 'provider': chain[0] if chain else '', 'chain': chain,
+                            'reference': page_reference(url), 'window_url': login_window_url(url),
+                            'cookies': origin.get('cookies') if origin else None, 'popup_failed': failed, 'popup': True}
+            self._finalize_sign_in(snapshot)
         passed = bool(hops)
         window = self._window
         if window and self._resign:
@@ -1424,6 +1460,10 @@ class BrowserSession:
         try:
             result = self._run(action, args)
         except ToolError as exc:
+            if getattr(exc, 'work_popup_origin', None):
+                origin = exc.work_popup_origin
+                offered = self._offer_login(page_reference(origin), explicit=True, window_url=login_window_url(origin))
+                exc.args = (str(exc) + ' ' + (offered or LOGIN_REQUIRED_TEXT),)
             if exc.code == 'provider_sign_in_off':
                 origin = self._requested_origin or self._outside or {'url': page_reference(args.get('url')),
                                                                    'window_url': login_window_url(args.get('url'))}
@@ -2397,6 +2437,7 @@ class WebKitWorkerDriver:
             code = str(message.get('error') or 'worker_error')
             if code == 'timeout':
                 timeout = TimeoutError('browser timeout')
+                timeout.work_popup_origin = message.get('work_popup_origin')
                 # #1496: whether a click or typing step that timed out started a non-GET form submission.
                 if isinstance(message.get('posted'), bool):
                     timeout.posted = message['posted']
