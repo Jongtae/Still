@@ -1695,19 +1695,23 @@ class Worker:
         if shown while nothing reaches the owner's screen or input.
         """
         self.fail_work_popup()
-        AppKit, Foundation = self.AppKit, self.Foundation
-        self.window.setIgnoresMouseEvents_(True)
-        self.window.setCollectionBehavior_(AppKit.NSWindowCollectionBehaviorTransient |
-                                           AppKit.NSWindowCollectionBehaviorIgnoresCycle)
-        self.window.setExcludedFromWindowsMenu_(True)
-        # #931 review P1: drop keyboard focus first (ordering out resigns key status;
-        # ordering back alone would not), so nothing the owner types reaches the page.
-        self.window.makeFirstResponder_(None)
-        self.window.orderOut_(None)
+        self.park_window(self.window)
         if self.app.isActive():
             self.app.deactivate()
-        self.window.setFrameOrigin_(Foundation.NSMakePoint(PARK_ORIGIN, PARK_ORIGIN))
-        self.window.orderBack_(None)
+
+    def park_window(self, window):
+        """Order a window in off-screen without making it key or accepting input."""
+        AppKit, Foundation = self.AppKit, self.Foundation
+        window.setIgnoresMouseEvents_(True)
+        window.setCollectionBehavior_(AppKit.NSWindowCollectionBehaviorTransient |
+                                      AppKit.NSWindowCollectionBehaviorIgnoresCycle)
+        window.setExcludedFromWindowsMenu_(True)
+        # #931 review P1: drop keyboard focus first (ordering out resigns key status;
+        # ordering back alone would not), so nothing the owner types reaches the page.
+        window.makeFirstResponder_(None)
+        window.orderOut_(None)
+        window.setFrameOrigin_(Foundation.NSMakePoint(PARK_ORIGIN, PARK_ORIGIN))
+        window.orderBack_(None)
 
     # -- plumbing ------------------------------------------------------------
     def reply(self, ident, ok=True, **fields):
@@ -2147,8 +2151,8 @@ class Worker:
                 self.window.setContentSize_(self.Foundation.NSMakeSize(*size))
             self.layout = layout
         request = self.Foundation.NSURLRequest.requestWithURL_(self.Foundation.NSURL.URLWithString_(url))
-        self.deadline(ident, timeout, on_timeout=view.stopLoading)
         self.navigation_view = view
+        self.deadline(ident, timeout, on_timeout=lambda: self.navigation_view.stopLoading())
         self.navigation = (ident, None)
         navigation = view.loadRequest_(request)
         if self.navigation is not None and self.navigation[0] == ident:
@@ -2200,8 +2204,8 @@ class Worker:
             return
         if error is not None:
             return self.fail(ident, navigation_error_code(error))
-        view = getattr(self, 'navigation_view', self.view)
         def answer():
+            view = getattr(self, 'navigation_view', self.view)
             self.reply(ident, url=str(view.URL().absoluteString()) if view.URL() else '', layout=self.layout)
         if getattr(self, 'work_popup', None):
             return self.settle(ident, answer)
@@ -2642,10 +2646,34 @@ class Worker:
         if _blank(view.URL()):
             return  # a reservation is decided by its first real navigation
         if not popup['hosts']:
-            # No authorization in the redirect chain: preserve the old same-view behavior.
-            request = self.Foundation.NSURLRequest.requestWithURL_(self.Foundation.NSURL.URLWithString_(url))
-            self.close_popup(view=view, record=False)
-            self.view.loadRequest_(request)
+            # Keep the committed document: replaying its request could consume a
+            # single-use URL twice. The supplied configuration already carries
+            # the main view's guard scripts, message handler and content worlds.
+            old = self.view
+            entry = next(entry for entry in self.popups if entry[0] is view)
+            self.popups.remove(entry)
+            self.work_popup = None
+            old.setNavigationDelegate_(None)
+            old.setUIDelegate_(None)
+            old.stopLoading()
+            self.view = view
+            if getattr(self, 'navigation_view', None) is old:
+                self.navigation_view = view
+            self.controller = view.configuration().userContentController()
+            view.setNavigationDelegate_(self.delegate)
+            view.setUIDelegate_(self.delegate)
+            view.setCustomUserAgent_(user_agent_for(getattr(self, 'layout', 'mobile')))
+            entry[1].setDelegate_(None)
+            entry[1].orderOut_(None)
+            entry[1].setContentView_(None)
+            self.window.setContentView_(view)
+            old.loadHTMLString_baseURL_('', None)
+            self.last_frame = None
+            self._remote_view = None
+            self.login_return_pending = None
+            self.main_navigations += 1
+            # Reuse commit bookkeeping (landed, hosts, title and phone state).
+            self.delegate.webView_didCommitNavigation_(view, None)
         elif _host(url) in getattr(self, 'provider_sign_in_policy', {}).get('protected_hosts', ()):
             # A provider document that waits is owner-only, even without visible controls.
             def waiting():
@@ -2687,14 +2715,19 @@ class Worker:
         window.setReleasedWhenClosed_(False)
         window.setDelegate_(delegate)
         window.setTitle_('Still · 로그인')
-        window.center()
         if work:
+            try:
+                view._setWindowOcclusionDetectionEnabled_(False)
+            except Exception:
+                pass
+            self.park_window(window)
             self.work_popup = {'view': view, 'origin': str(self.view.URL().absoluteString()) if self.view.URL() else '',
                                'hosts': [], 'oauth_error': False, 'needs_owner': False}
             popup = self.work_popup
             remaining = max(0, getattr(self, 'action_deadline', time.monotonic() + 20) - time.monotonic() - 1)
             self.AppHelper.callLater(min(20, remaining), lambda: self.fail_work_popup() if getattr(self, 'work_popup', None) is popup else None)
         else:
+            window.center()
             window.makeKeyAndOrderFront_(None)
         self.popups.append((view, window, delegate))
         return view
