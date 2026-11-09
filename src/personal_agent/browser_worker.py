@@ -518,6 +518,18 @@ return JSON.stringify({url: cut(location.href, 4000), title: cut(document.title,
   cancelled: takeCancelled()});
 """
 
+# Read-only control metadata, using the snapshot's visibility and form helpers.
+# No values, page text, guard state or popup actions leave this inspection.
+POPUP_INPUT_SCRIPT = PRELUDE + r"""
+const forms = new Map();
+const idOf = (form) => { if (!form) return null;
+  if (!forms.has(form)) forms.set(form, forms.size + 1); return forms.get(form); };
+return JSON.stringify(Array.from(document.querySelectorAll(SELECTOR))
+  .filter((el) => visible(el) && !offscreen(el) && !el.disabled && !el.readOnly)
+  .map((el) => ({tag: el.tagName.toLowerCase(), type: typeOf(el),
+    autocomplete: autocompleteOf(el), form: idOf(formOf(el)), editable: el.isContentEditable})));
+"""
+
 #: Arguments: index, expect, tokens, nonce, approved, lasts.  Resolve once,
 #: check, hit-test, keep the handle and arm the click guard for it.  An approved
 #: step lets a submit of its target's payment form through (#700): the target's
@@ -1726,12 +1738,13 @@ class Worker:
 
         ``observed`` (#1496): what the timed-out step is known to have done, added to the answer.
         """
+        self.failed_popup_origin = None
+        self.action_popup_failures = []
         self.action_deadline = time.monotonic() + max(0.5, float(seconds))
         def expire():
             if ident in self.pending:
-                popup = getattr(self, 'work_popup', None)
-                popup_origin = popup.get('origin') if popup else None
                 self.fail_work_popup()
+                popup_origin = getattr(self, 'failed_popup_origin', None)
                 fields = {}
                 if observed is not None:
                     try:
@@ -1745,6 +1758,10 @@ class Worker:
                         pass
                 if popup_origin:
                     fields['work_popup_origin'] = popup_origin
+                    # This timeout delivers the hand-off; a later snapshot must not repeat it.
+                    failures = getattr(self, 'action_popup_failures', [])
+                    self.popup_results = [result for result in getattr(self, 'popup_results', [])
+                                          if not any(result is failure for failure in failures)]
                 self.fail(ident, 'timeout', **fields)
         self.pending[ident] = True
         self.AppHelper.callLater(max(0.5, float(seconds)), expire)
@@ -2699,12 +2716,31 @@ class Worker:
             # Reuse commit bookkeeping (landed, hosts, title and phone state).
             self.delegate.webView_didCommitNavigation_(view, None)
         elif _host(url) in getattr(self, 'provider_sign_in_policy', {}).get('protected_hosts', ()):
-            # A provider document that waits is owner-only, even without visible controls.
-            def waiting():
+            # Loading and quiet do not imply owner input: asynchronous hand-backs
+            # keep their existing budget. Inspect controls without acting in this view.
+            document = popup['document'] = object()
+            def current_document():
                 current = str(view.URL().absoluteString()) if view.URL() else ''
-                if (getattr(self, 'work_popup', None) is popup and not view.isLoading()
-                        and _host(current) in getattr(self, 'provider_sign_in_policy', {}).get('protected_hosts', ())):
+                return (getattr(self, 'work_popup', None) is popup
+                        and popup.get('document') is document and current == url)
+            def inspected(elements, error):
+                if not current_document():
+                    return
+                from .browser_session import login_form_present, USERNAME_TYPES
+                if not error and isinstance(elements, list) and (
+                        login_form_present(elements, redirected=True)
+                        or any((el.get('tag') == 'input' and el.get('type') in (USERNAME_TYPES | {'password'}))
+                               or el.get('tag') in ('textarea', 'select') or el.get('editable')
+                               or (el.get('form') is not None and el.get('tag') == 'input'
+                                   and el.get('type') not in ('hidden', 'submit', 'button', 'reset', 'image'))
+                               for el in elements)):
                     self.fail_work_popup()
+                else:
+                    self.AppHelper.callLater(SETTLE_QUIET_SECONDS, waiting)
+            def waiting():
+                if not current_document():
+                    return
+                self.run(POPUP_INPUT_SCRIPT, {}, inspected, view=view)
             self.AppHelper.callLater(SETTLE_QUIET_SECONDS, waiting)
 
     def open_popup(self, config):
@@ -2766,7 +2802,11 @@ class Worker:
                     self.work_popup = None
                     if record:
                         results = getattr(self, 'popup_results', [])
-                        self.popup_results = (results + [{k: v for k, v in popup.items() if k != 'view'}])[-8:]
+                        result = {k: v for k, v in popup.items() if k not in ('view', 'document')}
+                        self.popup_results = (results + [result])[-8:]
+                        if (popup.get('needs_owner') or popup.get('oauth_error')) and getattr(self, 'pending', {}):
+                            self.failed_popup_origin = popup['origin']
+                            self.action_popup_failures = getattr(self, 'action_popup_failures', []) + [result]
                 # Detach before blanking: a removed view's policy must not cancel teardown.
                 entry[0].setNavigationDelegate_(None)
                 entry[0].setUIDelegate_(None)

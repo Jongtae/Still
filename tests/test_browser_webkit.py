@@ -1192,18 +1192,54 @@ class OwnerPopupReturnTests(unittest.TestCase):
         self.worker.work_popup_navigation(view, self.authorize, 'GET', False, True, answers.append)
         return answers
 
-    def test_waiting_provider_or_expired_blank_popup_is_closed(self):
+    def test_waiting_document_stays_alive_but_visible_controls_close_promptly(self):
         self.prepare_work()
-        view = self.create(self.authorize)
-        self.popup_navigate(view, self.authorize)
-        self.commit(view, self.authorize)
-        self.later[-1][1]()
-        self.assertFalse(self.worker.popups)
-        view = self.create('about:blank')
+        for elements in ([], [{'tag': 'input', 'type': 'password'}],
+                         [{'tag': 'input', 'type': 'text'}],
+                         [{'tag': 'select', 'form': 1}]):
+            with self.subTest(elements=elements):
+                view = self.create(self.authorize)
+                self.popup_navigate(view, self.authorize)
+                view.isLoading = lambda: False
+                calls = []
+                def inspect(script, arguments, done, **kwargs):
+                    calls.append((script, arguments, kwargs))
+                    done(elements, None)
+                self.worker.run = inspect
+                self.commit(view, self.authorize)
+                self.assertEqual(self.later[-1][0], self.bw.SETTLE_QUIET_SECONDS)
+                self.later[-1][1]()
+                self.assertEqual(calls, [(self.bw.POPUP_INPUT_SCRIPT, {}, {'view': view})])
+                if elements:
+                    self.assertFalse(self.worker.popups)
+                    self.assertTrue(self.worker.popup_results[-1]['needs_owner'])
+                else:
+                    self.assertIs(self.worker.work_popup['view'], view)
+                    # A second quiet check must still leave asynchronous work alone.
+                    self.later[-1][1]()
+                    self.assertIs(self.worker.work_popup['view'], view)
+                    self.worker.close_popup(view=view)
+
+    def test_expired_blank_popup_is_closed(self):
+        self.prepare_work()
+        self.create('about:blank')
         self.worker.action_deadline = 0
         self.assertFalse(self.worker.wait_work_popup())
         self.assertFalse(self.worker.popups)
         self.assertTrue(self.worker.popup_results[-1]['needs_owner'])
+
+    def test_late_control_inspection_cannot_close_a_callback(self):
+        self.prepare_work()
+        view = self.create(self.authorize)
+        self.popup_navigate(view, self.authorize)
+        view.isLoading = lambda: False
+        callbacks = []
+        self.worker.run = lambda script, args, done, **kwargs: callbacks.append(done)
+        self.commit(view, self.authorize)
+        self.later[-1][1]()
+        self.commit(view, 'https://site.test/callback')
+        callbacks.pop()([{'tag': 'input', 'type': 'password'}], None)
+        self.assertIs(self.worker.work_popup['view'], view)
 
     def test_popup_dialogs_are_never_answered_from_main_step_authority(self):
         self.prepare_work()
@@ -1299,6 +1335,33 @@ class OwnerPopupReturnTests(unittest.TestCase):
         expire()
         self.assertFalse(self.worker.popups)
         self.assertEqual(errors, [(7, 'timeout', {'work_popup_origin': 'https://site.test/start'})])
+
+    def test_timeout_retains_closed_failure_once_and_resets_for_next_action(self):
+        for close in ('timer', 'wait', 'error'):
+            with self.subTest(close=close):
+                self.prepare_work()
+                self.worker.deadline(7, 10)
+                expire = self.later[-1][1]
+                view = self.create('about:blank')
+                if close == 'timer':
+                    self.later[-1][1]()
+                elif close == 'wait':
+                    self.worker.action_deadline = 0
+                    self.assertFalse(self.worker.wait_work_popup())
+                else:
+                    self.worker.work_popup['oauth_error'] = True
+                    self.worker.close_popup(view=view)
+                self.assertFalse(self.worker.popups)
+                events = []
+                self.worker.emit = events.append
+                expire()
+                self.assertEqual(events[-1], {'id': 7, 'ok': False, 'error': 'timeout',
+                                             'work_popup_origin': 'https://site.test/start'})
+                # The next snapshot cannot deliver this failure a second time.
+                self.assertFalse(self.worker.popup_results)
+                self.worker.deadline(8, 10)
+                self.later[-1][1]()
+                self.assertEqual(events[-1], {'id': 8, 'ok': False, 'error': 'timeout'})
 
     def test_new_open_closes_popup_and_preserves_old_opener(self):
         self.prepare_work()
@@ -2225,15 +2288,22 @@ class SessionFixtureHandler(FixtureHandler):
                 await fetch('/work-popup-session', {method:'POST'}); location.href='/work-popup-home';
               };</script></body></html>''')
         if path in ('/work-popup-hop', '/work-provider'):
-            if path == '/work-provider' and getattr(self.server, 'popup_mode', '') == 'form':
-                return self._send('<html><body onpointerdown="fetch(\'/unexpected-provider-press\', {method:\'POST\'})"><form method="post" action="/unexpected-provider-post">'
-                                  '<input name="account"><button>Choose account</button></form></body></html>')
+            if path == '/work-provider' and getattr(self.server, 'popup_mode', '') in ('form', 'password'):
+                return self._send('<html><body onpointerdown="fetch(\'/unexpected-provider-press\', {method:\'POST\'})"><form method="post" action="/unexpected-provider-post">' +
+                                  ('<input type="password">' if self.server.popup_mode == 'password' else '<input name="account">') +
+                                  '<button>Choose account</button></form></body></html>')
+            if path == '/work-provider' and getattr(self.server, 'popup_mode', '') == 'async':
+                return self._send('<html><body><script>fetch("/work-popup-delay").then(() => {'
+                                  'location.href=' + json.dumps(self.server.popup_callback) + ';});</script></body></html>')
             destination = self.server.popup_authorize if path == '/work-popup-hop' else self.server.popup_callback
             self.send_response(302)
             self.send_header('Location', destination)
             self.send_header('Content-Length', '0')
             self.end_headers()
             return
+        if path == '/work-popup-delay':
+            time.sleep(1.5)
+            return self._send('ready')
         if path == '/work-popup-callback':
             if getattr(self.server, 'popup_mode', '') == 'native':
                 return self._send('''<html><body><form id="f" method="post" action="/unexpected-provider-post">
@@ -3411,7 +3481,7 @@ class WebKitIntegrationTests(unittest.TestCase):
             def provider_hosts(self):
                 return ['localhost']
 
-        for mode in ('silent', 'raf', 'form', 'native'):
+        for mode in ('silent', 'raf', 'async', 'form', 'password', 'native'):
             with self.subTest(mode=mode):
                 self.server.popup_mode = mode
                 self.server.posts.clear()
@@ -3421,16 +3491,23 @@ class WebKitIntegrationTests(unittest.TestCase):
                                          allowed_origins_for_tests=(self.fixture, provider_origin))
                 try:
                     sess.run('browser_open', {'url': self.origin + '/work-popup-start', 'effect': 'navigate'})
+                    started = time.monotonic()
                     page = sess.run('browser_click', {'target': 'Continue with provider', 'effect': 'navigate'})
+                    elapsed = time.monotonic() - started
                     receipt = page.get('provider_sign_in', {})
-                    self.assertEqual(receipt.get('state'), 'returned' if mode in ('silent', 'raf') else 'unconfirmed', page)
+                    self.assertEqual(receipt.get('state'), 'returned' if mode in ('silent', 'raf', 'async') else 'unconfirmed', page)
                     self.assertEqual(receipt['provider'], 'localhost')
-                    if mode in ('silent', 'raf'):
+                    if mode in ('silent', 'raf', 'async'):
                         self.assertIn('Account ready', page['text'])
                         self.assertEqual(self.server.posts, ['/work-popup-session'])
+                        self.assertFalse(approvals.offers)
+                        if mode == 'async':
+                            self.assertGreaterEqual(elapsed, 1.5)
                     else:
                         self.assertTrue(approvals.offers)
                         self.assertEqual(self.server.posts, [])
+                        if mode == 'password':
+                            self.assertLess(elapsed, 5, 'visible input must hand off before the popup deadline')
                     # The only AI press was on the main page; provider controls were never targeted.
                     self.assertNotIn('provider_sign_in', sess.run('browser_read', {}))
                 finally:
