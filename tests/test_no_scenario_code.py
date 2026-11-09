@@ -66,7 +66,7 @@ SRC = Path(__file__).resolve().parents[1] / 'src' / 'personal_agent'
 #: #805 owner-model upkeep; ``skills.py`` the #961 skill-supply glue.
 SCANNED_MODULES = ('agent_runtime.py', 'conversation_handoff.py', 'current_context.py', 'browser_session.py',
                    'browser_worker.py', 'browser_jar.py', 'browser_worker_chromium.py', 'chromium_runtime.py', 'browser_signin.py',
-                   'preparations.py', 'local_tools.py', 'quickstart_service.py', 'settings_continuation.py', 'memory_prompts.py', 'google_connections.py', 'work_executor.py', 'telegram_delivery.py', 'telegram_store.py', 'orchestrator.py', 'owner_model.py',
+                   'preparations.py', 'preparations_service.py', 'local_tools.py', 'quickstart_service.py', 'settings_continuation.py', 'memory_prompts.py', 'google_connections.py', 'work_executor.py', 'telegram_delivery.py', 'telegram_store.py', 'orchestrator.py', 'owner_model.py',
                    # SKILL-SUPPLY-02 (#961): the skill-supply glue stays free of site/category branches;
                    # skill content is data in packages, not scanned (#960 section 8).
                    'skills.py',
@@ -198,7 +198,7 @@ CLASSIFIED_TABLES = {
                        'substituted for a path, not matched against owner text'),
     ('browser_signin.py', 'BrowserSignin._request_browser_login'): (
         'enforcement', "redaction: a URL carrying Still's [가림] mark is never opened as is, only its origin"),
-    ('quickstart_service.py', 'AgentService.failed_preparation_watch_goals'): (
+    ('preparations_service.py', 'PreparationsService.failed_preparation_watch_goals'): (
         'enforcement', 'redaction: a goal Still masked ([가림: ...]) is never reused as a goal'),
     ('skills.py', 'LICENCE_TEXTS'): (
         'enforcement', 'licence gate (#960/#1219): an external skill is enabled only under a recognised licence, '
