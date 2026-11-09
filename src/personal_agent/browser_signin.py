@@ -514,28 +514,6 @@ class BrowserSignin:
                 service._browser_login_window_urls[job['id']]=(nonce,login_window_url(window_url))
         return BROWSER_LOGIN_OFFERED_TEXT if explicit else BROWSER_LOGIN_PAGE_OFFERED_TEXT
 
-    def resolve_browser_login(self, job, url):
-        """#636 (Codex P2 on #637): settle this Work's login request for ``url``'s site as ``resolved``.
-
-        Called only when the Work's re-sign-in through the owner's provider completed with
-        evidence (a new or renewed site session, no OAuth error).  Only a request still to be
-        shown (``requested``: no window opened, no prompt armed) of this Work and of the same
-        registrable domain moves, by compare-and-set; another site's or another Work's request is
-        never touched, and a window already offered is left to the owner.  True when it moved.
-        """
-        service=self.service
-        try:
-            site=registrable_domain(urlsplit(str(url or '')).hostname or '')
-        except ValueError:
-            return False
-        if not site or not isinstance((job or {}).get('id'),str):return False
-        with service.lock:
-            row=service._browser_login(job['id'])
-            if not row or row.get('state')!='requested' or registrable_domain(row.get('host'))!=site:return False
-            service._put_browser_login(job['id'],{**row,'state':'resolved','cause':'provider_sign_in','closed_at':time.time()})
-        LOG.info('browser login resolved by re-sign-in work=%s',job['id'])
-        return True
-
     def offer_browser_login(self, job):
         """After a Work's run: show the login window it asked for and ask the owner (#709).
 

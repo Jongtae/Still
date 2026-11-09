@@ -6617,6 +6617,12 @@
   "ja": "{provider} を経由してサイトに戻りましたが、ログインした根拠（新しく作られたか更新されたサイトのセッション）がないため、この再ログインを完了とはみなしません。",
   "zh": "已通过 {provider} 返回网站，但没有登录的依据（没有新建或更新的网站会话），因此不将此次重新登录视为完成。"
  },
+ "browser.provider_returned": {
+  "ko": "{provider}를 거쳐 오류 없이 사이트로 돌아왔지만, 그것만으로는 사이트에 로그인됐는지 알 수 없어요. 로그인이 필요했던 페이지를 다시 열어 로그인된 상태로 보이는지 확인하세요. 여전히 로그아웃 상태이거나 로그인을 요구하면 {provider} 버튼을 다시 누르지 말고 그 페이지 주소로 browser_sign_in을 호출하세요.",
+  "en": "The browser came back to the site through {provider} without an error, but that alone does not show the site signed you in. Open the page that needed the sign-in again and check that it now shows you signed in. If it still shows you signed out or asks for a sign-in, do not press the {provider} control again: call browser_sign_in with that page's address.",
+  "ja": "{provider} を経由してエラーなくサイトに戻りましたが、それだけではサイトにログインできたかは分かりません。ログインが必要だったページをもう一度開き、ログインした状態で表示されるか確認してください。まだログアウト状態か、ログインを求められる場合は、{provider} のボタンをもう一度押さず、そのページのアドレスで browser_sign_in を呼んでください。",
+  "zh": "已通过 {provider} 无错误地返回网站，但仅凭这一点无法确认网站已登录。请重新打开需要登录的页面，检查它现在是否显示为已登录。如果仍显示未登录或要求登录，请不要再次点击 {provider} 按钮，而是用该页面的地址调用 browser_sign_in。"
+ },
  "browser.provider_not_returned": {
   "ko": "{provider}를 거쳤지만 사이트가 여전히 로그인을 요구해 이 다시 로그인을 멈췄어요.",
   "en": "The sign-in went through {provider} but the site still asks for a sign-in, so this re-sign-in stopped.",

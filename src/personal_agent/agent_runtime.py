@@ -5234,10 +5234,9 @@ def _evidence_detail(name,result):
            'redacted_values':int(result.get('redacted_values') or 0),'found':result.get('found')}
   if result.get('layout')=='desktop':summary['layout']='desktop'   # #572
   signed=result.get('provider_sign_in')
-  if isinstance(signed,dict) and signed.get('state') in ('available','signed_in','unconfirmed'):
+  if isinstance(signed,dict) and signed.get('state') in ('available','returned','unconfirmed'):
    # #636: the site and the provider host a re-sign-in went through (hosts only), for the receipt and the audit.
    summary['provider_sign_in']={key:str(signed.get(key) or '')[:120] for key in ('site','provider','state')}
-   if signed.get('login_request')=='resolved':summary['provider_sign_in']['login_request']='resolved'
    if isinstance(signed.get('chain'),list):summary['provider_sign_in']['chain']=[str(host)[:120] for host in signed['chain'][:8]]
   loaded=result.get('loaded')
   if isinstance(loaded,dict):
