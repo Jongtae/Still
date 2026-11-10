@@ -623,6 +623,15 @@ class PreparedAnswerTests(_Case):
         self.web_turn('점심 뭐 먹지?')
         self.assertNotIn(prep.PREPARED_HEADING, seen[1], 'a stale prepared answer is not offered')
 
+    def test_a_long_brief_does_not_push_its_prepared_answer_out(self):
+        """#766: the brief is cut like the answer, so the item still fits the section."""
+        rows = [{'id': 'p1', 'goal_text': '조건' * 2000, 'timezone': 'Asia/Seoul', 'recurrence': None,
+                 'prepared_at': self.now - 60, 'status': 'succeeded', 'response': '준비된 답' * 400}]
+        text = prep.render_prepared(rows, self.now)
+        self.assertIsNotNone(text)
+        self.assertIn('prep:p1', text)
+        self.assertLessEqual(len(text.encode()), prep.SECTION_MAX_BYTES)
+
     def test_the_section_is_bounded_and_counted_in_the_turn_budget(self):
         rows = [{'id': f'p{i}', 'goal_text': '목표' * 20, 'timezone': 'Asia/Seoul', 'recurrence': None,
                  'prepared_at': self.now - 60, 'status': 'succeeded', 'response': '가' * 5000} for i in range(3)]
@@ -2159,6 +2168,62 @@ class CrossWorkProposalTests(_Case):
                     {'kind': 'prepare', 'goal': f'아침 일정 정리 again {index}', 'due': self.due_iso(600), 'recurrence': 'daily'})
                 self.assertEqual(result['state'], state)
                 self.assertEqual(self.service.owner_typed_work(job), relation != 'retry')
+
+    def watch(self, work, goal, owner_typed=1, **extra):
+        job = {'id': work, 'message': '감시 대상을 바꿔서 계속 봐 줘', 'owner_typed': owner_typed}
+        return self.service.preparation_scheduler(job, job['message'])(
+            {'kind': 'prepare', 'goal': goal, 'due': self.due_iso(600), 'every_minutes': '30',
+             'until': self.due_iso(7200), 'delivery': 'when_needed', **extra})
+
+    def test_a_long_brief_is_scheduled_whole(self):
+        """#766: a run's plan fits in its brief; it is not refused and moved elsewhere."""
+        brief = '조건을 확인하고 기록과 대조한다. ' * 160
+        result = self.watch('work-1', brief)
+        self.assertTrue(result['scheduled'])
+        stored = self.service.preparations.get(result['preparation_id'])['goal_text']
+        self.assertEqual(stored, ' '.join(brief.split()))
+        self.assertGreater(len(stored), 3000)
+
+    def test_a_proposal_card_folds_a_long_brief_inside_one_telegram_message(self):
+        """#766: the card shows a cut brief; Telegram refuses a message over 4096 characters."""
+        brief = '가' * prep.BRIEF_MAX_CHARS
+        plain = self.propose('work-1', goal=brief)
+        offered = {**plain, 'title_text': '종목 감시', 'offer_text': '오늘 20시까지 봐요.'}
+        html = prep.proposal_html([offered], 0)
+        self.assertLess(len(html), 4096)
+        self.assertIn('가' * prep.BRIEF_PREVIEW_CHARS + '…', html)
+        self.assertNotIn('가' * (prep.BRIEF_PREVIEW_CHARS + 1), html)
+        self.assertLess(len(prep.proposal_text([plain], 0)), 4096, 'a card without an offer folds it too')
+        self.assertEqual(self.service.preparations.get(plain['id'])['goal_text'], brief, 'the run still gets the whole brief')
+
+    def test_the_owners_work_replaces_an_earlier_watch(self):
+        """#766: the new watch stops the one it replaces, so the two never run side by side."""
+        old = self.watch('work-1', '첫 대상 감시')
+        new = self.watch('work-2', '바뀐 대상 감시', replaces=old['preparation_id'])
+        self.assertTrue(new['scheduled'])
+        self.assertEqual(new['replaced'], {'preparation_id': old['preparation_id'], 'state': prep.STATE_CANCELLED})
+        self.assertIn(old['preparation_id'], new['next_step'])
+        states = {row['id']: row['state'] for row in self.rows()}
+        self.assertEqual(states, {old['preparation_id']: prep.STATE_CANCELLED, new['preparation_id']: prep.STATE_SCHEDULED})
+        without = self.watch('work-3', '추가 대상 감시')
+        self.assertNotIn('replaced', without)
+        self.assertEqual(self.service.preparations.get(new['preparation_id'])['state'], prep.STATE_SCHEDULED,
+                         'a preparation without replaces stops nothing')
+
+    def test_a_proposal_or_an_unknown_id_replaces_nothing(self):
+        """#766: only a Work that schedules at once may stop another preparation; nothing is created on refusal."""
+        old = self.watch('work-1', '첫 대상 감시')
+        for name, work, typed, target, code in (
+                ('proposal', 'work-2', None, old['preparation_id'], 'replace_not_allowed'),
+                ('unknown', 'work-3', 1, 'missing', 'replace_not_found')):
+            with self.subTest(name), self.assertRaises(ToolError) as caught:
+                self.watch(work, '바뀐 대상 감시 ' + name, owner_typed=typed, replaces=target)
+            self.assertEqual(caught.exception.code, code)
+        self.service.cancel_preparation(old['preparation_id'])
+        with self.assertRaises(ToolError) as ended:
+            self.watch('work-4', '바뀐 대상 감시', replaces=old['preparation_id'])
+        self.assertEqual(ended.exception.code, 'replace_not_found', 'an ended preparation is not replaced')
+        self.assertEqual([row['id'] for row in self.rows()], [old['preparation_id']])
 
     def test_a_too_long_goal_refusal_states_the_kinds_limit_and_one_retry(self):
         job = {'id': 'work-1', 'message': '알려줘'}

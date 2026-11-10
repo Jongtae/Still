@@ -224,6 +224,16 @@ class PreparationsService:
             accepted_by=(prep.ACCEPTED_OWNER_REQUEST if asked else
                          prep.ACCEPTED_OWNER_WORK if owner_work else None)
             accepted=accepted_by is not None
+            # #766: the preparation this one takes the place of (a changed target or plan); it stops
+            # once this one is scheduled.  Only in the owner's own Work, which schedules at once, so a
+            # proposal never stops what is running.
+            replaces=args.get('replaces')
+            if replaces not in (None,''):
+                current=service.preparations.get(replaces) if isinstance(replaces,str) else None
+                if not current or current['state'] not in prep.ACTIVE_STATES:
+                    raise ToolError(str(prep.PreparationRefusal('replace_not_found')),'replace_not_found')
+                if not accepted:
+                    raise ToolError(str(prep.PreparationRefusal('replace_not_allowed')),'replace_not_allowed')
             try:
                 # #582: a goal the owner declined is not set up again unless they ask for it again.
                 if not asked and service.declined_before(job['id'],goal,now):
@@ -256,6 +266,11 @@ class PreparationsService:
                     'due':prep.iso(row['due_at'],row['timezone']),'due_local':when,'now_local':prep.local_text(now,row['timezone']),
                     'recurrence':row['recurrence'] or 'none','delivery':service.preparation_delivery(row),
                     'accepted_by':row['accepted_by'],'next_step':next_step}
+            if scheduled and replaces not in (None,'') and replaces!=row['id']:
+                stopped=service.cancel_preparation(replaces)
+                LOG.info('preparation replaced id=%s by=%s work=%s changed=%s',replaces,row['id'],job['id'],stopped['changed'])
+                result['replaced']={'preparation_id':replaces,'state':stopped['state']}
+                result['next_step']+=f' 이 준비가 대신하는 {replaces}는 더 실행되지 않습니다. 답에서 무엇을 멈추고 무엇으로 바꿨는지 한 줄로 말하세요.'
             if window:
                 result.update(every_minutes=row['every_seconds']//60,until=prep.iso(row['until_at'],row['timezone']),
                               max_runs=row['max_runs'],

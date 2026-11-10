@@ -116,7 +116,13 @@ UNTOLD_STATES = ('proposed', 'scheduled')
 GOAL_MAX_CHARS = 500
 #: #393: a ``prepare`` goal is the run's brief, which the owner no longer reads
 #: inline when an offer is given, so it is not squeezed into a reminder's length.
-BRIEF_MAX_CHARS = 1000
+#: #766: it is the whole request each run executes (a plan, its limits and what to
+#: re-check), so the bound only keeps one row and one run's request finite; at 1000
+#: every live watch with a plan was refused and moved its plan elsewhere.
+BRIEF_MAX_CHARS = 8000
+#: #766: what a proposal card folds of the brief, so one card stays inside a Telegram
+#: message; the whole brief is in Settings and is what each run receives.
+BRIEF_PREVIEW_CHARS = 1000
 #: #393: what the owner reads and accepts: a short name and a few plain lines.
 TITLE_MAX_CHARS = 60
 OFFER_MAX_CHARS = 400
@@ -138,6 +144,8 @@ FRESH_SECONDS = 6 * 3600
 SECTION_MAX_ITEMS = 3
 SECTION_MAX_BYTES = 4000
 ANSWER_PREVIEW_BYTES = 1500
+#: #766: a long brief is cut like the answer, or one item alone outgrows the section and is dropped.
+GOAL_PREVIEW_BYTES = 600
 #: Rows one tick looks at, at most.
 TICK_LIMIT = 8
 
@@ -215,7 +223,8 @@ REFUSALS = {
     'expired': '지켜보는 기간이 이미 끝나 시작하지 않았습니다.',
     'running': '지금 실행 중인 준비는 지울 수 없습니다. 먼저 취소하세요.',
     **{code: msg('preparations.' + code) for code in
-       ('invalid_rrule', 'already_running', 'invalid_state', 'goal_not_editable', 'invalid_edit', 'resume_expired', 'queue_full')},
+       ('invalid_rrule', 'already_running', 'invalid_state', 'goal_not_editable', 'invalid_edit', 'resume_expired', 'queue_full',
+        'replace_not_found', 'replace_not_allowed')},
 }
 
 
@@ -729,6 +738,12 @@ def owner_title(row, limit=120):
     return goal[:limit] + ('…' if len(goal) > limit else '')
 
 
+def brief_preview(row):
+    """#766: the run's brief as a proposal card folds it, cut to ``BRIEF_PREVIEW_CHARS``."""
+    goal = str(row.get('goal_text') or '')
+    return goal[:BRIEF_PREVIEW_CHARS] + ('…' if len(goal) > BRIEF_PREVIEW_CHARS else '')
+
+
 def accepted_offer(row):
     """#393: the title and offer the owner accepted, without the schedule line.
 
@@ -750,13 +765,13 @@ def proposal_summary(row, home_zone=None, brief=True):
         # #689: fixed kind labels must translate with the schedule on cards.
         kind = 'reminder' if row['kind'] == KIND_REMINDER else 'prepare'
         return msg('preparations.summary_' + kind,
-                   owner_preparation_schedule_with_delivery=schedule_text(row, home_zone), goal_text=row['goal_text'])
+                   owner_preparation_schedule_with_delivery=schedule_text(row, home_zone), goal_text=brief_preview(row))
     lines = [row.get('title_text') or owner_title(row), schedule_text(row, home_zone)]
     if row.get('offer_text'):
         lines.append(row['offer_text'])
     if brief:
         # #689: the offered card's fixed brief label translates with its value.
-        lines.append(msg('preparations.proposal_brief', goal=row['goal_text']))
+        lines.append(msg('preparations.proposal_brief', goal=brief_preview(row)))
     return '\n'.join(lines)
 
 
@@ -773,7 +788,7 @@ def proposal_html(shown, remaining, home_zone=None):
         if row.get('offer_text'):
             block.append(escape(row['offer_text']))
         # #689: keep the folded brief as one translatable catalog block.
-        block.append(msg('preparations.proposal_brief_html', goal=escape(row['goal_text'])))
+        block.append(msg('preparations.proposal_brief_html', goal=escape(brief_preview(row))))
         parts.append('\n'.join(block))
     if remaining:
         parts.append(escape(MORE_TEXT.format(remaining=remaining)))
@@ -1440,12 +1455,12 @@ def render_prepared(rows, now, redact=lambda text: text):
     Every goal and answer passes ``redact`` (the stored-secret pass) first.
     Oldest items are dropped until the text fits ``SECTION_MAX_BYTES``.
     """
+    def cut(text, limit):
+        return text if len(text.encode()) <= limit else text.encode()[:limit].decode('utf-8', 'ignore') + ' [...]'
     items = []
     for row in rows:
-        answer = redact(str(row.get('response') or ''))
-        if len(answer.encode()) > ANSWER_PREVIEW_BYTES:
-            answer = answer.encode()[:ANSWER_PREVIEW_BYTES].decode('utf-8', 'ignore') + ' [...]'
-        items.append({'ref': 'prep:' + row['id'], 'goal': redact(row['goal_text']),
+        answer = cut(redact(str(row.get('response') or '')), ANSWER_PREVIEW_BYTES)
+        items.append({'ref': 'prep:' + row['id'], 'goal': cut(redact(row['goal_text']), GOAL_PREVIEW_BYTES),
                       'prepared_at': iso(row['prepared_at'], row['timezone']),
                       'age_min': max(0, int((now - row['prepared_at']) // 60)), 'outcome': row['status'],
                       'repeats': row.get('recurrence') or 'no', 'answer': answer})

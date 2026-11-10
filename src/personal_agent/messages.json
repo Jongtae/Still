@@ -10366,6 +10366,18 @@
   "ja": "準備の予定を変更しました。",
   "zh": "已更改准备计划。"
  },
+ "preparations.replace_not_found": {
+  "ko": "replaces에 준 준비를 찾지 못했거나 이미 끝났어요. settings_read preparations의 진행 중인 준비 id를 주거나, 추가하는 준비라면 replaces를 빼세요.",
+  "en": "The preparation given in replaces was not found or has already ended. Give the id of an active preparation from settings_read preparations, or leave replaces out for an additional preparation.",
+  "ja": "replaces に指定した準備が見つからないか、すでに終了しています。settings_read preparations の進行中の準備のidを指定するか、追加する準備なら replaces を外してください。",
+  "zh": "未找到 replaces 指定的准备，或它已结束。请提供 settings_read preparations 中进行中准备的 id；若是新增准备，请省略 replaces。"
+ },
+ "preparations.replace_not_allowed": {
+  "ko": "이 Work에서는 준비가 제안만 되므로 기존 준비를 멈추지 않아요. replaces 없이 다시 호출하고, 무엇을 바꿀지 답에서 말하세요.",
+  "en": "In this Work a preparation is only proposed, so it does not stop an existing one. Call again without replaces and say in your answer what would change.",
+  "ja": "このWorkでは準備は提案のみのため、既存の準備は止めません。replaces なしで呼び直し、何を変えるかを回答で伝えてください。",
+  "zh": "在此 Work 中准备只会被提议，因此不会停止现有准备。请不带 replaces 重新调用，并在回答中说明要改变什么。"
+ },
  "preparations.invalid_rrule": {
   "ko": "rrule은 FREQ=DAILY/WEEKLY/MONTHLY, INTERVAL=1–12, BYDAY(서수는 MONTHLY만), BYMONTHDAY=1–31 또는 -1, UNTIL(날짜/시각) 또는 COUNT=1–366만 허용해요. UNTIL과 COUNT, recurrence나 window를 함께 쓰지 않아요.",
   "en": "rrule allows only FREQ=DAILY/WEEKLY/MONTHLY, INTERVAL=1–12, BYDAY (ordinals only with MONTHLY), BYMONTHDAY=1–31 or -1, and UNTIL (date/date-time) or COUNT=1–366. Do not combine UNTIL with COUNT, or rrule with recurrence or a window.",
