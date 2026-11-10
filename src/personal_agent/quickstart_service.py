@@ -6928,15 +6928,37 @@ class AgentService:
         paired=bool(cfg.get('enabled') and cfg.get('user_id') is not None and cfg.get('generation'))
         return cfg,paired,(f"telegram:{cfg.get('generation')}" if paired else 'web')
 
-    def record_conversation_notice(self, text, *, job=None, db=None):
+    def record_conversation_notice(self, text, *, job=None, db=None, channel=None):
         """The durable half: one assistant row in the owner's conversation."""
-        _cfg,_paired,channel=self._notice_channel()
-        if job is not None:channel=job['channel']
+        if channel is None:
+            _cfg,_paired,channel=self._notice_channel()
+            if job is not None:channel=job['channel']
         if db is None:
-            with self.store.db() as db:self.record_conversation_notice(text,job=job,db=db)
+            with self.store.db() as db:self.record_conversation_notice(text,job=job,db=db,channel=channel)
             return
         db.execute('INSERT INTO messages(role,content,channel,created,job_id) VALUES (?,?,?,?,?)',
                    ('assistant',text,channel,time.time(),job['id'] if job else None))
+
+    #: How much of a tapped message's text its transcript row keeps (#762).
+    TAPPED_MESSAGE_CHARS=700
+
+    def record_owner_tap(self, label, shown, channel):
+        """#762: an owner's button tap that took effect, as one transcript row the next turn reads.
+
+        The button's label and the text of the message it was on, as the owner
+        saw them, so a following "I pressed that by mistake" is read in
+        context.  No Work is linked: the row is no Work's reply.
+        """
+        label=' '.join(str(label or '').split())
+        if not label:return
+        shown=str(shown or '').strip()
+        if len(shown)>self.TAPPED_MESSAGE_CHARS:shown=shown[:self.TAPPED_MESSAGE_CHARS]+'…'
+        text=(msg('notice.owner_tapped',label=label,message=shown) if shown
+              else msg('notice.owner_tapped_button',label=label))
+        try:
+            self.record_conversation_notice(self._redact_known_secrets(text),channel=channel)
+        except Exception as exc:  # the tap already took effect; only its transcript line is lost
+            LOG.warning('owner tap not recorded (%s)',type(exc).__name__)
 
     def deliver_conversation_notice(self, text):
         return self.telegram_surface.deliver_conversation_notice(text)

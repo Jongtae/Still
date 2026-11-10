@@ -1541,6 +1541,18 @@
   "ja": "予約を取り消しました。すでに実行中の作業はそのまま終わります。",
   "zh": "已取消预约。已经在运行的任务会照常结束。"
  },
+ "notice.owner_tapped": {
+  "ko": "‘{label}’ 버튼을 누르셨어요. 누른 메시지:\n{message}",
+  "en": "You tapped ‘{label}’. The message it was on:\n{message}",
+  "ja": "「{label}」ボタンを押されました。押したメッセージ:\n{message}",
+  "zh": "你点了“{label}”按钮。按钮所在的消息：\n{message}"
+ },
+ "notice.owner_tapped_button": {
+  "ko": "‘{label}’ 버튼을 누르셨어요.",
+  "en": "You tapped ‘{label}’.",
+  "ja": "「{label}」ボタンを押されました。",
+  "zh": "你点了“{label}”按钮。"
+ },
  "notice.preparation_already_settled": {
   "ko": "이미 끝났거나 취소된 예약이라 바꾼 것이 없어요.",
   "en": "Those reservations had already finished or been cancelled; nothing changed.",
