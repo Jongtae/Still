@@ -10841,10 +10841,10 @@
   "zh": "只有在设置或所有者发起的对话中确认具体草案，才能开启自主付款。"
  },
  "payment_autonomy.notice": {
-  "ko": "자율 결제 모드로 다음 동작의 실행을 허용했어요. 결제 성공 여부는 작업 결과에서 확인하세요.\n{label}",
-  "en": "Payment autonomy authorized this action. Check the Work result for the payment outcome.\n{label}",
-  "ja": "自律決済モードで次の操作を許可しました。支払いの結果は作業結果を確認してください。\n{label}",
-  "zh": "自主付款模式已授权以下操作。付款结果请查看工作结果。\n{label}"
+  "ko": "자율 결제 모드로 아래 요청을 승인 없이 허용했어요. 실제로 처리됐는지는 이 작업의 답변에 나와요.\n\n{label}",
+  "en": "Payment autonomy allowed the request below without asking. Whether it went through is in this Work's reply.\n\n{label}",
+  "ja": "自律決済モードで、下のリクエストを承認なしで許可しました。実際に処理されたかはこの作業の返信に出ます。\n\n{label}",
+  "zh": "自主付款模式已无需确认地允许了下面的请求。是否实际完成会在这项工作的回复中说明。\n\n{label}"
  },
  "payment_autonomy.local_only": {
   "ko": "자율 결제 모드는 이 컴퓨터의 Still 설정에서만 바꿀 수 있어요.",

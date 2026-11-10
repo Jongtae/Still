@@ -8,7 +8,7 @@ from personal_agent.agent_runtime import ToolError
 from personal_agent.api_requests import ApiRequests, ApiError, save_slot
 from personal_agent.conversation_handoff import JUDGMENT_YES, Judgment
 from personal_agent.context_observations import CONTINUATION_KEY_PREFIX
-from personal_agent.quickstart_service import AgentService
+from personal_agent.quickstart_service import AgentService, payment_autonomy_notice
 from personal_agent.settings_orchestrator import SettingsError, direct_request_setting
 from test_owner_settings_conversation import _Case
 import test_action_bound_approvals_619 as prior
@@ -44,7 +44,8 @@ class Mode:
         self.assertEqual(len(rows[0]['digest']), 64)
         with self.store.db() as db:
             messages = [dict(row) for row in db.execute("SELECT * FROM messages WHERE role='assistant'")]
-        self.assertTrue(any(rows[0]['label'] in row['content'] and row['job_id'] == work for row in messages))
+        # #777: the notice is the receipt's label as the owner reads it.
+        self.assertTrue(any(row['content'] == payment_autonomy_notice(rows[0]) and row['job_id'] == work for row in messages))
         return rows[0]
 
 
@@ -482,6 +483,7 @@ class NoticesAndWaits(Mode, _Case):
         sends = [body for url, body in self.telegram if url == 'sendMessage']
         self.assertEqual(len(sends), 1)
         self.assertEqual(sends[0]['chat_id'], CHAT)
+        self.assertEqual(sends[0]['text'], payment_autonomy_notice(receipt))
         self.assertIn(receipt['label'], sends[0]['text'])
         with self.store.db() as db:
             row = db.execute("SELECT channel FROM messages WHERE job_id=? AND role='assistant'", (job['id'],)).fetchone()

@@ -275,6 +275,23 @@ def request_prompt_parts(label):
     return title,summary,rest,check,f'{APPROVAL_EXACT_LABEL} {exact}'
 
 
+def payment_autonomy_notice(authorization):
+    """The owner's notice for one action the payment mode allowed (#777).
+
+    A request label reads like its approval prompt (``request_prompt_parts``): the AI's
+    description, the values Still checked and the exact request only when a value does not
+    check out.  The receipt keeps the whole label; a browser step's short label is shown as is.
+    """
+    from .quickstart_store import REQUEST_APPROVAL_ACTIONS
+    label=authorization['label']
+    if authorization.get('action') in REQUEST_APPROVAL_ACTIONS:
+        _title,summary,rest,check,exact=request_prompt_parts(label)
+        parts=[part for part in ('\n'.join([summary,*rest]).strip(),check) if part]
+        if exact:parts.append(f"{msg('notice.request_raw')}\n{exact}")
+        label='\n\n'.join(parts) or label
+    return msg('payment_autonomy.notice',label=label)
+
+
 def truncated_owner_message(text):
     """An over-long owner message cut to what one Work stores, with a note saying so (#832)."""
     note = OVERLONG_MESSAGE_NOTE.format(total=len(text), kept='{kept}')
@@ -7219,7 +7236,7 @@ class AgentService:
         receipt=db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                    (job['id'],'payment_autonomy','authorized',json.dumps({'scope':'payment','effect':'none',
                     'evidence':authorization},ensure_ascii=False),time.time())).lastrowid
-        self.record_conversation_notice(msg('payment_autonomy.notice',label=label),job=job,db=db)
+        self.record_conversation_notice(payment_autonomy_notice(authorization),job=job,db=db)
         return {**authorization,'receipt':receipt}
 
     def _release_payment_autonomy(self, job, authorization):
@@ -7237,7 +7254,7 @@ class AgentService:
     def _deliver_payment_autonomy_notice(self, job, authorization):
         surface=self.surface_of(job)
         if surface is not None:
-            try:surface.deliver_conversation_notice(msg('payment_autonomy.notice',label=authorization['label']))
+            try:surface.deliver_conversation_notice(payment_autonomy_notice(authorization))
             except Exception:LOG.warning('payment autonomy notice delivery failed')
 
     def browser_approvals_for(self, job):
