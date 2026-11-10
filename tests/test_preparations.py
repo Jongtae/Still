@@ -745,6 +745,46 @@ class DeclinedOfferTests(_Case):
         self.assertEqual(self.service.preparations.declined_goals(self.now), ['아침 요약 준비'],
                          'cancelling what the AI set up is the owner\'s no')
 
+    def test_a_tapped_cancel_is_in_the_conversation_the_next_turn_reads(self):
+        """#762: the owner's tap and the message it was on reach the next Work; it is no Work's reply."""
+        self.judge = engine(preparation=False)
+        self.service.use_decision_engine(self.judge)
+        work, _result = self.offer()
+        self.service.deliver_one()
+        self.service.deliver_notification()
+        notice = self.sends()[-1]
+        message_id = self.store.notification_of(work, 'preparation_scheduled')['message_id']
+        [[button]] = notice['reply_markup']['inline_keyboard']
+        tapped = {'id': 'cb', 'from': {'id': CHAT}, 'data': button['callback_data'],
+                  'message': {'message_id': message_id, 'chat': {'id': CHAT, 'type': 'private'},
+                              'text': notice['text'], 'reply_markup': notice['reply_markup']}}
+        reply = self.store.last_reply(work)['content']
+        self.service.ingest_callback(tapped, GENERATION)
+        self.service.ingest_callback(tapped, GENERATION)  # settled: the second tap changes nothing
+        rows = [row for row in self.store.history() if button['text'] in str(row['content'])]
+        self.assertEqual(len(rows), 1, 'one row for the one tap that took effect')
+        self.assertEqual((rows[0]['role'], rows[0]['job_id']), ('assistant', None))
+        self.assertIn('아침 요약 준비', rows[0]['content'], 'the message it was on')
+        self.assertEqual(self.store.last_reply(work)['content'], reply, 'not the Work\'s reply')
+
+        self.script = [{'content': '다시 예약할까요?'}]
+        self.receive('방금 실수로 눌렀어')
+        read = '\n'.join(str(m.get('content')) for m in self.model_calls[-1]['messages'])
+        self.assertIn(button['text'], read)
+        self.assertIn('아침 요약 준비', read)
+
+    def test_a_tap_that_changes_nothing_is_not_recorded(self):
+        self.judge = engine(preparation=False)
+        self.service.use_decision_engine(self.judge)
+        work, _result = self.offer()
+        before = len(self.store.history())
+        self.service.ingest_callback({'id': 'cb', 'from': {'id': CHAT}, 'data': 'p7p:missing:cancel',
+                                      'message': {'message_id': 999, 'chat': {'id': CHAT, 'type': 'private'}, 'text': '예약했어요',
+                                                  'reply_markup': {'inline_keyboard': [[{'text': '예약 취소',
+                                                                                         'callback_data': 'p7p:missing:cancel'}]]}}},
+                                     GENERATION)
+        self.assertEqual(len(self.store.history()), before)
+
     def test_in_the_owners_typed_work_a_yes_is_the_owners_request(self):
         self.judge = engine(preparation=True)
         self.service.use_decision_engine(self.judge)

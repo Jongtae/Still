@@ -57,6 +57,20 @@ from .quickstart_service import (APPROVE_BUTTON, BROWSER_LOGIN_PHONE_ALERT, BROW
                                  MEMORY_SAVED_OUTDATED_TEXT, MEMORY_SAVED_TTL_SECONDS, REACTION_EVENT, TELEGRAM_PHOTO_ALBUM_SETTLE_SECONDS,
                                  TELEGRAM_RECEIVE_GRACE_SECONDS, WORKING_NOTES_KIND, prepared_ids, truncated_owner_message)
 
+#: Buttons that only show a Work's details; a tap on them is not an owner act (#762).
+VIEW_CONTROLS = ('p7v:', 'p7d:')
+
+
+def tapped_label(message, data):
+    """The label of the button carrying ``data`` on the tapped ``message`` ('' when not shown)."""
+    markup = message.get('reply_markup') if isinstance(message, dict) else None
+    rows = markup.get('inline_keyboard') if isinstance(markup, dict) else None
+    for row in rows if isinstance(rows, list) else ():
+        for button in row if isinstance(row, list) else ():
+            if isinstance(button, dict) and button.get('callback_data') == data:
+                return str(button.get('text') or '')
+    return ''
+
 
 class TelegramSurface(ConversationSurface):
     """Telegram ingestion, callbacks and delivery for one ``AgentService``."""
@@ -934,6 +948,10 @@ class TelegramSurface(ConversationSurface):
                             {'inline_keyboard':[]})
                         except ProviderError:pass
                         changed=True
+            if authorized and changed and isinstance(data,str) and data[:4] not in VIEW_CONTROLS:
+                # #762: the owner's act enters the conversation the next turn reads.
+                service.record_owner_tap(tapped_label(message,data),message.get('text') or message.get('caption'),
+                                         f"telegram:{generation}")
             if authorized and isinstance(callback_id,str):
                 text,show=alert or (msg('service.done') if changed else '',False)
                 try:service.telegram.answer_callback_query(callback_id,text,show_alert=show)

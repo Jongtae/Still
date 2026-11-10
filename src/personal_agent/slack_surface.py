@@ -567,11 +567,19 @@ class SlackSurface(DirectMessageSurface):
         message = payload.get('message') if isinstance(payload.get('message'), dict) else {}
         blocks = [block for block in message.get('blocks') or () if isinstance(block, dict) and block.get('type') != 'actions']
         owner, pressed = cfg['owner_user_id'], message_id(ts)
-        self.service.steer_spawn(lambda: self.answer_button(nid, answer == 'approve', pressed, owner, generation, blocks))
+        label = action['text'].get('text') if isinstance(action.get('text'), dict) else ''
+        # A markdown block's text is a string; a section's is a text object.
+        shown = ''.join(block['text'].get('text') or '' if isinstance(block.get('text'), dict) else str(block.get('text') or '')
+                        for block in blocks) or str(message.get('text') or '')
+        self.service.steer_spawn(lambda: self.answer_button(nid, answer == 'approve', pressed, owner, generation, blocks,
+                                                            tapped=(label, shown)))
         return 'pressed'
 
-    def answer_button(self, nid, approve, pressed, owner, generation, blocks=()):
-        """Settle the one item the pressed notice showed, through its own path; its buttons are then removed."""
+    def answer_button(self, nid, approve, pressed, owner, generation, blocks=(), tapped=None):
+        """Settle the one item the pressed notice showed, through its own path; its buttons are then removed.
+
+        ``tapped``: the button's label and the notice's text, recorded in the conversation once it settled (#762).
+        """
         service = self.service
         with self._button_lock:
             notification = service.store.notification(nid)
@@ -585,6 +593,8 @@ class SlackSurface(DirectMessageSurface):
                 kind = service.owner_acts.answer_exact(self, owner, generation, pressed, ref, approve)
         if exact and kind is None:
             self.send_owner(msg('slack.button_stale'), owner=owner, generation=generation)
+        if exact and kind is not None and tapped:
+            service.record_owner_tap(*tapped, f'{self.channel_prefix}{generation}')
         if exact:
             try:
                 cfg = self.config()

@@ -202,12 +202,14 @@ class SlackCase(unittest.TestCase):
         message = self.fake.messages.get(ts, {})
         # The buttons as the owner saw them (a press can still arrive after Still removed them).
         shown = self.buttons_shown.setdefault(ts, message['blocks'])
-        value = next(element['value'] for element in shown[-1]['elements'] if element['action_id'] == action)
+        element = next(element for element in shown[-1]['elements'] if element['action_id'] == action)
+        # Slack's block_actions payload carries the pressed element's text with its value.
         self.socket.deliver('interactive', {
             'type': 'block_actions', 'team': {'id': team}, 'user': {'id': user}, 'channel': {'id': channel},
             'container': {'type': 'message', 'message_ts': ts, 'channel_id': channel},
             'message': {'ts': ts, 'blocks': shown},
-            'actions': [{'action_id': action, 'value': value, 'action_ts': action_ts or self.fake.tick()}]})
+            'actions': [{'action_id': action, 'value': element['value'], 'text': element.get('text'),
+                         'action_ts': action_ts or self.fake.tick()}]})
 
     def sl_jobs(self):
         return [job for job in self.store.jobs() if job['channel'].startswith('slack:')]
@@ -535,6 +537,18 @@ class Buttons(SlackCase):
         self.assertIn('이미 처리됐거나', self.fake.posted()[-1])
         self.assertNotIn('actions', [block['type'] for block in self.fake.messages[slack_ts(notice['message_id'])]['blocks']],
                          'the answered message loses its buttons')
+
+    def test_a_pressed_button_is_in_the_conversation_once(self):
+        """#762: the press and the notice it was on are one transcript row the next turn reads."""
+        job, _draft_id, notice = self.settings_notice()
+        blocks = self.fake.messages[slack_ts(notice['message_id'])]['blocks']
+        label = next(element['text']['text'] for element in blocks[-1]['elements'] if element['action_id'] == ACTION_APPROVE)
+        self.press(slack_ts(notice['message_id']), ACTION_APPROVE)
+        self.press(slack_ts(notice['message_id']), ACTION_APPROVE)   # stale: nothing settled, nothing recorded
+        rows = [row for row in self.store.history() if label in str(row['content']) and row['job_id'] is None]
+        self.assertEqual(len(rows), 1)
+        self.assertIn('Tokyo', rows[0]['content'], 'the notice it was on')
+        self.assertTrue(rows[0]['channel'].startswith('slack:'))
 
     def test_a_notice_shows_its_markdown_beside_the_buttons(self):
         _job, _draft_id, notice = self.settings_notice()
