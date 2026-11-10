@@ -760,3 +760,117 @@ class SituationReview(ContextCase):
         refs = {source['ref'] for source in self.context.situation()['sources']}
         self.assertEqual(refs, {'request:' + job for job in (noted, *jobs)})
         self.assertEqual(self.context.note_situation(jobs[0], 'late older run')['reason'], 'situation_newer')
+
+
+class SecretRedactionCache(unittest.TestCase):
+    """#772: real decryption/redaction, temporary store and an injected key only."""
+
+    def setUp(self):
+        from cryptography.fernet import Fernet
+        from personal_agent.browser_jar import MemoryKey
+        from personal_agent.api_requests import save_slot
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.store = QuickStore(Path(tmp.name))
+        self.key = mock.Mock(wraps=MemoryKey(Fernet.generate_key()))
+        self.store.api_slot_key = self.key
+        self.secret = 'synthetic-secret-772'
+        save_slot(self.store, 'fixture', ['api.example.com'], self.secret, encrypted=True)
+        self.state = 'synthetic-state-token-' + 'x' * 24
+        self.write_state(self.state)
+        self.key.get.reset_mock()
+
+    def write_state(self, value):
+        from personal_agent.api_credentials import ApiCredentials
+        from personal_agent.api_requests import slots
+        self.assertTrue(ApiCredentials(self.store).write_state('fixture', slots(self.store)['fixture'],
+                                                              json.dumps({'token': value})))
+
+    def test_repeated_redactions_read_the_key_once(self):
+        for _ in range(3):
+            self.assertEqual(redact_known_secrets(self.store, self.secret + ' ' + self.state),
+                             '[redacted] [redacted]')
+        self.assertEqual(self.key.get.call_count, 1)
+
+    def test_concurrent_misses_read_the_key_once(self):
+        import threading
+        import time
+        from concurrent.futures import ThreadPoolExecutor
+        barrier = threading.Barrier(8)
+        value = self.key.get()
+        self.key.get.reset_mock()
+        self.key.get.side_effect = lambda: time.sleep(0.02) or value
+        def redact(_):
+            barrier.wait(timeout=5)
+            return redact_known_secrets(self.store, self.secret + ' ' + self.state)
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            self.assertEqual(list(pool.map(redact, range(8))), ['[redacted] [redacted]'] * 8)
+        self.assertEqual(self.key.get.call_count, 1)
+
+    def test_add_rotate_and_remove_keep_new_and_retired_values_redacted(self):
+        from personal_agent.api_requests import save_slot, remove_slot
+        redact_known_secrets(self.store, self.secret + ' ' + self.state)  # warm old revision
+        added, rotated, state = 'added-secret-772', 'rotated-secret-772', 'rotated-state-' + 'y' * 24
+        save_slot(self.store, 'added', ['api.example.com'], added, encrypted=True)
+        self.assertEqual(redact_known_secrets(self.store, added), '[redacted]')
+        self.write_state(state)
+        self.assertEqual(redact_known_secrets(self.store, self.state + ' ' + state), '[redacted] [redacted]')
+        save_slot(self.store, 'fixture', ['api.example.com'], rotated, encrypted=True)
+        text = ' '.join((self.secret, added, rotated, self.state, state))
+        self.assertEqual(redact_known_secrets(self.store, text), ' '.join(['[redacted]'] * 5))
+        remove_slot(self.store, 'fixture')
+        self.assertEqual(redact_known_secrets(self.store, text), ' '.join(['[redacted]'] * 5))
+
+    def test_missing_or_failing_key_is_not_cached_and_recovery_retries(self):
+        from personal_agent.api_credentials import CredentialError
+        for failure in (None, OSError('injected unavailable key')):
+            with self.subTest(failure=type(failure).__name__):
+                self.key.get.side_effect = failure if isinstance(failure, Exception) else lambda: None
+                with self.assertRaises(CredentialError):
+                    redact_known_secrets(self.store, self.secret)
+        self.key.get.side_effect = None
+        self.assertEqual(redact_known_secrets(self.store, self.secret), '[redacted]')
+        self.assertEqual(self.key.get.call_count, 3)
+
+    def test_switching_provider_cannot_reuse_a_cached_success(self):
+        from personal_agent.api_credentials import CredentialError
+        from personal_agent.browser_jar import MemoryKey
+        self.assertEqual(redact_known_secrets(self.store, self.secret), '[redacted]')
+        self.store.api_slot_key = MemoryKey()
+        with self.assertRaises(CredentialError):
+            redact_known_secrets(self.store, self.secret)
+
+    def test_default_keychain_provider_instances_share_the_key_identity(self):
+        from types import SimpleNamespace
+        from personal_agent.browser_jar import KeychainKey
+        value = self.key.get()
+        self.store.api_slot_key = None
+        runner = mock.Mock(return_value=SimpleNamespace(returncode=0, stdout=value.decode()))
+        def provider(account, service):
+            return KeychainKey(account, service, runner=runner)
+        with mock.patch('personal_agent.api_credentials.platform_key', provider):
+            for _ in range(3):
+                self.assertEqual(redact_known_secrets(self.store, self.secret), '[redacted]')
+        self.assertEqual(runner.call_count, 1)
+
+    def test_invalid_state_is_skipped_as_before_but_partial_results_are_not_cached(self):
+        from personal_agent.api_credentials import STATE_PREFIX
+        self.store.secret(STATE_PREFIX + 'broken', 'invalid-ciphertext')
+        for _ in range(2):
+            self.assertEqual(redact_known_secrets(self.store, self.secret + ' ' + self.state),
+                             '[redacted] [redacted]')
+        self.assertEqual(self.key.get.call_count, 2)
+
+    def test_cache_is_bounded_and_evicted_revisions_are_decrypted_again(self):
+        from personal_agent.api_requests import encrypted_secret_values
+        from personal_agent.api_credentials import STATE_PREFIX
+        first = self.store.secret(STATE_PREFIX + 'fixture')
+        encrypted_secret_values(self.store)
+        for index in range(6):
+            self.write_state('new-state-token-' + str(index) * 24)
+            encrypted_secret_values(self.store)
+        self.assertEqual(len(self.store._redaction_secret_values[2]), 4)
+        self.store.secret(STATE_PREFIX + 'fixture', first)
+        self.key.get.reset_mock()
+        self.assertIn(self.state, encrypted_secret_values(self.store))
+        self.assertEqual(self.key.get.call_count, 1)

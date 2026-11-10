@@ -44,6 +44,7 @@ import threading
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
+from collections import OrderedDict
 from decimal import Decimal, InvalidOperation
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -400,20 +401,59 @@ def secret_names(store):
     return tuple(SECRET_PREFIX + name for name in rows if isinstance(name, str) and NAME.match(name)) if isinstance(rows, dict) else ()
 
 
-def encrypted_secret_values(store):
+# Serialize misses too: concurrent judgments must not each read the Keychain.
+_REDACTION_LOCK = threading.Lock()
+_REDACTION_REVISIONS = 4
+
+
+def encrypted_secret_values(store, *, fresh=False):
     """Encrypted slot values for the existing secret redaction boundary.
 
     An unreadable encrypted slot must not silently skip redaction. The caller
     withholds context until the owner-held key is available again.
+    Response callers require a fresh read to detect key loss after dispatch.
     """
-    from .api_credentials import ApiCredentials, PREFIX
+    from .api_credentials import ApiCredentials, CredentialError, PREFIX, STATE_PREFIX
     reader = getattr(store, 'secret_items', None)
     records = reader(PREFIX) if callable(reader) else {}
     if not records:
         return ()
-    credentials = ApiCredentials(store)
-    # #1380: tokens a code run saved in its secret set's run state are redacted like the values.
-    return credentials.values(records) + credentials.state_values()
+    states = reader(STATE_PREFIX)
+    with _REDACTION_LOCK:
+        credentials = ApiCredentials(store)
+        provider = getattr(store, 'api_slot_key', None)
+        # Default providers are constructed per call; their type/account/service
+        # identify the owner-held key. Injected providers keep object identity.
+        identity = (type(credentials.key), credentials.key.location,
+                    credentials.key.account, credentials.key.service) if provider is None else None
+        cached = getattr(store, '_redaction_secret_values', None)
+        if cached is None or cached[0] is not provider or cached[1] != identity:
+            cached = (provider, identity, OrderedDict())
+            store._redaction_secret_values = cached
+        cache = cached[2]
+        revision = (tuple(records.items()), tuple(states.items()))
+        if not fresh and revision in cache:
+            cache.move_to_end(revision)
+            return cache[revision]
+        try:
+            cipher = credentials._cipher()
+        except Exception:
+            raise CredentialError() from None
+        values = list(credentials.values(records, cipher))
+        complete = True
+        # Preserve state_values' best-effort handling, but never memoize a
+        # partial result: an unreadable state must be retried next pass.
+        for token in states.values():
+            try:
+                values.extend(credentials._state_strings(token, cipher))
+            except Exception:
+                complete = False
+        values = tuple(values)
+        if complete:
+            cache[revision] = values
+            if len(cache) > _REDACTION_REVISIONS:
+                cache.popitem(last=False)
+        return values
 
 
 def describe(slot):
@@ -1287,7 +1327,7 @@ class ApiRequests:
         if status >= 400:
             # #432: the provider's own reason, redacted like a response body; none when redaction cannot be checked.
             try:
-                private_values = [value for value in encrypted_secret_values(self.store)
+                private_values = [value for value in encrypted_secret_values(self.store, fresh=True)
                                   if isinstance(value, str) and len(value) >= _min_redacted_chars()]
             except Exception:
                 private_values = None
@@ -1325,7 +1365,7 @@ class ApiRequests:
         # An escaped echo (``\"`` or ``\u`` in the JSON text) decodes back to the key: scrub the decoded values too.
         data = scrub(data, secret)
         try:
-            private_values = encrypted_secret_values(self.store)
+            private_values = encrypted_secret_values(self.store, fresh=True)
         except Exception:
             raise ApiError('API 응답의 인증 정보 가림을 확인할 수 없어 응답을 쓰지 않았습니다.',
                            'api_redaction_unavailable', effect='unknown' if effect in STATE_CHANGING_EFFECTS else None) from None

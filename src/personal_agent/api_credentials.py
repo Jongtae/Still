@@ -142,14 +142,14 @@ class ApiCredentials:
             self.store.retire_secret_values(self.values({reference: token}))
         self.store.remove_secret(reference)
 
-    def values(self, records):
+    def values(self, records, cipher=None):
         """Redaction includes staged/retired ciphertext, not only active slots.
 
         These values are never used as authentication: only read/resolve with
         current metadata can release a credential for that purpose.
         """
         try:
-            cipher = self._cipher()
+            cipher = cipher if cipher is not None else self._cipher()
             result = []
             for reference, token in records.items():
                 if not REFERENCE.fullmatch(reference):
@@ -192,9 +192,10 @@ class ApiCredentials:
         state = payload.get('state')
         return state if isinstance(state, str) else ''
 
-    def _state_strings(self, token):
+    def _state_strings(self, token, cipher=None):
         """The redacted string values of one saved run-state ciphertext (``state_values``' rule)."""
-        state = json.loads(json.loads(self._cipher().decrypt(token.encode())).get('state') or '{}')
+        cipher = cipher if cipher is not None else self._cipher()
+        state = json.loads(json.loads(cipher.decrypt(token.encode())).get('state') or '{}')
         values, stack = [], [state]
         while stack:
             item = stack.pop()
