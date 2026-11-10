@@ -650,7 +650,7 @@ class WorkExecutor:
         # the tool subset; deterministic code only validates the plan.  Without a
         # usable plan the default Main AI runs the raw request exactly as before,
         # and why is recorded once.  One budget spans every attempt of the Work.
-        run.section_values={'profile':service.owner_profile_snapshot(job.get('message'),recall=not prep.preparation_of(job.get('request_key'))),'current_context':service.current_context_text(job),
+        run.section_values={'profile':service.owner_profile_snapshot(job.get('message'),recall=not prep.preparation_of(job.get('request_key')) or service.day_plan_run(job)),'current_context':service.current_context_text(job),
                         'prepared':service.prepared_text(job)}
         # #961: the skill revisions this Work may load, captured once for every attempt;
         # None (skills off or none installed) is the unchanged pre-skill path.

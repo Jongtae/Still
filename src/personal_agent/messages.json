@@ -10929,5 +10929,23 @@
   "en": "/help — show this guide again",
   "ja": "/help — この案内をもう一度表示します",
   "zh": "/help — 再次显示本说明"
+ },
+ "preparations.day_plan_title": {
+  "ko": "하루 계획",
+  "en": "Daily plan",
+  "ja": "一日の計画",
+  "zh": "每日计划"
+ },
+ "preparations.day_plan_scheduled": {
+  "ko": "{when}에 예약했습니다. 소유자에게 따로 알리지 않으며, 설정에서 보고 취소할 수 있습니다.",
+  "en": "Scheduled for {when}. The owner is not told separately; it is listed in Settings, where it can be cancelled.",
+  "ja": "{when}に予約しました。オーナーには個別に知らせず、設定で確認・取り消しできます。",
+  "zh": "已预约在{when}。不会另行通知主人，可在设置中查看和取消。"
+ },
+ "preparations.day_plan_offer": {
+  "ko": "매일 아침 오늘 일정과 최근 대화를 보고, 필요해질 만한 것을 미리 준비해 둬요.\n조사하고 준비만 하며, 결제나 변경은 하지 않아요.",
+  "en": "Each morning I read today's schedule and our recent conversation and prepare what you are likely to need.\nI only research and prepare; I never pay for or change anything.",
+  "ja": "毎朝、今日の予定と最近の会話を見て、必要になりそうなことを先に準備しておきます。\n調べて準備するだけで、支払いや変更は行いません。",
+  "zh": "每天早上我会查看今天的日程和最近的对话，提前准备你可能需要的内容。\n我只做调查和准备，不会付款或更改任何内容。"
  }
 }

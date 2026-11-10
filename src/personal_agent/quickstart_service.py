@@ -1690,6 +1690,10 @@ class AgentService:
         """
         return self.preparations_service.preparation_run_fact(job)
 
+    def day_plan_run(self, job):
+        """Whether ``job`` is a run of the daily plan itself (#780)."""
+        return self.preparations_service.day_plan_run(job)
+
     def preparation_history(self, job):
         """The only conversation a preparation's Work is shown (#659).
 

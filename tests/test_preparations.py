@@ -72,6 +72,9 @@ class Network:
 
 class _Case(unittest.TestCase):
     START = START
+    #: #780: these cases are about the preparations they set up themselves; the daily plan Still sets
+    #: up on its own is exercised in ``test_day_plan_780`` (which turns this on).
+    DAY_PLAN = False
 
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -101,6 +104,8 @@ class _Case(unittest.TestCase):
         service.local_tools = self.network
         service.preparations.clock = lambda: self.now
         service.context_observations.clock = lambda: self.now
+        if not self.DAY_PLAN:
+            service.preparations_service.ensure_day_plan = lambda now: None
         if hasattr(self, 'judge'):
             service.use_decision_engine(self.judge)
         return service
@@ -1158,6 +1163,7 @@ class PreparationScopeTests(_Case):
         self.service = AgentService(self.store, ModelAdapter(self._model), self._telegram, execution_adapter=Engine(),
                                     subscription_engines=SubscriptionEngines(finder=lambda _: '/runtime/cli', clock=lambda: 1))
         self.service.preparations.clock = lambda: self.now
+        self.service.preparations_service.ensure_day_plan = lambda now: None  # #780: as ``make_service``
         self.service.use_decision_engine(self.judge)
         self.service.connect_subscription_engine({'engine': 'codex', 'officially_authenticated': True})
         origin = self.web_turn(self.ORIGIN)
