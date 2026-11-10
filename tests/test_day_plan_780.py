@@ -96,6 +96,20 @@ class SetUpTests(_Plan):
         self.tick()
         self.assertEqual(sorted(item['state'] for item in self.rows()), ['cancelled', 'scheduled'])
 
+    def test_an_opt_in_before_the_next_tick_is_not_overridden_by_it(self):
+        """Cancelled or deleted, then the look back turned on again, with no tick in between."""
+        for remove in (False, True):
+            with self.subTest(deleted=remove):
+                [row] = [item for item in self.rows() if item['state'] == 'scheduled'] or [self.plan()]
+                self.service.preparation_request({'operation': 'cancel', 'id': row['id']})
+                if remove:
+                    self.service.preparation_request({'operation': 'delete', 'id': row['id']})
+                self.service.owner_model_request({'operation': 'set', 'dream': True})
+                self.tick()
+                [active] = [item for item in self.rows() if item['state'] == 'scheduled']
+                self.assertNotEqual(active['id'], row['id'])
+                self.assertEqual(active['origin'], prep.ORIGIN_DAY_PLAN)
+
     def test_while_the_look_back_is_off_an_existing_plan_does_not_run(self):
         row = self.plan()
         self.service.owner_model.set_controls({'dream': False})

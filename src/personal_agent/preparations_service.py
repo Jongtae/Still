@@ -367,8 +367,13 @@ class PreparationsService:
 
     def day_plan_opt_in(self):
         """The owner turned the look back on (#780): an earlier opt-out of the daily plan ends."""
-        if (self.service.store.config(DAY_PLAN_KEY,{}) or {}).get('opted_out'):
-            self.service.store.put(DAY_PLAN_KEY,{})
+        service=self.service
+        state=dict(service.store.config(DAY_PLAN_KEY,{}) or {})
+        # A plan cancelled or deleted since the last tick is an opt-out the tick has not recorded
+        # yet; the owner's later yes ends it all the same, whichever came first.
+        row=service.preparations.get(state['row']) if state.get('row') else None
+        if state.get('opted_out') or (state.get('row') and (row is None or row['state']==prep.STATE_CANCELLED)):
+            service.store.put(DAY_PLAN_KEY,{})
 
     def day_plan_record(self, job):
         """What earlier plan runs set up and how it went, as one block for a plan run (#780); '' when none.
