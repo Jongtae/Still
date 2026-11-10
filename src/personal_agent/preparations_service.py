@@ -353,8 +353,10 @@ class PreparationsService:
             if row and row['state'] in prep.ACTIVE_STATES:service.store.put(DAY_PLAN_KEY,{'row':row['id']})
             else:row=None
         on=self.look_back_on()
-        if row and row['state'] in prep.ACTIVE_STATES:
-            if not on:service.preparations.defer(row['id'],now)
+        if row:
+            # The tracked plan is the owner's to shape: one they gave an end (no repeat, an end
+            # date) stays finished and is not replaced by a new indefinite one.
+            if not on and row['state'] in prep.ACTIVE_STATES:service.preparations.defer(row['id'],now)
             return None
         if not on:return None
         from .current_context import resolve_local_timezone
@@ -376,9 +378,10 @@ class PreparationsService:
         service=self.service
         state=dict(service.store.config(DAY_PLAN_KEY,{}) or {})
         # A plan cancelled or deleted since the last tick is an opt-out the tick has not recorded
-        # yet; the owner's later yes ends it all the same, whichever came first.
+        # yet; the owner's later yes ends it all the same, whichever came first.  So it does for a
+        # plan the owner let finish.
         row=service.preparations.get(state['row']) if state.get('row') else None
-        if state.get('opted_out') or (state.get('row') and (row is None or row['state']==prep.STATE_CANCELLED)):
+        if state.get('opted_out') or (state.get('row') and (row is None or row['state'] not in prep.ACTIVE_STATES)):
             service.store.put(DAY_PLAN_KEY,{})
 
     def day_plan_record(self, job):

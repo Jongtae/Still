@@ -123,6 +123,25 @@ class SetUpTests(_Plan):
         self.tick()
         self.assertEqual(self.store.jobs(), [], 'the recovered plan follows the switch like a tracked one')
 
+    def test_a_plan_the_owner_gave_an_end_is_not_replaced_when_it_finishes(self):
+        row = self.plan()
+        self.service.preparations.edit(row['id'], recurrence=None)
+        self.now = row['due_at'] + 60
+        self.assertTrue(self.tick())
+        self.script = [{'content': '오늘은 준비할 것이 없습니다.'}]
+        self.assertTrue(self.service.run_one())
+        self.tick()
+        finished = self.service.preparations.get(row['id'])
+        self.assertNotIn(finished['state'], prep.ACTIVE_STATES)
+        self.now += 3 * 86400
+        self.tick()
+        self.tick(self.make_service())
+        self.assertEqual([item['id'] for item in self.rows()], [row['id']], 'no new indefinite plan takes its place')
+        self.service.owner_model_request({'operation': 'set', 'dream': True})
+        self.tick()
+        self.assertEqual(len([item for item in self.rows() if item['state'] == 'scheduled']), 1,
+                         'turning the look back on again is the owner asking for it again')
+
     def test_while_the_look_back_is_off_an_existing_plan_does_not_run(self):
         row = self.plan()
         self.service.owner_model.set_controls({'dream': False})
