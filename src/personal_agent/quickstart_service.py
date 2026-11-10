@@ -1649,7 +1649,11 @@ class AgentService:
         body=body if isinstance(body,dict) else {}
         operation=body.get('operation','read')
         if operation=='read':return self.owner_model.status()
-        if operation=='set':return self.owner_model.set_controls(body)
+        if operation=='set':
+            status=self.owner_model.set_controls(body)
+            # #780: turning the look back on is the owner's yes to the daily plan again.
+            if isinstance(body,dict) and body.get('dream') is True:self.preparations_service.day_plan_opt_in()
+            return status
         raise ValueError(msg('quickstart_service.check_request'))
 
     #: #719: bounds of the texts one watch judgment is asked over.
@@ -1689,6 +1693,10 @@ class AgentService:
         '' for a Work no preparation started; the fixed #671 sentence when the row cannot be read.
         """
         return self.preparations_service.preparation_run_fact(job)
+
+    def day_plan_run(self, job):
+        """Whether ``job`` is a run of the daily plan itself (#780)."""
+        return self.preparations_service.day_plan_run(job)
 
     def preparation_history(self, job):
         """The only conversation a preparation's Work is shown (#659).

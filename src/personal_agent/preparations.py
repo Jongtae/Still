@@ -97,6 +97,17 @@ DECLINED_GOALS_LIMIT = 20
 #: #583: the ``origin`` of a proposal the daily look-back suggested; one still unanswered this long
 #: lapses as ``expired`` (not ``cancelled``, so it is not a decline).
 ORIGIN_DREAM = 'dream'
+#: #780: the daily plan itself: one run a day in which the owner's AI reads the day and sets up what
+#: to have ready.  What that run sets up carries ``ACCEPTED_DAY_PLAN`` and no origin.
+ORIGIN_DAY_PLAN = 'day-plan'
+ORIGINS = (ORIGIN_DREAM, ORIGIN_DAY_PLAN)
+#: #780: when the first daily plan runs, owner-local; the owner changes or cancels it like any preparation.
+DAY_PLAN_HOUR, DAY_PLAN_MINUTE = 6, 30
+#: #780: how far back a plan run is shown what earlier plan runs set up.
+DAY_PLAN_RECORD_SECONDS = 2 * 86400
+DAY_PLAN_RECORD_ITEMS = 20
+#: #780: the Evidence row saying which prepared results were placed in a Work's context.
+OFFERED_EVENT_TOOL = 'prepared_offered'
 SUGGESTION_EXPIRY_SECONDS = 7 * 86400
 #: #638: a look back that holds a one-off suggestion (no recurrence) is offered without waiting for the
 #: owner's next Work, but only inside these owner-local hours; one whose time passed unanswered lapses.
@@ -108,8 +119,10 @@ ACCEPTED_OWNER_ANSWER = 'owner-answer'
 #: #717: set up by the owner's AI inside a Work the owner's own typed message started; the owner
 #: is told with a cancel button.  ``ACCEPTED_DREAM``: set up by the nightly look back, told the same way.
 ACCEPTED_OWNER_WORK, ACCEPTED_DREAM = 'owner-work', 'dream'
+#: #780: the daily plan, and what a daily-plan run set up.
+ACCEPTED_DAY_PLAN = 'day-plan'
 #: #717: set up without the owner asking; such a run never uses the owner's payment autonomy.
-SELF_SET = (ACCEPTED_OWNER_WORK, ACCEPTED_DREAM)
+SELF_SET = (ACCEPTED_OWNER_WORK, ACCEPTED_DREAM, ACCEPTED_DAY_PLAN)
 #: #717: the states of a look-back's preparation the owner may not have been told about yet.
 UNTOLD_STATES = ('proposed', 'scheduled')
 
@@ -900,7 +913,7 @@ class Preparations:
             recurrence = RECURRENCE_WINDOW
         if state not in (STATE_PROPOSED, STATE_SCHEDULED):
             raise ValueError('a preparation starts proposed or scheduled')
-        if origin not in (None, ORIGIN_DREAM):
+        if origin not in (None, *ORIGINS):
             raise ValueError('unknown origin')
         now = self.clock()
         with self.store.db() as db:
@@ -1129,9 +1142,10 @@ class Preparations:
         """
         with self.store.db() as db:
             return [row['goal_text'] for row in db.execute(
-                "SELECT goal_text FROM preparations WHERE state=? AND (accepted_by IS NULL OR accepted_by IN (?,?)) "
+                'SELECT goal_text FROM preparations WHERE state=? AND (accepted_by IS NULL OR accepted_by IN '
+                f"({','.join('?' * len(SELF_SET))})) AND origin IS NOT ? "
                 'AND updated_at>=? ORDER BY updated_at DESC LIMIT ?',
-                (STATE_CANCELLED, *SELF_SET, now - DECLINED_SECONDS, int(limit)))]
+                (STATE_CANCELLED, *SELF_SET, ORIGIN_DAY_PLAN, now - DECLINED_SECONDS, int(limit)))]
 
     def proposed_from(self, work_id, suggestions=True):
         """The proposals ``work_id`` created; ``suggestions`` False leaves out the look-back's (#583)."""
@@ -1152,6 +1166,74 @@ class Preparations:
             rows = db.execute('SELECT title_text,goal_text FROM preparations WHERE state IN (?,?,?,?) '
                               'ORDER BY created_at DESC LIMIT ?', (*ACTIVE_STATES, int(limit))).fetchall()
         return [owner_title(dict(row)) for row in rows]
+
+    # -- the daily plan (#780) ------------------------------------------------
+
+    def day_plan(self):
+        """The daily plan's row in any state, newest first, or None (#780).
+
+        A cancelled or deleted-then-absent plan is told apart by the caller: a row in any state
+        means the plan was set up once, and the owner's cancel is kept.
+        """
+        with self.store.db() as db:
+            row = db.execute('SELECT * FROM preparations WHERE origin=? ORDER BY created_at DESC LIMIT 1',
+                             (ORIGIN_DAY_PLAN,)).fetchone()
+        return dict(row) if row else None
+
+    def defer(self, preparation_id, now):
+        """Let a scheduled recurring row's due slot pass unrun (#780); whether it moved.
+
+        The slot is not replayed later: ``due_at`` moves to the first slot after ``now``, as a slot
+        missed during downtime does.
+        """
+        with self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row = db.execute('SELECT * FROM preparations WHERE id=? AND state=? AND due_at<=?',
+                             (preparation_id, STATE_SCHEDULED, now)).fetchone()
+            following = row and next_due(row['due_at'], row['timezone'], row['recurrence'], now, row['rule_start'], row['run_count'])
+            if not following:
+                return False
+            return bool(db.execute('UPDATE preparations SET due_at=?,updated_at=? WHERE id=? AND state=?',
+                                   (following, now, preparation_id, STATE_SCHEDULED)).rowcount)
+
+    def set_by_day_plan(self, since, limit=DAY_PLAN_RECORD_ITEMS):
+        """What daily-plan runs set up since ``since``, newest first, each with ``offered_works`` (#780).
+
+        ``offered_works`` counts the distinct Works whose context a result of that preparation was
+        placed in (``OFFERED_EVENT_TOOL`` rows): an observed fact, not a judgment that it was useful.
+        """
+        with self.store.db() as db:
+            rows = [dict(row) for row in db.execute(
+                'SELECT * FROM preparations WHERE accepted_by=? AND origin IS NULL AND created_at>=? '
+                'ORDER BY created_at DESC LIMIT ?', (ACCEPTED_DAY_PLAN, since, int(limit)))]
+            offered = {}
+            if rows:
+                for event in db.execute('SELECT job_id,detail FROM tool_events WHERE tool=? AND created>=?',
+                                        (OFFERED_EVENT_TOOL, since)):
+                    try:
+                        ids = json.loads(event['detail']).get('preparation_ids') or []
+                    except (TypeError, ValueError, AttributeError):
+                        continue
+                    for preparation_id in ids:
+                        offered.setdefault(preparation_id, set()).add(event['job_id'])
+        for row in rows:
+            row['offered_works'] = len(offered.get(row['id'], ()))
+        return rows
+
+    def record_offered(self, work_id, preparation_ids, now=None):
+        """Record once per Work which prepared results were placed in its context (#780)."""
+        ids = sorted({str(item) for item in preparation_ids})
+        if not ids or not work_id:
+            return False
+        with self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            if db.execute('SELECT 1 FROM tool_events WHERE job_id=? AND tool=? LIMIT 1',
+                          (work_id, OFFERED_EVENT_TOOL)).fetchone():
+                return False
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       (work_id, OFFERED_EVENT_TOOL, 'recorded', json.dumps({'preparation_ids': ids}),
+                        self.clock() if now is None else now))
+        return True
 
     # -- look-back suggestions (#583) ----------------------------------------
 
@@ -1483,8 +1565,10 @@ class Preparations:
                 'SELECT p.id, p.goal_text, p.timezone, p.recurrence, p.prepared_at, j.id AS job_id, j.status, '
                 'p.prepared_text AS response '
                 "FROM preparations p JOIN jobs j ON j.id=p.prepared_result_ref WHERE p.kind='prepare' "
+                # #780: the daily plan's own reply is its run record, not an answer prepared for the owner.
+                'AND p.origin IS NOT ? '
                 'AND p.prepared_at>=? AND j.id IS NOT ? ORDER BY p.prepared_at DESC LIMIT ?',
-                (now - fresh_seconds, exclude_job, SECTION_MAX_ITEMS))]
+                (ORIGIN_DAY_PLAN, now - fresh_seconds, exclude_job, SECTION_MAX_ITEMS))]
 
 
 def render_prepared(rows, now, redact=lambda text: text):

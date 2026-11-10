@@ -17,10 +17,20 @@ from .agent_runtime import ToolError, not_run, work_written_values
 from .conversation_handoff import JUDGMENT_NO, JUDGMENT_YES
 from .conversation_projection import earlier_turn_line
 from .messages import LANGUAGES, msg
+from .prompt_files import prompt
 from .providers import ProviderError
 from .quickstart_service import (LOG, PREPARATION_CONVERSATION_CHARS,
                                  PREPARATION_CONVERSATION_TURNS, PREPARED_IDS_PREFIX,
                                  UNATTENDED_APPROVAL_TEXT)
+
+
+#: #780: the daily plan's brief: a method for reading the day, never a topic.
+DAY_PLAN_GOAL = prompt('day_plan')
+#: #780: the store config row for the daily plan: ``{'row': id}`` once set up, ``{'opted_out': True}``
+#: after the owner cancelled or deleted it.
+DAY_PLAN_KEY = 'day_plan'
+#: #780: the recent conversation a plan run is shown, as an owner-present Work is.
+PLAN_HISTORY_MESSAGES = 16
 
 
 class PreparationsService:
@@ -101,7 +111,14 @@ class PreparationsService:
         try:
             now=service.preparations.clock()
             rows=service.preparations.fresh(now,exclude_job=job.get('id'))
-            return prep.render_prepared(rows,now,service._redact_known_secrets) if rows else None
+            text=prep.render_prepared(rows,now,service._redact_known_secrets) if rows else None
+            if text and not service.unattended_work(job):
+                # #780: which results were placed in the context of a Work the owner started, once per
+                # Work: the observed half of a hit.  Whether one was useful is the daily plan's own judgment.
+                shown=[row['id'] for row in rows if 'prep:'+row['id'] in text]
+                try:service.preparations.record_offered(job.get('id'),shown,now)
+                except Exception:LOG.info('prepared answers shown but not recorded job=%s',job.get('id'))
+            return text
         except Exception:
             LOG.warning('prepared answers unavailable job=%s',job.get('id'))
             return None
@@ -197,7 +214,10 @@ class PreparationsService:
         """
         service=self.service
         def schedule(args):
-            if service.unattended_work(job):
+            # #780: the daily plan's own run sets up reading-and-reporting work; what it sets up never
+            # pays (``SELF_SET``) and cannot schedule in turn, so one misled plan run stays bounded.
+            planning=self.day_plan_run(job) and self.day_plan_on()
+            if service.unattended_work(job) and not planning:
                 # #619: a scheduled run leaves no proposal waiting; it says what it would schedule.
                 raise not_run(ToolError(UNATTENDED_APPROVAL_TEXT,'unattended_run'))  # #618: Still refused it, ran: false
             now=service.preparations.clock()
@@ -212,7 +232,8 @@ class PreparationsService:
             kind,goal,title,offer=fields['kind'],fields['goal'],fields['title'],fields['offer']
             due_at,timezone,recurrence,window=fields['due_at'],fields['timezone'],fields['recurrence'],fields['window']
             delivery_mode=fields['delivery_mode']
-            channel=service.preparation_channel(job,kind,args.get('delivery'))
+            # #780: what a plan run wants the owner to hear goes where the owner last talked to Still.
+            channel=service.preparation_channel(self.owner_last_work() if planning else job,kind,args.get('delivery'))
             summary=prep.proposal_summary({'kind':kind,'goal_text':goal,'due_at':due_at,'timezone':timezone,
                                            'recurrence':prep.RECURRENCE_WINDOW if window else recurrence,
                                            'every_seconds':window and window[0],'until_at':window and window[1],
@@ -225,7 +246,8 @@ class PreparationsService:
             # owner asked for keeps what the owner's payment autonomy allows (``self_set_run``).
             asked=bool(owner_work and service.decision_judge.explicit_preparation_request(
                 job['message'],summary,service.preparation_conversation(job)).outcome==JUDGMENT_YES)
-            accepted_by=(prep.ACCEPTED_OWNER_REQUEST if asked else
+            accepted_by=(prep.ACCEPTED_DAY_PLAN if planning else
+                         prep.ACCEPTED_OWNER_REQUEST if asked else
                          prep.ACCEPTED_OWNER_WORK if owner_work else None)
             accepted=accepted_by is not None
             # #766: the preparation this one takes the place of (a changed target or plan); it stops
@@ -236,7 +258,8 @@ class PreparationsService:
                 current=service.preparations.get(replaces) if isinstance(replaces,str) else None
                 if not current or current['state'] not in prep.ACTIVE_STATES:
                     raise ToolError(str(prep.PreparationRefusal('replace_not_found')),'replace_not_found')
-                if not accepted:
+                # #780: a plan run adds work; it never stops what the owner or an earlier run set up.
+                if not accepted or planning:
                     raise ToolError(str(prep.PreparationRefusal('replace_not_allowed')),'replace_not_allowed')
             try:
                 # #582: a goal the owner declined is not set up again unless they ask for it again.
@@ -260,6 +283,8 @@ class PreparationsService:
                 # The earlier proposal's own message already went; no new message follows for it.
                 next_step=(f'이미 제안되어 있던 {when} {label}을 소유자의 요청대로 예약했습니다. 대화로 취소를 요청할 수 있습니다.' if scheduled else
                            f'{when} {label}은 이미 제안되어 있어 새로 만들지 않았습니다. 소유자가 그 제안을 수락해야 예약됩니다(Telegram의 수락 버튼이나 대화로 수락).')
+            elif planning:
+                next_step=msg('preparations.day_plan_scheduled',when=when)
             else:
                 # #1455: managed in the conversation: a cancel button follows, and the owner may just say so.
                 next_step=(f'{when}에 {label}을 예약했습니다. 취소 버튼이 담긴 메시지가 따로 가고, 대화로 취소를 요청해도 됩니다.' if scheduled else
@@ -283,6 +308,103 @@ class PreparationsService:
             return result
         return schedule
 
+    def day_plan_run(self, job):
+        """Whether ``job`` is a run of the daily plan itself (#780), not of something it set up."""
+        preparation_id=prep.preparation_of((job or {}).get('request_key'))
+        if preparation_id is None:return False
+        row=self.service.preparations.get(preparation_id)
+        return bool(row and row.get('origin')==prep.ORIGIN_DAY_PLAN)
+
+    def owner_last_work(self):
+        """The newest Work no schedule started (#780): where the owner last talked to Still, or None."""
+        with self.service.store.db() as db:
+            row=db.execute("SELECT * FROM jobs WHERE request_key IS NULL OR request_key NOT LIKE ? ORDER BY created DESC LIMIT 1",
+                           (prep.REQUEST_KEY_PREFIX+'%',)).fetchone()
+        return dict(row) if row else None
+
+    def look_back_on(self):
+        """The owner's look-back switch (and the pause above it), which the daily plan follows (#780)."""
+        settings=self.service.owner_model.settings()
+        return bool(settings.get('enabled') and settings.get('dream'))
+
+    def day_plan_on(self):
+        """Whether the daily plan may run and schedule now (#780): the switch is on and the owner has not opted out."""
+        return self.look_back_on() and not (self.service.store.config(DAY_PLAN_KEY,{}) or {}).get('opted_out')
+
+    def ensure_day_plan(self, now):
+        """Keep the daily plan as the owner left it (#780); the row it created, or None.
+
+        ``DAY_PLAN_KEY`` remembers the row Still set up.  When that row is cancelled or no longer
+        exists (the owner deleted it from the list), that is the owner's no: it is recorded as an
+        opt-out and nothing is set up again until the owner turns the look back on again
+        (``day_plan_opt_in``).  While the look-back switch is off, the plan's due slots pass unrun
+        and no plan is created.  The plan is one ordinary daily ``prepare`` whose result is kept;
+        the owner changes its time or pauses it like any other.  Its brief is a method
+        (``prompts/day_plan``), never a topic.
+        """
+        service=self.service
+        state=dict(service.store.config(DAY_PLAN_KEY,{}) or {})
+        if state.get('opted_out'):return None
+        row=service.preparations.get(state['row']) if state.get('row') else None
+        if state.get('row') and (row is None or row['state']==prep.STATE_CANCELLED):
+            service.store.put(DAY_PLAN_KEY,{'opted_out':True})
+            LOG.info('daily plan opted out id=%s',state['row'])
+            return None
+        if not state.get('row'):
+            # The row and its marker are two writes: a stop between them leaves an active plan with
+            # no marker.  That plan is the one Still set up; it is tracked again, never doubled.
+            row=service.preparations.day_plan()
+            if row and row['state'] in prep.ACTIVE_STATES:service.store.put(DAY_PLAN_KEY,{'row':row['id']})
+            else:row=None
+        on=self.look_back_on()
+        if row:
+            # The tracked plan is the owner's to shape: one they gave an end (no repeat, an end
+            # date) stays finished and is not replaced by a new indefinite one.
+            if not on and row['state'] in prep.ACTIVE_STATES:service.preparations.defer(row['id'],now)
+            return None
+        if not on:return None
+        from .current_context import resolve_local_timezone
+        timezone=self.home_zone() or resolve_local_timezone(service.store)
+        today=datetime.fromtimestamp(now,prep.zone(timezone)).replace(hour=prep.DAY_PLAN_HOUR,minute=prep.DAY_PLAN_MINUTE,
+                                                                      second=0,microsecond=0).timestamp()
+        first=today if today>now else prep.next_due(today,timezone,'daily',now)
+        row=service.preparations.create(kind=prep.KIND_PREPARE,goal=DAY_PLAN_GOAL,due_at=first,timezone=timezone,
+                                        recurrence='daily',channel=prep.CHANNEL_WEB,created_from=None,
+                                        state=prep.STATE_SCHEDULED,accepted_by=prep.ACCEPTED_DAY_PLAN,
+                                        title=msg('preparations.day_plan_title'),offer=msg('preparations.day_plan_offer'),
+                                        origin=prep.ORIGIN_DAY_PLAN)
+        service.store.put(DAY_PLAN_KEY,{'row':row['id']})
+        LOG.info('daily plan set up id=%s due=%s',row['id'],prep.iso(row['due_at'],timezone))
+        return row
+
+    def day_plan_opt_in(self):
+        """The owner turned the look back on (#780): an earlier opt-out of the daily plan ends."""
+        service=self.service
+        state=dict(service.store.config(DAY_PLAN_KEY,{}) or {})
+        # A plan cancelled or deleted since the last tick is an opt-out the tick has not recorded
+        # yet; the owner's later yes ends it all the same, whichever came first.  So it does for a
+        # plan the owner let finish.
+        row=service.preparations.get(state['row']) if state.get('row') else None
+        if state.get('opted_out') or (state.get('row') and (row is None or row['state'] not in prep.ACTIVE_STATES)):
+            service.store.put(DAY_PLAN_KEY,{})
+
+    def day_plan_record(self, job):
+        """What earlier plan runs set up and how it went, as one block for a plan run (#780); '' when none.
+
+        Observed fields only: when each was due, its state and last outcome, and in how many later
+        Works its result was placed in the assistant's context.  Whether that was useful is the
+        plan run's own judgment against the conversation it is shown.
+        """
+        service=self.service
+        now=service.preparations.clock()
+        rows=service.preparations.set_by_day_plan(now-prep.DAY_PLAN_RECORD_SECONDS)
+        if not rows:return ''
+        items=[{'title':prep.owner_title(row),'due':prep.iso(row['due_at'],row['timezone']),'state':row['state'],
+                'last_outcome':row.get('last_outcome') or 'none',
+                'result_ready_at':prep.iso(row['prepared_at'],row['timezone']) if row.get('prepared_at') else None,
+                'placed_in_later_requests':row['offered_works']} for row in rows]
+        return 'earlier_plans: '+service._redact_known_secrets(json.dumps(items,ensure_ascii=False,separators=(',',':')))
+
     @staticmethod
     def preparation_delivery(row):
         """``send`` / ``keep`` / ``when_needed`` (#719) for one preparation row."""
@@ -305,6 +427,10 @@ class PreparationsService:
         try:service.offer_one_off_suggestion(now)
         except Exception as exc:  # noqa: BLE001 - an offer never stops the preparations tick
             LOG.warning('one-off suggestion not offered kind=%s',type(exc).__name__)
+        # #780: the daily plan exists once the look back is on (one read when it already does).
+        try:self.ensure_day_plan(now)
+        except Exception as exc:  # noqa: BLE001 - setting the plan up never stops the preparations tick
+            LOG.warning('daily plan not set up kind=%s',type(exc).__name__)
         rows=service.preparations.due(now)
         if not rows:return False
         for row in rows:
@@ -453,6 +579,17 @@ class PreparationsService:
         service=self.service
         rows=[]
         row=service.preparations.get(prep.preparation_of(job.get('request_key')))
+        if row and row.get('origin')==prep.ORIGIN_DAY_PLAN:
+            # #780: the daily plan reads the day, so it is shown the owner's recent conversation (the
+            # same window as an owner-present Work, without other scheduled runs' turns) and Still's
+            # record of what earlier plan runs set up.
+            own=job.get('id')
+            recent=[item for item in service.store.history(through=own)
+                    if item.get('job_id')!=own and not prep.preparation_of(item.get('request_key'))][-PLAN_HISTORY_MESSAGES:]
+            fact,record=service.preparation_run_fact(job),self.day_plan_record(job)
+            content='\n\n'.join(part for part in (job['message'],fact,record) if part)
+            return [*recent,{'role':'user','content':content,'job_id':own,'channel':job.get('channel'),'qualifier':None,
+                             'request_key':job.get('request_key'),'created':job.get('created')}]
         # #583: a look-back suggestion was not made from its anchor's request; it is shown none.
         origin=(service.store.job(row['created_from'])
                 if row and row.get('created_from') and row.get('origin')!=prep.ORIGIN_DREAM else None)

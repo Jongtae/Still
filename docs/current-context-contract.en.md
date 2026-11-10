@@ -27,7 +27,7 @@ First scope: one owner, Telegram volunteered location and conversation time, tem
 | CC-D09 | Profile limits are real | Preserve #616 and the declared trusted-local limitation; do not claim complete provenance over a worker's hidden host reads |
 | CC-D10 | The implementation path is finite | #607 → #626 → #627 → existing #608/#512/#513; patterns/preparation need a later bounded selection |
 
-These are decisions for this implementation plan, not external research findings. No observed owner home/work address, routine or GPS is contained in the examples. The closed, unmerged [#384 v0.3](https://github.com/Jongtae/agentos/pull/384) remains historical input, not a merge vehicle to revive. Multi-principal relations, external peers, purchases, automatic habit mining and unsolicited preparation from that candidate are **not adopted here**.
+These are decisions for this implementation plan, not external research findings. No observed owner home/work address, routine or GPS is contained in the examples. The closed, unmerged [#384 v0.3](https://github.com/Jongtae/agentos/pull/384) remains historical input, not a merge vehicle to revive. Multi-principal relations, external peers, purchases, automatic habit mining and unsolicited preparation from that candidate are **not adopted here**. Unsolicited preparation was later adopted separately, limited to reading, researching and reporting, by owner decision 2026-11-10 ([#780](https://github.com/Jongtae/Still/issues/780)); see the [Secretary agency contract](secretary-agency-contract.en.md), *Attention*.
 
 ## One product journey, two independently useful deliveries
 
