@@ -3911,3 +3911,67 @@ class PlanDirectReply749(Harness):
                 _job, row = self.run_work('Please handle this.', key='raw-blocker-' + str(extra))
                 self.assertEqual(len(self.engine.turns), before + 1)
                 self.assertNotEqual(row['response'], 'DIRECT')
+
+
+class SecretRedactionPlan(Harness):
+    """#772: cached/uncached facts and receipts across the real early/final plan boundary."""
+
+    def test_early_and_final_plan_share_one_key_read_and_identical_redaction(self):
+        from cryptography.fernet import Fernet
+        from personal_agent import api_requests
+        from personal_agent.api_credentials import ApiCredentials, PREFIX
+        from personal_agent.browser_jar import MemoryKey
+        key = mock.Mock(wraps=MemoryKey(Fernet.generate_key()))
+        self.store.api_slot_key = key
+        secret, state = 'plan-secret-772"\\한글', 'plan-state-token-' + 'x' * 24
+        api_requests.save_slot(self.store, 'fixture', ['api.example.com'], secret, encrypted=True)
+        self.assertTrue(ApiCredentials(self.store).write_state('fixture', api_requests.slots(self.store)['fixture'],
+                                                              json.dumps({'token': state})))
+        # Both an earlier message and the current request traverse the real redactor.
+        with self.store.db() as db:
+            db.execute('INSERT INTO messages(role,content,created) VALUES (?,?,?)',
+                       ('user', secret + ' ' + state, self.clock()))
+        ident = self.store.enqueue(secret + ' ' + state, 'secret-plan-772')
+        job = self.store.job(ident)
+        sections = {'profile': 'profile.' + secret + ': value',
+                    'current_context': EarlyPlan.clock('2026-10-14T12:00+09:00 Wed')}
+        spliced = [{'kind': 'file', 'ref': secret, 'label': state + ' 한글 " \\'}]
+
+        def run():
+            self.script([plan('codex', '')])
+            budget = WorkBudget(clock=lambda: 1)
+            early = self.service.early_work_plan(job, job['message'], budget)
+            self.assertIsNotNone(early)
+            orchestration = self.service.work_orchestration(job, job['message'], self.store.history(), sections, budget)
+            # Use precisely the early inputs so first exercises the reuse boundary.
+            matching = self.service.work_orchestration(
+                job, job['message'], self.service.history_for_models(self.store.history()),
+                {'profile': self.service.owner_profile_snapshot(job['message']),
+                 'current_context': self.service.current_context_text(job), 'prepared': self.service.prepared_text(job)}, budget)
+            self.assertTrue(matching.first(early=EarlyPlan.future(early)).planned)
+            facts = orchestration._plan_context(orchestration.catalogue.available()).facts
+            refs = self.service.owner_information_refs(sections, spliced)
+            receipt = self.store.turn_provenance(ident)['owner_information']
+            return json.dumps([self.asked_plans[-1][0].facts, facts, refs, receipt], ensure_ascii=False).encode()
+
+        # Baseline is the original implementation, with decryption and the entire
+        # redaction boundary intact; only memoization is bypassed.
+        def uncached(store):
+            records = store.secret_items(PREFIX)
+            credentials = ApiCredentials(store)
+            return credentials.values(records) + credentials.state_values() if records else ()
+
+        with mock.patch.object(api_requests, 'encrypted_secret_values', uncached):
+            baseline = run()
+        key.get.reset_mock()
+        cached = run()
+        self.assertEqual(key.get.call_count, 1)
+        self.assertEqual(cached, baseline)
+        self.assertNotIn(secret.encode(), cached)
+        self.assertNotIn(state.encode(), cached)
+        self.assertIn(b'[redacted]', cached)
+        self.assertTrue(ApiCredentials(self.store).write_state('fixture', api_requests.slots(self.store)['fixture'],
+                                                              json.dumps({'token': state + '-rotated'})))
+        key.get.reset_mock()
+        run()
+        self.assertEqual(key.get.call_count, 1, 'a new ciphertext revision is decrypted once too')
