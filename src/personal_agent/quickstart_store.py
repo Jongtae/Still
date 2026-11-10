@@ -665,10 +665,29 @@ class QuickStore:
                 start+=1
         return spans
 
-    def swap_secret(self, key, value, retire):
+    def _release_values_locked(self, values):
+        """Drop the retirement marks of ``values`` (caller holds the secrets lock; #778).
+
+        Only for text a writer declared not secret (a run state's ``plain`` values): a mark is
+        matched by its digest, so nothing else is touched.  A value still stored stays redacted
+        by the stored-value pass whatever the ledger holds.
+        """
+        values=[value for value in values or () if isinstance(value,str) and len(value)>=self.RETIRED_PREFIX_CHARS]
+        ledger=self._read_retired() if values else None
+        if not ledger or not ledger.get('marks'):return
+        key=bytes.fromhex(ledger['key'])
+        forms=[*values,*(form for value in values for form in self.json_escaped_forms(value))]
+        digests={hmac.digest(key,form.encode(),'sha256').hex() for form in forms}
+        marks=[item for item in ledger['marks'] if item[1] not in digests]
+        if len(marks)==len(ledger['marks']):return
+        ledger['marks']=marks
+        self.write_private(self.retired_secrets_path,json.dumps(ledger))
+
+    def swap_secret(self, key, value, retire, release=()):
         """Replace (or with ``value`` None remove) one secret, retiring ``retire(old)``'s plaintexts first,
         all under the cross-process secrets lock (Codex review on #259: concurrent writers cannot slip a
-        value past retirement).  ``retire`` raising leaves the secret unchanged."""
+        value past retirement).  ``retire`` raising leaves the secret unchanged.  ``release`` (#778):
+        values the new secret declares not secret, whose retirement marks are dropped under the same lock."""
         with self.secret_lock:
             lock_fd=os.open(self.secret_lock_path,os.O_RDWR|os.O_CREAT,0o600)
             try:
@@ -676,6 +695,7 @@ class QuickStore:
                 values=json.loads(self.secret_path.read_text()) if self.secret_path.exists() else {}
                 old=values.get(key)
                 if old:self._retire_values_locked(retire(old))
+                self._release_values_locked(release)
                 if value is None:
                     if key not in values:return False
                     values.pop(key)
