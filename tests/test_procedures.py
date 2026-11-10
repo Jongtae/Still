@@ -496,11 +496,25 @@ class CodeRunGate(unittest.TestCase):
         library = ProcedureLibrary(self.store)
         library.propose('w0', 'set-a', LIBRARY, REPORT['functions'])
         library.settle('w0', True)
-        scripted = ScriptedRunner({**REPORT, 'calls': {'reserve': [2, 1]}}, parameterized)
+        scripted = ScriptedRunner({**REPORT, 'calls': {'reserve': [2, 0]}}, parameterized)
         result = self.run_code(scripted)
         self.assertEqual(result['library']['set-a'], {'module': 'lib_set_a', 'state': 'used', 'version': 1})
         self.assertTrue(scripted.sessions[0].module_source['lib_set_a.py'].startswith(LIBRARY))
         self.assertEqual(len(scripted.sessions), 1, 'a used library is not checked again')
+        self.assertEqual(library.current('set-a')['stats'], {'reserve': [2, 0]})
+
+    def test_a_saved_function_that_raised_is_named_as_the_workers_to_fix(self):
+        # #770 (live): a saved function raised (an argument it lacked) and the worker told the owner it needed fixing.
+        library = ProcedureLibrary(self.store)
+        library.propose('w0', 'set-a', LIBRARY, REPORT['functions'])
+        library.settle('w0', True)
+        result = self.run_code(ScriptedRunner({**REPORT, 'calls': {'reserve': [2, 1], 'bad name': [0, 1]}}, parameterized))
+        used = result['library']['set-a']
+        self.assertEqual((used['state'], used['failed']), ('used', ['reserve']))
+        self.assertIn('reserve', used['note'])
+        self.assertIn('library set to the whole corrected module', used['note'])
+        # Its records name the failed function, never the run's note.
+        self.assertEqual(code_run.evidence(result)['library']['set-a'], {'state': 'used', 'version': 1, 'failed': ['reserve']})
         self.assertEqual(library.current('set-a')['stats'], {'reserve': [2, 1]})
 
     def test_adding_a_function_to_a_saved_library_keeps_both_and_a_left_out_one_is_named(self):
