@@ -10937,7 +10937,7 @@
   "zh": "每日计划"
  },
  "preparations.day_plan_scheduled": {
-  "ko": "{when}에 예약했습니다. 소유자에게 따로 알리지 않으며, 설정에서 보고 취소할 수 있습니다.",
+  "ko": "{when}에 예약했어요. 소유자에게 따로 알리지 않으며, 설정에서 보고 취소할 수 있어요.",
   "en": "Scheduled for {when}. The owner is not told separately; it is listed in Settings, where it can be cancelled.",
   "ja": "{when}に予約しました。オーナーには個別に知らせず、設定で確認・取り消しできます。",
   "zh": "已预约在{when}。不会另行通知主人，可在设置中查看和取消。"
