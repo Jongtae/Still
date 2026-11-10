@@ -1322,6 +1322,32 @@ class WindowTests(_WatchCase):
                                              channel='telegram', created_from='w', state=prep.STATE_SCHEDULED,
                                              delivery_mode=prep.DELIVERY_WHEN_NEEDED)
 
+    def test_window_refusal_names_the_failed_member_and_value(self):
+        due = self.now + 600
+        end = self.due_iso(1200)
+        for minutes, until, reason, value in (
+                ('1', end, 'window_minutes', "'1'"),
+                ('721', end, 'window_minutes', "'721'"),
+                ('1.5', end, 'window_minutes', "'1.5'"),
+                (True, end, 'window_minutes', 'True'),
+                (None, end, 'window_minutes', 'None'),
+                (10, None, 'window_until_missing', 'None'),
+                (10, '', 'window_until_missing', "''"),
+                (10, 'bad-time', 'window_until_invalid', "'bad-time'"),
+                (10, self.due_iso(600), 'window_until_order', repr(self.due_iso(600))),
+                (10, self.due_iso(300), 'window_until_order', repr(self.due_iso(300))),
+                (10, self.due_iso(-600), 'window_until_order', repr(self.due_iso(-600))),
+                (10, self.due_iso(600 + 31 * 86400 + 1), 'window_until_span',
+                 repr(self.due_iso(600 + 31 * 86400 + 1)))):
+            with self.subTest(minutes=minutes, until=until), self.assertRaises(prep.PreparationRefusal) as caught:
+                prep.normalize_window(minutes, until, None, due, 'Asia/Seoul', self.now)
+            self.assertEqual(caught.exception.code, 'invalid_window')
+            expected = msg('preparations.' + reason, value=value, due=prep.iso(due),
+                           minimum=5, maximum=720, days=31)
+            self.assertEqual(str(caught.exception), msg('preparations.invalid_window') + ' ' + expected)
+        self.assertEqual(prep.normalize_window(720, self.due_iso(600 + 31 * 86400), None,
+                                              due, 'Asia/Seoul', self.now)[1], due + 31 * 86400)
+
     def test_a_watch_runs_at_most_max_runs_then_stops(self):
         self.watched = self.watch(runs=3)
         for index in range(3):
@@ -1734,7 +1760,37 @@ class WatchAcceptanceTests(_WatchCase):
         results = [m['content'] for m in self.model_calls[-1]['messages'] if m['role'] == 'tool']
         self.assertEqual(len(results), 3)
         self.assertTrue(all('every_minutes' in text or 'when_needed' in text for text in results), results)
+        with self.store.db() as db:
+            records = [json.loads(row['detail']) for row in db.execute(
+                "SELECT detail FROM tool_events WHERE tool='schedule_preparation' AND status='failed' ORDER BY id")]
+        self.assertEqual(len(records), 3)
+        first = records[0]
+        self.assertEqual(first['code'], 'invalid_window')
+        self.assertIn("every_minutes='1'", first['error'])
+        window = json.loads(first['error'][first['error'].index('{'):])
+        self.assertEqual(window, {'every_minutes': '1', 'until': self.due_iso(1200), 'due': self.due_iso(600)},
+                         'only the window arguments the call gave')
+        self.assertNotIn('확인', first['error'], 'the refusal carries no goal text')
+        self.assertIn("recurrence='daily'", records[2]['error'])
         self.assertEqual(self.rows(), [])
+
+    def test_window_refusal_scrubs_secrets_and_omits_owner_text(self):
+        scheduler = self.service.preparation_scheduler({'id': 'work-1', 'message': '확인'}, '확인')
+        with self.assertRaises(ToolError) as caught:
+            scheduler({'kind': 'prepare', 'goal': 'private goal', 'title': 'private title',
+                       'offer': 'private offer', 'due': self.due_iso(600), 'every_minutes': '10',
+                       'until': SECRET, 'max_runs': 'x' * 1000})
+        detail = str(caught.exception)
+        self.assertNotIn(SECRET, detail)
+        for text in ('private goal', 'private title', 'private offer', 'x' * 161):
+            self.assertNotIn(text, detail)
+        self.assertIn('until', detail)
+        long_secret = 'sensitive-window-' + 'a' * 200
+        self.store.secret('telegram_token', long_secret)
+        with self.assertRaises(ToolError) as long_error:
+            scheduler({'kind': 'prepare', 'goal': 'private goal', 'due': self.due_iso(600),
+                       'every_minutes': '10', 'until': long_secret})
+        self.assertNotIn(long_secret[:100], str(long_error.exception), 'redact before truncating diagnostics')
 
     def test_rejected_watch_cannot_fan_out_into_same_goal_daily_preparations(self):
         """#860: correct one rejected watch; never replace it with dated one-shot rows."""
@@ -2183,6 +2239,18 @@ class CrossWorkProposalTests(_Case):
         stored = self.service.preparations.get(result['preparation_id'])['goal_text']
         self.assertEqual(stored, ' '.join(brief.split()))
         self.assertGreater(len(stored), 3000)
+
+    def test_maximum_brief_reaches_the_run_and_prompt_whole(self):
+        brief = '가' * prep.BRIEF_MAX_CHARS
+        result = self.watch('work-1', brief)
+        row = self.service.preparations.get(result['preparation_id'])
+        work = self.service.preparations.start(row, channel='web', chat_id=None, now=row['due_at'])
+        request = self.store.job(work)['message']
+        self.assertEqual(request, brief)
+        for route in ('cli', 'api'):
+            context = turn_context([{'role': 'user', 'content': request}], route)
+            self.assertEqual(context['request'], brief)
+            self.assertTrue(render_turn_prompt(context).endswith('# Current request\n' + brief))
 
     def test_a_proposal_card_folds_a_long_brief_inside_one_telegram_message(self):
         """#766: the card shows a cut brief; Telegram refuses a message over 4096 characters."""

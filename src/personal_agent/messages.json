@@ -10792,6 +10792,54 @@
   "ja": "{m}月{d}日({w}) {t}から{r}",
   "zh": "从{m}月{d}日（{w}） {t}开始，{r}"
  },
+ "preparations.invalid_window": {
+  "ko": "반복 기간을 수정해 주세요.",
+  "en": "Correct the repeating window.",
+  "ja": "繰り返し期間を修正してください。",
+  "zh": "请修改重复时间范围。"
+ },
+ "preparations.window_minutes": {
+  "ko": "every_minutes={value}: {minimum}~{maximum} 사이의 정수여야 해요.",
+  "en": "every_minutes={value}: expected an integer from {minimum} to {maximum}.",
+  "ja": "every_minutes={value}: {minimum}〜{maximum}の整数が必要です。",
+  "zh": "every_minutes={value}：需要{minimum}到{maximum}之间的整数。"
+ },
+ "preparations.window_until_missing": {
+  "ko": "until={value}: 종료 시각이 필요해요.",
+  "en": "until={value}: an end time is required.",
+  "ja": "until={value}: 終了時刻が必要です。",
+  "zh": "until={value}：需要结束时间。"
+ },
+ "preparations.window_until_invalid": {
+  "ko": "until={value}: RFC3339 시각으로 읽을 수 없어요. 시간대도 확인해 주세요.",
+  "en": "until={value}: cannot parse an RFC3339 time; check the timezone too.",
+  "ja": "until={value}: RFC3339時刻として解釈できません。タイムゾーンも確認してください。",
+  "zh": "until={value}：无法解析为RFC3339时间，请同时检查时区。"
+ },
+ "preparations.window_until_order": {
+  "ko": "until={value}: due={due}보다 늦어야 해요.",
+  "en": "until={value}: must be after due={due}.",
+  "ja": "until={value}: due={due}より後にしてください。",
+  "zh": "until={value}：必须晚于due={due}。"
+ },
+ "preparations.window_until_span": {
+  "ko": "until={value}: due={due}부터 {days}일 이내여야 해요.",
+  "en": "until={value}: must be within {days} days of due={due}.",
+  "ja": "until={value}: due={due}から{days}日以内にしてください。",
+  "zh": "until={value}：必须在due={due}起{days}天内。"
+ },
+ "preparations.window_recurrence": {
+  "ko": "recurrence={value}: every_minutes·until과 함께 쓸 수 없어요.",
+  "en": "recurrence={value}: cannot be combined with every_minutes and until.",
+  "ja": "recurrence={value}: every_minutes・untilと併用できません。",
+  "zh": "recurrence={value}：不能与every_minutes和until同时使用。"
+ },
+ "preparations.window_edit": {
+  "ko": "{fields}: 기존 watch에서만 수정할 수 있어요.",
+  "en": "{fields}: can only be edited on an existing watch.",
+  "ja": "{fields}: 既存のwatchでのみ変更できます。",
+  "zh": "{fields}：只能在现有watch中修改。"
+ },
  "preparations.proposal_brief": {
   "ko": "매번 실행할 때 맡길 내용: {goal}",
   "en": "What each run is asked to do: {goal}",
