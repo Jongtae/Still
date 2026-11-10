@@ -60,6 +60,8 @@ MIGRATED_MODULES = {
         '이미 제안되어 있던 ',  # Model-only tool result or next_step guidance (#574).
         '을 소유자의 요청대로 예약했습니다. 대화로 취소를 요청할 수 있습니다.',  # Model-only tool result or next_step guidance (#574).
         '은 이미 제안되어 있어 새로 만들지 않았습니다. 소유자가 그 제안을 수락해야 예약됩니다(Telegram의 수락 버튼이나 대화로 수락).',  # Model-only tool result or next_step guidance (#574).
+        ' 이 준비가 대신하는 ',  # Model-only next_step guidance (#766).
+        '는 더 실행되지 않습니다. 답에서 무엇을 멈추고 무엇으로 바꿨는지 한 줄로 말하세요.',  # Model-only next_step guidance (#766).
     },
     'work_executor.py': {
         '사진 자료를 포함한 요청을 선택된 AI 작업자에게 전달합니다.',  # Model-only fallthrough instruction.
