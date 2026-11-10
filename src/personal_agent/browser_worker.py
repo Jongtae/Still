@@ -518,6 +518,18 @@ return JSON.stringify({url: cut(location.href, 4000), title: cut(document.title,
   cancelled: takeCancelled()});
 """
 
+# Read-only control metadata, using the snapshot's visibility and form helpers.
+# No values, page text, guard state or popup actions leave this inspection.
+POPUP_INPUT_SCRIPT = PRELUDE + r"""
+const forms = new Map();
+const idOf = (form) => { if (!form) return null;
+  if (!forms.has(form)) forms.set(form, forms.size + 1); return forms.get(form); };
+return JSON.stringify(Array.from(document.querySelectorAll(SELECTOR))
+  .filter((el) => visible(el) && !offscreen(el) && !el.disabled && !el.readOnly)
+  .map((el) => ({tag: el.tagName.toLowerCase(), type: typeOf(el),
+    autocomplete: autocompleteOf(el), form: idOf(formOf(el)), editable: el.isContentEditable})));
+"""
+
 #: Arguments: index, expect, tokens, nonce, approved, lasts.  Resolve once,
 #: check, hit-test, keep the handle and arm the click guard for it.  An approved
 #: step lets a submit of its target's payment form through (#700): the target's
@@ -1500,6 +1512,8 @@ class Worker:
         self.authorization_count = 0
         self.login_return = None   # latest owner-window start; consumed at most once
         self.login_return_pending = None  # only the latest settle-time return may run
+        self.work_popup = None
+        self.popup_results = []
         self.popups = []           # #914: (view, window, delegate) of sign-in popups while the owner signs in
         self.main_navigations = 0  # main-frame navigations allowed so far (#736)
         #: #11: while a ``load_more`` read runs, a main-frame navigation the page starts is
@@ -1692,19 +1706,24 @@ class Worker:
         so client-rendered content never appears.  Parked, the page renders as
         if shown while nothing reaches the owner's screen or input.
         """
-        AppKit, Foundation = self.AppKit, self.Foundation
-        self.window.setIgnoresMouseEvents_(True)
-        self.window.setCollectionBehavior_(AppKit.NSWindowCollectionBehaviorTransient |
-                                           AppKit.NSWindowCollectionBehaviorIgnoresCycle)
-        self.window.setExcludedFromWindowsMenu_(True)
-        # #931 review P1: drop keyboard focus first (ordering out resigns key status;
-        # ordering back alone would not), so nothing the owner types reaches the page.
-        self.window.makeFirstResponder_(None)
-        self.window.orderOut_(None)
+        self.fail_work_popup()
+        self.park_window(self.window)
         if self.app.isActive():
             self.app.deactivate()
-        self.window.setFrameOrigin_(Foundation.NSMakePoint(PARK_ORIGIN, PARK_ORIGIN))
-        self.window.orderBack_(None)
+
+    def park_window(self, window):
+        """Order a window in off-screen without making it key or accepting input."""
+        AppKit, Foundation = self.AppKit, self.Foundation
+        window.setIgnoresMouseEvents_(True)
+        window.setCollectionBehavior_(AppKit.NSWindowCollectionBehaviorTransient |
+                                      AppKit.NSWindowCollectionBehaviorIgnoresCycle)
+        window.setExcludedFromWindowsMenu_(True)
+        # #931 review P1: drop keyboard focus first (ordering out resigns key status;
+        # ordering back alone would not), so nothing the owner types reaches the page.
+        window.makeFirstResponder_(None)
+        window.orderOut_(None)
+        window.setFrameOrigin_(Foundation.NSMakePoint(PARK_ORIGIN, PARK_ORIGIN))
+        window.orderBack_(None)
 
     # -- plumbing ------------------------------------------------------------
     def reply(self, ident, ok=True, **fields):
@@ -1719,8 +1738,13 @@ class Worker:
 
         ``observed`` (#1496): what the timed-out step is known to have done, added to the answer.
         """
+        self.failed_popup_origin = None
+        self.action_popup_failures = []
+        self.action_deadline = time.monotonic() + max(0.5, float(seconds))
         def expire():
             if ident in self.pending:
+                self.fail_work_popup()
+                popup_origin = getattr(self, 'failed_popup_origin', None)
                 fields = {}
                 if observed is not None:
                     try:
@@ -1732,6 +1756,12 @@ class Worker:
                         on_timeout()
                     except Exception:
                         pass
+                if popup_origin:
+                    fields['work_popup_origin'] = popup_origin
+                    # This timeout delivers the hand-off; a later snapshot must not repeat it.
+                    failures = getattr(self, 'action_popup_failures', [])
+                    self.popup_results = [result for result in getattr(self, 'popup_results', [])
+                                          if not any(result is failure for failure in failures)]
                 self.fail(ident, 'timeout', **fields)
         self.pending[ident] = True
         self.AppHelper.callLater(max(0.5, float(seconds)), expire)
@@ -1768,6 +1798,10 @@ class Worker:
             if ident not in self.pending:
                 return
             now = time.monotonic()
+            if self.wait_work_popup():
+                quiet_since[0] = None
+                self.AppHelper.callLater(POLL_SECONDS, poll)
+                return
             loading = bool(self.view.isLoading())
             if loading:
                 quiet_since[0] = None
@@ -1794,7 +1828,7 @@ class Worker:
         def poll():
             if ident not in self.pending:
                 return
-            if self.view.isLoading() or self.deciding > 0:
+            if self.wait_work_popup() or self.view.isLoading() or self.deciding > 0:
                 quiet_since[0] = None
             elif quiet_since[0] is None:
                 quiet_since[0] = time.monotonic()
@@ -2116,6 +2150,7 @@ class Worker:
             self.fail(ident, 'worker_error')
 
     def op_navigate(self, ident, command, timeout, view=None):
+        self.fail_work_popup()
         view = self.view if view is None else view
         layout = command.get('layout')
         if layout is None:
@@ -2133,8 +2168,8 @@ class Worker:
                 self.window.setContentSize_(self.Foundation.NSMakeSize(*size))
             self.layout = layout
         request = self.Foundation.NSURLRequest.requestWithURL_(self.Foundation.NSURL.URLWithString_(url))
-        self.deadline(ident, timeout, on_timeout=view.stopLoading)
         self.navigation_view = view
+        self.deadline(ident, timeout, on_timeout=lambda: self.navigation_view.stopLoading())
         self.navigation = (ident, None)
         navigation = view.loadRequest_(request)
         if self.navigation is not None and self.navigation[0] == ident:
@@ -2186,8 +2221,12 @@ class Worker:
             return
         if error is not None:
             return self.fail(ident, navigation_error_code(error))
-        view = getattr(self, 'navigation_view', self.view)
-        self.reply(ident, url=str(view.URL().absoluteString()) if view.URL() else '', layout=self.layout)
+        def answer():
+            view = getattr(self, 'navigation_view', self.view)
+            self.reply(ident, url=str(view.URL().absoluteString()) if view.URL() else '', layout=self.layout)
+        if getattr(self, 'work_popup', None):
+            return self.settle(ident, answer)
+        answer()
 
     def op_snapshot(self, ident, command, timeout):
         self.deadline(ident, timeout)
@@ -2218,6 +2257,10 @@ class Worker:
             if self.refused_submits > self.reported_refused:
                 self.reported_refused = self.refused_submits
                 value['refused_submit'] = True
+            self.fail_work_popup()
+            if getattr(self, 'popup_results', []):
+                value['work_popup_results'] = self.popup_results
+                self.popup_results = []
             then(value, None)
         self.run(SNAPSHOT_SCRIPT, {}, done)
 
@@ -2245,6 +2288,10 @@ class Worker:
             if ident not in self.pending:
                 return
             now = time.monotonic()
+            if self.wait_work_popup():
+                last[0], since[0] = None, now
+                self.AppHelper.callLater(POLL_SECONDS, lambda: self.run(RENDER_PROBE_SCRIPT, {}, measured))
+                return
             measure = (value.get('text'), value.get('nodes'), value.get('ready')) \
                 if error is None and isinstance(value, dict) else None
             if measure != last[0] or self.view.isLoading():
@@ -2522,6 +2569,7 @@ class Worker:
         self.run(RELEASE_SCRIPT, {'id': held['id']}, released)
 
     def op_show(self, ident, command, timeout):
+        self.fail_work_popup()
         url = command.get('url')
         self.login_return = (object(), url or (str(self.view.URL().absoluteString()) if self.view.URL() else None))
         # The owner signs in by hand: the guard is off while the window shows (#698).
@@ -2537,16 +2585,178 @@ class Worker:
             return self.op_navigate(ident, command, timeout)
         self.reply(ident)
 
+    def fail_work_popup(self):
+        popup = getattr(self, 'work_popup', None)
+        if popup:
+            popup['needs_owner'] = True
+            self.close_popup(view=popup['view'])
+
+    def work_popup_allowed(self):
+        """#696: whether the main page's site may keep a Work popup (``provider_sign_in_policy['popup_sites']``)."""
+        from .browser_session import registrable_domain
+        url = self.view.URL() if getattr(self, 'view', None) is not None else None
+        host = _host(str(url.absoluteString())) if url is not None else ''
+        sites = getattr(self, 'provider_sign_in_policy', {}).get('popup_sites', ())
+        return bool(host) and registrable_domain(host) in sites
+
+    def wait_work_popup(self):
+        """Keep the action pending through the opener hand-back, within its existing deadline."""
+        if not getattr(self, 'work_popup', None):
+            return False
+        # Leave enough of the action budget to settle and answer from the main document.
+        if time.monotonic() >= getattr(self, 'action_deadline', 0) - 1.0:
+            self.fail_work_popup()
+            return False
+        return True
+
+    def work_popup_navigation(self, view, url, method, form, top, then):
+        """Work-only popup policy. Native submissions fail closed, in every frame.
+
+        No popup form enters the main document's approval/release path. In particular,
+        an unwrapped submit from a fresh iframe cannot bypass the payment guard.
+        """
+        popup = getattr(self, 'work_popup', None)
+        if not popup or popup['view'] is not view:
+            return then(False)
+        if top and self.hold_read_navigation():
+            then(False)
+            self.close_popup(view=view, record=False)
+            return
+        if top and urlsplit(url).scheme in ('data', 'blob'):
+            then(False)
+            self.fail_work_popup()
+            return
+        if form or str(method or 'GET').upper() != 'GET':
+            then(False)
+            self.fail_work_popup()
+            return
+        if authorization_blocked(url, getattr(self, 'provider_sign_in_policy', {})):
+            then(False)
+            self.fail_work_popup()
+            if top:
+                self.navigation_refused(True, 'provider_sign_in_off')   # told as in the main view
+            return
+        def checked(allowed, reason=None):
+            if getattr(self, 'work_popup', None) is not popup:
+                return then(False)
+            if allowed and top and self.hold_read_navigation():
+                then(False)
+                self.close_popup(view=view, record=False)
+                return
+            if not allowed and top:
+                # A refused popup destination is the step's refusal, as when it loaded in the main view.
+                then(False)
+                self.fail_work_popup()
+                self.navigation_refused(True, reason or 'blocked_destination')
+                return
+            if allowed and top:
+                host = authorization_host(url)
+                protected = getattr(self, 'provider_sign_in_policy', {}).get('protected_hosts', ())
+                if host in protected:
+                    popup['hosts'].append(host)
+                parts = urlsplit(url)
+                if any(k == 'error' for k, _ in parse_qsl(parts.query + '&' + parts.fragment, keep_blank_values=True)):
+                    popup['oauth_error'] = True
+                self.note_authorization(url)
+            then(allowed)
+            if not allowed:
+                self.fail_work_popup()
+        self.decide(url, False, checked)
+
+    def hold_read_navigation(self):
+        """Apply the same main-document navigation hold at every entry point."""
+        if getattr(self, 'reading', False):
+            self.read_navigations += 1
+            return True
+        return False
+
+    def work_popup_committed(self, view, navigation=None):
+        popup = getattr(self, 'work_popup', None)
+        if not popup or popup['view'] is not view:
+            return
+        url = str(view.URL().absoluteString()) if view.URL() else ''
+        if _blank(view.URL()):
+            return  # a reservation is decided by its first real navigation
+        if not popup['hosts']:
+            if self.hold_read_navigation():
+                self.close_popup(view=view, record=False)
+                return
+            # Keep the committed document: replaying its request could consume a
+            # single-use URL twice. The supplied configuration already carries
+            # the main view's guard scripts, message handler and content worlds.
+            old = self.view
+            entry = next(entry for entry in self.popups if entry[0] is view)
+            self.popups.remove(entry)
+            self.work_popup = None
+            if getattr(self, 'navigation_view', None) is old:
+                self.navigation_view = view
+                if self.navigation is not None:
+                    self.navigation = (self.navigation[0], navigation)
+            old.setNavigationDelegate_(None)
+            old.setUIDelegate_(None)
+            old.stopLoading()
+            self.view = view
+            self.controller = view.configuration().userContentController()
+            view.setNavigationDelegate_(self.delegate)
+            view.setUIDelegate_(self.delegate)
+            view.setCustomUserAgent_(user_agent_for(getattr(self, 'layout', 'mobile')))
+            entry[1].setDelegate_(None)
+            entry[1].orderOut_(None)
+            entry[1].setContentView_(None)
+            self.window.setContentView_(view)
+            old.loadHTMLString_baseURL_('', None)
+            self.last_frame = None
+            self._remote_view = None
+            self.login_return_pending = None
+            self.main_navigations += 1
+            try:
+                self.phone_navigated(committed=False)
+            except Exception:
+                pass
+            # Reuse commit bookkeeping (landed, hosts, title and phone state).
+            self.delegate.webView_didCommitNavigation_(view, None)
+        elif _host(url) in getattr(self, 'provider_sign_in_policy', {}).get('protected_hosts', ()):
+            # Loading and quiet do not imply owner input: asynchronous hand-backs
+            # keep their existing budget. Inspect controls without acting in this view.
+            document = popup['document'] = object()
+            def current_document():
+                current = str(view.URL().absoluteString()) if view.URL() else ''
+                return (getattr(self, 'work_popup', None) is popup
+                        and popup.get('document') is document and current == url)
+            def inspected(elements, error):
+                if not current_document():
+                    return
+                from .browser_session import login_form_present, USERNAME_TYPES
+                if not error and isinstance(elements, list) and (
+                        login_form_present(elements, redirected=True)
+                        or any((el.get('tag') == 'input' and el.get('type') in (USERNAME_TYPES | {'password'}))
+                               or el.get('tag') in ('textarea', 'select') or el.get('editable')
+                               or (el.get('form') is not None and el.get('tag') == 'input'
+                                   and el.get('type') not in ('hidden', 'submit', 'button', 'reset', 'image'))
+                               for el in elements)):
+                    self.fail_work_popup()
+                else:
+                    self.AppHelper.callLater(SETTLE_QUIET_SECONDS, waiting)
+            def waiting():
+                if not current_document():
+                    return
+                self.run(POPUP_INPUT_SCRIPT, {}, inspected, view=view)
+            self.AppHelper.callLater(SETTLE_QUIET_SECONDS, waiting)
+
     def open_popup(self, config):
-        """#914: a popup (``window.open``) in its own window while the owner signs in by hand.
+        """#914/#696: a popup (``window.open``) in its own window while the owner signs in by hand.
 
         A social sign-in opens the provider in a popup and hands its result back
         to the page that opened it (``window.opener``).  Loading the popup in the
         login window itself destroyed that page, so the provider signed the owner
         in while the site never did.  The popup is a separate web view built from
         WebKit's own configuration (same data store, opener kept); its navigations
-        pass the same destination check.  Only while the login window shows.
+        pass the same destination check. Work candidates stay hidden until their
+        first committed page decides whether to keep the opener or fold into the main view.
         """
+        work = not (self.guard_off and self.owner_visible)
+        if work and getattr(self, 'work_popup', None):
+            return None  # at most one Work popup; nested windows cannot widen it
         AppKit, Foundation, WebKit = self.AppKit, self.Foundation, self.WebKit
         rect = Foundation.NSMakeRect(0, 0, WIDTH, HEIGHT)
         view = WebKit.WKWebView.alloc().initWithFrame_configuration_(rect, config)
@@ -2565,16 +2775,41 @@ class Worker:
         window.setReleasedWhenClosed_(False)
         window.setDelegate_(delegate)
         window.setTitle_('Still · 로그인')
-        window.center()
-        window.makeKeyAndOrderFront_(None)
+        if work:
+            try:
+                view._setWindowOcclusionDetectionEnabled_(False)
+            except Exception:
+                pass
+            self.park_window(window)
+            self.work_popup = {'view': view, 'origin': str(self.view.URL().absoluteString()) if self.view.URL() else '',
+                               'hosts': [], 'oauth_error': False, 'needs_owner': False}
+            popup = self.work_popup
+            remaining = max(0, getattr(self, 'action_deadline', time.monotonic() + 20) - time.monotonic() - 1)
+            self.AppHelper.callLater(min(20, remaining), lambda: self.fail_work_popup() if getattr(self, 'work_popup', None) is popup else None)
+        else:
+            window.center()
+            window.makeKeyAndOrderFront_(None)
         self.popups.append((view, window, delegate))
         return view
 
-    def close_popup(self, view=None, window=None):
+    def close_popup(self, view=None, window=None, record=True):
         """Close one popup (by its view or window), or every popup when neither is given."""
         for entry in list(self.popups):
             if (view is None and window is None) or entry[0] is view or entry[1] is window:
                 self.popups.remove(entry)
+                popup = getattr(self, 'work_popup', None)
+                if popup and popup['view'] is entry[0]:
+                    self.work_popup = None
+                    if record:
+                        results = getattr(self, 'popup_results', [])
+                        result = {k: v for k, v in popup.items() if k not in ('view', 'document')}
+                        self.popup_results = (results + [result])[-8:]
+                        if (popup.get('needs_owner') or popup.get('oauth_error')) and getattr(self, 'pending', {}):
+                            self.failed_popup_origin = popup['origin']
+                            self.action_popup_failures = getattr(self, 'action_popup_failures', []) + [result]
+                # Detach before blanking: a removed view's policy must not cancel teardown.
+                entry[0].setNavigationDelegate_(None)
+                entry[0].setUIDelegate_(None)
                 entry[0].stopLoading()
                 entry[1].orderOut_(None)
                 # Tear down the closed document so hidden scripts cannot keep running.
@@ -2599,6 +2834,7 @@ class Worker:
             finish()
 
     def op_hide(self, ident, command, timeout):
+        self.fail_work_popup()
         self.end_remote()
         self.close_popup()
         self.owner_visible = False
@@ -2607,6 +2843,7 @@ class Worker:
         self.reply(ident)
 
     def window_closed_by_owner(self):
+        self.fail_work_popup()
         self.end_remote()
         self.close_popup()
         self.owner_visible = False
@@ -3008,6 +3245,8 @@ class Worker:
             self._all_types(), self.Foundation.NSDate.distantPast(), lambda: self.reply(ident))
 
     def op_quit(self, ident, command, timeout):
+        self.fail_work_popup()
+        self.close_popup()
         self.reply(ident)
         self.AppHelper.stopEventLoop()
 
@@ -3139,7 +3378,7 @@ def guarded_policy(worker, where, handler, cancel, body):
 
 
 def _popup_delegate_class():
-    """#914: the delegate of a sign-in popup window: the same destination check, nothing else."""
+    """#914/#696: owner popup navigation and bounded, non-interactive Work popup policy."""
     if _POPUP_DELEGATE:
         return _POPUP_DELEGATE[0]
     import Foundation
@@ -3157,6 +3396,12 @@ def _popup_delegate_class():
                 url = str(request.URL().absoluteString()) if request is not None and request.URL() is not None else ''
                 frame = action.targetFrame()
                 top = frame is None or bool(frame.isMainFrame())
+                if not (worker.guard_off and worker.owner_visible):
+                    kind = action.navigationType()
+                    form = kind in (WebKit.WKNavigationTypeFormSubmitted, WebKit.WKNavigationTypeFormResubmitted)
+                    method = str(request.HTTPMethod() or 'GET') if request else 'GET'
+                    return worker.work_popup_navigation(view, url, method, form, top, lambda allowed: handler(
+                        WebKit.WKNavigationActionPolicyAllow if allowed else WebKit.WKNavigationActionPolicyCancel))
                 if top and str(urlsplit(url).scheme or '').lower() in ('data', 'blob'):
                     return handler(WebKit.WKNavigationActionPolicyCancel)
                 # main_frame=False: a popup's navigations never touch the login window's navigation counters.
@@ -3171,6 +3416,10 @@ def _popup_delegate_class():
             guarded_policy(worker, 'popup_navigation', handler, WebKit.WKNavigationActionPolicyCancel, body)
 
         def webView_runJavaScriptAlertPanelWithMessage_initiatedByFrame_completionHandler_(self, view, message, frame, handler):
+            if not self.worker.owner_visible:
+                handler()
+                self.worker.fail_work_popup()
+                return
             # #936: answered by the worker's rule; never left to WebKit's silent default.
             if self.worker.hold_dialog('alert', message, handler):
                 return   # #939: the phone (or the Mac's sheet) answers
@@ -3180,6 +3429,10 @@ def _popup_delegate_class():
                 handler()
 
         def webView_runJavaScriptConfirmPanelWithMessage_initiatedByFrame_completionHandler_(self, view, message, frame, handler):
+            if not self.worker.owner_visible:
+                handler(False)
+                self.worker.fail_work_popup()
+                return
             if self.worker.hold_dialog('confirm', message, handler):
                 return   # #939: the phone (or the Mac's sheet) answers
             answer = False
@@ -3190,6 +3443,10 @@ def _popup_delegate_class():
 
         def webView_runJavaScriptTextInputPanelWithPrompt_defaultText_initiatedByFrame_completionHandler_(
                 self, view, prompt, default, frame, handler):
+            if not self.worker.owner_visible:
+                handler(None)
+                self.worker.fail_work_popup()
+                return
             if self.worker.hold_dialog('prompt', prompt, handler):
                 return   # #939: the phone (or the Mac's sheet) answers
             try:
@@ -3206,6 +3463,7 @@ def _popup_delegate_class():
             return None
 
         def webView_didCommitNavigation_(self, view, navigation):
+            self.worker.work_popup_committed(view, navigation)
             url = view.URL()
             host = _host(url.absoluteString()) if url is not None else ''
             if host:
@@ -3251,6 +3509,12 @@ def _delegate_class():
             # Registered for the client world only: the page world cannot post here (#698).
             try:
                 body = message.body()
+                source = message.webView() if hasattr(message, 'webView') else self.worker.view
+                if source is not self.worker.view:
+                    popup = getattr(self.worker, 'work_popup', None)
+                    if popup and source is popup['view']:
+                        self.worker.fail_work_popup()
+                    return
                 if _press_record(body) is not None:
                     self.worker.receive_press(body)   # #103: the press guard's report
                 else:
@@ -3267,15 +3531,13 @@ def _delegate_class():
                 url = str(request.URL().absoluteString()) if request is not None and request.URL() is not None else ''
                 frame = action.targetFrame()
                 main_frame = frame is None or bool(frame.isMainFrame())
-                if main_frame and worker.reading:
-                    worker.read_navigations += 1
+                if main_frame and worker.hold_read_navigation():
                     return handler(WebKit.WKNavigationActionPolicyCancel)
 
                 def decision(allowed, reason=None):
                     # #11 review: a destination check that finishes after a load-more read
                     # began is held to the read, like a navigation that starts during it.
-                    if allowed and main_frame and worker.reading:
-                        worker.read_navigations += 1
+                    if allowed and main_frame and worker.hold_read_navigation():
                         return handler(WebKit.WKNavigationActionPolicyCancel)
                     # Record the typed refusal before cancellation can synchronously
                     # report a generic navigation failure through WebKit's delegate.
@@ -3383,8 +3645,13 @@ def _delegate_class():
                 # A blank popup (window.open('') / 'about:blank') is a sign-in flow reserving its
                 # window before it sets the address; that later navigation is checked like any other.
                 return self.worker.open_popup(config)
+            if (scheme in ('http', 'https') or _blank(url)) and not getattr(self.worker, 'work_popup', None) \
+                    and self.worker.work_popup_allowed():
+                # #696: a page of a site with a recorded provider keeps its opener for a provider sign-in.
+                return self.worker.open_popup(config)
             if scheme not in ('http', 'https'):
                 return None
+            self.worker.fail_work_popup()
             view.loadRequest_(request)
             return None
 

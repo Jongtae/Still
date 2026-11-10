@@ -283,6 +283,8 @@ class WorkerOpsWhileParked(unittest.TestCase):
         callbacks = []
         popup.takeSnapshotWithConfiguration_completionHandler_ = lambda config, done: callbacks.append(done)
         # #683: closing a popup also stops and blanks its document.
+        popup.setNavigationDelegate_ = lambda delegate: None
+        popup.setUIDelegate_ = lambda delegate: None
         popup.stopLoading = lambda: None
         popup.loadHTMLString_baseURL_ = lambda html, base: None
         worker.view = opener

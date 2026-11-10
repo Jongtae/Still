@@ -177,7 +177,7 @@ class ProviderApprovals(Approvals):
         self.off_sites = set()
 
     def provider_signin_settings(self):
-        return {'enabled': self.enabled, 'off_sites': sorted(self.off_sites)}
+        return {'enabled': self.enabled, 'off_sites': sorted(self.off_sites), 'sites': dict(self.providers)}
 
     def provider_sign_in_enabled(self, url):
         return self.enabled and bs.registrable_domain(urlsplit(url or '').hostname) not in self.off_sites
@@ -316,6 +316,23 @@ for line in sys.stdin:
 
 
 class ResignInSessionTests(unittest.TestCase):
+    def test_popup_sites_policy_includes_only_enabled_recorded_sites(self):
+        approvals = ProviderApprovals({SITE: PROVIDER, 'other.test': UPSTREAM})
+        sess = bs.BrowserSession(lambda: TwoHostDriver(), work_id='popup-policy', approvals=approvals)
+        self.assertEqual(sess._provider_sign_in_policy()['popup_sites'], ['other.test', SITE])
+        approvals.off_sites.add(SITE)
+        policy = sess._provider_sign_in_policy()
+        self.assertEqual(policy['popup_sites'], ['other.test'])
+        self.assertEqual(policy['off_sites'], [SITE])
+        approvals.enabled = False
+        self.assertEqual(sess._provider_sign_in_policy()['popup_sites'], [])
+        approvals.off_sites.clear()
+        self.assertEqual(sess._provider_sign_in_policy()['popup_sites'], [])
+
+    def test_popup_sites_policy_without_recorded_sites_is_empty(self):
+        sess = bs.BrowserSession(lambda: TwoHostDriver(), work_id='popup-no-sites', approvals=Approvals())
+        self.assertEqual(sess._provider_sign_in_policy()['popup_sites'], [])
+
     def assert_switch_refusal(self, sess, driver, approvals, url):
         sess.run('browser_open', {'url': url, 'effect': 'navigate'})
         before = (driver.url, driver.cookies_export(), driver.authorizations())
@@ -735,6 +752,20 @@ class ResignInLoopTests(unittest.TestCase):
 
     def record_result(self, action, page):
         self.record(action, 'succeeded', {'evidence': evidence_summary(action, page)})
+
+    def test_popup_receipt_reaches_information_use_without_claiming_sign_in(self):
+        sess, driver, _ = resign_session('silent')
+        sess.run('browser_open', {'url': f'https://{SITE}/start', 'effect': 'navigate'})
+        driver.navigate(AUTHORIZE)
+        driver.goto(f'https://{SITE}/callback', 1)
+        sess._popup_results = [{'origin': f'https://{SITE}/start', 'hosts': [PROVIDER],
+                                'needs_owner': False, 'oauth_error': False}]
+        page = sess.run('browser_read', {})
+        self.record_result('browser_read', page)
+        audit = information_use.work_information_use(self.store, self.job)
+        self.assertEqual(audit['sent_to']['browser_provider_sign_ins'][0]['site'], SITE)
+        self.assertIn(PROVIDER, information_use.render_korean(audit))
+        self.assertEqual(page['provider_sign_in']['state'], 'returned')
 
     def test_provider_hops_accumulate_across_observations_and_reach_the_audit(self):
         sess, driver, _ = resign_session('chooser', providers={SITE: PROVIDER, 'other.test': UPSTREAM})
@@ -1164,3 +1195,65 @@ class ReturnedLoginTests(LoginHarness):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class PopupResultsTests(unittest.TestCase):
+    def popup_result(self, *, failed=False, error=False, origin=None, blank=False):
+        return {'origin': origin or f'https://{SITE}/start', 'hosts': [] if blank else [PROVIDER],
+                'needs_owner': failed, 'oauth_error': error}
+
+    def test_closed_popup_result_uses_returned_receipt_without_settling_login(self):
+        sess, driver, approvals = resign_session('silent')
+        sess.run('browser_open', {'url': f'https://{SITE}/start', 'effect': 'navigate'})
+        driver.navigate(AUTHORIZE)
+        driver.goto(f'https://{SITE}/callback', 1)
+        sess._popup_results = [self.popup_result()]
+        page = sess.run('browser_read', {})
+        self.assertEqual(page['provider_sign_in']['state'], 'returned')
+        self.assertFalse(getattr(approvals, 'resolved', []))
+        self.assertNotIn('provider_sign_in', sess.run('browser_read', {}))
+
+    def test_timeout_blank_and_fragment_error_hand_off_once_without_poisoning_next_attempt(self):
+        for failed, error, blank in ((True, False, True), (True, False, False), (False, True, False)):
+            sess, driver, approvals = resign_session('silent')
+            sess.run('browser_open', {'url': f'https://{SITE}/start', 'effect': 'navigate'})
+            sess._popup_results = [self.popup_result(failed=failed, error=error, blank=blank)]
+            page = sess.run('browser_read', {})
+            self.assertEqual(page['provider_sign_in']['state'], 'unconfirmed')
+            self.assertTrue(approvals.offers)
+            offers = list(approvals.offers)
+            sess.run('browser_read', {})
+            self.assertEqual(offers, approvals.offers)
+            page = sess.run('browser_open', {'url': AUTHORIZE, 'effect': 'navigate'})
+            self.assertEqual(page['provider_sign_in']['state'], 'returned')
+
+    def test_hard_action_timeout_delivers_the_popup_opener_handoff(self):
+        sess, driver, approvals = resign_session('silent')
+        sess.run('browser_open', {'url': f'https://{SITE}/start', 'effect': 'navigate'})
+        def timeout(*args, **kwargs):
+            error = TimeoutError('bounded action')
+            error.work_popup_origin = f'https://{SITE}/start'
+            raise error
+        driver.click = timeout
+        with self.assertRaises(ToolError) as caught:
+            sess.run('browser_click', {'target': '다른 계정으로 계속', 'effect': 'navigate'})
+        self.assertEqual(caught.exception.code, 'browser_timeout')
+        self.assertIn('OFFER-EXPLICIT', str(caught.exception))
+        self.assertEqual(approvals.offers[-1][0], f'https://{SITE}/start')
+
+    def test_old_popup_origin_survives_later_explicit_open(self):
+        sess, driver, approvals = resign_session('silent')
+        sess.run('browser_open', {'url': f'https://{SITE}/start', 'effect': 'navigate'})
+        sess._popup_results = [self.popup_result(failed=True)]
+        page = sess.run('browser_open', {'url': 'https://public.test/', 'effect': 'navigate'})
+        self.assertEqual(page['provider_sign_in']['site'], SITE)
+        self.assertEqual(approvals.offers[-1][0], f'https://{SITE}/start')
+
+    def test_closed_blank_does_not_skip_main_provider_interaction_refusal(self):
+        sess, driver, approvals = resign_session('chooser')
+        sess.run('browser_open', {'url': f'https://{SITE}/start', 'effect': 'navigate'})
+        driver.goto(AUTHORIZE, 1)
+        sess._popup_results = [self.popup_result(blank=True)]
+        with self.assertRaises(ToolError) as caught:
+            sess.run('browser_click', {'target': 'anything', 'effect': 'navigate'})
+        self.assertEqual(caught.exception.code, 'provider_interaction_refused')
