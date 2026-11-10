@@ -163,7 +163,7 @@ class PreparationsService:
         # #719: a watch - every N minutes from due until a deadline, bounded.
         window=None
         if has_window:
-            if recurrence:raise prep.PreparationRefusal('invalid_window')
+            if recurrence:raise prep.PreparationRefusal('invalid_window',msg('preparations.window_recurrence',value=repr(recurrence)))
             window=prep.normalize_window(args.get('every_minutes'),args.get('until'),args.get('max_runs'),
                                          due_at,timezone,now)
         when_needed=args.get('delivery')==prep.DELIVERY_WHEN_NEEDED
@@ -204,7 +204,11 @@ class PreparationsService:
             try:
                 fields=service.preparation_fields(args,now,lambda goal:service.repeats_refused_watch(job['id'],goal))
             except prep.PreparationRefusal as exc:
-                raise ToolError(str(exc),exc.code) from None
+                # #785: the failure record keeps only bounded window arguments, never the brief or offer.
+                window_args={key:service._redact_known_secrets(str(args.get(key)))[:160]
+                             for key in ('every_minutes','until','max_runs','recurrence','due') if args.get(key) not in (None,'')}
+                detail=service._redact_known_secrets(str(exc))[:600]+' '+json.dumps(window_args,ensure_ascii=False)
+                raise ToolError(detail,exc.code) from None
             kind,goal,title,offer=fields['kind'],fields['goal'],fields['title'],fields['offer']
             due_at,timezone,recurrence,window=fields['due_at'],fields['timezone'],fields['recurrence'],fields['window']
             delivery_mode=fields['delivery_mode']

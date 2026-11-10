@@ -210,8 +210,7 @@ REFUSALS = {
     'due_in_past': '이 시각은 이미 지났습니다.',
     'due_too_far': '1년 이내의 시각만 예약할 수 있습니다.',
     'invalid_recurrence': 'recurrence는 비우거나 daily, weekdays, weekly 중 하나입니다.',
-    'invalid_window': (f'every_minutes는 {MIN_EVERY_MINUTES}~{MAX_EVERY_MINUTES} 사이의 정수이고, until은 due보다 늦고 '
-                       f'due부터 {MAX_WINDOW_SECONDS // 86400}일 이내인 RFC3339 시각입니다. recurrence와 함께 쓰지 않습니다.'),
+    'invalid_window': msg('preparations.invalid_window'),
     'window_retry_required': ('같은 목표의 반복 watch 요청이 이 Work에서 이미 있었습니다. 날짜별 단발 준비 여러 건으로 나누지 말고, '
                               'every_minutes와 until을 바로잡아 같은 watch를 다시 호출하세요. 필요한 값이 없으면 대체 일정을 만들지 말고 '
                               '소유자에게 한 가지 질문을 하세요. 이 호출은 새 준비를 만들지 않았습니다.'),
@@ -462,13 +461,23 @@ def normalize_window(every_minutes, until, max_runs, due_at, timezone_name, now)
     """
     minutes = _whole_number(every_minutes)
     if minutes is None or not MIN_EVERY_MINUTES <= minutes <= MAX_EVERY_MINUTES:
-        raise PreparationRefusal('invalid_window')
+        raise PreparationRefusal('invalid_window', msg('preparations.window_minutes', value=repr(every_minutes),
+                                                     minimum=MIN_EVERY_MINUTES, maximum=MAX_EVERY_MINUTES))
+    if until in (None, ''):
+        raise PreparationRefusal('invalid_window', msg('preparations.window_until_missing', value=repr(until)))
     try:
         until_at, _zone = parse_due(until, timezone_name, timezone_name, now)
-    except PreparationRefusal:
-        raise PreparationRefusal('invalid_window') from None
-    if until_at <= due_at or until_at - due_at > MAX_WINDOW_SECONDS:
-        raise PreparationRefusal('invalid_window')
+    except PreparationRefusal as exc:
+        reason = ('order' if exc.code == 'due_in_past' else
+                  'span' if exc.code == 'due_too_far' else 'invalid')
+        raise PreparationRefusal('invalid_window', msg('preparations.window_until_' + reason,
+                                 value=repr(until), due=iso(due_at), days=MAX_WINDOW_SECONDS // 86400)) from None
+    if until_at <= due_at:
+        raise PreparationRefusal('invalid_window', msg('preparations.window_until_order',
+                                 value=repr(until), due=iso(due_at)))
+    if until_at - due_at > MAX_WINDOW_SECONDS:
+        raise PreparationRefusal('invalid_window', msg('preparations.window_until_span',
+                                 value=repr(until), due=iso(due_at), days=MAX_WINDOW_SECONDS // 86400))
     every = minutes * 60
     slots = math.floor((until_at - due_at) / every) + 1
     if max_runs in (None, ''):
@@ -885,7 +894,7 @@ class Preparations:
         every_seconds = until_at = window_end = max_runs = None
         if window is not None:
             if recurrence:
-                raise PreparationRefusal('invalid_window')
+                raise PreparationRefusal('invalid_window', msg('preparations.window_recurrence', value=repr(recurrence)))
             every_seconds, until_at, max_runs = window
             window_end = until_at + run_seconds()
             recurrence = RECURRENCE_WINDOW
@@ -1043,7 +1052,7 @@ class Preparations:
             raise PreparationRefusal('invalid_rrule')
         if row['recurrence'] == RECURRENCE_WINDOW:
             if 'recurrence' in changes:
-                raise PreparationRefusal('invalid_window')
+                raise PreparationRefusal('invalid_window', msg('preparations.window_recurrence', value=repr(changes['recurrence'])))
             # #693: ``max_runs`` is the total that ``run_count`` is held to, while the window from the
             # next slot only counts the slots left; the runs already started are added back.
             done = int(row.get('run_count') or 0)
@@ -1058,7 +1067,8 @@ class Preparations:
             updates.update(every_seconds=every, until_at=until_at, window_end=until_at + run_seconds(), max_runs=runs)
         else:
             if set(changes) & {'every_minutes', 'until', 'max_runs'}:
-                raise PreparationRefusal('invalid_window')
+                raise PreparationRefusal('invalid_window', msg('preparations.window_edit',
+                                         fields=', '.join(sorted(set(changes) & {'every_minutes', 'until', 'max_runs'}))))
             updates['recurrence'] = (normalize_rrule(changes['rrule']) if 'rrule' in changes else
                                      normalize_recurrence(changes.get('recurrence', row['recurrence'])))
             if (due_at, timezone_name, updates['recurrence']) != (row['due_at'], row['timezone'], row['recurrence']):
