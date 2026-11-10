@@ -346,6 +346,12 @@ class PreparationsService:
             service.store.put(DAY_PLAN_KEY,{'opted_out':True})
             LOG.info('daily plan opted out id=%s',state['row'])
             return None
+        if not state.get('row'):
+            # The row and its marker are two writes: a stop between them leaves an active plan with
+            # no marker.  That plan is the one Still set up; it is tracked again, never doubled.
+            row=service.preparations.day_plan()
+            if row and row['state'] in prep.ACTIVE_STATES:service.store.put(DAY_PLAN_KEY,{'row':row['id']})
+            else:row=None
         on=self.look_back_on()
         if row and row['state'] in prep.ACTIVE_STATES:
             if not on:service.preparations.defer(row['id'],now)

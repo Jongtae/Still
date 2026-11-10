@@ -110,6 +110,19 @@ class SetUpTests(_Plan):
                 self.assertNotEqual(active['id'], row['id'])
                 self.assertEqual(active['origin'], prep.ORIGIN_DAY_PLAN)
 
+    def test_a_plan_whose_marker_was_never_written_is_tracked_again_not_doubled(self):
+        """A stop between the row and its marker: the next tick finds the plan instead of making another."""
+        from personal_agent.preparations_service import DAY_PLAN_KEY
+        row = self.plan()
+        self.store.put(DAY_PLAN_KEY, {})
+        self.tick(self.make_service())
+        self.assertEqual([item['id'] for item in self.rows()], [row['id']])
+        self.assertEqual(self.store.config(DAY_PLAN_KEY), {'row': row['id']})
+        self.service.owner_model.set_controls({'dream': False})
+        self.now = row['due_at'] + 60
+        self.tick()
+        self.assertEqual(self.store.jobs(), [], 'the recovered plan follows the switch like a tracked one')
+
     def test_while_the_look_back_is_off_an_existing_plan_does_not_run(self):
         row = self.plan()
         self.service.owner_model.set_controls({'dream': False})
