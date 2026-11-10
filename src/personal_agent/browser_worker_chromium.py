@@ -513,6 +513,7 @@ class Worker(shared.Worker):
         self.popups, self.reported = [], []
         self.guard_off = self.owner_visible = self.remote = False
         self.cancelled = self.held = self.press_seen = self.dialog_step = self.held_dialog = None
+        self._step_ident = None
         self.last_frame = self.qr_cache = self.mobile_restore = self.phone_fit = None
         self.layout, self.zoom = 'mobile', 1.0
         self.viewport_size = {'width': int(shared.MOBILE_SIZE[0]), 'height': int(shared.MOBILE_SIZE[1])}
@@ -743,6 +744,7 @@ class Worker(shared.Worker):
         began = time.monotonic()
         document = self.document_generation
         self.deciding += 1   # a click waits for this decision (#736)
+        self.report_step()
 
         def look():
             if document != self.document_generation:
@@ -924,6 +926,7 @@ class Worker(shared.Worker):
         if form and not event.get('redirectedRequestId') and not self.guard_off and (primary or popup or target.kind == 'iframe'):
             if method.upper() != 'GET':
                 self.posted_submits += 1
+                self.report_step()   # #791: before releasing the paused request
             if info.get('reason') == 'reload' and method.upper() != 'GET':
                 self.refused_submits += 1
                 return decision(False)
@@ -1005,6 +1008,7 @@ class Worker(shared.Worker):
             return self._settle_route(route, False)
         began = time.monotonic()
         self.deciding += 1
+        self.report_step()
         settled = False
 
         def finish(allowed):
@@ -1088,6 +1092,7 @@ class Worker(shared.Worker):
         document = self.document_generation
         opener_document = target.document_generation
         self.deciding += 1
+        self.report_step()
 
         def replay(result, error):
             if pending not in opens:

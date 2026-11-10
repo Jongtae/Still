@@ -2238,6 +2238,8 @@ class ObservedStepTests(unittest.TestCase):
                 driver._proc = types.SimpleNamespace(stdin=io.StringIO())
                 driver._queue = queue_module.Queue()
                 driver._queue.put(message)
+                driver._observation_lock = threading.Lock()
+                driver._observations = {'active': set(), 'steps': {}, 'alive': True, 'drained': False}
                 driver._ids = itertools.count(1)
                 driver.grace_seconds = 1
                 with self.assertRaises(ToolError) as caught:
@@ -2257,6 +2259,8 @@ class ObservedStepTests(unittest.TestCase):
                 driver._proc = types.SimpleNamespace(stdin=io.StringIO())
                 driver._queue = queue_module.Queue()
                 driver._queue.put(message)
+                driver._observation_lock = threading.Lock()
+                driver._observations = {'active': set(), 'steps': {}, 'alive': True, 'drained': False}
                 driver._ids = itertools.count(1)
                 driver.grace_seconds = 1
                 with self.assertRaises(TimeoutError) as caught:

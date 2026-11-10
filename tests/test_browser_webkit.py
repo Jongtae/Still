@@ -882,6 +882,29 @@ class OwnerPopupReturnTests(unittest.TestCase):
         finish()
         self.assertFalse(self.worker.view.loads)
 
+    def test_submission_progress_precedes_the_webkit_policy_answer(self):
+        self.prepare_work()
+        worker = self.worker
+        worker._step_ident, worker.step_posted = 42, 0
+        worker.dialog_step = {'dialogs': []}
+        events = []
+        worker.emit = events.append
+        worker.check_form_navigation = lambda url, method, then, **kwargs: then(True)
+        action = self.action('https://site.test/submit', kind=1, method='POST')
+        action.sourceFrame = lambda: self.NS(isMainFrame=lambda: True)
+        self.delegate.webView_decidePolicyForNavigationAction_decisionHandler_(
+            worker.view, action, lambda policy: events.append(('policy', policy)))
+        self.assertEqual(events, [{'event': 'step', 'id': 42, 'posted': True}, ('policy', 1)])
+
+        def broken(event):
+            if event.get('event') == 'step':
+                raise OSError('pipe failed')
+        worker.emit = broken
+        events.clear()
+        self.delegate.webView_decidePolicyForNavigationAction_decisionHandler_(
+            worker.view, action, lambda policy: events.append(('policy', policy)))
+        self.assertEqual(events, [('policy', 0)], 'a lost observation must cancel the navigation')
+
     def prepare_work(self):
         self.worker.provider_sign_in_policy = {'protected_hosts': ['id.provider.test'], 'enabled': True,
                                                'popup_sites': ['site.test']}
@@ -1401,6 +1424,19 @@ class WorkerGuardLogicTests(unittest.TestCase):
         for key, value in fields.items():
             setattr(worker, key, value)
         return bw, worker
+
+    def test_guard_wait_is_reported_before_page_check_or_answer(self):
+        bw, worker = self.worker()
+        worker._step_ident = 42
+        worker.dialog_step = {'dialogs': []}
+        events = []
+        worker.emit = events.append
+        worker.AppHelper = type('AppHelper', (), {'callLater': staticmethod(lambda *args: None)})
+        worker.run = lambda body, args, done: events.append(('check', done))
+        worker.check_form_navigation('https://site.test/submit', 'GET', lambda allowed: events.append(('policy', allowed)))
+        self.assertEqual(events[0], {'event': 'step', 'id': 42, 'posted': True})
+        events[1][1]({'allow': True}, None)
+        self.assertEqual(events[-1], ('policy', True))
 
     def test_a_cancelled_submit_crosses_as_a_digest_of_what_it_would_send(self):
         bw, worker = self.worker()

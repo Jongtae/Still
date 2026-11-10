@@ -2137,3 +2137,36 @@ def test_a_partitioned_cookie_keeps_its_partition_through_the_jar():
     assert chromium.cookie_object(row)['partitionKey'] == 'https://shop.test'
     plain = chromium.cookie_row({'name': 'a', 'value': 'b', 'domain': 'shop.test'})
     assert 'partition_key' not in plain and 'partitionKey' not in chromium.cookie_object(plain)
+
+
+def test_submission_progress_precedes_chromium_request_release(worker):
+    worker._step_ident = 42
+    worker.step_posted = worker.posted_submits
+    worker.dialog_step = {'dialogs': []}
+    events = []
+    worker.emit = events.append
+    worker.check_form_navigation = lambda url, method, then, **kwargs: then(True)
+    worker.decide = lambda url, main, then: then(True)
+    target = worker.main_target
+    event = {'requestId': 'post', 'frameId': target.main_frame,
+             'request': {'url': 'https://public.test/submit', 'method': 'POST'}}
+    worker.request_paused(target, event, lambda: events.append('release'), lambda: events.append('refuse'))
+    assert events == [{'event': 'step', 'id': 42, 'posted': True}, 'release']
+
+    def broken(event):
+        raise OSError('pipe failed')
+    worker.emit = broken
+    events.clear()
+    with pytest.raises(OSError):
+        worker.request_paused(target, event, lambda: events.append('release'), lambda: events.append('refuse'))
+    assert not events, 'a lost observation must leave the request paused'
+
+
+def test_chromium_guard_wait_progress_precedes_policy_answer(worker):
+    worker._step_ident = 42
+    worker.dialog_step = {'dialogs': []}
+    events = []
+    worker.emit = events.append
+    worker.take_vetted = lambda *args: True
+    worker.check_form_navigation('https://public.test/submit', 'GET', lambda allowed: events.append(allowed))
+    assert events == [{'event': 'step', 'id': 42, 'posted': True}, True]
