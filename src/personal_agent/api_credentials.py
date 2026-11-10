@@ -234,7 +234,7 @@ class ApiCredentials:
 
         Raises when the saved state cannot be read, so its ciphertext is never dropped unretired.
         """
-        return self.store.swap_secret(STATE_PREFIX + name, None, self._state_strings)
+        return self.store.swap_secret(STATE_PREFIX + name, None, self._state_strings, origin='state')
 
     def write_state(self, name, slot, text):
         """Save the run state (a JSON object of at most ``MAX_STATE_BYTES``); False when refused."""
@@ -255,7 +255,7 @@ class ApiCredentials:
             plain = set(plain_state_values(text))
             self.store.swap_secret(STATE_PREFIX + name, self._cipher(create=True).encrypt(encoded).decode(),
                                    lambda old: [value for value in self._state_strings(old) if value not in plain],
-                                   release=sorted(plain))
+                                   release=sorted(plain), origin='state')
         except Exception:
             return False
         return True

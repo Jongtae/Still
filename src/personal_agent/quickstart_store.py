@@ -625,11 +625,16 @@ class QuickStore:
     #: Characters of a retired value whose digest locates candidate spans (every retired value is longer).
     RETIRED_PREFIX_CHARS=8
 
-    def _retire_values_locked(self, olds):
+    #: #778 (Codex P1 on #787): the ledger's digests that only a run state retired, the one origin a
+    #: later ``plain`` declaration may release.  A value any other secret also retired is never in it.
+    STATE_MARKS='state_marks'
+
+    def _retire_values_locked(self, olds, origin=None):
         """Record each retired value as ``[length, digest, prefix digest]`` (caller holds the secrets lock).
 
         The prefix digest lets a scan locate candidates with one HMAC per position, however many values
-        and lengths are retired (Codex review on #259); the full digest confirms a match.
+        and lengths are retired (Codex review on #259); the full digest confirms a match.  ``origin``
+        ``'state'`` (#778) records a run state's value as releasable unless another origin retired it too.
         """
         olds=[old for old in olds or () if isinstance(old,str) and len(old)>=self.RETIRED_PREFIX_CHARS]
         if not olds:return
@@ -637,12 +642,18 @@ class QuickStore:
         ledger=self._read_retired() or {'key':secrets.token_hex(32),'marks':[]}
         key=bytes.fromhex(ledger['key'])
         marks=[item for item in ledger.get('marks') or () if isinstance(item,list) and len(item)==3]
+        state=set(ledger.get(self.STATE_MARKS) or ())
         for old in olds:
             mark=[len(old),hmac.digest(key,old.encode(),'sha256').hex(),
                   hmac.digest(key,old[:self.RETIRED_PREFIX_CHARS].encode(),'sha256').hex()]
+            known=any(item[1]==mark[1] for item in marks)
+            if origin!='state':state.discard(mark[1])
+            elif not known:state.add(mark[1])
             marks=[item for item in marks if item[1]!=mark[1]]+[mark]
         # Kept for as long as a message can be recalled (Codex review on #259): never evicted.
         ledger['marks']=marks
+        if state:ledger[self.STATE_MARKS]=sorted(state)
+        else:ledger.pop(self.STATE_MARKS,None)
         self.write_private(self.retired_secrets_path,json.dumps(ledger))
 
     @classmethod
@@ -666,35 +677,39 @@ class QuickStore:
         return spans
 
     def _release_values_locked(self, values):
-        """Drop the retirement marks of ``values`` (caller holds the secrets lock; #778).
+        """Drop the run-state retirement marks of ``values`` (caller holds the secrets lock; #778).
 
-        Only for text a writer declared not secret (a run state's ``plain`` values): a mark is
-        matched by its digest, so nothing else is touched.  A value still stored stays redacted
-        by the stored-value pass whatever the ledger holds.
+        Only for text a writer declared not secret (a run state's ``plain`` values), and only marks
+        that a run state alone retired (Codex P1 on #787): a credential's mark, or one recorded
+        before origins were kept, stays.  A value still stored stays redacted by the stored-value pass.
         """
         values=[value for value in values or () if isinstance(value,str) and len(value)>=self.RETIRED_PREFIX_CHARS]
         ledger=self._read_retired() if values else None
         if not ledger or not ledger.get('marks'):return
         key=bytes.fromhex(ledger['key'])
         forms=[*values,*(form for value in values for form in self.json_escaped_forms(value))]
-        digests={hmac.digest(key,form.encode(),'sha256').hex() for form in forms}
+        state=set(ledger.get(self.STATE_MARKS) or ())
+        digests={hmac.digest(key,form.encode(),'sha256').hex() for form in forms}&state
         marks=[item for item in ledger['marks'] if item[1] not in digests]
         if len(marks)==len(ledger['marks']):return
         ledger['marks']=marks
+        if state-digests:ledger[self.STATE_MARKS]=sorted(state-digests)
+        else:ledger.pop(self.STATE_MARKS,None)
         self.write_private(self.retired_secrets_path,json.dumps(ledger))
 
-    def swap_secret(self, key, value, retire, release=()):
+    def swap_secret(self, key, value, retire, release=(), origin=None):
         """Replace (or with ``value`` None remove) one secret, retiring ``retire(old)``'s plaintexts first,
         all under the cross-process secrets lock (Codex review on #259: concurrent writers cannot slip a
         value past retirement).  ``retire`` raising leaves the secret unchanged.  ``release`` (#778):
-        values the new secret declares not secret, whose retirement marks are dropped under the same lock."""
+        values the new secret declares not secret, whose run-state retirement marks are dropped under the
+        same lock; ``origin`` is the retired values' origin (``'state'`` for a run state)."""
         with self.secret_lock:
             lock_fd=os.open(self.secret_lock_path,os.O_RDWR|os.O_CREAT,0o600)
             try:
                 fcntl.flock(lock_fd,fcntl.LOCK_EX)
                 values=json.loads(self.secret_path.read_text()) if self.secret_path.exists() else {}
                 old=values.get(key)
-                if old:self._retire_values_locked(retire(old))
+                if old:self._retire_values_locked(retire(old),origin)
                 self._release_values_locked(release)
                 if value is None:
                     if key not in values:return False
@@ -707,13 +722,14 @@ class QuickStore:
                 fcntl.flock(lock_fd,fcntl.LOCK_UN)
                 os.close(lock_fd)
 
-    def retire_secret_values(self, olds):
-        """Record retired plaintext values another layer decrypted (encrypted API credentials)."""
+    def retire_secret_values(self, olds, origin=None):
+        """Record retired plaintext values another layer decrypted (encrypted API credentials; a run state's with
+        ``origin`` ``'state'``)."""
         with self.secret_lock:
             lock_fd=os.open(self.secret_lock_path,os.O_RDWR|os.O_CREAT,0o600)
             try:
                 fcntl.flock(lock_fd,fcntl.LOCK_EX)
-                self._retire_values_locked(olds)
+                self._retire_values_locked(olds,origin)
             finally:
                 fcntl.flock(lock_fd,fcntl.LOCK_UN)
                 os.close(lock_fd)
