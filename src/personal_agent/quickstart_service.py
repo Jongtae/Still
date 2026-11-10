@@ -1760,6 +1760,12 @@ class AgentService:
         """#1455: the one button that cancels exactly the reservations a message confirmed."""
         return self.preparations_service.preparation_cancel_markup(notification_id)
 
+    def preparation_restore_markup(self, notification_id):
+        return self.preparations_service.preparation_restore_markup(notification_id)
+
+    def restore_preparation(self, preparation_id, *, cancelled_at=None):
+        return self.preparations_service.restore_preparation(preparation_id,cancelled_at=cancelled_at)
+
     def scheduled_notice_text(self, ids):
         """#1455: what a directly scheduled message says: each reservation, and that it is cancelled here."""
         return self.preparations_service.scheduled_notice_text(ids)

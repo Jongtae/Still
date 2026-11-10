@@ -956,9 +956,13 @@ class Preparations:
         """Stop every future run.  A Work already running finishes as its own Work."""
         now = self.clock()
         with self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            current = db.execute('SELECT updated_at FROM preparations WHERE id=?', (preparation_id,)).fetchone()
+            # The cancellation's undo binding stays distinct even with an unchanged clock.
+            revision = max(now, math.nextafter(current['updated_at'], math.inf)) if current else now
             changed = db.execute('UPDATE preparations SET state=?,updated_at=? WHERE id=? AND state IN (?,?,?,?)',
-                                 (STATE_CANCELLED, now, preparation_id, *ACTIVE_STATES)).rowcount
-        row = self.get(preparation_id)
+                                 (STATE_CANCELLED, revision, preparation_id, *ACTIVE_STATES)).rowcount
+            row = db.execute('SELECT * FROM preparations WHERE id=?', (preparation_id,)).fetchone()
         if row is None:
             raise PreparationRefusal('not_found')
         return {**row, 'changed': bool(changed)}
@@ -1002,22 +1006,46 @@ class Preparations:
 
     def resume(self, preparation_id):
         """Resume at a future slot, never catch up missed slots (#575)."""
+        return self._resume(preparation_id, STATE_PAUSED)
+
+    def restore(self, preparation_id, *, cancelled_at=None):
+        """Undo cancellation at a future slot; an optional revision binds a notice's undo."""
+        return self._resume(preparation_id, STATE_CANCELLED, cancelled_at=cancelled_at)
+
+    def _resume(self, preparation_id, state, *, cancelled_at=None):
         now = self.clock()
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
-            row = self._editable(db, preparation_id, (STATE_PAUSED,))
-            following = row['due_at']
-            if row['recurrence'] == RECURRENCE_WINDOW:
-                if window_ended(row, now) or row['run_count'] >= row['max_runs']:
+            row = self._editable(db, preparation_id, (state,))
+            if cancelled_at is not None and row['updated_at'] != cancelled_at:
+                raise PreparationRefusal('invalid_state')
+            if state == STATE_CANCELLED:
+                active = db.execute('SELECT count(*) FROM preparations WHERE state IN (?,?,?,?)', ACTIVE_STATES).fetchone()[0]
+                if active >= MAX_ACTIVE:
+                    raise PreparationRefusal('too_many')
+                # #784: cancelled while its run was still working: it goes back to running, so that run
+                # settles as usual and schedules the next slot; no second run starts beside it.
+                run = (db.execute('SELECT status,delivery FROM jobs WHERE id=?', (row['last_run_job_id'],)).fetchone()
+                       if row['last_run_job_id'] else None)
+                in_progress = bool(run and (ws.is_active_preparation(run['status']) or run['delivery'] in ('pending', 'sending')))
+            else:
+                in_progress = False
+            revision = max(now, math.nextafter(row['updated_at'], math.inf))
+            if in_progress:
+                db.execute('UPDATE preparations SET state=?,updated_at=? WHERE id=?', (STATE_RUNNING, revision, row['id']))
+            else:
+                following = row['due_at']
+                if row['recurrence'] == RECURRENCE_WINDOW:
+                    if window_ended(row, now) or row['run_count'] >= row['max_runs']:
+                        raise PreparationRefusal('resume_expired')
+                    if following <= now:
+                        following = next_window_slot(row, now)
+                elif following <= now:
+                    following = next_due(following, row['timezone'], row['recurrence'], now, row.get('rule_start'), row.get('run_count', 0))
+                if following is None or following <= now:
                     raise PreparationRefusal('resume_expired')
-                if following <= now:
-                    following = next_window_slot(row, now)
-            elif following <= now:
-                following = next_due(following, row['timezone'], row['recurrence'], now, row.get('rule_start'), row.get('run_count', 0))
-            if following is None or following <= now:
-                raise PreparationRefusal('resume_expired')
-            db.execute('UPDATE preparations SET state=?,due_at=?,updated_at=? WHERE id=?',
-                       (STATE_SCHEDULED, following, now, row['id']))
+                db.execute('UPDATE preparations SET state=?,due_at=?,updated_at=? WHERE id=?',
+                           (STATE_SCHEDULED, following, revision, row['id']))
         return self.get(preparation_id)
 
     def edit(self, preparation_id, *, states=(STATE_PROPOSED, STATE_SCHEDULED, STATE_PAUSED), **changes):

@@ -55,7 +55,7 @@ from .quickstart_service import (APPROVE_BUTTON, BROWSER_LOGIN_PHONE_ALERT, BROW
                                  DENY_BUTTON, LOCAL_DOCUMENT_APPROVAL_TEXT, LOCAL_DOCUMENT_RESUMED_TEXT, LOG, MAX_OWNER_MESSAGE_CHARS,
                                  MEMORY_CANDIDATES_EXPIRED_TEXT, MEMORY_CANDIDATES_OUTDATED_TEXT, MEMORY_PROMPT_KINDS, MEMORY_SAVED_KINDS,
                                  MEMORY_SAVED_OUTDATED_TEXT, MEMORY_SAVED_TTL_SECONDS, REACTION_EVENT, TELEGRAM_PHOTO_ALBUM_SETTLE_SECONDS,
-                                 TELEGRAM_RECEIVE_GRACE_SECONDS, WORKING_NOTES_KIND, prepared_ids, truncated_owner_message)
+                                 TELEGRAM_RECEIVE_GRACE_SECONDS, WORKING_NOTES_KIND, PREPARED_IDS_PREFIX, prepared_ids, truncated_owner_message)
 
 #: Buttons that only show a Work's details; a tap on them is not an owner act (#762).
 VIEW_CONTROLS = ('p7v:', 'p7d:')
@@ -822,16 +822,44 @@ class TelegramSurface(ConversationSurface):
                            and (notification['kind'],notification['state']) in (('preparation_proposed','preparation_accepted'),
                                                                                 ('preparation_scheduled','sent')))
                     if exact:
-                        cancelled=0
+                        cancelled={}
                         for preparation_id in prepared_ids(notification):
-                            try:cancelled+=bool(service.cancel_preparation(preparation_id).get('changed'))
+                            try:
+                                row=service.cancel_preparation(preparation_id)
+                                if row.get('changed'):cancelled[preparation_id]=row['updated_at']
                             except prep.PreparationRefusal:continue
                         result_kind='preparation_cancelled' if cancelled else 'preparation_already_settled'
-                        LOG.info('preparation cancel by owner button work=%s count=%s',notification['job_id'],cancelled)
-                        service.store.update_notification(notification['id'],result_kind)
-                        try:service.telegram.edit_message_text(sender,notification['message_id'],service.notification_text(result_kind),{'inline_keyboard':[]})
+                        LOG.info('preparation cancel by owner button work=%s count=%s',notification['job_id'],len(cancelled))
+                        service.store.update_notification(notification['id'],result_kind,fingerprint=json.dumps(cancelled))
+                        markup=service.preparation_restore_markup(notification['id']) if cancelled else {'inline_keyboard':[]}
+                        try:service.telegram.edit_message_text(sender,notification['message_id'],service.notification_text(result_kind),markup)
                         except ProviderError:pass
                         changed=True
+                elif len(parts)==3 and parts[2]=='restore':
+                    notification=service.store.notification(parts[1])
+                    exact=(notification and notification['generation']==generation and notification['chat_id']==sender
+                           and notification['message_id']==message.get('message_id')
+                           and notification['kind'] in ('preparation_proposed','preparation_scheduled')
+                           and notification['state']=='preparation_cancelled')
+                    if exact:
+                        try:cancelled=json.loads(notification['fingerprint'])
+                        except (ValueError,TypeError):cancelled={}
+                        if not isinstance(cancelled,dict):cancelled={}
+                        restored=[]
+                        for preparation_id,revision in cancelled.items():
+                            if not isinstance(revision,(int,float)) or isinstance(revision,bool):continue
+                            try:service.restore_preparation(preparation_id,cancelled_at=revision)
+                            except prep.PreparationRefusal:continue
+                            restored.append(preparation_id)
+                        if restored:
+                            result_kind='preparation_accepted' if notification['kind']=='preparation_proposed' else 'sent'
+                            service.store.update_notification(notification['id'],result_kind,
+                                fingerprint=PREPARED_IDS_PREFIX+','.join(restored))
+                            text=service.scheduled_notice_text(restored)
+                            try:service.telegram.edit_message_text(sender,notification['message_id'],text,
+                                                                  service.preparation_cancel_markup(notification['id']))
+                            except ProviderError:pass
+                            changed=True
                 elif len(parts)==3 and parts[2] in ('accept','deny'):
                     notification=service.store.notification(parts[1])
                     # Only the rows this message rendered (digest of the shown page).

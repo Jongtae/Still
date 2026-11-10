@@ -111,7 +111,7 @@ SETTINGS = {"payment_autonomy": ("enabled",), "current_context": ("enabled", "ti
             # #1213: a one-time phone link for an input only a page can take (own Google client, Google consent).
             "phone_link": ("send",), "api_connections": ("connect",),
             # #1455: the owner's reservations (#659), seen and managed in the conversation first.
-            "preparations": ("cancel", "accept", "pause", "resume", "edit", "run_now"),
+            "preparations": ("cancel", "accept", "pause", "resume", "restore", "edit", "run_now"),
             # #1572: close one exact login window that holds the browser while the owner will not sign in.
             # #636: signing back in through the provider the owner used (every site, or one site).
             "browser": ("close_login", "use_mobile", "provider_sign_in"),
@@ -132,7 +132,7 @@ SETTING_LABELS = {"enabled": msg('label.use'), "timezone": msg('label.time_zone'
                   "provider_sign_in": msg('settings_orchestrator.provider_sign_in_label'),
                   "connect_chat": msg('settings_orchestrator.connect_chat_label'),
                   **{operation: msg('settings_orchestrator.label_preparations_' + operation)
-                     for operation in ('pause', 'resume', 'edit', 'run_now')}}
+                     for operation in ('pause', 'resume', 'restore', 'edit', 'run_now')}}
 _CATEGORY_LINE_IDS = {
     'payment_autonomy': 'payment_autonomy.category_line',
     'connections': 'settings_orchestrator.category_line_connections',
@@ -196,7 +196,7 @@ _CHANGE_LABELS = {("payment_autonomy", "enabled"): msg("payment_autonomy.label")
     ('preparations', 'cancel'): msg('button.cancel_reservation'),
     ('preparations', 'accept'): msg('settings_orchestrator.label_preparations_accept'),
     **{('preparations', operation): msg('settings_orchestrator.label_preparations_' + operation)
-       for operation in ('pause', 'resume', 'edit', 'run_now')},
+       for operation in ('pause', 'resume', 'restore', 'edit', 'run_now')},
     ('browser', 'close_login'): msg('settings_orchestrator.label_browser_close_login'),
     ('browser', 'use_mobile'): msg('settings_orchestrator.label_browser_use_mobile'),
     ('browser', 'provider_sign_in'): msg('settings_orchestrator.label_browser_provider_sign_in'),
@@ -273,7 +273,7 @@ DIRECT_REQUEST_SETTINGS = frozenset({
     ('current_context', 'enabled'), ('current_context', 'timezone'),
     ('owner_model', 'enabled'), ('owner_model', 'daily_calls'), ('owner_model', 'dream'),
     ('main_ai', 'model'), ('skills', 'remove'), ('payment_autonomy', 'enabled', 'off'),
-    *(('preparations', operation) for operation in ('cancel', 'accept', 'pause', 'resume', 'edit', 'run_now')),
+    *(('preparations', operation) for operation in ('cancel', 'accept', 'pause', 'resume', 'restore', 'edit', 'run_now')),
     ('browser', 'close_login'), ('browser', 'use_mobile'), ('connections', 'disconnect'),
     # #705: a presentation preference only.
     ('developer_mode', 'enabled')})
@@ -293,7 +293,7 @@ _PREPARATION_RUN = (*_PREPARATION_IDENTITY, 'title_text', 'offer_text', 'deliver
 _PREPARATION_SCHEDULE = (*_PREPARATION_RUN, 'due_at', 'timezone', 'recurrence', 'rule_start', 'every_seconds',
                          'window_end', 'max_runs')
 PREPARATION_BINDINGS = {'cancel': _PREPARATION_IDENTITY, 'pause': _PREPARATION_IDENTITY, 'edit': _PREPARATION_IDENTITY,
-                        'run_now': _PREPARATION_RUN, 'accept': _PREPARATION_SCHEDULE, 'resume': _PREPARATION_SCHEDULE}
+                        'run_now': _PREPARATION_RUN, 'accept': _PREPARATION_SCHEDULE, 'resume': _PREPARATION_SCHEDULE, 'restore': (*_PREPARATION_SCHEDULE, 'updated_at', 'run_count')}
 #: #619: settings whose apply resolves the route from current state; their drafts bind that route.
 MODEL_SETTINGS = frozenset({("main_ai", "model"), ("judgment_ai", "model")})
 MODEL_ROUTE_SEP = " @ "
@@ -573,16 +573,16 @@ class SettingsOrchestrator:
         """Active reservations and owner schedule operations (#1455, #575)."""
         from . import preparations as prep
         from .current_context import redact_known_secrets
-        states = {prep.STATE_PROPOSED: msg('settings_orchestrator.awaiting_acceptance'), prep.STATE_SCHEDULED: msg('settings_orchestrator.scheduled'), prep.STATE_RUNNING: msg('settings_orchestrator.running'), prep.STATE_PAUSED: msg('settings_orchestrator.paused')}
+        states = {prep.STATE_PROPOSED: msg('settings_orchestrator.awaiting_acceptance'), prep.STATE_SCHEDULED: msg('settings_orchestrator.scheduled'), prep.STATE_RUNNING: msg('settings_orchestrator.running'), prep.STATE_PAUSED: msg('settings_orchestrator.paused'), prep.STATE_CANCELLED: msg('state.cancelled')}
         rows = [row for row in self.service.preparations.rows() if row.get("state") in states]
         labels = {row["id"]: f"{redact_known_secrets(self.store, prep.proposal_summary(row))} ({states[row['state']]})"
                   for row in rows}
         listed = "\n".join(labels.values()) or msg('label.none')
         proposed = [row["id"] for row in rows if row["state"] == prep.STATE_PROPOSED]
-        result = {"cancel": self._row("cancel", "", listed, self._options(tuple(labels), labels), format=msg('settings_orchestrator.cancel_reservation_format')),
+        result = {"cancel": self._row("cancel", "", listed, self._options(tuple(row["id"] for row in rows if row["state"] in prep.ACTIVE_STATES), labels), format=msg('settings_orchestrator.cancel_reservation_format')),
                 "accept": self._row("accept", "", ", ".join(labels[item] for item in proposed) or msg('label.none'),
                                     self._options(tuple(proposed), labels), format=msg('settings_orchestrator.accept_reservation_format'))}
-        for operation, states_ in (("pause", (prep.STATE_SCHEDULED,)), ("resume", (prep.STATE_PAUSED,)),
+        for operation, states_ in (("pause", (prep.STATE_SCHEDULED,)), ("resume", (prep.STATE_PAUSED,)), ("restore", (prep.STATE_CANCELLED,)),
                                    ("run_now", (prep.STATE_SCHEDULED, prep.STATE_PAUSED)),
                                    ("edit", (prep.STATE_PROPOSED, prep.STATE_SCHEDULED, prep.STATE_PAUSED))):
             ids = tuple(item["id"] for item in rows if item["state"] in states_)

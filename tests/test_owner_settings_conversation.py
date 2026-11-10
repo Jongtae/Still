@@ -1033,7 +1033,7 @@ class PreparationManagementConversation(_Case):
 
     def test_pause_resume_edit_and_run_now_are_confirmed_owner_changes(self):
         read = self.settings.read('preparations')['settings']['preparations']
-        self.assertEqual(set(read), {'cancel', 'accept', 'pause', 'resume', 'edit', 'run_now'})
+        self.assertEqual(set(read), {'cancel', 'accept', 'pause', 'resume', 'restore', 'edit', 'run_now'})
         draft = self.settings.propose('owner', 'http', 'preparations', 'pause', self.row['id'])
         self.assertEqual(self.service.preparations.get(self.row['id'])['state'], prep.STATE_SCHEDULED)
         self.settings.confirm('owner', 'http', draft['draft_id'], draft['digest'])
@@ -1048,6 +1048,27 @@ class PreparationManagementConversation(_Case):
         self.assertEqual((current['state'], current['due_at'], current['recurrence']),
                          (prep.STATE_RUNNING, self.row['due_at'], 'weekly'))
         self.assertIsNotNone(current['last_run_job_id'])
+
+    def test_cancelled_reservation_restores_in_one_owner_requested_settings_call(self):
+        self.service.cancel_preparation(self.row['id'])
+        read = self.settings.read('owner', 'preparations')['settings']['preparations']
+        self.assertEqual([item['value'] for item in read['restore']['options']], [self.row['id']])
+        self.assertEqual(read['cancel']['options'], [])
+        tools = self.settings.work_tools('owner', 'http', None, owner_request=lambda summary: True)
+        result = tools('settings_change', {'category': 'preparations', 'setting': 'restore', 'value': self.row['id']})
+        self.assertTrue(result['applied'])
+        self.assertEqual(self.service.preparations.get(self.row['id'])['state'], prep.STATE_SCHEDULED)
+        self.assertIn('복원', result['response'])
+        self.assertEqual(result['state'], 'applied')
+
+    def test_restore_draft_is_stale_after_a_different_cancellation(self):
+        self.service.cancel_preparation(self.row['id'])
+        draft = self.settings.propose('owner', 'http', 'preparations', 'restore', self.row['id'])
+        self.service.restore_preparation(self.row['id'])
+        self.service.cancel_preparation(self.row['id'])
+        with self.assertRaisesRegex(SettingsError, STALE_MESSAGE):
+            self.settings.confirm('owner', 'http', draft['draft_id'], draft['digest'])
+        self.assertEqual(self.service.preparations.get(self.row['id'])['state'], prep.STATE_CANCELLED)
 
     def test_an_applied_reservation_operation_says_what_it_did(self):
         """#701: the receipt is the done operation, never the draft's question with "(으)로 바꿨습니다" appended."""

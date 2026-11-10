@@ -1012,6 +1012,87 @@ class CancelTests(_Case):
             self.service.preparations.delete('missing')
 
 
+class RestoreTests(_Case):
+    def notice(self):
+        work = self.store.enqueue('자료 확인', 'restore-test', f'telegram:{GENERATION}', CHAT)
+        rows = [self.service.preparations.create(kind='prepare', goal=goal, due_at=self.now + 60,
+                    timezone='Asia/Seoul', recurrence=None, channel='telegram', created_from=work,
+                    state=prep.STATE_SCHEDULED, accepted_by=prep.ACCEPTED_OWNER_REQUEST,
+                    window=(300, self.now + 3600, 10)) for goal in ('첫 자료', '둘째 자료')]
+        from personal_agent.quickstart_service import PREPARED_IDS_PREFIX
+        self.service.queue_notification(self.store.job(work), 'preparation_scheduled',
+                                        fingerprint=PREPARED_IDS_PREFIX + ','.join(row['id'] for row in rows))
+        self.service.deliver_notification()
+        return rows, self.store.notification_of(work, 'preparation_scheduled')
+
+    def test_cancel_restore_is_exact_persistent_symmetric_and_recorded(self):
+        rows, notice = self.notice()
+        # Another path cancelled this row before the message's cancel was pressed.
+        self.service.cancel_preparation(rows[1]['id'])
+        self.tap(f"p7p:{notice['id']}:cancel", notice['message_id'])
+        edit = [body for method, body in self.telegram if method == 'editMessageText'][-1]
+        [[button]] = edit['reply_markup']['inline_keyboard']
+        self.assertEqual(button['callback_data'], f"p7p:{notice['id']}:restore")
+        self.now += 25 * 60
+        # Restart retains the notification's exact cancellation binding.
+        self.service = self.make_service()
+        self.service.ingest_callback({'id': 'restore', 'from': {'id': CHAT}, 'data': button['callback_data'],
+            'message': {'message_id': notice['message_id'], 'chat': {'id': CHAT, 'type': 'private'},
+                        'text': edit['text'], 'reply_markup': edit['reply_markup']}}, GENERATION)
+        row = self.service.preparations.get(rows[0]['id'])
+        self.assertEqual((row['state'], row['due_at'], row['goal_text'], row['run_count']),
+                         ('scheduled', rows[0]['due_at'] + 1500, rows[0]['goal_text'], 0))
+        self.assertEqual(self.service.preparations.get(rows[1]['id'])['state'], 'cancelled')
+        self.assertEqual(sum(button['text'] in str(row['content']) for row in self.store.history()), 1)
+        edited = [body for method, body in self.telegram if method == 'editMessageText'][-1]
+        self.assertTrue(edited['reply_markup']['inline_keyboard'][0][0]['callback_data'].endswith(':cancel'))
+        before = self.service.preparations.get(rows[0]['id'])
+        self.tap(button['callback_data'], notice['message_id'])
+        self.assertEqual(self.service.preparations.get(rows[0]['id']), before, 'a replay changes nothing')
+        self.tap(f"p7p:{notice['id']}:cancel", notice['message_id'])
+        self.assertEqual(self.service.preparations.get(rows[0]['id'])['state'], 'cancelled')
+
+    def test_restore_refuses_other_chat_message_generation_and_changed_cancellation(self):
+        rows, notice = self.notice()
+        self.tap(f"p7p:{notice['id']}:cancel", notice['message_id'])
+        before = [self.service.preparations.get(row['id']) for row in rows]
+        for sender, message_id, generation in ((CHAT + 1, notice['message_id'], GENERATION),
+                (CHAT, notice['message_id'] + 1, GENERATION), (CHAT, notice['message_id'], 'old')):
+            self.service.ingest_callback({'id': 'stale', 'from': {'id': sender}, 'data': f"p7p:{notice['id']}:restore",
+                'message': {'message_id': message_id, 'chat': {'id': sender, 'type': 'private'}}}, generation)
+            self.assertEqual([self.service.preparations.get(row['id']) for row in rows], before)
+        # Even a restore and re-cancel at the same clock time invalidates the old undo.
+        for row in rows:
+            self.service.preparation_request({'operation': 'restore', 'id': row['id']})
+            self.service.cancel_preparation(row['id'])
+        before = [self.service.preparations.get(row['id']) for row in rows]
+        self.tap(f"p7p:{notice['id']}:restore", notice['message_id'])
+        self.assertEqual([self.service.preparations.get(row['id']) for row in rows], before)
+
+    def test_restore_refuses_past_one_shot_and_legacy_cancel_notice(self):
+        rows, notice = self.notice()
+        with self.store.db() as db:
+            db.execute('UPDATE preparations SET recurrence=NULL WHERE id IN (?,?)', tuple(row['id'] for row in rows))
+        self.tap(f"p7p:{notice['id']}:cancel", notice['message_id'])
+        before = [self.service.preparations.get(row['id']) for row in rows]
+        self.now += 60
+        self.tap(f"p7p:{notice['id']}:restore", notice['message_id'])
+        self.assertEqual([self.service.preparations.get(row['id']) for row in rows], before)
+        # Old cancelled notices had no undo binding. A forged restore cannot act on their old id list.
+        self.store.update_notification(notice['id'], 'preparation_cancelled', fingerprint='prepared:' + rows[0]['id'])
+        self.tap(f"p7p:{notice['id']}:restore", notice['message_id'])
+        self.assertEqual([self.service.preparations.get(row['id']) for row in rows], before)
+
+    def test_expired_restore_tap_changes_nothing(self):
+        rows, notice = self.notice()
+        self.tap(f"p7p:{notice['id']}:cancel", notice['message_id'])
+        before = [self.service.preparations.get(row['id']) for row in rows]
+        self.now += 3601
+        self.tap(f"p7p:{notice['id']}:restore", notice['message_id'])
+        self.assertEqual([self.service.preparations.get(row['id']) for row in rows], before)
+        self.assertEqual(self.store.notification(notice['id'])['state'], 'preparation_cancelled')
+
+
 class SecretTests(_Case):
     PASSPORT = 'M12345678'
 
@@ -1242,6 +1323,11 @@ class PreparationScopeTests(_Case):
         self.assertIn('취소했어요', [body for method, body in self.telegram if method == 'editMessageText'][-1]['text'])
         self.tap(button['callback_data'], notification['message_id'])
         self.assertEqual(sum(state == 'cancelled' for state in states.values()), len(shown), 'a second tap changes nothing')
+        self.tap(f"p7p:{notification['id']}:restore", notification['message_id'])
+        self.assertEqual(self.store.notification(notification['id'])['state'], 'preparation_accepted')
+        self.assertEqual({row['id'] for row in self.rows() if row['state'] == 'scheduled'}, {row['id'] for row in shown})
+        self.tap(button['callback_data'], notification['message_id'])
+        self.assertEqual({row['id'] for row in self.rows() if row['state'] == 'cancelled'}, {row['id'] for row in shown})
 
 
 # --- SEC-ATTN-02 (#719): watching until a deadline, telling only when needed ---
@@ -2650,6 +2736,74 @@ class PreparationManagementTests(unittest.TestCase):
         self.preparations.pause(row['id'])
         self.now = row['window_end']
         self.refusal('resume_expired', self.preparations.resume, row['id'])
+
+    def test_restore_preserves_watch_and_count_without_catch_up(self):
+        row = self.make(window=(300, self.now + 1800, 6))
+        with self.store.db() as db:
+            db.execute('UPDATE preparations SET run_count=2 WHERE id=?', (row['id'],))
+        self.preparations.cancel(row['id'])
+        self.now += 700
+        restored = self.preparations.restore(row['id'])
+        self.assertEqual(restored['due_at'], row['due_at'] + 900)
+        self.assertEqual(restored['run_count'], 2)
+        for field in ('goal_text', 'until_at', 'max_runs', 'every_seconds', 'accepted_by', 'created_from'):
+            self.assertEqual(restored[field], row[field])
+        self.assertEqual(self.preparations.due(self.now), [])
+
+    def test_restore_during_a_run_returns_to_running_and_never_starts_a_second_run(self):
+        row = self.make(window=(300, self.now + 1800, 6))
+        self.now = row['due_at']
+        work = self.preparations.start(self.preparations.get(row['id']), channel='web', chat_id=None, now=self.now)
+        self.assertIsNotNone(work)
+        self.preparations.cancel(row['id'])
+        self.now += 400
+        restored = self.preparations.restore(row['id'])
+        self.assertEqual(restored['state'], prep.STATE_RUNNING)
+        self.assertEqual(restored['last_run_job_id'], work)
+        self.assertEqual(self.preparations.due(self.now), [], 'the run is still working, so nothing is due')
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='succeeded',delivery='sent' WHERE id=?", (work,))
+        due = self.preparations.due(self.now)
+        self.assertEqual([item['id'] for item in due], [row['id']], 'the finished run settles as usual')
+        self.preparations.settle(due[0], self.now)
+        settled = self.preparations.get(row['id'])
+        self.assertEqual(settled['state'], prep.STATE_SCHEDULED)
+        self.assertGreater(settled['due_at'], self.now)
+
+    def test_restore_refuses_expired_exhausted_and_non_cancelled_rows(self):
+        row = self.make()
+        self.refusal('invalid_state', self.preparations.restore, row['id'])
+        self.preparations.cancel(row['id'])
+        self.now = row['due_at']
+        before = self.preparations.get(row['id'])
+        self.refusal('resume_expired', self.preparations.restore, row['id'])
+        self.assertEqual(self.preparations.get(row['id']), before)
+        for ended in (False, True):
+            row = self.make(window=(300, self.now + 1800, 6))
+            self.preparations.cancel(row['id'])
+            if ended:
+                self.now = row['until_at'] + 1
+            else:
+                with self.store.db() as db:
+                    db.execute('UPDATE preparations SET run_count=max_runs WHERE id=?', (row['id'],))
+            before = self.preparations.get(row['id'])
+            self.refusal('resume_expired', self.preparations.restore, row['id'])
+            self.assertEqual(self.preparations.get(row['id']), before)
+
+    def test_restore_future_one_shot_recurrence_and_active_limit(self):
+        from unittest.mock import patch
+        for recurrence in (None, 'daily', 'RRULE:FREQ=DAILY;COUNT=3'):
+            row = self.make(recurrence)
+            self.preparations.cancel(row['id'])
+            self.assertEqual(self.preparations.restore(row['id'])['due_at'], row['due_at'])
+            self.preparations.cancel(row['id'])
+            if recurrence:
+                self.now += 120
+                self.assertGreater(self.preparations.restore(row['id'])['due_at'], self.now)
+        row = self.make()
+        self.preparations.cancel(row['id'])
+        with patch.object(prep, 'MAX_ACTIVE', 1):
+            self.refusal('too_many', self.preparations.restore, row['id'])
 
     def test_edit_validates_schedule_keeps_proposed_and_preserves_goal(self):
         row = self.make(state=prep.STATE_PROPOSED)
