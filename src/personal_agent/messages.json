@@ -1,4 +1,22 @@
 {
+ "button.restore_reservation": {
+  "ko": "취소 되돌리기",
+  "en": "Undo cancel",
+  "ja": "取り消しを元に戻す",
+  "zh": "撤销取消"
+ },
+ "settings_orchestrator.label_preparations_restore": {
+  "ko": "예약 복원",
+  "en": "Restore reservation",
+  "ja": "予約を復元",
+  "zh": "恢复预约"
+ },
+ "settings_orchestrator.preparation_receipt_restore": {
+  "ko": "{reservation} 예약을 복원했어요. 다음 실행 시각부터 이어져요.",
+  "en": "Restored {reservation}. It continues at its next future slot.",
+  "ja": "{reservation}の予約を復元しました。次の実行時刻から再開します。",
+  "zh": "已恢复{reservation}。将从下一个未来时段继续运行。"
+ },
  "quickstart_store.drive_connection_retired": {
   "ko": "이 요청이 기다리던 이전 Drive 연결이 제거되어 요청을 완료하지 못했어요. 설정 > 외부 연결에서 Google Drive를 연결한 뒤 다시 요청해 주세요.",
   "en": "This request could not finish because the old Drive connection it was waiting for has been removed. Connect Google Drive in Settings > External connections, then ask again.",

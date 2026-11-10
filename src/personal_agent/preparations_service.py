@@ -631,6 +631,14 @@ class PreparationsService:
         service=self.service
         return {'inline_keyboard':[[{'text':msg('button.cancel_reservation'),'callback_data':f"p7p:{notification_id}:cancel"}]]}
 
+    def preparation_restore_markup(self, notification_id):
+        """Undo only the cancellations recorded on this message."""
+        return {'inline_keyboard':[[{'text':msg('button.restore_reservation'),'callback_data':f"p7p:{notification_id}:restore"}]]}
+
+    def restore_preparation(self, preparation_id, *, cancelled_at=None):
+        """Restore future runs without reopening a cancelled run's input requests."""
+        return self.service.preparations.restore(preparation_id,cancelled_at=cancelled_at)
+
     def scheduled_notice_text(self, ids):
         """#1455: what a directly scheduled message says: each reservation, and that it is cancelled here."""
         service=self.service
@@ -753,6 +761,7 @@ class PreparationsService:
         elif operation=='delete':service.preparations.delete(preparation_id)
         elif operation=='pause':service.preparations.pause(preparation_id)
         elif operation=='resume':service.preparations.resume(preparation_id)
+        elif operation=='restore':service.restore_preparation(preparation_id)
         elif operation=='edit':service.preparations.edit(preparation_id,**{key:value for key,value in body.items() if key not in ('operation','id')})
         elif operation=='run_now':
             row=service.preparations.get(preparation_id)
