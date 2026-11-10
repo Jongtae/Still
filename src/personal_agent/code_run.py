@@ -155,6 +155,11 @@ LIBRARY_REPORT_BYTES = 64 * 1024
 #: Work id -> the arguments of the run that asked the owner to approve a request (``rerun: approved``).
 APPROVAL_RUNS_KEY = 'code_run_approval_runs'
 LIBRARY_HINT = prompt('code_run_library_hint')
+#: #770: what a run that used a saved library says when one of its functions raised.
+SAVED_FUNCTION_FAILED = ('These saved functions raised an error in this run: {functions}. They are code written for '
+                         'earlier requests, not fixed tools: read the error, fix its cause (an argument they lack, a '
+                         'changed response, a bug) and finish the request now, by writing that step in your code or by '
+                         'running again with library set to the whole corrected module. Fixing them is not the owner\'s task.')
 #: #1486: the parameter-flow check calls each function with its two examples; what it would send is
 #: recorded, reads go through as in any run, and nothing else is sent or asked of the owner.
 CHECK_TEXT = 'parameter check: Still recorded this request and did not send it'
@@ -679,7 +684,7 @@ class CodeRunner:
         """
         if not libraries:
             return {}
-        from .procedures import ProcedureLibrary, clean_functions, dropped
+        from .procedures import IDENTIFIER, MAX_FUNCTIONS, ProcedureLibrary, clean_functions, dropped
         store = ProcedureLibrary(self.store)
         kept = {}
         for name, item in libraries.items():
@@ -688,6 +693,12 @@ class CodeRunner:
             if not item['proposed']:
                 store.record_calls(item['row']['id'], calls)
                 kept[name] = {'module': item['module'], 'state': 'used', 'version': item['row']['version']}
+                # #770 (live 2026-11-10): a saved function failed and the worker told the owner it needed
+                # fixing.  It is the AI's own earlier code, so the run says so where the failure is seen.
+                failed = [function for function, counts in calls.items() if counts[1] and IDENTIFIER.match(function)]
+                if failed:
+                    kept[name]['failed'] = failed[:MAX_FUNCTIONS]
+                    kept[name]['note'] = SAVED_FUNCTION_FAILED.format(functions=', '.join(failed[:MAX_FUNCTIONS]))
                 continue
             problem = self._library_problem(item, report, outcome, workdir, session)
             if problem:
@@ -1070,7 +1081,7 @@ def evidence(result):
         # #1486: what happened to each set's library, never its source.  #1489: and why a proposal was not
         # kept (Still's own text naming functions and arguments), so the Work's records can show it.
         kept['library'] = {name: {key: (str(item[key])[:300] if key == 'reason' else item[key])
-                                  for key in ('state', 'version', 'functions', 'dropped', 'reason') if item.get(key) is not None}
+                                  for key in ('state', 'version', 'functions', 'dropped', 'failed', 'reason') if item.get(key) is not None}
                            for name, item in result['library'].items() if isinstance(item, dict)}
     return kept | {'requests': [{key: row.get(key) for key in ('phase', 'method', 'host', 'path', 'allowed')}
                                               for row in (result.get('requests') or [])[:50]]}
