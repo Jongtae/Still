@@ -28,6 +28,7 @@ secret set can name it (set names never hold ``:``), so no ``code_run`` imports 
 import hashlib
 import json
 import re
+import sqlite3
 import time
 import uuid
 
@@ -88,6 +89,26 @@ def clean_functions(rows):
     return out
 
 
+def continued_work(db, work_id):
+    """#764: the Work whose request ``work_id`` continues as a run of a preparation it set up, or None.
+
+    A watch or follow-up the owner's AI set up runs under its own Work id, but it serves the same
+    request, so the library that request proposed is its library too.  A look-back suggestion
+    (``ORIGIN_DREAM``) was not made from its anchor's request and continues nothing.
+    """
+    from .preparations import ORIGIN_DREAM, preparation_of
+    try:
+        job = db.execute('SELECT request_key FROM jobs WHERE id=?', (work_id,)).fetchone()
+        preparation_id = preparation_of(job['request_key']) if job else None
+        row = (db.execute('SELECT created_from, origin FROM preparations WHERE id=?', (preparation_id,)).fetchone()
+               if preparation_id else None)
+    except sqlite3.OperationalError:  # a store without Works or preparations
+        return None
+    if row is None or not row['created_from'] or row['created_from'] == work_id or row['origin'] == ORIGIN_DREAM:
+        return None
+    return row['created_from']
+
+
 def dropped(before, after):
     """#7: the function names of library ``before`` that library ``after`` no longer has, in ``before``'s order.
 
@@ -119,11 +140,22 @@ class ProcedureLibrary:
         return self._row(db.execute("SELECT * FROM procedure_versions WHERE slot=? AND state=?", (slot, CURRENT)).fetchone())
 
     def for_run(self, slot, work_id):
-        """What a run of ``work_id`` imports for ``slot``: this Work's own candidate, else the current version."""
+        """What a run of ``work_id`` imports for ``slot``: this Work's own candidate, else the candidate of the
+        Work whose preparation it runs (#764), else the current version."""
         with self.store.db() as db:
             row = db.execute("SELECT * FROM procedure_versions WHERE slot=? AND state=? AND work_id=? ORDER BY created DESC",
                              (slot, CANDIDATE, work_id)).fetchone()
-            return self._row(row) or self.current(slot, db)
+            current = self.current(slot, db)
+            return self._row(row) or self._inherited(db, slot, work_id, current) or current
+
+    def _inherited(self, db, slot, work_id, current):
+        """#764: the candidate of the Work ``work_id`` continues, unless a newer version was saved since."""
+        origin = continued_work(db, work_id)
+        row = origin and db.execute("SELECT * FROM procedure_versions WHERE slot=? AND state=? AND work_id=?",
+                                    (slot, CANDIDATE, origin)).fetchone()
+        if not row or current is not None and (current['saved'] or 0) >= row['created']:
+            return None
+        return self._row(row)
 
     def propose(self, work_id, slot, source, functions):
         """Keep ``source`` as this Work's candidate for ``slot`` (replacing an earlier one); returns its id."""
@@ -162,8 +194,10 @@ class ProcedureLibrary:
         """Commit ``work_id``'s candidates when the Work reached its outcome; returns the newly saved versions.
 
         A Work that did not reach its outcome commits nothing; its candidates stay usable by a
-        continuation of the same Work (an approval, a sign-in) and are dropped after
-        ``CANDIDATE_SECONDS``.  A candidate identical to the current version only adds its counts.
+        continuation of the same Work (an approval, a sign-in, a run of a preparation it set up)
+        and are dropped after ``CANDIDATE_SECONDS``.  A preparation run that reached its outcome
+        also commits the candidates of the Work that set it up, for the sets it has none of its
+        own (#764).  A candidate identical to the current version only adds its counts.
         """
         if not reached:
             return []
@@ -171,9 +205,18 @@ class ProcedureLibrary:
         saved = []
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
-            for row in db.execute("SELECT * FROM procedure_versions WHERE state=? AND work_id=? ORDER BY created",
-                                  (CANDIDATE, work_id)).fetchall():
-                candidate = self._row(row)
+            candidates = [self._row(row) for row in db.execute(
+                "SELECT * FROM procedure_versions WHERE state=? AND work_id=? ORDER BY created", (CANDIDATE, work_id))]
+            origin = continued_work(db, work_id)
+            if origin:
+                # ``propose`` keeps one candidate per Work and set; this run's own one wins.
+                own = {row['slot'] for row in candidates}
+                for slot in [row['slot'] for row in db.execute("SELECT DISTINCT slot FROM procedure_versions "
+                                                               "WHERE state=? AND work_id=?", (CANDIDATE, origin))]:
+                    inherited = None if slot in own else self._inherited(db, slot, work_id, self.current(slot, db))
+                    if inherited:
+                        candidates.append(inherited)
+            for candidate in candidates:
                 current = self.current(candidate['slot'], db)
                 if current is not None and current['digest'] == candidate['digest']:
                     stats = current['stats']

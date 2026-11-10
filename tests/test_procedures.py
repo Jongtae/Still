@@ -13,6 +13,7 @@ from unittest import mock
 
 from personal_agent import code_run
 from personal_agent.code_run import CodeRunner, flow_problem
+from personal_agent import preparations as prep
 from personal_agent.owner_forget import ForgetError, OwnerForget
 from personal_agent.procedures import ProcedureLibrary, module_name
 from personal_agent.quickstart_store import QuickStore
@@ -128,6 +129,77 @@ class Store(unittest.TestCase):
     def test_module_name_is_an_identifier(self):
         self.assertEqual(module_name('my-api-2'), 'lib_my_api_2')
         self.assertTrue(module_name('my-api-2').isidentifier())
+
+
+class PreparationRun(unittest.TestCase):
+    """#764: a watch the owner's AI set up runs the library its request proposed, through the same outcome gate."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.store = QuickStore(self.temp.name)
+        self.now = 1_000.0
+        self.library = ProcedureLibrary(self.store, clock=lambda: self.now)
+        self.origin = self.store.enqueue('keep watching and act when the check passes', 'owner-request-1')
+
+    def tick(self):
+        self.now += 10
+        return self.now
+
+    def run_of(self, created_from, origin=None):
+        """A Work started for one slot of a preparation that ``created_from`` set up."""
+        row = prep.Preparations(self.store, clock=self.tick).create(
+            kind=prep.KIND_PREPARE, goal=f'watch {self.tick()}', due_at=self.now + 60, timezone='Asia/Seoul',
+            recurrence=None, channel='web', created_from=created_from, state=prep.STATE_SCHEDULED, origin=origin)
+        return self.store.enqueue('watch run', prep.request_key(row['id'], row['due_at']))
+
+    def saved(self, work, source):
+        self.tick()
+        self.library.propose(work, 'set-a', source, FUNCTIONS)
+        self.tick()
+        self.library.settle(work, True)
+
+    def test_a_run_of_the_watch_imports_the_library_its_request_proposed(self):
+        self.saved('earlier', SOURCE_V1)
+        self.tick()
+        self.library.propose(self.origin, 'set-a', SOURCE_V2, FUNCTIONS)
+        self.assertEqual(self.library.settle(self.origin, False), [])
+        run = self.run_of(self.origin)
+        self.assertEqual(self.library.for_run('set-a', run)['source'], SOURCE_V2)
+        # An unrelated Work, and a look back anchored on that request, still import the saved version.
+        self.assertEqual(self.library.for_run('set-a', 'other')['source'], SOURCE_V1)
+        dream = self.run_of(self.origin, origin=prep.ORIGIN_DREAM)
+        self.assertEqual(self.library.for_run('set-a', dream)['source'], SOURCE_V1)
+
+    def test_the_proposal_is_saved_when_a_run_of_the_watch_reaches_its_outcome(self):
+        self.saved('earlier', SOURCE_V1)
+        self.tick()
+        self.library.propose(self.origin, 'set-a', SOURCE_V2, FUNCTIONS)
+        self.library.settle(self.origin, False)
+        run = self.run_of(self.origin)
+        self.assertEqual(self.library.settle(run, False), [])
+        self.assertEqual(self.library.current('set-a')['source'], SOURCE_V1)
+        self.tick()
+        saved = self.library.settle(run, True)
+        self.assertEqual([(row['slot'], row['version']) for row in saved], [('set-a', 2)])
+        self.assertEqual(self.library.current('set-a')['source'], SOURCE_V2)
+        self.assertEqual(self.library.for_run('set-a', 'other')['source'], SOURCE_V2)
+
+    def test_the_runs_own_proposal_wins_and_a_newer_saved_version_is_not_replaced(self):
+        self.tick()
+        self.library.propose(self.origin, 'set-a', SOURCE_V1, FUNCTIONS)
+        first = self.run_of(self.origin)
+        self.tick()
+        self.library.propose(first, 'set-a', SOURCE_B, FUNCTIONS_B)
+        self.assertEqual(self.library.for_run('set-a', first)['source'], SOURCE_B)
+        self.tick()
+        self.assertEqual([row['functions'] for row in self.library.settle(first, True)], [['history']])
+        # The request's older proposal is not imported or saved over the version saved after it.
+        second = self.run_of(self.origin)
+        self.assertEqual(self.library.for_run('set-a', second)['source'], SOURCE_B)
+        self.tick()
+        self.assertEqual(self.library.settle(second, True), [])
+        self.assertEqual(self.library.current('set-a')['source'], SOURCE_B)
 
 
 class OwnerUndo(unittest.TestCase):
