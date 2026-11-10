@@ -22,6 +22,31 @@ STATE_PREFIX = 'api_credential_state:'
 MAX_STATE_BYTES = 16 * 1024
 #: State strings at least this long (tokens) are redacted; shorter ones (dates, times) are not.
 STATE_REDACT_CHARS = 24
+#: #778: the run state's top-level key for values the code declares not secret (paths, ids, a record of
+#: what it did).  Still cannot tell a token from other long text, so everything else stays redacted.
+STATE_PLAIN_KEY = 'plain'
+
+
+def _strings(item, shortest):
+    values, stack = [], [item]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, dict):
+            stack.extend(item.values())
+        elif isinstance(item, list):
+            stack.extend(item)
+        elif isinstance(item, str) and len(item) >= shortest:
+            values.append(item)
+    return values
+
+
+def plain_state_values(text):
+    """The strings under a run state's ``plain`` key, which are never redacted or retired (#778)."""
+    try:
+        state = json.loads(text or '{}')
+    except ValueError:
+        return []
+    return _strings(state.get(STATE_PLAIN_KEY), 1) if isinstance(state, dict) else []
 REFERENCE = re.compile(r'api_credential:[a-f0-9]{48}\Z')
 KEY_SERVICE = 'personal-agentos.api-slots'
 
@@ -193,19 +218,16 @@ class ApiCredentials:
         return state if isinstance(state, str) else ''
 
     def _state_strings(self, token, cipher=None):
-        """The redacted string values of one saved run-state ciphertext (``state_values``' rule)."""
+        """The redacted string values of one saved run-state ciphertext (``state_values``' rule).
+
+        #778: every long string except those under ``plain``; a plain value that also occurs
+        elsewhere in the state is still redacted.
+        """
         cipher = cipher if cipher is not None else self._cipher()
         state = json.loads(json.loads(cipher.decrypt(token.encode())).get('state') or '{}')
-        values, stack = [], [state]
-        while stack:
-            item = stack.pop()
-            if isinstance(item, dict):
-                stack.extend(item.values())
-            elif isinstance(item, list):
-                stack.extend(item)
-            elif isinstance(item, str) and len(item) >= STATE_REDACT_CHARS:
-                values.append(item)
-        return values
+        if isinstance(state, dict):
+            state = {key: value for key, value in state.items() if key != STATE_PLAIN_KEY}
+        return _strings(state, STATE_REDACT_CHARS)
 
     def discard_state(self, name):
         """Remove the set's run state after retiring its values, in one locked step (#258).
@@ -229,8 +251,11 @@ class ApiCredentials:
             payload = {'version': 1, 'binding': fingerprint(name, slot), 'state': text}
             encoded = json.dumps(payload, separators=(',', ':')).encode()
             # The old state's values are retired and the new state written under one lock (Codex review).
+            # #778: a value the new state declares plain is not retired, and its earlier mark is dropped.
+            plain = set(plain_state_values(text))
             self.store.swap_secret(STATE_PREFIX + name, self._cipher(create=True).encrypt(encoded).decode(),
-                                   self._state_strings)
+                                   lambda old: [value for value in self._state_strings(old) if value not in plain],
+                                   release=sorted(plain))
         except Exception:
             return False
         return True
