@@ -26,6 +26,9 @@ from .quickstart_service import (LOG, PREPARATION_CONVERSATION_CHARS,
 
 #: #780: the daily plan's brief: a method for reading the day, never a topic.
 DAY_PLAN_GOAL = prompt('day_plan')
+#: #780: the store config row for the daily plan: ``{'row': id}`` once set up, ``{'opted_out': True}``
+#: after the owner cancelled or deleted it.
+DAY_PLAN_KEY = 'day_plan'
 #: #780: the recent conversation a plan run is shown, as an owner-present Work is.
 PLAN_HISTORY_MESSAGES = 16
 
@@ -213,7 +216,7 @@ class PreparationsService:
         def schedule(args):
             # #780: the daily plan's own run sets up reading-and-reporting work; what it sets up never
             # pays (``SELF_SET``) and cannot schedule in turn, so one misled plan run stays bounded.
-            planning=self.day_plan_run(job)
+            planning=self.day_plan_run(job) and self.day_plan_on()
             if service.unattended_work(job) and not planning:
                 # #619: a scheduled run leaves no proposal waiting; it says what it would schedule.
                 raise not_run(ToolError(UNATTENDED_APPROVAL_TEXT,'unattended_run'))  # #618: Still refused it, ran: false
@@ -315,19 +318,39 @@ class PreparationsService:
                            (prep.REQUEST_KEY_PREFIX+'%',)).fetchone()
         return dict(row) if row else None
 
-    def ensure_day_plan(self, now):
-        """Set up the daily plan once (#780); the created row, or None.
+    def look_back_on(self):
+        """The owner's look-back switch (and the pause above it), which the daily plan follows (#780)."""
+        settings=self.service.owner_model.settings()
+        return bool(settings.get('enabled') and settings.get('dream'))
 
-        Only while the owner's look-back switch is on, and only when no plan row exists in any
-        state: a plan the owner cancelled or deleted from the list is not set up again while its
-        row is kept.  It is one ordinary daily ``prepare`` whose result is kept; the owner changes
-        its time, pauses or cancels it like any other.  Its brief is a method (``prompts/day_plan``),
-        never a topic.
+    def day_plan_on(self):
+        """Whether the daily plan may run and schedule now (#780): the switch is on and the owner has not opted out."""
+        return self.look_back_on() and not (self.service.store.config(DAY_PLAN_KEY,{}) or {}).get('opted_out')
+
+    def ensure_day_plan(self, now):
+        """Keep the daily plan as the owner left it (#780); the row it created, or None.
+
+        ``DAY_PLAN_KEY`` remembers the row Still set up.  When that row is cancelled or no longer
+        exists (the owner deleted it from the list), that is the owner's no: it is recorded as an
+        opt-out and nothing is set up again until the owner turns the look back on again
+        (``day_plan_opt_in``).  While the look-back switch is off, the plan's due slots pass unrun
+        and no plan is created.  The plan is one ordinary daily ``prepare`` whose result is kept;
+        the owner changes its time or pauses it like any other.  Its brief is a method
+        (``prompts/day_plan``), never a topic.
         """
         service=self.service
-        settings=service.owner_model.settings()
-        if not settings.get('enabled') or not settings.get('dream'):return None
-        if service.preparations.day_plan() is not None:return None
+        state=dict(service.store.config(DAY_PLAN_KEY,{}) or {})
+        if state.get('opted_out'):return None
+        row=service.preparations.get(state['row']) if state.get('row') else None
+        if state.get('row') and (row is None or row['state']==prep.STATE_CANCELLED):
+            service.store.put(DAY_PLAN_KEY,{'opted_out':True})
+            LOG.info('daily plan opted out id=%s',state['row'])
+            return None
+        on=self.look_back_on()
+        if row and row['state'] in prep.ACTIVE_STATES:
+            if not on:service.preparations.defer(row['id'],now)
+            return None
+        if not on:return None
         from .current_context import resolve_local_timezone
         timezone=self.home_zone() or resolve_local_timezone(service.store)
         today=datetime.fromtimestamp(now,prep.zone(timezone)).replace(hour=prep.DAY_PLAN_HOUR,minute=prep.DAY_PLAN_MINUTE,
@@ -338,8 +361,14 @@ class PreparationsService:
                                         state=prep.STATE_SCHEDULED,accepted_by=prep.ACCEPTED_DAY_PLAN,
                                         title=msg('preparations.day_plan_title'),offer=msg('preparations.day_plan_offer'),
                                         origin=prep.ORIGIN_DAY_PLAN)
+        service.store.put(DAY_PLAN_KEY,{'row':row['id']})
         LOG.info('daily plan set up id=%s due=%s',row['id'],prep.iso(row['due_at'],timezone))
         return row
+
+    def day_plan_opt_in(self):
+        """The owner turned the look back on (#780): an earlier opt-out of the daily plan ends."""
+        if (self.service.store.config(DAY_PLAN_KEY,{}) or {}).get('opted_out'):
+            self.service.store.put(DAY_PLAN_KEY,{})
 
     def day_plan_record(self, job):
         """What earlier plan runs set up and how it went, as one block for a plan run (#780); '' when none.

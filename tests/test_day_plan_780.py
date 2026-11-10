@@ -67,6 +67,49 @@ class SetUpTests(_Plan):
         self.assertEqual((kept['id'], kept['state']), (row['id'], 'cancelled'))
         self.assertEqual(self.store.jobs(), [], 'a cancelled plan never runs')
 
+    def test_a_deleted_plan_is_not_set_up_again(self):
+        """Removing the row from the list, cancelled first or not, is the owner's no and is kept."""
+        row = self.plan()
+        self.service.preparation_request({'operation': 'cancel', 'id': row['id']})
+        self.service.preparation_request({'operation': 'delete', 'id': row['id']})
+        self.now += 3 * 86400
+        self.tick()
+        self.tick(self.make_service())
+        self.assertEqual(self.rows(), [])
+        self.assertEqual(self.store.jobs(), [])
+
+    def test_a_plan_deleted_without_a_tick_in_between_is_not_set_up_again(self):
+        row = self.plan()
+        with self.store.db() as db:
+            db.execute('DELETE FROM preparations WHERE id=?', (row['id'],))
+        self.tick()
+        self.assertEqual(self.rows(), [])
+
+    def test_turning_the_look_back_on_again_ends_the_opt_out(self):
+        row = self.plan()
+        self.service.preparation_request({'operation': 'cancel', 'id': row['id']})
+        self.tick()
+        self.service.owner_model_request({'operation': 'set', 'daily_calls': 5})
+        self.tick()
+        self.assertEqual([item['state'] for item in self.rows()], ['cancelled'], 'another control does not opt in')
+        self.service.owner_model_request({'operation': 'set', 'dream': True})
+        self.tick()
+        self.assertEqual(sorted(item['state'] for item in self.rows()), ['cancelled', 'scheduled'])
+
+    def test_while_the_look_back_is_off_an_existing_plan_does_not_run(self):
+        row = self.plan()
+        self.service.owner_model.set_controls({'dream': False})
+        self.now = row['due_at'] + 60
+        self.tick()
+        self.assertEqual(self.store.jobs(), [], 'the due slot passes unrun')
+        moved = self.service.preparations.get(row['id'])
+        self.assertEqual(moved['state'], 'scheduled')
+        self.assertGreater(moved['due_at'], self.now)
+        self.service.owner_model.set_controls({'dream': True})
+        self.now = moved['due_at'] + 60
+        self.assertTrue(self.tick())
+        self.assertEqual(len(self.runs(row['id'])), 1, 'it runs again once the look back is on; the passed slot is not replayed')
+
     def test_no_plan_while_the_look_back_is_off(self):
         self.service.owner_model.set_controls({'dream': False})
         self.tick()
@@ -112,6 +155,15 @@ class SchedulingTests(_Plan):
         [run] = self.runs(child['id'])
         refused = self.tool_trace(run['id'])
         self.assertTrue(refused and refused[-1].get('code') == 'unattended_run', refused)
+
+    def test_a_plan_run_cannot_schedule_once_the_look_back_is_turned_off(self):
+        plan = self.start_plan_run()
+        self.service.owner_model.set_controls({'dream': False})
+        self.script = [self.schedule_call(), finish('f', '1')]
+        self.assertTrue(self.service.run_one())
+        self.assertEqual(self.children(), [])
+        [run] = self.runs(plan['id'])
+        self.assertEqual(self.tool_trace(run['id'])[-1].get('code'), 'unattended_run')
 
     def test_an_ordinary_scheduled_run_still_cannot_schedule(self):
         self.plan()

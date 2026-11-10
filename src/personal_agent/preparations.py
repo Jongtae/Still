@@ -1142,6 +1142,22 @@ class Preparations:
                              (ORIGIN_DAY_PLAN,)).fetchone()
         return dict(row) if row else None
 
+    def defer(self, preparation_id, now):
+        """Let a scheduled recurring row's due slot pass unrun (#780); whether it moved.
+
+        The slot is not replayed later: ``due_at`` moves to the first slot after ``now``, as a slot
+        missed during downtime does.
+        """
+        with self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row = db.execute('SELECT * FROM preparations WHERE id=? AND state=? AND due_at<=?',
+                             (preparation_id, STATE_SCHEDULED, now)).fetchone()
+            following = row and next_due(row['due_at'], row['timezone'], row['recurrence'], now, row['rule_start'], row['run_count'])
+            if not following:
+                return False
+            return bool(db.execute('UPDATE preparations SET due_at=?,updated_at=? WHERE id=? AND state=?',
+                                   (following, now, preparation_id, STATE_SCHEDULED)).rowcount)
+
     def set_by_day_plan(self, since, limit=DAY_PLAN_RECORD_ITEMS):
         """What daily-plan runs set up since ``since``, newest first, each with ``offered_works`` (#780).
 
