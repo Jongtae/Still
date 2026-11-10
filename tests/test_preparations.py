@@ -14,6 +14,7 @@ import time
 import logging
 import tempfile
 import unittest
+from unittest.mock import patch
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -21,7 +22,7 @@ from zoneinfo import ZoneInfo
 from personal_agent import preparations as prep
 from personal_agent.messages import msg
 from personal_agent.agent_runtime import (PROFILE_HEADING, Capabilities, ToolError, action_definitions, recorded_arguments,
-                                          turn_context, render_turn_prompt)
+                                          turn_context, render_turn_prompt, _error_observation, record_effect)
 from personal_agent.conversation_handoff import ConversationJudgments, PREPARATION_REQUEST_PROPOSITION, TelegramNotSent
 from personal_agent.decision import OUTCOME_DECIDED, BinaryDecision, FixtureDecisionEngine, fixture_confidence
 from personal_agent.memory_service import MemoryService
@@ -2379,6 +2380,7 @@ class CrossWorkProposalTests(_Case):
             with self.subTest(name), self.assertRaises(ToolError) as caught:
                 self.watch(work, '바뀐 대상 감시 ' + name, owner_typed=typed, replaces=target)
             self.assertEqual(caught.exception.code, code)
+            self.assertIs(caught.exception.ran, False)
         self.service.cancel_preparation(old['preparation_id'])
         with self.assertRaises(ToolError) as ended:
             self.watch('work-4', '바뀐 대상 감시', replaces=old['preparation_id'])
@@ -2395,6 +2397,58 @@ class CrossWorkProposalTests(_Case):
             self.assertIn(f'kind {kind}의 goal은 {limit}자 이내', str(caught.exception))
             self.assertIn('줄여서 한 번 다시 호출', str(caught.exception))
         self.assertEqual(self.rows(), [])
+
+
+class ValidationRefusalTests(_Case):
+    """#786: a refused validation leaves no effect; a later refusal proves no such thing."""
+
+    def test_live_validation_refusals_allow_redelegation(self):
+        work = self.store.enqueue('준비해 줘', 'validation-786')
+        schedule = self.service.preparation_scheduler(self.store.job(work), '')
+        valid = {'kind': 'prepare', 'goal': '조건 확인', 'due': self.due_iso(600)}
+        with patch.object(self.service.preparations, 'create') as create:
+            for index, (args, code) in enumerate((({**valid, 'goal': ''}, 'invalid_goal'),
+                                                   ({**valid, 'every_minutes': 1, 'until': self.due_iso(7200)}, 'invalid_window'))):
+                with self.subTest(code=code), self.assertRaises(ToolError) as caught:
+                    schedule(args)
+                self.assertEqual(caught.exception.code, code)
+                observation = _error_observation(caught.exception, True, 'schedule_preparation')
+                self.assertIs(observation['ran'], False)
+                self.assertEqual(record_effect('schedule_preparation', observation, 'failed'), 'none')
+                base = {'scope': 'subscription-mcp-bridge', 'host_action': 'schedule_preparation', 'call_id': str(index)}
+                with self.store.db() as db:
+                    for status, detail in (('running', base), ('failed', {**base, **observation})):
+                        db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                                   (work, 'schedule_preparation', status, json.dumps(detail), self.now))
+            create.assert_not_called()
+        self.assertEqual(self.rows(), [])
+        self.assertNotIn('effect', self.service.continuation_reasons(work, 'redelegate'))
+        self.assertEqual(self.model_calls, [])
+        self.assertEqual(self.telegram, [])
+
+    def test_capacity_refusal_before_insert_is_not_run(self):
+        with patch.object(prep, 'MAX_ACTIVE', 0), self.assertRaises(ToolError) as caught:
+            self.service.preparation_scheduler({'id': 'work-1', 'message': '준비'}, '')(
+                {'kind': 'prepare', 'goal': '조건 확인', 'due': self.due_iso(600)})
+        self.assertEqual(caught.exception.code, 'too_many')
+        self.assertIs(caught.exception.ran, False)
+        self.assertEqual(self.rows(), [])
+
+    def test_refusal_after_create_is_not_marked(self):
+        create = self.service.preparations.create
+
+        def written_then_refused(**kwargs):
+            create(**kwargs)
+            raise prep.PreparationRefusal('invalid_goal')
+
+        with patch.object(self.service.preparations, 'create', side_effect=written_then_refused):
+            with self.assertRaises(ToolError) as caught:
+                self.service.preparation_scheduler({'id': 'work-1', 'message': '준비'}, '')(
+                    {'kind': 'prepare', 'goal': '조건 확인', 'due': self.due_iso(600)})
+        self.assertEqual(len(self.rows()), 1)
+        observation = _error_observation(caught.exception, True, 'schedule_preparation')
+        self.assertNotIn('ran', observation)
+        self.assertNotEqual(record_effect('schedule_preparation', observation, 'failed'), 'none')
 
 
 class ScheduleTextTests(unittest.TestCase):

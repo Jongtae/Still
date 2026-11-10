@@ -897,17 +897,21 @@ class Preparations:
         deadline ``window_end`` is one run's time after ``until_at`` (#701).  ``origin``
         ``ORIGIN_DREAM`` marks a look-back suggestion (#583); #717: it starts scheduled (``ACCEPTED_DREAM``).
         """
+        from .agent_runtime import not_run
         if kind not in KINDS:
-            raise PreparationRefusal('invalid_kind')
+            raise not_run(PreparationRefusal('invalid_kind'))
         if delivery_mode not in (None, DELIVERY_ALWAYS, DELIVERY_WHEN_NEEDED):
             raise ValueError('unknown delivery mode')
         if delivery_mode == DELIVERY_WHEN_NEEDED and kind != KIND_PREPARE:
-            raise PreparationRefusal('invalid_delivery')
-        recurrence = normalize_recurrence(recurrence)
+            raise not_run(PreparationRefusal('invalid_delivery'))
+        try:
+            recurrence = normalize_recurrence(recurrence)
+        except PreparationRefusal as exc:
+            raise not_run(exc)
         every_seconds = until_at = window_end = max_runs = None
         if window is not None:
             if recurrence:
-                raise PreparationRefusal('invalid_window', msg('preparations.window_recurrence', value=repr(recurrence)))
+                raise not_run(PreparationRefusal('invalid_window', msg('preparations.window_recurrence', value=repr(recurrence))))
             every_seconds, until_at, max_runs = window
             window_end = until_at + run_seconds()
             recurrence = RECURRENCE_WINDOW
@@ -933,7 +937,7 @@ class Preparations:
                 return {**dict(proposed), 'already_proposed': True}
             active = db.execute('SELECT count(*) FROM preparations WHERE state IN (?,?,?,?)', ACTIVE_STATES).fetchone()[0]
             if active >= MAX_ACTIVE:
-                raise PreparationRefusal('too_many')
+                raise not_run(PreparationRefusal('too_many'))
             row = {'id': uuid.uuid4().hex[:16], 'owner': owner, 'kind': kind, 'goal_text': goal, 'due_at': due_at,
                    'timezone': timezone, 'recurrence': recurrence, 'channel': channel, 'state': state,
                    'last_run_job_id': None, 'last_outcome': None, 'prepared_result_ref': None, 'prepared_at': None, 'prepared_text': None,

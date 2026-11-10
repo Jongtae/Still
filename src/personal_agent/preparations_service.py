@@ -13,7 +13,7 @@ from datetime import datetime
 from . import preparations as prep
 from . import owner_model as om
 from . import work_status as ws
-from .agent_runtime import ToolError, not_run, work_written_values
+from .agent_runtime import ToolError, not_run, ran_field, work_written_values
 from .conversation_handoff import JUDGMENT_NO, JUDGMENT_YES
 from .conversation_projection import earlier_turn_line
 from .messages import LANGUAGES, msg
@@ -228,7 +228,7 @@ class PreparationsService:
                 window_args={key:service._redact_known_secrets(str(args.get(key)))[:160]
                              for key in ('every_minutes','until','max_runs','recurrence','due') if args.get(key) not in (None,'')}
                 detail=service._redact_known_secrets(str(exc))[:600]+' '+json.dumps(window_args,ensure_ascii=False)
-                raise ToolError(detail,exc.code) from None
+                raise not_run(ToolError(detail,exc.code)) from None
             kind,goal,title,offer=fields['kind'],fields['goal'],fields['title'],fields['offer']
             due_at,timezone,recurrence,window=fields['due_at'],fields['timezone'],fields['recurrence'],fields['window']
             delivery_mode=fields['delivery_mode']
@@ -257,14 +257,14 @@ class PreparationsService:
             if replaces not in (None,''):
                 current=service.preparations.get(replaces) if isinstance(replaces,str) else None
                 if not current or current['state'] not in prep.ACTIVE_STATES:
-                    raise ToolError(str(prep.PreparationRefusal('replace_not_found')),'replace_not_found')
+                    raise not_run(ToolError(str(prep.PreparationRefusal('replace_not_found')),'replace_not_found'))
                 # #780: a plan run adds work; it never stops what the owner or an earlier run set up.
                 if not accepted or planning:
-                    raise ToolError(str(prep.PreparationRefusal('replace_not_allowed')),'replace_not_allowed')
+                    raise not_run(ToolError(str(prep.PreparationRefusal('replace_not_allowed')),'replace_not_allowed'))
             try:
                 # #582: a goal the owner declined is not set up again unless they ask for it again.
                 if not asked and service.declined_before(job['id'],goal,now):
-                    raise prep.PreparationRefusal('declined_before')
+                    raise not_run(prep.PreparationRefusal('declined_before'))
                 row=service.preparations.create(kind=kind,goal=goal,due_at=due_at,timezone=timezone,recurrence=recurrence,
                                              channel=channel,created_from=job['id'],
                                              state=prep.STATE_SCHEDULED if accepted else prep.STATE_PROPOSED,
@@ -274,7 +274,7 @@ class PreparationsService:
                 already=bool(row.get('already_proposed'))
                 if already and accepted:row=service.preparations.accept(row['id'],accepted_by)
             except prep.PreparationRefusal as exc:
-                raise ToolError(str(exc),exc.code) from None
+                raise ToolError(str(exc),exc.code,**ran_field(exc)) from None
             LOG.info('preparation %s id=%s work=%s kind=%s already_proposed=%s',row['state'],row['id'],job['id'],kind,already)
             scheduled=row['state']==prep.STATE_SCHEDULED
             when=prep.local_text(row['due_at'],row['timezone'])
