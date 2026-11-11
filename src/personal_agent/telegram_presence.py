@@ -102,126 +102,38 @@ NO_STEP_LINE = ''
 _TRAILING_ELLIPSIS = re.compile(r'(?:\s*(?:…|\.{2,}))+\s*$')
 
 
-def draft_frame(line, frame, note=None):
-    """Dots frame ``frame`` with an optional line and attention note.
+def draft_frame(line, frame):
+    """Dots frame ``frame`` with an optional line.
 
     #445/#477: Telegram passes an empty line unless developer mode is on.
 
     A trailing ellipsis on the line is dropped, since the dots replace it.
-    ``note`` (ATTN-WAIT-01 / #839: the one "참, …" attention line) follows on
-    its own line.  Never empty.
+    Never empty.
     """
     dots = DOTS_FRAMES[frame % len(DOTS_FRAMES)]
     model = isinstance(line, Text)
     line = _TRAILING_ELLIPSIS.sub('', str(line or '')).strip()
     if model:
         line = ai_text(line)
-    return with_note(line + ' ' + dots if line else dots, note)
+    return line + ' ' + dots if line else dots
 
 
-def with_note(text, note=None):
-    """``text`` followed, on its own line, by the one attention ``note`` (#839) if any."""
-    note = ' '.join(str(note or '').split())
-    return text + '\n' + ai_text(note) if note else text
-
-
-def rich_draft_blocks(text, note=None):
-    """The ``InputRichMessage.blocks`` of one waiting draft (#858).
-
-    The first block is Telegram's ``thinking`` block holding ``text`` (the
-    dots only, never empty, #445); the #839 attention ``note`` follows as
-    an ordinary paragraph so the animated block keeps only the wait itself.
-    """
-    blocks = [{'type': 'thinking', 'text': text or draft_frame('', 0)}]
-    note = ' '.join(str(note or '').split())
-    if note:
-        blocks.append({'type': 'paragraph', 'text': ai_text(note)})
-    return blocks
+def rich_draft_blocks(text):
+    """The ``InputRichMessage.blocks`` of one waiting draft (#858): Telegram's
+    ``thinking`` block holding ``text`` (the dots only, never empty, #445)."""
+    return [{'type': 'thinking', 'text': text or draft_frame('', 0)}]
 
 
 def draft_body_text(body):
     """The text one draft request body shows, for a plain or a rich draft.
 
-    A rich body's blocks are joined by newlines (thinking text first, then the
-    attention paragraph), the same shape ``draft_frame`` gives the plain
-    draft, so both can be compared as one text.
+    A rich body's blocks are joined by newlines, so a plain and a rich draft
+    can be compared as one text.
     """
     if 'rich_message' in body:
         return '\n'.join(str(block.get('text') or '') for block in body['rich_message'].get('blocks') or ())
     return str(body.get('text') or '')
 
-
-# --- attention while waiting (ATTN-WAIT-01 / #839) ------------------------------
-#
-# Owner direction 2026-09-28: the waiting draft is a natural breakpoint, so
-# it may remind the owner of ONE thing Still already prepared for them.
-# Selection is deterministic from existing state (no model call): a fresh
-# prepared answer the owner has not received, then an accepted reminder due
-# soon, then an ask still waiting for the owner (a proposed preparation, a
-# memory ask).  The draft is ephemeral, so the item's durable surface is
-# unchanged; nothing is decided, accepted or delivered here.
-
-#: Selection order: lower is shown first.
-ATTENTION_PREPARED = 'prepared'
-ATTENTION_REMINDER = 'reminder'
-ATTENTION_ASK = 'ask'
-#: #951 (owner 2026-10-01): an unanswered ask is no longer surfaced on the waiting draft - an
-#: unrelated question typed into the animated wait read as stray fragments, and re-asking is the
-#: friction #918 removes.  Only the kinds ranked here are surfaced.
-ATTENTION_RANK = {ATTENTION_PREPARED: 0, ATTENTION_REMINDER: 1}
-#: A reminder is "soon" within this horizon.
-ATTENTION_REMINDER_HORIZON = 12 * 3600
-#: The same item is not surfaced again within this cooldown.
-ATTENTION_COOLDOWN = 6 * 3600
-#: #888: an open memory ask is surfaced only while its conversation is live -
-#: sent within this window (as #876 bounds the ask itself).  Shorter than the
-#: cooldown, so it is surfaced at most once; afterwards it waits in 내 기록.
-ATTENTION_MEMORY_ASK_FRESH = 3600
-#: The natural lead-in of the one line.
-ATTENTION_PREFIX = '참, '
-ATTENTION_LINE_CHARS = 160
-#: The recorded tool/host action of one surfacing (the information-use audit reads it).
-ATTENTION_ACTION = 'attention_surface'
-ATTENTION_TOOL = 'presence'
-#: How each kind of item is phrased; ``text`` is the item's own (redacted) words.
-ATTENTION_PHRASES = {ATTENTION_PREPARED: msg('attention.prepared'),
-                     ATTENTION_REMINDER: msg('attention.reminder'),
-                     ATTENTION_ASK: msg('attention.ask')}
-
-
-def attention_line(kind, text, lang=None):
-    """The one "참, …" line for an item of ``kind`` whose own words are ``text``, or None."""
-    text = ' '.join(str(text or '').split())
-    if not text or kind not in ATTENTION_PHRASES:
-        return None
-    # Localize fixed templates before inserting the item's own words.
-    line = msg('compose.by_the_way_text', lang or 'ko',
-               text=msg('attention.' + kind, lang or 'ko', text=text))
-    if len(line) > ATTENTION_LINE_CHARS:
-        line = line[:ATTENTION_LINE_CHARS - 1].rstrip() + '…'
-    return line
-
-
-def pick_attention(items, now, surfaced=None, cooldown=ATTENTION_COOLDOWN, lang=None):
-    """The one item to surface, or None: the best-ranked item not surfaced within ``cooldown``.
-
-    ``items`` are ``{'ref', 'kind', 'text', 'at'}`` dicts (``at``: the
-    item's own time, used as the tiebreak, earliest first).  ``surfaced``
-    maps an item ref to the time it was last surfaced.  Pure and
-    deterministic; the caller already excluded the current Work's own items.
-    """
-    surfaced = surfaced if isinstance(surfaced, dict) else {}
-    ranked = sorted((item for item in items or () if isinstance(item, dict) and item.get('ref')
-                     and item.get('kind') in ATTENTION_RANK),
-                    key=lambda item: (ATTENTION_RANK[item['kind']], item.get('at') or 0, str(item['ref'])))
-    for item in ranked:
-        last = surfaced.get(item['ref'])
-        if isinstance(last, (int, float)) and now - last < cooldown:
-            continue
-        line = attention_line(item['kind'], item.get('text'), lang)
-        if line:
-            return {**item, 'line': line}
-    return None
 
 # --- live step lines (SEC-PROGRESS-01 / #718) ----------------------------------
 #
@@ -541,7 +453,7 @@ class PresenceTiming:
     dots_refresh: float = 1.5
     #: #978: an unchanged draft is re-sent only this often, to outlive the
     #: draft preview; a re-sent identical text restarts the client's text
-    #: reveal, so a long attention line (#839) never finished appearing.
+    #: reveal.
     draft_keepalive: float = 20.0
 
     def wait_surface(self, elapsed, *, draft_available=True):
@@ -596,16 +508,12 @@ class WaitState:
     #: #518: the Work's sent messages when its draft was last shown; a new one moves the draft below it.
     said: int = 0
     shown: set = field(default_factory=set)
-    #: #445: the text the draft last showed (dots and optional note), the
+    #: #445: the text the draft last showed, the
     #: next DOTS_FRAMES index, and the (raw, displayed) pair of the last
     #: display-time redaction of a step line.
     draft_text: str = None
     dots_frame: int = 0
     scrubbed: tuple = None
-    #: #839: the one attention item chosen for this Work's draft (None: not
-    #: chosen yet; {}: nothing to surface), and whether it was shown and recorded.
-    attention: dict = None
-    attention_shown: bool = False
 
 
 # --- durable reply controls -----------------------------------------------------

@@ -41,7 +41,7 @@ body=render({status_kind:'active',step_line:'웹 검색 중: 경주 휴게소'})
 assert.deepEqual(body.children.map(n=>n.className),['typing-step','typing-dots']);
 assert.equal(body.textContent,'웹 검색 중: 경주 휴게소');
 body=render({status_kind:'active',step_line:'날씨 보고 있어요',draft_text:'부분 답변',attention_line:'참, 준비해 둔 게 있어요'});
-assert.deepEqual(body.children.map(n=>n.className),['rich','typing-step','typing-attention','typing-dots']);
+assert.deepEqual(body.children.map(n=>n.className),['rich','typing-step','typing-dots']);
 console.log(JSON.stringify({passed:3}));
 """
 
@@ -67,7 +67,7 @@ class TypingBubbleRenderTests(unittest.TestCase):
         content = re.search(r"function typingContent\(body,task\)\{(.*?)\}\n", self.js).group(1)
         self.assertIn("task.step_line", content)
         self.assertIn("task.draft_text", content)       # extension point: partial answer
-        self.assertIn("task.attention_line", content)   # extension point: #839 attention line
+        self.assertNotIn("attention", content)
         self.assertTrue(content.rstrip(';').endswith("body.append(typingDots())"), content)
         # The dots are three empty elements with an accessible name only.
         self.assertIn("for(let i=0;i<3;i++)dots.append(element('i'))", self.js)

@@ -39,7 +39,7 @@ import json
 import time
 
 from .telegram_presence import (CONTROL_RETRY, WaitState, draft_frame, draft_id_for, render_telegram_html, reply_controls_markup,
-                                rich_draft_blocks, with_note, without_consumed)
+                                rich_draft_blocks, without_consumed)
 from .providers import ProviderError
 from .conversation_handoff import TELEGRAM_UNSENT_BACKOFF_FIRST, TELEGRAM_UNSENT_BACKOFF_MAX, TelegramNotSent, TelegramRejected, transient_failure
 from .conversation_surface import (PRESENCE_REACT, PRESENCE_TYPING, ConversationSurface, SurfaceCapabilities, SurfacePairing,
@@ -185,12 +185,11 @@ class TelegramSurface(ConversationSurface):
             # (status='timeout') or a lost connection is not (#909 review).
             return False,isinstance(exc,TelegramRejected)
 
-    def show_draft(self, job, state, text, note=None):
+    def show_draft(self, job, state, text):
         """One Stop-able draft edit: the dots after any step line (#718/#835/#858).
 
         First Telegram's animated thinking block (`sendRichMessageDraft`,
-        `rich_draft_blocks`: the thinking block holds `text`, the #839
-        attention `note` follows as a paragraph).  Once that is refused for
+        `rich_draft_blocks`: the thinking block holds `text`).  Once that is refused for
         this Work (`state.rich_draft_failed`) the plain `sendMessageDraft`
         carries the same text; a refusal there too is the caller's fallback
         to typing.  The text is never empty (an empty draft is a blank bubble
@@ -201,7 +200,7 @@ class TelegramSurface(ConversationSurface):
         draft_id=draft_id_for(job['id'],state.said)
         can_stop=self.capabilities.native_stop
         if not state.rich_draft_failed:
-            sent,refused=self._attempt('send_rich_message_draft',job['chat_id'],draft_id,rich_draft_blocks(text,note),can_stop=can_stop)
+            sent,refused=self._attempt('send_rich_message_draft',job['chat_id'],draft_id,rich_draft_blocks(text),can_stop=can_stop)
             state.rich_draft_retry=not sent and not refused
             if sent:
                 return True
@@ -209,7 +208,7 @@ class TelegramSurface(ConversationSurface):
             # whole Work fell back to the plain draft.  Only Telegram refusing the rich draft
             # retires it for this Work; a timeout falls back this once and the next edit retries.
             if refused:state.rich_draft_failed=True
-        return self._attempt('send_message_draft',job['chat_id'],draft_id,with_note(text,note),can_stop=can_stop)[0]
+        return self._attempt('send_message_draft',job['chat_id'],draft_id,text,can_stop=can_stop)[0]
 
     def consume_control(self, chat_id, message_id, markup):
         """Make a used inline control visibly inert; fall back to removing it."""

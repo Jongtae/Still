@@ -414,7 +414,6 @@ details.technical details>summary{color:var(--muted)}
 .turn-body.run{background:var(--run-soft);border-color:#c9d7f2}
 .turn-body.typing{display:inline-flex;flex-direction:column;align-items:flex-start;gap:6px;min-height:0;max-width:70ch}
 .typing-step{margin:0;font-size:var(--fs-2);color:var(--ink-2)}
-.typing-attention{margin:0;font-size:var(--fs-2);color:var(--muted)}
 .turn-body.typing .rich{color:var(--ink-2)}
 .typing-dots{display:inline-flex;align-items:center;gap:5px;height:calc(var(--fs-3) * 1.6)}
 .typing-dots i{display:block;width:7px;height:7px;border-radius:50%;background:var(--muted);animation:typing-bob 1.2s ease-in-out infinite}

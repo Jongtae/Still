@@ -106,12 +106,11 @@ from . import remote_login
 from .browser_session import BrowserProfile, ascii_host, binding_digest, step_binding, keepalive_due_at, keepalive_interval, registrable_domain, page_reference, login_window_url
 from .browser_jar import unexpired
 from .cli_browser_relay import BrowserRelay
-from .telegram_presence import (ATTENTION_ACTION, ATTENTION_ASK, ATTENTION_COOLDOWN, ATTENTION_MEMORY_ASK_FRESH, ATTENTION_PREPARED, ATTENTION_REMINDER,
-                                ATTENTION_REMINDER_HORIZON, ATTENTION_TOOL, CLEAR_REACTION, DONE_REACTION, CONTROL_DETAILS, CONTROL_RETRY, NO_STEP_LINE,
+from .telegram_presence import (CLEAR_REACTION, DONE_REACTION, CONTROL_DETAILS, CONTROL_RETRY, NO_STEP_LINE,
                                 CLOSING_CANDIDATES, DONE_REACTIONS, RECEIVED_CANDIDATES,
                                 RECEIVED_REACTION, WAIT_CHAT_ACTION, WAIT_DRAFT, WROTE_REACTION, PresenceTiming, TelegramTurnAddressing,
-                                WaitState, draft_frame, draft_id_for, draft_step, masked as masked_step, outcome_reaction, pick_attention,
-                                rich_draft_blocks, with_note,
+                                WaitState, draft_frame, draft_id_for, draft_step, masked as masked_step, outcome_reaction,
+                                rich_draft_blocks,
                                 without_consumed)
 from .conversation_surface import PRESENCE_REACT, PRESENCE_TYPING
 LOCAL_RESUMED_KEY='local_authority_resumed_jobs'
@@ -6455,25 +6454,19 @@ class AgentService:
                         if line is None:
                             continue  # a payment/approval step: the approval prompt is the only surface
                         if state.draft_at is None or now-state.draft_at>=timing.dots_refresh:
-                            # #839: one already-prepared item may ride along, chosen once per Work.
-                            if state.attention is None:
-                                state.attention=self.waiting_attention(job,now) or {}
-                            text=draft_frame(line,state.dots_frame,state.attention.get('line'))
+                            text=draft_frame(line,state.dots_frame)
                             # #978: the same text again only to outlive the draft preview; a re-send
                             # restarts the client's reveal of the text.  #518: a message the Work sent
                             # ended the draft; it comes back at once, below that message.
                             said=self.store.interim_count(job['id'])
                             if text!=state.draft_text or now-state.draft_at>=timing.draft_keepalive or said!=state.said:
                                 state.said=said
-                                if conversation.show_draft(job,state,draft_frame(line,state.dots_frame),state.attention.get('line')):
+                                if conversation.show_draft(job,state,text):
                                     state.draft_at=now
                                     state.draft_text=None if state.rich_draft_retry else text
                                     state.dots_frame+=1
                                     state.shown.add(WAIT_DRAFT)
                                     shown.append((job['id'],WAIT_DRAFT))
-                                    if state.attention and not state.attention_shown:
-                                        state.attention_shown=True
-                                        self._record_attention(job,state.attention,now)
                                     continue
                                 # Unsupported/rejected draft: fall back to typing for this Work.
                                 state.draft_failed=True
@@ -6484,100 +6477,6 @@ class AgentService:
                             state.shown.add(WAIT_CHAT_ACTION)
                             shown.append((job['id'],WAIT_CHAT_ACTION))
         return shown
-
-    # -- ATTN-WAIT-01 (#839): one prepared item while the owner waits ----------
-
-    #: Config row: item ref -> the time it was last surfaced (bounded).
-    ATTENTION_SURFACED_KEY='attention_surfaced'
-    ATTENTION_SURFACED_LIMIT=200
-
-    def waiting_attention(self, job, now):
-        """The one existing owner-facing item to show on this Work's draft, or None (#839).
-
-        Deterministic from state only, no model call: a fresh prepared answer
-        that did not reach the owner as a message, else an accepted reminder
-        due within ATTENTION_REMINDER_HORIZON, else an ask still waiting for
-        the owner (a proposed preparation, an open memory ask).  Items this
-        Work is itself about (its own preparation, its own proposals or ask)
-        are excluded, and an item surfaced within ATTENTION_COOLDOWN is not
-        repeated.  Words come from the item's own text, redacted like any
-        draft line.  A failure here only means no line.
-        """
-        try:
-            items=self._attention_items(job,now)
-            chosen=pick_attention(items,now,self.store.config(self.ATTENTION_SURFACED_KEY,{}),ATTENTION_COOLDOWN,
-                                  lang=owner_language(self.store,job['id']))
-            if not chosen:return None
-            shown=' '.join(str(self.scrub_work_text(job['id'],chosen['line'])).split())
-            return {**chosen,'line':shown} if shown else None
-        except Exception as exc:  # presentation only
-            LOG.info('waiting attention skipped job=%s: %s',job.get('id'),type(exc).__name__)
-            return None
-
-    def _attention_items(self, job, now):
-        own=prep.preparation_of(job.get('request_key'))
-        items=[]
-        with self.store.db() as db:
-            # Unread: a fresh ``prepare`` answer whose run did not reach the owner as a
-            # message.  A when_needed watch (#719) is never one: its judgment already
-            # decided whether the owner hears it (a notify was sent; quiet stays quiet).
-            # The predicate runs before the limit (review: three delivered newest rows
-            # must not hide a fourth unread one).
-            prepared=[dict(row) for row in db.execute(
-                "SELECT p.id,p.goal_text,p.prepared_at FROM preparations p JOIN jobs j ON j.id=p.prepared_result_ref "
-                "WHERE p.kind=? AND p.prepared_at>=? AND j.id IS NOT ? AND p.id IS NOT ? AND j.delivery IS NOT 'sent' "
-                "AND (p.delivery_mode IS NULL OR p.delivery_mode!=?) ORDER BY p.prepared_at DESC LIMIT ?",
-                (prep.KIND_PREPARE,now-prep.FRESH_SECONDS,job['id'],own,prep.DELIVERY_WHEN_NEEDED,prep.SECTION_MAX_ITEMS)).fetchall()]
-            reminders=[dict(row) for row in db.execute(
-                "SELECT id,goal_text,due_at,timezone FROM preparations WHERE kind=? AND state=? AND due_at>? AND due_at<=? ORDER BY due_at",
-                (prep.KIND_REMINDER,prep.STATE_SCHEDULED,now,now+ATTENTION_REMINDER_HORIZON)).fetchall()]
-            proposed=[dict(row) for row in db.execute(
-                "SELECT id,kind,goal_text,due_at,timezone,recurrence,every_seconds,until_at,max_runs,delivery_mode,created_at "
-                "FROM preparations WHERE state=? AND created_from IS NOT ? ORDER BY created_at",
-                (prep.STATE_PROPOSED,job['id'])).fetchall()]
-            asks=self.store.telegram.sent_asks(db,MEMORY_PROMPT_KINDS,job['id'])
-        for row in prepared:
-            items.append({'ref':'prep:'+row['id'],'kind':ATTENTION_PREPARED,'text':row['goal_text'],'at':row['prepared_at']})
-        for row in reminders:
-            if row['id']==own:continue
-            items.append({'ref':'prep:'+row['id'],'kind':ATTENTION_REMINDER,'at':row['due_at'],
-                          'text':f"{prep.local_text(row['due_at'],row['timezone'])} {row['goal_text']}"})
-        for row in proposed:
-            if row['id']==own:continue
-            items.append({'ref':'prep:'+row['id'],'kind':ATTENTION_ASK,'at':row['created_at'],'text':prep.proposal_summary(row)})
-        for row in asks:
-            binding=self.memory_binding(row)
-            if not binding or not self.memory_open(binding):continue
-            # #888: only while the ask is fresh; an older one is not repeated on unrelated turns.
-            sent=binding.get('sent') if isinstance(binding.get('sent'),(int,float)) else row['created']
-            if now-sent>ATTENTION_MEMORY_ASK_FRESH:continue
-            first=binding['candidates'][self.memory_open(binding)[0]-1]
-            candidate=self.memory_candidate_still(row['job_id'],first.get('id'),first.get('digest'))
-            if not candidate:continue
-            fact=self.memory_fact(candidate['content'],MEMORY_CANDIDATE_CHARS,candidate['memory_key'])[0]
-            items.append({'ref':'memory-ask:'+row['job_id'],'kind':ATTENTION_ASK,'at':row['created'],'text':f'"{fact}" {MEMORY_CANDIDATES_HEADER}'})
-        return items
-
-    def _record_attention(self, job, item, now):
-        """Remember the surfacing (cooldown) and record it in the Work's Evidence (#839).
-
-        The event names the item by reference and its shown line (already
-        redacted), so the Work's information-use audit lists it.  Best-effort.
-        """
-        try:
-            surfaced=self.store.config(self.ATTENTION_SURFACED_KEY,{})
-            surfaced=surfaced if isinstance(surfaced,dict) else {}
-            surfaced[item['ref']]=now
-            if len(surfaced)>self.ATTENTION_SURFACED_LIMIT:
-                surfaced=dict(sorted(surfaced.items(),key=lambda pair:pair[1])[-self.ATTENTION_SURFACED_LIMIT:])
-            self.store.put(self.ATTENTION_SURFACED_KEY,surfaced)
-            detail={'host_action':ATTENTION_ACTION,'ref':item['ref'],'kind':item['kind'],
-                    'evidence':{'ref':item['ref'],'kind':item['kind'],'label':item['line']}}
-            with self.store.db() as db:
-                db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
-                           (job['id'],ATTENTION_TOOL,'succeeded',json.dumps(detail,ensure_ascii=False),now))
-        except Exception as exc:
-            LOG.info('waiting attention record skipped job=%s: %s',job.get('id'),type(exc).__name__)
 
     #: Notification kinds whose prompt is the Work's only surface while pending (#718).
     APPROVAL_NOTIFICATIONS=('approval_needed','context_approval_needed','browser_approval_needed')

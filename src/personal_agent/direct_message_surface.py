@@ -145,7 +145,7 @@ class DirectMessageSurface(ConversationSurface):
             self._shown_reactions = {}
         return self._shown_reactions
 
-    def show_draft(self, job, state, text, note=None):
+    def show_draft(self, job, state, text):
         return False   # no editable drafts on a direct-message surface
 
     # -- ingestion ----------------------------------------------------------------------

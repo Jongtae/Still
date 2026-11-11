@@ -349,11 +349,8 @@ class JudgmentReactionTests(NativePresenceTestCase):
 class DraftCompositionTests(unittest.TestCase):
     """#858: the animated thinking block carries the wait, attention stays a paragraph."""
 
-    def test_rich_draft_blocks_keep_attention_outside_the_thinking_block(self):
-        self.assertEqual(rich_draft_blocks('· · ·', '참, 준비한 답이 있어요'),
-                         [{'type': 'thinking', 'text': '· · ·'},
-                          {'type': 'paragraph', 'text': '참, 준비한 답이 있어요'}])
-        self.assertEqual(rich_draft_blocks('·'), [{'type': 'thinking', 'text': '·'}])
+    def test_rich_draft_is_the_thinking_block_alone(self):
+        self.assertEqual(rich_draft_blocks('· · ·'), [{'type': 'thinking', 'text': '· · ·'}])
 
 
 class WaitSurfaceTests(NativePresenceTestCase):
