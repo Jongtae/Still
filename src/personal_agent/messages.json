@@ -245,24 +245,6 @@
   "ja": "元に戻しました。",
   "zh": "已撤销。"
  },
- "attention.ask": {
-  "ko": "아직 답을 기다리는 게 있어요: {text}",
-  "en": "Still waiting on an answer: {text}",
-  "ja": "まだ返事を待っていることがあります: {text}",
-  "zh": "还有一件在等你回复：{text}"
- },
- "attention.prepared": {
-  "ko": "준비해 둔 답이 있어요: {text}",
-  "en": "I have an answer ready: {text}",
-  "ja": "用意しておいた答えがあります: {text}",
-  "zh": "我准备好了一个答复：{text}"
- },
- "attention.reminder": {
-  "ko": "{text} 알림 있어요.",
-  "en": "A reminder for {text}.",
-  "ja": "{text} のお知らせがあります。",
-  "zh": "有一条关于 {text} 的提醒。"
- },
  "button.accept": {
   "ko": "수락",
   "en": "Accept",
@@ -394,12 +376,6 @@
   "en": "Done.",
   "ja": "対応しました。",
   "zh": "已处理。"
- },
- "compose.by_the_way_text": {
-  "ko": "참, {text}",
-  "en": "By the way, {text}",
-  "ja": "ところで、{text}",
-  "zh": "对了，{text}"
  },
  "compose.i_couldn_t_complete_this_request": {
   "ko": "이 요청은 완료하지 못했어요: {reason}",

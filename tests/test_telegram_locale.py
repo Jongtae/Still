@@ -150,10 +150,9 @@ class AnswerBoundaryTests(unittest.TestCase):
         state = SimpleNamespace(said=0, rich_draft_failed=False, rich_draft_retry=False)
         job = self.store.job(work)
         line = draft_frame(step_line({'status': answer}), 0)
-        self.service.telegram_surface.show_draft(job, state, line, '참, AI가 쓴 문장입니다.')
+        self.service.telegram_surface.show_draft(job, state, line)
         rich = self.sent[-1][1]['rich_message']['blocks']
-        self.assertEqual(rich[0]['text'], answer + ' · · ·')
-        self.assertEqual(rich[1]['text'], '참, AI가 쓴 문장입니다.')
+        self.assertEqual(rich, [{'type': 'thinking', 'text': answer + ' · · ·'}])
         state.rich_draft_failed = True
         self.service.telegram_surface.show_draft(job, state, line)
         self.assertEqual(self.sent[-1][1]['text'], answer + ' · · ·')
@@ -196,16 +195,6 @@ class AnswerBoundaryTests(unittest.TestCase):
         self.assertEqual(self.sent[-1][1]['text'], 'Answer\n\n' + note)
         fixed = answer_note([('model', 'failed')], 'partial', lang='en')
         self.assertEqual(fixed, msg('projection.some_steps_unfinished', 'en'))
-
-    def test_attention_localizes_templates_before_inserting_prose(self):
-        from personal_agent.telegram_presence import attention_line, draft_frame
-        from personal_agent.messages import msg
-        answer = '다시 접속했지만 확인 중이에요.'
-        note = attention_line('prepared', answer, 'en')
-        self.assertEqual(note, msg('compose.by_the_way_text', 'en',
-                                  text=msg('attention.prepared', 'en', text=answer)))
-        self.service.telegram.send_message_draft(42, 1, draft_frame('', 0, note))
-        self.assertEqual(self.sent[-1][1]['text'], '· · ·\n' + note)
 
 
 if __name__ == '__main__':

@@ -197,7 +197,7 @@ class ConversationSurface(ABC):
         """
 
     @abstractmethod
-    def show_draft(self, job, state, text, note=None):
+    def show_draft(self, job, state, text):
         """Show or refresh the draft of a running Work; True when it was shown."""
 
 

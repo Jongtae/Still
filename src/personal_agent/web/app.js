@@ -1253,7 +1253,7 @@ function technicalView(task,box){const group=title=>{if(title)box.append(element
 // observed step line (the Telegram draft's, #718) and, when the API exposes
 // them, a partial answer or the waiting-time attention line (#839) sit above
 // the dots, replaced in place on each poll. Never a raw status word.
-function typingContent(body,task){const step=String(task.step_line||'').trim(),draft=String(task.draft_text||'').trim(),attention=String(task.attention_line||'').trim();if(draft)body.append(renderRichText(draft));if(step)body.append(element('p',step,'typing-step'));if(attention)body.append(element('p',attention,'typing-attention'));body.append(typingDots());}
+function typingContent(body,task){const step=String(task.step_line||'').trim(),draft=String(task.draft_text||'').trim();if(draft)body.append(renderRichText(draft));if(step)body.append(element('p',step,'typing-step'));body.append(typingDots());}
 function typingDots(){const dots=element('span',undefined,'typing-dots');dots.setAttribute('role','status');dots.setAttribute('aria-label',t('답변을 쓰고 있습니다'));for(let i=0;i<3;i++)dots.append(element('i'));return dots;}
 // #390 U5: what waits on the owner, projected read-only from the typed Work fields the
 // trace already shows (waits, waiting_for_owner, an unknown status or delivery). Each row
