@@ -371,7 +371,7 @@ def remove_slot(store, name):
             store.retire_secret_values(credentials.values({reference: token}))
     state = store.secret_items(STATE_PREFIX + name).get(STATE_PREFIX + name)
     if state:
-        store.retire_secret_values(credentials._state_strings(state))
+        store.retire_secret_values(credentials._state_strings(state), origin='state')
     with store.db() as db:
         db.execute('BEGIN IMMEDIATE')
         found = db.execute('SELECT value FROM config WHERE key=?', (SLOTS_KEY,)).fetchone()
