@@ -2324,8 +2324,12 @@ class WebKitWorkerDriver:
                                 text=True, encoding='utf-8', bufsize=1, close_fds=True, cwd=self._cwd,
                                 env=worker_environment())
         messages = queue.Queue()
+        observation_lock = threading.Lock()
+        observations = {'alive': True, 'drained': False, 'steps': {}, 'active': set()}
+        self._observation_lock, self._observations = observation_lock, observations
 
         def read():
+            drained = False
             try:
                 for line in proc.stdout:
                     try:
@@ -2333,6 +2337,12 @@ class WebKitWorkerDriver:
                     except ValueError:
                         continue
                     if not isinstance(message, dict):
+                        continue
+                    if message.get('event') == 'step':
+                        ident, posted = message.get('id'), message.get('posted')
+                        with observation_lock:
+                            if isinstance(ident, int) and ident in observations['active'] and isinstance(posted, bool):
+                                observations['steps'][ident] = observations['steps'].get(ident, False) or posted
                         continue
                     if message.get('event') == 'hidden':
                         self._visible = False
@@ -2345,10 +2355,16 @@ class WebKitWorkerDriver:
                                     str(message.get('error'))[:60], outcome)
                         continue
                     messages.put(message)
+                drained = True
             except (OSError, ValueError):
                 pass
+            finally:
+                with observation_lock:
+                    observations['alive'] = False
+                    observations['drained'] = drained
             messages.put(None)
-        threading.Thread(target=read, name='agentos-browser-worker-pipe', daemon=True).start()
+        self._reader = threading.Thread(target=read, name='agentos-browser-worker-pipe', daemon=True)
+        self._reader.start()
         self._proc, self._queue, self._visible, self._expect = proc, messages, False, {}
         deadline = time.monotonic() + self.start_seconds
         while True:
@@ -2375,24 +2391,45 @@ class WebKitWorkerDriver:
         self._held_page = None   # a page of the worker that is gone
         self._visible = False
         if proc is None:
-            return
+            return False
+        reader_alive = False
         try:
-            proc.kill()
+            with self._observation_lock:
+                reader_alive = self._observations['alive']
+                proc.kill()
             proc.wait(WORKER_QUIT_SECONDS)
         except Exception:
             pass
+        # #791: consume every flushed observation before using a killed worker's last state.
+        reader = getattr(self, '_reader', None)
+        if reader is not None:
+            reader.join(WORKER_QUIT_SECONDS)
         for stream in (proc.stdin, proc.stdout):
             try:
                 stream.close()
             except Exception:
                 pass
 
+        return reader_alive
+
     def alive(self):
         return self._proc is not None and self._proc.poll() is None
 
     def _send(self, op, timeout, stop=None, **arguments):
-        proc, messages = self._proc, self._queue
         ident = next(self._ids)
+        observation_lock, observations = self._observation_lock, self._observations
+        with observation_lock:
+            observations['active'].add(ident)
+        try:
+            return self._send_ident(op, timeout, ident, stop, **arguments)
+        finally:
+            with observation_lock:
+                observations['active'].discard(ident)
+                observations['steps'].pop(ident, None)
+
+    def _send_ident(self, op, timeout, ident, stop, **arguments):
+        proc, messages = self._proc, self._queue
+        observation_lock, observations = self._observation_lock, self._observations
         timeout = max(1.0, float(timeout))
         try:
             intranet = sorted(getattr(self, '_intranet', frozenset)())
@@ -2410,8 +2447,12 @@ class WebKitWorkerDriver:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 # Unresponsive: kill it; the next call starts a fresh worker.
-                self._kill()
-                raise TimeoutError('browser timeout')
+                reader_alive = self._kill()
+                error = TimeoutError('browser timeout')
+                with observation_lock:
+                    if reader_alive and observations['drained'] and ident in observations['steps']:
+                        error.posted = observations['steps'][ident]
+                raise error
             if stop is not None and not stop_sent and stop():
                 # #244: the owner stopped the Work; the worker ends this request at its next probe
                 # and answers it as usual.  The stop's own answer is ignored below (another id).

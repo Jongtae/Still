@@ -138,6 +138,7 @@ class PendingPolicyDecisions(unittest.TestCase):
         release = threading.Event()
         later = []
         stub = SimpleNamespace(resolved={}, allowed_origins=frozenset(), intranet=frozenset(), deciding=0,
+                               report_step=lambda: None,
                                AppHelper=SimpleNamespace(callAfter=lambda fn, *args: fn(*args),
                                                          callLater=lambda delay, fn: later.append(fn)))
 
@@ -163,6 +164,7 @@ class PendingPolicyDecisions(unittest.TestCase):
     def test_a_resolver_timeout_also_ends_the_pending_decision(self):
         later = []
         stub = SimpleNamespace(resolved={}, allowed_origins=frozenset(), intranet=frozenset(), deciding=0,
+                               report_step=lambda: None,
                                AppHelper=SimpleNamespace(callAfter=lambda fn, *args: None,
                                                          callLater=lambda delay, fn: later.append(fn)))
         decided = []

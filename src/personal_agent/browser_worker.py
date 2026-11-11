@@ -1504,6 +1504,7 @@ class Worker:
         self.step_refused = 0      # ``refused_submits`` when the current step began
         self.posted_submits = 0    # #899: non-GET form submissions the page started so far
         self.step_posted = 0       # ``posted_submits`` when the current step began
+        self._step_ident = None   # #791: observed until the reply, including step cleanup
         self.reported_refused = 0  # ``refused_submits`` last reported (step answer or snapshot, #758)
         self.hosts = set()         # hosts of committed main-frame navigations in this worker's life
         #: #636: hosts of allowed navigations that carried an OAuth 2.0 authorization request (hosts only,
@@ -1729,6 +1730,8 @@ class Worker:
     def reply(self, ident, ok=True, **fields):
         self.pending.pop(ident, None)
         self.emit({'id': ident, 'ok': ok, **fields})
+        if getattr(self, '_step_ident', None) == ident:
+            self._step_ident = None
 
     def fail(self, ident, code, **fields):
         self.reply(ident, False, error=code, **fields)
@@ -1911,6 +1914,7 @@ class Worker:
         get = str(method or 'GET').upper() == 'GET' and step.get('confirm_ok') is True
         answered = []
         self.deciding += 1   # a click waits for this decision (#736)
+        self.report_step()
 
         def answer(allowed, record=None):
             if answered:
@@ -1956,6 +1960,12 @@ class Worker:
             if done is not None:
                 done(self.take_cancelled())
         self.run(STEP_END_SCRIPT, {}, ended)
+
+    def report_step(self):
+        """#791: flush the observation before a policy decision can let the step act."""
+        ident = getattr(self, '_step_ident', None)
+        if ident is not None:
+            self.emit({'event': 'step', 'id': ident, **self.step_posted_field()})
 
     def step_posted_field(self):
         """#1496: ``posted`` of a click or typing step that timed out, as a finished step answers it.
@@ -2031,6 +2041,7 @@ class Worker:
         # its destination, so a slow resolver is never mistaken for "no navigation".
         if main_frame:
             self.deciding += 1
+            self.report_step()
 
         def answer(refusal):
             if answered:
@@ -2462,6 +2473,8 @@ class Worker:
         self.dialog_step = {'approved': command.get('dialog_approved') is True,
                             'confirm_ok': command.get('confirm_ok') is True,
                             'effect': effect if effect in CONFIRMING_EFFECTS else None, 'dialogs': []}
+        self._step_ident = ident
+        self.report_step()   # #791: before any page script or native input
         # Only a step the parent consumed an owner approval for may let a
         # payment-form submit through (#698); its allowance ends by itself even
         # if the step's end never reaches the page (#700 review).
@@ -3565,6 +3578,7 @@ def _delegate_class():
                     method = str(request.HTTPMethod() or 'GET') if request is not None else 'GET'
                     if method.upper() != 'GET':
                         worker.posted_submits += 1   # #899: counted when started, whatever the guard decides
+                        worker.report_step()   # #791: before the navigation handler can allow it
                     if kind == WebKit.WKNavigationTypeFormResubmitted and method.upper() != 'GET':
                         worker.refused_submits += 1
                         return handler(WebKit.WKNavigationActionPolicyCancel)
@@ -3669,7 +3683,7 @@ def _delegate_class():
 
 
 def make_emit(stream):
-    """A line writer that can never raise: ASCII JSON, and an encoding failure becomes an error reply."""
+    """ASCII JSON lines; step observations must flush successfully before a navigation proceeds (#791)."""
     lock = threading.Lock()
 
     def emit(message):
@@ -3685,7 +3699,8 @@ def make_emit(stream):
                 stream.write(line + '\n')
                 stream.flush()
             except (OSError, ValueError):
-                pass
+                if message.get('event') == 'step':
+                    raise   # #791: a lost observation must never release a submission
     return emit
 
 

@@ -86,7 +86,7 @@ class FormCheckUnknown(unittest.TestCase):
 
     def check(self, method, page=None, step=STEP):
         later = []
-        state = types.SimpleNamespace(deciding=0, refused_submits=0, held=[], dialog_step=step)
+        state = types.SimpleNamespace(deciding=0, refused_submits=0, held=[], dialog_step=step, report_step=lambda: None)
         state.receive_cancelled = lambda record: state.held.append(record)
         state.AppHelper = types.SimpleNamespace(callLater=lambda seconds, fn: later.append(fn))
         state.run = lambda script, args, done: page(done) if page else None
