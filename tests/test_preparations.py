@@ -1848,7 +1848,7 @@ class WatchAcceptanceTests(_WatchCase):
                  until=self.due_iso(1200)),
             call('2', 'schedule_preparation', kind='reminder', goal='확인', due=self.due_iso(600), delivery='when_needed'),
             call('3', 'schedule_preparation', kind='prepare', goal='확인', due=self.due_iso(600), recurrence='daily',
-                 every_minutes='10', until=self.due_iso(1200))]}, {'content': '예약하지 못했습니다.'}]
+                 every_minutes='10', until=self.due_iso(24 * 3600 + 1200))]}, {'content': '예약하지 못했습니다.'}]
         self.receive('확인해줘')
         results = [m['content'] for m in self.model_calls[-1]['messages'] if m['role'] == 'tool']
         self.assertEqual(len(results), 3)
@@ -1864,7 +1864,7 @@ class WatchAcceptanceTests(_WatchCase):
         self.assertEqual(window, {'every_minutes': '1', 'until': self.due_iso(1200), 'due': self.due_iso(600)},
                          'only the window arguments the call gave')
         self.assertNotIn('확인', first['error'], 'the refusal carries no goal text')
-        self.assertIn("recurrence='daily'", records[2]['error'])
+        self.assertIn(msg('preparations.recurring_window_same_day'), records[2]['error'])
         self.assertEqual(self.rows(), [])
 
     def test_window_refusal_scrubs_secrets_and_omits_owner_text(self):
