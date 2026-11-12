@@ -1241,17 +1241,30 @@ class PreparationsService:
     def retime_line_account(self, before, after):
         """#802: a changed account interval changes the pending account too, not only its rule.
 
-        The pending account moves to the start of its current period (its due time less the old
-        interval: the line's opening or its last account) plus the new interval; one already
-        past that point is due a minute from now.
+        The pending account moves to the start of its current period (when the account row was set
+        up, or its last run's slot) plus the new interval; one already past that point is due a
+        minute from now.  The start is read from the record, never from the due time, so a clamped
+        due time does not shift later changes (Codex review of #803).
         """
         service=self.service
         row=self.line_account_row(after['line_id'])
         if not row or row['state']==prep.STATE_RUNNING:return
         now=service.preparations.clock()
-        due=max(row['due_at']-before['account_every_days']*86400+after['account_every_days']*86400,now+60)
+        due=max(self.account_period_start(row)+after['account_every_days']*86400,now+60)
         service.preparations.edit(row['id'],rrule=el.account_rule(after['account_every_days']),
                                   due=datetime.fromtimestamp(due,prep.zone(row['timezone'])).isoformat())
+
+    def account_period_start(self, row):
+        """When the current period of a line's account began: its last run's slot, else when the row was set up."""
+        start=row['created_at']
+        prefix=prep.REQUEST_KEY_PREFIX+row['id']+':'
+        with self.service.store.db() as db:
+            keys=[item['request_key'] for item in db.execute('SELECT request_key FROM jobs WHERE request_key LIKE ?',(prefix+'%',))]
+        # A run's request key names its slot in whole seconds (``request_key``); a continuation keeps it.
+        for key in keys:
+            slot=prep.slot_key(key)[len(prefix):]
+            if slot.isdigit():start=max(start,float(slot))
+        return start
 
     def line_handler(self, job):
         """The ``entrusted_line`` handler bound to one Work (#798).

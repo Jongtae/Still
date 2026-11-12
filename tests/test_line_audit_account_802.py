@@ -66,3 +66,24 @@ class AccountIntervalTests(_LineCase):
         self.service.preparations_service.undo_line_version(brief['line_id'], 2)
         row = self.account(brief)
         self.assertEqual((row['recurrence'], row['due_at']), ('RRULE:FREQ=DAILY;INTERVAL=7', opened + 7 * 86400))
+
+    def test_a_clamped_due_time_does_not_shift_a_later_change(self):
+        brief, _work = self.open_line()
+        opened = self.now
+        self.now = opened + 3 * 86400
+        self.line_call('정기 보고는 매일 해 줘', action='revise', line=brief['line_id'], expected_version='1',
+                       account_every_days='1')
+        self.assertEqual(self.account(brief)['due_at'], self.now + 60)
+        self.service.preparations_service.undo_line_version(brief['line_id'], 2)
+        self.assertEqual(self.account(brief)['due_at'], opened + 7 * 86400)
+
+    def test_after_an_account_ran_its_period_starts_at_that_run(self):
+        brief, _work = self.open_line()
+        [work] = self.work_rows(brief['line_id'])
+        self.service.cancel_preparation(work['id'])
+        account = self.account(brief)
+        self.run_line(account, [{'content': '지난주 정리입니다.'}])
+        ran_at = account['due_at']
+        self.line_call('정기 보고는 3일마다 해 줘', action='revise', line=brief['line_id'], expected_version='1',
+                       account_every_days='3')
+        self.assertEqual(self.account(brief)['due_at'], ran_at + 3 * 86400)
