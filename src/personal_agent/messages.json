@@ -10841,7 +10841,7 @@
   "zh": "{schedule}（每天在同一时段重复）"
  },
  "preparations.recurring_window_weekdays": {
-  "ko": "{schedule} (평일마다 같은 시간대에 반복)",
+  "ko": "{schedule} (주중 같은 시간대에 반복)",
   "en": "{schedule} (same window on weekdays)",
   "ja": "{schedule}（平日ごとに同じ時間帯に繰り返し）",
   "zh": "{schedule}（每个工作日在同一时段重复）"
