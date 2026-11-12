@@ -104,7 +104,10 @@ ORIGIN_DREAM = 'dream'
 #: #780: the daily plan itself: one run a day in which the owner's AI reads the day and sets up what
 #: to have ready.  What that run sets up carries ``ACCEPTED_DAY_PLAN`` and no origin.
 ORIGIN_DAY_PLAN = 'day-plan'
-ORIGINS = (ORIGIN_DREAM, ORIGIN_DAY_PLAN)
+#: #798: the periodic account of an entrusted line: one repeating run per line that gives an account
+#: of it (what was done and came of it, the rules in force, what was learned, what is open).
+ORIGIN_LINE_ACCOUNT = 'line-account'
+ORIGINS = (ORIGIN_DREAM, ORIGIN_DAY_PLAN, ORIGIN_LINE_ACCOUNT)
 #: #780: when the first daily plan runs, owner-local; the owner changes or cancels it like any preparation.
 DAY_PLAN_HOUR, DAY_PLAN_MINUTE = 6, 30
 #: #780: how far back a plan run is shown what earlier plan runs set up.
@@ -194,7 +197,9 @@ COLUMN_MIGRATIONS = (('prepared_text', 'TEXT'),
                      ('origin', 'TEXT'), ('offered_at', 'REAL'),
                      # #701: a watch's inclusive last-slot bound, apart from its run deadline ``window_end``.
                      ('until_at', 'REAL'),
-                     ('window_terms', 'TEXT'))
+                     ('window_terms', 'TEXT'),
+                     # #798: the entrusted line this row does the work of (``entrusted_lines``), or NULL.
+                     ('line_id', 'TEXT'))
 
 
 def run_seconds():
@@ -209,6 +214,7 @@ def migrate(db):
     for name, kind in COLUMN_MIGRATIONS:
         if name not in present:
             db.execute(f'ALTER TABLE preparations ADD COLUMN {name} {kind}')
+    db.execute('CREATE INDEX IF NOT EXISTS preparations_line ON preparations(line_id)')
     # #701: a watch stored before ``until_at`` ran only strictly before ``window_end``; the same slots
     # are those up to one second before it, and its last slot gets a run's time after that.
     db.execute('UPDATE preparations SET until_at=window_end-1, window_end=window_end-1+? '
@@ -241,7 +247,7 @@ REFUSALS = {
     'running': '지금 실행 중인 준비는 지울 수 없습니다. 먼저 취소하세요.',
     **{code: msg('preparations.' + code) for code in
        ('invalid_rrule', 'already_running', 'invalid_state', 'goal_not_editable', 'invalid_edit', 'resume_expired', 'queue_full',
-        'replace_not_found', 'replace_not_allowed')},
+        'replace_not_found', 'replace_not_allowed', 'line_inactive')},
 }
 
 
@@ -661,6 +667,19 @@ def preparation_of(work_request_key):
     return key[len(REQUEST_KEY_PREFIX):].rsplit(':', 1)[0] or None
 
 
+#: #798: ``run_refusal`` reasons of a row whose line was stopped or whose brief cannot be read.
+LINE_STOPPED, LINE_UNREADABLE = 'line-stopped', 'line-unreadable'
+
+
+def line_refusal(db, line_id):
+    """#798: why a row of ``line_id`` may not run now, or None (no line, or an active one)."""
+    if not line_id:
+        return None
+    from .entrusted_lines import STATE_ACTIVE, line_state
+    state = line_state(db, line_id)
+    return None if state == STATE_ACTIVE else LINE_STOPPED if state else LINE_UNREADABLE
+
+
 def run_outcome(kind, job):
     """What one run's Work shows: ``delivered``, ``unknown`` or ``failed``.
 
@@ -1032,7 +1051,7 @@ class Preparations:
 
     def create(self, *, kind, goal, due_at, timezone, recurrence, channel, created_from, state,
                accepted_by=None, owner=OWNER, window=None, delivery_mode=None, title=None, offer=None, origin=None,
-               report_every_minutes=None):
+               report_every_minutes=None, line_id=None):
         """One new row (idempotent for the same Work, kind, goal and slot).
 
         #574: when another Work already proposed the same kind, goal, due and
@@ -1043,6 +1062,7 @@ class Preparations:
         ``normalize_window`` (#719); it replaces ``recurrence``.  Its run
         deadline ``window_end`` is one run's time after ``until_at`` (#701).  ``origin``
         ``ORIGIN_DREAM`` marks a look-back suggestion (#583); #717: it starts scheduled (``ACCEPTED_DREAM``).
+        #798: ``line_id`` is the entrusted line this row works for; the caller checked it is active.
         """
         from .agent_runtime import not_run
         if kind not in KINDS:
@@ -1097,7 +1117,7 @@ class Preparations:
                    'window_terms': terms,
                    'delivery_mode': delivery_mode, 'last_decision': None, 'last_decision_reason': None,
                    'last_notified_digest': None, 'last_notified_text': None, 'last_notified_at': None,
-                   'title_text': title, 'offer_text': offer, 'origin': origin, 'offered_at': None}
+                   'title_text': title, 'offer_text': offer, 'origin': origin, 'offered_at': None, 'line_id': line_id}
             db.execute(f"INSERT INTO preparations({','.join(row)}) VALUES ({','.join('?' * len(row))})", tuple(row.values()))
             return row
 
@@ -1523,6 +1543,11 @@ class Preparations:
         row = db.execute('SELECT * FROM preparations WHERE id=?', (preparation_id,)).fetchone()
         if row and row['recurrence'] == RECURRENCE_WINDOW and now >= row['window_end']:
             return 'preparation-window-expired'
+        # #798: stop wins (before the row's own state: stopping a line also cancels its rows); a line
+        # whose brief cannot be read stops its run instead of running without its rules.
+        refusal = line_refusal(db, row['line_id']) if row else None
+        if refusal:
+            return refusal
         if not row or row['state'] != STATE_RUNNING or row['last_run_job_id'] != work_id:
             return 'preparation-inactive'
         # The current run already consumed its count; equality is allowed.
@@ -1599,6 +1624,18 @@ class Preparations:
                     db.execute('UPDATE preparations SET state=?,updated_at=? WHERE id=? AND state=?',
                                (STATE_EXPIRED, now, current['id'], STATE_SCHEDULED))
                 self._queue_status_notice(db, current, key, EXPIRED_NOTICE_KIND, min(now, slot))
+                return None
+            refusal = None if existing else line_refusal(db, current.get('line_id'))
+            if refusal:
+                # #798: a stopped line runs nothing; an unreadable brief stops the row instead of running without it.
+                state = STATE_CANCELLED if refusal == LINE_STOPPED else STATE_FAILED
+                db.execute('UPDATE preparations SET state=?,last_outcome=?,updated_at=? WHERE id=? AND state IN (?,?)',
+                           (state, state, now, current['id'], STATE_SCHEDULED, STATE_PAUSED))
+                db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                           (key, 'preparation', 'withheld', json.dumps({'reason': refusal, 'resumed': False,
+                                                                        'preparation_id': current['id']}), now))
+                if immediate:
+                    raise PreparationRefusal('line_inactive')
                 return None
             if existing:
                 job_id = existing['id']

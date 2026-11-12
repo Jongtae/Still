@@ -47,6 +47,7 @@ from .conversation_surface import (PRESENCE_REACT, PRESENCE_TYPING, Conversation
 from .agent_runtime import WORK_STOP_KEEP, WORK_STOP_KEY
 from .messages import msg
 from . import owner_model as om
+from . import entrusted_lines
 from . import preparations as prep
 from . import remote_login
 from . import work_mode
@@ -308,6 +309,11 @@ class TelegramSurface(ConversationSurface):
                                         {'text':msg('button.keep'),'callback_data':f"p7s:{nid}:cancel"}]]}
         if kind==prep.NOTIFY_KIND:
             return {'inline_keyboard':[[{'text':msg('button.stop_watching'),'callback_data':f"p7q:{nid}:stop"}]]}
+        # #798: a line's announcement carries its stop control; a standing rule's restatement its undo.
+        if kind.startswith(entrusted_lines.NOTICE_OPENED):
+            return {'inline_keyboard':[[{'text':msg('button.line_stop'),'callback_data':f"p7k:{nid}:stop"}]]}
+        if kind.startswith(entrusted_lines.NOTICE_RULE):
+            return {'inline_keyboard':[[{'text':msg('button.line_undo'),'callback_data':f"p7k:{nid}:undo"}]]}
         # #1472 (owner choice 2026-10-13): a step approval has no buttons; the owner answers with a
         # reaction or a reply.  Working notes have none either (#996).
         return None
@@ -946,6 +952,41 @@ class TelegramSurface(ConversationSurface):
                             try:service.telegram.edit_message_reply_markup(sender,notification['message_id'],{'inline_keyboard':[]})
                             except ProviderError:pass
                             changed=True
+            elif authorized and isinstance(data,str) and data.startswith('p7k:'):
+                # #798: stop a line from its announcement, or undo a standing rule from its restatement.
+                # Exact: this notification, sent, this chat and message; each acts once.
+                parts=data.split(':')
+                notification=service.store.notification(parts[1]) if len(parts)==3 else None
+                exact=(notification and notification['state']=='sent' and notification['generation']==generation
+                       and notification['chat_id']==sender and notification['message_id']==message.get('message_id'))
+                line_id,_sep,version=str((notification or {}).get('fingerprint') or '').partition(':')
+                if exact and parts[2]=='stop' and notification['kind'].startswith(entrusted_lines.NOTICE_OPENED):
+                    try:
+                        brief,stopped=service.preparations_service.stop_line(line_id)
+                    except entrusted_lines.LineRefusal:
+                        brief=None
+                    if brief is not None:
+                        LOG.info('line stop by owner button id=%s changed=%s',line_id,stopped)
+                        service.store.update_notification(notification['id'],'line_stopped')
+                        try:service.telegram.edit_message_text(sender,notification['message_id'],
+                                                               service._redact_known_secrets(msg('lines.stopped',task=brief['task'])),
+                                                               {'inline_keyboard':[]})
+                        except ProviderError:pass
+                        changed=True
+                elif exact and parts[2]=='undo' and notification['kind'].startswith(entrusted_lines.NOTICE_RULE) and version.isdigit():
+                    try:
+                        brief=service.preparations_service.undo_line_version(line_id,int(version))
+                    except entrusted_lines.LineRefusal:
+                        brief=None
+                        alert=(msg('lines.undo_stale'),False)
+                    if brief is not None:
+                        LOG.info('line rule undone by owner button id=%s version=%s',line_id,version)
+                        service.store.update_notification(notification['id'],'line_undone')
+                        try:service.telegram.edit_message_text(sender,notification['message_id'],
+                                                               service._redact_known_secrets(msg('lines.undone')),
+                                                               {'inline_keyboard':[]})
+                        except ProviderError:pass
+                        changed=True
             elif authorized and isinstance(data,str) and data.startswith('v1c:'):
                 parts=data.split(':')
                 if len(parts)==3 and parts[2] in ('approve','deny'):

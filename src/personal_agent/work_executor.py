@@ -912,6 +912,8 @@ class WorkExecutor:
                                       # CONN-API: Still-held connections through api_request.
                                       'connections':lambda job=job:service.connection_slots(job),
                                       'preparations':service.preparation_scheduler(job,run.prompt),
+                                      # #798: entrusted lines, relayed like preparations.
+                                      'lines':service.line_handler(job),
                                       'location_request':service.location_requester(job,run.decision),
                                       # #407: interim messages to the owner after a plan preview.
                                       'owner_update':service.owner_updater(job),
@@ -1297,6 +1299,8 @@ class WorkExecutor:
                                   current_context=service.current_state,
                                   # #659: owner-accepted preparations (proposal or owner-request acceptance).
                                   preparations=service.preparation_scheduler(job,run.prompt),
+                                  # #798: the owner's entrusted lines, and a changed brief for a running line's next step.
+                                  lines=service.line_handler(job),line_note=lambda:service.line_note(job),
                                   # #774: ask the owner for a current position in the paired chat.
                                   location_request=service.location_requester(job,run.decision),
                                   # #407: interim messages to the owner after a plan preview.

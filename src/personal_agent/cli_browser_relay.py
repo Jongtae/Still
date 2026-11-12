@@ -356,6 +356,12 @@ def RELAYED_PREPARATIONS(*_args, **_kwargs):
     raise ToolError(RELAY_UNAVAILABLE_TEXT, 'browser_relay_unavailable')
 
 
+def RELAYED_LINES(*_args, **_kwargs):
+    """The bridge's ``Capabilities.lines`` placeholder (#798): ``entrusted_line`` is listed, and its
+    calls go to the service, which holds the owner's lines.  Never run in the bridge."""
+    raise ToolError(RELAY_UNAVAILABLE_TEXT, 'browser_relay_unavailable')
+
+
 def RELAYED_SETTINGS(*_args, **_kwargs):
     """The bridge's ``Capabilities.settings`` placeholder (#814): ``settings_read`` and
     ``settings_change`` are listed, and their calls go to the service, which holds the owner

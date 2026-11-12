@@ -290,6 +290,11 @@ def notice_binding(service, notification):
         # #719: one watch run the owner needs.
         watch_text = service.watch_notification_text(notification)
         return None if watch_text is None else {'watch_text': watch_text}
+    from . import entrusted_lines
+    if entrusted_lines.is_notice(kind):
+        # #798: told once per line event, while it still applies (a superseded rule is not restated).
+        line_text = service.preparations_service.line_notice_text(notification)
+        return None if line_text is None else {'line_text': line_text}
     return {}
 
 
@@ -314,6 +319,8 @@ def notice_text(service, notification, bound):
         return bound['preparation_status_text']
     if kind == prep.NOTIFY_KIND:
         return bound['watch_text']
+    if 'line_text' in bound:
+        return bound['line_text']
     if kind == 'approval_needed' and service.document_resume_eligible(notification.get('job_id')):
         return LOCAL_DOCUMENT_APPROVAL_TEXT
     if kind == 'browser_approval_needed':

@@ -24,6 +24,9 @@ the same store.  It has no candidate stage: a revision the host accepted is
 saved at once (``commit``), the previous version stays ``kept``, and forgetting
 the current version through ``owner_forget`` puts the previous one back.  No
 secret set can name it (set names never hold ``:``), so no ``code_run`` imports it.
+
+#798: the reserved prefix ``LINE_PREFIX`` holds the brief versions of entrusted lines
+(``entrusted_lines``), saved through ``commit`` the same way and never proposed.
 """
 import hashlib
 import json
@@ -52,6 +55,8 @@ CANDIDATE_SECONDS = 7 * 86400
 REF_PREFIX = 'procedure:'
 #: #19: the reserved owner-level slot of the working-notes document (``api_requests.NAME`` never matches it).
 NOTES_SLOT = 'owner:working-notes'
+#: #798: the reserved prefix of an entrusted line's brief versions (``entrusted_lines.SLOT_PREFIX``).
+LINE_PREFIX = 'line:'
 IDENTIFIER = re.compile(r'^[A-Za-z][A-Za-z0-9_]{0,63}$')
 
 
@@ -159,7 +164,7 @@ class ProcedureLibrary:
 
     def propose(self, work_id, slot, source, functions):
         """Keep ``source`` as this Work's candidate for ``slot`` (replacing an earlier one); returns its id."""
-        if slot == NOTES_SLOT:
+        if slot == NOTES_SLOT or str(slot).startswith(LINE_PREFIX):
             raise ValueError('reserved procedure slot')
         now = self.clock()
         row_id = str(uuid.uuid4())
