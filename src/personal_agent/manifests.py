@@ -58,6 +58,9 @@ HOST_TOOLS={
     'propose_current_state': HostTool(True, False, False, 'current_context', False, 'value'),
     # SEC-ATTN-01 (#659): an owner-accepted preparation (reminder/prepare).
     'schedule_preparation': HostTool(True, False, True, None, False, None),
+    # #798: the owner's entrusted lines (list/read, and owner-started writes of a brief version); a read
+    # shows a line's brief and its runs' outcomes, so the information-use audit lists it.
+    'entrusted_line': HostTool(True, False, True, 'lines', False, None),
     # #774: ask the owner for a current position in the paired Telegram chat.
     'ask_location': HostTool(True, False, True, None, False, None),
     # #407: one short message to the owner while the Work runs; its text is the transcript's, recorded by length.

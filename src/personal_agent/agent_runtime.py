@@ -152,7 +152,8 @@ FORGET_RECORD_ARGUMENTS={
  'ref':('The exact item: memory:<id> (an id from list_memory or search_memory), state:<id> or obs:<id> (from the current context), '
   'or procedure:<id> (a saved function library listed with its secret set in the current context, or the working_notes ref in '
   'the owner profile; forgetting it stops its use and puts the previous saved version, if any, back in use), '
-  'or message:<id>[,<id>...] (up to 20 conversation messages; action find lists them). '
+  'or message:<id>[,<id>...] (up to 20 conversation messages; action find lists them), '
+  'or line:<id> (an entrusted line from entrusted_line read: every version of its brief; its runs stop). '
   'Trust records also accept trust:<engine>|<kind>|<identity> from settings_read ai_connections. Their authority is disabled immediately and a revocation marker remains. Restoring trust requires settings_change ai_connections restore and owner confirmation, never this tool undo.'),
  'receipt':'A receipt from list: undo restores that forget; to erase something already forgotten, call delete with its receipt instead of a ref.',
  'query':'For action find: words to find the conversation messages that state something.',
@@ -167,6 +168,8 @@ REDACTED_ARGUMENTS={name:tool.recorded_by_length for name,tool in HOST_TOOLS.ite
 #: preparation goal is owner text the owner reads back, not a secret.
 #: Without a redactor it falls back to the length placeholder.
 SCRUBBED_ARGUMENTS={'schedule_preparation':('goal','title','offer'),
+                    # #798: a line's brief is the owner's own words, kept like a preparation goal.
+                    'entrusted_line':('task','report_promise','rules','rule','open_matters'),
                     # Memory queries are model-authored owner text and may
                     # contain a stored credential; scrub every durable call record.
                     'search_memory':'query',
@@ -429,7 +432,27 @@ SCHEDULE_PREPARATION_ARGUMENTS={
  'title':'For kind prepare, what the owner reads for the scheduled preparation or proposal (#393, #755), apart from goal: a short name in the owner\'s language (at most 60 characters).',
  'replaces':('The id (from settings_read preparations) of an active preparation this one takes the place of, when the owner changes what an existing watch or schedule does (another target, a new plan, a different time) (#766). '
   'In a Work the owner started, Still stops it once this one is scheduled, so the two never run side by side and the new one need not wait for the old to end; say in your answer what was stopped. Omit it for an additional preparation.'),
+ 'line':('The id of the entrusted line (entrusted_line) this preparation does the work of (#798): the line you opened for a '
+  'continuing responsibility, or an existing one when the owner starts the same work again; continue it instead of opening '
+  'another. A replacement keeps its line by itself.'),
  'offer':('For kind prepare, what the owner reads for the scheduled preparation or proposal (#393, #755), apart from goal, which each run receives as its brief: at most 6 short lines (400 characters) in the owner\'s own words, one point a line: the limits that matter to their decision (money, risk, counts), which of those you chose yourself and are assuming (say so), what it will not do, and when they will hear from it. Write plain words, not the method\'s terms: say what a term means for the owner, and prefer concrete amounts and times to ratios. State something as blocked only when Still or the service actually blocks it; otherwise say it is how you will do it. Still shows the time, repetition and last run itself, so the offer need not repeat them. In a Work the owner started, state what is set up and that it can be cancelled; in a continuation, retry or replay Work, describe what would run after acceptance without claiming it is set up. Ask nothing (#755).'),
+}
+#: #798: one continuing responsibility the owner entrusted, with an identity of its own.
+ENTRUSTED_LINE_DESCRIPTION=(
+ 'Keep a continuing responsibility the owner entrusted to you as one line that outlives any single schedule (#798). '
+ 'open it when the owner hands you ongoing work (task: one sentence in their words; report_promise: what you will report '
+ 'and when; rules: their standing rules, one a line), then schedule its work with schedule_preparation line. When the '
+ 'owner starts the same work again, continue the existing line. When the owner corrects it, judge whether they mean today '
+ 'only or from now on: only a standing correction is a revise with rule (or drop_rule); if unclear, apply it today only '
+ 'and say so. list answers what you are handling for the owner; read gives one line\'s brief and latest outcomes when it '
+ 'bears on a question; stop ends it and everything under it. A line grants nothing: approvals and payment stay as they are. '
+ 'Still tells the owner itself when a line opens, takes a standing rule or stops; do not repeat that message.')
+ENTRUSTED_LINE_ARGUMENTS={
+ 'action':'list, read, open, revise, undo, stop or restart. Only a Work the owner started may open, revise, undo, stop or restart.',
+ 'line':'The line id (from list, read or open), for every action but list and open.',
+ 'expected_version':'For revise: the version you read (list, read or open). A newer version wins and is shown to you.',
+ 'version':'For undo: the version to undo (the current one).',
+ 'account_every_days':'How often the line gives an account of itself (default 7): 1-12 days, or whole weeks up to 84 days.',
 }
 #: #774 step 2: ask the owner, in the paired Telegram chat, for a current position.
 ASK_LOCATION_DESCRIPTION=('Ask the owner through their paired Telegram chat to share their current location for this request. Use it only when the answer depends on where the owner is now and the current context does not already hold a fresh position. '
@@ -573,7 +596,8 @@ DEFINITIONS=[
  schema('calendar_query','List the owner\'s calendar events between two RFC3339 timestamps that both carry an explicit UTC offset, from every calendar the owner shows in Google Calendar; each event names its calendar. Use this to answer what is scheduled. Read-only: to create, change or delete an event, use api_request with the google-calendar slot (Google Calendar API v3).',{'start':STRING,'end':STRING,'timezone':STRING},['start','end','timezone']),
  schema('weather',WEATHER_DESCRIPTION,{'city':STRING,'country':STRING,'location_ref':STRING}),
  schema('propose_current_state',PROPOSE_CURRENT_STATE_DESCRIPTION,described({'predicate':{'type':'string','enum':['current_place','work_mode','availability_hint']},'value':STRING,'place_ref':STRING,'source':STRING,'until':STRING,'supersedes':STRING},PROPOSE_CURRENT_STATE_ARGUMENTS),['predicate']),
- schema('schedule_preparation',SCHEDULE_PREPARATION_DESCRIPTION,described({'kind':{'type':'string','enum':['reminder','prepare']},'goal':STRING,'due':STRING,'timezone':STRING,'recurrence':{'type':'string','enum':['daily','weekdays','weekly']},'rrule':STRING,'every_minutes':STRING,'until':STRING,'max_runs':STRING,'report_every_minutes':STRING,'delivery':{'type':'string','enum':['send','keep','when_needed']},'title':STRING,'offer':STRING,'replaces':STRING},SCHEDULE_PREPARATION_ARGUMENTS),['kind','goal','due']),
+ schema('schedule_preparation',SCHEDULE_PREPARATION_DESCRIPTION,described({'kind':{'type':'string','enum':['reminder','prepare']},'goal':STRING,'due':STRING,'timezone':STRING,'recurrence':{'type':'string','enum':['daily','weekdays','weekly']},'rrule':STRING,'every_minutes':STRING,'until':STRING,'max_runs':STRING,'report_every_minutes':STRING,'delivery':{'type':'string','enum':['send','keep','when_needed']},'title':STRING,'offer':STRING,'replaces':STRING,'line':STRING},SCHEDULE_PREPARATION_ARGUMENTS),['kind','goal','due']),
+ schema('entrusted_line',ENTRUSTED_LINE_DESCRIPTION,described({'action':{'type':'string','enum':['list','read','open','revise','undo','stop','restart']},'line':STRING,'task':STRING,'report_promise':STRING,'rules':STRING,'rule':STRING,'drop_rule':STRING,'open_matters':STRING,'expected_version':STRING,'version':STRING,'account_every_days':STRING},ENTRUSTED_LINE_ARGUMENTS),['action']),
  schema('tell_owner',TELL_OWNER_DESCRIPTION,{'text':STRING},['text']),
  schema('ask_location',ASK_LOCATION_DESCRIPTION,described({'reason':STRING,'button_label':STRING,'mode':{'type':'string','enum':['ask','with_answer']}},ASK_LOCATION_ARGUMENTS),['reason']),
  schema('skill_load',SKILL_LOAD_DESCRIPTION,{'skill':STRING,'part':{'type':'string','enum':['full','header']}},['skill']),
@@ -1778,6 +1802,8 @@ READONLY_EXCLUDED=tuple(name for name,tool in HOST_TOOLS.items() if not tool.rea
 #: #659: host actions offered only when the service wired owner preparations
 #: into this Work (never to a delegated specialist or a CLI bridge process).
 PREPARATION_ACTIONS=frozenset({'schedule_preparation'})
+#: #798: offered only when the service wired the owner's entrusted lines into this Work.
+LINE_ACTIONS=frozenset({'entrusted_line'})
 #: #774: offered only when the service wired a Telegram location request into this Work.
 LOCATION_ACTIONS=frozenset({'ask_location'})
 #: #407: offered only when the service wired the owner's interim messages into this Work.
@@ -3322,7 +3348,11 @@ def owner_wait_steps(rows, tools=None):
  return waits
 
 class Capabilities:
- def __init__(self,store,adapter,config,key,job_id,record,readonly=False,network=None,document_access=True,packages=None,allowed_tools=None,document_context=False,public_page_scope=None,memory_approval=None,inherited_provenance=(),calendar=None,calendar_owner=None,memory_request=None,current_packages=None,lookup_sources=None,delegated=False,inherited_excluded=(),budget=None,browser=None,browser_approvals=None,browser_unavailable=None,judgments=None,secret_redactor=None,current_context=None,preparations=None,location_request=None,owner_update=None,settings=None,information_use=None,skills=None,drive=None,mail=None,connections=None,a2a=None):
+ def __init__(self,store,adapter,config,key,job_id,record,readonly=False,network=None,document_access=True,packages=None,allowed_tools=None,document_context=False,public_page_scope=None,memory_approval=None,inherited_provenance=(),calendar=None,calendar_owner=None,memory_request=None,current_packages=None,lookup_sources=None,delegated=False,inherited_excluded=(),budget=None,browser=None,browser_approvals=None,browser_unavailable=None,judgments=None,secret_redactor=None,current_context=None,preparations=None,location_request=None,owner_update=None,settings=None,information_use=None,skills=None,drive=None,mail=None,connections=None,a2a=None,lines=None,line_note=None):
+  # #798: the service's ``entrusted_line`` handler bound to this Work, or None (delegated
+  # specialist, CLI bridge without the relay): then the tool is not offered.  ``line_note()``
+  # is what a run of a line reads before its next step when the line's brief changed, or None.
+  self.lines,self.line_note=lines,line_note
   # CONN-API: ``() -> {name: slot}`` of Still-held connections usable through api_request.
   self.connections=connections
   self._api_lock=threading.Lock();self._context_lock=threading.Lock()
@@ -3472,6 +3502,7 @@ class Capabilities:
   hidden=set()
   if self.browser is None:hidden|=BROWSER_ACTIONS
   if self.preparations is None:hidden|=PREPARATION_ACTIONS
+  if self.lines is None:hidden|=LINE_ACTIONS
   if self.location_request is None:hidden|=LOCATION_ACTIONS
   if self.owner_update is None:hidden|=OWNER_UPDATE_ACTIONS
   if self.settings is None:hidden|=SETTINGS_ACTIONS
@@ -4335,6 +4366,14 @@ class Capabilities:
     if isinstance(args.get(field),str) and args[field]:
      args={**args,field:self.secret_masked(args[field])}
    return self.preparations(args)
+  if name=='entrusted_line':
+   # #798: the owner's entrusted lines; the service refuses a write outside a Work the owner started.
+   if self.lines is None or self.delegated:
+    raise ToolError(msg('agent_runtime.preparations_unavailable'),'needs_setup',requires='owner-preparations')
+   for field in ('task','report_promise','rules','rule','open_matters'):
+    if isinstance(args.get(field),str) and args[field]:
+     args={**args,field:self.secret_masked(args[field])}
+   return self.lines(args)
   if name=='ask_location':
    # #774: one Telegram prompt to the owner; the reply continues this request once.
    if self.location_request is None or self.delegated:
@@ -5136,6 +5175,10 @@ def _evidence_detail(name,result):
   # #659: which preparation, its state and slot; never the goal text.
   return {key:result.get(key) for key in ('preparation_id','kind','state','scheduled','requires_owner_acceptance',
                                           'due','recurrence','delivery','accepted_by','every_minutes','until','max_runs')}
+ if name=='entrusted_line':
+  # #798: which line, its version and state; never the brief's text.
+  return {key:result.get(key) for key in ('line_id','version','state','restated','changed','money_rules') if key in result}|(
+   {'lines':len(result.get('lines') or [])} if 'lines' in result else {})
  if name=='tell_owner':return {'sent':bool(result.get('sent')),'channel':result.get('channel')}
  if name=='ask_location':return {'requested':bool(result.get('requested')),'channel':result.get('channel'),
                                  **({'with_answer':True} if result.get('with_answer') else {})}
@@ -5320,6 +5363,8 @@ def _fallback_text(name, result, sources):
  if name=='forget_record' and isinstance(result,dict):return str(result.get('message') or '')
  if name=='schedule_preparation' and isinstance(result,dict):
   return str(result.get('next_step') or msg('agent_runtime.preparation_recorded'))
+ if name=='entrusted_line' and isinstance(result,dict):
+  return str(result.get('text') or result.get('next_step') or msg('agent_runtime.preparation_recorded'))
  if name=='tell_owner' and isinstance(result,dict) and result.get('sent'):
   return msg('agent_runtime.owner_told')
  if name=='ask_location' and isinstance(result,dict) and result.get('requested'):
@@ -6293,6 +6338,11 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
   finally:overlap.settle()
   steer=claim_owner_steers(capabilities.store,capabilities.job_id,record)
   if steer:messages.append({'role':'user','content':steer})
+  # #798: a correction to this run's entrusted line reaches its next step (a stop ends it by itself).
+  line_note=capabilities.line_note() if callable(getattr(capabilities,'line_note',None)) else None
+  if line_note:
+   record('entrusted_line','delivered',json.dumps({'note':'brief-changed'}))
+   messages.append({'role':'user','content':line_note})
   # #620: the "try a different path" turn is no budget of its own (the turn after it is spent like
   # any other); it is said once per run of failed batches, not after every one.
   if path_failed and not nudged:

@@ -63,6 +63,8 @@ CATEGORY_NAMES = {
     'current_context': '현재 상황', 'notes': '메모', 'browser': msg('information_use.signed_in_browser_pages'),
     'settings': '설정', 'spliced': msg('information_use.material_attached_to_the_request'), 'prepared': msg('information_use.prepared_answers'),
     'conversation': '이전 대화', 'records': msg('information_use.an_earlier_answer_s_information_use'), 'attention': '기다리는 동안 알린 것',
+    # #798: an entrusted line's brief and its runs' outcomes.
+    'lines': '맡은 일',
 }
 #: Turn-provenance events that are not tools the worker called.
 _NOT_TOOLS = frozenset({'model', 'subscription_engine', 'orchestrator'})

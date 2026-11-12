@@ -702,6 +702,9 @@ class AgentService:
         # #659: owner-accepted preparations, run by the existing work loop.
         self.preparations=prep.Preparations(
             store,notice_destination=lambda channel:self.preparations_service.notice_destination(channel))
+        # #798: entrusted lines (one continuing responsibility each) on the preparations' clock.
+        from .entrusted_lines import EntrustedLines
+        self.lines=EntrustedLines(store,clock=lambda:self.preparations.clock())
         # #805: post-Work owner-model upkeep, claimed by the same loop when idle
         # and run off the work thread, one at a time.
         self.owner_model=om.Upkeep(store)
@@ -1376,6 +1379,20 @@ class AgentService:
         replayed turn - still only proposes; a scheduled run proposes nothing.
         """
         return self.preparations_service.preparation_scheduler(job, prompt)
+
+    def line_handler(self, job):
+        """#798: the ``entrusted_line`` handler bound to one Work (``PreparationsService.line_handler``)."""
+        return self.preparations_service.line_handler(job)
+
+    def reply_delivery(self, job):
+        """How a finished Work's reply is delivered: ``pending`` to its chat, ``none`` without one (#798: ``cancelled``
+        for a run of an entrusted line the owner stopped, whose stop confirmation is the only message)."""
+        if not job.get('chat_id'):return 'none'
+        return 'cancelled' if self.preparations_service.stopped_line_run(job) else 'pending'
+
+    def line_note(self, job):
+        """#798: what a run of an entrusted line reads before its next step when the brief changed, or None."""
+        return self.preparations_service.line_note(job)
 
     @staticmethod
     def preparation_delivery(row):
@@ -4881,8 +4898,10 @@ class AgentService:
         with self.store.db() as db:
             refusal=self.preparations.run_refusal(db,job_id,self.preparations.clock())
         # Cancelling future slots leaves an already running Work alone, as
-        # before. The accepted watch deadline still bounds active execution.
-        return bool(refusal and (job.get('status')!='running' or refusal=='preparation-window-expired'))
+        # before. The accepted watch deadline still bounds active execution;
+        # #798: so does stopping its entrusted line (stop wins at the next step).
+        return bool(refusal and (job.get('status')!='running'
+                                 or refusal in ('preparation-window-expired',prep.LINE_STOPPED,prep.LINE_UNREADABLE)))
 
     def work_budget(self, job_id):
         # #1301: resume the original request's counters and remaining active

@@ -40,7 +40,9 @@ BOUNDED_NAMES = ['ask_location', 'browser_click', 'browser_find', 'browser_open'
                  'capability_search',  # #1299: metadata-only discovery on the owner-state relay.
                  'code_run',  # #1380: sandboxed code runs, decided by the service.
                  # #1172: the owner's Drive reads, relayed to the service.
-                 'drive_read', 'drive_search', 'find_files',
+                 'drive_read', 'drive_search',
+                 'entrusted_line',  # #798: the owner's entrusted lines, relayed to the service.
+                 'find_files',
                  'forget_record', 'information_use', 'list_memory', 'list_notes', 'list_roots',
                  'mail_read', 'mail_search',  # #150: the owner's Gmail reads, relayed to the service.
                  'propose_current_state', 'public_page_read',

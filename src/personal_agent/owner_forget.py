@@ -54,8 +54,9 @@ MESSAGE_REFS = 20
 #: A Work in one of these states no longer runs on its own; a transcript row of any other Work is refused.
 FINISHED_WORK = ws.TERMINAL
 #: #1486: ``procedure:<id>``, one saved version of a secret set's function library (``procedures``).
+#: #798: ``line:<id>``, one entrusted line: every version of its brief (``entrusted_lines``).
 KINDS = {MEMORY_PREFIX: 'memory', CLAIM_PREFIX: 'claim', OBSERVATION_PREFIX: 'observation', 'trust:': 'trust',
-         'procedure:': 'procedure', MESSAGE_PREFIX: 'message'}
+         'procedure:': 'procedure', MESSAGE_PREFIX: 'message', 'line:': 'line'}
 FORGOTTEN = 'forgotten'
 #: #19: the receipt operation of a Memory row Still moved into the working notes (undone like a forget).
 MIGRATE = 'migrate'
@@ -294,6 +295,19 @@ class OwnerForget:
                 'slot': row['slot'], 'version': row['version'],
                 'restored_version': restored['version'] if restored is not None else None}
 
+    def _exclude_line(self, db, owner_key, line_id, receipt_id, now):
+        """#798: every brief version of one entrusted line leaves every later context; its runs stop."""
+        from .entrusted_lines import slot
+        from .procedures import CURRENT, KEPT
+        rows = db.execute('SELECT id,state FROM procedure_versions WHERE slot=? AND state IN (?,?) ORDER BY version',
+                          (slot(line_id), CURRENT, KEPT)).fetchall()
+        if not rows:
+            raise _refuse('stale')
+        for row in rows:
+            db.execute('UPDATE procedure_versions SET state=? WHERE id=?', (FORGOTTEN, row['id']))
+        return {'rows': [{'table': 'procedure_versions', 'id': row['id'], 'prior': row['state']} for row in rows],
+                'line': line_id}
+
     def _exclude_message(self, db, owner_key, ids, receipt_id, now):
         """#367: transcript rows leave every AI reader now; the row and its text stay (append + invalidate)."""
         self._context_scope(db, owner_key)   # only this installation's owner has a transcript here
@@ -512,6 +526,9 @@ class OwnerForget:
                                      'summary': trust_record.describe(record)}
                 elif receipt['kind'] == 'message':
                     entry['item'] = {'messages': len(json.loads(receipt['items_json']).get('rows') or [])}
+                elif receipt['kind'] == 'line':
+                    entry['item'] = {'line': json.loads(receipt['items_json']).get('line'),
+                                     'versions': len(json.loads(receipt['items_json']).get('rows') or [])}
                 elif head.get('id'):
                     found = db.execute('SELECT source_kind FROM context_observations WHERE id=?', (head['id'],)).fetchone()
                     if found:

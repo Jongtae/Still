@@ -176,6 +176,8 @@ class StrictLaunchArguments(unittest.TestCase):
         # #774: trusted-local also pre-approves the owner-state tools its service relays.
         owner_state = (',mcp__agentos__calendar_query,'
                        'mcp__agentos__list_memory,mcp__agentos__search_memory,mcp__agentos__search_conversation,mcp__agentos__save_memory,mcp__agentos__schedule_preparation,'
+                       # #798: the owner's entrusted lines, relayed the same way.
+                       'mcp__agentos__entrusted_line,'
                        'mcp__agentos__ask_location,'
                        # #407: the owner's interim messages, relayed the same way.
                        'mcp__agentos__tell_owner,'
