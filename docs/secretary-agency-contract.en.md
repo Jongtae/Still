@@ -128,6 +128,8 @@ When the owner agrees to a continuing preparation, the owner's AI uses the known
 
 With `when_needed` delivery, a bounded judgment compares the accepted goal, scrubbed result and last notification on ordinary intermediate checks. Identical results stay quiet. If judgment is unavailable, the existing fallback sends once, then keeps later unjudged runs quiet. A check that closes the accepted window or is due to report at the owner's requested cadence queues its report independently of this judgment. For an intermediate check with a successful result, a bounded judgment can close that window early when the observed result establishes that nothing further can change. A day-level rhythm continues on its next eligible day. The accept prompt states interval, deadline, run bound and delivery, and the owner can cancel through the supported Settings or notification control.
 
+An accepted preparation sends one notice to its paired conversation when a quiet run starts waiting for a connection or a window expires without its result. It uses the existing Work continuation when the connection is ready. A new connection wait after a resume can send its own notice. The day plan reads the recorded wait or expiry, and does not offer the same work again while it is waiting.
+
 ### Offered preparations
 
 Under #582/#583, the worker may answer and propose a plausible repeating preparation, and the daily look-back may suggest one from requests on separate owner days. Proposals remained `proposed` until accepted; #717 replaced that with act-then-tell (above). A previously declined equivalent goal is not offered for 30 days; identity uses exact goal equality or the existing judgment. Do not substitute a hard-coded category list.

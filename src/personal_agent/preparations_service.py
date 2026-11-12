@@ -428,6 +428,41 @@ class PreparationsService:
         if row.get('delivery_mode')==prep.DELIVERY_WHEN_NEEDED:return prep.DELIVERY_WHEN_NEEDED
         return 'send' if row['channel']!=prep.CHANNEL_WEB else 'keep'
 
+    def notice_destination(self, channel):
+        """Resolve only the preparation's own conversation surface and current pairing."""
+        surface = next((item for item in self.service.surfaces if item.name == channel), None)
+        pairing = surface.pairing() if surface is not None else None
+        if pairing is None:
+            return None
+        generation = surface.owner_generation()
+        if generation and pairing.channel == surface.channel_prefix + generation:
+            return pairing.owner, generation, surface.name
+        return None
+
+    def status_notice_text(self, notification):
+        """Suppress obsolete waiting episodes and notices for stopped preparations."""
+        service = self.service
+        kind = notification['kind']
+        with service.store.db() as db:
+            row = db.execute('SELECT * FROM preparations WHERE id=?',
+                             (notification['fingerprint'],)).fetchone()
+            if (not row or row['state'] == prep.STATE_CANCELLED
+                    or row['channel'] != notification['surface']):
+                return None
+            if kind.startswith(prep.BLOCKED_NOTICE_PREFIX):
+                job = db.execute('SELECT status FROM jobs WHERE id=?', (notification['job_id'],)).fetchone()
+                latest = db.execute('SELECT id FROM telegram_notifications WHERE job_id=? AND kind GLOB ? '
+                                    'ORDER BY rowid DESC LIMIT 1',
+                                    (notification['job_id'], prep.BLOCKED_NOTICE_PREFIX + '*')).fetchone()
+                if (row['state'] != prep.STATE_RUNNING or row['last_run_job_id'] != notification['job_id']
+                        or row['window_end'] is not None and service.preparations.clock() >= row['window_end']
+                        or not job or not ws.is_awaiting_connection(job['status'])
+                        or not latest or latest['id'] != notification['id']):
+                    return None
+        title = service._redact_known_secrets(prep.owner_title(dict(row)))
+        return msg('preparations.notice_waiting' if kind.startswith(prep.BLOCKED_NOTICE_PREFIX)
+                   else 'preparations.notice_elapsed', title=title)
+
     def run_due_preparation(self, now=None):
         """One tick of owner-accepted preparations (#659).
 

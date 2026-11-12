@@ -82,6 +82,8 @@ REASON_WINDOW_CLOSED = 'window-closed-report'
 REASON_PROMISED_REPORT = 'promised-report-due'
 #: The Telegram notification kind of a ``notify`` decision.
 NOTIFY_KIND = 'preparation_notify'
+BLOCKED_NOTICE_PREFIX = 'preparation_blocked:'
+EXPIRED_NOTICE_KIND = 'preparation_window_elapsed'
 NOTIFIED_TEXT_BYTES = 1500
 CHANNEL_TELEGRAM, CHANNEL_WEB = 'telegram', 'web'
 
@@ -998,8 +1000,30 @@ def digest(rows):
 class Preparations:
     """The ``preparations`` rows of one owner store.  No model, no network."""
 
-    def __init__(self, store, clock=time.time):
+    def __init__(self, store, clock=time.time, notice_destination=None):
         self.store, self.clock = store, clock
+        self.notice_destination = notice_destination
+
+    def _queue_status_notice(self, db, row, job_id, kind, created):
+        if self.notice_destination is None or not row['accepted_by']:
+            return
+        destination = self.notice_destination(row['channel'])
+        if destination:
+            owner, generation, surface = destination
+            anchor = db.execute('SELECT channel,chat_id FROM jobs WHERE id=?', (row['created_from'],)).fetchone()
+            if (anchor and str(anchor['channel']).startswith(surface + ':')
+                    and anchor['chat_id'] is not None and str(anchor['chat_id']) != str(owner)):
+                return
+            self.store.telegram.queue_notification(job_id, owner, generation, kind, row['id'], surface,
+                                                   db=db, created=created)
+
+    def connection_wait_notice(self, db, work_id, message_id, created):
+        """Bind a quiet run's new connection wait to its persisted guidance message."""
+        row = db.execute('SELECT p.* FROM preparations p JOIN jobs j ON j.id=p.last_run_job_id '
+                         "WHERE j.id=? AND j.chat_id IS NULL AND p.state=? AND j.status='awaiting_connection'",
+                         (work_id, STATE_RUNNING)).fetchone()
+        if row:
+            self._queue_status_notice(db, row, work_id, BLOCKED_NOTICE_PREFIX + str(message_id), created)
 
     def get(self, preparation_id):
         with self.store.db() as db:
@@ -1506,8 +1530,7 @@ class Preparations:
             return 'preparation-run-limit'
         return None
 
-    @staticmethod
-    def refuse_run(db, work_id, now, reason):
+    def refuse_run(self, db, work_id, now, reason):
         """Finish a refused queued/waiting run without presenting setup as its result.
 
         Called only after run_refusal in the same transaction. Retain prior
@@ -1530,6 +1553,11 @@ class Preparations:
                    'WHERE last_run_job_id=? AND state=?', (*updates.values(), work_id, STATE_RUNNING))
         db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                    (work_id, 'preparation', 'withheld', json.dumps({'reason': reason, 'resumed': False}), now))
+        if row and reason == 'preparation-window-expired':
+            job = db.execute('SELECT chat_id,delivery FROM jobs WHERE id=?', (work_id,)).fetchone()
+            # A pending paired reply will already render the expiry as the Work's failure.
+            if not job['chat_id'] or job['delivery'] != 'pending':
+                self._queue_status_notice(db, row, work_id, EXPIRED_NOTICE_KIND, now)
         return True
 
     def start(self, row, *, channel, chat_id, now, immediate=False):
@@ -1570,6 +1598,7 @@ class Preparations:
                 else:
                     db.execute('UPDATE preparations SET state=?,updated_at=? WHERE id=? AND state=?',
                                (STATE_EXPIRED, now, current['id'], STATE_SCHEDULED))
+                self._queue_status_notice(db, current, key, EXPIRED_NOTICE_KIND, min(now, slot))
                 return None
             if existing:
                 job_id = existing['id']
