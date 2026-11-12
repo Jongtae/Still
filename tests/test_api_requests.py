@@ -677,7 +677,7 @@ class ReadIsNotOrder(Base):
 class BoundedWatch(Base):
     """A 3-run bounded watch notifies only when the observed data changed (#719 watch, unchanged)."""
 
-    def test_three_runs_notify_on_the_first_and_on_a_change_only(self):
+    def test_three_runs_notify_on_the_first_and_the_closing_check(self):
         preparations = prep.Preparations(self.store, clock=self.clock)
         start = self.clock.now
         row = preparations.create(kind=prep.KIND_PREPARE, goal='자산 요약이 바뀌면 알려줘', due_at=start, timezone='Asia/Seoul',
@@ -702,7 +702,7 @@ class BoundedWatch(Base):
                 preparations.record_notified(work, prep.text_digest(result.content), result.content, self.clock.now)
         self.assertEqual(decisions, [(prep.DECISION_NOTIFY, prep.REASON_JUDGED_NEEDED),
                                      (prep.DECISION_QUIET, prep.REASON_UNCHANGED),
-                                     (prep.DECISION_NOTIFY, prep.REASON_JUDGED_NEEDED)])
+                                     (prep.DECISION_NOTIFY, prep.REASON_WINDOW_CLOSED)])
         with self.store.db() as db:
             queued = db.execute('SELECT count(*) FROM telegram_notifications WHERE kind=?', (prep.NOTIFY_KIND,)).fetchone()[0]
         self.assertEqual(queued, 2)

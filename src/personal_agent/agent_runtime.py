@@ -401,15 +401,21 @@ PROPOSE_CURRENT_STATE_ARGUMENTS={
  'supersedes':'The state:... ref of a hypothesis the owner just corrected.',
 }
 #: SEC-ATTN-01 (#659): the one model-facing operation of owner-accepted preparations.
-SCHEDULE_PREPARATION_DESCRIPTION=('Schedule something for a later time that the owner asked for or that would serve them (kind says what happens at due). '
- 'When the goal is a timed or conditional action at an external service (an order or a transfer), first read that service\'s documentation for its own scheduled or conditional feature (for example a reserved, stop or conditional order) and prefer it to a preparation or a watch: one action now that the service itself executes, instead of Still waking up to act. Never schedule an action that none of your tools can perform; say so and what the owner can do instead (#1456). '
- 'In a Work the owner started it is scheduled at once and the owner is told with a cancel button; the result says its state. A scheduled run takes no step that needs approval, and one the owner did not ask for never pays. Do not use it to answer a question now. '
- 'The wish itself is not a memory: never save the request sentence with save_memory. For an agreed continuing request, choose a reasonable missing time, schedule it, then name the assumption and how to cancel. Ask one question only for a decisive detail the owner must supply; keep the request in this conversation so the owner can answer without retyping it. Only claim it is scheduled after the tool confirms it.')
+SCHEDULE_PREPARATION_DESCRIPTION=(
+ 'Schedule later work that the owner asked for or that would serve them. For a timed or conditional external action, '
+ 'first read the service documentation and prefer its own scheduled or conditional action to a preparation or watch. '
+ 'Never schedule an action your tools cannot perform; explain what the owner can do instead (#1456). '
+ 'A Work the owner started schedules at once and tells them with a cancel button. Scheduled runs take no step that '
+ 'needs approval, and one the owner did not ask for never pays. Do not use this to answer a question now. '
+ 'The wish itself is not a memory: never save the request sentence with save_memory. '
+ 'For an agreed continuing request, choose a reasonable missing time, schedule it, then name the assumption. '
+ 'Ask one question only for a decisive detail the owner must supply. Claim it is scheduled only after the tool confirms it.')
 SCHEDULE_PREPARATION_ARGUMENTS={
  'kind':('reminder: at due Still sends goal to the owner as the reminder text; no model runs then. prepare: at due Still runs goal as a new request with the usual tools and keeps the result as a prepared answer for when the owner asks (delivery send also sends it to the owner). '
   'Set up ahead (#582, #717): when the owner would plausibly want something again on a rhythm, or a follow-up check or prepared result would serve what they are doing, in a Work the owner started, answer and also set it up, saying in one line that it is set up, when it runs, how the owner hears and that it can be cancelled (#755). A declined_before result means the owner already said no to this: drop it and do not mention it again.'),
  'goal':('One short sentence the owner will read (reminder), or the request to run (prepare): the whole brief each run needs (at most 8000 characters; reminder at most 500), its plan and limits included, so nothing has to be kept elsewhere for it; never credentials. Preserve the task interval and distinguish the owner\'s required limits from your provisional method or parameter choices. When revising a plan, reassess those choices against the latest request instead of copying earlier parameters as standing preferences.'),
- 'due':'An RFC3339 time; without an offset it is local time in timezone. For an event, pick a time before the event.',
+ 'due':('An RFC3339 time; without an offset it is local time in timezone. For an event, pick a time before the event. '
+        'When you ask for a decisive missing detail, keep the request in this conversation so the owner can answer without retyping it.'),
  'timezone':'An IANA name such as Asia/Seoul; default the owner\'s time zone.',
  'recurrence':('daily, weekdays or weekly (repeating from due); omit for once. A request that repeats on a calendar rhythm (every day, weekday mornings, every Monday) is one preparation with recurrence, and a repetition up to a deadline is one watch (every_minutes with until). Combine recurrence with every_minutes and until for the same local window on each recurring day; never split either into separately dated one-shot preparations.'),
  'rrule':'Use rrule only when daily/weekdays/weekly cannot express specific weekdays, monthly days, every N weeks, an end date or a run count: FREQ=DAILY/WEEKLY/MONTHLY; INTERVAL=1–12; BYDAY (ordinals only MONTHLY); BYMONTHDAY=1–31 or -1; UNTIL=date/date-time or COUNT=1–366, never both; no other parts; repeats from due, without recurrence or a window (#580).',

@@ -2714,7 +2714,9 @@ class SecretaryStandard(Harness):
                       'asking whether to set it up', 'reads and accepts'):
             self.assertNotIn(stale, text)
         self.assertIn('when it runs, how the owner hears and that it can be cancelled', text)
-        self.assertIn('If a required value is missing, ask one question and do not claim the watch is scheduled', text)
+        self.assertIn('choose a reasonable missing time', text)
+        self.assertIn('Ask one question only for a decisive detail the owner must supply', text)
+        self.assertIn('Claim it is scheduled only after the tool confirms it', text)
         offer = tool['parameters']['properties']['offer']['description']
         self.assertIn('state what is set up and that it can be cancelled', offer)
         self.assertIn('describe what would run after acceptance without claiming it is set up', offer)
