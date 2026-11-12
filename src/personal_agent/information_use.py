@@ -50,6 +50,8 @@ READ_CATEGORIES = {
     # #1445 part 4: a host action's category is declared once (``manifests.HOST_TOOLS``).
     **{name: tool.reads for name, tool in HOST_TOOLS.items() if tool.reads},
     MEMORY_UNDO_ACTION: 'memory',
+    # #802: the brief and earlier outcomes a run of an entrusted line was given with its request.
+    'entrusted_line_read': 'lines',
     # #1197: a read through the owner's AI-side connection (claude.ai connector) the turn's stream showed completing.
     'connector_read': 'ai_connection',
     # ATTN-WAIT-01 (#839): an item Still reminded the owner of on the waiting draft.
@@ -216,6 +218,11 @@ def merge_references(earlier, later):
 def _event_items(action, evidence):
     """Short labels of the owner items one successful read or write event shows."""
     evidence = evidence if isinstance(evidence, dict) else {}
+    if action in ('entrusted_line', 'entrusted_line_read'):
+        # #802: which line (and brief version) the AI was given; a list names how many lines.
+        if evidence.get('line_id'):
+            return [f"맡은 일 {_text(evidence.get('line_id'), 40)} (버전 {int(evidence.get('version') or 0)})"]
+        return [f"맡은 일 {int(evidence.get('lines') or 0)}개"] if 'lines' in evidence else []
     if action == 'search_conversation':
         return [f"earlier exchange {ref['work_id']} (messages {','.join(str(i) for i in ref['message_ids'])})" for ref in evidence.get('exchange_refs') or []]
     if action == 'list_memory':
