@@ -1551,7 +1551,7 @@ class WorkExecutor:
                     'SELECT status,detail FROM tool_events WHERE job_id=? AND created>=?',(job['id'],run.claimed_at)).fetchall())):
                 service.store.put('budget_continue:'+job['id'],{'state':'pending'},db=db)
             db.execute("UPDATE jobs SET status=?,response=?,error=?,provider=?,model=?,delivery=?,owner_cause=?,owner_verified=?,owner_note=?,goal_outcome=?,effect_state=? WHERE id=?",
-                       (run.outcome,run.response,cause,run.provider,run.model,'pending' if job['chat_id'] else 'none',spoken,observed,note,goal,effect,job['id']))
+                       (run.outcome,run.response,cause,run.provider,run.model,service.reply_delivery(job),spoken,observed,note,goal,effect,job['id']))
             # #308 S1: the steers the attempt whose reply this is had in hand are answered by it.
             if run.outcome in ('succeeded','partial') and run.attempt_started_at is not None:
                 service.store.answer_steers(job['id'],run.attempt_started_at,db)
@@ -1613,7 +1613,7 @@ class WorkExecutor:
             db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id,delivery_projection) VALUES (?,?,?,?,?,?,?)',('assistant',transcript,job['channel'],time.time(),job.get('workspace_id'),job['id'],'blocked-turn' if isinstance(exc,BlockedTurn) else None))
             goal_outcome,effect_state=service.run_goal_outcome(run),service.work_effect_state(job['id'],run.claimed_at)
             db.execute("UPDATE jobs SET status=?,error=?,delivery=?,owner_cause=COALESCE(?,owner_cause),goal_outcome=?,effect_state=? WHERE id=?",
-                       (run.outcome,run.response,'pending' if job['chat_id'] else 'none',report,goal_outcome,effect_state,job['id']))
+                       (run.outcome,run.response,service.reply_delivery(job),report,goal_outcome,effect_state,job['id']))
             # #998: a worker attempt failed and nothing followed: one self-review, settled with the Work.
             # A blocker the owner resolves (BlockedTurn) is a setup need, not a miss.
             if (run.outcome=='failed' and not isinstance(exc,BlockedTurn) and service.self_review_eligible(job,run.outcome,None)

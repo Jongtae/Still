@@ -11044,26 +11044,20 @@
   "ja": "やめる",
   "zh": "停止"
  },
- "button.line_undo": {
-  "ko": "되돌리기",
-  "en": "Undo",
-  "ja": "元に戻す",
-  "zh": "撤销"
- },
  "lines.announced": {
-  "ko": "{task}. {promise} 보고드릴게요. 그만하려면 \"그만\"이라고 말씀하세요.",
+  "ko": "{task}. {promise} 보고할게요. 그만하려면 \"그만\"이라고 해 주세요.",
   "en": "{task}. I will report {promise}. Say \"stop\" to end it.",
   "ja": "{task}。{promise}報告します。やめるときは「やめて」と言ってください。",
   "zh": "{task}。我会{promise}汇报。要结束时请说“停止”。"
  },
  "lines.restated": {
-  "ko": "앞으로: {rule}. 오늘만이 아니라 매번 적용됩니다.",
+  "ko": "앞으로: {rule}. 오늘만이 아니라 매번 적용해요.",
   "en": "From now on: {rule}. This applies every time, not only today.",
   "ja": "今後: {rule}。今日だけでなく毎回適用します。",
   "zh": "从现在起：{rule}。这每次都适用，不只是今天。"
  },
  "lines.money_rules": {
-  "ko": "지금 적용되는 규칙 전체와 각각을 정한 주인님의 원래 말:",
+  "ko": "지금 적용되는 규칙 전체와 각각을 정한 원래 말이에요:",
   "en": "All rules now in force, each with your original words:",
   "ja": "現在有効なすべてのルールと、それぞれのもとになったあなたの言葉:",
   "zh": "现在生效的全部规则，以及每条规则对应的您的原话："
@@ -11074,26 +11068,20 @@
   "ja": "{number}. {rule}（あなたの言葉: 「{words}」）",
   "zh": "{number}. {rule}（您的原话：“{words}”）"
  },
- "lines.words_unknown": {
-  "ko": "기록 없음",
-  "en": "not kept",
-  "ja": "記録なし",
-  "zh": "未保留"
- },
  "lines.stopped": {
-  "ko": "그만했습니다: {task}. 더 이상 아무것도 실행하지 않습니다.",
+  "ko": "그만했어요: {task}. 이제 아무것도 실행하지 않아요.",
   "en": "Stopped: {task}. Nothing further will run.",
   "ja": "停止しました: {task}。これ以上何も実行しません。",
   "zh": "已停止：{task}。不会再运行任何内容。"
  },
  "lines.undone": {
-  "ko": "방금 정한 규칙을 되돌렸습니다. 이전 규칙대로 합니다.",
+  "ko": "방금 정한 규칙을 되돌렸어요. 이전 규칙대로 할게요.",
   "en": "The rule you just set is undone. The earlier rules apply.",
   "ja": "設定したルールを元に戻しました。以前のルールで続けます。",
   "zh": "刚才设定的规则已撤销，按之前的规则执行。"
  },
  "lines.undo_stale": {
-  "ko": "그 뒤에 규칙이 다시 바뀌어 되돌리지 않았습니다.",
+  "ko": "그 뒤에 규칙이 다시 바뀌어서 되돌리지 않았어요.",
   "en": "The rules changed again since, so nothing was undone.",
   "ja": "その後ルールが再び変わったため、元に戻していません。",
   "zh": "此后规则又有变化，因此没有撤销。"
@@ -11110,12 +11098,6 @@
   "ja": "（なし）",
   "zh": "（无）"
  },
- "lines.none_open": {
-  "ko": "없음",
-  "en": "none",
-  "ja": "なし",
-  "zh": "无"
- },
  "lines.no_outcomes": {
   "ko": "이 일의 이전 실행 기록: 아직 없음",
   "en": "Earlier runs of this line: none yet",
@@ -11123,7 +11105,7 @@
   "zh": "此事项的以往运行：暂无"
  },
  "lines.outcomes_heading": {
-  "ko": "이 일의 이전 실행 기록 (최근 순, 주인님께 전달됐는지 표시):",
+  "ko": "이 일의 이전 실행 기록 (최근 순, 소유자에게 전달됐는지 표시):",
   "en": "Earlier runs of this line (newest first, marked whether they reached the owner):",
   "ja": "この仕事の過去の実行（新しい順、オーナーに届いたかを表示）:",
   "zh": "此事项的以往运行（最新在前，标明是否已送达主人）："
@@ -11153,19 +11135,19 @@
   "zh": "- {at}：仍在运行或等待"
  },
  "lines.run_input": {
-  "ko": "이 실행은 주인님이 맡긴 일의 한 번입니다. 아래 규칙을 지키고, 이전 실행 기록에 이어서 하세요 (권한을 주지 않습니다):",
+  "ko": "이 실행은 소유자가 맡긴 일의 한 번이에요. 아래 규칙을 지키고 이전 실행 기록에 이어서 하세요. 이 기록은 권한을 주지 않아요:",
   "en": "This run is one run of work the owner entrusted. Keep the rules below and carry on from the earlier runs (this grants nothing):",
   "ja": "この実行はオーナーが任せた仕事の一回です。下のルールを守り、過去の実行に続けてください（権限は与えません）:",
   "zh": "本次运行是主人受托事项的一次运行。请遵守以下规则，并接续以往运行（不授予任何权限）："
  },
  "lines.account_input": {
-  "ko": "이 실행은 주인님이 맡긴 일의 정기 보고입니다. 지난 보고 이후 한 일과 그 결과, 지금 적용되는 규칙 전체, 알게 된 것, 열린 사항을 알려 드리세요. 바뀐 것이 없어도 그렇게 말씀드리세요 (권한을 주지 않습니다):",
+  "ko": "이 실행은 소유자가 맡긴 일의 정기 보고예요. 지난 보고 이후 한 일과 그 결과, 지금 적용되는 규칙 전체, 알게 된 것, 열린 사항을 알려 주세요. 바뀐 것이 없어도 그렇다고 알려 주세요. 이 기록은 권한을 주지 않아요:",
   "en": "This run is the periodic account of work the owner entrusted. Report what was done and what came of it since the last account, the full set of rules now in force, what was learned and what is open; say so when nothing changed (this grants nothing):",
   "ja": "この実行はオーナーが任せた仕事の定期報告です。前回以降にしたことと結果、有効なルールすべて、わかったこと、未解決の事項を伝えてください。変化がなくてもそう伝えてください（権限は与えません）:",
   "zh": "本次运行是主人受托事项的定期汇报。请汇报自上次汇报以来做了什么及结果、现行的全部规则、了解到的情况和未决事项；即使没有变化也请说明（不授予任何权限）："
  },
  "lines.changed_during_run": {
-  "ko": "이 실행 중에 주인님이 맡긴 일의 규칙을 바꿨습니다. 다음 단계부터 아래 내용을 따르세요:",
+  "ko": "이 실행 중에 소유자가 맡긴 일의 규칙을 바꿨어요. 다음 단계부터 아래 내용을 따르세요:",
   "en": "The owner changed the rules of this entrusted line during this run. Follow the brief below from your next step on:",
   "ja": "この実行中にオーナーが任せた仕事のルールを変えました。次の手順から下の内容に従ってください:",
   "zh": "本次运行期间主人更改了受托事项的规则。请从下一步起遵循以下内容："
@@ -11177,7 +11159,7 @@
   "zh": "定期汇报：{task}"
  },
  "lines.list_none": {
-  "ko": "지금 맡고 있는 일은 없습니다.",
+  "ko": "지금 맡고 있는 일은 없어요.",
   "en": "You have not entrusted me with any continuing work right now.",
   "ja": "今お任せいただいている継続中の仕事はありません。",
   "zh": "目前没有受托的持续事项。"
@@ -11236,12 +11218,6 @@
   "ja": "あなたの返事を待っています",
   "zh": "等待您的回复"
  },
- "lines.blocked_paused": {
-  "ko": "일시 정지됨",
-  "en": "paused",
-  "ja": "一時停止中",
-  "zh": "已暂停"
- },
  "lines.blocked_unscheduled": {
   "ko": "예약된 실행이 없음",
   "en": "nothing scheduled",
@@ -11249,159 +11225,171 @@
   "zh": "没有安排的运行"
  },
  "lines.opened_next": {
-  "ko": "맡은 일 {line}을 열었습니다. 이제 schedule_preparation에 line={line}을 주어 이 일의 실행을 예약하세요. 맡았다는 안내는 Still이 따로 보내니 답에서 반복하지 마세요.",
+  "ko": "맡은 일 {line}을 열었어요. 이제 schedule_preparation에 line={line}을 주어 이 일의 실행을 예약하세요. 맡았다는 안내는 Still이 따로 보내니 답에서 반복하지 마세요.",
   "en": "Opened line {line}. Now schedule its work with schedule_preparation line={line}. Still tells the owner it was taken on in its own message; do not repeat that in your reply.",
   "ja": "任された仕事 {line} を開きました。schedule_preparation に line={line} を渡して実行を予約してください。引き受けた案内は Still が別に送るので、返答で繰り返さないでください。",
   "zh": "已开启受托事项 {line}。现在请用 schedule_preparation 并设置 line={line} 安排其运行。Still 会单独告知主人已接手，回复中不要重复。"
  },
  "lines.revised_next": {
-  "ko": "규칙을 저장했습니다. 앞으로 매번 적용된다는 안내는 Still이 되돌리기 버튼과 함께 따로 보내니 답에서 반복하지 마세요.",
+  "ko": "규칙을 저장했어요. 앞으로 매번 적용된다는 안내는 Still이 되돌리기 버튼과 함께 따로 보내니 답에서 반복하지 마세요.",
   "en": "Saved the rule. Still tells the owner it now applies every time, with an undo, in its own message; do not repeat that in your reply.",
   "ja": "ルールを保存しました。今後毎回適用される旨は Still が元に戻すボタン付きで別に送るので、返答で繰り返さないでください。",
   "zh": "规则已保存。Still 会单独发送“今后每次适用”的通知并附撤销按钮，回复中不要重复。"
  },
  "lines.revised_quiet_next": {
-  "ko": "맡은 일의 기록을 고쳤습니다.",
+  "ko": "맡은 일의 기록을 고쳤어요.",
   "en": "Updated the line.",
   "ja": "任された仕事の記録を更新しました。",
   "zh": "已更新受托事项。"
  },
  "lines.undone_next": {
-  "ko": "이전 버전으로 되돌렸습니다.",
+  "ko": "이전 버전으로 되돌렸어요.",
   "en": "Restored the earlier version.",
   "ja": "以前のバージョンに戻しました。",
   "zh": "已恢复到之前的版本。"
  },
  "lines.stopped_next": {
-  "ko": "그만했습니다. 이 일에 딸린 예약은 모두 취소됐고, 확인 메시지는 Still이 따로 보냅니다. 이미 한 일이 되돌려졌다고 말하지 마세요.",
+  "ko": "그만했어요. 이 일에 딸린 예약은 모두 취소됐고, 확인 메시지는 Still이 따로 보내요. 이미 한 일이 되돌려졌다고 말하지 마세요.",
   "en": "Stopped. Every pending run of it was cancelled and Still sends the confirmation itself. Do not say that earlier effects were undone.",
   "ja": "停止しました。この仕事の予約はすべて取り消され、確認は Still が送ります。すでに行ったことが元に戻ったとは言わないでください。",
   "zh": "已停止。其所有待运行项已取消，确认消息由 Still 发送。不要说之前的效果已被撤销。"
  },
  "lines.restarted_next": {
-  "ko": "다시 시작했습니다. schedule_preparation에 line={line}을 주어 실행을 다시 예약하세요.",
+  "ko": "다시 시작했어요. schedule_preparation에 line={line}을 주어 실행을 다시 예약하세요.",
   "en": "Restarted. Schedule its work again with schedule_preparation line={line}.",
   "ja": "再開しました。schedule_preparation に line={line} を渡して実行を予約し直してください。",
   "zh": "已重新开始。请用 schedule_preparation 并设置 line={line} 重新安排运行。"
  },
  "lines.refused_line_invalid_action": {
-  "ko": "action은 list, read, open, revise, undo, stop, restart 중 하나입니다.",
+  "ko": "action은 list, read, open, revise, undo, stop, restart 중 하나예요.",
   "en": "action is one of list, read, open, revise, undo, stop or restart.",
   "ja": "action は list, read, open, revise, undo, stop, restart のいずれかです。",
   "zh": "action 为 list、read、open、revise、undo、stop 或 restart 之一。"
  },
  "lines.refused_unattended_run": {
-  "ko": "맡은 일은 주인님이 직접 시작한 대화에서만 열거나 바꾸거나 멈출 수 있습니다. 바꾸지 않았습니다.",
+  "ko": "맡은 일은 소유자가 직접 시작한 대화에서만 열거나 바꾸거나 멈출 수 있어요. 바꾸지 않았어요.",
   "en": "A line is opened, changed or stopped only in a Work the owner started. Nothing was changed.",
   "ja": "任された仕事はオーナーが始めた会話でのみ開始・変更・停止できます。変更していません。",
   "zh": "受托事项只能在主人亲自发起的对话中开启、更改或停止。未做更改。"
  },
  "lines.refused_line_version_conflict": {
-  "ko": "그 사이 맡은 일이 바뀌었습니다(지금 버전 {detail}). 더 새 버전을 그대로 두었습니다. 다시 읽고 주인님께 알리세요.",
+  "ko": "그 사이 맡은 일이 바뀌었어요(지금 버전 {detail}). 더 새 버전을 그대로 두었어요. 다시 읽고 소유자에게 알리세요.",
   "en": "The line changed in the meantime (now version {detail}); the newer version was kept. Read it again and tell the owner.",
   "ja": "その間に仕事が変わりました（現在のバージョン {detail}）。新しい方を残しました。読み直してオーナーに伝えてください。",
   "zh": "期间该事项已更改（当前版本 {detail}），已保留较新的版本。请重新读取并告知主人。"
  },
  "lines.refused_line_not_found": {
-  "ko": "이 맡은 일을 찾지 못했습니다.",
+  "ko": "이 맡은 일을 찾지 못했어요.",
   "en": "This line was not found.",
   "ja": "この仕事が見つかりません。",
   "zh": "未找到此受托事项。"
  },
  "lines.refused_line_stopped": {
-  "ko": "이 일은 그만한 상태입니다. 주인님이 원하면 restart로 다시 시작하세요.",
+  "ko": "이 일은 그만한 상태예요. 소유자가 원할 때만 restart로 다시 시작하세요.",
   "en": "This line is stopped. Restart it only if the owner asks.",
   "ja": "この仕事は停止中です。オーナーが望むときだけ restart してください。",
   "zh": "此事项已停止。仅在主人要求时用 restart 重新开始。"
  },
  "lines.refused_line_mismatch": {
-  "ko": "바꾸려는 준비는 다른 맡은 일에 속합니다.",
+  "ko": "바꾸려는 준비는 다른 맡은 일에 속해요.",
   "en": "The replaced preparation belongs to another line.",
   "ja": "置き換える準備は別の仕事に属しています。",
   "zh": "被替换的准备属于另一个受托事项。"
  },
  "lines.refused_line_unknown_field": {
-  "ko": "맡은 일 기록에 없는 항목입니다.",
+  "ko": "맡은 일 기록에 없는 항목이에요.",
   "en": "That field is not part of a line.",
   "ja": "仕事の記録にない項目です。",
   "zh": "该字段不属于受托事项。"
  },
  "lines.refused_line_invalid": {
-  "ko": "맡은 일 기록 형식이 맞지 않습니다.",
+  "ko": "맡은 일 기록 형식이 맞지 않아요.",
   "en": "The line is not in the expected form.",
   "ja": "仕事の記録の形式が正しくありません。",
   "zh": "受托事项格式不正确。"
  },
  "lines.refused_line_invalid_rules": {
-  "ko": "규칙은 한 줄에 하나, 각 300자 이내, 최대 20개입니다.",
+  "ko": "규칙은 한 줄에 하나, 각 300자 이내, 최대 20개예요.",
   "en": "Rules are one a line, at most 300 characters each and 20 in all.",
   "ja": "ルールは1行に1つ、各300文字以内、最大20個です。",
   "zh": "规则每行一条，每条不超过 300 字，最多 20 条。"
  },
  "lines.refused_line_invalid_task": {
-  "ko": "task는 300자 이내의 한 문장입니다.",
+  "ko": "task는 300자 이내의 한 문장이에요.",
   "en": "task is one sentence of at most 300 characters.",
   "ja": "task は300文字以内の一文です。",
   "zh": "task 为不超过 300 字的一句话。"
  },
  "lines.refused_line_invalid_promise": {
-  "ko": "report_promise는 300자 이내로, 무엇을 언제 보고할지 적습니다.",
+  "ko": "report_promise에는 무엇을 언제 보고할지 300자 이내로 적어요.",
   "en": "report_promise says what you will report and when, in at most 300 characters.",
   "ja": "report_promise には何をいつ報告するかを300文字以内で書きます。",
   "zh": "report_promise 用不超过 300 字写明汇报什么、何时汇报。"
  },
  "lines.refused_line_invalid_open": {
-  "ko": "open_matters는 1000자 이내입니다.",
+  "ko": "open_matters는 1000자 이내예요.",
   "en": "open_matters is at most 1000 characters.",
   "ja": "open_matters は1000文字以内です。",
   "zh": "open_matters 不超过 1000 字。"
  },
  "lines.refused_line_invalid_account": {
-  "ko": "account_every_days는 1~12일이거나 84일 이내의 주 단위입니다.",
+  "ko": "account_every_days는 1~12일이거나 84일 이내의 주 단위예요.",
   "en": "account_every_days is 1-12 days, or whole weeks up to 84 days.",
   "ja": "account_every_days は1〜12日、または84日までの週単位です。",
   "zh": "account_every_days 为 1-12 天，或不超过 84 天的整周。"
  },
  "lines.refused_line_too_many": {
-  "ko": "맡은 일이 너무 많아 더 열지 않았습니다.",
+  "ko": "맡은 일이 너무 많아서 더 열지 않았어요.",
   "en": "Too many lines; none was opened.",
   "ja": "任された仕事が多すぎるため開いていません。",
   "zh": "受托事项过多，未开启新的。"
  },
  "lines.refused_line_unreadable": {
-  "ko": "이 맡은 일의 기록을 읽을 수 없어 실행하지 않았습니다.",
+  "ko": "이 맡은 일의 기록을 읽을 수 없어서 실행하지 않았어요.",
   "en": "This line's brief cannot be read, so nothing ran.",
   "ja": "この仕事の記録を読めないため実行していません。",
   "zh": "无法读取此事项的记录，因此未运行。"
  },
  "lines.refused_line_version_required": {
-  "ko": "revise와 undo에는 읽은 버전(expected_version 또는 version)이 필요합니다.",
+  "ko": "revise와 undo에는 읽은 버전(expected_version 또는 version)이 필요해요.",
   "en": "revise and undo need the version you read (expected_version or version).",
   "ja": "revise と undo には読んだバージョン（expected_version または version）が必要です。",
   "zh": "revise 和 undo 需要您读取的版本（expected_version 或 version）。"
  },
  "lines.refused_line_nothing_to_change": {
-  "ko": "바꿀 내용이 없습니다.",
+  "ko": "바꿀 내용이 없어요.",
   "en": "There is nothing to change.",
   "ja": "変更する内容がありません。",
   "zh": "没有要更改的内容。"
  },
  "lines.refused_line_change_needs_owner": {
-  "ko": "돈이 걸린 연결을 쓰는 일의 규칙은 주인님이 이번 메시지에서 직접 요청한 그대로만 바꿀 수 있습니다. 바꾸지 않았습니다. 주인님께 지금 규칙 전체를 보여 드리고 무엇을 바꿀지 여쭤보세요.",
+  "ko": "돈이 걸린 연결을 쓰는 일의 규칙은 소유자가 이번 메시지에서 직접 요청한 그대로만 바꿀 수 있어요. 바꾸지 않았어요. 소유자에게 지금 규칙 전체를 보여 주고 무엇을 바꿀지 물어보세요.",
   "en": "A rule of a line that uses a money-marked connection changes only as the owner asked in this message. Nothing was changed; show the owner the full current rules and ask what to change.",
   "ja": "お金が関わる接続を使う仕事のルールは、オーナーがこのメッセージで頼んだ通りにしか変えられません。変更していません。現在のルールをすべて見せ、何を変えるか尋ねてください。",
   "zh": "使用涉及资金的连接的事项，其规则只能按主人在本条消息中的要求更改。未做更改；请向主人展示全部现行规则并询问要改什么。"
  },
  "lines.refused_line_nothing_to_undo": {
-  "ko": "되돌릴 이전 버전이 없습니다.",
+  "ko": "되돌릴 이전 버전이 없어요.",
   "en": "There is no earlier version to restore.",
   "ja": "戻せる以前のバージョンがありません。",
   "zh": "没有可恢复的早期版本。"
  },
  "preparations.line_inactive": {
-  "ko": "이 준비가 속한 맡은 일이 멈췄거나 읽을 수 없어 실행하지 않았습니다.",
+  "ko": "이 준비가 속한 맡은 일이 멈췄거나 읽을 수 없어서 실행하지 않았어요.",
   "en": "The line this preparation belongs to is stopped or cannot be read, so it did not run.",
   "ja": "この準備が属する仕事が停止中か読めないため、実行していません。",
   "zh": "此准备所属的受托事项已停止或无法读取，因此未运行。"
+ },
+ "lines.say_in_reply": {
+  "ko": "이 대화에는 Still이 따로 보낼 수 없으니, 답에서 이 문장을 그대로 전하세요: {text}",
+  "en": "Still cannot send its own message in this conversation, so say this in your reply, as written: {text}",
+  "ja": "この会話では Still が別に送れないため、返答でこの文をそのまま伝えてください: {text}",
+  "zh": "在此对话中 Still 无法单独发送消息，请在回复中原样转达这句话：{text}"
+ },
+ "lines.opened_next_untold": {
+  "ko": "맡은 일 {line}을 열었어요. 이제 schedule_preparation에 line={line}을 주어 이 일의 실행을 예약하세요. 이 대화에는 Still이 따로 보낼 수 없으니, 답에서 이 문장을 그대로 전하세요: {text}",
+  "en": "Opened line {line}. Now schedule its work with schedule_preparation line={line}. Still cannot send its own message in this conversation, so say this in your reply, as written: {text}",
+  "ja": "任された仕事 {line} を開きました。schedule_preparation に line={line} を渡して実行を予約してください。この会話では Still が別に送れないため、返答でこの文をそのまま伝えてください: {text}",
+  "zh": "已开启受托事项 {line}。现在请用 schedule_preparation 并设置 line={line} 安排其运行。在此对话中 Still 无法单独发送消息，请在回复中原样转达这句话：{text}"
  }
 }

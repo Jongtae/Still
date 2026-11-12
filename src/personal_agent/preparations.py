@@ -1571,7 +1571,9 @@ class Preparations:
         row = db.execute('SELECT * FROM preparations WHERE last_run_job_id=? AND state=?',
                          (work_id, STATE_RUNNING)).fetchone()
         advance = next_day_window(dict(row), now) if row and reason == 'preparation-window-expired' else {}
-        state = (row['run_return_state'] or STATE_SCHEDULED) if advance else STATE_EXPIRED
+        # #798: a run its line stopped (or whose brief cannot be read) did not expire; it ended unfinished.
+        state = ((row['run_return_state'] or STATE_SCHEDULED) if advance
+                 else STATE_FAILED if reason in (LINE_STOPPED, LINE_UNREADABLE) else STATE_EXPIRED)
         updates = {'state': state, 'last_outcome': STATE_FAILED,
                    'updated_at': now, 'run_return_state': None, **advance}
         db.execute(f"UPDATE preparations SET {','.join(key + '=?' for key in updates)} "
@@ -1820,6 +1822,8 @@ class Preparations:
                 "FROM preparations p JOIN jobs j ON j.id=p.prepared_result_ref WHERE p.kind='prepare' "
                 # #780: the daily plan's own reply is its run record, not an answer prepared for the owner.
                 'AND p.origin IS NOT ? '
+                # #798: a line's results reach an answer only when the AI judges the line relevant (``read``).
+                'AND p.line_id IS NULL '
                 'AND p.prepared_at>=? AND j.id IS NOT ? ORDER BY p.prepared_at DESC LIMIT ?',
                 (ORIGIN_DAY_PLAN, now - fresh_seconds, exclude_job, SECTION_MAX_ITEMS))]
 

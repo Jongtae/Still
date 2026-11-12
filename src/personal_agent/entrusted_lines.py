@@ -307,7 +307,7 @@ def public_brief(brief):
 def brief_text(brief, lang='ko'):
     rules = '\n'.join(f'{number}. {rule["text"]}' for number, rule in enumerate(brief['rules'], 1)) or msg('lines.no_rules', lang)
     return msg('lines.brief', lang, task=brief['task'], promise=brief['report_promise'], rules=rules,
-               open=brief['open_matters'] or msg('lines.none_open', lang), version=brief['version'],
+               open=brief['open_matters'] or msg('label.none', lang), version=brief['version'],
                days=brief['account_every_days'])
 
 

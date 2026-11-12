@@ -1098,7 +1098,7 @@ class PreparationsService:
             entry['next']=prep.local_text(following['due_at'],following['timezone'])
             if not work:entry['next_is_account']=True
         elif any(row['state']==prep.STATE_PAUSED for row in active):
-            entry['blocked']=msg('lines.blocked_paused')
+            entry['blocked']=msg('settings_orchestrator.paused')
         else:
             entry['blocked']=msg('lines.blocked_unscheduled')
         return entry
@@ -1152,7 +1152,7 @@ class PreparationsService:
             words=(service.scrub_work_text(source['id'],source.get('message'))
                    if source and not service.store.work_request_forgotten(source['id']) else '')
             lines.append(msg('lines.rule_with_words',number=number,rule=rule['text'],
-                             words=el.excerpt(words,el.WORDS_CHARS) or msg('lines.words_unknown')))
+                             words=el.excerpt(words,el.WORDS_CHARS) or msg('label.not_recorded')))
         return '\n'.join(lines) or msg('lines.no_rules')
 
     def line_account_row(self, line_id):
@@ -1180,8 +1180,21 @@ class PreparationsService:
                                            line_id=brief['line_id'])
 
     def line_notice(self, job, kind, line_id, version):
-        """Queue one owner notice of a line on ``job``'s conversation (``lines.NOTICE_*``)."""
-        self.service.queue_notification(job,f'{kind}{line_id}:{version}',fingerprint=f'{line_id}:{version}')
+        """Queue one owner notice of a line on ``job``'s conversation (``lines.NOTICE_*``).
+
+        Returns '' when a surface took it, else the notice's text: this conversation has no
+        surface that sends notices (the local web chat), so the reply says it instead.
+        """
+        service=self.service
+        notice=f'{kind}{line_id}:{version}'
+        service.queue_notification(job,notice,fingerprint=f'{line_id}:{version}')
+        if service.store.notification_of(job['id'],notice):return ''
+        return self.line_notice_text({'kind':notice,'fingerprint':f'{line_id}:{version}'}) or ''
+
+    @staticmethod
+    def told(next_step, untold):
+        """The worker's next step, with the notice to say in the reply when Still could not send it."""
+        return next_step if not untold else msg('lines.say_in_reply',text=untold)
 
     def stop_line(self, line_id, work_id=None):
         """Stop a line: its brief becomes stopped and every pending row of it is cancelled; ``(brief, changed)``.
@@ -1190,12 +1203,26 @@ class PreparationsService:
         """
         service=self.service
         before,after=service.lines.write(line_id,work_id,None,'stopped',lambda brief:{**brief,'state':el.STATE_STOPPED})
-        for row in self.line_rows(line_id):
+        rows=self.line_rows(line_id)
+        for row in rows:
             if row['state'] in prep.ACTIVE_STATES:
                 try:service.cancel_preparation(row['id'])
                 except prep.PreparationRefusal:continue
+        # After a stop only its confirmation reaches the owner: a run's reply still waiting is not sent.
+        runs=[row['last_run_job_id'] for row in rows if row.get('last_run_job_id')]
+        if runs:
+            with service.store.db() as db:
+                db.execute(f"UPDATE jobs SET delivery='cancelled' WHERE delivery='pending' AND id IN ({','.join('?'*len(runs))})",runs)
         LOG.info('line stopped id=%s changed=%s',line_id,after['version']!=before['version'])
         return after,after['version']!=before['version']
+
+    def stopped_line_run(self, job):
+        """Whether ``job`` is a run of a line that was stopped (or whose brief is gone) since it started."""
+        preparation_id=prep.preparation_of((job or {}).get('request_key'))
+        if not preparation_id:return False
+        with self.service.store.db() as db:
+            row=db.execute('SELECT line_id FROM preparations WHERE id=?',(preparation_id,)).fetchone()
+            return bool(row and prep.line_refusal(db,row['line_id']))
 
     def undo_line_version(self, line_id, version, work_id=None):
         """Put back the brief as it was before ``version``, only while ``version`` is still current."""
@@ -1252,9 +1279,10 @@ class PreparationsService:
                                  account_every_days=el.ACCOUNT_DAYS if days is None else days)
         try:self.ensure_line_account(job,brief)
         except prep.PreparationRefusal as exc:LOG.warning('line account not scheduled id=%s code=%s',brief['line_id'],exc.code)
-        self.line_notice(job,el.NOTICE_OPENED,brief['line_id'],brief['version'])
+        untold=self.line_notice(job,el.NOTICE_OPENED,brief['line_id'],brief['version'])
         LOG.info('line opened id=%s work=%s',brief['line_id'],job['id'])
-        return {**el.public_brief(brief),'next_step':msg('lines.opened_next',line=brief['line_id'])}
+        return {**el.public_brief(brief),'next_step':msg('lines.opened_next',line=brief['line_id'])
+                if not untold else msg('lines.opened_next_untold',line=brief['line_id'],text=untold)}
 
     def _line_revise(self, job, args):
         service=self.service
@@ -1289,10 +1317,10 @@ class PreparationsService:
         before,after=service.lines.write(line_id,job['id'],expected,'rule' if rule else 'revised',update)
         if days is not None and days!=before['account_every_days']:self.retime_line_account(after)
         restated=bool(rule) and after['version']!=before['version']
-        if restated:self.line_notice(job,el.NOTICE_RULE,line_id,after['version'])
+        untold=self.line_notice(job,el.NOTICE_RULE,line_id,after['version']) if restated else ''
         LOG.info('line revised id=%s version=%s work=%s rule=%s',line_id,after['version'],job['id'],restated)
         return {**el.public_brief(after),'restated':restated,'money_rules':money,
-                'next_step':msg('lines.revised_next' if restated else 'lines.revised_quiet_next')}
+                'next_step':self.told(msg('lines.revised_next' if restated else 'lines.revised_quiet_next'),untold)}
 
     def _line_undo(self, job, args):
         version=el.whole_days(args.get('version'))
@@ -1304,8 +1332,8 @@ class PreparationsService:
         line_id=args.get('line')
         if not isinstance(line_id,str) or self.service.lines.current(line_id) is None:raise el.LineRefusal('line_not_found')
         after,changed=self.stop_line(line_id,job['id'])
-        if changed:self.line_notice(job,el.NOTICE_STOPPED,line_id,after['version'])
-        return {**el.public_brief(after),'changed':changed,'next_step':msg('lines.stopped_next')}
+        untold=self.line_notice(job,el.NOTICE_STOPPED,line_id,after['version']) if changed else ''
+        return {**el.public_brief(after),'changed':changed,'next_step':self.told(msg('lines.stopped_next'),untold)}
 
     def _line_restart(self, job, args):
         service=self.service
@@ -1394,9 +1422,11 @@ class PreparationsService:
             if brief['state']!=el.STATE_ACTIVE:return None
             return service._redact_known_secrets(msg('lines.announced',task=brief['task'],promise=brief['report_promise']))
         if kind.startswith(el.NOTICE_RULE):
+            # Told while its rule is still in force (a later change or an undo may have removed it).
             stored=service.lines.version(line_id,int(version))
-            if stored is None or brief['version']!=int(version) or not stored['rules']:return None
-            text=msg('lines.restated',rule=stored['rules'][-1]['text'])
+            rule=stored['rules'][-1]['text'] if stored and stored['rules'] else None
+            if rule is None or rule not in [item['text'] for item in brief['rules']]:return None
+            text=msg('lines.restated',rule=rule)
             if self.line_touches_money(line_id):
                 text+='\n\n'+msg('lines.money_rules')+'\n'+self.line_owner_rules(stored)
             return service._redact_known_secrets(text)

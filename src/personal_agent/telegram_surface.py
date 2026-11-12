@@ -313,7 +313,7 @@ class TelegramSurface(ConversationSurface):
         if kind.startswith(entrusted_lines.NOTICE_OPENED):
             return {'inline_keyboard':[[{'text':msg('button.line_stop'),'callback_data':f"p7k:{nid}:stop"}]]}
         if kind.startswith(entrusted_lines.NOTICE_RULE):
-            return {'inline_keyboard':[[{'text':msg('button.line_undo'),'callback_data':f"p7k:{nid}:undo"}]]}
+            return {'inline_keyboard':[[{'text':msg('button.undo'),'callback_data':f"p7k:{nid}:undo"}]]}
         # #1472 (owner choice 2026-10-13): a step approval has no buttons; the owner answers with a
         # reaction or a reply.  Working notes have none either (#996).
         return None

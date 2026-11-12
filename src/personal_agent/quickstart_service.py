@@ -1384,6 +1384,12 @@ class AgentService:
         """#798: the ``entrusted_line`` handler bound to one Work (``PreparationsService.line_handler``)."""
         return self.preparations_service.line_handler(job)
 
+    def reply_delivery(self, job):
+        """How a finished Work's reply is delivered: ``pending`` to its chat, ``none`` without one (#798: ``cancelled``
+        for a run of an entrusted line the owner stopped, whose stop confirmation is the only message)."""
+        if not job.get('chat_id'):return 'none'
+        return 'cancelled' if self.preparations_service.stopped_line_run(job) else 'pending'
+
     def line_note(self, job):
         """#798: what a run of an entrusted line reads before its next step when the brief changed, or None."""
         return self.preparations_service.line_note(job)
