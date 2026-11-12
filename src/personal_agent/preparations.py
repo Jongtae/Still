@@ -78,8 +78,12 @@ REASON_RUN_FAILED_TOLD = 'run-did-not-finish-told'
 REASON_RUN_STOPPED = 'run-stopped'
 REASON_UNJUDGED = 'judgment-unavailable'
 REASON_UNJUDGED_REPEAT = 'judgment-unavailable-already-notified'
+REASON_WINDOW_CLOSED = 'window-closed-report'
+REASON_PROMISED_REPORT = 'promised-report-due'
 #: The Telegram notification kind of a ``notify`` decision.
 NOTIFY_KIND = 'preparation_notify'
+BLOCKED_NOTICE_PREFIX = 'preparation_blocked:'
+EXPIRED_NOTICE_KIND = 'preparation_window_elapsed'
 NOTIFIED_TEXT_BYTES = 1500
 CHANNEL_TELEGRAM, CHANNEL_WEB = 'telegram', 'web'
 
@@ -189,7 +193,8 @@ COLUMN_MIGRATIONS = (('prepared_text', 'TEXT'),
                      # #583: a look-back suggestion, and when its one proposal message was queued.
                      ('origin', 'TEXT'), ('offered_at', 'REAL'),
                      # #701: a watch's inclusive last-slot bound, apart from its run deadline ``window_end``.
-                     ('until_at', 'REAL'))
+                     ('until_at', 'REAL'),
+                     ('window_terms', 'TEXT'))
 
 
 def run_seconds():
@@ -464,7 +469,7 @@ def _whole_number(value):
     return None
 
 
-def normalize_window(every_minutes, until, max_runs, due_at, timezone_name, now):
+def normalize_window(every_minutes, until, max_runs, due_at, timezone_name, now, recurrence=None):
     """``(every_seconds, until_at, max_runs)`` of one watch (#719), or a typed refusal.
 
     #701: the window is ``[due_at, until]``, inclusive like RFC 5545 ``UNTIL``:
@@ -492,7 +497,15 @@ def normalize_window(every_minutes, until, max_runs, due_at, timezone_name, now)
         raise PreparationRefusal('invalid_window', msg('preparations.window_until_span',
                                  value=repr(until), due=iso(due_at), days=MAX_WINDOW_SECONDS // 86400))
     every = minutes * 60
-    slots = math.floor((until_at - due_at) / every) + 1
+    span = until_at - due_at
+    if recurrence:
+        tz = zone(timezone_name)
+        first = datetime.fromtimestamp(due_at, tz).replace(tzinfo=None)
+        last = datetime.fromtimestamp(until_at, tz).replace(tzinfo=None)
+        if first.date() != last.date() or last <= first:
+            raise PreparationRefusal('invalid_window', msg('preparations.recurring_window_same_day'))
+        span = (last - first).total_seconds()
+    slots = math.floor(span / every) + 1
     if max_runs in (None, ''):
         runs = min(slots, MAX_WINDOW_RUNS)
     else:
@@ -501,6 +514,79 @@ def normalize_window(every_minutes, until, max_runs, due_at, timezone_name, now)
             raise PreparationRefusal('invalid_max_runs')
         runs = min(runs, slots)
     return every, until_at, runs
+
+
+def window_terms(window, recurrence, due_at, timezone_name, report_every_minutes, delivery_mode):
+    """Validate the schedule facts the owner's AI supplied and preserve the local closing time."""
+    if not window:
+        if report_every_minutes not in (None, ''):
+            raise PreparationRefusal('invalid_window', msg('preparations.report_interval'))
+        return None
+    every, until, _runs = window
+    terms = {}
+    if recurrence:
+        tz = zone(timezone_name)
+        start, end = datetime.fromtimestamp(due_at, tz), datetime.fromtimestamp(until, tz)
+        if recurrence not in RECURRENCES or start.date() != end.date() or start.time() >= end.time():
+            raise PreparationRefusal('invalid_window', msg('preparations.recurring_window_same_day'))
+        terms.update(recurrence=recurrence, end_time=end.time().isoformat())
+    if report_every_minutes not in (None, ''):
+        seconds = (_whole_number(report_every_minutes) or 0) * 60
+        if delivery_mode != DELIVERY_WHEN_NEEDED or seconds < every or seconds % every:
+            raise PreparationRefusal('invalid_window', msg('preparations.report_interval'))
+        terms['report_seconds'] = seconds
+    return json.dumps(terms, sort_keys=True) if terms else None
+
+
+def stored_window_terms(row):
+    return json.loads(row.get('window_terms') or '{}')
+
+
+def next_day_window(row, now):
+    """Find the next future slot, skipping elapsed and nonexistent local windows."""
+    terms = stored_window_terms(row)
+    recurrence = terms.get('recurrence')
+    if not recurrence:
+        return {}
+    tz = zone(row['timezone'])
+    anchor = datetime.fromtimestamp(row['rule_start'], tz)
+    today = datetime.fromtimestamp(now, tz).replace(hour=0, minute=0, second=0, microsecond=0)
+    after = max(row['until_at'], today.timestamp() - 1)
+    for _ in range(8):
+        start = next_due(row['rule_start'], row['timezone'], recurrence, after)
+        local = datetime.fromtimestamp(start, tz)
+        end = datetime.fromisoformat(f'{local.date()}T{terms["end_time"]}').replace(tzinfo=tz)
+        until = end.timestamp()
+        # The wall time of a skipped DST hour is not part of the accepted window.
+        if local.time() == anchor.time() and datetime.fromtimestamp(until, tz).time() == end.time():
+            future = start if start > now else next_window_slot(
+                {**row, 'due_at': start, 'until_at': until, 'run_count': 0}, now)
+            if future is not None:
+                return dict(due_at=future, until_at=until, window_end=until + run_seconds(), run_count=0)
+        after = max(start, now)
+    return {}
+
+
+def window_report_reason(row, now):
+    """The report the owner is due at this slot, independent of result equality."""
+    if row.get('recurrence') != RECURRENCE_WINDOW or row.get('run_return_state'):
+        return None
+    if next_window_slot(row, now) is None:
+        return REASON_WINDOW_CLOSED
+    terms = stored_window_terms(row)
+    seconds = terms.get('report_seconds')
+    if seconds:
+        first = row['rule_start']
+        if terms.get('recurrence'):
+            tz = zone(row['timezone'])
+            local_slot = datetime.fromtimestamp(row['due_at'], tz).replace(tzinfo=None)
+            anchor = datetime.fromtimestamp(first, tz)
+            elapsed = (local_slot - datetime.combine(local_slot.date(), anchor.time())).total_seconds()
+        else:
+            elapsed = row['due_at'] - first
+        if elapsed > 0 and elapsed % seconds == 0:
+            return REASON_PROMISED_REPORT
+    return None
 
 
 def next_window_slot(row, now):
@@ -512,6 +598,21 @@ def next_window_slot(row, now):
     """
     every, end = row.get('every_seconds'), row.get('until_at')
     if not every or end is None or int(row.get('run_count') or 0) >= int(row.get('max_runs') or 0):
+        return None
+    terms = stored_window_terms(row)
+    if terms.get('recurrence'):
+        tz = zone(row['timezone'])
+        opening = datetime.fromtimestamp(row['rule_start'], tz).time()
+        local_due = datetime.fromtimestamp(row['due_at'], tz)
+        local_end = datetime.fromtimestamp(end, tz).replace(tzinfo=None)
+        wall_slot = datetime.combine(local_due.date(), opening)
+        cadence = timedelta(seconds=every)
+        after = max(row['due_at'], now)
+        while wall_slot <= local_end:
+            slot = wall_slot.replace(tzinfo=tz).timestamp()
+            if slot > after and datetime.fromtimestamp(slot, tz).replace(tzinfo=None) == wall_slot:
+                return slot
+            wall_slot += cadence
         return None
     slot = row['due_at'] + every * (int(max(0.0, now - row['due_at']) // every) + 1)
     return slot if slot <= end else None
@@ -536,7 +637,7 @@ def next_due(due_at, timezone_name, recurrence, now, rule_start=None, run_count=
             continue
         if recurrence == 'weekly' and day.weekday() != first.weekday():
             continue
-        slot = datetime(day.year, day.month, day.day, first.hour, first.minute, first.second, tzinfo=tz).timestamp()
+        slot = datetime.combine(day, first.time(), tzinfo=tz).timestamp()
         if slot > now and slot > due_at:
             return slot
     raise AssertionError('recurrence has no slot within 16 days')  # pragma: no cover - unreachable
@@ -589,7 +690,7 @@ def bounded_text(text, limit=NOTIFIED_TEXT_BYTES):
     return raw[:limit].decode('utf-8', 'ignore') + (' [...]' if len(raw) > limit else '')
 
 
-def watch_decision(row, answer, decide=None, stopped=False):
+def watch_decision(row, answer, decide=None, stopped=False, promised=None):
     """``(decision, reason)`` of one finished ``when_needed`` run (#719).
 
     Deterministic only where no judgment is needed. A run with no result
@@ -604,6 +705,8 @@ def watch_decision(row, answer, decide=None, stopped=False):
     unjudged runs stay quiet until a judgment is available again: an
     outage neither hides the watch nor repeats it every slot.
     """
+    if promised and not stopped:
+        return DECISION_NOTIFY, promised
     if not str(answer or '').strip():
         if stopped:
             return DECISION_QUIET, REASON_RUN_STOPPED
@@ -664,7 +767,15 @@ def last_slot(row):
     What the model is told to plan by; a late start or a skipped slot can
     still run until the deadline, which is what the owner is shown (#399).
     """
-    return row['due_at'] + int(row['every_seconds']) * (max(1, int(row['max_runs'])) - 1)
+    if not stored_window_terms(row).get('recurrence'):
+        return row['due_at'] + int(row['every_seconds']) * (max(1, int(row['max_runs'])) - 1)
+    slot = row['due_at']
+    for count in range(int(row['run_count']) + 1, int(row['max_runs'])):
+        following = next_window_slot({**row, 'due_at': slot, 'run_count': count}, slot)
+        if following is None:
+            break
+        slot = following
+    return slot
 
 
 def rule_text(recurrence, lang='ko'):
@@ -713,7 +824,14 @@ def schedule_text(row, home_zone=None, lang='ko'):
     skipped slot can never run past what the owner read.
     """
     # #689: render directly in the owner's language or as translatable Korean.
-    day, at, date = _local_parts(row['due_at'], row['timezone'], lang)
+    terms = stored_window_terms(row)
+    opening = row['due_at']
+    if terms.get('recurrence') and row.get('rule_start') is not None:
+        tz = zone(row['timezone'])
+        local_day = datetime.fromtimestamp(opening, tz).date()
+        start = datetime.fromtimestamp(row['rule_start'], tz).time()
+        opening = datetime.combine(local_day, start, tzinfo=tz).timestamp()
+    day, at, date = _local_parts(opening, row['timezone'], lang)
     zone_note = '' if home_zone and row['timezone'] == home_zone else f" ({row['timezone']})"
     recurrence = row.get('recurrence') or ''
     if recurrence.startswith('RRULE:'):
@@ -735,6 +853,11 @@ def schedule_text(row, home_zone=None, lang='ko'):
         when = f'{day} {at}{zone_note}'
         if recurrence in ('daily', 'weekdays', 'weekly'):
             when = msg('preparations.schedule_' + recurrence, lang, preparation_start_time=when)
+    if terms.get('recurrence'):
+        when = msg('preparations.recurring_window_' + terms['recurrence'], lang, schedule=when)
+    if terms.get('report_seconds'):
+        when = msg('preparations.promised_interval', lang, schedule=when,
+                   interval=_minutes_text(terms['report_seconds'] // 60, lang))
     if row['kind'] == KIND_REMINDER:
         return when
     if row.get('delivery_mode') == DELIVERY_WHEN_NEEDED:
@@ -867,6 +990,7 @@ def digest(rows):
                                  # #393: the offer the owner read is part of what is accepted; a row
                                  # without one keeps the digest an earlier message was bound to.
                                  + ((row.get('title_text'), row.get('offer_text')) if offered(row) else ())
+                                 + ((row['window_terms'],) if row.get('window_terms') else ())
                                  for row in rows), ensure_ascii=False)
     return hashlib.sha256(material.encode()).hexdigest()[:32]
 
@@ -876,8 +1000,30 @@ def digest(rows):
 class Preparations:
     """The ``preparations`` rows of one owner store.  No model, no network."""
 
-    def __init__(self, store, clock=time.time):
+    def __init__(self, store, clock=time.time, notice_destination=None):
         self.store, self.clock = store, clock
+        self.notice_destination = notice_destination
+
+    def _queue_status_notice(self, db, row, job_id, kind, created):
+        if self.notice_destination is None or not row['accepted_by']:
+            return
+        destination = self.notice_destination(row['channel'])
+        if destination:
+            owner, generation, surface = destination
+            anchor = db.execute('SELECT channel,chat_id FROM jobs WHERE id=?', (row['created_from'],)).fetchone()
+            if (anchor and str(anchor['channel']).startswith(surface + ':')
+                    and anchor['chat_id'] is not None and str(anchor['chat_id']) != str(owner)):
+                return
+            self.store.telegram.queue_notification(job_id, owner, generation, kind, row['id'], surface,
+                                                   db=db, created=created)
+
+    def connection_wait_notice(self, db, work_id, message_id, created):
+        """Bind a quiet run's new connection wait to its persisted guidance message."""
+        row = db.execute('SELECT p.* FROM preparations p JOIN jobs j ON j.id=p.last_run_job_id '
+                         "WHERE j.id=? AND j.chat_id IS NULL AND p.state=? AND j.status='awaiting_connection'",
+                         (work_id, STATE_RUNNING)).fetchone()
+        if row:
+            self._queue_status_notice(db, row, work_id, BLOCKED_NOTICE_PREFIX + str(message_id), created)
 
     def get(self, preparation_id):
         with self.store.db() as db:
@@ -885,7 +1031,8 @@ class Preparations:
             return dict(row) if row else None
 
     def create(self, *, kind, goal, due_at, timezone, recurrence, channel, created_from, state,
-               accepted_by=None, owner=OWNER, window=None, delivery_mode=None, title=None, offer=None, origin=None):
+               accepted_by=None, owner=OWNER, window=None, delivery_mode=None, title=None, offer=None, origin=None,
+               report_every_minutes=None):
         """One new row (idempotent for the same Work, kind, goal and slot).
 
         #574: when another Work already proposed the same kind, goal, due and
@@ -909,9 +1056,11 @@ class Preparations:
         except PreparationRefusal as exc:
             raise not_run(exc)
         every_seconds = until_at = window_end = max_runs = None
+        try:
+            terms = window_terms(window, recurrence, due_at, timezone, report_every_minutes, delivery_mode)
+        except PreparationRefusal as exc:
+            raise not_run(exc)
         if window is not None:
-            if recurrence:
-                raise not_run(PreparationRefusal('invalid_window', msg('preparations.window_recurrence', value=repr(recurrence))))
             every_seconds, until_at, max_runs = window
             window_end = until_at + run_seconds()
             recurrence = RECURRENCE_WINDOW
@@ -929,10 +1078,10 @@ class Preparations:
             # #574: another Work's identical proposal still waiting for the owner is that same proposal,
             # not a second one.  Scheduled rows are left alone: the owner may want two.
             proposed = db.execute('SELECT * FROM preparations WHERE state=? AND created_from IS NOT ? AND kind=? AND goal_text=? '
-                                  'AND due_at=? AND recurrence IS ? AND every_seconds IS ? AND window_end IS ? AND max_runs IS ? '
+                                  'AND due_at=? AND recurrence IS ? AND every_seconds IS ? AND window_end IS ? AND max_runs IS ? AND window_terms IS ? '
                                   'ORDER BY created_at LIMIT 1',
                                   (STATE_PROPOSED, created_from, kind, goal, due_at, recurrence,
-                                   every_seconds, window_end, max_runs)).fetchone()
+                                   every_seconds, window_end, max_runs, terms)).fetchone()
             if proposed:
                 return {**dict(proposed), 'already_proposed': True}
             active = db.execute('SELECT count(*) FROM preparations WHERE state IN (?,?,?,?)', ACTIVE_STATES).fetchone()[0]
@@ -944,7 +1093,8 @@ class Preparations:
                    'created_from': created_from, 'accepted_by': accepted_by, 'created_at': now, 'updated_at': now,
                    'every_seconds': every_seconds, 'window_end': window_end, 'until_at': until_at,
                    'max_runs': max_runs, 'run_count': 0,
-                   'rule_start': due_at if recurrence and recurrence.startswith('RRULE:') else None,
+                   'rule_start': due_at if terms or recurrence and recurrence.startswith('RRULE:') else None,
+                   'window_terms': terms,
                    'delivery_mode': delivery_mode, 'last_decision': None, 'last_decision_reason': None,
                    'last_notified_digest': None, 'last_notified_text': None, 'last_notified_at': None,
                    'title_text': title, 'offer_text': offer, 'origin': origin, 'offered_at': None}
@@ -1053,10 +1203,15 @@ class Preparations:
             else:
                 following = row['due_at']
                 if row['recurrence'] == RECURRENCE_WINDOW:
-                    if window_ended(row, now) or row['run_count'] >= row['max_runs']:
-                        raise PreparationRefusal('resume_expired')
-                    if following <= now:
-                        following = next_window_slot(row, now)
+                    expired = window_ended(row, now) or row['run_count'] >= row['max_runs']
+                    if expired or following <= now:
+                        following = None if expired else next_window_slot(row, now)
+                        if following is None:
+                            advance = next_day_window(row, now)
+                            following = advance.get('due_at')
+                            if advance:
+                                db.execute('UPDATE preparations SET until_at=?,window_end=?,run_count=? WHERE id=?',
+                                           (advance['until_at'], advance['window_end'], advance['run_count'], row['id']))
                 elif following <= now:
                     following = next_due(following, row['timezone'], row['recurrence'], now, row.get('rule_start'), row.get('run_count', 0))
                 if following is None or following <= now:
@@ -1096,20 +1251,41 @@ class Preparations:
                                   or set(changes) & {'every_minutes', 'until', 'max_runs'}):
             raise PreparationRefusal('invalid_rrule')
         if row['recurrence'] == RECURRENCE_WINDOW:
+            terms = stored_window_terms(row)
             if 'recurrence' in changes:
                 raise PreparationRefusal('invalid_window', msg('preparations.window_recurrence', value=repr(changes['recurrence'])))
-            # #693: ``max_runs`` is the total that ``run_count`` is held to, while the window from the
-            # next slot only counts the slots left; the runs already started are added back.
+            # For a one-shot watch, #693 counts the remaining slots from the current due time.
+            # A recurring watch's count is per day, independent of any skipped slots today.
+            rhythm = terms.get('recurrence')
+            rebased = bool(set(changes) & {'due', 'timezone'})
+            anchor = due_at if rebased else row.get('rule_start')
             done = int(row.get('run_count') or 0)
-            every, until_at, left = normalize_window(changes.get('every_minutes', row['every_seconds'] // 60),
-                                                     changes.get('until', datetime.fromtimestamp(row['until_at'], zone(timezone_name)).isoformat()),
-                                                     None, due_at, timezone_name, now)
+            start = due_at
+            if rhythm:
+                tz = zone(timezone_name)
+                date = datetime.fromtimestamp(due_at, tz).date()
+                opening = datetime.fromtimestamp(anchor, tz).time()
+                start = datetime.combine(date, opening, tzinfo=tz).timestamp()
+                if datetime.fromtimestamp(row['due_at'], tz).date() != date:
+                    updates['run_count'] = 0
+                done = 0
+            every, until_at, remaining = normalize_window(
+                changes.get('every_minutes', row['every_seconds'] // 60),
+                changes.get('until', datetime.fromtimestamp(row['until_at'], zone(timezone_name)).isoformat()),
+                None, start, timezone_name, now, recurrence=rhythm)
+            if rhythm and until_at < due_at:
+                raise PreparationRefusal('invalid_window', msg('preparations.window_until_order',
+                                         value=repr(changes.get('until')), due=iso(due_at)))
             total = changes.get('max_runs', row['max_runs'])
-            total = None if total in (None, '') else total
-            if total is not None and not 1 <= (_whole_number(total) or 0) <= MAX_WINDOW_RUNS:
+            if total not in (None, '') and not 1 <= (_whole_number(total) or 0) <= MAX_WINDOW_RUNS:
                 raise PreparationRefusal('invalid_max_runs')
-            runs = done + left if total is None else min(_whole_number(total), done + left)
+            runs = done + remaining if total in (None, '') else min(_whole_number(total), done + remaining)
             updates.update(every_seconds=every, until_at=until_at, window_end=until_at + run_seconds(), max_runs=runs)
+            if terms:
+                report_every_minutes = terms['report_seconds'] // 60 if 'report_seconds' in terms else None
+                updates.update(window_terms=window_terms((every, until_at, runs), terms.get('recurrence'),
+                                                        start, timezone_name, report_every_minutes, row['delivery_mode']),
+                               rule_start=anchor)
         else:
             if set(changes) & {'every_minutes', 'until', 'max_runs'}:
                 raise PreparationRefusal('invalid_window', msg('preparations.window_edit',
@@ -1208,8 +1384,10 @@ class Preparations:
         """
         with self.store.db() as db:
             rows = [dict(row) for row in db.execute(
-                'SELECT * FROM preparations WHERE accepted_by=? AND origin IS NULL AND created_at>=? '
-                'ORDER BY created_at DESC LIMIT ?', (ACCEPTED_DAY_PLAN, since, int(limit)))]
+                'SELECT p.*, j.status AS last_work_status FROM preparations p '
+                'LEFT JOIN jobs j ON j.id=p.last_run_job_id '
+                'WHERE p.accepted_by=? AND p.origin IS NULL AND p.created_at>=? '
+                'ORDER BY p.created_at DESC LIMIT ?', (ACCEPTED_DAY_PLAN, since, int(limit)))]
             offered = {}
             if rows:
                 for event in db.execute('SELECT job_id,detail FROM tool_events WHERE tool=? AND created>=?',
@@ -1352,8 +1530,7 @@ class Preparations:
             return 'preparation-run-limit'
         return None
 
-    @staticmethod
-    def refuse_run(db, work_id, now, reason):
+    def refuse_run(self, db, work_id, now, reason):
         """Finish a refused queued/waiting run without presenting setup as its result.
 
         Called only after run_refusal in the same transaction. Retain prior
@@ -1366,10 +1543,21 @@ class Preparations:
                              "AND (status!='failed' OR error IS NOT ?)", (cause, cause, work_id, cause)).rowcount
         if not changed:
             return False
-        db.execute('UPDATE preparations SET state=?,last_outcome=?,updated_at=? '
-                   'WHERE last_run_job_id=? AND state=?', (STATE_EXPIRED, STATE_FAILED, now, work_id, STATE_RUNNING))
+        row = db.execute('SELECT * FROM preparations WHERE last_run_job_id=? AND state=?',
+                         (work_id, STATE_RUNNING)).fetchone()
+        advance = next_day_window(dict(row), now) if row and reason == 'preparation-window-expired' else {}
+        state = (row['run_return_state'] or STATE_SCHEDULED) if advance else STATE_EXPIRED
+        updates = {'state': state, 'last_outcome': STATE_FAILED,
+                   'updated_at': now, 'run_return_state': None, **advance}
+        db.execute(f"UPDATE preparations SET {','.join(key + '=?' for key in updates)} "
+                   'WHERE last_run_job_id=? AND state=?', (*updates.values(), work_id, STATE_RUNNING))
         db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                    (work_id, 'preparation', 'withheld', json.dumps({'reason': reason, 'resumed': False}), now))
+        if row and reason == 'preparation-window-expired':
+            job = db.execute('SELECT chat_id,delivery FROM jobs WHERE id=?', (work_id,)).fetchone()
+            # A pending paired reply will already render the expiry as the Work's failure.
+            if not job['chat_id'] or job['delivery'] != 'pending':
+                self._queue_status_notice(db, row, work_id, EXPIRED_NOTICE_KIND, now)
         return True
 
     def start(self, row, *, channel, chat_id, now, immediate=False):
@@ -1394,13 +1582,23 @@ class Preparations:
             if immediate and existing:
                 return existing['id']
             window = current['recurrence'] == RECURRENCE_WINDOW
-            if window and not existing and (now >= current['window_end']
+            missed_day = False
+            if window and not immediate and stored_window_terms(current).get('recurrence'):
+                tz = zone(current['timezone'])
+                missed_day = datetime.fromtimestamp(slot, tz).date() < datetime.fromtimestamp(now, tz).date()
+            if window and not existing and (missed_day or now >= current['window_end']
                                             or int(current['run_count'] or 0) >= int(current['max_runs'] or 0)):
                 if immediate:
                     raise PreparationRefusal('resume_expired')
                 # #719: a watch never runs after its deadline or beyond its bound.
-                db.execute('UPDATE preparations SET state=?,updated_at=? WHERE id=? AND state=?',
-                           (STATE_EXPIRED, now, current['id'], STATE_SCHEDULED))
+                advance = next_day_window(current, now)
+                if advance:
+                    db.execute('UPDATE preparations SET due_at=?,until_at=?,window_end=?,run_count=?,updated_at=? WHERE id=?',
+                               (advance['due_at'], advance['until_at'], advance['window_end'], advance['run_count'], now, current['id']))
+                else:
+                    db.execute('UPDATE preparations SET state=?,updated_at=? WHERE id=? AND state=?',
+                               (STATE_EXPIRED, now, current['id'], STATE_SCHEDULED))
+                self._queue_status_notice(db, current, key, EXPIRED_NOTICE_KIND, min(now, slot))
                 return None
             if existing:
                 job_id = existing['id']
@@ -1424,7 +1622,8 @@ class Preparations:
                         raise PreparationRefusal('queue_full') from None
                     return None
             # #580: an extra immediate run does not consume a rule's scheduled count.
-            extra_rule = immediate and str(current['recurrence'] or '').startswith('RRULE:')
+            extra_rule = immediate and (str(current['recurrence'] or '').startswith('RRULE:')
+                                        or bool(current.get('window_terms')))
             run = int(current['run_count'] or 0) + (0 if existing or extra_rule else 1)
             db.execute('UPDATE preparations SET state=?,last_run_job_id=?,run_count=?,updated_at=?,run_return_state=? WHERE id=?',
                        (STATE_RUNNING, job_id, run, now, current['state'] if immediate else None, current['id']))
@@ -1461,7 +1660,7 @@ class Preparations:
                         json.dumps({'preparation_id': preparation_id, 'continues_work': work_id}), now))
         return bool(changed)
 
-    def settle(self, row, now, scrub=None, decide=None, notify_to=None, waiting=None):
+    def settle(self, row, now, scrub=None, decide=None, notify_to=None, waiting=None, close=None):
         """Record one finished run and schedule the next slot, if any.
 
         A prepared answer is kept as ``scrub(job)`` - the service removes the
@@ -1482,10 +1681,17 @@ class Preparations:
             if finished and ws.has_delivered_result(finished['status']):
                 answer = scrub(finished) if scrub is not None else str(finished.get('response') or '')
         decision = None
+        closed_early = False
         if (row.get('delivery_mode') == DELIVERY_WHEN_NEEDED and finished
                 and not ws.is_active_preparation(finished['status'])
                 and finished['delivery'] not in ('pending', 'sending')):
-            decision = watch_decision(row, answer, decide, stopped=finished['status'] == 'cancelled')
+            promised = window_report_reason(row, now)
+            if (close is not None and row.get('recurrence') == RECURRENCE_WINDOW
+                    and not row.get('run_return_state') and promised != REASON_WINDOW_CLOSED
+                    and finished['status'] == 'succeeded' and str(answer or '').strip()):
+                closed_early = close(row, answer) is True
+            decision = watch_decision(row, answer, decide, stopped=finished['status'] == 'cancelled',
+                                      promised=REASON_WINDOW_CLOSED if closed_early else promised)
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
             current = db.execute('SELECT * FROM preparations WHERE id=?', (row['id'],)).fetchone()
@@ -1508,12 +1714,18 @@ class Preparations:
             if current['kind'] == KIND_PREPARE and job and ws.has_delivered_result(job['status']) and answer is not None:
                 updates.update(prepared_result_ref=job['id'], prepared_at=now, prepared_text=answer)
             if current['recurrence'] == RECURRENCE_WINDOW:
-                following = next_window_slot(current, now)
+                following = None if closed_early else next_window_slot(current, now)
             else:
                 following = next_due(current['due_at'], current['timezone'], current['recurrence'], now,
                                      current.get('rule_start'), current.get('run_count', 0))
             if following is None:
-                updates['state'] = outcome
+                advance = (next_day_window(current, now) if current['recurrence'] == RECURRENCE_WINDOW
+                           and not current.get('run_return_state') else {})
+                if advance:
+                    following = advance['due_at']
+                    updates.update(state=STATE_SCHEDULED, **advance)
+                else:
+                    updates['state'] = outcome
             else:
                 updates.update(state=STATE_SCHEDULED, due_at=following)
             if current.get('run_return_state'):

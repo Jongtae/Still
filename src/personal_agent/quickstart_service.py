@@ -700,7 +700,8 @@ class AgentService:
         # #627: hypotheses, snapshot and location refs over the same tables.
         self.current_state=CurrentContext(store,self.context_observations)
         # #659: owner-accepted preparations, run by the existing work loop.
-        self.preparations=prep.Preparations(store)
+        self.preparations=prep.Preparations(
+            store,notice_destination=lambda channel:self.preparations_service.notice_destination(channel))
         # #805: post-Work owner-model upkeep, claimed by the same loop when idle
         # and run off the work thread, one at a time.
         self.owner_model=om.Upkeep(store)
@@ -4855,10 +4856,20 @@ class AgentService:
             return False
         guidance=notice+guidance
         with self.store.db() as db:
-            db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id) VALUES (?,?,?,?,?,?)',('assistant',guidance,job['channel'],time.time(),job.get('workspace_id'),job['id']))
-            db.execute("UPDATE jobs SET status='awaiting_connection',response=?,error=NULL,delivery=? WHERE id=?",(guidance,'pending' if job['chat_id'] else 'none',job['id']))
+            self._record_connection_wait(db,job,guidance)
         self.update_task_card(job,'awaiting_connection')
         return True
+
+    def _record_connection_wait(self, db, job, guidance):
+        db.execute('BEGIN IMMEDIATE')
+        previous=db.execute('SELECT status FROM jobs WHERE id=?',(job['id'],)).fetchone()
+        now=time.time()
+        message=db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id) VALUES (?,?,?,?,?,?)',
+                           ('assistant',guidance,job['channel'],now,job.get('workspace_id'),job['id']))
+        db.execute("UPDATE jobs SET status='awaiting_connection',response=?,error=NULL,delivery=? WHERE id=?",
+                   (guidance,'pending' if job['chat_id'] else 'none',job['id']))
+        if previous and previous['status'] in ('queued','running'):
+            self.preparations.connection_wait_notice(db,job['id'],message.lastrowid,now)
 
     def work_stopped(self, job_id):
         """Did the owner Stop or cancel this running Work (#606 T1)?"""
@@ -5908,8 +5919,7 @@ class AgentService:
             self.cancel_superseded_work([superseded])
         guidance=notice+local_authority_guidance(key,self.local_folder_request_url())
         with self.store.db() as db:
-            db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id) VALUES (?,?,?,?,?,?)',('assistant',guidance,job['channel'],time.time(),job.get('workspace_id'),job['id']))
-            db.execute("UPDATE jobs SET status='awaiting_connection',response=?,error=NULL,delivery=? WHERE id=?",(guidance,'pending' if job['chat_id'] else 'none',job['id']))
+            self._record_connection_wait(db,job,guidance)
             db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',(job['id'],'local_authority','requested',json.dumps({'authority':LOCAL_AUTHORITY_KIND[key],'scopes':list(LOCAL_AUTHORITY_SCOPES[key])}),time.time()))
         self.update_task_card(job,'awaiting_connection')
         return True

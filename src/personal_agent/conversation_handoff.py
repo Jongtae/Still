@@ -796,6 +796,12 @@ WATCH_NOTIFY_PROPOSITION = ('The owner accepted a standing watch with the goal s
                             'said, when the run could not observe what the goal needs (unless the goal asks to be '
                             'told when a check cannot be made and the last notification did not already say so), or '
                             'when it is unclear. This judgment sends nothing.')
+WATCH_CLOSED_PROPOSITION = (
+    'The observed result establishes that nothing further can change within the current accepted watch window. '
+    'The accepted goal and offer define what can count as final. Say yes only for an explicitly observed final '
+    'state that leaves no part of that window to monitor. An unchanged result, missing data, a failed check, '
+    'or an unresolved condition is not final. This decision concerns the current window only.'
+)
 #: SEC-LOOP-01 (#657), ARCH-THIN-01 (#820): the one outcome judgment of a Work -
 #: did the reply serve the owner's message, given the conversation?  Step
 #: bookkeeping is evidence for it, never a verdict of its own.
@@ -1407,6 +1413,18 @@ class ConversationJudgments:
             facts['accepted_offer'] = offer
         context = self._context('watch-notification', facts, work_id=work_id)
         decision = self.engine.judge(context, WATCH_NOTIFY_PROPOSITION)
+        verdict = self.policy.binary(decision)
+        return Judgment(JUDGMENT_UNAVAILABLE if verdict == 'unknown' else verdict,
+                        source=decision.confidence.provider or decision.outcome)
+
+
+    def watch_window_closed(self, goal, result, work_id=None, offer=None):
+        """Can the observed result end this accepted window early (#797)?"""
+        facts = {'watch_goal': goal or '', 'run_result': result or ''}
+        if offer:
+            facts['accepted_offer'] = offer
+        context = self._context('watch-window-closed', facts, work_id=work_id)
+        decision = self.engine.judge(context, WATCH_CLOSED_PROPOSITION)
         verdict = self.policy.binary(decision)
         return Judgment(JUDGMENT_UNAVAILABLE if verdict == 'unknown' else verdict,
                         source=decision.confidence.provider or decision.outcome)

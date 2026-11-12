@@ -180,13 +180,16 @@ class PreparationsService:
         # #719: a watch - every N minutes from due until a deadline, bounded.
         window=None
         if has_window:
-            if recurrence:raise prep.PreparationRefusal('invalid_window',msg('preparations.window_recurrence',value=repr(recurrence)))
             window=prep.normalize_window(args.get('every_minutes'),args.get('until'),args.get('max_runs'),
-                                         due_at,timezone,now)
+                                         due_at,timezone,now,recurrence=recurrence)
         when_needed=args.get('delivery')==prep.DELIVERY_WHEN_NEEDED
         if when_needed and kind!=prep.KIND_PREPARE:raise prep.PreparationRefusal('invalid_delivery')
+        delivery_mode=prep.DELIVERY_WHEN_NEEDED if when_needed else None
+        report_every_minutes=args.get('report_every_minutes')
+        terms=prep.window_terms(window,recurrence,due_at,timezone,report_every_minutes,delivery_mode)
         return {'kind':kind,'goal':goal,'title':title,'offer':offer,'due_at':due_at,'timezone':timezone,
-                'recurrence':recurrence,'window':window,'delivery_mode':prep.DELIVERY_WHEN_NEEDED if when_needed else None}
+                'recurrence':recurrence,'window':window,'delivery_mode':delivery_mode,'window_terms':terms,
+                'report_every_minutes':report_every_minutes}
 
     def preparation_channel(self, job, kind, delivery):
         """Where a preparation's results go (#306 review): the surface ``job`` came from, or kept in Still.
@@ -226,7 +229,7 @@ class PreparationsService:
             except prep.PreparationRefusal as exc:
                 # #785: the failure record keeps only bounded window arguments, never the brief or offer.
                 window_args={key:service._redact_known_secrets(str(args.get(key)))[:160]
-                             for key in ('every_minutes','until','max_runs','recurrence','due') if args.get(key) not in (None,'')}
+                             for key in ('every_minutes','until','max_runs','recurrence','due','report_every_minutes') if args.get(key) not in (None,'')}
                 detail=service._redact_known_secrets(str(exc))[:600]+' '+json.dumps(window_args,ensure_ascii=False)
                 raise not_run(ToolError(detail,exc.code)) from None
             kind,goal,title,offer=fields['kind'],fields['goal'],fields['title'],fields['offer']
@@ -237,7 +240,7 @@ class PreparationsService:
             summary=prep.proposal_summary({'kind':kind,'goal_text':goal,'due_at':due_at,'timezone':timezone,
                                            'recurrence':prep.RECURRENCE_WINDOW if window else recurrence,
                                            'every_seconds':window and window[0],'until_at':window and window[1],
-                                           'max_runs':window and window[2],'delivery_mode':delivery_mode,
+                                           'max_runs':window and window[2],'delivery_mode':delivery_mode,'window_terms':fields['window_terms'],
                                            'channel':channel,'title_text':title,'offer_text':offer},service.home_zone())
             # #717: the owner's own typed Work (the same test as a direct settings request, #619);
             # #774: a location continuation re-runs an earlier message, so it is not one.
@@ -269,7 +272,8 @@ class PreparationsService:
                                              channel=channel,created_from=job['id'],
                                              state=prep.STATE_SCHEDULED if accepted else prep.STATE_PROPOSED,
                                              accepted_by=accepted_by,
-                                             window=window,delivery_mode=delivery_mode,title=title,offer=offer)
+                                             window=window,delivery_mode=delivery_mode,title=title,offer=offer,
+                                             report_every_minutes=fields['report_every_minutes'])
                 # #574: another Work's identical proposal is this one; the owner's own Work accepts it.
                 already=bool(row.get('already_proposed'))
                 if already and accepted:row=service.preparations.accept(row['id'],accepted_by)
@@ -305,6 +309,9 @@ class PreparationsService:
                               max_runs=row['max_runs'],
                               # #404: the model sees when its last check is (#701: at most until).
                               last_check=prep.iso(prep.last_slot(row),row['timezone']))
+                terms=prep.stored_window_terms(row)
+                if terms.get('recurrence'):result['window_recurrence']=terms['recurrence']
+                if terms.get('report_seconds'):result['report_every_minutes']=terms['report_seconds']//60
             return result
         return schedule
 
@@ -399,10 +406,20 @@ class PreparationsService:
         now=service.preparations.clock()
         rows=service.preparations.set_by_day_plan(now-prep.DAY_PLAN_RECORD_SECONDS)
         if not rows:return ''
-        items=[{'title':prep.owner_title(row),'due':prep.iso(row['due_at'],row['timezone']),'state':row['state'],
-                'last_outcome':row.get('last_outcome') or 'none',
-                'result_ready_at':prep.iso(row['prepared_at'],row['timezone']) if row.get('prepared_at') else None,
-                'placed_in_later_requests':row['offered_works']} for row in rows]
+        items=[]
+        for row in rows:
+            state=row['state']
+            reason=None
+            if state==prep.STATE_RUNNING and ws.is_awaiting_connection(row['last_work_status']):
+                state,reason='blocked','awaiting_connection'
+            elif state==prep.STATE_EXPIRED:
+                reason='expired'
+            item={'title':prep.owner_title(row),'due':prep.iso(row['due_at'],row['timezone']),'state':state,
+                  'last_outcome':row.get('last_outcome') or 'none',
+                  'result_ready_at':prep.iso(row['prepared_at'],row['timezone']) if row.get('prepared_at') else None,
+                  'placed_in_later_requests':row['offered_works']}
+            if reason:item['reason']=reason
+            items.append(item)
         return 'earlier_plans: '+service._redact_known_secrets(json.dumps(items,ensure_ascii=False,separators=(',',':')))
 
     @staticmethod
@@ -410,6 +427,41 @@ class PreparationsService:
         """``send`` / ``keep`` / ``when_needed`` (#719) for one preparation row."""
         if row.get('delivery_mode')==prep.DELIVERY_WHEN_NEEDED:return prep.DELIVERY_WHEN_NEEDED
         return 'send' if row['channel']!=prep.CHANNEL_WEB else 'keep'
+
+    def notice_destination(self, channel):
+        """Resolve only the preparation's own conversation surface and current pairing."""
+        surface = next((item for item in self.service.surfaces if item.name == channel), None)
+        pairing = surface.pairing() if surface is not None else None
+        if pairing is None:
+            return None
+        generation = surface.owner_generation()
+        if generation and pairing.channel == surface.channel_prefix + generation:
+            return pairing.owner, generation, surface.name
+        return None
+
+    def status_notice_text(self, notification):
+        """Suppress obsolete waiting episodes and notices for stopped preparations."""
+        service = self.service
+        kind = notification['kind']
+        with service.store.db() as db:
+            row = db.execute('SELECT * FROM preparations WHERE id=?',
+                             (notification['fingerprint'],)).fetchone()
+            if (not row or row['state'] == prep.STATE_CANCELLED
+                    or row['channel'] != notification['surface']):
+                return None
+            if kind.startswith(prep.BLOCKED_NOTICE_PREFIX):
+                job = db.execute('SELECT status FROM jobs WHERE id=?', (notification['job_id'],)).fetchone()
+                latest = db.execute('SELECT id FROM telegram_notifications WHERE job_id=? AND kind GLOB ? '
+                                    'ORDER BY rowid DESC LIMIT 1',
+                                    (notification['job_id'], prep.BLOCKED_NOTICE_PREFIX + '*')).fetchone()
+                if (row['state'] != prep.STATE_RUNNING or row['last_run_job_id'] != notification['job_id']
+                        or row['window_end'] is not None and service.preparations.clock() >= row['window_end']
+                        or not job or not ws.is_awaiting_connection(job['status'])
+                        or not latest or latest['id'] != notification['id']):
+                    return None
+        title = service._redact_known_secrets(prep.owner_title(dict(row)))
+        return msg('preparations.notice_waiting' if kind.startswith(prep.BLOCKED_NOTICE_PREFIX)
+                   else 'preparations.notice_elapsed', title=title)
 
     def run_due_preparation(self, now=None):
         """One tick of owner-accepted preparations (#659).
@@ -473,10 +525,11 @@ class PreparationsService:
                             if refusal and current and (current['status']=='queued' or service.work_has_pending_resume(work_id,now)):
                                 service.preparations.refuse_run(db,work_id,now,refusal)
                         if waiting:continue
-                    # #719: a when_needed run is judged once; only notify queues a message.
+                    # #719 and #797: settle a watch and queue any report in one transaction.
                     settled=service.preparations.settle(row,now,scrub=service.scrub_prepared_answer,decide=service.watch_judgment,
                                                      notify_to=(pairing.owner,surface.owner_generation(),surface.name) if paired else None,
-                                                     waiting=lambda work:service.work_has_pending_resume(work,now))
+                                                     waiting=lambda work:service.work_has_pending_resume(work,now),
+                                                     close=self.watch_window_closed)
                     if settled:LOG.info('preparation settled id=%s outcome=%s next=%s decision=%s',row['id'],settled['last_outcome'],
                                         settled['state'],settled.get('last_decision') if when_needed else '-')
                     continue
@@ -502,6 +555,19 @@ class PreparationsService:
                                                              work_id=row.get('last_run_job_id'),
                                                              offer=prep.accepted_offer(row) or None)
         return {JUDGMENT_YES:'yes',JUDGMENT_NO:'no'}.get(judged.outcome)
+
+    def watch_window_closed(self, row, answer):
+        """A positive judgment ends only the current window, keeping any daily rhythm."""
+        service=self.service
+        result=str(answer)[:service.WATCH_RESULT_CHARS]
+        try:
+            judged=service.decision_judge.watch_window_closed(row['goal_text'],result,
+                                                              work_id=row.get('last_run_job_id'),
+                                                              offer=prep.accepted_offer(row) or None)
+        except Exception as exc:  # A failed judgment leaves the accepted schedule active.
+            LOG.warning('watch closing judgment unavailable kind=%s',type(exc).__name__)
+            return False
+        return judged.outcome==JUDGMENT_YES
 
     def watch_notification_text(self, notification):
         """The one Telegram message of a ``notify`` decision, or None when it no longer applies (#719)."""
@@ -847,6 +913,7 @@ class PreparationsService:
         rows=[]
         for row in service.preparations.rows():
             last=str(row.get('last_response') or '')
+            terms=prep.stored_window_terms(row)
             rows.append({'id':row['id'],'kind':row['kind'],'goal':row['goal_text'],'state':row['state'],
                          # #393: the owner's name and offer for it, when the AI wrote them.
                          'title':row.get('title_text'),'offer':row.get('offer_text'),
@@ -865,6 +932,8 @@ class PreparationsService:
                          'until_local':prep.local_text(row['until_at'],row['timezone']) if row.get('until_at') else None,
                          'until':datetime.fromtimestamp(row['until_at'],prep.zone(row['timezone'])).isoformat() if row.get('until_at') else None,
                          'max_runs':row.get('max_runs'),'run_count':row.get('run_count') or 0,
+                         'window_recurrence':terms.get('recurrence'),
+                         'report_every_minutes':terms['report_seconds']//60 if terms.get('report_seconds') else None,
                          'last_decision':row.get('last_decision'),'last_decision_reason':row.get('last_decision_reason')})
         # #575: the page uses the same catalog in its selected language.
         labels={'accept':'button.preparation_accept','decline':'button.preparation_decline',

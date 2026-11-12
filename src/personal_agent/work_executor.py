@@ -346,8 +346,7 @@ class WorkExecutor:
             service.record_work_sources(job['id'],run.work_sources)
             guidance=run.reply_notice+guidance
             with service.store.db() as db:
-                db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id) VALUES (?,?,?,?,?,?)',('assistant',guidance,job['channel'],time.time(),job.get('workspace_id'),job['id']))
-                db.execute("UPDATE jobs SET status='awaiting_connection',response=?,error=NULL,delivery=? WHERE id=?",(guidance,'pending' if job['chat_id'] else 'none',job['id']))
+                service._record_connection_wait(db,job,guidance)
             service.update_task_card(job,'awaiting_connection')
             return True
         return PROCEED

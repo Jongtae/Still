@@ -195,15 +195,18 @@ class TelegramStore:
             row=db.execute('SELECT * FROM telegram_notifications WHERE id=?',(notification_id,)).fetchone()
             return dict(row) if row else None
 
-    def queue_notification(self, job_id, chat_id, generation, kind, fingerprint=None, surface='telegram'):
-        """#213: ``surface`` names the conversation surface whose delivery claims the row."""
-        store=self.store
-        notification_id=str(uuid.uuid4())
-        with store.db() as db:
-            db.execute('INSERT OR IGNORE INTO telegram_notifications(id,job_id,chat_id,generation,kind,fingerprint,state,message_id,created,surface) VALUES (?,?,?,?,?,?,?,?,?,?)',
-                       (notification_id,job_id,chat_id,generation,kind,fingerprint,'queued',None,time.time(),surface))
-            row=db.execute('SELECT * FROM telegram_notifications WHERE job_id=? AND kind=?',(job_id,kind)).fetchone()
-            return dict(row)
+    def queue_notification(self, job_id, chat_id, generation, kind, fingerprint=None, surface='telegram',
+                           *, db=None, created=None):
+        """Queue on the named surface, optionally in the caller's state transition."""
+        if db is None:
+            with self.store.db() as connection:
+                return self.queue_notification(job_id, chat_id, generation, kind, fingerprint, surface,
+                                               db=connection, created=created)
+        db.execute('INSERT OR IGNORE INTO telegram_notifications(id,job_id,chat_id,generation,kind,fingerprint,state,message_id,created,surface) VALUES (?,?,?,?,?,?,?,?,?,?)',
+                   (str(uuid.uuid4()), job_id, chat_id, generation, kind, fingerprint, 'queued', None,
+                    time.time() if created is None else created, surface))
+        row = db.execute('SELECT * FROM telegram_notifications WHERE job_id=? AND kind=?',(job_id,kind)).fetchone()
+        return dict(row)
 
     def next_notification(self, surface='telegram'):
         store=self.store

@@ -10822,6 +10822,54 @@
   "ja": "until={value}: due={due}から{days}日以内にしてください。",
   "zh": "until={value}：必须在due={due}起{days}天内。"
  },
+ "preparations.recurring_window_same_day": {
+  "ko": "반복되는 확인 구간의 시작과 종료는 같은 현지 날짜에 있어야 해요.",
+  "en": "A repeating watch must start and end on the same local day.",
+  "ja": "繰り返しの確認時間帯は、現地時間で同じ日のうちに開始・終了してください。",
+  "zh": "重复监测时段的开始和结束必须在同一个当地日期。"
+ },
+ "preparations.notice_waiting": {
+  "ko": "예약한 ‘{title}’ 작업이 연결을 기다리고 있어요. Still 설정에서 필요한 연결을 완료해 주세요.",
+  "en": "The scheduled task “{title}” is waiting for a connection. Complete the required connection in Still Settings.",
+  "ja": "予約した「{title}」は接続を待っています。Stillの設定で必要な接続を完了してください。",
+  "zh": "计划任务“{title}”正在等待连接。请在 Still 设置中完成所需连接。"
+ },
+ "preparations.notice_elapsed": {
+  "ko": "예약한 ‘{title}’ 작업의 이번 실행 시간이 끝났어요. 이 실행은 다시 시도하지 않아요.",
+  "en": "This run of the scheduled task “{title}” has expired. This run will not be retried.",
+  "ja": "予約した「{title}」の今回の実行期限が過ぎました。今回の実行は再試行しません。",
+  "zh": "计划任务“{title}”的本次运行已过期。本次运行不会重试。"
+ },
+ "preparations.report_interval": {
+  "ko": "정기 보고 간격은 필요할 때 알리는 확인 작업에서만 쓸 수 있고, 확인 간격의 정수 배여야 해요.",
+  "en": "A report interval applies to watches that notify when needed and must be a whole multiple of the check interval.",
+  "ja": "定期報告の間隔は必要に応じて通知する確認に使え、確認間隔の整数倍にしてください。",
+  "zh": "报告间隔仅适用于按需通知的监测，且必须是检查间隔的整数倍。"
+ },
+ "preparations.recurring_window_daily": {
+  "ko": "{schedule} (매일 같은 시간대에 반복)",
+  "en": "{schedule} (same window daily)",
+  "ja": "{schedule}（毎日同じ時間帯に繰り返し）",
+  "zh": "{schedule}（每天在同一时段重复）"
+ },
+ "preparations.recurring_window_weekdays": {
+  "ko": "{schedule} (주중 같은 시간대에 반복)",
+  "en": "{schedule} (same window on weekdays)",
+  "ja": "{schedule}（平日ごとに同じ時間帯に繰り返し）",
+  "zh": "{schedule}（每个工作日在同一时段重复）"
+ },
+ "preparations.recurring_window_weekly": {
+  "ko": "{schedule} (매주 같은 시간대에 반복)",
+  "en": "{schedule} (same window weekly)",
+  "ja": "{schedule}（毎週同じ時間帯に繰り返し）",
+  "zh": "{schedule}（每周在同一时段重复）"
+ },
+ "preparations.promised_interval": {
+  "ko": "{schedule}, {interval}마다 보고",
+  "en": "{schedule}, report every {interval}",
+  "ja": "{schedule}、{interval}ごとに報告",
+  "zh": "{schedule}，每{interval}报告一次"
+ },
  "preparations.window_recurrence": {
   "ko": "recurrence={value}: every_minutes·until과 함께 쓸 수 없어요.",
   "en": "recurrence={value}: cannot be combined with every_minutes and until.",
