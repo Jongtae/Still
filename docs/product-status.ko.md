@@ -106,7 +106,7 @@ Still은 일을 수행하는 AI와 사용자 상태를 분리하려 한다. 모�
 <!-- readme-section:release -->
 ## 공개 배포본
 
-**Homebrew 패키지는 태그가 붙은 main 커밋의 최신 공개 배포본 `v0.6.0`(2026-11-07)을 설치합니다.** [release manifest](release-manifest.json)에 포함 소스와 로컬 설치 검증을 기록했습니다.
+**Homebrew 패키지는 태그가 붙은 main 커밋의 최신 공개 배포본 `v0.7.0`(2026-11-13)을 설치합니다.** [release manifest](release-manifest.json)에 포함 소스와 로컬 설치 검증을 기록했습니다.
 
 기록된 태그 커밋은 `6d26edfdaeb2f1204dc877d62fa9f9e25cf3059b`다. 배포 파일의 해시와 macOS 포뮬러 검사는 실제 Google·메신저·쇼핑 사용이나 재부팅 뒤 동작을 입증하지 않는다. 이 배포본의 사용자 설치 업그레이드는 아직 기록되지 않았다. 한 줄 설치는 [빠른 시작](QUICKSTART.md)을 따르며, Apple silicon의 Homebrew 설치는 다음과 같다.
 

@@ -21,7 +21,7 @@ curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/main/scripts/install.
 ```
 
 <!-- scripts/dev/release.py updates the following sentence; edit its consumer and tests together if changing the format. -->
-This command and the Homebrew commands below install the newest published release, `v0.6.0` (2026-11-07). To run unreleased `main`, use a checkout instead ([source installation](#remote-host--source-installation)).
+This command and the Homebrew commands below install the newest published release, `v0.7.0` (2026-11-13). To run unreleased `main`, use a checkout instead ([source installation](#remote-host--source-installation)).
 
 The installer checks the release archive's SHA-256 against the manifest before installing. It uses a managed Python and starts Still in the same terminal. Set `AGENTOS_NO_START=1` to install without starting. Open a new terminal if `~/.local/bin` has just been added to your `PATH`.
 
