@@ -59,10 +59,10 @@ The sign-in link is cropped out and the name is blurred. [Open full size](docs/a
 
 You need **macOS, Linux or Windows with [WSL2](docs/QUICKSTART.md#windows-wsl2)**, plus one configured AI connection: Codex, Claude Code, an API or an already running Ollama server. Subscription routes need the appropriate CLI access and sign-in; AI subscriptions, API usage and model downloads are separate from Still. See [AI setup](docs/QUICKSTART.md#connect-an-ai).
 
-Inspect the [pinned installer](https://github.com/Jongtae/Still/blob/17fe561e271f033e660e13edd2c272acfcee2347/scripts/install.sh), then run this in a macOS or Linux terminal, or inside Ubuntu on WSL2:
+Inspect the [pinned installer](https://github.com/Jongtae/Still/blob/33e12cea89fccad49118600ff47106e1c6f16350/scripts/install.sh), then run this in a macOS or Linux terminal, or inside Ubuntu on WSL2:
 
 ```sh
-curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/17fe561e271f033e660e13edd2c272acfcee2347/scripts/install.sh | sh
+curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/33e12cea89fccad49118600ff47106e1c6f16350/scripts/install.sh | sh
 ```
 
 No preinstalled Python, Homebrew or Docker is needed. The installer supplies its Python environment and checks the release archive against the recorded SHA-256.
