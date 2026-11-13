@@ -40,7 +40,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, macos-15, macos-26, macos-15-intel,
+        os: [macos-15, macos-26, macos-15-intel,
              ubuntu-22.04, ubuntu-24.04, ubuntu-26.04, ubuntu-24.04-arm]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
@@ -79,7 +79,7 @@ jobs:
           - image: fedora:43
             bootstrap: dnf install -y -q curl tar gzip
           - image: archlinux:latest
-            bootstrap: pacman -Sy --noconfirm --needed curl tar gzip >/dev/null
+            bootstrap: pacman -Syu --noconfirm --needed curl tar gzip >/dev/null
           - image: opensuse/tumbleweed
             bootstrap: zypper -n -q in curl tar gzip gawk
           - image: alpine:3.22
