@@ -46,14 +46,17 @@ MAX_CONTEXT_CHARS = 6000
 #: #1451: what ``judge_explained`` asks besides the verdict.  Generic: it names no request or task.
 GAP_INSTRUCTION = ('gap: when the proposition is false, one short sentence, in the language of the owner\'s words '
                    'in the facts, naming what makes it false - what is missing, unsupported or different from what '
-                   'was asked, grounded in the facts. This is the evaluator reading for review, advice rather than an owner '
+                   'was asked, grounded in the facts. What the owner refers to (an earlier exchange, a site, an account, '
+                   'an item) is named only as the facts show it; when they do not show it, say that it is unclear '
+                   'instead of naming a likely one. This is the evaluator reading for review, advice rather than an owner '
                    'instruction; the owner message and conversation take precedence. No tool names and no instructions. When it is '
                    'true, an empty string.\n'
                    # #1459: the owner reads only this one; the gap stays internal.
                    # #631: the same judgment owns the closing line on either verdict.
                    'note: when the proposition is false or the failed steps are not none, what the owner is told after the reply '
                    'about what did not get done or is still '
-                   'open, in one or two sentences addressed to the owner following the shared Voice instructions, '
+                   'open, grounded in the facts like the gap (never a step the observations show done), in one or two '
+                   'sentences addressed to the owner following the shared Voice instructions, '
                    'with no internal terms such as '
                    'observation, evidence, judgment, attempt or proposition. '
                    # #155: the owner typed the approval and was asked for it again.
