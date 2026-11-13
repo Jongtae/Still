@@ -407,7 +407,7 @@ class Sandbox:
             spec = world_owner_spec(world.operations(), self.world.get('approvals') or {}, self.world.get('money'))
             self.world_setup = confirm_world(self.data, spec, self.python, src=self.src)
         argv = [self.python, '-m', 'personal_agent.quickstart', 'start', '--host', '127.0.0.1',
-                '--port', str(self.port), '--drive-handoff-port', str(self.port + 1),
+                '--port', str(self.port),
                 '--data', str(self.data), '--no-browser']
         self.log = open(self.data / 'server.log', 'ab')
         env = sandbox_environment(self.data, src=self.src,
