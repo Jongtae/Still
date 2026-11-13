@@ -90,7 +90,7 @@ For Intel Macs, use the one-line installer above. The command is still called `a
 
 </details>
 
-**Release status:** both installers install **v0.6.0** (2026-11-07), built from the tagged main commit. The demo and the everyday-use image come from real sessions and are not release-specific end-to-end validation; the architecture figure is product direction. See the [release manifest](docs/release-manifest.json) for the release's exact coverage and evidence limits.
+**Release status:** both installers install **v0.7.0** (2026-11-13), built from the tagged main commit. The demo and the everyday-use image come from real sessions and are not release-specific end-to-end validation; the architecture figure is product direction. See the [release manifest](docs/release-manifest.json) for the release's exact coverage and evidence limits.
 
 Setup, Windows limitations, updates and removal: [QUICKSTART](docs/QUICKSTART.md).
 
