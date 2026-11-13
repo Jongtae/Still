@@ -59,10 +59,10 @@
 
 **macOS、Linux、または [WSL2](../../docs/QUICKSTART.md#windows-wsl2) を使う Windows** と、設定済みの AI 接続が一つ必要です。Codex、Claude Code、API、または起動済みの Ollama を使えます。サブスクリプション経由では、対応する CLI を利用できるプランとサインインが必要です。AI の契約、API 利用、モデルのダウンロードは Still とは別です。[AI 接続の案内](../../docs/QUICKSTART.md#connect-an-ai)を参照してください。
 
-[固定リビジョンのインストーラー](https://github.com/Jongtae/Still/blob/17fe561e271f033e660e13edd2c272acfcee2347/scripts/install.sh)を確認し、macOS・Linux のターミナル、または WSL2 の Ubuntu 内で実行します。
+[固定リビジョンのインストーラー](https://github.com/Jongtae/Still/blob/33e12cea89fccad49118600ff47106e1c6f16350/scripts/install.sh)を確認し、macOS・Linux のターミナル、または WSL2 の Ubuntu 内で実行します。
 
 ```sh
-curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/17fe561e271f033e660e13edd2c272acfcee2347/scripts/install.sh | sh
+curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/33e12cea89fccad49118600ff47106e1c6f16350/scripts/install.sh | sh
 ```
 
 Python、Homebrew、Docker を事前に入れる必要はありません。インストーラーが Python 環境を用意し、リリースアーカイブの SHA-256 を記録された値と照合します。

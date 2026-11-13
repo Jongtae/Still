@@ -59,10 +59,10 @@
 
 你需要 **macOS、Linux 或使用 [WSL2](../../docs/QUICKSTART.md#windows-wsl2) 的 Windows**，以及一个配置好的 AI 连接：Codex、Claude Code、API，或已经运行的 Ollama。订阅方式需要相应的 CLI 使用资格和登录；AI 订阅、API 使用和模型下载与 Still 分开。详见 [AI 连接说明](../../docs/QUICKSTART.md#connect-an-ai)。
 
-先检查[固定提交的安装脚本](https://github.com/Jongtae/Still/blob/17fe561e271f033e660e13edd2c272acfcee2347/scripts/install.sh)，再在 macOS、Linux 的终端或 WSL2 的 Ubuntu 内运行：
+先检查[固定提交的安装脚本](https://github.com/Jongtae/Still/blob/33e12cea89fccad49118600ff47106e1c6f16350/scripts/install.sh)，再在 macOS、Linux 的终端或 WSL2 的 Ubuntu 内运行：
 
 ```sh
-curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/17fe561e271f033e660e13edd2c272acfcee2347/scripts/install.sh | sh
+curl -LsSf https://raw.githubusercontent.com/Jongtae/Still/33e12cea89fccad49118600ff47106e1c6f16350/scripts/install.sh | sh
 ```
 
 不必预先安装 Python、Homebrew 或 Docker。安装脚本会准备 Python 环境，并将发行归档的 SHA-256 与记录值核对。
