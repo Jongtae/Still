@@ -103,6 +103,36 @@ class PreparedRun(_Case):
         assert_unmasked(self, asked.facts['run_result'], ANSWER)
         self.assertEqual(asked.facts['run_result'], ANSWER)
 
+    def test_the_runs_information_use_lists_the_watch_judgment_that_read_it(self):
+        """The run's words now reach the Judgment AI as written: the run's record names that call."""
+        class Watch(_WatchCase):
+            def runTest(self):
+                pass
+        case = Watch()
+        case.setUp()
+        self.addCleanup(case.doCleanups)
+        case.judge = watch_engine([False] * 5)
+        judge = case.judge.judge
+
+        def audited(context, proposition):
+            # What a provider engine's ``audit`` does, in the caller's thread (decision.DecisionEngine).
+            case.service.record_decision({'purpose': context.purpose, 'kind': 'judge', 'model': 'judgment-model'})
+            return judge(context, proposition)
+        case.judge.judge = audited
+        case.service.use_decision_engine(case.judge)
+        case.watched = case.watch()
+        case.now = case.service.preparations.get(case.watched['id'])['due_at'] + 1
+        case.assertTrue(case.tick())
+        case.script = note_then_answer()
+        case.assertTrue(case.service.run_one())
+        case.service.deliver_one()
+        case.assertTrue(case.tick())
+        run_id = case.service.preparations.get(case.watched['id'])['last_run_job_id']
+        purposes = [row.get('purpose') for row in case.store.work_decisions(run_id)]
+        self.assertIn('watch-notification', purposes)
+        self.assertGreaterEqual(case.service.work_information_use(run_id)['sent_to']['judgment_ai']['calls'], 1)
+        self.assertIsNone(case.service.current_work_id)
+
     def test_a_stored_secret_in_the_answer_is_still_replaced(self):
         answer = f'{NOTE} 메모했고 토큰은 {SECRET} 입니다.'
         row = self.scheduled(goal='여행 준비물 정리', seconds=900, channel='telegram')

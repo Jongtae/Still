@@ -8,6 +8,7 @@ The existing preparations.Preparations store retains persistence ownership.
 """
 
 import json
+from contextlib import contextmanager
 from datetime import datetime
 
 from . import entrusted_lines as el
@@ -582,20 +583,39 @@ class PreparationsService:
         result=str(answer or '')
         if len(result)>service.WATCH_RESULT_CHARS:result=result[:service.WATCH_RESULT_CHARS]+' [...]'
         brief=service.lines.readable(row['line_id']) if row.get('line_id') else None
-        judged=service.decision_judge.watch_notification_needed(row['goal_text'],result,row.get('last_notified_text'),
-                                                             work_id=row.get('last_run_job_id'),
-                                                             offer=prep.accepted_offer(row) or None,
-                                                             report_promise=brief['report_promise'] if brief else None)
+        with self._judged_for_run(row):
+            judged=service.decision_judge.watch_notification_needed(row['goal_text'],result,row.get('last_notified_text'),
+                                                                 work_id=row.get('last_run_job_id'),
+                                                                 offer=prep.accepted_offer(row) or None,
+                                                                 report_promise=brief['report_promise'] if brief else None)
         return {JUDGMENT_YES:'yes',JUDGMENT_NO:'no'}.get(judged.outcome)
+
+    @contextmanager
+    def _judged_for_run(self, row):
+        """Link a watch judgment's audit row to the run it judged (#818).
+
+        The tick runs outside any Work, and ``record_decision`` links a judgment to the thread's current
+        Work only.  The run's result now reaches the Judgment AI as written, so the run's information-use
+        record must list that call.  No Work budget is attached; ``current_work_id`` is per thread.
+        """
+        service=self.service
+        work_id=row.get('last_run_job_id')
+        if not work_id or service.current_work_id:
+            yield
+            return
+        service.current_work_id=work_id
+        try:yield
+        finally:service.current_work_id=None
 
     def watch_window_closed(self, row, answer):
         """A positive judgment ends only the current window, keeping any daily rhythm."""
         service=self.service
         result=str(answer)[:service.WATCH_RESULT_CHARS]
         try:
-            judged=service.decision_judge.watch_window_closed(row['goal_text'],result,
-                                                              work_id=row.get('last_run_job_id'),
-                                                              offer=prep.accepted_offer(row) or None)
+            with self._judged_for_run(row):
+                judged=service.decision_judge.watch_window_closed(row['goal_text'],result,
+                                                                  work_id=row.get('last_run_job_id'),
+                                                                  offer=prep.accepted_offer(row) or None)
         except Exception as exc:  # A failed judgment leaves the accepted schedule active.
             LOG.warning('watch closing judgment unavailable kind=%s',type(exc).__name__)
             return False

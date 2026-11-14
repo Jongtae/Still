@@ -1040,10 +1040,6 @@ class WorkExecutor:
             capability_limitation=profile_status(facade.PROFILE)['limitation'],
             instructions=engine_context['instructions'] if adapter_context is not None else '',
             instructions_channel=('developer-instructions' if run.subscription['id']=='codex' else 'append-system-prompt') if separate else ('prompt' if adapter_context is not None else 'not sent (bare request)'),
-            # #658: record-only labels for the profile, current-context and
-            # prepared sections, not for capabilities (lookups stay open).
-            # #701: they no longer withhold the local envelope, which is
-            # stored after deterministic secret/private-value redaction.
             route='subscription',engine=run.subscription['id'],mode=mode,status='sent',
             context_mode=engine_context.get('mode','shared-context'),instructions_version=engine_context.get('version'),
             context_messages=len(engine_context['conversation']),egress_taint=sorted(run.capabilities.private_provenance),
