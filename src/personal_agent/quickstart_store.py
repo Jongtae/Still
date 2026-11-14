@@ -2407,15 +2407,32 @@ class QuickStore:
     def update_notification(self, notification_id, state, message_id=None, fingerprint=None, delivered=False):
         return self.telegram.update_notification(notification_id, state, message_id, fingerprint, delivered=delivered)
 
-    def recover(self):
+    def recover(self, reply_prefixes=()):
+        """Settle what a restart cut off, in one transaction (#841, matrix X4/X9).
+
+        Running Works become ``interrupted`` and their ledgers are fenced (a bridge from
+        before the restart can no longer spend or take steers); running Works on a surface
+        in ``reply_prefixes`` with no task card get their one interrupted reply queued in
+        the same commit, so a stop inside recovery leaves both or neither.  Returns those
+        Work ids.  Nothing is re-run.
+        """
+        from .agent_runtime import WorkLedger  # lazy: the store does not depend on the runtime
         with self.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            running=[row['id'] for row in db.execute("SELECT id FROM jobs WHERE status='running'")]
+            replies=self.telegram.running_without_task_cards(db,tuple(reply_prefixes))
             interrupted=db.execute("UPDATE jobs SET status='interrupted',error='실행 중 재시작되었습니다. 자동으로 재호출하지 않습니다.' WHERE status='running'").rowcount
+            WorkLedger.fence_restart(db,running)
             uncertain=db.execute("UPDATE jobs SET delivery='unknown' WHERE delivery='sending'").rowcount
             notifications=db.execute("UPDATE telegram_notifications SET state='unknown' WHERE state='sending'").rowcount
             db.execute("UPDATE telegram_task_cards SET message_id=-2,state='unknown',created=? WHERE message_id=-1",(time.time(),))
+            self.telegram.delete_interrupted_task_cards(db)
+            for work_id in replies:
+                db.execute("UPDATE jobs SET delivery='pending' WHERE id=? AND status='interrupted' AND delivery='none'",(work_id,))
             # #90: what this restart cut off, apart from older interrupted rows still in the history.
             self.put('last_recovery',{'interrupted_jobs':interrupted,'uncertain_deliveries':uncertain,
                                       'uncertain_notifications':notifications},db=db)
+        return replies
 
     def last_recovery(self):
         """Counts of what the latest restart cut off; zeros before the first one."""

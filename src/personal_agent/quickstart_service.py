@@ -9339,15 +9339,8 @@ class AgentService:
         `safe_retry` allows).  Nothing is re-run and nothing already sent or
         uncertain is re-sent - only `delivery='none'` rows are touched.
         """
-        prefixes=[surface.channel_prefix for surface in self.surfaces if surface.channel_prefix]
-        with self.store.db() as db:
-            running=self.store.telegram.running_without_task_cards(db,prefixes)
-        self.store.recover()
-        with self.store.db() as db:
-            self.store.telegram.delete_interrupted_task_cards(db)
-            for work_id in running:
-                db.execute("UPDATE jobs SET delivery='pending' WHERE id=? AND status='interrupted' AND delivery='none'",(work_id,))
-        return running
+        # #841 (matrix X9): one transaction, so a stop inside recovery cannot strand the reply.
+        return self.store.recover(surface.channel_prefix for surface in self.surfaces if surface.channel_prefix)
 
     def purge_forgotten(self):
         """Purge forgotten owner state whose undo window ended (#794); a failure is logged and retried next tick."""

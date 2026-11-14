@@ -2099,6 +2099,34 @@ class WorkLedger:
    job_id=work['related_job_id']
   raise ValueError('cyclic or excessive request chain')
 
+ @staticmethod
+ def fence_restart(db,job_ids):
+  """Supersede the runs a restart cut off, inside ``QuickStore.recover``'s transaction (#841, matrix X4).
+
+  For each interrupted Work that holds its request's record, advance the epoch by one at the
+  request-chain root ``_change`` uses, so a bridge or CLI child bound before the restart
+  returns ``superseded`` even after the same Work id resumes.  Counters, ``deadline``,
+  ``active`` and ``remaining_seconds`` stay as they are: nothing is replenished.  A Work
+  with no record gets none; a chain that does not resolve or an unreadable record is skipped
+  (an unreadable record already fails every spend closed).  Returns the record keys advanced.
+  """
+  advanced=[]
+  for job_id in job_ids:
+   try:
+    root=WorkLedger.request_chain(db,job_id)[-1]['id']
+    key=f'{WORK_LEDGER_KEY}:{root}'
+    if key in advanced:continue
+    found=db.execute('SELECT value FROM config WHERE key=?',(key,)).fetchone()
+    if not found:continue
+    row=WorkLedger._validate(json.loads(found[0]))
+   except (TypeError,ValueError):continue
+   # Another holder (a later retry or continuation) already supersedes this run's bridge.
+   if row.get('active_work_id',root)!=job_id:continue
+   row['epoch']+=1
+   db.execute('UPDATE config SET value=? WHERE key=?',(json.dumps(row),key))
+   advanced.append(key)
+  return advanced
+
  def _migrate_request(self,db,row,root):
   """Combine older per-Work allowances once, including completed retry branches.
 
