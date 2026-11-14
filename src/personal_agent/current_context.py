@@ -273,14 +273,10 @@ def stored_secret_values(store):
     values = []
     # #1216: every registered API slot's secret too.
     for name in (*KNOWN_SECRET_NAMES, *secret_names(store)):
-        try:
-            value = store.secret(name)
-        except Exception:
-            value = None
-            # #819 (Codex review on #839): a value that could not be read is missing from this list, so the
-            # list is used for this call only and never cached (``_material_entry``); the next call reads again.
-            from .api_requests import REDACTION_STATE
-            REDACTION_STATE.partial = True
+        # #819 (Codex review on #839): a stored value that cannot be read raises instead of being left out,
+        # so every caller withholds its text (an error falls back to Still's fixed text, a judgment fact to
+        # ``[redacted]``, an export stops) and nothing is cached; the next call reads again.
+        value = store.secret(name)
         if isinstance(value, str) and len(value) >= MIN_REDACTED_CHARS:
             values.append(value)
     # #1380: a short code-run value (an account product code such as "01") identifies nothing

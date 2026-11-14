@@ -67,5 +67,21 @@ class DirectRouteToolError(unittest.TestCase):
         self.assertNotIn('/Users/owner/notes/a.md', sent)
 
 
+    def test_an_unreadable_stored_value_withholds_the_error(self):
+        """Codex review on #839: a stored value that cannot be read never lets the error text through."""
+        from unittest import mock
+        real = QuickStore.secret
+
+        def failing(store, key, *args, **kwargs):
+            if key == 'telegram_token':
+                raise OSError('secrets file busy')
+            return real(store, key, *args, **kwargs)
+        self.store._known_secret_material = None
+        with mock.patch.object(QuickStore, 'secret', failing):
+            sent = self.run_with(lambda text: redact_known_secrets(self.store, text))
+        self.assertNotIn(SECRET, sent)
+        self.assertNotIn('/Users/owner/notes/a.md', sent)
+
+
 if __name__ == '__main__':
     unittest.main()
