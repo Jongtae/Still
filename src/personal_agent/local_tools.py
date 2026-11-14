@@ -445,10 +445,16 @@ class PublicPageReader:
             raise ValueError('지원하지 않는 공개 페이지 문자 인코딩입니다.')
         return canonical
 
-    def read(self, url, approved_urls=None):
+    def read(self, url):
+        """Read one public page at any public address (#820).
+
+        The boundary is this reader's own: an http(s) address without login
+        information, no loopback, private, link-local or metadata destination by
+        name or after DNS resolution, checked again on every redirect and pinned
+        for the connection, and the size, redirect and time limits.
+        """
         try:
             current=self._safe_url(url); started=self.clock();deadline=started+MAX_PAGE_SECONDS
-            approved={normalize_public_url(item,self.declared) for item in approved_urls} if approved_urls is not None else None
         except ValueError as exc:
             raise _not_sent(exc)
         for redirect in range(MAX_PAGE_REDIRECTS+1):
@@ -457,8 +463,6 @@ class PublicPageReader:
                 refused=self.guard(current) if callable(self.guard) else None
                 if refused:raise ValueError(refused)
                 self._remaining(deadline)
-                if approved is not None and current not in approved:
-                    raise ValueError('소유자가 승인한 공개 페이지 범위를 벗어난 주소입니다.')
                 addresses=self._validate_host(current,deadline)
             except (ValueError, ProviderError) as exc:
                 # #233: before the first request no page was asked for (at most its host name was
@@ -639,7 +643,7 @@ class LocalTools:
             import inspect
             extra={'budget':budget} if budget is not None and 'budget' in inspect.signature(self.search).parameters else {}
             return self.search(plan.get('query'),provider=plan.get('provider'),kind=plan.get('kind'),locale=plan.get('locale'),**extra)
-        if plan.get('tool')=='public_page_read':return self.page_reader.read(plan.get('url'),plan.get('approved_urls'))
+        if plan.get('tool')=='public_page_read':return self.page_reader.read(plan.get('url'))
         if plan.get('tool')=='weather' and 'latitude' in plan:return self.forecast(plan.get('latitude'),plan.get('longitude'))
         if plan.get('tool')=='weather':return self.weather(plan.get('city'),plan.get('country',''))
         raise _not_sent(ValueError('지원하지 않는 조회 도구입니다.'))

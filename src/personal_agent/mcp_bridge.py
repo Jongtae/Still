@@ -337,20 +337,6 @@ def _lookup_sources(store, job_id):
     return lambda: lookup_sources(store, job_id)
 
 
-def approved_public_pages(store):
-    """The owner's current approved public page addresses (#826).
-
-    The exact normalized URLs the owner approved in Settings; read on every
-    use, so a revoked approval refuses a later read.  On this route the
-    approval is the owner's page grant itself; it is not bound to the
-    direct-API model's fingerprint.
-    """
-    saved = store.config('public_page_sharing', {})
-    if not isinstance(saved, dict) or saved.get('approved') is not True:
-        return []
-    return [url for url in saved.get('urls') or [] if isinstance(url, str)]
-
-
 #: The Work this bridge serves has ended; a typed tool error, not a protocol one.
 WORK_NOT_RUNNING = '이 작업은 더 이상 실행 중이 아니어서 도구를 실행하지 않았습니다.'
 #: Returned for an untyped tool failure whose own text is not Still's.
@@ -491,13 +477,9 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
             db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)', (job_id,tool,status,detail,time.time()))
     # #604: the Work's allowed actions are the bounded CLI profile; names and
     # schemas come from Capabilities.definitions(), never a bridge-local list.
-    # #826: the connected-folder documents and approved public pages the profile offers are
-    # read here, within the folder grants (``Capabilities.roots``/``resolve_file``) and
-    # the owner's page approval (``approved_public_pages``) the tools check on every call.
+    # #826: the connected-folder documents the profile offers are read here, within the
+    # folder grants (``Capabilities.roots``/``resolve_file``) the tools check on every call.
     capabilities = Capabilities(store, None, {}, '', job_id, record, network=LocalTools(providers=ProviderRegistry.from_store(store)), document_access=True,
-                                # #23: strict-isolated reads only this Work's search results, never the owner's page list.
-                                public_page_scope=((lambda: approved_public_pages(store)) if profile == BOUNDED_PROFILE
-                                                   else ()),
                                 # #774: owner-state tools run only in the service; without its relay they are not offered.
                                 allowed_tools=(set(turn_actions(profile, native_search and profile == BOUNDED_PROFILE))
                                                - (set() if relay is not None else set(OWNER_STATE_ACTIONS))),

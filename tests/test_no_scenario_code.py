@@ -151,9 +151,6 @@ CLASSIFIED = {
     ('agent_runtime.py', 'HANGUL JONGSEONG '): (
         'adapter', 'a Unicode character-database name prefix (unicodedata.name) used to build the jamo table; '
                    'a platform format, not owner language'),
-    ('agent_runtime.py', '승인한 공개 페이지 범위를 벗어난'): (
-        'own-text', "part of the shared network reader's own redirect refusal, matched to replace it with the "
-                    "search-result wording; Still's message, not owner or page text"),
     # SettingsOrchestrator.handle_text's id-bearing compatibility forms; the
     # rest of that function is listed in CLASSIFIED_TABLES.
     ('settings_orchestrator.py', r'(?:confirm|확인)\s+([A-Za-z0-9_-]+)'): (

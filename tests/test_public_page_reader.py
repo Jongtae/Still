@@ -35,6 +35,12 @@ class Opener:
     def open(self, request, timeout=None): self.requests.append((request,timeout)); return self.response
 
 
+class Sequence:
+    """An opener that answers each request with the next response (a redirect chain)."""
+    def __init__(self, *responses): self.responses=list(responses); self.requests=[]
+    def open(self, request, timeout=None): self.requests.append((request,timeout)); return self.responses[len(self.requests)-1]
+
+
 def public_dns(host, port, type=None, timeout=None):
     return [(None,None,None,None,('93.184.216.34', port))]
 
@@ -111,24 +117,60 @@ class PublicPageReaderTests(unittest.TestCase):
             PublicPageReader(opener=opener, resolver=redirect_dns).read('https://example.com/')
         self.assertEqual(len(opener.requests), 1)
 
-    def test_owner_scope_binds_initial_url_and_redirects(self):
-        opener=Opener(Response())
-        reader=PublicPageReader(opener=opener, resolver=public_dns)
-        with self.assertRaisesRegex(ValueError, '승인한 공개 페이지 범위'):
-            reader.read('https://example.com/event', approved_urls=['https://example.com/other'])
+    def test_reads_an_address_nobody_listed_and_follows_a_public_redirect(self):
+        """#820: no approval list or search result bounds the read; a redirect to another public host is followed."""
+        opener=Sequence(Response(status=302, headers={'Location':'https://other.example/landed?x=1'}), Response())
+        result=PublicPageReader(opener=opener, resolver=public_dns).read('https://example.com/event')
+        self.assertEqual([request.full_url for request,_timeout in opener.requests],
+                         ['https://example.com/event','https://other.example/landed?x=1'])
+        self.assertEqual((result['url'],result['sources']),('https://other.example/landed?x=1',['https://other.example/landed?x=1']))
+        self.assertIn('Price: 120 USD', result['content'])
         self.assertEqual(normalize_public_url('HTTPS://Example.com/event?b=2&a=1#frag'), 'https://example.com/event?a=1&b=2')
 
-    def test_normalization_preserves_scheme_mismatched_explicit_ports_and_scope(self):
+    def test_refuses_loopback_private_and_link_local_destinations_before_any_request(self):
+        """#820 invariant: by name, by literal and after DNS resolution, nothing on the owner's machine or network is asked."""
+        for url in ('http://localhost/admin','http://127.0.0.1:8765/','http://[::1]/','http://10.0.0.5/','http://192.168.0.1/router',
+                    'http://172.16.3.4/','http://169.254.169.254/latest/meta-data/','http://[fe80::1]/','http://[fc00::1]/',
+                    'http://0.0.0.0/','http://printer.local/','http://metadata.google.internal/','http://100.64.0.1/'):
+            opener=Opener(Response())
+            with self.subTest(url=url),self.assertRaisesRegex(ValueError,'개인 네트워크'):
+                PublicPageReader(opener=opener, resolver=public_dns).read(url)
+            self.assertEqual(opener.requests,[])
+        for address in ('127.0.0.1','10.0.0.5','192.168.1.20','169.254.169.254','::1','fe80::1','fd00::1'):
+            opener=Opener(Response())
+            resolver=lambda host,port,type=None,timeout=None,address=address:[(None,None,None,None,(address,port))]
+            with self.subTest(resolved=address),self.assertRaisesRegex(ValueError,'개인 네트워크') as raised:
+                PublicPageReader(opener=opener, resolver=resolver).read('https://public-name.example/')
+            self.assertEqual((opener.requests,getattr(raised.exception,'ran',None)),([],False))
+        # One private answer among public ones refuses the whole host.
+        mixed=lambda host,port,type=None,timeout=None:[(None,None,None,None,('93.184.216.34',port)),(None,None,None,None,('10.0.0.5',port))]
+        with self.assertRaisesRegex(ValueError,'개인 네트워크'):
+            PublicPageReader(opener=Opener(Response()), resolver=mixed).read('https://public-name.example/')
+
+    def test_refuses_a_redirect_to_a_loopback_private_or_link_local_destination(self):
+        """#820 invariant: every redirect target is checked like the first address, by name and after resolution."""
+        def resolver(host, port, type=None, timeout=None):
+            return [(None,None,None,None,('192.168.0.9' if host=='rebound.example' else '93.184.216.34', port))]
+        for location in ('http://127.0.0.1:8765/api','http://localhost/','http://10.0.0.5/','http://[::1]/','http://169.254.169.254/latest',
+                         'http://[fe80::1]/','https://rebound.example/inside','//192.168.0.1/router'):
+            opener=Sequence(Response(status=302, headers={'Location':location}), Response(b'<p>inside</p>'))
+            with self.subTest(location=location),self.assertRaisesRegex(ValueError,'개인 네트워크'):
+                PublicPageReader(opener=opener, resolver=resolver).read('http://example.com/')
+            self.assertEqual(len(opener.requests),1,'the redirect target is never requested')
+        # A second hop is checked too.
+        opener=Sequence(Response(status=302, headers={'Location':'https://other.example/'}),
+                        Response(status=302, headers={'Location':'https://rebound.example/'}), Response(b'<p>inside</p>'))
+        with self.assertRaisesRegex(ValueError,'개인 네트워크'):
+            PublicPageReader(opener=opener, resolver=resolver).read('https://example.com/')
+        self.assertEqual(len(opener.requests),2)
+
+    def test_normalization_preserves_scheme_mismatched_explicit_ports(self):
         self.assertEqual(normalize_public_url('http://example.com:443/path'),'http://example.com:443/path')
         self.assertEqual(normalize_public_url('https://example.com:80/path'),'https://example.com:80/path')
         self.assertEqual(normalize_public_url('http://example.com:80/path'),'http://example.com/path')
         self.assertEqual(normalize_public_url('https://example.com:443/path'),'https://example.com/path')
         opener=Opener(Response())
-        reader=PublicPageReader(opener=opener,resolver=public_dns)
-        with self.assertRaisesRegex(ValueError,'승인한 공개 페이지 범위'):
-            reader.read('http://example.com:443/path',approved_urls=['http://example.com/path'])
-        self.assertEqual(opener.requests,[])
-        reader.read('https://example.com:80/path',approved_urls=['https://example.com:80/path'])
+        PublicPageReader(opener=opener,resolver=public_dns).read('https://example.com:80/path')
         self.assertEqual(opener.requests[0][0].full_url,'https://example.com:80/path')
 
     def test_host_header_preserves_scheme_specific_authority_and_ipv6_brackets(self):
@@ -149,7 +191,7 @@ class PublicPageReaderTests(unittest.TestCase):
         for url in ('http://example.com:0/path','https://93.184.216.34:0/path',
                     'https://[2606:2800:220:1:248:1893:25c8:1946]:0/path'):
             with self.subTest(url=url),self.assertRaisesRegex(ValueError,'포트'):
-                reader.read(url,approved_urls=[url])
+                reader.read(url)
             with self.subTest(host=url),self.assertRaisesRegex(ValueError,'포트'):
                 PublicPageReader._host_header(urlsplit(url))
             with self.subTest(resolve=url),self.assertRaisesRegex(ValueError,'포트'):
@@ -334,12 +376,6 @@ class PublicPageReaderTests(unittest.TestCase):
         for body,headers in cases:
             with self.subTest(headers=headers),self.assertRaisesRegex(ValueError,'인코딩'):
                 PublicPageReader(opener=Opener(Response(body,headers=headers)),resolver=public_dns).read('https://example.com/')
-
-    def test_owner_scope_rejects_public_redirect_collector(self):
-        opener=Opener(Response(status=302, headers={'Location':'https://collector.example/collect?x=1'}))
-        reader=PublicPageReader(opener=opener, resolver=public_dns)
-        with self.assertRaisesRegex(ValueError, '승인한 공개 페이지 범위'):
-            reader.read('https://example.com/event', approved_urls=['https://example.com/event'])
 
     def test_rejects_oversize_and_non_text(self):
         with self.assertRaisesRegex(ValueError, '응답 크기'):

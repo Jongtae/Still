@@ -21,7 +21,7 @@ from urllib.parse import urlsplit
 from .messages import LANGUAGES, msg
 from .telegram_locale import ai_text, owner_language
 from .prompt_files import prompt
-from .local_tools import LocalTools, normalize_public_url
+from .local_tools import LocalTools
 from functools import cached_property
 from .work_execution import PROCEED, REDELEGATED, WorkRun
 from .agent_runtime import (Capabilities, ToolError, not_run, cut_to_fit, run_agent, AGENTS, STEER_EVENT, steer_note, evidence_summary, turn_context, render_turn_prompt, attachment_facts,
@@ -4213,28 +4213,6 @@ class AgentService:
                         except ProviderError:pass
             return boundary
 
-    def public_page_boundary(self, model=None):
-        model=self.store.config('model',{}) if model is None else model
-        saved=self.store.config('public_page_sharing',{})
-        urls=saved.get('urls',[]) if isinstance(saved,dict) else []
-        approved=bool(urls) and saved.get('approved') is True and saved.get('fingerprint')==self.model_fingerprint(model)
-        return {'approved':approved,'requires_approval':True,'urls':urls if approved else [],'scope':msg('quickstart_service.public_url_approval_label')}
-
-    def set_public_page_approval(self, body):
-        if not isinstance(body,dict) or body.get('approved') is not True:
-            raise ValueError(msg('quickstart_service.explicit_public_url_approval'))
-        urls=body.get('urls')
-        if not isinstance(urls,list) or not 1<=len(urls)<=20:
-            raise ValueError(msg('quickstart_service.public_url_count'))
-        normalized=[]
-        for url in urls:
-            value=normalize_public_url(url,self.intranet_declared)
-            if value not in normalized: normalized.append(value)
-        model=self.store.config('model',{})
-        if not model: raise ValueError(msg('quickstart_service.connect_model_first'))
-        self.store.put('public_page_sharing',{'approved':True,'fingerprint':self.model_fingerprint(model),'urls':normalized,'approved_at':time.time()})
-        return self.public_page_boundary(model)
-
     def owner_memory_approval(self, job, prompt):
         """A lazy resolver for this Work's owner-request memory approval (#597).
 
@@ -4500,7 +4478,6 @@ class AgentService:
             self.store.put('model_test',tested)
             self.store.put('model_draft_test',None)
             self.store.put('document_sharing',{})
-            self.store.put('public_page_sharing',{})
         return self.settings()
 
     def connect_openrouter(self, body):

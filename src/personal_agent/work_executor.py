@@ -1288,9 +1288,6 @@ class WorkExecutor:
         shown=api_context['conversation']
         shown_sources=service.shown_history_provenance(run.history_rows[:-1][-len(shown):] if shown else [],run.document_jobs)
         run.capabilities=Capabilities(service.store,service.adapter,runtime_config,run.key,job['id'],run.record,network=service.local_tools,document_access=not run.boundary['requires_approval'],packages=service.runtime_packages(),skills=run.skill_binding,
-                                  # #605 F4: read on every use, so a page approval revoked
-                                  # during this Work refuses a read that starts afterwards.
-                                  public_page_scope=lambda:service.public_page_boundary(run.config)['urls'],
                                   memory_request=run.owner_memory_request,inherited_provenance=set(run.turn_provenance)|shown_sources|run.work_private,calendar=service.calendar_for(job),calendar_owner=service.issuer_owner_id(job),drive=service.drive_for(job),mail=service.mail_for(job),connections=lambda job=job:service.connection_slots(job),current_packages=service.runtime_packages,
                                   budget=run.work_budget,
                                   # #656: the owner-logged-in browser profile and its per-step approvals.
