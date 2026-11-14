@@ -474,10 +474,10 @@ def shape(data):
     return isinstance(data.get('proposals'), list) and isinstance(data.get('situation', ''), str)
 
 
-DREAM_QUESTION = prompt('owner_model_dream').format(categories=', '.join(CATEGORIES), notes_points=NOTES_POINTS,
-                                                    point_chars=POINT_CHARS, notes_chars=NOTES_CHARS,
-                                                    diary_chars=DIARY_CHARS, suggestions=DREAM_SUGGESTIONS,
-                                                    title_chars=prep.TITLE_MAX_CHARS)
+DREAM_QUESTION = (prompt('owner_model_dream') + '\n\n' + prompt('owner_model_dream_lines')).format(
+    categories=', '.join(CATEGORIES), notes_points=NOTES_POINTS,
+    point_chars=POINT_CHARS, notes_chars=NOTES_CHARS,
+    diary_chars=DIARY_CHARS, suggestions=DREAM_SUGGESTIONS, title_chars=prep.TITLE_MAX_CHARS)
 DREAM_QUESTION += ('\n\nThe shared Voice instructions below apply to diary and change, which the owner may read. '
                    'They never relax the rules above.\n\n' + prompt('voice'))
 
@@ -507,15 +507,37 @@ _DREAM_SUGGESTION = {'type': 'object', 'additionalProperties': False,
                                     'recurrence': {'type': 'string', 'enum': [*prep.RECURRENCES, SUGGESTION_ONCE]},
                                     'delivery': {'type': 'string', 'enum': ['send', 'keep', prep.DELIVERY_WHEN_NEEDED]},
                                     'title': {'type': 'string'}, 'offer': {'type': 'string'},
+                                    'line': {'type': 'string'},
                                     'sources': {'type': 'array', 'items': {'type': 'string'}}},
-                     'required': ['kind', 'goal', 'due', 'recurrence', 'delivery', 'title', 'offer', 'sources']}
+                     'required': ['kind', 'goal', 'due', 'recurrence', 'delivery', 'title', 'offer', 'sources', 'line']}
+#: #799: bounded inferred writes; evidence dates are computed from the owner store.
+LINE_ACTIONS, LINE_EVIDENCE_DAYS, LINE_INPUT_CHARS, LINE_WAITING_MAX = 2, 14, 8000, 3
+_DREAM_FIRST = json.loads(json.dumps(_DREAM_SUGGESTION))
+for _field in ('sources', 'line'):
+    _DREAM_FIRST['properties'].pop(_field, None)
+_DREAM_FIRST['required'] = [key for key in _DREAM_FIRST['required'] if key not in ('sources', 'line')]
+_DREAM_FIRST['properties']['kind']['enum'] = [prep.KIND_PREPARE]
+_DREAM_FIRST['properties']['recurrence']['enum'] = list(prep.RECURRENCES)
+_DREAM_FIRST['properties']['delivery']['enum'] = ['send', prep.DELIVERY_WHEN_NEEDED]
+_DREAM_LINE = {'type': 'object', 'additionalProperties': False, 'properties': {
+    **{key: {'type': 'string'} for key in ('line', 'task', 'report_promise', 'open_matters')},
+    'action': {'type': 'string', 'enum': ['stand', 'amend']},
+    'expected_version': {'type': 'integer'},
+    'rules': {'type': 'array', 'items': {'type': 'string'}},
+    'drop_rules': {'type': 'array', 'items': {'type': 'integer'}},
+    'first': {'type': 'array', 'maxItems': 1, 'items': _DREAM_FIRST},
+    'sources': {'type': 'array', 'items': {'type': 'string'}},
+    'supporting': {'type': 'array', 'items': {'type': 'string'}}}}
+_DREAM_LINE['required'] = list(_DREAM_LINE['properties'])
+
 DREAM_SCHEMA = {'type': 'object', 'additionalProperties': False,
                 'properties': {'proposals': {'type': 'array', 'items': _DREAM_ITEM},
                                'notes': {'type': 'string'}, 'change': {'type': 'string'},
                                'notes_sources': {'type': 'array', 'items': {'type': 'string'}},
                                'diary': {'type': 'string'},
-                               'suggestions': {'type': 'array', 'items': _DREAM_SUGGESTION}},
-                'required': ['proposals', 'notes', 'change', 'notes_sources', 'diary', 'suggestions']}
+                               'suggestions': {'type': 'array', 'items': _DREAM_SUGGESTION},
+                               'lines': {'type': 'array', 'items': _DREAM_LINE}},
+                'required': ['proposals', 'notes', 'change', 'notes_sources', 'diary', 'suggestions', 'lines']}
 
 
 DREAM_GATHER_SCHEMA = {'type': 'object', 'additionalProperties': False,
@@ -530,7 +552,7 @@ def gather_shape(data):
 def dream_shape(data):
     """Types only; what may be kept is ``validate_dream``'s and the run's (no ``suggestions`` is none)."""
     return (isinstance(data.get('proposals'), list) and isinstance(data.get('notes_sources'), list)
-            and isinstance(data.get('suggestions', []), list)
+            and isinstance(data.get('suggestions', []), list) and isinstance(data.get('lines', []), list)
             and all(isinstance(data.get(name), str) for name in ('notes', 'change', 'diary')))
 
 
@@ -563,6 +585,62 @@ def validate_suggestions(suggestions, refs, turn_days, limit=DREAM_SUGGESTIONS):
         else:
             kept.append({**item, 'sources': named, 'index': index})
     return kept, dropped
+
+
+def validate_line_actions(items, refs, request_refs, limit=LINE_ACTIONS):
+    """Shape and shown-reference checks only; store provenance is checked at application."""
+    kept, dropped = [], []
+    allowed = set(refs) | set(request_refs)
+    for index, item in enumerate(items if isinstance(items, list) else []):
+        reason = None
+        named = dream_refs(item.get('sources'), allowed) if isinstance(item, dict) else None
+        if (not isinstance(item, dict) or set(item) - set(_DREAM_LINE['properties'])
+                or item.get('action') not in ('stand', 'amend')
+                or any(not isinstance(item.get(key), str) for key in ('line', 'task', 'report_promise', 'open_matters'))
+                or type(item.get('expected_version')) is not int
+                or any(not isinstance(item.get(key), list) for key in ('rules', 'drop_rules', 'first', 'supporting'))
+                or any(not isinstance(rule, str) for rule in item.get('rules', []))
+                or any(type(pos) is not int or pos < 1 for pos in item.get('drop_rules', []))
+                or any(not isinstance(ref, str) for ref in item.get('supporting', []))
+                or len(item.get('first', [])) > 1
+                or any(not isinstance(first, dict) or set(first) != set(_DREAM_FIRST['properties'])
+                       or any(not isinstance(value, str) for value in first.values()) for first in item.get('first', []))):
+            reason = 'line_shape'
+        elif not named or len(named) < (2 if item['action'] == 'stand' else 1):
+            reason = 'line_evidence_sources'
+        elif item['action'] == 'stand' and (item['line'] or item['expected_version'] != 0 or item['drop_rules']):
+            reason = 'line_shape'
+        elif item['action'] == 'amend' and (not item['line'] or item['expected_version'] < 1 or item['first']):
+            reason = 'line_shape'
+        elif len(kept) >= limit:
+            reason = 'line_limit'
+        if reason:
+            dropped.append({'line': index, 'reason': reason})
+        else:
+            kept.append({**item, 'sources': named, 'index': index})
+    return kept, dropped
+
+
+def dream_turn_input(turns):
+    """The look back's whole newest turns and shown refs, shared with the owner-run replay."""
+    refs = {turn[0]: turn[1] for turn in turns}
+    # #452: each turn's owner date ('YYYY-MM-DD' of its local time), when the caller gave one.
+    turn_days = {turn[0]: str(turn[3])[:10] for turn in turns if len(turn) > 3 and turn[3]}
+    lines, used = [], 0
+    for ref, owner, answer, *when in turns:
+        # #438: the owner's local time of each request, so the daily record can date its events.
+        stamp = f" {when[0]}" if when and when[0] else ''
+        outcome = when[1] if len(when) > 1 and when[1] in TURN_OUTCOMES else 'unknown'
+        line = (f"[{ref}]{stamp} ({outcome}) owner: {' '.join(str(owner or '').split())[:DREAM_OWNER_CHARS] or '(withheld)'}"
+                f" | assistant: {' '.join(str(answer or '').split())[:DREAM_ANSWER_CHARS] or 'none'}")
+        lines.append(line)
+        used += len(line) + 1
+    while lines and used > DREAM_TURNS_CHARS:
+        # The oldest turns give way: the newest are what upkeep had the least time for.
+        used -= len(lines.pop(0)) + 1
+    shown = {line[1:line.index(']')] for line in lines}
+    refs = {ref: owner for ref, owner in refs.items() if ref in shown}
+    return lines, refs, turn_days
 
 
 def turn_outcome(status, linked_kinds):
@@ -1438,7 +1516,7 @@ class Upkeep:
 
     # -- one dream (#402) ---------------------------------------------------
     def run_dream(self, job, row, judgments, *, turns, profile, clock, diary_date, ends_after, cancelled=None, source_works=None,
-                  preparations='', suggest=None, earlier=(), earlier_works=None, read_scope=None):
+                  preparations='', suggest=None, earlier=(), earlier_works=None, read_scope=None, lines='', line_refs=None, stand=None):
         """Look back over ``turns`` once and keep the owner model in order; returns ``(state, calls, event_status, detail)``.
 
         ``job`` is the anchor Work (the newest request the dream covers): what is kept is attributed to
@@ -1460,23 +1538,8 @@ class Upkeep:
         notes = WorkingNotes(self.store, self.clock)
         if not notes.migrated():
             return STATE_UNAVAILABLE, 0, EVENT_UNAVAILABLE, {'sent': False, 'stopped': STOPPED_MIGRATION}
-        refs = {turn[0]: turn[1] for turn in turns}
-        # #452: each turn's owner date ('YYYY-MM-DD' of its local time), when the caller gave one.
-        turn_days = {turn[0]: str(turn[3])[:10] for turn in turns if len(turn) > 3 and turn[3]}
-        lines, used = [], 0
-        for ref, owner, answer, *when in turns:
-            # #438: the owner's local time of each request, so the daily record can date its events.
-            stamp = f" {when[0]}" if when and when[0] else ''
-            outcome = when[1] if len(when) > 1 and when[1] in TURN_OUTCOMES else 'unknown'
-            line = (f"[{ref}]{stamp} ({outcome}) owner: {' '.join(str(owner or '').split())[:DREAM_OWNER_CHARS] or '(withheld)'}"
-                    f" | assistant: {' '.join(str(answer or '').split())[:DREAM_ANSWER_CHARS] or 'none'}")
-            lines.append(line)
-            used += len(line) + 1
-        while lines and used > DREAM_TURNS_CHARS:
-            # The oldest turns give way: the newest are what upkeep had the least time for.
-            used -= len(lines.pop(0)) + 1
-        shown = {line[1:line.index(']')] for line in lines}
-        refs = {ref: owner for ref, owner in refs.items() if ref in shown}
+        line_input = lines
+        lines, refs, turn_days = dream_turn_input(turns)
         # #496: a separately bounded lesson-only block. Its refs never enter the facts or suggestions gates.
         misses, used = [], 0
         for ref, owner, answer, when, outcome, correction in earlier:
@@ -1531,11 +1594,11 @@ class Upkeep:
                                                        'dropped': [], 'notes': None, 'diary': None,
                                                        'stopped': stopped or STOPPED_DEADLINE,
                                                        'inputs': {'turns': len(lines)}}
-        with scope([*shown_works, *missed_works]):
+        with scope([*shown_works, *missed_works, *(line_refs or {}).values()]):
             data, decision = judgments.owner_model_dream('\n'.join(lines), snapshot(), current_text,
                                                          previous['content'] if previous else '', clock,
                                                          work_id=job['id'], cancelled=cancelled, preparations=preparations,
-                                                         earlier='\n'.join(line for _ref, _day, line in misses))
+                                                         earlier='\n'.join(line for _ref, _day, line in misses), lines=line_input)
         confidence = decision.confidence
         calls += 1 if call_sent(decision) else 0
         self.count(job['id'], calls, KIND_DREAM)
@@ -1607,6 +1670,9 @@ class Upkeep:
                         detail['notes_evidence']['rule'] = rule
             stopped = detail.get('stopped') or stopped
         if stopped != STOPPED_PAUSED:
+            calls, stopped = self._lines(job, data.get('lines'), refs, line_refs or {}, source_works or {},
+                                         judgments, stand, calls, detail, stopped, cancelled)
+        if stopped != STOPPED_PAUSED:
             calls, stopped = self._suggest(job, data.get('suggestions'), refs, turn_days, judgments, suggest, calls,
                                            detail, stopped, cancelled)
         # #438: one line per event; each line's spacing is collapsed, the lines are kept.
@@ -1631,6 +1697,28 @@ class Upkeep:
         detail['stopped'] = stopped
         return STATE_DONE, calls, EVENT_RECORDED, detail
 
+
+    def _lines(self, job, items, refs, request_refs, source_works, judgments, stand, calls, detail, stopped, cancelled):
+        kept, dropped = validate_line_actions(items, refs, request_refs)
+        record = {'proposed': len(items or []), 'kept': [], 'dropped': dropped}
+        detail['lines'] = record
+        if not kept or stand is None:
+            return calls, stopped
+        if self.allowance(self.clock())[1] == STOPPED_PAUSED or cancelled and cancelled():
+            reason = STOPPED_PAUSED if self.allowance(self.clock())[1] == STOPPED_PAUSED else STOPPED_DEADLINE
+            record['dropped'].extend({'line': item['index'], 'reason': reason} for item in kept)
+            return calls, reason
+        mapping = {**source_works, **request_refs}
+        mapped = [{**item, 'sources': [mapping.get(ref, '') for ref in item['sources']]} for item in kept]
+        outcomes, used = stand(mapped, judgments)
+        calls += used
+        if used:
+            self.count(job['id'], calls, KIND_DREAM)
+            detail['sent'] = True
+        for item, outcome in zip(kept, outcomes):
+            (record['kept'] if outcome.get('line_id') else record['dropped']).append(
+                {'line': item['index'], 'sources': item['sources'], **outcome})
+        return calls, stopped
 
     def _suggest(self, job, suggestions, refs, turn_days, judgments, suggest, calls, detail, stopped, cancelled):
         """#583: the look back's preparation suggestions; returns ``(calls, stopped)`` and records ``detail['suggestions']``.

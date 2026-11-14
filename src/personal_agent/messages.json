@@ -11403,5 +11403,29 @@
  "en": "- Only {limit} recorded held-value match labels are shown; remaining labels were not displayed.",
  "ja": "- 記録済みの保管情報の一致ラベルは {limit} 件まで表示します。残りは表示していません。",
  "zh": "- 最多显示 {limit} 个已记录的保存值匹配标签，其余未显示。"
-}
+},
+ "lines.stood_announced": {
+  "en": "{task}\nI will watch this for you and report {promise}. I will only read and report: I will not pay, order, send, change anything or ask for approvals.\nYou asked about this on {days} days.\nSay \"stop\" or use the stop button to end it.",
+  "ko": "{task}\n이 일을 살펴보고 {promise} 보고할게요. 읽고 보고만 하며 결제, 주문, 전송, 변경이나 승인 요청은 하지 않아요.\n이 일에 대해 {days}일에 걸쳐 물어보셨어요.\n\"그만\"이라고 하거나 중지 버튼을 누르면 멈춰요.",
+  "ja": "{task}\nこの件を見守り、{promise}報告します。読むことと報告だけを行い、支払い、注文、送信、変更、承認の依頼はしません。\nこの件について{days}日間にわたり質問されました。\n「停止」と言うか停止ボタンを押すと終了します。",
+  "zh": "{task}\n我会为你关注此事，并{promise}报告。我只读取和报告，不付款、下单、发送、更改任何内容或请求批准。\n你曾在{days}天里询问此事。\n说“停止”或使用停止按钮即可结束。"
+ },
+ "lines.list_waiting": {
+  "en": "{task} — waiting for its announcement; nothing runs yet.",
+  "ko": "{task} — 안내를 기다리고 있어요. 아직 실행하지 않아요.",
+  "ja": "{task} — お知らせ待ちです。まだ実行しません。",
+  "zh": "{task} — 等待告知，尚未运行。"
+ },
+ "lines.inferred": {
+  "en": "(inferred)",
+  "ko": "(추론)",
+  "ja": "（推測）",
+  "zh": "（推断）"
+ },
+ "lines.refused_line_not_announced": {
+  "en": "This responsibility is waiting for its announcement. No work starts until it is delivered.",
+  "ko": "이 일은 안내를 기다리고 있어요. 안내가 전달된 뒤에만 실행을 시작해요.",
+  "ja": "この仕事はお知らせ待ちです。お知らせが届いてから実行を始めます。",
+  "zh": "此职责正在等待告知。告知送达后才会开始工作。"
+ }
 }

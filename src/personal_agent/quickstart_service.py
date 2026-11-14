@@ -1576,6 +1576,7 @@ class AgentService:
             upkeep.finish(work_id,om.STATE_GONE,0,om.EVENT_UNAVAILABLE,{'reason':'nothing-to-review','period':period},now,kind=kind)
             return
         from .current_context import owner_today
+        line_input,line_refs=self.preparations_service.line_judgment_input(now,refs=True,exclude=tonight)
         deadline=upkeep.clock()+om.DREAM_RUN_SECONDS
         state,calls,status,detail=upkeep.run_dream(
             job,row,self._owner_model_judgments(work_id),turns=turns,earlier=earlier,source_works=source_works,
@@ -1585,7 +1586,8 @@ class AgentService:
             cancelled=lambda:self.stop.is_set() or upkeep.clock()>deadline,
             # #583: the active preparations by name, so the look back does not suggest one again.
             preparations='\n'.join('- '+title for title in self.preparations.active_titles(om.DREAM_PREPARATIONS_SHOWN)),
-            suggest=lambda items,judgments:self.suggest_preparations(work_id,items,judgments))
+            suggest=lambda items,judgments:self.suggest_preparations(work_id,items,judgments),
+            lines=line_input,line_refs=line_refs,stand=lambda items,judgments:self.apply_line_actions(work_id,items,judgments))
         detail['period']=period
         upkeep.finish(work_id,state,calls,status,detail,upkeep.clock(),kind=kind)
         LOG.info('owner-model dream work=%s state=%s calls=%s turns=%s applied=%s notes=%s diary=%s',work_id,state,calls,
@@ -1773,6 +1775,9 @@ class AgentService:
         so a reservation is managed in the conversation, not in Settings first.
         """
         return self.preparations_service.queue_preparation_proposal(job)
+
+    def apply_line_actions(self, anchor_id, items, judgments):
+        return self.preparations_service.apply_line_actions(anchor_id, items, judgments)
 
     def suggest_preparations(self, anchor_id, items, judgments=None):
         """Schedule the look-back's preparations (#583, #717) as rows of its anchor Work; ``(outcomes, calls)``.

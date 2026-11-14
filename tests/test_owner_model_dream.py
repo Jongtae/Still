@@ -588,6 +588,9 @@ class Misses(Dream):
             'old miss', 'scrubbed miss' if work == made[0] else 'wrong scope').replace(
             'correcting words', 'scrubbed correction' if work == correction else 'wrong scope')
         self.dreams = [dream()]
+        # The fixture's cutoff is fixed before setup; keep the anchor inside that owner night.
+        with self.store.db() as db:
+            db.execute('UPDATE jobs SET created=? WHERE id=?', (now - 0.1, anchor))
         self.service._owner_model_dream({'job_id': anchor, 'reason': str(since)}, self.store.job(anchor), now)
         context = self.asked[0][0]
         block = context.facts['earlier_misses']
@@ -620,6 +623,9 @@ class Misses(Dream):
             db.execute('UPDATE jobs SET created=? WHERE id=?', (since - 60, work))
         anchor = self.settled('tonight')
         self.dreams = [dream()]
+        # The fixture's cutoff is fixed before setup; keep the anchor inside that owner night.
+        with self.store.db() as db:
+            db.execute('UPDATE jobs SET created=? WHERE id=?', (now - 0.1, anchor))
         self.service._owner_model_dream({'job_id': anchor, 'reason': str(since)}, self.store.job(anchor), now)
         block = self.asked[0][0].facts['earlier_misses']
         self.assertEqual(len(block.splitlines()), om.DREAM_EARLIER_MISSES)
@@ -890,3 +896,20 @@ class Diary(Dream):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class LineSchema(unittest.TestCase):
+    def test_lines_are_tolerated_when_absent_but_typed_when_present(self):
+        self.assertTrue(om.dream_shape(dream()))
+        self.assertTrue(om.dream_shape({**dream(), 'lines': []}))
+        self.assertFalse(om.dream_shape({**dream(), 'lines': {}}))
+        self.assertIn('line', om.DREAM_SCHEMA['properties']['suggestions']['items']['properties'])
+        kept, dropped = om.validate_line_actions([{'action': 'stand', 'sources': ['not-shown']}], {}, {})
+        self.assertEqual(kept, [])
+        self.assertEqual(dropped[0]['reason'], 'line_shape')
+
+    def test_requests_refs_cannot_ground_facts(self):
+        proposal = fact('profile.preference.format', 'A lasting preference', 'r1')
+        kept, dropped = om.validate_dream([proposal], {'t1': 'tonight'}, ['tonight'], set(), set(), 0, {})
+        self.assertEqual(kept, [])
+        self.assertTrue(dropped)

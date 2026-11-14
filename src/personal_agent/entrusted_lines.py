@@ -14,9 +14,9 @@ line is about.
 
 A brief grants nothing.  It has no authority, rung, amount or subject field (an unknown
 field is refused), and no authorizing path reads it: Grants, trust rungs, per-action
-approval and payment autonomy are decided as before.  A brief is written only inside a
-Work the owner's own typed message started (``preparations_service``); a write from an
-unattended run is refused.
+approval and payment autonomy are decided as before. A brief is written inside an
+owner-typed Work or by the look back's stand/amend path, recorded as inferred (``preparations_service``). Every other unattended write
+is refused.
 """
 import json
 import sqlite3
@@ -32,7 +32,7 @@ STATE_ACTIVE, STATE_STOPPED = 'active', 'stopped'
 STATES = (STATE_ACTIVE, STATE_STOPPED)
 #: The whole brief format.  Nothing here names a subject, an authority or an amount.
 FIELDS = ('task', 'rules', 'report_promise', 'open_matters', 'state', 'account_every_days')
-RULE_FIELDS = ('text', 'from', 'at')
+RULE_FIELDS = ('text', 'from', 'at', 'basis')
 TASK_CHARS = RULE_CHARS = PROMISE_CHARS = 300
 OPEN_CHARS = 1000
 MAX_RULES = 20
@@ -41,7 +41,7 @@ MAX_RULES = 20
 ACCOUNT_DAYS, MIN_ACCOUNT_DAYS, MAX_ACCOUNT_DAYS = 7, 1, 84
 MAX_LINES = 50
 #: Change labels recorded with a version (its ``stats``), never owner text.
-CHANGES = ('opened', 'revised', 'rule', 'undo', 'stopped', 'restarted')
+CHANGES = ('opened', 'revised', 'rule', 'undo', 'stopped', 'restarted', 'stood', 'amended', 'withdrawn')
 
 
 class LineRefusal(ValueError):
@@ -98,7 +98,10 @@ def validate(brief):
         if source is not None and not isinstance(source, str) or at is not None and (
                 not isinstance(at, (int, float)) or isinstance(at, bool)):
             raise LineRefusal('line_invalid_rules')
-        clean.append({'text': _text(rule.get('text'), RULE_CHARS, 'line_invalid_rules', True), 'from': source, 'at': at})
+        if rule.get('basis') not in (None, 'inferred'):
+            raise LineRefusal('line_invalid_rules')
+        clean.append({'basis': rule.get('basis'),
+                      'text': _text(rule.get('text'), RULE_CHARS, 'line_invalid_rules', True), 'from': source, 'at': at})
     days = brief.get('account_every_days', ACCOUNT_DAYS)
     if account_rule(days) is None:
         raise LineRefusal('line_invalid_account')
@@ -217,6 +220,37 @@ class EntrustedLines:
             row = self.library.commit(slot(line_id), source, work_id=work_id, stats={'change': 'opened'}, db=db)
         return decode(row)
 
+    def provenance(self, line_id):
+        """The immutable opening record, or {} for a missing line."""
+        with self.store.db() as db:
+            row = db.execute('SELECT stats_json FROM procedure_versions WHERE slot=? AND version=1',
+                             (slot(line_id),)).fetchone()
+        return json.loads(row['stats_json'] or '{}') if row else {}
+
+    def owner_written(self, line_id):
+        """Whether an owner revision has locked the task and promise against inference."""
+        with self.store.db() as db:
+            rows = db.execute('SELECT stats_json FROM procedure_versions WHERE slot=? AND version>1',
+                              (slot(line_id),)).fetchall()
+        return any(json.loads(row['stats_json'] or '{}').get('change') in
+                   ('revised', 'rule', 'undo', 'restarted') for row in rows)
+
+    def stand(self, work_id, brief, stats):
+        """Commit an inferred opening once per stable look-back key, including across restart."""
+        source = encode(brief)
+        with self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            for row in db.execute('SELECT * FROM procedure_versions WHERE slot LIKE ? AND version=1 AND state IN (?,?)',
+                                  (SLOT_PREFIX+'%', CURRENT, KEPT)):
+                if json.loads(row['stats_json'] or '{}').get('stand_key') == stats['stand_key']:
+                    return self.current(row['slot'][len(SLOT_PREFIX):], db)
+            count = db.execute('SELECT count(*) FROM procedure_versions WHERE slot LIKE ? AND state=?',
+                               (SLOT_PREFIX+'%', CURRENT)).fetchone()[0]
+            if count >= MAX_LINES:
+                raise LineRefusal('line_too_many')
+            row = self.library.commit(slot(uuid.uuid4().hex[:16]), source, work_id=work_id, stats=stats, db=db)
+        return decode(row)
+
     def write(self, line_id, work_id, expected_version, change, update):
         """Save ``update(brief)`` as the next version, only while ``expected_version`` is still current.
 
@@ -322,6 +356,8 @@ def outcomes_text(outcomes, timezone_name=None, lang='ko'):
 
 def entry_text(entry, lang='ko'):
     """One line of the list answer: task, report promise, last delivered report, next run or blocker."""
+    if entry['state'] == 'waiting':
+        return msg('lines.list_waiting', lang, task=entry['task'])
     if entry['state'] != STATE_ACTIVE:
         return msg('lines.list_stopped', lang, task=entry['task'])
     last = entry.get('last_report') or msg('lines.no_report_yet', lang)

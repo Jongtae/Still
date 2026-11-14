@@ -348,3 +348,13 @@ class HitRecordTests(_Plan):
         self.script = [lambda body: seen.append(json.loads(json.dumps(body['messages']))) or {'content': '없음'}]
         self.assertTrue(self.service.run_one())
         self.assertNotIn('earlier_plans: [', seen[0][-1]['content'])
+
+
+class LineInputTests(_Plan):
+    def test_plan_history_contains_lines_proposals_and_requests_blocks(self):
+        row = self.start_plan_run()
+        work = self.store.job(row['last_run_job_id'])
+        if work is None:
+            work = self.store.job(self.service.preparations.get(row['id'])['last_run_job_id'])
+        history = self.service.preparation_history(work)
+        self.assertTrue(all('"'+key+'"' in history[-1]['content'] for key in ('lines', 'proposals', 'requests')))
