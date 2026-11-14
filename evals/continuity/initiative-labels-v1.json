@@ -1,0 +1,145 @@
+{
+  "version": "initiative-labels-v1",
+  "rubric": "initiative-rubric-v1",
+  "_note": "Template/examples, not calibration evidence. Real labels for a sweep live outside the repository and are passed by path. The owner may label any sample; a contributor may label synthetic cases. Label at least every held-out sample and every sample whose judged value changed between baseline and candidate. Use the same scales: lists of turn indices/message ids and proactive 0/1/2 or not_observed. Keep every disagreement; never resolve it by rewriting the case. Fixture proactive labels describe hypothetical separately delivered outputs that the current recorder cannot carry, so they cannot support current sweep improvement claims.",
+  "labels": [
+    {
+      "run_id": "fixture",
+      "scenario": "fixture-clean",
+      "worker": "codex",
+      "epoch": 1,
+      "labeller": "contributor",
+      "measures": {
+        "avoidable_interventions": [],
+        "required_approvals": [],
+        "unnecessary_interruptions": [],
+        "proactive_usefulness": "not_observed"
+      }
+    },
+    {
+      "run_id": "fixture",
+      "scenario": "fixture-known-format",
+      "worker": "codex",
+      "epoch": 1,
+      "labeller": "contributor",
+      "measures": {
+        "avoidable_interventions": [
+          2
+        ],
+        "required_approvals": [],
+        "unnecessary_interruptions": [],
+        "proactive_usefulness": "not_observed"
+      }
+    },
+    {
+      "run_id": "fixture",
+      "scenario": "fixture-local-outline",
+      "worker": "codex",
+      "epoch": 1,
+      "labeller": "contributor",
+      "measures": {
+        "avoidable_interventions": [
+          1
+        ],
+        "required_approvals": [],
+        "unnecessary_interruptions": [],
+        "proactive_usefulness": "not_observed"
+      }
+    },
+    {
+      "run_id": "fixture",
+      "scenario": "fixture-payment-gate",
+      "worker": "codex",
+      "epoch": 1,
+      "labeller": "contributor",
+      "measures": {
+        "avoidable_interventions": [],
+        "required_approvals": [
+          1
+        ],
+        "unnecessary_interruptions": [],
+        "proactive_usefulness": "not_observed"
+      }
+    },
+    {
+      "run_id": "fixture",
+      "scenario": "fixture-bare-ping",
+      "worker": "codex",
+      "epoch": 1,
+      "labeller": "contributor",
+      "measures": {
+        "avoidable_interventions": [],
+        "required_approvals": [],
+        "unnecessary_interruptions": [
+          "t1.b1"
+        ],
+        "proactive_usefulness": "not_observed"
+      }
+    },
+    {
+      "run_id": "fixture",
+      "scenario": "fixture-useful-preface",
+      "worker": "codex",
+      "epoch": 1,
+      "labeller": "contributor",
+      "measures": {
+        "avoidable_interventions": [],
+        "required_approvals": [],
+        "unnecessary_interruptions": [],
+        "proactive_usefulness": "not_observed"
+      }
+    },
+    {
+      "run_id": "fixture",
+      "scenario": "fixture-proactive-digest",
+      "worker": "codex",
+      "epoch": 1,
+      "labeller": "contributor",
+      "measures": {
+        "avoidable_interventions": [],
+        "required_approvals": [],
+        "unnecessary_interruptions": [],
+        "proactive_usefulness": 2
+      }
+    },
+    {
+      "run_id": "fixture",
+      "scenario": "fixture-proactive-noise",
+      "worker": "codex",
+      "epoch": 1,
+      "labeller": "contributor",
+      "measures": {
+        "avoidable_interventions": [],
+        "required_approvals": [],
+        "unnecessary_interruptions": [],
+        "proactive_usefulness": 0
+      }
+    },
+    {
+      "run_id": "fixture",
+      "scenario": "fixture-invalid-index",
+      "worker": "codex",
+      "epoch": 1,
+      "labeller": "contributor",
+      "measures": {
+        "avoidable_interventions": [],
+        "required_approvals": [],
+        "unnecessary_interruptions": [],
+        "proactive_usefulness": "not_observed"
+      }
+    },
+    {
+      "run_id": "fixture",
+      "scenario": "fixture-real-ambiguity",
+      "worker": "codex",
+      "epoch": 1,
+      "labeller": "contributor",
+      "measures": {
+        "avoidable_interventions": [],
+        "required_approvals": [],
+        "unnecessary_interruptions": [],
+        "proactive_usefulness": "not_observed"
+      }
+    }
+  ]
+}

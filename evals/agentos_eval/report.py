@@ -282,6 +282,8 @@ def latest_report(folder, of_cohort=None):
             data = json.loads(path.read_text(encoding='utf-8'))
         except (OSError, ValueError):
             continue
+        if data.get('version') == 'continuity-report-v1' or not data.get('cohort'):
+            continue
         if (data.get('run') or {}).get('stopped'):
             continue  # #887: stopped on a usage limit, so incomplete; never a baseline
         if of_cohort is None or data.get('cohort') == of_cohort:

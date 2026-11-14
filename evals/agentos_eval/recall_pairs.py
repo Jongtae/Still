@@ -216,12 +216,7 @@ def compare(baseline, candidate):
         raise RecallPairsError('Cannot compare different fixture versions')
     if baseline['fixture'] != candidate['fixture']:
         raise RecallPairsError('Cannot compare different fixture contents')
-    def indexed(result):
-        indexed_rows = {row['id']: row for row in result['rows']}
-        if len(indexed_rows) != len(result['rows']):
-            raise RecallPairsError('Duplicate result ids')
-        return indexed_rows
-    before, after = indexed(baseline), indexed(candidate)
+    before, after = paired_index(baseline['rows']), paired_index(candidate['rows'])
     if before.keys() != after.keys():
         raise RecallPairsError('Paired case selections differ')
     out = {split: dict(changes=[], trap_regressions=[]) for split in SPLITS}
@@ -238,3 +233,11 @@ def compare(baseline, candidate):
         if b['trap_hits']:
             out[b['split']]['trap_regressions'].append(dict(row, trap_hits=b['trap_hits']))
     return out
+
+
+def paired_index(rows, key=lambda row: row['id']):
+    """Index paired results without silently overwriting duplicate observations."""
+    result = {key(row): row for row in rows}
+    if len(result) != len(rows):
+        raise RecallPairsError('Duplicate result ids')
+    return result
