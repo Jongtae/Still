@@ -393,7 +393,7 @@ def work_measurements(data, task_ids):
     Adapt WorkLedger.request_chain's retry/consumed-location bindings without
     importing the runtime. Missing historical counters remain unknown.
     """
-    result = {task: {'ledger': None, 'tools': None, 'engine': None} for task in task_ids}
+    result = {task: {'root': None, 'ledger': None, 'tools': None, 'engine': None} for task in task_ids}
     path = Path(data) / 'private' / 'quickstart.db'
     if not path.is_file():
         return result
@@ -438,6 +438,8 @@ def work_measurements(data, task_ids):
                 ancestor = root(task)
                 if ancestor is None:
                     continue
+                # A missing jobs table cannot establish a canonical family id.
+                measurement['root'] = ancestor if ancestor in jobs else None
                 family = [job for job in jobs if root(job) == ancestor] if jobs else [task]
                 row = db.execute('SELECT value FROM config WHERE key=?', ('work_budget:' + ancestor,)).fetchone()
                 if row:

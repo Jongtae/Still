@@ -23,7 +23,8 @@ def record(status='succeeded', rows=None, epoch=1):
 
 
 def arms(a, b):
-    return {name: {'records': records, 'run': {'git_head': name, 'worker': 'codex', 'epochs': 1, 'seed': 'fresh'}}
+    return {name: {'records': records, 'run': {'git_head': name, 'worker': 'codex', 'epochs': 1, 'seed': 'fresh',
+                                                            'scenario_ids': sorted({r['scenario'] for r in records})}}
             for name, records in [('limit1', a), ('limit4', b)]}
 
 
@@ -57,6 +58,7 @@ def test_work_measurements_readonly_chain_and_allowlist(tmp_path):
     assert path.read_bytes() == before
     assert captured['continue'] == captured['root'] == captured['retry']
     work = captured['root']
+    assert work['root'] == 'root'
     assert work['ledger'] == {'turns': 2, 'attempts': 5, 'nudges': 1}
     assert work['tools'][:2] == [event('web_search', 'running', 1), event('web_search', 'succeeded', 3)]
     assert len(work['tools']) == 3
@@ -67,7 +69,7 @@ def test_work_measurements_readonly_chain_and_allowlist(tmp_path):
 
 
 def test_missing_database_and_tables(tmp_path):
-    empty = {'t': {'ledger': None, 'tools': None, 'engine': None}}
+    empty = {'t': {'root': None, 'ledger': None, 'tools': None, 'engine': None}}
     assert runner.work_measurements(tmp_path, ['t']) == empty
     (tmp_path / 'private').mkdir()
     sqlite3.connect(tmp_path / 'private' / 'quickstart.db').close()
@@ -183,7 +185,7 @@ def test_missing_ledger_row_and_corrupt_json_do_not_fail_capture(tmp_path):
     result = runner.work_measurements(tmp_path, ['bad', 'missing'])
     assert result['bad']['ledger'] is None
     assert result['bad']['tools'] == [event('read_file', 'running', 1)]
-    assert result['missing'] == {'ledger': None, 'tools': None, 'engine': None}
+    assert result['missing'] == {'root': None, 'ledger': None, 'tools': None, 'engine': None}
 
 
 def test_cli_reads_existing_logs_and_writes_outputs(tmp_path, monkeypatch):
@@ -194,7 +196,7 @@ def test_cli_reads_existing_logs_and_writes_outputs(tmp_path, monkeypatch):
         run = record()
         sample = SimpleNamespace(id='s', epoch=1, metadata={'run': run}, scores={
             'secretary': SimpleNamespace(metadata={'scenario': 's', 'worker': 'codex', 'checks': run['checks']}, value={})})
-        logs[path] = SimpleNamespace(samples=[sample], eval=SimpleNamespace(metadata={'git_head': path, 'epochs': 1}))
+        logs[path] = SimpleNamespace(samples=[sample], eval=SimpleNamespace(metadata={'git_head': path, 'epochs': 1, 'scenario_ids': ['s']}))
     module = types.ModuleType('inspect_ai.log')
     module.read_eval_log = logs.__getitem__
     monkeypatch.setitem(sys.modules, 'inspect_ai.log', module)
@@ -206,6 +208,7 @@ def test_cli_reads_existing_logs_and_writes_outputs(tmp_path, monkeypatch):
     assert data['arms']['limit1']['summary']['latency']['median'] == 4
     assert 'limit4 − limit1' in md.read_text()
     logs['four.eval'].samples[0].scores['secretary'].metadata['scenario'] = 'other'
+    logs['four.eval'].eval.metadata['scenario_ids'] = ['other']
     with pytest.raises(SystemExit, match='scenario_ids differ'):
         cli.main(['p1-report', '--arm', 'limit1=one.eval', '--arm', 'limit4=four.eval'])
 
@@ -420,3 +423,260 @@ def test_declared_scenario_with_no_observed_runs_is_missing():
     assert result['comparison_complete'] is False
     assert result['paired_epochs']['t'] == []
     assert result['paired_deltas']['t']['latency_median'] is None
+
+
+
+@pytest.mark.parametrize('shared_root, expected_attempts, expected_cost', [(True, 4, .10), (False, 8, .20)])
+def test_work_families_count_once_without_deduplicating_turn_latency(shared_root, expected_attempts, expected_cost):
+    import copy
+    run = record()
+    first = {'root': 'root-1', 'ledger': {'turns': 2, 'attempts': 4, 'nudges': 1},
+             'tools': [{**event('web_search', status, at), 'scope': 'subscription-mcp-bridge', 'call_id': 'call-1'}
+                       for status, at in [('running', 1), ('succeeded', 2)]],
+             'engine': [{'usage': {'input_tokens': 20}, 'cost_usd': .10}]}
+    second = copy.deepcopy(first)
+    if not shared_root:
+        second['root'] = 'root-2'
+        for row in second['tools']:
+            row['call_id'] = 'call-2'
+            row['created'] += 10
+    run['work'] = {'turn-1': first, 'turn-2-retry': second}
+    measured = p1.measure(run, {'web_search'})
+    assert measured['ledger']['attempts'] == expected_attempts
+    assert measured['cost_usd'] == pytest.approx(expected_cost)
+    families = 1 if shared_root else 2
+    assert measured['ledger']['turns'] == 2 * families
+    assert measured['ledger']['nudges'] == families
+    assert measured['reads']['bridge_calls'] == families
+    assert measured['reads']['bridge_peak'] == 1
+    assert measured['usage'] == {'input_tokens': 20 * families}
+    assert len(measured['engine']) == families
+    assert measured['latencies'] == [6, 2]
+    summary = p1.compare_arms(arms([run], [run]), names={'web_search'})['arms']['limit1']['summary']
+    assert summary['ledger']['attempts']['mean'] == expected_attempts
+    assert summary['cost_usd'] == pytest.approx(expected_cost)
+    assert summary['latency']['n'] == 2
+
+
+@pytest.mark.parametrize('failure', [
+    {'kind': 'infra', 'name': 'judgment_ai'},
+    {'kind': 'check', 'name': 'other_boundary'},
+    {'kind': 'authority', 'name': 'uncovered'},
+    {'kind': 'check', 'name': 'judge'},  # a coincidental name is not a rubric judge grade
+])
+def test_non_grade_failures_prevent_verified_completion(failure):
+    run = {**record(), 'failures': [{**failure, 'reason': 'configured path was not measured'}]}
+    result = p1.compare_arms(arms([run], [run]), names=set())
+    arm = result['arms']['limit1']
+    key = failure['kind'] + ':' + failure['name']
+    assert arm['summary']['verified'] == 0
+    assert len(arm['not_verified']) == 1
+    assert arm['not_verified'][0]['statuses'] == ['succeeded', 'succeeded']
+    assert key in arm['not_verified'][0]['failure_classes']
+    assert key in p1.render_markdown(result)
+
+
+@pytest.mark.parametrize('failure', [
+    {'kind': 'rubric', 'name': 'follow_through'},
+    {'kind': 'judge', 'name': 'grade'},
+    {'kind': 'infra', 'name': 'judge'},  # eval task's judge transport failure
+])
+def test_rubric_and_eval_judge_failures_do_not_change_verified_completion(failure):
+    run = {**record(), 'failures': [failure]}
+    result = p1.compare_arms(arms([run], [run]), names=set())
+    arm = result['arms']['limit1']
+    assert arm['summary']['verified'] == 1
+    assert arm['not_verified'] == []
+
+
+
+def test_identical_legacy_snapshots_deduplicate_with_stable_keys():
+    first = {'ledger': {'turns': 2, 'attempts': 4, 'nudges': 1},
+             'tools': [event('web_search', 'running', 1), event('web_search', 'succeeded', 2)],
+             'engine': [{'usage': {'input_tokens': 20}, 'cost_usd': .10}]}
+    # Different object identities and dictionary insertion order are still one snapshot.
+    second = {'engine': [{'cost_usd': .10, 'usage': {'input_tokens': 20}}],
+              'tools': [dict(reversed(list(row.items()))) for row in first['tools']],
+              'ledger': {'nudges': 1, 'attempts': 4, 'turns': 2}}
+    run = record()
+    run['work'] = {'turn-1': first, 'turn-2': second}
+    measured = p1.measure(run, {'web_search'})
+    assert measured['families_deduplicated_without_root'] == 1
+    assert measured['ledger']['attempts'] == 4
+    assert measured['cost_usd'] == pytest.approx(.10)
+    assert measured['reads']['direct_calls'] == 1
+    assert measured['usage'] == {'input_tokens': 20}
+    assert measured['latencies'] == [6, 2]
+    result = p1.compare_arms(arms([run], [run]), names={'web_search'})
+    assert result['arms']['limit1']['runs'][0]['families_deduplicated_without_root'] == 1
+
+
+@pytest.mark.parametrize('changed_field', ['ledger', 'tools', 'engine'])
+def test_distinct_legacy_snapshots_still_sum(changed_field):
+    import copy
+    first = {'ledger': {'turns': 2, 'attempts': 4, 'nudges': 1},
+             'tools': [event('web_search', 'running', 1), event('web_search', 'succeeded', 2)],
+             'engine': [{'usage': {'input_tokens': 20}, 'cost_usd': .10}]}
+    second = copy.deepcopy(first)
+    if changed_field == 'ledger':
+        second['ledger']['nudges'] = 2
+    elif changed_field == 'tools':
+        second['tools'][0]['created'] = 1.5
+    else:
+        second['engine'][0]['usage']['input_tokens'] = 21
+    run = record()
+    run['work'] = {'turn-1': first, 'turn-2': second}
+    measured = p1.measure(run, {'web_search'})
+    assert measured['families_deduplicated_without_root'] == 0
+    assert measured['ledger']['attempts'] == 8
+    assert measured['cost_usd'] == pytest.approx(.20)
+    assert measured['reads']['direct_calls'] == 2
+    assert measured['usage']['input_tokens'] == (41 if changed_field == 'engine' else 40)
+
+
+def test_explicit_distinct_roots_override_identical_snapshot_contents():
+    import copy
+    first = {'root': 'a', 'ledger': {'turns': 2, 'attempts': 4, 'nudges': 1}, 'tools': [],
+             'engine': [{'cost_usd': .10}]}
+    second = {**copy.deepcopy(first), 'root': 'b'}
+    run = record()
+    run['work'] = {'turn-1': first, 'turn-2': second}
+    measured = p1.measure(run, set())
+    assert measured['ledger']['attempts'] == 8
+    assert measured['cost_usd'] == pytest.approx(.20)
+    assert measured['families_deduplicated_without_root'] == 0
+
+
+def test_missing_declared_cohort_makes_completeness_unknown():
+    data = arms([record()], [record()])
+    for arm in data.values():
+        del arm['run']['scenario_ids']
+    result = p1.compare_arms(data, names=set())
+    assert result['comparison_complete'] == 'unknown'
+    assert all(arm['complete'] == 'unknown' for arm in result['arms'].values())
+    assert all(arm['missing'] is None for arm in result['arms'].values())
+    assert 'declared cohort was unavailable' in p1.render_markdown(result)
+
+
+def _cohort_log(sample_ids=None, declared=None):
+    samples = []
+    for epoch in range(1, 4):
+        run = record(epoch=epoch)
+        samples.append(SimpleNamespace(id='s@codex', epoch=epoch, metadata={'run': run}, scores={
+            'secretary': SimpleNamespace(metadata={'scenario': 's', 'worker': 'codex', 'checks': run['checks']}, value={})}))
+    metadata = {'worker': 'codex'}
+    if declared is not None:
+        metadata['scenario_ids'] = declared
+    return SimpleNamespace(samples=samples, eval=SimpleNamespace(
+        metadata=metadata, dataset=SimpleNamespace(sample_ids=sample_ids), config=SimpleNamespace(epochs=3)))
+
+
+@pytest.mark.parametrize('source', ['metadata', 'inspect', 'flag', 'unavailable'])
+def test_cli_cohort_recovery_does_not_use_completed_samples(tmp_path, monkeypatch, source):
+    import types
+    from agentos_eval import cli
+    log = _cohort_log(sample_ids=['s@codex', 't@codex'] if source == 'inspect' else None,
+                      declared=['s', 't'] if source == 'metadata' else None)
+    module = types.ModuleType('inspect_ai.log')
+    module.read_eval_log = lambda path: log
+    monkeypatch.setitem(sys.modules, 'inspect_ai.log', module)
+    out = tmp_path / 'cohort.json'
+    args = ['p1-report', '--arm', 'limit1=one.eval', '--arm', 'limit4=four.eval', '--json', str(out)]
+    if source == 'flag':
+        args += ['--scenarios', 's,t']
+    assert cli.main(args) == 0
+    result = json.loads(out.read_text())
+    if source == 'unavailable':
+        assert result['comparison_complete'] == 'unknown'
+        assert result['arms']['limit1']['complete'] == 'unknown'
+    else:
+        assert result['comparison_complete'] is False
+        for arm in result['arms'].values():
+            assert arm['identity']['scenario_ids'] == ['s', 't']
+            assert arm['missing'] == [['t', 1], ['t', 2], ['t', 3]]
+            assert arm['declared_runs'] == 6
+
+
+@pytest.mark.parametrize('source', ['metadata', 'inspect'])
+def test_cli_scenarios_disagreement_refused(monkeypatch, source):
+    import types
+    from agentos_eval import cli
+    log = _cohort_log(declared=['s'] if source == 'metadata' else None,
+                      sample_ids=['s@codex'] if source == 'inspect' else None)
+    module = types.ModuleType('inspect_ai.log')
+    module.read_eval_log = lambda path: log
+    monkeypatch.setitem(sys.modules, 'inspect_ai.log', module)
+    with pytest.raises(SystemExit, match='--scenarios disagrees with'):
+        cli.main(['p1-report', '--arm', 'limit1=a.eval', '--arm', 'limit4=b.eval', '--scenarios', 's,t'])
+
+
+@pytest.mark.parametrize('sample_ids', [[1, 2], ['s'], ['s@unrecognized-worker']])
+def test_unknown_inspect_id_formats_do_not_invent_a_cohort(sample_ids):
+    declared, source = p1.declared_cohort(_cohort_log(sample_ids=sample_ids))
+    assert declared is None
+    assert source == 'unavailable'
+
+
+def _stub_inspect_task(monkeypatch):
+    """Load the real task construction with model-free Inspect stand-ins."""
+    import importlib.util
+    import types
+    package = types.ModuleType('inspect_ai')
+    package.__path__ = []
+    package.Task = lambda **kwargs: SimpleNamespace(**kwargs)
+    package.task = lambda fn: fn
+    monkeypatch.setitem(sys.modules, 'inspect_ai', package)
+    dataset = types.ModuleType('inspect_ai.dataset')
+    dataset.MemoryDataset = lambda samples, name: list(samples)
+    dataset.Sample = lambda **kwargs: SimpleNamespace(**kwargs)
+    monkeypatch.setitem(sys.modules, 'inspect_ai.dataset', dataset)
+    model = types.ModuleType('inspect_ai.model')
+    for name in ('ChatMessageAssistant', 'ChatMessageSystem', 'ChatMessageUser', 'GenerateConfig', 'ModelOutput', 'get_model'):
+        setattr(model, name, lambda *a, **k: None)
+    monkeypatch.setitem(sys.modules, 'inspect_ai.model', model)
+    scorer = types.ModuleType('inspect_ai.scorer')
+    scorer.Score, scorer.Target = object, object
+    scorer.mean = lambda: None
+    scorer.scorer = lambda **kwargs: lambda fn: fn
+    monkeypatch.setitem(sys.modules, 'inspect_ai.scorer', scorer)
+    solver = types.ModuleType('inspect_ai.solver')
+    solver.Generate, solver.TaskState = object, object
+    solver.solver = lambda fn: fn
+    monkeypatch.setitem(sys.modules, 'inspect_ai.solver', solver)
+    util = types.ModuleType('inspect_ai.util')
+    util.EarlyStop = object
+    monkeypatch.setitem(sys.modules, 'inspect_ai.util', util)
+    path = Path(__file__).resolve().parents[1] / 'evals' / 'agentos_eval' / 'task.py'
+    spec = importlib.util.spec_from_file_location('agentos_eval.task', path)
+    task = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, 'agentos_eval.task', task)
+    spec.loader.exec_module(task)
+    monkeypatch.setattr(task, 'SandboxPool', lambda **kwargs: None)
+    monkeypatch.setattr(task, 'secretary', lambda *args, **kwargs: None)
+    return package, task
+
+
+def test_sweep_and_task_metadata_record_selected_ids_after_filters_and_limit(monkeypatch):
+    from agentos_eval import cli, scenarios
+    inspect, task = _stub_inspect_task(monkeypatch)
+    ids = [s['id'] for s in scenarios.load(include_local=False, split='dev')[:2]]
+    assert len(ids) == 2
+    selected = task.agentos_secretary(scenarios=','.join(ids), split='dev', worker='codex',
+                                     include_local=False, judge='none', sample_limit=1)
+    assert len(selected.dataset) == 1
+    assert selected.metadata['scenario_ids'] == [ids[0]]
+    captured = {}
+
+    def inspect_eval(selected_task, **kwargs):
+        captured['task'] = selected_task
+        captured.update(kwargs)
+        return [SimpleNamespace()]
+
+    inspect.eval = inspect_eval
+    monkeypatch.setattr(cli, 'git_head', lambda: 'fixture-head')
+    monkeypatch.setattr(cli, '_write', lambda *args: {'trend': {'regressions': []}})
+    assert cli.main(['sweep', '--scenarios', ','.join(ids), '--split', 'dev', '--worker', 'codex',
+                     '--judge', 'none', '--no-local', '--limit', '1', '--epochs', '3']) == 0
+    assert captured['metadata']['scenario_ids'] == [ids[0]]
+    assert captured['task'].metadata['scenario_ids'] == [ids[0]]
+    assert len(captured['task'].dataset) == 1

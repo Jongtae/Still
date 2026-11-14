@@ -134,6 +134,7 @@ def run_world_sweep(args, run_scenario=None, pool_factory=None, folder=None):
     pool = (pool_factory or SandboxPool)(size=args.instances, seed=seed, keep=args.keep_sandboxes)
     run_scenario = run_scenario or run_world_scenario
     jobs = [(scenario, epoch) for epoch in range(1, args.epochs + 1) for scenario in loaded][:args.limit]
+    run['scenario_ids'] = sorted({scenario['id'] for scenario, _ in jobs})
     tripped = threading.Event()
 
     def one(job):
@@ -173,7 +174,8 @@ def cmd_sweep(args):
     task = agentos_secretary(scenarios=args.scenarios, split=args.split, worker=args.worker,
                              instances=args.instances, seed=str(seed or ''), judge=judge,
                              turn_timeout=args.turn_timeout, include_local=not args.no_local,
-                             keep_sandboxes=args.keep_sandboxes)
+                             keep_sandboxes=args.keep_sandboxes, sample_limit=args.limit)
+    run['scenario_ids'] = task.metadata['scenario_ids']
     logs = inspect_eval(task, epochs=args.epochs, max_samples=args.instances, limit=args.limit,
                         log_dir=str(eval_home() / 'logs'), display=args.display, fail_on_error=False,
                         tags=['agentos-eval', args.worker], metadata=run)
@@ -201,14 +203,25 @@ def cmd_report(args):
 
 def cmd_p1_report(args):
     from inspect_ai.log import read_eval_log
-    from .p1_report import compare_arms, render_markdown
+    from .p1_report import compare_arms, render_markdown, declared_cohort
     arms = {}
     for value in args.arm:
         label, separator, path = value.partition('=')
         if not separator or not label or not path or label in arms:
             raise SystemExit('--arm must be a unique label=<log.eval>')
         log = read_eval_log(path)
-        arms[label] = {'records': records_from_samples(log.samples), 'run': dict(log.eval.metadata or {})}
+        run = dict(log.eval.metadata or {})
+        try:
+            scenario_ids, source = declared_cohort(log, getattr(args, 'scenarios', None))
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
+        if scenario_ids is not None:
+            run['scenario_ids'] = scenario_ids
+        run['cohort_source'] = source
+        config_epochs = getattr(getattr(log.eval, 'config', None), 'epochs', None)
+        if config_epochs is not None:
+            run.setdefault('epochs', config_epochs)
+        arms[label] = {'records': records_from_samples(log.samples), 'run': run}
     try:
         report = compare_arms(arms)
     except ValueError as exc:
@@ -285,6 +298,7 @@ def main(argv=None):
     rep.add_argument('--log', required=True)
     p1 = sub.add_parser('p1-report', help='compare P1 read-concurrency arms from Inspect logs')
     p1.add_argument('--arm', action='append', required=True, help='label=<log.eval> (twice)')
+    p1.add_argument('--scenarios', default=None, help='declared comma-separated scenario ids for older logs')
     p1.add_argument('--json')
     p1.add_argument('--md')
     coverage = sub.add_parser('coverage', help='validate or render the task coverage map (no live runs)')

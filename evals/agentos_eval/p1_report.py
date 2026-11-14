@@ -3,6 +3,7 @@
 Adopt Inspect's records_from_samples and stdlib statistics; adapt the persisted
 WorkLedger/event schema. No dependency, authority or runtime changes (#16/#827).
 """
+import json
 import math
 from collections import Counter
 from statistics import mean, median
@@ -92,8 +93,13 @@ def measure(record, names):
     checks = record.get('checks')
     checks_pass = bool(checks) and all(v is True for v in checks.values()) if isinstance(checks, dict) else (
         record.get('checks_pass', (record.get('value') or {}).get('checks_pass')) == 1)
+    # Rubric grades and the eval judge's transport do not measure execution.
+    # infra:judgment_ai is the sandbox's worker-route qualification, not the eval judge.
+    blocking_failures = [f for f in record.get('failures') or []
+                         if f.get('kind') not in ('rubric', 'judge')
+                         and not (f.get('kind') == 'infra' and f.get('name') == 'judge')]
     # An unscored/missing run is never verified by vacuous checks.
-    verified = record.get('judge_status') != 'not_scored' and bool(statuses) and checks_pass and all(s == 'succeeded' for s in statuses)
+    verified = not blocking_failures and record.get('judge_status') != 'not_scored' and bool(statuses) and checks_pass and all(s == 'succeeded' for s in statuses)
     latencies = []
     for turn in turns:
         sent, delivered = turn.get('sent_epoch'), turn.get('delivered_epoch')
@@ -103,7 +109,23 @@ def measure(record, names):
     if not turns:
         latencies = [v for v in record.get('elapsed') or [] if numeric(v) and v >= 0]
     work = record.get('work')
-    measurements = list(work.values()) if isinstance(work, dict) else []
+    # Each turn keeps its family snapshot. Retries/continuations can share one
+    # canonical root, so count it once, without changing per-turn latency above.
+    # Older captures lack roots: only identical ledger/tools/engine snapshots
+    # are considered the same family, and the fallback's use stays visible.
+    families = {}
+    families_deduplicated_without_root = 0
+    for measurement in (work.values() if isinstance(work, dict) else []):
+        root = measurement.get('root')
+        if isinstance(root, str) and root:
+            identity = ('root', root)
+        else:
+            snapshot = {key: measurement.get(key) for key in ('ledger', 'tools', 'engine')}
+            identity = ('snapshot', json.dumps(snapshot, sort_keys=True, separators=(',', ':')))
+            if identity in families:
+                families_deduplicated_without_root += 1
+        families.setdefault(identity, measurement)
+    measurements = list(families.values())
     ledgers = [m.get('ledger') for m in measurements]
     counts = {key: sum(l[key] for l in ledgers) if ledgers and all(l and numeric(l.get(key)) for l in ledgers) else None
               for key in ('turns', 'attempts', 'nudges')}
@@ -118,13 +140,13 @@ def measure(record, names):
         if numeric(engine.get('cost_usd')):
             cost.append(engine['cost_usd'])
     failure_classes = set(filter(None, record.get('failure_classes') or [t.get('failure_class') for t in turns]))
-    failure_classes.update(f"{f.get('kind')}:{f.get('name')}" for f in record.get('failures') or []
-                           if f.get('kind') != 'rubric' and f.get('name') != 'judge')
+    failure_classes.update(f"{f.get('kind')}:{f.get('name')}" for f in blocking_failures)
     return {'scenario': record['scenario'], 'epoch': record.get('epoch', 1), 'sample_id': record.get('sample_id'),
             'verified': verified, 'statuses': statuses,
             'failure_classes': sorted(failure_classes),
             'failed_checks': [k for k, v in (checks or {}).items() if v is not True],
             'latencies': latencies, 'ledger': counts, 'reads': overlap(tools, names),
+            'families_deduplicated_without_root': families_deduplicated_without_root,
             'usage': dict(usage) or 'unavailable', 'cost_usd': sum(cost) if cost else 'unavailable',
             'engine': engines,
             'stage_timings': {stage: [r['ms'] for r in tools or [] if r.get('tool') == 'response_timing'
@@ -167,6 +189,35 @@ def summarize(runs):
             'cost_unavailable_runs': sum(r['cost_usd'] == 'unavailable' for r in runs)}
 
 
+def declared_cohort(log, scenarios=None):
+    """Recover selection, never infer it from completed samples.
+
+    Inspect 0.3.271's task/log.py writes dataset.sample_ids using slice_dataset
+    with the eval limit/sample_id filter, before execution. task.py emits
+    <scenario>@<worker> ids. Unknown formats are not guessed.
+    """
+    metadata = log.eval.metadata or {}
+    declared = metadata.get('scenario_ids')
+    source = 'metadata' if declared is not None else 'unavailable'
+    if declared is None:
+        ids = getattr(getattr(log.eval, 'dataset', None), 'sample_ids', None)
+        if ids is not None and all(isinstance(i, str) and i.rpartition('@')[0]
+                                   and i.rpartition('@')[2] in ('codex', 'claude-code') for i in ids):
+            declared = [i.rpartition('@')[0] for i in ids]
+            source = 'Inspect dataset.sample_ids'
+    if declared is not None:
+        declared = sorted(set(declared))
+    if scenarios is not None:
+        explicit = sorted({s.strip() for s in scenarios.split(',') if s.strip()})
+        if not explicit:
+            raise ValueError('--scenarios must declare at least one scenario id')
+        if declared is not None and explicit != declared:
+            raise ValueError(f'--scenarios disagrees with {source} scenario_ids: {explicit} != {declared}')
+        if declared is None:
+            declared, source = explicit, '--scenarios'
+    return declared, source
+
+
 def compare_arms(arms, names=None):
     """arms: label -> {'records': records_from_samples(...), 'run': log.eval.metadata}."""
     if len(arms) != 2:
@@ -175,18 +226,22 @@ def compare_arms(arms, names=None):
     output = {}
     for label, arm in arms.items():
         records, run = arm['records'], arm.get('run') or {}
-        scenarios = sorted(set(run.get('scenario_ids', [r['scenario'] for r in records])))
-        workers = sorted({r.get('worker') or run.get('worker') or 'unknown' for r in records})
+        declared = run.get('scenario_ids')
+        scenarios = sorted(set(declared if declared is not None else [r['scenario'] for r in records]))
+        workers = sorted({r.get('worker') or run.get('worker') or 'unknown' for r in records}
+                         or {run.get('worker') or 'unknown'})
         epochs = run.get('epochs') or len({r.get('epoch', 1) for r in records})
         measured = [measure(r, names) for r in records]
         groups = {s: [r for r in measured if r['scenario'] == s] for s in scenarios}
         expected = {(scenario, epoch) for scenario in scenarios for epoch in range(1, epochs + 1)}
         observed = {(r['scenario'], r['epoch']) for r in measured if 'usage-limit' not in r['failure_classes']}
-        missing = [list(pair) for pair in sorted(expected - observed)]
+        missing = [list(pair) for pair in sorted(expected - observed)] if declared is not None else None
         output[label] = {'identity': {**{k: run.get(k) for k in ('id', 'git_head', 'seed', 'judge', 'model')},
                                       'worker': workers, 'epochs': epochs, 'scenario_ids': scenarios},
-                         'complete': observed == expected, 'missing': missing, 'declared_runs': len(expected),
-                         'unexpected': [list(pair) for pair in sorted(observed - expected)],
+                         'complete': observed == expected if declared is not None else 'unknown', 'missing': missing,
+                         'declared_runs': len(expected) if declared is not None else None,
+                         'cohort_source': run.get('cohort_source', 'metadata' if declared is not None else 'unavailable'),
+                         'unexpected': [list(pair) for pair in sorted(observed - expected)] if declared is not None else [],
                          'summary': summarize(measured), 'per_scenario': {s: summarize(g) for s, g in groups.items()},
                          'per_scenario_epoch': {s: {str(e): summarize([r for r in g if r['epoch'] == e])
                                                     for e in sorted({r['epoch'] for r in g})} for s, g in groups.items()},
@@ -194,6 +249,8 @@ def compare_arms(arms, names=None):
     labels = list(output)
     a, b = [output[l] for l in labels]
     for key in ('scenario_ids', 'worker', 'epochs'):
+        if key == 'scenario_ids' and any(arm['complete'] == 'unknown' for arm in (a, b)):
+            continue
         if a['identity'][key] != b['identity'][key]:
             raise ValueError(f'Cannot compare arms: {key} differ')
     # Interrupted arms may have different observed epochs. Duplicates remain ambiguous.
@@ -204,7 +261,7 @@ def compare_arms(arms, names=None):
         labels = ['limit1', 'limit4']
         a, b = [output[l] for l in labels]
     deltas, paired_epochs = {}, {}
-    for s in a['identity']['scenario_ids']:
+    for s in sorted(set(a['identity']['scenario_ids']) | set(b['identity']['scenario_ids'])):
         eligible = [[r for r in arm['runs'] if r['scenario'] == s and 'usage-limit' not in r['failure_classes']]
                     for arm in (a, b)]
         shared = {r['epoch'] for r in eligible[0]} & {r['epoch'] for r in eligible[1]}
@@ -222,19 +279,23 @@ def compare_arms(arms, names=None):
                      'cost_usd': delta(x['cost_usd'], y['cost_usd']) if numeric(x['cost_usd']) and numeric(y['cost_usd']) else 'unavailable',
                      'usage': {k: y['usage'][k] - x['usage'][k] for k in sorted(x['usage'].keys() & y['usage'].keys())}
                               if isinstance(x['usage'], dict) and isinstance(y['usage'], dict) else 'unavailable'}
-    return {'schema_version': 4, 'arms': output,
-            'comparison_complete': all(arm['complete'] for arm in output.values()), 'paired_epochs': paired_epochs, 'read_names_source': source, 'read_names': sorted(names),
+    return {'schema_version': 6, 'arms': output,
+            'comparison_complete': ('unknown' if any(arm['complete'] == 'unknown' for arm in output.values())
+                                    else all(arm['complete'] for arm in output.values())), 'paired_epochs': paired_epochs, 'read_names_source': source, 'read_names': sorted(names),
             'delta_direction': f'{labels[1]} − {labels[0]}', 'paired_deltas': deltas}
 
 
 def render_markdown(report):
     import json
     lines = ['# P1 read concurrency report', '', '## Fixture support', '',
-             'P1 measurement schema v4. Test results and the harness revision are not embedded in the logs; '
+             'P1 measurement schema v6. Test results and the harness revision are not embedded in the logs; '
              'model-free fixtures do not establish live worker performance.', '',
              '## Live evidence', '']
     for label, arm in report['arms'].items():
-        if not arm['complete']:
+        if arm['complete'] == 'unknown':
+            lines += [f'**Comparison completeness unknown: {label} declared cohort was unavailable. '
+                      'Supply --scenarios to declare it.**', '']
+        elif not arm['complete']:
             missing = ', '.join(f'{scenario} epoch {epoch}' for scenario, epoch in arm['missing']) or 'none'
             lines += [f"**Incomplete comparison: {label} is missing {len(arm['missing'])} of "
                       f"{arm['declared_runs']} declared runs: {missing}.**", '']
