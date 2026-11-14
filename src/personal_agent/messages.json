@@ -11471,9 +11471,15 @@
  "zh": "- 记忆和任务写入值合计最多比对 {limit} 个。"
 },
  "information_use.comparison_cut_legacy_match_withheld": {
- "ko": "- 기록된 기억 일치 표시 일부를 숨겼어요. 그 기억을 잊거나 삭제했거나, 남아 있는 이력에서 당시의 기억을 확인할 수 없어요.",
- "en": "- Some recorded Memory matches were withheld because that Memory was forgotten/deleted or its retained history could not be confirmed.",
- "ja": "- 記録済みの記憶一致の一部を非表示にしました。忘却・削除済みか、残存履歴から当時の記憶を確認できません。",
- "zh": "- 部分已记录的记忆匹配已隐藏：该记忆已被遗忘、删除，或无法从保留的历史确认当时的记忆。"
+ "ko": "- 기록된 기억 일치 표시 일부를 숨겼어요. 호출 뒤에 기억을 수정하거나 잊거나 삭제했거나, 남아 있는 이력에서 당시의 기억을 확인할 수 없어요.",
+ "en": "- Some recorded Memory matches were withheld because the Memory was updated, forgotten or deleted since the call, or its retained history could not be confirmed.",
+ "ja": "- 呼出後に記憶が更新・忘却・削除されたか、残存履歴から当時の記憶を確認できないため、記録済みの記憶一致の一部を非表示にしました。",
+ "zh": "- 部分已记录的记忆匹配已隐藏：该记忆在调用后已更新、遗忘或删除，或无法从保留的历史确认当时的记忆。"
+},
+ "information_use.comparison_cut_legacy_display": {
+ "ko": "- 기록된 보관 정보 일치 표시는 {limit}개까지만 보여요. 나머지는 표시하지 않았어요.",
+ "en": "- Only {limit} recorded held-value match labels are shown; remaining labels were not displayed.",
+ "ja": "- 記録済みの保管情報の一致ラベルは {limit} 件まで表示します。残りは表示していません。",
+ "zh": "- 最多显示 {limit} 个已记录的保存值匹配标签，其余未显示。"
 }
 }

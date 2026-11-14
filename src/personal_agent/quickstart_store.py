@@ -1312,7 +1312,7 @@ class QuickStore:
         older superseded version we cannot distinguish a retained version
         from a pointer rewired past a deleted one. Suppress that *key's* label
         with a view cut; unrelated table gaps must never affect this check.
-        The audit supplies one shared connection and its deadline/call bounds.
+        The audit supplies one shared connection and its deadline/display bounds.
         """
         if db is None:
             with self.db() as connection:

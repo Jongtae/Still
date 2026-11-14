@@ -102,16 +102,16 @@ def test_legacy_retention_checks_reuse_one_connection_without_table_count(store)
     with pytest.raises(sqlite3.ProgrammingError): connections[0].execute('SELECT 1')
 
 
-def test_legacy_validation_obeys_shared_call_bound(store):
+def test_legacy_validation_obeys_display_bound(store):
     memory(store, 'member', MEMBER, 10)
     job = store.enqueue('find', 'test')
-    for i in range(20): legacy(store, job, destination='host-' + str(i))
+    for i in range(audit.MAX_ITEMS + 1): legacy(store, job, destination='host-' + str(i))
     with mock.patch.object(store, 'comparison_legacy_kept', wraps=store.comparison_legacy_kept) as check:
         result = view(store, job)
-    assert check.call_count == audit.COMPARED_CALLS_MAX
-    assert len(result['held_value_matches']) == audit.COMPARED_CALLS_MAX
-    assert {'kind': 'calls', 'limit': audit.COMPARED_CALLS_MAX} in result['held_value_comparison_cut']
-    assert {'kind': 'legacy_match_withheld', 'limit': 0} in result['held_value_comparison_cut']
+    assert check.call_count == audit.MAX_ITEMS
+    assert len(result['held_value_matches']) == audit.MAX_ITEMS
+    assert {'kind': 'legacy_display', 'limit': audit.MAX_ITEMS} in result['held_value_comparison_cut']
+    assert 'calls' not in {row['kind'] for row in result['held_value_comparison_cut']}
 
 
 def test_current_export_restore_preserves_memory_deletion_gap(store, tmp_path):

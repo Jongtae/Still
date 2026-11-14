@@ -84,7 +84,7 @@ MATCH_SOURCES = frozenset({'memory', 'work_write'})
 #: (``agent_runtime.COMPARISON_CUT_MEMORY`` and ``COMPARISON_CUT_TEXT``).
 COMPARISON_CUTS = ('memory_rows', 'text_chars', 'calls', 'outbound_unrecorded',
                    'work_writes_unavailable', 'memory_history_unavailable', 'texts', 'matches',
-                   'comparison_time', 'comparison_failed', 'value_chars', 'held_values', 'legacy_match_withheld')
+                   'comparison_time', 'comparison_failed', 'value_chars', 'held_values', 'legacy_match_withheld', 'legacy_display')
 # Bound expensive matching independently of the number of recorded events.
 COMPARED_CALLS_MAX = 5
 COMPARED_TEXTS_MAX = 2
@@ -550,7 +550,7 @@ def _work_information_use(store, job_id, redact=None, *, compare_held_values=Tru
 
     ``redact`` (the service's stored-secret pass) is applied to every label.
     """
-    from .agent_runtime import OUTBOUND_MATCH_ACTIONS, OUTBOUND_MATCHES_MAX, MEMORY_OWNER
+    from .agent_runtime import OUTBOUND_MATCH_ACTIONS, MEMORY_OWNER
     job = store.job(job_id) if isinstance(job_id, str) and job_id else None
     if not job:
         return None
@@ -590,7 +590,6 @@ def _work_information_use(store, job_id, redact=None, *, compare_held_values=Tru
     matches, opened, cuts = [], [], {}
     outbound_started = {}
     compared_calls = 0
-    bounded_calls = 0
     legacy_db = None
     # #636: sites the AI signed back in to through the provider the owner used (site and provider host only).
     resigned = []
@@ -645,8 +644,7 @@ def _work_information_use(store, job_id, redact=None, *, compare_held_values=Tru
         if action in OUTBOUND_MATCH_ACTIONS and status in ('succeeded', 'failed') and trace.get('scope') != 'cli-native':
             begun, at = outbound_started.pop(identity, ({}, event.get('created')))
             if compare_held_values and source.get('outbound_comparison') == 'deferred' and not legacy and trace.get('ran') is not False:
-                if bounded_calls < COMPARED_CALLS_MAX:
-                    bounded_calls += 1
+                if compared_calls < COMPARED_CALLS_MAX:
                     compared_calls += 1
                     arguments = begun.get('arguments') or trace.get('arguments') or {}
                     event_key = event.get('id')
@@ -669,26 +667,26 @@ def _work_information_use(store, job_id, redact=None, *, compare_held_values=Tru
         # withheld after it returned keeps them in its Evidence: either may have carried them out.
         withheld = status == 'failed' and trace.get('state') == 'withheld'
         found = source.get('outbound_matches') if compare_held_values else None
-        legacy_allowed = False
-        if legacy and isinstance(found, list) and found:
-            if bounded_calls >= COMPARED_CALLS_MAX:
-                cuts['calls'] = COMPARED_CALLS_MAX
-            elif clock_fn() >= deadline:
-                cuts['comparison_time'] = int(COMPARISON_SECONDS * 1000)
-            else:
-                bounded_calls += 1
-                legacy_allowed = True
-        for index, row in enumerate(found if isinstance(found, list) else ()):
-            if legacy and index >= OUTBOUND_MATCHES_MAX:
-                cuts['matches'] = OUTBOUND_MATCHES_MAX
-                cuts['legacy_match_withheld'] = 0
-                break
+        for row in found if isinstance(found, list) else ():
             if not isinstance(row, dict) or row.get('source') not in MATCH_SOURCES:
                 continue
+            match = {'source': row['source'], 'key': label(row.get('key'), 80) if row['source'] == 'memory' else '',
+                     'tool': label(row.get('tool') or action, 60), 'destination': label(row.get('destination'), 120),
+                     'status': status}
+            if row.get('comparison') in ('later_work_writes', 'later_memory'):
+                match['comparison'] = row['comparison']
+            if legacy:
+                # Recorded labels are not comparisons. Preserve every distinct
+                # one up to the audit display limit, without spending a call.
+                if match in matches:
+                    continue
+                if len(matches) >= MAX_ITEMS:
+                    cuts['legacy_display'] = MAX_ITEMS
+                    break
             # Legacy labels remain recorded results, but forgotten/deleted Memory
             # must not be named even if it was forgotten after the call.
             if legacy and row['source'] == 'memory' and hasattr(store, 'comparison_legacy_kept'):
-                if not legacy_allowed or clock_fn() >= deadline:
+                if clock_fn() >= deadline:
                     cuts['legacy_match_withheld'] = 0
                     if clock_fn() >= deadline:
                         cuts['comparison_time'] = int(COMPARISON_SECONDS * 1000)
@@ -708,11 +706,6 @@ def _work_information_use(store, job_id, redact=None, *, compare_held_values=Tru
                 if not retained:
                     cuts['legacy_match_withheld'] = 0
                     continue
-            match = {'source': row['source'], 'key': label(row.get('key'), 80) if row['source'] == 'memory' else '',
-                     'tool': label(row.get('tool') or action, 60), 'destination': label(row.get('destination'), 120),
-                     'status': status}
-            if row.get('comparison') in ('later_work_writes', 'later_memory'):
-                match['comparison'] = row['comparison']
             if match not in matches and len(matches) < MAX_ITEMS:
                 matches.append(match)
         # #245: a comparison the bounds cut off (Memory rows past the newest ones, text past its first characters).
