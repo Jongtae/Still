@@ -641,19 +641,25 @@ def test_agreement_three_disagreements_in_eleven_is_order_independent(rubric):
                 (r['scenario'], r['epoch']) for r in expected[measure]['disagreements'])
 
 
-@pytest.mark.parametrize('message', ['t2', 't2.b1'])
-def test_avoidable_intervention_overrides_same_turn_interruption(rubric, message):
-    data = reply(2, interruptions=[message, 't3.b1'])
+@pytest.mark.parametrize('messages,kept,conflicts', [
+    (['t1.b1'], ['t1.b1'], 0),
+    (['t1'], [], 1),
+    (['t1', 't1.b1', 't3.b1'], ['t1.b1', 't3.b1'], 1),
+])
+def test_avoidable_intervention_deduplicates_only_answer_message(rubric, messages, kept, conflicts):
+    data = reply(1, interruptions=messages)
     parsed = s.parse_measures(json.dumps(data), rubric[0], run())
-    assert [row['turn'] for row in parsed['avoidable_interventions']] == [1, 2]
-    assert [row['message'] for row in parsed['unnecessary_interruptions']] == ['t3.b1']
-    assert parsed['inconsistencies'] == [{
-        'turn': 2, 'message': message, 'interruption_item': data['unnecessary_interruptions'][0],
-        'reason': 'Judge listed a turn as both avoidable intervention and interruption; counted only as intervention'}]
+    assert [row['turn'] for row in parsed['avoidable_interventions']] == [1]
+    assert [row['message'] for row in parsed['unnecessary_interruptions']] == kept
+    assert len(parsed['inconsistencies']) == conflicts
+    if conflicts:
+        assert parsed['inconsistencies'] == [{
+            'turn': 1, 'message': 't1', 'interruption_item': data['unnecessary_interruptions'][0],
+            'reason': 'Judge listed an answer as both avoidable intervention and interruption; counted only as intervention'}]
     value, meta = s.combine(scenario(), run(), {}, [], measures=parsed, measures_status='judged')
-    assert value['measure_avoidable_interventions'] == 2
-    assert value['measure_unnecessary_interruptions'] == 1
-    assert meta['measures']['inconsistencies'][0]['message'] == message
+    assert value['measure_avoidable_interventions'] == 1
+    assert value['measure_unnecessary_interruptions'] == len(kept)
+    assert meta['measures']['inconsistencies'] == parsed['inconsistencies']
 
 
 def test_errored_samples_are_not_labellable_and_labels_fail_clearly(rubric):

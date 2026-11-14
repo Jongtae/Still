@@ -373,14 +373,15 @@ def parse_measures(text, rubric, run):
     data['inconsistencies'] = [{'turn': r['turn'], 'reason': 'Judge listed an ask as both required and avoidable',
                               'avoidable_item': r} for r in overlaps]
     data['avoidable_interventions'] = [r for r in data['avoidable_interventions'] if r['turn'] not in required]
-    avoidable = {row['turn'] for row in data['avoidable_interventions']}
+    # Turn-only intervention items refer to the answer by default. A separate
+    # before_answer message can still be a valid interruption in that turn.
+    avoidable = {f"t{row['turn']}": row['turn'] for row in data['avoidable_interventions']}
     interruptions = []
     for row in data['unnecessary_interruptions']:
-        turn = int(row['message'].split('.', 1)[0][1:])
-        if turn in avoidable:
+        if row['message'] in avoidable:
             data['inconsistencies'].append({
-                'turn': turn, 'message': row['message'], 'interruption_item': row,
-                'reason': 'Judge listed a turn as both avoidable intervention and interruption; counted only as intervention'})
+                'turn': avoidable[row['message']], 'message': row['message'], 'interruption_item': row,
+                'reason': 'Judge listed an answer as both avoidable intervention and interruption; counted only as intervention'})
         else:
             interruptions.append(row)
     data['unnecessary_interruptions'] = interruptions
