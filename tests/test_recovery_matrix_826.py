@@ -597,8 +597,11 @@ def test_x2_ledger_deadline_includes_downtime(env):
     ledger = service.work_budget(work).ledger
     before = store.config(ledger.key)
     restarted = _restart(store)
-    with mock.patch.object(ledger, 'wall', return_value=before['deadline'] + 1):
-        assert ledger.refusal(40) == 'deadline'
+    # #841: the pre-restart ledger is fenced; the run that resumes keeps the original deadline.
+    assert ledger.refusal(40) == 'superseded'
+    resumed = WorkLedger(restarted.store, work, fresh=True)
+    with mock.patch.object(resumed, 'wall', return_value=before['deadline'] + 1):
+        assert resumed.refusal(40) == 'deadline'
     assert restarted.store.config(ledger.key)['deadline'] == before['deadline']
     assert restarted.store.config(ledger.key)['attempts'] == before['attempts']
 
@@ -790,7 +793,8 @@ def test_x6_active_crash_ledger_is_not_renewed(env):
     restarted = _restart(store)
     with restarted.store.db() as db:
         assert not renew_for_owner_prerequisite(db, work)
-    assert restarted.store.config(budget.ledger.key) == before
+    # #841: only the restart fence's epoch moved; nothing was renewed.
+    assert restarted.store.config(budget.ledger.key) == {**before, 'epoch': before['epoch'] + 1}
 
 
 @pytest.mark.parametrize('terminal', ['finish', 'fail'])

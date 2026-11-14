@@ -2103,7 +2103,7 @@ class WorkLedger:
  def fence_restart(db,job_ids):
   """Supersede the runs a restart cut off, inside ``QuickStore.recover``'s transaction (#841, matrix X4).
 
-  For each interrupted Work that holds its request's record, advance the epoch by one at the
+  For each interrupted Work that holds its request's active record, advance the epoch by one at the
   request-chain root ``_change`` uses, so a bridge or CLI child bound before the restart
   returns ``superseded`` even after the same Work id resumes.  Counters, ``deadline``,
   ``active`` and ``remaining_seconds`` stay as they are: nothing is replenished.  A Work
@@ -2120,8 +2120,9 @@ class WorkLedger:
     if not found:continue
     row=WorkLedger._validate(json.loads(found[0]))
    except (TypeError,ValueError):continue
-   # Another holder (a later retry or continuation) already supersedes this run's bridge.
-   if row.get('active_work_id',root)!=job_id:continue
+   # A paused record already refuses every spend, and its epoch may bind a budget-continue
+   # offer; another holder (a later retry or continuation) already supersedes this run's bridge.
+   if not row['active'] or row.get('active_work_id',root)!=job_id:continue
    row['epoch']+=1
    db.execute('UPDATE config SET value=? WHERE key=?',(json.dumps(row),key))
    advanced.append(key)
