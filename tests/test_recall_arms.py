@@ -39,6 +39,34 @@ def test_lexical_matches_existing_baseline_on_all_cases(data, seeded):
     assert [row['returned'] for row in actual['rows']] == [row['returned'] for row in expected['rows']]
 
 
+def test_lexical_context_reuses_lexical_with_context_first(monkeypatch):
+    calls = []
+
+    def factory(store, data):
+        def search(query, context=''):
+            calls.append((query, context))
+            return ['synthetic-id']
+        return search
+
+    monkeypatch.setattr(arms, 'lexical', factory)
+    retrieve = arms.lexical_context(None, {})
+    assert retrieve('request', 'prior turn') == ['synthetic-id']
+    assert retrieve('request') == ['synthetic-id']
+    assert calls == [('prior turn request', ''), ('request', '')]
+
+
+def test_context_first_order_matters_at_real_search_term_limit(data, seeded, dev_controls):
+    store, refs = seeded
+    request, context = dev_controls[:2]
+    query = ' '.join(f'unmatched{i}' for i in range(12)) + ' ' + request['content']
+    reference = arms.lexical_context(store, data)
+    diagnostic = arms.context_concat(store, data)
+    returned = reference(query, context['content'])
+    assert refs[context['ref']] in returned
+    assert refs[request['ref']] not in returned
+    assert diagnostic(query, context['content']) == []
+
+
 @pytest.mark.parametrize('name', arms.ARMS)
 def test_no_trap_hits_on_either_split(name, data, seeded):
     store, refs = seeded
@@ -108,7 +136,7 @@ def test_retriever_leaves_store_unchanged(name, data, seeded):
 
 def test_arm_metadata_agrees():
     assert arms.ARMS == {'lexical': arms.lexical, 'context': arms.context_aware,
-                         'context-concat': arms.context_concat}
+                         'context-concat': arms.context_concat, 'lexical-context': arms.lexical_context}
     assert arms.ARMS.keys() == arms.EVIDENCE.keys() == arms.DETERMINISTIC
     assert isinstance(arms.DETERMINISTIC, frozenset)
     assert set(arms.EVIDENCE.values()) == {'fixture (model-free)'}

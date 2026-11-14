@@ -22,6 +22,7 @@ from pathlib import Path
 
 
 VERSION = 'recall-pairs/1'
+VERSIONS = ('recall-pairs/1', 'recall-pairs/2')
 SPLITS = ('dev', 'heldout')
 KINDS = {'lexical-control', 'paraphrase', 'cross-language', 'short-follow-up',
          'dated-contradiction', 'correction', 'currentness', 'forgetting', 'harm-control'}
@@ -53,7 +54,7 @@ def _date(value):
 def validate(data):
     """Check the strict fixture schema and final-state labels; return data."""
     _object(data, ('version', 'owner', 'today', 'rows', 'cases'))
-    if data['version'] != VERSION:
+    if data['version'] not in VERSIONS:
         raise RecallPairsError('Unsupported fixture version')
     _text(data['owner'])
     _date(data['today'])
