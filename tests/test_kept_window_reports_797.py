@@ -4,6 +4,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from personal_agent import preparations as prep
+from personal_agent.quickstart_store import QuickStore
 from test_preparations import _WatchCase, call, watch_engine
 
 
@@ -41,6 +42,191 @@ class KeptWindowTests(_WatchCase):
                                     prep.REASON_PROMISED_REPORT, prep.REASON_WINDOW_CLOSED])
         self.assertEqual(len(self.notifications()), 2)
         self.assertEqual(len(self.watch_asks()), 2, 'a promised result never asks the quiet judgment')
+
+    def run_late_slot(self, minutes):
+        row = self.service.preparations.get(self.watched['id'])
+        self.now = row['due_at'] + 1
+        self.assertTrue(self.tick())
+        self.script = [{'content': '변화가 없어요.'}] * 2
+        self.assertTrue(self.service.run_one())
+        self.service.deliver_one()
+        self.now += minutes * 60
+        self.assertTrue(self.tick())
+        self.service.deliver_notification()
+        return self.service.preparations.get(row['id'])
+
+    def test_promised_report_survives_a_skipped_boundary_slot(self):
+        zone = ZoneInfo('Asia/Seoul')
+        due = datetime.fromtimestamp(self.now + 60, zone)
+        until = datetime.fromtimestamp(due.timestamp() + 60 * 60, zone)
+        self.schedule(due, until, report_every_minutes='20')
+        self.assertIsNone(self.watched['last_report_at'])
+        self.run_slot('변화가 없어요.')  # +0
+        row = self.run_late_slot(11)  # +10 settles after +20
+        self.assertEqual(row['last_decision_reason'], prep.REASON_PROMISED_REPORT)
+        self.assertEqual(row['last_report_at'], self.now)
+        self.assertEqual(row['due_at'], due.timestamp() + 30 * 60)
+        self.assertEqual(len(self.notifications()), 1)
+        outcomes = [self.run_slot('변화가 없어요.')['last_decision_reason'] for _ in range(4)]
+        self.assertEqual(outcomes, [prep.REASON_UNCHANGED, prep.REASON_PROMISED_REPORT,
+                                    prep.REASON_UNCHANGED, prep.REASON_WINDOW_CLOSED])
+        self.assertEqual(len(self.notifications()), 3)
+
+    def test_multiple_missed_intervals_produce_one_report_then_resume(self):
+        zone = ZoneInfo('Asia/Seoul')
+        due = datetime.fromtimestamp(self.now + 60, zone)
+        until = datetime.fromtimestamp(due.timestamp() + 90 * 60, zone)
+        self.schedule(due, until, report_every_minutes='20')
+        self.run_slot('변화가 없어요.')
+        row = self.run_late_slot(41)  # +10 settles after both +20 and +40
+        self.assertEqual(row['last_decision_reason'], prep.REASON_PROMISED_REPORT)
+        self.assertEqual(row['last_report_at'], self.now)
+        self.assertEqual(row['due_at'], due.timestamp() + 60 * 60)
+        self.assertEqual(len(self.notifications()), 1)
+        row = self.run_slot('변화가 없어요.')  # +60 is a fresh interval
+        self.assertEqual(row['last_decision_reason'], prep.REASON_PROMISED_REPORT)
+        self.assertEqual(len(self.notifications()), 2)
+
+    def test_boundary_report_is_decided_once_before_delivery(self):
+        zone = ZoneInfo('Asia/Seoul')
+        due = datetime.fromtimestamp(self.now + 60, zone)
+        until = datetime.fromtimestamp(due.timestamp() + 60 * 60, zone)
+        self.schedule(due, until, report_every_minutes='20')
+        self.run_slot('변화가 없어요.')
+        self.run_slot('변화가 없어요.')
+        self.now = due.timestamp() + 20 * 60
+        self.assertTrue(self.tick())
+        self.script = [{'content': '변화가 없어요.'}] * 2
+        self.assertTrue(self.service.run_one())
+        self.service.deliver_one()
+        running = self.service.preparations.get(self.watched['id'])
+        row = self.service.preparations.settle(running, self.now, notify_to=(77, 'gen-1'))
+        self.assertEqual(row['last_decision_reason'], prep.REASON_PROMISED_REPORT)
+        self.assertEqual(row['last_report_at'], self.now)
+        self.assertIsNone(row['last_notified_at'], 'the marker records a decision, not delivery')
+        self.assertEqual(prep.digest([row]), prep.digest([{**row, 'last_report_at': None}]))
+        self.assertIsNone(self.service.preparations.settle(running, self.now, notify_to=(77, 'gen-1')))
+        self.assertFalse(self.tick())
+        self.assertTrue(self.service.deliver_notification())
+        self.assertFalse(self.service.deliver_notification())
+        self.assertEqual(len(self.notifications()), 1)
+        row = self.run_slot('변화가 없어요.')  # +30 stays in the same interval
+        self.assertEqual(row['last_decision_reason'], prep.REASON_UNCHANGED)
+        self.assertEqual(row['last_report_at'], due.timestamp() + 20 * 60)
+        self.assertEqual(len(self.notifications()), 1)
+
+    def test_overdue_closing_report_takes_precedence(self):
+        zone = ZoneInfo('Asia/Seoul')
+        due = datetime.fromtimestamp(self.now + 60, zone)
+        until = datetime.fromtimestamp(due.timestamp() + 60 * 60, zone)
+        self.schedule(due, until, report_every_minutes='20')
+        self.run_slot('변화가 없어요.')
+        row = self.run_late_slot(51)  # +10 settles after the last slot, also owing a report
+        self.assertEqual(row['last_decision_reason'], prep.REASON_WINDOW_CLOSED)
+        self.assertIsNone(row['last_report_at'])
+        self.assertEqual(len(self.notifications()), 1)
+        self.assertFalse(self.tick())
+
+    def test_stopped_overdue_run_leaves_the_report_owed(self):
+        zone = ZoneInfo('Asia/Seoul')
+        due = datetime.fromtimestamp(self.now + 60, zone)
+        until = datetime.fromtimestamp(due.timestamp() + 60 * 60, zone)
+        self.schedule(due, until, report_every_minutes='20')
+        self.run_slot('변화가 없어요.')
+        self.now = due.timestamp() + 10 * 60 + 1
+        self.assertTrue(self.tick())
+        [_, run] = self.runs(self.watched['id'])
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='cancelled',response=NULL,delivery='none' WHERE id=?", (run['id'],))
+        self.now += 11 * 60
+        self.assertTrue(self.tick())
+        self.service.deliver_notification()
+        row = self.service.preparations.get(self.watched['id'])
+        self.assertEqual(row['last_decision_reason'], prep.REASON_RUN_STOPPED)
+        self.assertIsNone(row['last_report_at'])
+        self.assertEqual(len(self.notifications()), 0)
+        row = self.run_slot('변화가 없어요.')  # +30 carries the still-owed +20 report
+        self.assertEqual(row['last_decision_reason'], prep.REASON_PROMISED_REPORT)
+        self.assertEqual(len(self.notifications()), 1)
+
+    def test_daily_report_marker_does_not_suppress_the_next_days_report(self):
+        zone = ZoneInfo('America/New_York')
+        due = datetime(2026, 10, 31, 9, tzinfo=zone)
+        self.now = due.timestamp() - 60
+        self.schedule(due, due.replace(hour=10), recurrence='daily', report_every_minutes='20')
+        for _ in range(3):
+            row = self.run_slot('변화가 없어요.')
+        self.assertEqual(row['last_decision_reason'], prep.REASON_PROMISED_REPORT)
+        marker = row['last_report_at']
+        self.now = due.replace(hour=10).timestamp()
+        row = self.run_slot('변화가 없어요.')  # closing, then the next day (across DST)
+        self.assertEqual(row['last_decision_reason'], prep.REASON_WINDOW_CLOSED)
+        self.assertEqual(row['last_report_at'], marker)
+        self.assertEqual(row['due_at'], due.replace(month=11, day=1).timestamp())
+        row = self.run_slot('변화가 없어요.')
+        self.assertEqual(row['last_decision_reason'], prep.REASON_UNCHANGED)
+        self.run_slot('변화가 없어요.')
+        row = self.run_slot('변화가 없어요.')
+        self.assertEqual(row['last_decision_reason'], prep.REASON_PROMISED_REPORT)
+        self.assertEqual(row['last_report_at'], self.now)
+        self.assertEqual(len(self.notifications()), 3)
+
+    def test_restart_inside_window_reports_at_first_overdue_settlement(self):
+        zone = ZoneInfo('Asia/Seoul')
+        due = datetime.fromtimestamp(self.now + 60, zone)
+        until = datetime.fromtimestamp(due.timestamp() + 60 * 60, zone)
+        self.schedule(due, until, report_every_minutes='20')
+        self.run_slot('변화가 없어요.')
+        self.now = due.timestamp() + 10 * 60 + 1
+        self.assertTrue(self.tick())
+        self.now = due.timestamp() + 31 * 60
+        self.store = QuickStore(self.root)
+        self.service = self.make_service()
+        self.script = [{'content': '변화가 없어요.'}] * 2
+        self.assertTrue(self.service.run_one())
+        self.service.deliver_one()
+        self.assertTrue(self.tick())
+        self.service.deliver_notification()
+        row = self.service.preparations.get(self.watched['id'])
+        self.assertEqual(row['last_decision_reason'], prep.REASON_PROMISED_REPORT)
+        self.assertEqual(row['due_at'], due.timestamp() + 40 * 60)
+        self.assertEqual(len(self.notifications()), 1)
+        # A second restart keeps the marker durable and the next interval reportable.
+        self.store = QuickStore(self.root)
+        self.service = self.make_service()
+        self.assertEqual(self.service.preparations.get(row['id'])['last_report_at'], self.now)
+        row = self.run_slot('변화가 없어요.')
+        self.assertEqual(row['last_decision_reason'], prep.REASON_PROMISED_REPORT)
+        self.assertEqual(len(self.notifications()), 2)
+
+    def test_window_edit_resets_report_marker_only_when_reanchored(self):
+        zone = ZoneInfo('Asia/Seoul')
+        due = datetime.fromtimestamp(self.now + 60, zone)
+        until = datetime.fromtimestamp(due.timestamp() + 60 * 60, zone)
+        self.schedule(due, until, report_every_minutes='20')
+        for _ in range(3):
+            row = self.run_slot('변화가 없어요.')
+        marker = row['last_report_at']
+        self.assertIsNotNone(marker)
+        row = self.service.preparations.edit(row['id'], max_runs=7)
+        self.assertEqual(row['last_report_at'], marker)
+        for changes in ({'due': self.due_iso(60)}, {'timezone': 'Asia/Tokyo'}):
+            with self.subTest(changes=changes):
+                self.assertIsNone(prep.Preparations.edit_values(row, changes, self.now)['last_report_at'])
+        row = self.service.preparations.edit(row['id'], due=self.due_iso(60))
+        self.assertIsNone(row['last_report_at'])
+        self.assertEqual(row['rule_start'], row['due_at'])
+
+    def test_report_marker_migration_preserves_an_existing_window(self):
+        zone = ZoneInfo('Asia/Seoul')
+        due = datetime.fromtimestamp(self.now + 60, zone)
+        until = datetime.fromtimestamp(due.timestamp() + 60 * 60, zone)
+        self.schedule(due, until, report_every_minutes='20')
+        with self.store.db() as db:
+            db.execute('ALTER TABLE preparations DROP COLUMN last_report_at')
+            prep.migrate(db)
+            prep.migrate(db)
+        self.assertEqual(self.service.preparations.get(self.watched['id']), self.watched)
 
     def test_closing_queues_one_notification_when_the_quiet_judge_raises(self):
         self.watched = self.watch(runs=1)
