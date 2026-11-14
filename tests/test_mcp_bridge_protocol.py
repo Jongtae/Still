@@ -248,6 +248,17 @@ class ExposedToolWireBoundary(unittest.TestCase):
     def _listed(self):
         return self._wire({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})[2]["result"]["tools"]
 
+    def test_turn_record_keeps_what_the_bridge_actually_served(self):
+        """#825: the attempt's served identity is the real bridge's ``tools/list`` answer."""
+        from personal_agent.attempt_identity import offered_tools_identity
+        listed = self._listed()
+        job_id = self.store.jobs()[0]["id"]
+        entry = self.store.turn_provenance(job_id)["attempt_inputs"][-1]
+        self.assertEqual((entry["route"], entry["input"]), ("subscription", "sent"))
+        self.assertEqual(entry["served"], offered_tools_identity(listed, representation="still-host-mcp:bridge"))
+        self.assertEqual(entry["offered"]["representation"], "still-host-mcp:parent-listing")
+        self.assertEqual(entry["native"]["digest"], None)
+
     def test_listed_local_tools_are_invocable_through_the_real_bridge(self):
         """Positive control: exposure and host invocation agree for local tools."""
         names = [tool["name"] for tool in self._listed()]

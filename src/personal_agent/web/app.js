@@ -516,6 +516,11 @@ function provenanceView(task){const record=task.provenance,box=devNode('section'
  fact(t('보고된 모델'),record.reported_model||(record.route==='direct-api'?t('요청한 모델과 같거나 보고되지 않음'):none));
  fact(t('Still 지침'),record.instructions_version?`${record.instructions_version} (sha256 ${record.instructions_digest||'-'})`:none);
  if(record.instructions_channel)fact(t('지침 전달 방식'),record.instructions_channel);
+ // #825: each attempt's instructions and offered-tool identities; "-" with a reason where Still cannot observe them.
+ const toolSet=set=>set&&typeof set==='object'?(set.digest?`${set.count} (sha256 ${set.digest})`:`- (${set.unavailable||none})`):'-';
+ if(Array.isArray(record.attempt_inputs)&&record.attempt_inputs.length)fact(t('시도별 입력'),record.attempt_inputs.map(row=>[`#${row.attempt??'-'} ${row.route||'-'}`,row.input||'-',
+  `${t('지침')} ${row.instructions_digest||'-'}`,`${t('제공한 도구')} ${toolSet(row.offered)}`,...(row.served?[`${t('브리지가 제공한 도구')} ${toolSet(row.served)}`]:[]),
+  ...(row.native?[`${t('CLI 자체 도구')} ${toolSet(row.native)}`]:[])].join(' · ')).join('\n')+(record.attempt_inputs_dropped?'\n'+t('이전 시도 {count}개 생략',{count:record.attempt_inputs_dropped}):''));
  if(Number.isFinite(record.context_messages))fact(t('함께 보낸 대화'),t('{count}개 메시지',{count:record.context_messages})+(record.context_mode?` (${record.context_mode})`:''));
  fact(t('외부 전송 제한'),(record.egress_taint||[]).join(', ')||t('없음'));
  fact(t('결과'),record.status||none);if(record.failure_class)fact(t('실패 종류'),record.failure_class);
@@ -535,6 +540,9 @@ function provenanceView(task){const record=task.provenance,box=devNode('section'
 // #826 이 답변에 쓴 정보: which owner information this Work used and where it went,
 // built by the backend from Still's own records (references and short labels, never values).
 const INFO_CATEGORY={profile:()=>t('프로필'),memory:()=>t('기억'),calendar:()=>t('캘린더'),files:()=>t('파일'),current_context:()=>t('현재 상황'),notes:()=>t('메모'),browser:()=>t('로그인한 브라우저 페이지'),settings:()=>t('설정'),spliced:()=>t('요청에 붙인 자료'),prepared:()=>t('준비해 둔 답변'),records:()=>t('이전 답변의 사용 기록')};
+Object.assign(I18N["en"],{"시도별 입력": "Input per attempt", "지침": "instructions", "제공한 도구": "tools offered", "브리지가 제공한 도구": "tools served by the bridge", "CLI 자체 도구": "CLI's own tools", "이전 시도 {count}개 생략": "{count} earlier attempts not kept"});
+Object.assign(I18N["ja"],{"시도별 입력": "試行ごとの入力", "지침": "指示", "제공한 도구": "提供したツール", "브리지가 제공한 도구": "ブリッジが提供したツール", "CLI 자체 도구": "CLI 独自のツール", "이전 시도 {count}개 생략": "以前の試行 {count} 件は保持していません"});
+Object.assign(I18N["zh-CN"],{"시도별 입력": "每次尝试的输入", "지침": "指令", "제공한 도구": "提供的工具", "브리지가 제공한 도구": "桥接提供的工具", "CLI 자체 도구": "CLI 自带工具", "이전 시도 {count}개 생략": "未保留之前的 {count} 次尝试"});
 Object.assign(I18N["en"],{"AI 사용량": "AI usage", "도구 호출 일부만 보고됨": "Tool calls partially reported"});
 Object.assign(I18N["ja"],{"AI 사용량": "AI 使用量", "도구 호출 일부만 보고됨": "ツール呼び出しは一部のみ報告"});
 Object.assign(I18N["zh-CN"],{"AI 사용량": "AI 用量", "도구 호출 일부만 보고됨": "工具调用仅部分报告"});

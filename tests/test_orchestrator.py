@@ -617,13 +617,18 @@ class Redelegation(Harness):
         self.assertEqual(row['status'], 'partial')
         self.assertIn(GOAL_NOT_SHOWN, row['owner_cause'])
 
-    def test_a_cli_attempt_that_could_not_be_judged_is_partial_with_the_unknown_stated(self):
+    def test_an_unavailable_judgment_is_recorded_without_a_fixed_reply_suffix(self):
         self.script([plan('codex', 'Look it up.')], goals=[])
         job, row = self.run_work('찾아줘')
         last = self.events(job, 'evaluated')[-1][1]
         self.assertEqual((last['outcome'], last['stop']), ('unjudged', 'unjudged'))
         self.assertEqual(row['status'], 'partial')
         self.assertIn(GOAL_UNJUDGED, row['owner_cause'])
+        self.assertEqual(len(self.asked_goals), 1, 'the outcome judgment still runs')
+        self.assertEqual(row['goal_outcome'], 'not_judged')
+        self.assertIsNone(row['owner_note'])
+        self.assertEqual(self.service.telegram_result_text(row['response'], row['owner_cause'], row['status'],
+                                                           note=row['owner_note']), row['response'])
 
     def test_a_complete_reply_on_the_last_turns_is_still_judged(self):
         # #1445 rehearsal: the right answer on the Work's last turns was left unjudged and the Work
