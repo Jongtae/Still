@@ -11391,5 +11391,59 @@
   "en": "Opened line {line}. Now schedule its work with schedule_preparation line={line}. Still cannot send its own message in this conversation, so say this in your reply, as written: {text}",
   "ja": "任された仕事 {line} を開きました。schedule_preparation に line={line} を渡して実行を予約してください。この会話では Still が別に送れないため、返答でこの文をそのまま伝えてください: {text}",
   "zh": "已开启受托事项 {line}。现在请用 schedule_preparation 并设置 line={line} 安排其运行。在此对话中 Still 无法单独发送消息，请在回复中原样转达这句话：{text}"
- }
+ },
+ "information_use.comparison_cut_calls": {
+  "ko": "- 이 보기에서는 처음 {limit}개 호출까지만 비교했어요. 나머지는 확인하지 않았어요.",
+  "en": "- This view compared only the first {limit} calls; remaining calls were not checked.",
+  "ja": "- この表示では最初の {limit} 件だけ照合しました。残りは未確認です。",
+  "zh": "- 此视图仅比对了前 {limit} 次调用，其余未检查。"
+ },
+ "information_use.comparison_cut_outbound_unrecorded": {
+  "ko": "- 기록하지 않은 입력이나 가려진 내용은 비교하지 않았어요. 전송되지 않았다는 뜻은 아니에요.",
+  "en": "- Unrecorded or redacted outbound input was not compared. This does not mean nothing was sent.",
+  "ja": "- 未記録または伏せられた送信内容は照合していません。未送信という意味ではありません。",
+  "zh": "- 未记录或已遮蔽的发送内容未作比对。这不代表没有发送内容。"
+ },
+ "information_use.comparison_cut_work_writes_unavailable": {
+  "ko": "- 이 작업의 저장 값은 지금 복구할 수 있는 것만 나중 비교로 확인했어요. 상속·대기 중인 값과 복구하지 못한 저장 값은 확인하지 않았어요.",
+  "en": "- Recoverable Work writes were checked as a later comparison only. Inherited, pending and unrecoverable writes were not checked.",
+  "ja": "- 復元できる作業の保存値のみ、後の照合として確認しました。継承・保留中・復元不能の値は未確認です。",
+  "zh": "- 仅将可恢复的任务写入值作为事后比对。继承、待处理和无法恢复的写入值未检查。"
+ },
+ "information_use.comparison_cut_memory_history_unavailable": {
+  "ko": "- 기억은 호출 시각의 생성·교체 기록으로 비교했어요. 잊거나 삭제한 기억과 되돌리기 때문에 복원할 수 없는 과거 상태는 확인하지 않았어요.",
+  "en": "- Memory comparison uses creation and supersession at call time. Forgotten/deleted Memory and historical states unavailable after undo were not checked.",
+  "ja": "- 記憶は呼出時点の作成・置換記録で照合しました。忘却・削除済みの記憶や取り消し後に復元できない過去の状態は未確認です。",
+  "zh": "- 记忆按调用时的创建和替代记录比对。已遗忘、删除的记忆和撤销后无法恢复的历史状态未检查。"
+ },
+ "information_use.comparison_cut_texts": {
+  "ko": "- 호출마다 처음 {limit}개 텍스트까지만 비교했어요.",
+  "en": "- Compared only the first {limit} texts per call.",
+  "ja": "- 呼出ごとに最初の {limit} 件のテキストのみ照合しました。",
+  "zh": "- 每次调用仅比对前 {limit} 条文本。"
+ },
+ "information_use.comparison_cut_matches": {
+  "ko": "- 호출마다 일치 표시는 {limit}개까지만 보여요.",
+  "en": "- Match labels are limited to {limit} per call.",
+  "ja": "- 一致ラベルは呼出ごとに {limit} 件までです。",
+  "zh": "- 每次调用的匹配标签限于 {limit} 个。"
+ },
+ "information_use.later_work_writes": {
+  "ko": "나중 비교: 현재 복구한 작업 저장 값과의 겹침이며 호출 당시의 증거는 아니에요",
+  "en": "Later comparison against recoverable Work writes; not call-time evidence",
+  "ja": "後の照合：復元できた作業の保存値との一致であり、呼出時点の証拠ではありません",
+  "zh": "事后比对：与当前可恢复任务写入值重叠，并非调用时证据"
+ },
+ "information_use.later_memory": {
+  "ko": "나중 비교: 현재 기억과의 겹침이며 호출 당시의 증거는 아니에요",
+  "en": "Later comparison against current Memory; not call-time evidence",
+  "ja": "後の照合：現在の記憶との一致であり、呼出時点の証拠ではありません",
+  "zh": "事后比对：与当前记忆重叠，并非调用时证据"
+ },
+ "information_use.view_time_comparison": {
+ "ko": "새 비교는 이 보기를 열 때 남아 있는 호출·기억 기록으로 했어요. 호출 당시의 비교 결과는 아니며, 삭제되거나 되돌린 과거 기록은 빠질 수 있어요. 이전에 기록한 비교 결과는 그대로 표시해요.",
+ "en": "New comparisons run when this view opens, using retained call and Memory history. They are not call-time results; deleted or undone history may be missing. Earlier recorded results stay as recorded.",
+ "ja": "新しい照合はこの表示を開いた時に残存する呼出・記憶記録で行います。呼出時点の照合結果ではなく、削除・取り消し済みの履歴は欠ける場合があります。以前の記録済み結果はそのまま表示します。",
+ "zh": "新的比对在打开此视图时使用保留的调用和记忆历史进行，并非调用时的比对结果；已删除或撤销的历史可能缺失。先前记录的结果按原记录显示。"
+}
 }

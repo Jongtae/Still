@@ -1305,6 +1305,57 @@ class QuickStore:
         with self.db() as db:
             return [self._memory_row(r) for r in db.execute('SELECT * FROM memories WHERE '+where+' ORDER BY created DESC,id DESC LIMIT ? OFFSET ?',(*parameters,limit,offset))]
 
+    def comparison_memories(self, owner_id, at, limit):
+        """Bounded retained Memory current at ``at``; forgetting always wins (#820).
+
+        Successors include forgotten/retracted rows: dropping them would revive
+        their predecessors. Undo cannot be reconstructed from these columns;
+        the view explicitly names that historical limitation.
+        """
+        with self.db() as db:
+            owner=self._memory_binding(owner_id)
+            # Undo mutates states in place (including clearing invalidated_at).
+            # When it can affect this time window, do not claim reconstruction.
+            uncertain=db.execute("SELECT 1 FROM memories WHERE owner_key=? AND state='retracted' AND created<=? LIMIT 1",(owner,at)).fetchone()
+            if not uncertain and db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='owner_state_receipts'").fetchone():
+                uncertain=db.execute("SELECT 1 FROM owner_state_receipts WHERE owner_key=? AND kind='memory' AND settled IS NOT NULL AND created<=? LIMIT 1",(owner,at)).fetchone()
+            if uncertain:
+                return [dict(row, comparison='later_memory') for row in db.execute(
+                    "SELECT memory_key,content FROM memories WHERE owner_key=? AND state='current' ORDER BY created DESC,id DESC LIMIT ?",
+                    (owner,limit))]
+            return [dict(row) for row in db.execute("""
+                SELECT m.id,m.memory_key,m.content FROM memories m
+                WHERE m.owner_key=? AND m.created<=?
+                  AND m.state IN ('current','superseded','corrected')
+                  AND (m.invalidated_at IS NULL OR m.invalidated_at>?)
+                  AND NOT EXISTS (SELECT 1 FROM memories n
+                    WHERE n.owner_key=m.owner_key AND n.supersedes=m.id AND n.created<=?)
+                ORDER BY m.created DESC,m.id DESC LIMIT ?
+                """,(self._memory_binding(owner_id),at,at,at,limit))]
+
+    def comparison_work_writes(self, owner_id, work_id, limit):
+        """Recover existing private writes, never create a comparison snapshot.
+
+        Notes have no Work foreign key (save_note uses a content-derived id),
+        so only a bounded recent window is inspected. Caller labels these as a
+        later comparison, and names omitted/inherited/pending writes as a gap.
+        """
+        owner=self._memory_binding(owner_id);work=self._work_binding(work_id)
+        with self.db() as db:
+            rows=[r['content'] for r in db.execute("""SELECT content FROM memory_candidates c
+                WHERE owner_key=? AND work_key=? AND state NOT IN ('forgotten','retracted')
+                AND NOT (state='accepted' AND substr(memory_key,1,8)='profile.')
+                AND (resulting_memory_id IS NULL OR EXISTS
+                  (SELECT 1 FROM memories m WHERE m.id=c.resulting_memory_id AND m.state<>'forgotten'))
+                ORDER BY created DESC LIMIT ?""",(owner,work,limit))]
+            rows.extend(r['content'] for r in db.execute("""SELECT content FROM memories
+                WHERE owner_key=? AND work_key=? AND state IN ('current','superseded','corrected')
+                AND substr(memory_key,1,8)<>'profile.' ORDER BY created DESC LIMIT ?""",(owner,work,limit)))
+            for row in db.execute('SELECT id,content FROM notes ORDER BY created DESC LIMIT ?', (limit,)):
+                if row['id'] in (work_id,hashlib.sha256((work_id+str(row['content'])).encode()).hexdigest()):
+                    rows.append(row['content'])
+        return rows[:limit]
+
     def _work_digests(self, db):
         """``{sha256(work id): work id}`` for every retained Work, kept incrementally.
 
