@@ -300,3 +300,61 @@ Run each checkout in a fresh process; `--src` selects its production imports, Gi
 Reuse decision: **Adapt** the existing eval package. Standard-library JSON, argparse, hashing, file permissions and timing cover serialization/CLI/report needs; the shipped `ModelAdapter`, decision policy, orchestration and qualification runners cover the measured boundary. Existing sandbox, seed resolution, Git-head and report-folder conventions supply the thin eval glue. No new dependency, licence, runtime authority, data destination or production component is introduced (Still remains AGPL-3.0-only).
 
 #42 unavailable-route follow-up reuse review: **Adapt** the shipped `DecisionRoutes._queue_cli_update` / `run_due_qualification` job and `RoutedDecisionEngine` admission with the harness's `CallCap` and `_MeasuredEngine`. Search evidence: `decision_routes.py` qualification jobs, `decision_qualification.qualify`, `bounded_execution.strict_binding_mismatch`, and `Sandbox.prepare`. Platform/stdlib facilities cover copying, counting and reporting. Provider SDKs and external evaluation frameworks cannot replace Still's qualification/activation contract; no new component or dependency is needed. This reuses the repository's current maintained path and official CLI boundary; no external release/version claim or network research is made in this offline fix. Licence remains AGPL-3.0-only; platform compatibility, destinations and authority remain those of the shipped route. The thin glue supplies synchronous scheduling and call admission, avoiding a second qualification implementation.
+
+## C2 continuity
+
+From `evals/` (with the eval extra installed), C2 runs exactly the eight bundled
+`exp-continuity` scenarios on fresh folders, using Codex and three epochs by default:
+
+```sh
+python -m agentos_eval continuity run --worker codex --epochs 3 --cap-usd 10 --judge openai/gpt-6.1-terra --instances 3 --turn-timeout 900 --display plain
+python -m agentos_eval continuity report --log <inspect-log> --labels /tmp/human-labels.json
+python -m agentos_eval continuity compare <baseline.c2.json> <candidate.c2.json> --labels /tmp/baseline-labels.json --labels /tmp/candidate-labels.json
+python -m agentos_eval continuity labels-template <report.c2.json> [extra-scenario-id ...]
+```
+
+`--seed` and `AGENTOS_EVAL_SEED` are refused, as is `--judge none`; local scenarios
+are never loaded. `--rubric PATH` overrides the default
+[initiative rubric](continuity/initiative-rubric-v1.json), which defines:
+
+- **Avoidable interventions:** AI asks for known facts or reconfirms entrusted actions, indexed by turn and kind.
+- **Required approvals:** genuine owner gates, counted separately by the judge and by observed tool requests; never offsets to interventions.
+- **Unnecessary interruptions:** messages with no new information or needed decision, indexed as `t<turn>` or `t<turn>.b<j>`.
+- **Proactive usefulness:** relevance, correctness and saved effort of an unsolicited delivery, graded 0/1/2; `not_observed` when the record establishes no delivery.
+
+C2 writes `<eval home>/reports/<run-id>.c2.json` and `.c2.md` beside the sweep
+report. Dev and held-out results remain separate, with each epoch, spread,
+per-turn latency, item reasons, approval-count discrepancies and judge/human
+disagreements. More than one disagreement in any five consecutive labels
+(or all labels when fewer than five) makes that measure uncertain. Comparisons
+require identical fixtures, rubric, worker, judge and epochs; stopped sweeps
+cannot be compared. Gains inside epoch spread do not count as improvements.
+
+Held-out cases are not tuned against: a change motivated by a held-out failure
+moves that case to dev and needs a new held-out case. A better verdict requires
+both dev and certain held-out gains, no deterministic-check regression, and no
+worse held-out measure. Required approval counts have no better direction.
+
+The sweep's evidence class is **live local observation of the sandbox, judged**;
+model-free fixture tests provide fixture evidence only. New preparation rows can retain a bounded `last_result` excerpt and
+`last_delivery`/`last_work_id`. A typed `line_account` row whose reply was sent
+on a distinct Work establishes an observed account output. Generic preparation
+receipts lack scheduled-versus-run-now origin and delivery time; `before_answer`
+text alone proves no unsolicited delivery. Existing-row updates, separate
+notifications and full report bodies remain unsupported. C2 cases whose
+reports never come due remain `not_observed`. Approval event counts are lower bounds:
+the public task endpoint hides some approval codes, and the recorder caps tool
+events at 40 per turn. Judge token usage and settled charges are reported;
+subscription-worker usage is explicitly **unavailable**, never zero. Fixture
+examples of unrecorded proactive deliveries are unsupported and excluded from
+record-supported judge/human calibration. No live acceptance claim follows
+from these tests.
+
+Reuse review for #853: **Adapt** the existing Inspect task/log and sweep APIs,
+`scoring._transcript`, `JudgeBudget.reserve`/`settle`, `Redactor.for_seed`,
+`report.records_from_samples`, and the strict `recall_pairs.paired_index` helper
+extracted from its comparison. **Adopt** stdlib JSON, hashing, descriptive
+statistics and argparse; **Build** only C2 aggregation and the specified decision
+rule. No dependency, production authority or destination changes. This offline
+review uses the existing pinned evaluation stack; no external maintenance or
+release claim is made.

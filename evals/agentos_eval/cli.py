@@ -101,17 +101,22 @@ def cmd_budget(args):
     print(json.dumps(JudgeBudget.from_environ(eval_home() / 'judge-budget.json').status(), indent=1))
 
 
-def _write(log, run):
+def _write(log, run, folder=None):
     records = records_from_samples(log.samples)
     stopped = usage_limit_stops(log)
     if stopped:
         run = {**run, 'stopped': stopped}  # #887: an incomplete sweep is never a later trend baseline
-    json_path, md_path, report = write_report(records, eval_home() / 'reports', run)
+    json_path, md_path, report = write_report(records, folder or eval_home() / 'reports', run)
     print(md_path.read_text(encoding='utf-8'))
     print(f'report: {json_path}\nlog: {log.location}')
     if stopped:
         print(f"STOPPED: a subscription usage limit was hit ({stopped['tripped_by']}); "
               f"{stopped['skipped']} runs were not started. Results cover only the runs before it.")
+    if run.get('continuity'):
+        from . import continuity
+        result = continuity.build_report(records, run, run['continuity'])
+        _, path = continuity.write_report(result, folder or eval_home() / 'reports')
+        print(path)
     return report
 
 
@@ -157,27 +162,31 @@ def run_world_sweep(args, run_scenario=None, pool_factory=None, folder=None):
     return 1 if report['trend']['regressions'] else 0
 
 
-def cmd_sweep(args):
+def cmd_sweep(args, folder=None, inspect_eval=None, task_factory=None, key_loader=None):
     if args.world:
         return run_world_sweep(args)
-    from inspect_ai import eval as inspect_eval  # the eval extra
-    from .task import agentos_secretary
+    if inspect_eval is None or task_factory is None:
+        from .task import agentos_secretary, inspect_eval as default_eval
+        inspect_eval = inspect_eval or default_eval
+        task_factory = task_factory or agentos_secretary
     judge = args.judge or os.environ.get('AGENTOS_EVAL_JUDGE_MODEL') or 'openai/gpt-6.1-terra'
-    key_source = ensure_judge_key(judge)
+    key_source = (key_loader or ensure_judge_key)(judge)
     if args.cap_usd is not None:
         os.environ['AGENTOS_EVAL_JUDGE_CAP_USD'] = str(args.cap_usd)
     seed = resolve_seed(args.seed)
     run = {'id': run_id(), 'started': time.time(), 'git_head': git_head(), 'worker': args.worker,
            'instances': args.instances, 'epochs': args.epochs, 'judge': judge, 'judge_key': key_source,
            'seed': seed.name if seed else 'fresh'}
-    task = agentos_secretary(scenarios=args.scenarios, split=args.split, worker=args.worker,
+    if getattr(args, 'continuity', None):
+        run['continuity'] = args.continuity
+    task = task_factory(scenarios=args.scenarios, split=args.split, worker=args.worker,
                              instances=args.instances, seed=str(seed or ''), judge=judge,
                              turn_timeout=args.turn_timeout, include_local=not args.no_local,
-                             keep_sandboxes=args.keep_sandboxes)
+                             keep_sandboxes=args.keep_sandboxes, measures=getattr(args, 'measures', ''))
     logs = inspect_eval(task, epochs=args.epochs, max_samples=args.instances, limit=args.limit,
                         log_dir=str(eval_home() / 'logs'), display=args.display, fail_on_error=False,
                         tags=['agentos-eval', args.worker], metadata=run)
-    report = _write(logs[0], run)
+    report = _write(logs[0], run, folder)
     if usage_limit_stops(logs[0]):
         return 2
     return 1 if report['trend']['regressions'] else 0
@@ -191,9 +200,13 @@ def usage_limit_stops(log):
     return {'tripped_by': summary.metadata['tripped_by'], 'skipped': len(summary.early_stops)}
 
 
+def read_log(path):
+    from .task import read_eval_log
+    return read_eval_log(path)
+
+
 def cmd_report(args):
-    from inspect_ai.log import read_eval_log
-    log = read_eval_log(args.log)
+    log = read_log(args.log)
     run = dict((log.eval.metadata or {}))
     run.setdefault('id', run_id())
     _write(log, run)
@@ -208,6 +221,76 @@ def cmd_judgments(args):
             json.loads(Path(args.baseline).read_text()), json.loads(Path(args.head).read_text()))))
     else:
         judgments.live_run(args)
+
+
+def run_continuity(args, sweep=None, folder=None):
+    """C2 fixes selection/freshness, then delegates all execution to cmd_sweep."""
+    from . import continuity
+    if getattr(args, 'seed', None) is not None or os.environ.get('AGENTOS_EVAL_SEED'):
+        raise SystemExit('C2 refuses --seed/AGENTOS_EVAL_SEED: use a fresh data folder.')
+    judge = args.judge or os.environ.get('AGENTOS_EVAL_JUDGE_MODEL') or 'openai/gpt-6.1-terra'
+    if judge == 'none':
+        raise SystemExit('C2 refuses --judge none: judged measures need a judge.')
+    if args.epochs < 1 or args.instances < 1:
+        raise SystemExit('C2 epochs and instances must be positive.')
+    loaded = [s for s in scenario_module.load(include_local=False) if 'exp-continuity' in s['tags']]
+    if not loaded:
+        raise SystemExit('No bundled C2 scenarios.')
+    args.seed, args.no_local, args.world, args.split = '', True, '', ''
+    args.limit, args.keep_sandboxes = None, False
+    args.judge, args.scenarios, args.measures = judge, ','.join(s['id'] for s in loaded), str(args.rubric)
+    args.continuity = continuity.fixture_support(loaded, args.rubric)
+    return (sweep or cmd_sweep)(args, **({'folder': folder} if folder is not None else {}))
+
+
+def cmd_continuity(args):
+    from . import continuity
+    if args.action == 'run':
+        return run_continuity(args)
+    if args.action == 'report':
+        log = read_log(args.log)
+        run = dict(log.eval.metadata or {})
+        if not run.get('continuity'):
+            raise ValueError('Log lacks frozen C2 fixture provenance; run continuity run first.')
+        stopped = usage_limit_stops(log)
+        if stopped:
+            run['stopped'] = stopped
+        result = continuity.build_report(records_from_samples(log.samples), run, run['continuity'], args.labels)
+        _, path = continuity.write_report(result, eval_home() / 'reports')
+        print(path)
+    elif args.action == 'compare':
+        reports = [json.loads(Path(p).read_text()) for p in (args.baseline, args.candidate)]
+        if args.labels:
+            # Each file is strict against its arm. Reject unknown or ambiguous run ids.
+            by_run = {r['live_evidence']['id']: r for r in reports}
+            if len(by_run) != 2:
+                raise ValueError('Comparison labels require distinct run ids')
+            combined = {key: {'version': 'initiative-labels-v1', 'rubric': r['fixture_support']['rubric_version'],
+                              'labels': []} for key, r in by_run.items()}
+            for path in args.labels:
+                data = json.loads(Path(path).read_text())
+                if (not isinstance(data, dict) or not {'version', 'rubric', 'labels'} <= set(data)
+                        or set(data) - {'version', 'rubric', 'labels', '_note'}
+                        or data['version'] != 'initiative-labels-v1' or not isinstance(data['labels'], list)
+                        or any(data['rubric'] != r['fixture_support']['rubric_version'] for r in reports)):
+                    raise ValueError('Invalid comparison labels file')
+                for label in data['labels']:
+                    if not isinstance(label, dict) or label.get('run_id') not in by_run:
+                        raise ValueError('Label sample does not exist in either report')
+                    combined[label['run_id']]['labels'].append(label)
+            for key, r in by_run.items():
+                r['uncertainty']['agreement'] = continuity.agreement(r, combined[key])
+        result = continuity.compare(*reports)
+        markdown = continuity.compare_markdown(result)
+        base = Path(args.candidate).with_suffix('')
+        jp, mp = Path(str(base) + '.compare.json'), Path(str(base) + '.compare.md')
+        jp.write_text(json.dumps(result, indent=2) + '\n')
+        mp.write_text(markdown)
+        print(markdown)
+        print(mp)
+    else:
+        result = continuity.labels_template(json.loads(Path(args.report).read_text()), args.ids)
+        print(json.dumps(result, indent=2))
 
 
 def main(argv=None):
@@ -261,9 +344,32 @@ def main(argv=None):
     comparison = actions.add_parser('compare')
     comparison.add_argument('baseline')
     comparison.add_argument('head')
+    from .continuity import DEFAULT_RUBRIC
+    c2 = sub.add_parser('continuity', help='C2 judged continuity experiment')
+    c2actions = c2.add_subparsers(dest='action', required=True)
+    c2run = c2actions.add_parser('run')
+    c2run.add_argument('--worker', choices=('codex',), default='codex')
+    c2run.add_argument('--epochs', type=int, default=3)
+    c2run.add_argument('--cap-usd', type=float)
+    c2run.add_argument('--judge', default='')
+    c2run.add_argument('--instances', type=int, default=3)
+    c2run.add_argument('--turn-timeout', type=int, default=900)
+    c2run.add_argument('--display', default='plain')
+    c2run.add_argument('--rubric', type=Path, default=DEFAULT_RUBRIC)
+    c2run.add_argument('--seed', default=None, help='refused: C2 always uses fresh data')
+    c2report = c2actions.add_parser('report')
+    c2report.add_argument('--log', required=True)
+    c2report.add_argument('--labels', type=Path)
+    c2compare = c2actions.add_parser('compare')
+    c2compare.add_argument('baseline')
+    c2compare.add_argument('candidate')
+    c2compare.add_argument('--labels', type=Path, action='append', default=[])
+    c2labels = c2actions.add_parser('labels-template')
+    c2labels.add_argument('report')
+    c2labels.add_argument('ids', nargs='*', help='additional scenario ids already in the report')
     args = parser.parse_args(argv)
     handler = {'snapshot': cmd_snapshot, 'scenarios': cmd_scenarios, 'sweep': cmd_sweep, 'report': cmd_report,
-               'budget': cmd_budget, 'judgments': cmd_judgments}[args.command]
+               'budget': cmd_budget, 'judgments': cmd_judgments, 'continuity': cmd_continuity}[args.command]
     return handler(args) or 0
 
 

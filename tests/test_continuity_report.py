@@ -1,0 +1,619 @@
+"""C2 harness fixture evidence: no Inspect, model, network or socket required."""
+import asyncio
+import copy
+import io
+import json
+import math
+import sys
+from argparse import Namespace
+from contextlib import redirect_stdout
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'evals'))
+from agentos_eval import cli, continuity as c, scenarios, scoring as s
+from agentos_eval.budget import JudgeBudget
+from agentos_eval.report import records_from_samples
+
+
+@pytest.fixture
+def rubric(tmp_path):
+    data = {'version': 'initiative-rubric-v1', 'applies_to_tag': 'exp-continuity',
+            'messages': 't<turn>, t<turn>.b<j>',
+            'measures': {name: {'kind': 'score' if name == 'proactive_usefulness' else
+                              'message_list' if name == 'unnecessary_interruptions' else 'turn_list',
+                              'definition': f'definition {name}'} for name in s.MEASURES},
+            'judge_instructions': 'CUSTOM INSTRUCTIONS: judge only visible evidence',
+            'output_schema': reply(), 'agreement': {'window': 5, 'max_disagreements': 1}}
+    path = tmp_path / 'rubric.json'
+    path.write_text(json.dumps(data))
+    return data, path
+
+
+def reply(n=0, approvals=(), interruptions=(), proactive=2):
+    return {'avoidable_interventions': [{'turn': i, 'kind': 'asked_known_fact', 'reason': 'asked again'}
+                                         for i in range(1, n + 1)],
+            'required_approvals': [{'turn': i, 'reason': 'required'} for i in approvals],
+            'unnecessary_interruptions': [{'message': m, 'reason': 'chatter'} for m in interruptions],
+            'proactive_usefulness': {'score': proactive, 'reason': 'the judge claimed useful'}}
+
+
+def scenario(ident='dev-case', split='dev'):
+    return scenarios.validate({'id': ident, 'split': split, 'turns': ['first', 'second', 'third'],
+                               'rubric': ['follow_through']})
+
+
+def run():
+    return {'worker': 'codex', 'turns': [
+        {'say': f'owner {i}', 'answer': f'answer {i}', 'status': 'succeeded', 'elapsed': i,
+         'sent_at': f'2026-11-14T12:0{i}:00+09:00', 'events': [{'tool': 'save_memory', 'status': 'succeeded'}],
+         'before_answer': [{'text': 'I did something else useful', 'after_s': 0.5}]}
+        for i in range(1, 4)], 'diff': {'preparations': [{'id': 1, 'state': 'active'}]}}
+
+
+def test_prompt_reuses_transcript_and_labels_all_messages(rubric):
+    r = run()
+    r['diff']['current_state'] = [{'predicate': 'situation', 'value': 'PRIVATE SUMMARY'}]
+    prompt = s.measures_prompt(scenario(), r, rubric[0])
+    for text in ('AGENTOS t1 ', 'AGENTOS t1.b1 before', 'AGENTOS t3 ', 'AGENTOS t3.b1 before',
+                 'sent 2026-11-14T12:01:00', 'save_memory succeeded', 'new reminder/preparation',
+                 'CUSTOM INSTRUCTIONS', 'definition avoidable_interventions', 'output schema', 'not_observed'):
+        assert text in prompt
+    assert 'PRIVATE SUMMARY' not in prompt
+
+
+@pytest.mark.parametrize('name,item', [
+    ('avoidable_interventions', {'turn': 4, 'kind': 'asked_known_fact', 'reason': ''}),
+    ('avoidable_interventions', {'turn': 0, 'kind': 'asked_known_fact', 'reason': ''}),
+    ('avoidable_interventions', {'turn': True, 'kind': 'asked_known_fact', 'reason': ''}),
+    ('avoidable_interventions', {'turn': 1, 'kind': 'made_up', 'reason': ''}),
+    ('required_approvals', {'turn': 4, 'reason': ''}),
+    ('unnecessary_interruptions', {'message': 't1.b2', 'reason': ''}),
+    ('unnecessary_interruptions', {'message': 't4', 'reason': ''}),
+    ('unnecessary_interruptions', {'message': 't1', 'reason': '', 'extra': 1}),
+])
+def test_parser_rejects_malformed_items(rubric, name, item):
+    data = reply()
+    data[name] = [item]
+    with pytest.raises(ValueError):
+        s.parse_measures(json.dumps(data), rubric[0], run())
+
+
+def test_not_observed_and_required_override(rubric):
+    data = s.parse_measures(json.dumps(reply(2, approvals=[1], interruptions=['t1.b1'])), rubric[0], run())
+    assert data['proactive_usefulness']['score'] is None
+    assert 'the judge claimed' not in json.dumps(data)
+    assert [i['turn'] for i in data['avoidable_interventions']] == [2]
+    assert [i['turn'] for i in data['required_approvals']] == [1]
+    assert data['inconsistencies'][0]['turn'] == 1
+    assert s.proactive_observation(run())['value'] == 'not_observed'
+    # Neither a non-progress message nor a preparation state proves delivery.
+    fake = run()
+    fake['diff']['preparations'][0]['state'] = 'delivered'
+    assert not s.proactive_observation(fake)['observed']
+
+
+def test_approval_counts_only_observed_requests_and_allowed_approval_status():
+    r, case = run(), scenario()
+    r['turns'][0]['events'] = [{'tool': 'local_authority', 'status': 'requested'},
+                              {'tool': 'connector_permission', 'status': 'denied'}]
+    r['turns'][1]['status'] = 'awaiting_approval'
+    r['turns'][2]['status'] = 'awaiting_context'
+    case['expect']['allow_status'] = ['awaiting_approval', 'awaiting_context']
+    events = s.required_approvals_events(case, r)
+    assert [e['turn'] for e in events] == [1, 2]
+    case['expect']['allow_status'] = []
+    assert [e['turn'] for e in s.required_approvals_events(case, r)] == [1]
+    r['turns'][0]['status'] = 'awaiting_approval'
+    case['expect']['allow_status'] = ['awaiting_approval']
+    assert len(s.required_approvals_events(case, r)) == 2  # no duplicate fallback on t1
+
+
+def test_combine_keys_and_records_metadata(rubric):
+    case, r = scenario(), run()
+    measured = s.parse_measures(json.dumps(reply(1)), rubric[0], r)
+    a, _ = s.combine(case, r, {'delivered': True}, [])
+    b, meta = s.combine(case, r, {'delivered': True}, [], measures=measured,
+                        measures_status='judged', measures_rubric=rubric[0])
+    assert set(a) == set(b)
+    assert all(math.isnan(a[k]) for k in s.MEASURE_KEYS)
+    assert b['measure_avoidable_interventions'] == 1
+    assert math.isnan(b['measure_proactive_usefulness'])
+    score = SimpleNamespace(value=b, metadata=meta)
+    records = records_from_samples([SimpleNamespace(id='dev-case@codex', epoch=2, scores={'secretary': score})])
+    assert records[0]['latency'][0] == {'turn': 1, 'sent_at': r['turns'][0]['sent_at'], 'elapsed': 1}
+    assert records[0]['measures_rubric_version'] == rubric[0]['version']
+
+
+def score_with(tmp_path, rubric, *, cap=10, records=None, error=False, malformed=False, usage=True):
+    calls = []
+    async def generate(system, prompt):
+        calls.append((system, prompt))
+        if error and len(calls) == 2:
+            raise RuntimeError('judge unavailable')
+        text = (json.dumps({'dimensions': {'follow_through': {'score': 2, 'reason': 'good'}}})
+                if len(calls) == 1 else 'BAD JSON' if malformed else json.dumps(reply(1)))
+        return SimpleNamespace(completion=text, usage=SimpleNamespace(input_tokens=20, output_tokens=10) if usage else None)
+    budget = JudgeBudget(tmp_path / 'budget.json', cap_usd=cap)
+    value, metadata = asyncio.run(s.score_run(scenario(), records or run(), 'grader', budget,
+                                            lambda text: text.replace('owner 1', 'REDACTED'), generate, rubric[0]))
+    return value, metadata, calls, budget
+
+
+def test_second_call_budget_redaction_and_settled_usage(tmp_path, rubric):
+    value, meta, calls, budget = score_with(tmp_path, rubric)
+    assert len(calls) == 2
+    assert all('REDACTED' in prompt and 'owner 1' not in prompt for _, prompt in calls)
+    assert meta['measures_status'] == 'judged'
+    assert meta['judge_usage']['rubric']['input_tokens'] == 20
+    assert meta['judge_usage']['measures']['output_tokens'] == 10
+    assert sum(u['usd'] for u in meta['judge_usage'].values()) == pytest.approx(budget.status()['usd'])
+    assert value['measure_avoidable_interventions'] == 1
+
+
+def test_budget_refusal_is_nan_and_never_zero(tmp_path, rubric):
+    value, meta, calls, _ = score_with(tmp_path, rubric, cap=0)
+    assert calls == []
+    assert meta['measures_status'] == 'budget_refused'
+    assert all(math.isnan(value[k]) for k in s.MEASURE_KEYS)
+
+
+@pytest.mark.parametrize('option,status,calls', [('error', 'judge_error', 2), ('malformed', 'judge_error', 2),
+                                                ('infra', 'not_scored', 0), ('limit', 'not_scored', 0)])
+def test_failure_statuses(tmp_path, rubric, option, status, calls):
+    r = run()
+    if option == 'infra':
+        r['error'] = 'sandbox failed'
+    if option == 'limit':
+        r['turns'][0]['failure_class'] = 'usage-limit'
+    value, meta, generated, _ = score_with(tmp_path, rubric, records=r, error=option == 'error', malformed=option == 'malformed')
+    assert len(generated) == calls
+    assert meta['measures_status'] == status
+    assert all(math.isnan(value[k]) for k in s.MEASURE_KEYS)
+    if calls:
+        assert meta['judge_usage']['measures']['usd'] > 0
+
+
+def make_report(rubric, *, ident='before', head='abc', dev=(2, 2, 2), held=(2, 2, 2), checks=True):
+    records = []
+    for case, counts in ((scenario(), dev), (scenario('held-case', 'heldout'), held)):
+        for epoch, count in enumerate(counts, 1):
+            r = run()
+            r['turns'][0]['elapsed'] = epoch
+            measures = s.parse_measures(json.dumps(reply(count)), rubric[0], r)
+            value, meta = s.combine(case, r, {'delivered': checks}, [], measures=measures,
+                                    measures_status='judged', measures_rubric=rubric[0],
+                                    judge_usage={'rubric': {'input_tokens': 10, 'output_tokens': 5, 'usd': .001},
+                                                 'measures': {'input_tokens': 20, 'output_tokens': 8, 'usd': .002}})
+            records.append({**meta, 'epoch': epoch, 'value': value})
+    run_meta = {'id': ident, 'git_head': head, 'worker': 'codex', 'judge': 'fixture-judge',
+                'epochs': len(dev), 'seed': 'fresh'}
+    fixture = {'scenario_files': [{'path': 'synthetic.json', 'sha256': 'fixture-sha'}],
+               'scenario_digest': 'fixture-sha', 'rubric_digest': 'rubric-sha', 'rubric_version': rubric[0]['version'],
+               'scenario_ids': {'dev': ['dev-case'], 'heldout': ['held-case']}, 'rubric': rubric[0]}
+    return c.build_report(records, run_meta, fixture)
+
+
+def test_report_split_spread_cost_and_unavailable_worker(rubric, tmp_path):
+    report = make_report(rubric, dev=(0, 1, 2), held=(1, 1, 1))
+    dev = report['live_evidence']['splits']['dev']['scenarios']['dev-case']
+    measure = dev['measures']['avoidable_interventions']
+    assert {k: measure[k] for k in ('n', 'mean', 'min', 'max', 'spread', 'total', 'not_observed', 'not_scored')} == {
+        'n': 3, 'mean': 1, 'min': 0, 'max': 2, 'spread': 2, 'total': 3, 'not_observed': 0, 'not_scored': 0}
+    assert [r['value'] for r in measure['epochs']] == [0, 1, 2]
+    assert report['live_evidence']['splits']['heldout']['totals']['measures']['avoidable_interventions']['spread'] == 0
+    assert {k: dev['latency']['1'][k] for k in ('median', 'min', 'max')} == {'median': 2, 'min': 1, 'max': 3}
+    assert report['samples'][1]['measures']['avoidable_interventions'][0]['turn'] == 1
+    assert report['unsupported_paths']['cost']['worker_usage'] == 'unavailable'
+    assert report['unsupported_paths']['cost']['judge']['usd'] == pytest.approx(.018)
+    assert report['unsupported_paths']['proactive_not_observed'] == 6
+    md = c.render_markdown(report)
+    for section in ('Fixture support', 'Live evidence', 'Uncertainty', 'Unsupported paths'):
+        assert f'## {section}' in md
+    assert 'unavailable (subscription CLI)' in md
+    paths = c.write_report(report, tmp_path)
+    assert all(p.exists() and p.stat().st_mode & 0o777 == 0o600 for p in paths)
+    assert json.loads(paths[0].read_text()) == report
+
+
+def labels_for(report):
+    labels = []
+    for sample in report['samples']:
+        labels.append({**{k: sample[k] for k in ('run_id', 'scenario', 'worker', 'epoch')}, 'labeller': 'owner',
+                       'measures': {'avoidable_interventions': [r['turn'] for r in sample['measures']['avoidable_interventions']],
+                                    'required_approvals': [], 'unnecessary_interruptions': [],
+                                    'proactive_usefulness': 'not_observed'}})
+    return {'version': 'initiative-labels-v1', 'rubric': report['fixture_support']['rubric_version'], 'labels': labels}
+
+
+def test_agreement_window_and_fewer_than_five(rubric):
+    report = make_report(rubric)
+    labels = labels_for(report)
+    assert c.agreement(report, labels)['avoidable_interventions']['agreed'] == 6
+    labels['labels'] = labels['labels'][:3]
+    for row in labels['labels'][:2]:
+        row['measures']['avoidable_interventions'] = []
+    result = c.agreement(report, labels)
+    assert result['avoidable_interventions']['uncertain']
+    assert len(result['avoidable_interventions']['disagreements']) == 2
+    assert result['avoidable_interventions']['disagreements'][0]['epoch'] == 1
+    labels['labels'][1]['measures']['avoidable_interventions'] = [1, 2]
+    assert not c.agreement(report, labels)['avoidable_interventions']['uncertain']
+    full = labels_for(report)
+    full['labels'][1]['measures']['avoidable_interventions'] = []
+    full['labels'][5]['measures']['avoidable_interventions'] = []
+    assert c.agreement(report, full)['avoidable_interventions']['uncertain']  # second window
+    full['labels'][1]['measures']['avoidable_interventions'] = [1, 2]
+    full['labels'][0]['measures']['avoidable_interventions'] = []
+    assert not c.agreement(report, full)['avoidable_interventions']['uncertain']
+
+
+@pytest.mark.parametrize('bad', ['version', 'duplicate', 'missing', 'null', 'bad_list', 'extra_measure', 'bad_score'])
+def test_bad_labels_fail(rubric, bad):
+    report = make_report(rubric)
+    labels = labels_for(report)
+    if bad == 'version':
+        labels['rubric'] = 'wrong'
+    elif bad == 'duplicate':
+        labels['labels'].append(copy.deepcopy(labels['labels'][0]))
+    elif bad == 'missing':
+        labels['labels'][0]['scenario'] = 'missing'
+    elif bad == 'null':
+        labels['labels'][0]['measures']['avoidable_interventions'] = None
+    elif bad == 'bad_list':
+        labels['labels'][0]['measures']['required_approvals'] = ['1']
+    elif bad == 'extra_measure':
+        labels['labels'][0]['measures']['extra'] = []
+    else:
+        labels['labels'][0]['measures']['proactive_usefulness'] = .5
+    with pytest.raises(ValueError):
+        c.agreement(report, labels)
+
+
+def test_template_heldout_and_extra_ids(rubric):
+    report = make_report(rubric)
+    template = c.labels_template(report)
+    assert len(template['labels']) == 3
+    assert all(r['scenario'] == 'held-case' and all(v is None for v in r['measures'].values()) for r in template['labels'])
+    assert len(c.labels_template(report, ['dev-case'])['labels']) == 6
+    with pytest.raises(ValueError):
+        c.labels_template(report, ['unknown'])
+
+
+@pytest.mark.parametrize('field', ['judge', 'epochs', 'worker', 'scenario_digest', 'rubric_version', 'rubric_digest',
+                                   'scenario_ids', 'stopped', 'duplicate', 'missing_epoch'])
+def test_compare_refuses_mismatched_conditions(rubric, field):
+    a, b = make_report(rubric), make_report(rubric, ident='after', head='def')
+    if field in ('judge', 'epochs', 'worker'):
+        b['live_evidence'][field] = 'different'
+    elif field in ('scenario_digest', 'rubric_version', 'rubric_digest', 'scenario_ids'):
+        b['fixture_support'][field] = 'different'
+    elif field == 'stopped':
+        b['live_evidence']['stopped'] = {'tripped_by': 'usage-limit'}
+    elif field == 'duplicate':
+        b['samples'].append(b['samples'][0])
+    else:
+        a['samples'].pop()
+        b['samples'].pop()
+    with pytest.raises(ValueError):
+        c.compare(a, b)
+
+
+def test_comparison_better_and_not_observed_stays_non_numeric(rubric):
+    a = make_report(rubric)
+    b = make_report(rubric, ident='after', head='def', dev=(1, 1, 1), held=(1, 1, 1))
+    result = c.compare(a, b)
+    assert result['verdict'] == 'better'
+    assert not result['failed_conditions']
+    for split in ('dev', 'heldout'):
+        row = next(iter(result['splits'][split].values()))['proactive_usefulness']
+        assert row['change'] == 'not_observed' and 'delta' not in row
+    assert c.HELDOUT_RULE in c.compare_markdown(result)
+
+
+@pytest.mark.parametrize('dev,held', [((1, 1, 1), (3, 3, 3)),  # heldout regression
+                                     ((1, 1, 1), (2, 2, 2)),  # dev-only gain
+                                     ((0, 1, 2), (0, 1, 2))])  # gain inside spread
+
+def test_comparison_requires_certain_heldout_gain(rubric, dev, held):
+    a = make_report(rubric)
+    b = make_report(rubric, ident='after', head='def', dev=dev, held=held)
+    result = c.compare(a, b)
+    assert result['verdict'] == 'not better'
+    assert result['failed_conditions']
+    if dev == (0, 1, 2):
+        row = result['splits']['heldout']['held-case']['avoidable_interventions']
+        assert row['change'] == 'uncertain'
+
+
+def test_deterministic_regression_and_uncertain_labels_veto_better(rubric):
+    a = make_report(rubric)
+    b = make_report(rubric, ident='after', head='def', dev=(1, 1, 1), held=(1, 1, 1), checks=False)
+    assert c.compare(a, b)['verdict'] == 'not better'
+    b = make_report(rubric, ident='after', head='def', dev=(1, 1, 1), held=(1, 1, 1))
+    labels = labels_for(b)
+    for label in labels['labels'][:2]:
+        label['measures']['avoidable_interventions'] = []
+    b['uncertainty']['agreement'] = c.agreement(b, labels)
+    result = c.compare(a, b)
+    assert result['verdict'] == 'not better'
+    assert 'avoidable_interventions' in result['uncertain_measures']
+    assert result['splits']['heldout']['held-case']['avoidable_interventions']['change'] == 'uncertain'
+
+
+def args(rubric, **overrides):
+    values = dict(worker='codex', epochs=3, cap_usd=None, judge='fixture-judge', instances=2,
+                  turn_timeout=5, display='plain', rubric=rubric[1], seed=None)
+    return Namespace(**(values | overrides))
+
+
+def test_runner_refuses_seed_and_no_judge(rubric):
+    for changes, env in (({'seed': ''}, {}), ({'seed': 'owner'}, {}), ({}, {'AGENTOS_EVAL_SEED': 'owner'}),
+                         ({'judge': 'none'}, {}), ({'judge': ''}, {'AGENTOS_EVAL_JUDGE_MODEL': 'none'})):
+        with patch.dict('os.environ', env, clear=True), pytest.raises(SystemExit, match='C2 refuses'):
+            cli.run_continuity(args(rubric, **changes), sweep=lambda *a, **k: pytest.fail('must not sweep'), )
+
+
+def test_runner_selects_exact_eight_bundled_ids(rubric, tmp_path):
+    captured = []
+    def sweep(ns, folder=None):
+        captured.append(ns)
+        assert folder == tmp_path
+        return 2
+    with patch.object(scenarios, 'load', wraps=scenarios.load) as load:
+        assert cli.run_continuity(args(rubric), sweep=sweep, folder=tmp_path, ) == 2
+    load.assert_called_once_with(include_local=False)
+    selected = scenarios.load_file(c.SCENARIOS)
+    assert len(selected) == 8
+    assert set(captured[0].scenarios.split(',')) == {r['id'] for r in selected}
+    assert captured[0].no_local and captured[0].seed == ''
+    assert captured[0].measures == str(rubric[1])
+    fixture = captured[0].continuity
+    assert len(fixture['scenario_digest']) == 64
+    assert {s: len(ids) for s, ids in fixture['scenario_ids'].items()} == {'dev': 5, 'heldout': 3}
+
+
+def test_actual_sweep_path_is_injectable_and_writes_c2(rubric, tmp_path, monkeypatch):
+    """Exercise real cmd_sweep/_write/records_from_samples boundary without Inspect."""
+    monkeypatch.setenv('AGENTOS_EVAL_HOME', str(tmp_path))
+    monkeypatch.delenv('AGENTOS_EVAL_SEED', raising=False)
+    calls = []
+    def factory(**kwargs):
+        calls.append(kwargs)
+        return 'task'
+    def inspect_eval(task, **kwargs):
+        assert task == 'task'
+        run_meta = kwargs['metadata']
+        assert run_meta['seed'] == 'fresh'
+        assert sum(map(len, run_meta['continuity']['scenario_ids'].values())) == 8
+        return [SimpleNamespace(samples=[], location='fixture.eval', results=None)]
+    def sweep(ns, folder=None):
+        return cli.cmd_sweep(ns, folder=folder, task_factory=factory, inspect_eval=inspect_eval,
+                             key_loader=lambda judge: 'fixture-key')
+    with redirect_stdout(io.StringIO()) as output:
+        assert cli.run_continuity(args(rubric), sweep=sweep, folder=tmp_path, ) == 0
+    assert not calls[0]['include_local']
+    assert calls[0]['measures'] == str(rubric[1])
+    report = json.loads(next(tmp_path.glob('*.c2.json')).read_text())
+    assert report['live_evidence']['seed'] == 'fresh'
+    assert report['uncertainty']['missing_samples'] == 24
+    assert str(next(tmp_path.glob('*.c2.md'))) in output.getvalue()
+
+
+def test_cli_template_report_and_compare_rebuild(rubric, tmp_path, monkeypatch):
+    monkeypatch.setenv('AGENTOS_EVAL_HOME', str(tmp_path))
+    a = make_report(rubric)
+    b = make_report(rubric, ident='after', head='def', dev=(1, 1, 1), held=(1, 1, 1))
+    ap, _ = c.write_report(a, tmp_path)
+    bp, _ = c.write_report(b, tmp_path)
+    with redirect_stdout(io.StringIO()) as output:
+        assert cli.main(['continuity', 'labels-template', str(ap)]) == 0
+    assert len(json.loads(output.getvalue())['labels']) == 3
+    with redirect_stdout(io.StringIO()) as output:
+        assert cli.main(['continuity', 'compare', str(ap), str(bp)]) == 0
+    assert 'better' in output.getvalue()
+    assert (tmp_path / 'after.c2.compare.json').exists()
+    # Read-log boundary, preserving the run-time fingerprint rather than current fixture bytes.
+    run_meta = a['live_evidence'] | {'continuity': a['fixture_support']}
+    log = SimpleNamespace(eval=SimpleNamespace(metadata=run_meta), samples=[], results=None)
+    monkeypatch.setattr(cli, 'read_log', lambda path: log)
+    with redirect_stdout(io.StringIO()):
+        assert cli.main(['continuity', 'report', '--log', 'synthetic.eval']) == 0
+    assert json.loads((tmp_path / 'reports/before.c2.json').read_text())['fixture_support'] == a['fixture_support']
+
+
+FIXTURE_FOLDER = Path(__file__).resolve().parents[1] / 'evals/continuity'
+REAL_RUBRIC = c.load_rubric(c.DEFAULT_RUBRIC)
+REAL_CASES = json.loads((FIXTURE_FOLDER / 'initiative-judge-fixtures-v1.json').read_text())['cases']
+
+
+def test_real_rubric_prompt_and_default_runner(monkeypatch):
+    case = next(row for row in REAL_CASES if row['id'] == 'fixture-bare-ping')
+    prompt = s.measures_prompt(scenarios.validate(case['scenario']), case['run'], REAL_RUBRIC)
+    assert 'AGENTOS t1.b1 before' in prompt and 'AGENTOS t1 (status' in prompt
+    assert case['run']['turns'][0]['sent_at'] in prompt
+    for measure in REAL_RUBRIC['measures'].values():
+        assert measure['definition'] in prompt
+    assert REAL_RUBRIC['judge_instructions'] in prompt
+    assert json.dumps(REAL_RUBRIC['output_schema'], ensure_ascii=False) in prompt
+    monkeypatch.delenv('AGENTOS_EVAL_SEED', raising=False)
+    captured = []
+    monkeypatch.setattr(cli, 'cmd_sweep', lambda args: captured.append(args) or 0)
+    assert cli.main(['continuity', 'run', '--judge', 'fixture-judge']) == 0
+    assert Path(captured[0].measures) == FIXTURE_FOLDER / 'initiative-rubric-v1.json'
+    assert captured[0].continuity['rubric'] == REAL_RUBRIC
+
+
+@pytest.mark.parametrize('case', REAL_CASES, ids=lambda row: row['id'])
+def test_real_fixture_replies_parse_or_reject(case):
+    if case.get('_malformed'):
+        with pytest.raises(ValueError, match='turn index out of range'):
+            s.parse_measures(case['judge_reply'], REAL_RUBRIC, case['run'])
+        return
+    parsed = s.parse_measures(case['judge_reply'], REAL_RUBRIC, case['run'])
+    expected = json.loads(case['judge_reply'])
+    for measure in s.MEASURES[:3]:
+        assert parsed[measure] == expected[measure]
+    assert parsed['proactive_usefulness']['score'] is None
+    assert parsed['proactive_observation']['value'] == 'not_observed'
+    # The two delivered-output examples explicitly live outside the recorded run;
+    # their _note must never become evidence or a numeric proactive score.
+    if case.get('_note', '').startswith('UNSUPPORTED'):
+        assert case['human']['proactive_usefulness'] in (0, 2)
+        assert parsed['proactive_usefulness']['value'] == 'not_observed'
+
+
+def test_real_fixture_agreement_has_exactly_two_record_supported_disagreements():
+    # Calibration uses the record-supported fixtures. The two hypothetical
+    # deliveries have no provenance and cannot calibrate a delivered-output grade.
+    supported = [case for case in REAL_CASES if not case.get('_malformed')
+                 and not case.get('_note', '').startswith('UNSUPPORTED')]
+    assert len(supported) == len(REAL_CASES) - 3
+    records, human_labels = [], []
+    for case in supported:
+        scenario_case = scenarios.validate(case['scenario'])
+        parsed = s.parse_measures(case['judge_reply'], REAL_RUBRIC, case['run'])
+        value, meta = s.combine(scenario_case, case['run'], {'delivered': True}, [],
+                                measures=parsed, measures_status='judged', measures_rubric=REAL_RUBRIC)
+        records.append({**meta, 'value': value, 'epoch': 1})
+        human_labels.append({'run_id': 'fixture', 'scenario': case['id'], 'worker': 'codex', 'epoch': 1,
+                             'labeller': 'contributor', 'measures': case['human']})
+    fixture = c.fixture_support([scenarios.validate(case['scenario']) for case in supported], c.DEFAULT_RUBRIC)
+    result = c.build_report(records, {'id': 'fixture', 'seed': 'fresh', 'worker': 'codex', 'epochs': 1,
+                                      'judge': 'fixture', 'git_head': 'fixture'}, fixture,
+                            {'version': 'initiative-labels-v1', 'rubric': REAL_RUBRIC['version'], 'labels': human_labels})
+    agreement = result['uncertainty']['agreement']
+    actual = {(row['scenario'], measure) for measure, table in agreement.items() for row in table['disagreements']}
+    expected = {(case['id'], case['_disagreement']) for case in REAL_CASES if '_disagreement' in case}
+    assert actual == expected and len(actual) == 2
+    assert agreement['avoidable_interventions']['uncertain'] is True
+    assert {m for m, table in agreement.items() if table['uncertain']} == {'avoidable_interventions'}
+    assert agreement['avoidable_interventions']['labelled'] == len(supported)
+
+
+def test_only_measures_budget_refused_and_pass_off_still_has_one_call(tmp_path, rubric):
+    from agentos_eval.budget import estimate_tokens
+    reserved = JudgeBudget(tmp_path / 'pricing').cost(
+        estimate_tokens(s.JUDGE_SYSTEM + s.judge_prompt(scenario(), run())), s.JUDGE_MAX_TOKENS)
+    budget = JudgeBudget(tmp_path / 'limited.json', cap_usd=reserved)
+    calls = []
+    async def generate(system, prompt):
+        calls.append(prompt)
+        return SimpleNamespace(usage=None, completion=json.dumps({'dimensions': {'follow_through': {'score': 2}}}))
+    values, meta = asyncio.run(s.score_run(scenario(), run(), 'grader', budget, str, generate, rubric[0]))
+    assert len(calls) == 1 and meta['judge_status'] == 'judged'
+    assert meta['measures_status'] == 'budget_refused'
+    assert all(math.isnan(values[k]) for k in s.MEASURE_KEYS)
+    assert meta['judge_usage']['rubric']['usd'] == reserved
+    assert meta['judge_usage']['rubric']['input_tokens'] == 'unavailable'
+    assert budget.status()['refused'] == 1
+    calls.clear()
+    off, metadata = asyncio.run(s.score_run(scenario(), run(), 'grader', JudgeBudget(tmp_path / 'off.json'), str, generate))
+    assert len(calls) == 1 and metadata['measures_status'] == 'skipped'
+    assert off.keys() == values.keys() and off['rubric_follow_through'] == 1
+    assert all(math.isnan(off[k]) for k in s.MEASURE_KEYS)
+
+
+def test_same_turn_distinct_intervention_kinds_are_not_silently_lost(rubric):
+    data = reply(1)
+    data['avoidable_interventions'].append({'turn': 1, 'kind': 'asked_entrusted_action', 'reason': 'separate ask'})
+    parsed = s.parse_measures(json.dumps(data), rubric[0], run())
+    values, _ = s.combine(scenario(), run(), {}, [], measures=parsed, measures_status='judged')
+    assert len(parsed['avoidable_interventions']) == 2
+    assert values['measure_avoidable_interventions'] == 2
+    data['avoidable_interventions'].append(data['avoidable_interventions'][0])
+    with pytest.raises(ValueError, match='duplicate'):
+        s.parse_measures(json.dumps(data), rubric[0], run())
+
+
+def test_cli_labels_on_comparison_and_duplicate_across_files(rubric, tmp_path, monkeypatch):
+    monkeypatch.setenv('AGENTOS_EVAL_HOME', str(tmp_path))
+    a = make_report(rubric)
+    b = make_report(rubric, ident='after', head='def', dev=(1, 1, 1), held=(1, 1, 1))
+    ap, _ = c.write_report(a, tmp_path)
+    bp, _ = c.write_report(b, tmp_path)
+    lp, rp = tmp_path / 'a-labels.json', tmp_path / 'b-labels.json'
+    lp.write_text(json.dumps(labels_for(a)))
+    rp.write_text(json.dumps(labels_for(b)))
+    with redirect_stdout(io.StringIO()) as out:
+        assert cli.main(['continuity', 'compare', str(ap), str(bp), '--labels', str(lp), '--labels', str(rp)]) == 0
+    assert '"verdict": "better"' in out.getvalue()
+    with pytest.raises(ValueError, match='Duplicate human label'), redirect_stdout(io.StringIO()):
+        cli.main(['continuity', 'compare', str(ap), str(bp), '--labels', str(lp), '--labels', str(lp)])
+
+
+def test_sweep_records_survive_to_c2_and_usage_stop_refuses_comparison(rubric, tmp_path, monkeypatch):
+    from agentos_eval import report as sweep_report
+    monkeypatch.setenv('AGENTOS_EVAL_HOME', str(tmp_path))
+    monkeypatch.delenv('AGENTOS_EVAL_SEED', raising=False)
+    def factory(**kwargs):
+        assert kwargs['include_local'] is False and kwargs['measures'] == str(rubric[1])
+        return kwargs
+    def inspect_eval(task, **kwargs):
+        samples = []
+        for case in scenarios.load(include_local=False, ids=task['scenarios'].split(',')):
+            measures = s.parse_measures(json.dumps(reply()), rubric[0], run())
+            values, metadata = s.combine(case, run(), {'delivered': True}, [], measures=measures,
+                                         measures_status='judged', measures_rubric=rubric[0])
+            samples.append(SimpleNamespace(id=case['id'] + '@codex', epoch=1,
+                                           scores={'secretary': SimpleNamespace(value=values, metadata=metadata)}))
+        stopped = SimpleNamespace(metadata={'tripped_by': 'fixture@codex'}, early_stops=['pending'])
+        return [SimpleNamespace(samples=samples, location='fixture.eval',
+                                results=SimpleNamespace(early_stopping=stopped))]
+    def sweep(ns, **kw):
+        return cli.cmd_sweep(ns, task_factory=factory, inspect_eval=inspect_eval, key_loader=lambda _: 'fixture', **kw)
+    with redirect_stdout(io.StringIO()):
+        assert cli.run_continuity(args(rubric, epochs=1), sweep=sweep, folder=tmp_path) == 2
+    result = json.loads(next(tmp_path.glob('*.c2.json')).read_text())
+    assert len(result['samples']) == 8
+    assert result['live_evidence']['stopped']['skipped'] == 1
+    assert result['samples'][0]['measures_status'] == 'judged'
+    assert result['samples'][0]['latency'][0]['elapsed'] == 1
+    assert 'STOPPED' in c.render_markdown(result)
+    with pytest.raises(ValueError, match='stopped'):
+        c.compare(result, result)
+    assert sweep_report.latest_report(tmp_path) is None
+
+
+def test_report_outage_is_unscored_not_zero_and_keeps_missing_samples(rubric):
+    case = scenario()
+    sample = SimpleNamespace(id='dev-case@codex', epoch=1, scores={},
+                             metadata={'scenario': case, 'worker': 'codex'}, error='outage')
+    record = records_from_samples([sample])[0]
+    fixture = {'scenario_ids': {'dev': ['dev-case'], 'heldout': []}, 'rubric_version': rubric[0]['version'],
+               'rubric_digest': 'digest', 'scenario_digest': 'digest', 'rubric': rubric[0]}
+    data = c.build_report([record], {'id': 'outage', 'worker': 'codex', 'judge': 'fixture', 'seed': 'fresh', 'epochs': 3}, fixture)
+    measure = data['live_evidence']['splits']['dev']['scenarios']['dev-case']['measures']['avoidable_interventions']
+    assert measure['mean'] is None and measure['n'] == 0 and measure['not_scored'] == 1
+    assert data['uncertainty']['status_counts'] == {'not_scored': 1}
+    assert data['uncertainty']['missing_samples'] == 2
+
+
+def test_preparation_excerpts_require_typed_unsolicited_origin_and_sent_receipt(rubric):
+    r = run()
+    r['turns'][0]['task_id'] = 'owner-work'
+    row = {'id': 'account', 'last_work_id': 'account-work', 'last_delivery': 'sent',
+           'last_status': 'succeeded', 'last_result': 'Observed account result excerpt'}
+    r['diff']['preparations'] = [row]
+    # A generic preparation could have been run-now: its excerpt is not enough.
+    assert not s.proactive_observation(r)['observed']
+    row['line_account'] = True
+    observation = s.proactive_observation(r)
+    assert observation['observed'] and observation['outputs'][0]['text'] == row['last_result']
+    prompt = s.measures_prompt(scenario(), r, rubric[0])
+    assert row['last_result'] in prompt
+    parsed = s.parse_measures(json.dumps(reply(proactive=2)), rubric[0], r)
+    assert parsed['proactive_usefulness']['score'] == 2
+    value, metadata = s.combine(scenario(), r, {}, [], measures=parsed, measures_status='judged')
+    assert value['measure_proactive_usefulness'] == 1
+    assert metadata['proactive_observation']['observed']
+    null = reply(proactive=None)
+    with pytest.raises(ValueError, match='needs a grade'):
+        s.parse_measures(json.dumps(null), rubric[0], r)
+    for field, value in [('last_work_id', 'owner-work'), ('last_delivery', 'pending'), ('last_result', '')]:
+        broken = copy.deepcopy(r)
+        broken['diff']['preparations'][0][field] = value
+        assert not s.proactive_observation(broken)['observed']

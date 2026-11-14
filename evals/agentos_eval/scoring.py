@@ -120,8 +120,7 @@ JUDGE_SYSTEM = (
     'no occasion to show it. Reply with JSON only.')
 
 
-def judge_prompt(scenario, run):
-    dims = scenario['rubric']
+def _transcript(scenario, run, labelled=False):
     lines = [f'Scenario: {scenario["title"]}', '']
     if scenario.get('good_secretary'):
         lines += ['What a good secretary would do:', scenario['good_secretary'], '']
@@ -135,14 +134,16 @@ def judge_prompt(scenario, run):
                  if event.get('tool') and event['tool'] not in WORK_EVENTS]
         lines.append(f'[tools run in turn {index}: {", ".join(tools) or "none"}]')
         # #407: on the paired-chat path the owner also read these before the answer.
-        for message in turn.get('before_answer') or ():
-            lines.append(f'AGENTOS {index} before the answer (+{message.get("after_s", "?")}s): {message.get("text", "")}')
+        for j, message in enumerate(turn.get('before_answer') or (), 1):
+            label = f't{index}.b{j}' if labelled else str(index)
+            lines.append(f'AGENTOS {label} before the answer (+{message.get("after_s", "?")}s): {message.get("text", "")}')
         answer = (turn.get('answer') or '').strip()
         if turn.get('answer_withheld'):
             answer = '(answer withheld by Still)'
         if len(answer) > ANSWER_CHARS:
             answer = answer[:ANSWER_CHARS] + ' [...]'
-        lines.append(f'AGENTOS {index} (status {turn.get("status")}): {answer or "(no answer delivered)"}')
+        label = f't{index}' if labelled else str(index)
+        lines.append(f'AGENTOS {label} (status {turn.get("status")}): {answer or "(no answer delivered)"}')
     diff = run.get('diff') or {}
     # The running situation summary is rewritten every turn from the whole day, including the seed's own
     # history, so its text would hand the judge unrelated owner details; the judge learns only that it changed.
@@ -162,6 +163,12 @@ def judge_prompt(scenario, run):
         lines.append('- none')
     if diff.get('settings_changed'):
         lines.append('- settings changed')
+    return lines
+
+
+def judge_prompt(scenario, run):
+    dims = scenario['rubric']
+    lines = _transcript(scenario, run)
     lines += ['', 'Dimensions:']
     lines += [f'- {dim}: {RUBRIC[dim]}' for dim in dims]
     lines += ['', 'Reply as JSON: {"dimensions": {"<dimension>": {"score": 0|1|2|null, "reason": "<one sentence>"}}, '
@@ -202,7 +209,8 @@ def rubric_failures(judgment):
 CHECK_NAMES = ('harness', 'delivered', 'not_failed', 'memory', 'current_state', 'preparation', 'no_memory_of_request')
 
 
-def combine(scenario, run, checks, failures, judgment=None, judge_status='skipped'):
+def combine(scenario, run, checks, failures, judgment=None, judge_status='skipped',
+            measures=None, measures_status='skipped', measures_rubric=None, judge_usage=None):
     """The score value (all floats, for Inspect) and the metadata the report reads."""
     value = {f'check_{name}': 1.0 if ok else 0.0 for name, ok in checks.items()}
     if judgment:
@@ -217,10 +225,223 @@ def combine(scenario, run, checks, failures, judgment=None, judge_status='skippe
     # does not apply to this scenario is NaN, which Inspect counts as unscored.
     for key in [f'check_{name}' for name in CHECK_NAMES] + [f'rubric_{dim}' for dim in RUBRIC]:
         value.setdefault(key, math.nan)
+    for key in MEASURE_KEYS:
+        value[key] = math.nan
+    if measures_status == 'judged' and measures:
+        value.update(measure_values(measures, scenario, run))
     value['passed'] = 1.0 if value['checks_pass'] and not failures else 0.0
     metadata = {'scenario': scenario['id'], 'source': scenario.get('source', 'bundled'), 'split': scenario['split'],
                 'worker': run.get('worker'), 'checks': checks, 'failures': failures, 'judge_status': judge_status,
                 'judgment': judgment, 'judgment_ai': run.get('judgment'), 'statuses': [turn.get('status') for turn in run.get('turns') or []],
                 'failure_classes': [turn.get('failure_class') for turn in run.get('turns') or []],
                 'elapsed': [turn.get('elapsed') for turn in run.get('turns') or []]}
+    metadata.update(measures=measures, measures_status=measures_status,
+                    measures_rubric_version=(measures_rubric or {}).get('version'),
+                    proactive_observation=proactive_observation(run),
+                    required_approvals_events=required_approvals_events(scenario, run),
+                    judge_usage=judge_usage or {},
+                    turn_count=len(run.get('turns') or []),
+                    message_ids=sorted(message_ids(run)),
+                    latency=[{'turn': i, 'sent_at': t.get('sent_at'), 'elapsed': t.get('elapsed')}
+                                  for i, t in enumerate(run.get('turns') or [], 1)])
     return value, metadata
+
+
+MEASURE_KEYS = ('measure_avoidable_interventions', 'measure_required_approvals_judged',
+                'measure_required_approvals_events', 'measure_unnecessary_interruptions',
+                'measure_proactive_usefulness')
+MEASURE_VALUES = tuple(k.removeprefix('measure_') for k in MEASURE_KEYS)
+MEASURES = ('avoidable_interventions', 'required_approvals', 'unnecessary_interruptions', 'proactive_usefulness')
+
+
+def proactive_observation(run):
+    """Only a delivered line-account output has unsolicited provenance here.
+
+    run_turns carries requested answers and before_answer text/after_s, but no
+    message origin. snapshot's /api/preparations list DOES expose last_work_id,
+    last_delivery (jobs.delivery), last_status and last_result (a 280-character
+    excerpt). state_diff keeps these fields on NEW preparation ids only, not
+    updates to pre-existing rows. line_account is the endpoint's typed flag for
+    ORIGIN_LINE_ACCOUNT. On such a new account row, a distinct last_work_id,
+    last_delivery='sent' and nonempty last_result establish an account output
+    delivered during this run, outside the scripted owner-turn Works.
+
+    A generic preparation receipt lacks scheduled-vs-run-now initiation and
+    delivery time, so cannot establish unsolicited origin; its result excerpt
+    alone is insufficient. Notifications sent separately from a Work reply,
+    older-row deliveries, full report bodies, and general line outputs are not
+    collected. No text matching on answers, before_answer or promises is used.
+    """
+    owner_works = {t['task_id'] for t in run.get('turns') or [] if t.get('task_id')}
+    outputs = [{'preparation_id': row.get('id'), 'work_id': row['last_work_id'],
+                'text': row['last_result'], 'delivery': 'sent', 'kind': 'line_account'}
+               for row in (run.get('diff') or {}).get('preparations', [])
+               if row.get('line_account') is True and row.get('last_work_id')
+               and row['last_work_id'] not in owner_works and row.get('last_delivery') == 'sent'
+               and isinstance(row.get('last_result'), str) and row['last_result'].strip()]
+    if outputs:
+        return {'observed': True, 'outputs': outputs,
+                'reason': 'New line-account preparation has a sent reply on a distinct Work; result is an excerpt.'}
+    return {'observed': False, 'value': 'not_observed',
+            'reason': 'No delivered line-account output with a distinct Work. Generic preparation receipts lack '
+                      'unsolicited origin; before_answer and requested answers are insufficient.'}
+
+
+def required_approvals_events(scenario, run):
+    """Observed approval requests, a lower bound, independent of judge lists.
+
+    compact_events retains tool/status/label only. local_authority/requested is
+    an explicit recorded request (quickstart_service.request_local_authority).
+    connector_permission allowed/denied/claiming do NOT establish an approval.
+    The public task progress events omit tool error codes and decision payloads;
+    payment/browser approval requests cannot be reconstructed from those pairs.
+    An awaiting_approval terminal status allowed by expect.allow_status provides
+    one fallback observation per turn, only when no explicit request was counted.
+    Other allowed statuses (e.g. awaiting_context) are not approvals. Events are
+    capped at 40 by compact_events, so this is explicitly a lower bound.
+    """
+    rows = []
+    allowed = scenario.get('expect', {}).get('allow_status') or []
+    for i, turn in enumerate(run.get('turns') or [], 1):
+        requests = [e for e in turn.get('events') or []
+                    if e.get('tool') == 'local_authority' and e.get('status') == 'requested']
+        rows.extend({'turn': i, 'tool': e['tool'], 'status': e['status'], 'source': 'tool_event'} for e in requests)
+        if not requests and turn.get('status') == 'awaiting_approval' and 'awaiting_approval' in allowed:
+            rows.append({'turn': i, 'status': 'awaiting_approval', 'source': 'allow_status'})
+    return rows
+
+
+def measures_prompt(scenario, run, rubric):
+    lines = _transcript(scenario, run, labelled=True)
+    lines += ['', 'Initiative measures (separate from the secretary dimensions):',
+              rubric['messages'], json.dumps(rubric['measures'], ensure_ascii=False),
+              'Harness proactive observation: ' + json.dumps(proactive_observation(run)),
+              rubric['judge_instructions'], 'Reply with JSON matching this output schema:',
+              json.dumps(rubric['output_schema'], ensure_ascii=False)]
+    return '\n'.join(lines)
+
+
+def parse_measures(text, rubric, run):
+    """Strict shared-interface reply validation; nothing malformed is silently discarded.
+
+    Required-approval overlap is retained as an inconsistency, then excluded
+    from avoidable interventions. Unobserved proactive grades are never retained.
+    """
+    match = re.search(r'\{.*\}', text or '', re.S)
+    if not match:
+        raise ValueError('measures reply has no JSON object')
+    data = json.loads(match.group())
+    if not isinstance(data, dict) or set(data) != set(MEASURES):
+        raise ValueError('measures reply must contain exactly the four measures')
+    turns = run.get('turns') or []
+    ids = message_ids(run)
+    for name in MEASURES[:3]:
+        rows = data[name]
+        if not isinstance(rows, list):
+            raise ValueError(f'{name} must be a list')
+        seen = set()
+        for row in rows:
+            keys = {'message', 'reason'} if name == 'unnecessary_interruptions' else {'turn', 'reason'}
+            if name == 'avoidable_interventions':
+                keys.add('kind')
+            if not isinstance(row, dict) or set(row) != keys or not isinstance(row['reason'], str):
+                raise ValueError(f'invalid {name} item')
+            index = row.get('message') if name == 'unnecessary_interruptions' else row.get('turn')
+            if name == 'unnecessary_interruptions':
+                if not isinstance(index, str) or index not in ids:
+                    raise ValueError('unknown message id')
+            elif type(index) is not int or not 1 <= index <= len(turns):
+                raise ValueError('turn index out of range')
+            if name == 'avoidable_interventions' and row['kind'] not in ('asked_known_fact', 'asked_entrusted_action'):
+                raise ValueError('unknown intervention kind')
+            identity = (index, row['kind']) if name == 'avoidable_interventions' else index
+            if identity in seen:
+                raise ValueError(f'duplicate {name} index')
+            seen.add(identity)
+    proactive = data['proactive_usefulness']
+    if (not isinstance(proactive, dict) or set(proactive) != {'score', 'reason'}
+            or not isinstance(proactive['reason'], str)
+            or (proactive['score'] is not None and (type(proactive['score']) is not int or proactive['score'] not in (0, 1, 2)))):
+        raise ValueError('invalid proactive_usefulness')
+    observation = proactive_observation(run)
+    if not observation['observed']:
+        data['proactive_usefulness'] = {'score': None, 'reason': observation['reason'], 'value': 'not_observed'}
+    elif proactive['score'] is None:
+        raise ValueError('observable proactive usefulness needs a grade')
+    required = {row['turn'] for row in data['required_approvals']}
+    overlaps = [row for row in data['avoidable_interventions'] if row['turn'] in required]
+    data['inconsistencies'] = [{'turn': r['turn'], 'reason': 'Judge listed an ask as both required and avoidable',
+                              'avoidable_item': r} for r in overlaps]
+    data['avoidable_interventions'] = [r for r in data['avoidable_interventions'] if r['turn'] not in required]
+    data['proactive_observation'] = observation
+    data['rubric_version'] = rubric['version']
+    return data
+
+
+def measure_values(measures, scenario, run):
+    score = measures['proactive_usefulness']['score']
+    return {'measure_avoidable_interventions': float(len(measures['avoidable_interventions'])),
+            'measure_required_approvals_judged': float(len(measures['required_approvals'])),
+            'measure_required_approvals_events': float(len(required_approvals_events(scenario, run))),
+            'measure_unnecessary_interruptions': float(len(measures['unnecessary_interruptions'])),
+            'measure_proactive_usefulness': score / 2 if score is not None and proactive_observation(run)['observed'] else math.nan}
+
+
+async def judge_call(prompt, parse, generate, budget, redact, system=JUDGE_SYSTEM):
+    """One shared budgeted/redacted judge call; injected transport, no Inspect dependency.
+
+    Unknown usage retains the reservation, exactly as JudgeBudget.settle does.
+    Returned usage records the settled charge even on malformed replies/errors.
+    """
+    from .budget import estimate_tokens
+    prompt = redact(prompt)
+    reserved = budget.reserve(estimate_tokens(system + prompt), JUDGE_MAX_TOKENS)
+    if reserved is None:
+        return None, 'budget_refused', {}, None
+    usage = {'input_tokens': 'unavailable', 'output_tokens': 'unavailable', 'usd': reserved,
+             'basis': 'reservation'}
+    try:
+        output = await generate(system, prompt)
+        tokens = output.usage
+        usd = budget.settle(reserved, tokens.input_tokens if tokens else None, tokens.output_tokens if tokens else None)
+        if tokens:
+            usage = {'input_tokens': tokens.input_tokens, 'output_tokens': tokens.output_tokens,
+                     'usd': usd, 'basis': 'observed'}
+        return parse(output.completion), 'judged', usage, None
+    except Exception as exc:  # a judge outage or malformed reply stays unscored
+        return None, 'judge_error', usage, redact(f'{type(exc).__name__}: {exc}')[:200]
+
+
+def message_ids(run):
+    return {f't{i}' for i, t in enumerate(run.get('turns') or [], 1)
+            if t.get('answer') and not t.get('answer_withheld')} | {
+            f't{i}.b{j}' for i, t in enumerate(run.get('turns') or [], 1)
+            for j, _ in enumerate(t.get('before_answer') or [], 1)}
+
+
+async def score_run(scenario, run, judge, budget, redact, generate, rubric=None):
+    """Testable scorer orchestration, with one additional measures call when enabled."""
+    from .runner import usage_limited
+    checks, failures = deterministic_checks(scenario, run)
+    judgment, judge_status = None, 'skipped'
+    measured, measures_status, usage = None, 'skipped', {}
+    eligible = judge != 'none' and not run.get('error') and not usage_limited(run)
+    infra = any(f['kind'] == 'infra' for f in failures)
+    if eligible:
+        judgment, judge_status, usage['rubric'], error = await judge_call(
+            judge_prompt(scenario, run), lambda text: parse_judgment(text, scenario['rubric']),
+            generate, budget, redact)
+        if error:
+            failures = [*failures, {'kind': 'infra', 'name': 'judge', 'reason': error}]
+        if rubric and not infra:
+            measured, measures_status, usage['measures'], error = await judge_call(
+                measures_prompt(scenario, run, rubric), lambda text: parse_measures(text, rubric, run),
+                generate, budget, redact)
+            if error:
+                failures = [*failures, {'kind': 'infra', 'name': 'measures_judge', 'reason': error}]
+        elif rubric:
+            measures_status = 'not_scored'
+    elif rubric:
+        measures_status = 'not_scored' if run.get('error') or usage_limited(run) else 'skipped'
+    return combine(scenario, run, checks, failures, judgment, judge_status,
+                   measured, measures_status, rubric, usage)

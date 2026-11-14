@@ -9,6 +9,7 @@ or through ``python -m agentos_eval sweep`` (evals/README.md), which also writes
 the trend report.  This is the only module that imports Inspect AI.
 """
 import asyncio
+import hashlib
 import os
 import sys
 from pathlib import Path
@@ -17,7 +18,8 @@ if __package__ in (None, ''):
     # `inspect eval evals/agentos_eval/task.py` loads this file by path.
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from inspect_ai import Task, task
+from inspect_ai import Task, task, eval as inspect_eval
+from inspect_ai.log import read_eval_log
 from inspect_ai.dataset import MemoryDataset, Sample
 from inspect_ai.model import (ChatMessageAssistant, ChatMessageSystem, ChatMessageUser, GenerateConfig,
                               ModelOutput, get_model)
@@ -26,13 +28,13 @@ from inspect_ai.solver import Generate, TaskState, solver
 from inspect_ai.util import EarlyStop
 
 from agentos_eval import scenarios as scenario_module
-from agentos_eval.budget import JudgeBudget, estimate_tokens
+from agentos_eval.budget import JudgeBudget
 from agentos_eval.paths import eval_home
 from agentos_eval.redaction import Redactor
-from agentos_eval.runner import WORKERS, StopOnUsageLimit, run_scenario, usage_limited
+from agentos_eval.runner import WORKERS, StopOnUsageLimit, run_scenario
 from agentos_eval.sandbox import SandboxPool
-from agentos_eval.scoring import (JUDGE_MAX_TOKENS, JUDGE_SYSTEM, combine, deterministic_checks, judge_prompt,
-                                  parse_judgment)
+from agentos_eval.scoring import JUDGE_MAX_TOKENS, score_run
+
 
 DEFAULT_JUDGE = 'openai/gpt-6.1-terra'
 
@@ -75,33 +77,27 @@ def agentos_blackbox(pool, turn_timeout=900, judgment_timeout=300):
 
 
 @scorer(metrics={'*': [mean()]})
-def secretary(judge='grader', budget_path=None, seed=None):
+def secretary(judge='grader', budget_path=None, seed=None, measures=''):
     budget = JudgeBudget.from_environ(budget_path or eval_home() / 'judge-budget.json')
     redact = Redactor.for_seed(seed)
+    if measures:
+        from agentos_eval.continuity import load_rubric
+        rubric = load_rubric(measures)
+        rubric_digest = hashlib.sha256(Path(measures).read_bytes()).hexdigest()
+    else:
+        rubric, rubric_digest = None, None
+
+    async def generate(system, prompt):
+        model = get_model(role='grader') if judge == 'grader' else get_model(judge)
+        return await model.generate([ChatMessageSystem(content=system), ChatMessageUser(content=prompt)],
+                                    config=GenerateConfig(max_tokens=JUDGE_MAX_TOKENS))
 
     async def score(state: TaskState, target: Target):
         scenario, run = state.metadata['scenario'], state.metadata.get('run') or {'error': 'solver did not run'}
-        checks, failures = deterministic_checks(scenario, run)
-        judgment, judge_status = None, 'skipped'
-        if judge != 'none' and not run.get('error') and not usage_limited(run):  # #887: no judge spend on an outage
-            prompt = redact(judge_prompt(scenario, run))
-            reserved = budget.reserve(estimate_tokens(JUDGE_SYSTEM + prompt), JUDGE_MAX_TOKENS)
-            if reserved is None:
-                judge_status = 'budget_refused'
-            else:
-                try:
-                    model = get_model(role='grader') if judge == 'grader' else get_model(judge)
-                    output = await model.generate([ChatMessageSystem(content=JUDGE_SYSTEM), ChatMessageUser(content=prompt)],
-                                                  config=GenerateConfig(max_tokens=JUDGE_MAX_TOKENS))
-                    usage = output.usage
-                    budget.settle(reserved, usage.input_tokens if usage else None, usage.output_tokens if usage else None)
-                    judgment = parse_judgment(output.completion, scenario['rubric'])
-                    judge_status = 'judged'
-                except Exception as exc:  # noqa: BLE001 - a judge outage must stay in the denominator
-                    judge_status = 'judge_error'
-                    failures = [*failures, {'kind': 'infra', 'name': 'judge',
-                                            'reason': redact(f'{type(exc).__name__}: {exc}')[:200]}]
-        value, metadata = combine(scenario, run, checks, failures, judgment, judge_status)
+        value, metadata = await score_run(scenario, run, judge, budget, redact, generate, rubric)
+        judgment, failures = metadata['judgment'], metadata['failures']
+        if measures:
+            metadata['measures_rubric_digest'] = rubric_digest
         explanation = (judgment or {}).get('summary') or '; '.join(f"{row['name']}: {row['reason']}" for row in failures)
         return Score(value=value, answer=(state.output.completion or '')[:500], explanation=explanation or 'ok',
                      metadata=metadata)
@@ -110,7 +106,7 @@ def secretary(judge='grader', budget_path=None, seed=None):
 
 @task
 def agentos_secretary(scenarios='', split='', worker='codex', instances=3, seed='', judge='',
-                      turn_timeout=900, judgment_timeout=300, include_local=True, keep_sandboxes=False):
+                      turn_timeout=900, judgment_timeout=300, include_local=True, keep_sandboxes=False, measures=''):
     """Multi-turn owner scenarios against fresh Still sandboxes, on Codex and/or Claude Code."""
     seed = seed or os.environ.get('AGENTOS_EVAL_SEED', '')
     judge = judge or os.environ.get('AGENTOS_EVAL_JUDGE_MODEL', DEFAULT_JUDGE)
@@ -119,7 +115,8 @@ def agentos_secretary(scenarios='', split='', worker='codex', instances=3, seed=
     include_local = str(include_local).lower() not in ('0', 'false', 'no')
     return Task(dataset=dataset(scenarios, split, worker, include_local),
                 solver=agentos_blackbox(pool, int(turn_timeout), int(judgment_timeout)),
-                scorer=secretary('none' if judge == 'none' else 'grader', seed=Path(seed).expanduser() if seed else None),
+                scorer=secretary('none' if judge == 'none' else 'grader', seed=Path(seed).expanduser() if seed else None,
+                                 measures=measures),
                 model='none/none',
                 early_stopping=StopOnUsageLimit(EarlyStop),
                 model_roles=None if judge == 'none' else {'grader': judge},

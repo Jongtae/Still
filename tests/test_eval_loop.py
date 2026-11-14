@@ -14,6 +14,7 @@ import tempfile
 import unittest
 from contextlib import contextmanager
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'evals'))
@@ -743,7 +744,9 @@ class SandboxTest(unittest.TestCase):
         self.assertEqual(done.stdout.split(), ['blocked', 'WebKit', 'blocked', 'AppKit', 'blocked', 'objc'])
 
     def test_pool_uses_locked_stable_slots_and_a_seed_bound_judgment_cache(self):
-        with tempfile.TemporaryDirectory() as folder:
+        # Slot/cache behavior does not require probing a real host port.
+        with mock.patch.object(sandbox, 'free_port', side_effect=lambda taken: next(
+                p for p in range(18900, 18910) if p not in taken)), tempfile.TemporaryDirectory() as folder:
             seed = Path(folder) / 'seed'
             seed.mkdir()
             (seed / 'SEED.json').write_text(json.dumps({'created': 1.0}))
@@ -787,10 +790,21 @@ class SandboxTest(unittest.TestCase):
             self.assertFalse(box.data.exists())
 
     def test_ports_never_collide_with_the_live_server(self):
-        for _ in range(3):
-            port = sandbox.free_port(start=8786, end=8800)
-            self.assertNotIn(port, LIVE_PORTS)
-            self.assertNotIn(port + 1, LIVE_PORTS)
+        # Exercise the real allocator and its retry/deny rules without socket binding.
+        attempted = []
+        class Probe:
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+            def bind(self, address):
+                attempted.append(address[1])
+                if address[1] == 8789: raise OSError('occupied')
+        with mock.patch.object(sandbox.socket, 'socket', return_value=Probe()):
+            for _ in range(3):
+                port = sandbox.free_port(start=8786, end=8800)
+                self.assertEqual(port, 8790)
+                self.assertNotIn(port, LIVE_PORTS)
+                self.assertNotIn(port + 1, LIVE_PORTS)
+        self.assertEqual(attempted, [8789, 8790] * 3)
         with tempfile.TemporaryDirectory() as folder:
             with self.assertRaises(sandbox.SandboxError):
                 sandbox.Sandbox(folder, port=8787).start()
