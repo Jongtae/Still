@@ -957,7 +957,7 @@
           "status": "complete-on-merge",
           "pull_request": [
             856,
-            "#D2PR"
+            864
           ],
           "decision": "D1 re-offers eligible cut-off prompts once and tells the owner of unknown deliveries without resending them; D2 commits sent replies with their anchors, retries definitely-unsent notices and recovers missing after-work prompts within existing windows with bounded retries and pending budget-hold release.",
           "dependency_disposition": "FRONTIER-RECOVERY-01 (#826) is complete via merged PR #831; its matrix supplies the F-P4, F-D3 and Telegram F-W4 recovery contract."
@@ -1109,7 +1109,7 @@
       "tests": [
         "PYTHONPATH=src python3 -m pytest -q tests/test_recovery_matrix_826.py"
       ],
-      "summary": "M1, recovery matrix F-P4 and F-D3 and the Telegram part of F-W4: a Telegram prompt or reply whose delivery a restart cut off stays answerable and the owner is told; sent and the reply anchor commit together, _after_work prompts get a sweeper, and a notice that was definitely not sent is retried. Complete on the merge of PRs #856 (D1) and #D2PR (D2).",
+      "summary": "M1, recovery matrix F-P4 and F-D3 and the Telegram part of F-W4: a Telegram prompt or reply whose delivery a restart cut off stays answerable and the owner is told; sent and the reply anchor commit together, _after_work prompts get a sweeper, and a notice that was definitely not sent is retried. Complete on the merge of PRs #856 (D1) and #864 (D2).",
       "depends_on": [
         "FRONTIER-RECOVERY-01"
       ]

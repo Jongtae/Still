@@ -509,7 +509,7 @@ def test_frontier_declares_completed_units_and_owner_authorized_wave_2():
     assert (telegram["issue"], telegram["status"]) == (842, "complete-on-merge")
     d1, d2 = telegram["pull_request"]
     assert d1 == 856
-    assert d2 == "#D2PR" or isinstance(d2, int) and d2 > 0
+    assert d2 == 864 or isinstance(d2, int) and d2 > 0
     assert telegram["decision"]
     assert "FRONTIER-RECOVERY-01" in telegram["dependency_disposition"]
     assert "#831" in telegram["dependency_disposition"]
