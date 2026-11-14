@@ -316,6 +316,30 @@ Reuse decision: **Adapt** the existing eval package. Standard-library JSON, argp
 
 #42 unavailable-route follow-up reuse review: **Adapt** the shipped `DecisionRoutes._queue_cli_update` / `run_due_qualification` job and `RoutedDecisionEngine` admission with the harness's `CallCap` and `_MeasuredEngine`. Search evidence: `decision_routes.py` qualification jobs, `decision_qualification.qualify`, `bounded_execution.strict_binding_mismatch`, and `Sandbox.prepare`. Platform/stdlib facilities cover copying, counting and reporting. Provider SDKs and external evaluation frameworks cannot replace Still's qualification/activation contract; no new component or dependency is needed. This reuses the repository's current maintained path and official CLI boundary; no external release/version claim or network research is made in this offline fix. Licence remains AGPL-3.0-only; platform compatibility, destinations and authority remain those of the shipped route. The thin glue supplies synchronous scheduling and call admission, avoiding a second qualification implementation.
 
+P1 (#16/#827): each run's `work` maps turn task ids to read-only WorkLedger
+counts, tool names/statuses/timestamps across retries and continuations, and
+allowlisted subscription-engine usage fields. Tool rows retain only call identity/scope
+and response stage timings from details; arguments, URLs and other text are excluded.
+Turn `sent_epoch`/`delivered_epoch` record the wall clock at send/answer fetch.
+Compare matching sweeps (no judge grades enter verified completion):
+```
+python -m agentos_eval p1-report --arm limit1=<baseline.eval> --arm limit4=<parallel.eval> --json p1.json --md p1.md
+```
+New sweeps record the selected `scenario_ids` after filtering and the sample limit.
+For older logs, P1 recovers Inspect dataset sample ids or accepts `--scenarios id1,id2`.
+Conflicting declarations are refused; without a declared cohort completeness is `unknown`.
+For separate sweeps, pass `--arm limit1=a.eval,b.eval,c.eval` in epoch order.
+Their declared epoch counts add; all logs within an arm must share worker, cohort
+and git head. The identity retains each run id, start time and epoch offset.
+Missing usage/cost is `unavailable`. Native-search replay rows are counted separately
+from governed reads (bridge + direct). Only bridge rows expose observed peak overlap;
+direct records are replayed in call order and cannot show overlap. Reports separate all
+three read counts, stage timings and reported model/effort; missing bridge terminal rows
+make the bridge peak unknown.
+Reuse review: Adopt Inspect `read_eval_log`/`records_from_samples`, stdlib SQLite
+read-only URI and `statistics`; adapt the existing ledger schema. No new dependencies,
+runtime authority, or external calls. External maintenance research was unavailable offline.
+
 ## C2 continuity
 
 From `evals/` (with the eval extra installed), C2 runs exactly the eight bundled

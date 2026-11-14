@@ -106,18 +106,24 @@ def secretary(judge='grader', budget_path=None, seed=None, measures=''):
 
 @task
 def agentos_secretary(scenarios='', split='', worker='codex', instances=3, seed='', judge='',
-                      turn_timeout=900, judgment_timeout=300, include_local=True, keep_sandboxes=False, measures=''):
+                      turn_timeout=900, judgment_timeout=300, include_local=True, keep_sandboxes=False, measures='',
+                      sample_limit=None):
     """Multi-turn owner scenarios against fresh Still sandboxes, on Codex and/or Claude Code."""
     seed = seed or os.environ.get('AGENTOS_EVAL_SEED', '')
     judge = judge or os.environ.get('AGENTOS_EVAL_JUDGE_MODEL', DEFAULT_JUDGE)
     pool = SandboxPool(size=int(instances), seed=Path(seed).expanduser() if seed else None,
                        keep=str(keep_sandboxes).lower() in ('1', 'true', 'yes'))
     include_local = str(include_local).lower() not in ('0', 'false', 'no')
-    return Task(dataset=dataset(scenarios, split, worker, include_local),
+    selected = dataset(scenarios, split, worker, include_local)
+    if sample_limit is not None:
+        selected = selected[:int(sample_limit)]
+    scenario_ids = sorted({sample.metadata['scenario']['id'] for sample in selected})
+    return Task(dataset=selected,
                 solver=agentos_blackbox(pool, int(turn_timeout), int(judgment_timeout)),
                 scorer=secretary('none' if judge == 'none' else 'grader', seed=Path(seed).expanduser() if seed else None,
                                  measures=measures),
                 model='none/none',
                 early_stopping=StopOnUsageLimit(EarlyStop),
                 model_roles=None if judge == 'none' else {'grader': judge},
-                metadata={'worker': worker, 'instances': int(instances), 'seed': bool(seed), 'judge': judge})
+                metadata={'worker': worker, 'instances': int(instances), 'seed': bool(seed), 'judge': judge,
+                          'scenario_ids': scenario_ids})

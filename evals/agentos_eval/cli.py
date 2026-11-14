@@ -140,6 +140,7 @@ def run_world_sweep(args, run_scenario=None, pool_factory=None, folder=None):
     pool = (pool_factory or SandboxPool)(size=args.instances, seed=seed, keep=args.keep_sandboxes)
     run_scenario = run_scenario or run_world_scenario
     jobs = [(scenario, epoch) for epoch in range(1, args.epochs + 1) for scenario in loaded][:args.limit]
+    run['scenario_ids'] = sorted({scenario['id'] for scenario, _ in jobs})
     tripped = threading.Event()
 
     def one(job):
@@ -185,7 +186,10 @@ def cmd_sweep(args, folder=None, inspect_eval=None, task_factory=None, key_loade
                              instances=args.instances, seed=str(seed or ''), judge=judge,
                              turn_timeout=args.turn_timeout, judgment_timeout=run['judgment_timeout'],
                              include_local=not args.no_local,
-                             keep_sandboxes=args.keep_sandboxes, measures=getattr(args, 'measures', ''))
+                             keep_sandboxes=args.keep_sandboxes, measures=getattr(args, 'measures', ''),
+                             sample_limit=args.limit)
+    if 'scenario_ids' in (getattr(task, 'metadata', None) or {}):
+        run['scenario_ids'] = task.metadata['scenario_ids']
     if getattr(args, 'continuity', None) and getattr(task, 'metadata', None) is not None:
         # Inspect merges Task.metadata with eval(metadata=...), and the task's
         # seed bool otherwise replaces the sweep's canonical 'fresh' value.
@@ -242,6 +246,36 @@ def cmd_report(args):
         run = continuity_run_from_log(log)
     run.setdefault('id', run_id())
     _write(log, run)
+
+
+def cmd_p1_report(args):
+    from inspect_ai.log import read_eval_log
+    from .p1_report import compare_arms, render_markdown, combine_arm_logs
+    arms = {}
+    seen_identities = {}
+    for value in args.arm:
+        label, separator, path = value.partition('=')
+        if not separator or not label or not path or label in arms:
+            raise SystemExit('--arm must be a unique label=<log.eval>')
+        paths = [part.strip() for part in path.split(',')]
+        if any(not part for part in paths):
+            raise SystemExit('--arm must be label=<log.eval>[,<log.eval>...] with no empty paths')
+        logs = [read_eval_log(part) for part in paths]
+        try:
+            arms[label] = combine_arm_logs(logs, label, getattr(args, 'scenarios', None),
+                                           paths=paths, seen_identities=seen_identities)
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
+    try:
+        report = compare_arms(arms)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    markdown = render_markdown(report)
+    if args.json:
+        Path(args.json).write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+    if args.md:
+        Path(args.md).write_text(markdown, encoding='utf-8')
+    print(markdown)
 
 
 def cmd_judgments(args):
@@ -407,6 +441,11 @@ def main(argv=None):
     sweep.add_argument('--world', default='', help='run the world scenarios of this world (e.g. appworld), on Codex')
     rep = sub.add_parser('report', help='rebuild the trend report from an Inspect log')
     rep.add_argument('--log', required=True)
+    p1 = sub.add_parser('p1-report', help='compare P1 read-concurrency arms from Inspect logs')
+    p1.add_argument('--arm', action='append', required=True, help='label=<log.eval>[,<log.eval>...] in epoch order (two arms)')
+    p1.add_argument('--scenarios', default=None, help='declared comma-separated scenario ids for older logs')
+    p1.add_argument('--json')
+    p1.add_argument('--md')
     coverage = sub.add_parser('coverage', help='validate or render the task coverage map (no live runs)')
     coverage.add_argument('--check', action='store_true')
     coverage.add_argument('--write', type=Path)
@@ -470,7 +509,7 @@ def main(argv=None):
     c2labels.add_argument('ids', nargs='*', help='additional scenario ids already in the report')
     args = parser.parse_args(argv)
     handler = {'snapshot': cmd_snapshot, 'scenarios': cmd_scenarios, 'sweep': cmd_sweep, 'report': cmd_report,
-               'budget': cmd_budget, 'judgments': cmd_judgments, 'continuity': cmd_continuity,
+               'p1-report': cmd_p1_report, 'budget': cmd_budget, 'judgments': cmd_judgments, 'continuity': cmd_continuity,
                'coverage': cmd_coverage, 'recall': cmd_recall}[args.command]
     return handler(args) or 0
 
