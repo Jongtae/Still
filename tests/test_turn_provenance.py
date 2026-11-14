@@ -166,11 +166,11 @@ class ServiceProvenance(unittest.TestCase):
         self.assertIn('sk-live', engine.prompts[0], 'the engine itself still received the real request')
         stored = json.dumps(record, ensure_ascii=False)
         self.assertNotIn('sk-live' + 'a' * 20, stored)
-        self.assertNotIn('/Users/owner', stored)
+        self.assertIn('/Users/owner', stored)
         self.assertNotIn('ghp_' + 'b' * 20, stored)
         self.assertNotIn('opaque-telegram-value-123', stored, 'stored secrets are removed by value, whatever their format')
         self.assertIn('[redacted]', record['prompt_envelope'])
-        self.assertIn('[경로 가림]', record['prompt_envelope'])
+        self.assertIn('/Users/owner/private/plan.md', record['prompt_envelope'])
         self.assertTrue(record['instructions_version'])
         self.assertEqual(len(record['instructions_digest']), 16)
         self.assertNotIn('reported_model', record, 'an unreported model is absent, not guessed')
@@ -198,10 +198,13 @@ class ServiceProvenance(unittest.TestCase):
         service = self._service(_Engine())
         self.store.enqueue('hello', 'k1')
         service.run_one()
+        service.record_turn_provenance('export-path', argv=['/Users/owner/Documents/x.txt'])
+        self.assertIn('/Users/owner/Documents/x.txt', json.dumps(self.store.turn_provenance('export-path')))
         target = Path(self.store.root) / 'export.db'
         _portable_db(self.store.path, target)
         with sqlite3.connect(target) as db:
             self.assertEqual(db.execute('SELECT COUNT(*) FROM turn_provenance').fetchone()[0], 0)
+            self.assertNotIn('/Users/owner/Documents/x.txt', '\n'.join(db.iterdump()))
 
     def test_bare_request_fallback_records_no_instructions(self):
         service = self._service(_Engine())
@@ -213,14 +216,14 @@ class ServiceProvenance(unittest.TestCase):
         self.assertNotIn('instructions_version', record, 'no version is claimed for instructions that were not sent')
         self.assertEqual(record['prompt_envelope'], 'just the request')
 
-    def test_custom_data_and_turn_folders_are_masked(self):
+    def test_local_provenance_preserves_data_and_turn_folders(self):
         service = self._service(_Engine())
         root = str(self.store.root)
         service.record_turn_provenance('job-paths', argv=['codex', '--data', root + '/state.db', '/srv/runs/turn-1'])
         service.execution_adapter.runtime_root = Path('/srv/runs')
         service.record_turn_provenance('job-paths2', argv=['--data', root, '/srv/runs/turn-1'])
-        self.assertNotIn(root, json.dumps(self.store.turn_provenance('job-paths')))
-        self.assertEqual(self.store.turn_provenance('job-paths2')['argv'], ['--data', '[Still data]', '[turn folder]/turn-1'])
+        self.assertIn(root, json.dumps(self.store.turn_provenance('job-paths')))
+        self.assertEqual(self.store.turn_provenance('job-paths2')['argv'], ['--data', root, '/srv/runs/turn-1'])
 
     def test_failure_is_recorded_with_its_class(self):
         service = self._service(_Engine(fail=ExecutionError('x', failure_class='rate-limit', exit_code=1,

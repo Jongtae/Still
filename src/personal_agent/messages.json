@@ -7624,12 +7624,6 @@
   "ja": "[非表示]",
   "zh": "[已隐藏]"
  },
- "quickstart_service.path_redacted": {
-  "ko": "[경로 가림]",
-  "en": "[Path redacted]",
-  "ja": "[パス非表示]",
-  "zh": "[路径已隐藏]"
- },
  "quickstart_service.work_title": {
   "ko": "작업 {work_id}",
   "en": "Work {work_id}",

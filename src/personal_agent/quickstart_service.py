@@ -47,7 +47,7 @@ from .conversation_projection import (BLOCKER_CLOUD_PROFILE, BLOCKER_MODEL_UNVER
                                       answer_note, owner_cause, report_statement, terminal_text, tried_statement, turn_qualifier,
                                       verified_portion)
 from .subscription_engines import SubscriptionEngines
-from .bounded_execution import reported_usage, BRIDGE_UNAVAILABLE, CLI_TOOL_CALLS_KEPT, TOOL_INCOMPLETE, TOOL_INCOMPLETE_TEXT, bridge_sdk_problem, incomplete_bridge_calls, MAX_NATIVE_EXCERPT
+from .bounded_execution import SECRET_PATTERN, reported_usage, BRIDGE_UNAVAILABLE, CLI_TOOL_CALLS_KEPT, TOOL_INCOMPLETE, TOOL_INCOMPLETE_TEXT, bridge_sdk_problem, incomplete_bridge_calls, MAX_NATIVE_EXCERPT
 from .bounded_execution import AgentOSMcpTools, ReadOnlyAgentOSMcpTools, StrictIsolatedAgentOSMcpTools, BoundedExecutionAdapter, ExecutionError, ExecutionResult, MAX_PROMPT_BYTES, BOUNDED_PROFILE, HOST_CLI_PROFILES, STRICT_PROFILE, profile_actions, profile_status, route_unavailable
 from .orchestrator import DEFAULT_MODEL_LABEL, MIN_ATTEMPT_SECONDS, model_refused, observations_with_pages, preview_text, remember_model_refusal
 from .orchestrator import (EVENT_TOOL as ORCHESTRATION_EVENT, PURPOSE as ORCHESTRATION_PURPOSE, NOT_JUDGED, NOT_REACHED, OWNER_NEEDED, REACHED, UNJUDGED, WORKER_FAILED,
@@ -2403,17 +2403,9 @@ class AgentService:
         return self._redact_known_secrets(text)
 
     def _redact_provenance(self, text):
-        # Adopt the existing redaction: the stored secrets' literal values, the
-        # adapter's credential patterns, then the owner-visible path mask.
-        text=self._redact_known_secrets(text)
-        # The configured data and turn folders can live anywhere, not only
-        # under /Users or /home; mask them by their actual value.
-        for root,label in ((getattr(self.store,'root',None),'[Still data]'),
-                           (getattr(self.execution_adapter,'runtime_root',None),'[turn folder]')):
-            if root:
-                for form in sorted({str(root),str(Path(root).resolve())},key=len,reverse=True):
-                    if len(form)>1:text=text.replace(form,label)
-        return (self._redact_reason(text) or '')[:60000]
+        # Local-only diagnostics; portable_state deletes these records.  #819: one pass - the stored
+        # secrets' values, then the credential shapes (``redact_known_secrets`` ends with them).
+        return self._redact_known_secrets(str(text or ''))[:60000]
 
     def record_turn_provenance(self, job_id, **fields):
         """Keep what this Work actually sent and what the worker reported.
@@ -2448,11 +2440,9 @@ class AgentService:
                 fields['cited_urls']=[url for url in (self._redact_provenance(str(url))[:300] for url in fields['cited_urls'])
                                       if public_http_url(url)][:8]
             if isinstance(fields.get('stream_errors'),list):
-                # #792 review: a CLI error may echo the request or owner values: withheld when it
-                # echoes the request, then the Work's saved values, stored secrets and paths removed.
+                # Keep useful CLI errors; remove stored credentials and apply existing bounds.
                 from .bounded_execution import redact_reason
-                request=(self.store.job(job_id) or {}).get('message') or None
-                fields['stream_errors']=[self.scrub_work_text(job_id,self._redact_provenance(redact_reason(str(text),request)))[:300]
+                fields['stream_errors']=[self.scrub_work_text(job_id,self._redact_provenance(redact_reason(str(text))))[:300]
                                          for text in fields['stream_errors'][:3]]
             # One transaction merges the fields into the stored record, so concurrent writers keep each other's.
             self.store.merge_turn_provenance(job_id,{**{k:v for k,v in fields.items() if v is not None},'recorded_at':time.time()},
@@ -2570,8 +2560,8 @@ class AgentService:
                 envelope=(f'[not stored: this turn included {", ".join(withheld)}; '
                           f'{size} bytes, sha256 {hashlib.sha256(sent.encode()).hexdigest()[:16]}]')
             else:
-                # The stored secrets' values and credential shapes are removed before it is kept.
-                envelope=self.scrub_envelope(job_id,sent)
+                # #819: ``record_turn_provenance`` redacts the envelope, once.
+                envelope=sent
             fields.update(prompt_envelope=envelope,prompt_bytes=size,prompt_withheld=withheld or None,instructions_channel=instructions_channel)
             if instructions:
                 fields.update(instructions=instructions,instructions_digest=hashlib.sha256(instructions.encode()).hexdigest()[:16])
@@ -2600,10 +2590,6 @@ class AgentService:
         """
         if not ref or state not in attempt_identity.INPUT_STATES:return
         self.record_turn_provenance(job_id,attempt_input_update={'ref':ref,'input':state})
-
-    def scrub_envelope(self, job_id, text):
-        """Apply only the stored-secret pass before keeping a local prompt envelope."""
-        return self._redact_known_secrets(str(text or ''))
 
     def owner_information_refs(self, sections, spliced=()):
         """References of the owner-model sections and splices one turn carries (#826).
@@ -3576,8 +3562,7 @@ class AgentService:
     @staticmethod
     def _progress_title(message, job_id):
         text=' '.join(str(message or '').split())
-        text=re.sub(r'(?:sk-|Bearer\s+)[A-Za-z0-9._-]+',msg('quickstart_service.redacted'),text,flags=re.I)
-        text=re.sub(r'(?<!\w)/(?:Users|home)/[^\s]+',msg('quickstart_service.path_redacted'),text)
+        text=SECRET_PATTERN.sub(msg('quickstart_service.redacted'),text)
         return (text[:72]+'…') if len(text)>72 else (text or msg('quickstart_service.work_title', work_id=job_id[:8]))
 
     @staticmethod
@@ -3592,10 +3577,9 @@ class AgentService:
 
     @staticmethod
     def _redact_reason(text):
-        """Redact credentials and host paths out of an owner-visible reason."""
+        """Redact credential shapes in an owner-visible reason; the owner's paths stay (#819)."""
         if not isinstance(text,str):return None
-        text=re.sub(r'(?:sk-|Bearer\s+)[A-Za-z0-9._-]+',msg('quickstart_service.redacted'),text,flags=re.I)
-        return re.sub(r'(?<!\w)/(?:Users|home)/[^\s]+',msg('quickstart_service.path_redacted'),text)
+        return SECRET_PATTERN.sub(msg('quickstart_service.redacted'),text)
 
     @staticmethod
     def _failure_cause(refusals):
@@ -6514,9 +6498,10 @@ class AgentService:
             self._observe_sub_agent(job_id,step)
             return
         if step.get('state')=='running':
-            query=self._redact_provenance(str(step.get('query') or ''))[:200]
+            # #819: redacted once, by ``progress_step`` (which also bounds it).
+            query=str(step.get('query') or '')[:2000]
             self.live_steps[job_id]={'at':time.time(),'running':True,'id':step.get('id'),
-                                     'step':progress_step('web_search',{'query':query} if query else {},None,self._redact_provenance)}
+                                     'step':progress_step('web_search',{'query':query} if query.strip() else {},None,self._redact_provenance)}
         else:
             live=self.live_steps.get(job_id)
             if live and live.get('running') and live.get('id')==step.get('id'):

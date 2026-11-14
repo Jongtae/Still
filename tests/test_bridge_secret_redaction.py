@@ -77,6 +77,71 @@ class RelayedRedaction(unittest.TestCase):
         with self.assertRaises(ToolError):
             wrong.call(SECRET_REDACTION, {'text': SECRET})
 
+    def test_worker_error_text_preserves_paths_and_removes_stored_credentials(self):
+        from personal_agent.mcp_bridge import tool_error_result, unexpected_error_result
+        redact = bridge_secret_redactor(self.store, None)
+        self.store.secret('model_key', 'ordinarycredential')
+        self.store.retire_secret_values(['retiredcredential'])
+        for make in (tool_error_result, unexpected_error_result):
+            for message in ('file /Users/o/a.txt not found', 'risk-free failure'):
+                with self.subTest(make=make.__name__, message=message):
+                    result, typed = make(RuntimeError(message), 'list_notes', redact)
+                    self.assertEqual(result['content'][0]['text'], message)
+                    self.assertEqual(result['structuredContent'], typed)
+            result, _ = make(RuntimeError('ordinarycredential retiredcredential password=hunter2'), 'list_notes', redact)
+            text = result['content'][0]['text']
+            for value in ('ordinarycredential', 'retiredcredential', 'hunter2'):
+                self.assertNotIn(value, text)
+            result, _ = make(RuntimeError(), 'list_notes', redact)
+            self.assertEqual(result['content'][0]['text'], 'RuntimeError')
+
+    def test_worker_errors_fail_closed_without_the_stored_secret_pass(self):
+        from personal_agent.mcp_bridge import tool_error_result, unexpected_error_result, TOOL_FAILED_TEXT
+        def broken(text):
+            raise RuntimeError('redactor unavailable')
+        for make in (tool_error_result, unexpected_error_result):
+            for redact in (None, broken, lambda text: None):
+                with self.subTest(make=make.__name__, redact=redact):
+                    result, _ = make(RuntimeError(SECRET), 'list_notes', redact)
+                    self.assertEqual(result['content'][0]['text'], TOOL_FAILED_TEXT)
+
+    def test_owner_reason_and_progress_keep_paths_and_ordinary_words(self):
+        from personal_agent.quickstart_service import AgentService
+        text = 'risk-free file /Users/owner/Documents/x.txt not found'
+        self.assertEqual(AgentService._redact_reason(text), text)
+        self.assertEqual(AgentService._progress_title(text, 'job'), text)
+
+class BridgeErrorPassThrough(unittest.TestCase):
+    def test_raising_tool_reaches_worker_through_actual_bridge_dispatch(self):
+        from unittest import mock
+        from personal_agent import mcp_bridge
+        from personal_agent.bounded_execution import AgentOSMcpTools, STRICT_PROFILE
+        with tempfile.TemporaryDirectory() as folder:
+            store = QuickStore(Path(folder) / 'state')
+            store.secret('model_key', 'storedcredential')
+            job = store.enqueue('fixture request', 'error-pass-through')
+            with store.db() as db:
+                db.execute("UPDATE jobs SET status='running' WHERE id=?", (job,))
+            messages = ['file /Users/o/a.txt not found', 'storedcredential password=hunter2', '']
+            def dispatch(handle, _tools):
+                for message in messages:
+                    for kind in (RuntimeError, ValueError):
+                        with self.subTest(message=message, kind=kind):
+                            with mock.patch.object(AgentOSMcpTools, 'call', side_effect=kind(message)):
+                                result = handle('tools/call', {'name': 'list_notes', 'arguments': {}})
+                            text = result['content'][0]['text']
+                            self.assertTrue(result['isError'])
+                            self.assertEqual(store.task_events(job)[-1]['trace']['error'], text)
+                            if message == messages[0]:
+                                self.assertEqual(text, message)
+                            elif message:
+                                self.assertNotIn('storedcredential', text)
+                                self.assertNotIn('hunter2', text)
+                            else:
+                                self.assertEqual(text, kind.__name__)
+            with mock.patch.object(mcp_bridge, '_serve_stdio', side_effect=dispatch):
+                mcp_bridge.serve(store.root, job, profile=STRICT_PROFILE)
+
 
 if __name__ == '__main__':
     unittest.main()

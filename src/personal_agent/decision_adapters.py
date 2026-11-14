@@ -457,11 +457,11 @@ class SubscriptionCliDecisionEngine(SchemaDecisionEngine):
                             self.engine_id, context.purpose)
                 context.strongest = False
                 return self._ask(context, kind, question, schema, valid)
-            diagnostics = self._failure_diagnostics(completed.returncode, status, stdout, stderr, env, prompt)
+            diagnostics = self._failure_diagnostics(completed.returncode, status, stdout, stderr, env)
+            # #819: structured fields only; the reason may quote the judged text, so it is neither logged nor kept.
             LOG.warning('decision call failed engine=%s kind=%s purpose=%s exit_code=%s class=%s status=%s '
-                        'source=%s duration=%.1fs reason=%s', self.engine_id, kind, context.purpose,
-                        completed.returncode, failure, status, diagnostics['error_source'], self.now() - started,
-                        diagnostics.pop('reason') or '-')
+                        'source=%s duration=%.1fs', self.engine_id, kind, context.purpose,
+                        completed.returncode, failure, status, diagnostics['error_source'], self.now() - started)
             return done(OUTCOME_UNAVAILABLE, confidence=identity_seen, failure=failure, diagnostics=diagnostics, sent=True)
         data = self._structured(stdout)
         if data is None:
@@ -472,17 +472,11 @@ class SubscriptionCliDecisionEngine(SchemaDecisionEngine):
         return done(outcome, data if outcome == OUTCOME_DECIDED else {}, confidence,
                     '' if outcome == OUTCOME_DECIDED else 'invalid-output', sent=True)
 
-    def _failure_diagnostics(self, exit_code, status, stdout, stderr, env, prompt):
-        """#797: why a decision CLI exited non-zero, for the audit and one log line.
+    def _failure_diagnostics(self, exit_code, status, stdout, stderr, env):
+        """#797: structured exit/status/source diagnostics for the audit and log.
 
-        Diagnostics only; classification above is unchanged.  The audit keeps
-        the exit code, the provider's structured status and where the last
-        error came from (``provider-error`` event, ``stderr`` tail or
-        ``none``).  The text ``reason`` is for the log line only and goes
-        through the engine path's own guards: the stored Claude Code token's
-        literal value is removed first, then ``failure_details`` bounds the
-        text with ``redact_reason``, which withholds any echo of the prompt
-        and masks secret-shaped strings.
+        Provider and stderr text may quote owner input; neither is retained.
+        Scrub carried credentials before inspecting the provider error source.
         """
         # #211: and every cloud provider credential the call carried (by its documented name).
         from .cloud_engines import PROVIDERS
@@ -496,11 +490,10 @@ class SubscriptionCliDecisionEngine(SchemaDecisionEngine):
                 text = text.replace(value, '[redacted]')
             return text
         stdout, stderr = scrub(stdout), scrub(stderr)
-        _, reason = failure_details(self.engine_id, stdout, stderr, prompt)
         source = ('provider-error' if failure_details(self.engine_id, stdout, '')[1]
                   else 'stderr' if stderr.strip() else 'none')
         return {'exit_code': exit_code, 'provider_status': status if isinstance(status, int) else None,
-                'error_source': source, 'reason': reason}
+                'error_source': source}
 
     def _structured(self, stdout):
         """The CLI's structured answer as a dict, or None.

@@ -1002,3 +1002,37 @@ def test_work_mode_pauses_even_declared_intranet_peer_destinations(state, declar
                 await send_message(MessageToDict(card(url)), 'hello', 'intranet', store=service.store, http=http)
     asyncio.run(run())
     assert observed == []
+
+
+def test_a_question_for_another_persons_agent_masks_owner_paths_819(state):
+    """#819: a path of the owner's machine never leaves in an outbound question; the rest of it does."""
+    service, peers, model, registration = state
+    work_id = owner_work(service)
+    path = '/Users/owner/Documents/x.txt'
+    remote_app = echo_application(card('http://127.0.0.1/'))
+    seen = []
+    async def capture(request):
+        seen.append(request.content.decode())
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=remote_app),
+                                     event_hooks={'request': [capture]}) as http:
+            result = await peers.send(registration['peer']['id'], work_id, f'hello, see {path} risk-free', 'path-boundary', http=http)
+            assert result['answer'] == 'answer: hello, see [owner path] risk-free'
+    asyncio.run(run())
+    assert seen
+    assert path not in ''.join(seen)
+    assert '[owner path] risk-free' in ''.join(seen)
+
+
+def test_an_answer_for_another_persons_agent_masks_owner_paths_819(state):
+    """#819: owner-visible text keeps real paths; an inbound peer's answer does not carry them."""
+    service, peers, _model, registration = state
+    turn, created = peers.admit(registration['peer']['id'], 'message-819', None, 'where is the plan?')
+    assert created
+    root = str(service.store.root)
+    sent = peers.finish(turn, f'It is in /Users/owner/Documents/plan.md and {root}/private/x.json; risk-free.')
+    assert '/Users/owner' not in sent and root not in sent
+    assert '[owner path]' in sent and 'risk-free' in sent
+    with service.store.db() as db:
+        stored = db.execute('SELECT answer FROM a2a_turns WHERE id=?', (turn['id'],)).fetchone()['answer']
+    assert stored == sent

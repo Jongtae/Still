@@ -15,7 +15,7 @@ import uuid
 
 from mcp_types.version import HANDSHAKE_PROTOCOL_VERSIONS, LATEST_HANDSHAKE_VERSION
 
-from .agent_runtime import (ENGINE_UNMEDIATED, OWNER_STATE_ACTIONS, TRANSIENT_FAILURE_TEXT,
+from .agent_runtime import (ENGINE_UNMEDIATED, OWNER_STATE_ACTIONS,
                             Capabilities, ToolError, WorkBudget, WorkLedger, attempted_outbound, classify_failure, declared_effect,
                             call_target_field, claim_owner_steers, evidence_summary, lookup_sources, outbound_evidence, executed_field, observed_field, progress_step, ran_field, worker_result,
                             recorded_private_sources, split_status, work_source_records,
@@ -340,7 +340,7 @@ def _lookup_sources(store, job_id):
 
 #: The Work this bridge serves has ended; a typed tool error, not a protocol one.
 WORK_NOT_RUNNING = '이 작업은 더 이상 실행 중이 아니어서 도구를 실행하지 않았습니다.'
-#: Returned for an untyped tool failure whose own text is not Still's.
+#: Fail-closed fallback when the stored-secret pass cannot safely run.
 TOOL_FAILED_TEXT = 'Still 도구가 이 요청을 처리하지 못했습니다. 다른 방법을 고르거나 소유자에게 필요한 정보를 물어보세요.'
 
 
@@ -351,35 +351,39 @@ class _Rejected(ExecutionError):
         self.rpc = {'code': code, 'message': message}
 
 
-def tool_error_result(exc, action):
+def _error_text(exc, secret_redactor):
+    """Fail closed if the stored/retired credential pass cannot run."""
+    if not callable(secret_redactor):
+        return TOOL_FAILED_TEXT
+    try:
+        text = secret_redactor(str(exc) or type(exc).__name__)
+        if not isinstance(text, str):
+            return TOOL_FAILED_TEXT
+        return redact_reason(text)
+    except Exception:
+        return TOOL_FAILED_TEXT
+
+
+def tool_error_result(exc, action, secret_redactor=None):
     """An MCP tool-result error carrying #607's typed recovery metadata.
 
-    Normal tool failures are tool results (``isError``), not JSON-RPC protocol
-    errors, so the CLI can tell a transient read failure from a denial, a
-    setup need, the Work's Stop/deadline or an unknown effect.  The text is
-    Still's own: a typed ``ToolError`` or #605 input request verbatim, a fixed
-    text otherwise (an exception's own text may quote a URL or credential).
+    Normal tool failures are tool results (``isError``), not JSON-RPC protocol errors, so the CLI can tell a
+    transient read failure from a denial, a setup need, the Work's Stop/deadline or an unknown effect.  A
+    typed ``ToolError`` or #605 input request is Still's own text, verbatim.  #819: any other exception
+    reaches the worker with its own message, after the stored-secret pass and bounded (``_error_text``).
     """
     code, retry, effect = classify_failure(exc, action)
-    if code == 'input_required':
-        # #605 D2: Still's own fixed texts reach the CLI verbatim.
-        text = str(exc)
-    elif isinstance(exc, ToolError):
-        text = str(exc)
-    elif code == 'transient_failure':
-        text = TRANSIENT_FAILURE_TEXT
-    else:
-        text = TOOL_FAILED_TEXT
+    text = str(exc) if code == 'input_required' or isinstance(exc, ToolError) else _error_text(exc, secret_redactor)
     typed = {'code': code, 'retry': retry, 'effect': effect, **ran_field(exc), **executed_field(exc), **observed_field(exc)}
     if getattr(exc, 'requires', None):
         typed['requires'] = exc.requires
     return {'content': [{'type': 'text', 'text': text}], 'structuredContent': typed, 'isError': True}, typed
 
 
-def unexpected_error_result(exc, action):
+def unexpected_error_result(exc, action, secret_redactor=None):
     """The typed tool result of an exception no tool layer maps (#735).
 
-    Its class name only, never its text (it may quote a URL or credential).
+    Its message passes through the stored-secret and credential-shape filters.
     An effect-free read failed with no effect; any other action may have
     acted before it failed, so its effect is unknown and it is never replayed.
     """
@@ -387,7 +391,7 @@ def unexpected_error_result(exc, action):
     read = action in EFFECT_FREE_READS
     typed = {'code': 'tool_failed', 'retry': 'permanent' if read else 'never', 'effect': 'none' if read else 'unknown',
              'exception': type(exc).__name__}
-    return {'content': [{'type': 'text', 'text': TOOL_FAILED_TEXT}], 'structuredContent': typed, 'isError': True}, typed
+    return {'content': [{'type': 'text', 'text': _error_text(exc, secret_redactor)}], 'structuredContent': typed, 'isError': True}, typed
 
 
 def _with_steer(result, store, job_id, record):
@@ -582,11 +586,11 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
                 raise _Rejected(-32602, 'Invalid Still MCP tool arguments.') from None
             except (ValueError, TypeError, OSError, ProviderError) as exc:
                 # #607 AX-06: a normal tool failure is a typed tool result.
-                result, typed = tool_error_result(exc, action)
+                result, typed = tool_error_result(exc, action, capabilities.secret_redactor)
                 # #167: a call that failed after it was handed to a transport may still have carried a held value out.
                 record(listed, 'failed',
                        json.dumps({'scope':'subscription-mcp-bridge','call_id':call_id, **({'host_action':action} if action else {}), **typed,
-                                   'error':redact_reason(str(exc)), **declared, **call_target_field(action, arguments),
+                                   'error':result['content'][0]['text'], **declared, **call_target_field(action, arguments),
                                    **attempted_outbound(capabilities, action, arguments, exc)}, ensure_ascii=False))
                 if not session_steers:_with_steer(result, store, job_id, record)
                 _with_remaining(result, capabilities.budget)
@@ -597,10 +601,10 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
                 # typed failure of that call.  It used to end the bridge
                 # process: the CLI saw its MCP connection close mid-call and
                 # the Work recorded only a call that never completed.
-                result, typed = unexpected_error_result(exc, action)
+                result, typed = unexpected_error_result(exc, action, capabilities.secret_redactor)
                 record(listed, 'failed',
                        json.dumps({'scope':'subscription-mcp-bridge','call_id':call_id, **({'host_action':action} if action else {}), **typed,
-                                   'error':redact_reason(TOOL_FAILED_TEXT), **declared, **call_target_field(action, arguments),
+                                   'error':result['content'][0]['text'], **declared, **call_target_field(action, arguments),
                                    **attempted_outbound(capabilities, action, arguments, exc)}, ensure_ascii=False))
                 if not session_steers:_with_steer(result, store, job_id, record)
                 _with_remaining(result, capabilities.budget)

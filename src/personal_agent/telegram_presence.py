@@ -207,8 +207,8 @@ FALLBACK_STEP_LINES = {
 
 #: #881: the masking marks redaction leaves in a text (``browser_session.REDACTED``,
 #: ``[가림: N자]``, ``[경로 가림]``, ``[redacted]``, ``[Still data]``, ``[turn folder]``).
-#: They are internal: a step line carrying one is never shown; the next plainer
-#: line for the step is.
+#: #819: a step line carrying one is shown with the rest of its words; only the mark
+#: stands where the credential was.
 MASK_MARK = re.compile(r'\[(?:가림(?::[^\]]*)?|경로 가림|redacted|Still data|turn folder)\]', re.IGNORECASE)
 
 
@@ -223,11 +223,12 @@ def step_line(step, last_host=None, clean=None):
     ``step`` is the recorded ``progress_step`` dict.  The model's ``status``
     wins; otherwise the generic line for its tool kind with the observed
     host (the call's own, else ``last_host`` - the page an earlier observed
-    call of this Work opened) or query.  ``clean`` is the display-time
-    redaction.  #881: a line that carries a masking mark after it (or that it
-    could not redact) gives way to the next plainer one - status, then the
-    line with its target, then the bare line - so a mark never reaches the
-    owner's screen; if even that is masked, NO_STEP_LINE (the dots).
+    call of this Work opened) or query.  ``clean`` is an optional display-time
+    redaction; the recorded step was already redacted once when it was recorded
+    (#819).  A line ``clean`` could not redact gives way to the next plainer one -
+    status, then the line with its target, then the bare line; if none is left,
+    NO_STEP_LINE (the dots).  #819: a line carrying a masking mark is shown with
+    the rest of its words.
     """
     if not isinstance(step, dict) or step.get('approval'):
         return None
@@ -248,7 +249,7 @@ def step_line(step, last_host=None, clean=None):
             shown = ' '.join(str(clean(line.strip()) if clean is not None else line.strip()).split())
         except Exception:
             continue  # never show a line that could not be redacted
-        if shown and not masked(shown):
+        if shown:
             return ai_text(shown) if line in (step.get('announce'), step.get('status')) else shown
     return NO_STEP_LINE
 

@@ -486,7 +486,7 @@ class SubscriptionCliTests(Temp):
     def test_an_unclassified_cli_failure_records_its_exit_code_and_error_source(self):
         # #797: the owner's plan call failed as engine-failed with no exit
         # code, status or reason anywhere.  A stderr-only failure now leaves
-        # the exit code in the audit and the redacted reason in one log line.
+        # the exit code in the audit and structured fields in one log line (#819: no reason text).
         decision, record, line = self.failed_call('codex', lambda e, a: types.SimpleNamespace(
             returncode=2, stdout='', stderr='warning: retrying\nstream disconnected before completion\n'))
         self.assertEqual((decision.outcome, record['failure']), (OUTCOME_UNAVAILABLE, 'engine-failed'))
@@ -494,9 +494,11 @@ class SubscriptionCliTests(Temp):
         self.assertNotIn('provider_status', record, 'no structured status was observed')
         self.assertNotIn('reason', record, 'the audit keeps no CLI text')
         for part in ('engine=codex', 'kind=choose', 'purpose=conversation-followup', 'exit_code=2',
-                     'class=engine-failed', 'status=None', 'source=stderr',
-                     'reason=stream disconnected before completion'):
+                     'class=engine-failed', 'status=None', 'source=stderr'):
             self.assertIn(part, line)
+        # #819: the reason is no longer withheld when it echoes the prompt, so the log keeps structured fields only.
+        self.assertNotIn('reason=', line)
+        self.assertNotIn('stream disconnected', line)
 
     def test_a_structured_provider_error_records_its_status_without_text(self):
         failed = json.dumps({'type': 'turn.failed', 'error': {'message': json.dumps(
@@ -508,7 +510,7 @@ class SubscriptionCliTests(Temp):
                          (1, 503, 'provider-error'))
         self.assertNotIn('upstream overloaded', json.dumps(record))
         self.assertIn('status=503', line)
-        self.assertIn('reason=upstream overloaded', line)
+        self.assertNotIn('upstream overloaded', line)
 
     def test_classified_failures_also_record_diagnostics(self):
         rejected = json.dumps({'type': 'error', 'message': json.dumps({'status': 400, 'error': {'message': 'nope'}})})
@@ -536,11 +538,11 @@ class SubscriptionCliTests(Temp):
                     self.assertNotIn(secret, line)
                 self.assertIn('exit_code=1', line)
 
-    def test_the_stored_claude_token_is_removed_before_the_reason_is_logged(self):
+    def test_the_stored_claude_token_never_reaches_the_log(self):
         _, record, line = self.failed_call('claude-code', lambda e, a: types.SimpleNamespace(
             returncode=1, stdout='', stderr='fatal: session cc-fixture-token-000000 rejected by upstream'))
         self.assertNotIn('cc-fixture-token-000000', line)
-        self.assertIn('[redacted] rejected by upstream', line)
+        self.assertNotIn('rejected by upstream', line, '#819: structured fields only')
         self.assertEqual(record['error_source'], 'stderr')
 
     def test_a_decided_call_records_no_failure_diagnostics(self):

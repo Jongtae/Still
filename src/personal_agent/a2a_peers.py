@@ -16,6 +16,7 @@ import re
 import secrets
 import threading
 import time
+from pathlib import Path
 from urllib.parse import urlsplit
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -399,7 +400,12 @@ class A2APeers:
                        (work_id, 'a2a_message', status, payload, self.clock()))
 
     def finish(self, turn, answer, state='completed'):
-        answer = self.service._redact_known_secrets(str(answer))[:24000]
+        answer = self.service._redact_known_secrets(str(answer))
+        if turn['direction'] == 'inbound':
+            # #819: owner-visible text keeps real paths now; an answer for another person's agent does not.
+            from .bounded_execution import mask_owner_paths
+            answer = mask_owner_paths(answer, self._owner_roots())
+        answer = answer[:24000]
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
             self.guard(turn['peer_id'], turn['revision'], db)
@@ -411,6 +417,10 @@ class A2APeers:
                 db.execute('UPDATE jobs SET status=?,response=? WHERE id=?',
                            ('succeeded' if state == 'completed' else 'failed', answer, turn['work_id']))
         return answer
+
+    def _owner_roots(self):
+        root = getattr(self.store, 'root', None)
+        return (str(root), str(Path(root).resolve())) if root else ()
 
     def fail(self, turn, code):
         with self.store.db() as db:
@@ -537,6 +547,10 @@ class A2APeers:
                                     store=self.store, credential=self.secrets.get(peer_id).get('outbound', ''), http=http)
             if digest(card) != row['card_digest']:
                 raise PeerError('card_confirmation_required')
+        # #819: a question for another person's agent carries no path of the owner's machine.
+        from .bounded_execution import mask_owner_paths
+        if isinstance(text, str):
+            text = mask_owner_paths(text, self._owner_roots())
         turn, fresh = self.admit(peer_id, message_id, None, text, 'outbound', work_id)
         if not fresh:
             if turn['state'] != 'completed':

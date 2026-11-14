@@ -713,14 +713,14 @@ class FailureCauseRedaction(unittest.TestCase):
     leaking string.
     """
 
-    def test_credentials_and_host_paths_are_redacted_out_of_the_cause(self):
+    def test_credentials_are_redacted_and_the_owners_path_is_shown(self):
+        """#819: the owner reads the real path on their own machine; a credential is still masked."""
         cause = AgentService._failure_cause([
             ('read_file', '/Users/owner/private/taxes.pdf 를 읽을 수 없습니다.'),
             ('web_search', 'Bearer sk-live-abcdef123456 was rejected'),
         ])
-        self.assertNotIn('/Users/owner', cause)
+        self.assertIn('/Users/owner/private/taxes.pdf', cause)
         self.assertNotIn('sk-live-abcdef123456', cause)
-        self.assertIn('[경로 가림]', cause)
         self.assertIn('[가림]', cause)
 
     def test_no_observed_failure_means_no_invented_cause(self):

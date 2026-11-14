@@ -62,7 +62,7 @@ def prepare(root: Path, port: int, environ: dict[str, str]) -> dict:
 # owner report.  Redaction reuses the existing passes: ``recorded_arguments``
 # (typed browser text), exact literal replacement (values this Work saved
 # privately), ``redact_known_secrets`` (stored secret values and credential
-# shapes) and ``AgentService._redact_reason`` (bearer tokens, home paths).
+# shapes), ``AgentService._redact_reason`` (credentials), and an explicit export-only path filter.
 # Keys that name session or credential material are dropped outright.
 # A subscription CLI-route Work (#786) adds ``bridge_steps`` (its MCP bridge
 # calls) and ``orchestration`` (attempts and the goal verdict); a Work without
@@ -247,6 +247,12 @@ def _mask_saved_values(text, values):
     return "\n".join(lines)
 
 
+def mask_owner_paths(text, roots=()):
+    """The probe export's path exclusions, outside owner UI (the runtime's export/peer helper, #819)."""
+    from personal_agent.bounded_execution import mask_owner_paths as mask
+    return mask(text, roots)
+
+
 def _redactor(runtime, store, job_id, omit_text):
     private = _work_private_values(store, job_id)
     roots = sorted({str(store.root), str(Path(store.root).resolve())}, key=len, reverse=True)
@@ -260,10 +266,7 @@ def _redactor(runtime, store, job_id, omit_text):
             value = runtime["redact_known_secrets"](store, value)
         except Exception:
             return "[redacted]"
-        for root in roots:
-            if len(root) > 1:
-                value = value.replace(root, "[Still data]")
-        value = runtime["redact_reason"](value) or ""
+        value = mask_owner_paths(runtime["redact_reason"](value) or "", roots)
         if free and omit_text:
             return _omitted(value)
         return value

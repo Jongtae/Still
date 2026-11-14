@@ -392,17 +392,25 @@ def remove_slot(store, name):
     return store.remove_secret(SECRET_PREFIX + name) or previous is not None
 
 
-def secret_names(store):
-    """``QuickStore.secret`` keys of every configured slot, for the stored-secret redactor."""
+def secret_names(store, strict=False):
+    """``QuickStore.secret`` keys of every configured slot, for the stored-secret redactor.
+
+    ``strict`` (#819, the redaction cache): a configuration read that fails raises instead of reading as
+    no slots, so the caller withholds rather than redacts without those slots' values.
+    """
     try:
         rows = store.config(SLOTS_KEY, {})
     except Exception:
+        if strict:
+            raise
         return ()
     return tuple(SECRET_PREFIX + name for name in rows if isinstance(name, str) and NAME.match(name)) if isinstance(rows, dict) else ()
 
 
 # Serialize misses too: concurrent judgments must not each read the Keychain.
 _REDACTION_LOCK = threading.Lock()
+#: #819: whether this thread's last ``encrypted_secret_values`` reads left a value undecrypted.
+REDACTION_STATE = threading.local()
 _REDACTION_REVISIONS = 4
 
 
@@ -449,6 +457,9 @@ def encrypted_secret_values(store, *, fresh=False):
             except Exception:
                 complete = False
         values = tuple(values)
+        # #819: ``redaction_material`` caches by secrets revision; a partial result must not be kept there
+        # either.  Per thread: another thread's read never clears this one's flag.
+        REDACTION_STATE.partial = getattr(REDACTION_STATE, 'partial', False) or not complete
         if complete:
             cache[revision] = values
             if len(cache) > _REDACTION_REVISIONS:
