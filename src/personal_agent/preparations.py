@@ -130,6 +130,11 @@ ACCEPTED_OWNER_WORK, ACCEPTED_DREAM = 'owner-work', 'dream'
 ACCEPTED_DAY_PLAN = 'day-plan'
 #: #717: set up without the owner asking; such a run never uses the owner's payment autonomy.
 SELF_SET = (ACCEPTED_OWNER_WORK, ACCEPTED_DREAM, ACCEPTED_DAY_PLAN)
+#: #821: the owner asked for or accepted it; such a run may ask the owner to sign in.  An allowlist:
+#: a missing, NULL or unknown ``accepted_by`` is never read as the owner's acceptance.
+OWNER_ACCEPTED = (ACCEPTED_OWNER_REQUEST, ACCEPTED_OWNER_BUTTON, ACCEPTED_OWNER_SETTINGS, ACCEPTED_OWNER_ANSWER)
+#: #821: a waiting run's continuation refused because its preparation changed while it waited.
+WAIT_CHANGED = 'preparation-changed'
 #: #717: the states of a look-back's preparation the owner may not have been told about yet.
 UNTOLD_STATES = ('proposed', 'scheduled')
 
@@ -1553,6 +1558,30 @@ class Preparations:
         # The current run already consumed its count; equality is allowed.
         if row['recurrence'] == RECURRENCE_WINDOW and row['run_count'] > row['max_runs']:
             return 'preparation-run-limit'
+        return None
+
+    @staticmethod
+    def wait_stamp(row):
+        """The accepted version a run's owner wait is bound to (#821): identity, acceptance, revision, run."""
+        return {'id': row['id'], 'accepted_by': row['accepted_by'], 'revision': row['updated_at'],
+                'run': row['last_run_job_id']}
+
+    @staticmethod
+    def wait_refusal(db, work_id, stamp):
+        """``WAIT_CHANGED`` unless Work ``work_id`` is still the current run of the owner-accepted
+        preparation version ``stamp`` names (#821); None when it is.
+
+        Inside the caller's transaction.  ``updated_at`` is the row's revision: every owner change a
+        running row admits (cancel, restore, the run's own pause) moves it, and editing or pausing a
+        running row is refused (``already_running``).
+        """
+        if not isinstance(stamp, dict):
+            return WAIT_CHANGED
+        row = db.execute('SELECT * FROM preparations WHERE id=?', (stamp.get('id'),)).fetchone()
+        if not (row and row['accepted_by'] in OWNER_ACCEPTED and row['accepted_by'] == stamp.get('accepted_by')
+                and row['state'] == STATE_RUNNING and row['last_run_job_id'] == work_id == stamp.get('run')
+                and row['updated_at'] == stamp.get('revision')):
+            return WAIT_CHANGED
         return None
 
     def refuse_run(self, db, work_id, now, reason):
