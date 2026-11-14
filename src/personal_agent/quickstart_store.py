@@ -822,10 +822,14 @@ class QuickStore:
         self.link_work_relation(source_job_id,job_id,'steer',db=db)
         return True
 
-    def claim_steers(self, job_id):
+    def claim_steers(self, job_id, *, ledger=None):
         """The owner messages for running Work ``job_id`` not yet handed to its worker, marked handed (#999)."""
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            # Check in the claim transaction: recovery may have fenced this
+            # worker since its last tool result, even if the Work is running again.
+            if not db.execute("SELECT 1 FROM jobs WHERE id=? AND status='running'",(job_id,)).fetchone():return []
+            if ledger is not None and ledger.lapse(db=db) in ('superseded','unavailable'):return []
             rows=db.execute('SELECT source_job_id,content FROM work_steers WHERE job_id=? AND delivered_at IS NULL ORDER BY created',
                             (job_id,)).fetchall()
             if rows:

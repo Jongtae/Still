@@ -2119,11 +2119,12 @@ class WorkLedger:
     found=db.execute('SELECT value FROM config WHERE key=?',(key,)).fetchone()
     if not found:continue
     row=WorkLedger._validate(json.loads(found[0]))
-   except (TypeError,ValueError):continue
+   except (TypeError,ValueError,KeyError,OverflowError,RecursionError):continue
    # A paused record already refuses every spend, and its epoch may bind a budget-continue
    # offer; another holder (a later retry or continuation) already supersedes this run's bridge.
    if not row['active'] or row.get('active_work_id',root)!=job_id:continue
    row['epoch']+=1
+   # Failure to write the fence must roll back recovery; only unreadable data is skipped.
    db.execute('UPDATE config SET value=? WHERE key=?',(json.dumps(row),key))
    advanced.append(key)
   return advanced
@@ -2217,7 +2218,7 @@ class WorkLedger:
   try:return self._validate(self.store.config(self.key))
   except Exception:return None
 
- def lapse(self):
+ def lapse(self,*,db=None):
   """Why this run may take no further step, or None (#617).
 
   ``deadline`` (its active time is used up), ``superseded`` (a newer run of
@@ -2226,7 +2227,7 @@ class WorkLedger:
   """
   if self.opened:return self.opened
   try:
-   row=self._validate(self.store.config(self.key))
+   row=self._validate(self.store.config(self.key,db=db))
    if row['epoch']!=self.epoch or row.get('active_work_id')!=self.job_id or not row['active']:return 'superseded'
    return 'deadline' if min(self.deadline,row['deadline'])-self.wall()<=0 else None
   except Exception:return 'unavailable'
@@ -2686,7 +2687,7 @@ def steer_note(texts, draft=''):
  return note+('\n\n'+STEER_DRAFT_LEAD+'\n'+draft[:STEER_DRAFT_CHARS] if draft else '')
 
 
-def claim_owner_steers(store, job_id, record=None):
+def claim_owner_steers(store, job_id, record=None, *, ledger=None):
  """The owner steers this Work's worker has not seen yet, as one message, or None (#999).
 
  Claiming marks them handed over, so each reaches the worker once; ``record``
@@ -2694,7 +2695,7 @@ def claim_owner_steers(store, job_id, record=None):
  """
  claim=getattr(store,'claim_steers',None)
  if not callable(claim) or not isinstance(job_id,str):return None
- try:texts=claim(job_id)
+ try:texts=claim(job_id,ledger=ledger)
  except Exception:return None
  if not texts:return None
  if record:record(STEER_EVENT,'delivered',json.dumps({'count':len(texts)}))
