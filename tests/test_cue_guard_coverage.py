@@ -15,7 +15,6 @@ EXCLUDED = {
     'quickstart.py': 'Forbidden: provider routes, OAuth hosts and UI labels need separate classification.',
     'telegram_surface.py': 'Forbidden: photo attachment marker comparisons are reported as language cues.',
     'connector_revocation.py': 'OAuth revoke endpoint hostname is provider protocol syntax.',
-    'context_inbox.py': 'Sensitive-data filtering regex is security policy, not owner intent.',
     'conversation_projection.py': 'Hangul range comparisons implement grammatical particles.',
     'folder_grants.py': 'Sensitive host directories are filesystem authority exclusions.',
     'intranet.py': 'Metadata hostname denylist enforces network authority.',

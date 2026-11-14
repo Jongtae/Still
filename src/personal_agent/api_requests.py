@@ -403,6 +403,8 @@ def secret_names(store):
 
 # Serialize misses too: concurrent judgments must not each read the Keychain.
 _REDACTION_LOCK = threading.Lock()
+#: #819: whether this thread's last ``encrypted_secret_values`` reads left a value undecrypted.
+REDACTION_STATE = threading.local()
 _REDACTION_REVISIONS = 4
 
 
@@ -449,6 +451,9 @@ def encrypted_secret_values(store, *, fresh=False):
             except Exception:
                 complete = False
         values = tuple(values)
+        # #819: ``redaction_material`` caches by secrets revision; a partial result must not be kept there
+        # either.  Per thread: another thread's read never clears this one's flag.
+        REDACTION_STATE.partial = getattr(REDACTION_STATE, 'partial', False) or not complete
         if complete:
             cache[revision] = values
             if len(cache) > _REDACTION_REVISIONS:

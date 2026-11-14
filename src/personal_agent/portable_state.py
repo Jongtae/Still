@@ -32,6 +32,7 @@ def _portable_db(source, target, redaction=((), None)):
         # #258 (Codex review): the export carries no secrets, so a secret the owner typed into a
         # conversation - current, or since replaced or removed - leaves the transcript here.
         _redact_transcript(copy, tables, redaction)
+        _mask_diagnostic_paths(copy, tables, Path(source).resolve().parents[1])
         copy.execute("DELETE FROM auth");copy.execute("DELETE FROM sessions")
         # #570: developer-mode provenance is owner-local diagnostics, not portable state.
         if 'turn_provenance' in tables:copy.execute("DELETE FROM turn_provenance")
@@ -123,6 +124,37 @@ _STRUCTURAL_SUFFIXES = ("_id", "_key", "_ref", "_digest", "_hash", "_state", "_s
 def _owner_content_column(name):
     name = str(name).lower()
     return name not in _STRUCTURAL_COLUMNS and not name.endswith(_STRUCTURAL_SUFFIXES)
+
+
+#: #819: the failure and step texts the owner reads with their real paths on this machine.  Before #819 they
+#: were path-masked when written (or carried a fixed tool error text); the export, which leaves this machine,
+#: still masks them: the Work's failure columns, the tool events (a tool's error text now reaches the
+#: worker and its record as written) and the browser step requests' labels.
+_DIAGNOSTIC_COLUMNS = {"jobs": ("error", "owner_cause", "owner_note"), "tool_events": ("detail",)}
+_DIAGNOSTIC_CONFIG = ("browser_step_requests",)
+
+
+def _mask_diagnostic_paths(copy, tables, data_root):
+    from .bounded_execution import mask_owner_paths
+    roots = (str(data_root),)
+
+    def mask(table, column, where="", args=()):
+        rows = copy.execute(f'SELECT rowid, "{column}" FROM "{table}" WHERE typeof("{column}")=\'text\'{where}',
+                            args).fetchall()
+        for rowid, text in rows:
+            clean = mask_owner_paths(text, roots)
+            if clean != text:
+                copy.execute(f'UPDATE "{table}" SET "{column}"=? WHERE rowid=?', (clean, rowid))
+    for table, columns in _DIAGNOSTIC_COLUMNS.items():
+        if table not in tables:
+            continue
+        present = {row[1] for row in copy.execute(f'PRAGMA table_info("{table}")')}
+        for column in columns:
+            if column in present:
+                mask(table, column)
+    if "config" in tables:
+        for key in _DIAGNOSTIC_CONFIG:
+            mask("config", "value", " AND key=?", (key,))
 
 
 def _redact_owner_text(text, values, ledger):

@@ -30,9 +30,12 @@ Vocabulary is mapped, not installed: OWL-Time intervals (``effective_from``/
 ``homeLocation``/``workLocation`` (the ``profile.place.*`` anchors).
 """
 import json
+from collections import OrderedDict
+from pathlib import Path
 import os
 import math
 import uuid
+import threading
 import time
 from datetime import datetime, timedelta, timezone as dt_timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -115,16 +118,132 @@ def redact_known_secrets(store, text):
     """
     from .bounded_execution import SECRET_PATTERN
     text = str(text or '')
-    for value in stored_secret_values(store):
+    entry = _material_entry(store)
+    values, ledger = entry['values'], entry['ledger']
+    # #819: the same text (a prompt envelope, a recorded step) is redacted several times per Work; its result
+    # is kept with this secrets revision's own entry, so it is dropped with it on any secrets change.
+    memo = entry.get('results')
+    if memo is not None:
+        with _MATERIAL_LOCK:
+            known = memo.pop(text, None)
+            if known is not None:
+                memo[text] = known
+                return known
+    original = text
+    for value in values:
         text = text.replace(value, '[redacted]')
     # #258 (Codex review): a value since replaced or removed is no longer stored; its spans are found by
     # their retired digests, at this one boundary every model-bound text already passes.
-    ledger = getattr(store, 'retired_secret_ledger', None)
-    ledger = ledger() if callable(ledger) else None
     if ledger:
         from .quickstart_store import QuickStore
         text = QuickStore.redact_secret_spans(text, (), ledger)
-    return SECRET_PATTERN.sub('[redacted]', text)
+    text = SECRET_PATTERN.sub('[redacted]', text)
+    if memo is not None and len(original) <= MEMO_MAX_CHARS:
+        with _MATERIAL_LOCK:
+            memo[original] = text
+            while len(memo) > MEMO_ENTRIES:
+                memo.popitem(last=False)
+    return text
+
+
+#: #819: how many redacted texts, of at most how many characters, one secrets revision remembers.
+MEMO_ENTRIES = 128
+MEMO_MAX_CHARS = 16384
+#: #819: guards the per-store material entry and its memo across threads.
+_MATERIAL_LOCK = threading.RLock()
+
+
+#: #819: how long after a secrets file's last modification its metadata alone identifies its content.  A file
+#: modified within this window of the read is "racy" (git's racy-timestamp rule, Documentation/technical/
+#: racy-git.txt): a second write in the same timestamp tick with the same size could reuse the inode, so its
+#: content is compared instead.  Two seconds covers the coarsest common timestamp granularity (FAT).
+RACY_SECONDS = 2
+
+
+def _file_stat(path):
+    """``(inode, mtime_ns, size)`` of one secrets file, None when it does not exist."""
+    try:
+        stat = os.stat(path)
+    except FileNotFoundError:
+        return None
+    return (stat.st_ino, stat.st_mtime_ns, stat.st_size)
+
+
+def _file_bytes(path):
+    try:
+        return Path(path).read_bytes()
+    except FileNotFoundError:
+        return None
+
+
+def redaction_material(store):
+    """``(stored values, retired ledger)`` for ``redact_known_secrets``, read once per secrets revision (#819)."""
+    entry = _material_entry(store)
+    return entry['values'], entry['ledger']
+
+
+def _material_entry(store):
+    """This secrets revision's ``{'values', 'ledger', 'results'?}``, read only when the revision changed (#819).
+
+    Before #819 every call took the secrets lock and read the secrets file once per known name, then the
+    ledger, dozens to hundreds of times per Work.  Now they are read again only when the secrets revision
+    changed: the secrets file (plaintext slots, encrypted API credentials, cloud credentials) or the
+    retired-secret ledger was rewritten (a new value, a rotation, a removal or a retirement, by this or
+    another process sharing the store - every write is an atomic replace), the configured slot names
+    changed, or the encrypted-slot key provider changed.  Unchanged metadata identifies an unchanged file
+    unless the file was modified within ``RACY_SECONDS`` of the read; then its bytes are compared.
+
+    Every revision is taken *before* the values are read, so a write that lands during the read leaves an
+    older revision cached and the next call reads again.  A failing read (an unreadable ledger, an encrypted
+    slot whose key is unavailable) raises as before and caches nothing, so model-bound text stays withheld;
+    a partial read (an undecryptable run state, #772) is used once and not cached.  A store without secrets
+    files (a test double) is read on every call, as before, and gets no memo.
+    """
+    secret_path = getattr(store, 'secret_path', None)
+    retired_path = getattr(store, 'retired_secrets_path', None)
+    if secret_path is None or retired_path is None:
+        values, ledger = _read_material(store)
+        return {'values': values, 'ledger': ledger}
+    from .api_requests import REDACTION_STATE, secret_names
+    with _MATERIAL_LOCK:
+        now = time.time_ns()
+        stats = (_file_stat(secret_path), _file_stat(retired_path))
+        others = (secret_names(store), id(getattr(store, 'api_slot_key', None)))
+        cached = getattr(store, '_known_secret_material', None)
+        if cached is not None and cached['others'] == others:
+            if cached['trusted'] and cached['stats'] == stats:
+                return cached
+            contents = (_file_bytes(secret_path), _file_bytes(retired_path))
+            if contents == cached['contents']:
+                cached.update(stats=stats, trusted=_settled(stats, now))
+                return cached
+        else:
+            contents = (_file_bytes(secret_path), _file_bytes(retired_path))
+        REDACTION_STATE.partial = False
+        values, ledger = _read_material(store)
+        entry = {'stats': stats, 'contents': contents, 'others': others, 'trusted': _settled(stats, now),
+                 'values': values, 'ledger': ledger, 'results': OrderedDict()}
+        if getattr(REDACTION_STATE, 'partial', False):
+            # An encrypted run state could not be decrypted: retried on the next call, as before (#772).
+            store._known_secret_material = None
+            return {'values': values, 'ledger': ledger}
+        try:
+            store._known_secret_material = entry
+        except AttributeError:
+            pass
+        return entry
+
+
+def _settled(stats, now):
+    """Whether every secrets file was last modified more than ``RACY_SECONDS`` before ``now``."""
+    return all(stat is None or now - stat[1] > RACY_SECONDS * 1_000_000_000 for stat in stats)
+
+
+def _read_material(store):
+    values = tuple(stored_secret_values(store))
+    ledger = getattr(store, 'retired_secret_ledger', None)
+    ledger = ledger() if callable(ledger) else None
+    return values, ledger
 
 
 #: #258: the plaintext secret namespaces ``stored_secret_values`` reads besides ``KNOWN_SECRET_NAMES``

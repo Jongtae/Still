@@ -2788,7 +2788,7 @@ class StreamRedaction(unittest.TestCase):
 
 
 class StreamErrorsInTheTurnRecord(Harness):
-    def test_a_stream_error_echoing_the_request_or_a_secret_is_not_stored(self):
+    def test_stream_error_preserves_request_text_and_excludes_credentials(self):
         """#792 review: the stored turn record passes the service redaction, not only the pattern pass."""
         self.engine.fail = [ExecutionError('no answer', failure_class='invalid-output',
                                            meta={'stream_errors': [f'rejected: 비밀 요청 문장 그대로 반복 key {OPENAI_KEY}',
@@ -2800,7 +2800,7 @@ class StreamErrorsInTheTurnRecord(Harness):
         self.assertIn('bad key', errors[1])
         stored = json.dumps(errors, ensure_ascii=False)
         self.assertNotIn(OPENAI_KEY, stored)
-        self.assertNotIn('비밀 요청 문장 그대로 반복', stored)
+        self.assertIn('비밀 요청 문장 그대로 반복', stored)
 
 
 class OwnerModelAlwaysOn(Harness):
@@ -3969,6 +3969,8 @@ class SecretRedactionPlan(Harness):
 
         with mock.patch.object(api_requests, 'encrypted_secret_values', uncached):
             baseline = run()
+        # #819: the per-revision material the baseline read is dropped, so this run reads it itself.
+        self.store._known_secret_material = None
         key.get.reset_mock()
         cached = run()
         self.assertEqual(key.get.call_count, 1)

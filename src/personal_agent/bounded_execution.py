@@ -80,8 +80,57 @@ PEER_AUTH_REFRESH_REASON = ('Peer Codex is waiting for the owner login cache to 
 
 LOG = logging.getLogger('personal_agent.engine')
 ENGINE_NAMES = {'codex': 'Codex', 'claude-code': 'Claude Code'}
-_SECRET = re.compile(r'(?i)\bauthorization["\']?\s*[=:]\s*["\']?(?:[a-z]+\s+)?[^\s"\',}]+|\b(?:bearer|basic)\s+\S+|\b(?:sk|pk|rk)-[A-Za-z0-9_-]{8,}|\b(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{10,}|\b(?:xox[abposr]|xapp)-[A-Za-z0-9-]{10,}|\bAIza[0-9A-Za-z_-]{30,}|\b\d{6,}:[A-Za-z0-9_-]{30,}|["\']?\b(?:api[_-]?key|access[_-]?token|token|secret|password)["\']?\s*[=:]\s*["\']?[^\s"\',}]+')
-_ECHO_WINDOW = 24
+# Adapt provider-prefix recognition used by detect-secrets / gitleaks; no
+# scanner dependency or entropy-only detection. Context distinguishes short
+# passwords from ordinary prose. Keep this a stdlib compiled regex for callers.
+# Bound every speculative scan; delimiter-separated name segments are disjoint.
+_CREDENTIAL_NAME = (r'(?:[a-z][a-z0-9]{0,30}[_-]){0,4}(?:api[_-]?key|access[_-]?token|'
+                    r'refresh[_-]?token|id[_-]?token|secret(?:[_-]access[_-]key)?|'
+                    r'password|passwd|token|auth[_-]?token|authorization|sessionid|session|accountkey|otp)|pgpassword')
+_PLACEHOLDER = r'(?!your[_-]|null\b|true\b|false\b|<|\$(?:[A-Z_][A-Z0-9_]*\b|\{[^}]{1,128}\}))'
+_VALUE = r"[^\s\\\"',};&<>]{1,8192}"
+# In ambiguous prose, require a numeric/mixed/punctuated value. Long letters
+# are tokens only in a credential context, never a standalone entropy rule.
+_SHAPED_VALUE = (r'(?=[^\s\\\"\',};&<>]{0,8192}(?:[0-9]|[a-z][A-Z]|[A-Za-z][_./+!=@-][A-Za-z0-9]))' + _VALUE)
+_CONTEXT_VALUE = _PLACEHOLDER + r'(?!\$[0-9])(?:[A-Za-z]{20,8192}(?=[\s\"\',};&]|$)|' + _SHAPED_VALUE + ')'
+# Alternatives: bounded PEM; provider shapes; JWT; URL userinfo; auth headers;
+# quoted/YAML passwords; named fields and flags; command credential fragments.
+# Fixed prefixes plus bounded lookahead/backtracking keep failed scans linear.
+_SECRET = re.compile(
+    r'-----BEGIN (?:[A-Z]{1,20} )?PRIVATE KEY-----(?:(?!-----BEGIN )[\s\S]){0,8192}?-----END (?:[A-Z]{1,20} )?PRIVATE KEY-----'
+    # A pasted or cut-off key without its END line: the header and its base64 body.
+    r'|-----BEGIN (?:[A-Z]{1,20} )?PRIVATE KEY-----[A-Za-z0-9+/=\s]{0,8192}+'
+    r'|\b(?:sk|pk|rk)-[A-Za-z0-9_-]{8,}+'
+    r'|\b(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9_]++'
+    r'|\b(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]{10,}+'
+    r'|\bhf_[A-Za-z]{34}\b|\bnpm_[A-Za-z0-9]{36}\b'
+    r'|\b(?:glpat-|GOCSPX-|xox[abposr]-|xapp-)[A-Za-z0-9_-]{10,}+'
+    r'|https://hooks\.slack\.com/services/[A-Za-z0-9]{1,128}/[A-Za-z0-9]{1,128}/[A-Za-z0-9]{1,256}'
+    r'|\bAIza[0-9A-Za-z_-]{30,}+|\b(?:AKIA|ASIA)[A-Z0-9]{16}\b'
+    r'|\b\d{6,32}:[A-Za-z0-9_-]{30,}+'
+    r'|\beyJ[A-Za-z0-9_-]{1,8192}\.[A-Za-z0-9_-]{1,8192}\.[A-Za-z0-9_-]{1,8192}'
+    r'|\b[a-z][a-z0-9+.-]{0,30}://[^\s/@:]{0,1024}:[^\s/@]{1,8192}@'
+    r'|(?i:\bauthorization)[\\\"\']{0,3} *[=:] *[\\\"\']{0,3}'
+    r'(?:(?i:digest) +[^\r\n]{1,2000}|[A-Za-z0-9_-]{1,128} +'+_CONTEXT_VALUE+r')'
+    r'|\b(?i:bearer|basic) +'+_CONTEXT_VALUE+
+    r'|(?i:[\"\'](?:'+_CREDENTIAL_NAME+r'|pin|auth))[\\\"\']{1,3} *: *[\"\']'
+    +_PLACEHOLDER+r'[^\"\'\r\n]{1,8192}[\"\']'
+    r'|(?im:^[ \t]{0,80}(?:password|passwd):)[ \t]{0,80}'+_PLACEHOLDER+_VALUE+r'(?=[ \t]{0,80}(?:\n|$))'
+    # ``name=value`` with no space (a query string, an env line, a flag) is a credential context for any
+    # value that is not a placeholder; ``name: value`` prose needs a credential-shaped value.
+    r'|(?i:\b(?:'+_CREDENTIAL_NAME+r'))[\\\"\']{0,3}=[\\\"\']{0,3}'+_PLACEHOLDER+_VALUE+
+    r'|(?i:\b(?:'+_CREDENTIAL_NAME+r'))[\\\"\']{0,3} *[=:][ \t\r\n]{0,80}[\\\"\']{0,3}'
+    +_CONTEXT_VALUE+
+    r'|(?i:\b(?:(?:[a-z][a-z0-9]{0,30}[_-]){0,4}(?:password|passwd)|pgpassword))[\\\"\']{0,3} *= *[\\\"\']{0,3}'
+    +_PLACEHOLDER+_VALUE+
+    r'|(?i:\b(?:(?:[a-z][a-z0-9]{0,30}[_-]){0,4}pwd)) *= *(?![/~])'+_PLACEHOLDER+_VALUE+
+    r'|(?i:--(?:'+_CREDENTIAL_NAME+r'))(?:=| +)[\"\']{0,2}'+_PLACEHOLDER+_VALUE+
+    r'|(?<=mysql -p)'+_PLACEHOLDER+r'[^\s-]{1,8192}'
+    r'|(?<= -p)'+_PLACEHOLDER+_SHAPED_VALUE+
+    r'|(?<=sshpass -p )'+_PLACEHOLDER+_VALUE+
+    r'|(?:(?<= -u )|(?<= --user ))[^\s:]{1,256}:'+_PLACEHOLDER+_VALUE+
+    r'|(?<=password )'+_PLACEHOLDER+_SHAPED_VALUE
+)
 _CONTROL = re.compile(r'[\x00-\x1f\x7f]+')
 # Hints are keyed by the provider's structured HTTP status, never by guessing
 # from free text.  An unknown status keeps only the observed reason.
@@ -614,34 +663,33 @@ def claude_bridge_status(raw):
 SECRET_PATTERN = _SECRET
 
 
-def _echoes(text, prompt):
-    """True when ``text`` repeats any run of 24+ characters from the prompt.
-
-    Every window of the (already bounded) text is checked, so an echo of the
-    prompt's start, middle or end is caught regardless of alignment.
-    """
-    prompt = ' '.join(prompt.split())
-    if len(prompt) < _ECHO_WINDOW:
-        return len(prompt) >= 8 and prompt in text
-    return any(text[start:start + _ECHO_WINDOW] in prompt
-               for start in range(0, len(text) - _ECHO_WINDOW + 1))
-
-
-def redact_reason(text, prompt=None):
-    """Bound provider/CLI text before it is persisted, logged or shown.
-
-    A reason that echoes the request is withheld entirely: providers may
-    quote any part of it, so partial scrubbing is not trustworthy.
-    """
+def redact_reason(text):
+    """Keep useful error text, folding controls and excluding credentials."""
     if not isinstance(text, str):
         return ''
-    text = ' '.join(_CONTROL.sub(' ', text).split())
-    # Check only what could be shown, before redaction can split an echo.
+    # Bound work before matching, then redact PEM blocks before folding controls.
     text = text[:MAX_REASON_CHARS * 2]
-    if isinstance(prompt, str) and _echoes(text, prompt):
-        return '[요청 내용이 포함된 응답이라 표시하지 않습니다]'
-    text = _SECRET.sub('[redacted]', text)
+    text = SECRET_PATTERN.sub('[redacted]', text)
+    text = ' '.join(_CONTROL.sub(' ', text).split())
+    # Folding can expose a header separated by controls (for example a tab).
+    text = SECRET_PATTERN.sub('[redacted]', text)
     return text if len(text) <= MAX_REASON_CHARS else text[:MAX_REASON_CHARS - 1] + '…'
+
+
+
+#: #819: the owner's home and data paths, masked only where text leaves the owner's machine for someone else
+#: (a portable export, another person's agent).  Owner-visible text and local records keep the real path.
+OWNER_PATH = re.compile(r'(?<!\w)/(?:Users|home|private/var/folders|var/folders)/[^\s"\'<>]+')
+OWNER_PATH_MARK = '[owner path]'
+
+
+def mask_owner_paths(text, roots=()):
+    """``text`` with the configured data roots and any ``/Users/...`` or ``/home/...`` path replaced."""
+    text = str(text or '')
+    for root in sorted({str(root) for root in roots if root}, key=len, reverse=True):
+        if len(root) > 1:
+            text = text.replace(root, '[Still data]')
+    return OWNER_PATH.sub(OWNER_PATH_MARK, text)
 
 
 def _provider_error(message):
@@ -1256,7 +1304,7 @@ def incomplete_bridge_calls(rows):
 _RETRY_STATUS = re.compile(r'\blast status:? (\d{3})\b', re.I)
 
 
-def failure_details(engine_id, stdout, stderr, prompt=None):
+def failure_details(engine_id, stdout, stderr):
     """Summarise a failed CLI turn from its official machine output.
 
     Codex ``exec --json`` reports failures as ``turn.failed``/``error``
@@ -1290,7 +1338,7 @@ def failure_details(engine_id, stdout, stderr, prompt=None):
         # ("exceeded retry limit, last status: 429 Too Many Requests").
         retried = _RETRY_STATUS.search(message or '')
         status = int(retried.group(1)) if retried else None
-    return status, redact_reason(message, prompt)
+    return status, redact_reason(message)
 
 
 #: How often a running CLI is checked for the owner's Stop (#607 AX-10).
@@ -1955,8 +2003,8 @@ class RelayedWorkMcpTools(StrictIsolatedAgentOSMcpTools):
         except Exception as exc:
             if not dispatched:
                 not_run(exc)
-            result, typed = (tool_error_result(exc, action) if isinstance(exc, (ValueError, TypeError, OSError))
-                             else unexpected_error_result(exc, action))
+            result, typed = (tool_error_result(exc, action, caps.secret_redactor) if isinstance(exc, (ValueError, TypeError, OSError))
+                             else unexpected_error_result(exc, action, caps.secret_redactor))
             if keys:
                 self.guard.settle(loop_outcome(action, {}, typed), *keys)
             caps.record(listed, 'failed', json.dumps({**trace, **typed}))
@@ -3334,7 +3382,7 @@ class BoundedExecutionAdapter:
                         text = text.replace(value, '[redacted]')
                     return text
                 stdout, stderr = scrub(completed.stdout), scrub(getattr(completed, 'stderr', ''))
-                status, reason = failure_details(engine_id, stdout, stderr, prompt)
+                status, reason = failure_details(engine_id, stdout, stderr)
                 failure_class, hint = 'engine-failed', ''
                 for match, name, text in _STATUS_HINTS:
                     if status is not None and match(status):
@@ -3351,11 +3399,13 @@ class BoundedExecutionAdapter:
                 if cloud is not None and failure_class == 'auth':
                     # #211: the cloud credentials, not a CLI login, were refused.
                     hint = msg('cloud_engines.auth_failed', provider=cloud.definition.name)
-                LOG.warning('engine turn failed engine=%s exit_code=%s class=%s status=%s duration=%.1fs reason=%s',
-                            engine_id, completed.returncode, failure_class, status, elapsed, reason or '-')
+                # #819: the provider's reason now reaches the owner and the Work record as written, so the
+                # log keeps structured fields only: a reason may quote the owner's request.
+                LOG.warning('engine turn failed engine=%s exit_code=%s class=%s status=%s duration=%.1fs',
+                            engine_id, completed.returncode, failure_class, status, elapsed)
                 # The conversation receives an owner sentence, not process
                 # diagnostics. Exit code and the bounded CLI reason remain in
-                # the Work's technical evidence/logs; a typed hint leads when
+                # the Work's technical evidence; a typed hint leads when
                 # the CLI gave one (#873).
                 message = hint or f'{ENGINE_NAMES[engine_id]}가 요청을 끝까지 처리하지 못했어요.'
                 if reason:

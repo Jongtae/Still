@@ -12,16 +12,18 @@ import time
 import uuid
 from urllib.parse import urlsplit
 
+from .bounded_execution import SECRET_PATTERN
+
 
 MAX_CONTENT = 12000
 MAX_RETENTION = 90 * 24 * 60 * 60
 DEFAULT_RETENTION = 7 * 24 * 60 * 60
-CREDENTIALS = re.compile(
-    r"(?:\b(?:password|passwd|secret|api[_-]?key|access[_-]?token|otp)\b\s*[:=]\s*\S+|"
-    r"-----BEGIN [A-Z ]*PRIVATE KEY-----|"
-    r"\beyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\.)", re.I)
+# #819: one credential recognizer for every caller (``bounded_execution.SECRET_PATTERN``); ``SENSITIVE``
+# adds only a card-number-length digit run, for the gates that keep one away from a remote service
+# (capability search, MCP setup, API input, approval-card inputs, Personal Space excerpts).
+CREDENTIALS = SECRET_PATTERN
 
-SENSITIVE = re.compile(CREDENTIALS.pattern + r"|\b(?:\d[ -]*?){13,19}\b", re.I)
+SENSITIVE = re.compile(SECRET_PATTERN.pattern + r"|\b(?:\d[ -]*?){13,19}\b")
 
 
 def _safe_url(value):

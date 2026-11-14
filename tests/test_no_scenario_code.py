@@ -191,11 +191,8 @@ CLASSIFIED_TABLES = {
         'enforcement', 'source backfill: a past Work whose message was the notes-summary command may have spliced '
                        'every note, so it is never marked clean; a match only keeps a Work private'),
     ('telegram_presence.py', 'MASK_MARK'): (
-        'enforcement', "redaction: the masking marks Still's own redaction writes; a step line carrying one is "
-                       'never shown (#881)'),
-    ('quickstart_service.py', 'AgentService._redact_provenance'): (
-        'enforcement', 'redaction: the labels the path mask writes in place of the data and turn folders; '
-                       'substituted for a path, not matched against owner text'),
+        'enforcement', "redaction: the masking marks Still's own redaction writes, older records included; a "
+                       'repeated call carrying one is never treated as the same invocation (#881, #819)'),
     ('browser_signin.py', 'BrowserSignin._request_browser_login'): (
         'enforcement', "redaction: a URL carrying Still's [가림] mark is never opened as is, only its origin"),
     ('preparations_service.py', 'PreparationsService.failed_preparation_watch_goals'): (
