@@ -9,6 +9,7 @@ QUALITY-CORE-01 (#115), STEADY-01 (#132) and CHECKS-01 (#157), all since closed 
 import importlib.util
 import copy
 import json
+import re
 import subprocess
 from pathlib import Path
 from unittest import TestCase
@@ -462,10 +463,20 @@ def items_of(current):
 
 
 FRONTIER_FIRST_WAVE = ["FRONTIER-SPEC-01", "FRONTIER-EVAL-01"]
-FRONTIER_RESERVED = ["FRONTIER-PROVENANCE-01", "FRONTIER-RECOVERY-01", "FRONTIER-CONTEXT-01"]
+FRONTIER_RECONCILED = ["FRONTIER-PROVENANCE-01", "FRONTIER-RECOVERY-01", "FRONTIER-CONTEXT-01"]
+FRONTIER_COMPLETED = FRONTIER_FIRST_WAVE + FRONTIER_RECONCILED
+FRONTIER_WAVE_2 = ["FRONTIER-FENCE-01", "FRONTIER-JUDGMENT-01", "FRONTIER-TELEGRAM-01", "FRONTIER-WORKCHAT-01"]
 
 
-def test_frontier_declares_only_the_owner_authorized_first_wave():
+def assert_frontier_wave_2_dependencies_satisfied(current):
+    items = items_of(current)
+    completed = set(current["history"]["documented_completed_iterations"])
+    for name in FRONTIER_WAVE_2:
+        missing = set(items[name]["depends_on"]) - completed
+        assert not missing, f"{name} has non-completed dependencies: {sorted(missing)}"
+
+
+def test_frontier_declares_completed_units_and_owner_authorized_wave_2():
     current = plan()
     program = current["programs"]["FRONTIER-01"]
     items = items_of(current)
@@ -473,46 +484,105 @@ def test_frontier_declares_only_the_owner_authorized_first_wave():
     assert current["next_goal"]["id"] == "FRONTIER-01"
     invariants.assert_activation_record(TestCase(), "FRONTIER-01 activation", program["activated_by"])
     assert program["activated_by"]["issue"] == program["issue"] == 822
-    assert program["ordered_substeps"] == FRONTIER_FIRST_WAVE
-    assert [items[name]["issue"] for name in FRONTIER_FIRST_WAVE] == [823, 824]
-    # #824's own PR completes the first wave on merge; nothing else is selected.
+    assert program["ordered_substeps"] == FRONTIER_COMPLETED + FRONTIER_WAVE_2
     assert program["active_substeps"] == []
-    assert program["completed_substeps"] == FRONTIER_FIRST_WAVE
-    assert program["reserved_substeps"] == FRONTIER_RESERVED
-    assert [items[name]["issue"] for name in FRONTIER_RESERVED] == [825, 826, 827]
-    assert all(items[name]["activation_status"] == "complete-on-merge" for name in FRONTIER_FIRST_WAVE)
-    done = items["FRONTIER-01"]["completed_substeps"]
-    assert {name: (done[name]["issue"], done[name]["status"]) for name in done} == {
-        "FRONTIER-SPEC-01": (823, "complete-on-merge"), "FRONTIER-EVAL-01": (824, "complete-on-merge")}
-    assert all(items[name]["activation_status"] == "reserved" for name in FRONTIER_RESERVED)
+    assert program["completed_substeps"] == FRONTIER_COMPLETED
+    assert program["reserved_substeps"] == []
+    assert [items[name]["issue"] for name in FRONTIER_FIRST_WAVE] == [823, 824]
+    assert all(items[name]["activation_status"] == "complete-on-merge" for name in FRONTIER_COMPLETED)
     completed = set(current["history"]["documented_completed_iterations"])
-    assert set(FRONTIER_FIRST_WAVE) <= completed
-    assert not {"FRONTIER-01", *FRONTIER_RESERVED} & completed
-    invariants.assert_completed_work_is_unselectable(TestCase(), current)
+    assert set(FRONTIER_COMPLETED) <= completed
+    assert not {"FRONTIER-01", *FRONTIER_WAVE_2} & completed
+    done = items["FRONTIER-01"]["completed_substeps"]
+    assert set(done) == set(FRONTIER_COMPLETED)
+    assert {name: (done[name]["issue"], done[name]["status"]) for name in FRONTIER_FIRST_WAVE} == {
+        "FRONTIER-SPEC-01": (823, "complete-on-merge"), "FRONTIER-EVAL-01": (824, "complete-on-merge")}
+    for name, pair in zip(FRONTIER_RECONCILED, [(825, 835), (826, 831), (827, 832)]):
+        assert (items[name]["issue"], done[name]["pull_request"]) == pair
+        assert done[name]["issue"] == pair[0]
+        assert done[name]["status"] == "complete-on-merge"
+        assert re.fullmatch(r"[0-9a-f]{40}", done[name]["merge_commit"])
+        assert done[name]["decision"]
+        assert "selection_rule" not in items[name]
+    assert {"first-wave-units-reconciled", "m1-wave-2-selection"} <= set(program["decisions"])
     assert items["FRONTIER-PROVENANCE-01"]["dependency_issues"] == [818, 819, 820]
     assert items["FRONTIER-RECOVERY-01"]["dependency_issues"] == [821]
     assert items["FRONTIER-RECOVERY-01"]["related_pull_requests"] == [816]
     assert items["FRONTIER-CONTEXT-01"]["depends_on"] == FRONTIER_FIRST_WAVE
 
 
-def test_frontier_parallel_evaluation_has_disjoint_files_and_satisfied_dependencies():
+def test_frontier_historical_programs_and_completed_units_stay_unselectable(tmp_path):
+    current = plan()
+    closed = set(invariants.closed_out_programs(current))
+    assert set(current["programs"]) - {"FRONTIER-01"} <= closed | invariants.LEGACY_CLOSED_PROGRAMS
+    invariants.assert_completed_work_is_unselectable(TestCase(), current)
+    path = tmp_path / "delivery-plan.yaml"
+    completed = current["history"]["documented_completed_iterations"]
+    for name in sorted(closed | (set(current["programs"]) & invariants.LEGACY_CLOSED_PROGRAMS)) + FRONTIER_COMPLETED:
+        altered = copy.deepcopy(current)
+        altered["next_goal"] = {"id": name, "status": "active"}
+        path.write_text(json.dumps(altered), encoding="utf-8")
+        for state in ({}, {"completed": completed}):
+            assert DeliveryPlan(path).select(state) is None, (name, state)
+
+
+def test_frontier_wave_2_has_disjoint_ownership_and_satisfied_dependencies():
     current = plan()
     program = current["programs"]["FRONTIER-01"]
     items = items_of(current)
-    assert program["parallel_eligible_substeps"] == []
+    assert program["parallel_eligible_substeps"] == FRONTIER_WAVE_2
     authorization = program["parallel_authorization"]
     assert authorization["issue"] == 822
-    assert authorization["substeps"] == FRONTIER_FIRST_WAVE
+    assert authorization["date"] == "2026-11-14"
+    assert authorization["substeps"] == FRONTIER_WAVE_2
+    assert authorization["decision"]
+    wave_1, = [record for record in authorization["history"] if record["wave"] == 1]
+    assert wave_1["substeps"] == FRONTIER_FIRST_WAVE
     assert not set(program["parallel_eligible_substeps"]) & set(program["active_substeps"])
-    specification = set(program["delegation"]["FRONTIER-SPEC-01"]["owned_files"])
-    evaluation = set(program["delegation"]["FRONTIER-EVAL-01"]["owned_files"])
-    assert specification and evaluation
-    assert specification.isdisjoint(evaluation)
-    assert evaluation == {"evals/agentos_eval/judgments.py", "tests/test_eval_judgments.py"}
-    completed = set(current["history"]["documented_completed_iterations"])
-    for name in authorization["substeps"]:
+    assert [items[name]["issue"] for name in FRONTIER_WAVE_2] == [841, 722, 842, 843]
+    plan_files = set(program["delegation"]["FRONTIER-PLAN-M1"]["owned_files"])
+    assert plan_files
+    owned = set()
+    for name in FRONTIER_WAVE_2:
+        assert items[name]["program"] == "FRONTIER-01"
+        assert items[name]["activation_status"] == "parent-controlled"
         assert name in program["ordered_substeps"]
-        assert set(items[name]["depends_on"]) <= completed
+        assert name not in program["completed_substeps"]
+        assert name not in items["FRONTIER-01"]["completed_substeps"]
+        assert name not in current["history"]["documented_completed_iterations"]
+        assert items[name]["depends_on"] == [
+            "FRONTIER-SPEC-01" if name == "FRONTIER-JUDGMENT-01" else "FRONTIER-RECOVERY-01"]
+        delegation = program["delegation"][name]
+        assert delegation["issue"] == items[name]["issue"]
+        functions = delegation["owned_functions"]
+        assert isinstance(functions, list) and functions
+        assert all(isinstance(function, str) and function for function in functions)
+        assert owned.isdisjoint(functions)
+        assert all(file not in function for file in plan_files for function in functions)
+        assert plan_files.isdisjoint(delegation.get("owned_files", []))
+        assert isinstance(delegation["shared_files"], list)
+        assert plan_files.isdisjoint(delegation["shared_files"])
+        assert delegation["shared_rule"]
+        owned.update(functions)
+    assert items["FRONTIER-FENCE-01"]["dependency_issues"] == [818, 819, 821]
+    assert_frontier_wave_2_dependencies_satisfied(current)
+
+
+def test_frontier_wave_2_rejects_non_completed_dependencies():
+    current = plan()
+    assert_frontier_wave_2_dependencies_satisfied(current)
+    for name in FRONTIER_WAVE_2:
+        altered = copy.deepcopy(current)
+        items_of(altered)[name]["depends_on"] = ["FRONTIER-01"]
+        with TestCase().assertRaisesRegex(AssertionError, "non-completed dependencies"):
+            assert_frontier_wave_2_dependencies_satisfied(altered)
+
+
+def test_frontier_wave_2_cannot_declare_two_substeps_in_flight():
+    altered = copy.deepcopy(plan())
+    altered["programs"]["FRONTIER-01"]["active_substeps"] = FRONTIER_WAVE_2[:2]
+    with TestCase().assertRaisesRegex(AssertionError, "more than one substep in flight"):
+        invariants.assert_declared_goal_shape(TestCase(), plan=altered)
 
 
 def test_frontier_parent_selection_never_self_activates_children_or_successors(tmp_path):
@@ -523,11 +593,12 @@ def test_frontier_parent_selection_never_self_activates_children_or_successors(t
     delivery = DeliveryPlan(path)
     assert delivery.select({})["id"] == "FRONTIER-01"
     assert delivery.select({"completed": ["FRONTIER-01"]}) is None
-    # Finishing both authorized units does not cause the controller to pick a reserved one.
-    selected = delivery.select({"completed": FRONTIER_FIRST_WAVE})
-    assert selected["id"] == "FRONTIER-01"
-    for name in FRONTIER_FIRST_WAVE + FRONTIER_RESERVED:
-        current["next_goal"] = {"id": name, "status": "active"}
-        path.write_text(json.dumps(current), encoding="utf-8")
-        for state in ({}, {"completed": FRONTIER_FIRST_WAVE}):
+    # Even all nine units in runtime completion state select only the parent.
+    all_substeps = FRONTIER_COMPLETED + FRONTIER_WAVE_2
+    assert delivery.select({"completed": all_substeps})["id"] == "FRONTIER-01"
+    for name in all_substeps:
+        altered = copy.deepcopy(current)
+        altered["next_goal"] = {"id": name, "status": "active"}
+        path.write_text(json.dumps(altered), encoding="utf-8")
+        for state in ({}, {"completed": FRONTIER_COMPLETED}, {"completed": all_substeps}):
             assert DeliveryPlan(path).select(state) is None, (name, state)

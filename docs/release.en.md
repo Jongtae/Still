@@ -55,6 +55,46 @@ post-publication. Any formula committed before that point must carry the
 `__SHA256__` placeholder; a fabricated hex string would produce a formula that
 looks reviewable and installs nothing.
 
+## Release notes template
+
+Write the public notes in English. Put the Markdown below in the release's
+`carries` value in `docs/release-manifest.json`, using JSON newline escapes.
+Omit a feature or improvement section when it has no entries. Keep upgrade
+notes visible and state when no manual upgrade steps are needed.
+
+Start each entry with a short, bold noun phrase that names the capability,
+fix, or compatibility change. Follow it with one or two sentences about the
+previous limitation or unmet need, what changed, and what the owner can now
+do or expect. Use the linked issue to establish the prior behavior. If the
+issue establishes a need but no previous defect, describe that need. Finish
+with direct links to the relevant issues.
+
+Use upgrade notes for removals, changed defaults, migrations, and actions
+owners need to take. Record verification gaps separately in `not_claimed`.
+The workflow appends that evidence and the milestone link to the public notes.
+
+```markdown
+<One sentence on the main user-facing change in this release.>
+
+## New features
+
+- **<Capability name>.** <Owner need and what the new capability enables.> [#123](https://github.com/Jongtae/Still/issues/123)
+
+## Improvements and fixes
+
+- **<Area or behavior name>.** <Previous limitation. What now happens.> [#124](https://github.com/Jongtae/Still/issues/124)
+
+## Upgrade notes
+
+- **<Compatibility or migration name>.** <Who is affected and what they need to do or expect.> [#125](https://github.com/Jongtae/Still/issues/125)
+```
+
+For example, an improvement could read as follows.
+
+- **Consistent Work status.** Closing messages and Continue offers could disagree.
+  Both now use the recorded goal outcome and effect state.
+  [#632](https://github.com/Jongtae/Still/issues/632)
+
 ## Steps
 
 Steps 1–4 are reversible and form one release-preparation PR. Steps 5 onward
@@ -72,8 +112,9 @@ fallback when it cannot.
    indistinguishable from the shipped build.
 2. **Record what the release carries.** Replace the placeholder `unpublished`
    entry in `docs/release-manifest.json` with the release's own: `carries`
-   (the journeys/issues in it) and `not_claimed` (what was not observed, such
-   as a live external effect). The workflow refuses an entry without both.
+   (the English Markdown from the [release notes template](#release-notes-template))
+   and `not_claimed` (what was not observed, such as a live external effect).
+   The workflow refuses an entry without both.
 3. **Run the full suite and the verifier gates** on the exact commit:
    `pytest tests`, `python3 -m unittest discover -s tests -t tests`,
    `scripts/verify_master_plan_docs.py`, and `scripts/verify_src_layout.py`.

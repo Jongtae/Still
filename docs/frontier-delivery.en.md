@@ -36,9 +36,11 @@ Memory, scheduling and continuous responsibilities are already implemented in su
 | M4 Useful initiative | Continuing mandate leads to relevant action/report with less repeated owner effort | #799 acceptance and #821 origin distinction; existing operating evidence criteria remain visible |
 | M5 Repeated improvement | Relevant regressions, held-out comparison and rollback support model/prompt changes | Extends existing harness continuously; no blanket paid-evaluation gate |
 
-For this explicitly owner-authorized parallel wave, `active_substeps` selects the serial integration step. `parallel_authorization` records the disjoint specification and evaluation lanes used during preparation. On integration of the #823 PR, specification work is complete-on-merge and #824 is the sole selected integration step; `parallel_eligible_substeps` is empty at that point. The #824 PR carries its own complete-on-merge record, so on its merge both first-wave substeps are complete and `active_substeps` is empty; no reserved unit is selected by that. These fields describe selection and ownership; GitHub issues and PRs describe actual work in flight. The controller continues selecting the parent program and cannot independently activate a child.
+For the first wave, `active_substeps` selected the serial integration step, and `parallel_authorization` (now its wave-1 `history` entry) recorded the disjoint specification and evaluation lanes used during preparation. On integration of the #823 PR, specification work was complete-on-merge and #824 was the sole selected integration step; `parallel_eligible_substeps` was empty at that point. The #824 PR carried its own complete-on-merge record, so on its merge both first-wave substeps were complete and `active_substeps` was empty; no reserved unit was selected by that. These fields described selection and ownership; GitHub issues and PRs described actual work in flight. The controller still selects only the parent program and cannot independently activate a child.
 
-The plan's first wave is bounded to #823 and #824. The parallel lanes below work on #817–#821 and #825–#827 under the owner's direct 2026-11-14 instruction (#822), each on its own issue, branch and PR. A reserved plan unit (#825–#827) is recorded as selected or complete by its own PR, with its dependency disposition, as the Goal Execution Contract requires; until then it stays reserved in the plan. #825–#827 are issued design/implementation contracts with explicit predecessors. Their readiness is assessed using current GitHub evidence and scoped file ownership. Closing one issue does not silently activate an unrelated historical program. The checked-in goal declaration does not itself start a background scheduler.
+The plan's first wave was bounded to #823 and #824. The first-wave lanes below worked on #817–#821 and #825–#827 under the owner's direct 2026-11-14 instruction (#822), each on its own issue, branch and PR. #825 (PR #835), #826 (PR #831) and #827 (PR #832) merged while their plan entries still read reserved; lane P records them complete-on-merge with their pull requests, merge commits and dependency dispositions.
+
+M1 wave 2 follows the owner's 2026-11-14 instruction to proceed with M1 (reliable work) in parallel lanes. The plan selects #841 (F-X4 recovery fence), #722 (judgment scope for relayed calls), #842 (F-P4/F-D3 Telegram delivery) and #843 (F-W4 Mattermost/Slack) as `parent-controlled` units listed in `parallel_eligible_substeps` and `parallel_authorization`. Each lane integrates its own PR, so `active_substeps` stays empty: no serial integration step is selected. Each unit's own PR moves its entry to complete-on-merge with its dependency disposition, as the Goal Execution Contract requires. Completing wave 2 selects no successor; M2 (#403 with #827's experiments) needs its own selection. Their readiness is assessed using current GitHub evidence and scoped file ownership. Closing one issue does not silently activate an unrelated historical program. The checked-in goal declaration does not itself start a background scheduler.
 
 ## Interface and state contracts
 
@@ -80,11 +82,34 @@ PR #816's grounded follow-up context and related execution facts remain useful. 
 
 ## Development roles and working protocol
 
-Owner instruction 2026-11-14 moved coordination from the stalled Codex coordinator to a Claude Code coordinator session. The [coordinator handoff on #822](https://github.com/Jongtae/Still/issues/822#issuecomment-6873291477) holds the live lane table; this section records the same topology. Where the two differ, the latest coordinator comment on #822 wins and this section is corrected in the next lane-I change.
+Owner instruction 2026-11-14 moved coordination from the stalled Codex coordinator to a Claude Code coordinator session. The coordinator comments on #822 hold the live lane tables: the [first-wave handoff](https://github.com/Jongtae/Still/issues/822#issuecomment-6873291477) and the [M1 wave-2 table](https://github.com/Jongtae/Still/issues/822#issuecomment-6877174014). This section records the same topology. Where the two differ, the latest coordinator comment on #822 wins and this section is corrected in the next plan-lane change.
 
 ### Lanes
 
 Each lane is one Claude Code session with its own worktree and one purpose-named issue branch per PR. Inside a lane, Codex implements a named piece in a scratch worktree, and Claude subagents take the other roles below.
+
+#### M1 wave 2 (current)
+
+M1's required result is a recovery matrix with a chosen bounded implementation, and actual effect and delivery state that agree. The [recovery matrix](recovery-matrix.en.md) (#826, PR #831) selected F-X4 and named F-W4 and F-P4 next. #722 is M1's remaining judgment-ownership gap (F10).
+
+| Lane | Issue / plan unit | Owns (function level) | Codex piece (scratch worktree) | Review |
+| --- | --- | --- | --- | --- |
+| P plan | #822 / reconcile #825–#827, select wave 2 | `delivery-plan.yaml`, `tests/test_fresh_delivery_plan.py`, the lanes and handoff sections of this document | Plan-test updates | Not escalated: auto-merge |
+| R recovery fence | #841 / `FRONTIER-FENCE-01` (F-X4, rows X4 and X9) | `QuickStore.recover` and an epoch helper beside the store, `recover_interrupted_work`, the `mcp_bridge` refused-call `_with_steer` path | The seven matrix tests and the X4/X9 fixture flips | Assessed in its PR |
+| J judgment scope | #722 / `FRONTIER-JUDGMENT-01` (F10) | The `cli_browser_relay` relay handlers, the relay scope wiring around `work_decision_scope`, the `RoutedDecisionEngine` stop and admission check | Separate-thread model-free tests | Assessed in its PR |
+| D Telegram delivery | #842 / `FRONTIER-TELEGRAM-01` (F-P4, F-D3, the Telegram part of F-W4) | Telegram delivery and callback handlers, prompt and notification delivery state and web counts, `record_reply` | Sweeper and fixture flips | Assessed in its PR |
+| W Mattermost/Slack | #843 / `FRONTIER-WORKCHAT-01` (F-W4, row W4) | The Mattermost and Slack adapters' cursor and press records | The apply-then-advance reorder and its tests | Assessed in its PR |
+
+Shared rules for wave 2:
+
+- **`delivery-plan.yaml`**: a unit lane edits only its own entry, and only after lane P's PR merges. The later merger resolves conflicts.
+- **`docs/recovery-matrix.en.md` and `tests/test_recovery_matrix_826.py`**: each lane flips only its own rows.
+- **Merge order**: the four units merge independently, in readiness order. Each later PR merges `origin/main` into its branch (no rebase or force-push) and re-runs its focused tests. An escalated unit is merged by the owner.
+- **Watching CI**: `gh run watch <id> --interval 60` or longer. On 2026-11-14 the 3 s default exhausted the 5,000/hr API limit.
+
+#### First wave (history)
+
+The tables, ownership and merge order below describe the first wave (#817–#827). All of its PRs have merged; they are kept as the record of how that wave ran.
 
 | Lane | Issues / PRs | Lead | Codex piece (scratch worktree) | Review |
 | --- | --- | --- | --- | --- |
@@ -111,7 +136,7 @@ Each lane is one Claude Code session with its own worktree and one purpose-named
 
 Distinct models under one author's control are cross-model self-review under the [existing review contract](governance/ai-contribution-review.en.md), not independent review.
 
-### Function-level ownership
+### Function-level ownership (first wave)
 
 `quickstart_service.py`, `agent_runtime.py`, `quickstart_store.py` and `preparations_service.py` are shared hotspots, so ownership is assigned per function rather than per file.
 
@@ -124,7 +149,7 @@ Distinct models under one author's control are cross-model self-review under the
 
 Shared one-line conflicts, such as the `Capabilities.__init__` signature or `messages.json` keys, are resolved by the lane that merges later, at rebase. A lane that needs a function another lane owns asks the coordinator first.
 
-### Merge order
+### Merge order (first wave)
 
 1. PR #828, then PR #829 (lane I).
 2. Runtime: PR #816, then #818, then #820-B1, #821-C1 and #825 in readiness order. Each later PR rebases on `origin/main` and re-runs its focused tests before asking for review. PR #816 merges first only after its general unattended sign-in condition is reconciled with #821's owner-accepted versus self-initiated distinction. #825 may merge before #819/#820 because the function-level ownership below isolates its edits; its PR records that disposition.
@@ -146,6 +171,8 @@ Earlier on 2026-11-14 a read-only Claude review request returned `429 usage_limi
 ### Handoff
 
 Handoff fields are issue/PR, base/head, functions and files, requested and observed engine/settings, implementation result, exact tests and evidence class, findings and disposition, integration state, operating evidence, remaining dependency, next actor and action, and rollback. Status lives on each issue and PR, so a stopped lane can resume from them. Use the [incremental handoff](incremental-delivery.en.md) for integration waits.
+
+For wave 2, the next actor after lane P's PR merges is each unit lane, on its own issue. Its PR moves its own `delivery-plan.yaml` entry from `parent-controlled` to `complete-on-merge` and adds the matching `completed_substeps` record with its issue, status and decision, as the first-wave units were recorded; it flips only its own recovery-matrix rows. The coordinator records cross-lane questions on #822. After the last wave-2 merge, M2 (#403 recall with #827's experiments) is the next milestone, and selecting it needs its own plan change.
 
 ## Existing solutions review
 

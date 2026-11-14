@@ -141,9 +141,9 @@ def check(root: Path, branch: str = "main") -> str:
 
 def notes(root: Path, version: str, milestone_url: str) -> str:
     entry = unpublished_entry(load_manifest(root), version)
-    lines = [entry["carries"], "", f"**Not claimed:** {entry['not_claimed']}"]
+    lines = [entry["carries"].strip(), "", "## Verification at release", "", entry["not_claimed"]]
     if milestone_url:
-        lines += ["", f"Scope: {milestone_url}"]
+        lines += ["", f"[Release milestone]({milestone_url})"]
     return "\n".join(lines) + "\n"
 
 
