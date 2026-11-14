@@ -5927,7 +5927,9 @@ class AgentService:
     #: #710: ``orchestrator`` events record the plan and its evaluation, never a tool attempt.
     LOCAL_NON_TOOL_EVENTS=frozenset({'model','local_authority','conversation_continuity',ORCHESTRATION_EVENT,om.EVENT_TOOL,
                                      om.REVIEW_EVENT_TOOL,MEMORY_UNDO_TOOL,STEER_EVENT,REACTION_EVENT,
-                                     'response_timing','connection_setup','preparation'})  # host slot receipt, not schedule_preparation
+                                     'response_timing','connection_setup','preparation',
+                                     # #842: the marker that a finished Work's prompts were queued (``sweep_after_work``).
+                                     'after_work'})  # host slot receipt, not schedule_preparation
 
     def workspace_authority_need(self):
         """Which folder a save-a-result request still lacks: the read first, then the write."""
@@ -9247,6 +9249,9 @@ class AgentService:
         from .work_executor import WorkExecutor
         return WorkExecutor(self)
 
+    def sweep_after_work(self, now=None):
+        return self.work_executor.sweep_after_work(now)
+
     def run_one(self):
         return self.work_executor.run_one()
 
@@ -9389,6 +9394,7 @@ class AgentService:
             self.retire_document_consent()
         except Exception as exc:
             LOG.warning('document consent not retired (%s)',type(exc).__name__)
+        self.sweep_after_work()
         def work():
             next_purge_check=0.0
             while not self.stop.is_set():
@@ -9403,6 +9409,7 @@ class AgentService:
                 self.expire_memory_prompts()
                 # #918 review: saved-notices a crash or an unknown delivery left behind are released.
                 self.release_memory_saved_notices()
+                self.sweep_after_work()
                 # #709: close and settle in-flow logins (decisions, owner closes, timeouts).
                 self.process_browser_logins()
                 # #990: keep signed-in sites signed in while idle; off this thread (the jar read may wait

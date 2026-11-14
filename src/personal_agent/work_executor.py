@@ -1574,6 +1574,7 @@ class WorkExecutor:
             # #998: a Work a worker AI answered that failed gets one self-review instead.
             elif service.self_review_eligible(job,run.outcome,run.provider):
                 om.enqueue_self_review(service.store,job['id'],om.REVIEW_FAILED,db=db)
+            self._record_after_work(run,db)
         service.record_turn_provenance(job['id'],goal=service.work_goal(job['id'],run.work_capabilities[0],run.outcome))
 
     def _fail_work(self, run, exc):
@@ -1629,6 +1630,7 @@ class WorkExecutor:
                     and db.execute("SELECT 1 FROM tool_events WHERE job_id=? AND tool IN ('subscription_engine','model') LIMIT 1",
                                    (job['id'],)).fetchone()):
                 om.enqueue_self_review(service.store,job['id'],om.REVIEW_FAILED,db=db)
+            self._record_after_work(run,db)
         service.record_turn_provenance(job['id'],goal=service.work_goal(job['id'],run.work_capabilities[0],run.outcome))
 
     def _settle_work_judgments(self, run):
@@ -1667,6 +1669,65 @@ class WorkExecutor:
         # #814: settings changes this Work drafted wait for the owner's confirm.
         service.queue_settings_confirmation(job)
         service.offer_budget_continue(run)
+        with service.store.db() as db:
+            db.execute("UPDATE tool_events SET status='completed' WHERE job_id=? AND tool='after_work' AND status='pending'",
+                       (job['id'],))
+
+
+    def _record_after_work(self, run, db):
+        # In the terminal-status transaction: no legacy Work is enrolled.
+        db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                   (run.job['id'],'after_work','pending',json.dumps({
+                       'context_approval_needed':bool(run.context_approval_needed[0]),
+                   }),time.time()))
+
+    def sweep_after_work(self, now=None):
+        """Recover at most 50 recent terminal queueing tails, once per minute.
+
+        Only terminal commits enrolled by _record_after_work qualify (seven
+        days maximum). No task-card edit, photo cleanup, projection mutation or
+        fresh suggestion selection is replayed. Budget generation needs the
+        lost orchestration; only an already durable current offer is queued.
+        """
+        service=self.service
+        now=time.time() if now is None else now
+        if now-getattr(service,'_after_work_sweep',0)<60:return 0
+        service._after_work_sweep=now
+        recovered=0
+        with service.worker_lock,service.lock:
+            with service.store.db() as db:
+                rows=db.execute("SELECT e.id,e.job_id,e.detail FROM tool_events e JOIN jobs j ON j.id=e.job_id "
+                    "WHERE e.tool='after_work' AND e.status='pending' AND e.created>=? "
+                    f"AND j.status IN {ws.sql_in(ws.TERMINAL)} "
+                    "AND NOT EXISTS (SELECT 1 FROM tool_events newer WHERE newer.job_id=e.job_id "
+                    "AND newer.tool='after_work' AND newer.id>e.id) ORDER BY e.id LIMIT 50",(now-7*86400,)).fetchall()
+            for row in rows:
+                job=service.store.job(row['job_id'])
+                with service.store.db() as db:
+                    forgotten=db.execute("SELECT 1 FROM messages m JOIN forgotten_messages f ON f.message_id=m.id "
+                                         "WHERE m.job_id=? LIMIT 1",(job['id'],)).fetchone()
+                if not forgotten and not service.work_stopped(job['id']):
+                    try:
+                        detail=json.loads(row['detail'])
+                        # Login's requested -> opening claim is durable; settled logins are no-ops.
+                        if not ws.is_succeeded(job['status']) or (service._browser_login(job['id']) or {}).get('explicit'):
+                            service.offer_browser_login(job)
+                        attachment=service.store.context_attachment(job['id'])
+                        if detail.get('context_approval_needed') and attachment and not attachment['approved']:
+                            service.queue_notification(job,'context_approval_needed')
+                        # These read current pending rows; UNIQUE(job_id,kind) preserves settled notices.
+                        service.queue_preparation_proposal(job)
+                        service.queue_settings_confirmation(job)
+                        offer=service.budget_continue_offer(job['id'])
+                        if service.budget_continue_current(job,offer):
+                            service.queue_notification(job,'budget_continue',fingerprint=offer['nonce'])
+                    except Exception as exc:
+                        LOG.warning('after work recovery failed work=%s kind=%s',job['id'],type(exc).__name__)
+                        continue
+                    recovered+=1
+                with service.store.db() as db:
+                    db.execute("UPDATE tool_events SET status='completed' WHERE id=? AND status='pending'",(row['id'],))
+        return recovered
 
 
     def _unshown_steps(self, run, job):
