@@ -4051,7 +4051,8 @@ class AgentService:
         elif not selected:
             steps.append({'id':'model', 'state':'needed', 'message':msg('service.onboarding_model_needed')})
         # #90: the step names the latest restart; older interrupted rows stay counted in 'recovery'.
-        if any(self.store.last_recovery().values()):
+        # #842: and clears once what it cut off has settled (each of its counts is settled now).
+        if any(cut and recovery.get(key) for key,cut in self.store.last_recovery().items()):
             steps.append({'id':'recovery', 'state':'attention', 'message':msg('service.onboarding_recovery_attention')})
         else:
             steps.append({'id':'recovery', 'state':'ready', 'message':msg('service.onboarding_recovery_ready')})
@@ -8596,6 +8597,14 @@ class AgentService:
     def deliver_notification(self):
         return self.telegram_delivery.deliver_notification()
 
+    #: Seconds between sweeps of deliveries whose outcome is unknown (#842).
+    UNKNOWN_DELIVERY_SWEEP_SECONDS=60
+
+    def settle_unknown_deliveries(self, now=None):
+        """#842: a cut-off prompt is offered once more; the owner is told once of any other uncertain delivery."""
+        from .conversation_surface import settle_unknown_deliveries
+        return settle_unknown_deliveries(self, now)
+
     def _cancel_orphan_deliveries(self):
         return self.telegram_delivery._cancel_orphan_deliveries()
 
@@ -9404,6 +9413,7 @@ class AgentService:
             LOG.warning('after work startup recovery failed (%s)',type(exc).__name__)
         def work():
             next_purge_check=0.0
+            next_unknown_check=0.0
             while not self.stop.is_set():
                 # #659: one indexed query; nothing due costs no model or network call.
                 self.run_due_preparation()
@@ -9430,6 +9440,12 @@ class AgentService:
                     # #794 phase 3 / #367: the forget purge hook; a forget is never purged now, so this finds nothing.
                     self.purge_forgotten()
                     next_purge_check=now+30
+                if now>=next_unknown_check:
+                    # #842: the first pass follows the restart's recovery; later ones catch uncertain sends.
+                    try:self.settle_unknown_deliveries()
+                    except Exception as exc:
+                        LOG.warning('unknown deliveries not settled (%s)',type(exc).__name__)
+                    next_unknown_check=now+self.UNKNOWN_DELIVERY_SWEEP_SECONDS
                 # #805: claim one pending owner-model upkeep when idle; it runs off this thread.
                 self.run_owner_model_upkeep()
                 self.stop.wait(.3)

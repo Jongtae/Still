@@ -242,12 +242,27 @@ def notice_binding(service, notification):
     from . import preparations as prep
     from .quickstart_service import MEMORY_PROMPT_KINDS, MEMORY_SAVED_KINDS, WORKING_NOTES_KIND, prepared_ids
     kind = notification['kind']
+    if kind == DELIVERY_UNKNOWN_KIND:
+        # #842: told while its Work is still there to tell about.
+        job = service.store.job(notification.get('job_id'))
+        return {'delivery_unknown_text': delivery_unknown_text(job)} if job else None
     if kind == 'approval_needed':
         # #820: the document-sharing consent was removed; a prompt an earlier version queued is not shown.
         return None
+    if kind == 'context_approval_needed':
+        attachment = service.store.context_attachment(notification.get('job_id'))
+        model = service.store.config('model', {})
+        # The offer must still match the v1c handler's attachment and model; tap
+        # identity, generation and message checks remain in that handler.
+        return {} if (attachment and not attachment['approved']
+                      and attachment['assistant_id'] == service.context_assistant_id(model)
+                      and service.external_model(model)) else None
     if kind == 'browser_approval_needed':
         pending = service._browser_request(notification.get('job_id'))
         if not pending or pending.get('state') != 'requested' or pending.get('offer_digest') != notification.get('fingerprint'):
+            return None
+        # #842: past its approval window the step cannot be approved, so its prompt is not shown.
+        if not service.step_approval_pending(notification.get('job_id')):
             return None
         return {}
     if kind == 'budget_continue':
@@ -327,4 +342,84 @@ def notice_text(service, notification, bound):
         return bound['text']
     if kind == 'browser_login_needed':
         return service.browser_login_prompt(notification.get('job_id'))
+    if kind == DELIVERY_UNKNOWN_KIND:
+        return bound['delivery_unknown_text']
     return service.notification_text(kind)
+
+
+# -- cut-off deliveries (#842) -------------------------------------------------------
+#
+# A send cut off by a restart (``sending`` -> ``unknown``) or answered by an uncertain
+# response may or may not have reached the owner, so it is never resent blindly.  A prompt
+# that waits for the owner's answer is offered once more on the same row: the row keeps its
+# binding (what an answer covers) and loses its message id, so only the new message can
+# answer it, and its delivery path decides again whether it is still to be shown.  Anything
+# else whose delivery is unknown is told to the owner once, in the Work's conversation.
+
+#: Notices that wait for the owner's answer.  ``approval_needed`` is listed so a cut-off
+#: one settles: ``notice_binding`` no longer shows it (#820), so its re-offer is cancelled.
+OWNER_PROMPT_KINDS = ('approval_needed', 'context_approval_needed', 'browser_approval_needed', 'budget_continue',
+                      'browser_login_needed', 'settings_change_proposed', 'preparation_proposed')
+#: The one notice per Work that says one of its messages may not have arrived.
+DELIVERY_UNKNOWN_KIND = 'delivery_unknown'
+#: Config key: the prompts already offered once more, by notification id -> the binding offered.
+REOFFERED_KEY = 'reoffered_prompts'
+#: Shared Work-age limit for prompt re-offers and notices; older uncertainties stay web counts.
+DELIVERY_UNKNOWN_TELL_SECONDS = 24 * 3600
+#: How much of the owner's request the notice quotes, so the owner can tell which reply it means.
+DELIVERY_UNKNOWN_QUOTE_CHARS = 60
+
+
+def delivery_unknown_text(job):
+    from .messages import msg
+    request = ' '.join(str(job.get('message') or '').split())
+    if len(request) > DELIVERY_UNKNOWN_QUOTE_CHARS:
+        request = request[:DELIVERY_UNKNOWN_QUOTE_CHARS - 1].rstrip() + '…'
+    return msg('notice.delivery_unknown', request=request)
+
+
+def settle_unknown_deliveries(service, now=None):
+    """Offer each cut-off prompt once more and queue the owner's one notice per uncertain Work.
+
+    Returns ``(reoffered, told)`` counts.  Holds ``service.lock``, which every claim and
+    callback takes, so a tap cannot interleave with a row moving from ``unknown`` to ``queued``.
+    A delivery stays ``unknown`` (a reply is never resent and its Work's retry stays refused);
+    only the prompt row moves, and the web counts leave out what the owner was told.
+    """
+    now = time.time() if now is None else now
+    store = service.store
+    since = now - DELIVERY_UNKNOWN_TELL_SECONDS
+    reoffered, told = 0, 0
+    with service.lock:
+        marks = dict(store.config(REOFFERED_KEY, {}) or {})
+        kept = dict(marks)
+        with store.db() as db:
+            rows = [dict(row) for row in db.execute(
+                "SELECT n.id,n.job_id,n.kind,n.fingerprint FROM telegram_notifications n "
+                "JOIN jobs j ON j.id=n.job_id WHERE n.state='unknown' AND j.created>=?", (since,))]
+            tell = set()
+            for row in rows:
+                binding = row['fingerprint'] or ''
+                if row['kind'] in OWNER_PROMPT_KINDS and marks.get(row['id']) != binding:
+                    if store.telegram.reoffer_unknown(row['id'], db):
+                        marks[row['id']] = binding
+                        reoffered += 1
+                elif row['kind'] != DELIVERY_UNKNOWN_KIND:
+                    tell.add(row['job_id'])
+            tell.update(job_id for (job_id,) in db.execute(
+                "SELECT id FROM jobs WHERE delivery='unknown' AND created>=?", (since,)))
+            tell -= {job_id for (job_id,) in db.execute(
+                'SELECT job_id FROM telegram_notifications WHERE kind=?', (DELIVERY_UNKNOWN_KIND,))}
+            if marks:
+                present = {key for (key,) in db.execute(
+                    "SELECT id FROM telegram_notifications WHERE state IN ('queued','sending','unknown')")}
+                marks = {key: value for key, value in marks.items() if key in present}
+            if marks != kept:
+                store.put(REOFFERED_KEY, marks, db=db)
+        for job_id in sorted(job_id for job_id in tell if job_id):
+            job = store.job(job_id)
+            if not job or float(job.get('created') or 0) < since:
+                continue
+            service.queue_notification(job, DELIVERY_UNKNOWN_KIND)
+            told += store.notification_of(job_id, DELIVERY_UNKNOWN_KIND) is not None
+    return reoffered, told
