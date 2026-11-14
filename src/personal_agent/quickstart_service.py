@@ -2575,8 +2575,9 @@ class AgentService:
     def record_attempt_input(self, job_id, ref, state):
         """Whether attempt ``ref``'s recorded input reached its worker (#825).
 
-        ``sent``: handed to the provider or the launched CLI; ``not-sent``: a preflight failed
-        before dispatch; ``unknown``: the dispatch failed and Still cannot tell.
+        ``sent``: the provider responded, or the launched CLI completed its turn; ``not-sent``: a
+        preflight failed before dispatch (or the run ended before any model turn); ``unknown``:
+        the dispatch failed and Still cannot tell whether the input reached the worker.
         """
         if not ref or state not in attempt_identity.INPUT_STATES:return
         self.record_turn_provenance(job_id,attempt_input_update={'ref':ref,'input':state})

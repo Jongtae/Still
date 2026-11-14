@@ -58,12 +58,22 @@ class AttemptIdentityTests(unittest.TestCase):
         self.assertEqual(normalize_tool({'name': 'empty'}),
                          {'name': 'empty', 'description': '', 'parameters': {}})
         original = dict(self.tool(), type='function')
-        decorated = dict(original, annotations={'readOnlyHint': True}, cache_control={'type': 'ephemeral'}, strict=False)
+        decorated = dict(original, cache_control={'type': 'ephemeral'}, strict=False, annotations={})
         self.assertEqual(tool_digest(original), tool_digest(decorated))
-        for shape in (dict(original, strict=True),
+        # MCP behaviour hints change what a CLI may auto-approve, so they are part of the identity.
+        read_only = dict(original, annotations={'readOnlyHint': True})
+        self.assertNotEqual(tool_digest(read_only), tool_digest(dict(original, annotations={'readOnlyHint': False})))
+        for shape in (dict(original, strict=True), read_only,
                       {'type': 'function', 'function': dict(self.tool(), strict=True)}):
             self.assertNotEqual(tool_digest(original), tool_digest(shape))
-            self.assertTrue(normalize_tool(shape)['strict'])
+        self.assertTrue(normalize_tool(dict(original, strict=True))['strict'])
+
+    def test_a_definition_that_cannot_be_canonicalised_is_reported_not_raised(self):
+        from personal_agent.attempt_identity import identity_or_unavailable
+        bad = dict(self.tool(), parameters={'type': 'number', 'maximum': float('inf')})
+        self.assertEqual(identity_or_unavailable([bad], representation='still-host-api'),
+                         {'representation': 'still-host-api', 'digest': None, 'unavailable': 'identity not computable: ValueError'})
+        self.assertEqual(identity_or_unavailable([{'description': 'no name'}], representation='x')['digest'], None)
 
     def test_instructions(self):
         text = 'Follow these instructions: 한글'

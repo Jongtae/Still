@@ -95,8 +95,14 @@ class RecordedAttemptInputs(unittest.TestCase):
         self.assertEqual([row['attempt'] for row in record['workers']], [2, 3, 4, 5, 6, 7])
         self.assertEqual(record['workers'][-1], {'attempt': 7, 'route': 'subscription', 'engine': 'codex'})
         self.assertEqual(record['workers_dropped'], 1)
+        self.assertIs(record['workers_dropped_exact'], False, 'a list cut before counts were kept gives a lower bound')
         self.assertNotIn('attempt_inputs', record, 'a historical record gains no invented attempt identities')
+        fresh = self.store.enqueue('another', 'k2')
+        for number in range(1, 8):
+            self.service.record_turn_worker(fresh, {'attempt': number})
         self.assertEqual(record['instructions_digest'], 'abcdefabcdefabcd')
+        counted = self.store.turn_provenance(fresh)
+        self.assertEqual((counted['workers_dropped'], counted.get('workers_dropped_exact', True)), (1, True))
 
     def test_no_instruction_text_schema_or_case_payload_is_kept_in_the_entries(self):
         tool = _tool('weather', 'DESCRIPTION-MARKER-825', PROPERTY_MARKER_825={'type': 'string'})
@@ -105,15 +111,20 @@ class RecordedAttemptInputs(unittest.TestCase):
         for marker in ('DESCRIPTION-MARKER-825', 'PROPERTY_MARKER_825', 'INSTRUCTIONS-MARKER-825', 'CASE-PAYLOAD-825'):
             self.assertNotIn(marker, rows)
 
+    def test_a_bridge_without_a_running_attempt_writes_nothing(self):
+        other = self.store.enqueue('no record yet', 'k3')
+        attempt_identity.record_served(self.store, other, [{'name': 'list_notes'}], 'still-host-mcp:bridge').join()
+        self.assertIsNone(self.store.turn_provenance(other))
+
     def test_a_bridge_listing_lands_only_on_the_running_cli_attempt(self):
         served = [{'name': 'list_notes', 'description': 'd', 'inputSchema': {'type': 'object'}}]
         entry = {'attempt': 1, 'route': 'subscription'}
         ref = self.service.record_turn_sent(self.job, sent='x', instructions='I', instructions_channel='prompt', attempt_input=entry)
-        attempt_identity.record_served(self.store, self.job, served, 'still-host-mcp:bridge')
+        attempt_identity.record_served(self.store, self.job, served, 'still-host-mcp:bridge').join()
         row = self.store.turn_provenance(self.job)['attempt_inputs'][-1]
         self.assertEqual(row['served'], attempt_identity.offered_tools_identity(served, representation='still-host-mcp:bridge'))
         self.service.record_attempt_input(self.job, ref, 'sent')
-        attempt_identity.record_served(self.store, self.job, [*served, {'name': 'late'}], 'still-host-mcp:bridge')
+        attempt_identity.record_served(self.store, self.job, [*served, {'name': 'late'}], 'still-host-mcp:bridge').join()
         self.assertEqual(self.store.turn_provenance(self.job)['attempt_inputs'][-1]['served']['count'], 1,
                          'a finished attempt is never rewritten by a later bridge')
 
@@ -159,6 +170,20 @@ class RouteAttemptInputs(unittest.TestCase):
         self.assertIn('finish', [tool['name'] for tool in entry['offered']['tools']])
         self.assertNotIn('native', entry, 'a direct call offers no provider-side tools')
 
+    def test_an_uncanonicalisable_schema_never_breaks_the_turn(self):
+        from personal_agent.agent_runtime import Capabilities
+        original = Capabilities.definitions
+
+        def definitions(capabilities):
+            rows = original(capabilities)
+            rows[0] = {**rows[0], 'function': {**rows[0]['function'], 'parameters': {'type': 'object', 'x': {1, 2}}}}
+            return rows
+        Capabilities.definitions = definitions
+        self.addCleanup(setattr, Capabilities, 'definitions', original)
+        record = self._api(lambda url, body, headers: {'choices': [{'message': {'content': 'api answer'}}]})
+        self.assertEqual(record['status'], 'answered')
+        self.assertEqual(record['attempt_inputs'][-1]['offered']['unavailable'], 'identity not computable: TypeError')
+
     def test_direct_api_failure_without_a_response_is_unknown_not_sent(self):
         def transport(url, body, headers):
             raise OSError('connection refused')
@@ -174,7 +199,9 @@ class RouteAttemptInputs(unittest.TestCase):
         self.assertEqual(sorted(tool['name'] for tool in entry['offered']['tools']), sorted(record['exposed_tools'])[:40])
         self.assertEqual(entry['offered']['count'], len(record['exposed_tools']))
         self.assertIsNone(entry['native']['digest'])
-        self.assertEqual(entry['native']['known_enabled'], record['cli_native_tools'])
+        self.assertEqual(entry['native']['web_search_on'], record['cli_native_tools'] == ['web_search'])
+        # The fake engine starts no bridge, so the attempt says no listing was observed.
+        self.assertEqual(entry['served'], attempt_identity.BRIDGE_NOT_OBSERVED)
         self.assertEqual(entry['instructions_channel'], 'developer-instructions')
         self.assertEqual(entry['instructions_digest'], record['instructions_digest'])
 

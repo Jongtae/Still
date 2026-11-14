@@ -16,6 +16,7 @@ A CLI's vendor-native tools and an isolated sidecar's served list are
 
 import hashlib
 import json
+import threading
 
 
 TOOLS_KEEP = 40
@@ -47,6 +48,10 @@ def normalize_tool(definition) -> dict:
     }
     if get('strict'):
         normalized['strict'] = True
+    # MCP behaviour hints (``readOnlyHint`` and the like) change what a CLI may auto-approve.
+    annotations = get('annotations')
+    if annotations:
+        normalized['annotations'] = annotations if isinstance(annotations, dict) else getattr(annotations, 'model_dump', dict)()
     return normalized
 
 
@@ -74,6 +79,18 @@ def unavailable(representation: str, reason: str) -> dict:
     return {'representation': representation[:40], 'digest': None, 'unavailable': reason[:120]}
 
 
+def identity_or_unavailable(definitions, *, representation: str) -> dict:
+    """``offered_tools_identity``, or ``unavailable`` when a definition cannot be canonicalised.
+
+    Recording must never break the turn: a schema carrying a non-JSON value (``Infinity``, a set)
+    is still sent as before; only its identity is reported as not computable.
+    """
+    try:
+        return offered_tools_identity(definitions, representation=representation)
+    except Exception as exc:
+        return unavailable(representation, f'identity not computable: {type(exc).__name__}')
+
+
 # The turn record keeps one input entry per worker attempt (#825), newest
 # last, bounded like ``workers``; ``attempt_inputs_dropped`` counts the
 # entries the bound removed, so a truncated list never reads as complete.
@@ -88,19 +105,37 @@ def _bounded(rows, dropped, row, keep):
 
 
 def appended(current, key, row, keep):
-    """``key`` with ``row`` appended and its ``<key>_dropped`` count, read from ``current``."""
+    """``key`` with ``row`` appended and its ``<key>_dropped`` count, read from ``current``.
+
+    A list already at its bound with no count was cut before counts were kept: its count is a
+    lower bound, so ``<key>_dropped_exact`` says False rather than reading as complete.
+    """
     rows = [item for item in current.get(key) or [] if isinstance(item, dict)]
-    dropped = current.get(f'{key}_dropped') if isinstance(current.get(f'{key}_dropped'), int) else 0
-    rows, dropped = _bounded(rows, dropped, row, keep)
-    return {key: rows, **({f'{key}_dropped': dropped} if dropped else {})}
+    counted = isinstance(current.get(f'{key}_dropped'), int)
+    exact = current.get(f'{key}_dropped_exact', True) is not False and (counted or len(rows) < keep)
+    rows, dropped = _bounded(rows, current.get(f'{key}_dropped') if counted else 0, row, keep)
+    # The count is written from the first row on (0 included), so a later reader can tell a
+    # counted list from one cut before counts were kept.
+    return {key: rows, f'{key}_dropped': dropped, **({f'{key}_dropped_exact': False} if not exact else {})}
+
+
+BRIDGE_NOT_OBSERVED = unavailable('still-host-mcp:bridge', 'no tools/list answer was observed for this attempt')
 
 
 def updated_entry(current, ref, changes):
-    """``attempt_inputs`` with the entry ``ref`` changed; ``{}`` when it is gone (bounded out)."""
+    """``attempt_inputs`` with the entry ``ref`` changed; ``{}`` when it is gone (bounded out).
+
+    A CLI attempt that ends without a recorded bridge listing says so instead of leaving a gap.
+    """
     rows = [item for item in current.get('attempt_inputs') or [] if isinstance(item, dict)]
     if not any(item.get('ref') == ref for item in rows):
         return {}
-    return {'attempt_inputs': [{**item, **changes} if item.get('ref') == ref else item for item in rows]}
+    def change(item):
+        item = {**item, **changes}
+        if item.get('route') == 'subscription' and 'served' not in item:
+            item['served'] = BRIDGE_NOT_OBSERVED
+        return item
+    return {'attempt_inputs': [change(item) if item.get('ref') == ref else item for item in rows]}
 
 
 def served_entry(current, identity):
@@ -116,9 +151,20 @@ def served_entry(current, identity):
 
 
 def record_served(store, job_id, definitions, representation):
-    """Record the definitions a bridge answered ``tools/list`` with; never breaks the bridge."""
-    try:
-        identity = offered_tools_identity(definitions, representation=representation)
-        store.merge_turn_provenance(job_id, {}, combine=lambda current, _fields: served_entry(current, identity))
-    except Exception:
-        pass
+    """Record the definitions a bridge answered ``tools/list`` with; never breaks the bridge.
+
+    Off the response path: a non-daemon thread, so the answer is not delayed by the store and
+    the bridge process still finishes the write before it exits.  Nothing is written when no
+    running CLI attempt is waiting for it.
+    """
+    def write():
+        try:
+            identity = identity_or_unavailable(definitions, representation=representation)
+            if not served_entry(store.turn_provenance(job_id) or {}, identity):
+                return
+            store.merge_turn_provenance(job_id, {}, combine=lambda current, _fields: served_entry(current, identity) or current)
+        except Exception:
+            pass
+    worker = threading.Thread(target=write, name='record-served-tools')
+    worker.start()
+    return worker
