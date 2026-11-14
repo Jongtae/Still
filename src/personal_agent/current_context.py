@@ -277,6 +277,10 @@ def stored_secret_values(store):
             value = store.secret(name)
         except Exception:
             value = None
+            # #819 (Codex review on #839): a value that could not be read is missing from this list, so the
+            # list is used for this call only and never cached (``_material_entry``); the next call reads again.
+            from .api_requests import REDACTION_STATE
+            REDACTION_STATE.partial = True
         if isinstance(value, str) and len(value) >= MIN_REDACTED_CHARS:
             values.append(value)
     # #1380: a short code-run value (an account product code such as "01") identifies nothing

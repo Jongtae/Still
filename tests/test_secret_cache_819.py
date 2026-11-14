@@ -147,8 +147,6 @@ class SecretsReadOncePerRevision(unittest.TestCase):
         self.assertEqual(redact_known_secrets(self.store, 'telegram-token-AFTER-0002'), '[redacted]')
 
 
-if __name__ == '__main__':
-    unittest.main()
 
     def test_threads_redacting_during_rotations_never_fail_or_keep_a_stale_value(self):
         import threading
@@ -175,6 +173,25 @@ if __name__ == '__main__':
         self.assertEqual(errors, [])
         for value in rotated:
             self.assertEqual(redact_known_secrets(self.store, value), '[redacted]')
+
+    def test_a_failed_secret_read_is_not_cached(self):
+        """A transient failure reading one stored value leaves it out of this call only (Codex review on #839)."""
+        fresh = 'mattermost-token-NEVERRETIRED1'
+        self.store.secret('mattermost_token', fresh)
+        self.settle()
+        self.store._known_secret_material = None
+        real = QuickStore.secret
+        calls = {'failed': False}
+
+        def flaky(store, key, *args, **kwargs):
+            if key == 'mattermost_token' and not calls['failed']:
+                calls['failed'] = True
+                raise OSError('secrets file busy')
+            return real(store, key, *args, **kwargs)
+        with mock.patch.object(QuickStore, 'secret', flaky):
+            redact_known_secrets(self.store, 'warm up')
+            self.assertTrue(calls['failed'])
+            self.assertEqual(redact_known_secrets(self.store, 'a ' + fresh), 'a [redacted]')
 
     def test_a_read_in_a_new_thread_works(self):
         """The partial-read flag is per thread: a thread that never set it reads it as unset."""
@@ -206,3 +223,7 @@ class EnvelopeRedactedOnce(unittest.TestCase):
         kept = store.turn_provenance(job)['prompt_envelope']
         self.assertNotIn('telegram-token-0123456789', kept)
         self.assertIn('/Users/owner/a.txt', kept, 'a local record keeps the real path')
+
+
+if __name__ == '__main__':
+    unittest.main()
