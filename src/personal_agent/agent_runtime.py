@@ -4165,7 +4165,11 @@ class Capabilities:
    # boundary (``PublicPageReader``): size, redirect and time limits, and no loopback, private
    # or link-local destination after DNS resolution, checked again on every redirect.
    self._page_address_secret_free(args.get('url'))
-   return self._read_network({'tool':name,'url':args.get('url')})
+   # #820 review: every redirect target passes the same check before its request.
+   from .local_tools import PAGE_ADDRESS_CHECK
+   token=PAGE_ADDRESS_CHECK.set(self._page_address_secret_free)
+   try:return self._read_network({'tool':name,'url':args.get('url')})
+   finally:PAGE_ADDRESS_CHECK.reset(token)
   if name in BROWSER_ACTIONS:
    # #656: the owner-logged-in browser profile.  Mediation and the payment
    # guard live in `browser_session`; this branch only routes the call and

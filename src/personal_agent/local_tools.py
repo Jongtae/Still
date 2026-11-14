@@ -2,6 +2,7 @@
 import http.client
 import ipaddress
 import codecs
+import contextvars
 from contextlib import contextmanager
 import multiprocessing
 import math
@@ -203,6 +204,12 @@ def _not_sent(exc):
     """
     from .agent_runtime import not_run
     return not_run(exc)
+
+
+#: #820 review: a per-read check of each address a page read is about to request, set by the caller for
+#: the read (``Capabilities`` sets its stored-secret check), so a redirect cannot carry what the first
+#: address could not.  A context variable, so it reaches the reader without changing the read's plan.
+PAGE_ADDRESS_CHECK=contextvars.ContextVar('page_address_check',default=None)
 
 
 class PublicPageReader:
@@ -448,6 +455,10 @@ class PublicPageReader:
     def read(self, url):
         """Read one public page at any public address (#820).
 
+        ``PAGE_ADDRESS_CHECK``, when the caller set it for this read, is asked
+        about every address before its request, redirect targets included: the
+        caller's stored-secret check on the address (#820 review).
+
         The boundary is this reader's own: an http(s) address without login
         information, no loopback, private, link-local or metadata destination by
         name or after DNS resolution, checked again on every redirect and pinned
@@ -459,6 +470,9 @@ class PublicPageReader:
             raise _not_sent(exc)
         for redirect in range(MAX_PAGE_REDIRECTS+1):
             try:
+                # #820 review: the caller's address check (stored secrets) holds on every hop too.
+                check=PAGE_ADDRESS_CHECK.get()
+                if callable(check):check(current)
                 # #208 review: work mode is asked before every hop, redirects included.
                 refused=self.guard(current) if callable(self.guard) else None
                 if refused:raise ValueError(refused)
@@ -466,7 +480,9 @@ class PublicPageReader:
                 addresses=self._validate_host(current,deadline)
             except (ValueError, ProviderError) as exc:
                 # #233: before the first request no page was asked for (at most its host name was
-                # resolved); after it, a refused redirect follows a request that was sent.
+                # resolved); after it, a refused redirect follows a request that was sent, whatever
+                # the refusal itself says (the address check marks its own refusals ``ran: false``).
+                if redirect:exc.__dict__.pop('ran',None)
                 raise _not_sent(exc) if redirect == 0 else exc
             request=Request(current, headers={'User-Agent':'Still public-page-reader/1.0','Accept':'text/html,text/plain,application/xhtml+xml;q=0.9'})
             try:

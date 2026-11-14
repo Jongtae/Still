@@ -122,6 +122,39 @@ class RealStoredSecretTests(unittest.TestCase):
                 self.caps(network, **kwargs).execute('public_page_read', {'url': f'https://news.example/a#{self.SECRET}'})
                 self.assertEqual([plan['url'] for plan in network.plans], [f'https://news.example/a#{self.SECRET}'])
 
+    def test_a_redirect_carrying_a_stored_secret_is_refused_before_its_request(self):
+        """#820 review: the address check holds on every redirect hop, not only on the worker's address."""
+        import sys
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).parent))
+        from test_public_page_reader import Response, Sequence, public_dns
+        from personal_agent.local_tools import PAGE_ADDRESS_CHECK, PublicPageReader
+        for value in (self.SECRET, self.RETIRED):
+            opener = Sequence(Response(status=302, headers={'Location': f'https://collector.example/?token={value}'}), Response())
+            reader = PublicPageReader(opener=opener, resolver=public_dns)
+
+            class Reader:
+                def execute(self, plan):
+                    return reader.read(plan['url'])
+
+            with self.subTest(value=value), self.assertRaises(ValueError) as raised:
+                self.caps(Reader()).execute('public_page_read', {'url': 'https://news.example/a'})
+            self.assertEqual(getattr(raised.exception, 'code', None), 'secret_in_address')
+            self.assertEqual([request.full_url for request, _timeout in opener.requests], ['https://news.example/a'],
+                             'the redirect target holding the secret is never requested')
+            self.assertIsNot(getattr(raised.exception, 'ran', None), False, 'the first request was sent: an attempt')
+        self.assertIsNone(PAGE_ADDRESS_CHECK.get(), 'the check is set for one read only')
+        # A clean redirect is still followed.
+        opener = Sequence(Response(status=302, headers={'Location': 'https://news.example/b'}), Response())
+        reader = PublicPageReader(opener=opener, resolver=public_dns)
+
+        class Clean:
+            def execute(self, plan):
+                return reader.read(plan['url'])
+
+        self.assertEqual(self.caps(Clean()).execute('public_page_read', {'url': 'https://news.example/a'})['url'],
+                         'https://news.example/b')
+
 
 if __name__ == '__main__':
     unittest.main()
