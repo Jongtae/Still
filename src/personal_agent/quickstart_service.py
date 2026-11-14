@@ -940,14 +940,16 @@ class AgentService:
 
         Such a run may ask the owner to sign in, in its paired conversation, as a typed Work does.  Only
         an ``accepted_by`` in ``prep.OWNER_ACCEPTED`` counts (a missing row, a NULL or self-set value is
-        False), only the slot's current Work (``last_run_job_id``) while the row runs, and never a run
-        kept in Still (``when_needed``), which has no conversation to ask in.  Payment is unaffected:
+        False), only the slot's current Work (``last_run_job_id``) while the row runs, and only a run
+        in the owner's current paired conversation: never one kept in Still (``when_needed``) or started
+        while nothing was paired, which has no conversation to ask in.  Payment is unaffected:
         it stays under the payment-autonomy contract (``_authorize_payment_autonomy``).
         """
         preparation_id=prep.preparation_of((job or {}).get('request_key'))
         row=self.preparations.get(preparation_id) if preparation_id else None
         return bool(row and row.get('accepted_by') in prep.OWNER_ACCEPTED and row.get('state')==prep.STATE_RUNNING
-                    and row.get('last_run_job_id')==job.get('id') and row.get('delivery_mode')!=prep.DELIVERY_WHEN_NEEDED)
+                    and row.get('last_run_job_id')==job.get('id') and row.get('delivery_mode')!=prep.DELIVERY_WHEN_NEEDED
+                    and self._surface_work(job))
 
     def owner_typed_work(self, job):
         """Whether the owner's own typed message started ``job`` (#619, #717).
@@ -7341,8 +7343,10 @@ class AgentService:
         receipts=[json.loads(item['detail']) for item in db.execute(
             "SELECT detail FROM tool_events WHERE job_id=? AND tool IN ('action_continuation','settings_continuation')",(job['id'],))]
         if any(item.get('offer_digest')==row.get('offer_digest') and item.get('resumed') for item in receipts):return False
-        # #821: a scheduled run's owner wait continues only the preparation version it was asked under.
-        if 'preparation' in row and self.preparations.wait_refusal(db,job['id'],row['preparation']):
+        # #821: a scheduled run's sign-in continues only the preparation version it was asked under; a
+        # row without that version (never recorded for a scheduled run since #816) continues nothing.
+        if ((row.get('action')=='browser_sign_in' and self.unattended_work(job) or 'preparation' in row)
+                and self.preparations.wait_refusal(db,job['id'],row.get('preparation'))):
             if not any(item.get('offer_digest')==row.get('offer_digest') and item.get('reason')==prep.WAIT_CHANGED for item in receipts):
                 db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                            (job['id'],'action_continuation','withheld',json.dumps({'action_digest':row['digest'],'offer_digest':row.get('offer_digest'),

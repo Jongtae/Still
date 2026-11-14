@@ -292,6 +292,52 @@ class ScheduledSignIn(_Runs):
         self.assertEqual(len(self.notices(job['id'])), 1)
 
 
+    def test_an_expired_scheduled_login_offers_no_reopen(self):
+        """Verifier P2-1: the slot settles once the wait ends, so a reopen button would continue nothing."""
+        row, job, login, note = self.open_run()
+        before = len(self.edits())
+        self.assertEqual(self.settle(job['id'], now=login['deadline'] + 1), 'expired')
+        self.assertEqual([edit['text'] for edit in self.edits()[before:]], [BROWSER_LOGIN_RESULT_TEXT['expired']])
+        self.assertFalse(self.service._login_reopenable(job['id']))
+        self.assertFalse(self.service.reopen_browser_login(job['id'], login['nonce']))
+        self.assertEqual(self.state(job['id']), 'expired')
+
+    def test_a_changed_preparation_opens_no_window(self):
+        """Verifier P2-3: the version is checked before the window opens, not only at the continuation."""
+        row, job = self.started()
+        self.assertEqual(self.ask(job), BROWSER_LOGIN_PAGE_OFFERED_TEXT)
+        self.ended_waiting(job)
+        with self.store.db() as db:
+            db.execute('UPDATE preparations SET updated_at=? WHERE id=?',
+                       (math.nextafter(row['updated_at'], math.inf), row['id']))
+        with mock.patch.object(self.profile, 'open_for_login') as opened:
+            self.assertFalse(self.service.offer_browser_login(self.store.job(job['id'])))
+            opened.assert_not_called()
+        self.assertEqual((self.state(job['id']), self.service._browser_login(job['id'])['cause']),
+                         ('unavailable', prep.WAIT_CHANGED))
+        self.assertEqual(self.notices(job['id']), [])
+
+    def test_a_scheduled_sign_in_without_its_version_continues_nothing(self):
+        """Verifier P2-3: a scheduled run's sign-in row that lost its version fails closed."""
+        _, job, login, _ = self.open_run()
+        unstamped = {key: value for key, value in self.continuation(login).items() if key != 'preparation'}
+        with self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            self.assertFalse(self.service._queue_action_continuation(db, self.store.job(job['id']), unstamped))
+        [(status, detail)] = self.receipts(job['id'])
+        self.assertEqual((status, detail['reason'], detail['resumed']), ('withheld', prep.WAIT_CHANGED, False))
+        self.assert_no_continuation(job)
+
+    def test_a_run_with_no_paired_conversation_asks_nothing(self):
+        """Verifier P2-2: a run started while nothing was paired has no conversation to ask in."""
+        row, job = self.started()
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET channel='web',chat_id=NULL WHERE id=?", (job['id'],))
+        job = self.store.job(job['id'])
+        self.assertFalse(self.service.owner_accepted_run(job))
+        self.assertEqual(self.ask(job), BROWSER_LOGIN_UNATTENDED_TEXT)
+        self.assertIsNone(self.service._browser_login(job['id']))
+
 class SignInBoundaries(_Runs):
     def test_owner_accepted_api_is_allowlisted_and_current_run_only(self):
         self.assertEqual(prep.OWNER_ACCEPTED, OWNER_ACCEPTED)

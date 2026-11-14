@@ -1087,7 +1087,9 @@ class BrowserSignin:
 
         Only the window's own timeout (not a skip, a close without sign-in or a failed close), at most
         ``BROWSER_LOGIN_REOPENS`` times, while the Work still ended short (partial/failed), is not
-        stopped, is this chat's Telegram Work and the site may still be signed in to.
+        stopped, is this chat's Telegram Work and the site may still be signed in to.  #821: never a
+        scheduled run's login (``preparation``): its slot settles once the wait ends, so a reopened
+        window could continue nothing; its expiry is told once.
         """
         service=self.service
         row=service._browser_login(work_id) or {}
@@ -1095,7 +1097,7 @@ class BrowserSignin:
         return bool(row.get('state')=='expired' and row.get('cause')=='expired'
                     and int(row.get('reopens') or 0)<BROWSER_LOGIN_REOPENS
                     and job and ws.is_resumable_continuation(job['status']) and not service.work_stopped(work_id)
-                    and service._surface_work(job) and not self._wait_changed(work_id,row))
+                    and service._surface_work(job) and 'preparation' not in row)
 
     def _wait_changed(self, work_id, row):
         """#821: a scheduled run's login row whose preparation version is no longer current."""
@@ -1117,7 +1119,7 @@ class BrowserSignin:
             if (not row or not hmac.compare_digest(str(row.get('nonce','')),str(nonce or ''))
                     or not service._login_reopenable(work_id)):
                 return False
-            kept={key:row[key] for key in ('work_id','url','host','preparation') if key in row}
+            kept={key:row[key] for key in ('work_id','url','host') if key in row}
             window_url=service._browser_login_window_url(work_id,row)
             cached=work_id in service._browser_login_window_urls
             new_nonce=secrets.token_hex(16)
