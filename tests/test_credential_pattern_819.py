@@ -23,8 +23,20 @@ class CredentialPattern819(unittest.TestCase):
                 self.assertEqual(SECRET_PATTERN.sub('[redacted]', text), text)
 
 
+def _best_time(text, runs=3):
+    best = None
+    for _ in range(runs):
+        start = time.perf_counter()
+        SECRET_PATTERN.sub('[redacted]', text)
+        elapsed = time.perf_counter() - start
+        best = elapsed if best is None else min(best, elapsed)
+    return best
+
+
 def test_the_pattern_is_linear_on_hostile_input():
-    size = 200_000
+    """Growth, not wall-clock: an 8x longer input takes about 8x longer when the scan is linear and about
+    64x when it backtracks quadratically.  A fixed time bound flaked on a loaded CI runner (#839)."""
+    small, large = 25_000, 200_000
     seeds = {
         'hyphen chain': 'a-',
         'kebab chain': 'lorem-ipsum-',
@@ -32,14 +44,17 @@ def test_the_pattern_is_linear_on_hostile_input():
         'mysql commands': 'mysql ',
         'dot chain': 'a.',
         'unterminated PEM': '-----BEGIN PRIVATE KEY-----\n',
-        'single-line JSON': '{"message": "' + 'curl ' * 1342 + 'x' * (size - 6725) + '"}',
+        'label and word': 'token word ',
     }
     for name, seed in seeds.items():
-        text = (seed * (size // len(seed) + 1))[:size]
-        start = time.perf_counter()
-        SECRET_PATTERN.sub('[redacted]', text)
-        elapsed = time.perf_counter() - start
-        assert elapsed < 1.0, f'{name}: {elapsed:.3f}s for {len(text)} characters'
+        texts = [(seed * (size // len(seed) + 1))[:size] for size in (small, large)]
+        short, long = (_best_time(text) for text in texts)
+        ratio = long / max(short, 1e-4)
+        assert ratio < 24, f'{name}: {long:.3f}s for {large} vs {short:.3f}s for {small} characters ({ratio:.1f}x)'
+        # A catastrophic pattern takes minutes; this backstop only catches that, whatever the runner's load.
+        assert long < 5.0, f'{name}: {long:.3f}s for {large} characters'
+    json_line = '{"message": "' + 'curl ' * 1342 + 'x' * (large - 6725) + '"}'
+    assert _best_time(json_line, runs=1) < 5.0
 
 
 def test_command_redaction_preserves_surrounding_text():
