@@ -115,10 +115,14 @@ _SECRET = re.compile(
     r'|\b\d{6,32}:[A-Za-z0-9_-]{30,}+'
     r'|\beyJ[A-Za-z0-9_-]{1,8192}\.[A-Za-z0-9_-]{1,8192}\.[A-Za-z0-9_-]{1,8192}'
     r'|\b[a-z][a-z0-9+.-]{0,30}://[^\s/@:]{0,1024}:[^\s/@]{1,8192}@'
-    r'|(?i:\bauthorization)[\\\"\']{0,3} *[=:] *[\\\"\']{0,3}'
-    r'(?:(?i:digest) +[^\r\n]{1,2000}|(?i:'+_AUTH_SCHEMES+r') +'+_PLACEHOLDER+_VALUE+
-    r'|[A-Za-z0-9_-]{1,128} +'+_CONTEXT_VALUE+r')'
-    r'|\b(?i:bearer|basic) +'+_CONTEXT_VALUE+
+    # Header separators may be spaces or tabs (a pasted header, Codex review on #839).
+    r'|(?i:\bauthorization)[\\\"\']{0,3}[ \t]{0,8}[=:][ \t]{0,8}[\\\"\']{0,3}'
+    r'(?:(?i:digest)[ \t]{1,8}[^\r\n]{1,2000}|(?i:'+_AUTH_SCHEMES+r')[ \t]{1,8}'+_PLACEHOLDER+_VALUE+
+    r'|[A-Za-z0-9_-]{1,128}[ \t]{1,8}'+_CONTEXT_VALUE+r')'
+    r'|\b(?i:bearer|basic)[ \t]{1,8}'+_CONTEXT_VALUE+
+    # A quoted value after a credential name runs to its closing quote, delimiters inside included.
+    r"|(?i:\b(?:"+_CREDENTIAL_NAME+r"))[ \t]{0,8}[=:][ \t]{0,8}'"+_PLACEHOLDER+r"[^'\r\n]{1,8192}'"
+    r'|(?i:\b(?:'+_CREDENTIAL_NAME+r'))[ \t]{0,8}[=:][ \t]{0,8}"'+_PLACEHOLDER+r'[^"\r\n]{1,8192}"'
     r'|(?i:[\"\'](?:'+_CREDENTIAL_NAME+r'|pin|auth))[\\\"\']{1,3} *: *[\"\']'
     +_PLACEHOLDER+r'[^\"\'\r\n]{1,8192}[\"\']'
     r'|(?im:^[ \t]{0,80}(?:password|passwd):)[ \t]{0,80}'+_PLACEHOLDER+_VALUE+r'(?=[ \t]{0,80}(?:\n|$))'
