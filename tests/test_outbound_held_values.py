@@ -422,9 +422,10 @@ class ApiRoute(_ServiceBase):
                                       ('web_search', {'query': MEMBER + ' 회원 혜택'})]))
         job = self.turn(service, '메모하고 회원 혜택 찾아줘')
         self.assertEqual(self.wire.plans[0]['query'], MEMBER + ' 회원 혜택')
+        # #820 B2: a value this Work wrote is compared when the view opens, so it is labelled a later comparison.
         self.assertEqual(service.work_information_use(job)['sent_to']['held_value_matches'], [
             {'source': 'work_write', 'key': '', 'tool': 'web_search',
-             'destination': 'brave', 'status': 'succeeded'}])
+             'destination': 'brave', 'status': 'succeeded', 'comparison': 'later_work_writes'}])
 
 
 
