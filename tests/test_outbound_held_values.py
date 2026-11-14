@@ -41,10 +41,14 @@ def held(*rows):
 
 
 def compared(caps, action, args, result):
-    class Store:
-        def comparison_memories(self, owner, at, limit):
-            return [{'memory_key': key, 'content': value} for source, key, value in caps.held_values() if source == 'memory']
-    found, cuts = information_use.deferred_comparison(Store(), '', action, args, result, 1)
+    with tempfile.TemporaryDirectory() as folder:
+        store = QuickStore(Path(folder) / 'state')
+        for source, key, value in caps.values:
+            if source == 'memory':
+                with mock.patch('personal_agent.quickstart_store.time.time', return_value=0.5):
+                    store.save_memory(key, value)
+        job = store.enqueue('compare', 'comparison')
+        found, cuts = information_use.deferred_comparison(store, job, action, args, result, 1)
     out = {key: value for key, value in outbound_evidence(caps, action, args, result).items() if key != 'outbound_comparison'}
     if found:
         out['outbound_matches'] = [{**row, 'tool': action} for row in found]
@@ -144,7 +148,7 @@ class ComparisonCut(unittest.TestCase):
         text = '가' * agent_runtime.OUTBOUND_TEXT_MAX + ' ' + MEMBER
         added = compared(caps, 'web_search', {'query': text}, {'provider': 'brave'})
         self.assertNotIn('outbound_matches', added)
-        self.assertEqual(added['outbound_comparison_cut'], [{'kind': 'text_chars', 'limit': agent_runtime.OUTBOUND_TEXT_MAX}])
+        self.assertEqual(added['outbound_comparison_cut'], [{'kind': 'text_chars', 'limit': information_use.COMPARISON_TEXT_MAX}])
         short = compared(caps, 'web_search', {'query': MEMBER}, {'provider': 'brave'})
         self.assertNotIn('outbound_comparison_cut', short)
         self.assertTrue(short['outbound_matches'])
@@ -280,8 +284,20 @@ class Recording(unittest.TestCase):
         self.assertNotIn('5678', json.dumps({**evidence_summary('code_run', result), **added}))
 
     def test_a_failing_comparison_leaves_the_evidence_as_before(self):
-        caps = self.Caps(error=RuntimeError('store gone'))
-        self.assertEqual(outbound_evidence(caps, 'browser_type', {'text': MEMBER}, {'url': 'https://a.example/'}), {'outbound_comparison': 'deferred'})
+        with tempfile.TemporaryDirectory() as folder:
+            store = QuickStore(Path(folder) / 'state')
+            store.save_memory('member-number', MEMBER)
+            job = store.enqueue('compare', 'comparison-failed')
+            detail = {'host_action': 'web_search', 'arguments': {'query': MEMBER},
+                      'evidence': {'outbound_comparison': 'deferred'}}
+            with store.db() as db:
+                db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                           (job, 'web_search', 'succeeded', json.dumps(detail), time.time()))
+            with mock.patch.object(store, 'comparison_work_writes', side_effect=RuntimeError('store gone')):
+                audit = information_use.work_information_use(store, job)
+            self.assertEqual(audit['sent_to']['held_value_matches'], [])
+            self.assertIn({'kind': 'comparison_failed', 'limit': 0}, audit['sent_to']['held_value_comparison_cut'])
+            self.assertTrue(audit['results'])
 
     def test_an_api_request_keeps_its_body_out_of_the_evidence(self):
         caps = self.Caps(held(('phone', PHONE)))

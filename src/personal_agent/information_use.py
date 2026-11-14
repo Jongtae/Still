@@ -35,6 +35,12 @@ from .messages import msg
 from .bounded_execution import reported_usage
 import json
 import re
+import copy
+import sqlite3
+import threading
+import time
+import weakref
+from collections import OrderedDict
 from datetime import datetime, timezone
 
 #: Evidence class of every audit this module returns.
@@ -76,10 +82,70 @@ MATCH_SOURCES = frozenset({'memory', 'work_write'})
 #: #245: the bounds that can cut that comparison off, in the order the view says them
 #: (``agent_runtime.COMPARISON_CUT_MEMORY`` and ``COMPARISON_CUT_TEXT``).
 COMPARISON_CUTS = ('memory_rows', 'text_chars', 'calls', 'outbound_unrecorded',
-                   'work_writes_unavailable', 'memory_history_unavailable', 'texts', 'matches')
+                   'work_writes_unavailable', 'memory_history_unavailable', 'texts', 'matches',
+                   'comparison_time', 'comparison_failed', 'value_chars', 'held_values')
 # Bound expensive matching independently of the number of recorded events.
-COMPARED_CALLS_MAX = 20
-COMPARED_TEXTS_MAX = 12
+COMPARED_CALLS_MAX = 5
+COMPARED_TEXTS_MAX = 2
+COMPARISON_TEXT_MAX = 200
+COMPARISON_VALUE_MAX = 200
+COMPARISON_SECONDS = 1.5
+COMPARISON_CACHE_WORKS = 32
+_COMPARISON_CACHE = weakref.WeakKeyDictionary()
+_CACHE_LOCK = threading.RLock()
+
+
+class _ComparisonCache:
+    """SQLite data_version observes *other connections*, including forget/delete.
+
+    This connection executes PRAGMA only, never reads an owner value and never
+    holds a transaction. Cached payloads are value-free labels/cuts, bounded
+    by Work/call count. A new inode also invalidates a replaced database.
+    """
+    def __init__(self, store):
+        self.identity = (store.path.stat().st_dev, store.path.stat().st_ino)
+        self.db = sqlite3.connect(store.path.as_uri() + '?mode=ro', uri=True, check_same_thread=False)
+        self.version = None
+        self.results = OrderedDict()
+        weakref.finalize(store, self.db.close)
+
+    def read(self, key):
+        version = self.db.execute('PRAGMA data_version').fetchone()[0]
+        if version != self.version:
+            self.results.clear()
+            self.version = version
+        value = self.results.get(key)
+        if value is not None:
+            self.results.move_to_end(key)
+        return version, copy.deepcopy(value)
+
+
+def _cached_comparison(store, key):
+    with _CACHE_LOCK:
+        if not hasattr(store, 'path'):
+            return None, None, None
+        identity = (store.path.stat().st_dev, store.path.stat().st_ino)
+        state = _COMPARISON_CACHE.get(store)
+        if state is None or state.identity != identity:
+            if state is not None:
+                state.db.close()
+            state = _COMPARISON_CACHE[store] = _ComparisonCache(store)
+        version, value = state.read(key)
+        return state, version, value
+
+
+def _save_comparison_cache(state, version, key, value):
+    if state is None:
+        return
+    with _CACHE_LOCK:
+        # A concurrent mutation must not seal stale labels into the cache.
+        if state.db.execute('PRAGMA data_version').fetchone()[0] != version:
+            return
+        state.results[key] = copy.deepcopy(value)
+        state.results.move_to_end(key)
+        while len(state.results) > COMPARISON_CACHE_WORKS:
+            state.results.popitem(last=False)
+
 
 
 
@@ -363,15 +429,17 @@ def _result_label(action, evidence):
     return ', '.join(items[:3]) if items else '완료'
 
 
-def deferred_comparison(store, job_id, action, arguments, evidence, at):
+def deferred_comparison(store, job_id, action, arguments, evidence, at, *, clock=None, deadline=None):
     """Compare existing, possibly redacted records; never retain another payload.
 
     Ordinary Memory supersession is reconstructed at the running event's time.
     Work writes lack exact exclusion-set versions, so recovered writes are
     explicitly a later comparison. Inherited/pending writes cannot be recovered.
     """
-    from .agent_runtime import (MEMORY_OWNER, HELD_MEMORY_MAX, OUTBOUND_TEXT_MAX,
+    from .agent_runtime import (MEMORY_OWNER, HELD_MEMORY_MAX,
                                 OUTBOUND_MATCHES_MAX, outbound_texts, held_value_matches)
+    clock = clock or time.monotonic
+    deadline = clock() + COMPARISON_SECONDS if deadline is None else deadline
     cuts = {'work_writes_unavailable': 0, 'memory_history_unavailable': 0}
     args = dict(arguments) if isinstance(arguments, dict) else {}
     result = dict(evidence)
@@ -412,34 +480,63 @@ def deferred_comparison(store, job_id, action, arguments, evidence, at):
     if len(texts) > COMPARED_TEXTS_MAX:
         cuts['texts'] = COMPARED_TEXTS_MAX
         texts = texts[:COMPARED_TEXTS_MAX]
-    if any(len(text) > OUTBOUND_TEXT_MAX for text, _host in texts):
-        cuts['text_chars'] = OUTBOUND_TEXT_MAX
+    if any(len(text) > COMPARISON_TEXT_MAX for text, _host in texts):
+        cuts['text_chars'] = COMPARISON_TEXT_MAX
     if not texts:
+        return [], [{'kind': kind, 'limit': limit} for kind, limit in cuts.items()]
+    if clock() >= deadline:
+        cuts['comparison_time'] = int(COMPARISON_SECONDS * 1000)
         return [], [{'kind': kind, 'limit': limit} for kind, limit in cuts.items()]
     try:
         stamp = float(at)
         if not (0 < stamp < float('inf')):
             raise ValueError
-        rows = store.comparison_memories(MEMORY_OWNER, stamp, HELD_MEMORY_MAX + 1)
-    except (AttributeError, TypeError, ValueError):
+    except (TypeError, ValueError):
         rows = []  # Unknown call time is not silently replaced with today's Memory.
+    else:
+        reader = getattr(store, 'comparison_memories', None)
+        rows = reader(MEMORY_OWNER, stamp, HELD_MEMORY_MAX + 1) if reader is not None else []
     if len(rows) > HELD_MEMORY_MAX:
         cuts['memory_rows'] = HELD_MEMORY_MAX
     held = [('memory', row['memory_key'], row['content']) for row in rows[:HELD_MEMORY_MAX]]
-    found = held_value_matches(texts, held)
-    if any(row.get('comparison') == 'later_memory' for row in rows):
-        found = [{**row, 'comparison': 'later_memory'} for row in found]
-    # Existing writes may have changed since the call. Never call them call-time matches.
-    values = store.comparison_work_writes(MEMORY_OWNER, job_id, HELD_MEMORY_MAX) if hasattr(store, 'comparison_work_writes') else []
+    memory_later = any(row.get('comparison') == 'later_memory' for row in rows)
+    if clock() >= deadline:
+        cuts['comparison_time'] = int(COMPARISON_SECONDS * 1000)
+        return [], [{'kind': kind, 'limit': limit} for kind, limit in cuts.items()]
+    remaining = HELD_MEMORY_MAX - len(held)
+    values = store.comparison_work_writes(MEMORY_OWNER, job_id, remaining + 1) if hasattr(store, 'comparison_work_writes') else []
     known = {row[2] for row in held}
-    later = held_value_matches(texts, [('work_write', '', value) for value in values if value not in known])
-    found += [{**row, 'comparison': 'later_work_writes'} for row in later]
-    if len(found) >= OUTBOUND_MATCHES_MAX:
-        cuts['matches'] = OUTBOUND_MATCHES_MAX
-    return found[:OUTBOUND_MATCHES_MAX], [{'kind': kind, 'limit': limit} for kind, limit in cuts.items()]
+    writes = list(dict.fromkeys(value for value in values if value not in known))
+    if len(writes) > remaining:
+        cuts['held_values'] = HELD_MEMORY_MAX
+    held += [('work_write', '', value) for value in writes[:remaining]]
+    found = []
+    # One bounded text/value pair per unchanged matcher call. Deadline checks
+    # occur between atomic comparisons; a single comparison can overrun slightly.
+    for text, destination in texts:
+        for source, key, value in held:
+            if clock() >= deadline:
+                cuts['comparison_time'] = int(COMPARISON_SECONDS * 1000)
+                return found, [{'kind': kind, 'limit': limit} for kind, limit in cuts.items()]
+            if len(value) > COMPARISON_VALUE_MAX:
+                cuts['value_chars'] = COMPARISON_VALUE_MAX
+            matches = held_value_matches([(text[:COMPARISON_TEXT_MAX], destination)],
+                                         [(source, key, value[:COMPARISON_VALUE_MAX])])
+            for row in matches:
+                if source == 'work_write': row = {**row, 'comparison': 'later_work_writes'}
+                elif memory_later: row = {**row, 'comparison': 'later_memory'}
+                if row in found:
+                    continue
+                if len(found) == OUTBOUND_MATCHES_MAX:
+                    cuts['matches'] = OUTBOUND_MATCHES_MAX
+                    return found, [{'kind': kind, 'limit': limit} for kind, limit in cuts.items()]
+                found.append(row)
+    if clock() >= deadline:
+        cuts['comparison_time'] = int(COMPARISON_SECONDS * 1000)
+    return found, [{'kind': kind, 'limit': limit} for kind, limit in cuts.items()]
 
 
-def work_information_use(store, job_id, redact=None):
+def work_information_use(store, job_id, redact=None, *, compare_held_values=True, clock=None):
     """The information-use audit of one Work, or None when the Work does not exist.
 
     ``redact`` (the service's stored-secret pass) is applied to every label.
@@ -486,7 +583,19 @@ def work_information_use(store, job_id, redact=None):
     compared_calls = 0
     # #636: sites the AI signed back in to through the provider the owner used (site and provider host only).
     resigned = []
-    for event in store.task_events(job_id):
+    events = store.task_events(job_id)
+    clock_fn = clock or time.monotonic
+    deadline = clock_fn() + COMPARISON_SECONDS
+    cache_key = (job_id, max((row.get('id') or 0 for row in events), default=0))
+    cache_state, cache_version, cached = None, None, None
+    if compare_held_values and clock is None:
+        try:
+            cache_state, cache_version, cached = _cached_comparison(store, cache_key)
+        except Exception:
+            pass  # Cache failure never prevents a bounded uncached comparison.
+    computed = {}
+    cacheable = True
+    for event in events:
         tool, status, trace = event.get('tool'), event.get('status'), event.get('trace') or {}
         # #467: one terminal event per CLI attempt; reuse the numeric-only boundary.
         if tool == 'subscription_engine' and status in ('succeeded', 'failed') and isinstance(trace, dict):
@@ -517,34 +626,48 @@ def work_information_use(store, job_id, redact=None):
                 'destination': label(evidence.get('host'), 200), 'state': evidence_state,
                 'remote_receipt': label(str(evidence.get('response_status') or ''), 20)}
             continue
-        identity = (tool, trace.get('call_id'))
+        identity = (tool, trace.get('call_id'), trace.get('attempt'))
         if action in OUTBOUND_MATCH_ACTIONS and status == 'running' and trace.get('scope') != 'cli-native':
             outbound_started[identity] = (trace, event.get('created'))
         source = evidence if status == 'succeeded' or (status == 'failed' and trace.get('state') == 'withheld') else trace
         legacy = 'outbound_matches' in source or 'outbound_comparison_cut' in source
         if action in OUTBOUND_MATCH_ACTIONS and status in ('succeeded', 'failed') and trace.get('scope') != 'cli-native':
             begun, at = outbound_started.pop(identity, ({}, event.get('created')))
-            if not legacy and trace.get('ran') is not False:
+            if compare_held_values and source.get('outbound_comparison') == 'deferred' and not legacy and trace.get('ran') is not False:
                 if compared_calls < COMPARED_CALLS_MAX:
                     compared_calls += 1
                     arguments = begun.get('arguments') or trace.get('arguments') or {}
-                    found, left = deferred_comparison(store, job_id, action, arguments, evidence, at)
+                    event_key = event.get('id')
+                    try:
+                        if cached is not None and event_key in cached:
+                            found, left = cached[event_key]
+                        elif clock_fn() >= deadline:
+                            found, left = [], [{'kind': 'comparison_time', 'limit': int(COMPARISON_SECONDS * 1000)}]
+                        else:
+                            found, left = deferred_comparison(store, job_id, action, arguments, evidence, at,
+                                                              clock=clock_fn, deadline=deadline)
+                        computed[event_key] = (found, left)
+                    except Exception:
+                        cacheable = False
+                        found, left = [], [{'kind': 'comparison_failed', 'limit': 0}]
                     source = {**source, 'outbound_matches': found, 'outbound_comparison_cut': left}
                 else:
                     cuts['calls'] = COMPARED_CALLS_MAX
         # A failed call that was dispatched records its matches at the top level, and a call the runtime
         # withheld after it returned keeps them in its Evidence: either may have carried them out.
         withheld = status == 'failed' and trace.get('state') == 'withheld'
-        found = source.get('outbound_matches')
+        found = source.get('outbound_matches') if compare_held_values else None
         for row in found if isinstance(found, list) else ():
             if not isinstance(row, dict) or row.get('source') not in MATCH_SOURCES:
                 continue
             # Legacy labels remain recorded results, but forgotten/deleted Memory
             # must not be named even if it was forgotten after the call.
-            if legacy and row['source'] == 'memory' and hasattr(store, 'db'):
-                with store.db() as db:
-                    retained = db.execute("SELECT 1 FROM memories WHERE owner_key=? AND memory_key=? AND state<>'forgotten' AND created<=? LIMIT 1",
-                                          (store._memory_binding(MEMORY_OWNER), row.get('key'), event.get('created') or 0)).fetchone()
+            if legacy and row['source'] == 'memory' and hasattr(store, 'comparison_legacy_kept'):
+                try:
+                    retained = store.comparison_legacy_kept(MEMORY_OWNER, row.get('key'), event.get('created') or 0)
+                except Exception:
+                    retained = False
+                    cuts['comparison_failed'] = 0
                 if not retained:
                     continue
             match = {'source': row['source'], 'key': label(row.get('key'), 80) if row['source'] == 'memory' else '',
@@ -555,7 +678,7 @@ def work_information_use(store, job_id, redact=None):
             if match not in matches and len(matches) < MAX_ITEMS:
                 matches.append(match)
         # #245: a comparison the bounds cut off (Memory rows past the newest ones, text past its first characters).
-        left_out = source.get('outbound_comparison_cut')
+        left_out = source.get('outbound_comparison_cut') if compare_held_values else None
         for row in left_out if isinstance(left_out, list) else ():
             if isinstance(row, dict) and row.get('kind') in COMPARISON_CUTS and isinstance(row.get('limit'), int) \
                     and not isinstance(row.get('limit'), bool):
@@ -580,7 +703,7 @@ def work_information_use(store, job_id, redact=None):
                 resigned.append(row)
         if action in LOOKUP_ACTIONS and status == 'running':
             # The arguments a lookup started with, for a call that then failed.
-            started[(tool, trace.get('call_id'))] = trace
+            started[identity] = trace
         # #918: an undo is recorded on the Work after it settled (status ``recorded``, never a step).
         if (status == 'succeeded' or (action == MEMORY_UNDO_ACTION and status == 'recorded')) and action in READ_CATEGORIES:
             add(READ_CATEGORIES[action], _event_items(action, evidence))
@@ -589,7 +712,7 @@ def work_information_use(store, job_id, redact=None):
             # queries); the worker's raw arguments are not shown for it.  A failed lookup was still
             # attempted: its starting event (the worker's arguments, or the /search preflight's query)
             # completes what the terminal event recorded.
-            begun = started.pop((tool, trace.get('call_id')), {})
+            begun = started.pop(identity, {})
             source = trace if status == 'succeeded' else {**begun, **trace}
             lookup = _lookup(action, source, evidence)
             lookup['status'] = status
@@ -601,6 +724,11 @@ def work_information_use(store, job_id, redact=None):
             results.append({'tool': label(tool, 60), 'status': status,
                             'label': label(_result_label(action, evidence)) if status == 'succeeded'
                             else label(trace.get('code') or trace.get('error') or status, 80)})
+    if cacheable and compare_held_values and cached is None:
+        try:
+            _save_comparison_cache(cache_state, cache_version, cache_key, computed)
+        except Exception:
+            pass
     used = [{'category': category, 'name': CATEGORY_NAMES.get(category, category), 'items': items}
             for category, items in sorted(used.items(), key=lambda row: list(CATEGORY_NAMES).index(row[0])
                                           if row[0] in CATEGORY_NAMES else len(CATEGORY_NAMES)) if items]

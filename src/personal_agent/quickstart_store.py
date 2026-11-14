@@ -1305,6 +1305,22 @@ class QuickStore:
         with self.db() as db:
             return [self._memory_row(r) for r in db.execute('SELECT * FROM memories WHERE '+where+' ORDER BY created DESC,id DESC LIMIT ? OFFSET ?',(*parameters,limit,offset))]
 
+    def comparison_legacy_kept(self, owner_id, key, at):
+        """Legacy labels have no row id: suppress uncertain or forgotten keys."""
+        with self.db() as db:
+            # A gap in the append-only rowids means deletion can have rewired
+            # a chain. No tombstone survives Personal Space deletion, so fail
+            # closed rather than interpreting its new pointer as old history.
+            if db.execute('SELECT COALESCE(MAX(rowid),0)>COUNT(*) FROM memories').fetchone()[0]:
+                return False
+            owner=self._memory_binding(owner_id)
+            return bool(db.execute("""SELECT 1 FROM memories m WHERE m.owner_key=? AND m.memory_key=?
+                AND m.created<=? AND m.state IN ('current','superseded','corrected')
+                AND NOT EXISTS (SELECT 1 FROM memories f WHERE f.owner_key=m.owner_key
+                  AND f.memory_key=m.memory_key AND f.created<=? AND f.state IN ('forgotten','retracted'))
+                AND NOT EXISTS (SELECT 1 FROM memories n WHERE n.owner_key=m.owner_key
+                  AND n.supersedes=m.id AND n.created<=?) LIMIT 1""",(owner,key,at,at,at)).fetchone())
+
     def comparison_memories(self, owner_id, at, limit):
         """Bounded retained Memory current at ``at``; forgetting always wins (#820).
 
@@ -1319,6 +1335,8 @@ class QuickStore:
             uncertain=db.execute("SELECT 1 FROM memories WHERE owner_key=? AND state='retracted' AND created<=? LIMIT 1",(owner,at)).fetchone()
             if not uncertain and db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='owner_state_receipts'").fetchone():
                 uncertain=db.execute("SELECT 1 FROM owner_state_receipts WHERE owner_key=? AND kind='memory' AND settled IS NOT NULL AND created<=? LIMIT 1",(owner,at)).fetchone()
+            if db.execute('SELECT COALESCE(MAX(rowid),0)>COUNT(*) FROM memories').fetchone()[0]:
+                uncertain=True
             if uncertain:
                 return [dict(row, comparison='later_memory') for row in db.execute(
                     "SELECT memory_key,content FROM memories WHERE owner_key=? AND state='current' ORDER BY created DESC,id DESC LIMIT ?",
@@ -1350,8 +1368,8 @@ class QuickStore:
                 ORDER BY created DESC LIMIT ?""",(owner,work,limit))]
             rows.extend(r['content'] for r in db.execute("""SELECT content FROM memories
                 WHERE owner_key=? AND work_key=? AND state IN ('current','superseded','corrected')
-                AND substr(memory_key,1,8)<>'profile.' ORDER BY created DESC LIMIT ?""",(owner,work,limit)))
-            for row in db.execute('SELECT id,content FROM notes ORDER BY created DESC LIMIT ?', (limit,)):
+                AND substr(memory_key,1,8)<>'profile.' ORDER BY created DESC LIMIT ?""",(owner,work,max(0,limit-len(rows)))))
+            for row in db.execute('SELECT id,content FROM notes ORDER BY created DESC LIMIT ?', (max(0,limit-len(rows)),)):
                 if row['id'] in (work_id,hashlib.sha256((work_id+str(row['content'])).encode()).hexdigest()):
                     rows.append(row['content'])
         return rows[:limit]

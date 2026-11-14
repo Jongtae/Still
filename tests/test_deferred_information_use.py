@@ -31,7 +31,10 @@ def event(store, job, tool, status, trace, at):
 def call(store, job, action='web_search', args=None, evidence=None, at=20, status='succeeded', **trace):
     identity = str(time.time_ns())
     event(store, job, action, 'running', {'call_id': identity, 'arguments': {'query': MEMBER} if args is None else args}, at)
-    event(store, job, action, status, {'call_id': identity, 'evidence': evidence or {}, **trace}, at + 1)
+    detail = {'call_id': identity, 'evidence': {'outbound_comparison': 'deferred', **(evidence or {})}, **trace}
+    if status == 'failed' and trace.get('state') != 'withheld':
+        detail['outbound_comparison'] = (evidence or {}).get('outbound_comparison', 'deferred')
+    event(store, job, action, status, detail, at + 1)
 
 
 def view(store, job):
@@ -224,14 +227,14 @@ for(const locale of ['ko','en','ja','zh-CN']){
     held_value_comparison_time:'view_time_retained_history',
     held_value_matches:[{source:'memory',key:'member',tool:'web_search',comparison:'later_memory'},
                         {source:'work_write',tool:'web_search',comparison:'later_work_writes'}],
-    held_value_comparison_cut:['calls','outbound_unrecorded','work_writes_unavailable','memory_history_unavailable','texts','matches'].map(kind=>({kind,limit:20}))}}},box);
+    held_value_comparison_cut:['calls','outbound_unrecorded','work_writes_unavailable','memory_history_unavailable','texts','matches','comparison_time','comparison_failed','value_chars','held_values'].map(kind=>({kind,limit:20}))}}},box);
   console.log(JSON.stringify(box));
 }
 '''
     result = subprocess.run([node, '-e', script, str(root / 'src/personal_agent/web/app.js')], check=True, text=True, capture_output=True)
     catalogue = json.loads((root / 'src/personal_agent/messages.json').read_text())
     for locale, output in zip(('ko', 'en', 'ja', 'zh'), result.stdout.splitlines()):
-        for kind in ('calls', 'outbound_unrecorded', 'work_writes_unavailable', 'memory_history_unavailable', 'texts', 'matches'):
+        for kind in ('calls', 'outbound_unrecorded', 'work_writes_unavailable', 'memory_history_unavailable', 'texts', 'matches', 'comparison_time', 'comparison_failed', 'value_chars', 'held_values'):
             label = catalogue['information_use.comparison_cut_' + kind][locale].replace('{limit}', '20')
             assert label in output
         assert catalogue['information_use.view_time_comparison'][locale] in output

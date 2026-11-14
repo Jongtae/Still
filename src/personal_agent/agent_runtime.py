@@ -1675,8 +1675,8 @@ def outbound_texts(action,args,result):
  arguments; a URL contributes its path and query (and the landed URL after a
  redirect to another host); typed browser text goes to
  the page it was typed into; an API request carries its URL and body; a code
- run, the paths of the requests its sandbox let out (``outbound_evidence``
- compares their query, body and header values too, from the runner's memory).
+ run, the paths of the requests its sandbox let out. The audit cannot
+ recover the runner's in-memory query, body or header values (#820).
  """
  args=args if isinstance(args,dict) else {}
  result=result if isinstance(result,dict) else {}
@@ -1716,7 +1716,7 @@ def held_value_matches(texts,held):
  covers (spacing, digit runs, jamo) and the overlap carries the value rather
  than an everyday word it shares (``carries_held_value``, #245).  Only the
  first OUTBOUND_TEXT_MAX characters of a text are compared
- (``outbound_evidence`` names the cut).  The result holds no value and no text.
+ (the information-use view names the cut and applies its smaller view budget).  The result holds no value and no text.
  """
  matches=[]
  for text,destination in texts:

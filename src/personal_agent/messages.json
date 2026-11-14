@@ -11441,9 +11441,33 @@
   "zh": "事后比对：与当前记忆重叠，并非调用时证据"
  },
  "information_use.view_time_comparison": {
- "ko": "새 비교는 이 보기를 열 때 남아 있는 호출·기억 기록으로 했어요. 호출 당시의 비교 결과는 아니며, 삭제되거나 되돌린 과거 기록은 빠질 수 있어요. 이전에 기록한 비교 결과는 그대로 표시해요.",
- "en": "New comparisons run when this view opens, using retained call and Memory history. They are not call-time results; deleted or undone history may be missing. Earlier recorded results stay as recorded.",
- "ja": "新しい照合はこの表示を開いた時に残存する呼出・記憶記録で行います。呼出時点の照合結果ではなく、削除・取り消し済みの履歴は欠ける場合があります。以前の記録済み結果はそのまま表示します。",
- "zh": "新的比对在打开此视图时使用保留的调用和记忆历史进行，并非调用时的比对结果；已删除或撤销的历史可能缺失。先前记录的结果按原记录显示。"
+ "ko": "새 비교는 감사 보기를 열 때 남아 있는 호출·기억 기록으로 해요. 기록이 그대로면 이전 비교 표시를 재사용해요. 호출 당시의 결과는 아니며, 삭제되거나 되돌린 과거 기록은 빠질 수 있어요. 예전에 기록한 호출 당시 결과는 그대로 표시해요.",
+ "en": "New comparisons use retained call and Memory history when the audit is opened; unchanged records reuse cached labels. These are not call-time results and deleted or undone history may be missing. Earlier call-time results stay as recorded.",
+ "ja": "新しい照合は監査表示を開いた時に残存する呼出・記憶記録で行い、記録が同じならキャッシュしたラベルを再利用します。呼出時点の結果ではなく、削除・取り消し済みの履歴は欠ける場合があります。以前の呼出時点の結果は記録どおり表示します。",
+ "zh": "打开审计视图时使用保留的调用和记忆历史进行新比对；记录未变化时复用缓存标签。这并非调用时的结果，已删除或撤销的历史可能缺失。先前调用时的结果按原记录显示。"
+},
+ "information_use.comparison_cut_comparison_time": {
+ "ko": "- 보관 정보 비교 시간이 {limit}ms에 도달해 나머지는 확인하지 않았어요.",
+ "en": "- Held-value comparison reached its {limit} ms time limit; the remainder was not checked.",
+ "ja": "- 保管情報の照合は制限時間 {limit} ms に達したため、残りは未確認です。",
+ "zh": "- 已保存信息的比对已达到 {limit} 毫秒时限，其余未检查。"
+},
+ "information_use.comparison_cut_comparison_failed": {
+ "ko": "- 이 호출의 보관 정보 비교에 실패했어요. 전송된 내용이 없었다는 뜻은 아니에요.",
+ "en": "- Held-value comparison failed for a call. This does not mean nothing was sent.",
+ "ja": "- 呼出の保管情報の照合に失敗しました。未送信という意味ではありません。",
+ "zh": "- 某次调用的已保存信息比对失败。这不代表没有发送内容。"
+},
+ "information_use.comparison_cut_value_chars": {
+ "ko": "- 저장 값마다 앞 {limit}자까지만 비교했어요. 그 뒤는 확인하지 않았어요.",
+ "en": "- Only the first {limit} characters of each held value were compared; the rest was not checked.",
+ "ja": "- 保存値ごとに先頭 {limit} 文字のみ照合しました。残りは未確認です。",
+ "zh": "- 每个保存值仅比对前 {limit} 个字符，其余未检查。"
+},
+ "information_use.comparison_cut_held_values": {
+ "ko": "- 기억과 작업 저장 값을 합해 {limit}개까지만 비교했어요.",
+ "en": "- Compared at most {limit} Memory and Work-written values combined.",
+ "ja": "- 記憶と作業の保存値は合計 {limit} 件まで照合しました。",
+ "zh": "- 记忆和任务写入值合计最多比对 {limit} 个。"
 }
 }
