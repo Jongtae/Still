@@ -43,6 +43,8 @@ Installing, updating, enabling, connecting or discovering a package does not imp
 
 Packages, runtimes, tools, connectors and nested agents receive only task-required authority. File, network, secret, external-recipient and consequential-action boundaries are explicit. Read authority never silently implies write/delete/send/privilege/payment authority.
 
+Owner decision 2026-11-14 ([#817](https://github.com/Jongtae/Still/issues/817)) narrows this principle for the owner's own data and requests on the owner's device: there, C17 decides, and only its three retained cases justify a restriction. C4 is unchanged for packages, connectors, delegated runtimes, nested agents and other people's agents, which still receive only task-required authority.
+
 ### C5. Context is not automatic Memory
 
 Task Context is bounded and attributable. Complete conversation history or package-local state does not automatically become canonical owner Memory. Third-party durable-memory writes are candidate/review based unless a separately reviewed policy explicitly permits more. One such policy is recorded: by owner decision 2026-09-30 (GOV-ASK-LESS-01, [#918](https://github.com/Jongtae/agentos/issues/918) slice a), the owner's own chosen AI (the Work's worker and the owner-model upkeep) saves a fact directly as current Memory and the owner is told afterwards with a bounded, exact undo; package tools, delegated specialists and other third parties still write candidates.
@@ -122,6 +124,36 @@ Owner direction 2026-09-27 (#712). An AI is always the engine. The owner's chose
 - **Do not make the owner operate the machinery.** No context-reset commands, setup rituals or manual steps that an AI or Still could handle.
 
 Every proposal and PR answers: *Which AI does the work here, and is this change removing a blocker or orchestrating — or is it scripting the task?* Scripting the task is rejected.
+
+### C17. The owner's machine is the owner's
+
+Owner decision 2026-11-14 ([#817](https://github.com/Jongtae/Still/issues/817)), reviewed in program [#822](https://github.com/Jongtae/Still/issues/822). It applies to every install: everyone who installs Still runs it on their own device under their own control. It continues the direction of EGRESS-OPEN-01 ([Jongtae/agentos#826](https://github.com/Jongtae/agentos/issues/826), 2026-09-28), which removed the private-document egress rules for the same reason and replaced them with an information-use audit.
+
+On the owner's device, work the owner asked for is carried out with everything the owner has connected. Owner data reaching the owner's chosen AI, the owner's own conversation or a local record is owner-authorized: it is never masked, withheld or re-asked, and it needs no repeated document-consent prompt.
+
+This removes a consent policy; it does not hide a fact. When the owner's chosen AI runs remotely, the data physically leaves the device, and the information-use record names the actual recipient and route.
+
+A security or authority restriction exists only where it stops someone other than the owner from controlling the assistant or the owner's assets:
+
+1. a credential or secret leaving to a party the owner did not choose;
+2. money or another irreversible external effect without the owner's approval or the owner's standing autonomy setting;
+3. text from outside (a page, a mail, another agent) being taken as the owner's instruction.
+
+Source text can inform a task. It never supplies owner authority and never widens the authorized recipient or action. This is the third case; it does not bring back blanket document-sharing consent.
+
+A rule that withholds, masks, refuses or re-asks for any other reason is a defect. A new restriction must name which of the three cases it serves and show what it costs in answers and time.
+
+Functional execution conditions are not restrictions in this sense: input validation, cancellation, finite execution budgets, an unavailable capability and recovery consistency. Each keeps a concrete purpose and a visible consequence for the owner, and a redundant check is removed.
+
+These defaults stay as they are:
+
+- payment autonomy is off until the owner turns it on;
+- a run Still set up on its own never pays, and a scheduled execution never approves itself;
+- only the authenticated owner-interaction path settles an approval: a message the owner typed, or a supported button bound to the exact action;
+- stored secret values are kept out of text;
+- forgetting does what the owner asked.
+
+C3, C5's rule for third-party memory writes and C14 are unchanged, and so is C4 for everyone other than the owner. The first application of this principle is the program in #817: [#818](https://github.com/Jongtae/Still/issues/818), [#819](https://github.com/Jongtae/Still/issues/819), [#820](https://github.com/Jongtae/Still/issues/820) and [#821](https://github.com/Jongtae/Still/issues/821). #817 names what that program leaves as it is: the worker CLI and code-run sandboxes, the completion and goal judgments, tool budgets, and the blocking of loopback and private-network addresses. Changing any of those needs its own issue.
 
 ## Escalated review
 
