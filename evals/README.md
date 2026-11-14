@@ -70,6 +70,21 @@ Judge spend is capped per day (default **USD 10**; `--cap-usd` or `AGENTOS_EVAL_
 - Prices are per million tokens: `AGENTOS_EVAL_JUDGE_PRICE_IN` and `AGENTOS_EVAL_JUDGE_PRICE_OUT`, default 2 and 8. Set them to your judge model's real prices. They are deliberately conservative defaults, not read from anywhere.
 - See today's spend with `python3 -m agentos_eval budget`.
 
+## R1 runner
+
+Run `PYTHONPATH=src:evals python -m agentos_eval recall --arm lexical --arm context`
+from the checkout for paired, split-local retrieval reports. The deterministic
+arms are `lexical`, `context`, and `context-concat`; `--arm phrasing` samples
+worker-written extra search words three times (`--runs` changes this), using
+`--phraser-cmd 'claude -p --model sonnet'` or model-free `--phrasings recorded.json`
+(a full report JSON checks fixture provenance; the legacy
+`arms.phrasing.phrasings` mapping is also accepted). `context-concat` is a
+diagnostic arm with no preference verdict. Other factories plug in as
+`--arm module.path:callable`, for example `agentos_eval.recall_embedding:factory`.
+The lexical baseline is always included. JSON and Markdown reports go to the
+eval home's `reports/` folder, never the repository; `--out` selects another
+folder outside the checkout. Verdicts are information and the command exits 0.
+
 ## Run a sweep
 
 ```sh
