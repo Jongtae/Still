@@ -231,7 +231,9 @@ def trace_test(trace):
                 self.now = self.START + step['at_hours'] * 3600
                 # Flush owner acknowledgments before measuring this step's deliveries.
                 self.deliver_all()
-                self.telegram.clear()
+                if step['do'] != 'observe':
+                    # An observe step reads what the previous step delivered, so its sends are kept.
+                    self.telegram.clear()
                 self.execute(step)
     return test
 
