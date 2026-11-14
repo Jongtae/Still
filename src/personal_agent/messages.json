@@ -11469,5 +11469,11 @@
  "en": "- Compared at most {limit} Memory and Work-written values combined.",
  "ja": "- 記憶と作業の保存値は合計 {limit} 件まで照合しました。",
  "zh": "- 记忆和任务写入值合计最多比对 {limit} 个。"
+},
+ "information_use.comparison_cut_legacy_match_withheld": {
+ "ko": "- 기록된 기억 일치 표시 일부를 숨겼어요. 그 기억을 잊거나 삭제했거나, 남아 있는 이력에서 당시의 기억을 확인할 수 없어요.",
+ "en": "- Some recorded Memory matches were withheld because that Memory was forgotten/deleted or its retained history could not be confirmed.",
+ "ja": "- 記録済みの記憶一致の一部を非表示にしました。忘却・削除済みか、残存履歴から当時の記憶を確認できません。",
+ "zh": "- 部分已记录的记忆匹配已隐藏：该记忆已被遗忘、删除，或无法从保留的历史确认当时的记忆。"
 }
 }

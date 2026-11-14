@@ -1305,21 +1305,24 @@ class QuickStore:
         with self.db() as db:
             return [self._memory_row(r) for r in db.execute('SELECT * FROM memories WHERE '+where+' ORDER BY created DESC,id DESC LIMIT ? OFFSET ?',(*parameters,limit,offset))]
 
-    def comparison_legacy_kept(self, owner_id, key, at):
-        """Legacy labels have no row id: suppress uncertain or forgotten keys."""
-        with self.db() as db:
-            # A gap in the append-only rowids means deletion can have rewired
-            # a chain. No tombstone survives Personal Space deletion, so fail
-            # closed rather than interpreting its new pointer as old history.
-            if db.execute('SELECT COALESCE(MAX(rowid),0)>COUNT(*) FROM memories').fetchone()[0]:
-                return False
-            owner=self._memory_binding(owner_id)
-            return bool(db.execute("""SELECT 1 FROM memories m WHERE m.owner_key=? AND m.memory_key=?
-                AND m.created<=? AND m.state IN ('current','superseded','corrected')
-                AND NOT EXISTS (SELECT 1 FROM memories f WHERE f.owner_key=m.owner_key
-                  AND f.memory_key=m.memory_key AND f.created<=? AND f.state IN ('forgotten','retracted'))
-                AND NOT EXISTS (SELECT 1 FROM memories n WHERE n.owner_key=m.owner_key
-                  AND n.supersedes=m.id AND n.created<=?) LIMIT 1""",(owner,key,at,at,at)).fetchone())
+    def comparison_legacy_kept(self, owner_id, key, at, *, db=None):
+        """A legacy key-only label is kept only while its version is provable.
+
+        Personal Space deletion leaves no key-attributed tombstone. For an
+        older superseded version we cannot distinguish a retained version
+        from a pointer rewired past a deleted one. Suppress that *key's* label
+        with a view cut; unrelated table gaps must never affect this check.
+        The audit supplies one shared connection and its deadline/call bounds.
+        """
+        if db is None:
+            with self.db() as connection:
+                return self.comparison_legacy_kept(owner_id,key,at,db=connection)
+        owner=self._memory_binding(owner_id)
+        return bool(db.execute("""SELECT 1 FROM memories m WHERE m.owner_key=? AND m.memory_key=?
+            AND m.created<=? AND m.state='current'
+            AND NOT EXISTS (SELECT 1 FROM memories f WHERE f.owner_key=m.owner_key
+              AND f.memory_key=m.memory_key AND f.created<=? AND f.state IN ('forgotten','retracted'))
+            LIMIT 1""",(owner,key,at,at)).fetchone())
 
     def comparison_memories(self, owner_id, at, limit):
         """Bounded retained Memory current at ``at``; forgetting always wins (#820).

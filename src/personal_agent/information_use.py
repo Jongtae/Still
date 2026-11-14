@@ -41,6 +41,7 @@ import threading
 import time
 import weakref
 from collections import OrderedDict
+from contextlib import ExitStack
 from datetime import datetime, timezone
 
 #: Evidence class of every audit this module returns.
@@ -83,7 +84,7 @@ MATCH_SOURCES = frozenset({'memory', 'work_write'})
 #: (``agent_runtime.COMPARISON_CUT_MEMORY`` and ``COMPARISON_CUT_TEXT``).
 COMPARISON_CUTS = ('memory_rows', 'text_chars', 'calls', 'outbound_unrecorded',
                    'work_writes_unavailable', 'memory_history_unavailable', 'texts', 'matches',
-                   'comparison_time', 'comparison_failed', 'value_chars', 'held_values')
+                   'comparison_time', 'comparison_failed', 'value_chars', 'held_values', 'legacy_match_withheld')
 # Bound expensive matching independently of the number of recorded events.
 COMPARED_CALLS_MAX = 5
 COMPARED_TEXTS_MAX = 2
@@ -135,8 +136,9 @@ def _cached_comparison(store, key):
 
 
 def _save_comparison_cache(state, version, key, value):
-    if state is None:
-        return
+    if state is None or any(cut.get('kind') == 'comparison_time'
+                            for _matches, cuts in value.values() for cut in cuts):
+        return  # Reopening must retry deadline-truncated work, even without a DB write.
     with _CACHE_LOCK:
         # A concurrent mutation must not seal stale labels into the cache.
         if state.db.execute('PRAGMA data_version').fetchone()[0] != version:
@@ -537,11 +539,18 @@ def deferred_comparison(store, job_id, action, arguments, evidence, at, *, clock
 
 
 def work_information_use(store, job_id, redact=None, *, compare_held_values=True, clock=None):
+    """Build an audit, closing its shared legacy reader even on a failure."""
+    with ExitStack() as readers:
+        return _work_information_use(store, job_id, redact, compare_held_values=compare_held_values,
+                                     clock=clock, readers=readers)
+
+
+def _work_information_use(store, job_id, redact=None, *, compare_held_values=True, clock=None, readers):
     """The information-use audit of one Work, or None when the Work does not exist.
 
     ``redact`` (the service's stored-secret pass) is applied to every label.
     """
-    from .agent_runtime import OUTBOUND_MATCH_ACTIONS, MEMORY_OWNER
+    from .agent_runtime import OUTBOUND_MATCH_ACTIONS, OUTBOUND_MATCHES_MAX, MEMORY_OWNER
     job = store.job(job_id) if isinstance(job_id, str) and job_id else None
     if not job:
         return None
@@ -581,6 +590,8 @@ def work_information_use(store, job_id, redact=None, *, compare_held_values=True
     matches, opened, cuts = [], [], {}
     outbound_started = {}
     compared_calls = 0
+    bounded_calls = 0
+    legacy_db = None
     # #636: sites the AI signed back in to through the provider the owner used (site and provider host only).
     resigned = []
     events = store.task_events(job_id)
@@ -634,7 +645,8 @@ def work_information_use(store, job_id, redact=None, *, compare_held_values=True
         if action in OUTBOUND_MATCH_ACTIONS and status in ('succeeded', 'failed') and trace.get('scope') != 'cli-native':
             begun, at = outbound_started.pop(identity, ({}, event.get('created')))
             if compare_held_values and source.get('outbound_comparison') == 'deferred' and not legacy and trace.get('ran') is not False:
-                if compared_calls < COMPARED_CALLS_MAX:
+                if bounded_calls < COMPARED_CALLS_MAX:
+                    bounded_calls += 1
                     compared_calls += 1
                     arguments = begun.get('arguments') or trace.get('arguments') or {}
                     event_key = event.get('id')
@@ -657,18 +669,44 @@ def work_information_use(store, job_id, redact=None, *, compare_held_values=True
         # withheld after it returned keeps them in its Evidence: either may have carried them out.
         withheld = status == 'failed' and trace.get('state') == 'withheld'
         found = source.get('outbound_matches') if compare_held_values else None
-        for row in found if isinstance(found, list) else ():
+        legacy_allowed = False
+        if legacy and isinstance(found, list) and found:
+            if bounded_calls >= COMPARED_CALLS_MAX:
+                cuts['calls'] = COMPARED_CALLS_MAX
+            elif clock_fn() >= deadline:
+                cuts['comparison_time'] = int(COMPARISON_SECONDS * 1000)
+            else:
+                bounded_calls += 1
+                legacy_allowed = True
+        for index, row in enumerate(found if isinstance(found, list) else ()):
+            if legacy and index >= OUTBOUND_MATCHES_MAX:
+                cuts['matches'] = OUTBOUND_MATCHES_MAX
+                cuts['legacy_match_withheld'] = 0
+                break
             if not isinstance(row, dict) or row.get('source') not in MATCH_SOURCES:
                 continue
             # Legacy labels remain recorded results, but forgotten/deleted Memory
             # must not be named even if it was forgotten after the call.
             if legacy and row['source'] == 'memory' and hasattr(store, 'comparison_legacy_kept'):
+                if not legacy_allowed or clock_fn() >= deadline:
+                    cuts['legacy_match_withheld'] = 0
+                    if clock_fn() >= deadline:
+                        cuts['comparison_time'] = int(COMPARISON_SECONDS * 1000)
+                    continue
                 try:
-                    retained = store.comparison_legacy_kept(MEMORY_OWNER, row.get('key'), event.get('created') or 0)
+                    if legacy_db is None:
+                        legacy_db = readers.enter_context(store.db())
+                    if clock_fn() >= deadline:
+                        cuts['comparison_time'] = int(COMPARISON_SECONDS * 1000)
+                        cuts['legacy_match_withheld'] = 0
+                        continue
+                    retained = store.comparison_legacy_kept(MEMORY_OWNER, row.get('key'),
+                                                            event.get('created') or 0, db=legacy_db)
                 except Exception:
                     retained = False
                     cuts['comparison_failed'] = 0
                 if not retained:
+                    cuts['legacy_match_withheld'] = 0
                     continue
             match = {'source': row['source'], 'key': label(row.get('key'), 80) if row['source'] == 'memory' else '',
                      'tool': label(row.get('tool') or action, 60), 'destination': label(row.get('destination'), 120),
