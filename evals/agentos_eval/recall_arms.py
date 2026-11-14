@@ -52,8 +52,19 @@ def context_concat(store, data):
     return retrieve
 
 
-ARMS = {'lexical': lexical, 'context': context_aware, 'context-concat': context_concat}
+def lexical_context(store, data):
+    """#849 reference baseline: search context first, then the request."""
+    search = lexical(store, data)
+
+    def retrieve(query, context=''):
+        return search(f'{context} {query}' if context else query)
+
+    return retrieve
+
+
+ARMS = {'lexical': lexical, 'context': context_aware, 'context-concat': context_concat,
+        'lexical-context': lexical_context}
 EVIDENCE = {'lexical': 'fixture (model-free)', 'context': 'fixture (model-free)',
-            'context-concat': 'fixture (model-free)'}
+            'context-concat': 'fixture (model-free)', 'lexical-context': 'fixture (model-free)'}
 DETERMINISTIC = frozenset(ARMS)
 DIAGNOSTIC = frozenset({'context-concat'})

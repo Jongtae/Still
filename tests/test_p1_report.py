@@ -630,7 +630,11 @@ def _stub_inspect_task(monkeypatch):
     package.__path__ = []
     package.Task = lambda **kwargs: SimpleNamespace(**kwargs)
     package.task = lambda fn: fn
+    package.eval = lambda *a, **k: None
     monkeypatch.setitem(sys.modules, 'inspect_ai', package)
+    log = types.ModuleType('inspect_ai.log')
+    log.read_eval_log = lambda *a, **k: None
+    monkeypatch.setitem(sys.modules, 'inspect_ai.log', log)
     dataset = types.ModuleType('inspect_ai.dataset')
     dataset.MemoryDataset = lambda samples, name: list(samples)
     dataset.Sample = lambda **kwargs: SimpleNamespace(**kwargs)
@@ -678,6 +682,7 @@ def test_sweep_and_task_metadata_record_selected_ids_after_filters_and_limit(mon
         return [SimpleNamespace()]
 
     inspect.eval = inspect_eval
+    monkeypatch.setattr(task, 'inspect_eval', inspect_eval)
     monkeypatch.setattr(cli, 'git_head', lambda: 'fixture-head')
     monkeypatch.setattr(cli, '_write', lambda *args: {'trend': {'regressions': []}})
     assert cli.main(['sweep', '--scenarios', ','.join(ids), '--split', 'dev', '--worker', 'codex',
