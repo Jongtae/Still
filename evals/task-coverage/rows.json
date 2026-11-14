@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "revision": "6d542ab",
+  "revision": "6ba8657",
   "as_of": "2026-11-14",
   "rows": [
     {
@@ -1399,7 +1399,7 @@
           "kind": "doc",
           "source": "src/personal_agent/quickstart_service.py#L5495",
           "date": "2026-11-14",
-          "revision": "6d542ab",
+          "revision": "6ba8657",
           "summary": "Static inspection of AgentService.attempt_observations: the CLI completion check receives serialized evidence metadata, not the tool result body; open #767 records valid connected-account reads judged unsupported."
         },
         {
@@ -1407,7 +1407,7 @@
           "kind": "doc",
           "source": "src/personal_agent/code_run.py#L1069",
           "date": "2026-11-14",
-          "revision": "6d542ab",
+          "revision": "6ba8657",
           "summary": "Static inspection of code_run.evidence: persisted code_run evidence excludes stdout and request bodies, including the read fields needed to substantiate balance/order claims in #767; not a new execution."
         }
       ],
@@ -3345,7 +3345,7 @@
           "kind": "doc",
           "source": "src/personal_agent/preparations.py#L581",
           "date": "2026-11-14",
-          "revision": "6d542ab",
+          "revision": "6ba8657",
           "summary": "Static inspection of window_report_reason: a promised report depends on elapsed % report_seconds == 0 for the settled slot, with no overdue-report cursor (#813)."
         },
         {
@@ -3353,7 +3353,7 @@
           "kind": "doc",
           "source": "src/personal_agent/preparations.py#L483",
           "date": "2026-11-14",
-          "revision": "6d542ab",
+          "revision": "6ba8657",
           "summary": "Static inspection of normalize_window: omitted max_runs silently becomes min(slots, MAX_WINDOW_RUNS); schedule_text renders until_at, so the requested end can exceed the last check (#814)."
         },
         {
@@ -3361,7 +3361,7 @@
           "kind": "doc",
           "source": "docs/outcome-experiments.en.md#foundations-and-gaps",
           "date": "2026-11-14",
-          "revision": "6d542ab",
+          "revision": "6ba8657",
           "summary": "The existing experiment design records #813 skipped-slot reports and #814 silent run-cap truncation as gaps; their trace steps are skipped, not passing execution evidence."
         }
       ],
@@ -3607,7 +3607,7 @@
           "kind": "doc",
           "source": "src/personal_agent/quickstart_service.py#L5206",
           "date": "2026-11-14",
-          "revision": "6d542ab",
+          "revision": "6ba8657",
           "summary": "Static inspection of AgentService.continued_exchange: the linked Work contributes its request, final reply and sign-in notices, not its comparison tool results; corroborates the missing reasons in open #768."
         },
         {
@@ -3615,7 +3615,7 @@
           "kind": "doc",
           "source": "src/personal_agent/code_run.py#L1069",
           "date": "2026-11-14",
-          "revision": "6d542ab",
+          "revision": "6ba8657",
           "summary": "Static inspection of code_run.evidence: code_run output is excluded from persisted evidence, so a later Work cannot recover comparison fields from that record (#768)."
         }
       ],
@@ -4675,7 +4675,7 @@
           "kind": "doc",
           "source": "src/personal_agent/quickstart_service.py#L5495",
           "date": "2026-11-14",
-          "revision": "6d542ab",
+          "revision": "6ba8657",
           "summary": "Static inspection of AgentService.attempt_observations: the CLI completion check receives serialized evidence metadata, not the tool result body; open #767 records valid connected-account reads judged unsupported."
         },
         {
@@ -4683,7 +4683,7 @@
           "kind": "doc",
           "source": "src/personal_agent/code_run.py#L1069",
           "date": "2026-11-14",
-          "revision": "6d542ab",
+          "revision": "6ba8657",
           "summary": "Static inspection of code_run.evidence: persisted code_run evidence excludes stdout and request bodies, including the read fields needed to substantiate balance/order claims in #767; not a new execution."
         }
       ],
