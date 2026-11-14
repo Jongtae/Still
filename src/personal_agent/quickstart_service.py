@@ -1525,6 +1525,7 @@ class AgentService:
         tonight={work['id'] for work in works}
         turns=[]
         earlier=[]
+        earlier_ids=[]
         source_works={}
         for work in candidates:
             current=work['id'] in tonight
@@ -1543,26 +1544,29 @@ class AgentService:
                 correction=work['correction']
                 words=(self.scrub_work_text(correction['id'],correction['message'] or '') if correction else '')
                 earlier.append((owner,answer,when,outcome,words[:om.DREAM_CORRECTION_CHARS]))
+                earlier_ids.append((work['id'],correction['id'] if correction else None))
                 continue
             ref=f"t{len(turns)+1}"
             source_works[ref]=work['id']
             turns.append((ref,owner,answer,when,outcome))
         # #496: only the newest eligible misses, oldest first; never earlier daily summaries or successful turns.
         earlier=[(f'm{index}',*miss) for index,miss in enumerate(earlier[-om.DREAM_EARLIER_MISSES:],1)]
+        read=[*source_works.values(),*(work for pair in earlier_ids[-om.DREAM_EARLIER_MISSES:] for work in pair)]
         period={'works':len(works),'turns':len(turns)}
         if not turns:
             upkeep.finish(work_id,om.STATE_GONE,0,om.EVENT_UNAVAILABLE,{'reason':'nothing-to-review','period':period},now,kind=kind)
             return
         from .current_context import owner_today
         deadline=upkeep.clock()+om.DREAM_RUN_SECONDS
-        state,calls,status,detail=upkeep.run_dream(
-            job,row,self._owner_model_judgments(work_id),turns=turns,earlier=earlier,source_works=source_works,
-            profile=lambda:self.owner_profile_snapshot(None,notes=False,ids=True),clock=self._owner_model_clock(),
-            diary_date=owner_today(self.store,works[-1]['created']),ends_after=now,
-            cancelled=lambda:self.stop.is_set() or upkeep.clock()>deadline,
-            # #583: the active preparations by name, so the look back does not suggest one again.
-            preparations='\n'.join('- '+title for title in self.preparations.active_titles(om.DREAM_PREPARATIONS_SHOWN)),
-            suggest=lambda items,judgments:self.suggest_preparations(work_id,items,judgments))
+        with self.judgments_read(read):
+            state,calls,status,detail=upkeep.run_dream(
+                job,row,self._owner_model_judgments(work_id),turns=turns,earlier=earlier,source_works=source_works,
+                profile=lambda:self.owner_profile_snapshot(None,notes=False,ids=True),clock=self._owner_model_clock(),
+                diary_date=owner_today(self.store,works[-1]['created']),ends_after=now,
+                cancelled=lambda:self.stop.is_set() or upkeep.clock()>deadline,
+                # #583: the active preparations by name, so the look back does not suggest one again.
+                preparations='\n'.join('- '+title for title in self.preparations.active_titles(om.DREAM_PREPARATIONS_SHOWN)),
+                suggest=lambda items,judgments:self.suggest_preparations(work_id,items,judgments))
         detail['period']=period
         upkeep.finish(work_id,state,calls,status,detail,upkeep.clock(),kind=kind)
         LOG.info('owner-model dream work=%s state=%s calls=%s turns=%s applied=%s notes=%s diary=%s',work_id,state,calls,
@@ -1629,6 +1633,7 @@ class AgentService:
             # same rewrite, each with stored secrets removed, and become the note's sources too.
             situation=note_situation=None
             turns=''
+            folded=[]
             try:
                 if self.current_state.enabled():
                     live=self.current_state.situation()
@@ -1642,12 +1647,14 @@ class AgentService:
             except Exception:
                 situation=note_situation=None
                 turns=''
+                folded=[]
             # #220: the upkeep sees each row's short id, so a new fact can end earlier ones by id.
             # #241: the same query-first selection the Work's worker read, not the key-ordered head.
-            state,calls,status,detail=upkeep.run(job,judgments,answer=job.get('response') or '',
-                                                 profile=self.owner_profile_snapshot(job.get('message'),notes=False,ids=True),clock=clock,
-                                                 cancelled=cancelled,situation=situation,
-                                                 note_situation=note_situation,situation_turns=turns)
+            with self.judgments_read(folded if turns else ()):
+                state,calls,status,detail=upkeep.run(job,judgments,answer=job.get('response') or '',
+                                                     profile=self.owner_profile_snapshot(job.get('message'),notes=False,ids=True),clock=clock,
+                                                     cancelled=cancelled,situation=situation,
+                                                     note_situation=note_situation,situation_turns=turns)
             upkeep.finish(work_id,state,calls,status,detail,upkeep.clock())
             LOG.info('owner-model upkeep work=%s state=%s calls=%s applied=%s',work_id,state,calls,len(detail.get('applied') or ()))
             # #836: candidates this upkeep left pending join the Work's one ask.
@@ -2602,6 +2609,20 @@ class AgentService:
         return getattr(local,'budget',None) if local is not None else None
 
     @contextmanager
+    def judgments_read(self, work_ids):
+        """Judgments made here read these Works' turns too: each Work lists them (#818).
+
+        A look back or a situation rewrite sends other Works' requests and replies, as written, to the
+        Judgment AI; its audit row is linked to the anchor Work (``current_work_id``) and also to each
+        Work it read, so every one of those Works' information-use records names the call.  Per thread.
+        """
+        local=self.__dict__.setdefault('_work_local',threading.local())
+        previous=getattr(local,'read_works',())
+        local.read_works=tuple(dict.fromkeys(work for work in work_ids if work))
+        try:yield
+        finally:local.read_works=previous
+
+    @contextmanager
     def work_decision_scope(self, work_id, budget):
         previous_work,previous_budget=self.current_work_id,self.current_decision_budget()
         self.current_work_id=work_id
@@ -2661,6 +2682,10 @@ class AgentService:
         with self.lock:
             self.store.append_config_list('decision_audit',record,100)
             # #794: the Work keeps its own judgments for as long as it exists.
+            local=self.__dict__.get('_work_local')
+            for other in (getattr(local,'read_works',()) if local is not None else ()):
+                if other!=record.get('work_id'):
+                    self.store.add_work_decision(other,{**record,'work_id':other,'read_for':record.get('work_id')})
             if record.get('work_id'):
                 self.store.add_work_decision(record['work_id'],record)
                 if record.get('earlier_exchanges'):

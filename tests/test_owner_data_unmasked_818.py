@@ -165,6 +165,26 @@ class NightlyLookBack(Dream):
         [(context, _question, _schema)] = self.asked
         assert_unmasked(self, context.facts['turns'], ANSWER)
 
+    def test_each_work_the_look_back_read_lists_that_judgment(self):
+        """The look back sends other Works' turns as written: each of those Works names the call."""
+        engine = self.service.decision_engine
+        structured = engine.structured
+
+        def audited(context, *args, **kwargs):
+            # What a provider engine's ``audit`` does, in the caller's thread (decision.DecisionEngine).
+            self.service.record_decision({'purpose': context.purpose, 'kind': 'structured', 'model': 'judgment-model'})
+            return structured(context, *args, **kwargs)
+        engine.structured = audited
+        first = self.settled('여행 준비물 정리해 줘', answer=ANSWER)
+        second = self.settled('둘째 요청')
+        self.settled('셋째 요청')
+        self.dreams = [dream()]
+        self.tick()
+        self.assertTrue(self.asked)
+        for work in (first, second):
+            self.assertGreaterEqual(self.service.work_information_use(work)['sent_to']['judgment_ai']['calls'], 1, work)
+        self.assertFalse(getattr(self.service._work_local, 'read_works', ()))
+
 
 class Fixture(unittest.TestCase):
     def setUp(self):
