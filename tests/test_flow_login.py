@@ -50,7 +50,9 @@ from personal_agent.quickstart_service import (AgentService, BROWSER_LOGIN_CLOSE
                                                BROWSER_LOGIN_PHONE_LABEL, BROWSER_LOGIN_RESULT_TEXT, BROWSER_LOGIN_SECONDS,
                                                BROWSER_LOGIN_REOPEN_TEXT, BROWSER_LOGIN_REOPENED_TEXT, BROWSER_LOGIN_REOPENING_TEXT, BROWSER_LOGIN_REOPENS,
                                                BROWSER_LOGIN_REOPEN_FAILED_TEXT,
-                                               BROWSER_LOGIN_SKIP_LABEL, BROWSER_OWNER_SIGNINS_KEY)
+                                               BROWSER_LOGIN_SKIP_LABEL, BROWSER_LOGIN_UNATTENDED_TEXT,
+                                               BROWSER_OWNER_SIGNINS_KEY)
+from personal_agent import preparations as prep
 from personal_agent.quickstart_store import QuickStore
 
 from test_bounded_execution import _Capabilities
@@ -684,6 +686,24 @@ class InFlowLogin(LoginHarness):
         for state in ('resumed', 'skipped'):
             self.service._put_browser_login(job['id'], {**self.service._browser_login(job['id']), 'state': state})
             self.assertIsNone(self.service._request_browser_login(job, ORIGIN + '/cart'), 'asked once (#709)')
+
+    def test_a_scheduled_run_asks_no_login_and_leaves_no_window_waiting(self):
+        """#619 (#815, live 2026-11-13): a daily preparation, run with no owner present, reached a news page's sign-in
+        form; the owner was sent a login prompt that expired unanswered.  Nothing is asked or left waiting."""
+        job = self.store.job(self.store.enqueue('오늘 소식 정리', prep.request_key('daily', time.time()), 'telegram:gen'))
+        self.assertTrue(self.service.unattended_work(job))
+        for explicit in (False, True):
+            with self.subTest(explicit=explicit):
+                text = self.service._request_browser_login(job, ORIGIN + '/article', explicit=explicit)
+                self.assertEqual(text, BROWSER_LOGIN_UNATTENDED_TEXT)
+                self.assertIsNone(self.service._browser_login(job['id']), 'no login row is recorded')
+        with mock.patch.object(self.profile, 'open_for_login') as opened:
+            self.assertFalse(self.service.offer_browser_login(job))
+            opened.assert_not_called()
+        self.assertIsNone(self.store.notification_of(job['id'], 'browser_login_needed'))
+        # The owner's own Work is still asked in-flow.
+        owned = self.store.job(self.store.enqueue('장바구니 보여줘', 'web-owned'))
+        self.assertEqual(self.service._request_browser_login(owned, ORIGIN + '/cart', explicit=True), BROWSER_LOGIN_OFFERED_TEXT)
 
     def test_closing_the_login_window_resumes_the_work_once(self):
         job_id, prompt, buttons, notification = self.login_work()
