@@ -1551,22 +1551,22 @@ class AgentService:
             turns.append((ref,owner,answer,when,outcome))
         # #496: only the newest eligible misses, oldest first; never earlier daily summaries or successful turns.
         earlier=[(f'm{index}',*miss) for index,miss in enumerate(earlier[-om.DREAM_EARLIER_MISSES:],1)]
-        read=[*source_works.values(),*(work for pair in earlier_ids[-om.DREAM_EARLIER_MISSES:] for work in pair)]
+        earlier_works={f'm{index}':pair for index,pair in enumerate(earlier_ids[-om.DREAM_EARLIER_MISSES:],1)}
         period={'works':len(works),'turns':len(turns)}
         if not turns:
             upkeep.finish(work_id,om.STATE_GONE,0,om.EVENT_UNAVAILABLE,{'reason':'nothing-to-review','period':period},now,kind=kind)
             return
         from .current_context import owner_today
         deadline=upkeep.clock()+om.DREAM_RUN_SECONDS
-        with self.judgments_read(read):
-            state,calls,status,detail=upkeep.run_dream(
-                job,row,self._owner_model_judgments(work_id),turns=turns,earlier=earlier,source_works=source_works,
-                profile=lambda:self.owner_profile_snapshot(None,notes=False,ids=True),clock=self._owner_model_clock(),
-                diary_date=owner_today(self.store,works[-1]['created']),ends_after=now,
-                cancelled=lambda:self.stop.is_set() or upkeep.clock()>deadline,
-                # #583: the active preparations by name, so the look back does not suggest one again.
-                preparations='\n'.join('- '+title for title in self.preparations.active_titles(om.DREAM_PREPARATIONS_SHOWN)),
-                suggest=lambda items,judgments:self.suggest_preparations(work_id,items,judgments))
+        state,calls,status,detail=upkeep.run_dream(
+            job,row,self._owner_model_judgments(work_id),turns=turns,earlier=earlier,source_works=source_works,
+            earlier_works=earlier_works,read_scope=self.judgments_read,
+            profile=lambda:self.owner_profile_snapshot(None,notes=False,ids=True),clock=self._owner_model_clock(),
+            diary_date=owner_today(self.store,works[-1]['created']),ends_after=now,
+            cancelled=lambda:self.stop.is_set() or upkeep.clock()>deadline,
+            # #583: the active preparations by name, so the look back does not suggest one again.
+            preparations='\n'.join('- '+title for title in self.preparations.active_titles(om.DREAM_PREPARATIONS_SHOWN)),
+            suggest=lambda items,judgments:self.suggest_preparations(work_id,items,judgments))
         detail['period']=period
         upkeep.finish(work_id,state,calls,status,detail,upkeep.clock(),kind=kind)
         LOG.info('owner-model dream work=%s state=%s calls=%s turns=%s applied=%s notes=%s diary=%s',work_id,state,calls,
@@ -1634,23 +1634,31 @@ class AgentService:
             situation=note_situation=None
             turns=''
             folded=[]
+            read=[]
             try:
                 if self.current_state.enabled():
                     live=self.current_state.situation()
                     situation=live['value'] if live else ''
                     earlier=self.current_state.situation_turns(work_id)
-                    turns='\n'.join(f"[{turn['local']}] owner: {self.scrub_work_text(turn['id'],turn['message'])}"
-                                     f" | assistant: {self.scrub_work_text(turn['id'],turn['response'])}" for turn in earlier)
+                    lines=[(turn['id'],f"[{turn['local']}] owner: {self.scrub_work_text(turn['id'],turn['message'])}"
+                                       f" | assistant: {self.scrub_work_text(turn['id'],turn['response'])}") for turn in earlier]
+                    turns='\n'.join(line for _id,line in lines)
                     folded=[turn['id'] for turn in earlier]
+                    # #818: the judgment keeps the newest SITUATION_TURNS_CHARS; only the Works in them were read.
+                    end,start=0,len(turns)-om.SITUATION_TURNS_CHARS
+                    for read_id,line in lines:
+                        end+=len(line)+1
+                        if end>start:read.append(read_id)
                     note_situation=lambda text:self.current_state.note_situation(
                         work_id,self.scrub_work_text(work_id,text),folded=folded)
             except Exception:
                 situation=note_situation=None
                 turns=''
                 folded=[]
+                read=[]
             # #220: the upkeep sees each row's short id, so a new fact can end earlier ones by id.
             # #241: the same query-first selection the Work's worker read, not the key-ordered head.
-            with self.judgments_read(folded if turns else ()):
+            with self.judgments_read(read if turns else ()):
                 state,calls,status,detail=upkeep.run(job,judgments,answer=job.get('response') or '',
                                                      profile=self.owner_profile_snapshot(job.get('message'),notes=False,ids=True),clock=clock,
                                                      cancelled=cancelled,situation=situation,

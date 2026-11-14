@@ -185,6 +185,24 @@ class NightlyLookBack(Dream):
             self.assertGreaterEqual(self.service.work_information_use(work)['sent_to']['judgment_ai']['calls'], 1, work)
         self.assertFalse(getattr(self.service._work_local, 'read_works', ()))
 
+    def test_a_turn_the_bounded_look_back_left_out_lists_no_judgment(self):
+        """Only the Works in each call's bounded input are listed (Codex review on #836)."""
+        engine = self.service.decision_engine
+        structured = engine.structured
+
+        def audited(context, *args, **kwargs):
+            self.service.record_decision({'purpose': context.purpose, 'kind': 'structured', 'model': 'judgment-model'})
+            return structured(context, *args, **kwargs)
+        engine.structured = audited
+        works = [self.settled(f'요청 {index:02d} ' + '가' * 100, answer='답 ' + '나' * 298) for index in range(40)]
+        self.dreams = [dream()]
+        self.tick()
+        self.assertTrue(self.asked)
+        calls = [self.service.work_information_use(work)['sent_to']['judgment_ai']['calls'] for work in works]
+        self.assertEqual(calls[0], 0, 'the oldest turn gave way to the bound and was never sent')
+        self.assertGreaterEqual(calls[-2], 1)
+        self.assertLess(sum(1 for count in calls if count), len(works))
+
 
 class Fixture(unittest.TestCase):
     def setUp(self):
