@@ -180,8 +180,8 @@ class ProbeRecordTests(unittest.TestCase):
                     self.assertNotIn(leaked, text)
         record = self.record()
         self.assertEqual(record['tool_calls'][3]['arguments']['text'], f'[가림: {len(PASSWORD)}자]')
-        # Export-only exact literal masking keeps the saved value out; secrets use their own pass.
-        self.assertEqual(record['requested'], '《리더는 언제 차이를 만들어내는가》 장바구니에 넣어줘 [redacted] [가림]')
+        # The saved private value (and its line's digit-bearing tokens) and the stored secret.
+        self.assertEqual(record['requested'], '《리더는 언제 차이를 만들어내는가》 장바구니에 넣어줘 [가림] [가림] [가림]')
         self.assertEqual(record['report']['reply'], '장바구니에 담았습니다. [redacted]')
         self.assertIn('[경로 가림]', record['tool_calls'][3]['error'])
         self.assertEqual(record['finish']['cited'][1]['evidence'],
@@ -501,5 +501,18 @@ class ProbeRecordLoopIntegrationTests(unittest.TestCase):
                                             'repeat_paths_refused': 1})
 
 
+class ExportedSavedValues(unittest.TestCase):
+    """#818: the owner's views show saved values; the exported probe record still keeps them out."""
+
+    def test_a_value_that_reappears_only_in_part_is_masked_in_the_export(self):
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+        out = smoke._mask_saved_values('여권 M12345678 으로 담았습니다.', ['여권번호 M12345678'])
+        self.assertNotIn('M12345678', out)
+        self.assertIn('담았습니다.', out)
+        self.assertEqual(smoke._mask_saved_values('그냥 답입니다.', ['여권번호 M12345678']), '그냥 답입니다.')
+
+
 if __name__ == "__main__":
     unittest.main()
+

@@ -2355,7 +2355,7 @@ class AgentService:
         # #627: one pass shared with the CLI bridge's location-ref resolution.
         return redact_known_secrets(self.store,text)
 
-    def redact_judgment_text(self, text, private=True):
+    def redact_judgment_text(self, text):
         """Text as it may reach a DecisionEngine judgment (#672 review, #826).
 
         The stored secrets' literal values and credential shapes, removed
@@ -2363,9 +2363,8 @@ class AgentService:
         Work saved to a private store (the #605 exclusion set) are no longer
         masked. The Judgment AI is an owner-configured model, the same egress
         class as the worker, and a masked workplace or allergy left it unable
-        to judge whether the reply served the owner.  ``private`` is kept
-        only as the ``ConversationJudgments`` redactor interface; both kinds
-        of fact get this one pass.
+        to judge whether the reply served the owner.  #818: every fact gets
+        this one pass.
         """
         return self._redact_known_secrets(text)
 
@@ -2498,14 +2497,34 @@ class AgentService:
             return db.execute("SELECT 1 FROM tool_events WHERE job_id=? AND tool='model' AND status='responded' AND id>? LIMIT 1",
                               (work_id,since_event_id or 0)).fetchone() is not None
 
-    # Local turn envelopes retain owner content with stored secrets removed.
-    # portable_state drops turn_provenance from owner-state exports.
-    def record_turn_sent(self, job_id, *, sent, instructions, instructions_channel, **fields):
+    # Private sources whose content existing guards keep out of durable
+    # records (Drive excerpts, the expiring context inbox, notes, documents,
+    # Memory reads, calendar). A turn that carried any of them keeps only a
+    # size and digest of what was sent, never the text (#570 review, major 1).
+    # #701 (pilot posture): the private stores, including history-inherited
+    # ones (#605) and the owner-logged-in browser session.  Unknown history
+    # (`unrecorded`), a CLI's unmediated-read note and the record-only profile /
+    # current-context / prepared-answers sections no longer withhold the
+    # envelope: it is stored locally, after the deterministic stored-secret
+    # redaction in ``record_turn_sent``, and never exported (``portable_state``).
+    # #818: a retention rule (expiring and forgettable stores), not masking; the
+    # labels are also the turn's source scope for a peer (``a2a_peers.outbound_scope``).
+    PROVENANCE_WITHHELD_SOURCES=frozenset({'personal-space','owner-context-inbox','connected-drive-file','connected-document',
+                                           'owner-memory','owner-folder-names','owner-calendar','owner-mail','owner-settings','telegram-photo',
+                                           'conversation-history','unattributed-tool-evidence','owner-browser-session'})
+
+    def record_turn_sent(self, job_id, *, sent, instructions, instructions_channel, private_sources=(), **fields):
         """Record what a turn sent; computed inside the guard so it can never break the turn."""
         try:
+            withheld=sorted(set(private_sources)&self.PROVENANCE_WITHHELD_SOURCES)
             size=len(sent.encode())
-            envelope=self.scrub_envelope(job_id,sent)
-            fields.update(prompt_envelope=envelope,prompt_bytes=size,prompt_withheld=None,instructions_channel=instructions_channel)
+            if withheld:
+                envelope=(f'[not stored: this turn included {", ".join(withheld)}; '
+                          f'{size} bytes, sha256 {hashlib.sha256(sent.encode()).hexdigest()[:16]}]')
+            else:
+                # The stored secrets' values and credential shapes are removed before it is kept.
+                envelope=self.scrub_envelope(job_id,sent)
+            fields.update(prompt_envelope=envelope,prompt_bytes=size,prompt_withheld=withheld or None,instructions_channel=instructions_channel)
             if instructions:
                 fields.update(instructions=instructions,instructions_digest=hashlib.sha256(instructions.encode()).hexdigest()[:16])
             else:
@@ -4314,7 +4333,7 @@ class AgentService:
             LOG.warning('work source provenance could not be recorded job=%s',job_id)
 
     def work_lookup_sources(self, job, prompt):
-        """Resolver of this Work's lookup binding and redaction set (#605).
+        """Resolver of this Work's lookup binding (#605; #818: no redaction set).
 
         Always supplied, so every public lookup is composed (N3).
         """
@@ -5499,7 +5518,7 @@ class AgentService:
         # #151: which listed items this attempt opened and read through, from the recorded evidence;
         # kept whole at the end of the bounded observations, so no number of step lines drops it.
         read_state=read_state_text([(tool,data.get('evidence')) for tool,status,data in tool_rows if status=='succeeded'])
-        read_state=('- '+str(orchestration._redact(read_state,private=False) or '')) if read_state else ''
+        read_state=('- '+str(orchestration._redact(read_state) or '')) if read_state else ''
         observations=observations_with_pages(observed,pages,orchestration._redact,last=read_state)
         summary='; '.join(part for part in (
             f"tools called: {', '.join(called) or 'none'}",

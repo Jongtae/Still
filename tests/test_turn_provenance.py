@@ -176,7 +176,7 @@ class ServiceProvenance(unittest.TestCase):
         self.assertNotIn('reported_model', record, 'an unreported model is absent, not guessed')
         self.assertEqual(record['usage'], {'input_tokens': 7})
 
-    def test_private_source_content_is_kept_in_local_provenance(self):
+    def test_private_source_content_is_never_stored(self):
         engine = _Engine()
         service = self._service(engine)
         self.store.enqueue('/note private-plan-XYZ for the merger', 'n1')
@@ -186,9 +186,10 @@ class ServiceProvenance(unittest.TestCase):
         self.assertIn('private-plan-XYZ', engine.prompts[-1], 'the engine still receives the notes')
         records = [service.task_progress(job['id'])['selected'].get('provenance') for job in self.store.jobs()]
         stored = json.dumps([r for r in records if r], ensure_ascii=False)
-        self.assertIn('private-plan-XYZ', stored)
-        summary = [r for r in records if r and 'private-plan-XYZ' in r.get('prompt_envelope', '')][0]
-        self.assertNotIn('prompt_withheld', summary)
+        self.assertNotIn('private-plan-XYZ', stored)
+        summary = [r for r in records if r and r.get('prompt_withheld')][0]
+        self.assertEqual(summary['prompt_withheld'], ['personal-space'])
+        self.assertTrue(summary['prompt_envelope'].startswith('[not stored: this turn included personal-space;'))
         self.assertGreater(summary['prompt_bytes'], 0)
 
     def test_provenance_is_not_exported(self):

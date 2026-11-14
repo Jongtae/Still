@@ -223,6 +223,30 @@ def _work_private_values(store, job_id):
     return [value for value in values if isinstance(value, str) and value.strip()]
 
 
+def _mask_saved_values(text, values):
+    """``text`` with tokens matching a value this Work saved replaced by ``[가림]``: export only (#818).
+
+    The probe record is evidence that may be published, not the owner's own view, so the saved
+    values stay out of it however they reappear: the runtime's #605 matcher (whole values,
+    contained spans, jamo keys and digit runs), applied per line.
+    """
+    from personal_agent.agent_runtime import lookup_norm, lookup_text_violations, lookup_words
+    values = [value for value in values if isinstance(value, str) and value.strip()]
+    if not text or not values:
+        return text
+    lines = []
+    for line in text.split("\n"):
+        bad, digits = lookup_text_violations(line, values) if line.strip() else (set(), False)
+        if not bad and not digits:
+            lines.append(line)
+            continue
+        lines.append("".join(
+            "[가림]" if token and not token.isspace() and (
+                any(word in bad for word in lookup_words(token)) or (digits and re.search(r"\d", lookup_norm(token))))
+            else token for token in re.split(r"(\s+)", line)))
+    return "\n".join(lines)
+
+
 def _redactor(runtime, store, job_id, omit_text):
     private = _work_private_values(store, job_id)
     roots = sorted({str(store.root), str(Path(store.root).resolve())}, key=len, reverse=True)
@@ -232,8 +256,7 @@ def _redactor(runtime, store, job_id, omit_text):
             return None
         value = str(value)
         try:
-            for saved in sorted(set(private), key=len, reverse=True):
-                value = value.replace(saved, "[가림]")
+            value = _mask_saved_values(value, private)
             value = runtime["redact_known_secrets"](store, value)
         except Exception:
             return "[redacted]"

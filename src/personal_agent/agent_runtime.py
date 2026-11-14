@@ -163,8 +163,8 @@ FORGET_RECORD_ARGUMENTS={
 #: owner may have phrased around a secret before the host redacts it.
 #: #1216 review: an API request body; #1380: code, whose digest is in the run's Evidence (``HOST_TOOLS``).
 REDACTED_ARGUMENTS={name:tool.recorded_by_length for name,tool in HOST_TOOLS.items() if tool.recorded_by_length}
-#: #659: the argument recorded with only stored secrets, credential shapes and
-#: saved private values removed (``Capabilities.judgment_text``): a
+#: #659: the argument recorded with only stored secrets and credential shapes
+#: removed (``Capabilities.judgment_text``): a
 #: preparation goal is owner text the owner reads back, not a secret.
 #: Without a redactor it falls back to the length placeholder.
 SCRUBBED_ARGUMENTS={'schedule_preparation':('goal','title','offer'),
@@ -1502,7 +1502,7 @@ OUTBOUND_MATCH_ACTIONS=frozenset({'web_search','public_page_read','weather','bro
 OUTBOUND_MATCHES_MAX=12
 HELD_MEMORY_MAX=500
 OUTBOUND_TEXT_MAX=1000
-#: The source label of a value this Work wrote to a private store (the #605 set) that is not current Memory.
+#: The source label of a value this Work wrote to a private store that is not current Memory (audit only, #818).
 WRITTEN_SOURCE='work_write'
 #: #245: the comparison bounds a call's Evidence names when it was cut off by them, so the
 #: information-use view can say what was not compared (``outbound_comparison_cut``).
@@ -5705,8 +5705,8 @@ def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact
  (``steps_read_state``) says which listed items the run opened and read through.  #240: ``awaiting``
  (``work_awaiting_owner_text``) is what this Work showed for the owner's own approval.  #674: ``effects``
  (``recorded_effects``) are the calls whose own record shows them completed; a judgment denying one is asked once more.  No judgments, an engine error or a non-answer is
- ``unavailable``, which never yields ``succeeded``.  ``redact(text,
- private)`` (``Capabilities.judgment_text``) runs on every fact before it is
+ ``unavailable``, which never yields ``succeeded``.  ``redact(text)``
+ (``Capabilities.judgment_text``) runs on every fact before it is
  bounded, so a cut can never leave part of a secret; the owner's request is
  passed whole and only its stored-secret values are replaced.  #826 (owner
  decision): every fact gets the secrets-only pass; the

@@ -1057,7 +1057,7 @@ class PreparationsService:
 
         Read from the runs of every row of the line (a replacement and a restart included), so a
         run sees what happened before under an earlier schedule.  A run whose request the owner
-        forgot is left out; texts are scrubbed of the run's saved private values and stored secrets.
+        forgot is left out; texts pass the stored-secret redaction (#818: saved values stay).
         """
         service=self.service
         with service.store.db() as db:

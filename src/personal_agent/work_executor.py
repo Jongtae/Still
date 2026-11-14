@@ -1040,6 +1040,14 @@ class WorkExecutor:
             capability_limitation=profile_status(facade.PROFILE)['limitation'],
             instructions=engine_context['instructions'] if adapter_context is not None else '',
             instructions_channel=('developer-instructions' if run.subscription['id']=='codex' else 'append-system-prompt') if separate else ('prompt' if adapter_context is not None else 'not sent (bare request)'),
+            # #658: record-only labels for the profile, current-context and
+            # prepared sections, not for capabilities (lookups stay open).
+            # #701: they no longer withhold the local envelope, which is
+            # stored after deterministic secret/private-value redaction.
+            private_sources=set(run.turn_provenance)|{base_label(label) for label in run.capabilities.private_provenance}|({'owner-profile'} if engine_context.get('profile') else set())
+                            |({'owner-current-context'} if engine_context.get('current_context') else set())
+                            |({'owner-preparations'} if engine_context.get('prepared') else set())
+                            |({'telegram-photo'} if run.image_inputs else set()),
             route='subscription',engine=run.subscription['id'],mode=mode,status='sent',
             context_mode=engine_context.get('mode','shared-context'),instructions_version=engine_context.get('version'),
             context_messages=len(engine_context['conversation']),egress_taint=sorted(run.capabilities.private_provenance),
@@ -1319,6 +1327,14 @@ class WorkExecutor:
         service.record_turn_sent(job['id'],sent=render_turn_prompt(api_context),instructions=api_context['instructions'],
             instructions_channel='system-message',build=service.build,
             exposed_tools=[tool['function']['name'] for tool in run.capabilities.definitions()],
+            private_sources=set(run.turn_provenance)|{base_label(label) for label in run.capabilities.private_provenance}|({'connected-document'} if run.workspace_request or run.document_history else set())
+                            # #658: see the CLI route - record-only label for the profile section.
+                            |({'owner-profile'} if api_context.get('profile') else set())
+                            # #627: record-only label for the current-context section.
+                            |({'owner-current-context'} if api_context.get('current_context') else set())
+                            # #659: record-only label for the prepared answers section.
+                            |({'owner-preparations'} if api_context.get('prepared') else set())
+                            |({'telegram-photo'} if run.image_inputs else set()),
             route='direct-api',provider=runtime_config.get('provider'),status='sent',
             requested_model=runtime_config.get('model'),instructions_version=api_context.get('version'),
             context_messages=len(api_context['conversation']),egress_taint=sorted(run.capabilities.private_provenance),

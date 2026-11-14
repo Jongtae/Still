@@ -1039,9 +1039,7 @@ class ServiceIntegration(unittest.TestCase):
         self.assertEqual(store.turn_provenance(second)['cli_native_tools'], ['web_search'])
         # #605 inheritance is unchanged for Still-composed lookups and the turn record.
         self.assertIn('history:personal-space', store.config('work_source_provenance', {}).get(second, []))
-        # #818: the local turn record keeps the envelope (secrets-only redaction) instead of withholding it.
-        self.assertFalse(store.turn_provenance(second).get('prompt_withheld'))
-        self.assertTrue(store.turn_provenance(second).get('prompt_envelope'))
+        self.assertIn('personal-space', store.turn_provenance(second).get('prompt_withheld') or [])
 
     def test_a_turn_with_a_notes_read_keeps_native_search_on(self):
         """#826 (owner decision): spliced notes no longer turn the CLI's own search off."""
@@ -1056,9 +1054,7 @@ class ServiceIntegration(unittest.TestCase):
         self.assertTrue(launched['native_search'])
         record = service.store.turn_provenance(job)
         self.assertIsNone(record.get('native_search_reason'))
-        # #818: the spliced notes are kept in the local envelope; nothing is withheld from the owner's record.
-        self.assertFalse(record.get('prompt_withheld'))
-        self.assertIn('PRIVATE-NOTE-TEXT', record['prompt_envelope'])
+        self.assertIn('personal-space', record['prompt_withheld'])
 
     def test_a_denial_or_a_transient_error_or_a_turn_with_search_off_is_never_remembered(self):
         cases = ((True, 'denied', 'unavailable', 'native_search_off'), (True, 'failed', 'failed', 'tool_failed'),

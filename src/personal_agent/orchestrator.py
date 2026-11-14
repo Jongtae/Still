@@ -996,7 +996,7 @@ class Orchestration:
         self.spans = {}
 
     # -- the plan call --------------------------------------------------------
-    def _redact(self, text, private=True):
+    def _redact(self, text):
         redact = getattr(self.judgments, 'redact', None)
         return redact(text) if redact else str(text or '')
 
@@ -1159,7 +1159,7 @@ class Orchestration:
 
     def _plan_context(self, candidates):
         """The ``DecisionContext`` one plan call over ``candidates`` reads."""
-        request = self._redact(self.request, private=False)
+        request = self._redact(self.request)
         workers = render_catalogue(candidates)
         tools_text = render_tool_descriptions(candidates, getattr(self.catalogue, 'descriptions', {}))
         # #804: the owner model the worker is always given, so the plan fits it too.
@@ -1174,7 +1174,7 @@ class Orchestration:
                  'continues': self._continues_text(),
                  'previous_route': self._redact(self.previous_route)[:600] or 'none recorded',
                  'effort_timing': self.effort_timing[:600] or 'none recorded',
-                 'awaiting_owner': self._redact(self._awaiting_text(), private=False),
+                 'awaiting_owner': self._redact(self._awaiting_text()),
                  'context_sections': self._sections_text(),
                  'workers': workers,
                  'tool_descriptions': tools_text,
@@ -1332,7 +1332,7 @@ class Orchestration:
             return None, 'budget'
         attempt = Attempt(number, worker['id'], model=model, notes=notes, reason=one_line(data['reason'], MAX_REASON_CHARS),
                           planned=True, effort=effort, lens=lens)
-        attempt.reply = (self._redact(data['reply'], private=False).strip()[:REPLY_CHARS]
+        attempt.reply = (self._redact(data['reply']).strip()[:REPLY_CHARS]
                          if number == 1 and not data.get('ask_location', '').strip()
                          and not plan_preview(data.get('preview')) else '')
         attempt.unlisted_model = unlisted
@@ -1530,7 +1530,7 @@ class Orchestration:
         """
         outcome = getattr(result, 'outcome', 'succeeded')
         # #1451: the run's own judgment's gap, when it said no.
-        self.gap = self._redact(getattr(getattr(result, 'judgment', None), 'gap', '') or '', private=False)[:GAP_CHARS]
+        self.gap = self._redact(getattr(getattr(result, 'judgment', None), 'gap', '') or '')[:GAP_CHARS]
         self.retry_warranted = getattr(getattr(result, 'judgment', None), 'retry_warranted', None)
         if outcome == 'succeeded':
             return REACHED
@@ -1599,11 +1599,11 @@ class Orchestration:
         self.record_check = getattr(judged, 'record_check', None)
         if verdict == 'no':
             # #1451: the judgment's own statement of what is missing (already owner-facing text).
-            self.gap = self._redact(getattr(judged, 'value', None) or '', private=False)[:GAP_CHARS]
+            self.gap = self._redact(getattr(judged, 'value', None) or '')[:GAP_CHARS]
         # #631: either verdict owns the closing line, including explicit silence.
         if verdict in ('yes', 'no'):
             note = getattr(judged, 'note', None)
-            self.note = self._redact(note, private=False)[:GAP_CHARS] if isinstance(note, str) else None
+            self.note = self._redact(note)[:GAP_CHARS] if isinstance(note, str) else None
         return REACHED if verdict == 'yes' else NOT_REACHED if verdict == 'no' else UNJUDGED
 
     def _continues_text(self):

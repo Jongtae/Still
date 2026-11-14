@@ -856,19 +856,13 @@ class ConversationJudgments:
     even with no redactor, and a failing redactor withholds the fact.
     """
 
-    #: Facts that are the owner's own words.
-    #: #836: ``already_noted`` is what the owner's own message already gave the Work
-    #: (its saved values, #831), so it is treated like the owner's words.
-    OWNER_FACTS = frozenset({'owner_message', 'owner_request', 'owner_followup', 'earlier_owner_message', 'terms', 'owner_context',
-                             'already_noted', 'previous_owner_message'})
-
     def __init__(self, engine=None, policy=None, redactor=None):
         self.engine = engine or UnavailableDecisionEngine()
         self.policy = policy or DecisionPolicy()
         self.redactor = redactor
 
-    def redact(self, text, private=True):
-        """Apply secret replacement; ``private`` remains for existing judgment callers."""
+    def redact(self, text):
+        """The stored secrets' values and credential shapes, replaced; a failing redactor withholds the text."""
         from .bounded_execution import SECRET_PATTERN
         text = str(text or '')
         try:
@@ -885,7 +879,7 @@ class ConversationJudgments:
         bound instead of being cut (#657 ``goal-reached``: the owner's message;
         #820: also the caller-bounded reply and conversation).
         """
-        facts = {label: self.redact(value, private=label not in self.OWNER_FACTS) for label, value in facts.items()}
+        facts = {label: self.redact(value) for label, value in facts.items()}
         if uncut is not None:
             names = (uncut,) if isinstance(uncut, str) else tuple(uncut)
             options['max_chars'] = MAX_CONTEXT_CHARS + sum(len(facts[name]) for name in names)
@@ -1022,8 +1016,8 @@ class ConversationJudgments:
         RULES-OUT-01 (#173 slice B): no correction or continuation word list
         decides this any more, so the judgment is given what the owner would
         have in mind: the focused Work's request and reply (each bounded to
-        ``FOLLOWUP_EARLIER_CHARS`` and redacted like every fact: secrets
-        removed, and the reply's saved private values too), when each was
+        ``FOLLOWUP_EARLIER_CHARS`` and redacted like every fact: stored
+        secrets and credential shapes removed), when each was
         made, and the kinds of what still waits for the owner (no content).
         The selected relation still passes deterministic execution gates later.
         """
@@ -1246,8 +1240,7 @@ class ConversationJudgments:
                  'final_answer_excerpt': self.redact(answer)[:ANSWER_CHARS] or 'none',
                  'owner_profile': self.redact(profile)[:PROFILE_CHARS] or 'none',
                  'clock': self.redact(clock)[:CLOCK_CHARS] or 'unknown',
-                 'already_noted': self.redact('\n'.join(str(item) for item in noted or ()),
-                                              private=False)[:NOTED_CHARS] or 'none',
+                 'already_noted': self.redact('\n'.join(str(item) for item in noted or ()))[:NOTED_CHARS] or 'none',
                  'current_situation': self.redact(situation or '')[:SITUATION_CHARS] or 'none',
                  'turns_since_situation': self.redact(situation_turns or '')[-SITUATION_TURNS_CHARS:] or 'none'}
         # #217: the profile is bounded by the caller (``PROFILE_CHARS``), so it widens the bound, never overflows it.
