@@ -216,15 +216,17 @@ def cmd_recall(args):
 
     if args.runs < 1:
         raise SystemExit('--runs must be a positive integer')
+    if (args.phraser_cmd is not None or args.phrasings is not None) and 'phrasing' not in (args.arm or []):
+        raise SystemExit('--phraser-cmd and --phrasings require --arm phrasing')
     folder = (args.out or eval_home() / 'reports').expanduser().resolve()
     if folder.is_relative_to(REPO.resolve()):
         raise SystemExit('Recall reports belong outside the repository; choose --out or AGENTOS_EVAL_HOME')
+    data = recall_pairs.load(args.fixture)
     phraser = None
     if args.phraser_cmd:
         phraser = recall_report.command_phraser(shlex.split(args.phraser_cmd))
     elif args.phrasings:
-        phraser = recall_report.replay_phraser(json.loads(args.phrasings.read_text(encoding='utf-8')))
-    data = recall_pairs.load(args.fixture)
+        phraser = recall_report.replay_phraser(json.loads(args.phrasings.read_text(encoding='utf-8')), data=data)
     names = list(dict.fromkeys(['lexical', *(args.arm or [])]))
     # Resolve everything before running any arm (especially before an opt-in model command).
     arms = {name: recall_report.resolve_arm(name, phraser=phraser) for name in names}

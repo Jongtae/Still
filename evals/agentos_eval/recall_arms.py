@@ -56,3 +56,4 @@ ARMS = {'lexical': lexical, 'context': context_aware, 'context-concat': context_
 EVIDENCE = {'lexical': 'fixture (model-free)', 'context': 'fixture (model-free)',
             'context-concat': 'fixture (model-free)'}
 DETERMINISTIC = frozenset(ARMS)
+DIAGNOSTIC = frozenset({'context-concat'})

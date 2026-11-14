@@ -38,6 +38,7 @@ class Arm:
     evidence: str = 'fixture (model-free)'
     deterministic: bool = True
     phraser: object = None
+    diagnostic: bool = False
 
 
 def resolve_arm(spec, *, phraser=None):
@@ -49,12 +50,12 @@ def resolve_arm(spec, *, phraser=None):
                    getattr(phraser, 'evidence', 'local model observation'), False, phraser)
     if ':' not in spec:
         try:
-            from .recall_arms import ARMS, DETERMINISTIC, EVIDENCE
+            from .recall_arms import ARMS, DETERMINISTIC, DIAGNOSTIC, EVIDENCE
         except ImportError as exc:
             raise ValueError(f'Unknown recall arm {spec!r} (built-in arms unavailable)') from exc
         if spec not in ARMS:
             raise ValueError(f'Unknown recall arm {spec!r}; use a known name or module:callable')
-        return Arm(ARMS[spec], EVIDENCE[spec], spec in DETERMINISTIC)
+        return Arm(ARMS[spec], EVIDENCE[spec], spec in DETERMINISTIC, diagnostic=spec in DIAGNOSTIC)
     module_name, attribute = spec.split(':', 1)
     try:
         module = importlib.import_module(module_name)
@@ -69,8 +70,10 @@ def resolve_arm(spec, *, phraser=None):
     deterministic = getattr(module, 'DETERMINISTIC', True)
     if not isinstance(deterministic, bool):
         deterministic = attribute in deterministic or spec in deterministic
+    diagnostics = getattr(module, 'DIAGNOSTIC', frozenset())
     return Arm(factory, getattr(factory, 'evidence', evidence),
-               getattr(factory, 'deterministic', deterministic))
+               getattr(factory, 'deterministic', deterministic),
+               diagnostic=getattr(factory, 'diagnostic', attribute in diagnostics or spec in diagnostics))
 
 
 def command_phraser(argv, timeout=120):
@@ -95,8 +98,28 @@ def command_phraser(argv, timeout=120):
     return phrase
 
 
-def replay_phraser(recorded):
-    """Replay one-based run -> case id -> words; JSON string run keys are accepted."""
+def _fixture_digest(data):
+    return hashlib.sha256(json.dumps(data, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+
+def _phrasing_cases(data):
+    return {case['id']: dict(query=case['query'], context=case.get('context', '')) for case in data['cases']}
+
+
+def _validate_phrasing_fixture(phraser, data):
+    digest = getattr(phraser, 'phrasing_fixture', None)
+    if digest is not None and digest != _fixture_digest(data):
+        raise ValueError('Recorded phrasing fixture digest differs from the loaded fixture')
+    cases = getattr(phraser, 'phrasing_cases', None)
+    if cases is not None and cases != _phrasing_cases(data):
+        raise ValueError('Recorded phrasing query/context differs from the loaded fixture')
+
+
+def replay_phraser(recorded, *, data=None):
+    """Replay a legacy run -> case -> words mapping or a report with provenance."""
+    provenance = recorded['arms']['phrasing'] if 'arms' in recorded else {}
+    if provenance:
+        recorded = provenance['phrasings']
     recorded = {str(run): dict(words) for run, words in recorded.items()}
 
     def for_run(run, cases):
@@ -120,6 +143,10 @@ def replay_phraser(recorded):
 
     phrase.for_run = for_run
     phrase.evidence = 'fixture replay of a local model observation'
+    phrase.phrasing_fixture = provenance.get('phrasing_fixture')
+    phrase.phrasing_cases = provenance.get('phrasing_cases')
+    if data is not None:
+        _validate_phrasing_fixture(phrase, data)
     return phrase
 
 
@@ -144,6 +171,7 @@ def phrasing(store, data, phraser, *, run=1):
     """Search literal Memory with the request plus the worker's extra words."""
     from personal_agent.memory_service import MemoryService
 
+    _validate_phrasing_fixture(phraser, data)
     service = MemoryService(store, private_read_sink=lambda marker: None)
     service._today = lambda: data['today']
     identify, recorded = _case_lookup(data['cases']), {}
@@ -170,7 +198,9 @@ def run_arm(data, arm, runs=3):
         raise ValueError('runs must be a positive integer')
     if not isinstance(arm, Arm):
         arm = Arm(arm, getattr(arm, 'evidence', 'fixture (model-free)'),
-                  getattr(arm, 'deterministic', True))
+                  getattr(arm, 'deterministic', True), diagnostic=getattr(arm, 'diagnostic', False))
+    if arm.phraser is not None:
+        _validate_phrasing_fixture(arm.phraser, data)
     results, phrasings = [], {}
     for index in range(1, (1 if arm.deterministic else runs) + 1):
         with tempfile.TemporaryDirectory(prefix='still-recall-') as tmp:
@@ -184,9 +214,9 @@ def run_arm(data, arm, runs=3):
             results.append(result)
             if hasattr(retriever, 'phrasings'):
                 phrasings[str(index)] = dict(retriever.phrasings)
-    out = dict(evidence=arm.evidence, deterministic=arm.deterministic, runs=results)
+    out = dict(evidence=arm.evidence, deterministic=arm.deterministic, diagnostic=arm.diagnostic, runs=results)
     if phrasings:
-        out['phrasings'] = phrasings
+        out.update(phrasings=phrasings, phrasing_fixture=results[0]['fixture'], phrasing_cases=_phrasing_cases(data))
     return out
 
 
@@ -217,13 +247,20 @@ def _majority(results):
     return dict(version=first['version'], fixture=first['fixture'], rows=rows), cases
 
 
-def _verdict(comparison, score, scores, baseline_score, deterministic):
-    """#827 conditions, each named independently for inspectable failures."""
+def _verdict(comparison, score, scores, baseline_score, deterministic, baseline_rows, runs):
+    """#827 conditions, each named independently for inspectable failures.
+
+    For sampling arms, condition b fails when a baseline-passing lexical-control
+    fails in ANY run, even when the majority passes. Case change labels stay as is.
+    """
     failed = []
     if any(score[split]['total']['cases_with_trap'] for score in scores for split in pairs.SPLITS):
         failed.append('a-zero-traps')
-    if any(row['kind'] == 'lexical-control' and row['change'] == 'regressed'
-           for split in comparison.values() for row in split['changes']):
+    lexical_loss = not deterministic and any(
+        row['kind'] == 'lexical-control' and _passes(baseline_rows[row['id']]) and not _passes(row)
+        for run in runs for row in run['rows'])
+    if lexical_loss or any(row['kind'] == 'lexical-control' and row['change'] == 'regressed'
+                           for split in comparison.values() for row in split['changes']):
         failed.append('b-no-lexical-control-regressions')
     heldout = comparison['heldout']
     baseline_recall = baseline_score['heldout']['total']['needed_recall']
@@ -257,7 +294,7 @@ def report(data, results_by_arm, baseline='lexical'):
     if base['version'] != data['version']:
         raise pairs.RecallPairsError('Report fixture version differs')
     # The report's named fixture must be the one measured, not merely the same version.
-    digest = hashlib.sha256(json.dumps(data, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    digest = _fixture_digest(data)
     if base['fixture'] != digest:
         raise pairs.RecallPairsError('Report fixture contents differ')
     baseline_score = pairs.score(base)
@@ -267,6 +304,7 @@ def report(data, results_by_arm, baseline='lexical'):
         envelope, cases = prepared[name]
         comparison = pairs.compare(base, envelope)
         sampling = not result['deterministic']
+        diagnostic = result.get('diagnostic', False)
         scores = [pairs.score(run) for run in result['runs']]
         score = pairs.score(envelope)
         for case in cases:
@@ -295,16 +333,18 @@ def report(data, results_by_arm, baseline='lexical'):
                              recall_max=max(recalls) if valid else None,
                              recall_spread=max(recalls) - min(recalls) if valid else None,
                              recall_difference=mean(recalls) - b if valid else None)
-        arm = dict(evidence=result['evidence'], deterministic=result['deterministic'], runs=len(scores),
+        arm = dict(evidence=result['evidence'], deterministic=result['deterministic'], diagnostic=diagnostic,
+                   runs=len(scores),
                    score=score,
                    cases=cases if sampling else [{key: value for key, value in row.items() if key != 'returned'}
                                                 for row in envelope['rows']],
-                   compare=comparison, verdict=None if name == baseline else
-                   _verdict(comparison, score, scores, baseline_score, result['deterministic']))
+                   compare=comparison, verdict=None if name == baseline or diagnostic else
+                   _verdict(comparison, score, scores, baseline_score, result['deterministic'], before, result['runs']))
         if sampling:
             arm['run_scores'] = scores
         if 'phrasings' in result:
-            arm['phrasings'] = result['phrasings']
+            for key in ('phrasings', 'phrasing_fixture', 'phrasing_cases'):
+                arm[key] = result[key]
         arms[name] = arm
     return dict(version=base['version'], fixture=base['fixture'], today=data['today'], baseline=baseline, arms=arms)
 
@@ -322,7 +362,8 @@ def report_markdown(result):
     lines = ['# R1 paired recall', '', f"Fixture: {result['version']} · `{result['fixture']}`",
              f"Today: {result['today']} · Baseline: {_cell(result['baseline'])}", '']
     for name, arm in result['arms'].items():
-        lines.append(f"- {_cell(name)}: {_cell(arm['evidence'])}; {arm['runs']} run(s)")
+        diagnostic = '; diagnostic (no verdict)' if arm.get('diagnostic') else ''
+        lines.append(f"- {_cell(name)}: {_cell(arm['evidence'])}; {arm['runs']} run(s){diagnostic}")
     lines += ['', 'Sampling recall, hit totals and noise use observed majority representatives; '
               'trap case counts include every run. Per-run recall and uncertainty appear below.']
     for split in pairs.SPLITS:
@@ -356,7 +397,9 @@ def report_markdown(result):
     lines += ['', '## Verdicts', '']
     for name, arm in result['arms'].items():
         verdict = arm['verdict']
-        if verdict is None:
+        if arm.get('diagnostic'):
+            lines.append(f'- {_cell(name)}: diagnostic (no verdict).')
+        elif verdict is None:
             lines.append(f'- {_cell(name)}: baseline.')
         else:
             lines.append(f"- {_cell(name)}: {'preferred' if verdict['preferred'] else 'not preferred'}; "

@@ -211,6 +211,14 @@ def test_plugin_resolution_metadata_and_clear_errors(monkeypatch):
     arm = rr.resolve_arm('r1_test_plugin:factory')
     assert arm.factory is module.factory and arm.deterministic is True
     assert arm.evidence == 'fixture (model-free)'
+    assert arm.diagnostic is False
+    module.DIAGNOSTIC = frozenset({'factory'})
+    assert rr.resolve_arm('r1_test_plugin:factory').diagnostic is True
+    module.factory.diagnostic = False
+    assert rr.resolve_arm('r1_test_plugin:factory').diagnostic is False
+    module.DIAGNOSTIC = frozenset()
+    module.factory.diagnostic = True
+    assert rr.resolve_arm('r1_test_plugin:factory').diagnostic is True
     module.EVIDENCE = 'test module evidence'
     module.DETERMINISTIC = False
     assert rr.resolve_arm('r1_test_plugin:factory').deterministic is False
@@ -249,6 +257,7 @@ def test_command_phraser_prompt_stdout_failure_and_timeout(monkeypatch):
 
 
 def test_phrasing_retrieves_extra_words_and_replays_exact_counts(data):
+    data['cases'][3]['context'] = 'Earlier turn for this synthetic case'
     calls = []
 
     def phraser(query, context):
@@ -265,7 +274,11 @@ def test_phrasing_retrieves_extra_words_and_replays_exact_counts(data):
     assert observed['evidence'] == 'local model observation'
     assert by_id(observed['compare']['heldout']['changes'])['h-para']['change'] == 'fixed'
     assert observed['phrasings']['1']['h-para'] == 'carpet'
-    replay = rr.resolve_arm('phrasing', phraser=rr.replay_phraser(json.loads(json.dumps(observed['phrasings']))))
+    assert observed['phrasing_fixture'] == result['fixture']
+    assert observed['phrasing_cases'] == {
+        case['id']: {'query': case['query'], 'context': case.get('context', '')} for case in data['cases']}
+    assert ('underfoot', data['cases'][3]['context']) in calls
+    replay = rr.resolve_arm('phrasing', phraser=rr.replay_phraser(json.loads(json.dumps(result))))
     rebuilt = rr.report(data, {'lexical': measured(data, lexical), 'phrasing': rr.run_arm(data, replay)})
     replayed = rebuilt['arms']['phrasing']
     assert replayed.pop('evidence') == 'fixture replay of a local model observation'
@@ -349,3 +362,86 @@ def test_cli_phrasing_options_and_runs(data, tmp_path, monkeypatch, mode):
     assert arm['runs'] == 2 and arm['phrasings'] == {'1': words, '2': words}
     assert arm['evidence'] == ('local model observation' if mode == 'command'
                                else 'fixture replay of a local model observation')
+    if mode == 'replay':
+        # A complete newly written report is also valid CLI replay input.
+        replay_folder = tmp_path / 'replayed'
+        assert cli.main(['recall', '--arm', 'phrasing', '--runs', '2', '--fixture', str(path),
+                         '--out', str(replay_folder), '--phrasings', str(report_path)]) == 0
+        replayed_path, = replay_folder.glob('recall-*.json')
+        assert json.loads(replayed_path.read_text())['arms']['phrasing'] == arm
+
+
+def test_diagnostic_metadata_and_no_verdict_in_report_or_markdown(data):
+    from agentos_eval import recall_arms
+
+    assert recall_arms.DIAGNOSTIC == frozenset({'context-concat'})
+    assert rr.resolve_arm('context-concat').diagnostic is True
+    assert rr.resolve_arm('context').diagnostic is False
+    assert rr.resolve_arm('lexical').diagnostic is False
+    baseline = measured(data, lexical)
+    diagnostic = rr.run_arm(data, rr.Arm(scripted([FIX]), diagnostic=True))
+    result = rr.report(data, {'lexical': baseline, 'diagnostic': diagnostic,
+                              'candidate': dict(diagnostic, diagnostic=False)})
+    assert result['arms']['diagnostic']['diagnostic'] is True
+    assert result['arms']['diagnostic']['verdict'] is None
+    assert result['arms']['candidate']['verdict']['preferred'] is True
+    text = rr.report_markdown(result)
+    arm_list, verdicts = text.split('## Verdicts')
+    assert '- diagnostic: fixture (model-free); 1 run(s); diagnostic (no verdict)' in arm_list
+    assert '- diagnostic: diagnostic (no verdict).' in verdicts
+
+
+@pytest.mark.parametrize('query,ident,split,returned', [
+    ('cedar', 'd-lex', 'dev', []),
+    ('cushion', 'h-lex', 'heldout', ['seat', 'desk']),
+])
+def test_sampling_lexical_loss_in_one_run_fails_condition_b(data, query, ident, split, returned):
+    arm = build(data, [FIX, FIX, {**FIX, query: returned}], sampling=True)['arms']['candidate']
+    assert by_id(arm['cases'])[ident]['passes'] == 2
+    assert by_id(arm['compare'][split]['changes'])[ident]['change'] == 'unchanged-pass'
+    assert arm['verdict']['failed'] == ['b-no-lexical-control-regressions']
+    assert arm['verdict']['preferred'] is False
+
+
+def test_sampling_lexical_failure_is_not_a_loss_if_baseline_also_fails(data):
+    data['cases'][0]['query'] = 'unmatched request'
+    arm = build(data, [FIX], sampling=True)['arms']['candidate']
+    assert by_id(arm['cases'])['d-lex']['passes'] == 0
+    assert arm['verdict']['preferred'] is True
+
+
+@pytest.mark.parametrize('changed', ['query', 'context', 'rows'])
+def test_cli_replay_refuses_different_fixture_before_running(data, tmp_path, monkeypatch, changed):
+    baseline = measured(data, lexical)
+    phrase_arm = rr.resolve_arm('phrasing', phraser=lambda q, c: '')
+    recorded = rr.report(data, {'lexical': baseline, 'phrasing': rr.run_arm(data, phrase_arm, runs=1)})
+    report_path = tmp_path / 'recorded.json'
+    report_path.write_text(json.dumps(recorded))
+    if changed == 'rows':
+        data['rows'][0]['content'] += ' modified'
+    else:
+        data['cases'][0][changed] = 'Modified input'
+    fixture_path = tmp_path / 'fixture.json'
+    fixture_path.write_text(json.dumps(data))
+
+    def no_run(*args, **kwargs):
+        pytest.fail('A mismatched replay must be refused before any arm runs')
+
+    monkeypatch.setattr(rr, 'run_arm', no_run)
+    with pytest.raises(ValueError, match='phrasing fixture digest differs'):
+        cli.main(['recall', '--arm', 'phrasing', '--phrasings', str(report_path),
+                  '--fixture', str(fixture_path), '--out', str(tmp_path / 'reports')])
+    replay = rr.resolve_arm('phrasing', phraser=rr.replay_phraser(recorded))
+    # The direct API enforces provenance even without CLI validation.
+    with pytest.raises(ValueError, match='phrasing fixture digest differs'):
+        rr.phrasing(None, data, replay.phraser)
+
+
+@pytest.mark.parametrize('option', ['--phraser-cmd', '--phrasings'])
+def test_cli_phraser_options_require_phrasing_arm(tmp_path, monkeypatch, option):
+    def no_load(*args, **kwargs):
+        pytest.fail('Unused phraser options must be refused before loading a fixture or running arms')
+
+    monkeypatch.setattr(pairs, 'load', no_load)
+    with pytest.raises(SystemExit, match='require --arm phrasing'):
+        cli.main(['recall', '--arm', 'context', option, 'unused', '--out', str(tmp_path)])

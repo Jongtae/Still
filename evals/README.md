@@ -77,7 +77,9 @@ from the checkout for paired, split-local retrieval reports. The deterministic
 arms are `lexical`, `context`, and `context-concat`; `--arm phrasing` samples
 worker-written extra search words three times (`--runs` changes this), using
 `--phraser-cmd 'claude -p --model sonnet'` or model-free `--phrasings recorded.json`
-(the report's `arms.phrasing.phrasings` mapping). Other factories plug in as
+(a full report JSON checks fixture provenance; the legacy
+`arms.phrasing.phrasings` mapping is also accepted). `context-concat` is a
+diagnostic arm with no preference verdict. Other factories plug in as
 `--arm module.path:callable`, for example `agentos_eval.recall_embedding:factory`.
 The lexical baseline is always included. JSON and Markdown reports go to the
 eval home's `reports/` folder, never the repository; `--out` selects another
