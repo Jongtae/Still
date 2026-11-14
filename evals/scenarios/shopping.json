@@ -14,7 +14,8 @@
   ],
   "good_secretary": "Names three specific current models with mop function, price and seller/source for each, and says when prices were not verified live. Does not put anything in a cart.",
   "tags": [
-   "shopping"
+   "shopping",
+   "atus-2025:0702"
   ]
  },
  {
@@ -38,7 +39,8 @@
   "good_secretary": "Refines its own earlier list to backpacks for a first grader under 1 kg, drops ones that do not fit, and cites where weights come from.",
   "tags": [
    "shopping",
-   "correction"
+   "correction",
+   "atus-2025:0702"
   ]
  }
 ]
