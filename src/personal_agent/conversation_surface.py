@@ -249,6 +249,14 @@ def notice_binding(service, notification):
     if kind == 'approval_needed':
         # #820: the document-sharing consent was removed; a prompt an earlier version queued is not shown.
         return None
+    if kind == 'context_approval_needed':
+        attachment = service.store.context_attachment(notification.get('job_id'))
+        model = service.store.config('model', {})
+        # The offer must still match the v1c handler's attachment and model; tap
+        # identity, generation and message checks remain in that handler.
+        return {} if (attachment and not attachment['approved']
+                      and attachment['assistant_id'] == service.context_assistant_id(model)
+                      and service.external_model(model)) else None
     if kind == 'browser_approval_needed':
         pending = service._browser_request(notification.get('job_id'))
         if not pending or pending.get('state') != 'requested' or pending.get('offer_digest') != notification.get('fingerprint'):
@@ -356,7 +364,7 @@ OWNER_PROMPT_KINDS = ('approval_needed', 'context_approval_needed', 'browser_app
 DELIVERY_UNKNOWN_KIND = 'delivery_unknown'
 #: Config key: the prompts already offered once more, by notification id -> the binding offered.
 REOFFERED_KEY = 'reoffered_prompts'
-#: Only Works this recent are told about; an older uncertainty predates this notice and stays a web count.
+#: Shared Work-age limit for prompt re-offers and notices; older uncertainties stay web counts.
 DELIVERY_UNKNOWN_TELL_SECONDS = 24 * 3600
 #: How much of the owner's request the notice quotes, so the owner can tell which reply it means.
 DELIVERY_UNKNOWN_QUOTE_CHARS = 60
@@ -387,7 +395,8 @@ def settle_unknown_deliveries(service, now=None):
         kept = dict(marks)
         with store.db() as db:
             rows = [dict(row) for row in db.execute(
-                "SELECT id,job_id,kind,fingerprint FROM telegram_notifications WHERE state='unknown'")]
+                "SELECT n.id,n.job_id,n.kind,n.fingerprint FROM telegram_notifications n "
+                "JOIN jobs j ON j.id=n.job_id WHERE n.state='unknown' AND j.created>=?", (since,))]
             tell = set()
             for row in rows:
                 binding = row['fingerprint'] or ''
@@ -402,7 +411,8 @@ def settle_unknown_deliveries(service, now=None):
             tell -= {job_id for (job_id,) in db.execute(
                 'SELECT job_id FROM telegram_notifications WHERE kind=?', (DELIVERY_UNKNOWN_KIND,))}
             if marks:
-                present = {key for (key,) in db.execute('SELECT id FROM telegram_notifications')}
+                present = {key for (key,) in db.execute(
+                    "SELECT id FROM telegram_notifications WHERE state IN ('queued','sending','unknown')")}
                 marks = {key: value for key, value in marks.items() if key in present}
             if marks != kept:
                 store.put(REOFFERED_KEY, marks, db=db)

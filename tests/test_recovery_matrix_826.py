@@ -237,12 +237,21 @@ def test_r4_sending_prompt_is_offered_once_more_with_a_new_message(case):
     work = c.job['id']
     note = c.store.queue_notification(work, 42, 'g', 'browser_approval_needed',
                                       c.service._browser_request(work)['offer_digest'])
-    c.store.update_notification(note['id'], 'sending', 201)   # the old message
+    c.store.update_notification(note['id'], 'sending')   # receipt lost; message 201 exists only at Telegram
     requests = c.store.config('browser_requests')
     service = _restart_wired(c.store, transport)
     assert service.store.notification(note['id'])['state'] == 'unknown'
     assert not sends, 'a restart never resends by itself'
     assert service.settle_unknown_deliveries()[0] == 1
+    queued = service.store.notification(note['id'])
+    assert (queued['state'], queued['message_id'], queued['sent_at']) == ('queued', None, None)
+
+    def tap(message_id, sender=42):
+        service.ingest_callback({'id': f'approve-{sender}-{message_id}', 'from': {'id': sender},
+            'message': {'chat': {'id': 42, 'type': 'private'}, 'message_id': message_id},
+            'data': f"p7w:{note['id']}:approve"}, 'g')
+    tap(201)
+    assert service.store.config('browser_requests') == requests
     assert service.deliver_notification()
     after = service.store.notification(note['id'])
     assert (after['state'], len(sends)) == ('sent', 1)
@@ -252,6 +261,13 @@ def test_r4_sending_prompt_is_offered_once_more_with_a_new_message(case):
     assert service.settle_unknown_deliveries() == (0, 0)
     assert not service.deliver_notification()
     assert len(sends) == 1
+
+    tap(201)
+    tap(after['message_id'], sender=99)
+    assert service.store.config('browser_requests') == requests
+    tap(after['message_id'])
+    assert service.store.notification(note['id'])['state'] == 'browser_approved'
+    assert service._browser_request(work)['offer_digest'] == note['fingerprint']
 
 
 def test_r4_unknown_prompt_callback_does_not_apply_settings(case):
@@ -263,7 +279,7 @@ def test_r4_unknown_prompt_callback_does_not_apply_settings(case):
         'timezone', 'Asia/Tokyo', work_id=work)
     c.service.queue_settings_confirmation(job)
     note = c.store.notification_of(work, 'settings_change_proposed')
-    c.store.update_notification(note['id'], 'sending', 201)
+    c.store.update_notification(note['id'], 'sending')
     service = _restart(c.store, c.service)
     service.ingest_callback({'id': 'dead-prompt', 'from': {'id': 42},
         'message': {'chat': {'id': 42, 'type': 'private'}, 'message_id': 201},
@@ -282,9 +298,11 @@ def test_r4_reoffered_settings_prompt_old_button_settles_nothing_new_one_applies
         'timezone', 'Asia/Tokyo', work_id=work)
     c.service.queue_settings_confirmation(job)
     note = c.store.notification_of(work, 'settings_change_proposed')
-    c.store.update_notification(note['id'], 'sending', 201)
+    c.store.update_notification(note['id'], 'sending')
     service = _restart(c.store, c.service)
     assert service.settle_unknown_deliveries()[0] == 1
+    queued = service.store.notification(note['id'])
+    assert (queued['state'], queued['message_id'], queued['sent_at']) == ('queued', None, None)
     assert service.deliver_notification()
     new = service.store.notification(note['id'])
     assert new['state'] == 'sent' and new['message_id'] not in (None, 201)
@@ -502,6 +520,10 @@ def test_i4_interrupted_sending_reply_has_no_reply_anchor(case):
     assert service.settle_unknown_deliveries() == (0, 0)
     assert not service.deliver_notification()
     assert len([x for x in c.calls if x[0].endswith('/sendMessage')]) == 1
+
+    assert service.store.recovery_summary() == {'interrupted_jobs': 1, 'uncertain_deliveries': 0,
+                                                'uncertain_notifications': 0}
+    assert service.home()['state'] == 'attention'
 
 
 def test_u1_unknown_work_not_resumable(env):
