@@ -229,26 +229,27 @@ def labels_for(report):
     return {'version': 'initiative-labels-v1', 'rubric': report['fixture_support']['rubric_version'], 'labels': labels}
 
 
-def test_agreement_window_and_fewer_than_five(rubric):
+def test_agreement_rate_and_fewer_than_five(rubric):
     report = make_report(rubric)
     labels = labels_for(report)
     assert c.agreement(report, labels)['avoidable_interventions']['agreed'] == 6
     labels['labels'] = labels['labels'][:3]
-    for row in labels['labels'][:2]:
-        row['measures']['avoidable_interventions'] = []
-    result = c.agreement(report, labels)
-    assert result['avoidable_interventions']['uncertain']
-    assert len(result['avoidable_interventions']['disagreements']) == 2
-    assert result['avoidable_interventions']['disagreements'][0]['epoch'] == 1
-    labels['labels'][1]['measures']['avoidable_interventions'] = [1, 2]
-    assert not c.agreement(report, labels)['avoidable_interventions']['uncertain']
+    labels['labels'][0]['measures']['avoidable_interventions'] = []
+    result = c.agreement(report, labels)['avoidable_interventions']
+    assert result['uncertain']  # 1/3 exceeds 1/5, even with fewer than five labels
+    assert result['heldout_status'] == 'unlabelled' and result['heldout_labelled'] == 0
     full = labels_for(report)
-    full['labels'][1]['measures']['avoidable_interventions'] = []
-    full['labels'][5]['measures']['avoidable_interventions'] = []
-    assert c.agreement(report, full)['avoidable_interventions']['uncertain']  # second window
-    full['labels'][1]['measures']['avoidable_interventions'] = [1, 2]
+    full['labels'] = full['labels'][:5]
     full['labels'][0]['measures']['avoidable_interventions'] = []
-    assert not c.agreement(report, full)['avoidable_interventions']['uncertain']
+    result = c.agreement(report, full)['avoidable_interventions']
+    assert not result['uncertain']  # exactly 1/5 is not above the threshold
+    assert result['heldout_status'] == 'certain'
+    full = labels_for(report)
+    for index in (0, 5):
+        full['labels'][index]['measures']['avoidable_interventions'] = []
+    assert c.agreement(report, full)['avoidable_interventions']['uncertain']
+    full['labels'].reverse()
+    assert c.agreement(report, full)['avoidable_interventions']['uncertain']
 
 
 @pytest.mark.parametrize('bad', ['version', 'duplicate', 'missing', 'null', 'bad_list', 'extra_measure', 'bad_score'])
@@ -323,7 +324,7 @@ def test_comparison_requires_certain_heldout_gain(rubric, dev, held):
     b = make_report(rubric, ident='after', head='def', dev=dev, held=held)
     result = c.compare(a, b)
     assert result['verdict'] == 'not better'
-    assert result['failed_conditions']
+    assert 'certain_heldout_gain' in result['failed_conditions']
     if dev == (0, 1, 2):
         row = result['splits']['heldout']['held-case']['avoidable_interventions']
         assert row['change'] == 'uncertain'
@@ -617,3 +618,172 @@ def test_preparation_excerpts_require_typed_unsolicited_origin_and_sent_receipt(
         broken = copy.deepcopy(r)
         broken['diff']['preparations'][0][field] = value
         assert not s.proactive_observation(broken)['observed']
+
+
+def test_agreement_three_disagreements_in_eleven_is_order_independent(rubric):
+    report = make_report(rubric, dev=(2,) * 6, held=(2,) * 6)
+    labels = labels_for(report)
+    labels['labels'] = labels['labels'][:11]
+    # Five apart: the old sliding window sees at most one disagreement per window.
+    for index in (0, 5, 10):
+        labels['labels'][index]['measures']['avoidable_interventions'] = []
+    expected = c.agreement(report, labels)
+    assert expected['avoidable_interventions']['uncertain']
+    assert expected['avoidable_interventions']['labelled'] == 11
+    assert len(expected['avoidable_interventions']['disagreements']) == 3
+    for ordering in (list(reversed(labels['labels'])), labels['labels'][4:] + labels['labels'][:4]):
+        actual = c.agreement(report, {**labels, 'labels': ordering})
+        assert actual == expected
+        for measure in s.MEASURES:
+            assert {k: v for k, v in actual[measure].items() if k not in ('rows', 'disagreements')} == {
+                k: v for k, v in expected[measure].items() if k not in ('rows', 'disagreements')}
+            assert sorted((r['scenario'], r['epoch']) for r in actual[measure]['disagreements']) == sorted(
+                (r['scenario'], r['epoch']) for r in expected[measure]['disagreements'])
+
+
+@pytest.mark.parametrize('message', ['t2', 't2.b1'])
+def test_avoidable_intervention_overrides_same_turn_interruption(rubric, message):
+    data = reply(2, interruptions=[message, 't3.b1'])
+    parsed = s.parse_measures(json.dumps(data), rubric[0], run())
+    assert [row['turn'] for row in parsed['avoidable_interventions']] == [1, 2]
+    assert [row['message'] for row in parsed['unnecessary_interruptions']] == ['t3.b1']
+    assert parsed['inconsistencies'] == [{
+        'turn': 2, 'message': message, 'interruption_item': data['unnecessary_interruptions'][0],
+        'reason': 'Judge listed a turn as both avoidable intervention and interruption; counted only as intervention'}]
+    value, meta = s.combine(scenario(), run(), {}, [], measures=parsed, measures_status='judged')
+    assert value['measure_avoidable_interventions'] == 2
+    assert value['measure_unnecessary_interruptions'] == 1
+    assert meta['measures']['inconsistencies'][0]['message'] == message
+
+
+def test_errored_samples_are_not_labellable_and_labels_fail_clearly(rubric):
+    report = make_report(rubric)
+    sample = SimpleNamespace(id='held-case@codex', epoch=1, scores={},
+                             metadata={'scenario': scenario('held-case', 'heldout'), 'worker': 'codex'}, error='outage')
+    errored = {**records_from_samples([sample])[0], 'run_id': report['live_evidence']['id']}
+    report['samples'][3] = errored
+    assert 'turn_count' not in errored
+    template = c.labels_template(report)
+    assert [(row['scenario'], row['epoch']) for row in template['labels']] == [('held-case', 2), ('held-case', 3)]
+    assert template['not_labellable'] == [{
+        'run_id': 'before', 'scenario': 'held-case', 'worker': 'codex', 'epoch': 1,
+        'reason': 'not labellable: not_scored'}]
+    bad = {'version': 'initiative-labels-v1', 'rubric': rubric[0]['version'], 'labels': [{
+        'run_id': 'before', 'scenario': 'held-case', 'worker': 'codex', 'epoch': 1,
+        'labeller': 'owner', 'measures': {'avoidable_interventions': [], 'required_approvals': [],
+                                         'unnecessary_interruptions': [], 'proactive_usefulness': 'not_observed'}}]}
+    with pytest.raises(ValueError, match='not labellable: not_scored'):
+        c.agreement(report, bad)
+    # A filled template may retain its separate exclusion list.
+    good = copy.deepcopy(template)
+    for row in good['labels']:
+        row['measures'] = {'avoidable_interventions': [1, 2], 'required_approvals': [],
+                           'unnecessary_interruptions': [], 'proactive_usefulness': 'not_observed'}
+    assert c.agreement(report, good)['avoidable_interventions']['labelled'] == 2
+
+
+def test_compare_candidate_labels_do_not_erase_baseline_uncertainty(rubric, tmp_path):
+    baseline = make_report(rubric)
+    candidate = make_report(rubric, ident='after', head='def', dev=(1, 1, 1), held=(1, 1, 1))
+    labels = labels_for(baseline)
+    for label in labels['labels'][:2]:
+        label['measures']['avoidable_interventions'] = []
+    # Model the persisted report --labels path (including legacy reports storing only agreement rows).
+    baseline['uncertainty']['agreement'] = c.agreement(baseline, labels)
+    assert baseline['uncertainty']['agreement']['avoidable_interventions']['uncertain']
+    ap, _ = c.write_report(baseline, tmp_path)
+    bp, _ = c.write_report(candidate, tmp_path)
+    supplied = tmp_path / 'candidate-labels.json'
+    supplied.write_text(json.dumps(labels_for(candidate)))
+    with redirect_stdout(io.StringIO()):
+        assert cli.main(['continuity', 'compare', str(ap), str(bp), '--labels', str(supplied)]) == 0
+    compared = json.loads((tmp_path / 'after.c2.compare.json').read_text())
+    assert compared['uncertain_measures'] == ['avoidable_interventions']
+    assert compared['splits']['heldout']['held-case']['avoidable_interventions']['change'] == 'uncertain'
+    assert compared['verdict'] == 'not better'
+    assert 'certain_heldout_gain' in compared['failed_conditions']
+
+
+@pytest.mark.parametrize('legacy', [False, True])
+def test_labels_merge_with_stored_labels_and_reject_repeated_sample(rubric, tmp_path, legacy):
+    report = make_report(rubric)
+    labels = labels_for(report)
+    first = {**labels, 'labels': labels['labels'][:2]}
+    rest = {**labels, 'labels': labels['labels'][2:]}
+    if legacy:
+        report['uncertainty']['agreement'] = c.agreement(report, first)
+    else:
+        report = c.with_labels(report, first)
+    merged = c.with_labels(report, rest)
+    assert merged['uncertainty']['agreement']['avoidable_interventions']['labelled'] == 6
+    assert len(merged['uncertainty']['labels']) == 6
+    assert report['uncertainty']['agreement']['avoidable_interventions']['labelled'] == 2
+    with pytest.raises(ValueError, match='Duplicate human label'):
+        c.with_labels(report, first)
+    # CLI must also reject a stored-versus-passed duplicate, not just duplicates among new files.
+    candidate = make_report(rubric, ident='after', head='def')
+    ap, _ = c.write_report(report, tmp_path)
+    bp, _ = c.write_report(candidate, tmp_path)
+    repeated = tmp_path / 'repeat.json'
+    repeated.write_text(json.dumps(first))
+    with pytest.raises(ValueError, match='Duplicate human label'), redirect_stdout(io.StringIO()):
+        cli.main(['continuity', 'compare', str(ap), str(bp), '--labels', str(repeated)])
+
+
+def test_unlabelled_heldout_blocks_gain_only_when_labels_exist(rubric):
+    baseline = make_report(rubric)
+    candidate = make_report(rubric, ident='after', head='def', dev=(1, 1, 1), held=(1, 1, 1))
+    judge_only = c.compare(baseline, candidate)
+    assert judge_only['verdict'] == 'better'
+    assert judge_only['verdict_basis'] == 'judge-only, unlabelled'
+    assert 'Verdict: **better** (judge-only, unlabelled)' in c.compare_markdown(judge_only)
+    assert 'judged deltas are judge-only, unlabelled' in c.render_markdown(baseline)
+    labels = labels_for(candidate)
+    labels['labels'] = [row for row in labels['labels'] if row['scenario'] == 'dev-case']
+    candidate = c.with_labels(candidate, labels)
+    for row in candidate['uncertainty']['agreement'].values():
+        assert row['heldout_status'] == 'unlabelled' and row['heldout_labelled'] == 0
+    assert 'Held-out measures without human labels are unlabelled: neither certain nor uncertain.' in c.render_markdown(candidate)
+    compared = c.compare(baseline, candidate)
+    assert compared['verdict'] == 'not better'
+    assert compared['failed_conditions'] == ['certain_heldout_gain']
+    # Covering just the candidate's held-out cases still leaves the baseline unlabelled.
+    rest = labels_for(candidate)
+    rest['labels'] = [row for row in rest['labels'] if row['scenario'] == 'held-case']
+    candidate = c.with_labels(candidate, rest)
+    assert c.compare(baseline, candidate)['failed_conditions'] == ['certain_heldout_gain']
+    baseline = c.with_labels(baseline, labels_for(baseline))
+    assert c.compare(baseline, candidate)['verdict'] == 'better'
+
+
+def test_fixture_digest_includes_all_contributing_bundled_files(rubric, tmp_path):
+    import hashlib
+    folder = tmp_path / 'scenarios'
+    folder.mkdir()
+    for name, ident, tags in [('z.json', 'case-zed', ['exp-continuity']),
+                              ('a.json', 'case-aye', ['exp-continuity']), ('ignore.json', 'case-other', [])]:
+        (folder / name).write_text(json.dumps({'id': ident, 'turns': ['Synthetic'], 'tags': tags}))
+    loaded = scenarios.load(dirs=[folder], include_local=False)
+    selected = [row for row in loaded if 'exp-continuity' in row['tags']]
+    fingerprint = c.fixture_support(selected, rubric[1], scenario_dir=folder)
+    assert [row['relative_path'] for row in fingerprint['scenario_files']] == ['a.json', 'z.json']
+    digest = hashlib.sha256()
+    for name in ('a.json', 'z.json'):
+        content = (folder / name).read_bytes()
+        assert next(row for row in fingerprint['scenario_files'] if row['relative_path'] == name)['sha256'] == hashlib.sha256(content).hexdigest()
+        for part in (name.encode(), content):
+            digest.update(len(part).to_bytes(8, 'big'))
+            digest.update(part)
+    assert fingerprint['scenario_digest'] == digest.hexdigest()
+    (folder / 'ignore.json').write_text(json.dumps({'id': 'case-other', 'turns': ['Changed but unrelated']}))
+    assert c.fixture_support(selected, rubric[1], scenario_dir=folder)['scenario_digest'] == fingerprint['scenario_digest']
+    (folder / 'z.json').write_text((folder / 'z.json').read_text() + '\n')
+    changed = c.fixture_support(selected, rubric[1], scenario_dir=folder)
+    assert changed['scenario_digest'] != fingerprint['scenario_digest']
+    # Paths participate too, and absolute checkout location does not.
+    (folder / 'z.json').rename(folder / 'b.json')
+    assert c.fixture_support(selected, rubric[1], scenario_dir=folder)['scenario_digest'] != changed['scenario_digest']
+    import shutil
+    other = tmp_path / 'other-checkout'
+    shutil.copytree(folder, other)
+    assert c.fixture_support(selected, rubric[1], scenario_dir=other)['scenario_digest'] == c.fixture_support(selected, rubric[1], scenario_dir=folder)['scenario_digest']

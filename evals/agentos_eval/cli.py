@@ -270,7 +270,7 @@ def cmd_continuity(args):
             for path in args.labels:
                 data = json.loads(Path(path).read_text())
                 if (not isinstance(data, dict) or not {'version', 'rubric', 'labels'} <= set(data)
-                        or set(data) - {'version', 'rubric', 'labels', '_note'}
+                        or set(data) - {'version', 'rubric', 'labels', '_note', 'not_labellable'}
                         or data['version'] != 'initiative-labels-v1' or not isinstance(data['labels'], list)
                         or any(data['rubric'] != r['fixture_support']['rubric_version'] for r in reports)):
                     raise ValueError('Invalid comparison labels file')
@@ -278,8 +278,8 @@ def cmd_continuity(args):
                     if not isinstance(label, dict) or label.get('run_id') not in by_run:
                         raise ValueError('Label sample does not exist in either report')
                     combined[label['run_id']]['labels'].append(label)
-            for key, r in by_run.items():
-                r['uncertainty']['agreement'] = continuity.agreement(r, combined[key])
+            reports = [continuity.with_labels(r, combined[r['live_evidence']['id']])
+                       if combined[r['live_evidence']['id']]['labels'] else r for r in reports]
         result = continuity.compare(*reports)
         markdown = continuity.compare_markdown(result)
         base = Path(args.candidate).with_suffix('')

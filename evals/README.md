@@ -325,15 +325,33 @@ are never loaded. `--rubric PATH` overrides the default
 C2 writes `<eval home>/reports/<run-id>.c2.json` and `.c2.md` beside the sweep
 report. Dev and held-out results remain separate, with each epoch, spread,
 per-turn latency, item reasons, approval-count discrepancies and judge/human
-disagreements. More than one disagreement in any five consecutive labels
-(or all labels when fewer than five) makes that measure uncertain. Comparisons
+disagreements. Uncertainty is order-independent: a measure exceeds the
+agreement threshold when `disagreements * window > labelled * max_disagreements`
+(default: disagreement rate above 1/5, including samples smaller than five).
+Reordering labels never changes the assessment. A measure with no held-out
+human labels has held-out status **unlabelled**, neither certain nor uncertain. Comparisons
 require identical fixtures, rubric, worker, judge and epochs; stopped sweeps
 cannot be compared. Gains inside epoch spread do not count as improvements.
+
+`continuity report --labels` stores the labels and agreement in the report.
+`continuity compare` uses each arm's stored agreement; additional `--labels`
+files merge with those stored labels. Repeating a `(run_id, scenario, worker,
+epoch)` across stored and supplied labels is an error. Uncertainty in either
+arm makes that measure's deltas uncertain. Error/unjudged samples are excluded
+from the label template and listed separately as `not labellable: <status>`.
 
 Held-out cases are not tuned against: a change motivated by a held-out failure
 moves that case to dev and needs a new held-out case. A better verdict requires
 both dev and certain held-out gains, no deterministic-check regression, and no
-worse held-out measure. Required approval counts have no better direction.
+worse held-out measure. Once any human labels are supplied, an improving
+held-out measure must have held-out labels in **both** arms; an unlabelled
+measure cannot satisfy the certain held-out improvement condition. With no
+human labels at all, reports state that judged deltas are **judge-only,
+unlabelled**, and the comparison verdict carries that qualifier; the human
+coverage gate does not apply. Required approval counts have no better direction.
+The fixture digest covers every bundled file contributing an `exp-continuity`
+scenario, using sorted relative paths and exact contents; the report lists each
+file and its SHA-256.
 
 The sweep's evidence class is **live local observation of the sandbox, judged**;
 model-free fixture tests provide fixture evidence only. New preparation rows can retain a bounded `last_result` excerpt and

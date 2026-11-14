@@ -22,6 +22,7 @@ from pathlib import Path
 from statistics import mean, median
 
 from .paths import BUNDLED_SCENARIOS, REPO
+from .scenarios import load_file
 from .recall_pairs import paired_index
 from .scoring import MEASURES, MEASURE_VALUES
 
@@ -48,10 +49,27 @@ def load_rubric(path):
     return rubric
 
 
-def fixture_support(scenarios, rubric_path, scenario_path=SCENARIOS):
+def fixture_support(scenarios, rubric_path, scenario_dir=None):
+    """Fingerprint all bundled C2 source files, independent of checkout location.
+
+    Hash sorted relative paths and exact contents, length-prefixed to avoid
+    ambiguous concatenation. Unrelated bundled files do not affect C2 pairing.
+    """
     rubric = load_rubric(rubric_path)
-    return {'scenario_file': str(scenario_path),
-            'scenario_digest': hashlib.sha256(Path(scenario_path).read_bytes()).hexdigest(),
+    folder = Path(scenario_dir) if scenario_dir is not None else BUNDLED_SCENARIOS
+    files, digest = [], hashlib.sha256()
+    for path in sorted(folder.glob('*.json')):
+        if not any('exp-continuity' in row['tags'] for row in load_file(path)):
+            continue
+        content, relative = path.read_bytes(), path.relative_to(folder).as_posix()
+        for part in (relative.encode('utf-8'), content):
+            digest.update(len(part).to_bytes(8, 'big'))
+            digest.update(part)
+        files.append({'path': str(path), 'relative_path': relative,
+                      'sha256': hashlib.sha256(content).hexdigest()})
+    if not files:
+        raise ValueError('No bundled exp-continuity scenario files')
+    return {'scenario_files': files, 'scenario_digest': digest.hexdigest(),
             'rubric_file': str(rubric_path), 'rubric_version': rubric['version'],
             'rubric_digest': hashlib.sha256(Path(rubric_path).read_bytes()).hexdigest(),
             'scenario_ids': {split: sorted(s['id'] for s in scenarios if s['split'] == split)
@@ -92,12 +110,12 @@ def _label_values(row):
 
 
 def agreement(report, labels):
-    """Strict sample identity validation; sliding windows retain label-file order."""
+    """Strict sample identity validation; uncertainty is an order-independent rate."""
     if isinstance(labels, (str, Path)):
         labels = json.loads(Path(labels).read_text(encoding='utf-8'))
     version = report['fixture_support']['rubric_version']
     if (not isinstance(labels, dict) or not {'version', 'rubric', 'labels'} <= set(labels)
-            or set(labels) - {'version', 'rubric', 'labels', '_note'}
+            or set(labels) - {'version', 'rubric', 'labels', '_note', 'not_labellable'}
             or labels['version'] != 'initiative-labels-v1' or labels['rubric'] != version
             or not isinstance(labels['labels'], list)):
         raise ValueError('Invalid labels file or different rubric version')
@@ -116,6 +134,9 @@ def agreement(report, labels):
         if key not in samples:
             raise ValueError(f'Label sample does not exist: {key}')
         sample = samples[key]
+        reason = not_labellable(sample)
+        if reason:
+            raise ValueError(f'Label sample is {reason}: {key}')
         judged = _label_values(sample)
         for measure, human in label['measures'].items():
             if measure == 'proactive_usefulness':
@@ -137,12 +158,73 @@ def agreement(report, labels):
     window, maximum = rule['window'], rule['max_disagreements']
     result = {}
     for measure, items in rows.items():
-        flags = [int(not r['agree']) for r in items]
-        uncertain = any(sum(flags[i:i + window]) > maximum for i in range(max(1, len(flags) - window + 1)))
+        items = sorted(items, key=_key)
+        disagreements = sum(not r['agree'] for r in items)
+        uncertain = disagreements * window > len(items) * maximum
+        heldout = sum(samples[(r['run_id'], r['scenario'], r['worker'], r['epoch'])]['split'] == 'heldout'
+                      for r in items)
+        heldout_status = 'unlabelled' if not heldout else 'uncertain' if uncertain else 'certain'
         result[measure] = {'labelled': len(items), 'agreed': sum(r['agree'] for r in items),
-                           'uncertain': uncertain, 'rows': items,
+                           'uncertain': uncertain, 'heldout_labelled': heldout,
+                           'heldout_status': heldout_status, 'rows': items,
                            'disagreements': [r for r in items if not r['agree']]}
     return result
+
+
+def not_labellable(sample):
+    status = sample.get('measures_status', 'not_scored')
+    if status != 'judged' or not sample.get('measures'):
+        return f'not labellable: {status}'
+    if type(sample.get('turn_count')) is not int or not isinstance(sample.get('message_ids'), list):
+        return 'not labellable: missing transcript indices'
+    return None
+
+
+def stored_labels(report):
+    """Read saved labels, including pre-merge reports that stored only agreement rows."""
+    uncertainty = report['uncertainty']
+    if 'labels' in uncertainty:
+        return copy.deepcopy(uncertainty['labels'])
+    indexed = {}
+    for measure, table in uncertainty['agreement'].items():
+        for row in table.get('rows', []):
+            key = _key(row)
+            label = indexed.setdefault(key, {**{k: row[k] for k in ('run_id', 'scenario', 'worker', 'epoch')},
+                                             'labeller': 'contributor', 'measures': {}})
+            if measure in label['measures']:
+                raise ValueError('Duplicate stored human label')
+            label['measures'][measure] = row['human']
+    return list(indexed.values())
+
+
+def with_labels(report, labels):
+    """Merge new labels with saved labels; validation rejects duplicates across both."""
+    if isinstance(labels, (str, Path)):
+        labels = json.loads(Path(labels).read_text(encoding='utf-8'))
+    # Validate the incoming envelope and sample references even for an empty file.
+    agreement(report, labels)
+    merged = {**labels, 'labels': stored_labels(report) + labels['labels']}
+    tables = agreement(report, merged)
+    result = copy.deepcopy(report)
+    result['uncertainty'].update(agreement=tables, labels=copy.deepcopy(merged['labels']))
+    return result
+
+
+def agreement_states(report):
+    """Global disagreement flags and held-out coverage, including older saved tables."""
+    tables = report['uncertainty']['agreement']
+    samples = {_key(row): row for row in report['samples']}
+    states = {}
+    for measure in MEASURES:
+        table = tables.get(measure, {})
+        heldout = table.get('heldout_labelled')
+        if heldout is None:
+            heldout = sum(samples.get(_key(row), {}).get('split') == 'heldout' for row in table.get('rows', []))
+        states[measure] = {'labelled': table.get('labelled', 0), 'heldout_labelled': heldout,
+                           'uncertain': bool(table.get('uncertain')),
+                           'heldout_status': 'unlabelled' if not heldout else
+                           'uncertain' if table.get('uncertain') else 'certain'}
+    return states
 
 
 def _measure_value(row, name):
@@ -222,7 +304,7 @@ def build_report(records, run, fixture, labels=None):
                                     'cost': {'judge': cost, 'worker_usage': 'unavailable',
                                              'worker_reason': 'subscription CLI'}}}
     if labels is not None:
-        report['uncertainty']['agreement'] = agreement(report, labels)
+        report = with_labels(report, labels)
     return report
 
 
@@ -249,7 +331,7 @@ def render_markdown(report):
     run, fixture = report['live_evidence'], report['fixture_support']
     lines = [f"# C2 continuity {run['id']}", '', '## Fixture support', '',
              'Synthetic fixture support is not live evidence.', '',
-             f"- Scenario file: {_cell(fixture.get('scenario_file', fixture.get('scenario_files')))}",
+             f"- Scenario files: {_cell(fixture.get('scenario_files', fixture.get('scenario_file')))}",
              f"- Scenario SHA-256: {fixture['scenario_digest']}",
              f"- Rubric: {fixture['rubric_version']} ({_cell(fixture.get('rubric_file'))})",
              f"- Rubric SHA-256: {fixture['rubric_digest']}",
@@ -291,15 +373,20 @@ def render_markdown(report):
     lines += ['## Uncertainty', '', f"- Measures status counts: {_cell(uncertainty['status_counts'])}",
               f"- Missing samples: {uncertainty['missing_samples']}", '',
               'Epoch spread per scenario/measure appears above; gains within either arm’s spread are uncertain.', '',
-              '| measure | labelled | agreed | uncertain |', '| --- | --- | --- | --- |']
-    for measure, row in uncertainty['agreement'].items():
-        lines.append(f"| {measure} | {row['labelled']} | {row['agreed']} | {row['uncertain']} |")
+              '| measure | labelled | agreed | rate exceeds threshold | held-out status |',
+              '| --- | --- | --- | --- | --- |']
+    states = agreement_states(report)
+    for measure, state in states.items():
+        table = uncertainty['agreement'].get(measure, {})
+        lines.append(f"| {measure} | {state['labelled']} | {table.get('agreed', 0)} | "
+                     f"{state['uncertain'] if state['labelled'] else 'unlabelled'} | {state['heldout_status']} |")
+    lines += ['', 'Held-out measures without human labels are unlabelled: neither certain nor uncertain.']
     lines += ['', '| measure | scenario | epoch | run | judge | human |', '| --- | --- | --- | --- | --- | --- |']
     for measure, group in uncertainty['agreement'].items():
         for row in group['disagreements']:
             lines.append('| ' + ' | '.join(map(_cell, [measure, row['scenario'], row['epoch'], row['run_id'], row['judge'], row['human']])) + ' |')
-    if not uncertainty['agreement']:
-        lines += ['', 'No human labels supplied; agreement is unmeasured.']
+    if not any(row['labelled'] for row in states.values()):
+        lines += ['', 'No human labels supplied: judged deltas are judge-only, unlabelled.']
     unsupported = report['unsupported_paths']
     lines += ['', '## Unsupported paths', '', f"Proactive usefulness not observed: {unsupported['proactive_not_observed']} samples.", '']
     lines += ['- ' + item for item in unsupported['limitations']]
@@ -326,10 +413,12 @@ def labels_template(report, extra_ids=()):
     wanted = set(extra_ids)
     if wanted - {r['scenario'] for r in report['samples']}:
         raise ValueError('Extra scenario ids must exist in the report')
+    selected = [r for r in report['samples'] if r['split'] == 'heldout' or r['scenario'] in wanted]
     return {'version': 'initiative-labels-v1', 'rubric': report['fixture_support']['rubric_version'],
             'labels': [{**{k: r[k] for k in ('run_id', 'scenario', 'worker', 'epoch')}, 'labeller': 'owner',
-                        'measures': {m: None for m in MEASURES}}
-                       for r in report['samples'] if r['split'] == 'heldout' or r['scenario'] in wanted]}
+                        'measures': {m: None for m in MEASURES}} for r in selected if not not_labellable(r)],
+            'not_labellable': [{**{k: r[k] for k in ('run_id', 'scenario', 'worker', 'epoch')},
+                                'reason': not_labellable(r)} for r in selected if not_labellable(r)]}
 
 
 def _change(a, b, direction, uncertain=False):
@@ -364,10 +453,16 @@ def compare(baseline, candidate):
     arows, brows = paired_index(baseline['samples'], pair_key), paired_index(candidate['samples'], pair_key)
     if arows.keys() != brows.keys():
         raise ValueError('Paired scenario/epoch selections differ')
-    uncertain = {m for r in (baseline, candidate) for m, v in r['uncertainty']['agreement'].items() if v['uncertain']}
+    states = [agreement_states(r) for r in (baseline, candidate)]
+    uncertain = {m for arm in states for m, state in arm.items() if state['uncertain']}
+    unlabelled = {m for arm in states for m, state in arm.items() if state['heldout_status'] == 'unlabelled'}
+    has_labels = any(state['labelled'] for arm in states for state in arm.values())
     result = {'baseline_revision': ar.get('git_head'), 'candidate_revision': br.get('git_head'),
               'revision_warning': 'Revisions should differ' if ar.get('git_head') == br.get('git_head') else None,
-              'splits': {}, 'uncertain_measures': sorted(uncertain), 'heldout_rule': HELDOUT_RULE}
+              'splits': {}, 'uncertain_measures': sorted(uncertain),
+              'unlabelled_measures': sorted(unlabelled),
+              'verdict_basis': 'human labels supplied' if has_labels else 'judge-only, unlabelled',
+              'heldout_rule': HELDOUT_RULE}
     check_regression, held_regression = False, False
     gains = {'dev': False, 'heldout': False}
     for split in ('dev', 'heldout'):
@@ -381,7 +476,8 @@ def compare(baseline, candidate):
                 change = _change(a['measures'][name], b['measures'][name], direction, label_name in uncertain)
                 metrics[name] = change
                 if name in JUDGED:
-                    gains[split] |= change['change'] == 'improved'
+                    gains[split] |= (change['change'] == 'improved' and
+                                     (split != 'heldout' or not has_labels or name not in unlabelled))
                     if split == 'heldout' and direction is not None:
                         # Raw regression veto also applies inside noise or a disputed grade.
                         av, bv = a['measures'][name]['mean'], b['measures'][name]['mean']
@@ -416,4 +512,5 @@ def compare(baseline, candidate):
 
 
 def compare_markdown(result):
-    return '# C2 paired comparison\n\n' + result['heldout_rule'] + '\n\n```json\n' + json.dumps(result, indent=2) + '\n```\n'
+    return (f"# C2 paired comparison\n\nVerdict: **{result['verdict']}** ({result['verdict_basis']}).\n\n"
+            + result['heldout_rule'] + '\n\n```json\n' + json.dumps(result, indent=2) + '\n```\n')
