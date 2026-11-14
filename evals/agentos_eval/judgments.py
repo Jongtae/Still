@@ -5,6 +5,7 @@ policy, callers and provider adapters. No evaluator dependency or runtime policy
 """
 import hashlib
 import importlib
+import inspect
 import json
 import os
 import re
@@ -435,6 +436,9 @@ def effective_runtime(service, audit=()):
                'destination', 'available', 'requalification_needed', 'cli_version')
     active = {k: status['active'][k] for k in allowed if k in status.get('active', {})
               and isinstance(status['active'][k], (str, bool, int, float, type(None)))}
+    # A present null means this run used the route's default effort. Older
+    # reports that omit the field cannot establish that comparison condition.
+    active.setdefault('effort', None)
     qualification = status.get('active', {}).get('qualification', {})
     if isinstance(qualification, dict):
         active['qualification'] = {k: qualification[k] for k in ('suite_version', 'model', 'score', 'cli_version',
@@ -476,12 +480,39 @@ def summarize(rows):
                          for tag in sorted({t for r in rows for t in r['targets']})})
 
 
-def report(rows, run_meta, runtime):
+def qualification_identity(rows):
+    selected = {row['id'] for row in rows if row['role'] == 'qualification-suite'}
+    if not selected:
+        return None
+    suite = still().decision_qualification
+    identity = {'suite_version': suite.SUITE_VERSION, 'digest': None}
+    try:
+        definitions = {
+            'qualification-' + name: {'source': inspect.getsource(runner),
+                                     'values': inspect.getclosurevars(runner).nonlocals}
+            for name, runner in suite.CASES if 'qualification-' + name in selected
+        }
+        if set(definitions) != selected:
+            return identity
+        # Module text also covers the helpers/constants used by these closures.
+        content = {'module': Path(suite.__file__).read_text(encoding='utf-8'), 'cases': definitions}
+        identity['digest'] = hashlib.sha256(json.dumps(content, sort_keys=True, ensure_ascii=False,
+                                                     separators=(',', ':')).encode('utf-8')).hexdigest()
+    except (OSError, TypeError, ValueError):
+        pass  # Dynamic/unavailable definitions cannot establish equivalent conditions.
+    return identity
+
+
+def report(rows, run_meta, runtime, *, cases=None):
     src = Path(run_meta.get('src', still().src))
     evidence = run_meta.get('evidence_class', 'fixture')
     if evidence != 'fixture' and not evidence.startswith('live-route:'):
         raise ValueError('Unknown evidence class')
     return dict(harness_version=HARNESS_VERSION, case_set_version=run_meta.get('case_set_version', CASE_VERSION),
+                case_set_digest=(hashlib.sha256(json.dumps(cases, sort_keys=True, ensure_ascii=False,
+                                                          separators=(',', ':')).encode('utf-8')).hexdigest()
+                                 if cases is not None else None),
+                qualification_identity=qualification_identity(rows),
                 evidence_class=evidence, git_head=run_meta.get('git_head'), src=str(src),
                 prompt_digests={str(p.relative_to(src)): hashlib.sha256(p.read_bytes()).hexdigest()[:12]
                                 for p in sorted((src / 'personal_agent/prompts').glob('*.md'))},
@@ -533,6 +564,24 @@ def compare(baseline, head):
         raise CaseError('Cannot compare different case set versions')
     reasons = [f'runtime.{k} differs' for k in ('transport', 'engine', 'requested_model', 'model_policy')
                if baseline['runtime'].get('active', {}).get(k) != head['runtime'].get('active', {}).get(k)]
+    if not baseline.get('case_set_digest') or not head.get('case_set_digest'):
+        reasons.append('case_set_digest missing; case content equivalence is unverified')
+    elif baseline['case_set_digest'] != head['case_set_digest']:
+        reasons.append('case_set_digest differs')
+    before_runtime, after_runtime = baseline['runtime'].get('active', {}), head['runtime'].get('active', {})
+    if 'effort' not in before_runtime or 'effort' not in after_runtime:
+        reasons.append('runtime.effort missing; reasoning effort equivalence is unverified')
+    elif before_runtime['effort'] != after_runtime['effort']:
+        reasons.append('runtime.effort differs')
+    if baseline['runtime'].get('suite_version') != head['runtime'].get('suite_version'):
+        reasons.append('runtime.suite_version differs')
+    if any(row['role'] == 'qualification-suite' for report in (baseline, head) for row in report['rows']):
+        before_suite = baseline.get('qualification_identity') or {}
+        after_suite = head.get('qualification_identity') or {}
+        if not before_suite.get('digest') or not after_suite.get('digest'):
+            reasons.append('qualification identity missing; qualification equivalence is unverified')
+        elif before_suite != after_suite:
+            reasons.append('qualification identity differs')
     if baseline['evidence_class'] != head['evidence_class']:
         reasons.append('evidence_class differs')
     def verdict(row):
@@ -674,7 +723,7 @@ def live_run(args, factory=None):
         meta = dict(src=args.src, git_head=measured_head, case_set_version=cases['version'],
                     evidence_class=('live-route:' + runtime['active'].get('transport', 'unknown')
                                     if (factory or service_factory) is _production_service_factory else 'fixture'))
-        result = report(rows, meta, runtime)
+        result = report(rows, meta, runtime, cases=cases)
         if pinned_model is not None:
             result['pinned_model'] = pinned_model
         result['requalification'] = qualification

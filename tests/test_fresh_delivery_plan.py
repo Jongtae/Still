@@ -475,19 +475,19 @@ def test_frontier_declares_only_the_owner_authorized_first_wave():
     assert program["activated_by"]["issue"] == program["issue"] == 822
     assert program["ordered_substeps"] == FRONTIER_FIRST_WAVE
     assert [items[name]["issue"] for name in FRONTIER_FIRST_WAVE] == [823, 824]
-    assert program["active_substeps"] == ["FRONTIER-EVAL-01"]
-    assert program["completed_substeps"] == ["FRONTIER-SPEC-01"]
+    # #824's own PR completes the first wave on merge; nothing else is selected.
+    assert program["active_substeps"] == []
+    assert program["completed_substeps"] == FRONTIER_FIRST_WAVE
     assert program["reserved_substeps"] == FRONTIER_RESERVED
     assert [items[name]["issue"] for name in FRONTIER_RESERVED] == [825, 826, 827]
-    assert items["FRONTIER-SPEC-01"]["activation_status"] == "complete-on-merge"
-    assert items["FRONTIER-EVAL-01"]["activation_status"] == "parent-controlled"
-    specification = items["FRONTIER-01"]["completed_substeps"]["FRONTIER-SPEC-01"]
-    assert specification["issue"] == 823
-    assert specification["status"] == "complete-on-merge"
+    assert all(items[name]["activation_status"] == "complete-on-merge" for name in FRONTIER_FIRST_WAVE)
+    done = items["FRONTIER-01"]["completed_substeps"]
+    assert {name: (done[name]["issue"], done[name]["status"]) for name in done} == {
+        "FRONTIER-SPEC-01": (823, "complete-on-merge"), "FRONTIER-EVAL-01": (824, "complete-on-merge")}
     assert all(items[name]["activation_status"] == "reserved" for name in FRONTIER_RESERVED)
     completed = set(current["history"]["documented_completed_iterations"])
-    assert "FRONTIER-SPEC-01" in completed
-    assert not {"FRONTIER-01", "FRONTIER-EVAL-01", *FRONTIER_RESERVED} & completed
+    assert set(FRONTIER_FIRST_WAVE) <= completed
+    assert not {"FRONTIER-01", *FRONTIER_RESERVED} & completed
     invariants.assert_completed_work_is_unselectable(TestCase(), current)
     assert items["FRONTIER-PROVENANCE-01"]["dependency_issues"] == [818, 819, 820]
     assert items["FRONTIER-RECOVERY-01"]["dependency_issues"] == [821]
