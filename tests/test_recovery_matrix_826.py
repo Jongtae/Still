@@ -336,7 +336,6 @@ def test_w4_telegram_definitely_unsent_notice_is_unknown_today(case):
     assert service.store.notification(note['id'])['state'] == 'unknown'
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason='#826 W4: Mattermost cursor commits before covered reactions are applied')
 def test_w4_mattermost_reaction_survives_cursor_crash(case):
     """W4 a reaction lost after cursor commit should be replayed after restart."""
     c = case(mm_cases.OwnerActs)
@@ -353,6 +352,28 @@ def test_w4_mattermost_reaction_survives_cursor_crash(case):
     service.mattermost_surface.receive()
     assert service.store.notification(note['id'])['state'] == 'sent'
     assert service.store.config('settings_change_drafts')[draft]['state'] == 'applied'
+
+
+def test_w4_mattermost_correction_survives_cursor_crash(case):
+    """W4 a correction is queued before the cursor; recovery interrupts the earlier Work."""
+    c = case(mm_cases.OwnerActs)
+    c.owner_says('Read the requested records')
+    running = c.mm_jobs()[0]['id']
+    _status(c.store, running, 'running')
+    post = c.fake.post(mm_cases.OWNER, c.dm(), 'Use the updated records instead')
+    with mock.patch.object(c.service, 'consider_steer', side_effect=RuntimeError('crash before steer')):
+        with pytest.raises(RuntimeError, match='crash before steer'):
+            c.surface.receive()
+    assert c.surface.config()['cursor'] == post['update_at']
+    correction = next(job for job in c.mm_jobs() if job['id'] != running)
+    assert correction['status'] == 'queued'
+    service = _restart(c.store)
+    service.mattermost_transport = c.fake
+    service.mattermost_surface.receive()
+    assert service.store.job(running)['status'] == 'interrupted'
+    assert service.store.job(correction['id'])['status'] == 'queued'
+    assert service.store.job(correction['id'])['message'] == post['message']
+    assert len(service.store.jobs()) == 2
 
 
 @pytest.mark.xfail(strict=True, raises=AssertionError, reason='#826 W4: Slack press key commits before the answer starts')

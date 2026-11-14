@@ -179,6 +179,8 @@ class MattermostSurface(DirectMessageSurface):
         self.service = service
         self._transport = transport
         self._lock = threading.Lock()
+        self._acting = set()
+        self._acting_lock = threading.Lock()
         # ``mattermost_turns`` is created with the store (``QuickStore``), never here: a surface is first
         # built inside other transactions.
 
@@ -321,23 +323,70 @@ class MattermostSurface(DirectMessageSurface):
                 if at < reacted_from or at == reacted_from and key in done_at or key in keys:
                     continue
                 keys[key] = at
-                acts.append((at, post['id'], reaction.get('emoji_name') or ''))
+                bound = service.owner_acts.bound_to(self, owner, generation, post['id'])
+                acts.append((at, {'key': key, 'post_id': post['id'],
+                                  'emoji': reaction.get('emoji_name') or '', 'bound': bound}))
         if keys:
             reacted = max(reacted_from, *keys.values())
         at_cursor = sorted({key for key, at in keys.items() if at == reacted}
                            | (done_at if reacted == reacted_from else set()))[-50:]
         with service.lock:
             current = self.config()
+            pending = []
             if current.get('generation') == generation:
+                pending = [entry for entry in current.get('pending_reactions') or ()
+                           if entry.get('generation', generation) == generation]
+                pending_keys = {entry['key'] for entry in pending}
+                pending = (pending + [entry for _at, entry in sorted(acts, key=lambda act: act[0])
+                                      if entry['key'] not in pending_keys])[-50:]
                 service.store.put(CONFIG_KEY, {**current, 'cursor': cursor, 'seen_created': seen,
-                                               'reaction_cursor': reacted, 'reactions_at_cursor': at_cursor})
-        acts = [(post_id, name) for _at, post_id, name in sorted(acts)]
+                                               'reaction_cursor': reacted, 'reactions_at_cursor': at_cursor,
+                                               'pending_reactions': pending})
         for work_id, text in created:
             if service.is_natural_language(text):
                 service.consider_steer(work_id, text)
-        for post_id, name in acts:
-            self.ingest_reaction(post_id, name, owner, generation)
+        for entry in pending:
+            key = entry['key']
+            acting = (generation, key)
+            with service.lock:
+                current = self.config()
+                # A worker may have cleared this entry since the batch took its snapshot.
+                if (current.get('generation') != generation
+                        or not any(item['key'] == key for item in current.get('pending_reactions') or ())):
+                    continue
+                with self._acting_lock:
+                    if acting in self._acting:
+                        continue
+                    self._acting.add(acting)
+            spawned = False
+            try:
+                if entry['bound'] and not service.owner_acts.bound_to(self, owner, generation, entry['post_id']):
+                    self.send_owner(self._text('act_stale'), owner=owner, generation=generation)
+                    self._clear_reaction(key, generation)
+                else:
+                    result = self.ingest_reaction(entry['post_id'], entry['emoji'], owner, generation,
+                                                  done=lambda key=key: self._clear_reaction(key, generation))
+                    spawned = result == 'owner_act'
+                    if not spawned:
+                        self._clear_reaction(key, generation)
+            finally:
+                if not spawned:
+                    with self._acting_lock:
+                        self._acting.discard(acting)
         return [work_id for work_id, _text in created]
+
+    def _clear_reaction(self, key, generation):
+        """Clear only this pairing's durable act before releasing its in-process claim (#843)."""
+        try:
+            with self.service.lock:
+                current = self.config()
+                if current.get('generation') == generation:
+                    pending = [entry for entry in current.get('pending_reactions') or ()
+                               if entry['key'] != key and entry.get('generation', generation) == generation]
+                    self.service.store.put(CONFIG_KEY, {**current, 'pending_reactions': pending})
+        finally:
+            with self._acting_lock:
+                self._acting.discard((generation, key))
 
     def _ingest_post(self, post, owner, generation):
         current = self.config()
