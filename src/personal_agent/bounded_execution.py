@@ -104,7 +104,7 @@ _STATUS_HINTS = (
 #
 # Discovery grants nothing: an offered tool still goes through
 # ``Capabilities.execute`` (declared/allowed tool, current package state,
-# provenance egress guard, owner-approved page scope, idempotent writes) on
+# provenance egress guard, idempotent writes) on
 # every call.  An action a profile does not offer has a *declared* reason, so a
 # missing binding is reported as a route limit, never as global incapability,
 # and an undeclared omission is a diagnosable defect (scripts/agentos_doctor.py).
