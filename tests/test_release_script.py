@@ -592,6 +592,38 @@ class ReleaseWorkflowShapeTests(unittest.TestCase):
                 self.assertEqual(len(calls), 1)
                 self.assertNotIn('PATCH', calls[0])
 
+    def run_close_issue(self, state):
+        """The release-issue step with a fake `gh` that reports `state` and logs every call."""
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp) / 'calls'
+            gh = Path(tmp) / 'gh'
+            gh.write_text('#!/bin/bash\necho "$*" >> "$GH_LOG"\n'
+                          'if [[ "$1" == api ]]; then echo "$FAKE_STATE"; fi\n')
+            gh.chmod(0o755)
+            step = self.jobs['close-milestone']['steps'][1]
+            result = subprocess.run(['bash', '-c', step['run']], capture_output=True, text=True,
+                                    env={**os.environ, 'PATH': f'{tmp}:{os.environ["PATH"]}', 'GH_LOG': str(log),
+                                         'FAKE_STATE': state, 'GITHUB_REPOSITORY': 'o/r',
+                                         'VERSION': '9.0.0', 'ISSUE': '42'})
+            calls = log.read_text().splitlines() if log.exists() else []
+        return step, result, calls
+
+    def test_the_release_issue_closes_after_the_milestone_and_is_safe_to_rerun(self):
+        """#844: the preparation PR only refers to the issue; publication closes it."""
+        step, opened, calls = self.run_close_issue('open')
+        self.assertEqual(step['env'], {'GH_TOKEN': '${{ github.token }}',
+                                       'VERSION': '${{ needs.prepare.outputs.version }}',
+                                       'ISSUE': '${{ needs.prepare.outputs.issue }}'})
+        self.assertEqual(opened.returncode, 0, opened.stderr)
+        self.assertEqual(calls[0], 'api repos/o/r/issues/42 --jq .state')
+        self.assertTrue(calls[1].startswith('issue close 42 --repo o/r --reason completed --comment v9.0.0 is published: '
+                                            'https://github.com/o/r/releases/tag/v9.0.0.'), calls[1])
+        self.assertEqual(len(calls), 2)
+
+        _, again, calls = self.run_close_issue('closed')
+        self.assertEqual(again.returncode, 0, again.stderr)
+        self.assertEqual(calls, ['api repos/o/r/issues/42 --jq .state'])
+
     def test_publication_waits_for_the_release_environment_and_its_credential(self):
         publish = self.jobs['publish']
         self.assertEqual(publish['environment'], 'release')
