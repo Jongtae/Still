@@ -1436,12 +1436,18 @@ class TelegramSurface(ConversationSurface):
                     # The sent receipt and reaction/control anchor commit together.
                     if isinstance(message_id,int):
                         service.telegram_turns.record_reply(job['id'],job['chat_id'],message_id,db=db)
-            except Exception:
+            except Exception as exc:
                 # Telegram may already have accepted the reply. Never replay it
                 # if local persistence failed; a process death is covered by recovery.
-                with service.store.db() as db:
-                    db.execute("UPDATE jobs SET delivery='unknown' WHERE id=? AND delivery='sending'",(job['id'],))
-                raise
+                status='unknown'
+                LOG.warning('telegram receipt commit failed work=%s kind=%s',job['id'],type(exc).__name__)
+                try:
+                    with service.store.db() as db:
+                        db.execute("UPDATE jobs SET delivery='unknown' WHERE id=? AND delivery='sending'",(job['id'],))
+                except Exception as fallback_exc:
+                    LOG.warning('telegram uncertain receipt not saved work=%s kind=%s',job['id'],type(fallback_exc).__name__)
+                # Continue through outcome presentation and presence cleanup;
+                # a remaining sending row is made unknown by restart recovery.
             # #818/#836: after a reply confirmed sent (never 'unknown'), the Work's
             # one ask about its pending memory proposals.
             try:

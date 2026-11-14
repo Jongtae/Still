@@ -554,8 +554,7 @@ def test_d3_anchor_write_failure_leaves_delivery_unknown_not_resent(case):
     """D3 a failed anchor write never leaves sent without an anchor, and nothing is resent."""
     c, work = _telegram(case)
     with mock.patch.object(c.service.telegram_turns, 'record_reply', side_effect=RuntimeError('crash in anchor write')):
-        with pytest.raises(RuntimeError, match='crash in anchor write'):
-            c.service.deliver_one()
+        c.service.deliver_one()
     assert c.store.job(work)['delivery'] == 'unknown'
     assert c.service.telegram_turns.get(work)['reply_message_id'] is None
     service = _restart(c.store, c.service)

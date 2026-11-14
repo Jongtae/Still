@@ -1,5 +1,8 @@
 """#842 D2: fixture Telegram wires and real SQLite delivery/restart boundaries."""
+import json
+import threading
 import time
+from contextlib import contextmanager
 from unittest import mock
 
 import pytest
@@ -7,7 +10,7 @@ import pytest
 from personal_agent.conversation_handoff import TelegramNotSent, TelegramRejected
 from personal_agent.decision import FixtureDecisionEngine
 from personal_agent.providers import ProviderError
-from personal_agent.quickstart_service import AgentService
+from personal_agent.quickstart_service import AgentService, BROWSER_LOGIN_SECONDS
 from personal_agent.quickstart_store import QuickStore
 from personal_agent.work_execution import WorkRun
 import test_quickstart as quick
@@ -86,8 +89,7 @@ def test_anchor_failure_rolls_back_receipt_and_anchor_without_resending(case):
         original(*args, **kwargs)
         raise RuntimeError('cut off before commit')
     with mock.patch.object(c.service.telegram_turns, 'record_reply', side_effect=lost_anchor):
-        with pytest.raises(RuntimeError, match='before commit'):
-            c.service.deliver_one()
+        c.service.deliver_one()
     assert c.store.job(work)['delivery'] == 'unknown'
     assert c.service.telegram_turns.get(work)['reply_message_id'] is None
     service = _restart(c)
@@ -278,3 +280,252 @@ def test_after_work_marker_never_shows_in_the_owner_trail(case):
     assert 'after_work' in tools
     assert all(step[0] != 'after_work' for step in c.service.work_steps(work))
     assert 'after_work' in c.service.LOCAL_NON_TOOL_EVENTS
+
+
+def _marker(store, work):
+    with store.db() as db:
+        return dict(db.execute("SELECT * FROM tool_events WHERE job_id=? AND tool='after_work' ORDER BY id DESC", (work,)).fetchone())
+
+
+@pytest.mark.parametrize('age', [10, BROWSER_LOGIN_SECONDS, 2 * 86400])
+def test_sweep_login_respects_requested_age_and_opens_once(case, age):
+    c, work = _telegram(case)
+    _finish(c, work)
+    now = time.time()
+    login = {'state': 'requested', 'requested_at': now - age, 'explicit': True,
+             'nonce': 'same-nonce', 'url': 'https://example.com/', 'host': 'example.com'}
+    c.service._put_browser_login(work, login)
+    service = _restart(c)
+    with mock.patch.object(service, '_login_cookie_marks', return_value={}), \
+         mock.patch.object(service.browser_profile, 'open_for_login', return_value={'state': 'opening', 'window': 'fixture'}) as opened, \
+         mock.patch.object(service, 'offer_browser_login', wraps=service.offer_browser_login) as offer:
+        assert service.sweep_after_work(now=now) == 1
+        assert service.sweep_after_work(now=now + 61) == 0
+        assert opened.call_count == offer.call_count == int(age < BROWSER_LOGIN_SECONDS)
+    row = service._browser_login(work)
+    assert row['nonce'] == login['nonce']
+    assert row['requested_at'] == login['requested_at']
+    if age >= BROWSER_LOGIN_SECONDS:
+        assert row == login  # expiry remains the normal reconciler's job
+        service.process_browser_logins()
+        assert service._browser_login(work)['state'] == 'expired'
+
+
+@pytest.mark.parametrize('approved', [False, True])
+def test_sweep_context_approval_uses_current_attachment(case, approved):
+    c, work = _telegram(case)
+    _finish(c, work)
+    with c.store.db() as db:
+        db.execute('INSERT INTO context_job_attachments VALUES (?,?,?,?,?)', (work, '[]', 'fixture', int(approved), time.time()))
+        db.execute("UPDATE tool_events SET detail=? WHERE job_id=? AND tool='after_work'",
+                   (json.dumps({'context_approval_needed': True}), work))
+    service = _restart(c)
+    assert service.sweep_after_work() == 1
+    note = c.store.notification_of(work, 'context_approval_needed')
+    assert bool(note) is not approved
+    if not approved:
+        assert note['state'] == 'queued'
+        assert service.deliver_notification()
+        assert not service.deliver_notification()
+        assert len(_sent(c)) == 1
+
+
+def test_sweep_preparation_proposal_uses_existing_proposal(case):
+    c, work = _telegram(case)
+    proposal = c.service.preparations.create(kind='reminder', goal='fixture reminder', due_at=time.time() + 3600,
+        timezone='Asia/Seoul', recurrence=None, channel='telegram', created_from=work, state='proposed')
+    _finish(c, work)
+    service = _restart(c)
+    assert service.sweep_after_work() == 1
+    note = c.store.notification_of(work, 'preparation_proposed')
+    assert note['state'] == 'queued'
+    assert [p['id'] for p in service.offered_proposals(note)[0]] == [proposal['id']]
+    assert all(service.preparations.get(proposal['id'])[key] == value for key, value in proposal.items())
+    assert service.deliver_notification()
+    assert not service.deliver_notification()
+
+
+@pytest.mark.parametrize('expired', [False, True])
+def test_sweep_budget_offer_preserves_nonce_and_absolute_deadline(case, expired):
+    c, work = _telegram(case)
+    _finish(c, work)
+    with c.store.db() as db:
+        db.execute("UPDATE jobs SET status='partial' WHERE id=?", (work,))
+    budget = c.service.work_budget(work)
+    budget.spend_attempt()
+    budget.ledger.pause()
+    offer = {'state': 'offered', 'nonce': 'original-nonce', 'deadline': time.time() + (-1 if expired else 3600),
+             'ledger_key': budget.ledger.key, 'epoch': c.store.config(budget.ledger.key)['epoch'],
+             'generation': c.service._owner_generation(c.service.issuer_owner_id(c.store.job(work))),
+             'text': 'Continue the fixture?', 'progress': 'fixture progress'}
+    c.store.put('budget_continue:' + work, offer)
+    service = _restart(c)
+    assert service.sweep_after_work() == 1
+    note = c.store.notification_of(work, 'budget_continue')
+    assert bool(note) is not expired
+    assert service.budget_continue_offer(work) == offer
+    if not expired:
+        assert note['fingerprint'] == offer['nonce']
+        assert service.deliver_notification()
+        assert not service.deliver_notification()
+
+
+def test_sweep_releases_pending_budget_hold_and_photo(case):
+    c, work = _telegram(case)
+    c.store.attach_telegram_photo(work, 'fixture-photo')
+    job = c.store.job(work)
+    run = WorkRun(job, time.time())
+    run.outcome = 'partial'
+    run.response = 'fixture partial'
+    with c.store.db() as db:
+        db.execute("INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)",
+                   (work, 'model', 'stopped', json.dumps({'code': 'turn_budget'}), time.time()))
+    c.service._finish_work(run)
+    assert c.service.budget_continue_offer(work) == {'state': 'pending'}
+    assert c.store.telegram_photo_file_ids(work) == ['fixture-photo']
+    service = _restart(c)
+    with mock.patch.object(service, '_offer_budget_continue', side_effect=AssertionError('must not mint an offer')):
+        assert service.sweep_after_work() == 1
+    assert service.budget_continue_offer(work) == {'state': 'none'}
+    assert c.store.telegram_photo_file_ids(work) == []
+    assert not c.store.notification_of(work, 'budget_continue')
+
+
+def test_sweep_expired_settings_draft_is_not_queued(case):
+    c, work = _telegram(case)
+    with mock.patch.object(c.service.settings_orchestrator, 'TTL_SECONDS', -1):
+        _settings_draft(c, work)
+    _finish(c, work)
+    assert _restart(c).sweep_after_work() == 1
+    assert not c.store.notification_of(work, 'settings_change_proposed')
+
+
+def test_sweep_keeps_worker_exclusion_without_holding_service_lock(case):
+    c, work = _telegram(case)
+    _finish(c, work)
+    c.service._put_browser_login(work, {'state': 'requested', 'requested_at': time.time(), 'explicit': True,
+        'nonce': 'same', 'url': 'https://example.com/', 'host': 'example.com'})
+    service = _restart(c)
+    entered, release, claimed = threading.Event(), threading.Event(), threading.Event()
+    def slow_cookies(row):
+        entered.set()
+        assert release.wait(5)
+        return {}
+    with mock.patch.object(service, '_login_cookie_marks', side_effect=slow_cookies), \
+         mock.patch.object(service.browser_profile, 'open_for_login', return_value={'state': 'opening'}), \
+         mock.patch.object(service, '_claim_queued_work', side_effect=lambda: claimed.set() or False):
+        sweep = threading.Thread(target=service.sweep_after_work)
+        worker = threading.Thread(target=service._run_one)
+        sweep.start()
+        try:
+            assert entered.wait(5)
+            assert service.lock.acquire(timeout=1)
+            service.lock.release()
+            assert not service.worker_lock.acquire(blocking=False)
+            worker.start()
+            assert not claimed.wait(.1)
+        finally:
+            release.set()
+            sweep.join(5)
+            if worker.ident is not None:worker.join(5)
+        assert claimed.is_set()
+        assert not sweep.is_alive() and not worker.is_alive()
+
+
+@pytest.mark.parametrize('failure', ['job', 'forgotten', 'stopped', 'settlement'])
+def test_sweep_contains_row_failures_and_bounds_attempts(case, failure):
+    c, work = _telegram(case)
+    _finish(c, work)
+    service = _restart(c)
+    original_db = service.store.db
+    @contextmanager
+    def failing_db():
+        with original_db() as db:
+            class Connection:
+                def execute(self, sql, args=()):
+                    if (failure == 'forgotten' and 'JOIN forgotten_messages' in sql or
+                            failure == 'settlement' and "SET status='completed'" in sql):
+                        raise RuntimeError('fixture row failure')
+                    return db.execute(sql, args)
+            yield Connection()
+    target = service.store if failure == 'job' else service
+    with mock.patch.object(service.store, 'db', side_effect=failing_db), \
+         mock.patch.object(target, 'job' if failure == 'job' else 'work_stopped',
+                           **({'side_effect': RuntimeError('fixture row failure')} if failure in ('job', 'stopped') else {'return_value': False})):
+        now = time.time()
+        for attempt in range(3):
+            assert service.sweep_after_work(now=now + attempt * 61) == 0
+            assert json.loads(_marker(c.store, work)['detail'])['attempts'] == attempt + 1
+    assert _marker(c.store, work)['status'] == 'failed'
+    assert service.sweep_after_work(now=now + 183) == 0
+
+
+def test_fifty_poisoned_markers_do_not_starve_newer_work(case):
+    c, work = _telegram(case)
+    _finish(c, work)
+    # Fifty separate terminal Works ahead of a healthy one.
+    bad = [work]
+    for index in range(49):
+        job = c.store.enqueue('fixture', 'poison-' + str(index))
+        bad.append(job)
+    for job in bad[1:]:_finish(c, job)
+    newer = c.store.enqueue('fixture', 'healthy', channel='telegram:g', chat_id=42)
+    _settings_draft(c, newer)
+    _finish(c, newer)
+    service = _restart(c)
+    original = service.store.job
+    def job_read(job):
+        if job in bad:raise RuntimeError('poison')
+        return original(job)
+    with mock.patch.object(service.store, 'job', side_effect=job_read):
+        now = time.time()
+        for attempt in range(3):assert service.sweep_after_work(now=now + attempt * 61) == 0
+        assert service.sweep_after_work(now=now + 183) == 1
+    assert all(_marker(c.store, job)['status'] == 'failed' for job in bad)
+    assert c.store.notification_of(newer, 'settings_change_proposed')['state'] == 'queued'
+
+
+def test_start_continues_when_startup_sweep_fails(case):
+    c, _ = _telegram(case)
+    with mock.patch.object(c.service, 'sweep_after_work', side_effect=RuntimeError('fixture startup failure')) as sweep, \
+         mock.patch('personal_agent.quickstart_service.threading.Thread') as thread, \
+         mock.patch('personal_agent.quickstart_service.bridge_sdk_problem', return_value=None):
+        c.service.start()
+        sweep.assert_called_once_with()
+        assert thread.call_count == 4
+        assert thread.return_value.start.call_count == 4
+
+
+def test_anchor_fallback_failure_keeps_loop_alive_and_recovery_never_resends(case):
+    c, work = _telegram(case)
+    original_db = c.store.db
+    @contextmanager
+    def failing_fallback():
+        with original_db() as db:
+            class Connection:
+                def execute(self, sql, args=()):
+                    if "SET delivery='unknown'" in sql:raise RuntimeError('fallback unavailable')
+                    return db.execute(sql, args)
+            yield Connection()
+    c.service.presence[work] = {'fixture': True}
+    with mock.patch.object(c.service.telegram_turns, 'record_reply', side_effect=RuntimeError('anchor unavailable')), \
+         mock.patch.object(c.store, 'db', side_effect=failing_fallback), \
+         mock.patch.object(c.service, '_present_outcome') as present:
+        c.service.deliver_one()
+        assert present.call_args.kwargs['delivered'] is False
+    assert work not in c.service.presence
+    assert c.store.job(work)['delivery'] == 'sending'
+    service = _restart(c)
+    assert c.store.job(work)['delivery'] == 'unknown'
+    service.deliver_one()
+    assert len(_sent(c)) == 1
+
+
+@pytest.mark.parametrize('detail', ['broken json', '[]', '{"attempts":"invalid"}'])
+def test_sweep_unreadable_marker_is_terminal(case, detail):
+    c, work = _telegram(case)
+    _finish(c, work)
+    with c.store.db() as db:
+        db.execute("UPDATE tool_events SET detail=? WHERE job_id=? AND tool='after_work'", (detail, work))
+    assert _restart(c).sweep_after_work() == 0
+    assert _marker(c.store, work)['status'] == 'failed'

@@ -7691,12 +7691,16 @@ class AgentService:
     def offer_budget_continue(self, run):
         """Offer Continue at a budget boundary, or release what the run held for one (#471)."""
         offered=self._offer_budget_continue(run)
-        work_id=run.job['id']
-        if not offered and self.budget_continue_offer(work_id).get('state')=='pending':
-            self.store.put('budget_continue:'+work_id,{'state':'none'})
-            if ws.is_resumable_continuation(run.outcome) and not self.photo_work_has_pending_resume(work_id):
-                self.store.remove_telegram_photo(work_id)
+        if not offered:self._release_budget_continue_hold(run.job,run.outcome)
         return offered
+
+    def _release_budget_continue_hold(self, job, outcome):
+        """Release a pending hold when no Continue offer can be made or recovered."""
+        work_id=job['id']
+        if self.budget_continue_offer(work_id).get('state')=='pending':
+            self.store.put('budget_continue:'+work_id,{'state':'none'})
+            if ws.is_resumable_continuation(outcome) and not self.photo_work_has_pending_resume(work_id):
+                self.store.remove_telegram_photo(work_id)
 
     def _offer_budget_continue(self, run):
         from .agent_runtime import read_state_text
@@ -9394,7 +9398,10 @@ class AgentService:
             self.retire_document_consent()
         except Exception as exc:
             LOG.warning('document consent not retired (%s)',type(exc).__name__)
-        self.sweep_after_work()
+        try:
+            self.sweep_after_work()
+        except Exception as exc:
+            LOG.warning('after work startup recovery failed (%s)',type(exc).__name__)
         def work():
             next_purge_check=0.0
             while not self.stop.is_set():
@@ -9409,7 +9416,10 @@ class AgentService:
                 self.expire_memory_prompts()
                 # #918 review: saved-notices a crash or an unknown delivery left behind are released.
                 self.release_memory_saved_notices()
-                self.sweep_after_work()
+                try:
+                    self.sweep_after_work()
+                except Exception as exc:
+                    LOG.warning('after work recovery failed (%s)',type(exc).__name__)
                 # #709: close and settle in-flow logins (decisions, owner closes, timeouts).
                 self.process_browser_logins()
                 # #990: keep signed-in sites signed in while idle; off this thread (the jar read may wait
