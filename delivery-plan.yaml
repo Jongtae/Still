@@ -1496,7 +1496,7 @@
         "coordination": "The active_substeps field names the integration selection after this PR merges. #824 was authorized to progress in its disjoint worktree during #823 authoring; advancing the selection reuses that worktree. GitHub issues and PRs record actual execution and integration status.",
         "FRONTIER-SPEC-01": {
           "issue": 823,
-          "role": "Codex coordinator; Claude author-controlled cross-review when available",
+          "role": "Codex authored; the Claude Code coordinator (lane I) integrates from 2026-11-14",
           "owned_files": [
             "docs/frontier-delivery.en.md",
             "delivery-plan.yaml",
@@ -1509,7 +1509,7 @@
         },
         "FRONTIER-EVAL-01": {
           "issue": 824,
-          "role": "Codex implementer; Claude author-controlled cross-review when available",
+          "role": "Codex implementer; the Claude Code coordinator (lane I) integrates from 2026-11-14",
           "owned_files": [
             "evals/agentos_eval/judgments.py",
             "tests/test_eval_judgments.py"
@@ -1535,6 +1535,11 @@
           "issue": 823,
           "date": "2026-11-14",
           "decision": "Reconcile #817\u2013#821 and PR #816 by their current owner decisions and concrete bugs; keep existing #42/#202/#403/#799/#722/#744/#16 as canonical work owners."
+        },
+        "coordination-handoff": {
+          "issue": 822,
+          "date": "2026-11-14",
+          "decision": "Coordination moved from the stalled Codex coordinator to a Claude Code coordinator session running parallel lanes under the owner's direct instruction; Codex implements a named piece inside a lane when its brief assigns one. Lanes, function-level ownership and merge order are in frontier-delivery.en.md and the #822 coordinator comment. This record selects no further substep: a reserved unit is recorded as selected or complete by its own PR."
         }
       },
       "parallel_authorization": {

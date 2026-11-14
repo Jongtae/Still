@@ -17,7 +17,6 @@ The historical predecessor order was:
 
 `OSS-MEMORY-01` in the root plan is a **reserved dependency gate without an implementation issue**, not permission to start coding. After #794 and #660, give it its own bounded issue, goal-ready scope, interfaces, ownership and acceptance before implementation. Do not skip the gate to reach #661. A new explicit owner re-plan can change this order; closing a child cannot.
 
-
 The current Still selection is owned by root `next_goal`; [FRONTIER-01](frontier-delivery.en.md) maps the new issue-based work. This predecessor sequence and its ownership list are historical context, and selecting FRONTIER-01 does not resume SECRETARY-01. Current forgetting/deletion semantics are in the [Memory contract](engineering/contracts/memory.en.md#3-currentness-invalidation-expiry-and-forgetting).
 
 ## 2. Reuse; do not repeat completed work
@@ -43,7 +42,7 @@ A clear request is handled in conversation; the owner does not navigate a manage
 
 **Forget.** Under Still #367 (owner decision 2026-10-28), the identified item is excluded from current use and retains an undoable record, including supported transcript targets. Restart preserves exclusion. The prior Jongtae/agentos#918 option B required a seven-day undo followed by payload purge; that requirement is superseded. A memory-notice button has its own expiry, as described in the current Memory contract.
 
-**Complete deletion.** An explicit request such as “delete it completely” uses the immediate-purge path without waiting for the undo window. Report success only for the deletion actually performed; stale targets, partial deletion and failure have distinct truthful results.
+**Complete deletion.** An explicit request such as “delete it completely” uses the immediate-purge path and keeps no undoable record. Report success only for the deletion actually performed; stale targets, partial deletion and failure have distinct truthful results.
 
 An undo binds to owner, exact item and version. It must not restore another owner's item, revive an expired/purged item, or overwrite a later correction. Repeated delivery or callbacks must not repeat the state change.
 

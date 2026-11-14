@@ -6,7 +6,7 @@ Parent [#822](https://github.com/Jongtae/Still/issues/822), specification [#823]
 
 The owner entrusts work across interruptions and days, corrects it in conversation and receives a result grounded in observed evidence. Measure verified completion, avoidable owner interventions, elapsed time, observable usage/cost, recovery and useful proactive outputs. Count required approvals separately from avoidable interventions. Compare products only on disclosed equivalent inputs, accessible tools, accounts and budgets, with held-out tasks and repeated observations. Record sample sizes and uncertainty. A passing unit suite establishes implementation behavior within its fixtures; frontier performance needs comparative operating evidence.
 
-Both Codex and Claude are available development resources under the owner's instruction. Provider refusals remain observed execution facts. Use an eligible alternate agent on the same bounded issue when one route cannot run, preserving the branch and handoff. Subscription capacity does not remove product Work/upkeep limits, grant API judge spend or authorize external account operations. On-demand evaluation scope follows the issue being changed. The earlier calendar estimates and percentage targets were proposals; establish baselines before selecting numerical product targets.
+Both Codex and Claude are available development resources under the owner's instruction; observed availability is recorded under *Observed engine availability* below. Provider refusals remain observed execution facts. Use an eligible alternate agent on the same bounded issue when one route cannot run, preserving the branch and handoff. Subscription capacity does not remove product Work/upkeep limits, grant API judge spend or authorize external account operations. On-demand evaluation scope follows the issue being changed. The earlier calendar estimates and percentage targets were proposals; establish baselines before selecting numerical product targets.
 
 ## Existing foundations and requirement ownership
 
@@ -38,7 +38,7 @@ Memory, scheduling and continuous responsibilities are already implemented in su
 
 For this explicitly owner-authorized parallel wave, `active_substeps` selects the serial integration step. `parallel_authorization` records the disjoint specification and evaluation lanes used during preparation. On integration of the #823 PR, specification work is complete-on-merge and #824 is the sole selected integration step; `parallel_eligible_substeps` is empty at that point. These fields describe selection and ownership; GitHub issues and PRs describe actual work in flight. The controller continues selecting the parent program and cannot independently activate a child.
 
-First-wave implementation is bounded to #823 and #824. #825–#827 are issued design/implementation contracts with explicit predecessors. Their readiness is assessed using current GitHub evidence and scoped file ownership. Closing one issue does not silently activate an unrelated historical program. The checked-in goal declaration does not itself start a background scheduler.
+The plan's first wave is bounded to #823 and #824. The parallel lanes below work on #817–#821 and #825–#827 under the owner's direct 2026-11-14 instruction (#822), each on its own issue, branch and PR. A reserved plan unit (#825–#827) is recorded as selected or complete by its own PR, with its dependency disposition, as the Goal Execution Contract requires; until then it stays reserved in the plan. #825–#827 are issued design/implementation contracts with explicit predecessors. Their readiness is assessed using current GitHub evidence and scoped file ownership. Closing one issue does not silently activate an unrelated historical program. The checked-in goal declaration does not itself start a background scheduler.
 
 ## Interface and state contracts
 
@@ -80,24 +80,72 @@ PR #816's grounded follow-up context and related execution facts remain useful. 
 
 ## Development roles and working protocol
 
-| Role | Initial assignment | Deliverable and file boundary |
+Owner instruction 2026-11-14 moved coordination from the stalled Codex coordinator to a Claude Code coordinator session. The [coordinator handoff on #822](https://github.com/Jongtae/Still/issues/822#issuecomment-6873291477) holds the live lane table; this section records the same topology. Where the two differ, the latest coordinator comment on #822 wins and this section is corrected in the next lane-I change.
+
+### Lanes
+
+Each lane is one Claude Code session with its own worktree and one purpose-named issue branch per PR. Inside a lane, Codex implements a named piece in a scratch worktree, and Claude subagents take the other roles below.
+
+| Lane | Issues / PRs | Lead | Codex piece (scratch worktree) | Review |
+| --- | --- | --- | --- | --- |
+| I integration | #823 / PR #828, #824 / PR #829, #817 constitution text | Claude | None for #828/#829, which Codex authored; the lane-I brief later gave Codex the #817 governance-test update | #828/#829 not escalated: auto-merge; #817 escalated: owner merges |
+| A masking and credentials | #818 then #819, stacked on the same functions | Claude | #818 removal sweep; #819 pattern and error pass-through | Escalated, owner merges |
+| B reads | #820 as B1 read/consent and B2 deferred audit | Claude (B1) | B2 deferred information-use computation | B1 escalated; B2 assessed in its PR |
+| C scheduled work | PR #816, then #821 as C1 owner-accepted runs may ask and C2 no unconfirmed suffix | Claude (C1) | C2 suffix removal and the C1 acceptance-matrix tests | C1 escalated; #816 and C2 not |
+| D recovery specification | #826 | Claude | Fixture and spike tests | Design evidence; Codex adversarial review |
+| E recall and continuity experiments | #827 | Claude | Fixture cases | Design evidence |
+| F attempt provenance | #825 | Claude | Digest helper and tests | Assessed in its PR |
+
+### Roles inside a lane
+
+| Role | Engine and model | Deliverable and boundary |
 | --- | --- | --- |
-| Coordinator | Codex root | Issue dependencies, spec and documented decisions, integration review; one writer for root plan and canonical spec |
-| Evaluation implementer | Codex agent | #824, `evals/agentos_eval/judgments.py` and `tests/test_eval_judgments.py` |
-| Plan contributor | Codex agent | #823 root plan and plan tests; coordinator owns other #823 documents |
-| Cross-model reviewer | Claude when callable | Review actual diff and evidence, return concrete defects/counterexamples; provider refusal permits a recorded alternate |
-| Recovery/experiment designer | Claude preferred, eligible alternate recorded | #826/#827 scoped specification and fixtures when ready |
-| Runtime implementer | Issue-assigned Codex or Claude | One bounded runtime change per worktree after predecessors; shared files serialized |
+| Coordinator | Claude Code session (Claude Opus 5.5) | Lane table, function ownership, merge order, cross-lane questions; writes no runtime code |
+| Lane lead | Claude Code session | Integrates diffs, runs the full suite outside the Codex sandbox, commits, pushes, opens the PR ready, records evidence on the issue |
+| Codex implementer | `gpt-6.1-sol`, medium effort, `codex-companion task --write` | Its named piece in a scratch worktree, self-check against acceptance, draft PR body; never writes in the lane worktree and never pushes |
+| Caller sweep | Claude subagent, Explore on Sonnet | Read-only search for callers and pinned wording |
+| Authority/threat model | Claude subagent, Plan on Opus | Threat model of an escalated slice |
+| Disjoint implementer and fresh-context verifier | Claude subagent, general-purpose on Opus | A disjoint implementation piece; verification given the diff and the acceptance list, not the author's conclusions |
+| Tables, fixtures and PR-body check | Claude subagent, general-purpose on Sonnet | Should/should-not tables, fixtures, `scripts/verify_reuse_review.py` |
+| Suite runner and CI triage | Claude subagent, general-purpose on Haiku | Full-suite runs with `PYTHONPATH=src`, grepping `^FAILED` and `SUBFAILED`; CI log triage |
 
-Each issue has a purpose-named branch and isolated worktree based on an identified main revision. Before editing, read the current issue, relevant contracts, active PRs and file ownership. Root instructions are common to both tools. `quickstart_service.py`, `agent_runtime.py`, `quickstart_store.py` and `preparations_service.py` are shared hotspots. A second writer waits or takes a disjoint ready issue. Rebase/merge conflict resolution is owned by the implementer and checked against current contracts.
+Distinct models under one author's control are cross-model self-review under the [existing review contract](governance/ai-contribution-review.en.md), not independent review.
 
-Implementation briefs contain the issue URL, base revision, permitted files, objective, required behavior, cases that must keep working, tests, dependencies and expected handoff. Review briefs contain exact head/base, diff, acceptance evidence and affected boundaries. Review the code and tests directly. Distinct models controlled by the same author are cross-model self-review; use the [existing review contract](governance/ai-contribution-review.en.md).
+### Function-level ownership
 
-Use focused deterministic tests while editing, and the required repository validation before integration. If a finding identifies a reproducible defect, fix or rebut it with evidence. Routine cross-model review does not impose a fixed round count. The Constitution's material-boundary criteria govern escalated Codex review and owner merge. Public release follows the existing release policy. Live-account tests and their data/actions require their specific scope; synthetic local tests can proceed with the development instruction.
+`quickstart_service.py`, `agent_runtime.py`, `quickstart_store.py` and `preparations_service.py` are shared hotspots, so ownership is assigned per function rather than per file.
 
-When a provider refuses, record the error, scope and any stated reset time. Reassign the same ready unit where possible, keeping ownership explicit. A prepared Claude brief is pending until a real Claude result is received. Avoid claiming a test or review ran because a process started.
+- **A**: `browser_session.redact_private_values` and its callers, `preparations_service.scrub_*`, `quickstart_service.scrub_envelope` / `_redact_known_secrets` / `_redact_reason`, `Capabilities.judgment_text`, `agent_runtime.work_written_values` with the `lookup_sources` / `inherited_excluded` exclusion plumbing, `context_inbox.SENSITIVE`, `current_context.redact_known_secrets`, `bounded_execution._SECRET` / `redact_reason`, `mcp_bridge` error results, `telegram_presence.MASK_MARK`. A may drop `private_sources` from the signature and callers of `record_turn_sent`, nothing else in that method.
+- **B**: `agent_runtime` `page_scope` / `public_page_read` / `search_result_urls` and the `_read_network` scope, `quickstart_service.document_boundary`, `folder_grants`, `outbound_evidence` / `held_value_matches`, `information_use`.
+- **C**: `browser_signin`, `decision`, `orchestrator` (the PR #816 hunks), `quickstart_service.unattended_work` / `_queue_action_continuation` and the continuation methods, the scheduling and line-change refusals in `preparations_service`, `settings_orchestrator`, `conversation_projection`.
+- **F**: `work_executor`, and the bodies of `quickstart_service.record_turn_sent` / `record_turn_worker`.
+- **D** and **E**: new documents and new fixture/test files only.
+- **I**: this document, `delivery-plan.yaml`, `tests/test_fresh_delivery_plan.py`, `evals/README.md`, `evals/agentos_eval/judgments.py`, `docs/owner-model-phase3-delivery.en.md`, `docs/engineering/contracts/memory.en.md`, `docs/README.md`, `docs/development-constitution.en.md`, and the AGENTS.md lines named by #817.
 
-Handoff fields are issue/PR, base/head, files, requested and observed engine/settings, implementation result, exact tests/evidence class, findings/disposition, integration state, operating evidence, remaining dependency, next actor/action and rollback. GitHub stores current execution status. Use the [incremental handoff](incremental-delivery.en.md) for integration waits.
+Shared one-line conflicts, such as the `Capabilities.__init__` signature or `messages.json` keys, are resolved by the lane that merges later, at rebase. A lane that needs a function another lane owns asks the coordinator first.
+
+### Merge order
+
+1. PR #828, then PR #829 (lane I).
+2. Runtime: PR #816, then #818, then #820-B1, #821-C1 and #825 in readiness order. Each later PR rebases on `origin/main` and re-runs its focused tests before asking for review. PR #816 merges first only after its general unattended sign-in condition is reconciled with #821's owner-accepted versus self-initiated distinction. #825 may merge before #819/#820 because the function-level ownership below isolates its edits; its PR records that disposition.
+3. #819 is built on #818's branch and retargeted to `main` before #818 merges, because deleting a stacked PR's base closes it.
+4. #817 closeout last: the census amendment naming every removed rule and the README, SECURITY.md and product-status update, after #818–#821 merge.
+
+### Working protocol
+
+Each branch is based on an identified `origin/main` revision. Before editing, read the current issue, the relevant contracts, active PRs and the ownership above. Root instructions are common to both tools. Codex runs without network and cannot bind sockets, so the lane prepares the scratch worktree's `.venv` before the brief and runs socket and real-CLI tests itself. A run stopped on capacity resumes with `task --write --resume-last`.
+
+Implementation briefs contain the issue URL, base revision, permitted functions and files, objective, required behaviour, cases that must keep working, tests, dependencies and expected handoff. Review briefs contain the exact head and base, the diff, the acceptance list and the affected boundaries. Review the code and tests directly.
+
+Use focused deterministic tests while editing and the required repository validation before integration. A reproducible finding is fixed or rebutted with evidence. Routine cross-model review has no fixed round count. The Constitution's material-boundary criteria govern escalated Codex review of the exact final head, `validate` and `full-validate`, and owner merge; non-escalated PRs open ready with squash auto-merge armed. Public release follows the existing release policy. Live-account tests need their own scope; synthetic local tests proceed under the development instruction.
+
+### Observed engine availability
+
+Earlier on 2026-11-14 a read-only Claude review request returned `429 usage_limit_reached` before model execution, with a stated reset at 14:00 KST, and author-controlled Codex review was used instead. Later the same day Claude was observed available: the coordinator and lane-I sessions ran as Claude Code sessions on Claude Opus 5.5, and lane I observed Opus and Sonnet subagents completing work. Haiku subagents are assigned by the roster; their runs are recorded on the lanes that use them. This replaces the earlier 429-only record. When a provider refuses again, record the error, scope and any stated reset time, and reassign the same ready unit where possible with ownership kept explicit. A prepared brief is pending until a real result is received; a started process is not a test or review that ran.
+
+### Handoff
+
+Handoff fields are issue/PR, base/head, functions and files, requested and observed engine/settings, implementation result, exact tests and evidence class, findings and disposition, integration state, operating evidence, remaining dependency, next actor and action, and rollback. Status lives on each issue and PR, so a stopped lane can resume from them. Use the [incremental handoff](incremental-delivery.en.md) for integration waits.
 
 ## Existing solutions review
 
