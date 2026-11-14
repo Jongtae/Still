@@ -25,15 +25,23 @@ refs, paths, titles, counts, queries - never payloads; a secret redactor is
 applied to every label before it leaves this module.
 
 #167 (#28 option A): ``sent_to`` also lists the hosts the signed-in browser
-opened and the held values outbound calls carried, as the labels
-``agent_runtime.outbound_evidence`` recorded (where the value is kept, the
-tool, the destination), never the value or the outbound text.
+opened and held-value matches derived on opening this view (#820), or legacy
+call-time labels. Only existing call records and retained Memory are compared;
+unavailable text and historical state are named as gaps. Values and outbound
+text are never added to Evidence for this comparison.
 """
 from .manifests import HOST_TOOLS
 from .messages import msg
 from .bounded_execution import reported_usage
 import json
 import re
+import copy
+import sqlite3
+import threading
+import time
+import weakref
+from collections import OrderedDict
+from contextlib import ExitStack
 from datetime import datetime, timezone
 
 #: Evidence class of every audit this module returns.
@@ -70,11 +78,77 @@ CATEGORY_NAMES = {
 }
 #: Turn-provenance events that are not tools the worker called.
 _NOT_TOOLS = frozenset({'model', 'subscription_engine', 'orchestrator'})
-#: #167: where a held value an outbound call carried is kept (``agent_runtime.held_values``).
+#: #167: source labels of held values, including legacy call-time results.
 MATCH_SOURCES = frozenset({'memory', 'work_write'})
 #: #245: the bounds that can cut that comparison off, in the order the view says them
 #: (``agent_runtime.COMPARISON_CUT_MEMORY`` and ``COMPARISON_CUT_TEXT``).
-COMPARISON_CUTS = ('memory_rows', 'text_chars')
+COMPARISON_CUTS = ('memory_rows', 'text_chars', 'calls', 'outbound_unrecorded',
+                   'work_writes_unavailable', 'memory_history_unavailable', 'texts', 'matches',
+                   'comparison_time', 'comparison_failed', 'value_chars', 'held_values', 'legacy_match_withheld', 'legacy_display')
+# Bound expensive matching independently of the number of recorded events.
+COMPARED_CALLS_MAX = 5
+COMPARED_TEXTS_MAX = 2
+COMPARISON_TEXT_MAX = 200
+COMPARISON_VALUE_MAX = 200
+COMPARISON_SECONDS = 1.5
+COMPARISON_CACHE_WORKS = 32
+_COMPARISON_CACHE = weakref.WeakKeyDictionary()
+_CACHE_LOCK = threading.RLock()
+
+
+class _ComparisonCache:
+    """SQLite data_version observes *other connections*, including forget/delete.
+
+    This connection executes PRAGMA only, never reads an owner value and never
+    holds a transaction. Cached payloads are value-free labels/cuts, bounded
+    by Work/call count. A new inode also invalidates a replaced database.
+    """
+    def __init__(self, store):
+        self.identity = (store.path.stat().st_dev, store.path.stat().st_ino)
+        self.db = sqlite3.connect(store.path.as_uri() + '?mode=ro', uri=True, check_same_thread=False)
+        self.version = None
+        self.results = OrderedDict()
+        weakref.finalize(store, self.db.close)
+
+    def read(self, key):
+        version = self.db.execute('PRAGMA data_version').fetchone()[0]
+        if version != self.version:
+            self.results.clear()
+            self.version = version
+        value = self.results.get(key)
+        if value is not None:
+            self.results.move_to_end(key)
+        return version, copy.deepcopy(value)
+
+
+def _cached_comparison(store, key):
+    with _CACHE_LOCK:
+        if not hasattr(store, 'path'):
+            return None, None, None
+        identity = (store.path.stat().st_dev, store.path.stat().st_ino)
+        state = _COMPARISON_CACHE.get(store)
+        if state is None or state.identity != identity:
+            if state is not None:
+                state.db.close()
+            state = _COMPARISON_CACHE[store] = _ComparisonCache(store)
+        version, value = state.read(key)
+        return state, version, value
+
+
+def _save_comparison_cache(state, version, key, value):
+    if state is None or any(cut.get('kind') == 'comparison_time'
+                            for _matches, cuts in value.values() for cut in cuts):
+        return  # Reopening must retry deadline-truncated work, even without a DB write.
+    with _CACHE_LOCK:
+        # A concurrent mutation must not seal stale labels into the cache.
+        if state.db.execute('PRAGMA data_version').fetchone()[0] != version:
+            return
+        state.results[key] = copy.deepcopy(value)
+        state.results.move_to_end(key)
+        while len(state.results) > COMPARISON_CACHE_WORKS:
+            state.results.popitem(last=False)
+
+
 
 
 def _text(value, limit=LABEL_CHARS):
@@ -357,11 +431,126 @@ def _result_label(action, evidence):
     return ', '.join(items[:3]) if items else '완료'
 
 
-def work_information_use(store, job_id, redact=None):
+def deferred_comparison(store, job_id, action, arguments, evidence, at, *, clock=None, deadline=None):
+    """Compare existing, possibly redacted records; never retain another payload.
+
+    Ordinary Memory supersession is reconstructed at the running event's time.
+    Work writes lack exact exclusion-set versions, so recovered writes are
+    explicitly a later comparison. Inherited/pending writes cannot be recovered.
+    """
+    from .agent_runtime import (MEMORY_OWNER, HELD_MEMORY_MAX,
+                                OUTBOUND_MATCHES_MAX, outbound_texts, held_value_matches)
+    clock = clock or time.monotonic
+    deadline = clock() + COMPARISON_SECONDS if deadline is None else deadline
+    cuts = {'work_writes_unavailable': 0, 'memory_history_unavailable': 0}
+    args = dict(arguments) if isinstance(arguments, dict) else {}
+    result = dict(evidence)
+    # These fields were deliberately never recorded as raw outbound text.
+    if action == 'browser_type':
+        args.pop('text', None)
+        cuts['outbound_unrecorded'] = 0
+    if action == 'api_request':
+        args.pop('body', None)
+        source = evidence.get('source') or {}
+        if not args.get('url') and isinstance(source, dict) and source.get('host'):
+            args['url'] = 'https://' + source['host'] + str(source.get('path') or '/')
+            if source.get('query'):
+                args['url'] += '?' + str(source['query'])
+        cuts['outbound_unrecorded'] = 0
+    if action == 'code_run':
+        cuts['outbound_unrecorded'] = 0
+    if action == 'public_page_read':
+        # Evidence does not retain every redirect request.
+        cuts['outbound_unrecorded'] = 0
+    queries = evidence.get('search_queries') if action == 'web_search' and not result.get('sent') else None
+    if queries:
+        result['sent'] = {'query': queries[0]}
+    if action in ('web_search', 'weather') and isinstance(result.get('sent'), dict):
+        if any(isinstance(value, str) and len(value) >= 200 for value in result['sent'].values()):
+            cuts['outbound_unrecorded'] = 0  # evidence_summary's existing clip
+    texts = outbound_texts(action, args, result)
+    if queries:
+        texts = [pair for query in queries[:COMPARED_TEXTS_MAX + 1] for pair in outbound_texts(action, {}, {**result, 'sent': {'query': query}})]
+        if any(isinstance(query, str) and len(query) >= 200 for query in queries):
+            cuts['outbound_unrecorded'] = 0
+    if not arguments and not result.get('sent') and action in ('web_search', 'weather', 'public_page_read', 'browser_open'):
+        # Some relay routes keep only summaries. Public-page sources are
+        # citations, not necessarily a record of every request/redirect.
+        if action in ('public_page_read', 'browser_open') and evidence.get('url'):
+            texts = outbound_texts(action, {'url': evidence['url']}, {})
+        cuts['outbound_unrecorded'] = 0
+    if len(texts) > COMPARED_TEXTS_MAX:
+        cuts['texts'] = COMPARED_TEXTS_MAX
+        texts = texts[:COMPARED_TEXTS_MAX]
+    if any(len(text) > COMPARISON_TEXT_MAX for text, _host in texts):
+        cuts['text_chars'] = COMPARISON_TEXT_MAX
+    if not texts:
+        return [], [{'kind': kind, 'limit': limit} for kind, limit in cuts.items()]
+    if clock() >= deadline:
+        cuts['comparison_time'] = int(COMPARISON_SECONDS * 1000)
+        return [], [{'kind': kind, 'limit': limit} for kind, limit in cuts.items()]
+    try:
+        stamp = float(at)
+        if not (0 < stamp < float('inf')):
+            raise ValueError
+    except (TypeError, ValueError):
+        rows = []  # Unknown call time is not silently replaced with today's Memory.
+    else:
+        reader = getattr(store, 'comparison_memories', None)
+        rows = reader(MEMORY_OWNER, stamp, HELD_MEMORY_MAX + 1) if reader is not None else []
+    if len(rows) > HELD_MEMORY_MAX:
+        cuts['memory_rows'] = HELD_MEMORY_MAX
+    held = [('memory', row['memory_key'], row['content']) for row in rows[:HELD_MEMORY_MAX]]
+    memory_later = any(row.get('comparison') == 'later_memory' for row in rows)
+    if clock() >= deadline:
+        cuts['comparison_time'] = int(COMPARISON_SECONDS * 1000)
+        return [], [{'kind': kind, 'limit': limit} for kind, limit in cuts.items()]
+    remaining = HELD_MEMORY_MAX - len(held)
+    values = store.comparison_work_writes(MEMORY_OWNER, job_id, remaining + 1) if hasattr(store, 'comparison_work_writes') else []
+    known = {row[2] for row in held}
+    writes = list(dict.fromkeys(value for value in values if value not in known))
+    if len(writes) > remaining:
+        cuts['held_values'] = HELD_MEMORY_MAX
+    held += [('work_write', '', value) for value in writes[:remaining]]
+    found = []
+    # One bounded text/value pair per unchanged matcher call. Deadline checks
+    # occur between atomic comparisons; a single comparison can overrun slightly.
+    for text, destination in texts:
+        for source, key, value in held:
+            if clock() >= deadline:
+                cuts['comparison_time'] = int(COMPARISON_SECONDS * 1000)
+                return found, [{'kind': kind, 'limit': limit} for kind, limit in cuts.items()]
+            if len(value) > COMPARISON_VALUE_MAX:
+                cuts['value_chars'] = COMPARISON_VALUE_MAX
+            matches = held_value_matches([(text[:COMPARISON_TEXT_MAX], destination)],
+                                         [(source, key, value[:COMPARISON_VALUE_MAX])])
+            for row in matches:
+                if source == 'work_write': row = {**row, 'comparison': 'later_work_writes'}
+                elif memory_later: row = {**row, 'comparison': 'later_memory'}
+                if row in found:
+                    continue
+                if len(found) == OUTBOUND_MATCHES_MAX:
+                    cuts['matches'] = OUTBOUND_MATCHES_MAX
+                    return found, [{'kind': kind, 'limit': limit} for kind, limit in cuts.items()]
+                found.append(row)
+    if clock() >= deadline:
+        cuts['comparison_time'] = int(COMPARISON_SECONDS * 1000)
+    return found, [{'kind': kind, 'limit': limit} for kind, limit in cuts.items()]
+
+
+def work_information_use(store, job_id, redact=None, *, compare_held_values=True, clock=None):
+    """Build an audit, closing its shared legacy reader even on a failure."""
+    with ExitStack() as readers:
+        return _work_information_use(store, job_id, redact, compare_held_values=compare_held_values,
+                                     clock=clock, readers=readers)
+
+
+def _work_information_use(store, job_id, redact=None, *, compare_held_values=True, clock=None, readers):
     """The information-use audit of one Work, or None when the Work does not exist.
 
     ``redact`` (the service's stored-secret pass) is applied to every label.
     """
+    from .agent_runtime import OUTBOUND_MATCH_ACTIONS, MEMORY_OWNER
     job = store.job(job_id) if isinstance(job_id, str) and job_id else None
     if not job:
         return None
@@ -399,9 +588,24 @@ def work_information_use(store, job_id, redact=None):
     peers = []
     # #167 (#28 option A): labels of held values outbound calls carried, and the hosts the browser opened.
     matches, opened, cuts = [], [], {}
+    outbound_started = {}
+    compared_calls = 0
+    legacy_db = None
     # #636: sites the AI signed back in to through the provider the owner used (site and provider host only).
     resigned = []
-    for event in store.task_events(job_id):
+    events = store.task_events(job_id)
+    clock_fn = clock or time.monotonic
+    deadline = clock_fn() + COMPARISON_SECONDS
+    cache_key = (job_id, max((row.get('id') or 0 for row in events), default=0))
+    cache_state, cache_version, cached = None, None, None
+    if compare_held_values and clock is None:
+        try:
+            cache_state, cache_version, cached = _cached_comparison(store, cache_key)
+        except Exception:
+            pass  # Cache failure never prevents a bounded uncached comparison.
+    computed = {}
+    cacheable = True
+    for event in events:
         tool, status, trace = event.get('tool'), event.get('status'), event.get('trace') or {}
         # #467: one terminal event per CLI attempt; reuse the numeric-only boundary.
         if tool == 'subscription_engine' and status in ('succeeded', 'failed') and isinstance(trace, dict):
@@ -432,22 +636,83 @@ def work_information_use(store, job_id, redact=None):
                 'destination': label(evidence.get('host'), 200), 'state': evidence_state,
                 'remote_receipt': label(str(evidence.get('response_status') or ''), 20)}
             continue
+        identity = (tool, trace.get('call_id'), trace.get('attempt'))
+        if status in ('succeeded', 'failed') and action not in OUTBOUND_MATCH_ACTIONS and identity in outbound_started:
+            # A package alias's failed record names only the alias; its running event names the host action.
+            action = outbound_started[identity][0].get('host_action') or action
+        if action in OUTBOUND_MATCH_ACTIONS and status == 'running' and trace.get('scope') != 'cli-native':
+            outbound_started[identity] = (trace, event.get('created'))
+        source = evidence if status == 'succeeded' or (status == 'failed' and trace.get('state') == 'withheld') else trace
+        legacy = 'outbound_matches' in source or 'outbound_comparison_cut' in source
+        if action in OUTBOUND_MATCH_ACTIONS and status in ('succeeded', 'failed') and trace.get('scope') != 'cli-native':
+            begun, at = outbound_started.pop(identity, ({}, event.get('created')))
+            if compare_held_values and source.get('outbound_comparison') == 'deferred' and not legacy and trace.get('ran') is not False:
+                if compared_calls < COMPARED_CALLS_MAX:
+                    compared_calls += 1
+                    arguments = begun.get('arguments') or trace.get('arguments') or {}
+                    event_key = event.get('id')
+                    try:
+                        if cached is not None and event_key in cached:
+                            found, left = cached[event_key]
+                        elif clock_fn() >= deadline:
+                            found, left = [], [{'kind': 'comparison_time', 'limit': int(COMPARISON_SECONDS * 1000)}]
+                        else:
+                            found, left = deferred_comparison(store, job_id, action, arguments, evidence, at,
+                                                              clock=clock_fn, deadline=deadline)
+                        computed[event_key] = (found, left)
+                    except Exception:
+                        cacheable = False
+                        found, left = [], [{'kind': 'comparison_failed', 'limit': 0}]
+                    source = {**source, 'outbound_matches': found, 'outbound_comparison_cut': left}
+                else:
+                    cuts['calls'] = COMPARED_CALLS_MAX
         # A failed call that was dispatched records its matches at the top level, and a call the runtime
         # withheld after it returned keeps them in its Evidence: either may have carried them out.
         withheld = status == 'failed' and trace.get('state') == 'withheld'
-        found = (evidence.get('outbound_matches') if status == 'succeeded' or withheld
-                 else trace.get('outbound_matches') if status == 'failed' else None)
+        found = source.get('outbound_matches') if compare_held_values else None
         for row in found if isinstance(found, list) else ():
             if not isinstance(row, dict) or row.get('source') not in MATCH_SOURCES:
                 continue
             match = {'source': row['source'], 'key': label(row.get('key'), 80) if row['source'] == 'memory' else '',
                      'tool': label(row.get('tool') or action, 60), 'destination': label(row.get('destination'), 120),
                      'status': status}
+            if row.get('comparison') in ('later_work_writes', 'later_memory'):
+                match['comparison'] = row['comparison']
+            if legacy:
+                # Recorded labels are not comparisons. Preserve every distinct
+                # one up to the audit display limit, without spending a call.
+                if match in matches:
+                    continue
+                if len(matches) >= MAX_ITEMS:
+                    cuts['legacy_display'] = MAX_ITEMS
+                    break
+            # Legacy labels remain recorded results, but forgotten/deleted Memory
+            # must not be named even if it was forgotten after the call.
+            if legacy and row['source'] == 'memory' and hasattr(store, 'comparison_legacy_kept'):
+                if clock_fn() >= deadline:
+                    cuts['legacy_match_withheld'] = 0
+                    if clock_fn() >= deadline:
+                        cuts['comparison_time'] = int(COMPARISON_SECONDS * 1000)
+                    continue
+                try:
+                    if legacy_db is None:
+                        legacy_db = readers.enter_context(store.db())
+                    if clock_fn() >= deadline:
+                        cuts['comparison_time'] = int(COMPARISON_SECONDS * 1000)
+                        cuts['legacy_match_withheld'] = 0
+                        continue
+                    retained = store.comparison_legacy_kept(MEMORY_OWNER, row.get('key'),
+                                                            event.get('created') or 0, db=legacy_db)
+                except Exception:
+                    retained = False
+                    cuts['comparison_failed'] = 0
+                if not retained:
+                    cuts['legacy_match_withheld'] = 0
+                    continue
             if match not in matches and len(matches) < MAX_ITEMS:
                 matches.append(match)
         # #245: a comparison the bounds cut off (Memory rows past the newest ones, text past its first characters).
-        left_out = (evidence.get('outbound_comparison_cut') if status == 'succeeded' or withheld
-                    else trace.get('outbound_comparison_cut') if status == 'failed' else None)
+        left_out = source.get('outbound_comparison_cut') if compare_held_values else None
         for row in left_out if isinstance(left_out, list) else ():
             if isinstance(row, dict) and row.get('kind') in COMPARISON_CUTS and isinstance(row.get('limit'), int) \
                     and not isinstance(row.get('limit'), bool):
@@ -472,7 +737,7 @@ def work_information_use(store, job_id, redact=None):
                 resigned.append(row)
         if action in LOOKUP_ACTIONS and status == 'running':
             # The arguments a lookup started with, for a call that then failed.
-            started[(tool, trace.get('call_id'))] = trace
+            started[identity] = trace
         # #918: an undo is recorded on the Work after it settled (status ``recorded``, never a step).
         if (status == 'succeeded' or (action == MEMORY_UNDO_ACTION and status == 'recorded')) and action in READ_CATEGORIES:
             add(READ_CATEGORIES[action], _event_items(action, evidence))
@@ -481,7 +746,7 @@ def work_information_use(store, job_id, redact=None):
             # queries); the worker's raw arguments are not shown for it.  A failed lookup was still
             # attempted: its starting event (the worker's arguments, or the /search preflight's query)
             # completes what the terminal event recorded.
-            begun = started.pop((tool, trace.get('call_id')), {})
+            begun = started.pop(identity, {})
             source = trace if status == 'succeeded' else {**begun, **trace}
             lookup = _lookup(action, source, evidence)
             lookup['status'] = status
@@ -493,6 +758,11 @@ def work_information_use(store, job_id, redact=None):
             results.append({'tool': label(tool, 60), 'status': status,
                             'label': label(_result_label(action, evidence)) if status == 'succeeded'
                             else label(trace.get('code') or trace.get('error') or status, 80)})
+    if cacheable and compare_held_values and cached is None:
+        try:
+            _save_comparison_cache(cache_state, cache_version, cache_key, computed)
+        except Exception:
+            pass
     used = [{'category': category, 'name': CATEGORY_NAMES.get(category, category), 'items': items}
             for category, items in sorted(used.items(), key=lambda row: list(CATEGORY_NAMES).index(row[0])
                                           if row[0] in CATEGORY_NAMES else len(CATEGORY_NAMES)) if items]
@@ -524,6 +794,8 @@ def work_information_use(store, job_id, redact=None):
     if peers:sent_to['peers'] = peers[-MAX_ITEMS:]
     sent_to['browser_destinations'] = opened
     sent_to['held_value_matches'] = matches
+    if compared_calls:
+        sent_to['held_value_comparison_time'] = 'view_time_retained_history'
     if resigned:
         sent_to['browser_provider_sign_ins'] = resigned
     if cuts:
@@ -562,8 +834,14 @@ def _match_line(match):
     where = f"{match.get('tool')} → {match['destination']}" if match.get('destination') else str(match.get('tool') or '')
     failed = '_attempt' if match.get('status') == 'failed' else ''
     if match.get('source') == 'memory':
-        return msg(f'information_use.matched_memory{failed}', where=where, key=match.get('key') or '?')
-    return msg(f'information_use.matched_work_write{failed}', where=where)
+        text = msg(f'information_use.matched_memory{failed}', where=where, key=match.get('key') or '?')
+        if match.get('comparison') == 'later_memory':
+            text += ' · ' + msg('information_use.later_memory')
+        return text
+    text = msg(f'information_use.matched_work_write{failed}', where=where)
+    if match.get('comparison') == 'later_work_writes':
+        text += ' · ' + msg('information_use.later_work_writes')
+    return text
 
 
 def _cli_search(workers):
@@ -643,6 +921,8 @@ def render_korean(audit):
     if matches:
         lines.append(msg('information_use.held_values_that_went_out'))
         lines.extend(_match_line(match) for match in matches)
+    if sent.get('held_value_comparison_time') == 'view_time_retained_history':
+        lines.append(msg('information_use.view_time_comparison'))
     for cut in sent.get('held_value_comparison_cut') or ():
         if cut.get('kind') in COMPARISON_CUTS:
             lines.append(msg(f"information_use.comparison_cut_{cut['kind']}", limit=f"{int(cut.get('limit') or 0):,}"))

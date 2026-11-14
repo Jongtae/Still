@@ -1488,17 +1488,17 @@ def lookup_sources(store, job_id):
 # Detect and show only.  After an outbound call Still mediates has run, its
 # outbound text is compared with the values Still holds for the owner, using
 # the #605 matcher (``lookup_text_violations``).  A match is recorded on the
-# call's Evidence as labels only - where the value is kept (a Memory key, or
+# information-use view as labels only - where the value is kept (a Memory key, or
 # "this Work's own writes"), the tool and the destination host.  Neither the
 # value nor the outbound text is stored, and nothing is blocked or rewritten:
-# the comparison runs on the recording path, after the call has gone out.
+# the comparison runs when the owner opens the information-use audit (#820).
 
 #: The outbound calls whose text is compared.  ``capability_search`` already
 #: refuses a query carrying a held value, so it is not listed.
 OUTBOUND_MATCH_ACTIONS=frozenset({'web_search','public_page_read','weather','browser_open','browser_type','api_request','code_run'})
 #: Bounds: match labels kept per call, Memory rows compared, and characters of one outbound text compared
 #: (the matcher's cost grows with text length times held words: about a second for 1,000 characters
-#: against 500 Memory rows, on the recording path after the call).
+#: against 500 Memory rows, when the audit opens).
 OUTBOUND_MATCHES_MAX=12
 HELD_MEMORY_MAX=500
 OUTBOUND_TEXT_MAX=1000
@@ -1630,8 +1630,8 @@ def outbound_texts(action,args,result):
  arguments; a URL contributes its path and query (and the landed URL after a
  redirect to another host); typed browser text goes to
  the page it was typed into; an API request carries its URL and body; a code
- run, the paths of the requests its sandbox let out (``outbound_evidence``
- compares their query, body and header values too, from the runner's memory).
+ run, the paths of the requests its sandbox let out. The audit cannot
+ recover the runner's in-memory query, body or header values (#820).
  """
  args=args if isinstance(args,dict) else {}
  result=result if isinstance(result,dict) else {}
@@ -1671,7 +1671,7 @@ def held_value_matches(texts,held):
  covers (spacing, digit runs, jamo) and the overlap carries the value rather
  than an everyday word it shares (``carries_held_value``, #245).  Only the
  first OUTBOUND_TEXT_MAX characters of a text are compared
- (``outbound_evidence`` names the cut).  The result holds no value and no text.
+ (the information-use view names the cut and applies its smaller view budget).  The result holds no value and no text.
  """
  matches=[]
  for text,destination in texts:
@@ -1695,37 +1695,19 @@ def held_value_matches(texts,held):
  return matches
 
 def outbound_evidence(capabilities,action,args,result):
- """What a call's Evidence adds for #167: ``outbound_matches`` labels, and a ``browser_open`` destination.
+ """Cheap destination receipt; #820 compares retained text only when the audit opens.
 
- Display only: it runs after the call and can neither stop nor change it; a
- failure in it leaves the Evidence as before.  A call that failed after it was
- dispatched is compared from its arguments (``result`` empty): what it carried
- may have left before the failure.
+ The marker distinguishes new records (including an empty comparison) from
+ legacy call-time match labels. No owner values or outbound payloads are read.
  """
  if action not in OUTBOUND_MATCH_ACTIONS:return {}
- out={}
- try:
-  texts=outbound_texts(action,args,result)
-  runner=getattr(capabilities,'_code_runner',None) if action=='code_run' else None
-  if isinstance(getattr(runner,'sent',None),list):
-   # The requests the run let out with their query, body and header values, held only in the
-   # runner's memory (``CodeRunner.sent``); the recorded request rows keep method, host and path.
-   from urllib.parse import unquote_plus
-   texts=[(unquote_plus(str(text)),str(host)[:253]) for text,host in runner.sent if str(text).strip()]
-  if action=='browser_open':
-   hosts=list(dict.fromkeys(host for host in (_url_parts((args or {}).get('url'))[1],_url_parts((result or {}).get('url'))[1]) if host))
-   if hosts:out['destination']=hosts[0][:253]
-   if len(hosts)>1:out['landed']=hosts[1][:253]
-  held=capabilities.held_values() if texts and callable(getattr(capabilities,'held_values',None)) else []
-  matches=held_value_matches(texts,held) if held else []
-  if matches:out['outbound_matches']=[{**row,'tool':action} for row in matches]
-  # #245: what the comparison left out, so the view does not read "nothing went out" past it.
-  cut=[{'kind':kind,'limit':limit} for kind,limit,left_out in (
-       (COMPARISON_CUT_MEMORY,HELD_MEMORY_MAX,getattr(capabilities,'held_memory_cut',False) is True),
-       (COMPARISON_CUT_TEXT,OUTBOUND_TEXT_MAX,any(len(text)>OUTBOUND_TEXT_MAX for text,_host in texts))) if held and left_out]
-  if cut:out['outbound_comparison_cut']=cut
- except Exception:
-  return {}
+ args=args if isinstance(args,dict) else {}
+ result=result if isinstance(result,dict) else {}
+ out={'outbound_comparison':'deferred'}
+ if action=='browser_open':
+  hosts=list(dict.fromkeys(host for host in (_url_parts((args or {}).get('url'))[1],_url_parts((result or {}).get('url'))[1]) if host))
+  if hosts:out['destination']=hosts[0][:253]
+  if len(hosts)>1:out['landed']=hosts[1][:253]
  return out
 
 class EvidenceLog(list):
@@ -1988,7 +1970,7 @@ def refused_before_hand_off(execute):
  return run
 
 def attempted_outbound(capabilities,action,args,exc):
- """What a failed call's record adds for #167: held values it may have carried out, and where.
+ """A failed dispatched call's deferred-audit marker and cheap destination (#820).
 
  A call that failed once it was handed to a transport may have carried them
  out before the failure; a ``browser_open`` also keeps the host it was sent
@@ -1997,7 +1979,7 @@ def attempted_outbound(capabilities,action,args,exc):
  """
  if not action or ran_field(exc):return {}
  found=outbound_evidence(capabilities,action,args,{})
- return {key:found[key] for key in ('destination','landed','outbound_matches','outbound_comparison_cut') if found.get(key)}
+ return {key:found[key] for key in ('destination','landed','outbound_comparison') if found.get(key)}
 
 def observed_field(exc):
  """``{'observed_step': ...}`` of a click or typing step that failed after Still observed it (#1496), else nothing.
@@ -3565,7 +3547,7 @@ class Capabilities:
   The owner's current Memory, whichever Work saved it (``memory``, by key),
   then saved and pending Work values not already covered by current
   Memory (candidates, notes and inherited values; ``work_write``).
-  Read when a call is recorded and never stored.  Only the newest
+  Legacy helper; outbound recording no longer calls this (#820). Only the newest
   HELD_MEMORY_MAX Memory rows are read; ``held_memory_cut`` says whether
   older ones were left out (#245).
   """

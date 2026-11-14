@@ -967,13 +967,13 @@ class AgentService:
         return asked
 
     # -- EGRESS-OPEN-01 (#826): the per-Work information-use audit -------------
-    def work_information_use(self, job_id):
+    def work_information_use(self, job_id, *, compare_held_values=True):
         """Which owner information one Work used and where it went, or None (#826).
 
         A view over the Work's own records (``information_use``); every label
         passes the stored-secret redaction first.
         """
-        return information_use.work_information_use(self.store,job_id,redact=self._redact_known_secrets)
+        return information_use.work_information_use(self.store,job_id,redact=self._redact_known_secrets,compare_held_values=compare_held_values)
 
     #: Work states whose answer the owner may ask about.
     INFORMATION_USE_STATES=ws.INSPECTABLE_ANSWER
@@ -7825,7 +7825,7 @@ class AgentService:
         if verified:done+=' '+verified[:500]
         gap=(getattr(run.orchestration,'terminal_gap','') or (run.agency_report or {}).get('gap')
              or (run.agency_report or {}).get('next') or msg('budget_continue.remaining'))
-        totals=self.work_information_use(job['id'])['usage']['totals']
+        totals=self.work_information_use(job['id'],compare_held_values=False)['usage']['totals']
         usage=' · '.join(f'{key}: {value}' for key,value in (totals.get('usage') or {}).items()) or msg('information_use.usage_not_reported')
         if totals.get('cost_usd') is not None:usage+=f" · USD {totals['cost_usd']}"
         for key in ('num_turns','cli_tool_calls'):
