@@ -386,8 +386,7 @@
           "args": {
             "goal": "Watch the archive for a full day at five-minute intervals",
             "window_hours": 24,
-            "refusal_code": "invalid_window",
-            "gap_reason": "A window with more than 96 slots needs a typed refusal rather than a silently capped promise"
+            "gap_reason": "A window longer than the 96-run cap must not end early while the confirmation shows the owner's end time; #814 decides between a typed refusal and a stated shortened end"
           },
           "expect": {
             "run_started": false,

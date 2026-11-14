@@ -17,8 +17,8 @@ Each invariant below names the check that enforces it in the fixtures, so a brok
 | Invariant | How the experiment holds it |
 |---|---|
 | No experiment or prompt/source change creates authority (C3, C4, C16). | Fixtures live under `evals/` and `tests/` only. Nothing under `src/personal_agent` is added or changed. `tests/test_no_scenario_code.py` keeps guarding core code against task, site and skill branches. A candidate retriever or brief changes **which current rows are read**. It never changes Grants, approvals, folder scope or effects. |
-| No forgotten, superseded, corrected or expired fact is revived. | In the paired recall fixture, the scorer decides whether a returned row is eligible from the **seeded store's own state** (`state`, `valid_until`), not from anything the retriever reports. Any such row a retriever returns counts as a `trap` hit. A candidate with any trap hit is reported under `trap_regressions`, whatever it gained elsewhere. The lexical baseline is held to zero trap hits by a test. |
-| No experiment claims an outcome it did not observe (C6). | Outcomes come from Still's own records: `tool_events`, `line_outcomes`, and `work_status.derive_status` with `goal_outcome` and `effect_state`. The rubric judge only grades conversation text. A promised report or scheduled run that the sandbox never fired is recorded as **not observed**, never as delivered. |
+| No forgotten, superseded, corrected or expired fact is revived. | In the paired recall fixture, the scorer decides whether a returned row is eligible from the **seeded store's own state** (`state`, `valid_until`), not from anything the retriever reports. Any such row a retriever returns counts as a `trap` hit. A candidate with any trap hit is reported under `trap_regressions`, whatever it gained elsewhere. A retriever that writes to the store (which could re-create a forgotten value under a new id) is refused. The lexical baseline is held to zero trap hits by a test. |
+| No experiment claims an outcome it did not observe (C6). | Outcomes come from Still's own records: `tool_events`, `line_outcomes`, and `work_status.derive_status` with `goal_outcome` and `effect_state`. The rubric judge only grades conversation text. A promised report or scheduled run that did not come due during a sweep is recorded as **not observed**, never as delivered. |
 | No task-specific core branch (C16). | Cases differ by data, not by code path. The step vocabulary of a continuity trace is a closed set of existing primitives (`open_line`, `standing_correction`, `replace_preparation`, `stop_line`, …). Nothing in it is named after a task. |
 | No owner data in the bundled set. | All bundled cases are synthetic, with made-up people, companies and places. Owner-derived cases stay in the owner-local scenario folder (`paths.local_scenario_dirs`) and are reported only as counts and patterns. |
 
@@ -51,7 +51,7 @@ Every proposed capability maps to an existing primitive and an existing issue. T
 | R2 | Does stored context reach the answer, and does irrelevant context stay out? | baseline revision vs candidate revision of Still, the same scenarios | `evals/scenarios/recall-experiments.json` | live local observation of the sandbox, judged |
 | C1 | Does one responsibility keep its identity across corrections, replacement, restart and stop, with outcomes taken from Still's records? | current code; gap steps skipped | `evals/continuity/line-traces-v1.json`, `tests/test_line_traces.py` | fixture (model-free, injected clock) |
 | C2 | In conversation, does the owner's AI treat a change as the same responsibility and stay honest about runs it has not made? | baseline vs candidate revision | `evals/scenarios/continuity-experiments.json` | live local observation, judged |
-| P1 | Does parallel reading improve completion or latency at a comparable budget? | `CONCURRENT_READ_LIMIT` 1 vs 4, same `WorkBudget` | read-heavy dev scenarios already bundled, plus R2/C2 | live local observation |
+| P1 | Does parallel reading improve completion or latency at a comparable budget? | `CONCURRENT_READ_LIMIT` 1 vs 4 as two checkouts, same `WorkBudget` | bundled scenarios tagged `travel`, `shopping` and `food`, fixed before the run | live local observation |
 
 ### R1. Paired recall: lexical vs candidate
 
@@ -73,14 +73,14 @@ Each case names its `split`, its `kind` and three lists:
 | `lexical-control` | The query shares the fact's words. The baseline must find it, so a candidate that loses it has regressed. |
 | `paraphrase` | The meaning is the same but no content words are shared. This is the main reason for #403. |
 | `cross-language` | The fact is stored in Korean and asked for in English, or the reverse. |
-| `short-follow-up` | "그거", "아까 말한 데": the query alone carries little meaning. It shows whether more context helps. |
+| `short-follow-up` | "그거", "아까 말한 데": the query alone carries little meaning, and the case's `context` holds the preceding owner turn. A retriever that reads the context can recall the row and one that does not cannot, so the case shows whether more context helps. |
 | `dated-contradiction` | The later dated statement supersedes the earlier one, and the earlier one is a trap. |
 | `correction` | The owner says the earlier value was wrong. The corrected row is a trap. |
 | `currentness` | The fact ended before `today` (`valid_until` < `today`) and is a trap. |
 | `forgetting` | The owner forgot the fact. The forgotten row is a trap, and `needed` may be empty. |
 | `harm-control` | Nothing stored is needed, and every returned row counts as noise. It shows where extra context harms. |
 
-**Arms.** The baseline is `QuickStore.search_memories` called the way `MemoryService.search_memories` calls it: owner id, the literal words of the query and `holding_on = today`. A candidate is any callable `retriever(query) -> [memory ids]` over the same seeded store, for example a #403 step-1 or step-2 implementation on that issue's branch. The fixture and the scorer do not change between arms.
+**Arms.** The baseline is `MemoryService.search_memories` on the request text, with the service's date set to the fixture's `today`. It ignores `context`, as today's brief query uses the raw request text (`owner_words_block`). A candidate is any callable `retriever(query, context) -> [memory ids]` over the same seeded store that does not write to it, for example a #403 step-1 or step-2 implementation on that issue's branch. The fixture and the scorer do not change between arms.
 
 **Measures, reported per split and per kind, never pooled across splits:**
 - needed recall: needed rows returned divided by needed rows;
@@ -119,6 +119,7 @@ The sweep runs without `--seed`, so each sandbox starts from an empty data folde
 
 **Limits.**
 - A scenario cannot seed Memory, so recall is within one sandbox conversation, not across real days.
+- The held-out split has no currentness or harm-control scenario, so in conversation those directions are checked on dev only. R1 covers both on held-out.
 - The scenario format has no deterministic answer-content check, so "the forgotten value is absent from the answer" is a judge grade, not a substring check. That gap is recorded and no format change is made here.
 - A sweep's results apply to the exact checkout, worker and models it ran with.
 
@@ -138,9 +139,9 @@ The sweep runs without `--seed`, so each sandbox starts from an empty data folde
 - **Edit the schedule.** One line and one active row remain.
 - **Stop.** A stop cancels every row of the line. The next due tick starts nothing and no reply is sent.
 - **Today-only correction.** No version is written, and the correction is absent the next day.
-- **Promised interval report across a skipped slot** (`gap: 813`), and a **window longer than the run cap** (`gap: 814`). Both are recorded and skipped, never asserted as passing.
+- **Promised interval report across a skipped slot** (`gap: 813`), and a **window longer than the run cap** (`gap: 814`). Both are recorded and skipped, never asserted as passing or failing. The #814 step states only the owner-visible requirement and leaves the remedy to #814. The PR that closes either issue removes the step's `gap` marker, so the step runs from then on.
 
-**Why model-free.** The eval sandbox never fires a scheduled row: `sandbox.sanitize_database` cancels them and the sandbox runs on the real clock. Multi-day behavior can only be observed with an injected clock, as the existing unit tests do.
+**Why model-free.** A sweep runs Still on the real clock for minutes, so a row a scenario schedules for later that day or later in the week does not come due during the run. A seed's own scheduled rows are cancelled when it is snapshotted (`sandbox.sanitize_database`). Multi-day behavior can therefore only be observed with an injected clock, as the existing unit tests do.
 
 **Limits.** Each trace scripts its model steps. The traces show that the primitives keep identity and propagate corrections and stops. They do not show that a real model chooses to continue a line (C2 grades that in conversation) or that #799's AI-stood lines exist (they do not yet).
 
@@ -154,7 +155,7 @@ The sweep runs without `--seed`, so each sandbox starts from an empty data folde
 - a status question asked before any run;
 - a deadline already passed.
 
-They are tagged `exp-continuity` and `kind-<kind>`. Expected output: a change is treated as the **same** responsibility, not a second one; a cancellation claims no further runs; a status question before any run says nothing has run yet, with no invented results (`honest_unverified`). `expect.preparation` checks that a row was created. Runs, reports and deadlines are never observed in the sandbox (C1 explains why), so C2 grades conversation only.
+They are tagged `exp-continuity` and `kind-<kind>`. Expected output: a change is treated as the **same** responsibility, not a second one; a cancellation claims no further runs; a status question before any run says nothing has run yet, with no invented results (`honest_unverified`). `expect.preparation` checks only that a row was created. Whether a change kept the same responsibility, or a cancellation took effect, is a **judge grade**, not verified completion. Runs, reports and deadlines do not come due during a sweep (C1 explains why), so C2 grades conversation only.
 
 ### P1. Single worker vs parallel reads at comparable budgets
 
@@ -162,7 +163,7 @@ They are tagged `exp-continuity` and `kind-<kind>`. Expected output: a change is
 - `CONCURRENT_READ_LIMIT = 1`, a single read at a time;
 - `CONCURRENT_READ_LIMIT = 4`, today's default.
 
-The limit is changed for the experiment run only, the way a test patches a module constant. No runtime setting is added.
+A sweep runs Still as a subprocess, so the harness cannot patch the constant. Each arm is a separate checkout: the baseline revision, and the same revision with only `CONCURRENT_READ_LIMIT` changed on an unmerged experiment branch. No runtime setting is added. Both arms run the same scenario ids, chosen and recorded before the run.
 
 **Measures:**
 - verified completion;
@@ -170,7 +171,7 @@ The limit is changed for the experiment run only, the way a test patches a modul
 - model turns and attempts, from `WorkLedger`;
 - tokens and cost, where the provider reports them.
 
-**Scope.** Only effect-free reads overlap (`concurrent_read` already excludes browser and code actions). Shared browser and account **mutations** are not run in parallel by any arm: today `service.worker_lock` is their only ownership, and no per-account lease exists. Decomposition into delegated specialists (`delegate_agent`) is selected only where P1 shows a completion or latency benefit at the disclosed cost.
+**Scope.** Only effect-free reads overlap (`concurrent_read` already excludes browser and code actions). Shared browser and account **mutations** are not run in parallel by any arm: today `service.worker_lock` is their only ownership, and no per-account lease exists. P1 measures read concurrency only. Decomposition into delegated specialists (`delegate_agent`) is not measured by P1, and a specialist runs with its own bounds rather than the parent's cumulative budget, so it stays unselected until an arm with a comparable cumulative budget exists (#16).
 
 **Limits.** Subscription CLIs hide their usage, so their cost is recorded as unavailable, not as zero. Latency on live web reads varies by site and time, so P1 needs three epochs and reports the spread.
 
@@ -179,12 +180,12 @@ The limit is changed for the experiment run only, the way a test patches a modul
 | Measure | Source | Notes |
 |---|---|---|
 | Verified completion | deterministic checks (`scoring.deterministic_checks`), trace expectations, `derive_status` `goal_outcome = reached` with Still-observed `effect_state` | A judge's "looks done" is not verified completion. |
-| Avoidable owner interventions | owner turns that restate a fact Still already held or re-ask for something entrusted, counted per scenario by the judge, with the turn index recorded | Required approvals are **counted separately**, never as avoidable. A payment or consequential-action approval is a real gate (C14). |
+| Avoidable owner interventions | the AI asking again for a fact Still already held, or for an action it was already entrusted with, counted per scenario by the judge with the turn index recorded. Owner turns are scripted, so the measure counts the AI's questions, not the owner's turns. | Required approvals are **counted separately**, never as avoidable. A payment or consequential-action approval is a real gate (C14). |
 | Required approvals | approval events in `tool_events` and the scenario's `allow_status` | Reported next to interventions, not subtracted from them. |
 | Latency | runner timestamps (sent → delivered) | Per turn, with the spread over epochs. |
 | Cost | judge tokens from `budget.JudgeBudget`; worker tokens only where an API worker reports usage | Subscription-worker usage is unavailable, and the report says so. |
 | Recovery | C1 restart steps; #826 receipts once specified | Identity and standing corrections after restart. |
-| Proactive usefulness | judged on C2 and on line account outputs when they exist | Not graded where nothing ran. A report the sandbox never fired is not observed. |
+| Proactive usefulness | judged on C2 and on line account outputs when they exist | Not graded where nothing ran. A report that never came due is not observed. |
 | Context harm | R1 noise and trap hits; R2 `no_wrong_narrowing` grades | Shows where extra context made the outcome worse. |
 
 ## Why extra context helps or harms
@@ -217,7 +218,7 @@ Every experiment report keeps four sections apart:
 1. **Fixture support.** What the deterministic fixture and the model-free tests showed, with the fixture version and commit.
 2. **Live evidence.** What a sweep observed, with the revision, worker, model, judge, epochs, seed ("fresh") and run id. The R2/C2 sweep results are a local observation of that exact setup.
 3. **Uncertainty.** Spread over repetitions, cases inside noise, and judge-and-human disagreements.
-4. **Unsupported paths.** What could not be observed: runs and reports that never fired in the sandbox, steps marked `gap`, vendor-hidden usage, transcript recall, and #799 AI-stood lines.
+4. **Unsupported paths.** What could not be observed: runs and reports that never came due during a sweep, steps marked `gap`, vendor-hidden usage, transcript recall, and #799 AI-stood lines.
 
 Issue-specific live observation acceptance stays visible and unchanged: #403's acceptance (recall before vs after, the compatibility test, forget/undo removing vectors, the FTS5 fallback, the information-use audit), and #799, #813, #814 and #16's own criteria. Nothing here checks or waives them.
 

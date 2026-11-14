@@ -217,7 +217,8 @@
         "r4"
       ],
       "traps": [],
-      "note": "Assumes immediate conversation focus is presentation venue; query-only retrieval may miss."
+      "note": "Assumes immediate conversation focus is presentation venue; the preceding owner turn is in `context`, so only a retriever that reads it can recall the row.",
+      "context": "다음 주 발표 장소가 어디였는지 지도로 보여줘."
     },
     {
       "id": "d-dated-current",
@@ -346,7 +347,8 @@
         "r18"
       ],
       "traps": [],
-      "note": "Assumes immediate focus is parcel ribbon, not a venue."
+      "note": "Assumes immediate focus is parcel ribbon, not a venue.; the preceding owner turn is in `context`, so only a retriever that reads it can recall the row.",
+      "context": "여다온한테 보낼 상자 포장은 어떻게 하기로 했지?"
     },
     {
       "id": "h-dated",

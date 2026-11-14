@@ -1,7 +1,6 @@
 """Synthetic fixture/harness evidence only; no live model or scheduler calls."""
 import copy
 import json
-import re
 import sys
 from collections import Counter
 from pathlib import Path
@@ -13,6 +12,7 @@ sys.path.insert(0, str(ROOT / 'evals'))
 
 from agentos_eval import recall_pairs as pairs, scenarios  # noqa: E402
 from personal_agent.owner_forget import OwnerForget  # noqa: E402
+from personal_agent.memory_service import MemoryService  # noqa: E402
 from personal_agent.quickstart_store import QuickStore  # noqa: E402
 
 FIXTURE = ROOT / 'evals/recall/recall-pairs-v1.json'
@@ -29,12 +29,14 @@ def seeded(tmp_path, data):
     return store, pairs.seed(store, data)
 
 
-def lexical(store, data):
-    def retrieve(query):
-        # Same literal-word normalization/entry point as MemoryService.search_memories.
-        terms = list(dict.fromkeys(re.findall(r'[^\W_]+', query.casefold(), flags=re.UNICODE)))[:12]
-        return [row['id'] for row in store.search_memories(
-            data['owner'], terms, limit=21, holding_on=data['today'])]
+def lexical(store, data, read_context=False):
+    """Today's path: MemoryService.search_memories on the request text, on the fixture's date."""
+    service = MemoryService(store, private_read_sink=lambda marker: None)
+    service._today = lambda: data['today']
+
+    def retrieve(query, context=''):
+        text = f'{context} {query}' if read_context else query
+        return [row['id'] for row in service.search_memories(data['owner'], text)['memories']]
     return retrieve
 
 
@@ -120,13 +122,13 @@ def test_paired_fixes_authority_override_and_split_separation(data, seeded):
     _, refs = seeded
     cases = [case for case in data['cases'] if case['kind'] == 'paraphrase']
     needed = {case['query']: [refs[ref] for ref in case['needed']] for case in cases}
-    before = pairs.run(lambda query: [], cases, refs)
-    after = pairs.run(needed.__getitem__, cases, refs)
+    before = pairs.run(lambda query, context='': [], cases, refs)
+    after = pairs.run(lambda query, context='': needed[query], cases, refs)
     comparison = pairs.compare(before, after)
     assert {row['id'] for row in comparison['dev']['changes']} == {'d-para-focus', 'd-para-posture'}
     assert {row['id'] for row in comparison['heldout']['changes']} == {'h-para-layout'}
     assert all(row['change'] == 'fixed' for split in comparison.values() for row in split['changes'])
-    dangerous = pairs.run(lambda query: needed[query] + [refs['r24']], cases, refs)
+    dangerous = pairs.run(lambda query, context='': needed[query] + [refs['r24']], cases, refs)
     authority = pairs.compare(before, dangerous)
     for split in ('dev', 'heldout'):
         assert len(authority[split]['trap_regressions']) == len(comparison[split]['changes'])
@@ -149,8 +151,8 @@ def test_all_four_paired_verdicts(data, seeded):
     _, refs = seeded
     cases = data['cases'][:4]
     expected = {case['query']: [refs[ref] for ref in case['needed']] for case in cases}
-    a = pairs.run(lambda q: expected[q] if q in (cases[0]['query'], cases[2]['query']) else [], cases, refs)
-    b = pairs.run(lambda q: expected[q] if q in (cases[0]['query'], cases[1]['query']) else [], cases, refs)
+    a = pairs.run(lambda q, c='': expected[q] if q in (cases[0]['query'], cases[2]['query']) else [], cases, refs)
+    b = pairs.run(lambda q, c='': expected[q] if q in (cases[0]['query'], cases[1]['query']) else [], cases, refs)
     assert [r['change'] for r in pairs.compare(a, b)['dev']['changes']] == [
         'unchanged-pass', 'fixed', 'regressed', 'unchanged-fail']
 
@@ -159,8 +161,8 @@ def test_noise_is_not_an_authority_trap_and_ids_are_deduplicated(data, seeded):
     _, refs = seeded
     cases = [case for case in data['cases'] if case['kind'] == 'harm-control']
     values = {case['query']: [refs[ref] for ref in case['irrelevant']] for case in cases}
-    clean = pairs.run(lambda q: [], cases, refs)
-    noisy = pairs.run(lambda q: values[q] * 3, cases, refs)
+    clean = pairs.run(lambda q, c='': [], cases, refs)
+    noisy = pairs.run(lambda q, c='': values[q] * 3, cases, refs)
     for row in noisy['rows']:
         assert (row['needed_hit'], row['needed_total'], row['trap_hits'], row['noise_hits']) == (0, 0, 0, 1)
         assert len(row['returned']) == 1
@@ -176,22 +178,22 @@ def test_eligibility_comes_from_store_even_after_seed(data, seeded):
     store, refs = seeded
     case = copy.deepcopy(data['cases'][0])
     OwnerForget(store).forget(data['owner'], 'memory:' + refs['r1'])
-    result = pairs.run(lambda q: [refs['r1']], [case], refs)['rows'][0]
+    result = pairs.run(lambda q, c='': [refs['r1']], [case], refs)['rows'][0]
     assert result['needed_hit'] == 0
     assert result['trap_hits'] == 1
     # Relabeling a forbidden id as needed cannot create credit, either.
     case['needed'] = ['r9', 'r5', 'r7', 'r24']
-    result = pairs.run(lambda q: [refs[ref] for ref in case['needed']], [case], refs)['rows'][0]
+    result = pairs.run(lambda q, c='': [refs[ref] for ref in case['needed']], [case], refs)['rows'][0]
     assert (result['needed_hit'], result['needed_total'], result['trap_hits']) == (0, 4, 4)
     with pytest.raises(pairs.RecallPairsError):
-        pairs.run(lambda q: [{'id': refs['r1'], 'state': 'current'}], [case], refs)
+        pairs.run(lambda q, c='': [{'id': refs['r1'], 'state': 'current'}], [case], refs)
 
 
 def test_score_uses_weighted_recall_and_never_pools_splits(data, seeded):
     _, refs = seeded
     cases = copy.deepcopy(data['cases'][:2])
     cases[0]['needed'] = ['r1', 'r2']
-    result = pairs.run(lambda q: [refs['r1']] if q == cases[0]['query'] else [], cases, refs)
+    result = pairs.run(lambda q, c='': [refs['r1']] if q == cases[0]['query'] else [], cases, refs)
     score = pairs.score(result)
     assert score['dev']['total']['needed_recall'] == 1 / 3
     assert score['dev']['by_kind']['lexical-control']['needed_recall'] == 1 / 3
@@ -208,7 +210,7 @@ def test_seed_expiry_does_not_depend_on_wall_clock(tmp_path, data):
     store = QuickStore(tmp_path / 'expiry')
     refs = pairs.seed(store, data)
     assert not store.memory(refs['new'], owner_id=data['owner'])['valid_until']
-    assert pairs.run(lambda q: [refs['new']], data['cases'], refs)['rows'][0]['needed_hit'] == 1
+    assert pairs.run(lambda q, c='': [refs['new']], data['cases'], refs)['rows'][0]['needed_hit'] == 1
 
 
 @pytest.mark.parametrize('filename,prefix,tag,counts', [
@@ -227,9 +229,31 @@ def test_bundled_scenarios_load(filename, prefix, tag, counts):
         assert sum(t.startswith('kind-') for t in row['tags']) == 1
         if prefix == 'line-':
             assert row['expect']['preparation']
-            assert 'real clock' in row['good_secretary']
-            assert 'never fires scheduled rows' in row['good_secretary']
         for turn in row['turns']:
             if turn['note']:
                 assert turn['note_in_message']
                 assert turn['note'] in scenarios.owner_message(turn)
+
+
+def test_short_follow_ups_need_context_and_reading_it_recalls_them(data, seeded):
+    store, refs = seeded
+    follow = [case for case in data['cases'] if case['kind'] == 'short-follow-up']
+    assert follow and all(case.get('context') for case in follow)
+    broken = copy.deepcopy(data)
+    next(case for case in broken['cases'] if case['kind'] == 'short-follow-up').pop('context')
+    with pytest.raises(pairs.RecallPairsError, match='context'):
+        pairs.validate(broken)
+    # The cases are passable honestly: a retriever that reads the preceding turn recalls them.
+    with_context = pairs.run(lexical(store, data, read_context=True), follow, refs)
+    assert all(row['needed_hit'] == row['needed_total'] and not row['trap_hits'] for row in with_context['rows'])
+
+
+def test_a_retriever_that_writes_to_the_store_is_refused(data, seeded):
+    store, refs = seeded
+    forgotten = next(row for row in data['rows'] if row.get('forgotten'))
+
+    def resave(query, context=''):
+        saved = store.save_memory(forgotten['key'], forgotten['content'], owner_id=data['owner'], work_id='retriever')
+        return [saved['id']]
+    with pytest.raises(pairs.RecallPairsError, match='wrote to the store'):
+        pairs.run(resave, data['cases'][:1], refs)

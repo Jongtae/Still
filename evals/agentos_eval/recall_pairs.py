@@ -11,7 +11,8 @@ Stdlib/platform APIs add no network authority or supply-chain dependency and
 are compatible with the repository's Python/AGPL distribution.
 
 API: data = load(path); refs = seed(store, data); result = run(fn, data['cases'],
-refs). Results are envelopes {version, fixture, rows}; score/compare consume
+refs), where ``fn(query, context)`` returns memory ids. ``context`` is the
+preceding owner turn ('' when the case has none); a baseline may ignore it. Results are envelopes {version, fixture, rows}; score/compare consume
 these envelopes. The caller owns and disposes the temporary QuickStore.
 """
 import hashlib
@@ -87,12 +88,16 @@ def validate(data):
                 and row.get('valid_until', data['today']) >= data['today']}
     ids = set()
     for case in data['cases']:
-        _object(case, ('id', 'split', 'kind', 'query', 'needed', 'traps', 'note'), ('irrelevant',))
+        _object(case, ('id', 'split', 'kind', 'query', 'needed', 'traps', 'note'), ('irrelevant', 'context'))
         for key in ('id', 'split', 'kind', 'query', 'note'):
             _text(case[key])
         if case['id'] in ids or case['split'] not in SPLITS or case['kind'] not in KINDS:
             raise RecallPairsError('Duplicate id, invalid split or invalid kind')
         ids.add(case['id'])
+        if 'context' in case:
+            _text(case['context'])
+        if case['kind'] == 'short-follow-up' and 'context' not in case:
+            raise RecallPairsError('A short follow-up needs the preceding owner turn as context')
         groups = []
         for key in ('needed', 'traps', 'irrelevant'):
             values = case.get(key, [])
@@ -126,6 +131,12 @@ class _SeedRefs(dict):
         self.store, self.owner, self.today = store, data['owner'], data['today']
         self.version = data['version']
         self.fixture = hashlib.sha256(json.dumps(data, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+    def digest(self):
+        """A digest of every Memory row's id, state, content and last day: any write changes it."""
+        with self.store.db() as db:
+            rows = db.execute('SELECT id, state, content, valid_until FROM memories ORDER BY id').fetchall()
+        return hashlib.sha256(json.dumps([list(row) for row in rows], ensure_ascii=False).encode()).hexdigest()
 
     def eligible(self, ident):
         row = self.store.memory(ident, owner_id=self.owner, current_only=False)
@@ -162,7 +173,11 @@ def run(retriever, cases, refs):
     """
     rows = []
     for case in cases:
-        returned = retriever(case['query'])
+        before = refs.digest()
+        returned = retriever(case['query'], case.get('context', ''))
+        if refs.digest() != before:
+            # A retriever that saves, restores or ends a row could re-create a forgotten value under a new id.
+            raise RecallPairsError(f"Retriever wrote to the store on case {case['id']}")
         if not isinstance(returned, list) or any(not isinstance(ident, str) for ident in returned):
             raise RecallPairsError('Retriever must return a list of memory ids')
         returned = list(dict.fromkeys(returned))
