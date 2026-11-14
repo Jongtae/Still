@@ -3,9 +3,11 @@
 Adopt Inspect's records_from_samples and stdlib statistics; adapt the persisted
 WorkLedger/event schema. No dependency, authority or runtime changes (#16/#827).
 """
+import hashlib
 import json
 import math
 from collections import Counter
+from pathlib import Path
 from statistics import mean, median
 
 # Explicit fallback snapshot of CONCURRENT_CALL_READS at this revision. Resolved
@@ -218,12 +220,43 @@ def declared_cohort(log, scenarios=None):
     return declared, source
 
 
-def combine_arm_logs(logs, label, scenarios=None):
+def log_run_identities(log, path=None):
+    """All declared run/eval aliases, or a digest of the original log bytes."""
+    candidates = {'metadata.id': (log.eval.metadata or {}).get('id'),
+                  'run_id': getattr(log.eval, 'run_id', None), 'eval_id': getattr(log.eval, 'eval_id', None)}
+    identities = [f'{kind}={value}' for kind, value in candidates.items() if isinstance(value, str) and value]
+    if identities:
+        return identities
+    path = path or getattr(log, 'location', None)
+    if not path:
+        raise ValueError('Cannot identify log: no run/eval id or log file for content digest')
+    try:
+        with Path(path).open('rb') as stream:
+            digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+    except OSError as exc:
+        raise ValueError(f'Cannot identify log without an id: cannot read {path} for content digest') from exc
+    return ['sha256=' + digest]
+
+
+def _claim_run_identities(identities, seen, origin):
+    for identity in identities:
+        if identity in seen:
+            raise ValueError(f'Duplicate run identity {identity}: {seen[identity]} and {origin}')
+    for identity in identities:
+        seen[identity] = origin
+
+
+def combine_arm_logs(logs, label, scenarios=None, paths=None, seen_identities=None):
     """Normalize Inspect logs and concatenate their declared epoch ranges in order."""
     from .report import records_from_samples
     pieces = []
-    for log in logs:
+    seen = {} if seen_identities is None else seen_identities
+    for index, log in enumerate(logs, 1):
+        identities = log_run_identities(log, paths[index - 1] if paths is not None else None)
+        origin = f'arm {label}, log {index}'
+        _claim_run_identities(identities, seen, origin)
         run = dict(log.eval.metadata or {})
+        run['_log_identities'] = [identities]
         scenario_ids, source = declared_cohort(log, scenarios)
         if scenario_ids is not None:
             run['scenario_ids'] = scenario_ids
@@ -273,7 +306,8 @@ def combine_arm_logs(logs, label, scenarios=None):
         runs.append({'id': run.get('id'), 'started': run.get('started'),
                      'epochs': run['epochs'], 'epoch_offset': offset})
         offset += run['epochs']
-    combined = {**pieces[0]['run'], 'id': None, 'epochs': offset, 'runs': runs}
+    combined = {**pieces[0]['run'], 'id': None, 'epochs': offset, 'runs': runs,
+                '_log_identities': [ids for piece in pieces for ids in piece['run']['_log_identities']]}
     return {'records': records, 'run': combined}
 
 
@@ -282,6 +316,14 @@ def compare_arms(arms, names=None):
     if len(arms) != 2:
         raise ValueError('P1 requires exactly two arms')
     names, source = read_names() if names is None else (frozenset(names), 'explicit argument')
+    seen = {}
+    for label, arm in arms.items():
+        run = arm.get('run') or {}
+        aliases = run.get('_log_identities')
+        if aliases is None:
+            aliases = [[f"metadata.id={r['id']}"] for r in run.get('runs', [run]) if r.get('id')]
+        for index, identities in enumerate(aliases, 1):
+            _claim_run_identities(identities, seen, f'arm {label}, log {index}')
     output = {}
     for label, arm in arms.items():
         records, run = arm['records'], arm.get('run') or {}

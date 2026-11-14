@@ -205,6 +205,7 @@ def cmd_p1_report(args):
     from inspect_ai.log import read_eval_log
     from .p1_report import compare_arms, render_markdown, combine_arm_logs
     arms = {}
+    seen_identities = {}
     for value in args.arm:
         label, separator, path = value.partition('=')
         if not separator or not label or not path or label in arms:
@@ -214,7 +215,8 @@ def cmd_p1_report(args):
             raise SystemExit('--arm must be label=<log.eval>[,<log.eval>...] with no empty paths')
         logs = [read_eval_log(part) for part in paths]
         try:
-            arms[label] = combine_arm_logs(logs, label, getattr(args, 'scenarios', None))
+            arms[label] = combine_arm_logs(logs, label, getattr(args, 'scenarios', None),
+                                           paths=paths, seen_identities=seen_identities)
         except ValueError as exc:
             raise SystemExit(str(exc)) from exc
     try:

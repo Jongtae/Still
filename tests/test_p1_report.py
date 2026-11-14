@@ -196,7 +196,7 @@ def test_cli_reads_existing_logs_and_writes_outputs(tmp_path, monkeypatch):
         run = record()
         sample = SimpleNamespace(id='s', epoch=1, metadata={'run': run}, scores={
             'secretary': SimpleNamespace(metadata={'scenario': 's', 'worker': 'codex', 'checks': run['checks']}, value={})})
-        logs[path] = SimpleNamespace(samples=[sample], eval=SimpleNamespace(metadata={'git_head': path, 'epochs': 1, 'scenario_ids': ['s']}))
+        logs[path] = SimpleNamespace(samples=[sample], eval=SimpleNamespace(metadata={'id': path, 'git_head': path, 'epochs': 1, 'scenario_ids': ['s']}))
     module = types.ModuleType('inspect_ai.log')
     module.read_eval_log = logs.__getitem__
     monkeypatch.setitem(sys.modules, 'inspect_ai.log', module)
@@ -564,7 +564,7 @@ def _cohort_log(sample_ids=None, declared=None):
         run = record(epoch=epoch)
         samples.append(SimpleNamespace(id='s@codex', epoch=epoch, metadata={'run': run}, scores={
             'secretary': SimpleNamespace(metadata={'scenario': 's', 'worker': 'codex', 'checks': run['checks']}, value={})}))
-    metadata = {'worker': 'codex'}
+    metadata = {'worker': 'codex', 'id': 'cohort-fixture'}
     if declared is not None:
         metadata['scenario_ids'] = declared
     return SimpleNamespace(samples=samples, eval=SimpleNamespace(
@@ -578,7 +578,12 @@ def test_cli_cohort_recovery_does_not_use_completed_samples(tmp_path, monkeypatc
     log = _cohort_log(sample_ids=['s@codex', 't@codex'] if source == 'inspect' else None,
                       declared=['s', 't'] if source == 'metadata' else None)
     module = types.ModuleType('inspect_ai.log')
-    module.read_eval_log = lambda path: log
+    def read_log(path):
+        import copy
+        distinct = copy.deepcopy(log)
+        distinct.eval.metadata['id'] = path
+        return distinct
+    module.read_eval_log = read_log
     monkeypatch.setitem(sys.modules, 'inspect_ai.log', module)
     out = tmp_path / 'cohort.json'
     args = ['p1-report', '--arm', 'limit1=one.eval', '--arm', 'limit4=four.eval', '--json', str(out)]
@@ -752,7 +757,10 @@ def test_log_epoch_offsets_use_declared_counts_even_when_a_log_stops_early():
     assert combined['run']['epochs'] == 3
     assert [r['epoch'] for r in combined['records']] == [1, 3]
     assert [r['epoch_offset'] for r in combined['run']['runs']] == [0, 2]
-    result = p1.compare_arms({'limit1': combined, 'limit4': combined}, names=set())
+    other_first, other_second = _one_epoch_log('limit4', 1), _one_epoch_log('limit4', 2)
+    other_first.eval.metadata['epochs'] = 2
+    other = p1.combine_arm_logs([other_first, other_second], 'limit4')
+    result = p1.compare_arms({'limit1': combined, 'limit4': other}, names=set())
     assert result['comparison_complete'] is False
     assert result['arms']['limit1']['missing'] == [['s', 2]]
     assert result['paired_epochs']['s'] == [1, 3]
@@ -765,3 +773,78 @@ def test_single_log_retains_epoch_and_identity():
     assert single['run']['epochs'] == 1
     assert single['records'][0]['epoch'] == 1
     assert single['run']['runs'] == [{'id': 'limit1-run-1', 'started': 1100, 'epochs': 1, 'epoch_offset': 0}]
+
+
+
+@pytest.mark.parametrize('duplicate_field', ['metadata.id', 'run_id', 'eval_id'])
+def test_repeated_run_aliases_within_arm_rejected_before_offset(duplicate_field):
+    import copy
+    first = _one_epoch_log('limit1', 1)
+    second, third = copy.deepcopy(first), copy.deepcopy(first)
+    for index, log in enumerate((first, second, third), 1):
+        log.eval.metadata['id'] = f'unique-metadata-{index}'
+        if duplicate_field == 'metadata.id':
+            log.eval.metadata['id'] = 'reused-trial'
+        else:
+            setattr(log.eval, duplicate_field, 'reused-trial')
+    with pytest.raises(ValueError, match=f'Duplicate run identity .*reused-trial'):
+        p1.combine_arm_logs([first, second, third], 'limit1')
+    assert first.samples[0].epoch == second.samples[0].epoch == third.samples[0].epoch == 1
+
+
+@pytest.mark.parametrize('across_arms', [False, True])
+def test_cli_rejects_same_log_under_different_paths(monkeypatch, across_arms):
+    import copy
+    import types
+    from agentos_eval import cli
+    log = _one_epoch_log('limit1', 1)
+    module = types.ModuleType('inspect_ai.log')
+    module.read_eval_log = lambda path: copy.deepcopy(log)
+    monkeypatch.setitem(sys.modules, 'inspect_ai.log', module)
+    first_arm = 'limit1=a.eval' if across_arms else 'limit1=a.eval,alias.eval,another-alias.eval'
+    with pytest.raises(SystemExit, match='Duplicate run identity metadata.id=limit1-run-1'):
+        cli.main(['p1-report', '--arm', first_arm, '--arm', 'limit4=copy.eval'])
+
+
+@pytest.mark.parametrize('across_arms', [False, True])
+def test_idless_log_copies_are_rejected_by_file_digest(tmp_path, monkeypatch, across_arms):
+    import copy
+    import hashlib
+    import types
+    from agentos_eval import cli
+    log = _one_epoch_log('limit1', 1)
+    del log.eval.metadata['id']
+    content = b'fixture Inspect log bytes without run ids'
+    first, alias = tmp_path / 'original.eval', tmp_path / 'copy.eval'
+    first.write_bytes(content)
+    alias.write_bytes(content)
+    digest = hashlib.sha256(content).hexdigest()
+    module = types.ModuleType('inspect_ai.log')
+    module.read_eval_log = lambda path: copy.deepcopy(log)
+    monkeypatch.setitem(sys.modules, 'inspect_ai.log', module)
+    first_arm = f'limit1={first}' if across_arms else f'limit1={first},{alias}'
+    with pytest.raises(SystemExit, match=f'Duplicate run identity sha256={digest}'):
+        cli.main(['p1-report', '--arm', first_arm, '--arm', f'limit4={alias}'])
+
+
+def test_distinct_idless_log_files_remain_distinct(tmp_path):
+    logs, paths = [], []
+    for index in range(1, 4):
+        log = _one_epoch_log('limit1', index)
+        del log.eval.metadata['id']
+        path = tmp_path / f'{index}.eval'
+        path.write_bytes(f'distinct fixture log {index}'.encode())
+        logs.append(log)
+        paths.append(path)
+    combined = p1.combine_arm_logs(logs, 'limit1', paths=paths)
+    assert combined['run']['epochs'] == 3
+    assert [r['epoch'] for r in combined['records']] == [1, 2, 3]
+
+
+
+def test_comparison_rejects_reuse_even_when_arms_were_combined_separately():
+    log = _one_epoch_log('limit1', 1)
+    a = p1.combine_arm_logs([log], 'limit1')
+    b = p1.combine_arm_logs([log], 'limit4')
+    with pytest.raises(ValueError, match='Duplicate run identity metadata.id=limit1-run-1'):
+        p1.compare_arms({'limit1': a, 'limit4': b}, names=set())
