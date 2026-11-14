@@ -412,9 +412,8 @@ def test_the_workplace_program_is_closed_out_and_selects_no_successor():
 def test_the_responsive_program_is_closed_out_and_selects_no_successor():
     """#332: #309, #17 and #346 merged on their own PRs; no successor, heartbeat paused."""
     current = plan()
-    assert current["next_goal"]["id"] is None
-    assert "heartbeat stays paused" in current["next_goal"]["action"]
-    assert invariants.assert_declared_goal_shape(TestCase(), plan=current) == "terminal"
+    assert current["next_goal"]["id"] != "RESPONSIVE-01"
+    assert invariants.assert_declared_goal_shape(TestCase(), plan=current) in {"goal-ready", "terminal"}
     assert "RESPONSIVE-01" in invariants.closed_out_programs(current)
     invariants.assert_completed_work_is_unselectable(TestCase(), current)
     program = current["programs"]["RESPONSIVE-01"]
@@ -460,3 +459,75 @@ def test_the_post_closeout_audit_notes_correct_without_rewriting_the_closeouts()
 
 def items_of(current):
     return {item["id"]: item for item in current["iterations"]}
+
+
+FRONTIER_FIRST_WAVE = ["FRONTIER-SPEC-01", "FRONTIER-EVAL-01"]
+FRONTIER_RESERVED = ["FRONTIER-PROVENANCE-01", "FRONTIER-RECOVERY-01", "FRONTIER-CONTEXT-01"]
+
+
+def test_frontier_declares_only_the_owner_authorized_first_wave():
+    current = plan()
+    program = current["programs"]["FRONTIER-01"]
+    items = items_of(current)
+    assert invariants.assert_declared_goal_shape(TestCase(), plan=current) == "goal-ready"
+    assert current["next_goal"]["id"] == "FRONTIER-01"
+    invariants.assert_activation_record(TestCase(), "FRONTIER-01 activation", program["activated_by"])
+    assert program["activated_by"]["issue"] == program["issue"] == 822
+    assert program["ordered_substeps"] == FRONTIER_FIRST_WAVE
+    assert [items[name]["issue"] for name in FRONTIER_FIRST_WAVE] == [823, 824]
+    assert program["active_substeps"] == ["FRONTIER-EVAL-01"]
+    assert program["completed_substeps"] == ["FRONTIER-SPEC-01"]
+    assert program["reserved_substeps"] == FRONTIER_RESERVED
+    assert [items[name]["issue"] for name in FRONTIER_RESERVED] == [825, 826, 827]
+    assert items["FRONTIER-SPEC-01"]["activation_status"] == "complete-on-merge"
+    assert items["FRONTIER-EVAL-01"]["activation_status"] == "parent-controlled"
+    specification = items["FRONTIER-01"]["completed_substeps"]["FRONTIER-SPEC-01"]
+    assert specification["issue"] == 823
+    assert specification["status"] == "complete-on-merge"
+    assert all(items[name]["activation_status"] == "reserved" for name in FRONTIER_RESERVED)
+    completed = set(current["history"]["documented_completed_iterations"])
+    assert "FRONTIER-SPEC-01" in completed
+    assert not {"FRONTIER-01", "FRONTIER-EVAL-01", *FRONTIER_RESERVED} & completed
+    invariants.assert_completed_work_is_unselectable(TestCase(), current)
+    assert items["FRONTIER-PROVENANCE-01"]["dependency_issues"] == [818, 819, 820]
+    assert items["FRONTIER-RECOVERY-01"]["dependency_issues"] == [821]
+    assert items["FRONTIER-RECOVERY-01"]["related_pull_requests"] == [816]
+    assert items["FRONTIER-CONTEXT-01"]["depends_on"] == FRONTIER_FIRST_WAVE
+
+
+def test_frontier_parallel_evaluation_has_disjoint_files_and_satisfied_dependencies():
+    current = plan()
+    program = current["programs"]["FRONTIER-01"]
+    items = items_of(current)
+    assert program["parallel_eligible_substeps"] == []
+    authorization = program["parallel_authorization"]
+    assert authorization["issue"] == 822
+    assert authorization["substeps"] == FRONTIER_FIRST_WAVE
+    assert not set(program["parallel_eligible_substeps"]) & set(program["active_substeps"])
+    specification = set(program["delegation"]["FRONTIER-SPEC-01"]["owned_files"])
+    evaluation = set(program["delegation"]["FRONTIER-EVAL-01"]["owned_files"])
+    assert specification and evaluation
+    assert specification.isdisjoint(evaluation)
+    assert evaluation == {"evals/agentos_eval/judgments.py", "tests/test_eval_judgments.py"}
+    completed = set(current["history"]["documented_completed_iterations"])
+    for name in authorization["substeps"]:
+        assert name in program["ordered_substeps"]
+        assert set(items[name]["depends_on"]) <= completed
+
+
+def test_frontier_parent_selection_never_self_activates_children_or_successors(tmp_path):
+    current = plan()
+    path = tmp_path / "delivery-plan.yaml"
+    current["next_goal"]["status"] = "active"
+    path.write_text(json.dumps(current), encoding="utf-8")
+    delivery = DeliveryPlan(path)
+    assert delivery.select({})["id"] == "FRONTIER-01"
+    assert delivery.select({"completed": ["FRONTIER-01"]}) is None
+    # Finishing both authorized units does not cause the controller to pick a reserved one.
+    selected = delivery.select({"completed": FRONTIER_FIRST_WAVE})
+    assert selected["id"] == "FRONTIER-01"
+    for name in FRONTIER_FIRST_WAVE + FRONTIER_RESERVED:
+        current["next_goal"] = {"id": name, "status": "active"}
+        path.write_text(json.dumps(current), encoding="utf-8")
+        for state in ({}, {"completed": FRONTIER_FIRST_WAVE}):
+            assert DeliveryPlan(path).select(state) is None, (name, state)
