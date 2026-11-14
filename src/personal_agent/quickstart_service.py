@@ -494,8 +494,9 @@ BROWSER_LOGIN_PAGE_OFFERED_TEXT=('이 페이지는 로그인이 필요해요. �
                                  '로그인 창을 열고 소유자에게 로그인을 요청하며, 소유자가 로그인하고 창을 닫으면 이 요청을 한 번 '
                                  '이어서 처리합니다.')
 #: #619 (owner decision 2026-11-03): a scheduled run has no owner present, so a sign-in page asks
-#: nothing and leaves no login window waiting; the worker continues without that page.
-BROWSER_LOGIN_UNATTENDED_TEXT=('이 페이지는 로그인이 필요해요. 이 실행은 소유자가 없는 예약 실행이라 Still은 로그인을 요청하지 '
+#: nothing and leaves no login window waiting; the worker continues without that page.  #821: only a
+#: run the owner did not accept (``owner_accepted_run``); one the owner accepted asks as a typed Work does.
+BROWSER_LOGIN_UNATTENDED_TEXT=('이 페이지는 로그인이 필요해요. 이 실행은 소유자에게 묻지 않는 예약 실행이라 Still은 로그인을 요청하지 '
                                '않았고, 소유자를 기다리는 것도 없어요. 비밀번호는 입력하지 말고, 로그인 없이 확인할 수 있는 '
                                '다른 경로가 있으면 그것으로 확인하세요. 끝내 확인하지 못한 부분은 답에서 확인하지 못했다고 '
                                '짧게 밝히세요.')
@@ -935,6 +936,22 @@ class AgentService:
         # The Work retains its preparation request key after cancellation/deletion.
         # Missing consent provenance must never widen payment authority.
         return row is None or row.get('accepted_by') in prep.SELF_SET
+
+    def owner_accepted_run(self, job):
+        """#821 (owner decision 2026-11-14): ``job`` is the current run of a preparation the owner accepted.
+
+        Such a run may ask the owner to sign in, in its paired conversation, as a typed Work does.  Only
+        an ``accepted_by`` in ``prep.OWNER_ACCEPTED`` counts (a missing row, a NULL or self-set value is
+        False), only the slot's current Work (``last_run_job_id``) while the row runs, and only a run
+        in the owner's current paired conversation: never one kept in Still (``when_needed``) or started
+        while nothing was paired, which has no conversation to ask in.  Payment is unaffected:
+        it stays under the payment-autonomy contract (``_authorize_payment_autonomy``).
+        """
+        preparation_id=prep.preparation_of((job or {}).get('request_key'))
+        row=self.preparations.get(preparation_id) if preparation_id else None
+        return bool(row and row.get('accepted_by') in prep.OWNER_ACCEPTED and row.get('state')==prep.STATE_RUNNING
+                    and row.get('last_run_job_id')==job.get('id') and row.get('delivery_mode')!=prep.DELIVERY_WHEN_NEEDED
+                    and self._surface_work(job))
 
     def owner_typed_work(self, job):
         """Whether the owner's own typed message started ``job`` (#619, #717).
@@ -7256,6 +7273,17 @@ class AgentService:
         receipts=[json.loads(item['detail']) for item in db.execute(
             "SELECT detail FROM tool_events WHERE job_id=? AND tool IN ('action_continuation','settings_continuation')",(job['id'],))]
         if any(item.get('offer_digest')==row.get('offer_digest') and item.get('resumed') for item in receipts):return False
+        # #821: a scheduled run's sign-in continues only the preparation version it was asked under; a
+        # row without that version (never recorded for a scheduled run since #816) continues nothing.
+        if ((row.get('action')=='browser_sign_in' and self.unattended_work(job) or 'preparation' in row)
+                and self.preparations.wait_refusal(db,job['id'],row.get('preparation'))):
+            if not any(item.get('offer_digest')==row.get('offer_digest') and item.get('reason')==prep.WAIT_CHANGED for item in receipts):
+                db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                           (job['id'],'action_continuation','withheld',json.dumps({'action_digest':row['digest'],'offer_digest':row.get('offer_digest'),
+                                                                                  'resumed':False,'reason':prep.WAIT_CHANGED}),time.time()))
+            cause=msg('preparations.wait_changed')
+            db.execute("UPDATE jobs SET status='partial',owner_cause=? WHERE id=?",(cause,job['id']))
+            return False
         from .quickstart_store import REQUEST_APPROVAL_ACTIONS
         guarded=REQUEST_APPROVAL_ACTIONS|{'browser_sign_in','budget_continue'}
         # #618 E2: the one continuation rule, and its one reason text for the owner.  #627: its one

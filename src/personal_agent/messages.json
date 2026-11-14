@@ -10750,6 +10750,12 @@
   "ja": "繰り返しの確認時間帯は、現地時間で同じ日のうちに開始・終了してください。",
   "zh": "重复监测时段的开始和结束必须在同一个当地日期。"
  },
+ "preparations.wait_changed": {
+  "ko": "기다리는 동안 이 예약 작업이 바뀌어서, 로그인 뒤에 원래 요청을 이어서 처리하지 않았어요.",
+  "en": "This scheduled task changed while it was waiting, so I didn't continue the original request after the sign-in.",
+  "ja": "待っている間にこの予約タスクが変更されたため、ログイン後に元の依頼の続きは処理しませんでした。",
+  "zh": "这个计划任务在等待期间被更改了，所以登录后没有继续处理原来的请求。"
+ },
  "preparations.notice_waiting": {
   "ko": "예약한 ‘{title}’ 작업이 연결을 기다리고 있어요. Still 설정에서 필요한 연결을 완료해 주세요.",
   "en": "The scheduled task “{title}” is waiting for a connection. Complete the required connection in Still Settings.",

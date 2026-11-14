@@ -6,6 +6,7 @@ service so existing callers and method patches retain their behavior.
 Shared constants remain in quickstart_service, as in telegram_surface.
 """
 
+from . import preparations as prep
 from . import work_status as ws
 from . import remote_login
 from .agent_runtime import ToolError, not_run
@@ -487,9 +488,15 @@ class BrowserSignin:
         (``browser_sign_in``); the row is then offered however the Work ends.
         #619: a scheduled run (no owner present) records nothing either and
         leaves no window waiting; the model reads that it continues without the page.
+        #821: except the current run of a preparation the owner accepted (``owner_accepted_run``):
+        it asks as a typed Work does, and its row carries the preparation version it was asked
+        under (``preparation``), so only that version's run is continued.
         """
         service=self.service
-        if service.unattended_work(job):return BROWSER_LOGIN_UNATTENDED_TEXT
+        stamp=None
+        if service.unattended_work(job):
+            if not service.owner_accepted_run(job):return BROWSER_LOGIN_UNATTENDED_TEXT
+            stamp=service.preparations.wait_stamp(service.preparations.get(prep.preparation_of(job['request_key'])))
         try:
             parts=urlsplit(str(url or ''))
             host=parts.hostname
@@ -512,7 +519,8 @@ class BrowserSignin:
             nonce=secrets.token_hex(16)
             service._put_browser_login(job['id'],{'work_id':job['id'],'url':target,'host':host,
                                                'state':'requested','requested_at':time.time(),
-                                               'nonce':nonce,'explicit':bool(explicit)})
+                                               'nonce':nonce,'explicit':bool(explicit),
+                                               **({'preparation':stamp} if stamp else {})})
             # #340: redacted references cannot vouch for an unmediated address.
             if window_url and '[가림]' not in url:
                 service._browser_login_window_urls[job['id']]=(nonce,login_window_url(window_url))
@@ -531,6 +539,10 @@ class BrowserSignin:
         service=self.service
         row=service._browser_login(job['id'])
         if not row or row.get('state')!='requested':return False
+        if self._wait_changed(job['id'],row):
+            # #821: the preparation changed since its run asked; no window opens for the old version.
+            service._put_browser_login(job['id'],{**row,'state':'unavailable','cause':prep.WAIT_CHANGED,'closed_at':time.time()})
+            return False
         # The site's stored sign-in cookies before the window: a login is evidenced by their change.
         now=time.time()
         row={**row,'cookies_before':service._login_cookie_marks(row),'site':registrable_domain(row['host'])}
@@ -992,7 +1004,8 @@ class BrowserSignin:
                         binding='browser-login:'+str(nonce)
                         try:
                             resumed=service._queue_action_continuation(db,job,
-                                {'action':'browser_sign_in','digest':binding,'offer_digest':binding})
+                                {'action':'browser_sign_in','digest':binding,'offer_digest':binding,
+                                 **({'preparation':row['preparation']} if 'preparation' in row else {})})
                         except (ValueError,TypeError,KeyError):
                             # Unreadable effect/request evidence cannot permit replay.
                             db.execute("UPDATE jobs SET status='unknown',error=?,owner_cause=? WHERE id=?",
@@ -1074,7 +1087,9 @@ class BrowserSignin:
 
         Only the window's own timeout (not a skip, a close without sign-in or a failed close), at most
         ``BROWSER_LOGIN_REOPENS`` times, while the Work still ended short (partial/failed), is not
-        stopped, is this chat's Telegram Work and the site may still be signed in to.
+        stopped, is this chat's Telegram Work and the site may still be signed in to.  #821: never a
+        scheduled run's login (``preparation``): its slot settles once the wait ends, so a reopened
+        window could continue nothing; its expiry is told once.
         """
         service=self.service
         row=service._browser_login(work_id) or {}
@@ -1082,7 +1097,13 @@ class BrowserSignin:
         return bool(row.get('state')=='expired' and row.get('cause')=='expired'
                     and int(row.get('reopens') or 0)<BROWSER_LOGIN_REOPENS
                     and job and ws.is_resumable_continuation(job['status']) and not service.work_stopped(work_id)
-                    and service._surface_work(job))
+                    and service._surface_work(job) and 'preparation' not in row)
+
+    def _wait_changed(self, work_id, row):
+        """#821: a scheduled run's login row whose preparation version is no longer current."""
+        if 'preparation' not in row:return False
+        with self.service.store.db() as db:
+            return bool(self.service.preparations.wait_refusal(db,work_id,row['preparation']))
 
     def reopen_browser_login(self, work_id, nonce):
         """The expired prompt's 로그인 창 다시 열기: ask the same login again for the same Work (#1573).
