@@ -8975,10 +8975,10 @@
   "zh": "内容疑似凭据，未保存为记忆。"
  },
  "agent_runtime.page_address_holds_secret": {
-  "ko": "주소에 저장된 비밀값이 들어 있어 페이지를 읽지 않았어요. 비밀값을 뺀 주소로 다시 시도하세요.",
-  "en": "The address contains a stored secret value, so the page was not read. Try again with an address that does not contain it.",
-  "ja": "アドレスに保存済みの秘密情報が含まれているため、ページを読みませんでした。秘密情報を除いたアドレスで再試行してください。",
-  "zh": "地址中含有已保存的秘密信息，因此未读取该页面。请使用不含该信息的地址重试。"
+  "ko": "주소에 저장된 비밀값이나 인증 정보 형태의 값이 들어 있어 페이지를 읽지 않았어요. 그 값을 뺀 주소로 다시 시도하세요.",
+  "en": "The address contains a stored secret or a credential-shaped value, so the page was not read. Try again with an address without it.",
+  "ja": "アドレスに保存済みの秘密情報または認証情報の形の値が含まれているため、ページを読みませんでした。その値を除いたアドレスで再試行してください。",
+  "zh": "地址中含有已保存的秘密信息或凭据形式的值，因此未读取该页面。请使用不含该值的地址重试。"
  },
  "agent_runtime.public_query_empty": {
   "ko": "공개 조회에 보낼 검색어(또는 도시)가 비어 있거나 비밀값뿐이라 보내지 않았어요. 조회할 내용을 직접 적어 주세요.",

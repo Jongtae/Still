@@ -5,11 +5,11 @@ the other, and stored grants that later fall outside the rules are blocked at us
 time instead of silently widening access.
 
 #820: the owner's folder choice is honoured.  A grant that *is* or lies *inside* a
-credential, system or Still-data location is refused (``SENSITIVE``).  A broad grant
-- the filesystem root, the home folder or one of its ancestors, or any folder that
-*contains* such a location - is granted once the owner confirms it with what it
-includes (``ConfirmBroad``); the protected locations inside it stay out of every read
-and listing (``excluded``).
+credential, system or Still-data location is refused (``SENSITIVE``), and so are the
+filesystem root and the folders above the home folder (``BROAD``).  The home folder,
+and a folder inside it that *contains* a protected location, is granted once the
+owner confirms it with what it includes (``ConfirmBroad``); the protected locations
+inside it stay out of every read and listing (``excluded``).
 
 Folders are compared by filesystem identity (device and inode of the folder and its
 ancestors) as well as by case-folded path, so case-insensitive volumes, firmlinks and
@@ -22,7 +22,8 @@ import os
 from pathlib import Path
 
 # Credential, key and app-data stores under the owner's home. A grant may not be one
-# of these, live inside one, or contain one.
+# of these or live inside one; a grant inside the home folder that contains one is
+# granted after the owner's confirmation and never reads it (#820).
 _HOME_SENSITIVE = (
     '.ssh', '.gnupg', '.aws', '.azure', '.kube', '.docker', '.password-store', '.gnome-keyring',
     '.terraform.d', '.mozilla', '.config/gcloud', '.config/gh', '.config/google-chrome',
@@ -134,19 +135,28 @@ def _protected(store):
 def refusal(path, store, case_insensitive=None):
     """Why an existing, resolved directory may not be granted at all, or None.
 
-    #820: only the filesystem root and a credential, system or Still-data location
-    are refused: the folder is one of them, lies inside one, or is Still's own data
-    folder.  The root holds every other account's files and the system, which no
-    location list covers.  A broad folder is not refused here (``broad``).
+    #820: refused are Still's own data folder; a folder that is, or lies inside, a
+    credential, system or Still-data location (``SENSITIVE``); the filesystem root
+    and the folders above the home folder, which hold other accounts' files the
+    location list does not cover (``BROAD``); and, outside the home folder, a
+    folder that contains a protected location (``SENSITIVE``, as before).  The home
+    folder itself and a folder inside it that contains protected locations are
+    not refused: they are granted once the owner confirms them (``broad``).
     """
     chain = _chain(path)
     own = _identity(path)
     if own is None:
         return None
     case_insensitive = _case_insensitive(path) if case_insensitive is None else case_insensitive
-    if own in (_identity(store.root), _identity(Path('/'))):
+    if own == _identity(store.root):
         return SENSITIVE
-    if any(_relation(path, chain, item, case_insensitive)[0] for item in _protected(store)):
+    relations = [_relation(path, chain, item, case_insensitive) for item in _protected(store)]
+    if any(inside for inside, _contains in relations):
+        return SENSITIVE
+    home_id = _identity(Path.home().resolve())
+    if own in _chain(Path.home().resolve()) and own != home_id:
+        return BROAD
+    if not (home_id and home_id in chain) and any(contains for _inside, contains in relations):
         return SENSITIVE
     return None
 
@@ -154,18 +164,20 @@ def refusal(path, store, case_insensitive=None):
 def broad(path, store, case_insensitive=None):
     """Whether granting an allowed ``path`` needs the owner's one confirmation (#820).
 
-    The home folder or an ancestor of it, and any folder that contains a protected
-    location (credential, system or Still data).
+    The home folder itself, and a folder inside it that contains a protected
+    location (credential, system or Still data).  ``refusal`` has already refused
+    anything wider.
     """
     chain = _chain(path)
     own = _identity(path)
     if own is None:
         return False
-    home = Path.home().resolve()
-    case_insensitive = _case_insensitive(path) if case_insensitive is None else case_insensitive
-    if own in _chain(home) \
-            or (case_insensitive and _folded(home).is_relative_to(_folded(path))):
+    home_id = _identity(Path.home().resolve())
+    if own == home_id:
         return True
+    if not (home_id and home_id in chain):
+        return False
+    case_insensitive = _case_insensitive(path) if case_insensitive is None else case_insensitive
     return any(_relation(path, chain, item, case_insensitive)[1] for item in [*_protected(store), Path(store.root)])
 
 

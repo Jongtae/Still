@@ -89,14 +89,27 @@ class FolderGrantTests(unittest.TestCase):
             self.skipTest('no /etc on this platform')
         self.refuse_both(str(etc), folder_grants.SENSITIVE)
 
-    def test_root_and_still_data_are_refused_and_home_asks_once(self):
-        """#820: the filesystem root and Still's own data stay refused; the home folder and its ancestors ask once."""
-        for value in ('/', str(self.store.root), str(self.store.private)):
+    def test_root_above_home_and_still_data_are_refused_and_home_asks_once(self):
+        """#820: Still's own data stays refused; the root and the folders above home stay refused (other accounts'
+        files); the home folder itself asks once."""
+        for value in (str(self.store.root), str(self.store.private)):
             with self.subTest(value=value):
                 self.refuse_both(value, folder_grants.SENSITIVE)
-        for value in (str(self.home), str(self.home.parent)):
+        for value in ('/', str(self.home.parent), str(self.home.parent.parent)):
             with self.subTest(value=value):
-                self.confirm_both(value)
+                self.refuse_both(value, folder_grants.BROAD)
+                with self.assertRaisesRegex(ValueError, folder_grants.BROAD):
+                    folder_grants.validate(value, self.store, confirm_broad=True)
+        self.confirm_both(str(self.home))
+
+    def test_outside_home_a_folder_containing_a_system_location_stays_refused(self):
+        """#820 keeps the old rule outside the home folder: containing a protected location refuses."""
+        outside = self.home.parent.parent / 'shared'
+        (outside / 'conf').mkdir(parents=True)
+        with mock.patch.object(folder_grants, '_SYSTEM_SENSITIVE', (*folder_grants._SYSTEM_SENSITIVE, str(outside / 'conf'))):
+            self.refuse_both(str(outside), folder_grants.SENSITIVE)
+            with self.assertRaisesRegex(ValueError, folder_grants.SENSITIVE):
+                folder_grants.validate(str(outside), self.store, confirm_broad=True)
 
     def test_each_refusal_class_has_its_own_message(self):
         (self.docs / 'note.txt').write_text('x')

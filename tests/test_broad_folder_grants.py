@@ -92,11 +92,14 @@ class BroadFolderGrantTests(handoff.HandoffTestCase):
         custom.mkdir()
         (custom / 'notes.txt').write_text('launch plan copy kept by Still', encoding='utf-8')
         (self.home / 'Documents' / 'keys.txt').symlink_to(self.home / 'Library' / 'Keychains' / 'login.txt')
+        (self.home / '.config' / 'tool').mkdir(parents=True)
+        (self.home / '.config' / 'tool' / 'token.md').write_text('launch token', encoding='utf-8')
+        (self.home / 'Documents' / 'token.md').symlink_to(self.home / '.config' / 'tool' / 'token.md')
         roots = self.service.save_roots({'paths': [str(self.home)], 'confirm_broad': [str(self.home)]})['roots']
         caps = Capabilities(self.store, None, {}, '', 'job', lambda *args: None)
         with mock.patch.object(self.store, 'root', custom), mock.patch.object(self.store, 'private', custom / 'private'):
             self.assertIn('launch plan', caps.read_file(roots[0]['id'], 'Documents/plan.txt')['content'])
-            for path in ('Library/Keychains/login.txt', 'Documents/keys.txt', 'StillData/notes.txt'):
+            for path in ('Library/Keychains/login.txt', 'Documents/keys.txt', 'StillData/notes.txt', 'Documents/token.md'):
                 with self.subTest(path=path), self.assertRaises(ValueError):
                     caps.read_file(roots[0]['id'], path)
             found = {hit['path'] for hit in caps.find_files('launch')['files']} | {hit['path'] for hit in caps.find_files('keychain')['files']}

@@ -6082,7 +6082,8 @@ class AgentService:
         with self.lock:
             raw=self.store.config(LOCAL_DOCUMENT_RESUME_KEY,{})
             with self.store.db() as db:
-                db.execute('DELETE FROM config WHERE key IN (?,?)',(LOCAL_DOCUMENT_RESUME_KEY,'document_sharing'))
+                # #820: the removed public page approval's list of addresses goes with it.
+                db.execute('DELETE FROM config WHERE key IN (?,?,?)',(LOCAL_DOCUMENT_RESUME_KEY,'document_sharing','public_page_sharing'))
         parked=[key for key in (raw if isinstance(raw,dict) else ()) if isinstance(key,str)]
         for work_id in parked:
             if not self.photo_work_has_pending_resume(work_id):self.store.remove_telegram_photo(work_id)
@@ -9326,7 +9327,10 @@ class AgentService:
         except Exception as exc:
             LOG.warning('unattended waits not retired (%s)',type(exc).__name__)
         # #820: the document-sharing consent was removed; nothing stays parked on it.
-        self.retire_document_consent()
+        try:
+            self.retire_document_consent()
+        except Exception as exc:
+            LOG.warning('document consent not retired (%s)',type(exc).__name__)
         def work():
             next_purge_check=0.0
             while not self.stop.is_set():

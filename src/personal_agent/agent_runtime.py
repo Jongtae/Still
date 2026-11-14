@@ -3742,7 +3742,9 @@ class Capabilities:
   resolved=(base/relative).resolve()
   # #820: a broad grant (the home folder) contains credential, system and Still-data locations;
   # the resolved target - a symlink's too - is never one of them.
-  if not resolved.is_relative_to(base) or resolved.is_relative_to(self.store.private) or folder_grants.excluded(resolved,self.store,base):
+  # A symlink inside the grant is followed only to a target that is itself no hidden path of the grant.
+  if not resolved.is_relative_to(base) or resolved.is_relative_to(self.store.private) or folder_grants.excluded(resolved,self.store,base) \
+     or any(part.startswith('.') for part in resolved.relative_to(base).parts):
    raise ValueError(msg('agent_runtime.file_outside_connected_folder'))
   if not resolved.is_file() or resolved.stat().st_size>MAX_FILE_BYTES:raise ValueError(msg('agent_runtime.file_size_limit'))
   if not supported_document(resolved):raise ValueError(msg('agent_runtime.supported_document_formats'))
@@ -4133,13 +4135,19 @@ class Capabilities:
 
   Any public address may be read, including one a page supplied, so the
   address is the one thing this read sends.  It passes the same stored-secret
-  pass every outbound lookup takes (``secret_redactor``) unchanged in each
-  spelling the destination could decode - as given, normalized, and
-  percent-decoded up to three times - or nothing is requested.  A failing
+  pass every outbound lookup takes (``secret_redactor``: stored and retired
+  secrets' literal values and credential shapes) unchanged as given,
+  normalized, and percent-decoded up to three times, or nothing is requested.
+  The fragment is never sent, so it is not checked.  This is a literal check:
+  another encoding of a value (case, base64, hex) is not recognised; stored
+  secrets never reach the model, which is the main boundary.  A failing
   redactor refuses the read (``redaction_unavailable``, #617).  A Work built
   without a redactor uses the store's own pass, so no route reads unchecked.
   """
   if not isinstance(url,str):return
+  from urllib.parse import urlsplit,urlunsplit
+  try:url=urlunsplit(urlsplit(url)._replace(fragment=''))
+  except ValueError:pass
   redactor=self.secret_redactor
   if redactor is None:
    from .current_context import redact_known_secrets
