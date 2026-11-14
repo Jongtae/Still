@@ -871,23 +871,7 @@
           "source": "tests/test_file_workspace_worker_tools.py::WorkerFileWorkspaceTests::test_the_worker_finds_reads_and_saves_a_result_citing_what_it_read",
           "date": "2026-11-14",
           "revision": "6ba8657",
-          "summary": "Temporary business-trip documents are found, read and summarized into a new file with source provenance; content is supplied by the fixture, not a live model."
-        },
-        {
-          "class": "S",
-          "kind": "scenario",
-          "source": "scenario:recall-dated-studio",
-          "date": "2026-11-14",
-          "revision": "6ba8657",
-          "summary": "Synthetic scenario specification only: dated studio. No dated run is claimed."
-        },
-        {
-          "class": "S",
-          "kind": "scenario",
-          "source": "scenario:recall-quiet-desk",
-          "date": "2026-11-14",
-          "revision": "6ba8657",
-          "summary": "Synthetic scenario specification only: quiet desk. No dated run is claimed."
+          "summary": "Direct caps.execute fixture finds and reads supplied files and saves a supplied summary with provenance; no worker or model generates the summary."
         }
       ],
       "judgment_cases": [],
@@ -1145,7 +1129,8 @@
           "source": "docs/skill-eval-01-coverage.en.md#5-live-sample-results",
           "date": "2026-10-03",
           "revision": "efb5977",
-          "summary": "Run 1 stopped at sign-in after loading two skills; zero cart mutations, later cases not run. This is a failed live attempt, not live cart completion."
+          "summary": "Run 1 stopped at sign-in after loading two skills; zero cart mutations, later cases not run. This is a stopped live attempt, not live cart completion; efb5977 is a predecessor Jongtae/agentos revision from the skill-eval-01 record.",
+          "outcome": "stopped"
         },
         {
           "class": "S",
@@ -1190,7 +1175,7 @@
           "source": "tests/test_presence_eval_matrix.py::G_LongResearch::test_long_generation_is_one_stop_able_draft_then_one_durable_answer",
           "date": "2026-11-14",
           "revision": "6ba8657",
-          "summary": "Scripted headphone research reads two fake public pages and delivers one sourced reply; no live comparison quality claim."
+          "summary": "G_LongResearch tests progress drafts and one durable answer with a scripted comparison reply after two fake public-page reads; no model-generated comparison or live quality claim."
         },
         {
           "class": "S",
@@ -1423,7 +1408,7 @@
           "source": "src/personal_agent/code_run.py#L1069",
           "date": "2026-11-14",
           "revision": "6d542ab",
-          "summary": "Static inspection of evidence: persisted code_run evidence excludes stdout and request bodies, including the read fields needed to substantiate balance/order claims in #767; not a new execution."
+          "summary": "Static inspection of code_run.evidence: persisted code_run evidence excludes stdout and request bodies, including the read fields needed to substantiate balance/order claims in #767; not a new execution."
         }
       ],
       "judgment_cases": [
@@ -2025,59 +2010,14 @@
         {
           "class": "S",
           "kind": "scenario",
-          "source": "scenario:recall-dated-committee",
-          "date": "2026-11-14",
-          "revision": "6ba8657",
-          "summary": "Synthetic scenario specification only: dated committee. No dated run is claimed."
-        },
-        {
-          "class": "S",
-          "kind": "scenario",
           "source": "scenario:world-appworld-send-text",
           "date": "2026-11-14",
           "revision": "6ba8657",
           "summary": "Synthetic scenario specification only: Send a message on the owner's behalf (M3b). No dated run is claimed."
-        },
-        {
-          "class": "S",
-          "kind": "judgment-case",
-          "source": "judgment:owner-act-approve",
-          "date": "2026-11-14",
-          "revision": "6ba8657",
-          "summary": "Synthetic owner_act_answer input and expected judgment; not a task execution or a dated model run."
-        },
-        {
-          "class": "S",
-          "kind": "judgment-case",
-          "source": "judgment:owner-act-decline",
-          "date": "2026-11-14",
-          "revision": "6ba8657",
-          "summary": "Synthetic owner_act_answer input and expected judgment; not a task execution or a dated model run."
-        },
-        {
-          "class": "S",
-          "kind": "judgment-case",
-          "source": "judgment:owner-act-none",
-          "date": "2026-11-14",
-          "revision": "6ba8657",
-          "summary": "Synthetic owner_act_answer input and expected judgment; not a task execution or a dated model run."
-        },
-        {
-          "class": "S",
-          "kind": "judgment-case",
-          "source": "judgment:goal-unknown-ko",
-          "date": "2026-11-14",
-          "revision": "6ba8657",
-          "summary": "Synthetic goal_reached input and expected judgment; not a task execution or a dated model run."
         }
       ],
-      "judgment_cases": [
-        "owner-act-approve",
-        "owner-act-decline",
-        "owner-act-none",
-        "goal-unknown-ko"
-      ],
-      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools. The built-in Gmail/Drive tools are read-only (src/personal_agent/agent_runtime.py:DEFINITIONS); tell_owner addresses the owner, and a2a_message addresses an agent peer. Browser interaction can in principle operate signed-in web mail, so the missing dedicated send tool alone is not a Still blocker. No row-specific third-party delivery run or browser-mail fixture was found. The AppWorld send-text link specifies simulator behavior only; no dated run is cited."
+      "judgment_cases": [],
+      "notes": "Only the short conversational reply and AppWorld send-text specifications are linked; no row-specific execution or third-party message delivery is evidenced. Memory-recall and owner-approval judgments do not demonstrate social communication. tell_owner addresses the owner and a2a_message addresses an agent peer. The built-in Gmail/Drive tools are read-only; browser interaction could in principle operate signed-in web mail, so a missing dedicated send tool alone is not a Still blocker. No dated send-text run is cited."
     },
     {
       "id": "atus-2025:1202",
@@ -2882,7 +2822,7 @@
           "source": "tests/test_file_workspace_worker_tools.py::WorkerFileWorkspaceTests::test_the_worker_finds_reads_and_saves_a_result_citing_what_it_read",
           "date": "2026-11-14",
           "revision": "6ba8657",
-          "summary": "Temporary business-trip documents are found, read and summarized into a new file with source provenance; content is supplied by the fixture, not a live model."
+          "summary": "Direct caps.execute fixture finds and reads supplied files and saves a supplied summary with provenance; no worker or model generates the summary."
         },
         {
           "class": "S",
@@ -3339,11 +3279,35 @@
           "source": "tests/test_file_workspace_worker_tools.py::WorkerFileWorkspaceTests::test_the_worker_finds_reads_and_saves_a_result_citing_what_it_read",
           "date": "2026-11-14",
           "revision": "6ba8657",
-          "summary": "Temporary business-trip documents are found, read and summarized into a new file with source provenance; content is supplied by the fixture, not a live model."
+          "summary": "Direct caps.execute fixture finds and reads supplied files and saves a supplied summary with provenance; no worker or model generates the summary."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:recall-dated-studio",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: dated studio. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:recall-quiet-desk",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: quiet desk. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:recall-dated-committee",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: dated committee. No dated run is claimed."
         }
       ],
       "judgment_cases": [],
-      "notes": "Only the cited subtask is exercised by fixtures; no whole-category or live capability claim. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools. File boundary: src/personal_agent/agent_runtime.py:Capabilities.execute."
+      "notes": "Only the cited subtask is exercised by fixtures; no whole-category or live capability claim. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools. File boundary: src/personal_agent/agent_runtime.py:Capabilities.execute. The recall specifications retrieve supplied preferences or the current fact after a dated correction; these S links do not evidence a worker run."
     },
     {
       "id": "onet-31.0-gwa:4.A.1.a.2",
@@ -3652,7 +3616,7 @@
           "source": "src/personal_agent/code_run.py#L1069",
           "date": "2026-11-14",
           "revision": "6d542ab",
-          "summary": "Static inspection of evidence: code_run output is excluded from persisted evidence, so a later Work cannot recover comparison fields from that record (#768)."
+          "summary": "Static inspection of code_run.evidence: code_run output is excluded from persisted evidence, so a later Work cannot recover comparison fields from that record (#768)."
         }
       ],
       "judgment_cases": [],
@@ -3954,7 +3918,7 @@
           "source": "tests/test_skill_shop.py::OwnerAddsAReferenceSkillByName::test_adding_by_name_pins_the_commit_and_switches_skills_on_once_confirmed",
           "date": "2026-11-14",
           "revision": "6ba8657",
-          "summary": "A fake GitHub transport supplies a skill package; settings confirmation pins its revision and enables it. No live install or model-written program is exercised."
+          "summary": "A fake GitHub transport supplies a skill installed into Still's own settings; confirmation pins its revision and enables it. No general computer configuration, live install or model-written program is exercised."
         },
         {
           "class": "S",
@@ -4118,7 +4082,7 @@
           "source": "tests/test_file_workspace_worker_tools.py::WorkerFileWorkspaceTests::test_the_worker_finds_reads_and_saves_a_result_citing_what_it_read",
           "date": "2026-11-14",
           "revision": "6ba8657",
-          "summary": "Temporary business-trip documents are found, read and summarized into a new file with source provenance; content is supplied by the fixture, not a live model."
+          "summary": "Direct caps.execute fixture finds and reads supplied files and saves a supplied summary with provenance; no worker or model generates the summary."
         },
         {
           "class": "S",
@@ -4640,7 +4604,7 @@
           "source": "tests/test_file_workspace_worker_tools.py::WorkerFileWorkspaceTests::test_the_worker_finds_reads_and_saves_a_result_citing_what_it_read",
           "date": "2026-11-14",
           "revision": "6ba8657",
-          "summary": "Temporary business-trip documents are found, read and summarized into a new file with source provenance; content is supplied by the fixture, not a live model."
+          "summary": "Direct caps.execute fixture finds and reads supplied files and saves a supplied summary with provenance; no worker or model generates the summary."
         }
       ],
       "judgment_cases": [],
@@ -4720,7 +4684,7 @@
           "source": "src/personal_agent/code_run.py#L1069",
           "date": "2026-11-14",
           "revision": "6d542ab",
-          "summary": "Static inspection of evidence: persisted code_run evidence excludes stdout and request bodies, including the read fields needed to substantiate balance/order claims in #767; not a new execution."
+          "summary": "Static inspection of code_run.evidence: persisted code_run evidence excludes stdout and request bodies, including the read fields needed to substantiate balance/order claims in #767; not a new execution."
         }
       ],
       "judgment_cases": [],

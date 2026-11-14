@@ -32,18 +32,40 @@ scenario and judgment links while remaining untried. Both `untried` and
 `scenario`, `judgment-case` or `doc`, never U/I/P/L. Keep those S links: lane G
 uses them to select regressions; they do not claim execution.
 
-`fixture-only` needs a concrete U or I citation. Its summary states the tested
-subtask and limitations. It never covers every activity under a broad row.
-`observed-live` needs a dated P or L run with a revision and a relevant observed
-outcome. The historical shopping run stopped at sign-in; it is retained as a
-failed L attempt alongside cart fixtures, not evidence of live cart completion.
+`fixture-only` needs at least one U or I citation. Every U/I item must have
+`kind: test`. Every test item must start with `tests/`, name an existing file,
+and resolve by static AST inspection to `file::test_fn` or
+`file::Class::test_fn`, with a function name starting `test_`. A class-only
+selector, a comment, or a function in another class does not qualify. No tests
+are imported or executed during validation. Summaries state the tested subtask
+and limitations; a fixture never covers every activity under a broad row.
+
+`observed-live` needs at least one P/L item with `kind: live-observation`, a
+valid date, a nonempty revision, an existing file under `docs/` (optionally with
+`#anchor`), and `outcome: succeeded` or `partial`. P/L documentary citations
+alone cannot qualify. Every live-observation item, on any status, requires an
+existing doc source and an `outcome` from `succeeded`, `partial`, `failed`,
+`stopped`, or `not-applicable`. The outcome field is optional on other items.
+Every `kind: doc` item must also name an existing repository file, including
+code-inspection citations under `src/`; anchors are not resolved. The historical
+shopping run stopped at sign-in; it is retained as an L attempt with outcome
+`stopped` alongside cart fixtures, not evidence of live cart completion.
+Its `efb5977` revision belongs to predecessor Jongtae/agentos, as recorded by
+skill-eval-01, rather than this repository's history.
 The presence-eval record is explicitly fixture-only. Historical findings are
 checked against current tests before being treated as current failures.
 
-`blocked-by-still` requires a task that actually needs the blocked path, an
-open issue recording the block, an existing `path:symbol` in `code_ref`, and
-at least one evidence item showing it (S documentation/code inspection or a
-U test pinning the behavior). The four kinds are:
+For `blocked-by-still`, the validator requires a non-null `#NNN` issue,
+`code_ref: path:Symbol[.attr]` resolving to an existing file under `src/` and
+an AST-defined class, function or assignment (methods use their class path),
+and at least one U test or S `doc` item. The S item must cite either the
+`code_ref` file or a file under `docs/`. Every citation must also pass the
+source checks above. The report retains its by-issue table.
+
+Reviewers establish that the task needs the blocked path, that the linked issue
+is open and current, and that the evidence shows the block. Static validation
+does not query GitHub, execute the cited code, or judge semantic relevance.
+The four kinds are:
 
 - `tool-not-exposed`: the AI needs a capability Still does not offer, and no
   offered tool covers it; for example the history capability requested in #31.
@@ -64,7 +86,8 @@ relevant behavior. A fixture-backed row is marked blocked only when the
 block stops the realistic task; notes name that path and preserve the narrower
 fixture result. A block on one route does not claim that every route fails.
 
-`engine-limit` needs evidence attributing failure to the owner's AI. Unknown
+`engine-limit` requires at least one U/I/P/L item; S-only evidence cannot qualify.
+Reviewers must check that it attributes failure to the owner's AI. Unknown
 causes are not assigned either label.
 Physical execution and personal security checks are `out-of-bounds-by-design`;
 linked advice scenarios do not change that boundary.
@@ -102,5 +125,14 @@ browser-mail fixture was found. AppWorld's send-text scenario is S only; the
 injected Gmail-send effect records in `tests/test_owner_update_redelegation_466.py`
 test classification, not message delivery. Drafting and sending are distinct.
 A configured connector may extend the host catalogue. Skill installation or
-loading does not prove a task outcome. Every bundled scenario has row tags;
-existing tags and all other scenario content are preserved.
+loading does not prove a task outcome. Every bundled scenario has at least one
+valid row tag. Known-taxonomy tags must resolve to a row. Any tag matching
+`^[a-z]+-[0-9][0-9.]*(-[a-z]+)?:` must use an adopted taxonomy prefix;
+for example, `atus-2024:0101` is an error. Ordinary tags remain free-form.
+The three corrected memory-recall links (quiet desk, dated studio, dated
+committee) belong to Getting Information, not working or social communication.
+
+The CLI validates before rendering or writing the standalone document, which
+starts with one `# Task coverage map` H1. The sweep also validates first: its
+`## Task coverage map` section lists validation problems instead of rendering
+an invalid map. Neither path runs models or upgrades status from sweep results.

@@ -222,7 +222,7 @@ def cmd_coverage(args):
     if problems:
         print('\n'.join(problems), file=sys.stderr)
         return 1
-    markdown = coverage_markdown(cmap, loaded)
+    markdown = coverage_markdown(cmap, loaded, heading_level=1)
     if args.write:
         args.write.write_text(markdown, encoding='utf-8')
     if args.check:

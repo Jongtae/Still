@@ -333,3 +333,13 @@ PYTHONPATH=src .venv/bin/python -m pytest -q tests/test_task_coverage_map.py
 Validation checks all bundled scenarios, including world scenarios, without
 loading owner-local cases or running models. The generated-document test checks
 that the checked-in report matches the map.
+
+U/I citations must resolve to test functions under `tests/`. Live observations
+require an existing doc source and an explicit outcome; only succeeded or
+partial P/L live observations support `observed-live`. Blockers require a linked
+issue, an AST-defined symbol under `src/`, and a U test or S doc/code citation.
+Engine limitations need U/I/P/L evidence. Taxonomy-shaped tags must use adopted
+prefixes. See `task-coverage/README.md` for the full static rules and the
+relevance/current-issue judgments that still need review. Invalid maps produce
+validation problems in the sweep section. The standalone generated document
+starts with an H1; the sweep keeps its H2 coverage section.

@@ -28,7 +28,7 @@
     "tags": [
       "exp-recall",
       "kind-paraphrase",
-      "atus-2025:0501"
+      "onet-31.0-gwa:4.A.1.a.1"
     ]
   },
   {
@@ -130,7 +130,7 @@
     "tags": [
       "exp-recall",
       "kind-dated-contradiction",
-      "atus-2025:0501"
+      "onet-31.0-gwa:4.A.1.a.1"
     ]
   },
   {
@@ -388,7 +388,7 @@
     "tags": [
       "exp-recall",
       "kind-dated-contradiction",
-      "atus-2025:1201"
+      "onet-31.0-gwa:4.A.1.a.1"
     ]
   },
   {

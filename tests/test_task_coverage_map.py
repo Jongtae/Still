@@ -43,6 +43,13 @@ def fixture(root):
     write_json(root / 'evals/judgments/cases-v1.json', {'cases': [{'id': 'case-one'}]})
     (root / 'tests').mkdir()
     (root / 'tests/test_demo.py').write_text('class Demo:\n    def test_read(self): pass\n')
+    (root / 'src').mkdir()
+    (root / 'src/example.py').write_text(
+        'def route(): pass\nclass Router:\n    def route(self): pass\n'
+        '    limit: int = 1\nLIMIT = 1\nLEFT, RIGHT = 1, 2\n')
+    (root / 'docs').mkdir()
+    (root / 'docs/observations.md').write_text('# Dated run\nRecorded fixture observation.\n')
+    (root / 'docs/scope.md').write_text('Scope and boundary notes.\n')
     scenarios = [{'id': 'demo-one', 'tags': [row['id']]},
                  {'id': 'demo-two', 'tags': [row['id'], blocked['id']]}]
     return coverage.load_map(root), scenarios
@@ -95,6 +102,141 @@ class CoverageTests(unittest.TestCase):
     def test_unknown_row_tag_fails(self):
         self.scenarios[0]['tags'].append('onet-31.0-gwa:unknown')
         self.assertTrue(any('unknown row tag' in p for p in self.problems()))
+
+    def test_unknown_or_nonadopted_taxonomy_prefix_fails(self):
+        self.cmap.taxonomies.append({'id': 'future-2026', 'name': 'Future',
+                                    'status': 'considered-not-adopted-yet', 'reason': 'Deferred.'})
+        for tag in ('atus-2024:0101', 'onet-30.0-gwa:4.A.1.a.1', 'future-2026:0101'):
+            with self.subTest(tag=tag):
+                self.scenarios[0]['tags'].append(tag)
+                self.assertTrue(self.problems())
+                self.scenarios[0]['tags'].pop()
+        self.scenarios[0]['tags'].append('ordinary:label')
+        self.assertEqual(self.problems(), [])
+
+    def test_observed_live_rejects_stopped_failed_and_inapplicable_runs(self):
+        self.row['status'] = 'observed-live'
+        item = self.row['evidence'][0]
+        item.update(kind='live-observation', source='docs/observations.md#dated-run', **{'class': 'L'})
+        for outcome in ('stopped', 'failed', 'not-applicable'):
+            with self.subTest(outcome=outcome):
+                item['outcome'] = outcome
+                self.assertTrue(any('observed-live' in p for p in self.problems()))
+
+    def test_observed_live_rejects_doc_kind_even_with_live_class(self):
+        self.row['status'] = 'observed-live'
+        self.row['evidence'][0].update(kind='doc', source='docs/observations.md', **{'class': 'L'})
+        self.assertTrue(self.problems())
+
+    def test_live_observation_requires_outcome_on_every_status(self):
+        # Keep U evidence so the fixture-only requirement is independently satisfied.
+        live = dict(self.row['evidence'][0], kind='live-observation',
+                    source='docs/observations.md#dated-run', **{'class': 'L'})
+        self.row['evidence'].append(live)
+        self.assertTrue(self.problems())
+
+    def test_live_observation_rejects_unknown_outcome(self):
+        self.row['evidence'].append(dict(self.row['evidence'][0], kind='live-observation',
+                                        source='docs/observations.md', outcome='unknown', **{'class': 'L'}))
+        self.assertTrue(self.problems())
+
+    def test_observed_live_requires_existing_doc_source(self):
+        self.row['status'] = 'observed-live'
+        item = self.row['evidence'][0]
+        item.update(kind='live-observation', outcome='succeeded', **{'class': 'P'})
+        for source in ('docs/missing.md#run', 'scenario:demo-one', 'src/example.py', '../observations.md'):
+            with self.subTest(source=source):
+                item['source'] = source
+                self.assertTrue(any('doc source' in p for p in self.problems()))
+
+    def test_fixture_classes_require_test_kind(self):
+        item = self.row['evidence'][0]
+        for cls in ('U', 'I'):
+            for kind in ('doc', 'live-observation'):
+                with self.subTest(cls=cls, kind=kind):
+                    item.update(kind=kind, source='docs/observations.md', **{'class': cls})
+                    if kind == 'live-observation':
+                        item['outcome'] = 'stopped'
+                    self.assertTrue(any('requires kind test' in p for p in self.problems()))
+
+    def test_test_kind_requires_test_path_and_scoped_test_function(self):
+        (self.cmap.root / 'tests/test_demo.py').write_text(
+            'class Demo:\n    def test_read(self): pass\n'
+            'class Other:\n    def test_elsewhere(self): pass\n'
+            'def helper(): pass\n# def test_comment(): pass\n')
+        for source in ('src/example.py', 'src/example.py::route',
+                       'tests/test_demo.py::Demo', 'tests/test_demo.py::helper',
+                       'tests/test_demo.py::Demo::test_elsewhere',
+                       'tests/test_demo.py::test_read', 'tests/test_demo.py::test_comment',
+                       'tests/../src/example.py::route'):
+            with self.subTest(source=source):
+                self.row['evidence'][0]['source'] = source
+                self.assertTrue(self.problems())
+
+    def test_doc_kind_requires_existing_file(self):
+        self.row['evidence'].append(dict(self.row['evidence'][0], kind='doc',
+                                        source='docs/missing.md#anchor', **{'class': 'S'}))
+        self.assertTrue(self.problems())
+
+    def test_blocked_requires_linked_issue(self):
+        self.cmap.rows[2]['blocker']['issue'] = None
+        self.assertTrue(self.problems())
+
+    def test_blocker_code_ref_requires_src_file_and_scoped_definition(self):
+        for ref in ('nowhere.py:nothing', 'src/missing.py:route', 'src/example.py:missing',
+                    'tests/test_demo.py:Demo', 'src/example.py', 'src/example.py:Router.missing',
+                    'src/example.py:Missing.route', 'src/example.py:route.limit',
+                    'src/../tests/test_demo.py:Demo'):
+            with self.subTest(ref=ref):
+                self.cmap.rows[2]['blocker']['code_ref'] = ref
+                self.assertTrue(self.problems())
+
+    def test_blocker_requires_test_or_doc_code_evidence(self):
+        blocked = self.cmap.rows[2]
+        for kind, source, cls in [('scenario', 'scenario:demo-one', 'S'),
+                                  ('judgment-case', 'judgment:case-one', 'S'),
+                                  ('test', 'tests/test_demo.py::Demo::test_read', 'I')]:
+            with self.subTest(kind=kind):
+                blocked['evidence'] = [dict(self.row['evidence'][0], kind=kind, source=source, **{'class': cls})]
+                self.assertTrue(self.problems())
+
+    def test_blocker_code_evidence_must_match_code_ref_file(self):
+        (self.cmap.root / 'src/other.py').write_text('def route(): pass\n')
+        self.cmap.rows[2]['evidence'] = [dict(self.row['evidence'][0], kind='doc',
+                                            source='src/other.py#L1', **{'class': 'S'})]
+        self.assertTrue(self.problems())
+
+    def test_engine_limit_requires_execution_evidence(self):
+        self.row['status'] = 'engine-limit'
+        self.row['evidence'][0].update(kind='doc', source='docs/scope.md', **{'class': 'S'})
+        self.assertTrue(self.problems())
+
+    def test_ast_references_accept_definitions_assignments_and_test_functions(self):
+        for symbol in ('route', 'Router', 'Router.route', 'Router.limit', 'LIMIT', 'LEFT', 'RIGHT'):
+            with self.subTest(symbol=symbol):
+                self.cmap.rows[2]['blocker']['code_ref'] = 'src/example.py:' + symbol
+                self.assertEqual(self.problems(), [])
+        with (self.cmap.root / 'tests/test_demo.py').open('a') as stream:
+            stream.write('async def test_top_level(): pass\n')
+        self.row['evidence'][0]['source'] = 'tests/test_demo.py::test_top_level'
+        self.assertEqual(self.problems(), [])
+
+    def test_blocker_accepts_static_doc_or_matching_code_evidence(self):
+        for source in ('docs/scope.md#boundary', 'src/example.py#L1'):
+            with self.subTest(source=source):
+                self.cmap.rows[2]['evidence'] = [dict(self.row['evidence'][0], kind='doc',
+                                                    source=source, **{'class': 'S'})]
+                self.assertEqual(self.problems(), [])
+
+    def test_engine_limit_accepts_unit_integration_and_live_evidence(self):
+        self.row['status'] = 'engine-limit'
+        item = self.row['evidence'][0]
+        for cls in ('U', 'I', 'P', 'L'):
+            with self.subTest(cls=cls):
+                item['class'] = cls
+                if cls in ('P', 'L'):
+                    item.update(kind='live-observation', source='docs/observations.md', outcome='failed')
+                self.assertEqual(self.problems(), [])
 
     def test_unknown_status_fails(self):
         self.row['status'] = 'passed'
@@ -155,7 +297,9 @@ class CoverageTests(unittest.TestCase):
         self.row['status'] = 'observed-live'
         item = self.row['evidence'][0]
         item.update(source='docs/observations.md#dated-run', kind='live-observation', **{'class': 'P'})
-        self.assertEqual(self.problems(), [])
+        for outcome in ('succeeded', 'partial'):
+            item['outcome'] = outcome
+            self.assertEqual(self.problems(), [])
         for field, value in [('date', '2026-02-30'), ('revision', '')]:
             previous = item[field]
             item[field] = value
@@ -244,10 +388,10 @@ class CoverageTests(unittest.TestCase):
 
     def test_blocker_work_list_groups_kinds_and_issues_by_row_count(self):
         for code, kind, issue in [('4', 'login', '#900'), ('5', 'login', '#900'),
-                                  ('6', 'tool-not-exposed', '#900'), ('7', 'approval-boundary', None)]:
+                                  ('6', 'tool-not-exposed', '#900'), ('7', 'approval-boundary', '#901')]:
             row = copy.deepcopy(self.cmap.rows[2])
             row.update(id=f'onet-31.0-gwa:{code}', code=code)
-            row['blocker'].update(kind=kind, issue=issue, code_ref=f'src/example.py:block_{code}')
+            row['blocker'].update(kind=kind, issue=issue, code_ref='src/example.py:route')
             self.cmap.rows.append(row)
         self.assertEqual(self.problems(), [])
         markdown = coverage.coverage_markdown(self.cmap, self.scenarios)
@@ -256,9 +400,10 @@ class CoverageTests(unittest.TestCase):
         self.assertLess(kinds.index('| login |'), kinds.index('| routing |'))
         self.assertIn('| [#900](https://github.com/Jongtae/Still/issues/900) | 3 |', issues)
         self.assertLess(issues.index('| [#900]'), issues.index('| [#462]'))
-        self.assertIn('| No linked issue | 1 |', issues)
+        self.assertIn('| [#901](https://github.com/Jongtae/Still/issues/901) | 1 |', issues)
+        self.assertNotIn('No linked issue', issues)
         for code in ('4', '5', '6', '7'):
-            self.assertIn(f'`onet-31.0-gwa:{code}`: `src/example.py:block_{code}`', issues)
+            self.assertIn(f'`onet-31.0-gwa:{code}`: `src/example.py:route`', issues)
         self.assertIn('completion check', markdown)
         self.assertNotIn('%', markdown)
 
@@ -267,7 +412,10 @@ class CoverageTests(unittest.TestCase):
         with patch.object(coverage, 'load_map', return_value=self.cmap), \
                 patch.object(coverage, 'bundled_scenarios', return_value=self.scenarios):
             self.assertEqual(cli.main(['coverage', '--check', '--write', str(output)]), 0)
-            self.assertEqual(output.read_text(), coverage.coverage_markdown(self.cmap, self.scenarios))
+            self.assertEqual(output.read_text(), coverage.coverage_markdown(self.cmap, self.scenarios, heading_level=1))
+            self.assertTrue(output.read_text().startswith('# Task coverage map\n'))
+            self.assertEqual(sum(line.startswith('# ') for line in output.read_text().splitlines()), 1)
+            self.assertIn('\n## Still-side blockers\n', output.read_text())
             self.row['status'] = 'invalid'
             self.assertEqual(cli.main(['coverage', '--check']), 1)
 
@@ -276,6 +424,16 @@ class CoverageTests(unittest.TestCase):
                 patch.object(coverage, 'bundled_scenarios', return_value=self.scenarios):
             rendered = report.render_markdown(report.aggregate([], {'id': 'empty'}))
         self.assertTrue(rendered.endswith(coverage.coverage_markdown(self.cmap, self.scenarios)))
+
+    def test_sweep_reports_validation_problems_instead_of_invalid_map(self):
+        self.row['status'] = 'observed-live'
+        with patch.object(coverage, 'load_map', return_value=self.cmap), \
+                patch.object(coverage, 'bundled_scenarios', return_value=self.scenarios):
+            rendered = report.render_markdown(report.aggregate([], {'id': 'empty'}))
+        self.assertIn('## Task coverage map', rendered)
+        for problem in self.problems():
+            self.assertIn(problem, rendered)
+        self.assertNotIn('### Evidence inventory', rendered)
 
 
 class RuntimeIsolationTests(unittest.TestCase):
@@ -299,5 +457,5 @@ class RealMapTests(unittest.TestCase):
         self.assertEqual(coverage.validate(coverage.load_map(), coverage.bundled_scenarios()), [])
 
     def test_generated_document_is_current(self):
-        expected = coverage.coverage_markdown(coverage.load_map(), coverage.bundled_scenarios())
+        expected = coverage.coverage_markdown(coverage.load_map(), coverage.bundled_scenarios(), heading_level=1)
         self.assertEqual((ROOT / 'docs/task-coverage-map.en.md').read_text(encoding='utf-8'), expected)

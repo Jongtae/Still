@@ -4,6 +4,7 @@ Adopt JSON Schema 2020-12 via the existing schema-validation extra (jsonschema),
 stdlib JSON/date/path APIs, and the skill-eval-01 table shape. Adapt the existing
 scenario tags for cross-references. No runtime dependency or authority is added.
 """
+import ast
 import json
 import re
 from collections import Counter
@@ -65,6 +66,39 @@ def _dated(item):
         return False
 
 
+def _source_file(root, source, folder=None):
+    """Resolve a repository file, optionally restricted to a named subtree."""
+    name = source.split('#', 1)[0]
+    if Path(name).is_absolute() or (folder and not name.startswith(folder + '/')):
+        return None
+    path = (root / name).resolve()
+    boundary = (root / folder if folder else root).resolve()
+    return path if path.is_relative_to(boundary) and path.is_file() else None
+
+
+def _definitions(scope):
+    """Declarations in one lexical scope, including conditional declarations."""
+    for node in ast.iter_child_nodes(scope):
+        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            yield node.name, node
+        elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                for name in ast.walk(target):
+                    if isinstance(name, ast.Name) and isinstance(name.ctx, ast.Store):
+                        yield name.id, node
+        elif isinstance(node, (ast.stmt, ast.ExceptHandler)):
+            yield from _definitions(node)
+
+
+def _symbol_node(tree, names):
+    for name in names:
+        if not isinstance(tree, (ast.Module, ast.ClassDef)):
+            return None
+        tree = next((node for ident, node in _definitions(tree) if ident == name), None)
+    return tree
+
+
 def validate(cmap, scenarios) -> list[str]:
     """Schema and static semantic problems, without imports or live execution."""
     if Draft202012Validator is None:
@@ -84,6 +118,16 @@ def validate(cmap, scenarios) -> list[str]:
         problems.extend(f'duplicate {label} id: {ident}' for ident, count in Counter(values).items() if count > 1)
     adopted = {tax['id'] for tax in cmap.taxonomies if tax['status'] == 'adopted'}
     scenario_ids = {scenario['id'] for scenario in scenarios}
+    trees = {}
+
+    def parsed(path):
+        if path not in trees:
+            try:
+                trees[path] = ast.parse(path.read_text(encoding='utf-8'), filename=str(path)) if path else None
+            except (OSError, SyntaxError, UnicodeError):
+                trees[path] = None
+        return trees[path]
+
     try:
         judgment_ids = {case['id'] for case in _read(cmap.root / 'evals/judgments/cases-v1.json')['cases']}
     except (OSError, ValueError, KeyError, TypeError) as exc:
@@ -94,11 +138,28 @@ def validate(cmap, scenarios) -> list[str]:
         if row['taxonomy'] not in adopted or ident != f"{row['taxonomy']}:{row['code']}":
             problems.append(f'{ident}: id must be adopted taxonomy:code matching its fields')
         if status == 'observed-live' and not any(
-                item['class'] in ('P', 'L') and item['kind'] in ('live-observation', 'doc')
-                and _dated(item) for item in evidence):
-            problems.append(f'{ident}: observed-live needs dated P/L live evidence with revision')
+                item['class'] in ('P', 'L') and item['kind'] == 'live-observation'
+                and item.get('outcome') in ('succeeded', 'partial') and _dated(item)
+                and _source_file(cmap.root, item['source'], 'docs') for item in evidence):
+            problems.append(f'{ident}: observed-live needs dated P/L live-observation evidence with revision, '
+                            'succeeded/partial outcome and an existing doc source')
         if status == 'fixture-only' and not any(item['class'] in ('U', 'I') for item in evidence):
             problems.append(f'{ident}: fixture-only needs U/I evidence')
+        if status == 'engine-limit' and not any(item['class'] in ('U', 'I', 'P', 'L') for item in evidence):
+            problems.append(f'{ident}: engine-limit needs U/I/P/L execution evidence')
+        if status == 'blocked-by-still':
+            ref = row['blocker']['code_ref']
+            path, sep, symbol = ref.partition(':')
+            code_file = _source_file(cmap.root, path, 'src')
+            if (not sep or '#' in path or not re.fullmatch(r'[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*', symbol)
+                    or _symbol_node(parsed(code_file), symbol.split('.')) is None):
+                problems.append(f'{ident}: blocker code_ref needs an existing src/ file and defined symbol: {ref}')
+            if not any((item['class'] == 'U' and item['kind'] == 'test') or (
+                    item['class'] == 'S' and item['kind'] == 'doc' and (
+                        _source_file(cmap.root, item['source'], 'docs') or
+                        (code_file and _source_file(cmap.root, item['source']) == code_file))) for item in evidence):
+                problems.append(f'{ident}: blocked-by-still needs a U test or S doc/code evidence matching '
+                                'the code_ref file or a doc')
         for case in row['judgment_cases']:
             if case not in judgment_ids:
                 problems.append(f'{ident}: unknown judgment case {case}')
@@ -116,23 +177,31 @@ def validate(cmap, scenarios) -> list[str]:
                     problems.append(f'{ident}: judgment specification requires class S: {source}')
             if item['kind'] in ('test', 'judgment-case') and item['class'] in ('P', 'L'):
                 problems.append(f'{ident}: fixture/specification is not live evidence: {source}')
-            if source.startswith('tests/'):
+            if item['class'] in ('U', 'I') and item['kind'] != 'test':
+                problems.append(f'{ident}: U/I evidence requires kind test: {source}')
+            if item['kind'] == 'doc' and not _source_file(cmap.root, source):
+                problems.append(f'{ident}: missing doc source {source}')
+            if item['kind'] == 'live-observation' and not _source_file(cmap.root, source, 'docs'):
+                problems.append(f'{ident}: missing live-observation doc source {source}')
+            if item['kind'] == 'test' or source.startswith('tests/'):
                 parts = source.split('::')
-                path = (cmap.root / parts[0]).resolve()
-                if not path.is_relative_to(cmap.root.resolve() / 'tests') or not path.is_file():
+                path = _source_file(cmap.root, parts[0], 'tests')
+                if path is None:
                     problems.append(f'{ident}: missing test source {source}')
                     continue
-                text = path.read_text(encoding='utf-8')
-                if len(parts) < 2 or any(not re.search(
-                        r'^\s*(?:async\s+def|def|class)\s+' + re.escape(name) + r'\b', text, re.M)
-                        for name in parts[1:]):
-                    problems.append(f'{ident}: missing test function or class {source}')
+                node = _symbol_node(parsed(path), parts[1:])
+                if (len(parts) not in (2, 3) or not parts[-1].startswith('test_')
+                        or not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))):
+                    problems.append(f'{ident}: missing test function (file::test_fn or file::Class::test_fn): {source}')
     for scenario in scenarios:
         tags = set(scenario.get('tags', []))
         if not tags.intersection(ids):
             problems.append(f"{scenario['id']}: scenario has no row tag")
         for tag in sorted(tags):
-            if ':' in tag and tag.split(':', 1)[0] in taxonomy_ids and tag not in ids:
+            prefix = tag.split(':', 1)[0]
+            if (re.match(r'^[a-z]+-[0-9][0-9.]*(-[a-z]+)?:', tag) and prefix not in adopted):
+                problems.append(f"{scenario['id']}: unknown or nonadopted taxonomy prefix in tag {tag}")
+            elif ':' in tag and prefix in taxonomy_ids and tag not in ids:
                 problems.append(f"{scenario['id']}: unknown row tag {tag}")
     return problems
 
@@ -167,7 +236,7 @@ def _link(source, scenario_files=None):
     return f'[{_cell(source)}](../{path})'
 
 
-def coverage_markdown(cmap, scenarios) -> str:
+def coverage_markdown(cmap, scenarios, *, heading_level=2) -> str:
     """Deterministic map of evidence and gaps, independent of sweep results."""
     scenarios = list(scenarios)
     scenario_files = {}
@@ -180,7 +249,7 @@ def coverage_markdown(cmap, scenarios) -> str:
              'A map of everyday and work activities, the evidence we have, and the Still blockers to remove.', '',
              f"As of {cmap.document['as_of']}; evidence read at revision `{cmap.document['revision']}`.",
              'This is not a score: counts are rows in the map, never measures of task success.', '',
-             '- `observed-live`: a dated live observation is cited.',
+             '- `observed-live`: a dated live observation with a succeeded or partial outcome is cited.',
              '- `fixture-only`: unit or model-free integration evidence, without a claim of live success.',
              '- `blocked-by-still`: Still blocks the task; the work list below names the boundary.',
              '- `engine-limit`: the cited limitation belongs to the owner\'s AI.',
@@ -220,8 +289,9 @@ def coverage_markdown(cmap, scenarios) -> str:
     for row in cmap.rows:
         specifications, evidence = [], []
         for item in row['evidence']:
+            outcome = f"; outcome: {item['outcome']}" if 'outcome' in item else ''
             cell = (f"{item['class']}: {_link(item['source'], scenario_files)} — {_cell(item['summary'])} "
-                    f"({item['date']}, `{item['revision']}`)")
+                    f"({item['date']}, `{item['revision']}`{outcome})")
             (specifications if item['class'] == 'S' else evidence).append(cell)
         lines.append(f"| {_cell(row['id'])} | {_cell(row['title'])}: {_cell(row['still_task'])} | "
                      f"{'<br>'.join(specifications) or 'none'} | {'<br>'.join(evidence) or 'none'} | {row['status']} |")
@@ -247,7 +317,7 @@ def coverage_markdown(cmap, scenarios) -> str:
             details = '<br>'.join(f"`{row['id']}`: {row['blocker']['kind']} — {_cell(row['blocker']['detail'])}"
                                  for row in rows)
             refs = '<br>'.join(f"`{row['id']}`: `{_cell(row['blocker']['code_ref'])}`" for row in rows)
-            issue_link = f'[{issue}](https://github.com/Jongtae/Still/issues/{issue[1:]})' if issue else 'No linked issue'
+            issue_link = f'[{issue}](https://github.com/Jongtae/Still/issues/{issue[1:]})'
             lines.append(f'| {issue_link} | {count} | {details} | {refs} |')
     else:
         lines.append('- none')
@@ -257,4 +327,5 @@ def coverage_markdown(cmap, scenarios) -> str:
         lines.append(f"| {_cell(row['id'])} | "
                      + ', '.join(_link('scenario:' + item, scenario_files) for item in cases['scenarios'])
                      + ' | ' + ', '.join(_link('judgment:' + item) for item in cases['judgment_cases']) + ' |')
-    return '\n'.join(lines) + '\n'
+    return '\n'.join(re.sub(r'^#{2,}(?= )', lambda match: '#' * (len(match[0]) - 2 + heading_level), line)
+                     for line in lines) + '\n'
