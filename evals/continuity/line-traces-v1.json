@@ -391,8 +391,7 @@
             "rows_active": 1,
             "same_line_id": true,
             "window_end_honest": true
-          },
-          "gap": 814
+          }
         },
         {
           "at_hours": 24,

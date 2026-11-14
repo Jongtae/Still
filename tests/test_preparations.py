@@ -1399,11 +1399,11 @@ class WindowTests(_WatchCase):
         until = lambda seconds: datetime.fromtimestamp(due + seconds, SEOUL).isoformat()
         self.assertEqual(prep.normalize_window(10, until(3600), None, due, 'Asia/Seoul', self.now), (600, due + 3600, 7), 'slots up to and including until (#701)')
         self.assertEqual(prep.normalize_window('10', until(3600), 3, due, 'Asia/Seoul', self.now)[2], 3)
-        self.assertEqual(prep.normalize_window(5, until(86400), None, due, 'Asia/Seoul', self.now)[2], prep.MAX_WINDOW_RUNS)
+        self.assertEqual(prep.normalize_window(5, until(86400), None, due, 'Asia/Seoul', self.now)[2], 288)
         # #846: about three checks a day up to a deadline weeks away fits the window.
         self.assertEqual(prep.normalize_window(480, until(30 * 86400), None, due, 'Asia/Seoul', self.now)[2], 91)
         for every, span, runs in ((4, 3600, None), (721, 3600, None), (10, 0, None), (10, -600, None),
-                                  (10, 31 * 86400 + 60, None), (True, 3600, None), (10, 3600, 0), (10, 3600, 97)):
+                                  (10, 31 * 86400 + 60, None), (True, 3600, None), (10, 3600, 0), (10, 3600, prep.MAX_DAILY_WINDOW_RUNS + 1)):
             with self.assertRaises(prep.PreparationRefusal, msg=(every, span, runs)):
                 prep.normalize_window(every, until(span), runs, due, 'Asia/Seoul', self.now)
         with self.assertRaises(prep.PreparationRefusal):
@@ -2684,13 +2684,17 @@ const press=async(label)=>{const button=descendants(rows()[0]).find(n=>n.tag==='
  await form.onsubmit({preventDefault(){}});
  assert.equal(JSON.stringify(calls.at(-1).body),JSON.stringify({operation:'edit',id:'p4',due:'2026-10-15T09:00',timezone:'Asia/Seoul',recurrence:'weekly'}));
  assert(!Object.hasOwn(calls.at(-1).body,'goal'));
- ctx.rows=[{...ctx.rows[0],recurrence:'window',every_minutes:10,until:'2026-10-15T12:00:00+09:00',until_local_input:'2026-10-15T12:00',max_runs:6}];
+ ctx.rows=[{...ctx.rows[0],recurrence:'window',every_minutes:10,until:'2026-10-15T12:00:00+09:00',until_local_input:'2026-10-15T12:00',max_runs:6,max_window_runs:8928}];
  await ctx.loadPreparations();await press('일정 변경');
  const watchForm=$('preparations-list').children.find(n=>n.tag==='form'),watchFields=descendants(watchForm).filter(n=>n.tag==='input');
  assert.deepEqual(watchFields.map(n=>n.name),['due','timezone','every_minutes','until','max_runs']);
  watchFields.find(n=>n.name==='max_runs').value='3';await watchForm.onsubmit({preventDefault(){}});
  assert.equal(calls.at(-1).body.max_runs,3);assert(!Object.hasOwn(calls.at(-1).body,'recurrence'));
+ assert.equal(watchFields.find(n=>n.name==='max_runs').max,'8928');
  assert.equal(watchFields.find(n=>n.name==='until').type,'datetime-local');
+ watchFields.find(n=>n.name==='max_runs').value='6';watchFields.find(n=>n.name==='until').value='2026-10-15T20:00';await watchForm.onsubmit({preventDefault(){}});
+ assert(!Object.hasOwn(calls.at(-1).body,'max_runs'),'lengthening does not silently resubmit the old count');
+ watchFields.find(n=>n.name==='until').value='2026-10-15T12:00';await watchForm.onsubmit({preventDefault(){}});
  assert.equal(calls.at(-1).body.until,'2026-10-15T12:00');
  // #581: rule controls submit one rule, without recurrence or JS offset conversion.
  ctx.rows=[{...ctx.rows[0],recurrence:'weekly'}];await ctx.loadPreparations();await press('일정 변경');
