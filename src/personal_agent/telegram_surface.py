@@ -53,7 +53,7 @@ from . import remote_login
 from . import work_mode
 from .quickstart_service import (APPROVE_BUTTON, BROWSER_LOGIN_PHONE_ALERT, BROWSER_LOGIN_PHONE_LABEL, BROWSER_LOGIN_REOPENED_TEXT,
                                  BROWSER_LOGIN_REOPENING_TEXT, BROWSER_LOGIN_SKIP_LABEL,
-                                 DENY_BUTTON, LOCAL_DOCUMENT_APPROVAL_TEXT, LOCAL_DOCUMENT_RESUMED_TEXT, LOG, MAX_OWNER_MESSAGE_CHARS,
+                                 DENY_BUTTON, LOG, MAX_OWNER_MESSAGE_CHARS,
                                  MEMORY_CANDIDATES_EXPIRED_TEXT, MEMORY_CANDIDATES_OUTDATED_TEXT, MEMORY_PROMPT_KINDS, MEMORY_SAVED_KINDS,
                                  MEMORY_SAVED_OUTDATED_TEXT, MEMORY_SAVED_TTL_SECONDS, REACTION_EVENT, TELEGRAM_PHOTO_ALBUM_SETTLE_SECONDS,
                                  TELEGRAM_RECEIVE_GRACE_SECONDS, WORKING_NOTES_KIND, PREPARED_IDS_PREFIX, prepared_ids, truncated_owner_message)
@@ -275,15 +275,11 @@ class TelegramSurface(ConversationSurface):
         service=self.service
         cfg=service.store.config('telegram',{})
         if not (cfg.get('enabled') and job.get('channel')==f"telegram:{cfg.get('generation')}" and job.get('chat_id')==cfg.get('user_id')):return
-        fingerprint=service.document_fingerprint() if kind=='approval_needed' else fingerprint
         service.store.queue_notification(job['id'],job['chat_id'],cfg['generation'],kind,fingerprint,surface=self.name)
 
     def _notice_markup(self, notification, bound, *, phone_preparing=False):
         """Telegram's buttons for a notice that is still shown (``notice_binding``), or None."""
         service,kind,nid=self.service,notification['kind'],notification['id']
-        if kind=='approval_needed':
-            return {'inline_keyboard':[[{'text':APPROVE_BUTTON,'callback_data':f"p7a:{nid}:approve"},
-                                        {'text':DENY_BUTTON,'callback_data':f"p7a:{nid}:deny"}]]}
         if kind=='context_approval_needed':
             return {'inline_keyboard':[[{'text':APPROVE_BUTTON,'callback_data':f"v1c:{nid}:approve"},
                                         {'text':DENY_BUTTON,'callback_data':f"v1c:{nid}:deny"}]]}
@@ -709,32 +705,6 @@ class TelegramSurface(ConversationSurface):
                     try:service.telegram.edit_message_text(sender,message.get('message_id'),msg('telegram_surface.without_context'),{'inline_keyboard':[]})
                     except ProviderError:pass
                     changed=True
-            elif authorized and isinstance(data,str) and data.startswith('p7a:'):
-                parts=data.split(':')
-                if len(parts)==3 and parts[2] in ('approve','deny'):
-                    notification=service.store.notification(parts[1])
-                    current=service.document_boundary()
-                    exact=(notification and notification['kind']=='approval_needed' and notification['state']=='sent'
-                           and notification['generation']==generation and notification['chat_id']==sender
-                           and notification['message_id']==message.get('message_id')
-                           and notification['fingerprint']==service.document_fingerprint()
-                           and current['requires_approval'])
-                    if exact:
-                        resumed=False
-                        if parts[2]=='approve':
-                            service.set_document_approval({'approved':True})
-                            # #505: the folder-resumed Work continues once.
-                            resumed=service.resume_after_document_approval(notification.get('job_id'))
-                            result_kind='approved'
-                        else:
-                            service.store.put('document_sharing',{})
-                            service.drop_document_resume(work_id=notification.get('job_id'))
-                            result_kind='denied'
-                        service.store.update_notification(notification['id'],result_kind)
-                        try:service.telegram.edit_message_text(sender,notification['message_id'],
-                            LOCAL_DOCUMENT_RESUMED_TEXT if resumed else service.notification_text(result_kind),{'inline_keyboard':[]})
-                        except ProviderError:pass
-                        changed=True
             elif authorized and isinstance(data,str) and data.startswith('p7w:'):
                 # #656: one guarded browser step of one Work.  Exact: this
                 # notification, sent, this chat and message, and the request

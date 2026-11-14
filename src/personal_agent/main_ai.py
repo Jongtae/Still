@@ -386,10 +386,6 @@ class MainAiRoutes:
             self.store.put('model_test', record)
             self.store.put('model_draft_test', None)
             self.store.put('subscription_engine', {})
-            # A new destination: earlier document/public-page approvals were
-            # given for the previous one (same rule as save_model).
-            self.store.put('document_sharing', {})
-            self.store.put('public_page_sharing', {})
         # #710: the verified config and its tool-call probe stay with this
         # route's check, so the orchestrator may offer the route as a worker
         # after the owner switches the Main AI elsewhere (key unchanged since).

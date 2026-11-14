@@ -642,12 +642,13 @@ const press=async(id,label)=>{const button=buttons(id).find(node=>node.textConte
  refuse=null;$('file-workspace-cancel').onclick();assert.equal($('file-workspace-form').hidden,true);
  assert.equal(focused?.textContent,'폴더 변경','closing the editor returns focus to its opener');
 
- ctx.renderDocumentBoundary({external_model:true,approved:false});
- assert($('document-boundary').textContent.includes('승인 필요'));
- await press('document-boundary','전송 승인');
- same(calls.pop(),{path:'/api/documents/approval',body:{approved:true}});
- ctx.renderDocumentBoundary({external_model:true,approved:true});assert($('document-boundary').textContent.includes('승인됨'));
- ctx.renderDocumentBoundary({external_model:false});assert($('document-boundary').textContent.includes('보내지 않음'));
+ // #820: an external model reads the documents with no sharing approval; the row only says where they go.
+ const sentBefore=calls.length;
+ ctx.renderDocumentBoundary({external_model:true,requires_approval:false});
+ assert($('document-boundary').textContent.includes('외부 AI로 보냄'));
+ assert(!$('document-boundary').textContent.includes('승인'),'no approval is asked for or shown');
+ assert.equal(calls.length,sentBefore,'rendering the row sends nothing');
+ ctx.renderDocumentBoundary({external_model:false,requires_approval:false});assert($('document-boundary').textContent.includes('보내지 않음'));
  console.log('folder settings DOM checks passed');
 })().catch(error=>{console.error(error);process.exit(1);});
 """

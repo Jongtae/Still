@@ -39,7 +39,7 @@ from .main_ai import MainAiRoutes
 from .search_providers import (SEARCH_FAILED_TEXT, ProviderRegistry, SearchProviderSettings, public_http_url)
 from .cloud_engines import (BUDGET_EXCEEDED as CLOUD_BUDGET_EXCEEDED, NOT_CONFIGURED as CLOUD_NOT_CONFIGURED,
                             CloudEngines, CloudLaunchError)
-from .conversation_projection import (BLOCKER_CLOUD_PROFILE, BLOCKER_DOCUMENT_APPROVAL, BLOCKER_MODEL_UNVERIFIED, BLOCKER_NO_AI_ROUTE,
+from .conversation_projection import (BLOCKER_CLOUD_PROFILE, BLOCKER_MODEL_UNVERIFIED, BLOCKER_NO_AI_ROUTE,
                                       TELEGRAM_RESULT_PREVIEW_CHARS, TERMINAL_FAILED_HEADER,
                                       TERMINAL_INTERRUPTED_HEADER, TERMINAL_NEXT_ACTION, TERMINAL_PARTIAL_HEADER,
                                       BlockedTurn, ConversationProjection, context_message, earlier_turn_line,
@@ -89,7 +89,7 @@ from .conversation_handoff import LINKABLE_KINDS
 from .conversation_handoff import (LOCAL_AUTHORITY_KIND, LOCAL_AUTHORITY_LABELS, LOCAL_AUTHORITY_PREVIEWS,
                                    LOCAL_AUTHORITY_SCOPES, LOCAL_FOLDER_READ, LOCAL_REFERENCE_READ,
                                    LOCAL_RESULT_WRITE, LOCAL_RESUMED_NOTICE, local_authority_guidance,
-                                   local_authority_handoff, local_refusal_text, LOCAL_RESUME_TTL_SECONDS)
+                                   local_authority_handoff, local_refusal_text)
 from . import local_folder_picker
 from . import owner_mcp
 from . import trust_record
@@ -114,10 +114,10 @@ from .telegram_presence import (CLEAR_REACTION, DONE_REACTION, CONTROL_DETAILS, 
                                 without_consumed)
 from .conversation_surface import PRESENCE_REACT, PRESENCE_TYPING
 LOCAL_RESUMED_KEY='local_authority_resumed_jobs'
+#: #820: retired.  Works parked here waited on the removed document-sharing consent;
+#: ``retire_document_consent`` clears what an earlier version stored.
 LOCAL_DOCUMENT_RESUME_KEY='local_authority_document_resume_jobs'
-LOCAL_DOCUMENT_APPROVAL_TEXT=msg('service.to_continue_the_request_for_which')
 LOCAL_KEPT_WORKSPACE_TEXT=msg('service.an_output_folder_is_already_connected')
-LOCAL_DOCUMENT_RESUMED_TEXT=msg('service.document_sharing_was_approved_the_request')
 #: #779: the Settings folder routes' "this Mac only" refusal, in the pattern of
 #: the #505 folder-request refusal.  The web UI keys its translation on it.
 SETTINGS_FOLDER_LOCAL_TEXT=msg('service.continue_on_the_mac_adding_or')
@@ -2490,9 +2490,7 @@ class AgentService:
         if self.context_observations.awaiting_answer(work_id,now):
             return True
         offer=self.budget_continue_offer(work_id)
-        if offer.get('state')=='offered' and self.budget_continue_current(self.store.job(work_id),offer):
-            return True
-        return work_id in self._document_resume_rows()
+        return offer.get('state')=='offered' and self.budget_continue_current(self.store.job(work_id),offer)
 
     def photo_attempt_received_model_response(self, work_id, since_event_id):
         """Whether a direct model turn responded after this photo-backed attempt began."""
@@ -3187,8 +3185,6 @@ class AgentService:
                             if row['state']=='awaiting-confirmation':orchestrator.cancel(row['owner'],row['channel'],row['id'])
                         self.update_task_card(self.store.job(work_id),'cancelled')
                         return True,msg('quickstart_service.cancelled_settings')
-        if previous.get('status')=='failed' and self.drop_document_resume(owner_id=connector_owner,work_id=work_id):
-            return True,msg('quickstart_service.cancelled_document')
         if previous.get('status')=='awaiting_connection' and self.resume_index:
             dropped=self.resume_index.supersede(owner_id=connector_owner,work_id=work_id)
             if dropped:
@@ -4157,61 +4153,22 @@ class AgentService:
             text = msg('quickstart_service.skill_added_enabled', skill=skill['name'], repo=source['repo'], path=source['path'], revision=source['revision'][:7], licence=skill['licence'])
         return {'response': text, 'skill': skill['name'], 'digest': skill['digest'], 'revision': source['revision']}
 
-    def document_fingerprint(self, model=None):
-        model=self.store.config('model',{}) if model is None else model
-        roots=self.store.config('file_roots',[])
-        workspace=self.store.config('file_workspace',{})
-        public={'model':{key:model.get(key,'') for key in ('provider','endpoint','model')},'roots':[root.get('id','') for root in roots],
-                'workspace_references':[root.get('id','') for root in workspace.get('references',[]) if isinstance(root,dict)],
-                'workspace_configured':bool(workspace.get('workspace'))}
-        return hashlib.sha256(json.dumps(public,sort_keys=True).encode()).hexdigest()
-
     @staticmethod
     def external_model(model):
         endpoint=urlsplit(str(model.get('endpoint',''))).hostname
         return bool(model) and endpoint not in ('localhost','127.0.0.1','::1')
 
     def document_boundary(self, model=None):
-        model=self.store.config('model',{}) if model is None else model
-        external=self.external_model(model)
-        saved=self.store.config('document_sharing',{})
-        approved=external and saved.get('approved') is True and saved.get('fingerprint')==self.document_fingerprint(model)
-        return {'external_model':external,'approved':approved,'requires_approval':external and not approved,'scope':msg('quickstart_service.document_approval_label')}
+        """Where the owner's documents go when the configured model reads them (#820).
 
-    def set_document_approval(self, body):
-        if body.get('approved') is not True:raise ValueError(msg('quickstart_service.document_approval_only'))
-        model=self.store.config('model',{})
-        if not model:raise ValueError(msg('quickstart_service.connect_model_first'))
-        if not self.external_model(model):return self.document_boundary(model)
-        self.store.put('document_sharing',{'approved':True,'fingerprint':self.document_fingerprint(model),'approved_at':time.time()})
-        return self.document_boundary(model)
-
-    def approve_document_sharing_from_settings(self, body):
-        """Settings 전송 승인: the same standing approval as the Telegram button, and the same resume.
-
-        #594 item 11: the approval the Settings row sets is exactly the one the
-        `p7a` button sets, but only the button continued the folder-resumed
-        Work that was parked on it.  Approving here instead stranded that Work
-        and made its Telegram button inert (sharing no longer required).  The
-        parked Work now continues through the same once-only claim
-        (`resume_after_document_approval`: eligible, unexpired, unwithdrawn,
-        read-only, still failed), and its pending approval prompt is closed.
-        No new authority: any new request would use this approval too.
+        The configured model reads the owner's documents on every route: the
+        one-time document-sharing consent for an external direct-API model was
+        removed, so nothing here waits for an approval.  Folder grants still
+        bound every read.  ``external_model`` says whether the excerpts leave
+        this machine, for the Settings line and the information-use record.
         """
-        # One lock with the worker's continuation registration and with prompt
-        # delivery, so neither can interleave with approval and strand the Work.
-        with self.lock:
-            boundary=self.set_document_approval(body)
-            if not boundary.get('approved'):return boundary
-            for work_id in list(self._document_resume_rows()):
-                if not self.resume_after_document_approval(work_id):continue
-                prompts=self.store.telegram.open_prompts(work_id,'approval_needed')
-                for prompt in prompts:
-                    self.store.update_notification(prompt['id'],'approved')
-                    if prompt['state']=='sent' and prompt.get('message_id'):
-                        try:self.telegram.edit_message_text(prompt['chat_id'],prompt['message_id'],LOCAL_DOCUMENT_RESUMED_TEXT,{'inline_keyboard':[]})
-                        except ProviderError:pass
-            return boundary
+        model=self.store.config('model',{}) if model is None else model
+        return {'external_model':self.external_model(model),'requires_approval':False}
 
     def owner_memory_approval(self, job, prompt):
         """A lazy resolver for this Work's owner-request memory approval (#597).
@@ -4281,7 +4238,6 @@ class AgentService:
             if any(root['path']==str(p) for root in roots):continue
             roots.append({'id':__import__('hashlib').sha256(str(p).encode()).hexdigest()[:12],'path':str(p)})
         self.store.put('file_roots',roots,db=db)
-        self.store.put('document_sharing',{},db=db)
         return {'roots':[{**root,'blocked':folder_grants.blocked(root['path'],self.store)} for root in roots]}
 
     def configure_file_workspace(self, body, local_surface=True):
@@ -4306,7 +4262,6 @@ class AgentService:
             # folder the rules now block (e.g. a parent replaced by a symlink)
             # stays as stored instead of being re-resolved to a new target.
             files.configure(body.get('references',[]),body.get('workspace',''),keep_blocked_workspace=not local_surface)
-            self.store.put('document_sharing',{})
             return files.projection()
 
     def record_work_sources(self, job_id, labels):
@@ -4477,7 +4432,6 @@ class AgentService:
             self.store.put('model',config)
             self.store.put('model_test',tested)
             self.store.put('model_draft_test',None)
-            self.store.put('document_sharing',{})
         return self.settings()
 
     def connect_openrouter(self, body):
@@ -5649,7 +5603,6 @@ class AgentService:
     def supersede_pending_handoffs(self, except_work_id=None, owner_id=None):
         """Drop this owner's pending resume paths because the owner corrected course."""
         if not self.resume_index:return []
-        self.drop_document_resume(owner_id=owner_id,except_work_id=except_work_id)
         dropped=self.resume_index.supersede(owner_id=owner_id,except_work_id=except_work_id)
         return self.cancel_superseded_work(dropped)
 
@@ -6079,80 +6032,21 @@ class AgentService:
         rows=[row for row in self.store.config(key,[],db=db) if isinstance(row,str) and row!=work_id]
         self.store.put(key,[*rows,work_id][-100:],db=db)
 
-    def _forget_work(self, key, work_id):
-        """Remove one id; True only for the caller that actually removed it."""
-        with self.lock:
-            rows=[row for row in self.store.config(key,[]) if isinstance(row,str)]
-            if work_id not in rows:return False
-            self.store.put(key,[row for row in rows if row!=work_id])
-            return True
+    def retire_document_consent(self):
+        """Clear what the removed document-sharing consent stored (#820); returns the parked Works dropped.
 
-    def mark_document_resume(self, job):
-        """A folder-resumed Work stopped only at document sharing may continue after approval.
-
-        A hosted model needs the separate document-sharing approval, and every
-        folder grant clears it on purpose.  Only a Work this handoff resumed,
-        whose recorded tool calls were all read-only, is eligible, so continuing
-        it after the owner approves sharing cannot repeat an effect.
+        A Work an earlier version parked for that approval is no longer parked on
+        anything: it stays failed as recorded and is never resumed now.  Its kept
+        Telegram photo is released unless another owner wait still needs it.
         """
-        if job['id'] not in set(self.store.config(LOCAL_RESUMED_KEY,[])):return False
-        if not self.may_continue(job['id'],'resume')[0]:return False
-        with self.lock:
-            rows=self._document_resume_rows()
-            rows[job['id']]={'owner':_owner_key(self.issuer_owner_id(job)),
-                             'expires_at':self.local_handoff.now()+LOCAL_RESUME_TTL_SECONDS}
-            self.store.put(LOCAL_DOCUMENT_RESUME_KEY,rows)
-        return True
-
-    def _document_resume_rows(self):
-        raw=self.store.config(LOCAL_DOCUMENT_RESUME_KEY,{})
-        now=self.local_handoff.now()
-        return {key:row for key,row in (raw.items() if isinstance(raw,dict) else ())
-                if isinstance(row,dict) and isinstance(row.get('expires_at'),(int,float)) and row['expires_at']>now}
-
-    def document_resume_eligible(self, work_id):
-        return isinstance(work_id,str) and work_id in self._document_resume_rows()
-
-    def drop_document_resume(self, owner_id=None, work_id=None, except_work_id=None):
-        """Withdraw continuation eligibility: a newer request, supersede or cancel."""
-        owner=_owner_key(owner_id) if owner_id is not None else None
         with self.lock:
             raw=self.store.config(LOCAL_DOCUMENT_RESUME_KEY,{})
-            rows=self._document_resume_rows()
-            stale=set(raw)-set(rows) if isinstance(raw,dict) else set()
-            dropped=[key for key,row in rows.items() if key!=except_work_id
-                     and (work_id is None or key==work_id)
-                     and (owner is None or hmac.compare_digest(str(row.get('owner','')),owner))]
-            for key in dropped:rows.pop(key,None)
-            self.store.put(LOCAL_DOCUMENT_RESUME_KEY,rows)
-        for key in set(dropped)|stale:
-            if not self.photo_work_has_pending_resume(key):self.store.remove_telegram_photo(key)
-        return dropped
-
-    def prune_expired_document_resumes(self):
-        """Drop expired local-document continuation records and their now-unneeded photo handles."""
-        with self.lock:
-            raw=self.store.config(LOCAL_DOCUMENT_RESUME_KEY,{})
-            rows=self._document_resume_rows()
-            stale=set(raw)-set(rows) if isinstance(raw,dict) else set()
-            if stale:self.store.put(LOCAL_DOCUMENT_RESUME_KEY,rows)
-        for work_id in stale:
-            if not self.photo_work_has_pending_resume(work_id):self.store.remove_telegram_photo(work_id)
-        return len(stale)
-
-    def resume_after_document_approval(self, work_id):
-        """Re-queue exactly the eligible, unexpired, unwithdrawn Work once, after sharing is approved."""
-        with self.lock:
-            rows=self._document_resume_rows()
-            if work_id not in rows:return False
-            rows.pop(work_id,None)
-            self.store.put(LOCAL_DOCUMENT_RESUME_KEY,rows)
-            self._forget_work(LOCAL_RESUMED_KEY,work_id)
             with self.store.db() as db:
-                db.execute('BEGIN IMMEDIATE')
-                resumed=db.execute(f"UPDATE jobs SET status='queued',error=NULL,delivery='none' WHERE id=? AND status IN {ws.sql_in(ws.FAILED)}",(work_id,)).rowcount==1
-        if not resumed and not self.photo_work_has_pending_resume(work_id):self.store.remove_telegram_photo(work_id)
-        return resumed
+                db.execute('DELETE FROM config WHERE key IN (?,?)',(LOCAL_DOCUMENT_RESUME_KEY,'document_sharing'))
+        parked=[key for key in (raw if isinstance(raw,dict) else ()) if isinstance(key,str)]
+        for work_id in parked:
+            if not self.photo_work_has_pending_resume(work_id):self.store.remove_telegram_photo(work_id)
+        return parked
 
     def _abandon_local_work(self, work_id, reason):
         changed=self._fail_waiting_work(work_id,local_refusal_text(reason))
@@ -6485,7 +6379,7 @@ class AgentService:
         return shown
 
     #: Notification kinds whose prompt is the Work's only surface while pending (#718).
-    APPROVAL_NOTIFICATIONS=('approval_needed','context_approval_needed','browser_approval_needed')
+    APPROVAL_NOTIFICATIONS=('context_approval_needed','browser_approval_needed')
 
     def _draft_step_text(self, job, state):
         """The launched worker in /dev mode, dots alone otherwise (#477).
@@ -7717,7 +7611,7 @@ class AgentService:
         if not self._budget_boundary(failed):return False
         # #618 E2: the one continuation rule; this attempt's owner prerequisites are its named inputs.
         owner_waits=bool(any(code in {'needs_setup','input_required','approval_required','login_required','awaiting_connection'} for code in failed)
-                         or run.approval_needed[0] or run.context_approval_needed[0] or run.waits_for_sign_in
+                         or run.context_approval_needed[0] or run.waits_for_sign_in
                          or (run.agency_report or {}).get('question')
                          or self.work_waits_for_owner(job) or awaiting_owner_rows(tools) or self.missing_connection_rows(tools)
                          or (self._browser_login(job['id']) or {}).get('state') in ('requested','opening','offered','closing'))
@@ -9023,9 +8917,12 @@ class AgentService:
         return True
 
     def _document_history_rows(self, rows, config, subscription, document_jobs):
-        """The #826 first-attempt boundary, shared with the side lane."""
-        if self.document_boundary(config)['requires_approval'] and not subscription.get('id'):
-            return [row for row in rows if row.get('job_id') not in document_jobs]
+        """The earlier rows the side lane is shown, as a worker is: all of them, on every route (#820).
+
+        Earlier document Works stay in the history: the configured model reads the
+        owner's documents without a separate sharing consent.  Only the Judgment AI's
+        plan call leaves their excerpts out (``planner_history``, #826).
+        """
         return list(rows)
 
     def _side_answer_event(self, task_id, status, db=None):
@@ -9388,8 +9285,10 @@ class AgentService:
             self.retire_unattended_waits()
         except Exception as exc:
             LOG.warning('unattended waits not retired (%s)',type(exc).__name__)
+        # #820: the document-sharing consent was removed; nothing stays parked on it.
+        self.retire_document_consent()
         def work():
-            next_document_resume_prune=0.0
+            next_purge_check=0.0
             while not self.stop.is_set():
                 # #659: one indexed query; nothing due costs no model or network call.
                 self.run_due_preparation()
@@ -9408,11 +9307,10 @@ class AgentService:
                 # on the Keychain), one at a time, at most one check a minute.
                 self.start_session_keepalive()
                 now=time.monotonic()
-                if now>=next_document_resume_prune:
-                    self.prune_expired_document_resumes()
+                if now>=next_purge_check:
                     # #794 phase 3 / #367: the forget purge hook; a forget is never purged now, so this finds nothing.
                     self.purge_forgotten()
-                    next_document_resume_prune=now+30
+                    next_purge_check=now+30
                 # #805: claim one pending owner-model upkeep when idle; it runs off this thread.
                 self.run_owner_model_upkeep()
                 self.stop.wait(.3)

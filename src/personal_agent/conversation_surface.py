@@ -243,8 +243,8 @@ def notice_binding(service, notification):
     from .quickstart_service import MEMORY_PROMPT_KINDS, MEMORY_SAVED_KINDS, WORKING_NOTES_KIND, prepared_ids
     kind = notification['kind']
     if kind == 'approval_needed':
-        # #594 item 11: sharing was approved (e.g. in Settings) after this prompt was queued.
-        return {} if service.document_boundary()['requires_approval'] else None
+        # #820: the document-sharing consent was removed; a prompt an earlier version queued is not shown.
+        return None
     if kind == 'browser_approval_needed':
         pending = service._browser_request(notification.get('job_id'))
         if not pending or pending.get('state') != 'requested' or pending.get('offer_digest') != notification.get('fingerprint'):
@@ -301,7 +301,7 @@ def notice_binding(service, notification):
 def notice_text(service, notification, bound):
     """The text a notice shows, from what ``notice_binding`` bound."""
     from . import preparations as prep
-    from .quickstart_service import LOCAL_DOCUMENT_APPROVAL_TEXT, MEMORY_PROMPT_KINDS, MEMORY_SAVED_KINDS, WORKING_NOTES_KIND
+    from .quickstart_service import MEMORY_PROMPT_KINDS, MEMORY_SAVED_KINDS, WORKING_NOTES_KIND
     kind = notification['kind']
     if kind == 'preparation_proposed':
         return prep.proposal_text(bound['proposals'], bound['remaining'], service.home_zone())
@@ -321,8 +321,6 @@ def notice_text(service, notification, bound):
         return bound['watch_text']
     if 'line_text' in bound:
         return bound['line_text']
-    if kind == 'approval_needed' and service.document_resume_eligible(notification.get('job_id')):
-        return LOCAL_DOCUMENT_APPROVAL_TEXT
     if kind == 'browser_approval_needed':
         return service.browser_step_prompt(notification.get('job_id'))
     if kind == 'budget_continue':

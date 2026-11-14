@@ -168,13 +168,11 @@ class QuickStore:
                  (NEW.status IN ('failed','partial') AND (
                    EXISTS (
                      SELECT 1 FROM config, json_each(CASE WHEN json_valid(config.value) THEN config.value ELSE '{}' END)
-                     WHERE config.key IN ('browser_login_requests','browser_step_requests','local_authority_document_resume_jobs')
+                     WHERE config.key IN ('browser_login_requests','browser_step_requests')
                        AND json_each.key=NEW.id
                        AND (
                          (config.key='browser_login_requests' AND json_extract(json_each.value,'$.state') IN ('requested','opening','offered','closing','resuming'))
                          OR (config.key='browser_step_requests' AND json_extract(json_each.value,'$.state') IN ('requested','issued'))
-                         OR (config.key='local_authority_document_resume_jobs'
-                             AND CAST(json_extract(json_each.value,'$.expires_at') AS REAL) > CAST(strftime('%s','now') AS REAL))
                        )
                    )
                    OR EXISTS (SELECT 1 FROM context_job_attachments WHERE job_id=NEW.id AND approved=0)

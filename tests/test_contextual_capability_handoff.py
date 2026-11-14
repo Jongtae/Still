@@ -27,7 +27,7 @@ from personal_agent.conversation_handoff import (CONVERSATION_RESUME_KEY, LOCAL_
 from personal_agent.file_workspace import FileWorkspace
 from personal_agent.providers import ModelAdapter
 from personal_agent.quickstart import make_handler
-from personal_agent.quickstart_service import (LOCAL_DOCUMENT_APPROVAL_TEXT, LOCAL_DOCUMENT_RESUMED_TEXT, LOCAL_KEPT_WORKSPACE_TEXT,
+from personal_agent.quickstart_service import (LOCAL_DOCUMENT_RESUME_KEY, LOCAL_KEPT_WORKSPACE_TEXT,
                                               SETTINGS_FOLDER_LOCAL_TEXT, AgentService, GMAIL_CONNECT_PATH)
 from personal_agent.quickstart_store import QuickStore
 
@@ -214,7 +214,7 @@ class ReadHandoffTests(HandoffTestCase):
         self.assertEqual(self.roots(), [str(contracts.resolve())])
         # A read grant is never a result-write grant.
         self.assertIsNone(self.store.config('file_workspace', {}).get('workspace'))
-        self.assertEqual(self.store.config('document_sharing'), {})
+        self.assertIsNone(self.store.config('document_sharing'), 'a grant writes no sharing consent (#820)')
         self.assertEqual(self.job(job_id)['status'], 'queued')
         notice = self.sent[before:]
         self.assertEqual(notice, ['선택한 폴더를 읽기로 허용했어요. 방금 요청을 이어서 처리해요.'])
@@ -399,8 +399,8 @@ class ReadHandoffTests(HandoffTestCase):
         self.assertEqual(len(self.pending()), 1)
 
 
-class HostedModelDocumentApprovalTests(HandoffTestCase):
-    """A hosted model still needs document sharing; the folder-resumed Work continues once after it."""
+class HostedModelDocumentTests(HandoffTestCase):
+    """#820: a hosted model reads the granted folder; the folder-resumed Work continues to its answer."""
 
     def make_service(self):
         service = super().make_service()
@@ -437,28 +437,20 @@ class HostedModelDocumentApprovalTests(HandoffTestCase):
                                                   'message_id': notification['message_id']},
                                       'data': f"p7a:{notification['id']}:{action}"}, GENERATION)
 
-    def test_folder_then_document_approval_resume_the_same_work_once(self):
+    def test_a_folder_grant_resumes_the_work_and_a_hosted_model_reads_it(self):
         job_id, _ = self.park_read()
         self.approve_picked(self.folder('contracts', {'renewal.txt': '계약서 갱신일: 10월 1일'}))
-        self.assertTrue(self.service.document_boundary()['requires_approval'], 'a grant never carries sharing')
-        self.plan = [('find_files', {'query': '계약서'})]
-        self.service.run_one()
-        self.assertEqual(self.job(job_id)['status'], 'failed')
-        self.assertTrue(self.service.deliver_notification())
-        with self.store.db() as db:
-            notification = dict(db.execute("SELECT * FROM telegram_notifications WHERE job_id=? AND kind='approval_needed'",
-                                           (job_id,)).fetchone())
-        self.callback(notification, 'approve', sender=999)  # not the paired owner
-        self.assertEqual(self.job(job_id)['status'], 'failed')
-        self.callback(notification, 'approve')
         self.assertFalse(self.service.document_boundary()['requires_approval'])
         self.assertEqual(self.job(job_id)['status'], 'queued')
         self.plan = [('find_files', {'query': '계약서'})]
         self.claim_completion()
         self.assertTrue(self.service.run_one())
         self.assertEqual(self.job(job_id)['status'], 'succeeded', self.job(job_id).get('error'))
-        self.assertFalse(self.service.resume_after_document_approval(job_id), 'continues once only')
-        self.assertFalse(self.service.run_one())
+        with self.store.db() as db:
+            prompts = db.execute("SELECT COUNT(*) FROM telegram_notifications WHERE job_id=? AND kind='approval_needed'",
+                                 (job_id,)).fetchone()[0]
+        self.assertEqual(prompts, 0, 'no document-sharing prompt is queued')
+        self.assertFalse(self.service.run_one(), 'runs once only')
 
     def across(self, start, flow):
         """``flow`` with the Work's runs one second apart from ``start`` on the Asia/Seoul clock (#9)."""
@@ -466,147 +458,57 @@ class HostedModelDocumentApprovalTests(HandoffTestCase):
         self.context_clock.now, self.context_step = start, 1
         flow()
 
-    def test_folder_then_document_approval_resume_once_across_midnight(self):
-        """#9: the parked run before midnight (Asia/Seoul), the resumed runs after it."""
-        self.across(SEOUL_MIDNIGHT - 2, self.test_folder_then_document_approval_resume_the_same_work_once)
+    def test_a_folder_grant_resumes_once_across_midnight(self):
+        """#9: the parked run before midnight (Asia/Seoul), the resumed run after it."""
+        self.across(SEOUL_MIDNIGHT - 2, self.test_a_folder_grant_resumes_the_work_and_a_hosted_model_reads_it)
         self.assertGreater(self.context_clock.now, SEOUL_MIDNIGHT)
 
-    def test_folder_then_document_approval_resume_once_across_a_minute(self):
-        self.across(CONTEXT_START + 28, self.test_folder_then_document_approval_resume_the_same_work_once)
+    def test_a_folder_grant_resumes_once_across_a_minute(self):
+        self.across(CONTEXT_START + 28, self.test_a_folder_grant_resumes_the_work_and_a_hosted_model_reads_it)
 
-    def test_settings_approval_resumes_once_across_midnight(self):
-        self.across(SEOUL_MIDNIGHT - 2, self.test_settings_approval_resumes_the_parked_work_once_and_closes_the_prompt)
-        self.assertGreater(self.context_clock.now, SEOUL_MIDNIGHT)
-
-    def test_settings_approval_resumes_once_across_a_minute(self):
-        self.across(CONTEXT_START + 28, self.test_settings_approval_resumes_the_parked_work_once_and_closes_the_prompt)
-
-    def stop_at_sharing(self, clock=None, resumed_plan=None):
-        if clock is not None:
-            self.service.local_handoff = local_authority_handoff(self.store, now=clock)
-        job_id, _ = self.park_read()
-        self.approve_picked(self.folder('contracts', {'renewal.txt': '계약서 갱신일: 10월 1일'}))
-        self.plan = resumed_plan or [('find_files', {'query': '계약서'})]
-        self.service.run_one()
-        self.assertIn(self.job(job_id)['status'], ('failed', 'partial'))
-        before = len(self.sent)
-        self.assertTrue(self.service.deliver_notification())
+    def failed_work(self):
+        """A Work an earlier version left failed at the removed document-sharing approval."""
+        job_id = self.store.enqueue('계약서 찾아줘', 'old-document-work', channel=f'telegram:{GENERATION}', chat_id=CHAT)
         with self.store.db() as db:
-            notification = dict(db.execute("SELECT * FROM telegram_notifications WHERE job_id=? AND kind='approval_needed'",
-                                           (job_id,)).fetchone())
-        return job_id, notification, self.sent[before:]
+            db.execute("UPDATE jobs SET status='failed' WHERE id=?", (job_id,))
+        return job_id
 
-    def test_settings_approval_resumes_the_parked_work_once_and_closes_the_prompt(self):
-        """#594 item 11: approving in Settings continues the parked Work, like the button."""
-        job_id, notification, _ = self.stop_at_sharing()
-        edits = []
-        self.service.telegram.edit_message_text = lambda *args, **kwargs: edits.append(args)
-        self.assertTrue(self.service.approve_document_sharing_from_settings({'approved': True})['approved'])
-        self.assertEqual(self.job(job_id)['status'], 'queued')
-        self.assertEqual(self.store.notification(notification['id'])['state'], 'approved')
-        self.assertEqual(edits, [(CHAT, notification['message_id'], LOCAL_DOCUMENT_RESUMED_TEXT, {'inline_keyboard': []})])
-        # The now-closed button cannot queue it a second time.
-        self.callback(notification, 'approve')
-        self.plan = [('find_files', {'query': '계약서'})]
-        self.claim_completion()
-        self.assertTrue(self.service.run_one())
-        self.assertEqual(self.job(job_id)['status'], 'succeeded', self.job(job_id).get('error'))
-        self.assertFalse(self.service.approve_document_sharing_from_settings({'approved': True})['requires_approval'])
-        self.assertFalse(self.service.run_one(), 'continues once only')
+    def test_a_work_parked_by_an_earlier_version_is_retired_not_resumed(self):
+        """Rows the removed consent stored are cleared at start; their Work stays as recorded."""
+        job_id = self.failed_work()
+        self.store.put(LOCAL_DOCUMENT_RESUME_KEY, {job_id: {'owner': 'x', 'expires_at': 9e9}})
+        self.store.put('document_sharing', {'approved': True, 'fingerprint': 'old'})
+        self.assertEqual(self.service.retire_document_consent(), [job_id])
+        self.assertIsNone(self.store.config(LOCAL_DOCUMENT_RESUME_KEY))
+        self.assertIsNone(self.store.config('document_sharing'))
+        self.assertEqual(self.job(job_id)['status'], 'failed')
+        self.assertFalse(self.service.run_one(), 'nothing is resumed')
+        self.assertEqual(self.service.retire_document_consent(), [], 'idempotent')
 
-    def test_settings_approval_landing_as_the_run_ends_still_continues_the_work(self):
-        """Review P2: approval between the run's boundary check and its continuation registration."""
-        job_id, _ = self.park_read()
-        self.approve_picked(self.folder('contracts', {'renewal.txt': '계약서 갱신일: 10월 1일'}))
-        original = self.service.mark_document_resume
+    def test_a_malformed_stored_row_does_not_stop_the_retirement(self):
+        self.store.put(LOCAL_DOCUMENT_RESUME_KEY, ['not', 'a', 'mapping'])
+        self.assertEqual(self.service.retire_document_consent(), [])
+        self.assertIsNone(self.store.config(LOCAL_DOCUMENT_RESUME_KEY))
 
-        def approve_first(job):
-            self.service.approve_document_sharing_from_settings({'approved': True})
-            return original(job)
-
-        self.service.mark_document_resume = approve_first
-        self.plan = [('find_files', {'query': '계약서'})]
-        self.service.run_one()
-        self.assertEqual(self.job(job_id)['status'], 'queued', 'continued, not stranded')
-        with self.store.db() as db:
-            prompts = db.execute("SELECT COUNT(*) FROM telegram_notifications WHERE job_id=? AND kind='approval_needed'",
-                                 (job_id,)).fetchone()[0]
-        self.assertEqual(prompts, 0, 'no inert approval prompt is queued')
-
-    def test_a_queued_prompt_is_not_published_once_sharing_is_approved(self):
-        """Review P2: delivery that picked the prompt before a Settings approval does not publish it."""
-        job_id, _ = self.park_read()
-        self.approve_picked(self.folder('contracts', {'renewal.txt': '계약서 갱신일: 10월 1일'}))
-        self.plan = [('find_files', {'query': '계약서'})]
-        self.service.run_one()
+    def test_a_sharing_prompt_an_earlier_version_queued_is_not_shown(self):
+        job_id = self.failed_work()
+        self.store.queue_notification(job_id, CHAT, GENERATION, 'approval_needed', 'old-fingerprint', surface='telegram')
         picked = self.store.next_notification()
         self.assertEqual((picked['job_id'], picked['kind']), (job_id, 'approval_needed'))
-        self.service.approve_document_sharing_from_settings({'approved': True})
         before = len(self.sent)
         with mock.patch.object(self.store, 'next_notification', return_value=picked):
             self.assertTrue(self.service.deliver_notification())
         self.assertEqual(self.sent[before:], [])
         self.assertEqual(self.store.notification(picked['id'])['state'], 'cancelled')
-        self.assertEqual(self.job(job_id)['status'], 'queued')
 
-    def test_settings_approval_does_not_revive_a_withdrawn_work(self):
-        job_id, _notification, _ = self.stop_at_sharing()
-        self.service.supersede_pending_handoffs(owner_id=OWNER)
-        self.service.approve_document_sharing_from_settings({'approved': True})
+    def test_an_old_sharing_button_changes_nothing(self):
+        job_id = self.failed_work()
+        nid = self.store.queue_notification(job_id, CHAT, GENERATION, 'approval_needed', 'old-fingerprint', surface='telegram')['id']
+        self.store.update_notification(nid, 'sent', message_id=77)
+        self.callback(self.store.notification(nid), 'approve')
         self.assertEqual(self.job(job_id)['status'], 'failed')
+        self.assertIsNone(self.store.config('document_sharing'))
         self.assertFalse(self.service.run_one())
-
-    def test_the_sharing_notification_says_approval_continues_that_request(self):
-        _job_id, _notification, sent = self.stop_at_sharing()
-        self.assertEqual(sent, [LOCAL_DOCUMENT_APPROVAL_TEXT])
-
-    def test_a_newer_request_withdraws_the_continuation(self):
-        job_id, notification, _ = self.stop_at_sharing()
-        self.ask('아까 요청은 취소해 줘')
-        self.callback(notification, 'approve')
-        self.assertEqual(self.job(job_id)['status'], 'failed')
-        self.assertFalse(self.service.run_one())
-
-    def test_an_explicit_cancel_of_the_stopped_work_withdraws_the_continuation(self):
-        job_id, notification, _ = self.stop_at_sharing()
-        cancelled, text = self.service.cancel_focused_work(self.job(job_id), OWNER)
-        self.assertTrue(cancelled)
-        self.assertIn('문서 공유를 승인해도 이어서 처리하지 않아요', text)
-        self.callback(notification, 'approve')
-        self.assertEqual(self.job(job_id)['status'], 'failed')
-
-    def test_supersede_withdraws_the_continuation(self):
-        job_id, notification, _ = self.stop_at_sharing()
-        self.service.supersede_pending_handoffs(owner_id=OWNER)
-        self.callback(notification, 'approve')
-        self.assertEqual(self.job(job_id)['status'], 'failed')
-
-    def test_the_continuation_expires(self):
-        clock = Clock()
-        job_id, notification, _ = self.stop_at_sharing(clock)
-        clock.now += 3601
-        self.callback(notification, 'approve')
-        self.assertFalse(self.service.document_boundary()['requires_approval'], 'sharing itself is still approved')
-        self.assertEqual(self.job(job_id)['status'], 'failed')
-        self.assertFalse(self.service.run_one())
-
-    def test_a_resumed_turn_that_attempted_an_effect_is_not_continued(self):
-        job_id, notification, sent = self.stop_at_sharing(
-            resumed_plan=[('save_note', {'content': '계약서'}), ('find_files', {'query': '계약서'})])
-        self.assertNotEqual(sent, [LOCAL_DOCUMENT_APPROVAL_TEXT])
-        status = self.job(job_id)['status']
-        self.callback(notification, 'approve')
-        self.assertEqual(self.job(job_id)['status'], status)
-        self.assertFalse(self.service.run_one(), 'the note is never saved twice')
-
-    def test_an_ordinary_failed_work_is_not_requeued_by_document_approval(self):
-        contracts = self.folder('contracts', {'renewal.txt': '계약서'})
-        self.service.save_roots({'paths': [str(contracts)]})
-        self.plan = [('find_files', {'query': '계약서'})]
-        job_id, _ = self.ask('계약서 찾아줘')
-        self.assertEqual(self.job(job_id)['status'], 'failed')
-        self.assertFalse(self.service.resume_after_document_approval(job_id))
-        self.assertEqual(self.job(job_id)['status'], 'failed')
 
 
 class OutputFolderHandoffTests(HandoffTestCase):
@@ -964,8 +866,6 @@ class HttpSurfaceTests(HandoffTestCase):
         refs = [ref['path'] for ref in workspace['references']]
         self.assertEqual(len(roots), 2)
         self.assertEqual(len(refs), 2)
-        sharing = {'approved': True, 'marker': 'unchanged'}
-        self.store.put('document_sharing', sharing)
 
         widening_roots = ({'paths': [*roots, str(extra)]},       # add
                           {'paths': [roots[0], str(extra)]},      # replace
@@ -990,7 +890,6 @@ class HttpSurfaceTests(HandoffTestCase):
                         # No Grant change and nothing written.
                         self.assertEqual(self.roots(), roots)
                         self.assertEqual(FileWorkspace(self.store).status(), workspace)
-                        self.assertEqual(self.store.config('document_sharing'), sharing)
 
         # Removing a folder only reduces authority, so any owner session may.
         mobile = {**session, 'Host': MOBILE_HOST}

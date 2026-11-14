@@ -238,7 +238,8 @@ class SideAnswerTests(_SteerCase):
         complete()
         self.assertEqual(len(self.side_calls), 1)
 
-    def test_context_redaction_history_and_document_boundary(self):
+    def test_context_redaction_and_history_keep_document_works(self):
+        # #820: an earlier document Work stays in the side lane's history on every route.
         hidden = self.store.enqueue('private material', 'hidden')
         with self.store.db() as db:
             db.execute("INSERT INTO messages(role,content,channel,created,job_id) VALUES ('assistant','private answer','web',1,?)", (hidden,))
@@ -248,10 +249,9 @@ class SideAnswerTests(_SteerCase):
         self.store.secret('model_key', 'fixture-private-secret')
         with self.store.db() as db:
             db.execute("INSERT INTO messages(role,content,channel,created) VALUES ('user','fixture-private-secret','web',3)")
-        with mock.patch.object(self.service, 'document_boundary', return_value={'requires_approval': True}):
-            self.pair()
+        self.pair()
         [context] = self.side_calls
-        self.assertNotIn('private answer', context.render())
+        self.assertIn('private answer', context.render())
         self.assertNotIn('fixture-private-secret', context.render())
         self.assertIn('safe previous question', context.render())
         self.assertIn('another_task_in_progress', context.facts)
@@ -429,8 +429,7 @@ class SideAnswerTests(_SteerCase):
             db.execute("UPDATE jobs SET status='succeeded' WHERE id=?", (hidden,))
             db.execute("INSERT INTO messages(role,content,channel,created,job_id) VALUES ('assistant','private answer','web',1,?)", (hidden,))
         self.store.put('file_workspace_document_jobs', [hidden])
-        with mock.patch.object(self.service, 'document_boundary', return_value={'requires_approval': False}):
-            running, side = self.pair()
+        running, side = self.pair()
         self.assertIn('private answer', self.side_calls[0].render())
         self.assertIn(side['id'], self.store.config('file_workspace_document_jobs'))
 

@@ -52,7 +52,6 @@ class FileWorkspace:
         if kept: workspace_id=current.get('workspace_id')
         else: target_stat=target.stat(); workspace_id=hashlib.sha256(f'{target_stat.st_dev}:{target_stat.st_ino}'.encode()).hexdigest()[:24]
         self.store.put('file_workspace',{'references':refs,'workspace':str(target),'workspace_id':workspace_id})
-        self.store.put('document_sharing',{})
         return self.status()
 
     def plan_grant(self, kind, value):
@@ -61,9 +60,7 @@ class FileWorkspace:
         #505's local handoff adds exactly one folder of exactly one kind:
         ``reference`` (read-only original) or ``workspace`` (new result files).
         The shared ``folder_grants`` rules and the existing non-overlap rule
-        apply, and nothing is written until ``commit`` is called.  Like
-        ``configure``, a changed folder set clears document sharing, so the
-        grant never carries external-AI transmission with it.
+        apply, and nothing is written until ``commit`` is called.
         """
         if kind not in ('reference','workspace'): raise ValueError('허용하지 않은 폴더 권한입니다.')
         path=folder_grants.validate(value,self.store)
@@ -85,7 +82,6 @@ class FileWorkspace:
                 updated={**current,'references':refs}
             else: updated={**current,'references':refs,'workspace':str(path),'workspace_id':identity}
             self.store.put('file_workspace',updated,db=db)
-            self.store.put('document_sharing',{},db=db)
         return path,commit
 
     def status(self): return self.store.config('file_workspace',{'references':[],'workspace':None})
