@@ -26,9 +26,9 @@ class InProcessRelay:
 
     Separate tests below use real RelayClient sockets and injected stdio only.
     """
-    def __init__(self, tools, *, full_surface=False):
+    def __init__(self, tools, *, full_surface=False, scope=None):
         self.relay = object.__new__(BrowserRelay)
-        self.relay.tools, self.relay.full_surface = tools, full_surface
+        self.relay.tools, self.relay.full_surface, self.relay._scope = tools, full_surface, scope
         self.relay._key, self.relay._closed = 'synthetic-key', False
         self.relay._lock = threading.Lock()
         self.address = 'synthetic-relay'

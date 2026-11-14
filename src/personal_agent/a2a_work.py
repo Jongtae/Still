@@ -160,7 +160,9 @@ def answer_peer(peers, turn):
                 served = RelayedWorkMcpTools(capabilities)
                 relay = None
                 try:
-                    relay = BrowserRelay(served, full_surface=True)
+                    # #722: relayed calls run in this peer Work's decision scope, as its direct route does.
+                    relay = BrowserRelay(served, full_surface=True,
+                                         scope=lambda: service.work_decision_scope(work_id, budget))
                     served.browser_relay = relay.address
                     budget.spend_turn()
                     result = service.execution_adapter.execute(route['subscription']['id'],
