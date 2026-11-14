@@ -300,3 +300,16 @@ Run each checkout in a fresh process; `--src` selects its production imports, Gi
 Reuse decision: **Adapt** the existing eval package. Standard-library JSON, argparse, hashing, file permissions and timing cover serialization/CLI/report needs; the shipped `ModelAdapter`, decision policy, orchestration and qualification runners cover the measured boundary. Existing sandbox, seed resolution, Git-head and report-folder conventions supply the thin eval glue. No new dependency, licence, runtime authority, data destination or production component is introduced (Still remains AGPL-3.0-only).
 
 #42 unavailable-route follow-up reuse review: **Adapt** the shipped `DecisionRoutes._queue_cli_update` / `run_due_qualification` job and `RoutedDecisionEngine` admission with the harness's `CallCap` and `_MeasuredEngine`. Search evidence: `decision_routes.py` qualification jobs, `decision_qualification.qualify`, `bounded_execution.strict_binding_mismatch`, and `Sandbox.prepare`. Platform/stdlib facilities cover copying, counting and reporting. Provider SDKs and external evaluation frameworks cannot replace Still's qualification/activation contract; no new component or dependency is needed. This reuses the repository's current maintained path and official CLI boundary; no external release/version claim or network research is made in this offline fix. Licence remains AGPL-3.0-only; platform compatibility, destinations and authority remain those of the shipped route. The thin glue supplies synchronous scheduling and call admission, avoiding a second qualification implementation.
+
+P1 (#16/#827): each run's `work` maps turn task ids to read-only WorkLedger
+counts, tool names/statuses/timestamps across retries and continuations, and
+allowlisted subscription-engine usage fields. Tool details and arguments are excluded.
+Turn `sent_epoch`/`delivered_epoch` record the wall clock at send/answer fetch.
+Compare matching sweeps (no judge grades enter verified completion):
+```
+python -m agentos_eval p1-report --arm limit1=<baseline.eval> --arm limit4=<parallel.eval> --json p1.json --md p1.md
+```
+Missing usage/cost is `unavailable`; ambiguous event pairs have unknown overlap.
+Reuse review: Adopt Inspect `read_eval_log`/`records_from_samples`, stdlib SQLite
+read-only URI and `statistics`; adapt the existing ledger schema. No new dependencies,
+runtime authority, or external calls. External maintenance research was unavailable offline.

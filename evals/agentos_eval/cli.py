@@ -199,6 +199,28 @@ def cmd_report(args):
     _write(log, run)
 
 
+def cmd_p1_report(args):
+    from inspect_ai.log import read_eval_log
+    from .p1_report import compare_arms, render_markdown
+    arms = {}
+    for value in args.arm:
+        label, separator, path = value.partition('=')
+        if not separator or not label or not path or label in arms:
+            raise SystemExit('--arm must be a unique label=<log.eval>')
+        log = read_eval_log(path)
+        arms[label] = {'records': records_from_samples(log.samples), 'run': dict(log.eval.metadata or {})}
+    try:
+        report = compare_arms(arms)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    markdown = render_markdown(report)
+    if args.json:
+        Path(args.json).write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+    if args.md:
+        Path(args.md).write_text(markdown, encoding='utf-8')
+    print(markdown)
+
+
 def cmd_judgments(args):
     from . import judgments
     if args.action == 'plan':
@@ -239,6 +261,10 @@ def main(argv=None):
     sweep.add_argument('--world', default='', help='run the world scenarios of this world (e.g. appworld), on Codex')
     rep = sub.add_parser('report', help='rebuild the trend report from an Inspect log')
     rep.add_argument('--log', required=True)
+    p1 = sub.add_parser('p1-report', help='compare P1 read-concurrency arms from Inspect logs')
+    p1.add_argument('--arm', action='append', required=True, help='label=<log.eval> (twice)')
+    p1.add_argument('--json')
+    p1.add_argument('--md')
     sub.add_parser('budget', help="show today's judge spend")
     judgments = sub.add_parser('judgments', help='measure shipped judgments (#42)')
     actions = judgments.add_subparsers(dest='action', required=True)
@@ -263,7 +289,7 @@ def main(argv=None):
     comparison.add_argument('head')
     args = parser.parse_args(argv)
     handler = {'snapshot': cmd_snapshot, 'scenarios': cmd_scenarios, 'sweep': cmd_sweep, 'report': cmd_report,
-               'budget': cmd_budget, 'judgments': cmd_judgments}[args.command]
+               'p1-report': cmd_p1_report, 'budget': cmd_budget, 'judgments': cmd_judgments}[args.command]
     return handler(args) or 0
 
 

@@ -263,7 +263,10 @@ class FakePool:
         self.used += 1
         if self.error:
             raise self.error
-        yield FakeBox(self.cached)
+        with tempfile.TemporaryDirectory() as data:
+            box = FakeBox(self.cached)
+            box.data = Path(data)
+            yield box
 
     def store_judgment(self, slot, worker, rows):
         self.stored[(slot, worker)] = rows
