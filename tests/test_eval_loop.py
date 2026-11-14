@@ -850,6 +850,28 @@ class CliTest(unittest.TestCase):
             self.assertIn('owner-private', out.getvalue())
             self.assertNotIn('비밀 제목', out.getvalue())
 
+    def test_sweep_judgment_timeout_flag_default_and_override(self):
+        from unittest import mock
+        for extra, expected in (([], 300), (['--judgment-timeout', '650'], 650)):
+            with self.subTest(extra=extra), mock.patch.object(cli, 'cmd_sweep', return_value=0) as sweep:
+                self.assertEqual(cli.main(['sweep', *extra]), 0)
+                selected = sweep.call_args.args[0]
+                self.assertEqual(selected.judgment_timeout, expected)
+            from types import SimpleNamespace
+            selected.seed = ''
+            task_options = []
+            def factory(**kwargs):
+                task_options.append(kwargs)
+                return 'fixture-task'
+            def evaluate(task, **kwargs):
+                self.assertEqual(task, 'fixture-task')
+                self.assertEqual(kwargs['metadata']['judgment_timeout'], expected)
+                return [SimpleNamespace(results=None)]
+            with mock.patch.object(cli, '_write', return_value={'trend': {'regressions': []}}):
+                self.assertEqual(cli.cmd_sweep(selected, task_factory=factory, inspect_eval=evaluate,
+                                               key_loader=lambda _: 'fixture'), 0)
+            self.assertEqual(task_options[0]['judgment_timeout'], expected)
+
 
 class BoundaryTest(unittest.TestCase):
     def test_runtime_never_imports_the_eval_harness(self):

@@ -879,3 +879,93 @@ def test_new_sweep_metadata_and_log_rebuild_match(rubric, tmp_path, monkeypatch,
     with redirect_stdout(io.StringIO()):
         assert cli.main(['continuity', 'report', '--log', 'fixture.eval']) == 0
     assert json.loads(path.read_text()) == original
+
+
+@pytest.mark.parametrize('extra,timeout', [([], 900), (['--judgment-timeout', '1200'], 1200)])
+def test_c2_judgment_timeout_reaches_task_and_metadata(rubric, tmp_path, monkeypatch, extra, timeout):
+    monkeypatch.delenv('AGENTOS_EVAL_SEED', raising=False)
+    monkeypatch.setenv('AGENTOS_EVAL_HOME', str(tmp_path))
+    captured = []
+    def factory(**kwargs):
+        assert kwargs['judgment_timeout'] == timeout
+        return SimpleNamespace(metadata={'seed': False})
+    def evaluate(task, **kwargs):
+        metadata = kwargs['metadata']
+        assert metadata['judgment_timeout'] == timeout
+        assert task.metadata['judgment_timeout'] == timeout
+        captured.append(metadata)
+        return [SimpleNamespace(samples=[], results=None, location='fixture.eval')]
+    real_sweep = cli.cmd_sweep
+    monkeypatch.setattr(cli, 'cmd_sweep', lambda ns: real_sweep(
+        ns, task_factory=factory, inspect_eval=evaluate, key_loader=lambda _: 'fixture'))
+    with redirect_stdout(io.StringIO()):
+        assert cli.main(['continuity', 'run', '--rubric', str(rubric[1]), *extra]) == 0
+    result = json.loads(next((tmp_path / 'reports').glob('*.c2.json')).read_text())
+    assert result['live_evidence']['judgment_timeout'] == timeout
+    assert len(captured) == 1
+
+
+def judgment_ai_failure_report(rubric, *, ident='before', head='abc', dev=(2, 2, 2), held=(2, 2, 2)):
+    result = make_report(rubric, ident=ident, head=head, dev=dev, held=held)
+    records = copy.deepcopy(result['samples'])
+    # Readiness metadata and scorer failure receipt are independent evidence paths.
+    for i in range(3):
+        records[i]['measures_status'] = 'not_scored'
+    records[0]['judgment_ai'] = {'ready': False, 'requalified': True, 'waited': 318}
+    records[0]['failures'] = [{'kind': 'infra', 'name': 'judgment_ai', 'reason': 'not ready'}]
+    records[1]['failures'] = [{'kind': 'infra', 'name': 'judgment_ai', 'reason': 'not ready'}]
+    records[2]['judgment_ai'] = {'ready': False, 'waited': 318}
+    return c.build_report(records, result['live_evidence'], result['fixture_support'])
+
+
+def test_report_prominently_counts_judgment_ai_failures(rubric):
+    result = judgment_ai_failure_report(rubric)
+    state = result['live_evidence']['judgment_ai']
+    assert state['not_ready'] == 3 and state['unscored_measures'] == 3 and state['samples'] == 6
+    assert result['uncertainty']['judgment_ai'] == state
+    assert result['uncertainty']['status_counts'] == {'not_scored': 3, 'judged': 3}
+    markdown = c.render_markdown(result)
+    assert "Still's Judgment AI was not ready in 3 of 6 samples" in state['warning']
+    assert 'not a representative observation' in state['warning']
+    live, uncertainty = markdown.split('## Live evidence')[1].split('## Uncertainty')
+    assert state['warning'] in live and state['warning'] in uncertainty
+    assert not c.judgment_ai_status([{'measures_status': 'not_scored'}])['not_ready']
+    assert c.judgment_ai_status([{'judgment_ai': {'ready': False}, 'measures_status': 'judged'}])['unscored_measures'] == 0
+
+
+@pytest.mark.parametrize('arm', ['baseline', 'candidate'])
+def test_compare_requires_opt_in_for_missing_judgment_ai_measures(rubric, arm):
+    baseline = make_report(rubric)
+    candidate = make_report(rubric, ident='after', head='def', dev=(1, 1, 1), held=(1, 1, 1))
+    if arm == 'baseline':
+        baseline = judgment_ai_failure_report(rubric)
+    else:
+        candidate = judgment_ai_failure_report(rubric, ident='after', head='def', dev=(1, 1, 1), held=(1, 1, 1))
+    # Gate also protects historical reports lacking the new aggregate readiness section.
+    baseline['live_evidence'].pop('judgment_ai', None)
+    candidate['live_evidence'].pop('judgment_ai', None)
+    with pytest.raises(ValueError, match='infra:judgment_ai.*--allow-partial'):
+        c.compare(baseline, candidate)
+    result = c.compare(baseline, candidate, allow_partial=True)
+    assert result['partial'] is True and result['verdict'] == 'not better'
+    assert result['judgment_ai'][arm]['unscored_measures'] == 3
+    assert 'representative_judgment_ai' in result['failed_conditions']
+    assert 'PARTIAL' in c.compare_markdown(result)
+    assert 'verdict cannot be better' in c.compare_markdown(result)
+
+
+def test_compare_cli_allow_partial_and_clean_comparison(rubric, tmp_path):
+    baseline = make_report(rubric)
+    candidate = make_report(rubric, ident='after', head='def', dev=(1, 1, 1), held=(1, 1, 1))
+    clean = c.compare(baseline, candidate, allow_partial=True)
+    assert clean['partial'] is False and clean['verdict'] == 'better'
+    baseline = judgment_ai_failure_report(rubric)
+    bp, _ = c.write_report(baseline, tmp_path)
+    cp, _ = c.write_report(candidate, tmp_path)
+    with pytest.raises(ValueError, match='--allow-partial'):
+        cli.main(['continuity', 'compare', str(bp), str(cp)])
+    with redirect_stdout(io.StringIO()) as output:
+        assert cli.main(['continuity', 'compare', str(bp), str(cp), '--allow-partial']) == 0
+    compared = json.loads((tmp_path / 'after.c2.compare.json').read_text())
+    assert compared['partial'] and compared['verdict'] == 'not better'
+    assert 'PARTIAL' in output.getvalue()

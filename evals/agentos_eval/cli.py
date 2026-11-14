@@ -177,12 +177,14 @@ def cmd_sweep(args, folder=None, inspect_eval=None, task_factory=None, key_loade
     seed = resolve_seed(args.seed)
     run = {'id': run_id(), 'started': time.time(), 'git_head': git_head(), 'worker': args.worker,
            'instances': args.instances, 'epochs': args.epochs, 'judge': judge, 'judge_key': key_source,
+           'judgment_timeout': getattr(args, 'judgment_timeout', 300),
            'seed': seed.name if seed else 'fresh'}
     if getattr(args, 'continuity', None):
         run['continuity'] = args.continuity
     task = task_factory(scenarios=args.scenarios, split=args.split, worker=args.worker,
                              instances=args.instances, seed=str(seed or ''), judge=judge,
-                             turn_timeout=args.turn_timeout, include_local=not args.no_local,
+                             turn_timeout=args.turn_timeout, judgment_timeout=run['judgment_timeout'],
+                             include_local=not args.no_local,
                              keep_sandboxes=args.keep_sandboxes, measures=getattr(args, 'measures', ''))
     if getattr(args, 'continuity', None) and getattr(task, 'metadata', None) is not None:
         # Inspect merges Task.metadata with eval(metadata=...), and the task's
@@ -268,6 +270,7 @@ def run_continuity(args, sweep=None, folder=None):
         raise SystemExit('No bundled C2 scenarios.')
     args.seed, args.no_local, args.world, args.split = '', True, '', ''
     args.limit, args.keep_sandboxes = None, False
+    args.judgment_timeout = getattr(args, 'judgment_timeout', 900)
     args.judge, args.scenarios, args.measures = judge, ','.join(s['id'] for s in loaded), str(args.rubric)
     args.continuity = continuity.fixture_support(loaded, args.rubric)
     return (sweep or cmd_sweep)(args, **({'folder': folder} if folder is not None else {}))
@@ -307,7 +310,7 @@ def cmd_continuity(args):
                     combined[label['run_id']]['labels'].append(label)
             reports = [continuity.with_labels(r, combined[r['live_evidence']['id']])
                        if combined[r['live_evidence']['id']]['labels'] else r for r in reports]
-        result = continuity.compare(*reports)
+        result = continuity.compare(*reports, allow_partial=args.allow_partial)
         markdown = continuity.compare_markdown(result)
         base = Path(args.candidate).with_suffix('')
         jp, mp = Path(str(base) + '.compare.json'), Path(str(base) + '.compare.md')
@@ -397,6 +400,7 @@ def main(argv=None):
     sweep.add_argument('--judge', default='', help="Inspect model name, e.g. openai/gpt-6.1-terra, or 'none'")
     sweep.add_argument('--cap-usd', type=float, default=None, help='daily judge spend cap (default 10)')
     sweep.add_argument('--turn-timeout', type=int, default=900)
+    sweep.add_argument('--judgment-timeout', type=int, default=300, help='seconds to wait for Judgment AI qualification')
     sweep.add_argument('--limit', type=int, default=None)
     sweep.add_argument('--keep-sandboxes', action='store_true')
     sweep.add_argument('--display', default='plain')
@@ -447,6 +451,7 @@ def main(argv=None):
     c2run.add_argument('--judge', default='')
     c2run.add_argument('--instances', type=int, default=3)
     c2run.add_argument('--turn-timeout', type=int, default=900)
+    c2run.add_argument('--judgment-timeout', type=int, default=900, help='seconds to wait for Judgment AI qualification')
     c2run.add_argument('--display', default='plain')
     c2run.add_argument('--rubric', type=Path, default=DEFAULT_RUBRIC)
     c2run.add_argument('--seed', default=None, help='refused: C2 always uses fresh data')
@@ -457,6 +462,8 @@ def main(argv=None):
     c2compare.add_argument('baseline')
     c2compare.add_argument('candidate')
     c2compare.add_argument('--labels', type=Path, action='append', default=[])
+    c2compare.add_argument('--allow-partial', action='store_true',
+                           help='allow missing measures from unavailable Judgment AI; verdict cannot be better')
     c2labels = c2actions.add_parser('labels-template')
     c2labels.add_argument('report')
     c2labels.add_argument('ids', nargs='*', help='additional scenario ids already in the report')

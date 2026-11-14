@@ -276,6 +276,23 @@ def normalize_run(run):
     return run
 
 
+def judgment_ai_status(samples):
+    """Count each affected sample once, from readiness or the scorer's infra receipt.
+
+    Missing readiness metadata alone is unknown, not proof of a failed AI.
+    Only unscored measures on an affected sample trigger the comparison gate.
+    """
+    affected = [row for row in samples if (row.get('judgment_ai') or {}).get('ready') is False
+                or any(f.get('kind') == 'infra' and f.get('name') == 'judgment_ai'
+                       for f in row.get('failures') or [])]
+    missing = sum(row.get('measures_status', 'not_scored') != 'judged' for row in affected)
+    warning = (f"Still's Judgment AI was not ready in {len(affected)} of {len(samples)} samples; "
+               f"{missing} have unscored judged measures. The run is not a representative observation."
+               if affected else None)
+    return {'not_ready': len(affected), 'samples': len(samples),
+            'unscored_measures': missing, 'warning': warning}
+
+
 def build_report(records, run, fixture, labels=None):
     """Pure aggregation over records_from_samples plus frozen pre-run provenance."""
     run = normalize_run(run)
@@ -301,10 +318,13 @@ def build_report(records, run, fixture, labels=None):
     for metric in ('input_tokens', 'output_tokens', 'usd'):
         values = [call.get(metric, 'unavailable') for row in samples for call in row.get('judge_usage', {}).values() if call]
         cost[metric] = sum(values) if all(type(v) in (float, int) for v in values) else 'unavailable'
+    readiness = judgment_ai_status(samples)
     report = {'version': 'continuity-report-v1', 'fixture_support': copy.deepcopy(fixture),
-              'live_evidence': {**{k: v for k, v in run.items() if k != 'continuity'}, 'seed': 'fresh', 'evidence_class': EVIDENCE, 'splits': splits},
+              'live_evidence': {**{k: v for k, v in run.items() if k != 'continuity'}, 'seed': 'fresh', 'evidence_class': EVIDENCE, 'splits': splits,
+                                'judgment_ai': readiness},
               'samples': samples,
-              'uncertainty': {'status_counts': dict(Counter(r.get('measures_status', 'not_scored') for r in samples)),
+              'uncertainty': {'judgment_ai': copy.deepcopy(readiness),
+                              'status_counts': dict(Counter(r.get('measures_status', 'not_scored') for r in samples)),
                               'agreement': {},
                               'missing_samples': len(definitions) * run['epochs'] - len(samples),
                               'epoch_spreads': {split: {ident: {m: v['spread'] for m, v in g['measures'].items()}
@@ -358,6 +378,9 @@ def render_markdown(report):
              '| revision | worker | judge model | epochs | seed | run id |',
              '| --- | --- | --- | --- | --- | --- |',
              '| ' + ' | '.join(_cell(run.get(k)) for k in ('git_head', 'worker', 'judge', 'epochs', 'seed', 'id')) + ' |', '']
+    readiness = judgment_ai_status(report['samples'])
+    if readiness['warning']:
+        lines += [f"**{readiness['warning']}**", '']
     if run.get('stopped'):
         lines += [f"**STOPPED: {_cell(run['stopped'])}; incomplete sweep, cannot be compared.**", '']
     for split, block in run['splits'].items():
@@ -390,8 +413,10 @@ def render_markdown(report):
     uncertainty = report['uncertainty']
     lines += ['## Uncertainty', '', f"- Measures status counts: {_cell(uncertainty['status_counts'])}",
               f"- Missing samples: {uncertainty['missing_samples']}", '',
-              'Epoch spread per scenario/measure appears above; gains within either arm’s spread are uncertain.', '',
-              '| measure | labelled | agreed | rate exceeds threshold | held-out status |',
+              'Epoch spread per scenario/measure appears above; gains within either arm’s spread are uncertain.', '']
+    if readiness['warning']:
+        lines += [f"**{readiness['warning']}**", '']
+    lines += ['| measure | labelled | agreed | rate exceeds threshold | held-out status |',
               '| --- | --- | --- | --- | --- |']
     states = agreement_states(report)
     for measure, state in states.items():
@@ -454,11 +479,19 @@ def _change(a, b, direction, uncertain=False):
     return {**result, 'delta': delta, 'change': change}
 
 
-def compare(baseline, candidate):
+def compare(baseline, candidate, *, allow_partial=False):
     """Strict paired identities from recall_pairs.compare, never a pooled trend."""
     for report in (baseline, candidate):
         if report['live_evidence'].get('stopped'):
             raise ValueError('Cannot compare a stopped C2 report')
+    readiness = {arm: judgment_ai_status(r['samples']) for arm, r in
+                 (('baseline', baseline), ('candidate', candidate))}
+    partial = any(state['unscored_measures'] for state in readiness.values())
+    if partial and not allow_partial:
+        affected = ', '.join(f"{arm}: {state['unscored_measures']}" for arm, state in readiness.items()
+                             if state['unscored_measures'])
+        raise ValueError('Cannot compare missing measures caused by infra:judgment_ai (' + affected
+                         + '); use --allow-partial for a partial comparison that cannot be better')
     af, bf = baseline['fixture_support'], candidate['fixture_support']
     for key in ('scenario_digest', 'rubric_version', 'rubric_digest', 'scenario_ids'):
         if af[key] != bf[key]:
@@ -477,7 +510,8 @@ def compare(baseline, candidate):
     has_labels = any(state['labelled'] for arm in states for state in arm.values())
     result = {'baseline_revision': ar.get('git_head'), 'candidate_revision': br.get('git_head'),
               'revision_warning': 'Revisions should differ' if ar.get('git_head') == br.get('git_head') else None,
-              'splits': {}, 'uncertain_measures': sorted(uncertain),
+              'splits': {}, 'partial': partial, 'judgment_ai': readiness,
+              'uncertain_measures': sorted(uncertain),
               'unlabelled_measures': sorted(unlabelled),
               'verdict_basis': 'human labels supplied' if has_labels else 'judge-only, unlabelled',
               'heldout_rule': HELDOUT_RULE}
@@ -521,7 +555,7 @@ def compare(baseline, candidate):
     if arows.keys() != expected:
         raise ValueError('Incomplete paired scenario/epoch selection')
     complete = all(r.get('measures_status') == 'judged' for r in [*arows.values(), *brows.values()])
-    conditions = {'complete_judged_pairs': complete, 'no_check_regression': not check_regression,
+    conditions = {'representative_judgment_ai': not partial, 'complete_judged_pairs': complete, 'no_check_regression': not check_regression,
                   'dev_judged_gain': gains['dev'], 'no_heldout_regression': not held_regression,
                   'heldout_means_not_worse': means_ok, 'certain_heldout_gain': gains['heldout']}
     result['failed_conditions'] = [k for k, ok in conditions.items() if not ok]
@@ -530,5 +564,6 @@ def compare(baseline, candidate):
 
 
 def compare_markdown(result):
+    partial_notice = 'PARTIAL: missing measures from infra:judgment_ai; verdict cannot be better.\n\n' if result['partial'] else ''
     return (f"# C2 paired comparison\n\nVerdict: **{result['verdict']}** ({result['verdict_basis']}).\n\n"
-            + result['heldout_rule'] + '\n\n```json\n' + json.dumps(result, indent=2) + '\n```\n')
+            + partial_notice + result['heldout_rule'] + '\n\n```json\n' + json.dumps(result, indent=2) + '\n```\n')
