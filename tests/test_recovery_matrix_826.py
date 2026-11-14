@@ -209,7 +209,7 @@ def test_r3_receipt_does_not_recover_worker_reply(env):
     assert service.store.task_events(work)[0]['status'] == 'succeeded'
 
 
-@pytest.mark.xfail(strict=True, reason='#826 R4: sending prompts lose actionable delivery state on restart')
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason='#826 R4: sending prompts lose actionable delivery state on restart')
 def test_r4_sending_prompt_remains_actionable(case):
     """R4 a prompt already shown should remain actionable after restart."""
     c = _payment(case)
@@ -320,7 +320,7 @@ def _not_sent_notification(case):
     return c, note
 
 
-@pytest.mark.xfail(strict=True, reason='#826 W4: TelegramNotSent notifications become unknown instead of queued')
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason='#826 W4: TelegramNotSent notifications become unknown instead of queued')
 def test_w4_telegram_definitely_unsent_notice_is_requeued(case):
     """W4 a definitely unsent Telegram notification should remain queued."""
     c, note = _not_sent_notification(case)
@@ -336,7 +336,7 @@ def test_w4_telegram_definitely_unsent_notice_is_unknown_today(case):
     assert service.store.notification(note['id'])['state'] == 'unknown'
 
 
-@pytest.mark.xfail(strict=True, reason='#826 W4: Mattermost cursor commits before covered reactions are applied')
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason='#826 W4: Mattermost cursor commits before covered reactions are applied')
 def test_w4_mattermost_reaction_survives_cursor_crash(case):
     """W4 a reaction lost after cursor commit should be replayed after restart."""
     c = case(mm_cases.OwnerActs)
@@ -355,7 +355,7 @@ def test_w4_mattermost_reaction_survives_cursor_crash(case):
     assert service.store.config('settings_change_drafts')[draft]['state'] == 'applied'
 
 
-@pytest.mark.xfail(strict=True, reason='#826 W4: Slack press key commits before the answer starts')
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason='#826 W4: Slack press key commits before the answer starts')
 def test_w4_slack_press_survives_answer_crash(case):
     """W4 replay of a pressed Slack button should settle its pending draft."""
     c = case(slack_cases.Buttons)
@@ -528,7 +528,7 @@ def _lost_anchor(case):
     return c, service, work
 
 
-@pytest.mark.xfail(strict=True, reason='#826 D3: sent delivery and reply anchor are separate commits with no recovery')
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason='#826 D3: sent delivery and reply anchor are separate commits with no recovery')
 def test_d3_sent_reply_anchor_survives_lost_record_reply(case):
     """D3 a confirmed sent reply should retain an anchor for reaction lookup."""
     c, service, work = _lost_anchor(case)
@@ -634,7 +634,7 @@ def _stale_bridge(env):
     return restarted.store, bridge, before
 
 
-@pytest.mark.xfail(strict=True, reason='#826 X4: recovery does not fence an active bridge for the same Work id')
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason='#826 X4: recovery does not fence an active bridge for the same Work id')
 def test_x4_pre_restart_bridge_is_superseded_after_same_id_resume(env):
     """X4 a pre-restart bridge must be superseded once the same Work resumes."""
     _, bridge, _ = _stale_bridge(env)
@@ -685,7 +685,7 @@ def _superseded_bridge_steer(env):
     return store, work, source, result
 
 
-@pytest.mark.xfail(strict=True, reason='#826 X4: a refused superseded bridge call still claims owner steers')
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason='#826 X4: a refused superseded bridge call still claims owner steers')
 def test_x4_superseded_bridge_call_leaves_owner_steer_unclaimed(env):
     """X4 a refused stale call records ran:false and claims no owner steer."""
     store, work, source, result = _superseded_bridge_steer(env)
@@ -795,7 +795,7 @@ def test_x6_active_crash_ledger_is_not_renewed(env):
 
 @pytest.mark.parametrize('terminal', ['finish', 'fail'])
 @pytest.mark.parametrize('protected', ['interrupted', 'cancelled'])
-@pytest.mark.xfail(strict=True, reason='#826 X7: terminal writes do not compare the current Work status')
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason='#826 X7: terminal writes do not compare the current Work status')
 def test_x7_late_terminal_writer_preserves_protected_status(env, terminal, protected):
     """X7 a late terminal writer must not overwrite interrupted or cancelled status."""
     store, service = env
@@ -833,19 +833,20 @@ def _recovery_commit_gap(case):
     """X9 stop just after recovery's status commit, before its pending update."""
     c, work = _telegram(case, 'running', 'none')
     c.store.recover()  # The middle transaction of recover_interrupted_work.
-    assert c.store.job(work)['status'] == 'interrupted'
-    assert c.store.job(work)['delivery'] == 'none'
+    # Read, not asserted: once the X9 fix writes `pending` inside recover(), the
+    # desired-invariant test below must still reach its delivery checks.
+    stranded = c.store.job(work)['delivery']
     service = _restart(c.store, c.service)
     service.deliver_one()
     service.deliver_one()
     sent = [call for call in c.calls if call[0].endswith('/sendMessage')]
-    return service, work, sent
+    return service, work, sent, stranded
 
 
-@pytest.mark.xfail(strict=True, reason='#826 X9: crash after recover commits loses the interrupted reply')
+@pytest.mark.xfail(strict=True, raises=AssertionError, reason='#826 X9: crash after recover commits loses the interrupted reply')
 def test_x9_recovery_commit_gap_still_delivers_one_interrupted_reply(case):
     """X9 restarting recovery must queue the interrupted Telegram reply once."""
-    service, work, sent = _recovery_commit_gap(case)
+    service, work, sent, _ = _recovery_commit_gap(case)
     assert service.store.job(work)['status'] == 'interrupted'
     assert service.store.job(work)['delivery'] == 'sent'
     assert len(sent) == 1
@@ -853,7 +854,8 @@ def test_x9_recovery_commit_gap_still_delivers_one_interrupted_reply(case):
 
 def test_x9_recovery_commit_gap_leaves_delivery_none_today(case):
     """X9 characterize the stranded interrupted row after recovery itself crashes."""
-    service, work, sent = _recovery_commit_gap(case)
+    service, work, sent, stranded = _recovery_commit_gap(case)
+    assert stranded == 'none'
     assert service.store.job(work)['status'] == 'interrupted'
     assert service.store.job(work)['delivery'] == 'none'
     assert sent == []
