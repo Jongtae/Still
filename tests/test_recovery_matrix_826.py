@@ -355,7 +355,6 @@ def test_w4_mattermost_reaction_survives_cursor_crash(case):
     assert service.store.config('settings_change_drafts')[draft]['state'] == 'applied'
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason='#826 W4: Slack press key commits before the answer starts')
 def test_w4_slack_press_survives_answer_crash(case):
     """W4 replay of a pressed Slack button should settle its pending draft."""
     c = case(slack_cases.Buttons)

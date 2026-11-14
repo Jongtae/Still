@@ -192,6 +192,8 @@ class SlackSurface(DirectMessageSurface):
         self._web, self._socket_factory = web, socket
         self._lock = threading.Lock()
         self._button_lock = threading.Lock()
+        self._act_lock = threading.Lock()
+        self._acting = set()
         self._socket = self._socket_generation = None
         self._next_attempt, self._failures = 0.0, 0
 
@@ -404,9 +406,13 @@ class SlackSurface(DirectMessageSurface):
         """Keep the Socket Mode connection matching the pairing: open while usable, closed otherwise.
 
         Messages, reactions and button presses arrive on the SDK's threads (``_on_request``); this tick only
-        opens, replaces or closes the connection, with a growing pause after a failed attempt.
+        replays pending owner acts, then opens, replaces or closes the connection, with a growing pause after a failed attempt.
         """
         now = time.monotonic() if now is None else now
+        cfg = self.config()
+        wanted = cfg.get('generation') if self.usable(cfg) else None
+        if wanted:
+            self._replay_acts(wanted)   # may send to the owner; never under the socket lock
         with self._lock:
             cfg = self.config()
             wanted = cfg.get('generation') if self.usable(cfg) else None
@@ -446,19 +452,27 @@ class SlackSurface(DirectMessageSurface):
                 LOG.warning('slack: closing failed (%s)', type(exc).__name__)
 
     def _on_request(self, sdk, request, generation):
-        """One Socket Mode envelope: a button press is acknowledged first (Slack waits 3 s); an event only after it was
-        durably taken, so one that failed is not acknowledged and Slack delivers it again (#316 review)."""
+        """Acknowledge a press after its durable receipt, before answering (Slack waits 3 s).
+
+        An event is acknowledged after ingestion; a failed ingestion is redelivered (#316 review).
+        """
         from slack_sdk.socket_mode.response import SocketModeResponse
 
+        acknowledged = False
+
         def ack():
+            nonlocal acknowledged
+            if acknowledged:
+                return
+            acknowledged = True
             try:
                 sdk.send_socket_mode_response(SocketModeResponse(envelope_id=request.envelope_id))
             except Exception as exc:
                 LOG.warning('slack: acknowledging failed (%s)', type(exc).__name__)
         try:
             if request.type == 'interactive':
+                self.ingest_interaction(request.payload, generation, ack=ack)
                 ack()
-                self.ingest_interaction(request.payload, generation)
                 return
             if request.type == 'events_api':
                 self.ingest_event(request.payload, generation)
@@ -466,14 +480,61 @@ class SlackSurface(DirectMessageSurface):
         except Exception as exc:
             LOG.warning('slack: an envelope was not taken (%s)', type(exc).__name__)
 
-    def _first_time(self, key):
+    def _first_time(self, key, act=None):
         """Whether ``key`` (an event id, a button press) is seen for the first time; Slack redelivers on a slow ack."""
         if not key:
             return False
         with self.service.store.db() as db:
-            db.execute(f'DELETE FROM {EVENTS_TABLE} WHERE created<?', (time.time() - 7 * 86400,))
-            return db.execute(f'INSERT OR IGNORE INTO {EVENTS_TABLE}(key,created) VALUES (?,?)',
-                              (str(key)[:200], time.time())).rowcount == 1
+            db.execute(f'DELETE FROM {EVENTS_TABLE} WHERE created<? AND act IS NULL', (time.time() - 7 * 86400,))
+            return db.execute(f'INSERT OR IGNORE INTO {EVENTS_TABLE}(key,created,act) VALUES (?,?,?)',
+                              (str(key)[:200], time.time(), json.dumps(act) if act is not None else None)).rowcount == 1
+
+    def _clear_act(self, key):
+        with self.service.store.db() as db:
+            db.execute(f'UPDATE {EVENTS_TABLE} SET act=NULL WHERE key=?', (str(key)[:200],))
+
+    def _finish_act(self, key):
+        self._clear_act(key)
+        with self._act_lock:
+            self._acting.discard(key)
+
+    def _apply_act(self, key, act):
+        if act['kind'] == 'press':
+            def answer():
+                try:
+                    self.answer_button(act['nid'], act['approve'], act['pressed'], act['owner'], act['generation'],
+                                       act['blocks'], tapped=act['tapped'])
+                finally:
+                    self._finish_act(key)
+            self.service.steer_spawn(answer)
+            return 'pressed'
+        result = self.ingest_reaction(act['message_id'], act['name'], act['owner'], act['generation'],
+                                      done=lambda: self._finish_act(key))
+        if result != 'owner_act':
+            self._finish_act(key)
+        return result
+
+    def _replay_acts(self, generation):
+        with self.service.store.db() as db:
+            pending = [row['key'] for row in db.execute(f'SELECT key FROM {EVENTS_TABLE} WHERE act IS NOT NULL')]
+        for key in pending:
+            with self._act_lock:
+                if key in self._acting:
+                    continue
+                with self.service.store.db() as db:
+                    row = db.execute(f'SELECT act FROM {EVENTS_TABLE} WHERE key=? AND act IS NOT NULL', (key,)).fetchone()
+                if row is None:
+                    continue
+                act = json.loads(row['act'])
+                self._acting.add(key)
+            if act['generation'] != generation:
+                self._finish_act(key)   # an old pairing is dropped, never retargeted (#299)
+            elif (act['kind'] == 'reaction' and act['bound']
+                  and not self.service.owner_acts.bound_to(self, act['owner'], generation, act['message_id'])):
+                self.send_owner(msg('slack.button_stale'), owner=act['owner'], generation=generation)
+                self._finish_act(key)
+            else:
+                self._apply_act(key, act)
 
     def _forget(self, key):
         with self.service.store.db() as db:
@@ -533,16 +594,24 @@ class SlackSurface(DirectMessageSurface):
             name = str(event.get('reaction') or '').split('::', 1)[0]
             reacted = message_id(item.get('ts'))
             key = 'event:' + str(payload.get('event_id') or '')
-            if not (name and reacted) or not self._first_time(key):
+            if not (name and reacted):
                 return None
+            act = {'kind': 'reaction', 'message_id': reacted, 'name': name, 'owner': owner, 'generation': generation,
+                   'bound': self.service.owner_acts.bound_to(self, owner, generation, reacted)}
+            with self._act_lock:
+                if not self._first_time(key, act=act):
+                    return None
+                self._acting.add(key)
             try:
-                return self.ingest_reaction(reacted, name, owner, generation)
+                return self._apply_act(key, act)
             except Exception:
-                self._forget(key)   # not taken: Slack's redelivery is read again (#316 review)
+                with self._act_lock:
+                    self._forget(key)   # not taken: Slack's redelivery is read again (#316 review)
+                    self._acting.discard(key)
                 raise
         return None
 
-    def ingest_interaction(self, payload, generation):
+    def ingest_interaction(self, payload, generation, ack=None):
         """A Block Kit button press: only the paired owner's, on the message that showed the item, once."""
         payload = payload if isinstance(payload, dict) else {}
         team = payload.get('team') if isinstance(payload.get('team'), dict) else {}
@@ -562,8 +631,6 @@ class SlackSurface(DirectMessageSurface):
         expected = {ACTION_APPROVE: 'approve', ACTION_DECLINE: 'decline'}.get(action.get('action_id'))
         if not nid or answer != expected:
             return None
-        if not self._first_time(f"press:{ts}:{action.get('action_ts') or ''}"):
-            return None
         message = payload.get('message') if isinstance(payload.get('message'), dict) else {}
         blocks = [block for block in message.get('blocks') or () if isinstance(block, dict) and block.get('type') != 'actions']
         owner, pressed = cfg['owner_user_id'], message_id(ts)
@@ -571,9 +638,16 @@ class SlackSurface(DirectMessageSurface):
         # A markdown block's text is a string; a section's is a text object.
         shown = ''.join(block['text'].get('text') or '' if isinstance(block.get('text'), dict) else str(block.get('text') or '')
                         for block in blocks) or str(message.get('text') or '')
-        self.service.steer_spawn(lambda: self.answer_button(nid, answer == 'approve', pressed, owner, generation, blocks,
-                                                            tapped=(label, shown)))
-        return 'pressed'
+        key = f"press:{ts}:{action.get('action_ts') or ''}"
+        act = {'kind': 'press', 'nid': nid, 'approve': answer == 'approve', 'pressed': pressed, 'owner': owner,
+               'generation': generation, 'blocks': blocks, 'tapped': (label, shown)}
+        with self._act_lock:
+            if not self._first_time(key, act=act):
+                return None
+            self._acting.add(key)
+        if ack is not None:
+            ack()
+        return self._apply_act(key, act)
 
     def answer_button(self, nid, approve, pressed, owner, generation, blocks=(), tapped=None):
         """Settle the one item the pressed notice showed, through its own path; its buttons are then removed.
