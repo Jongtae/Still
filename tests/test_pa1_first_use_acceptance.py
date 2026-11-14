@@ -114,9 +114,11 @@ JOURNEY_EVIDENCE = {
     'J5': 'covered offline through the generic tools (#23 retired the '
           'category tool `bounded_public_research` and its price/fee/'
           'inventory classifier). The worker searches with web_search and '
-          'reads results with public_page_read, which accepts a result URL '
-          'this Work\'s own search returned or an owner-approved page; the '
-          'reader re-checks that set on every redirect. Which facts a page '
+          'reads pages with public_page_read, which since #820 takes any '
+          'public address with no owner approval or search-result scope; the '
+          'reader refuses loopback, private and link-local destinations, '
+          'checked again on every redirect, and an address carrying a stored '
+          'secret is not requested. Which facts a page '
           'supports is the worker\'s judgment, not Still code, so no '
           'discrimination is claimed here. No network was touched.',
     'J6': 'covered: prose capture as canonical Memory, correction by '
@@ -168,7 +170,7 @@ class _FakeEgress:
     leave the machine.  Replacing it is the same kind of substitution as the
     Telegram and Gmail transports above: an outbound transport, not a policy
     object.  Every authority decision - whether a read is allowed at all,
-    which URLs are in scope - stays in the shipped code being tested.
+    what its plan carries - stays in the shipped code being tested.
     """
 
     def __init__(self):
@@ -555,7 +557,7 @@ class FirstUseEndToEndAcceptance(unittest.TestCase):
             self.assertTrue(self.web('/api/home')['model_connected'])
 
         with self.subTest('J5 bounded public research cites what it observed'):
-            self.web('/api/public-pages/approval', {'approved': True, 'urls': [PAGE_URL]})
+            # #820: no page approval is set up first; the page is read at its public address.
             self.model_plan = [('web_search', '{"query": "노이즈캔슬링 헤드폰 비교"}'),
                                ('public_page_read', json.dumps({'url': PAGE_URL}))]
             self.model_text = ('관찰됨: Model A 재생 시간 30시간. '
@@ -579,10 +581,10 @@ class FirstUseEndToEndAcceptance(unittest.TestCase):
             # so the citation was appended by the product.
             self.assertIn(PAGE_URL, job['response'])
             # The egress layer was asked for exactly the bounded plan, and
-            # the page read carried the owner-approved scope with it.
+            # the page read carried only its address (#820: no approved scope).
             self.assertEqual([plan['tool'] for plan in self.network.plans],
                              ['web_search', 'public_page_read'])
-            self.assertEqual(self.network.plans[1]['approved_urls'], [PAGE_URL])
+            self.assertEqual(self.network.plans[1], {'tool': 'public_page_read', 'url': PAGE_URL})
             # Per-source evidence is durable and visible on the web surface.
             sources = [event['trace']['evidence']['sources']
                        for event in self.store.task_events(research)
