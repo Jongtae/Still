@@ -715,19 +715,22 @@ def offers_above_lowest(worker):
 def lift_model(worker, model):
     """The model an account-changing attempt runs instead of a lowest-cost one, or None (#947).
 
-    ``model`` "" means the worker's default.  The strongest qualified model (the
-    last higher-cost model in the worker's cheapest-first list) replaces a
-    lowest-cost choice; the first unranked one only when no ranked higher model
-    exists.  A worker with nothing above leaves it as is.
+    ``model`` "" means the worker's default.  Replace a lowest-cost choice with
+    the runnable default/configured model if it is not lowest-cost, otherwise
+    the first non-lowest model in the catalogue's order: configured first,
+    then CLI priority or documented capability order, strongest first.
+    Cost tiers exclude the lowest model; they do not rank capability.
+    Return None when no non-lowest model is runnable.
     """
     tiers = worker.get('model_tiers') or {}
-    effective = model or worker.get('default_model') or ''
+    default = worker.get('default_model') or ''
+    effective = model or default
     if not effective or tiers.get(effective) != TIER_LOWEST:
         return None
-    models = [item for item in worker.get('models') or () if item and item != effective]
-    higher = [item for item in reversed(models) if tiers.get(item) == TIER_HIGHER] or \
-        [item for item in models if tiers.get(item, TIER_UNRANKED) == TIER_UNRANKED]
-    return higher[0] if higher else None
+    models = [item for item in worker.get('models') or () if item]
+    if default in models and tiers.get(default) != TIER_LOWEST:
+        return default
+    return next((item for item in models if tiers.get(item) != TIER_LOWEST), None)
 
 
 def plan_schema(workers, ask_location=False, preview=False):
@@ -885,7 +888,7 @@ class Attempt:
                          'answer:\n' + self.shown_preview)
             # #407: the owner hears from the worker as a person, not through a changing status line.
             lines.append('The owner was told this will take a while. When what you found or did would matter to them '
-                         'now, tell them in one natural sentence with tell_owner if it is offered. Never to report '
+                         'now, tell them in one natural sentence with tell_owner if it is offered. Do not use it to report '
                          'what you are doing, checking or filtering. Your answer still comes at the end.')
         if adjusted:
             lines.append('An earlier reply was judged short. Any evaluator critique in these notes is advice for '

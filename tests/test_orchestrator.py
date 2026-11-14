@@ -3320,11 +3320,15 @@ class ThinOrchestration(Harness):
 class AccountChangeFloor(unittest.TestCase):
     """#947 (owner decision 2026-10-01): account-changing work never runs on the lowest-cost model."""
 
-    def worker(self, default_model='', models=('haiku', 'sonnet', 'opus', 'unranked-a', 'unranked-b')):
-        from personal_agent.orchestrator import TIER_HIGHER, TIER_LOWEST, TIER_UNRANKED
-        tiers = {'haiku': TIER_LOWEST, 'sonnet': TIER_HIGHER, 'opus': TIER_HIGHER,
-                 'unranked-a': TIER_UNRANKED, 'unranked-b': TIER_UNRANKED}
-        return {'models': list(models), 'model_tiers': {m: tiers[m] for m in models}, 'default_model': default_model}
+    def worker(self, default_model='opus', models=None):
+        from personal_agent.decision_routes import RANKED_MODELS, known_models
+        from personal_agent.orchestrator import model_tier, runnable_models
+        offered = runnable_models(None, 'claude-code', default_model, known_models('claude-code'), {})
+        if models is not None:
+            offered = [model for model in offered if model in models]
+        return {'models': offered, 'model_tiers': {
+            model: model_tier('claude-code', model, RANKED_MODELS, offered) for model in offered},
+            'default_model': default_model}
 
     def test_the_question_covers_api_accounts_and_a_new_change_names_no_model(self):
         # #1502 (owner decision 2026-10-14): information for the choice, not a rule naming a model.
@@ -3334,20 +3338,50 @@ class AccountChangeFloor(unittest.TestCase):
         for name in ('gpt-', 'sonnet', 'opus', 'haiku'):
             self.assertNotIn(name, QUESTION)
 
-    def test_a_lowest_cost_choice_is_lifted_to_the_strongest_qualified_model(self):
+    def test_a_lowest_cost_choice_is_lifted_to_the_non_lowest_configured_model(self):
         from personal_agent.orchestrator import lift_model
-        self.assertEqual(lift_model(self.worker(), 'haiku'), 'opus')
-        self.assertEqual(lift_model(self.worker(default_model='haiku'), ''), 'opus', 'a lowest-cost default too')
+        worker = self.worker()
+        self.assertEqual(worker['models'], ['opus', 'sonnet', 'haiku'], 'configured first, then documented capability order')
+        self.assertEqual(lift_model(worker, 'haiku'), 'opus')
         self.assertIsNone(lift_model(self.worker(), 'sonnet'))
-        self.assertIsNone(lift_model(self.worker(), ''), 'the CLI default is not ranked lowest')
-        self.assertEqual(lift_model(self.worker(models=('haiku', 'sonnet', 'unranked-a')), 'haiku'), 'sonnet',
-                         'the strongest qualified model must be offered by this worker')
-        self.assertEqual(lift_model(self.worker(models=('haiku', 'unranked-a', 'unranked-b')), 'haiku'), 'unranked-a',
-                         'the first unranked model when nothing ranked is higher')
-        worker = self.worker(models=('haiku', 'unranked-a', 'unranked-b'))
-        del worker['model_tiers']['unranked-a']
-        self.assertEqual(lift_model(worker, 'haiku'), 'unranked-a', 'a missing tier is unranked too')
-        self.assertIsNone(lift_model(self.worker(models=('haiku',)), 'haiku'), 'nothing above: unchanged')
+        self.assertIsNone(lift_model(self.worker(), ''), 'a non-lowest default is not lifted')
+        self.assertEqual(lift_model(self.worker(default_model='sonnet'), 'haiku'), 'sonnet',
+                         'a non-lowest configured model takes precedence over the other models')
+        worker['default_model'] = 'not-offered'
+        self.assertEqual(lift_model(worker, 'haiku'), 'opus', 'a default outside the runnable list cannot be chosen')
+        del worker['model_tiers']['opus']
+        self.assertEqual(lift_model(worker, 'haiku'), 'opus', 'a missing tier does not make a model lowest-cost')
+
+    def test_a_lowest_configured_codex_model_is_lifted_in_cli_priority_order(self):
+        from types import SimpleNamespace
+        from personal_agent.decision_routes import RANKED_MODELS, known_models
+        from personal_agent.orchestrator import lift_model, model_tier, runnable_models
+        priority = ['gpt-6-astra', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-6-luna']
+        service = SimpleNamespace(decision_routes=SimpleNamespace(bundled_models=lambda route: priority))
+        models = runnable_models(service, 'codex', 'gpt-6-luna', known_models('codex'), {})
+        worker = {'models': models, 'default_model': 'gpt-6-luna', 'model_tiers': {
+            model: model_tier('codex', model, RANKED_MODELS, models) for model in models}}
+        self.assertEqual(models, ['gpt-6-luna', 'gpt-6-astra', 'gpt-5.6-terra', 'gpt-5.6-luna'])
+        self.assertEqual(lift_model(worker, ''), 'gpt-6-astra')
+        self.assertEqual(lift_model(worker, 'gpt-6-luna'), 'gpt-6-astra')
+        worker['default_model'] = ''
+        self.assertEqual(lift_model(worker, 'gpt-6-luna'), 'gpt-6-astra', 'the CLI default need not have a known identity')
+        models = runnable_models(service, 'codex', 'gpt-6-luna', known_models('codex'), {'codex': {'gpt-6-astra'}})
+        worker.update(models=models, default_model='gpt-6-luna')
+        self.assertEqual(lift_model(worker, ''), 'gpt-5.6-terra', 'a refused model is never a lift target')
+
+    def test_a_lowest_configured_claude_model_is_lifted_to_the_unranked_documented_model(self):
+        from personal_agent.decision_routes import RANKED_MODELS, known_models
+        from personal_agent.orchestrator import lift_model, model_tier, runnable_models
+        worker = self.worker(default_model='haiku')
+        self.assertEqual(worker['models'], ['haiku', 'opus', 'sonnet'])
+        self.assertEqual(lift_model(worker, ''), 'opus')
+        self.assertEqual(lift_model(worker, 'haiku'), 'opus')
+        models = runnable_models(None, 'claude-code', 'haiku', known_models('claude-code'), {'claude-code': {'opus'}})
+        worker.update(models=models, model_tiers={
+            model: model_tier('claude-code', model, RANKED_MODELS, models) for model in models})
+        self.assertEqual(lift_model(worker, ''), 'sonnet', 'only runnable models can be chosen')
+        self.assertIsNone(lift_model(self.worker(default_model='haiku', models=('haiku',)), ''), 'no non-lowest model')
 
     def test_validate_lifts_only_when_the_plan_says_account_change(self):
         from personal_agent.orchestrator import Orchestration

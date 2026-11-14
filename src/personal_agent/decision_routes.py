@@ -136,8 +136,9 @@ DEFAULT_EFFORT = 'low'
 CLAUDE_CODE_MODELS = {'haiku': (), 'sonnet': ('low', 'medium', 'high', 'xhigh', 'max'),
                       'opus': ('low', 'medium', 'high', 'xhigh', 'max')}
 #: #710: models a route documents without a machine-readable list (the
-#: aliases above), offered to the orchestrator's worker catalogue as data.
-DOCUMENTED_MODELS = {'claude-code': tuple(CLAUDE_CODE_MODELS)}
+#: aliases above, from smallest to largest), offered to the orchestrator's
+#: worker catalogue in capability order, strongest first.
+DOCUMENTED_MODELS = {'claude-code': tuple(reversed(CLAUDE_CODE_MODELS))}
 #: The documented Claude Code alias of its most capable family; the CLI resolves it to the newest version.
 CLAUDE_CODE_STRONGEST = 'opus'
 #: The reasoning level a strongest-model judgment asks for when the model declares it.
@@ -145,14 +146,14 @@ STRONGEST_EFFORT = 'high'
 
 
 def known_models(route_id, listed=None):
-    """The models the worker catalogue lists for one route (#710): ranked
-    cheapest-first candidates, documented aliases and the owner's last
+    """The models the worker catalogue lists for one route (#710): documented
+    aliases in capability order, cheapest-first Judgment candidates and the owner's last
     explicit 모델 목록 새로고침 listing (``decision_model_lists``), in that
     order, without duplicates.  Data only: a listed model is not verified.
     """
     rows = ((listed or {}).get(route_id) or {}).get('models') if isinstance(listed, dict) else None
     ids = [row.get('id') for row in rows or () if isinstance(row, dict)]
-    return [model for model in dict.fromkeys([*RANKED_MODELS.get(route_id, ()), *DOCUMENTED_MODELS.get(route_id, ()), *ids])
+    return [model for model in dict.fromkeys([*DOCUMENTED_MODELS.get(route_id, ()), *RANKED_MODELS.get(route_id, ()), *ids])
             if valid_model_id(model)]
 
 
