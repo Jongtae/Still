@@ -349,3 +349,74 @@ def test_mixed_run_only_bridge_rows_determine_peak(bridge_peak):
     assert '| direct | 6 |' in md
     assert '| native | 2 |' in md
     assert 'peak ≥ 2 run counts cover bridge rows only' in md
+
+
+
+def test_declared_epochs_mark_identically_interrupted_arms_incomplete():
+    data = arms([record()], [record()])
+    for arm in data.values():
+        arm['run']['epochs'] = 3
+    result = p1.compare_arms(data, names=set())
+    assert result['comparison_complete'] is False
+    for arm in result['arms'].values():
+        assert arm['complete'] is False
+        assert arm['missing'] == [['s', 2], ['s', 3]]
+        assert arm['declared_runs'] == 3
+    md = p1.render_markdown(result)
+    for label in data:
+        assert f'Incomplete comparison: {label} is missing 2 of 3 declared runs: s epoch 2, s epoch 3.' in md
+    assert md.index('Incomplete comparison:') < md.index('Read-name source:')
+
+
+def test_full_declared_grid_is_complete():
+    rows = [{**record(epoch=epoch), 'scenario': scenario} for scenario in ('s', 't') for epoch in range(1, 4)]
+    data = arms(rows, rows)
+    for arm in data.values():
+        arm['run'].update(epochs=3, scenario_ids=['s', 't'])
+    result = p1.compare_arms(data, names=set())
+    assert result['comparison_complete'] is True
+    assert all(arm['complete'] is True and arm['missing'] == [] for arm in result['arms'].values())
+    assert result['paired_epochs'] == {'s': [1, 2, 3], 't': [1, 2, 3]}
+    assert 'Incomplete comparison:' not in p1.render_markdown(result)
+
+
+def test_deltas_pair_only_shared_epochs_and_allow_asymmetric_stops():
+    a = [record(epoch=e) for e in (1, 2, 3)]
+    b = [record(epoch=e) for e in (1, 3)]
+    a[1]['turns'][0]['delivered_epoch'] = 1000  # unmatched epoch must not skew the baseline
+    a[1]['turns'][1]['elapsed'] = 900
+    data = arms(a, b)
+    for arm in data.values():
+        arm['run']['epochs'] = 3
+    result = p1.compare_arms(data, names=set())
+    assert result['arms']['limit1']['complete'] is True
+    assert result['arms']['limit4']['missing'] == [['s', 2]]
+    assert result['paired_epochs']['s'] == [1, 3]
+    assert result['paired_deltas']['s']['latency_median'] == 0
+    assert result['paired_deltas']['s']['verified_rate'] == 0
+    assert 'only epochs present in both arms' in p1.render_markdown(result)
+
+
+def test_usage_limit_records_are_missing_for_completeness_and_pairing():
+    rows = [record(epoch=e) for e in (1, 2, 3)]
+    stopped = {**record(status='failed', epoch=3), 'failure_classes': ['usage-limit']}
+    data = arms(rows, [*rows[:2], stopped])
+    for arm in data.values():
+        arm['run']['epochs'] = 3
+    result = p1.compare_arms(data, names=set())
+    assert result['comparison_complete'] is False
+    assert result['arms']['limit4']['missing'] == [['s', 3]]
+    assert result['arms']['limit4']['summary']['runs'] == 3  # failed run remains reportable
+    assert result['paired_epochs']['s'] == [1, 2]
+    assert result['paired_deltas']['s']['verified_rate'] == 0
+
+
+def test_declared_scenario_with_no_observed_runs_is_missing():
+    data = arms([record()], [record()])
+    for arm in data.values():
+        arm['run']['scenario_ids'] = ['s', 't']
+    result = p1.compare_arms(data, names=set())
+    assert result['arms']['limit1']['missing'] == [['t', 1]]
+    assert result['comparison_complete'] is False
+    assert result['paired_epochs']['t'] == []
+    assert result['paired_deltas']['t']['latency_median'] is None

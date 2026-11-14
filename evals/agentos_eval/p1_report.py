@@ -175,13 +175,18 @@ def compare_arms(arms, names=None):
     output = {}
     for label, arm in arms.items():
         records, run = arm['records'], arm.get('run') or {}
-        scenarios = sorted({r['scenario'] for r in records})
+        scenarios = sorted(set(run.get('scenario_ids', [r['scenario'] for r in records])))
         workers = sorted({r.get('worker') or run.get('worker') or 'unknown' for r in records})
         epochs = run.get('epochs') or len({r.get('epoch', 1) for r in records})
         measured = [measure(r, names) for r in records]
         groups = {s: [r for r in measured if r['scenario'] == s] for s in scenarios}
+        expected = {(scenario, epoch) for scenario in scenarios for epoch in range(1, epochs + 1)}
+        observed = {(r['scenario'], r['epoch']) for r in measured if 'usage-limit' not in r['failure_classes']}
+        missing = [list(pair) for pair in sorted(expected - observed)]
         output[label] = {'identity': {**{k: run.get(k) for k in ('id', 'git_head', 'seed', 'judge', 'model')},
                                       'worker': workers, 'epochs': epochs, 'scenario_ids': scenarios},
+                         'complete': observed == expected, 'missing': missing, 'declared_runs': len(expected),
+                         'unexpected': [list(pair) for pair in sorted(observed - expected)],
                          'summary': summarize(measured), 'per_scenario': {s: summarize(g) for s, g in groups.items()},
                          'per_scenario_epoch': {s: {str(e): summarize([r for r in g if r['epoch'] == e])
                                                     for e in sorted({r['epoch'] for r in g})} for s, g in groups.items()},
@@ -191,16 +196,20 @@ def compare_arms(arms, names=None):
     for key in ('scenario_ids', 'worker', 'epochs'):
         if a['identity'][key] != b['identity'][key]:
             raise ValueError(f'Cannot compare arms: {key} differ')
-    # Also reject incomplete or duplicated epoch pairings, even if metadata says 3.
+    # Interrupted arms may have different observed epochs. Duplicates remain ambiguous.
     cohorts = [Counter((r['scenario'], r['epoch']) for r in arm['runs']) for arm in (a, b)]
-    if cohorts[0] != cohorts[1] or any(n != 1 for n in cohorts[0].values()):
-        raise ValueError('Cannot compare arms: scenario × epoch runs differ or are duplicated')
+    if any(n != 1 for cohort in cohorts for n in cohort.values()):
+        raise ValueError('Cannot compare arms: scenario × epoch runs are duplicated')
     if set(labels) == {'limit1', 'limit4'}:
         labels = ['limit1', 'limit4']
         a, b = [output[l] for l in labels]
-    deltas = {}
+    deltas, paired_epochs = {}, {}
     for s in a['identity']['scenario_ids']:
-        x, y = a['per_scenario'][s], b['per_scenario'][s]
+        eligible = [[r for r in arm['runs'] if r['scenario'] == s and 'usage-limit' not in r['failure_classes']]
+                    for arm in (a, b)]
+        shared = {r['epoch'] for r in eligible[0]} & {r['epoch'] for r in eligible[1]}
+        paired_epochs[s] = sorted(shared)
+        x, y = [summarize([r for r in runs if r['epoch'] in shared]) for runs in eligible]
         def delta(v, w):
             return w - v if numeric(v) and numeric(w) else None
         deltas[s] = {'verified_rate': delta(x['verified_rate'], y['verified_rate']),
@@ -213,16 +222,25 @@ def compare_arms(arms, names=None):
                      'cost_usd': delta(x['cost_usd'], y['cost_usd']) if numeric(x['cost_usd']) and numeric(y['cost_usd']) else 'unavailable',
                      'usage': {k: y['usage'][k] - x['usage'][k] for k in sorted(x['usage'].keys() & y['usage'].keys())}
                               if isinstance(x['usage'], dict) and isinstance(y['usage'], dict) else 'unavailable'}
-    return {'schema_version': 3, 'arms': output, 'read_names_source': source, 'read_names': sorted(names),
+    return {'schema_version': 4, 'arms': output,
+            'comparison_complete': all(arm['complete'] for arm in output.values()), 'paired_epochs': paired_epochs, 'read_names_source': source, 'read_names': sorted(names),
             'delta_direction': f'{labels[1]} − {labels[0]}', 'paired_deltas': deltas}
 
 
 def render_markdown(report):
     import json
     lines = ['# P1 read concurrency report', '', '## Fixture support', '',
-             'P1 measurement schema v3. Test results and the harness revision are not embedded in the logs; '
+             'P1 measurement schema v4. Test results and the harness revision are not embedded in the logs; '
              'model-free fixtures do not establish live worker performance.', '',
-             '## Live evidence', '', f"Read-name source: {report['read_names_source']}", '']
+             '## Live evidence', '']
+    for label, arm in report['arms'].items():
+        if not arm['complete']:
+            missing = ', '.join(f'{scenario} epoch {epoch}' for scenario, epoch in arm['missing']) or 'none'
+            lines += [f"**Incomplete comparison: {label} is missing {len(arm['missing'])} of "
+                      f"{arm['declared_runs']} declared runs: {missing}.**", '']
+            if arm['unexpected']:
+                lines += [f"Unexpected scenario/epoch runs: {arm['unexpected']}", '']
+    lines += [f"Read-name source: {report['read_names_source']}", '']
     def seconds(value):
         return f'{value:.1f}' if numeric(value) else 'unavailable'
 
@@ -267,6 +285,8 @@ def render_markdown(report):
         lines += ['- ' + json.dumps({k: r[k] for k in ('scenario', 'epoch', 'statuses', 'failure_classes', 'failed_checks')})
                   for r in arm['not_verified']] or ['- none']
     lines += ['', f"### Paired deltas ({report['delta_direction']})", '',
+              'Scenario deltas use only epochs present in both arms, excluding usage-limit runs. '
+              f"Paired epochs: {report['paired_epochs']}", '',
               '| scenario | verified rate | median latency (s) | mean turns | mean attempts | mean governed read calls | mean native read calls | mean bridge read peak | USD | usage |',
               '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |']
     for scenario, row in report['paired_deltas'].items():
