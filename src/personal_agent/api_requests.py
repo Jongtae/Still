@@ -392,11 +392,17 @@ def remove_slot(store, name):
     return store.remove_secret(SECRET_PREFIX + name) or previous is not None
 
 
-def secret_names(store):
-    """``QuickStore.secret`` keys of every configured slot, for the stored-secret redactor."""
+def secret_names(store, strict=False):
+    """``QuickStore.secret`` keys of every configured slot, for the stored-secret redactor.
+
+    ``strict`` (#819, the redaction cache): a configuration read that fails raises instead of reading as
+    no slots, so the caller withholds rather than redacts without those slots' values.
+    """
     try:
         rows = store.config(SLOTS_KEY, {})
     except Exception:
+        if strict:
+            raise
         return ()
     return tuple(SECRET_PREFIX + name for name in rows if isinstance(name, str) and NAME.match(name)) if isinstance(rows, dict) else ()
 

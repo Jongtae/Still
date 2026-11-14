@@ -208,7 +208,7 @@ def _material_entry(store):
     with _MATERIAL_LOCK:
         now = time.time_ns()
         stats = (_file_stat(secret_path), _file_stat(retired_path))
-        others = (secret_names(store), id(getattr(store, 'api_slot_key', None)))
+        others = (secret_names(store, strict=True), id(getattr(store, 'api_slot_key', None)))
         cached = getattr(store, '_known_secret_material', None)
         if cached is not None and cached['others'] == others:
             if cached['trusted'] and cached['stats'] == stats:
@@ -220,7 +220,7 @@ def _material_entry(store):
         else:
             contents = (_file_bytes(secret_path), _file_bytes(retired_path))
         REDACTION_STATE.partial = False
-        values, ledger = _read_material(store)
+        values, ledger = _read_material(store, others[0])
         entry = {'stats': stats, 'contents': contents, 'others': others, 'trusted': _settled(stats, now),
                  'values': values, 'ledger': ledger, 'results': OrderedDict()}
         if getattr(REDACTION_STATE, 'partial', False):
@@ -239,8 +239,8 @@ def _settled(stats, now):
     return all(stat is None or now - stat[1] > RACY_SECONDS * 1_000_000_000 for stat in stats)
 
 
-def _read_material(store):
-    values = tuple(stored_secret_values(store))
+def _read_material(store, names=None):
+    values = tuple(stored_secret_values(store, names))
     ledger = getattr(store, 'retired_secret_ledger', None)
     ledger = ledger() if callable(ledger) else None
     return values, ledger
@@ -261,7 +261,7 @@ def is_redacted_secret_key(key):
 MIN_REDACTED_CHARS = 8
 
 
-def stored_secret_values(store):
+def stored_secret_values(store, names=None):
     """The stored secrets' literal values that ``redact_known_secrets`` replaces (8 characters or more).
 
     #1489: a function library is checked for these values only.  Credential shapes
@@ -274,7 +274,10 @@ def stored_secret_values(store):
     # #1216: every registered API slot's secret too.
     read = getattr(store, 'secret', None)
     # A store without plaintext secrets (a test double, a read-only view) has none to replace.
-    for name in ((*KNOWN_SECRET_NAMES, *secret_names(store)) if callable(read) else ()):
+    # ``names``: the configured slot names the caller already read (``_material_entry`` keys its cache on
+    # them, so the values it caches always match that key; Codex review on #839).
+    slots = secret_names(store) if names is None else names
+    for name in ((*KNOWN_SECRET_NAMES, *slots) if callable(read) else ()):
         # #819 (Codex review on #839): a stored value that cannot be read raises instead of being left out,
         # so every caller withholds its text (an error falls back to Still's fixed text, a judgment fact to
         # ``[redacted]``, an export stops) and nothing is cached; the next call reads again.

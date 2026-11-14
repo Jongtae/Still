@@ -194,6 +194,28 @@ class SecretsReadOncePerRevision(unittest.TestCase):
             self.assertTrue(calls['failed'])
             self.assertEqual(redact_known_secrets(self.store, 'a ' + fresh), 'a [redacted]')
 
+    def test_a_failed_slot_name_read_never_caches_values_missing_a_slot(self):
+        """Codex review on #839: the cached values always match the slot names they are keyed on."""
+        from personal_agent import api_requests
+        api_requests.save_slot(self.store, 'fixture', ['api.example.com'], 'slot-secret-NEVERRETIRED-77')
+        self.settle()
+        self.store._known_secret_material = None
+        real_config = type(self.store).config
+        state = {'fail': False}
+
+        def config(store, key, *args, **kwargs):
+            if key == api_requests.SLOTS_KEY and state['fail']:
+                raise OSError('database is locked')
+            return real_config(store, key, *args, **kwargs)
+        with mock.patch.object(type(self.store), 'config', config):
+            self.assertEqual(redact_known_secrets(self.store, 'a slot-secret-NEVERRETIRED-77'), 'a [redacted]')
+            self.store._known_secret_material = None
+            state['fail'] = True
+            with self.assertRaises(OSError):  # withheld, never redacted without the slot's value
+                redact_known_secrets(self.store, 'b slot-secret-NEVERRETIRED-77')
+            state['fail'] = False
+            self.assertEqual(redact_known_secrets(self.store, 'c slot-secret-NEVERRETIRED-77'), 'c [redacted]')
+
     def test_a_read_in_a_new_thread_works(self):
         """The partial-read flag is per thread: a thread that never set it reads it as unset."""
         import threading
