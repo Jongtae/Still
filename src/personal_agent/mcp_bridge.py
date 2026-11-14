@@ -524,6 +524,16 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
     tools.relay = relay
     tools.native_search_reason = str(search_off_reason or '')
 
+    def current_run():
+        # #841: status alone cannot bind a surviving bridge to the resumed run.
+        ledger = getattr(capabilities.budget, 'ledger', None)
+        return (_work_running(store, job_id)
+                and (ledger is None or ledger.lapse() not in ('superseded', 'unavailable')))
+
+    def stale_epoch():
+        epoch = getattr(getattr(capabilities.budget, 'ledger', None), 'epoch', None)
+        return {'bound_epoch': epoch} if not current_run() and type(epoch) is int and epoch >= 0 else {}
+
     def handle(method, params):
         if method == 'initialize':
             offered = params.get('protocolVersion') if isinstance(params, dict) else None
@@ -557,7 +567,7 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
             listed = name if isinstance(name, str) and name in capabilities.allowed_tools else 'unlisted'
             action = (capabilities.tools.get(listed) or {}).get('host_action') if listed != 'unlisted' else None
             if listed == 'unlisted' or name not in tools._offered():
-                record(listed, 'failed', json.dumps({'scope':'subscription-mcp-bridge','call_id':call_id,'code':'unknown_tool','retry':'permanent',
+                record(listed, 'failed', json.dumps({'scope':'subscription-mcp-bridge','call_id':call_id,'code':'unknown_tool','retry':'permanent', **stale_epoch(),
                                                      'effect':'none','ran':False,'error':'Unknown Still MCP tool.'}))
                 raise _Rejected(-32602, 'Unknown Still MCP tool.')
             # #787: a browser call's declared effect, recorded on every event of the call.
@@ -582,7 +592,7 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
                 # params).  Redacted: the reason, never the arguments.
                 record(listed, 'failed',
                        json.dumps({'scope':'subscription-mcp-bridge','call_id':call_id,'code':'invalid_arguments','retry':'permanent','effect':'none',
-                                   **ran_field(exc), 'error':redact_reason(str(exc))}, ensure_ascii=False))
+                                   **ran_field(exc), **stale_epoch(), 'error':redact_reason(str(exc))}, ensure_ascii=False))
                 raise _Rejected(-32602, 'Invalid Still MCP tool arguments.') from None
             except (ValueError, TypeError, OSError, ProviderError) as exc:
                 # #607 AX-06: a normal tool failure is a typed tool result.
@@ -591,8 +601,9 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
                 record(listed, 'failed',
                        json.dumps({'scope':'subscription-mcp-bridge','call_id':call_id, **({'host_action':action} if action else {}), **typed,
                                    'error':result['content'][0]['text'], **declared, **call_target_field(action, arguments),
-                                   **attempted_outbound(capabilities, action, arguments, exc)}, ensure_ascii=False))
-                if not session_steers:_with_steer(result, store, job_id, record)
+                                   **attempted_outbound(capabilities, action, arguments, exc), **stale_epoch()}, ensure_ascii=False))
+                if not session_steers and current_run():
+                    _with_steer(result, store, job_id, record)
                 _with_remaining(result, capabilities.budget)
                 return result
             except Exception as exc:
@@ -605,8 +616,9 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
                 record(listed, 'failed',
                        json.dumps({'scope':'subscription-mcp-bridge','call_id':call_id, **({'host_action':action} if action else {}), **typed,
                                    'error':result['content'][0]['text'], **declared, **call_target_field(action, arguments),
-                                   **attempted_outbound(capabilities, action, arguments, exc)}, ensure_ascii=False))
-                if not session_steers:_with_steer(result, store, job_id, record)
+                                   **attempted_outbound(capabilities, action, arguments, exc), **stale_epoch()}, ensure_ascii=False))
+                if not session_steers and current_run():
+                    _with_steer(result, store, job_id, record)
                 _with_remaining(result, capabilities.budget)
                 return result
             # The same redacted Evidence the direct route records
@@ -620,7 +632,7 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
                                                   ensure_ascii=False))
             # #836: the worker reads a held memory write as the owner's one-tap ask, nothing more.
             result = {'content':[{'type':'text','text':json.dumps(worker_result(host_action, value), ensure_ascii=False)}]}
-            if not session_steers:_with_steer(result, store, job_id, record)
+            if not session_steers and current_run():_with_steer(result, store, job_id, record)
             _with_remaining(result, capabilities.budget)
         elif method == 'notifications/initialized': return {}
         else: raise _Rejected(-32601, 'Method not found.')
