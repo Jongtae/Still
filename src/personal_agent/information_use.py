@@ -637,6 +637,9 @@ def _work_information_use(store, job_id, redact=None, *, compare_held_values=Tru
                 'remote_receipt': label(str(evidence.get('response_status') or ''), 20)}
             continue
         identity = (tool, trace.get('call_id'), trace.get('attempt'))
+        if status in ('succeeded', 'failed') and action not in OUTBOUND_MATCH_ACTIONS and identity in outbound_started:
+            # A package alias's failed record names only the alias; its running event names the host action.
+            action = outbound_started[identity][0].get('host_action') or action
         if action in OUTBOUND_MATCH_ACTIONS and status == 'running' and trace.get('scope') != 'cli-native':
             outbound_started[identity] = (trace, event.get('created'))
         source = evidence if status == 'succeeded' or (status == 'failed' and trace.get('state') == 'withheld') else trace

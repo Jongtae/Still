@@ -181,6 +181,21 @@ def test_failed_dispatched_call_is_compared_but_local_refusal_is_not(store):
                                                      'destination': '', 'status': 'failed'}]
 
 
+def test_a_failed_package_alias_is_compared_as_its_host_action(store):
+    """An alias's failed record carries no host_action (the direct runtime omits it); its running event does."""
+    memory(store, 'member', MEMBER, 10)
+    job = store.enqueue('find', 'test')
+    with store.db() as db:
+        db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                   (job, 'news_search', 'running', json.dumps({'host_action': 'web_search', 'call_id': 'c1', 'attempt': 1,
+                                                                'arguments': {'query': MEMBER}}), 20))
+        db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                   (job, 'news_search', 'failed', json.dumps({'call_id': 'c1', 'attempt': 1, 'error': 'provider failed',
+                                                               'outbound_comparison': 'deferred'}), 21))
+    assert view(store, job)['held_value_matches'] == [{'source': 'memory', 'key': 'member', 'tool': 'web_search',
+                                                     'destination': '', 'status': 'failed'}]
+
+
 def test_view_bounds_calls_texts_matches_and_memory_reads(store):
     memory(store, 'member', MEMBER, 10)
     job = store.enqueue('find', 'test')
