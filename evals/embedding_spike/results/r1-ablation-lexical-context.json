@@ -1,0 +1,279 @@
+{
+  "version": "recall-pairs/1",
+  "fixture": "720e8939da261a61f702be74bad195c2fa9c6f00658733ac15fbdf2f3ad89cda",
+  "rows": [
+    {
+      "id": "d-lex-instrument",
+      "split": "dev",
+      "kind": "lexical-control",
+      "needed_hit": 1,
+      "needed_total": 1,
+      "trap_hits": 0,
+      "noise_hits": 0,
+      "returned": [
+        "25beec57-17f5-43e8-b9ed-2c377e895ba8"
+      ]
+    },
+    {
+      "id": "d-lex-last-day",
+      "split": "dev",
+      "kind": "lexical-control",
+      "needed_hit": 1,
+      "needed_total": 1,
+      "trap_hits": 0,
+      "noise_hits": 0,
+      "returned": [
+        "74e71053-79f8-4b7b-b14a-c76e3ca2721a"
+      ]
+    },
+    {
+      "id": "d-lex-desk",
+      "split": "dev",
+      "kind": "lexical-control",
+      "needed_hit": 1,
+      "needed_total": 1,
+      "trap_hits": 0,
+      "noise_hits": 0,
+      "returned": [
+        "15911b44-4343-41cd-baac-9665d185bee1"
+      ]
+    },
+    {
+      "id": "d-para-focus",
+      "split": "dev",
+      "kind": "paraphrase",
+      "needed_hit": 0,
+      "needed_total": 1,
+      "trap_hits": 0,
+      "noise_hits": 0,
+      "returned": []
+    },
+    {
+      "id": "d-para-posture",
+      "split": "dev",
+      "kind": "paraphrase",
+      "needed_hit": 0,
+      "needed_total": 1,
+      "trap_hits": 0,
+      "noise_hits": 0,
+      "returned": []
+    },
+    {
+      "id": "d-language",
+      "split": "dev",
+      "kind": "cross-language",
+      "needed_hit": 1,
+      "needed_total": 1,
+      "trap_hits": 0,
+      "noise_hits": 1,
+      "returned": [
+        "25beec57-17f5-43e8-b9ed-2c377e895ba8",
+        "282d59b4-f986-4817-8b60-0dc21a0d2d4b"
+      ]
+    },
+    {
+      "id": "d-follow",
+      "split": "dev",
+      "kind": "short-follow-up",
+      "needed_hit": 1,
+      "needed_total": 1,
+      "trap_hits": 0,
+      "noise_hits": 0,
+      "returned": [
+        "c562acb7-cc0b-47da-880b-e9c26069c10a"
+      ]
+    },
+    {
+      "id": "d-dated-current",
+      "split": "dev",
+      "kind": "dated-contradiction",
+      "needed_hit": 1,
+      "needed_total": 1,
+      "trap_hits": 0,
+      "noise_hits": 0,
+      "returned": [
+        "d8eb68e7-a882-4c01-95cc-e2445e75531e"
+      ]
+    },
+    {
+      "id": "d-dated-old-token",
+      "split": "dev",
+      "kind": "dated-contradiction",
+      "needed_hit": 0,
+      "needed_total": 1,
+      "trap_hits": 0,
+      "noise_hits": 0,
+      "returned": []
+    },
+    {
+      "id": "d-correction",
+      "split": "dev",
+      "kind": "correction",
+      "needed_hit": 1,
+      "needed_total": 1,
+      "trap_hits": 0,
+      "noise_hits": 0,
+      "returned": [
+        "c4f48081-7a1a-4336-89ba-2b64c5fccddd"
+      ]
+    },
+    {
+      "id": "d-expired",
+      "split": "dev",
+      "kind": "currentness",
+      "needed_hit": 0,
+      "needed_total": 0,
+      "trap_hits": 0,
+      "noise_hits": 0,
+      "returned": []
+    },
+    {
+      "id": "d-expired-date",
+      "split": "dev",
+      "kind": "currentness",
+      "needed_hit": 0,
+      "needed_total": 0,
+      "trap_hits": 0,
+      "noise_hits": 0,
+      "returned": []
+    },
+    {
+      "id": "d-forget-chain",
+      "split": "dev",
+      "kind": "forgetting",
+      "needed_hit": 0,
+      "needed_total": 0,
+      "trap_hits": 0,
+      "noise_hits": 0,
+      "returned": []
+    },
+    {
+      "id": "d-noise",
+      "split": "dev",
+      "kind": "harm-control",
+      "needed_hit": 0,
+      "needed_total": 0,
+      "trap_hits": 0,
+      "noise_hits": 1,
+      "returned": [
+        "1fa080d6-4c49-40b5-814c-a6ed886ba429"
+      ]
+    },
+    {
+      "id": "h-lex-tool",
+      "split": "heldout",
+      "kind": "lexical-control",
+      "needed_hit": 1,
+      "needed_total": 1,
+      "trap_hits": 0,
+      "noise_hits": 0,
+      "returned": [
+        "6fcc1687-755e-4c59-a574-a1fc41c15e6f"
+      ]
+    },
+    {
+      "id": "h-para-layout",
+      "split": "heldout",
+      "kind": "paraphrase",
+      "needed_hit": 0,
+      "needed_total": 1,
+      "trap_hits": 0,
+      "noise_hits": 0,
+      "returned": []
+    },
+    {
+      "id": "h-language",
+      "split": "heldout",
+      "kind": "cross-language",
+      "needed_hit": 1,
+      "needed_total": 1,
+      "trap_hits": 0,
+      "noise_hits": 1,
+      "returned": [
+        "18322da3-046f-4aee-b61e-b3a3751e181c",
+        "25beec57-17f5-43e8-b9ed-2c377e895ba8"
+      ]
+    },
+    {
+      "id": "h-follow",
+      "split": "heldout",
+      "kind": "short-follow-up",
+      "needed_hit": 1,
+      "needed_total": 1,
+      "trap_hits": 0,
+      "noise_hits": 0,
+      "returned": [
+        "c6492653-8a19-43c2-ad22-502d373227d5"
+      ]
+    },
+    {
+      "id": "h-dated",
+      "split": "heldout",
+      "kind": "dated-contradiction",
+      "needed_hit": 1,
+      "needed_total": 1,
+      "trap_hits": 0,
+      "noise_hits": 0,
+      "returned": [
+        "a7be3168-c126-441e-b967-8f2fa23c36cd"
+      ]
+    },
+    {
+      "id": "h-correction",
+      "split": "heldout",
+      "kind": "correction",
+      "needed_hit": 1,
+      "needed_total": 1,
+      "trap_hits": 0,
+      "noise_hits": 1,
+      "returned": [
+        "2df75a5b-b08e-4111-8e7c-2deedb053e4d",
+        "d8eb68e7-a882-4c01-95cc-e2445e75531e"
+      ]
+    },
+    {
+      "id": "h-expired",
+      "split": "heldout",
+      "kind": "currentness",
+      "needed_hit": 0,
+      "needed_total": 0,
+      "trap_hits": 0,
+      "noise_hits": 0,
+      "returned": []
+    },
+    {
+      "id": "h-forget-name",
+      "split": "heldout",
+      "kind": "forgetting",
+      "needed_hit": 0,
+      "needed_total": 0,
+      "trap_hits": 0,
+      "noise_hits": 0,
+      "returned": []
+    },
+    {
+      "id": "h-forget-role",
+      "split": "heldout",
+      "kind": "forgetting",
+      "needed_hit": 0,
+      "needed_total": 0,
+      "trap_hits": 0,
+      "noise_hits": 1,
+      "returned": [
+        "25beec57-17f5-43e8-b9ed-2c377e895ba8"
+      ]
+    },
+    {
+      "id": "h-noise",
+      "split": "heldout",
+      "kind": "harm-control",
+      "needed_hit": 0,
+      "needed_total": 0,
+      "trap_hits": 0,
+      "noise_hits": 1,
+      "returned": [
+        "f1e9f322-254c-4b90-9e90-1a39010ac673"
+      ]
+    }
+  ]
+}
