@@ -500,7 +500,7 @@ _DREAM_END['properties'].update(because={'type': 'string', 'enum': list(END_BECA
 _DREAM_END['required'] = [*_DREAM_END['required'], 'because', 'turn']
 #: #638: the recurrence of a one-off suggestion (a dated need the owner mentioned); stored as no recurrence.
 SUGGESTION_ONCE = 'once'
-#: #583: one preparation the look back suggests; the owner accepts or declines it.
+#: #583: a dream preparation is scheduled at once and told with a cancel button; continuations still propose.
 _DREAM_SUGGESTION = {'type': 'object', 'additionalProperties': False,
                      'properties': {'kind': {'type': 'string', 'enum': list(prep.KINDS)},
                                     'goal': {'type': 'string'}, 'due': {'type': 'string'},

@@ -474,6 +474,20 @@ class PreparationsService:
         """Suppress obsolete waiting episodes and notices for stopped preparations."""
         service = self.service
         kind = notification['kind']
+        if kind.startswith(prep.SELF_CHANGE_NOTICE_PREFIX):
+            with service.store.db() as db:
+                receipt = db.execute("SELECT detail FROM tool_events WHERE job_id=? AND tool='preparation_self_change' "
+                                     "AND json_extract(detail,'$.fingerprint')=?",
+                                     (notification['job_id'], notification['fingerprint'])).fetchone()
+            if not receipt:
+                return None
+            event = json.loads(receipt['detail'])
+            operation = event['target'].split('.')[-1]
+            return msg('preparations.self_change_notice', id=event['preparation_id'],
+                       change=msg('preparations.self_change_' + operation),
+                       before=json.dumps(event['before'], ensure_ascii=False),
+                       after=json.dumps(event['after'], ensure_ascii=False), reason=event['reason'],
+                       undo='resume' if operation == 'pause' else 'restore')
         with service.store.db() as db:
             row = db.execute('SELECT * FROM preparations WHERE id=?',
                              (notification['fingerprint'],)).fetchone()
@@ -671,7 +685,7 @@ class PreparationsService:
                 schedule+=msg('preparations.run_end',end=local(row['until_at']))
             delivery=msg('preparations.run_delivery_needed' if row.get('delivery_mode')==prep.DELIVERY_WHEN_NEEDED
                          else 'preparations.run_delivery',channel=row['channel'])
-            return msg('preparations.run_record',
+            return msg('preparations.run_record', id=preparation_id,
                        position=msg('preparations.run_bounded',run=count,maximum=maximum) if maximum else str(count),
                        schedule=schedule,delivery=delivery)
         except Exception:

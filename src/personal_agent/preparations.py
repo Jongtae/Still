@@ -6,11 +6,9 @@ docs/secretary-agency-contract.en.md ("Attention in this program"):
 * A **preparation** is one durable ``preparations`` row in the owner's
   QuickStore: a kind, a bounded goal text, a due time (UTC seconds) with the
   owner's time zone, an optional tiny recurrence and a delivery channel.
-* It is ``proposed`` until the owner accepts it.  The owner's own request
-  for it ("내일 9시에 알려줘") is that acceptance, but only on a
-  DecisionEngine judgment (``ConversationJudgments.explicit_preparation_request``),
-  never a text rule; otherwise the owner accepts it with an inline Telegram
-  button or in Settings.  Only ``scheduled`` rows ever run.
+* Rows set up by the owner's AI or the dream are scheduled at once and
+  announced with a cancel button. Continuations still propose for the owner.
+  The scheduler claims scheduled rows and settles their running Works.
 * The existing service loop (``AgentService.start``) asks one indexed query
   per tick.  Nothing due costs no model and no network call.  A due row is
   claimed atomically together with its Work, keyed ``preparation:<id>:<slot>``,
@@ -83,6 +81,8 @@ REASON_PROMISED_REPORT = 'promised-report-due'
 #: The Telegram notification kind of a ``notify`` decision.
 NOTIFY_KIND = 'preparation_notify'
 BLOCKED_NOTICE_PREFIX = 'preparation_blocked:'
+# The existing preparation-status notice transport also carries self-change receipts.
+SELF_CHANGE_NOTICE_PREFIX = BLOCKED_NOTICE_PREFIX + 'self-change:'
 EXPIRED_NOTICE_KIND = 'preparation_window_elapsed'
 NOTIFIED_TEXT_BYTES = 1500
 CHANNEL_TELEGRAM, CHANNEL_WEB = 'telegram', 'web'
@@ -204,7 +204,10 @@ COLUMN_MIGRATIONS = (('prepared_text', 'TEXT'),
                      ('until_at', 'REAL'),
                      ('window_terms', 'TEXT'),
                      # #798: the entrusted line this row does the work of (``entrusted_lines``), or NULL.
-                     ('line_id', 'TEXT'))
+                     ('line_id', 'TEXT'),
+                     # #717: current slot revision, latest undo receipt, and durable owner veto.
+                     ('own_run_revision', 'REAL'), ('self_change', 'TEXT'),
+                     ('self_change_undone', 'INTEGER NOT NULL DEFAULT 0'))
 
 
 def run_seconds():
@@ -227,6 +230,7 @@ def migrate(db):
                (run_seconds(), RECURRENCE_WINDOW))
 
 REFUSALS = {
+    'self_change_refused': msg('preparations.self_change_refused'),
     'declined_before': ('소유자가 최근에 같은 준비 제안을 거절했습니다. 다시 제안하지 말고, 지금 요청에 대한 답만 하세요. '
                         '소유자가 직접 요청하면 그때 예약할 수 있습니다.'),
     'invalid_kind': 'kind는 reminder(정해진 때에 이 문장을 알려 주기) 또는 prepare(정해진 때에 이 목표를 미리 처리해 두기)입니다.',
@@ -1161,10 +1165,121 @@ class Preparations:
 
     @staticmethod
     def owns_running(row, job):
-        """Only the current slot's Work may pause its running, repeating preparation (#717)."""
-        return bool(row and job and row['state'] == STATE_RUNNING and row['recurrence']
+        """Whether this Work owns the preparation's currently running slot (#717)."""
+        return bool(row and job and row['state'] == STATE_RUNNING
                     and row['last_run_job_id'] == job['id']
                     and preparation_of(job['request_key']) == row['id'])
+
+    @staticmethod
+    def narrowing_values(row, changes, now):
+        """Keep the existing slot anchor and a subset of its future slots (#717).
+
+        Build: dateutil/RFC 5545 supplies recurrence, not Still's Work ownership or
+        consumed-run budget. Reuse normalize_window and SQLite; no new scheduler.
+        A multiple of the old interval preserves slots, including wall-clock windows.
+        Lower the remaining count too: a larger interval must not extend a count-bound
+        schedule beyond its previously final slot. Neither counts nor anchors reset.
+        """
+        if (row['recurrence'] != RECURRENCE_WINDOW or not changes
+                or set(changes) - {'until', 'max_runs', 'every_minutes'}):
+            raise PreparationRefusal('invalid_edit')
+        maximum = changes.get('max_runs', row['max_runs'])
+        maximum = _whole_number(maximum)
+        if maximum is None or not row['run_count'] <= maximum <= row['max_runs']:
+            raise PreparationRefusal('invalid_edit')
+        terms = stored_window_terms(row)
+        every, end, _ = normalize_window(
+            changes.get('every_minutes', row['every_seconds'] // 60),
+            changes.get('until', iso(row['until_at'])), None, row['due_at'], row['timezone'], now,
+            recurrence=terms.get('recurrence'))
+        if every < row['every_seconds'] or every % row['every_seconds'] or end > row['until_at']:
+            raise PreparationRefusal('invalid_edit')
+        report = terms.get('report_seconds')
+        if report and report % every:
+            raise PreparationRefusal('invalid_edit')
+        ratio = every // row['every_seconds']
+        maximum = min(maximum, row['run_count'] + (row['max_runs'] - row['run_count']) // ratio)
+        if terms.get('recurrence'):
+            # The next day's counter starts at zero; its last slot must also stay inside
+            # the old daily count-bound schedule, not just inside today's remainder.
+            maximum = min(maximum, (row['max_runs'] - 1) // ratio + 1)
+            if maximum < row['run_count']:
+                raise PreparationRefusal('invalid_edit')
+            if ratio > 1:
+                # A skipped DST hour can consume fewer of the coarser slots. A count
+                # alone could then admit a later slot than the old daily count allowed.
+                # Keep even the earliest possible old final wall slot as an end bound.
+                tz = zone(row['timezone'])
+                opening = datetime.fromtimestamp(row['rule_start'], tz).time()
+                day = datetime.fromtimestamp(row['due_at'], tz).date()
+                last = datetime.combine(day, opening) + timedelta(seconds=(row['max_runs'] - 1) * row['every_seconds'])
+                end = min(end, last.replace(tzinfo=tz).timestamp())
+                if end <= row['due_at']:
+                    raise PreparationRefusal('invalid_edit')
+        if end + run_seconds() > row['window_end']:
+            raise PreparationRefusal('invalid_edit')
+        updates = dict(every_seconds=every, until_at=end, window_end=end + run_seconds(), max_runs=maximum)
+        if end != row['until_at'] and terms.get('recurrence'):
+            terms['end_time'] = datetime.fromtimestamp(end, zone(row['timezone'])).time().isoformat()
+            updates['window_terms'] = json.dumps(terms, sort_keys=True)
+        return {key: value for key, value in updates.items() if value != row[key]}
+
+    def change_own(self, preparation_id, work_id, operation, changes=None, *, reason='', notify_to=None):
+        """Atomic current-slot narrowing, receipt and outbox. Never creates a settings draft.
+
+        Adopt sqlite3 BEGIN IMMEDIATE and TelegramStore.queue_notification(db=...).
+        tool_events retains fingerprints even when the bounded settings audit rolls off.
+        """
+        now = self.clock()
+        fingerprint = hashlib.sha256(json.dumps([preparation_id, work_id, operation, changes],
+                                               sort_keys=True).encode()).hexdigest()
+        with self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row = db.execute('SELECT * FROM preparations WHERE id=?', (preparation_id,)).fetchone()
+            job = db.execute('SELECT * FROM jobs WHERE id=?', (work_id,)).fetchone()
+            if (not self.owns_running(row, job) or row['self_change_undone']
+                    or row['own_run_revision'] is None or row['updated_at'] != row['own_run_revision']):
+                raise PreparationRefusal('self_change_refused')
+            if db.execute("SELECT 1 FROM tool_events WHERE job_id=? AND tool='preparation_self_change' "
+                          "AND json_extract(detail,'$.fingerprint')=?", (work_id, fingerprint)).fetchone():
+                raise PreparationRefusal('self_change_refused')
+            row = dict(row)
+            if operation == 'edit':
+                updates = self.narrowing_values(row, changes, now)
+            elif operation == 'cancel':
+                updates = {'state': STATE_CANCELLED}
+            elif operation == 'pause':
+                updates = {} if row['run_return_state'] == STATE_PAUSED else {'run_return_state': STATE_PAUSED}
+            else:
+                raise PreparationRefusal('self_change_refused')
+            if not updates:
+                raise PreparationRefusal('self_change_refused')
+            revision = max(now, math.nextafter(row['updated_at'], math.inf))
+            event = dict(at=now, draft_ref=fingerprint, fingerprint=fingerprint, preparation_id=row['id'],
+                         revision=revision, target='preparations.' + operation, terminal='own-run',
+                         before={key: row[key] for key in updates}, after=dict(updates), reason=reason)
+            updates.update(updated_at=revision, own_run_revision=revision, self_change=json.dumps(event))
+            db.execute(f"UPDATE preparations SET {','.join(k + '=?' for k in updates)} WHERE id=?",
+                       (*updates.values(), preparation_id))
+            audit = self.store.config('settings_audit', [], db=db)
+            self.store.put('settings_audit', [*(audit if isinstance(audit, list) else []), event][-100:], db=db)
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       (work_id, 'preparation_self_change', 'succeeded', json.dumps(event), now))
+            # A separate status notice survives keep/when_needed result delivery and restarts.
+            destination = notify_to or (OWNER, '', CHANNEL_WEB)
+            anchor = db.execute('SELECT channel,chat_id FROM jobs WHERE id=?', (row['created_from'],)).fetchone()
+            if (anchor and str(anchor['channel']).startswith(destination[2] + ':')
+                    and anchor['chat_id'] is not None and str(anchor['chat_id']) != str(destination[0])):
+                destination = (OWNER, '', CHANNEL_WEB)
+            self.store.telegram.queue_notification(work_id, *destination[:2],
+                SELF_CHANGE_NOTICE_PREFIX + fingerprint, fingerprint, surface=destination[2], db=db, created=now)
+        return event
+
+    @staticmethod
+    def self_undoable(row, operation):
+        event = json.loads(row.get('self_change') or '{}')
+        return bool(not row.get('self_change_undone') and event.get('target') == 'preparations.' + operation
+                    and all(row.get(key) == value for key, value in event.get('after', {}).items()))
 
     def pause(self, preparation_id, *, work_id=None):
         """Keep a schedule without allowing the tick to run it (#575).
@@ -1198,10 +1313,38 @@ class Preparations:
 
     def resume(self, preparation_id):
         """Resume at a future slot, never catch up missed slots (#575)."""
+        with self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row = db.execute('SELECT * FROM preparations WHERE id=?', (preparation_id,)).fetchone()
+            if row and row['state'] == STATE_RUNNING and self.self_undoable(dict(row), 'pause'):
+                db.execute('UPDATE preparations SET run_return_state=NULL,self_change_undone=1,updated_at=? WHERE id=?',
+                           (max(self.clock(), math.nextafter(row['updated_at'], math.inf)), preparation_id))
+                return dict(db.execute('SELECT * FROM preparations WHERE id=?', (preparation_id,)).fetchone())
         return self._resume(preparation_id, STATE_PAUSED)
 
     def restore(self, preparation_id, *, cancelled_at=None):
         """Undo cancellation at a future slot; an optional revision binds a notice's undo."""
+        # Owner-only restore also reapplies the audited bounds after a self-narrow.
+        with self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row = db.execute('SELECT * FROM preparations WHERE id=?', (preparation_id,)).fetchone()
+            if row and row['state'] != STATE_CANCELLED and cancelled_at is None and self.self_undoable(dict(row), 'edit'):
+                row = dict(row)
+                updates = json.loads(row['self_change'])['before']
+                updates.update(self_change_undone=1, updated_at=max(self.clock(), math.nextafter(row['updated_at'], math.inf)))
+                if row['state'] not in ACTIVE_STATES:
+                    active = db.execute('SELECT count(*) FROM preparations WHERE state IN (?,?,?,?)', ACTIVE_STATES).fetchone()[0]
+                    if active >= MAX_ACTIVE:
+                        raise PreparationRefusal('too_many')
+                if row['state'] not in (STATE_RUNNING, STATE_PAUSED, STATE_CANCELLED):
+                    restored = {**row, **updates}
+                    following = next_window_slot(restored, self.clock())
+                    if following is None:
+                        raise PreparationRefusal('resume_expired')
+                    updates.update(state=STATE_SCHEDULED, due_at=following)
+                db.execute(f"UPDATE preparations SET {','.join(k + '=?' for k in updates)} WHERE id=?",
+                           (*updates.values(), preparation_id))
+                return dict(db.execute('SELECT * FROM preparations WHERE id=?', (preparation_id,)).fetchone())
         return self._resume(preparation_id, STATE_CANCELLED, cancelled_at=cancelled_at)
 
     def _resume(self, preparation_id, state, *, cancelled_at=None):
@@ -1223,6 +1366,8 @@ class Preparations:
             else:
                 in_progress = False
             revision = max(now, math.nextafter(row['updated_at'], math.inf))
+            if row['self_change']:
+                db.execute('UPDATE preparations SET self_change_undone=1 WHERE id=?', (row['id'],))
             if in_progress:
                 db.execute('UPDATE preparations SET state=?,updated_at=? WHERE id=?', (STATE_RUNNING, revision, row['id']))
             else:
@@ -1255,7 +1400,8 @@ class Preparations:
             db.execute('BEGIN IMMEDIATE')
             row = self._editable(db, preparation_id, states)
             updates = self.edit_values(row, changes, now)
-            updates['updated_at'] = now
+            updates['updated_at'] = max(now, math.nextafter(row['updated_at'], math.inf))
+            updates['self_change_undone'] = int(bool(row['self_change']) or row['self_change_undone'])
             db.execute(f"UPDATE preparations SET {','.join(k + '=?' for k in updates)} WHERE id=?",
                        (*updates.values(), preparation_id))
         return self.get(preparation_id)
@@ -1693,8 +1839,8 @@ class Preparations:
             extra_rule = immediate and (str(current['recurrence'] or '').startswith('RRULE:')
                                         or bool(current.get('window_terms')))
             run = int(current['run_count'] or 0) + (0 if existing or extra_rule else 1)
-            db.execute('UPDATE preparations SET state=?,last_run_job_id=?,run_count=?,updated_at=?,run_return_state=? WHERE id=?',
-                       (STATE_RUNNING, job_id, run, now, current['state'] if immediate else None, current['id']))
+            db.execute('UPDATE preparations SET state=?,last_run_job_id=?,run_count=?,updated_at=?,own_run_revision=?,run_return_state=? WHERE id=?',
+                       (STATE_RUNNING, job_id, run, now, now, current['state'] if immediate else None, current['id']))
             # Evidence: preparation id -> Work id; the Work's delivery is the receipt.
             detail = {'preparation_id': current['id'], 'kind': current['kind'], 'slot': iso(slot),
                       'recurrence': current['recurrence'], 'accepted_by': current['accepted_by'],
@@ -1720,8 +1866,8 @@ class Preparations:
                                          or {'request_key': None})['request_key'])
         if not preparation_id:
             return False
-        changed = db.execute('UPDATE preparations SET last_run_job_id=?,updated_at=? WHERE id=? AND state=? '
-                             'AND last_run_job_id=?', (continuation_id, now, preparation_id, STATE_RUNNING, work_id)).rowcount
+        changed = db.execute('UPDATE preparations SET last_run_job_id=?,updated_at=?,own_run_revision=CASE WHEN updated_at=own_run_revision THEN ? ELSE NULL END WHERE id=? AND state=? '
+                             'AND last_run_job_id=?', (continuation_id, now, now, preparation_id, STATE_RUNNING, work_id)).rowcount
         if changed:
             db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                        (continuation_id, 'preparation', 'succeeded',

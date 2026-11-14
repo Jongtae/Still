@@ -1608,10 +1608,10 @@
   "zh": "主人阅读并接受的内容（请在此范围内进行）："
  },
  "preparations.run_record": {
-  "ko": "이 Work는 소유자가 수락한 준비의 {position}번째 실행이며, 답은 이번 실행의 결과예요. {schedule}. {delivery}",
-  "en": "This Work is run {position} of the owner's accepted preparation; its reply is this run's result. {schedule}. {delivery}",
-  "ja": "このWorkはオーナーが承諾した準備の{position}回目で、回答は今回の実行結果です。{schedule}。{delivery}",
-  "zh": "此 Work 是主人已接受的准备事项的第{position}次运行，回答是本次运行的结果。{schedule}。{delivery}"
+  "ko": "준비 {id}. 이 Work는 소유자가 수락한 준비의 {position}번째 실행이며, 답은 이번 실행의 결과예요. {schedule}. {delivery}",
+  "en": "Preparation {id}. This Work is run {position} of the owner's accepted preparation; its reply is this run's result. {schedule}. {delivery}",
+  "ja": "準備 {id}。このWorkはオーナーが承諾した準備の{position}回目で、回答は今回の実行結果です。{schedule}。{delivery}",
+  "zh": "准备事项 {id}。此 Work 是主人已接受的准备事项的第{position}次运行，回答是本次运行的结果。{schedule}。{delivery}"
  },
  "preparations.run_bounded": {
   "ko": "총 {maximum}회 중 {run}",
@@ -11403,5 +11403,41 @@
  "en": "- Only {limit} recorded held-value match labels are shown; remaining labels were not displayed.",
  "ja": "- 記録済みの保管情報の一致ラベルは {limit} 件まで表示します。残りは表示していません。",
  "zh": "- 最多显示 {limit} 个已记录的保存值匹配标签，其余未显示。"
-}
+},
+ "preparations.self_change_refused": {
+  "en": "No change was proposed or applied. A scheduled run may only cancel, pause or narrow its own current preparation, and cannot repeat a change the owner undid. Explain this in the run answer.",
+  "ko": "변경을 제안하거나 적용하지 않았어요. 예약 실행은 현재 자신이 실행 중인 준비만 취소·일시 중지·축소할 수 있고, 소유자가 되돌린 준비를 다시 변경할 수 없어요. 실행 답변에 이를 설명하세요.",
+  "ja": "変更は提案も適用もされていません。予約実行は現在実行中の自身の準備だけを取消・一時停止・縮小でき、オーナーが元に戻した準備は再変更できません。実行の回答で説明してください。",
+  "zh": "未提议或应用任何更改。定时运行只能取消、暂停或缩减自己当前运行的准备事项，不能再次更改主人已撤销更改的准备事项。请在运行答复中说明。"
+ },
+ "preparations.self_change_applied": {
+  "en": "Still applied this change and queued one owner notice with undo instructions. State the change in the run answer.",
+  "ko": "Still이 변경을 적용하고 되돌리는 방법을 담은 알림을 한 번 등록했어요. 실행 답변에 변경 내용을 설명하세요.",
+  "ja": "Stillが変更を適用し、元に戻す方法を含む通知を1件登録しました。実行の回答で変更を説明してください。",
+  "zh": "Still 已应用更改，并排队发送一条包含撤销方法的主人通知。请在运行答复中说明更改。"
+ },
+ "preparations.self_change_notice": {
+  "en": "Preparation {id}: its scheduled run {change}. Before: {before}. After: {after}. Reason stated by the run: {reason}. To undo, ask Still to {undo} preparation {id}; restore reapplies the recorded earlier bounds after narrowing. The run will not change this preparation again after you undo it.",
+  "ko": "준비 {id}: 예약 실행이 {change}. 변경 전: {before}. 변경 후: {after}. 실행이 밝힌 이유: {reason}. 되돌리려면 Still에 준비 {id}에 {undo}를 요청하세요. 축소 후 restore는 기록된 이전 조건을 복원해요. 되돌린 뒤에는 예약 실행이 이 준비를 다시 변경하지 못해요.",
+  "ja": "準備 {id}: 予約実行が{change}。変更前: {before}。変更後: {after}。実行が述べた理由: {reason}。元に戻すには、Stillに準備 {id} の {undo} を依頼してください。縮小後の restore は記録された以前の条件を復元します。元に戻した後は予約実行がこの準備を再変更することはありません。",
+  "zh": "准备事项 {id}：定时运行已{change}。更改前：{before}。更改后：{after}。运行所述理由：{reason}。要撤销，请让 Still 对准备事项 {id} 执行 {undo}；缩减后的 restore 会恢复记录中的原有条件。撤销后，定时运行将不能再次更改此准备事项。"
+ },
+ "preparations.self_change_cancel": {
+  "en": "cancelled future runs",
+  "ko": "앞으로의 실행을 취소했어요",
+  "ja": "今後の実行を取り消しました",
+  "zh": "取消后续运行"
+ },
+ "preparations.self_change_pause": {
+  "en": "paused future runs",
+  "ko": "앞으로의 실행을 일시 중지했어요",
+  "ja": "今後の実行を一時停止しました",
+  "zh": "暂停后续运行"
+ },
+ "preparations.self_change_edit": {
+  "en": "narrowed future runs",
+  "ko": "앞으로의 실행을 축소했어요",
+  "ja": "今後の実行を縮小しました",
+  "zh": "缩减后续运行"
+ }
 }
