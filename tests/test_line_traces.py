@@ -24,7 +24,7 @@ KINDS = frozenset(('open_line', 'standing_correction', 'today_only_correction',
                    'finish_run', 'stop_line', 'cancel_row', 'observe'))
 EXPECT = frozenset(('same_line_id', 'line_version', 'rule_present', 'rule_absent',
                     'rows_active', 'run_started', 'run_read_version', 'reply_sent',
-                    'report_reason'))
+                    'report_reason', 'window_end_honest'))
 # Deliberately restricted to the two known, locally specified issues. No network lookup.
 GAPS = frozenset((813, 814))
 
@@ -131,11 +131,21 @@ class LineTraceTests(_LineCase):
         result = tool_results(self.model_calls[-1], 'schedule_preparation')[-1]
         if 'refusal_code' in args:
             self.assertEqual(result['code'], args['refusal_code'])
+        elif args.get('may_refuse') and not result.get('scheduled'):
+            # A typed refusal is one honest answer to a window Still cannot run in full (#814).
+            self.assertTrue(result.get('code'), result)
+            self.window_end_honest = True
         else:
             self.assertTrue(result['scheduled'], result)
             old = self.current_row()
             self.assertEqual(old['state'], prep.STATE_CANCELLED)
             self.row_id = result['preparation_id']
+            row = self.current_row()
+            if row.get('every_seconds') and row.get('max_runs') and row.get('until_at'):
+                # Honest when the stored end, which the confirmation is built from, does not lie
+                # past the last run Still will make: a silently capped window fails this.
+                last_run = row['due_at'] + row['every_seconds'] * (row['max_runs'] - 1)
+                self.window_end_honest = last_run + row['every_seconds'] > row['until_at']
 
     def restart(self, args):
         self.store = QuickStore(self.root)
@@ -203,6 +213,7 @@ class LineTraceTests(_LineCase):
             'run_read_version': read[1] if read else None,
             'reply_sent': bool(self.sends()),
             'report_reason': self.current_row().get('last_decision_reason'),
+            'window_end_honest': getattr(self, 'window_end_honest', None),
         }
         for key, expected in step['expect'].items():
             if key in ('rule_present', 'rule_absent'):

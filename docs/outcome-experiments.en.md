@@ -139,7 +139,7 @@ The sweep runs without `--seed`, so each sandbox starts from an empty data folde
 - **Edit the schedule.** One line and one active row remain.
 - **Stop.** A stop cancels every row of the line. The next due tick starts nothing and no reply is sent.
 - **Today-only correction.** No version is written, and the correction is absent the next day.
-- **Promised interval report across a skipped slot** (`gap: 813`), and a **window longer than the run cap** (`gap: 814`). Both are recorded and skipped, never asserted as passing or failing. The #814 step states only the owner-visible requirement and leaves the remedy to #814. The PR that closes either issue removes the step's `gap` marker, so the step runs from then on.
+- **Promised interval report across a skipped slot** (`gap: 813`), and a **window longer than the run cap** (`gap: 814`). Both are recorded and skipped, never asserted as passing or failing. The #814 step leaves the remedy to #814. Its check, `window_end_honest`, passes on a typed refusal or when the stored end, which the confirmation is built from, does not lie past the last run Still will make. On today's code, with the marker removed, it fails on the silent cap. The PR that closes either issue removes the step's `gap` marker, so the step runs from then on.
 
 **Why model-free.** A sweep runs Still on the real clock for minutes, so a row a scenario schedules for later that day or later in the week does not come due during the run. A seed's own scheduled rows are cancelled when it is snapshotted (`sandbox.sanitize_database`). Multi-day behavior can therefore only be observed with an injected clock, as the existing unit tests do.
 

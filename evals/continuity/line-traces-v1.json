@@ -386,12 +386,14 @@
           "args": {
             "goal": "Watch the archive for a full day at five-minute intervals",
             "window_hours": 24,
-            "gap_reason": "A window longer than the 96-run cap must not end early while the confirmation shows the owner's end time; #814 decides between a typed refusal and a stated shortened end"
+            "gap_reason": "A window longer than the 96-run cap must not end early while the confirmation shows the owner's end time; #814 decides between a typed refusal and a stated shortened end",
+            "may_refuse": true
           },
           "expect": {
             "run_started": false,
             "rows_active": 1,
-            "same_line_id": true
+            "same_line_id": true,
+            "window_end_honest": true
           },
           "gap": 814
         },
