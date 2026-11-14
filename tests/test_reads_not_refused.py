@@ -300,7 +300,7 @@ class FolderGrantTests(WorkTestCase):
         (self.home / 'Library' / 'Keychains').mkdir(parents=True)
         candidates = [self.home / '.ssh', self.home / 'Library' / 'Keychains']
         if Path('/etc').is_dir():
-            candidates.append(Path('/etc'))
+            candidates.append(Path('/etc').resolve())
         for path in candidates:
             with self.subTest(path=str(path)):
                 with self.assertRaisesRegex(ValueError, folder_grants.SENSITIVE) as caught:

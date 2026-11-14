@@ -4271,18 +4271,27 @@ class AgentService:
         paths=body.get('paths')
         if not isinstance(paths,list) or len(paths)>8 or any(not isinstance(p,str) for p in paths):raise ValueError(msg('quickstart_service.folder_limit'))
         roots=[];stored={root.get('path'):root for root in self.store.config('file_roots',[],db=db)}
+        # #820: a broad folder (the home folder, or one holding credential or system locations) is
+        # granted once the owner confirms it; a folder already stored was confirmed when it was added.
+        confirmed=self._broad_confirmations(body)|set(stored)
         for value in paths:
             if value in stored and folder_grants.blocked(value,self.store):
                 # Keep an already-stored grant the rules now forbid as-is (still blocked at use)
                 # so the owner can change other folders without first clearing every blocked one.
                 if all(root['path']!=value for root in roots):roots.append(stored[value])
                 continue
-            p=folder_grants.validate(value,self.store)
+            p=folder_grants.validate(value,self.store,confirm_broad=confirmed)
             if any(root['path']==str(p) for root in roots):continue
             roots.append({'id':__import__('hashlib').sha256(str(p).encode()).hexdigest()[:12],'path':str(p)})
         self.store.put('file_roots',roots,db=db)
         self.store.put('document_sharing',{},db=db)
         return {'roots':[{**root,'blocked':folder_grants.blocked(root['path'],self.store)} for root in roots]}
+
+    @staticmethod
+    def _broad_confirmations(body):
+        """The folders the owner confirmed as broad grants in this request (#820): ``confirm_broad``, a list of paths."""
+        values=body.get('confirm_broad') if isinstance(body,dict) else None
+        return {value for value in values if isinstance(value,str)} if isinstance(values,list) else set()
 
     def configure_file_workspace(self, body, local_surface=True):
         """Replace the reference folders and the result folder.
@@ -4305,7 +4314,8 @@ class AgentService:
             # Off this Mac the result folder is kept, never re-chosen: a stored
             # folder the rules now block (e.g. a parent replaced by a symlink)
             # stays as stored instead of being re-resolved to a new target.
-            files.configure(body.get('references',[]),body.get('workspace',''),keep_blocked_workspace=not local_surface)
+            files.configure(body.get('references',[]),body.get('workspace',''),keep_blocked_workspace=not local_surface,
+                            confirm_broad=self._broad_confirmations(body))
             self.store.put('document_sharing',{})
             return files.projection()
 
@@ -5940,7 +5950,8 @@ class AgentService:
     def _plan_local_grant(self, key, value):
         """Validate one folder for one declared authority; nothing is written yet."""
         if key==LOCAL_FOLDER_READ:
-            path=folder_grants.validate(value,self.store)
+            # #820: a folder a Work asked for is never a broad one; the owner grants that in Settings.
+            path=folder_grants.validate(value,self.store,broad_allowed=False)
             paths=[root.get('path') for root in self.store.config('file_roots',[]) if isinstance(root,dict)]
             if str(path) not in paths and len(paths)>=8:raise ValueError(msg('quickstart_service.folder_limit'))
             def commit(*, db=None):
@@ -5962,7 +5973,9 @@ class AgentService:
         picker=self.folder_picker or local_folder_picker.choose_folder
         value=picker(self.LOCAL_PICKER_PROMPTS[prompts[kind]])
         if value is None:return {'state':'cancelled'}
-        path=folder_grants.validate(value,self.store)
+        # A draft, not a grant: a broad read folder is confirmed when it is saved (#820); the
+        # result-write folder is never a broad one.
+        path=folder_grants.validate(value,self.store,confirm_broad=True,broad_allowed=kind!='result')
         return {'state':'selected','name':path.name,'path':str(path)}
 
     def local_authority_requests(self):

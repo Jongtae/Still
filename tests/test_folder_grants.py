@@ -43,19 +43,38 @@ class FolderGrantTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, message):
             FileWorkspace(self.store).configure([str(self.docs)], value)
 
-    def test_sensitive_credential_folders_are_refused_itself_inside_and_as_ancestor(self):
+    def confirm_both(self, value):
+        """#820: a broad folder asks once as a read folder or reference, and is refused as the result folder."""
+        with self.assertRaises(folder_grants.ConfirmBroad):
+            self.service.save_roots({'paths': [value]})
+        with self.assertRaises(folder_grants.ConfirmBroad):
+            FileWorkspace(self.store).configure([value], str(self.out))
+        with self.assertRaisesRegex(ValueError, folder_grants.BROAD):
+            FileWorkspace(self.store).configure([str(self.docs)], value)
+        self.assertEqual(self.store.config('file_roots', []), [], 'nothing is granted before the confirmation')
+
+    def test_sensitive_credential_folders_are_refused_itself_and_inside(self):
         (self.home / '.ssh' / 'keys').mkdir(parents=True)
         (self.home / 'Library' / 'Keychains').mkdir(parents=True)
-        for value in (self.home / '.ssh', self.home / '.ssh' / 'keys', self.home / 'Library'):
+        for value in (self.home / '.ssh', self.home / '.ssh' / 'keys', self.home / 'Library' / 'Keychains'):
             with self.subTest(value=value):
                 self.refuse_both(str(value), folder_grants.SENSITIVE)
+        # #820: a folder that only contains one asks once instead of being refused.
+        self.confirm_both(str(self.home / 'Library'))
 
-    def test_sensitive_symlink_alias_refuses_its_containing_grant(self):
+    def test_sensitive_symlink_alias_makes_its_containing_grant_broad_and_stays_unreadable(self):
         target=self.home/'Documents'/'dotfiles'/'aws'
         target.mkdir(parents=True)
+        (target/'credentials.txt').write_text('aws key')
+        (self.home/'Documents'/'plan.txt').write_text('plan')
         link=self.home/'.aws'
         link.symlink_to(target,target_is_directory=True)
-        self.refuse_both(str(self.home/'Documents'),folder_grants.SENSITIVE)
+        self.confirm_both(str(self.home/'Documents'))
+        roots=self.service.save_roots({'paths':[str(self.home/'Documents')],'confirm_broad':[str(self.home/'Documents')]})['roots']
+        caps=Capabilities(self.store,None,{},'','job',lambda *args:None)
+        self.assertIn('plan',caps.read_file(roots[0]['id'],'plan.txt')['content'])
+        with self.assertRaises(ValueError):
+            caps.read_file(roots[0]['id'],'dotfiles/aws/credentials.txt')
 
     def test_sensitive_symlink_loop_does_not_break_other_grant_checks(self):
         loop=self.home/'.aws'
@@ -70,10 +89,14 @@ class FolderGrantTests(unittest.TestCase):
             self.skipTest('no /etc on this platform')
         self.refuse_both(str(etc), folder_grants.SENSITIVE)
 
-    def test_broad_folders_are_refused(self):
-        for value in ('/', str(self.home), str(self.home.parent), str(self.store.private)):
+    def test_root_and_still_data_are_refused_and_home_asks_once(self):
+        """#820: the filesystem root and Still's own data stay refused; the home folder and its ancestors ask once."""
+        for value in ('/', str(self.store.root), str(self.store.private)):
             with self.subTest(value=value):
-                self.refuse_both(value, folder_grants.BROAD)
+                self.refuse_both(value, folder_grants.SENSITIVE)
+        for value in (str(self.home), str(self.home.parent)):
+            with self.subTest(value=value):
+                self.confirm_both(value)
 
     def test_each_refusal_class_has_its_own_message(self):
         (self.docs / 'note.txt').write_text('x')
@@ -153,11 +176,13 @@ class FolderGrantTests(unittest.TestCase):
             self.skipTest('case-sensitive filesystem')
         (self.home / '.ssh').mkdir()
         (self.home / 'Library' / 'Keychains').mkdir(parents=True)
-        for value in ('~/.SSH', '~/library/keychains', '~/Library/KEYCHAINS', '~/LIBRARY'):
+        for value in ('~/.SSH', '~/library/keychains', '~/Library/KEYCHAINS'):
             with self.subTest(value=value):
                 self.refuse_both(value, folder_grants.SENSITIVE)
         self.assertEqual(folder_grants.blocked(str(self.home / '.SSH'), self.store), folder_grants.SENSITIVE)
-        self.refuse_both(str(self.home).upper() if str(self.home).upper() != str(self.home) else str(self.home), folder_grants.BROAD)
+        # #820: a case spelling of a folder that contains one, or of the home folder, asks once like the folder itself.
+        self.confirm_both('~/LIBRARY')
+        self.confirm_both(str(self.home).upper() if str(self.home).upper() != str(self.home) else str(self.home))
 
     def test_case_sensitive_volume_keeps_distinct_case_spelling_allowed(self):
         if self.case_insensitive():

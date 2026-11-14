@@ -7864,6 +7864,12 @@
   "ja": "ここでは文書共有の承認のみ設定できます。",
   "zh": "这里只能设置文档共享批准。"
  },
+ "folder_grants.broad_includes": {
+  "ko": "{path} 폴더를 연결하면 AI가 그 아래의 모든 문서를 읽을 수 있어요. 숨김 폴더, 인증 정보와 시스템 위치(Library/Keychains 등), Still 데이터 폴더는 계속 제외돼요. 이 폴더를 연결할까요?",
+  "en": "Connecting {path} lets the AI read every document under it. Hidden folders, credential and system locations (such as Library/Keychains) and Still's data folder stay excluded. Connect this folder?",
+  "ja": "{path} を接続すると、AIはその下のすべての文書を読めるようになります。隠しフォルダー、認証情報やシステムの場所（Library/Keychainsなど）、Stillのデータフォルダーは引き続き除外されます。このフォルダーを接続しますか？",
+  "zh": "连接 {path} 后，AI 可以读取其下的所有文档。隐藏文件夹、凭据和系统位置（如 Library/Keychains）以及 Still 的数据文件夹仍会被排除。要连接此文件夹吗？"
+ },
  "quickstart_service.folder_limit": {
   "ko": "폴더는 최대 8개까지 연결할 수 있어요.",
   "en": "You can connect up to 8 folders.",

@@ -3740,7 +3740,10 @@ class Capabilities:
   base=Path(root['path']).resolve();relative=Path(path)
   if relative.is_absolute() or '..' in relative.parts or any(p.startswith('.') for p in relative.parts):raise ValueError(msg('agent_runtime.file_path_not_allowed'))
   resolved=(base/relative).resolve()
-  if not resolved.is_relative_to(base) or resolved.is_relative_to(self.store.private):raise ValueError(msg('agent_runtime.file_outside_connected_folder'))
+  # #820: a broad grant (the home folder) contains credential, system and Still-data locations;
+  # the resolved target - a symlink's too - is never one of them.
+  if not resolved.is_relative_to(base) or resolved.is_relative_to(self.store.private) or folder_grants.excluded(resolved,self.store,base):
+   raise ValueError(msg('agent_runtime.file_outside_connected_folder'))
   if not resolved.is_file() or resolved.stat().st_size>MAX_FILE_BYTES:raise ValueError(msg('agent_runtime.file_size_limit'))
   if not supported_document(resolved):raise ValueError(msg('agent_runtime.supported_document_formats'))
   return resolved
@@ -3833,8 +3836,11 @@ class Capabilities:
   seen=set()
   for root in roots:
    base=Path(root['path']).resolve()
+   # #820: the protected locations a broad grant contains are not walked into (``resolve_file`` refuses them too).
+   protected=folder_grants.protected_identities(self.store,base)
    for parent,dirs,files in os.walk(base,followlinks=False):
-    dirs[:]=[d for d in dirs if not d.startswith('.') and d not in ('node_modules','venv','__pycache__') and not (Path(parent)/d).is_symlink()]
+    dirs[:]=[d for d in dirs if not d.startswith('.') and d not in ('node_modules','venv','__pycache__') and not (Path(parent)/d).is_symlink()
+             and folder_grants.identity(Path(parent)/d) not in protected]
     for name in files:
      if visited>=500 or time.monotonic()>deadline:return {'files':hits,'truncated':True}
      visited+=1
@@ -4130,9 +4136,14 @@ class Capabilities:
   pass every outbound lookup takes (``secret_redactor``) unchanged in each
   spelling the destination could decode - as given, normalized, and
   percent-decoded up to three times - or nothing is requested.  A failing
-  redactor refuses the read (``redaction_unavailable``, #617).
+  redactor refuses the read (``redaction_unavailable``, #617).  A Work built
+  without a redactor uses the store's own pass, so no route reads unchecked.
   """
-  if self.secret_redactor is None or not isinstance(url,str):return
+  if not isinstance(url,str):return
+  redactor=self.secret_redactor
+  if redactor is None:
+   from .current_context import redact_known_secrets
+   redactor=lambda text:redact_known_secrets(self.store,text)
   from urllib.parse import unquote,unquote_plus
   from .local_tools import normalize_public_url
   forms=[url]
@@ -4142,7 +4153,7 @@ class Capabilities:
    decoded=[form for text in forms for form in (unquote(text),unquote_plus(text))]
    if set(decoded)<=set(forms):break
    forms.extend(decoded)
-  try:held=any(str(self.secret_redactor(form))!=form for form in dict.fromkeys(forms))
+  try:held=any(str(redactor(form))!=form for form in dict.fromkeys(forms))
   except Exception:raise ToolError(REDACTION_UNAVAILABLE_TEXT,'redaction_unavailable',ran=False) from None
   if held:raise ToolError(PAGE_ADDRESS_SECRET_TEXT,'secret_in_address',ran=False)
  def with_memory_sources(self,rows):

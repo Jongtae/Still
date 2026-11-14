@@ -19,18 +19,23 @@ class FileWorkspace:
 
     def __init__(self, store): self.store=store
 
-    def configure(self, references, workspace, keep_blocked_workspace=False):
+    def configure(self, references, workspace, keep_blocked_workspace=False, confirm_broad=()):
         """Replace the references and the result folder.
 
         ``keep_blocked_workspace`` (#779, an off-Mac Settings removal): an
         unchanged result folder the rules now block is kept verbatim with its
         stored identity.  ``validate`` would follow a symlinked parent and move
         the result-write grant to the symlink's target.
+
+        #820: a broad reference folder is granted when its path is in
+        ``confirm_broad`` (the owner confirmed it) or it is already stored; the
+        result folder is never a broad one.
         """
         if not isinstance(references,list) or not references: raise ValueError('하나 이상의 참고 폴더를 연결하세요.')
         refs=[]; usable=[]
         current=self.status()
         previous={ref.get('path'):ref for ref in current.get('references',[]) if isinstance(ref,dict)}
+        confirmed={*confirm_broad,*previous}
         for value in references:
             # Keep a previously stored blocked entry only when the owner leaves it
             # unchanged. This lets the settings editor remove blocked entries one
@@ -39,13 +44,13 @@ class FileWorkspace:
             if old and folder_grants.blocked(old.get('path',''),self.store):
                 if all(ref.get('path')!=old.get('path') for ref in refs): refs.append(old)
                 continue
-            path=folder_grants.validate(value,self.store)
+            path=folder_grants.validate(value,self.store,confirm_broad=confirmed)
             if any(ref['path']==str(path) for ref in refs): continue
             stat=path.stat(); ref={'id':hashlib.sha256(f'{stat.st_dev}:{stat.st_ino}'.encode()).hexdigest()[:24],'path':str(path)}
             refs.append(ref); usable.append(ref)
         kept=(keep_blocked_workspace and isinstance(workspace,str) and workspace==current.get('workspace')
               and folder_grants.blocked(workspace,self.store))
-        target=Path(workspace) if kept else folder_grants.validate(workspace,self.store)
+        target=Path(workspace) if kept else folder_grants.validate(workspace,self.store,broad_allowed=False)
         # Retained blocked references still count for overlap: if one later
         # becomes available again, active() will expose it without another edit.
         if any(target==Path(ref['path']) or target.is_relative_to(ref['path']) or Path(ref['path']).is_relative_to(target) for ref in refs): raise ValueError('참고 폴더와 관리 작업공간은 겹치지 않게 연결하세요.')
@@ -66,7 +71,8 @@ class FileWorkspace:
         grant never carries external-AI transmission with it.
         """
         if kind not in ('reference','workspace'): raise ValueError('허용하지 않은 폴더 권한입니다.')
-        path=folder_grants.validate(value,self.store)
+        # #820: a folder a Work asked for is never a broad one; the owner grants that in Settings.
+        path=folder_grants.validate(value,self.store,broad_allowed=False)
         def overlaps(a,b): return a==b or a.is_relative_to(b) or b.is_relative_to(a)
         def validate_overlap(status):
             refs=[ref for ref in status.get('references',[]) if isinstance(ref,dict)]
@@ -124,7 +130,8 @@ class FileWorkspace:
         try: info=resolved.stat()
         except (FileNotFoundError,NotADirectoryError): info=None
         except OSError as exc: raise ValueError('참고 자료를 지금 읽을 수 없습니다.') from exc
-        if (not resolved.is_relative_to(base) or resolved.suffix.lower() not in ('.txt','.md','.pdf','.docx','.xlsx') or info is None or not stat.S_ISREG(info.st_mode) or candidate.is_symlink()): raise ValueError('참고 폴더 밖 또는 지원하지 않는 파일입니다.')
+        # #820: nor a credential, system or Still-data location a broad reference folder contains.
+        if (not resolved.is_relative_to(base) or folder_grants.excluded(resolved,self.store,base) or resolved.suffix.lower() not in ('.txt','.md','.pdf','.docx','.xlsx') or info is None or not stat.S_ISREG(info.st_mode) or candidate.is_symlink()): raise ValueError('참고 폴더 밖 또는 지원하지 않는 파일입니다.')
         # #182 review: bounded like a connected-folder read, before any byte is read.
         if info.st_size>MAX_FILE_BYTES: raise ValueError(msg('agent_runtime.file_size_limit'))
         return resolved
@@ -150,8 +157,10 @@ class FileWorkspace:
         matches=[]
         for root in self.active()['references']:
             base=Path(root['path'])
+            protected=folder_grants.protected_identities(self.store,base)
             for parent,dirs,names in os.walk(base,followlinks=False):
-                dirs[:]=[name for name in dirs if not name.startswith('.') and not (Path(parent)/name).is_symlink()]
+                dirs[:]=[name for name in dirs if not name.startswith('.') and not (Path(parent)/name).is_symlink()
+                         and folder_grants.identity(Path(parent)/name) not in protected]
                 for name in names:
                     if name.startswith('.') or Path(name).suffix.lower() not in ('.txt','.md','.pdf','.docx','.xlsx') or not supported_document(Path(parent)/name): continue
                     relative=str((Path(parent)/name).relative_to(base))

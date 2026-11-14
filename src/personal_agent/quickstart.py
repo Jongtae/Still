@@ -25,6 +25,7 @@ from urllib.error import HTTPError
 from urllib.parse import parse_qs, unquote, urlencode, urlsplit, urlunsplit
 from .browser_worker import EMBEDDED_UA_TOKEN
 from . import first_run
+from . import folder_grants
 from .quickstart_store import QuickStore
 from .calendar import CalendarConnector
 from .calendar_oauth import (GMAIL_FILTERS_GRANT, GMAIL_MODIFY_GRANT, GMAIL_MODIFY_SECRET_NAMESPACE, DRIVE_GRANT, DRIVE_SECRET_NAMESPACE, CalendarOAuth, EncryptedCalendarSecretStore,
@@ -1175,6 +1176,9 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                         return self.reply(200,save(body,local_surface=self.folder_settings_surface()))
                     except OwnerLocalRequired as exc:
                         return self.reply(403,{'error':str(exc),'reason':exc.reason})
+                    except folder_grants.ConfirmBroad as exc:
+                        # #820: nothing was saved; the owner confirms this folder once and saves again.
+                        return self.reply(409,{'error':exc.includes,'reason':exc.reason,'path':str(exc.path)})
                 if path=='/api/context-inbox/config':return self.reply(200,service.context_inbox().configure(body))
                 if path=='/api/context-inbox/capture':return self.reply(200,service.context_inbox().capture(body))
                 if path=='/api/context-inbox/delete':return self.reply(200,service.context_inbox().delete(body.get('id')))
