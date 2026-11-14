@@ -538,9 +538,9 @@ const $=id=>ids.get(id),document={getElementById:$,createElement:tag=>new Elemen
  querySelector:selector=>pickerButtons.find(button=>selector==='[data-folder-pick="'+button.dataset.folderPick+'"]')||null};
 const part=(start,end)=>app.slice(app.indexOf(start),app.indexOf(end));
 const source=part('const LANGUAGES=','function normalizeEndpoint(')+part('function element(', 'function focusSettingsTarget(')+part('let savedRoots=', 'function renderTelegram(');
-const calls=[];let refreshes=0,refuse=null,refuseReason=null,revisions=0,gate=null;
-const ctx={document,$,console,invalidateRootsLoad:()=>revisions++,invalidateFileWorkspaceLoad:()=>revisions++,
- api:async(path,body)=>{calls.push({path,body});if(gate)await gate;if(refuse){const failure=new Error(refuse);if(refuseReason)failure.reason=refuseReason;throw failure;}if(path==='/api/files/roots')return {roots:body.paths.map(path=>({path}))};if(path==='/api/file-workspace')return {references:body.references.map(path=>({path})),workspace:body.workspace};return {};},
+const calls=[];let refreshes=0,refuse=null,refuseReason=null,refusePath=null,refuseOnce=false,confirmAnswer=false,confirmed=[],revisions=0,gate=null;
+const ctx={document,$,console,window:{confirm:text=>{confirmed.push(text);return confirmAnswer;}},invalidateRootsLoad:()=>revisions++,invalidateFileWorkspaceLoad:()=>revisions++,
+ api:async(path,body)=>{calls.push({path,body});if(gate)await gate;if(refuse){const failure=new Error(refuse);if(refuseReason)failure.reason=refuseReason;if(refusePath)failure.path=refusePath;if(refuseOnce){refuse=null;refuseReason=null;refusePath=null;refuseOnce=false;}throw failure;}if(path==='/api/files/roots')return {roots:body.paths.map(path=>({path}))};if(path==='/api/file-workspace')return {references:body.references.map(path=>({path})),workspace:body.workspace};return {};},
  refresh:async()=>{refreshes++;},busy:async(button,fn)=>fn(),setError:(id,error)=>{$(id).textContent=error?.message||String(error||'');$(id).dataset.error='1';},setFeedback:(id,text)=>{$(id).textContent=text||'';delete $(id).dataset.error;}};
 vm.createContext(ctx);vm.runInContext(source,ctx);vm.runInContext("setLanguage('ko')",ctx);
 const same=(actual,expected,message)=>assert.equal(JSON.stringify(actual),JSON.stringify(expected),message);
@@ -577,6 +577,16 @@ const press=async(id,label)=>{const button=buttons(id).find(node=>node.textConte
  assert.equal($('root-path-input').value,'/Users/me','the draft is kept for the Mac');
  for(const [language,locale] of [['zh-CN','zh'],['ja','ja']]){vm.runInContext(`setLanguage('${language}')`,ctx);assert.equal(ctx.t(macOnly),macOnlyMessage[locale],`${language} translates the off-Mac refusal`);}
  vm.runInContext("setLanguage('ko')",ctx);refuseReason=null;
+ // #820: a broad folder asks once with what it includes; declining saves nothing, confirming saves with that one folder named.
+ const includes='/Users/me 폴더를 연결하면 AI가 그 아래의 모든 문서를 읽을 수 있어요.';
+ refuse=includes;refuseReason='confirm_broad';refusePath='/Users/me';refuseOnce=true;confirmAnswer=false;
+ let posted=calls.length;await $('roots-form').onsubmit({preventDefault(){},submitter:new Element('button')});
+ assert.equal(calls.length,posted+1,'declining sends nothing more');same(confirmed,[includes],'the owner is shown what the folder includes');
+ assert.equal($('roots-feedback').textContent,'폴더를 연결하지 않았습니다.','a declined broad folder is a plain note');assert.equal($('roots-feedback').dataset.error,undefined);
+ refuse=includes;refuseReason='confirm_broad';refusePath='/Users/me';refuseOnce=true;confirmAnswer=true;
+ posted=calls.length;await $('roots-form').onsubmit({preventDefault(){},submitter:new Element('button')});
+ same(calls.slice(posted).map(call=>call.body.confirm_broad||null),[null,['/Users/me']],'one confirmation, for exactly the folder asked about');
+ ctx.renderRootList(['/tmp/a/Research','/tmp/b/Notes','/tmp/c/New']);
  refuse=null;const before=calls.length;
  await press('root-list','제거');
  assert.equal(calls.length,before,'remove asks before saving');
