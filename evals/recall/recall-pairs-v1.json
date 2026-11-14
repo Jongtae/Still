@@ -1,0 +1,425 @@
+{
+  "version": "recall-pairs/1",
+  "owner": "owner-fixture",
+  "today": "2026-03-25",
+  "rows": [
+    {
+      "ref": "r1",
+      "key": "profile.d.instrument",
+      "content": "달잎피리 연습 악기는 달잎피리"
+    },
+    {
+      "ref": "r2",
+      "key": "profile.d.focus",
+      "content": "소란스러운 공간에서는 집중이 어렵다"
+    },
+    {
+      "ref": "r3",
+      "key": "profile.d.binding",
+      "content": "문서 제본은 실로 엮는 방식을 선호한다"
+    },
+    {
+      "ref": "r4",
+      "key": "profile.d.hall",
+      "content": "발표 장소는 누리온 달무리홀"
+    },
+    {
+      "ref": "r5",
+      "key": "profile.d.studio",
+      "content": "3월 2일 작업실 해온동"
+    },
+    {
+      "ref": "r6",
+      "key": "profile.d.studio",
+      "content": "3월 20일 작업실 별솔동",
+      "after": "r5"
+    },
+    {
+      "ref": "r7",
+      "key": "profile.d.printer",
+      "content": "프린터 포그 P4"
+    },
+    {
+      "ref": "r8",
+      "key": "profile.d.printer",
+      "content": "프린터 포그 P9",
+      "after": "r7",
+      "corrected": true
+    },
+    {
+      "ref": "r9",
+      "key": "profile.d.pass",
+      "content": "잔빛공방 이용권 2월 말 만료",
+      "valid_until": "2026-02-28"
+    },
+    {
+      "ref": "r10",
+      "key": "profile.d.walk",
+      "content": "산책길 옛모래길"
+    },
+    {
+      "ref": "r11",
+      "key": "profile.d.walk",
+      "content": "산책길 모래별길",
+      "after": "r10",
+      "forgotten": true
+    },
+    {
+      "ref": "r12",
+      "key": "profile.d.band",
+      "content": "좋아하는 밴드 초록종이 포장 공연"
+    },
+    {
+      "ref": "r13",
+      "key": "profile.d.loan",
+      "content": "푸른자 대여 마감 3월 25일",
+      "valid_until": "2026-03-25"
+    },
+    {
+      "ref": "r14",
+      "key": "profile.d.desk",
+      "content": "책상 높이를 조절해서 서서 일한다"
+    },
+    {
+      "ref": "r15",
+      "key": "profile.h.token",
+      "content": "노란실패 바느질 도구는 노란실패"
+    },
+    {
+      "ref": "r16",
+      "key": "profile.h.reading",
+      "content": "활자가 빽빽하면 눈이 쉽게 피로해진다"
+    },
+    {
+      "ref": "r17",
+      "key": "profile.h.pottery",
+      "content": "도자기 표면은 무광을 선호한다"
+    },
+    {
+      "ref": "r18",
+      "key": "profile.h.ribbon",
+      "content": "여다온 상자 리본은 남색"
+    },
+    {
+      "ref": "r19",
+      "key": "profile.h.contact",
+      "content": "3월 4일 은결회 담당 서루민"
+    },
+    {
+      "ref": "r20",
+      "key": "profile.h.contact",
+      "content": "3월 22일 은결회 담당 도하린",
+      "after": "r19"
+    },
+    {
+      "ref": "r21",
+      "key": "profile.h.gloves",
+      "content": "작업 장갑 사이즈 S"
+    },
+    {
+      "ref": "r22",
+      "key": "profile.h.gloves",
+      "content": "작업 장갑 사이즈 L",
+      "after": "r21",
+      "corrected": true
+    },
+    {
+      "ref": "r23",
+      "key": "profile.h.locker",
+      "content": "이슬함 보관함 임대 3월 10일까지",
+      "valid_until": "2026-03-10"
+    },
+    {
+      "ref": "r24",
+      "key": "profile.h.project",
+      "content": "연습 프로젝트 구름나사",
+      "forgotten": true
+    },
+    {
+      "ref": "r25",
+      "key": "profile.h.game",
+      "content": "가상 보드게임 별지도 수집 취미"
+    }
+  ],
+  "cases": [
+    {
+      "id": "d-lex-instrument",
+      "split": "dev",
+      "kind": "lexical-control",
+      "query": "달잎피리",
+      "needed": [
+        "r1"
+      ],
+      "traps": [],
+      "note": "Exact synthetic instrument token."
+    },
+    {
+      "id": "d-lex-last-day",
+      "split": "dev",
+      "kind": "lexical-control",
+      "query": "푸른자",
+      "needed": [
+        "r13"
+      ],
+      "traps": [],
+      "note": "Inclusive valid_until: eligible on today."
+    },
+    {
+      "id": "d-lex-desk",
+      "split": "dev",
+      "kind": "lexical-control",
+      "query": "책상",
+      "needed": [
+        "r14"
+      ],
+      "traps": [],
+      "note": "Exact content word."
+    },
+    {
+      "id": "d-para-focus",
+      "split": "dev",
+      "kind": "paraphrase",
+      "query": "업무 볼 자리는 어떤 환경이어야 나한테 맞지?",
+      "needed": [
+        "r2"
+      ],
+      "traps": [],
+      "note": "Quiet-space inference without shared content words."
+    },
+    {
+      "id": "d-para-posture",
+      "split": "dev",
+      "kind": "paraphrase",
+      "query": "오래 앉아 있지 않으려고 쓰는 가구의 기능은?",
+      "needed": [
+        "r14"
+      ],
+      "traps": [],
+      "note": "Standing-work habit described differently."
+    },
+    {
+      "id": "d-language",
+      "split": "dev",
+      "kind": "cross-language",
+      "query": "Which binding style do I prefer for documents?",
+      "needed": [
+        "r3"
+      ],
+      "traps": [],
+      "note": "Korean fact, English request."
+    },
+    {
+      "id": "d-follow",
+      "split": "dev",
+      "kind": "short-follow-up",
+      "query": "그거 다시",
+      "needed": [
+        "r4"
+      ],
+      "traps": [],
+      "note": "Assumes immediate conversation focus is presentation venue; the preceding owner turn is in `context`, so only a retriever that reads it can recall the row.",
+      "context": "다음 주 발표 장소가 어디였는지 지도로 보여줘."
+    },
+    {
+      "id": "d-dated-current",
+      "split": "dev",
+      "kind": "dated-contradiction",
+      "query": "작업실",
+      "needed": [
+        "r6"
+      ],
+      "traps": [
+        "r5"
+      ],
+      "note": "Later dated address is current."
+    },
+    {
+      "id": "d-dated-old-token",
+      "split": "dev",
+      "kind": "dated-contradiction",
+      "query": "해온동",
+      "needed": [
+        "r6"
+      ],
+      "traps": [
+        "r5"
+      ],
+      "note": "Old cue must not resurrect superseded value; current address needed."
+    },
+    {
+      "id": "d-correction",
+      "split": "dev",
+      "kind": "correction",
+      "query": "프린터",
+      "needed": [
+        "r8"
+      ],
+      "traps": [
+        "r7"
+      ],
+      "note": "Owner correction invalidates P4."
+    },
+    {
+      "id": "d-expired",
+      "split": "dev",
+      "kind": "currentness",
+      "query": "잔빛공방",
+      "needed": [],
+      "traps": [
+        "r9"
+      ],
+      "note": "No current pass basis after expiry."
+    },
+    {
+      "id": "d-expired-date",
+      "split": "dev",
+      "kind": "currentness",
+      "query": "이용권 2월",
+      "needed": [],
+      "traps": [
+        "r9"
+      ],
+      "note": "Expired lexical cue remains forbidden."
+    },
+    {
+      "id": "d-forget-chain",
+      "split": "dev",
+      "kind": "forgetting",
+      "query": "산책길 모래별길 옛모래길",
+      "needed": [],
+      "traps": [
+        "r10",
+        "r11"
+      ],
+      "note": "Forgetting head excludes the revision chain."
+    },
+    {
+      "id": "d-noise",
+      "split": "dev",
+      "kind": "harm-control",
+      "query": "종이 포장 습기",
+      "needed": [],
+      "traps": [],
+      "note": "Band context must not narrow paper-packaging question.",
+      "irrelevant": [
+        "r12"
+      ]
+    },
+    {
+      "id": "h-lex-tool",
+      "split": "heldout",
+      "kind": "lexical-control",
+      "query": "노란실패",
+      "needed": [
+        "r15"
+      ],
+      "traps": [],
+      "note": "Exact sewing token; different domain from dev."
+    },
+    {
+      "id": "h-para-layout",
+      "split": "heldout",
+      "kind": "paraphrase",
+      "query": "읽을 자료 편집은 어떤 배치가 편할까?",
+      "needed": [
+        "r16"
+      ],
+      "traps": [],
+      "note": "Spacious layout follows from fatigue; no shared content words."
+    },
+    {
+      "id": "h-language",
+      "split": "heldout",
+      "kind": "cross-language",
+      "query": "What finish do I like on pottery?",
+      "needed": [
+        "r17"
+      ],
+      "traps": [],
+      "note": "Korean pottery preference, English query."
+    },
+    {
+      "id": "h-follow",
+      "split": "heldout",
+      "kind": "short-follow-up",
+      "query": "아까 말한 걸로 색만",
+      "needed": [
+        "r18"
+      ],
+      "traps": [],
+      "note": "Assumes immediate focus is parcel ribbon, not a venue.; the preceding owner turn is in `context`, so only a retriever that reads it can recall the row.",
+      "context": "여다온한테 보낼 상자 포장은 어떻게 하기로 했지?"
+    },
+    {
+      "id": "h-dated",
+      "split": "heldout",
+      "kind": "dated-contradiction",
+      "query": "은결회 담당",
+      "needed": [
+        "r20"
+      ],
+      "traps": [
+        "r19"
+      ],
+      "note": "Later committee contact replaces old one."
+    },
+    {
+      "id": "h-correction",
+      "split": "heldout",
+      "kind": "correction",
+      "query": "작업 장갑 사이즈",
+      "needed": [
+        "r22"
+      ],
+      "traps": [
+        "r21"
+      ],
+      "note": "Corrected glove size, unrelated to printer model."
+    },
+    {
+      "id": "h-expired",
+      "split": "heldout",
+      "kind": "currentness",
+      "query": "이슬함 보관함",
+      "needed": [],
+      "traps": [
+        "r23"
+      ],
+      "note": "Locker lease ended before today."
+    },
+    {
+      "id": "h-forget-name",
+      "split": "heldout",
+      "kind": "forgetting",
+      "query": "구름나사",
+      "needed": [],
+      "traps": [
+        "r24"
+      ],
+      "note": "Forgotten project name must not surface."
+    },
+    {
+      "id": "h-forget-role",
+      "split": "heldout",
+      "kind": "forgetting",
+      "query": "연습 프로젝트",
+      "needed": [],
+      "traps": [
+        "r24"
+      ],
+      "note": "Semantic role cannot resurrect a forgotten name."
+    },
+    {
+      "id": "h-noise",
+      "split": "heldout",
+      "kind": "harm-control",
+      "query": "별지도 관측 설명",
+      "needed": [],
+      "traps": [],
+      "note": "Boardgame hobby is noise for astronomy.",
+      "irrelevant": [
+        "r25"
+      ]
+    }
+  ]
+}

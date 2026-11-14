@@ -26,6 +26,7 @@ CREDENTIALS = SECRET_PATTERN
 SENSITIVE = re.compile(SECRET_PATTERN.pattern + r"|\b(?:\d[ -]*?){13,19}\b")
 
 
+
 def _safe_url(value):
     try:
         parsed = urlsplit(value)
