@@ -20,6 +20,7 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from pathlib import Path
 
 from . import scenarios as scenario_module
@@ -183,6 +184,10 @@ def cmd_sweep(args, folder=None, inspect_eval=None, task_factory=None, key_loade
                              instances=args.instances, seed=str(seed or ''), judge=judge,
                              turn_timeout=args.turn_timeout, include_local=not args.no_local,
                              keep_sandboxes=args.keep_sandboxes, measures=getattr(args, 'measures', ''))
+    if getattr(args, 'continuity', None) and getattr(task, 'metadata', None) is not None:
+        # Inspect merges Task.metadata with eval(metadata=...), and the task's
+        # seed bool otherwise replaces the sweep's canonical 'fresh' value.
+        task.metadata.update(run)
     logs = inspect_eval(task, epochs=args.epochs, max_samples=args.instances, limit=args.limit,
                         log_dir=str(eval_home() / 'logs'), display=args.display, fail_on_error=False,
                         tags=['agentos-eval', args.worker], metadata=run)
@@ -205,9 +210,34 @@ def read_log(path):
     return read_eval_log(path)
 
 
+def continuity_run_from_log(log):
+    """Recover C2 provenance without consulting today's settings or clock."""
+    from .continuity import normalize_run
+    run = dict(log.eval.metadata or {})
+    if run.get('started') is None:
+        created = getattr(log.eval, 'created', None)
+        try:
+            moment = datetime.fromisoformat(created) if isinstance(created, str) else created
+            if isinstance(moment, datetime) and moment.tzinfo is not None:
+                run['started'] = moment.timestamp()
+                run['started_source'] = 'inspect.eval.created'
+        except ValueError:
+            pass  # Missing/invalid historical timestamps stay unavailable.
+    if run.get('instances') is None:
+        maximum = getattr(getattr(log.eval, 'config', None), 'max_samples', None)
+        if type(maximum) is int and maximum > 0:
+            run['instances'] = maximum
+    stopped = usage_limit_stops(log)
+    if stopped:
+        run['stopped'] = stopped
+    return normalize_run(run)
+
+
 def cmd_report(args):
     log = read_log(args.log)
     run = dict((log.eval.metadata or {}))
+    if run.get('continuity'):
+        run = continuity_run_from_log(log)
     run.setdefault('id', run_id())
     _write(log, run)
 
@@ -249,12 +279,9 @@ def cmd_continuity(args):
         return run_continuity(args)
     if args.action == 'report':
         log = read_log(args.log)
-        run = dict(log.eval.metadata or {})
+        run = continuity_run_from_log(log)
         if not run.get('continuity'):
             raise ValueError('Log lacks frozen C2 fixture provenance; run continuity run first.')
-        stopped = usage_limit_stops(log)
-        if stopped:
-            run['stopped'] = stopped
         result = continuity.build_report(records_from_samples(log.samples), run, run['continuity'], args.labels)
         _, path = continuity.write_report(result, eval_home() / 'reports')
         print(path)

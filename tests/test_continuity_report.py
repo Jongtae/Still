@@ -793,3 +793,89 @@ def test_fixture_digest_includes_all_contributing_bundled_files(rubric, tmp_path
     other = tmp_path / 'other-checkout'
     shutil.copytree(folder, other)
     assert c.fixture_support(selected, rubric[1], scenario_dir=other)['scenario_digest'] == c.fixture_support(selected, rubric[1], scenario_dir=folder)['scenario_digest']
+
+
+@pytest.mark.parametrize('seed', [False, None, ''])
+def test_report_rebuild_accepts_legacy_fresh_seed_metadata(rubric, tmp_path, monkeypatch, seed):
+    monkeypatch.setenv('AGENTOS_EVAL_HOME', str(tmp_path))
+    original = make_report(rubric)
+    metadata = {'id': 'real-shape', 'git_head': 'd256835', 'worker': 'codex', 'instances': 3,
+                'epochs': 3, 'judge': 'openai/gpt-6.1-terra', 'judge_key': 'environment',
+                'seed': seed, 'continuity': original['fixture_support']}
+    log = SimpleNamespace(eval=SimpleNamespace(metadata=metadata), samples=[], results=None)
+    monkeypatch.setattr(cli, 'read_log', lambda _: log)
+    with redirect_stdout(io.StringIO()):
+        assert cli.main(['continuity', 'report', '--log', 'baseline.eval']) == 0
+    rebuilt = json.loads((tmp_path / 'reports/real-shape.c2.json').read_text())
+    run = rebuilt['live_evidence']
+    assert run['seed'] == 'fresh' and run['started'] == 'unavailable'
+    assert run['judge_key'] == 'environment' and run['instances'] == 3
+    assert run['git_head'] == 'd256835' and 'stopped' not in run
+    assert metadata['seed'] is seed  # normalization does not rewrite the log object
+
+
+@pytest.mark.parametrize('seed', ['owner-seed', True])
+def test_report_rebuild_refuses_seeded_log(rubric, tmp_path, monkeypatch, seed):
+    monkeypatch.setenv('AGENTOS_EVAL_HOME', str(tmp_path))
+    metadata = make_report(rubric)['live_evidence'] | {'seed': seed, 'continuity': make_report(rubric)['fixture_support']}
+    log = SimpleNamespace(eval=SimpleNamespace(metadata=metadata), samples=[], results=None)
+    monkeypatch.setattr(cli, 'read_log', lambda _: log)
+    with pytest.raises(ValueError, match='requires a fresh data folder'):
+        cli.main(['continuity', 'report', '--log', 'seeded.eval'])
+    assert not (tmp_path / 'reports').exists()
+
+
+def test_log_metadata_fallbacks_preserve_provenance_and_stops():
+    from datetime import datetime
+    metadata = {'seed': False, 'stopped': {'tripped_by': 'stored', 'skipped': 1}}
+    log = SimpleNamespace(eval=SimpleNamespace(metadata=metadata, created='2026-11-14T09:00:00+00:00',
+                                               config=SimpleNamespace(max_samples=3)), results=None)
+    recovered = cli.continuity_run_from_log(log)
+    assert recovered['started'] == datetime.fromisoformat(log.eval.created).timestamp()
+    assert recovered['started_source'] == 'inspect.eval.created'
+    assert recovered['instances'] == 3 and recovered['judge_key'] == 'unavailable'
+    assert recovered['stopped'] == metadata['stopped']
+    metadata.update(started=1234.5, judge_key='environment', instances=2)
+    recovered = cli.continuity_run_from_log(log)
+    assert recovered['started'] == 1234.5 and 'started_source' not in recovered
+    assert recovered['instances'] == 2 and recovered['judge_key'] == 'environment'
+    summary = SimpleNamespace(metadata={'tripped_by': 'observed'}, early_stops=['one', 'two'])
+    log.results = SimpleNamespace(early_stopping=summary)
+    assert cli.continuity_run_from_log(log)['stopped'] == {'tripped_by': 'observed', 'skipped': 2}
+    metadata.pop('instances')
+    metadata.pop('started')
+    log.eval.created, log.eval.config = 'invalid historical timestamp', None
+    recovered = cli.continuity_run_from_log(log)
+    assert recovered['started'] == recovered['instances'] == 'unavailable'
+
+
+@pytest.mark.parametrize('stopped', [False, True])
+def test_new_sweep_metadata_and_log_rebuild_match(rubric, tmp_path, monkeypatch, stopped):
+    monkeypatch.setenv('AGENTOS_EVAL_HOME', str(tmp_path))
+    monkeypatch.delenv('AGENTOS_EVAL_SEED', raising=False)
+    captured = []
+    def factory(**kwargs):
+        # The real task's metadata is the source of the legacy boolean.
+        return SimpleNamespace(metadata={'seed': False, 'worker': kwargs['worker'],
+                                         'instances': kwargs['instances'], 'judge': kwargs['judge']})
+    def evaluate(task, **kwargs):
+        assert task.metadata == kwargs['metadata']
+        assert task.metadata['seed'] == 'fresh'
+        assert all(k in task.metadata for k in ('started', 'judge_key', 'instances'))
+        summary = SimpleNamespace(metadata={'tripped_by': 'fixture@codex'}, early_stops=['pending']) if stopped else None
+        log = SimpleNamespace(eval=SimpleNamespace(metadata={**kwargs['metadata'], **task.metadata}),
+                              samples=[], results=SimpleNamespace(early_stopping=summary), location='fixture.eval')
+        captured.append(log)
+        return [log]
+    def sweep(ns, **kwargs):
+        return cli.cmd_sweep(ns, task_factory=factory, inspect_eval=evaluate,
+                             key_loader=lambda _: 'environment', **kwargs)
+    with redirect_stdout(io.StringIO()):
+        assert cli.run_continuity(args(rubric), sweep=sweep, folder=tmp_path / 'reports') == (2 if stopped else 0)
+    path = next((tmp_path / 'reports').glob('*.c2.json'))
+    original = json.loads(path.read_text())
+    assert bool(original['live_evidence'].get('stopped')) is stopped
+    monkeypatch.setattr(cli, 'read_log', lambda _: captured[0])
+    with redirect_stdout(io.StringIO()):
+        assert cli.main(['continuity', 'report', '--log', 'fixture.eval']) == 0
+    assert json.loads(path.read_text()) == original

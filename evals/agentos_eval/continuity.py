@@ -257,10 +257,28 @@ def _group(rows):
             'latency': latency}
 
 
+def normalize_run(run):
+    """Canonical C2 metadata, including legacy Inspect task seed booleans.
+
+    Missing historical metadata is unavailable, never reconstructed from the
+    current machine's settings or clock. Named seeds and True remain refused.
+    """
+    run = dict(run)
+    seed = run.get('seed')
+    if not (seed is False or seed is None or seed in ('', 'fresh')):
+        raise ValueError('C2 requires a fresh data folder')
+    run['seed'] = 'fresh'
+    for key in ('started', 'judge_key', 'instances'):
+        if run.get(key) is None:
+            run[key] = 'unavailable'
+    if not run.get('stopped'):
+        run.pop('stopped', None)
+    return run
+
+
 def build_report(records, run, fixture, labels=None):
     """Pure aggregation over records_from_samples plus frozen pre-run provenance."""
-    if run.get('seed') != 'fresh':
-        raise ValueError('C2 requires a fresh data folder')
+    run = normalize_run(run)
     samples = []
     definitions = {s: split for split, ids in fixture['scenario_ids'].items() for s in ids}
     for record in records:
