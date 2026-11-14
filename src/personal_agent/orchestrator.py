@@ -242,8 +242,8 @@ def observations_with_pages(lines, pages, redact=None, last=''):
     judgment already reads tool results with their text (``goal_judgment``);
     this gives the CLI route the same, in the same total bound.  Page text
     takes what the step lines leave and at least ``PAGE_TEXT_FLOOR_CHARS``
-    (the oldest step lines are cut first); each page passes ``redact(text,
-    private=False)``, the secrets-only pass both routes use (#826).
+    (the oldest step lines are cut first); each page passes ``redact(text)``,
+    the secrets-only pass both routes use (#826).
     #151: ``last`` is one line kept whole at the end inside the same bound (the read state), so
     neither many step lines nor page text can push it out.
     """
@@ -259,7 +259,7 @@ def observations_with_pages(lines, pages, redact=None, last=''):
 
 def _observations_with_pages(lines, pages, redact=None, bound=OBSERVATION_CHARS):
     meta = '\n'.join(str(line) for line in lines or ())
-    clean = (lambda text: redact(text, private=False)) if redact else (lambda text: str(text or ''))
+    clean = (lambda text: redact(text)) if redact else (lambda text: str(text or ''))
     room = min(bound, max(PAGE_TEXT_FLOOR_CHARS, bound - len(meta) - 1)) - len(PAGE_TEXT_HEADER) - 1
     block = []
     for url, title, text in pages or ():
@@ -996,9 +996,9 @@ class Orchestration:
         self.spans = {}
 
     # -- the plan call --------------------------------------------------------
-    def _redact(self, text, private=True):
+    def _redact(self, text):
         redact = getattr(self.judgments, 'redact', None)
-        return redact(text, private=private) if redact else str(text or '')
+        return redact(text) if redact else str(text or '')
 
     def budget_allows(self, calls=1, reserve=False):
         """Whether the Work's deadline, Stop and turns still allow ``calls`` more model calls
@@ -1159,7 +1159,7 @@ class Orchestration:
 
     def _plan_context(self, candidates):
         """The ``DecisionContext`` one plan call over ``candidates`` reads."""
-        request = self._redact(self.request, private=False)
+        request = self._redact(self.request)
         workers = render_catalogue(candidates)
         tools_text = render_tool_descriptions(candidates, getattr(self.catalogue, 'descriptions', {}))
         # #804: the owner model the worker is always given, so the plan fits it too.
@@ -1174,7 +1174,7 @@ class Orchestration:
                  'continues': self._continues_text(),
                  'previous_route': self._redact(self.previous_route)[:600] or 'none recorded',
                  'effort_timing': self.effort_timing[:600] or 'none recorded',
-                 'awaiting_owner': self._redact(self._awaiting_text(), private=False),
+                 'awaiting_owner': self._redact(self._awaiting_text()),
                  'context_sections': self._sections_text(),
                  'workers': workers,
                  'tool_descriptions': tools_text,
@@ -1332,7 +1332,7 @@ class Orchestration:
             return None, 'budget'
         attempt = Attempt(number, worker['id'], model=model, notes=notes, reason=one_line(data['reason'], MAX_REASON_CHARS),
                           planned=True, effort=effort, lens=lens)
-        attempt.reply = (self._redact(data['reply'], private=False).strip()[:REPLY_CHARS]
+        attempt.reply = (self._redact(data['reply']).strip()[:REPLY_CHARS]
                          if number == 1 and not data.get('ask_location', '').strip()
                          and not plan_preview(data.get('preview')) else '')
         attempt.unlisted_model = unlisted
@@ -1360,7 +1360,7 @@ class Orchestration:
         Redacted of stored secrets (the owner's own words, like ``owner_request``) and bounded: the
         most recent ``MAX_CORRECTIONS``, each at most ``MAX_CORRECTION_CHARS``.
         """
-        kept = [' '.join(self._redact(text, private=False).split())[:MAX_CORRECTION_CHARS]
+        kept = [' '.join(self._redact(text).split())[:MAX_CORRECTION_CHARS]
                 for text in texts or () if isinstance(text, str) and text.strip()]
         self.corrections = tuple(kept[-MAX_CORRECTIONS:])
 
@@ -1530,7 +1530,7 @@ class Orchestration:
         """
         outcome = getattr(result, 'outcome', 'succeeded')
         # #1451: the run's own judgment's gap, when it said no.
-        self.gap = self._redact(getattr(getattr(result, 'judgment', None), 'gap', '') or '', private=False)[:GAP_CHARS]
+        self.gap = self._redact(getattr(getattr(result, 'judgment', None), 'gap', '') or '')[:GAP_CHARS]
         self.retry_warranted = getattr(getattr(result, 'judgment', None), 'retry_warranted', None)
         if outcome == 'succeeded':
             return REACHED
@@ -1599,11 +1599,11 @@ class Orchestration:
         self.record_check = getattr(judged, 'record_check', None)
         if verdict == 'no':
             # #1451: the judgment's own statement of what is missing (already owner-facing text).
-            self.gap = self._redact(getattr(judged, 'value', None) or '', private=False)[:GAP_CHARS]
+            self.gap = self._redact(getattr(judged, 'value', None) or '')[:GAP_CHARS]
         # #631: either verdict owns the closing line, including explicit silence.
         if verdict in ('yes', 'no'):
             note = getattr(judged, 'note', None)
-            self.note = self._redact(note, private=False)[:GAP_CHARS] if isinstance(note, str) else None
+            self.note = self._redact(note)[:GAP_CHARS] if isinstance(note, str) else None
         return REACHED if verdict == 'yes' else NOT_REACHED if verdict == 'no' else UNJUDGED
 
     def _continues_text(self):

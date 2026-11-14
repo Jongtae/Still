@@ -45,7 +45,7 @@ class RegistryTests(unittest.TestCase):
 
     def test_private_freeform_and_secret_queries_never_leave(self):
         transport=Mock();search=CapabilitySearch(transport)
-        for query in ('my private request','a@private.example','https://example.org','x'*81,'token=abc','',None):
+        for query in ('my private request','a@private.example','https://example.org','x'*81,'token=abc','1234567890123456','',None):
             with self.subTest(query=query),self.assertRaises(ValueError):search.registry(query)
         with self.assertRaises(ValueError):search.registry('private-value',lambda text:'[redacted]')
         transport.assert_not_called()

@@ -28,7 +28,7 @@ class TimeoutDriver(FakeDriver):
 class TimeoutRecoveryTests(unittest.TestCase):
     def test_explicit_read_observes_the_partial_page_without_replaying_navigation(self):
         driver = TimeoutDriver()
-        session = bs.BrowserSession(lambda: driver, work_id='w', excluded=lambda: [PASSWORD])
+        session = bs.BrowserSession(lambda: driver, work_id='w', )
         with self.assertRaises(ToolError) as caught:
             session.open({'url': ORIGIN + '/login', 'effect': 'read'})
         self.assertEqual(caught.exception.code, 'browser_timeout')
