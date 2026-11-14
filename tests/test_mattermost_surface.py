@@ -362,7 +362,7 @@ class OwnerActs(MattermostCase):
         settings = self.service.settings_orchestrator
         with mock.patch.object(settings, 'settle_pending', wraps=settings.settle_pending) as settle:
             with mock.patch.object(self.surface, '_clear_reaction', side_effect=RuntimeError('cut off clear')):
-                with self.assertRaisesRegex(RuntimeError, 'cut off clear'):
+                with self.assertLogs('personal_agent.mattermost', level='WARNING'):
                     self.surface.receive()
         self.assertEqual(settle.call_count, 1)
         self.assertEqual(settings._drafts()[draft]['state'], 'applied')
@@ -447,12 +447,35 @@ class OwnerActs(MattermostCase):
         _, draft, note = self.settings_notice()
         self.fake.react(OWNER, note['message_id'], '+1')
         with mock.patch.object(self.service, 'steer_spawn', side_effect=RuntimeError('spawn failed')):
-            with self.assertRaisesRegex(RuntimeError, 'spawn failed'):
+            with self.assertLogs('personal_agent.mattermost', level='WARNING'):
                 self.surface.receive()
         self.assertEqual(self.surface._acting, set())
         self.assertEqual(len(self.surface.config()['pending_reactions']), 1)
         self.surface.receive()
         self.assertEqual(self.service.settings_orchestrator._drafts()[draft]['state'], 'applied')
+
+    def test_a_failed_pending_reaction_does_not_block_the_rest_of_the_poll(self):
+        _, draft, note = self.settings_notice()
+        unbound = self.fake.post(BOT, self.dm(), 'An unbound message')
+        self.fake.react(OWNER, unbound['id'], 'eyes')
+        self.fake.react(OWNER, note['message_id'], '+1')
+        original = self.surface.ingest_reaction
+
+        def read(post_id, *args, **kwargs):
+            if post_id == unbound['id']:
+                raise RuntimeError('reaction failed')
+            return original(post_id, *args, **kwargs)
+        with mock.patch.object(self.surface, 'ingest_reaction', side_effect=read) as ingested:
+            with self.assertLogs('personal_agent.mattermost', level='WARNING'):
+                self.surface.receive()
+                self.surface.receive()
+        self.assertEqual(ingested.call_count, 3)
+        self.assertEqual(self.service.settings_orchestrator._drafts()[draft]['state'], 'applied')
+        pending = self.surface.config()['pending_reactions']
+        self.assertEqual([entry['post_id'] for entry in pending], [unbound['id']])
+        self.assertEqual(self.surface._acting, set())
+        self.surface.receive()
+        self.assertEqual(self.surface.config()['pending_reactions'], [])
 
     def test_a_reaction_cleared_after_the_poll_snapshot_is_not_read_again(self):
         _, draft, note = self.settings_notice()

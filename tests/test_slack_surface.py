@@ -836,12 +836,91 @@ class Buttons(SlackCase):
         draft, _, _, _ = self.pending_press()
         self.restart_pending()
         with mock.patch.object(self.service, 'steer_spawn', side_effect=RuntimeError('spawn failed')):
-            with self.assertRaisesRegex(RuntimeError, 'spawn failed'):
+            with self.assertLogs('personal_agent.slack', level='WARNING'):
                 self.surface.receive()
         self.assertEqual(len(self.pending_acts()), 1)
         self.assertEqual(self.surface._acting, set())
         self.surface.receive()
         self.assertEqual(self.service.settings_orchestrator._drafts()[draft]['state'], 'applied')
+
+    def test_failed_press_replay_does_not_block_other_acts_or_reconnect(self):
+        draft, ts, _, _ = self.pending_press()
+        self.press(ts, ACTION_APPROVE)
+        first, second = self.pending_acts()
+        self.restart_pending()
+        held, attempts = [], []
+
+        def spawn(target):
+            attempts.append(target)
+            if len(attempts) != 2:
+                raise RuntimeError('spawn failed')
+            held.append(target)
+        with mock.patch.object(self.service, 'steer_spawn', side_effect=spawn):
+            with self.assertLogs('personal_agent.slack', level='WARNING'):
+                self.surface.receive()
+                self.assertTrue(self.surface._socket.connected)
+                self.surface.receive()
+        self.assertEqual(len(attempts), 3, 'the failed act is retried while the other worker stays claimed')
+        self.assertEqual(len(held), 1)
+        self.assertEqual(self.pending_acts(), [first, second])
+        self.assertEqual(self.surface._acting, {second['key']})
+        self.surface.receive()
+        held[0]()
+        self.assertEqual(self.service.settings_orchestrator._drafts()[draft]['state'], 'applied')
+        self.assertEqual(self.pending_acts(), [])
+        self.assertEqual(self.surface._acting, set())
+
+    def test_failed_reaction_replay_does_not_block_a_press_or_reconnect(self):
+        _, draft, notice = self.settings_notice()
+        ts = self.fake.chat_postMessage(DM, text='An unbound message')['ts']
+        payload = self.reaction_payload({'message_id': message_id(ts)})
+        with mock.patch.object(self.surface, 'ingest_reaction', side_effect=RuntimeError('reaction failed')):
+            self.socket.deliver('events_api', payload)
+        held = []
+        self.service.steer_spawn = held.append
+        self.press(slack_ts(notice['message_id']), ACTION_APPROVE)
+        failed = self.pending_acts()[0]
+        self.restart_pending()
+        with mock.patch.object(self.surface, 'ingest_reaction', side_effect=RuntimeError('reaction failed')) as read:
+            with self.assertLogs('personal_agent.slack', level='WARNING'):
+                self.surface.receive()
+                self.assertTrue(self.surface._socket.connected)
+                self.surface.receive()
+        self.assertEqual(read.call_count, 2)
+        self.assertEqual(self.service.settings_orchestrator._drafts()[draft]['state'], 'applied')
+        self.assertEqual(self.pending_acts(), [failed])
+        self.assertEqual(self.surface._acting, set())
+        self.surface.receive()
+        self.assertEqual(self.pending_acts(), [])
+
+    def test_long_press_key_is_shared_by_live_and_replay_claims(self):
+        _, draft, notice = self.settings_notice()
+        held = []
+        self.service.steer_spawn = held.append
+        self.press(slack_ts(notice['message_id']), ACTION_APPROVE, action_ts='1' * 220)
+        self.surface.receive()
+        self.assertEqual(len(held), 1)
+        self.assertEqual(len(self.pending_acts()[0]['key']), 200)
+        self.assertEqual(self.surface._acting, {self.pending_acts()[0]['key']})
+        held[0]()
+        self.assertEqual(self.service.settings_orchestrator._drafts()[draft]['state'], 'applied')
+        self.assertEqual(self.pending_acts(), [])
+        self.assertEqual(self.surface._acting, set())
+
+    def test_long_reaction_key_is_shared_by_live_and_replay_claims(self):
+        _, draft, notice = self.settings_notice()
+        held = []
+        self.service.steer_spawn = held.append
+        payload = {**self.reaction_payload(notice), 'event_id': 'Ev' + '1' * 220}
+        self.socket.deliver('events_api', payload)
+        self.surface.receive()
+        self.assertEqual(len(held), 1)
+        self.assertEqual(len(self.pending_acts()[0]['key']), 200)
+        self.assertEqual(self.surface._acting, {self.pending_acts()[0]['key']})
+        held[0]()
+        self.assertEqual(self.service.settings_orchestrator._drafts()[draft]['state'], 'applied')
+        self.assertEqual(self.pending_acts(), [])
+        self.assertEqual(self.surface._acting, set())
 
     def test_replayed_press_racing_live_delivery_runs_one_worker(self):
         draft, ts, action_ts, _ = self.pending_press()

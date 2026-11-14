@@ -379,6 +379,8 @@ class MattermostSurface(DirectMessageSurface):
                     spawned = result == 'owner_act'
                     if not spawned:
                         self._clear_reaction(key, generation)
+            except Exception as exc:
+                LOG.warning('mattermost: replaying a reaction failed (%s)', type(exc).__name__)
             finally:
                 if not spawned:
                     with self._acting_lock:

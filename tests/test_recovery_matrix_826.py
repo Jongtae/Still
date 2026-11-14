@@ -422,8 +422,7 @@ def test_w4_mattermost_reaction_survives_cursor_crash(case):
     _, draft, note = c.settings_notice()
     c.fake.react(mm_cases.OWNER, note['message_id'], '+1')
     with mock.patch.object(c.surface, 'ingest_reaction', side_effect=RuntimeError('crash before reaction')):
-        with pytest.raises(RuntimeError, match='crash before reaction'):
-            c.surface.receive()
+        c.surface.receive()
     service = _restart(c.store)
     service.mattermost_transport = c.fake
     service.steer_spawn = lambda target: target()
@@ -435,7 +434,10 @@ def test_w4_mattermost_reaction_survives_cursor_crash(case):
 
 
 def test_w4_mattermost_correction_survives_cursor_crash(case):
-    """W4 a correction is queued before the cursor; recovery interrupts the earlier Work."""
+    """Characterize existing behavior, not the #843 inbox change.
+
+    The correction is queued as Work before the cursor; recovery interrupts the running Work.
+    """
     c = case(mm_cases.OwnerActs)
     c.owner_says('Read the requested records')
     running = c.mm_jobs()[0]['id']

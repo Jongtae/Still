@@ -487,11 +487,11 @@ class SlackSurface(DirectMessageSurface):
         with self.service.store.db() as db:
             db.execute(f'DELETE FROM {EVENTS_TABLE} WHERE created<? AND act IS NULL', (time.time() - 7 * 86400,))
             return db.execute(f'INSERT OR IGNORE INTO {EVENTS_TABLE}(key,created,act) VALUES (?,?,?)',
-                              (str(key)[:200], time.time(), json.dumps(act) if act is not None else None)).rowcount == 1
+                              (key, time.time(), json.dumps(act) if act is not None else None)).rowcount == 1
 
     def _clear_act(self, key):
         with self.service.store.db() as db:
-            db.execute(f'UPDATE {EVENTS_TABLE} SET act=NULL WHERE key=?', (str(key)[:200],))
+            db.execute(f'UPDATE {EVENTS_TABLE} SET act=NULL WHERE key=?', (key,))
 
     def _finish_act(self, key):
         self._clear_act(key)
@@ -532,16 +532,21 @@ class SlackSurface(DirectMessageSurface):
                     row = db.execute(f'SELECT act FROM {EVENTS_TABLE} WHERE key=? AND act IS NOT NULL', (key,)).fetchone()
                 if row is None:
                     continue
-                act = json.loads(row['act'])
                 self._acting.add(key)
-            if act['generation'] != generation:
-                self._finish_act(key)   # an old pairing is dropped, never retargeted (#299)
-            elif (act['kind'] == 'reaction' and act['bound']
-                  and not self.service.owner_acts.bound_to(self, act['owner'], generation, act['message_id'])):
-                self.send_owner(msg('slack.button_stale'), owner=act['owner'], generation=generation)
-                self._finish_act(key)
-            else:
-                self._apply_act(key, act)
+            try:
+                act = json.loads(row['act'])
+                if act['generation'] != generation:
+                    self._finish_act(key)   # an old pairing is dropped, never retargeted (#299)
+                elif (act['kind'] == 'reaction' and act['bound']
+                      and not self.service.owner_acts.bound_to(self, act['owner'], generation, act['message_id'])):
+                    self.send_owner(msg('slack.button_stale'), owner=act['owner'], generation=generation)
+                    self._finish_act(key)
+                else:
+                    self._apply_act(key, act)
+            except Exception as exc:
+                with self._act_lock:
+                    self._acting.discard(key)
+                LOG.warning('slack: replaying an act failed (%s)', type(exc).__name__)
 
     def _forget(self, key):
         with self.service.store.db() as db:
@@ -600,7 +605,7 @@ class SlackSurface(DirectMessageSurface):
                 return None
             name = str(event.get('reaction') or '').split('::', 1)[0]
             reacted = message_id(item.get('ts'))
-            key = 'event:' + str(payload.get('event_id') or '')
+            key = ('event:' + str(payload.get('event_id') or ''))[:200]
             if not (name and reacted):
                 return None
             act = {'kind': 'reaction', 'message_id': reacted, 'name': name, 'owner': owner, 'generation': generation,
@@ -639,7 +644,7 @@ class SlackSurface(DirectMessageSurface):
         # A markdown block's text is a string; a section's is a text object.
         shown = ''.join(block['text'].get('text') or '' if isinstance(block.get('text'), dict) else str(block.get('text') or '')
                         for block in blocks) or str(message.get('text') or '')
-        key = f"press:{ts}:{action.get('action_ts') or ''}"
+        key = f"press:{ts}:{action.get('action_ts') or ''}"[:200]
         act = {'kind': 'press', 'nid': nid, 'approve': answer == 'approve', 'pressed': pressed, 'owner': owner,
                'generation': generation, 'blocks': blocks, 'tapped': (label, shown)}
         with self._act_lock:
