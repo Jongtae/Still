@@ -463,3 +463,19 @@ jobs:
             echo "::error::milestone v$VERSION gained $open_issues open issues during the release; move them and re-run"; exit 1
           fi
           gh api -X PATCH "$milestone" -f state=closed --jq '"closed \(.html_url)"'
+
+      # #844: the preparation PR only refers to the release issue, because it
+      # merges before publication; the issue closes here, once the milestone did.
+      - name: Close the release issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          ISSUE: ${{ needs.prepare.outputs.issue }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          state="$(gh api "repos/$GITHUB_REPOSITORY/issues/$ISSUE" --jq .state)"
+          if [[ "$state" == closed ]]; then
+            echo "release issue #$ISSUE already closed"; exit 0
+          fi
+          gh issue close "$ISSUE" --repo "$GITHUB_REPOSITORY" --reason completed --comment "v$VERSION is published: https://github.com/$GITHUB_REPOSITORY/releases/tag/v$VERSION. The milestone is closed. The owner's install check (docs/release.en.md step 8) and the closeout of step 13 are not part of this run."

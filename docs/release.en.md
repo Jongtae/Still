@@ -60,7 +60,7 @@ looks reviewable and installs nothing.
 Steps 1–4 are reversible and form one release-preparation PR. Steps 5 onward
 publish. Since #1472 `.github/workflows/release.yml` performs steps 5–7 and 9–12
 after the owner approves its `release` environment; step 8 stays with the
-owner. The numbered steps below are what the workflow does and the manual
+owner, and step 13 with the preparing session and the owner. The numbered steps below are what the workflow does and the manual
 fallback when it cannot.
 
 1. **Decide the version.** Close or move the open issues of the `vX.Y.Z`
@@ -164,6 +164,25 @@ PR is accepted only when it is merged or still open (#313).
     close one that gained an open issue during the release: move that issue
     to the next milestone and re-run the job. By hand:
     `gh api -X PATCH repos/Jongtae/Still/milestones/<number> -f state=closed`.
+    The same job then closes the release issue named by the
+    `release/<issue>-vX.Y.Z` branch, with a comment naming the tag and release
+    (#844). The preparation PR only refers to that issue, because it merges
+    before publication; an issue already closed is left alone on a re-run.
+    By hand: `gh issue close <issue> --reason completed`.
+
+13. **Close out.** After the workflow finishes, before the release is reported
+    done (#844):
+    - The session that prepared the release did so in its own worktree, never
+      in the owner's main checkout. It removes its local `release/<issue>-vX.Y.Z`
+      branch and that worktree. The remote branches of the preparation, formula,
+      record and pin PRs are deleted at merge.
+    - The owner's own running Still moves to the release. An owner who runs
+      Still from the source checkout updates that checkout to `main` and
+      restarts Still; one who installed it with Homebrew does step 8. Until
+      then the running instance still runs the code it started with.
+
+    Step 8 has not been recorded as observed since v0.1.0, and the owner runs
+    Still from the source checkout, which step 8 does not cover.
 
 ## Maintenance releases
 
