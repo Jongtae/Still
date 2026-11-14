@@ -300,7 +300,7 @@ def test_run_pair_freezes_cases_pins_each_revision_and_cleans_up(tmp_path, capsy
         return output
     result = p.run_pair('base', 'candidate', ['goal-failed'], model='pinned-model',
                         seed=seed_path, live=True, max_calls=51, git_runner=git,
-                        arm_runner=arm, out=tmp_path)
+                        arm_runner=arm, out=tmp_path, requalify_attempts=1)
     assert len(requests) == 2
     assert requests[0]['cases_path'] == requests[1]['cases_path']
     assert requests[0]['max_calls'] == requests[1]['max_calls'] == 25
@@ -318,7 +318,7 @@ def test_worktree_is_cleaned_up_on_arm_failure(seed_path):
         raise RuntimeError('fixture failure')
     with pytest.raises(RuntimeError, match='fixture failure'):
         p.run_pair('base', 'candidate', ['goal-failed'], model='pinned-model', seed=seed_path,
-                   live=True, max_calls=50, git_runner=git, arm_runner=fail)
+                   live=True, max_calls=50, git_runner=git, arm_runner=fail, requalify_attempts=1)
     assert len(git.paths) == 1 and not git.paths[0].exists()
     assert git.calls[-1][3:6] == ['worktree', 'remove', '--force']
 
@@ -327,13 +327,13 @@ def test_default_plan_spends_nothing_even_with_engine_and_caps(tmp_path, seed_pa
     def forbidden(*args, **kwargs):
         pytest.fail('Plan tried to check out a revision or run an engine')
     result = p.run_pair('base', 'candidate', ['goal-failed'], model='pinned-model',
-                        seed=seed_path, max_calls=50, git_runner=forbidden, arm_runner=forbidden)
+                        seed=seed_path, max_calls=50, git_runner=forbidden, arm_runner=forbidden, requalify_attempts=1)
     assert not result['live'] and not result['owner_data']
     with pytest.raises(p.PairedError, match='--model'):
-        p.run_pair('base', 'candidate', ['goal-failed'], model='', max_calls=50)
+        p.run_pair('base', 'candidate', ['goal-failed'], model='', max_calls=50, requalify_attempts=1)
     with pytest.raises(p.PairedError, match='--max-calls'):
         p.run_pair('base', 'candidate', ['goal-failed'], model='pinned-model',
-                   seed=seed_path, live=True, max_calls=1, git_runner=forbidden)
+                   seed=seed_path, live=True, max_calls=1, git_runner=forbidden, requalify_attempts=1)
 
 
 def test_cli_requires_model_and_live_optin_and_can_compare_saved_reports(tmp_path):
@@ -356,7 +356,7 @@ def test_cli_requires_model_and_live_optin_and_can_compare_saved_reports(tmp_pat
 def test_selection_json_input_is_supported_and_unsupported_sets_are_explicit(tmp_path):
     path = tmp_path / 'selection.json'
     path.write_text(json.dumps({'selected': [{'set': 'judgments', 'id': 'goal-failed'}]}))
-    assert p._selection('@' + str(path)) == {'ids': ['goal-failed'], 'selected_not_run': []}
+    assert p._selection('@' + str(path)) == {'ids': ['goal-failed'], 'selected_not_run': [], 'cases_argument': '@' + str(path)}
     path.write_text(json.dumps({'selected': [{'set': 'recall', 'id': 'other'}]}))
     with pytest.raises(p.PairedError, match='own runners'):
         p._selection('@' + str(path))
@@ -494,17 +494,20 @@ def test_mixed_selection_runs_judgments_and_lists_unrun_sets(tmp_path, seed_path
     path.write_text(json.dumps({'selected': [
         {'set': 'judgments', 'id': 'goal-served', 'split': 'dev'},
         {'set': 'recall', 'id': 'r-one', 'split': 'heldout'},
-        {'set': 'qualification', 'id': 'q-one', 'split': None}]}))
+        {'set': 'qualification', 'id': 'qualification-parked-request-withdrawn', 'split': None}]}))
     chosen = p._selection('@' + str(path))
     def arm(request):
         cases = j.load_cases(request['cases_path'])
         result = report({c['id']: [True] * 3 for c in cases['cases']})
         result['splits'] = request['splits']
+        for row in result['rows']:
+            if request['splits'].get(row['id']) is None:
+                row['role'] = 'qualification-suite'
         return result
     result = p.run_pair('base', 'candidate', chosen, model='pinned-model', seed=seed_path,
-                        max_calls=50, live=True, git_runner=FakeGit(), arm_runner=arm)
+                        max_calls=100, live=True, git_runner=FakeGit(), arm_runner=arm, requalify_attempts=1)
     assert result['selected_not_run'] == result['plan']['selected_not_run'] == chosen['selected_not_run']
-    assert {row['set'] for row in result['selected_not_run']} == {'recall', 'qualification'}
+    assert {row['set'] for row in result['selected_not_run']} == {'recall'}
     assert all(row['reason'] == p.NOT_RUN_REASON for row in result['selected_not_run'])
 
 
@@ -531,12 +534,12 @@ def test_invalid_synthetic_manifest_fails_before_checkout(kind, seed_path):
         pytest.fail('Invalid seed tried to run')
     with pytest.raises(p.PairedError, match='manifest'):
         p.run_pair('base', 'candidate', ['goal-served'], model='pinned-model', seed=seed_path,
-                   live=True, max_calls=50, git_runner=forbidden, arm_runner=forbidden)
+                   live=True, max_calls=50, git_runner=forbidden, arm_runner=forbidden, requalify_attempts=1)
 
 
 def test_live_requires_a_seed_and_stops_sandbox_on_prepare_failure(seed_path, tmp_path):
     with pytest.raises(p.PairedError, match='--seed'):
-        p.run_pair('base', 'candidate', ['goal-served'], model='pinned-model', live=True, max_calls=50)
+        p.run_pair('base', 'candidate', ['goal-served'], model='pinned-model', live=True, max_calls=50, requalify_attempts=1)
     class FailingSandbox:
         stopped = False
         def __init__(self, root, *, seed, src):
@@ -549,7 +552,275 @@ def test_live_requires_a_seed_and_stops_sandbox_on_prepare_failure(seed_path, tm
     source = tmp_path / 'cases.json'
     source.write_text(json.dumps(cases))
     request = dict(seed=str(seed_path), checkout=str(ROOT), cases_path=str(source),
-                   model='pinned-model', max_calls=50)
+                   model='pinned-model', max_calls=50, repetitions=3)
     with pytest.raises(RuntimeError, match='fixture prepare failure'):
         p.measure_arm(request, sandbox_factory=FailingSandbox)
     assert FailingSandbox.stopped
+
+
+@pytest.mark.parametrize('field,value', [('requested_model', 'different-request'), ('observed_model', 'different-observation')])
+def test_verifier_pin_checked_against_every_observed_model(field, value):
+    a, b = report(), report()
+    entry = dict(zip(j.MODEL_FIELDS, ['subscription_cli', 'fixture-engine', 'fixture-provider',
+                                     'pinned-model', 'not reported', 'explicit']))
+    entry[field] = value
+    for arm in (a, b):
+        arm['runtime']['observed_models'] = [[entry[key] for key in j.MODEL_FIELDS]]
+    result = compare(a, b)
+    assert not result['comparable']
+    assert value in str(result['conditions']['unknown'])
+
+
+def test_verifier_model_observation_claim_is_explicit():
+    a, b = report(), report()
+    for arm in (a, b):
+        arm['runtime']['observed_models'] = [['subscription_cli', 'fixture-engine', 'fixture-provider',
+                                            'pinned-model', 'not reported', 'explicit']]
+    result = compare(a, b)
+    assert result['comparable']
+    condition = result['conditions']['candidate']['model_observation']
+    assert not condition['reported']
+    assert condition['claim'] == 'requested model pinned; observed model not reported by the CLI'
+
+
+def test_verifier_sampling_needs_three_trials_unless_both_deterministic():
+    a, b = report({'held-case': [False]}), report({'held-case': [True]})
+    a['deterministic'] = b['deterministic'] = False
+    result = compare(a, b)
+    assert result['heldout']['verdict'] == 'inconclusive'
+    assert 'three' in ' '.join(result['heldout']['reasons'])
+    a['deterministic'] = b['deterministic'] = True
+    assert compare(a, b)['heldout']['verdict'] == 'better'
+    b['deterministic'] = False
+    assert compare(a, b)['heldout']['verdict'] == 'inconclusive'
+
+
+def test_verifier_live_refuses_one_or_two_trials_before_any_checkout(seed_path):
+    for repetitions in (1, 2):
+        with pytest.raises(p.PairedError, match='three'):
+            p.run_pair('base', 'candidate', ['goal-served'], model='pinned-model', seed=seed_path,
+                       repetitions=repetitions, live=True, max_calls=50,
+                       arm_runner=lambda _: pytest.fail('spent calls'), requalify_attempts=1)
+
+
+def test_verifier_uncertain_regression_blocks_better_even_with_positive_mean():
+    a = report({'held-case': [False] * 3, 'held-other': [True] * 3})
+    b = report({'held-case': [True] * 3, 'held-other': [True, False, False]})
+    result = compare(a, b)
+    assert result['heldout']['difference'] > 0
+    assert result['heldout']['verdict'] == 'inconclusive'
+    assert 'uncertain' in ' '.join(result['heldout']['reasons'])
+
+
+def test_verifier_qualification_selection_runs_suite_and_counts_calls():
+    qualification = 'qualification-' + j.still().decision_qualification.CASE_IDS[0]
+    chosen = p._selection_rows({'selected': [dict(set='judgments', id='goal-served', split='dev'),
+                                           dict(set='qualification', id=qualification, split=None)]})
+    plan = p.run_pair('base', 'candidate', chosen, model='pinned-model', max_calls=1000, requalify_attempts=1)
+    assert not plan['selected_not_run']
+    assert qualification in plan['cases']
+    assert plan['measurement_calls'] == 2 * 3 * (2 + 11)
+    assert plan['planned_calls'] == plan['measurement_calls'] + 22
+
+
+def test_verifier_worker_stderr_and_timeout_are_exposed_and_worktree_removed(seed_path, monkeypatch):
+    request = dict(checkout=str(ROOT), planned_calls=7)
+    def failed(*args, **kwargs):
+        assert kwargs['timeout'] >= 7 * 120
+        raise subprocess.CalledProcessError(2, args[0], stderr='fixture worker reason')
+    monkeypatch.setattr(p.subprocess, 'run', failed)
+    with pytest.raises(p.PairedError, match='fixture worker reason'):
+        p._process_arm(request)
+    def timeout(*args, **kwargs):
+        raise subprocess.TimeoutExpired(args[0], kwargs['timeout'], stderr=b'fixture stalled')
+    monkeypatch.setattr(p.subprocess, 'run', timeout)
+    git = FakeGit()
+    with pytest.raises(p.PairedError, match='timed out'):
+        p.run_pair('base', 'candidate', ['goal-served'], model='pinned-model', seed=seed_path,
+                   live=True, max_calls=50, git_runner=git, requalify_attempts=1)
+    assert git.calls[-1][3:6] == ['worktree', 'remove', '--force']
+
+
+class TestMeasuredQualificationArm(ServiceFixture):
+    def test_selected_qualification_rows_are_measured_separately_from_setup(self):
+        from personal_agent.quickstart_store import QuickStore
+        def factory(folder):
+            self.store = QuickStore(folder)
+            return self.service()
+        synthetic_seed.build('fixture-seed', model='gpt-5.6-terra', factory=factory)
+        cases, splits, data = p.select_cases(['goal-served'])
+        ids = ['qualification-' + ident for ident in j.still().decision_qualification.CASE_IDS]
+        splits.update({ident: None for ident in ids})
+        source = Path(self.root) / 'cases.json'
+        source.write_text(json.dumps(cases))
+        request = dict(seed='fixture-seed', checkout=str(ROOT), commit='fixture-sha', cases_path=str(source),
+                       model='gpt-5.6-terra', max_calls=50, repetitions=3, splits=splits,
+                       partner_version=data['version'], partner_digest=p._digest(data), qualification_selected=[ids[0]])
+        result = p.measure_arm(request, factory=factory, timer=lambda: 0.)
+        measured = [row for row in result['rows'] if row['role'] == 'qualification-suite']
+        assert len(measured) == 33
+        assert {row['id'] for row in measured} == set(ids)
+        assert result['requalification']['calls'] == 11
+        assert result['summary']['total']['calls'] == 39
+        assert result['call_budget']['admitted'] == 50
+        assert p._cost(result)['calls'] == 50
+        comparison = p.compare_paired(result, result, splits=splits)
+        assert comparison['comparable']
+        assert {row['id'] for row in comparison['cases'] if row['set'] == 'qualification'} == set(ids)
+
+
+@pytest.mark.parametrize('attempts', [0, 4, -1, True])
+def test_requalify_attempt_bounds(attempts):
+    with pytest.raises(p.PairedError, match='requalify-attempts'):
+        p.run_pair('a', 'b', ['goal-served'], model='pinned-model', max_calls=100, requalify_attempts=attempts)
+
+
+def test_requalify_default_plans_two_full_suites_without_calls():
+    planned = p.run_pair('a', 'b', ['goal-served'], model='pinned-model', max_calls=100)
+    assert planned['requalify_attempts'] == 2
+    assert planned['qualification_calls_per_arm'] == 22
+    assert planned['planned_calls'] == 2 * (6 + 22)
+
+
+@pytest.mark.parametrize('unavailable_arm', ['baseline', 'candidate'])
+def test_unavailable_all_not_run_arm_is_always_incomparable(unavailable_arm):
+    a, b = report(), report()
+    unavailable = a if unavailable_arm == 'baseline' else b
+    unavailable['runtime']['active']['available'] = False
+    for row in unavailable['rows']:
+        row.update(outcome='not_run', semantic_correct=None, calls=[])
+    result = compare(a, b)
+    assert not result['comparable']
+    assert result['heldout']['verdict'] == 'incomparable'
+    assert unavailable_arm + '.route-unavailable' in result['conditions']['unknown']
+
+
+class TestRequalificationAttempts(ServiceFixture):
+    def make_request(self, *, attempts=2, cap=50, fail_every=False):
+        from personal_agent.quickstart_store import QuickStore
+        from test_decision_routes import oracle
+        def factory(folder):
+            self.store = QuickStore(folder)
+            return self.service()
+        synthetic_seed.build('fixture-seed', model='gpt-5.6-terra', factory=factory)
+        cases, splits, data = p.select_cases(['goal-served'])
+        path = Path(self.root) / 'cases.json'
+        path.write_text(json.dumps(cases))
+        count = [0]
+        def flaky(*args):
+            value, confidence = oracle(*args)
+            count[0] += 1
+            if fail_every or count[0] == 3:
+                value = not value if isinstance(value, bool) else next(v for v in args[3] if v != value)
+            return value, confidence
+        def copied(folder):
+            service = factory(folder)
+            self.runner.judges['gpt-5.6-terra'] = flaky
+            return service
+        request = dict(seed='fixture-seed', checkout=str(ROOT), commit='fixture-sha', cases_path=str(path),
+                       model='gpt-5.6-terra', max_calls=cap, repetitions=3, splits=splits,
+                       partner_version=data['version'], partner_digest=p._digest(data), requalify_attempts=attempts)
+        return request, copied
+
+    def test_failed_shipped_job_is_retried_and_only_job_can_qualify(self):
+        request, factory = self.make_request(cap=20)
+        with patch.object(j, 'pin_model', wraps=j.pin_model) as pin, patch.object(j, 'requalify_route', wraps=j.requalify_route) as job:
+            result = p.measure_arm(request, factory=factory, timer=lambda: 0.)
+        assert pin.call_count == job.call_count == 2
+        assert [(a['state'], a['calls']) for a in result['requalification']['attempts']] == [('failed', 3), ('passed', 11)]
+        assert result['requalification']['calls'] == 14
+        assert result['call_budget']['admitted'] == 20
+        assert result['summary']['total']['calls'] == 6
+        assert result['status'] == 'available'
+
+    def test_attempt_limit_and_shared_cap_never_admit_extra_calls(self):
+        request, factory = self.make_request(attempts=3, cap=2, fail_every=True)
+        result = p.measure_arm(request, factory=factory, timer=lambda: 0.)
+        assert result['status'] == 'unavailable' and result['unavailable_reason']
+        assert result['call_budget']['admitted'] == 2
+        assert len(result['requalification']['attempts']) == 2
+        assert result['requalification']['calls'] == 2
+        assert all(row['outcome'] == 'not_run' for row in result['rows'])
+        assert p.compare_paired(result, result, splits=request['splits'])['heldout']['verdict'] == 'incomparable'
+
+
+def saved_candidate(tmp_path, seed_path, *, arm='candidate', measured=True):
+    cases, splits, data = p.select_cases(['goal-served'])
+    value = report({c['id']: [True] * 3 for c in cases['cases']})
+    value.update(git_head=('b' if arm == 'candidate' else 'a') * 40, splits=splits,
+                 partner_version=data['version'], partner_digest=p._digest(data),
+                 case_set_digest=p._digest(cases), catalogue_digest=p._digest(cases['catalogue']),
+                 seed_manifest=json.loads((seed_path / 'synthetic-seed.json').read_text()),
+                 requalification={'calls': 11}, status='available')
+    value['seed_manifest_digest'] = p._digest(value['seed_manifest'])
+    if measured:
+        value['measured_at'] = '2026-11-14T00:00:00+00:00'
+    path = tmp_path / (arm + '.json')
+    path.write_text(json.dumps(value))
+    return path, value
+
+
+@pytest.mark.parametrize('saved_arm', ['baseline', 'candidate'])
+def test_reuse_runs_only_other_arm_and_preserves_old_bytes(tmp_path, seed_path, saved_arm):
+    import hashlib
+    path, saved = saved_candidate(tmp_path, seed_path, arm=saved_arm)
+    original = path.read_bytes()
+    git, requests = FakeGit(), []
+    def engine(request):
+        requests.append(request)
+        cases = j.load_cases(request['cases_path'])
+        result = report({c['id']: [True] * 3 for c in cases['cases']})
+        result.update(splits=request['splits'], requalification={'calls': 14}, git_head=request['commit'],
+                      measured_at='2026-11-14T00:01:00+00:00')
+        return result
+    result = p.run_pair('a' * 40, 'b' * 40, ['goal-served'], model='pinned-model', seed=seed_path,
+                        max_calls=28, reuse_arm={saved_arm: path}, live=True, out=tmp_path,
+                        git_runner=git, arm_runner=engine)
+    assert len(requests) == len(git.paths) == 1
+    assert requests[0]['max_calls'] == 28
+    assert result['plan']['planned_calls'] == 28
+    assert result['cost']['calls'] == 37 and result['cost']['new_calls'] == 20 and result['cost']['reused_calls'] == 17
+    assert result['reused_arm']['report_sha256'] == hashlib.sha256(original).hexdigest()
+    assert result['reused_arm']['arm'] == saved_arm
+    assert result['time_gap_seconds'] == 60
+    assert path.read_bytes() == original
+    assert result['plan']['reused_arm'] == result['reused_arm']
+    assert p.compare_paired(saved, saved, splits=saved['splits'])['heldout']['verdict'] == 'no-gain'
+
+
+@pytest.mark.parametrize('field', ['git_head', 'splits', 'partner_digest', 'case_set_digest', 'catalogue_digest',
+                                   'pinned_model', 'seed_manifest', 'seed_manifest_digest'])
+def test_reuse_mismatches_are_rejected_before_spending(tmp_path, seed_path, field):
+    path, saved = saved_candidate(tmp_path, seed_path)
+    saved[field] = 'wrong' if field != 'git_head' else 'c' * 40
+    path.write_text(json.dumps(saved))
+    def no_calls(_):
+        pytest.fail('Reuse mismatch spent calls')
+    with pytest.raises(p.PairedError, match='Reused report'):
+        p.run_pair('a' * 40, 'b' * 40, ['goal-served'], model='pinned-model', seed=seed_path,
+                   max_calls=28, reuse_arm={'candidate': path}, live=True, git_runner=FakeGit(), arm_runner=no_calls)
+
+
+def test_reuse_legacy_time_is_unknown_and_mtime_is_labelled_proxy(tmp_path, seed_path):
+    path, saved = saved_candidate(tmp_path, seed_path, measured=False)
+    plan = p.run_pair('a' * 40, 'b' * 40, ['goal-served'], model='pinned-model', seed=seed_path,
+                      max_calls=28, reuse_arm='candidate=' + str(path), git_runner=FakeGit())
+    assert plan['reused_arm']['measured_at'] is None
+    assert plan['time_gap_seconds'] is None and plan['time_gap_proxy_seconds'] >= 0
+    assert 'proxy' in plan['time_gap_source']
+
+
+def test_reuse_cli_plan_is_read_only_and_duplicate_reuse_is_refused(tmp_path, seed_path):
+    source, _ = saved_candidate(tmp_path, seed_path)
+    out = tmp_path / 'plans'
+    argv = ['--baseline', 'a' * 40, '--candidate', 'b' * 40, '--cases', 'goal-served',
+            '--seed', str(seed_path), '--model', 'pinned-model', '--requalify-attempts', '2',
+            '--max-calls', '28', '--reuse-arm', 'candidate=' + str(source), '--out', str(out)]
+    # Use a narrow validation seam for CLI parsing; separate tests exercise Git.
+    with patch.object(p, '_validate_reuse') as validate, patch.object(p, '_process_arm', side_effect=AssertionError('spent calls')):
+        with redirect_stdout(io.StringIO()):
+            assert p.main(argv) == 0
+        validate.assert_called_once()
+    assert json.loads((out / 'plan.json').read_text())['reused_arm']['arm'] == 'candidate'
+    with redirect_stderr(io.StringIO()), pytest.raises(SystemExit):
+        p.main([*argv, '--reuse-arm', 'baseline=' + str(source)])

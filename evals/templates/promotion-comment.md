@@ -8,6 +8,14 @@ Base: $base → candidate: $head
 |---|---|---|---|---|---|---|---|
 | $route | $model | $effort | $cli | $evidence | $calls / $cap | $usage | $latency |
 
+Planned calls: $planned_calls. Budget exceeded: $budget_exceeded.
+
+Newly spent calls / cap: $budget_actual / $cap. Historical reused calls: $reused_calls.
+
+Reused arm provenance and time gap: $reuse
+
+Source arm evidence and synthetic seed manifests: $evidence_details
+
 Comparable: $comparable. Conditions (both arms, differences and unknowns): $conditions
 
 Instruction/prompt/tool identities (null means unknown): $digests

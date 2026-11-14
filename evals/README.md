@@ -313,6 +313,14 @@ Pass `--seed synthetic-terra` to `agentos_eval.paired`; `--live` requires a mani
 Each arm uses `Sandbox.prepare()` to copy the seed, reads its route, pins the explicit `--model`, and runs the shipped #346 requalification job before measurement.
 Copied qualification is path-bound; its calls share the per-arm cap with selected cases. The source seed remains unchanged and copies are stopped/removed in `finally`.
 Owner snapshots remain supported separately by `judgments run --seed ... --requalify`.
+Live paired runs require at least three repetitions; comparisons with shorter sampling arms stay inconclusive unless both are explicitly deterministic fixtures.
+Selected qualification definitions expand to the full measured qualification suite, separately counted from setup requalification under the same cap.
+Promotion derives evidence class and budget from the arm reports and run plan; `--from-pair` generates rollback and rerun instructions without executing them.
+`paired --requalify-attempts N` retries the same shipped qualification job up to N times (default 2, max 3), preserving every attempt's state/calls under the shared cap.
+`--reuse-arm candidate=REPORT` (or `baseline=REPORT`) validates a saved arm against the new plan and spends only on the other arm. The report is not rewritten; provenance and actual/proxy time gaps are disclosed.
+`--max-calls` then caps only new calls, while total cost still reports both arms. #752 at three repetitions reserves 166 calls for one new arm (144 measurement + up to 22 qualification), or 332 for a full new pair.
+
+
 
 Reuse decision: **Adapt** the existing eval package. Standard-library JSON, argparse, hashing, file permissions and timing cover serialization/CLI/report needs; the shipped `ModelAdapter`, decision policy, orchestration and qualification runners cover the measured boundary. Existing sandbox, seed resolution, Git-head and report-folder conventions supply the thin eval glue. No new dependency, licence, runtime authority, data destination or production component is introduced (Still remains AGPL-3.0-only).
 

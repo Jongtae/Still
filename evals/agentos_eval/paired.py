@@ -19,7 +19,7 @@ and get a replacement under a new mapping version. Never tune these fixtures.
 Live use is explicit (--live, --seed, --model, --max-calls). Each revision runs
 in a fresh interpreter on its own copy of a manifest-validated synthetic seed, and
 the SAME frozen cases and harness. The total call cap includes qualification,
-with equal per-arm allocations (an odd final call is left unused). The plan is
+with equal allocations for new arms (a reused arm spends none of this cap). The plan is
 printed before either arm starts. These are host-visible calls, not billing or
 CLI-internal model-call counts. No model calls occur in plan/compare modes.
 
@@ -37,6 +37,8 @@ import subprocess
 import sys
 import tempfile
 import time
+from copy import deepcopy
+from datetime import datetime, timezone
 from collections import Counter, defaultdict
 from contextlib import contextmanager
 from pathlib import Path
@@ -48,6 +50,24 @@ from .sandbox import Sandbox
 PARTNER_FILE = 'evals/judgments/heldout-partners-v1.json'
 PARTNER_VERSION = 'judgment-heldout-partners/1'
 NOT_RUN_REASON = 'no runner for this set in paired.py; run it with its own runner'
+PER_CALL_CEILING_SECONDS = 120
+
+
+def _timestamp(value):
+    return datetime.fromtimestamp(value, timezone.utc).isoformat()
+
+
+def _seconds(value):
+    parsed = datetime.fromisoformat(value.replace('Z', '+00:00'))
+    if parsed.tzinfo is None:
+        raise PairedError('Measurement timestamps must include a timezone')
+    return parsed.timestamp()
+
+
+def _attempt_limit(value):
+    if type(value) is not int or not 1 <= value <= 3:
+        raise PairedError('--requalify-attempts must be an integer from 1 to 3')
+    return value
 
 
 class PairedError(ValueError):
@@ -174,6 +194,14 @@ def _conditions(report):
             result[key] = report[key]
     if 'observed_models' in report.get('runtime', {}):
         result['runtime.observed_models'] = report['runtime']['observed_models']
+    observed = report.get('runtime', {}).get('observed_models', [])
+    reported = any((entry.get('observed_model') if isinstance(entry, dict) else
+                    dict(zip(j.MODEL_FIELDS, entry)).get('observed_model')) not in (None, '', 'not reported')
+                   for entry in observed if isinstance(entry, (dict, list, tuple)))
+    result['model_observation'] = dict(reported=reported, claim=(
+        'requested model pinned; observed model reported' if reported else
+        'requested model pinned; observed model not reported by the CLI' if active.get('transport') == 'subscription_cli'
+        else 'requested model pinned; observed model not reported'))
     return result
 
 
@@ -215,7 +243,11 @@ def compare_paired(baseline_report, candidate_report, *, splits):
     Each case's spread is the larger of its arms' (max - min) repetition pass
     indicators, each 0 or 1. Difference is candidate minus baseline pass rate.
     A nonzero change is certain only if spread <= abs(difference); otherwise it
-    is uncertain-fixed/uncertain-regressed. One repetition has range 0. Equal
+    is uncertain-fixed/uncertain-regressed. Any uncertain held-out regression
+    blocks better; a certain regression is worse. Sampling arms require three
+    trials per held-out case, unless both reports explicitly declare fixture
+    arms deterministic. One repetition has range 0, but does not prove a sampled
+    gain. Equal
     rates with changed trial outcomes are mixed. Dev never enters the verdict.
     Top-level spread (maximum per-case held-out spread) and difference (mean
     held-out rate change) are DISPLAY ONLY; uncertainty is assessed per case.
@@ -232,6 +264,13 @@ def compare_paired(baseline_report, candidate_report, *, splits):
         if field in a and field in b and av != bv:
             differences.append(dict(field=field, baseline=av, candidate=bv))
     for arm, conditions in (('baseline', a), ('candidate', b)):
+        pin = conditions.get('pinned_model')
+        for index, entry in enumerate(conditions.get('runtime.observed_models', [])):
+            values = entry if isinstance(entry, dict) else dict(zip(j.MODEL_FIELDS, entry)) if isinstance(entry, (list, tuple)) else {}
+            for field in ('requested_model', 'observed_model'):
+                value = values.get(field)
+                if value != pin and not (field == 'observed_model' and value == 'not reported'):
+                    unknown.append(f'{arm}.observed_models[{index}].{field}={value!r} does not match pin {pin!r}')
         if conditions.get('pinned_model') != conditions.get('runtime.requested_model'):
             unknown.append(arm + '.verified-model-pin')
         if (conditions.get('runtime.transport') == 'subscription_cli'
@@ -239,6 +278,9 @@ def compare_paired(baseline_report, candidate_report, *, splits):
             unknown.append(arm + '.explicit-model-policy')
         if 'splits' in conditions and conditions['splits'] != splits:
             unknown.append(arm + '.verified-split-assignment')
+    for arm, report in (('baseline', before), ('candidate', after)):
+        if report.get('status') == 'unavailable' or report.get('runtime', {}).get('active', {}).get('available') is False:
+            unknown.append(arm + '.route-unavailable')
     # Reuse the existing conditions gate, including its future extra checks.
     try:
         comparison = j.compare(before, after)
@@ -260,7 +302,8 @@ def compare_paired(baseline_report, candidate_report, *, splits):
     for ident in ids:
         ar, br = indices[0].get(ident, {}), indices[1].get(ident, {})
         split = splits.get(ident)
-        if split not in ('dev', 'heldout'):
+        is_qualification = all(row.get('role') == 'qualification-suite' for row in [*ar.values(), *br.values()])
+        if split not in ('dev', 'heldout') and not (ident in splits and split is None and is_qualification):
             unknown.append('split.' + ident)
         if not ar or not br or set(ar) != set(br):
             differences.append(dict(field='trials.' + ident, baseline=sorted(ar), candidate=sorted(br)))
@@ -280,7 +323,8 @@ def compare_paired(baseline_report, candidate_report, *, splits):
                 change = 'uncertain-' + change
         else:
             change = 'mixed' if any(_passed(ar[t]) != _passed(br[t]) for t in set(ar) & set(br)) else 'same'
-        table.append(dict(id=ident, split=split, baseline=dict(passed=sum(av), trials=len(av)),
+        table.append(dict(id=ident, set='qualification' if is_qualification else 'judgments',
+                          split=split, baseline=dict(passed=sum(av), trials=len(av)),
                           candidate=dict(passed=sum(bv), trials=len(bv)), change=change,
                           difference=difference, spread=spread))
         if split == 'heldout':
@@ -289,6 +333,10 @@ def compare_paired(baseline_report, candidate_report, *, splits):
     held = [row for row in table if row['split'] == 'heldout']
     fixed = [row['id'] for row in held if row['change'] == 'fixed']
     regressed = [row['id'] for row in held if row['change'] == 'regressed']
+    uncertain_regressed = [row['id'] for row in held if row['change'] == 'uncertain-regressed']
+    deterministic = all(report.get('deterministic') is True and report['evidence_class'] == 'fixture'
+                        for report in (before, after))
+    short_trials = [row['id'] for row in held if any(row[arm]['trials'] < 3 for arm in ('baseline', 'candidate'))]
     rates = {arm: sum(row[arm]['passed'] / row[arm]['trials'] for row in held if row[arm]['trials']) / len(held)
              if held else None for arm in ('baseline', 'candidate')}
     difference = rates['candidate'] - rates['baseline'] if held else 0.0
@@ -297,8 +345,12 @@ def compare_paired(baseline_report, candidate_report, *, splits):
         verdict, reasons = 'incomparable', ['Unequal or unknown conditions; see conditions and judgment_comparison.']
     elif not held:
         verdict, reasons = 'inconclusive', ['No held-out observations; dev gains cannot establish promotion.']
+    elif short_trials and not deterministic:
+        verdict, reasons = 'inconclusive', ['Sampling arms require at least three trials per held-out case: ' + ', '.join(short_trials)]
     elif regressed:
         verdict, reasons = 'worse', ['At least one held-out case has a certain regression.']
+    elif uncertain_regressed:
+        verdict, reasons = 'inconclusive', ['An uncertain held-out regression blocks better: ' + ', '.join(uncertain_regressed)]
     elif fixed and difference >= -1e-12:
         verdict, reasons = 'better', ['At least one certain held-out fix, no certain regression, mean rate not lower.']
     elif all(row['change'] == 'same' for row in held):
@@ -310,19 +362,38 @@ def compare_paired(baseline_report, candidate_report, *, splits):
     au, bu = costs['baseline']['usage'], costs['candidate']['usage']
     if isinstance(au, dict) and isinstance(bu, dict) and set(au) == set(bu):
         usage = {key: au[key] + bu[key] for key in au}
-    return dict(comparable=comparable, conditions=dict(baseline=a, candidate=b,
+    result = dict(comparable=comparable, conditions=dict(baseline=a, candidate=b,
                 differences=differences, unknown=sorted(set(unknown))), cases=table,
                 heldout=dict(verdict=verdict, reasons=reasons, fixed=fixed, regressed=regressed,
+                             uncertain_regressed=uncertain_regressed,
                              spread=spread, difference=difference, pass_rates=rates,
                              counts=dict(Counter(row['change'] for row in held))),
                 counts=dict(Counter(row['change'] for row in table)),
                 cost=dict(calls=sum(c['calls'] for c in costs.values()), usage=usage, **costs),
                 latency={arm: _latency(result) for arm, result in (('baseline', before), ('candidate', after))},
                 evidence_class=dict(baseline=before['evidence_class'], candidate=after['evidence_class']),
+                seed_manifests=dict(baseline=before.get('seed_manifest'), candidate=after.get('seed_manifest')),
+                plan=before.get('plan') if before.get('plan') == after.get('plan') else None,
                 revisions=dict(baseline=before.get('git_head'), candidate=after.get('git_head')),
                 prompt_digests=dict(baseline=before.get('prompt_digests'), candidate=after.get('prompt_digests')),
                 selected_not_run=_not_run_rows(before.get('selected_not_run', []) + after.get('selected_not_run', [])),
                 judgment_comparison=comparison)
+    # A resumed run can keep the original saved report byte-for-byte. Recover
+    # its new plan only when that plan binds the other arm's complete JSON.
+    if result['plan'] is None:
+        for fresh, saved_arm, saved in ((before, 'candidate', after), (after, 'baseline', before)):
+            plan = fresh.get('plan') or {}
+            reused = plan.get('reused_arm') or {}
+            if reused.get('arm') == saved_arm and reused.get('report_content_digest') == _digest(saved):
+                result['plan'] = plan
+                break
+    plan = result['plan'] or {}
+    if plan.get('reused_arm'):
+        reused = plan['reused_arm']
+        result.update(reused_arm=reused, **_arm_gap(reused, before, after))
+        result['cost'].update(reused_calls=costs[reused['arm']]['calls'],
+                              new_calls=costs['candidate' if reused['arm'] == 'baseline' else 'baseline']['calls'])
+    return result
 
 
 @contextmanager
@@ -373,6 +444,8 @@ def measure_arm(request, *, factory=None, timer=time.monotonic, sandbox_factory=
     """
     if not request.get('model'):
         raise PairedError('An explicit model is required')
+    if not factory and request.get('repetitions', 0) < 3:
+        raise PairedError('Live sampling arms require at least three repetitions')
     seed, manifest = synthetic_manifest(request.get('seed'))
     if request.get('seed_manifest_digest') and request['seed_manifest_digest'] != _digest(manifest):
         raise PairedError('Synthetic seed manifest changed after planning')
@@ -380,6 +453,7 @@ def measure_arm(request, *, factory=None, timer=time.monotonic, sandbox_factory=
     j.load_still(src)
     cases = j.load_cases(request['cases_path'])
     cap = j.CallCap(request['max_calls'])
+    attempt_limit = _attempt_limit(request.get('requalify_attempts', 2))
     sandbox = sandbox_factory(eval_home() / 'sandboxes', seed=seed, src=src)
     try:
         data = sandbox.prepare()
@@ -399,10 +473,24 @@ def measure_arm(request, *, factory=None, timer=time.monotonic, sandbox_factory=
             audit.append(dict(record))
         service.record_decision = capture
         j.pin_model(service, request['model'])
-        qualification = j.requalify_route(service, cap)
+        attempts = []
+        for attempt in range(attempt_limit):
+            if attempt:
+                # Reuse the shipped pin seam to clear the failed job's cache.
+                # Only the same shipped job can qualify the unchanged model.
+                j.pin_model(service, request['model'])
+            qualification = j.requalify_route(service, cap)
+            attempts.append(dict(qualification))
+            if j.effective_runtime(service)['active'].get('available') is True:
+                break
+            if qualification.get('state') != 'failed' or cap.refused or cap.used >= cap.max_calls:
+                break
+        qualification = dict(qualification, attempts=attempts, calls=sum(a['calls'] for a in attempts),
+                             attempted=any(a.get('attempted') for a in attempts))
         # The update job restores its own audit wrapper; capture remains installed.
         rows = j.run(cases, service.decision_judge, service.decision_engine, cap=cap, audit=audit,
-                     scope=service.work_decision_scope, roles=sorted({c['role'] for c in cases['cases']}),
+                     scope=service.work_decision_scope, roles=request.get('roles') or sorted(
+                         {c['role'] for c in cases['cases']} | ({'qualification-suite'} if request.get('qualification_selected') else set())),
                      trials=request['repetitions'], timer=timer)
         runtime = j.effective_runtime(service, audit)
         result = j.report(rows, dict(src=src, git_head=request['commit'],
@@ -414,7 +502,15 @@ def measure_arm(request, *, factory=None, timer=time.monotonic, sandbox_factory=
                       catalogue_digest=_digest(cases['catalogue']), splits=request['splits'],
                       partner_version=request['partner_version'], partner_digest=request['partner_digest'],
                       seed_manifest=manifest, seed_manifest_digest=_digest(manifest),
+                      deterministic=False, plan=request.get('plan'),
+                      measured_at=_timestamp(time.time()),
                       selected_not_run=request.get('selected_not_run', []))
+        if runtime['active'].get('available') is not True:
+            result.update(status='unavailable', unavailable_reason=(
+                f'Route unavailable after {len(attempts)} of {attempt_limit} requalification attempts; '
+                f'last state: {qualification.get("state")}; budget refused: {cap.refused}'))
+        else:
+            result['status'] = 'available'
         return result
     finally:
         sandbox.stop()
@@ -426,40 +522,158 @@ def _process_arm(request):
         source, target = Path(folder) / 'request.json', Path(folder) / 'report.json'
         source.write_text(json.dumps(request), encoding='utf-8')
         env = dict(os.environ, PYTHONPATH=str(REPO / 'evals'))
-        subprocess.run([sys.executable, '-m', 'agentos_eval.paired', '--worker', str(source), str(target)],
-                       cwd=request['checkout'], env=env, check=True, capture_output=True, text=True)
+        calls = request.get('planned_calls', request.get('max_calls', 0))
+        timeout = max(1, calls) * PER_CALL_CEILING_SECONDS + 60
+        try:
+            subprocess.run([sys.executable, '-m', 'agentos_eval.paired', '--worker', str(source), str(target)],
+                           cwd=request['checkout'], env=env, check=True, capture_output=True, text=True, timeout=timeout)
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+            tail = exc.stderr or ''
+            if isinstance(tail, bytes):
+                tail = tail.decode('utf-8', errors='replace')
+            detail = (f'timed out after {timeout}s ({calls} planned calls × {PER_CALL_CEILING_SECONDS}s + 60s startup)'
+                      if isinstance(exc, subprocess.TimeoutExpired) else f'exited with status {exc.returncode}')
+            raise PairedError(f'Paired worker {detail}; stderr tail:\n{tail[-4000:]}') from exc
         return json.loads(target.read_text(encoding='utf-8'))
 
 
+def _reuse_input(value):
+    if not value:
+        return None
+    if isinstance(value, str):
+        arm, sep, name = value.partition('=')
+        if not sep:
+            raise PairedError('--reuse-arm must be baseline=REPORT or candidate=REPORT')
+    else:
+        if not isinstance(value, dict) or len(value) != 1:
+            raise PairedError('Exactly one arm can be reused')
+        arm, name = next(iter(value.items()))
+    if arm not in ('baseline', 'candidate') or not str(name):
+        raise PairedError('--reuse-arm must be baseline=REPORT or candidate=REPORT')
+    path = Path(name).expanduser().resolve()
+    content = path.read_bytes()
+    report = json.loads(content)
+    measured_at = report.get('measured_at')
+    if measured_at is not None:
+        _seconds(measured_at)
+    metadata = dict(arm=arm, report_path=str(path), report_sha256=hashlib.sha256(content).hexdigest(),
+                    report_content_digest=_digest(report), measured_at=measured_at,
+                    report_modified_at=_timestamp(path.stat().st_mtime),
+                    measured_at_source='report' if measured_at else 'unavailable; file mtime is a proxy only')
+    return report, metadata
+
+
+def _arm_gap(reused, baseline=None, candidate=None, *, now=None):
+    fresh = candidate if reused['arm'] == 'baseline' else baseline
+    new_time = fresh.get('measured_at') if fresh else None
+    end = _seconds(new_time) if new_time else time.time() if now is None else now
+    if reused['measured_at']:
+        gap = abs(end - _seconds(reused['measured_at']))
+        source = 'arm completion timestamps' if new_time else 'planning time versus saved arm completion; provisional'
+        proxy = None
+    else:
+        gap = None
+        proxy = abs(end - _seconds(reused['report_modified_at']))
+        source = 'measurement time unavailable; report-file-mtime proxy only'
+    return dict(time_gap_seconds=gap, time_gap_proxy_seconds=proxy, time_gap_source=source)
+
+
+def _validate_reuse(report, metadata, *, ref, root, git_runner, cases, splits, data, model, manifest, repetitions, effort):
+    def resolve(value):
+        return git_runner(['git', '-C', str(root), 'rev-parse', '--verify', '--end-of-options', value + '^{commit}'],
+                          check=True, capture_output=True, text=True).stdout.strip()
+    saved = report.get('git_head')
+    if not isinstance(saved, str) or not saved or any(c not in '0123456789abcdef' for c in saved):
+        raise PairedError('Reused report must name an observed Git commit SHA')
+    if resolve(saved) != resolve(ref):
+        raise PairedError('Reused report git_head does not resolve to the selected ref')
+    expected = dict(splits=splits, partner_digest=_digest(data), partner_version=data['version'],
+                    case_set_digest=_digest(cases), case_set_version=cases['version'],
+                    catalogue_digest=_digest(cases['catalogue']), pinned_model=model,
+                    seed_manifest=manifest, seed_manifest_digest=_digest(manifest))
+    for field, value in expected.items():
+        if report.get(field) != value:
+            raise PairedError('Reused report does not match new plan: ' + field)
+    active = report.get('runtime', {}).get('active', {})
+    if active.get('requested_model') != model or active.get('model_policy') != 'explicit':
+        raise PairedError('Reused report model pin does not match new plan')
+    if effort is not None and active.get('effort') != effort:
+        raise PairedError('Reused report effort does not match new plan')
+    for entry in report.get('runtime', {}).get('observed_models', []):
+        fields = entry if isinstance(entry, dict) else dict(zip(j.MODEL_FIELDS, entry))
+        if fields.get('requested_model') != model or fields.get('observed_model') not in (model, 'not reported'):
+            raise PairedError('Reused report observed model contradicts the pin')
+    trials = defaultdict(list)
+    for row in report['rows']:
+        trials[row['id']].append(row.get('trial', 1))
+    if set(trials) != set(splits) or any(sorted(values) != list(range(1, repetitions + 1)) for values in trials.values()):
+        raise PairedError('Reused report cases/repetitions do not match new plan')
+
+
 def run_pair(baseline, candidate, case_ids, *, model, repetitions=3, max_calls,
-             seed=None, effort=None, root=REPO, live=False, out=None,
+             seed=None, effort=None, root=REPO, live=False, out=None, requalify_attempts=2, reuse_arm=None,
              git_runner=subprocess.run, arm_runner=None):
     """Plan or run frozen cases; injected git/arm runners never imply live evidence."""
+    requalify_attempts = _attempt_limit(requalify_attempts)
+    reuse = _reuse_input(reuse_arm)
     if not isinstance(model, str) or not model.strip():
         raise PairedError('--model is required (no route-selected fallback)')
     if type(repetitions) is not int or repetitions < 1 or type(max_calls) is not int or max_calls < 0:
         raise PairedError('Positive repetitions and a nonnegative total max-calls are required')
+    if live and repetitions < 3:
+        raise PairedError('Live sampling arms require at least three repetitions')
     selected = _selection_rows(case_ids) if isinstance(case_ids, dict) and 'selected' in case_ids else (
         case_ids if isinstance(case_ids, dict) else dict(ids=case_ids, selected_not_run=[]))
-    cases, splits, data = select_cases(selected['ids'], root=root)
+    qualification_ids = ['qualification-' + ident for ident in j.still().decision_qualification.CASE_IDS]
+    qualification_selected = sorted(set(selected['ids']) & set(qualification_ids))
+    judgment_ids = [ident for ident in selected['ids'] if ident not in qualification_ids]
+    if judgment_ids:
+        cases, splits, data = select_cases(judgment_ids, root=root)
+        roles = {c['role'] for c in cases['cases']}
+    elif qualification_selected:
+        data = load_partners(root=root)
+        cases, splits, roles = j.load_cases(Path(root) / data['case_sets'][0]), {}, set()
+    else:
+        raise PairedError('No judgment or qualification rows selected')
+    if qualification_selected:
+        # Public j.run includes the complete suite, exactly as judgments.live_run.
+        # Expand and budget it explicitly rather than masking unselected calls.
+        splits.update({ident: None for ident in qualification_ids})
+        roles.add('qualification-suite')
     # Use public plan call counts, excluding its automatically appended qualification
     # suite. That suite is setup overhead, reported separately under the SAME cap.
-    roles = {c['role'] for c in cases['cases']}
     counts = j.plan(cases)['roles']
     per_arm = sum(v['max_calls'] for role, v in counts.items() if role in roles) * repetitions
     qualification_calls = counts.get('qualification-suite', {}).get('max_calls', 0)
+    new_arms = 1 if reuse else 2
+    per_arm_cap = max_calls // new_arms
     planned = dict(model=model, seed=str(seed) if seed else None, effort=effort, baseline=baseline, candidate=candidate,
                    selected_not_run=selected['selected_not_run'],
+                   cases_argument=selected.get('cases_argument', ','.join(sorted(set(selected['ids'])))),
+                   qualification_selected=qualification_selected,
+                   qualification_measured=qualification_ids if qualification_selected else [],
                    cases=sorted(splits), splits=splits, repetitions=repetitions,
-                   measurement_calls=2 * per_arm, max_calls=max_calls, max_calls_per_arm=max_calls // 2,
-                   planned_calls=2 * (per_arm + qualification_calls),
-                   qualification_calls_per_arm=qualification_calls,
+                   measurement_calls=new_arms * per_arm, max_calls=max_calls, max_calls_per_arm=per_arm_cap,
+                   planned_calls=new_arms * (per_arm + qualification_calls * requalify_attempts),
+                   requalify_attempts=requalify_attempts, new_arms=new_arms,
+                   qualification_calls_per_arm=qualification_calls * requalify_attempts,
+                   qualification_calls_per_attempt=qualification_calls,
                    qualification='Estimate from current suite; revision changes may differ. Included in max_calls.',
-                   unused_call_allowance=max_calls % 2, owner_data=False, live=live)
+                   unused_call_allowance=max_calls % new_arms, owner_data=False, live=live)
+    seed_path, manifest = (synthetic_manifest(seed) if live or reuse else (None, None))
+    if reuse:
+        saved_report, reused = reuse
+        _validate_reuse(saved_report, reused, ref=baseline if reused['arm'] == 'baseline' else candidate,
+                        root=root, git_runner=git_runner, cases=cases, splits=splits, data=data,
+                        model=model, manifest=manifest, repetitions=repetitions, effort=effort)
+        planned.update(reused_arm=reused, **_arm_gap(reused))
+    if out:
+        planned['report_paths'] = {arm: str((Path(out) / (arm + '.json')).resolve()) for arm in ('baseline', 'candidate')}
+        if reuse:
+            planned['report_paths'][reused['arm']] = reused['report_path']
     print('Planned calls: ' + json.dumps(planned, sort_keys=True), flush=True)
     if not live:
         return planned
-    seed_path, manifest = synthetic_manifest(seed)
     if max_calls < planned['planned_calls']:
         raise PairedError('--max-calls cannot cover the planned measurement calls (plus qualification overhead)')
     reports = {}
@@ -467,17 +681,28 @@ def run_pair(baseline, candidate, case_ids, *, model, repetitions=3, max_calls,
         case_path = Path(folder) / 'cases.json'
         case_path.write_text(json.dumps(cases, ensure_ascii=False), encoding='utf-8')
         for arm, ref in (('baseline', baseline), ('candidate', candidate)):
+            if reuse and arm == reused['arm']:
+                reports[arm] = deepcopy(saved_report)
+                continue
             with revision_worktree(ref, root=root, git_runner=git_runner) as (checkout, commit):
                 request = dict(checkout=str(checkout), commit=commit, cases_path=str(case_path), model=model,
                                seed=str(seed_path), seed_manifest_digest=_digest(manifest), effort=effort,
-                               selected_not_run=selected['selected_not_run'], repetitions=repetitions, max_calls=max_calls // 2,
+                               selected_not_run=selected['selected_not_run'], repetitions=repetitions, max_calls=per_arm_cap, requalify_attempts=requalify_attempts,
+                               qualification_selected=qualification_selected, roles=sorted(roles), plan=planned,
+                               planned_calls=per_arm + qualification_calls * requalify_attempts,
                                splits=splits, partner_version=data['version'], partner_digest=_digest(data), live=True)
                 reports[arm] = (arm_runner or _process_arm)(request)
                 reports[arm]['selected_not_run'] = selected['selected_not_run']
+                reports[arm]['plan'] = planned
+                reports[arm].setdefault('measured_at', _timestamp(time.time()))
             if out:
                 _write_json(Path(out) / (arm + '.json'), reports[arm])
     result = compare_paired(reports['baseline'], reports['candidate'], splits=splits)
     result['plan'] = planned
+    if reuse:
+        result.update(reused_arm=reused, **_arm_gap(reused, reports['baseline'], reports['candidate']))
+        result['cost'].update(reused_calls=result['cost'][reused['arm']]['calls'],
+                              new_calls=result['cost']['candidate' if reused['arm'] == 'baseline' else 'baseline']['calls'])
     if out:
         _write_json(Path(out) / 'comparison.json', result)
     return result
@@ -494,19 +719,19 @@ def _not_run_rows(rows):
 
 
 def _selection_rows(data):
-    ids = sorted({row['id'] for row in data['selected'] if row['set'] == 'judgments'})
+    ids = sorted({row['id'] for row in data['selected'] if row['set'] in ('judgments', 'qualification')})
     if not ids:
-        raise PairedError('No judgment rows selected; run the selected sets with their own runners')
-    return dict(ids=ids, selected_not_run=_not_run_rows([row for row in data['selected'] if row['set'] != 'judgments']))
+        raise PairedError('No judgment or qualification rows selected; run the selected sets with their own runners')
+    return dict(ids=ids, selected_not_run=_not_run_rows([row for row in data['selected'] if row['set'] not in ('judgments', 'qualification')]))
 
 
 def _selection(value):
     if value.startswith('@'):
-        return _selection_rows(json.loads(Path(value[1:]).read_text(encoding='utf-8')))
+        return dict(_selection_rows(json.loads(Path(value[1:]).read_text(encoding='utf-8'))), cases_argument=value)
     ids = sorted({ident.strip() for ident in value.split(',') if ident.strip()})
     if not ids:
         raise PairedError('No judgment rows selected')
-    return dict(ids=ids, selected_not_run=[])
+    return dict(ids=ids, selected_not_run=[], cases_argument=value)
 
 
 def main(argv=None):
@@ -518,13 +743,17 @@ def main(argv=None):
     parser.add_argument('--seed', help='synthetic seed name under eval_home()/seeds; required with --live')
     parser.add_argument('--effort')
     parser.add_argument('--repetitions', type=int, default=3)
-    parser.add_argument('--max-calls', type=int, help='hard total cap including qualification, split equally')
+    parser.add_argument('--max-calls', type=int, help='hard cap for newly spent calls, including requalification')
+    parser.add_argument('--requalify-attempts', type=int, default=2, choices=range(1, 4), help='shipped-job attempts per new arm (default 2)')
+    parser.add_argument('--reuse-arm', action='append', help='baseline=REPORT or candidate=REPORT; validate and spend only on the other arm')
     parser.add_argument('--out', type=Path)
     parser.add_argument('--live', action='store_true', help='opt in to spending the disclosed call budget')
     parser.add_argument('--compare', nargs=2, metavar=('BASELINE_JSON', 'CANDIDATE_JSON'))
     parser.add_argument('--splits', type=Path, help='id-to-split JSON for external reports')
     parser.add_argument('--worker', nargs=2, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
+    if args.reuse_arm and len(args.reuse_arm) != 1:
+        parser.error('Exactly one --reuse-arm may be supplied')
     try:
         if args.worker:
             # An internal worker also requires explicit live intent in its request.
@@ -542,7 +771,8 @@ def main(argv=None):
                 parser.error('--baseline, --candidate, --cases, --model, --max-calls and --out are required')
             result = run_pair(args.baseline, args.candidate, _selection(args.cases), model=args.model,
                               seed=args.seed, effort=args.effort, repetitions=args.repetitions,
-                              max_calls=args.max_calls, out=args.out, live=args.live)
+                              max_calls=args.max_calls, out=args.out, live=args.live,
+                              requalify_attempts=args.requalify_attempts, reuse_arm=args.reuse_arm[0] if args.reuse_arm else None)
         if args.out:
             _write_json(args.out / ('comparison.json' if args.compare or args.live else 'plan.json'), result)
         print(json.dumps(result, ensure_ascii=False, indent=2))
