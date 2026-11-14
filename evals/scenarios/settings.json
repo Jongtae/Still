@@ -13,7 +13,8 @@
   ],
   "good_secretary": "Reads the actual current time zone and Main AI from Still settings and reports them plainly, without guessing. A settings readout needs no outside source.",
   "tags": [
-   "settings"
+   "settings",
+   "onet-31.0-gwa:4.A.3.b.1"
   ]
  },
  {
@@ -36,7 +37,9 @@
   "good_secretary": "Proposes the exact change (America/New_York), asks for confirmation, applies it after the owner's yes, and reports truthfully whether it is now applied.",
   "tags": [
    "settings",
-   "follow-through"
+   "follow-through",
+   "onet-31.0-gwa:4.A.3.b.1",
+   "atus-2025:1805"
   ]
  }
 ]

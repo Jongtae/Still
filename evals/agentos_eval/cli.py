@@ -9,8 +9,8 @@
 
 Run from the ``evals`` folder (or with it on ``PYTHONPATH``).  ``sweep`` and
 ``report`` need the eval extra (``evals/requirements.txt``); a ``--world``
-sweep needs no Inspect or judge, only the world's own package; the rest is
-standard library.
+sweep needs no Inspect or judge, only the world's own package. Coverage
+validation uses the optional schema-validation extra; the rest is standard library.
 """
 import argparse
 import json
@@ -293,6 +293,28 @@ def cmd_continuity(args):
         print(json.dumps(result, indent=2))
 
 
+def cmd_coverage(args):
+    from .coverage import bundled_scenarios, coverage_markdown, load_map, validate
+    try:
+        cmap = load_map()
+        loaded = bundled_scenarios(cmap.root)
+        problems = validate(cmap, loaded)
+    except (OSError, ValueError) as exc:
+        print(f'Coverage map: {exc}', file=sys.stderr)
+        return 1
+    if problems:
+        print('\n'.join(problems), file=sys.stderr)
+        return 1
+    markdown = coverage_markdown(cmap, loaded, heading_level=1)
+    if args.write:
+        args.write.write_text(markdown, encoding='utf-8')
+    if args.check:
+        print('Task coverage map valid.')
+    elif not args.write:
+        print(markdown, end='')
+    return 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog='agentos_eval', description=__doc__.split('\n\n')[0])
     sub = parser.add_subparsers(dest='command', required=True)
@@ -322,6 +344,9 @@ def main(argv=None):
     sweep.add_argument('--world', default='', help='run the world scenarios of this world (e.g. appworld), on Codex')
     rep = sub.add_parser('report', help='rebuild the trend report from an Inspect log')
     rep.add_argument('--log', required=True)
+    coverage = sub.add_parser('coverage', help='validate or render the task coverage map (no live runs)')
+    coverage.add_argument('--check', action='store_true')
+    coverage.add_argument('--write', type=Path)
     sub.add_parser('budget', help="show today's judge spend")
     judgments = sub.add_parser('judgments', help='measure shipped judgments (#42)')
     actions = judgments.add_subparsers(dest='action', required=True)
@@ -369,7 +394,8 @@ def main(argv=None):
     c2labels.add_argument('ids', nargs='*', help='additional scenario ids already in the report')
     args = parser.parse_args(argv)
     handler = {'snapshot': cmd_snapshot, 'scenarios': cmd_scenarios, 'sweep': cmd_sweep, 'report': cmd_report,
-               'budget': cmd_budget, 'judgments': cmd_judgments, 'continuity': cmd_continuity}[args.command]
+               'budget': cmd_budget, 'judgments': cmd_judgments, 'continuity': cmd_continuity,
+               'coverage': cmd_coverage}[args.command]
     return handler(args) or 0
 
 

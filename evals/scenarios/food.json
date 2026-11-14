@@ -19,7 +19,9 @@
   "good_secretary": "Names specific rest areas on the Gyeongbu route in driving order, specific signature menus with prices and where that information came from, and flags prices/opening as possibly outdated if not verified.",
   "tags": [
    "food",
-   "route"
+   "route",
+   "atus-2025:1811",
+   "atus-2025:1101"
   ]
  },
  {
@@ -47,7 +49,9 @@
   "tags": [
    "food",
    "route",
-   "correction"
+   "correction",
+   "atus-2025:1811",
+   "atus-2025:1101"
   ]
  },
  {
@@ -81,7 +85,8 @@
   "tags": [
    "food",
    "workplace",
-   "memory"
+   "memory",
+   "atus-2025:1101"
   ]
  },
  {
@@ -105,7 +110,8 @@
   "tags": [
    "food",
    "context",
-   "follow-through"
+   "follow-through",
+   "atus-2025:1101"
   ]
  },
  {
@@ -127,7 +133,8 @@
   "good_secretary": "Acknowledges dinner already happened, uses the recent conversation to avoid repeating sushi at tomorrow's lunch, and does not save a today-only event as a lasting profile fact.",
   "tags": [
    "food",
-   "context"
+   "context",
+   "atus-2025:1101"
   ]
  }
 ]

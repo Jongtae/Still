@@ -17,7 +17,8 @@
   "good_secretary": "Before working, says in one or two natural sentences what it is going to do (and the one assumption that matters, such as which nights), in one register, without restating the request as a form or listing routine steps. While working, speaks up only if it found something worth hearing before the answer. The answer compares three concrete places with sources and does not repeat what it already said.",
   "tags": [
    "presence",
-   "telegram"
+   "telegram",
+   "atus-2025:1812"
   ]
  },
  {
@@ -36,7 +37,8 @@
   "good_secretary": "Answers warmly in one short reply. Sends nothing before it: no preview, no plan, no status.",
   "tags": [
    "presence",
-   "telegram"
+   "telegram",
+   "atus-2025:1201"
   ]
  },
  {
@@ -57,7 +59,8 @@
   "good_secretary": "If it says anything before the answer, it is one short natural line that takes the task on, not a numbered plan. The answer gives tomorrow's commute-time weather and fine dust with sources and a clear yes or no for the umbrella and the mask.",
   "tags": [
    "presence",
-   "telegram"
+   "telegram",
+   "atus-2025:1805"
   ]
  }
 ]

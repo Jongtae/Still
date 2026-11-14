@@ -255,6 +255,21 @@ def render_markdown(report):
             failed = [name for name, ok in row['still'].items() if not ok]
             lines.append(f"| {row['scenario']} | {row['name']} {row['task_id']} ({row['task_set']}) | {tests} | "
                          f"{approvals} | {row['payments_allowed']} | {'all hold' if not failed else 'failed: ' + ', '.join(failed)} |")
+    from .coverage import bundled_scenarios, coverage_markdown, load_map, validate
+    try:
+        cmap = load_map()
+        scenarios = bundled_scenarios(cmap.root)
+        problems = validate(cmap, scenarios)
+    except FileNotFoundError:
+        lines += ['', '## Task coverage map', '', 'Map not available in this checkout.']
+    except (OSError, ValueError) as exc:
+        lines += ['', '## Task coverage map', '', f'Map validation failed: {exc}']
+    else:
+        if problems:
+            lines += ['', '## Task coverage map', '', 'Map validation failed:', '']
+            lines += [f'- {problem}' for problem in problems]
+        else:
+            lines += ['', coverage_markdown(cmap, scenarios).rstrip()]
     return '\n'.join(lines) + '\n'
 
 
