@@ -341,6 +341,8 @@ SHOULD_MASK += [
     ('h_tab_bearer', 'Authorization:\tBearer\tabc123', 'abc123'),
     ('h_tab_basic', 'Authorization: Basic\tdTpw', 'dTpw'),
     ('q_single_amp', "password='&hunter2'", '&hunter2'),
+    ('e_shell_escaped_amp', 'password=\\&hunter2', 'hunter2'),
+    ('e_shell_escaped_inner', 'DB_PASSWORD=hunter\\;secret run', 'secret'),
     ('q_inner_amp', "password='hunter&secret'", 'secret'),
     ('q_double_semicolon', 'api_key = "ab;cd;ef"', 'cd;ef'),
     ('s_api_key_short_eq', 'https://mcp.example/api_key=abcdef', 'abcdef'),

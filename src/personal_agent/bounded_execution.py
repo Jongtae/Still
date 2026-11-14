@@ -88,10 +88,12 @@ _CREDENTIAL_NAME = (r'(?:[a-z][a-z0-9]{0,30}[_-]){0,4}(?:api[_-]?key|access[_-]?
                     r'refresh[_-]?token|id[_-]?token|secret(?:[_-]access[_-]key)?|'
                     r'password|passwd|token|auth[_-]?token|authorization|sessionid|session|accountkey|otp)|pgpassword')
 _PLACEHOLDER = r'(?!your[_-]|null\b|true\b|false\b|<|\$(?:[A-Z_][A-Z0-9_]*\b|\{[^}]{1,128}\}))'
-_VALUE = r"[^\s\\\"',};&<>]{1,8192}"
+# A shell escape (``\&``, ``\;``) is part of an unquoted value (Codex review on #839); the two branches are
+# disjoint, so the scan stays linear.
+_VALUE = r"(?:\\[^\s]|[^\s\\\"',};&<>]){1,8192}+"
 # In ambiguous prose, require a numeric/mixed/punctuated value. Long letters
 # are tokens only in a credential context, never a standalone entropy rule.
-_SHAPED_VALUE = (r'(?=[^\s\\\"\',};&<>]{0,8192}(?:[0-9]|[a-z][A-Z]|[A-Za-z][_./+!=@-][A-Za-z0-9]))' + _VALUE)
+_SHAPED_VALUE = (r'(?=(?:\\[^\s]|[^\s\\\"\',};&<>]){0,8192}?(?:[0-9]|[a-z][A-Z]|[A-Za-z][_./+!=@-][A-Za-z0-9]|\\[^\s]))' + _VALUE)
 # An explicit ``Authorization: <scheme> <value>`` header with a known scheme is a credential context for
 # any value (Codex review on #839): the IANA HTTP Authentication Scheme Registry plus common unregistered
 # schemes.  An unknown scheme word still needs a credential-shaped value, so header-like prose survives.
