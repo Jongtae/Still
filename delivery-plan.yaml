@@ -47,7 +47,10 @@
       "CLI-UPDATE-01",
       "RESPONSIVE-01",
       "FRONTIER-SPEC-01",
-      "FRONTIER-EVAL-01"
+      "FRONTIER-EVAL-01",
+      "FRONTIER-PROVENANCE-01",
+      "FRONTIER-RECOVERY-01",
+      "FRONTIER-CONTEXT-01"
     ]
   },
   "iterations": [
@@ -914,7 +917,7 @@
       "tests": [
         "PYTHONPATH=src python3 -m pytest -q tests/test_fresh_delivery_plan.py"
       ],
-      "summary": "Finite first wave: the #823 specification is complete on merge of its own PR, then the integration selection advances to #824 evaluation-condition comparisons. The disjoint evaluation worktree was authorized alongside specification authoring. Subsequent units remain reserved until dependencies, concrete contracts and recorded selection are satisfied.",
+      "summary": "First wave (#823, #824) and the units #825\u2013#827 are complete on the merge of their own PRs. M1 wave 2 selects #841, #722, #842 and #843 as parent-controlled units in disjoint parallel lanes; each unit's own PR records it complete on merge. Completing wave 2 selects no successor: M2 (#403 with #827's experiments) needs its own selection.",
       "depends_on": [],
       "completed_substeps": {
         "FRONTIER-SPEC-01": {
@@ -926,6 +929,27 @@
           "issue": 824,
           "status": "complete-on-merge",
           "decision": "Judgment reports fingerprint validated case content, the worker catalogue and selected qualification definitions, record reasoning effort, and comparisons disclose changed or unverified conditions; historical reports stay readable. This entry is conditional on the #824 PR merging; GitHub records its actual integration status."
+        },
+        "FRONTIER-PROVENANCE-01": {
+          "issue": 825,
+          "status": "complete-on-merge",
+          "pull_request": 835,
+          "merge_commit": "f264f1e2fbf8c76908d9911137abfd8f2ad25822",
+          "decision": "Each worker attempt records the digests of the instructions and offered tool definitions it actually received, what a CLI bridge actually served, and whether the input was prepared, sent, not sent or unknown; what Still cannot observe is marked unavailable. Function-level ownership isolated it from #818\u2013#820, so it merged without waiting for #819/#820."
+        },
+        "FRONTIER-RECOVERY-01": {
+          "issue": 826,
+          "status": "complete-on-merge",
+          "pull_request": 831,
+          "merge_commit": "7c0417f32bad29c21ab3b6daafda9cfa56a6541a",
+          "decision": "docs/recovery-matrix.en.md records each Work state at each interruption point with its evidence class, and a fixture spike holds current behaviour. Adopt stdlib sqlite3 transactional receipts rather than LangGraph or Temporal; the selected next change is F-X4 (rows X4, X9), with F-W4 and F-P4 named next. #821 was reconciled with PR #816 on its own lane before the follow-up was filed."
+        },
+        "FRONTIER-CONTEXT-01": {
+          "issue": 827,
+          "status": "complete-on-merge",
+          "pull_request": 832,
+          "merge_commit": "6ea42090a7e5b28865a4a1d3a792ae8bbb1e78e4",
+          "decision": "docs/outcome-experiments.en.md specifies recall and continuing-responsibility experiments over existing memory and preparation primitives, with a lexical baseline, held-out cases and approvals counted apart from avoidable interventions; evals/agentos_eval/recall_pairs.py is development tooling only. Runtime recall work stays on #403 (M2)."
         }
       }
     },
@@ -962,9 +986,9 @@
       "issue": 825,
       "milestone": "frontier-delivery",
       "kind": "implementation",
-      "activation_status": "reserved",
+      "activation_status": "complete-on-merge",
       "contract": "frontier-delivery.en.md",
-      "summary": "Per-attempt instruction and offered-tool-schema provenance after the overlapping #818/#819/#820 changes are integrated or explicitly isolated.",
+      "summary": "Per-attempt instruction and offered-tool-schema provenance after the overlapping #818/#819/#820 changes are integrated or explicitly isolated. Complete on the merge of PR #835.",
       "depends_on": [
         "FRONTIER-SPEC-01"
       ],
@@ -972,8 +996,7 @@
         818,
         819,
         820
-      ],
-      "selection_rule": "Reserved. Record dependency disposition, exclusive file ownership and an explicit program selection before execution."
+      ]
     },
     {
       "id": "FRONTIER-RECOVERY-01",
@@ -981,9 +1004,9 @@
       "issue": 826,
       "milestone": "frontier-delivery",
       "kind": "investigation",
-      "activation_status": "reserved",
+      "activation_status": "complete-on-merge",
       "contract": "frontier-delivery.en.md",
-      "summary": "Executable recovery matrix and compatibility spike over current Work receipts, deadlines, epochs, owner corrections and external effects. Follow-on runtime implementation requires its own bounded issue.",
+      "summary": "Executable recovery matrix and compatibility spike over current Work receipts, deadlines, epochs, owner corrections and external effects. Follow-on runtime implementation requires its own bounded issue. Complete on the merge of PR #831.",
       "depends_on": [
         "FRONTIER-SPEC-01"
       ],
@@ -999,7 +1022,9 @@
       "related_pull_requests": [
         816
       ],
-      "selection_rule": "Reserved. Reconcile #821 with PR #816 and record the scoped design selection before execution."
+      "tests": [
+        "PYTHONPATH=src python3 -m pytest -q tests/test_recovery_matrix_826.py"
+      ]
     },
     {
       "id": "FRONTIER-CONTEXT-01",
@@ -1007,9 +1032,9 @@
       "issue": 827,
       "milestone": "frontier-delivery",
       "kind": "investigation",
-      "activation_status": "reserved",
+      "activation_status": "complete-on-merge",
       "contract": "frontier-delivery.en.md",
-      "summary": "Design bounded context, recall and entrusted-work experiments using existing memory and preparation primitives and the corrected evaluation comparison.",
+      "summary": "Design bounded context, recall and entrusted-work experiments using existing memory and preparation primitives and the corrected evaluation comparison. Complete on the merge of PR #832.",
       "depends_on": [
         "FRONTIER-SPEC-01",
         "FRONTIER-EVAL-01"
@@ -1021,8 +1046,80 @@
         814,
         462,
         744
+      ]
+    },
+    {
+      "id": "FRONTIER-FENCE-01",
+      "program": "FRONTIER-01",
+      "issue": 841,
+      "milestone": "frontier-delivery",
+      "kind": "implementation",
+      "activation_status": "parent-controlled",
+      "contract": "frontier-delivery.en.md",
+      "tests": [
+        "PYTHONPATH=src python3 -m pytest -q tests/test_recovery_matrix_826.py"
       ],
-      "selection_rule": "Reserved. Record experiment inputs, evidence conditions and program selection before execution; runtime work stays on its canonical issues."
+      "summary": "M1, recovery matrix F-X4 (rows X4, X9): after a restart the pre-restart run is superseded. Its ledger is fenced so it cannot spend the resumed run's allowance, the interrupted reply is kept, and a steer to a stale bridge is refused.",
+      "depends_on": [
+        "FRONTIER-RECOVERY-01"
+      ],
+      "dependency_issues": [
+        818,
+        819,
+        821
+      ],
+      "selection_rule": "Selected for the M1 wave-2 parallel lanes by the owner's 2026-11-14 direct instruction (#822). Parent-controlled: the unit never self-activates. Its own PR moves this entry to complete-on-merge and adds its completed_substeps record, with its dependency disposition, when it merges."
+    },
+    {
+      "id": "FRONTIER-JUDGMENT-01",
+      "program": "FRONTIER-01",
+      "issue": 722,
+      "milestone": "frontier-delivery",
+      "kind": "implementation",
+      "activation_status": "parent-controlled",
+      "contract": "frontier-delivery.en.md",
+      "tests": [
+        "PYTHONPATH=src python3 -m pytest -q tests/test_no_scenario_code.py"
+      ],
+      "summary": "M1, F10: a judgment made from a CLI-bridge (relayed) tool call is tied to its Work, so the Work's budget, Stop and audit cover it.",
+      "depends_on": [
+        "FRONTIER-SPEC-01"
+      ],
+      "selection_rule": "Selected for the M1 wave-2 parallel lanes by the owner's 2026-11-14 direct instruction (#822). Parent-controlled: the unit never self-activates. Its own PR moves this entry to complete-on-merge and adds its completed_substeps record, with its dependency disposition, when it merges."
+    },
+    {
+      "id": "FRONTIER-TELEGRAM-01",
+      "program": "FRONTIER-01",
+      "issue": 842,
+      "milestone": "frontier-delivery",
+      "kind": "implementation",
+      "activation_status": "parent-controlled",
+      "contract": "frontier-delivery.en.md",
+      "tests": [
+        "PYTHONPATH=src python3 -m pytest -q tests/test_recovery_matrix_826.py"
+      ],
+      "summary": "M1, recovery matrix F-P4 and F-D3 and the Telegram part of F-W4: a Telegram prompt or reply whose delivery a restart cut off stays answerable and the owner is told; sent and the reply anchor commit together, _after_work prompts get a sweeper, and a notice that was definitely not sent is retried.",
+      "depends_on": [
+        "FRONTIER-RECOVERY-01"
+      ],
+      "selection_rule": "Selected for the M1 wave-2 parallel lanes by the owner's 2026-11-14 direct instruction (#822). Parent-controlled: the unit never self-activates. Its own PR moves this entry to complete-on-merge and adds its completed_substeps record, with its dependency disposition, when it merges."
+    },
+    {
+      "id": "FRONTIER-WORKCHAT-01",
+      "program": "FRONTIER-01",
+      "issue": 843,
+      "milestone": "frontier-delivery",
+      "kind": "implementation",
+      "activation_status": "parent-controlled",
+      "contract": "frontier-delivery.en.md",
+      "tests": [
+        "PYTHONPATH=src python3 -m pytest -q tests/test_recovery_matrix_826.py"
+      ],
+      "summary": "M1, recovery matrix F-W4 (row W4): Mattermost and Slack never lose an owner's reaction, press or correction to a restart; the act is applied before the cursor advances and a duplicate delivery has no second effect.",
+      "depends_on": [
+        "FRONTIER-RECOVERY-01"
+      ],
+      "selection_rule": "Selected for the M1 wave-2 parallel lanes by the owner's 2026-11-14 direct instruction (#822). Parent-controlled: the unit never self-activates. Its own PR moves this entry to complete-on-merge and adds its completed_substeps record, with its dependency disposition, when it merges."
     }
   ],
   "milestones": {
@@ -1489,16 +1586,31 @@
       },
       "ordered_substeps": [
         "FRONTIER-SPEC-01",
-        "FRONTIER-EVAL-01"
+        "FRONTIER-EVAL-01",
+        "FRONTIER-PROVENANCE-01",
+        "FRONTIER-RECOVERY-01",
+        "FRONTIER-CONTEXT-01",
+        "FRONTIER-FENCE-01",
+        "FRONTIER-JUDGMENT-01",
+        "FRONTIER-TELEGRAM-01",
+        "FRONTIER-WORKCHAT-01"
       ],
       "active_substeps": [],
       "completed_substeps": [
         "FRONTIER-SPEC-01",
-        "FRONTIER-EVAL-01"
+        "FRONTIER-EVAL-01",
+        "FRONTIER-PROVENANCE-01",
+        "FRONTIER-RECOVERY-01",
+        "FRONTIER-CONTEXT-01"
       ],
-      "parallel_eligible_substeps": [],
+      "parallel_eligible_substeps": [
+        "FRONTIER-FENCE-01",
+        "FRONTIER-JUDGMENT-01",
+        "FRONTIER-TELEGRAM-01",
+        "FRONTIER-WORKCHAT-01"
+      ],
       "delegation": {
-        "coordination": "The active_substeps field names the integration selection after this PR merges. #824 was authorized to progress in its disjoint worktree during #823 authoring; advancing the selection reuses that worktree. GitHub issues and PRs record actual execution and integration status.",
+        "coordination": "Wave 1: active_substeps named the serial integration selection, and #824 progressed in its disjoint worktree during #823 authoring. Wave 2 (M1): the four units are parallel_eligible_substeps with disjoint function-level ownership. Each lane integrates its own PR, so no serial integration step is selected and active_substeps stays empty. A unit lane edits only its own delivery-plan entry, and only after this selection merges; the later merger resolves conflicts. GitHub issues and PRs record actual execution and integration status.",
         "FRONTIER-SPEC-01": {
           "issue": 823,
           "role": "Codex authored; the Claude Code coordinator (lane I) integrates from 2026-11-14",
@@ -1519,17 +1631,75 @@
             "evals/agentos_eval/judgments.py",
             "tests/test_eval_judgments.py"
           ]
+        },
+        "FRONTIER-FENCE-01": {
+          "issue": 841,
+          "role": "Lane R: a Claude Code lane session leads; Codex implements the piece its brief names in a scratch worktree",
+          "owned_functions": [
+            "quickstart_store.QuickStore.recover",
+            "an epoch helper beside the store",
+            "quickstart_service.AgentService.recover_interrupted_work",
+            "mcp_bridge._with_steer refused-call path"
+          ],
+          "shared_files": [
+            "docs/recovery-matrix.en.md",
+            "tests/test_recovery_matrix_826.py"
+          ],
+          "shared_rule": "A lane flips only its own rows in a shared file and edits only its own delivery-plan entry."
+        },
+        "FRONTIER-JUDGMENT-01": {
+          "issue": 722,
+          "role": "Lane J: a Claude Code lane session leads; Codex implements the piece its brief names in a scratch worktree",
+          "owned_functions": [
+            "cli_browser_relay relay handlers",
+            "the relay scope wiring around quickstart_service.AgentService.work_decision_scope",
+            "decision.RoutedDecisionEngine stop and admission check"
+          ],
+          "shared_files": [],
+          "shared_rule": "A lane flips only its own rows in a shared file and edits only its own delivery-plan entry."
+        },
+        "FRONTIER-TELEGRAM-01": {
+          "issue": 842,
+          "role": "Lane D: a Claude Code lane session leads; Codex implements the piece its brief names in a scratch worktree",
+          "owned_functions": [
+            "Telegram delivery and callback handlers",
+            "prompt and notification delivery state and web counts",
+            "telegram_presence.record_reply"
+          ],
+          "shared_files": [
+            "docs/recovery-matrix.en.md",
+            "tests/test_recovery_matrix_826.py"
+          ],
+          "shared_rule": "A lane flips only its own rows in a shared file and edits only its own delivery-plan entry."
+        },
+        "FRONTIER-WORKCHAT-01": {
+          "issue": 843,
+          "role": "Lane W: a Claude Code lane session leads; Codex implements the piece its brief names in a scratch worktree",
+          "owned_functions": [
+            "mattermost_surface cursor and press records",
+            "slack_surface cursor and press records"
+          ],
+          "shared_files": [
+            "docs/recovery-matrix.en.md",
+            "tests/test_recovery_matrix_826.py"
+          ],
+          "shared_rule": "A lane flips only its own rows in a shared file and edits only its own delivery-plan entry."
+        },
+        "FRONTIER-PLAN-M1": {
+          "issue": 822,
+          "role": "Lane P: the Claude Code plan lane records the wave-2 selection; Codex extends the plan test",
+          "owned_files": [
+            "delivery-plan.yaml",
+            "tests/test_fresh_delivery_plan.py",
+            "docs/frontier-delivery.en.md"
+          ]
         }
       },
-      "reserved_substeps": [
-        "FRONTIER-PROVENANCE-01",
-        "FRONTIER-RECOVERY-01",
-        "FRONTIER-CONTEXT-01"
-      ],
-      "allowed_authority": "The #823 documentation/plan lane and #824 evaluation harness lane, their focused model-free tests, isolated worktrees, issue/PR records and author-controlled cross-model review. Existing required checks and merge policy apply. Provider refusal or unavailable model settings are recorded with an explicit reassignment when necessary.",
-      "non_goals": "Production runtime changes, live owner-account operations, releases, deployment, delivery heartbeat activation, automatic successor selection, duplicate memory/goal/scheduler stores, blanket framework replacement and changed production budgets. #825/#826/#827 remain dependency-bound reserved units.",
-      "escalated_review": "Risk-triggered under the Development Constitution. This documentation and evaluation-harness first wave changes no runtime authority boundary; a later boundary-changing unit records its exact trigger, negative evidence and required Codex review.",
-      "completion_rule": "Both first-wave issues have their promised artifacts mapped to focused test evidence, required PR checks and merged revisions. Record unsupported provider paths and unresolved limitations. Preserve all historical closeouts. Completing the first wave does not select any reserved successor.",
+      "reserved_substeps": [],
+      "allowed_authority": "The #823 documentation/plan lane and #824 evaluation harness lane, their focused model-free tests, isolated worktrees, issue/PR records and author-controlled cross-model review. Existing required checks and merge policy apply. Provider refusal or unavailable model settings are recorded with an explicit reassignment when necessary. Wave 2 (M1): the four unit lanes' runtime changes within their owned functions, their model-free tests and fixtures, and the recovery-matrix rows each unit flips. Risk-triggered escalated review is assessed in each unit's PR.",
+      "non_goals": "Live owner-account operations, releases, deployment, delivery heartbeat activation, automatic successor selection, duplicate memory/goal/scheduler stores, blanket framework replacement and changed production budgets. M2 (#403 recall with #827's experiments) and later milestones are not selected by wave 2.",
+      "escalated_review": "Risk-triggered under the Development Constitution. This documentation and evaluation-harness first wave changes no runtime authority boundary; a later boundary-changing unit records its exact trigger, negative evidence and required Codex review. Wave 2: each unit's PR names whether it changes a Constitution escalation boundary; an escalated unit is merged by the owner after the Codex review of its exact final head, validate and full-validate.",
+      "completion_rule": "Both first-wave issues have their promised artifacts mapped to focused test evidence, required PR checks and merged revisions. Record unsupported provider paths and unresolved limitations. Preserve all historical closeouts. Completing the first wave does not select any reserved successor. Wave 2: each unit's acceptance criteria mapped to focused tests, required checks on its final head and its merged revision, recorded by that unit's own PR. Completing wave 2 does not select M2 or any other successor.",
       "decisions": {
         "development-capacity": {
           "issue": 822,
@@ -1545,16 +1715,38 @@
           "issue": 822,
           "date": "2026-11-14",
           "decision": "Coordination moved from the stalled Codex coordinator to a Claude Code coordinator session running parallel lanes under the owner's direct instruction; Codex implements a named piece inside a lane when its brief assigns one. Lanes, function-level ownership and merge order are in frontier-delivery.en.md and the #822 coordinator comment. This record selects no further substep: a reserved unit is recorded as selected or complete by its own PR."
+        },
+        "first-wave-units-reconciled": {
+          "issue": 822,
+          "date": "2026-11-14",
+          "decision": "#825 (PR #835), #826 (PR #831) and #827 (PR #832) merged under the owner's direct 2026-11-14 instruction while their plan entries still read reserved; lane P records them complete-on-merge with their pull requests and merge commits. Their dependency dispositions are in their PRs: #825 was isolated from #818\u2013#820 by function ownership, #826 reconciled #821 with PR #816, and #827 needed only the first wave."
+        },
+        "m1-wave-2-selection": {
+          "issue": 822,
+          "date": "2026-11-14",
+          "decision": "The owner instructed on 2026-11-14 to proceed with M1 (reliable work) in parallel lanes. The #826 matrix selected F-X4 (#841) and named F-P4/F-D3 (#842) and F-W4 (#843) next; #722 is M1's remaining judgment-ownership gap (F10). These four are wave 2. Lanes and ownership are in frontier-delivery.en.md and the #822 coordinator comment."
         }
       },
       "parallel_authorization": {
         "issue": 822,
         "date": "2026-11-14",
         "substeps": [
-          "FRONTIER-SPEC-01",
-          "FRONTIER-EVAL-01"
+          "FRONTIER-FENCE-01",
+          "FRONTIER-JUDGMENT-01",
+          "FRONTIER-TELEGRAM-01",
+          "FRONTIER-WORKCHAT-01"
         ],
-        "decision": "The owner-authorized evaluation worktree could progress alongside specification authoring with disjoint files. On merge of #823, evaluation is the single selected integration substep; this record does not start or duplicate a worker."
+        "decision": "The owner's direct 2026-11-14 instruction runs M1 in parallel lanes. The four units have disjoint function-level ownership (delegation), and shared files are partitioned by row. Each lane integrates its own PR; this record does not start or duplicate a worker.",
+        "history": [
+          {
+            "wave": 1,
+            "substeps": [
+              "FRONTIER-SPEC-01",
+              "FRONTIER-EVAL-01"
+            ],
+            "decision": "The owner-authorized evaluation worktree could progress alongside specification authoring with disjoint files. On merge of #823, evaluation was the single selected integration substep."
+          }
+        ]
       }
     }
   },
@@ -1562,6 +1754,6 @@
   "next_goal": {
     "id": "FRONTIER-01",
     "status": "owner-activated-goal-ready",
-    "action": "Owner-authorized FRONTIER-01 (#822): both first-wave substeps are complete-on-merge (#823 specification, #824 evaluation comparisons). No substep is selected; #825\u2013#827 stay reserved until their own PRs record their dependency disposition and selection, and the #817\u2013#821 lanes run under the owner's direct instruction on their own issues. This checked-in resting selection starts no heartbeat."
+    "action": "Owner-authorized FRONTIER-01 (#822): the first wave (#823, #824) and #825\u2013#827 are complete-on-merge. M1 wave 2 selects #841 (F-X4 recovery fence), #722 (judgment scope for relayed calls), #842 (F-P4/F-D3 Telegram delivery) and #843 (F-W4 Mattermost/Slack) as parent-controlled parallel lanes under the owner's 2026-11-14 direct instruction; each unit's own PR records it complete on merge. No successor beyond wave 2 is selected. This checked-in resting selection starts no heartbeat."
   }
 }
