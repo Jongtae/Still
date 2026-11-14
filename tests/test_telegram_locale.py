@@ -109,7 +109,6 @@ class AnswerBoundaryTests(unittest.TestCase):
                                   'telegram:g', 42, owner_typed=True)
 
     def test_real_delivery_preserves_ai_even_when_it_is_a_catalog_line(self):
-        from personal_agent.messages import msg
         from unittest.mock import patch
         # An exact catalog hit and a broad template hit must both be protected.
         answer = '다시 접속했지만 보유 종목은 아직 확인하지 못했어요.\n요청을 처리했어요.\n참, 다른 문장입니다.'
@@ -119,16 +118,15 @@ class AnswerBoundaryTests(unittest.TestCase):
         with patch.object(loc, '_match', wraps=loc._match) as match:
             self.service.deliver_one()
         body = next(body for method, body in self.sent if method == 'sendMessage')
-        self.assertEqual(body['text'], answer + '\n\n' + msg('projection.answer_not_confirmed', 'en'))
+        self.assertEqual(body['text'], answer)
         for call in match.call_args_list:
             for line in answer.splitlines():
                 self.assertNotIn(line, call.args[0], 'AI words must not enter catalog matching')
         self.service.telegram.send_message(42, '요청을 처리했어요.')
         self.assertEqual(self.sent[-1][1]['text'], 'Done.', 'the same words still translate as a Still notice')
 
-    def test_latest_owner_script_controls_fixed_lines_without_changing_telegram_code(self):
+    def test_partial_answers_have_no_fallback_in_any_owner_language(self):
         from personal_agent.phone_input import owner_language
-        from personal_agent.messages import msg
         for text, expected in [('한국어로 알려 주세요.', None), ('Please answer.', 'en'),
                                ('確認してください', 'ja'), ('请确认结果', 'zh')]:
             with self.subTest(text=text):
@@ -139,7 +137,7 @@ class AnswerBoundaryTests(unittest.TestCase):
                     db.execute("UPDATE jobs SET status='partial',response='AI answer',delivery='pending' WHERE id=?", (work,))
                 self.service.deliver_one()
                 bodies = [body for method, body in self.sent if method == 'sendMessage']
-                self.assertEqual(bodies[-1]['text'], 'AI answer\n\n' + msg('projection.answer_not_confirmed', expected or 'ko'))
+                self.assertEqual(bodies[-1]['text'], 'AI answer')
         self.assertEqual(self.store.config('telegram')['owner_language'], 'en')
 
     def test_presence_prose_is_protected_in_rich_and_plain_drafts(self):
