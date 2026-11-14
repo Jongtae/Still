@@ -248,8 +248,8 @@ class Apply(Upkeep):
                           for item in detail['applied']],
                          [('profile.place.work', 'stated', 'memory', memory['id'], True)])
         # #804: a saved profile fact is not a lookup exclusion.
-        from personal_agent.agent_runtime import work_written_values
-        self.assertNotIn('판교', work_written_values(self.store, job))
+        from personal_agent.agent_runtime import work_saved_values
+        self.assertNotIn('판교', work_saved_values(self.store, job))
 
     def test_a_plan_the_owner_states_beside_a_request_is_saved_with_its_last_day(self):
         """#398: a goal, upcoming need or obligation has its own category and ends on its day."""

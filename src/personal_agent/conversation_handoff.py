@@ -852,16 +852,8 @@ class ConversationJudgments:
     ``DecisionPolicy``. Swapping the engine changes no authority semantics.
 
     Every context is built by :meth:`_context`, which passes each fact through
-    ``redactor(text, private)`` first (#672 review, pilot boundary 1: secrets
-    never enter a model prompt).  The service supplies the redactor - the
-    stored secrets' literal values and credential shapes, and with
-    ``private`` the current Work's saved private values - so this module never
-    imports the service.  As for the completion judgment (#657
-    ``goal_judgment``), the owner's own words (``OWNER_FACTS``) have only
-    secrets removed: the values a Work saved came from them, and removing
-    those would change the question asked.  Credential-shaped tokens are
-    removed even with no redactor, and a failing redactor withholds the fact
-    rather than sending it unredacted.
+    the supplied stored-secret redactor. Credential-shaped tokens are removed
+    even with no redactor, and a failing redactor withholds the fact.
     """
 
     #: Facts that are the owner's own words.
@@ -876,12 +868,12 @@ class ConversationJudgments:
         self.redactor = redactor
 
     def redact(self, text, private=True):
-        """``text`` as it may reach the decision engine (deterministic, no judgment)."""
+        """Apply secret replacement; ``private`` remains for existing judgment callers."""
         from .bounded_execution import SECRET_PATTERN
         text = str(text or '')
         try:
             if self.redactor is not None:
-                text = str(self.redactor(text, private=private))
+                text = str(self.redactor(text))
         except Exception:
             return '[redacted]'
         return SECRET_PATTERN.sub('[redacted]', text)

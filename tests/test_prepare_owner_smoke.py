@@ -180,8 +180,8 @@ class ProbeRecordTests(unittest.TestCase):
                     self.assertNotIn(leaked, text)
         record = self.record()
         self.assertEqual(record['tool_calls'][3]['arguments']['text'], f'[가림: {len(PASSWORD)}자]')
-        # The saved private value (and its line's digit-bearing tokens) and the stored secret.
-        self.assertEqual(record['requested'], '《리더는 언제 차이를 만들어내는가》 장바구니에 넣어줘 [가림] [가림] [가림]')
+        # Export-only exact literal masking keeps the saved value out; secrets use their own pass.
+        self.assertEqual(record['requested'], '《리더는 언제 차이를 만들어내는가》 장바구니에 넣어줘 [redacted] [가림]')
         self.assertEqual(record['report']['reply'], '장바구니에 담았습니다. [redacted]')
         self.assertIn('[경로 가림]', record['tool_calls'][3]['error'])
         self.assertEqual(record['finish']['cited'][1]['evidence'],

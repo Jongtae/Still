@@ -25,7 +25,7 @@ from pathlib import Path
 
 from personal_agent.agent_runtime import (CORE_INSTRUCTIONS, DEFINITIONS, MEMORY_OWNER, MEMORY_REFUSALS,
                                           SECRET_SHAPED_VALUE, THIRD_PARTY_MEMORY_WRITE, Capabilities, evidence_summary,
-                                          work_written_values, worker_result)
+                                          work_saved_values, worker_result)
 from personal_agent.decision import OUTCOME_DECIDED, BinaryDecision, FixtureDecisionEngine, fixture_confidence
 from personal_agent.manifests import runtime_packages
 from personal_agent.quickstart_service import (MEMORY_CANDIDATES_KIND, MEMORY_PENDING_WEB_NOTE, MEMORY_SAVED_EXPIRED_TEXT,
@@ -634,17 +634,17 @@ class SaveAndTell(TelegramHarness):
         [undo] = [row for row in self.store.task_events(job['id']) if row['tool'] == MEMORY_UNDO_TOOL]
         self.assertEqual(undo['trace']['evidence']['restored_id'], kept['id'])
 
-    def test_the_redaction_set_keeps_superseded_and_retracted_values_of_the_work(self):
+    def test_audit_values_keep_superseded_and_retracted_values_of_the_work(self):
         job, _notice, row = self.told(plan=[('save_memory', {'memory_key': 'passport', 'content': 'M1234567'}),
                                             ('save_memory', {'memory_key': 'passport', 'content': 'M7654321'})])
         self.assertEqual(self.memory_states(), [('M1234567', 'superseded'), ('M7654321', 'current')])
-        written = work_written_values(self.store, job['id'])
+        written = work_saved_values(self.store, job['id'])
         self.assertIn('M1234567', written, 'the superseded value still stands in the Work\'s tool conversation')
         self.assertIn('M7654321', written)
         self.tap(f"p7u:{row['id']}:1", row['message_id'])
         self.assertEqual(self.memory_states(), [('M1234567', 'current'), ('M7654321', 'retracted')])
-        written = work_written_values(self.store, job['id'])
-        self.assertIn('M7654321', written, 'a retracted value stays in the redaction set')
+        written = work_saved_values(self.store, job['id'])
+        self.assertIn('M7654321', written, 'a retracted value stays in the audit input')
         self.assertIn('M1234567', written)
 
 

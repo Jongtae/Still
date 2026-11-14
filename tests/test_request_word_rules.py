@@ -230,21 +230,18 @@ class ServiceRouteTests(unittest.TestCase):
 class JudgmentRedactionTests(unittest.TestCase):
     """The one context builder redacts every fact (#672 review)."""
 
-    def test_every_fact_passes_the_redactor_owner_words_without_work_values(self):
+    def test_every_fact_passes_the_stored_secret_redactor(self):
         seen = []
 
-        def redactor(text, private=True):
-            seen.append((text, private))
-            return text.replace('SAVED', '[redacted]')
+        def redactor(text):
+            seen.append(text)
+            return text.replace('SECRET', '[redacted]')
 
         engine = FixtureDecisionEngine()
         judge = ConversationJudgments(engine, redactor=redactor)
-        judge.explicit_preparation_request('내일 아침 SAVED 알려줘', 'remind about SAVED')
+        judge.explicit_preparation_request('내일 아침 SECRET 알려줘', 'remind about SECRET')
         [(_kind, context, _proposition)] = engine.asked
-        # Owner words: stored secrets only (like #657's goal judgment); anything
-        # else: the Work's saved private values too.
-        self.assertEqual(dict((text, private) for text, private in seen),
-                         {'내일 아침 SAVED 알려줘': False, 'none': True, 'remind about SAVED': True})
+        self.assertEqual(set(seen), {'내일 아침 SECRET 알려줘', 'none', 'remind about SECRET'})
         self.assertEqual(context.facts['proposed_preparation'], 'remind about [redacted]')
 
     def test_credential_shapes_go_without_a_redactor_and_a_failing_redactor_withholds(self):

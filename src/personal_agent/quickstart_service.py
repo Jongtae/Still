@@ -25,7 +25,7 @@ from .local_tools import LocalTools, normalize_public_url
 from functools import cached_property
 from .work_execution import PROCEED, REDELEGATED, WorkRun
 from .agent_runtime import (Capabilities, ToolError, not_run, cut_to_fit, run_agent, AGENTS, STEER_EVENT, steer_note, evidence_summary, turn_context, render_turn_prompt, attachment_facts,
-                            MEMORY_OWNER, context_sections, ENGINE_UNMEDIATED, OWNER_CONVERSATION, lookup_sources, work_written_values, WORK_SOURCES_KEY, WORK_SOURCES_LIMIT, base_label,
+                            MEMORY_OWNER, context_sections, ENGINE_UNMEDIATED, OWNER_CONVERSATION, lookup_sources, WORK_SOURCES_KEY, WORK_SOURCES_LIMIT, base_label,
                             history_provenance, WorkBudget, PresentationBudget, WORK_TOOL_ATTEMPTS, WORK_DEADLINE_SECONDS, EFFECT_FREE_READS, explicit_search_query, outcome_from_events,
                             WORK_STOP_KEY, WORK_STOPPED, work_stop_requested, WorkLedger, WORK_LEDGER_KEY, goal_summary, work_source_records,
                             backfill_work_sources, recorded_private_sources, NOTES_SUMMARY_COMMANDS, WORK_SOURCES_BACKFILL_KEY, WORK_SOURCES_BACKFILL_VERSION,
@@ -1499,16 +1499,15 @@ class AgentService:
             return ''
 
     def _owner_model_judgments(self, work_id):
-        """The judgments of one owner-model run, every fact redacted by the redaction scoped to ``work_id``."""
+        """Owner-model judgments with the stored-secret pass on every fact."""
         return ConversationJudgments(self.decision_judge.engine,policy=self.decision_judge.policy,
-                                     redactor=lambda text,private=True:(self.scrub_work_text(work_id,text) if private
-                                                                         else self._redact_known_secrets(text)))
+                                     redactor=self._redact_known_secrets)
 
     def _owner_model_dream(self, row, job, now):
         """One claimed dream (#402): read the requests since the last one, then ``Upkeep.run_dream``.
 
         The turns are the settled requests a worker AI answered in the period, each scrubbed with its
-        own Work's saved private values; what upkeep never reads is left out by the same typed markers
+        stored-secret pass; what upkeep never reads is left out by the same typed markers
         (rule/command replies, preparation runs, location continuations, Works where the owner managed
         what Still keeps, forgotten requests).  What is kept is attributed to the anchor Work and its
         one saved-memory notice tells the owner, with an undo.
@@ -1605,9 +1604,7 @@ class AgentService:
                 # fact drawn from it would record again what the owner chose to forget: it settles unsent.
                 upkeep.finish(work_id,om.STATE_GONE,0,om.EVENT_UNAVAILABLE,{'reason':'owner-state-management'},now,kind=kind)
                 return
-            # Every fact is redacted by the judgment redaction scoped to the source Work:
-            # stored secrets and credential shapes always, and its saved private values
-            # (#605 set) from the model-stated facts.
+            # Every fact receives the stored-secret pass before judgment.
             judgments=self._owner_model_judgments(work_id)
             clock=self._owner_model_clock()
             # The hard deadline: no model call starts after it (each call has its adapter's own timeout).
@@ -1627,9 +1624,9 @@ class AgentService:
                 # A kept revision's one notice was queued with the version (``WorkingNotes.save``).
                 return
             # SITUATION-01 (#1004): the same judgment rewrites the running note of the owner's day,
-            # only while current context is on; the Work's saved private values never enter it.
+            # only while current context is on; stored secrets are removed.
             # #1005 review: the turns since the note (the newest Work runs first) are folded into the
-            # same rewrite, each scrubbed with its own Work's values, and become the note's sources too.
+            # same rewrite, each with stored secrets removed, and become the note's sources too.
             situation=note_situation=None
             turns=''
             try:
@@ -1695,16 +1692,11 @@ class AgentService:
         return self.preparations_service.watch_notification_text(notification)
 
     def scrub_prepared_answer(self, job):
-        """A prepared answer as it may be kept for later turns (#659).
-
-        The values the preparation's Work wrote to a private store (the #605
-        lookup exclusion set) and stored secrets / credential shapes are
-        removed before it is stored; deterministic, no judgment.
-        """
+        """A prepared answer with only stored secrets removed before reuse."""
         return self.preparations_service.scrub_prepared_answer(job)
 
     def scrub_work_text(self, work_id, text):
-        """``text`` with Work ``work_id``'s saved private values and stored secrets removed (#659)."""
+        """Apply only the stored-secret pass to text reused from a Work."""
         return self.preparations_service.scrub_work_text(work_id, text)
 
     def preparation_run_fact(self, job):
@@ -2506,36 +2498,14 @@ class AgentService:
             return db.execute("SELECT 1 FROM tool_events WHERE job_id=? AND tool='model' AND status='responded' AND id>? LIMIT 1",
                               (work_id,since_event_id or 0)).fetchone() is not None
 
-    # Private sources whose content existing guards keep out of durable
-    # records (Drive excerpts, the expiring context inbox, notes, documents,
-    # Memory reads, calendar). A turn that carried any of them keeps only a
-    # size and digest of what was sent, never the text (#570 review, major 1).
-    # #701 (pilot posture): the private stores, including history-inherited
-    # ones (#605) and the owner-logged-in browser session.  Unknown history
-    # (`unrecorded`), a CLI's unmediated-read note and the record-only profile /
-    # current-context / prepared-answers sections no longer withhold the
-    # envelope: it is stored locally, after the deterministic secret and
-    # saved-private-value redaction in ``record_turn_sent``, and never exported
-    # (``portable_state``).
-    PROVENANCE_WITHHELD_SOURCES=frozenset({'personal-space','owner-context-inbox','connected-drive-file','connected-document',
-                                           'owner-memory','owner-folder-names','owner-calendar','owner-mail','owner-settings','telegram-photo',
-                                           'conversation-history','unattributed-tool-evidence','owner-browser-session'})
-
-    def record_turn_sent(self, job_id, *, sent, instructions, instructions_channel, private_sources=(), **fields):
+    # Local turn envelopes retain owner content with stored secrets removed.
+    # portable_state drops turn_provenance from owner-state exports.
+    def record_turn_sent(self, job_id, *, sent, instructions, instructions_channel, **fields):
         """Record what a turn sent; computed inside the guard so it can never break the turn."""
         try:
-            withheld=sorted(set(private_sources)&self.PROVENANCE_WITHHELD_SOURCES)
             size=len(sent.encode())
-            if withheld:
-                envelope=(f'[not stored: this turn included {", ".join(withheld)}; '
-                          f'{size} bytes, sha256 {hashlib.sha256(sent.encode()).hexdigest()[:16]}]')
-            else:
-                # #701: the Work's whole lookup-exclusion set (``lookup_sources``:
-                # its Memory candidates and notes), then the
-                # stored secrets' values and credential shapes, are removed
-                # before it is kept.
-                envelope=self.scrub_envelope(job_id,sent)
-            fields.update(prompt_envelope=envelope,prompt_bytes=size,prompt_withheld=withheld or None,instructions_channel=instructions_channel)
+            envelope=self.scrub_envelope(job_id,sent)
+            fields.update(prompt_envelope=envelope,prompt_bytes=size,prompt_withheld=None,instructions_channel=instructions_channel)
             if instructions:
                 fields.update(instructions=instructions,instructions_digest=hashlib.sha256(instructions.encode()).hexdigest()[:16])
             else:
@@ -2545,22 +2515,8 @@ class AgentService:
             LOG.warning('turn provenance could not be recorded job=%s',job_id)
 
     def scrub_envelope(self, job_id, text):
-        """A prompt envelope as the local turn record may keep it (#701).
-
-        Deterministic, no judgment: the values of the Work's lookup-exclusion
-        set (``agent_runtime.lookup_sources(...)['excluded']``, read while the
-        Work runs; the same ``work_written_values`` otherwise), then stored
-        secrets and credential shapes.  Earlier Works' private-store content
-        never reaches a stored envelope: a turn shown it carries their
-        ``history:`` store label and keeps size/digest only.  Profile values
-        have no identifier marker to key on and are kept as sent (a value
-        equal to a stored secret is already redacted in the snapshot).
-        """
-        from .browser_session import redact_private_values
-        try:excluded=lookup_sources(self.store,job_id)['excluded']
-        except Exception:excluded=work_written_values(self.store,job_id)
-        text,_count=redact_private_values(str(text or ''),excluded)
-        return self._redact_known_secrets(text)
+        """Apply only the stored-secret pass before keeping a local prompt envelope."""
+        return self._redact_known_secrets(str(text or ''))
 
     def owner_information_refs(self, sections, spliced=()):
         """References of the owner-model sections and splices one turn carries (#826).

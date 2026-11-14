@@ -775,40 +775,6 @@ def _digit_order_ok(words,owner_words):
   index+=1
  return True
 
-def page_exclusions(excluded,owner_request):
- """The browser snapshot redaction set without the owner's own words of this request (#889).
-
- ``excluded`` are the Work's private-store values (``_browser_excluded``).
- The #605 lookup matcher over-blocks by design (any 2+ character contained
- span), so a value the owner just stated - a service name, a list of sites -
- masked those words on every public page the worker read for that very
- request.  Those words already reach the same AI verbatim in the request, so
- masking them in inbound page text protects nothing.  A value word is left
- out only when the owner typed it or a longer word starting with it (Korean
- particles: ``배민으로`` covers ``배민``) - never when a shorter owner word is
- only its prefix (#889 review: ``john`` must not cover ``johnsmith``) - and it
- has 2+ characters.  A word with digits needs the owner's exact word, and the
- value's digit runs in the owner's order (``_digit_order_ok``).  A value with
- no such word is kept verbatim; a value wholly said is dropped.  Outbound
- redaction is not affected.
- """
- owner_words=memory_words(owner_request)
- if not owner_words:return list(excluded)
- owner_set=set(owner_words)
- kept=[]
- for value in excluded:
-  if not isinstance(value,str):continue
-  words=memory_words(value)
-  digits_ok=_digit_order_ok(words,owner_words)
-  def said(word):
-   if len(word)<2:return False
-   if _MEMORY_DIGITS.search(word):return digits_ok and word in owner_set
-   return any(owner.startswith(word) for owner in owner_words)
-  rest=[word for word in words if not said(word)]
-  if len(rest)==len(words):kept.append(value)  # nothing the owner said: the value exactly as before
-  elif rest:kept.append(' '.join(rest))
- return kept
-
 def owner_covers(value,owner_words,whole=True):
  """Every word of ``value`` (or, with ``whole=False``, at least one) is the owner's."""
  words=memory_words(value)
@@ -1494,18 +1460,14 @@ def owner_stated_profile(memory_key, result):
  return (str(memory_key or '').startswith(PROFILE_PREFIX) and isinstance(result,dict)
          and result.get('state')=='current' and not result.get('requires_owner_approval'))
 
-def work_written_values(store, job_id):
- """The values one Work wrote to a private store: Memory candidates and notes
- (#605).  The lookup exclusion set; also removed from a
- prepared answer before it is kept for later turns (#659)."""
+def work_saved_values(store, job_id):
+ """Audit input, never a redaction set: this Work's saved candidates, memories and notes."""
  import hashlib
  with store.db() as db:
-  # #804: a ``profile.`` fact the owner stated and #597 accepted is not a lookup exclusion (see save_memory).
+  # Accepted profile facts are covered by the current-Memory audit query.
   written=[row['content'] for row in db.execute('SELECT content,memory_key,state FROM memory_candidates WHERE work_key=?',(store._work_binding(job_id),))
            if not (row['state']=='accepted' and str(row['memory_key'] or '').startswith(PROFILE_PREFIX))]
-  # #918: a non-``profile.`` value the owner's worker saved at once is excluded like the pending candidate it
-  # used to be - in every state (review P2: a superseded or retracted row's value still stands in the Work's
-  # tool conversation, so it stays in the redaction set as the former candidate query kept every state).
+  # Retain every state: superseded/retracted values can still occur in outbound text.
   written.extend(row['content'] for row in db.execute("SELECT content,memory_key FROM memories WHERE work_key=?",(store._work_binding(job_id),))
                  if not str(row['memory_key'] or '').startswith(PROFILE_PREFIX))
   # A note this Work saved: `/note` stores it under the Work id, `save_note`
@@ -1515,18 +1477,11 @@ def work_written_values(store, job_id):
   return written
 
 def lookup_sources(store, job_id):
- """The binding and redaction set of one public lookup of a running Work.
-
- ``current`` is the owner's request.  ``excluded`` are the values this Work
- wrote to a private store -- Memory candidates and notes --
- which the browser snapshot, judgment and envelope redaction remove (#605,
- #701).  #826: they no longer leave public lookups.  Raises when the Work is
- no longer running (the binding).
- """
+ """Check a running Work binding and return its current request; raise if it stopped."""
  job=store.job(job_id) if isinstance(job_id,str) and job_id else None
  if not job or job.get('status')!='running':
   raise ValueError(msg('agent_runtime.work_no_longer_running'))
- return {'current':job.get('message') or '','excluded':work_written_values(store,job_id)}
+ return {'current':job.get('message') or ''}
 
 # --- AUDIT-OUTBOUND-01 (#167, #28 option A): held values seen in outbound text --
 #
@@ -3348,7 +3303,7 @@ def owner_wait_steps(rows, tools=None):
  return waits
 
 class Capabilities:
- def __init__(self,store,adapter,config,key,job_id,record,readonly=False,network=None,document_access=True,packages=None,allowed_tools=None,document_context=False,public_page_scope=None,memory_approval=None,inherited_provenance=(),calendar=None,calendar_owner=None,memory_request=None,current_packages=None,lookup_sources=None,delegated=False,inherited_excluded=(),budget=None,browser=None,browser_approvals=None,browser_unavailable=None,judgments=None,secret_redactor=None,current_context=None,preparations=None,location_request=None,owner_update=None,settings=None,information_use=None,skills=None,drive=None,mail=None,connections=None,a2a=None,lines=None,line_note=None):
+ def __init__(self,store,adapter,config,key,job_id,record,readonly=False,network=None,document_access=True,packages=None,allowed_tools=None,document_context=False,public_page_scope=None,memory_approval=None,inherited_provenance=(),calendar=None,calendar_owner=None,memory_request=None,current_packages=None,lookup_sources=None,delegated=False,inherited_audit_values=(),budget=None,browser=None,browser_approvals=None,browser_unavailable=None,judgments=None,secret_redactor=None,current_context=None,preparations=None,location_request=None,owner_update=None,settings=None,information_use=None,skills=None,drive=None,mail=None,connections=None,a2a=None,lines=None,line_note=None):
   # #798: the service's ``entrusted_line`` handler bound to this Work, or None (delegated
   # specialist, CLI bridge without the relay): then the tool is not offered.  ``line_note()``
   # is what a run of a line reads before its next step when the line's brief changed, or None.
@@ -3401,13 +3356,13 @@ class Capabilities:
   self.lookup_sources=lookup_sources
   # Values this Work wrote to a private store in-process, and the private
   # writes proposed alongside the current tool batch (`run_agent`): the
-  # browser snapshot and judgment redaction set (`_browser_excluded`).
+  # outbound information-use audit input.
   self.written_private=[];self.pending_writes=[];self.written_labels=set()
   # #182: the file-workspace reference files this Work's read_file read, as ``FileWorkspace.read``
   # identified them (reference, file identity, path, content version): a saved result's sources.
   self.workspace_reads={}
-  # A delegated specialist; its parent's private-store writes stay in its redaction set.
-  self.delegated=delegated;self.inherited_excluded=list(inherited_excluded or ())
+  # A delegated specialist retains its parent's saved values for outbound auditing.
+  self.delegated=delegated;self.inherited_audit_values=list(inherited_audit_values or ())
   # #656: a zero-argument driver factory for the owner-logged-in browser
   # profile, or None: then the browser tools are not offered at all.  The
   # session itself is created on first use (`browser_session`) and closed by
@@ -3571,7 +3526,7 @@ class Capabilities:
   if self._browser_session is None:
    from .browser_session import BrowserSession
    # #174: the Work's judgments, asked only whether a mutate press the payment floor missed could charge.
-   self._browser_session=BrowserSession(self.browser,work_id=self.job_id,budget=self.budget,excluded=self._page_excluded,
+   self._browser_session=BrowserSession(self.browser,work_id=self.job_id,budget=self.budget,
                                         approvals=self.browser_approvals,judgments=self.judgments)
   return self._browser_session
  def _keep_browser_page(self,result):
@@ -3598,24 +3553,18 @@ class Capabilities:
  def close_browser(self):
   session,self._browser_session=self._browser_session,None
   if session is not None:session.close()
- def _browser_excluded(self):
-  """The values the browser snapshot redactor compares page text against.
-
-  The same exclusion a public lookup applies (#605, kept by #654): values
-  this Work wrote to a private store, writes proposed in the current batch
-  and values inherited from a parent.
-  """
-  excluded=[*self.written_private,*self.pending_writes,*self.inherited_excluded]
-  if self.lookup_sources is not None:
-   try:excluded=[*self.lookup_sources()['excluded'],*excluded]
-   except Exception:pass
-  return excluded
+ def _work_audit_values(self):
+  """Saved and pending Work values for outbound audit input, never for redaction."""
+  values=[*self.written_private,*self.pending_writes,*self.inherited_audit_values]
+  try:values=[*work_saved_values(self.store,self.job_id),*values]
+  except Exception:pass
+  return values
  def held_values(self):
   """``[(source, key, value)]`` the owner's values Still holds, for the outbound comparison (#167).
 
   The owner's current Memory, whichever Work saved it (``memory``, by key),
-  then the values this Work wrote to a private store that are not current
-  Memory (the #605 set: candidates and notes; ``work_write``).
+  then saved and pending Work values not already covered by current
+  Memory (candidates, notes and inherited values; ``work_write``).
   Read when a call is recorded and never stored.  Only the newest
   HELD_MEMORY_MAX Memory rows are read; ``held_memory_cut`` says whether
   older ones were left out (#245).
@@ -3635,37 +3584,18 @@ class Capabilities:
    else:
     try:self.held_memory_cut=bool(self.store.memories(MEMORY_OWNER,limit=1,offset=HELD_MEMORY_MAX))
     except Exception:pass
-  for value in self._browser_excluded():
+  for value in self._work_audit_values():
    if isinstance(value,str) and value.strip() and value not in seen:
     seen.add(value);held.append((WRITTEN_SOURCE,'',value))
   return held
- def _page_excluded(self):
-  """The snapshot redaction set for pages this Work reads: ``_browser_excluded`` less the request's own words (#889)."""
-  excluded=self._browser_excluded()
-  # #889 review: only the owner's own typed request; a delegated specialist never sees it,
-  # and a preparation's message is a model-written goal.
-  if self.delegated:return excluded
-  try:
-   job=self.store.job(self.job_id) or {}
-   request=job.get('message') or '' if job.get('owner_typed')==1 else ''
-  except Exception:return excluded
-  return page_exclusions(excluded,request)
- def judgment_text(self,text,private=True):
-  """Text as it may reach the completion judgment or a local record (#657, pilot boundary 1).
+ def judgment_text(self,text):
+  """Apply stored-secret and credential-shape replacement to judgments and local records.
 
-  Deterministic exclusion only, no judgment about the text: saved private
-  values (``private``; the same #605 set the browser mediation uses), the
-  stored secrets' literal values and credential-shaped tokens.  A failing
-  redactor withholds the text rather than sending it unredacted.  #826: the
-  judgment path (``goal_judgment``) asks with ``private=False`` (secrets
-  only); recorded step text and arguments keep the default.
+  A failing stored-secret redactor withholds the text.
   """
   from .bounded_execution import SECRET_PATTERN
   text=str(text or '')
   try:
-   if private:
-    from .browser_session import redact_private_values
-    text,_count=redact_private_values(text,self._browser_excluded())
    if self.secret_redactor is not None:text=self.secret_redactor(text)
   except Exception:return '[redacted]'
   return SECRET_PATTERN.sub('[redacted]',str(text))
@@ -4634,7 +4564,7 @@ class Capabilities:
                       current_packages=self.current_packages,
                       # #605: the specialist's lookups go through the same composition.
                       lookup_sources=self.lookup_sources,delegated=True,
-                      inherited_excluded=[*self.inherited_excluded,*self.written_private,*self.pending_writes],
+                      inherited_audit_values=self._work_audit_values(),
                       # #606 T1: the specialist spends this Work's budget.
                       budget=self.budget,
                       # #961 review P2: a skill the Work loaded and that was withdrawn stops the specialist's
@@ -5708,8 +5638,7 @@ def observed_part(result):
 def _observation_text(ref,name,result):
  """One referenced observation, as the completion judgment reads it.
 
- One value per line, so the line-scoped private-value redaction
- (``redact_private_values``) withholds only the line that carries a value.
+ One observed value per line.
  A native search's answer is model text and is left out (#678): only its
  cited sources are observations.
  """
@@ -5780,11 +5709,11 @@ def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact
  private)`` (``Capabilities.judgment_text``) runs on every fact before it is
  bounded, so a cut can never leave part of a secret; the owner's request is
  passed whole and only its stored-secret values are replaced.  #826 (owner
- decision): every fact gets the secrets-only pass (``private=False``); the
+ decision): every fact gets the secrets-only pass; the
  Work's saved private values are no longer masked from the owner's Judgment AI.
  """
  if judgments is None or not hasattr(judgments,'goal_reached'):return 'unavailable'
- clean=(lambda text,private=False:redact(text,private=False)) if redact else (lambda text,private=False:str(text or ''))
+ clean=(lambda text:redact(text)) if redact else (lambda text:str(text or ''))
  refs=claim['evidence_refs']
  # #151: which listed items were opened and read through comes first, in room of its own, so it
  # neither is cut nor cuts the referenced observations (Codex review: their share is what is left).
@@ -5809,7 +5738,7 @@ def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact
  try:
   if budget is not None and getattr(getattr(judgments,'engine',None),'work_budget',None) is not budget:budget.spend_turn(reserve=True)
  except Exception:return 'unavailable'
- try:judged=judgments.goal_reached(clean(goal,private=False),observed,failed,work_id=work_id,answer=reply,conversation=recent,
+ try:judged=judgments.goal_reached(clean(goal),observed,failed,work_id=work_id,answer=reply,conversation=recent,
                                    owner_context=owner,**({'conversation_messages':count} if count is not None else {}),
                                    **({'attachments':attachments} if attachments else {}),
                                    **({'awaiting_owner':clean(awaiting)} if awaiting else {}),
@@ -5819,8 +5748,8 @@ def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact
  outcome=getattr(judged,'outcome',None)
  if outcome not in ('yes','no'):return goal_verdict('unavailable')
  note=getattr(judged,'note',None)
- note=clean(' '.join(note.split()),private=False)[:GOAL_GAP_CHARS] if isinstance(note,str) else None
- verdict=goal_verdict(outcome,clean(' '.join(str(getattr(judged,'value',None) or '').split()),private=False)[:GOAL_GAP_CHARS],note,getattr(judged,'retry_warranted',None))
+ note=clean(' '.join(note.split()))[:GOAL_GAP_CHARS] if isinstance(note,str) else None
+ verdict=goal_verdict(outcome,clean(' '.join(str(getattr(judged,'value',None) or '').split()))[:GOAL_GAP_CHARS],note,getattr(judged,'retry_warranted',None))
  verdict.record_check=getattr(judged,'record_check',None) # #674
  return verdict
 

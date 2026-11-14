@@ -14,7 +14,7 @@ from . import entrusted_lines as el
 from . import preparations as prep
 from . import owner_model as om
 from . import work_status as ws
-from .agent_runtime import ToolError, not_run, ran_field, work_written_values
+from .agent_runtime import ToolError, not_run, ran_field
 from .conversation_handoff import JUDGMENT_NO, JUDGMENT_YES
 from .conversation_projection import earlier_turn_line
 from .messages import LANGUAGES, msg
@@ -615,21 +615,14 @@ class PreparationsService:
                 ('\n\n'+msg('quickstart_service.stop_watching_hint')))
 
     def scrub_prepared_answer(self, job):
-        """A prepared answer as it may be kept for later turns (#659).
-
-        The values the preparation's Work wrote to a private store (the #605
-        lookup exclusion set) and stored secrets / credential shapes are
-        removed before it is stored; deterministic, no judgment.
-        """
+        """A prepared answer with stored secrets removed before reuse in later turns."""
         service=self.service
         return service.scrub_work_text(job['id'],job.get('response'))
 
     def scrub_work_text(self, work_id, text):
-        """``text`` with Work ``work_id``'s saved private values and stored secrets removed (#659)."""
+        """Apply only the stored-secret pass to text reused from a Work."""
         service=self.service
-        from .browser_session import redact_private_values
-        text,_count=redact_private_values(str(text or ''),work_written_values(service.store,work_id))
-        return service._redact_known_secrets(text)
+        return service._redact_known_secrets(str(text or ''))
 
     def preparation_run_fact(self, job):
         """What Still records about this run of a preparation, for the worker and the judgment (#671, #682).
@@ -1456,7 +1449,7 @@ class PreparationsService:
             text=msg('lines.restated',rule=rule)
             if self.line_touches_money(line_id):
                 text+='\n\n'+msg('lines.money_rules')+'\n'+self.line_owner_rules(stored)
-            return service._redact_known_secrets(text)
+            return service._redact_known_secrets(str(text or ''))
         if kind.startswith(el.NOTICE_STOPPED):
             return service._redact_known_secrets(msg('lines.stopped',task=brief['task']))
         return None

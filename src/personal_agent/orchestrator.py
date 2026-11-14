@@ -242,8 +242,8 @@ def observations_with_pages(lines, pages, redact=None, last=''):
     judgment already reads tool results with their text (``goal_judgment``);
     this gives the CLI route the same, in the same total bound.  Page text
     takes what the step lines leave and at least ``PAGE_TEXT_FLOOR_CHARS``
-    (the oldest step lines are cut first); each page passes ``redact(text,
-    private=False)``, the secrets-only pass both routes use (#826).
+    (the oldest step lines are cut first); each page passes ``redact(text)``,
+    the secrets-only pass both routes use (#826).
     #151: ``last`` is one line kept whole at the end inside the same bound (the read state), so
     neither many step lines nor page text can push it out.
     """
@@ -259,7 +259,7 @@ def observations_with_pages(lines, pages, redact=None, last=''):
 
 def _observations_with_pages(lines, pages, redact=None, bound=OBSERVATION_CHARS):
     meta = '\n'.join(str(line) for line in lines or ())
-    clean = (lambda text: redact(text, private=False)) if redact else (lambda text: str(text or ''))
+    clean = (lambda text: redact(text)) if redact else (lambda text: str(text or ''))
     room = min(bound, max(PAGE_TEXT_FLOOR_CHARS, bound - len(meta) - 1)) - len(PAGE_TEXT_HEADER) - 1
     block = []
     for url, title, text in pages or ():
@@ -998,7 +998,7 @@ class Orchestration:
     # -- the plan call --------------------------------------------------------
     def _redact(self, text, private=True):
         redact = getattr(self.judgments, 'redact', None)
-        return redact(text, private=private) if redact else str(text or '')
+        return redact(text) if redact else str(text or '')
 
     def budget_allows(self, calls=1, reserve=False):
         """Whether the Work's deadline, Stop and turns still allow ``calls`` more model calls
@@ -1360,7 +1360,7 @@ class Orchestration:
         Redacted of stored secrets (the owner's own words, like ``owner_request``) and bounded: the
         most recent ``MAX_CORRECTIONS``, each at most ``MAX_CORRECTION_CHARS``.
         """
-        kept = [' '.join(self._redact(text, private=False).split())[:MAX_CORRECTION_CHARS]
+        kept = [' '.join(self._redact(text).split())[:MAX_CORRECTION_CHARS]
                 for text in texts or () if isinstance(text, str) and text.strip()]
         self.corrections = tuple(kept[-MAX_CORRECTIONS:])
 

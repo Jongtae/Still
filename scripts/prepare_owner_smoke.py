@@ -60,7 +60,7 @@ def prepare(root: Path, port: int, environ: dict[str, str]) -> dict:
 # tool call with provider/action and the alternative it was, the ``finish``
 # claim with its cited refs, the goal judgment, the final outcome and the
 # owner report.  Redaction reuses the existing passes: ``recorded_arguments``
-# (typed browser text), ``redact_private_values`` (values this Work saved
+# (typed browser text), exact literal replacement (values this Work saved
 # privately), ``redact_known_secrets`` (stored secret values and credential
 # shapes) and ``AgentService._redact_reason`` (bearer tokens, home paths).
 # Keys that name session or credential material are dropped outright.
@@ -185,7 +185,6 @@ def _import_runtime():
     except ImportError:
         sys.path.insert(0, str(ROOT / "src"))
     from personal_agent.agent_runtime import recorded_arguments, REDACTED_ARGUMENTS
-    from personal_agent.browser_session import redact_private_values
     from personal_agent.conversation_projection import (REPORT_NEXT_LABEL, REPORT_QUESTION_LABEL,
                                                         REPORT_STATED_FAILED_LABEL, REPORT_UNKNOWN_LABEL,
                                                         TERMINAL_UNFINISHED_LABEL)
@@ -193,7 +192,7 @@ def _import_runtime():
     from personal_agent.quickstart_service import AgentService
     from personal_agent.quickstart_store import QuickStore
     return {"recorded_arguments": recorded_arguments, "REDACTED_ARGUMENTS": REDACTED_ARGUMENTS,
-            "redact_private_values": redact_private_values, "redact_known_secrets": redact_known_secrets,
+            "redact_known_secrets": redact_known_secrets,
             "redact_reason": AgentService._redact_reason, "QuickStore": QuickStore,
             "labels": {"failed_steps": TERMINAL_UNFINISHED_LABEL, "failed_stated": REPORT_STATED_FAILED_LABEL,
                        "unknown": REPORT_UNKNOWN_LABEL, "question": REPORT_QUESTION_LABEL,
@@ -209,8 +208,7 @@ def _open_store(runtime, data: Path):
 
 
 def _work_private_values(store, job_id):
-    """Values this Work wrote to a private store (the #605 exclusion set of
-    ``agent_runtime.lookup_sources``: Memory candidates and notes)."""
+    """Values this Work wrote to a private store (export-only values: Memory candidates and notes)."""
     values = []
     with store.db() as db:
         values.extend(row["content"] for row in db.execute(
@@ -234,7 +232,8 @@ def _redactor(runtime, store, job_id, omit_text):
             return None
         value = str(value)
         try:
-            value, _count = runtime["redact_private_values"](value, private)
+            for saved in sorted(set(private), key=len, reverse=True):
+                value = value.replace(saved, "[가림]")
             value = runtime["redact_known_secrets"](store, value)
         except Exception:
             return "[redacted]"

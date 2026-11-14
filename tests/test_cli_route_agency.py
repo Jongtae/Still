@@ -550,9 +550,6 @@ class HistoryNeverTurnsNativeSearchOff(unittest.TestCase):
                     # (Still-composed) lookups and this Work's source record.
                     self.assertIn('--provenance=' + label, self.seen['bridge'])
                     self.assertIn(label, self.store.config(WORK_SOURCES_KEY, {})[later])
-                    if HISTORY_LABEL[kind] in ('personal-space', 'owner-browser-session'):
-                        # ...and a turn that carried a private store keeps size and digest only.
-                        self.assertIn(HISTORY_LABEL[kind], record.get('prompt_withheld') or [])
 
     def test_a_notes_splice_no_longer_turns_search_off(self):
         """#826: the /summarize splice of the owner's notes keeps the CLI's own search on."""
@@ -826,8 +823,6 @@ class BrowserThroughTheBridge(_BridgeHarness):
         product = _value(replies[3])
         self.assertEqual(product['state'], 'page')
         self.assertIn('세탁세제 3L', product['text'])
-        self.assertIn(bs.REDACTED, product['text'], 'mediation: the saved private value is redacted')
-        self.assertNotIn(PASSPORT, flat(replies))
         self.assertTrue(_value(replies[4])['found'])
         cart = _value(replies[5])
         self.assertEqual(cart['title'], '장바구니')
@@ -1108,7 +1103,7 @@ class RealWorkerThroughTheBridge(_BridgeHarness):
 # ---------------------------------------------------------------- the local prompt envelope (pilot posture)
 
 class PromptEnvelopeStorage(unittest.TestCase):
-    """Coordinator scope: the envelope is stored locally after redaction, withheld only for private stores, never exported."""
+    """Coordinator scope: the envelope is stored locally after redaction, never exported."""
 
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -1117,52 +1112,32 @@ class PromptEnvelopeStorage(unittest.TestCase):
         self.store = QuickStore(self.tmp / 'state')
         self.service = AgentService(self.store, browser_profile=bs.BrowserProfile(self.tmp / 'b', available=lambda: False))
 
-    def test_the_envelope_is_stored_with_secrets_and_saved_private_values_redacted(self):
+    def test_the_envelope_is_stored_with_secrets_redacted(self):
         secret = 'fake-telegram-token-701-abcdef'
         self.store.secret('telegram_token', secret)
         job = self.store.enqueue('저장해줘', 'k1')
         with self.store.db() as db:
             db.execute('INSERT INTO notes VALUES (?,?,?)', (job, 'PASSPORT-M7010101', 1))
         sent = f'request with {secret} and PASSPORT-M7010101 and sk-live-ABCDEFGHIJKLMNOP1234 visible text'
-        self.service.record_turn_sent(job, sent=sent, instructions='', instructions_channel='prompt',
-                                      private_sources={'unrecorded', 'engine-unmediated-read', 'owner-profile',
-                                                       'owner-current-context', 'owner-preparations'})
+        self.service.record_turn_sent(job, sent=sent, instructions='', instructions_channel='prompt')
         record = self.store.turn_provenance(job)
         self.assertNotIn('prompt_withheld', record)
         self.assertIn('visible text', record['prompt_envelope'])
-        for value in (secret, 'PASSPORT-M7010101', 'sk-live-ABCDEFGHIJKLMNOP1234'):
+        for value in (secret, 'sk-live-ABCDEFGHIJKLMNOP1234'):
             self.assertNotIn(value, flat(record), value)
 
-    def test_the_whole_lookup_exclusion_set_is_redacted(self):
-        """Reviewer P2-3: Memory candidates, notes and calendar drafts of the Work (``lookup_sources``)."""
-        job = self.store.enqueue('기억해줘', 'k-excl')
-        with self.store.db() as db:
-            db.execute("UPDATE jobs SET status='running' WHERE id=?", (job,))
-            db.execute('INSERT INTO notes VALUES (?,?,?)', (job, 'NOTE-VALUE-7011', 1))
-            db.execute('INSERT INTO memory_candidates(id,job_id,memory_key,content,created,state,owner_key,work_key,content_digest) '
-                       'VALUES (?,?,?,?,?,?,?,?,?)', ('c1', None, 'profile.id', 'MEMORY-VALUE-7012', 1, 'pending', 'o',
-                                                      self.store._work_binding(job), 'd'))
-        from personal_agent.agent_runtime import lookup_sources
-        self.assertEqual(set(lookup_sources(self.store, job)['excluded']), {'NOTE-VALUE-7011', 'MEMORY-VALUE-7012'})
-        self.service.record_turn_sent(job, sent='keep NOTE-VALUE-7011 and MEMORY-VALUE-7012 visible', instructions='',
-                                      instructions_channel='prompt')
-        envelope = self.store.turn_provenance(job)['prompt_envelope']
-        self.assertIn('visible', envelope)
-        self.assertNotIn('NOTE-VALUE-7011', envelope)
-        self.assertNotIn('MEMORY-VALUE-7012', envelope)
+    def test_a_notes_envelope_is_stored_locally_with_secrets_removed(self):
+        secret = 'fake-telegram-token-818-abcdef'
+        self.store.secret('telegram_token', secret)
+        job = self.store.enqueue('x', 'k-note')
+        self.service.record_turn_sent(job, sent='NOTE-CONTENT-701 ' + secret,
+                                      instructions='', instructions_channel='prompt')
+        record = self.store.turn_provenance(job)
+        self.assertNotIn('prompt_withheld', record)
+        self.assertIn('NOTE-CONTENT-701', record['prompt_envelope'])
+        self.assertNotIn(secret, record['prompt_envelope'])
 
-    def test_a_notes_turn_still_keeps_size_and_digest_only(self):
-        for label in ('personal-space', 'connected-document', 'connected-drive-file', 'owner-context-inbox',
-                      'owner-memory', 'owner-calendar'):
-            job = self.store.enqueue('x ' + label, 'k-' + label)
-            self.service.record_turn_sent(job, sent='NOTE-CONTENT-701', instructions='', instructions_channel='prompt',
-                                          private_sources={label, 'unrecorded'})
-            record = self.store.turn_provenance(job)
-            self.assertEqual(record['prompt_withheld'], [label])
-            self.assertTrue(record['prompt_envelope'].startswith('[not stored: this turn included'))
-            self.assertNotIn('NOTE-CONTENT-701', flat(record))
-
-    def test_a_real_notes_summary_turn_is_withheld(self):
+    def test_a_real_notes_summary_turn_is_stored_locally(self):
         seen = {}
 
         class Cli:
@@ -1179,8 +1154,8 @@ class PromptEnvelopeStorage(unittest.TestCase):
         self.assertTrue(service.run_one())
         self.assertIn('NOTE-SUMMARY-701', seen['prompt'])
         record = self.store.turn_provenance(job)
-        self.assertIn('personal-space', record['prompt_withheld'])
-        self.assertNotIn('NOTE-SUMMARY-701', flat(record))
+        self.assertNotIn('prompt_withheld', record)
+        self.assertIn('NOTE-SUMMARY-701', record['prompt_envelope'])
 
     def test_export_carries_no_prompt_envelope(self):
         job = self.store.enqueue('안녕', 'k-export')
