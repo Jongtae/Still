@@ -671,8 +671,7 @@ class FirstUseEndToEndAcceptance(unittest.TestCase):
             configured = self.web('/api/file-workspace', {'references': [str(self.reference)],
                                                           'workspace': str(self.workspace)})
             self.assertEqual(len(configured['references']), 1)
-            # Connecting a folder re-opened the document-sharing question, and
-            # the local model answers it without an external boundary.
+            # #820: connecting a folder asks no document-sharing question.
             self.assertFalse(self.service.document_boundary()['requires_approval'])
 
             # #182: the worker finds and reads the reference itself, then saves its summary.
@@ -834,33 +833,27 @@ class FirstUseEndToEndAcceptance(unittest.TestCase):
                 self.web('/api/state', opener=build_opener())
             self.assertEqual(refused.exception.code, 401)
 
-        with self.subTest('negative: an unapproved external model gets no owner document'):
+        with self.subTest('#820: an external model reads the granted document without a sharing approval'):
             self.connect_model('https://example.test/v1', 'external-model-key')
-            self.assertTrue(self.service.document_boundary()['requires_approval'])
+            self.assertFalse(self.service.document_boundary()['requires_approval'])
             outbound = len(self.calls)
-            # #182: the request reaches the worker; its document read is refused before any
-            # document text is read, so none reaches the external model and nothing is saved.
-            self.model_plan = [('find_files', '{"query": "출장 계획"}'),
-                               ('save_result', json.dumps({'title': '외부 전송 시도', 'content': MODEL_ANSWER},
-                                                          ensure_ascii=False))]
-            blocked = self.says(25, '“출장 계획” 자료를 요약해 “외부 전송 시도”로 저장해줘')
+            self.model_plan = [('read_file', json.dumps({'root_id': reference_root, 'path': 'trip.md'}))]
+            external_read = self.says(25, '“출장 계획” 자료를 읽어줘')
             self.drain()
             self.model_plan = []
-            # The worker's document search was refused naming the approval, and the owner was asked for it.
-            refused = [event['trace'] for event in self.store.task_events(blocked)
-                       if event['tool'] == 'find_files' and event['status'] == 'failed']
-            self.assertIn('문서 공유를 승인', refused[0]['error'])
-            self.assertEqual([row['kind'] for row in self.store.task_notifications(blocked)], ['approval_needed'])
-            self.assertEqual(self.store.task_artifacts(blocked), [])
-            self.assertNotIn('출장 계획 초안',
-                             json.dumps(self.calls[outbound:], ensure_ascii=False))
+            refused = [event for event in self.store.task_events(external_read)
+                       if event['tool'] in ('find_files', 'read_file') and event['status'] == 'failed']
+            self.assertEqual(refused, [])
+            self.assertNotIn('approval_needed', [row['kind'] for row in self.store.task_notifications(external_read)])
+            # The configured model received what it read; the original is unchanged and nothing new was saved.
+            self.assertIn('출장 계획 초안', json.dumps(self.calls[outbound:], ensure_ascii=False))
             self.assertEqual(sorted(path.name for path in self.workspace.glob('*.md')),
                              ['9월 출장 정리.md'])
 
         with self.subTest('J8 restart preserves what the contracts promise'):
             # Leave one Work mid-flight so recovery has something to decide.
             with self.store.db() as db:
-                db.execute("UPDATE jobs SET status='running' WHERE id=?", (blocked,))
+                db.execute("UPDATE jobs SET status='running' WHERE id=?", (external_read,))
             restarted_store = QuickStore(str(self.root / 'data'))
             restarted = self.boot(restarted_store)
             # `AgentService.start` runs `store.recover()` as its first
@@ -868,9 +861,9 @@ class FirstUseEndToEndAcceptance(unittest.TestCase):
             restarted_store.recover()
 
             # C8: an interrupted Work stays explicit and is not auto-retried.
-            self.assertEqual(restarted_store.job(blocked)['status'], 'interrupted')
+            self.assertEqual(restarted_store.job(external_read)['status'], 'interrupted')
             self.assertEqual(restarted_store.recovery_summary()['interrupted_jobs'], 1)
-            self.assertEqual(restarted.task_progress(blocked)['selected']['status_label'],
+            self.assertEqual(restarted.task_progress(external_read)['selected']['status_label'],
                              '확인 필요')
             self.assertEqual(restarted.home()['state'], 'attention')
 

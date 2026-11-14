@@ -46,6 +46,7 @@ from personal_agent.providers import ModelAdapter
 from personal_agent.quickstart import configured_service, make_handler
 from personal_agent.quickstart_service import AgentService
 from personal_agent.quickstart_store import QuickStore
+from personal_agent.messages import msg
 
 ROOT = Path(__file__).resolve().parents[1]
 OWNER_PASSWORD = 'a-long-wu4-owner-password'
@@ -594,9 +595,9 @@ class RefusedRunShowsItsCause(_OwnerSurface):
 
     def refused_run(self):
         """One turn whose tool is refused and whose model answers anyway."""
-        # A real capability refusal: an external model may not receive a
-        # connected-document excerpt until the owner approves document
-        # sharing, so `read_file` is denied before it resolves any path.
+        # A real capability refusal: `read_file` names a folder the owner never
+        # connected, so it is refused before any path is read (#820: the former
+        # document-sharing refusal no longer exists).
         self.model_plan = [('read_file', json.dumps(
             {'root_id': 'not-a-connected-folder', 'path': 'secret.md'}))]
         self.model_text = '해당 파일을 읽지 못했습니다.'
@@ -613,14 +614,14 @@ class RefusedRunShowsItsCause(_OwnerSurface):
         # The cause now exists on the job row instead of only in tool_events.
         self.assertIsNotNone(job['error'])
         self.assertIn('read_file', job['error'])
-        self.assertIn('연결 문서 발췌문을 외부 AI에 전달하려면 설정에서 문서 공유를 승인하세요.', job['error'])
+        self.assertIn(msg('agent_runtime.connect_file_folder'), job['error'])
 
         # And it reaches the owner-visible task card, which previously showed
         # '확인 필요' with no cause at all.
         detail = self.web('/api/tasks/' + job['id'])['selected']
         self.assertEqual(detail['status_label'], '확인 필요')
         self.assertEqual(detail['error'], job['error'])
-        self.assertIn('연결 문서 발췌문을 외부 AI에 전달하려면 설정에서 문서 공유를 승인하세요.', detail['error'])
+        self.assertIn(msg('agent_runtime.connect_file_folder'), detail['error'])
 
     def test_the_cause_matches_the_tool_event_actually_observed(self):
         """It is promoted from observed events, never composed from nothing."""

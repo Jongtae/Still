@@ -68,7 +68,6 @@ class WorkerCloseout(unittest.TestCase):
         run.subscription={'id':'fixture'} if route=='cli' else {}
         run.turn_provenance=set();run.context_sources=[]
         run.outcome=steps;run.resolved_blocker=True
-        run.approval_needed[0]=gate is True
         run.context_approval_needed[0]=gate=='context'
         run.waits_for_sign_in=waits
         run.orchestration=SimpleNamespace(orchestrated=True,terminal=goal,terminal_gap='Missing detail',
@@ -120,7 +119,7 @@ class WorkerCloseout(unittest.TestCase):
             with self.subTest(route=route,goal=goal):
                 *_,row=self.close(route,goal=goal,pending='login')
                 self.assertEqual((row['status'],row['effect_state']),('partial','withheld'))
-                for gate in (True,'context'):
+                for gate in ('context',):
                     *_,row=self.close(route,goal=goal,gate=gate)
                     self.assertEqual(row['status'],'partial')
         *_,run,row=self.close('direct',goal='none',waits=True)

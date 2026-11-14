@@ -183,7 +183,7 @@ class SlackSurface(DirectMessageSurface):
     CONFIG_KEY, STATUS_KEY, TURNS_TABLE, SECRET_KEYS = CONFIG_KEY, STATUS_KEY, TURNS_TABLE, (BOT_SECRET, APP_SECRET)
     REQUEST_KEY_PREFIX, MESSAGES = 'sl', 'slack'
     NOT_SENT, ERROR = SlackNotSent, SlackError
-    AT_THE_MAC = {'approval_needed': 'surface.answer_at_mac', 'context_approval_needed': 'surface.answer_at_mac',
+    AT_THE_MAC = {'context_approval_needed': 'surface.answer_at_mac',
                   'browser_login_needed': 'surface.answer_at_mac'}
 
     def __init__(self, service, web=None, socket=None):

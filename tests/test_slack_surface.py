@@ -903,7 +903,7 @@ class ThreadStatus(SlackCase):
 
     def test_pending_approval_has_no_initial_status(self):
         job = self.running()
-        self.service.queue_notification(job, 'approval_needed')
+        self.service.queue_notification(job, 'context_approval_needed')
         self.service.live_workers[job['id']] = 'Codex · gpt-6.1-sol · medium'
         for enabled in (False, True):
             self.store.put('developer_mode', enabled)

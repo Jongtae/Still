@@ -1279,7 +1279,6 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                     if self.tunneled():return self.reply(400,{'error':msg('intranet.local_only')})
                     return self.reply(200,service.set_intranet_destination(body))
                 if path=='/api/owner-model/request':return self.reply(200,service.owner_model_request(body))
-                if path=='/api/documents/approval':return self.reply(200,service.approve_document_sharing_from_settings(body))
                 if path=='/api/model':return self.reply(200,service.save_model(body,strict=True))
                 if path=='/api/model/test':return self.reply(200,service.test_model(body or None,strict=True))
                 if path=='/api/telegram':

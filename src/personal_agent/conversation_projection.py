@@ -338,7 +338,6 @@ def verified_portion(parts):
 # --- blockers ---------------------------------------------------------------
 BLOCKER_NO_AI_ROUTE = 'no-ai-route'
 BLOCKER_MODEL_UNVERIFIED = 'model-unverified'
-BLOCKER_DOCUMENT_APPROVAL = 'document-approval'
 #: #211: the engine's cloud provider profile is unfinished, unsupported here or past its daily cap.
 BLOCKER_CLOUD_PROFILE = 'cloud-profile'
 
@@ -455,8 +454,7 @@ class ConversationProjection:
             return self._no_ai_route(repeat)
         if kind == BLOCKER_MODEL_UNVERIFIED:
             return self._model_unverified(repeat)
-        # Other blockers (a document approval the notification below asks
-        # for) already carry their next action in the cause.
+        # Other blockers already carry their next action in the cause.
         return cause
 
     def _where_to_connect(self):

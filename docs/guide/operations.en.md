@@ -99,7 +99,7 @@ Open the setup link through the forwarded port. This is not a public-hosting or 
 
 ## Recommended owner dogfood task
 
-This retained, bounded file-workspace check uses a direct model connection; do not infer the capabilities of every subscription route from it. Create dedicated reference and result folders and put a small text or Markdown note containing `Launch review` in the reference folder. Configure those folders in Settings → Files and permissions. Test a direct OpenAI-compatible, OpenAI, Anthropic or Ollama connection. Where that path requires external-model document sharing, authorize the exact scope before using it.
+This retained, bounded file-workspace check uses a direct model connection; do not infer the capabilities of every subscription route from it. Create dedicated reference and result folders and put a small text or Markdown note containing `Launch review` in the reference folder. Configure those folders in Settings → Files and permissions. Test a direct OpenAI-compatible, OpenAI, Anthropic or Ollama connection. The configured model reads the documents in those folders without a separate sharing approval (#820); with an external model, the excerpts it reads go to that model.
 
 Ask in the paired conversation:
 

@@ -1433,18 +1433,6 @@
   "ja": "完了しました。結果の全体は Still のウェブで確認してください。",
   "zh": "已完成。完整结果请在 Still 网页上查看。"
  },
- "notice.document_approved": {
-  "ko": "문서 공유를 승인했어요. 같은 요청을 다시 보내 주세요.",
-  "en": "Document sharing approved. Please send the same request again.",
-  "ja": "ドキュメントの共有を承認しました。同じ依頼をもう一度送ってください。",
-  "zh": "已批准共享文档。请再次发送同样的请求。"
- },
- "notice.document_denied": {
-  "ko": "문서 공유를 허용하지 않았어요.",
-  "en": "Document sharing was not allowed.",
-  "ja": "ドキュメントの共有は許可されませんでした。",
-  "zh": "未允许共享文档。"
- },
  "notice.failed": {
   "ko": "작업을 완료하지 못했어요. 자세한 내용은 Still 웹에서 확인해 주세요.",
   "en": "I couldn't complete it. See the details in the Still web app.",
@@ -2075,12 +2063,6 @@
   "ja": "個人コンテキストを外部モデルに送るには、この作業への承認が必要です。コンテキストの内容は送信していません。",
   "zh": "将个人上下文发送给外部模型需要批准此任务。尚未发送上下文内容。"
  },
- "service.approval_is_required_to_send_connected": {
-  "ko": "연결 문서를 외부 모델에 전달하려면 승인이 필요해요. 문서 내용은 전송되지 않았어요.",
-  "en": "Approval is required to send connected documents to an external model. No document content was sent.",
-  "ja": "接続した文書を外部モデルに送るには承認が必要です。文書の内容は送信していません。",
-  "zh": "将已连接文档发送给外部模型需要批准，尚未发送文档内容。"
- },
  "service.check_the_telegram_connection_receiving_will": {
   "ko": "Telegram 연결을 확인해 주세요. 수신을 다시 시도해요.",
   "en": "Check the Telegram connection. Receiving will be retried.",
@@ -2140,18 +2122,6 @@
   "en": "Disconnected Telegram.",
   "ja": "Telegram の接続を解除しました。",
   "zh": "已断开 Telegram 连接。"
- },
- "service.document_sharing_approval_is_required_to": {
-  "ko": "승인된 참고 자료를 외부 모델에 전달하려면 문서 공유 승인이 필요해요.",
-  "en": "Document-sharing approval is required to send approved reference material to an external model.",
-  "ja": "承認済みの参考資料を外部モデルに送るには、文書共有の承認が必要です。",
-  "zh": "将已批准的参考资料发送给外部模型，需要文档共享批准。"
- },
- "service.document_sharing_was_approved_the_request": {
-  "ko": "문서 공유를 승인했어요. 폴더를 허용한 요청을 한 번만 이어서 처리해요.",
-  "en": "Document sharing was approved. The request for which you allowed the folder will resume just once.",
-  "ja": "文書の共有を承認しました。フォルダーを許可した依頼を一度だけ再開します。",
-  "zh": "已批准文档共享，将继续刚才授权文件夹的请求一次。"
  },
  "service.done": {
   "ko": "처리했어요.",
@@ -2374,12 +2344,6 @@
   "en": "This request was already retried once. I did not run it again.",
   "ja": "この依頼はすでに一度やり直しました。同じ依頼を重ねて実行していません。",
   "zh": "这个请求已经重试过一次，没有重复执行。"
- },
- "service.to_continue_the_request_for_which": {
-  "ko": "폴더를 허용한 방금 요청을 계속하려면 연결 문서 발췌문을 외부 모델에 보내는 승인이 필요해요. 승인하면 그 요청을 한 번만 이어서 처리해요. 아직 문서 내용은 전송되지 않았어요.",
-  "en": "To continue the request for which you just allowed the folder, approval is needed to send excerpts from connected documents to an external model. Once approved, that request will resume just once. No document content has been sent yet.",
-  "ja": "フォルダーを許可した直前の依頼を続けるには、接続した文書の抜粋を外部モデルに送る承認が必要です。承認後、その依頼を一度だけ再開します。文書の内容はまだ送信していません。",
-  "zh": "要继续刚才授权文件夹的请求，需要批准将已连接文档的摘录发送给外部模型。批准后只会继续该请求一次。尚未发送文档内容。"
  },
  "service.trying_again_runs_the_same_request": {
   "ko": "다시 시도하면 같은 요청을 한 번 다시 실행해요.",
@@ -7564,12 +7528,6 @@
   "ja": "前のリクエストをキャンセルしました。設定の確認後も実行しません。",
   "zh": "已取消上次请求。设置确认后也不会执行。"
  },
- "quickstart_service.cancelled_document": {
-  "ko": "이전 요청을 취소했어요. 문서 공유를 승인해도 이어서 처리하지 않아요.",
-  "en": "The previous request was cancelled. It will not resume after document sharing approval.",
-  "ja": "前のリクエストをキャンセルしました。文書共有を承認しても再開しません。",
-  "zh": "已取消上次请求。批准文档共享后也不会继续。"
- },
  "quickstart_service.cancelled_connection": {
   "ko": "이전 요청을 취소했어요. 연결이 끝나도 실행하지 않아요.",
   "en": "The previous request was cancelled. It will not run after connection.",
@@ -7851,18 +7809,6 @@
   "en": "Removed skill '{skill}'. It will not be used for new requests.",
   "ja": "スキル「{skill}」を削除しました。次のリクエストから使いません。",
   "zh": "已移除技能“{skill}”。后续请求将不再使用。"
- },
- "quickstart_service.document_approval_label": {
-  "ko": "현재 선택 모델과 연결 폴더의 문서 발췌문",
-  "en": "Currently selected model and excerpts from connected folders",
-  "ja": "現在選択中のモデルと接続フォルダーの文書抜粋",
-  "zh": "当前所选模型及已连接文件夹的文档摘录"
- },
- "quickstart_service.document_approval_only": {
-  "ko": "문서 공유 승인만 설정할 수 있어요.",
-  "en": "Only document sharing approval can be set here.",
-  "ja": "ここでは文書共有の承認のみ設定できます。",
-  "zh": "这里只能设置文档共享批准。"
  },
  "folder_grants.broad_includes": {
   "ko": "{path} 폴더를 연결하면 AI가 그 아래의 모든 문서를 읽을 수 있어요. 숨김 폴더, 인증 정보와 시스템 위치(Library/Keychains 등), Still 데이터 폴더는 계속 제외돼요. 이 폴더를 연결할까요?",
@@ -9167,10 +9113,10 @@
   "zh": "支持的格式：TXT、MD、PDF、DOCX和XLSX。"
  },
  "agent_runtime.document_excerpt_sharing": {
-  "ko": "연결 문서 발췌문을 외부 AI에 전달하려면 설정에서 문서 공유를 승인하세요.",
-  "en": "Approve document sharing in Settings to send excerpts from connected documents to an external AI.",
-  "ja": "接続文書の抜粋を外部AIに送るには、設定で文書共有を承認してください。",
-  "zh": "要将已连接文档的摘录发送给外部AI，请在设置中批准文档共享。"
+  "ko": "이 작업의 실행 경로에는 연결 문서 읽기가 포함되지 않아 문서를 읽을 수 없어요.",
+  "en": "This Work's route does not include reading connected documents, so the document cannot be read.",
+  "ja": "この作業の実行経路には接続文書の読み取りが含まれていないため、文書を読めません。",
+  "zh": "此任务的执行路径不包括读取已连接的文档，因此无法读取该文档。"
  },
  "agent_runtime.file_source_location": {
   "ko": "파일: {path} · {location}",
@@ -9233,10 +9179,10 @@
   "zh": "请先在连接设置中连接要访问的文件夹。"
  },
  "agent_runtime.document_search_sharing": {
-  "ko": "연결 문서 검색 결과를 외부 AI에 전달하려면 설정에서 문서 공유를 승인하세요.",
-  "en": "Approve document sharing in Settings to send connected-document search results to an external AI.",
-  "ja": "接続文書の検索結果を外部AIに送るには、設定で文書共有を承認してください。",
-  "zh": "要将已连接文档的搜索结果发送给外部AI，请在设置中批准文档共享。"
+  "ko": "이 작업의 실행 경로에는 연결 문서 읽기가 포함되지 않아 문서를 검색할 수 없어요.",
+  "en": "This Work's route does not include reading connected documents, so documents cannot be searched.",
+  "ja": "この作業の実行経路には接続文書の読み取りが含まれていないため、文書を検索できません。",
+  "zh": "此任务的执行路径不包括读取已连接的文档，因此无法搜索文档。"
  },
  "agent_runtime.query_length": {
   "ko": "검색어는 1~200자로 입력하세요.",
