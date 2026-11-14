@@ -215,7 +215,7 @@ class ModelTools(WorkModeCase):
 
     def test_each_outbound_tool_is_refused_without_running(self):
         network = self.Network()
-        caps = self.capabilities(network, public_page_scope=['https://example.com/'])
+        caps = self.capabilities(network)
         self.on()
         for name, args in (('web_search', {'query': 'q'}), ('public_page_read', {'url': 'https://example.com/'}),
                            ('weather', {'city': 'Seoul'})):
@@ -237,8 +237,7 @@ class ModelTools(WorkModeCase):
                 self.assertIsNone(work_mode.tool_refusal(self.store, action), 'local tools stay available')
 
     def test_a_public_url_request_opens_no_socket(self):
-        caps = self.capabilities(LocalTools(page_reader=PublicPageReader(resolver=no_socket)),
-                                 public_page_scope=['https://example.com/'])
+        caps = self.capabilities(LocalTools(page_reader=PublicPageReader(resolver=no_socket)))
         self.on()
         with mock.patch.object(socket, 'create_connection', no_socket), \
                 mock.patch.object(socket.socket, 'connect', no_socket):

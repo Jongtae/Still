@@ -63,7 +63,7 @@ class CallOrderTest(unittest.TestCase):
         self.assertEqual(timeline.events, [(kind, name) for name in ('w1', 'w2', 'w3') for kind in ('enter', 'exit')])
 
     def test_a_page_read_waits_for_the_searches_before_it(self):
-        """#16's rule: a page read whose scope includes search results never overtakes a search."""
+        """#16's rule: a page read never overtakes a search that arrived before it."""
         import anyio
         from personal_agent.mcp_bridge import _CallOrder
         timeline = Timeline()

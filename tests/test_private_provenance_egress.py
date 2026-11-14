@@ -183,18 +183,21 @@ class RoutingSiteProvenanceTests(unittest.TestCase):
         self.assertEqual(bare.execute('list_roots', {}), {'roots': []})
         self.assertEqual(bare.private_provenance, set())
 
-    def test_public_page_read_follows_only_the_owner_page_approval(self):
-        """#826: private material in the Work no longer closes an approved page; the approval still bounds it."""
-        scope = {'https://example.com/pricing'}
-        facade = self.caps(public_page_scope=scope)
+    def test_public_page_read_is_not_closed_by_private_material_in_the_work(self):
+        """#826/#820: private material in the Work, its own or a delegated parent's, does not close a page read.
+
+        No page approval bounds it any more: each read sends exactly the address given and nothing else.
+        """
+        facade = self.caps()
         facade.execute('list_notes', {})
         facade.execute('public_page_read', {'url': 'https://example.com/pricing'})
-        with self.assertRaises(ValueError):
-            facade.execute('public_page_read', {'url': 'https://example.com/pricing?account=110-222-333333'})
-        child = self.caps(public_page_scope=set(), inherited_provenance={'delegated:connected-document'})
-        with self.assertRaises(ValueError):
-            child.execute('public_page_read', {'url': 'https://example.com/pricing'})
-        self.assertEqual([plan['tool'] for plan in self.egress.plans], ['public_page_read'])
+        facade.execute('public_page_read', {'url': 'https://example.com/pricing?account=110-222-333333'})
+        child = self.caps(inherited_provenance={'delegated:connected-document'})
+        child.execute('public_page_read', {'url': 'https://example.com/pricing'})
+        self.assertEqual(self.egress.plans, [
+            {'tool': 'public_page_read', 'url': 'https://example.com/pricing'},
+            {'tool': 'public_page_read', 'url': 'https://example.com/pricing?account=110-222-333333'},
+            {'tool': 'public_page_read', 'url': 'https://example.com/pricing'}])
 
     def test_delegation_preserves_each_inherited_label(self):
         """The child inherits the parent's labels, not a single flat marker (the audit's record)."""

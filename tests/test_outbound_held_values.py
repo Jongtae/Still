@@ -503,15 +503,25 @@ class HandOff(unittest.TestCase):
                 raise self.error
             return {'tool': plan['tool'], 'url': plan.get('url'), 'text': 'page', 'sources': [], 'retrieved_at': 1}
 
-    def test_out_of_scope_page_reads_carrying_memory_record_no_attempt(self):
+    def test_locally_refused_page_reads_carrying_memory_record_no_attempt(self):
+        # #820: any public address is read, so the local refusal here is the reader's own
+        # boundary: a loopback literal, and a host that resolves to private-use space.
         # Two consecutive reads start together (#16), so each refusal is marked on its own thread.
-        script = Script({'tool_calls': [call('1', 'public_page_read', url='https://shop.example/find?no=M1234-5678'),
+        from personal_agent.local_tools import LocalTools, PublicPageReader
+        opened = []
+
+        class Opener:
+            def open(self, request, timeout=None):
+                opened.append(request.full_url)
+                raise AssertionError('never reached')
+        script = Script({'tool_calls': [call('1', 'public_page_read', url='https://127.0.0.1/find?no=M1234-5678'),
                                         call('2', 'public_page_read', url='https://other.example/q?m=m1234%205678')]},
                         {'content': '읽지 못했습니다.'})
-        network = self.Network()
+        network = LocalTools(page_reader=PublicPageReader(
+            opener=Opener(), resolver=lambda host, port, type=None, timeout=None: [(None, None, None, None, ('10.0.0.5', port))]))
         caps = Capabilities(self.store, ModelAdapter(script), BROWSER_CFG, '', self.job, self.record, network=network)
         run_agent(caps.adapter, BROWSER_CFG, '', [{'role': 'user', 'content': '회원 혜택 찾아줘'}], '', caps, self.record)
-        self.assertEqual(network.plans, [], 'nothing was sent')
+        self.assertEqual(opened, [], 'nothing was sent')
         failed = self.failed('public_page_read')
         self.assertEqual(len(failed), 2)
         for detail in failed:
@@ -523,8 +533,7 @@ class HandOff(unittest.TestCase):
         url = 'https://shop.example/find?no=M1234-5678'
         script = Script({'tool_calls': [call('1', 'public_page_read', url=url)]}, {'content': '읽지 못했습니다.'})
         network = self.Network(error=ValueError('response rejected after the request was sent'))
-        caps = Capabilities(self.store, ModelAdapter(script), BROWSER_CFG, '', self.job, self.record, network=network,
-                            public_page_scope=[url])
+        caps = Capabilities(self.store, ModelAdapter(script), BROWSER_CFG, '', self.job, self.record, network=network)
         run_agent(caps.adapter, BROWSER_CFG, '', [{'role': 'user', 'content': '회원 혜택 찾아줘'}], '', caps, self.record)
         self.assertEqual(len(network.plans), 1, 'the read was sent')
         [detail] = self.failed('public_page_read')
@@ -549,10 +558,12 @@ class HandOff(unittest.TestCase):
     def test_a_bridge_page_read_refused_locally_records_no_attempt(self):
         requests = [{'jsonrpc': '2.0', 'id': 0, 'method': 'initialize', 'params': {}},
                     {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call',
-                     'params': {'name': 'public_page_read', 'arguments': {'url': 'https://shop.example/find?no=M1234-5678'}}}]
+                     'params': {'name': 'public_page_read', 'arguments': {'url': 'https://127.0.0.1/find?no=M1234-5678'}}}]
         sent = []
         out = io.StringIO()
-        with mock.patch('personal_agent.local_tools.LocalTools.execute', lambda self, plan, budget=None: sent.append(plan)), \
+        # #820: the bridge reads any public address; a loopback one is refused by the reader before any request.
+        with mock.patch('personal_agent.local_tools.PublicPageReader._open_pinned',
+                        lambda self, url, addresses, deadline=None: sent.append(url)), \
                 mock.patch.object(sys, 'stdin', io.StringIO(''.join(json.dumps(r) + '\n' for r in requests))), \
                 contextlib.redirect_stdout(out):
             mcp_bridge.serve(str(self.store.root), self.job)
@@ -651,7 +662,7 @@ class NetworkLocalRefusals(HandOff):
     def reader_caps(self, address, opener=None):
         from personal_agent.local_tools import LocalTools, PublicPageReader
         network = LocalTools(page_reader=PublicPageReader(opener=opener, resolver=self.resolver(address)))
-        return Capabilities(self.store, None, {}, '', self.job, self.record, network=network, public_page_scope=[self.PAGE])
+        return Capabilities(self.store, None, {}, '', self.job, self.record, network=network)
 
     def execute(self, caps, name, args):
         from personal_agent.providers import ProviderError
@@ -718,7 +729,7 @@ class NetworkLocalRefusals(HandOff):
         for error in (ValueError('refused inside an unknown implementation'), OSError('socket closed')):
             with self.subTest(error=type(error).__name__):
                 network = self.Network(error=error)
-                caps = Capabilities(self.store, None, {}, '', self.job, self.record, network=network, public_page_scope=[url])
+                caps = Capabilities(self.store, None, {}, '', self.job, self.record, network=network)
                 exc, attempted = self.execute(caps, 'public_page_read', {'url': url})
                 self.assertTrue(network.plans, 'handed to the network (a transient failure is retried once)')
                 self.assertEqual(agent_runtime.ran_field(exc), {})
@@ -759,14 +770,14 @@ class NetworkLocalRefusals(HandOff):
                 raise OSError('connection reset after the request was written')
         from personal_agent.local_tools import LocalTools, PublicPageReader
         network = LocalTools(page_reader=PublicPageReader(opener=Opener(), resolver=resolver))
-        caps = Capabilities(self.store, None, {}, '', self.job, self.record, network=network, public_page_scope=[self.PAGE])
+        caps = Capabilities(self.store, None, {}, '', self.job, self.record, network=network)
         exc, attempted = self.execute(caps, 'public_page_read', {'url': self.PAGE})
         self.assertIn('개인 네트워크', str(exc), 'the retry was refused before its own request')
         self.assertEqual(agent_runtime.ran_field(exc), {}, 'the first attempt was sent')
         self.assertTrue(attempted.get('outbound_matches'))
 
     # The inherited cases already ran in ``HandOff``.
-    test_out_of_scope_page_reads_carrying_memory_record_no_attempt = None
+    test_locally_refused_page_reads_carrying_memory_record_no_attempt = None
     test_the_same_read_failing_after_it_was_sent_is_still_shown_as_an_attempt = None
     test_local_refusals_of_each_outbound_tool_are_marked_not_run_and_carry_nothing = None
     test_a_bridge_page_read_refused_locally_records_no_attempt = None

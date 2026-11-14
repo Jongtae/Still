@@ -11,8 +11,9 @@ this Work saved or read; a private context no longer refuses a lookup and a
 delegated specialist looks up like its parent.  What remains is deterministic
 only: stored secrets and credential shapes never leave (pilot invariant a),
 withdrawn current-context text is removed in every spelling (#627), the
-provider's query length bounds the text and the owner's page approval bounds
-``public_page_read``.  No per-request sensitivity judgment, word cap, fixed
+provider's query length bounds the text.  Since #820 ``public_page_read`` reads
+any public address as given (the reader keeps its own private-address and
+size limits; a stored secret in the address is refused).  No per-request sensitivity judgment, word cap, fixed
 order, one-attempt memo, per-Work lookup cap or `/search` requirement exists.
 """
 import contextlib
@@ -102,7 +103,6 @@ class DecisionTable(unittest.TestCase):
 
     def caps(self, labels=(), permitted=None, excluded=(), **kwargs):
         sources = None if permitted is None else (lambda: {'current': (list(permitted) or [''])[-1], 'excluded': list(excluded)})
-        kwargs.setdefault('public_page_scope', {URL})
         return Capabilities(self.store, None, CFG, '', next_work(), lambda *e: None, network=self.wire,
                             inherited_provenance=set(labels), lookup_sources=sources, **kwargs)
 
@@ -135,10 +135,11 @@ class DecisionTable(unittest.TestCase):
          'weather', {'city': '대전', 'country': 'Korea'}, [{'tool': 'weather', 'city': '대전'}], None),
         ('#826: a saved value inside a longer word goes out', NOTES, ['성남에 있어 병원 찾아줘'], ['정신과'],
          'web_search', {'query': '성남정신과 병원'}, [{'tool': 'web_search', 'query': '성남정신과 병원'}], None),
-        ('approved page in the current scope', ('owner-calendar',), [], (),
-         'public_page_read', {'url': URL}, [{'tool': 'public_page_read', 'url': URL, 'approved_urls': [URL]}], None),
-        ('page outside the current scope', ('owner-calendar',), [], (),
-         'public_page_read', {'url': URL + '?q=' + PRIVATE}, [], '소유자가 승인한 공개 페이지가 아니어서'),
+        # #820: no page approval or allowlist; the plan carries exactly the given address and nothing else.
+        ('#820: a page in a private context is read at exactly the given address', ('owner-calendar',), [], (),
+         'public_page_read', {'url': URL}, [{'tool': 'public_page_read', 'url': URL}], None),
+        ('#820: a page address with a value this Work read goes out as given', ('connected-document',), [], [PRIVATE],
+         'public_page_read', {'url': URL + '?q=' + PRIVATE}, [{'tool': 'public_page_read', 'url': URL + '?q=' + PRIVATE}], None),
     ]
 
     def test_decision_table(self):
@@ -154,7 +155,7 @@ class DecisionTable(unittest.TestCase):
                     result = caps.execute(action, args)
                     if permitted is not None and action != 'public_page_read':
                         # Checked arguments are exactly the transmitted arguments; a page
-                        # address is fixed by the owner's approval, never composed.
+                        # address is sent as given, never composed (#820).
                         self.assertEqual(result['composed_by'], 'agentos-public-task')
                         self.assertEqual({'tool': action, **result['sent']}, outbound[0])
                 self.assertEqual(self.wire.plans, outbound)
@@ -187,21 +188,6 @@ class DecisionTable(unittest.TestCase):
                 run_agent(ModelAdapter(lambda *a, **k: replies.pop(0)), CFG, '', [{'role': 'user', 'content': request}],
                           '', caps, lambda *e: None)
                 self.assertEqual(self.wire.plans, [{'tool': 'web_search', 'query': f'병원 {PASSPORT}'}])
-
-    def test_revoked_page_scope_refuses_a_read_that_starts_afterwards(self):
-        scope = {URL}
-        caps = self.caps(public_page_scope=lambda: set(scope))
-        caps.execute('public_page_read', {'url': URL})
-        scope.clear()
-        with self.assertRaisesRegex(ValueError, '소유자가 승인한 공개 페이지가 아니어서'):
-            caps.execute('public_page_read', {'url': URL + '#again'})
-        tainted = self.caps(('connected-document',), [], public_page_scope=lambda: set(scope))
-        with self.assertRaisesRegex(ValueError, '소유자가 승인한 공개 페이지가 아니어서'):
-            tainted.execute('public_page_read', {'url': URL})
-        clean = self.caps(public_page_scope=lambda: {URL})
-        with self.assertRaisesRegex(ValueError, '소유자가 승인한 공개 페이지가 아니어서'):
-            clean.execute('public_page_read', {'url': URL + '?q=' + PRIVATE})
-        self.assertEqual(len(self.wire.plans), 1, 'the read before revocation is not undone, and none follows it')
 
     def test_a_private_context_may_look_up_again_with_another_query(self):
         """#654: no one-attempt memo; alternatives after a failure or a first result are sent, not replayed."""
