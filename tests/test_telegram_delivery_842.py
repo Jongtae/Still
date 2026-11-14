@@ -267,3 +267,14 @@ def test_sweep_repeats_partial_queueing_without_duplicating_notice(case):
     assert service.deliver_notification()
     assert not service.deliver_notification()
     assert len(_sent(c)) == 1
+
+
+def test_after_work_marker_never_shows_in_the_owner_trail(case):
+    c, work = _telegram(case)
+    run = _finish(c, work)
+    c.service._after_work(run)
+    with c.store.db() as db:
+        tools = [row['tool'] for row in db.execute('SELECT tool FROM tool_events WHERE job_id=?', (work,))]
+    assert 'after_work' in tools
+    assert all(step[0] != 'after_work' for step in c.service.work_steps(work))
+    assert 'after_work' in c.service.LOCAL_NON_TOOL_EVENTS
