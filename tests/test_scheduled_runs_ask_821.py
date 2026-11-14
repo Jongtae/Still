@@ -59,6 +59,8 @@ class _Runs(_Case):
 
     def started(self, **kwargs):
         row = self.preparation(**kwargs)
+        if row['accepted_by'] == prep.ACCEPTED_DREAM:  # #717: a dream row runs once told, with the look back on
+            self.service.owner_model.set_controls({'dream': True}); self.service.preparations.mark_offered([row], self.now)
         self.now = row['due_at'] + 1
         self.assertTrue(self.tick())
         [run] = self.runs(row['id'])
