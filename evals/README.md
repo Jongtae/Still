@@ -295,7 +295,24 @@ To measure an older checkout using this harness, first create it with `git workt
 PYTHONPATH=evals .venv/bin/python -m agentos_eval judgments run --seed sanitized-seed --src /tmp/still-v0.6.0/src --out /tmp/judgment-baseline
 ```
 
-Run each checkout in a fresh process; `--src` selects its production imports, Git head and prompt digests. The seed must be a sanitized snapshot with `private/quickstart.db`; each run uses a fresh `Sandbox.prepare()` copy and removes it afterward. No server or worker is started. Use the same seed, roles, trial count and runtime settings for both measurements. Comparison refuses different case-set versions and flags changed runtime conditions; fixtures do not establish live availability or model quality.
+Run each checkout in a fresh process; `--src` selects its production imports, Git head and prompt digests. The seed must be a sanitized snapshot or synthetic seed with `private/quickstart.db`; each run uses a fresh `Sandbox.prepare()` copy and removes it afterward. No server or worker is started. Use the same seed, roles, trial count and runtime settings for both measurements. Comparison refuses different case-set versions and flags changed runtime conditions; fixtures do not establish live availability or model quality.
+
+### Synthetic seed (no owner data)
+
+From the repository root, run `PYTHONPATH=evals .venv/bin/python -m agentos_eval.synthetic_seed --out synthetic-terra --engine codex --model gpt-5.6-terra`.
+A bare output name resolves to `eval_home()/seeds/NAME` (by default `~/.local/share/agentos-evals/seeds/NAME`).
+The seed and its sandbox copies must be outside the system temp directory: a store under `/tmp`, `/private/tmp` or the platform temp directory fails the shipped Codex `protected-directory-denied` isolation probe because Codex can read system temp.
+Do not point `AGENTOS_EVAL_HOME` at system temp for live qualification. Model-free fixture tests explicitly inject the location seam.
+
+This creates a fresh store without owner Memory, history, owner model, connections or secrets; no profile is copied.
+Add `--effort E` to request an effort; activation uses the shipped Judgment AI path and spends real calls through your host CLI login.
+Use `--dry-run` to print the activation body and suite call bounds without creating a seed or calling the CLI.
+The private `synthetic-seed.json` manifest records `owner_data: "none"`, creation time, requested model, Git head and redacted runtime status.
+
+Pass `--seed synthetic-terra` to `agentos_eval.paired`; `--live` requires a manifest declaring `owner_data: "none"` and a seed under `eval_home()/seeds`.
+Each arm uses `Sandbox.prepare()` to copy the seed, reads its route, pins the explicit `--model`, and runs the shipped #346 requalification job before measurement.
+Copied qualification is path-bound; its calls share the per-arm cap with selected cases. The source seed remains unchanged and copies are stopped/removed in `finally`.
+Owner snapshots remain supported separately by `judgments run --seed ... --requalify`.
 
 Reuse decision: **Adapt** the existing eval package. Standard-library JSON, argparse, hashing, file permissions and timing cover serialization/CLI/report needs; the shipped `ModelAdapter`, decision policy, orchestration and qualification runners cover the measured boundary. Existing sandbox, seed resolution, Git-head and report-folder conventions supply the thin eval glue. No new dependency, licence, runtime authority, data destination or production component is introduced (Still remains AGPL-3.0-only).
 

@@ -1,0 +1,673 @@
+{
+  "version": "judgment-validation/3",
+  "catalogue": {
+    "workers": [
+      {
+        "id": "default-worker",
+        "name": "default-worker",
+        "kind": "api",
+        "available": true,
+        "default": true,
+        "default_model": "model-standard",
+        "models": [
+          "model-standard",
+          "model-advanced"
+        ],
+        "model_tiers": {
+          "model-standard": "lowest-cost",
+          "model-advanced": "higher-cost"
+        },
+        "tools": [],
+        "native_search": true,
+        "browser": false,
+        "cost": "synthetic",
+        "latency": "synthetic"
+      },
+      {
+        "id": "other-worker",
+        "name": "other-worker",
+        "kind": "api",
+        "available": true,
+        "default": false,
+        "default_model": "model-standard",
+        "models": [
+          "model-standard",
+          "model-advanced"
+        ],
+        "model_tiers": {
+          "model-standard": "lowest-cost",
+          "model-advanced": "higher-cost"
+        },
+        "tools": [],
+        "native_search": true,
+        "browser": false,
+        "cost": "synthetic",
+        "latency": "synthetic"
+      }
+    ],
+    "routes": {},
+    "default": "default-worker"
+  },
+  "cases": [
+    {
+      "id": "heldout-followup-retry",
+      "role": "followup_relation",
+      "class": "bounded",
+      "lang": "en",
+      "category": "follow-up",
+      "input": {
+        "utterance": "Give the page generator another attempt.",
+        "previous_intent": "document",
+        "previous_status": "failed",
+        "previous_request": "Make a poem into a printable page",
+        "previous_reply": "The page generator failed.",
+        "previous_request_at": "just now",
+        "previous_reply_at": "just now"
+      },
+      "expect": {
+        "outcome": "yes",
+        "value": "retry"
+      }
+    },
+    {
+      "id": "heldout-followup-correction",
+      "role": "followup_relation",
+      "class": "bounded",
+      "lang": "en",
+      "category": "correction",
+      "input": {
+        "utterance": "Actually, use 18-point type for it.",
+        "previous_intent": "document",
+        "previous_status": "succeeded",
+        "previous_request": "Create a 12-point heading",
+        "previous_reply": "The heading uses 12-point type.",
+        "previous_request_at": "just now",
+        "previous_reply_at": "just now"
+      },
+      "expect": {
+        "outcome": "yes",
+        "value": "correction"
+      }
+    },
+    {
+      "id": "heldout-followup-reference",
+      "role": "followup_relation",
+      "class": "bounded",
+      "lang": "en",
+      "category": "short-reference",
+      "input": {
+        "utterance": "Put that explanation in simpler words.",
+        "previous_intent": "document",
+        "previous_status": "succeeded",
+        "previous_request": "Explain this musical notation",
+        "previous_reply": "Here is the explanation of the notation.",
+        "previous_request_at": "just now",
+        "previous_reply_at": "just now"
+      },
+      "expect": {
+        "outcome": "yes",
+        "value": "reference"
+      }
+    },
+    {
+      "id": "heldout-followup-topic",
+      "role": "followup_relation",
+      "class": "bounded",
+      "lang": "en",
+      "category": "topic-change",
+      "input": {
+        "utterance": "Why do volcanoes erupt?",
+        "previous_intent": "document",
+        "previous_status": "succeeded",
+        "previous_request": "Explain this musical notation",
+        "previous_reply": "This symbol means a rest.",
+        "previous_request_at": "just now",
+        "previous_reply_at": "just now"
+      },
+      "expect": {
+        "outcome": "no"
+      }
+    },
+    {
+      "id": "heldout-steer-correction",
+      "role": "steers_running_work",
+      "class": "bounded",
+      "lang": "en",
+      "category": "steer",
+      "input": {
+        "running_request": "Prepare a one-page biography",
+        "utterance": "Make that biography two pages instead."
+      },
+      "expect": {
+        "outcome": "yes"
+      }
+    },
+    {
+      "id": "heldout-steer-unrelated",
+      "role": "steers_running_work",
+      "class": "bounded",
+      "lang": "en",
+      "category": "steer",
+      "input": {
+        "running_request": "Prepare a one-page biography",
+        "utterance": "What makes a rainbow appear?"
+      },
+      "expect": {
+        "outcome": "no"
+      }
+    },
+    {
+      "id": "heldout-open-question-true",
+      "role": "answers_open_question",
+      "class": "bounded",
+      "lang": "en",
+      "category": "open-question",
+      "input": {
+        "earlier_request": "Suggest a practice exercise",
+        "earlier_reply": "Which instrument are you learning?",
+        "utterance": "The cello."
+      },
+      "expect": {
+        "outcome": "yes"
+      }
+    },
+    {
+      "id": "heldout-open-question-false",
+      "role": "answers_open_question",
+      "class": "bounded",
+      "lang": "en",
+      "category": "open-question",
+      "input": {
+        "earlier_request": "Suggest a practice exercise",
+        "earlier_reply": "Which instrument are you learning?",
+        "utterance": "How are eclipses predicted?"
+      },
+      "expect": {
+        "outcome": "no"
+      }
+    },
+    {
+      "id": "heldout-withdrawal-true",
+      "role": "parked_work_withdrawn",
+      "class": "bounded",
+      "lang": "en",
+      "category": "withdrawal",
+      "input": {
+        "utterance": "Abandon the pending archive search; I no longer need it."
+      },
+      "expect": {
+        "outcome": "yes"
+      }
+    },
+    {
+      "id": "heldout-withdrawal-false",
+      "role": "parked_work_withdrawn",
+      "class": "bounded",
+      "lang": "en",
+      "category": "withdrawal",
+      "input": {
+        "utterance": "Leave the archive search pending until access is restored."
+      },
+      "expect": {
+        "outcome": "no"
+      }
+    },
+    {
+      "id": "heldout-effect-read",
+      "role": "connector_effect",
+      "class": "bounded",
+      "lang": "en",
+      "category": "effect-class",
+      "input": {
+        "tool_name": "list_exhibits",
+        "argument_names": [
+          "gallery"
+        ],
+        "owner_request": "Show the gallery exhibit list."
+      },
+      "expect": {
+        "value": "read"
+      }
+    },
+    {
+      "id": "heldout-effect-mutate",
+      "role": "connector_effect",
+      "class": "bounded",
+      "lang": "en",
+      "category": "effect-class",
+      "input": {
+        "tool_name": "reschedule_rehearsal",
+        "argument_names": [
+          "rehearsal",
+          "start_time"
+        ],
+        "owner_request": "Move the rehearsal to tomorrow."
+      },
+      "expect": {
+        "value": "mutate"
+      }
+    },
+    {
+      "id": "heldout-effect-payment",
+      "role": "connector_effect",
+      "class": "bounded",
+      "lang": "en",
+      "category": "effect-class",
+      "input": {
+        "tool_name": "purchase_license",
+        "argument_names": [
+          "license_id"
+        ],
+        "owner_request": "Buy the software license."
+      },
+      "expect": {
+        "value": "payment"
+      }
+    },
+    {
+      "id": "heldout-effect-abstain",
+      "role": "connector_effect",
+      "class": "bounded",
+      "lang": "en",
+      "category": "abstention",
+      "input": {
+        "tool_name": "invoke",
+        "argument_names": [
+          "payload"
+        ],
+        "owner_request": "Take care of the supplied payload."
+      },
+      "expect": {
+        "abstain": true
+      }
+    },
+    {
+      "id": "heldout-projection-failed",
+      "role": "status_projection",
+      "class": "bounded",
+      "lang": "en",
+      "category": "status-projection",
+      "input": {
+        "facts": {
+          "owner_message": "Did the conversion finish?",
+          "observed_status": "failed",
+          "observed_detail": "The audio conversion exited with an error before producing output."
+        }
+      },
+      "expect": {
+        "value": "failed"
+      }
+    },
+    {
+      "id": "heldout-projection-partial",
+      "role": "status_projection",
+      "class": "bounded",
+      "lang": "en",
+      "category": "status-projection",
+      "input": {
+        "facts": {
+          "owner_message": "Is the transcription complete?",
+          "observed_status": "partial",
+          "observed_detail": "Only the first audio segment was transcribed; the second segment is absent."
+        }
+      },
+      "expect": {
+        "value": "partial"
+      }
+    },
+    {
+      "id": "heldout-projection-unknown",
+      "role": "status_projection",
+      "class": "bounded",
+      "lang": "en",
+      "category": "status-projection",
+      "input": {
+        "facts": {
+          "owner_message": "Was the remote job completed?",
+          "observed_status": "unknown",
+          "observed_detail": "A job id was returned, but no terminal result was observed."
+        }
+      },
+      "expect": {
+        "value": "unknown"
+      }
+    },
+    {
+      "id": "heldout-act-approve",
+      "role": "owner_act_answer",
+      "class": "bounded",
+      "lang": "en",
+      "category": "owner-act",
+      "input": {
+        "act": "Go ahead and confirm the room.",
+        "items": [
+          {
+            "kind": "approval",
+            "id": "reservation-two",
+            "shown_text": "Confirm the prepared rehearsal-room reservation?",
+            "shown_at": "just now",
+            "expires_at": "later",
+            "answers": [
+              "approve",
+              "decline"
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "item": "reservation-two",
+        "answer": "approve"
+      }
+    },
+    {
+      "id": "heldout-act-decline",
+      "role": "owner_act_answer",
+      "class": "bounded",
+      "lang": "en",
+      "category": "owner-act",
+      "input": {
+        "act": "Keep the room unreserved; cancel this proposal.",
+        "items": [
+          {
+            "kind": "approval",
+            "id": "reservation-two",
+            "shown_text": "Confirm the prepared rehearsal-room reservation?",
+            "shown_at": "just now",
+            "expires_at": "later",
+            "answers": [
+              "approve",
+              "decline"
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "item": "reservation-two",
+        "answer": "decline"
+      }
+    },
+    {
+      "id": "heldout-act-unrelated",
+      "role": "owner_act_answer",
+      "class": "bounded",
+      "lang": "en",
+      "category": "owner-act",
+      "input": {
+        "act": "How large is that rehearsal room?",
+        "items": [
+          {
+            "kind": "approval",
+            "id": "reservation-two",
+            "shown_text": "Confirm the prepared rehearsal-room reservation?",
+            "shown_at": "just now",
+            "expires_at": "later",
+            "answers": [
+              "approve",
+              "decline"
+            ]
+          }
+        ]
+      },
+      "expect": {
+        "item": "none",
+        "answer": "unrelated"
+      }
+    },
+    {
+      "id": "heldout-goal-served",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "completion",
+      "input": {
+        "request": "Why does a metal spoon warm up in hot soup?",
+        "observations": "Reference: heat conducts from the hot liquid through the metal.",
+        "answer": "Heat moves from the soup into the spoon by conduction.",
+        "conversation": ""
+      },
+      "expect": {
+        "outcome": "yes"
+      }
+    },
+    {
+      "id": "heldout-goal-failed",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "false-completion",
+      "input": {
+        "request": "Convert the recording to a transcript",
+        "observations": "The converter failed and produced no transcript.",
+        "answer": "Your transcript is complete.",
+        "conversation": ""
+      },
+      "expect": {
+        "outcome": "no"
+      }
+    },
+    {
+      "id": "heldout-goal-partial",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "partial",
+      "input": {
+        "request": "Describe the melody and rhythm of both recordings",
+        "observations": "Only the melodies were analyzed; rhythm was not analyzed.",
+        "answer": "Here is the melody analysis.",
+        "conversation": ""
+      },
+      "expect": {
+        "outcome": "no"
+      }
+    },
+    {
+      "id": "heldout-goal-unknown",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "unknown-effect",
+      "input": {
+        "request": "Submit the rehearsal-room request",
+        "observations": "The submission was attempted but its receipt could not be observed.",
+        "answer": "The room request was submitted successfully.",
+        "conversation": ""
+      },
+      "expect": {
+        "outcome": "no"
+      }
+    },
+    {
+      "id": "heldout-goal-repeat-question",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "completion",
+      "input": {
+        "request": "Find the instrument maintenance instructions",
+        "observations": "none",
+        "answer": "Which instrument do you mean?",
+        "conversation": "Owner: My cello, please."
+      },
+      "expect": {
+        "outcome": "no"
+      }
+    },
+    {
+      "id": "heldout-goal-legitimate-question",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "completion",
+      "input": {
+        "request": "Suggest music I would enjoy practicing",
+        "observations": "none",
+        "answer": "Which musical styles do you enjoy playing?",
+        "conversation": ""
+      },
+      "expect": {
+        "outcome": "yes"
+      }
+    },
+    {
+      "id": "heldout-goal-unsupported-figure",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "false-completion",
+      "input": {
+        "request": "How many people can this room seat?",
+        "observations": "The room listing gives an address but no seating capacity.",
+        "answer": "It seats exactly forty people.",
+        "conversation": ""
+      },
+      "expect": {
+        "outcome": "no"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "heldout-goal-casual-reply",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "owner-situation",
+      "input": {
+        "request": "I finally finished my first ceramic bowl.",
+        "observations": "none",
+        "answer": "That sounds satisfying. How did it turn out?",
+        "conversation": ""
+      },
+      "expect": {
+        "outcome": "yes"
+      },
+      "targets": [
+        "#197"
+      ]
+    },
+    {
+      "id": "heldout-goal-unhelpful-curiosity",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "owner-situation",
+      "input": {
+        "request": "오늘 악기 연습을 하러 가는데 악보를 잃어버렸어. 어떻게 하지?",
+        "observations": "none",
+        "answer": "어떤 색 가방을 메고 가세요?",
+        "conversation": ""
+      },
+      "expect": {
+        "outcome": "no"
+      },
+      "targets": [
+        "#197"
+      ]
+    },
+    {
+      "id": "heldout-plan-plain",
+      "role": "orchestration_plan",
+      "class": "structured-plan",
+      "lang": "en",
+      "category": "completion",
+      "input": {
+        "request": "Why does a shadow get longer near sunset?"
+      },
+      "expect": {
+        "fallback": false,
+        "account_change": false,
+        "owner_situation": false,
+        "technical_work": false,
+        "tier": "any"
+      }
+    },
+    {
+      "id": "heldout-plan-account",
+      "role": "orchestration_plan",
+      "class": "structured-plan",
+      "lang": "en",
+      "category": "account-change",
+      "input": {
+        "request": "Remove the obsolete recovery phone number from my account."
+      },
+      "expect": {
+        "fallback": false,
+        "account_change": true,
+        "tier": "higher",
+        "owner_situation": false
+      }
+    },
+    {
+      "id": "heldout-plan-situation",
+      "role": "orchestration_plan",
+      "class": "structured-plan",
+      "lang": "en",
+      "category": "owner-situation",
+      "input": {
+        "request": "Given my usual bedtime, do I have enough time to practice tonight?"
+      },
+      "expect": {
+        "fallback": false,
+        "account_change": false,
+        "owner_situation": true,
+        "technical_work": false,
+        "tier": "higher"
+      }
+    },
+    {
+      "id": "heldout-plan-technical",
+      "role": "orchestration_plan",
+      "class": "structured-plan",
+      "lang": "en",
+      "category": "technical-work",
+      "input": {
+        "request": "Inspect the repository, correct the broken image decoder and run its checks."
+      },
+      "expect": {
+        "fallback": false,
+        "account_change": false,
+        "owner_situation": false,
+        "technical_work": true,
+        "tier": "higher"
+      }
+    },
+    {
+      "id": "heldout-plan-statement",
+      "role": "orchestration_plan",
+      "class": "structured-plan",
+      "lang": "ko",
+      "category": "owner-situation",
+      "input": {
+        "request": "이번 주말에는 합창단 연습에 가려고 해."
+      },
+      "expect": {
+        "fallback": false,
+        "account_change": false,
+        "owner_situation": true,
+        "technical_work": false,
+        "tier": "higher"
+      },
+      "targets": [
+        "#197"
+      ]
+    },
+    {
+      "id": "heldout-escalation",
+      "role": "orchestration_escalation",
+      "class": "structured-plan",
+      "lang": "en",
+      "category": "escalation",
+      "input": {
+        "request": "Contrast both recordings in melody and rhythm",
+        "answer": "I was unable to analyze the recordings.",
+        "observations": "Neither recording was analyzed.",
+        "failed": "The audio analysis tool failed."
+      },
+      "expect": {
+        "evaluation": "not_reached"
+      }
+    }
+  ]
+}
