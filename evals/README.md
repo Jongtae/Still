@@ -303,13 +303,16 @@ Reuse decision: **Adapt** the existing eval package. Standard-library JSON, argp
 
 P1 (#16/#827): each run's `work` maps turn task ids to read-only WorkLedger
 counts, tool names/statuses/timestamps across retries and continuations, and
-allowlisted subscription-engine usage fields. Tool details and arguments are excluded.
+allowlisted subscription-engine usage fields. Tool rows retain only call identity/scope
+and response stage timings from details; arguments, URLs and other text are excluded.
 Turn `sent_epoch`/`delivered_epoch` record the wall clock at send/answer fetch.
 Compare matching sweeps (no judge grades enter verified completion):
 ```
 python -m agentos_eval p1-report --arm limit1=<baseline.eval> --arm limit4=<parallel.eval> --json p1.json --md p1.md
 ```
-Missing usage/cost is `unavailable`; ambiguous event pairs have unknown overlap.
+Missing usage/cost is `unavailable`. Native-search replay rows are counted separately
+from governed reads; only governed reads contribute to peak overlap. Stage timings
+and reported model/effort appear in the report; missing terminal rows make overlap unknown.
 Reuse review: Adopt Inspect `read_eval_log`/`records_from_samples`, stdlib SQLite
 read-only URI and `statistics`; adapt the existing ledger schema. No new dependencies,
 runtime authority, or external calls. External maintenance research was unavailable offline.

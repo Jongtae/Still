@@ -111,10 +111,10 @@ def test_overlap_and_reported_usage():
     assert result['paired_deltas']['s']['read_peak_mean'] == 1
     assert summary['usage'] == {'input_tokens': 25}
     assert summary['cost_usd'] == pytest.approx(.35)
-    ambiguous = [event('web_search', 'running', 1), event('web_search', 'running', 2),
+    interleaved = [event('web_search', 'running', 1), event('web_search', 'running', 2),
                  event('web_search', 'succeeded', 3), event('web_search', 'succeeded', 4)]
-    assert p1.overlap(ambiguous, {'web_search'})['peak'] is None
-    assert 'ambiguous' in p1.overlap(ambiguous, {'web_search'})['reason']
+    assert p1.overlap(interleaved, {'web_search'})['peak'] == 2
+    assert p1.overlap(interleaved, {'web_search'})['reason'] is None
     assert p1.overlap(sequential[:-1], {'web_search', 'read_file'})['peak'] is None
 
 
@@ -205,3 +205,86 @@ def test_cli_reads_existing_logs_and_writes_outputs(tmp_path, monkeypatch):
     logs['four.eval'].samples[0].scores['secretary'].metadata['scenario'] = 'other'
     with pytest.raises(SystemExit, match='scenario_ids differ'):
         cli.main(['p1-report', '--arm', 'limit1=one.eval', '--arm', 'limit4=four.eval'])
+
+
+def test_native_replay_does_not_contribute_to_governed_peak():
+    native = [{**event('web_search', status, at), 'scope': 'cli-native', 'call_id': call}
+              for call, status, at in [('n1', 'running', 100), ('n2', 'running', 101),
+                                       ('n1', 'succeeded', 102), ('n2', 'succeeded', 103)]]
+    governed = [{**event('listed_mcp_search', status, at), 'host_action': 'web_search',
+                 'scope': 'subscription-mcp-bridge', 'call_id': 'bridge'}
+                for status, at in [('running', 1), ('succeeded', 2)]]
+    measured = p1.overlap(governed + native, {'web_search'})
+    assert measured['governed_calls'] == 1
+    assert measured['native_calls'] == 2
+    assert measured['peak'] == 1
+    assert p1.overlap(native, {'web_search'})['peak'] == 0
+    summary = p1.compare_arms(arms([record(rows=native)], [record(rows=governed + native)]),
+                              names={'web_search'})['arms']['limit4']['summary']
+    assert summary['native_read_calls']['mean'] == 2
+    assert summary['governed_read_calls']['mean'] == 1
+
+
+def test_same_tool_bridged_calls_pair_by_id():
+    rows = [{**event('mcp_alias', status, at), 'host_action': 'web_search',
+             'scope': 'subscription-mcp-bridge', 'call_id': call}
+            for call, status, at in [('a', 'running', 1), ('b', 'running', 2),
+                                     ('b', 'succeeded', 3), ('a', 'failed', 4)]]
+    assert p1.overlap(rows, {'web_search'})['peak'] == 2
+    assert p1.overlap(rows, {'web_search'})['governed_calls'] == 2
+    missing_terminal = rows[:-1]
+    assert p1.overlap(missing_terminal, {'web_search'})['peak'] is None
+    assert 'missing terminal' in p1.overlap(missing_terminal, {'web_search'})['reason']
+    wrong_id = [*rows[:-1], {**rows[-1], 'call_id': 'not-started'}]
+    assert p1.overlap(wrong_id, {'web_search'})['peak'] is None
+
+
+def test_capture_safe_detail_fields_and_response_stages(tmp_path):
+    private = tmp_path / 'private'
+    private.mkdir()
+    secret = 'https://private.example/sk-SECRET-arguments'
+    with sqlite3.connect(private / 'quickstart.db') as db:
+        db.executescript('CREATE TABLE config(key TEXT,value TEXT); '
+                         'CREATE TABLE tool_events(id INTEGER PRIMARY KEY,job_id TEXT,tool TEXT,status TEXT,detail TEXT,created REAL);')
+        detail_rows = [
+            ('mcp_alias', 'running', {'call_id': 'a', 'scope': 'subscription-mcp-bridge',
+                                    'host_action': 'web_search', 'arguments': {'url': secret}, 'text': secret}),
+            ('mcp_alias', 'succeeded', {'call_id': 'a', 'scope': 'subscription-mcp-bridge',
+                                      'host_action': 'web_search', 'result': secret}),
+            ('response_timing', 'recorded', {'stage': 'queue_wait', 'ms': 954.4, 'url': secret}),
+            ('response_timing', 'recorded', {'stage': 'routed', 'ms': 766.2, 'text': secret}),
+            ('response_timing', 'recorded', {'stage': 'finished', 'ms': 123235.4, 'total_ms': 124189.8}),
+            ('subscription_engine', 'running', {'model': None, 'effort': '', 'prompt': secret}),
+            ('ignored_types', 'recorded', {'scope': [], 'call_id': 7, 'host_action': {}, 'stage': 9,
+                                         'ms': True, 'total_ms': secret}),
+            ('response_timing', 'recorded', {'stage': True, 'ms': True, 'total_ms': secret}),
+        ]
+        db.executemany('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES(?,?,?,?,?)',
+                       [('t', tool, status, json.dumps(detail), at) for at, (tool, status, detail) in enumerate(detail_rows)])
+    work = runner.work_measurements(tmp_path, ['t'])
+    assert work['t']['tools'][0] == {**event('mcp_alias', 'running', 0), 'call_id': 'a',
+                                     'scope': 'subscription-mcp-bridge', 'host_action': 'web_search'}
+    assert work['t']['tools'][2] == {**event('response_timing', 'recorded', 2), 'stage': 'queue_wait', 'ms': 954.4}
+    assert work['t']['tools'][4]['total_ms'] == 124189.8
+    assert work['t']['tools'][6] == event('ignored_types', 'recorded', 6)
+    assert work['t']['tools'][7] == event('response_timing', 'recorded', 7)
+    assert work['t']['engine'] == [{'model': None, 'effort': None}]
+    assert secret not in json.dumps(work)
+    assert 'arguments' not in json.dumps(work)
+    run = record()
+    run['work'] = work
+    run['turns'][0]['delivered_epoch'] = 106.123456
+    result = p1.compare_arms(arms([run], [run]), names={'web_search'})
+    timings = result['arms']['limit1']['summary']['stage_timings']
+    assert timings['queue_wait'] == {'n': 1, 'median': 954.4, 'mean': 954.4, 'min': 954.4, 'max': 954.4}
+    assert timings['routed']['median'] == 766.2
+    assert timings['finished']['max'] == 123235.4
+    md = p1.render_markdown(result)
+    assert '| queue_wait | 1 | 954 | 954 | 954 |' in md
+    assert '| finished | 1 | 123235 | 123235 | 123235 |' in md
+    assert '6.1' in md
+    assert '6.123456' not in md
+    assert '954.4' not in md
+    assert 'CLI default (not reported)' in md
+    assert 'replayed after the run' in md
+    assert result['arms']['limit1']['runs'][0]['latencies'][0] == pytest.approx(6.123456)

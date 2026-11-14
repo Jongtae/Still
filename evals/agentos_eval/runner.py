@@ -455,16 +455,26 @@ def work_measurements(data, task_ids):
                 marks = ','.join('?' * len(family))
                 rows = db.execute(f'SELECT tool,status,created,detail FROM tool_events WHERE job_id IN ({marks}) ORDER BY id',
                                   family).fetchall()
-                measurement['tools'] = [{key: row[key] for key in ('tool', 'status', 'created')} for row in rows] or None
-                engines = []
+                tools, engines = [], []
                 for row in rows:
-                    if row['tool'] != 'subscription_engine':
-                        continue
+                    tool = {key: row[key] for key in ('tool', 'status', 'created')}
+                    tools.append(tool)
                     try:
                         detail = json.loads(row['detail'])
                     except (ValueError, TypeError):
                         continue
                     if not isinstance(detail, dict):
+                        continue
+                    for key in ('call_id', 'host_action', 'scope'):
+                        if isinstance(detail.get(key), str):
+                            tool[key] = detail[key]
+                    if row['tool'] == 'response_timing':
+                        if isinstance(detail.get('stage'), str):
+                            tool['stage'] = detail['stage']
+                        for key in ('ms', 'total_ms'):
+                            if _measurement_number(detail.get(key)):
+                                tool[key] = detail[key]
+                    if row['tool'] != 'subscription_engine':
                         continue
                     fields = {}
                     if isinstance(detail.get('usage'), dict):
@@ -473,8 +483,8 @@ def work_measurements(data, task_ids):
                         if _measurement_number(detail.get(key)):
                             fields[key] = detail[key]
                     for key in ('model', 'effort'):
-                        if isinstance(detail.get(key), str):
-                            fields[key] = detail[key]
+                        if key in detail and (detail[key] is None or isinstance(detail[key], str)):
+                            fields[key] = detail[key] or None
                     calls = detail.get('cli_tool_calls')
                     if isinstance(calls, list):
                         fields['cli_tool_calls'] = len(calls)
@@ -482,6 +492,7 @@ def work_measurements(data, task_ids):
                         fields['cli_tool_calls'] = calls
                     if fields:
                         engines.append(fields)
+                measurement['tools'] = tools or None
                 measurement['engine'] = engines or None
             except (sqlite3.Error, ValueError, TypeError):
                 pass
