@@ -464,9 +464,9 @@ def items_of(current):
 
 FRONTIER_FIRST_WAVE = ["FRONTIER-SPEC-01", "FRONTIER-EVAL-01"]
 FRONTIER_RECONCILED = ["FRONTIER-PROVENANCE-01", "FRONTIER-RECOVERY-01", "FRONTIER-CONTEXT-01"]
-FRONTIER_COMPLETED = FRONTIER_FIRST_WAVE + FRONTIER_RECONCILED + ["FRONTIER-TELEGRAM-01"]
+FRONTIER_COMPLETED = FRONTIER_FIRST_WAVE + FRONTIER_RECONCILED + ["FRONTIER-JUDGMENT-01", "FRONTIER-TELEGRAM-01"]
 FRONTIER_WAVE_2 = ["FRONTIER-FENCE-01", "FRONTIER-JUDGMENT-01", "FRONTIER-TELEGRAM-01", "FRONTIER-WORKCHAT-01"]
-FRONTIER_WAVE_2_PENDING = [name for name in FRONTIER_WAVE_2 if name != "FRONTIER-TELEGRAM-01"]
+FRONTIER_OPEN_WAVE_2 = [name for name in FRONTIER_WAVE_2 if name not in FRONTIER_COMPLETED]
 
 
 def assert_frontier_wave_2_dependencies_satisfied(current):
@@ -493,7 +493,7 @@ def test_frontier_declares_completed_units_and_owner_authorized_wave_2():
     assert all(items[name]["activation_status"] == "complete-on-merge" for name in FRONTIER_COMPLETED)
     completed = set(current["history"]["documented_completed_iterations"])
     assert set(FRONTIER_COMPLETED) <= completed
-    assert not {"FRONTIER-01", *FRONTIER_WAVE_2_PENDING} & completed
+    assert not {"FRONTIER-01", *FRONTIER_OPEN_WAVE_2} & completed
     done = items["FRONTIER-01"]["completed_substeps"]
     assert set(done) == set(FRONTIER_COMPLETED)
     assert {name: (done[name]["issue"], done[name]["status"]) for name in FRONTIER_FIRST_WAVE} == {
@@ -519,6 +519,19 @@ def test_frontier_declares_completed_units_and_owner_authorized_wave_2():
     assert items["FRONTIER-RECOVERY-01"]["dependency_issues"] == [821]
     assert items["FRONTIER-RECOVERY-01"]["related_pull_requests"] == [816]
     assert items["FRONTIER-CONTEXT-01"]["depends_on"] == FRONTIER_FIRST_WAVE
+    judgment = items["FRONTIER-JUDGMENT-01"]
+    assert judgment["depends_on"] == ["FRONTIER-SPEC-01"]
+    assert "selection_rule" not in judgment
+    assert "Complete on the merge of PR #854." in judgment["summary"]
+    assert judgment["tests"] == [
+        "PYTHONPATH=src python3 -m pytest -q tests/test_no_scenario_code.py",
+        "PYTHONPATH=src python3 -m pytest -q tests/test_relayed_judgments_722.py",
+    ]
+    judgment_done = done["FRONTIER-JUDGMENT-01"]
+    assert (judgment_done["issue"], judgment_done["status"], judgment_done["pull_request"]) == (
+        722, "complete-on-merge", 854)
+    assert judgment_done["merge_commit"] == "65f44aea72eb50f06dfd6f0d4860bcb0fc0586a4"
+    assert "Depends on FRONTIER-SPEC-01, which is complete." in judgment_done["decision"]
 
 
 def test_frontier_historical_programs_and_completed_units_stay_unselectable(tmp_path):
@@ -540,11 +553,11 @@ def test_frontier_wave_2_has_disjoint_ownership_and_satisfied_dependencies():
     current = plan()
     program = current["programs"]["FRONTIER-01"]
     items = items_of(current)
-    assert program["parallel_eligible_substeps"] == FRONTIER_WAVE_2_PENDING
+    assert program["parallel_eligible_substeps"] == FRONTIER_OPEN_WAVE_2
     authorization = program["parallel_authorization"]
     assert authorization["issue"] == 822
     assert authorization["date"] == "2026-11-14"
-    assert authorization["substeps"] == FRONTIER_WAVE_2
+    assert authorization["substeps"] == FRONTIER_OPEN_WAVE_2
     assert authorization["decision"]
     wave_1, = [record for record in authorization["history"] if record["wave"] == 1]
     assert wave_1["substeps"] == FRONTIER_FIRST_WAVE
@@ -553,16 +566,14 @@ def test_frontier_wave_2_has_disjoint_ownership_and_satisfied_dependencies():
     plan_files = set(program["delegation"]["FRONTIER-PLAN-M1"]["owned_files"])
     assert plan_files
     owned = set()
-    for name in FRONTIER_WAVE_2:
+    for name in FRONTIER_OPEN_WAVE_2:
         assert items[name]["program"] == "FRONTIER-01"
-        completed = name == "FRONTIER-TELEGRAM-01"
-        assert items[name]["activation_status"] == ("complete-on-merge" if completed else "parent-controlled")
+        assert items[name]["activation_status"] == "parent-controlled"
         assert name in program["ordered_substeps"]
-        assert (name in program["completed_substeps"]) == completed
-        assert (name in items["FRONTIER-01"]["completed_substeps"]) == completed
-        assert (name in current["history"]["documented_completed_iterations"]) == completed
-        assert items[name]["depends_on"] == [
-            "FRONTIER-SPEC-01" if name == "FRONTIER-JUDGMENT-01" else "FRONTIER-RECOVERY-01"]
+        assert name not in program["completed_substeps"]
+        assert name not in items["FRONTIER-01"]["completed_substeps"]
+        assert name not in current["history"]["documented_completed_iterations"]
+        assert items[name]["depends_on"] == ["FRONTIER-RECOVERY-01"]
         delegation = program["delegation"][name]
         assert delegation["issue"] == items[name]["issue"]
         functions = delegation["owned_functions"]
@@ -605,7 +616,7 @@ def test_frontier_parent_selection_never_self_activates_children_or_successors(t
     assert delivery.select({})["id"] == "FRONTIER-01"
     assert delivery.select({"completed": ["FRONTIER-01"]}) is None
     # Even all nine units in runtime completion state select only the parent.
-    all_substeps = FRONTIER_FIRST_WAVE + FRONTIER_RECONCILED + FRONTIER_WAVE_2
+    all_substeps = FRONTIER_COMPLETED + FRONTIER_OPEN_WAVE_2
     assert delivery.select({"completed": all_substeps})["id"] == "FRONTIER-01"
     for name in all_substeps:
         altered = copy.deepcopy(current)
