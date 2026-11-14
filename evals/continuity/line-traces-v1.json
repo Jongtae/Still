@@ -1,0 +1,421 @@
+{
+  "version": "line-traces/1",
+  "traces": [
+    {
+      "id": "standing_replacement_restart",
+      "split": "dev",
+      "title": "A standing correction survives replacement and restart into day two",
+      "steps": [
+        {
+          "at_hours": 0,
+          "do": "open_line",
+          "args": {
+            "task": "Review the reading queue each morning",
+            "promise": "Send a daily reading summary"
+          },
+          "expect": {
+            "same_line_id": true,
+            "line_version": 1,
+            "rows_active": 1
+          }
+        },
+        {
+          "at_hours": 1,
+          "do": "run_due",
+          "args": {},
+          "expect": {
+            "run_started": true,
+            "run_read_version": 1,
+            "same_line_id": true
+          }
+        },
+        {
+          "at_hours": 3,
+          "do": "standing_correction",
+          "args": {
+            "owner_text": "From now on include unfinished items",
+            "rule": "Include unfinished items"
+          },
+          "expect": {
+            "line_version": 2,
+            "same_line_id": true
+          }
+        },
+        {
+          "at_hours": 4,
+          "do": "replace_preparation",
+          "args": {
+            "goal": "Group the reading queue by topic",
+            "due_in_hours": 21
+          },
+          "expect": {
+            "same_line_id": true,
+            "rows_active": 1,
+            "line_version": 2
+          }
+        },
+        {
+          "at_hours": 20,
+          "do": "restart",
+          "args": {},
+          "expect": {
+            "same_line_id": true,
+            "line_version": 2,
+            "rows_active": 1
+          }
+        },
+        {
+          "at_hours": 25,
+          "do": "run_due",
+          "args": {},
+          "expect": {
+            "same_line_id": true,
+            "run_started": true,
+            "run_read_version": 2,
+            "rule_present": "Include unfinished items",
+            "reply_sent": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "schedule_edit_keeps_identity",
+      "split": "dev",
+      "title": "Changing the clock leaves one line and one active work row",
+      "steps": [
+        {
+          "at_hours": 0,
+          "do": "open_line",
+          "args": {
+            "task": "Prepare a daily project digest",
+            "promise": "Keep the digest each morning"
+          },
+          "expect": {
+            "same_line_id": true,
+            "line_version": 1,
+            "rows_active": 1
+          }
+        },
+        {
+          "at_hours": 0.25,
+          "do": "edit_schedule",
+          "args": {
+            "due_in_hours": 25.75
+          },
+          "expect": {
+            "same_line_id": true,
+            "rows_active": 1,
+            "line_version": 1
+          }
+        },
+        {
+          "at_hours": 24,
+          "do": "restart",
+          "args": {},
+          "expect": {
+            "same_line_id": true,
+            "rows_active": 1
+          }
+        },
+        {
+          "at_hours": 26,
+          "do": "run_due",
+          "args": {},
+          "expect": {
+            "same_line_id": true,
+            "rows_active": 1,
+            "run_started": true,
+            "run_read_version": 1
+          }
+        },
+        {
+          "at_hours": 27,
+          "do": "cancel_row",
+          "args": {},
+          "expect": {
+            "same_line_id": true,
+            "rows_active": 0
+          }
+        },
+        {
+          "at_hours": 50,
+          "do": "run_due",
+          "args": {
+            "complete": false
+          },
+          "expect": {
+            "run_started": false,
+            "rows_active": 0,
+            "reply_sent": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "today_only_expires",
+      "split": "dev",
+      "title": "An AI-scoped today-only correction creates no standing rule",
+      "steps": [
+        {
+          "at_hours": 0,
+          "do": "open_line",
+          "args": {
+            "task": "Summarize new notes daily",
+            "promise": "Keep a daily notes summary"
+          },
+          "expect": {
+            "same_line_id": true,
+            "line_version": 1,
+            "rows_active": 1
+          }
+        },
+        {
+          "at_hours": 0.5,
+          "do": "today_only_correction",
+          "args": {
+            "owner_text": "Today only use short bullet points",
+            "rule": "Today only use short bullet points"
+          },
+          "expect": {
+            "line_version": 1
+          }
+        },
+        {
+          "at_hours": 1,
+          "do": "run_due",
+          "args": {},
+          "expect": {
+            "run_started": true,
+            "run_read_version": 1
+          }
+        },
+        {
+          "at_hours": 23,
+          "do": "restart",
+          "args": {},
+          "expect": {
+            "same_line_id": true,
+            "line_version": 1
+          }
+        },
+        {
+          "at_hours": 25,
+          "do": "run_due",
+          "args": {},
+          "expect": {
+            "same_line_id": true,
+            "run_started": true,
+            "run_read_version": 1,
+            "rule_absent": "Today only use short bullet points"
+          }
+        }
+      ]
+    },
+    {
+      "id": "stop_active_after_reschedule",
+      "split": "heldout",
+      "title": "Stop an active responsibility before its queued run can reply",
+      "steps": [
+        {
+          "at_hours": 0,
+          "do": "open_line",
+          "args": {
+            "task": "Track exhibition announcements",
+            "promise": "Send the exhibition bulletin",
+            "delivery": "send"
+          },
+          "expect": {
+            "same_line_id": true,
+            "line_version": 1,
+            "rows_active": 1
+          }
+        },
+        {
+          "at_hours": 0.25,
+          "do": "edit_schedule",
+          "args": {
+            "due_in_hours": 24.75
+          },
+          "expect": {
+            "same_line_id": true,
+            "rows_active": 1
+          }
+        },
+        {
+          "at_hours": 1,
+          "do": "standing_correction",
+          "args": {
+            "owner_text": "Always include the venue name",
+            "rule": "Include the venue name"
+          },
+          "expect": {
+            "line_version": 2
+          }
+        },
+        {
+          "at_hours": 24,
+          "do": "restart",
+          "args": {},
+          "expect": {
+            "same_line_id": true,
+            "rows_active": 1
+          }
+        },
+        {
+          "at_hours": 25,
+          "do": "run_due",
+          "args": {
+            "complete": false
+          },
+          "expect": {
+            "run_started": true,
+            "rows_active": 1,
+            "reply_sent": false
+          }
+        },
+        {
+          "at_hours": 25.1,
+          "do": "stop_line",
+          "args": {},
+          "expect": {
+            "same_line_id": true,
+            "line_version": 3,
+            "rows_active": 0,
+            "reply_sent": false
+          }
+        },
+        {
+          "at_hours": 49,
+          "do": "run_due",
+          "args": {},
+          "expect": {
+            "run_started": false,
+            "rows_active": 0,
+            "reply_sent": false,
+            "same_line_id": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "interval_downtime_and_cap",
+      "split": "heldout",
+      "title": "A promised interval survives downtime; oversized windows need a typed refusal",
+      "steps": [
+        {
+          "at_hours": 0,
+          "do": "open_line",
+          "args": {
+            "task": "Watch archive release notices",
+            "promise": "Report every twenty minutes during the watch",
+            "delivery": "when_needed",
+            "window_hours": 1
+          },
+          "expect": {
+            "same_line_id": true,
+            "line_version": 1,
+            "rows_active": 1
+          }
+        },
+        {
+          "at_hours": 1,
+          "do": "run_due",
+          "args": {},
+          "expect": {
+            "run_started": true,
+            "run_read_version": 1,
+            "same_line_id": true,
+            "reply_sent": false
+          }
+        },
+        {
+          "at_hours": 1.17,
+          "do": "run_due",
+          "args": {
+            "complete": false
+          },
+          "expect": {
+            "run_started": true,
+            "reply_sent": false
+          }
+        },
+        {
+          "at_hours": 1.5,
+          "do": "restart",
+          "args": {},
+          "expect": {
+            "same_line_id": true,
+            "rows_active": 1
+          }
+        },
+        {
+          "at_hours": 1.51,
+          "do": "finish_run",
+          "args": {},
+          "expect": {
+            "run_read_version": 1,
+            "same_line_id": true
+          }
+        },
+        {
+          "at_hours": 1.52,
+          "do": "observe",
+          "args": {
+            "gap_reason": "A twenty-minute report slot skipped during downtime is still owed"
+          },
+          "expect": {
+            "report_reason": "promised-report-due",
+            "reply_sent": true
+          },
+          "gap": 813
+        },
+        {
+          "at_hours": 1.67,
+          "do": "run_due",
+          "args": {},
+          "expect": {
+            "run_started": true,
+            "report_reason": "promised-report-due",
+            "reply_sent": true,
+            "same_line_id": true
+          }
+        },
+        {
+          "at_hours": 2,
+          "do": "replace_preparation",
+          "args": {
+            "goal": "Watch the archive for a full day at five-minute intervals",
+            "window_hours": 24,
+            "gap_reason": "A window longer than the 96-run cap must not end early while the confirmation shows the owner's end time; #814 decides between a typed refusal and a stated shortened end",
+            "may_refuse": true
+          },
+          "expect": {
+            "run_started": false,
+            "rows_active": 1,
+            "same_line_id": true,
+            "window_end_honest": true
+          },
+          "gap": 814
+        },
+        {
+          "at_hours": 24,
+          "do": "restart",
+          "args": {},
+          "expect": {
+            "same_line_id": true,
+            "line_version": 1
+          }
+        },
+        {
+          "at_hours": 24.1,
+          "do": "cancel_row",
+          "args": {},
+          "expect": {
+            "same_line_id": true,
+            "rows_active": 0
+          }
+        }
+      ]
+    }
+  ]
+}
