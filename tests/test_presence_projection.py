@@ -483,8 +483,8 @@ class UnsupportedCapabilityTests(ProjectionTestCase):
         # No AI route is connected here, so the worker route says so; no rule searched mail.
         self.assertEqual(job['status'], 'failed')
         with self.store.db() as db:
-            # #1237: #1232's stage timings are clock readings, not tool calls.
-            self.assertEqual(db.execute("SELECT COUNT(*) FROM tool_events WHERE job_id=? AND tool!='response_timing'",
+            # #1237: #1232's stage timings are clock readings, not tool calls; #842's after-work marker is Still's own record.
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM tool_events WHERE job_id=? AND tool NOT IN ('response_timing','after_work')",
                                         (job['id'],)).fetchone()[0], 0)
 
 

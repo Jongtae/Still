@@ -51,7 +51,8 @@
       "FRONTIER-PROVENANCE-01",
       "FRONTIER-RECOVERY-01",
       "FRONTIER-CONTEXT-01",
-      "FRONTIER-JUDGMENT-01"
+      "FRONTIER-JUDGMENT-01",
+      "FRONTIER-TELEGRAM-01"
     ]
   },
   "iterations": [
@@ -958,6 +959,16 @@
           "pull_request": 854,
           "merge_commit": "65f44aea72eb50f06dfd6f0d4860bcb0fc0586a4",
           "decision": "A judgment made from a CLI-bridge (relayed) tool call is tied to its Work, so the Work's budget, Stop and audit cover it. Depends on FRONTIER-SPEC-01, which is complete."
+        },
+        "FRONTIER-TELEGRAM-01": {
+          "issue": 842,
+          "status": "complete-on-merge",
+          "pull_request": [
+            856,
+            864
+          ],
+          "decision": "D1 re-offers eligible cut-off prompts once and tells the owner of unknown deliveries without resending them; D2 commits sent replies with their anchors, retries definitely-unsent notices and recovers missing after-work prompts within existing windows with bounded retries and pending budget-hold release.",
+          "dependency_disposition": "FRONTIER-RECOVERY-01 (#826) is complete via merged PR #831; its matrix supplies the F-P4, F-D3 and Telegram F-W4 recovery contract."
         }
       }
     },
@@ -1101,16 +1112,15 @@
       "issue": 842,
       "milestone": "frontier-delivery",
       "kind": "implementation",
-      "activation_status": "parent-controlled",
+      "activation_status": "complete-on-merge",
       "contract": "frontier-delivery.en.md",
       "tests": [
         "PYTHONPATH=src python3 -m pytest -q tests/test_recovery_matrix_826.py"
       ],
-      "summary": "M1, recovery matrix F-P4 and F-D3 and the Telegram part of F-W4: a Telegram prompt or reply whose delivery a restart cut off stays answerable and the owner is told; sent and the reply anchor commit together, _after_work prompts get a sweeper, and a notice that was definitely not sent is retried.",
+      "summary": "M1, recovery matrix F-P4 and F-D3 and the Telegram part of F-W4: a Telegram prompt or reply whose delivery a restart cut off stays answerable and the owner is told; sent and the reply anchor commit together, _after_work prompts get a sweeper, and a notice that was definitely not sent is retried. Complete on the merge of PRs #856 (D1) and #864 (D2).",
       "depends_on": [
         "FRONTIER-RECOVERY-01"
-      ],
-      "selection_rule": "Selected for the M1 wave-2 parallel lanes by the owner's 2026-11-14 direct instruction (#822). Parent-controlled: the unit never self-activates. Its own PR moves this entry to complete-on-merge and adds its completed_substeps record, with its dependency disposition, when it merges."
+      ]
     },
     {
       "id": "FRONTIER-WORKCHAT-01",
@@ -1610,11 +1620,11 @@
         "FRONTIER-PROVENANCE-01",
         "FRONTIER-RECOVERY-01",
         "FRONTIER-CONTEXT-01",
-        "FRONTIER-JUDGMENT-01"
+        "FRONTIER-JUDGMENT-01",
+        "FRONTIER-TELEGRAM-01"
       ],
       "parallel_eligible_substeps": [
         "FRONTIER-FENCE-01",
-        "FRONTIER-TELEGRAM-01",
         "FRONTIER-WORKCHAT-01"
       ],
       "delegation": {
@@ -1740,7 +1750,6 @@
         "date": "2026-11-14",
         "substeps": [
           "FRONTIER-FENCE-01",
-          "FRONTIER-TELEGRAM-01",
           "FRONTIER-WORKCHAT-01"
         ],
         "decision": "The owner's direct 2026-11-14 instruction runs M1 in parallel lanes. The four units have disjoint function-level ownership (delegation), and shared files are partitioned by row. Each lane integrates its own PR; this record does not start or duplicate a worker.",
