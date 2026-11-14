@@ -313,6 +313,9 @@ python -m agentos_eval p1-report --arm limit1=<baseline.eval> --arm limit4=<para
 New sweeps record the selected `scenario_ids` after filtering and the sample limit.
 For older logs, P1 recovers Inspect dataset sample ids or accepts `--scenarios id1,id2`.
 Conflicting declarations are refused; without a declared cohort completeness is `unknown`.
+For separate sweeps, pass `--arm limit1=a.eval,b.eval,c.eval` in epoch order.
+Their declared epoch counts add; all logs within an arm must share worker, cohort
+and git head. The identity retains each run id, start time and epoch offset.
 Missing usage/cost is `unavailable`. Native-search replay rows are counted separately
 from governed reads (bridge + direct). Only bridge rows expose observed peak overlap;
 direct records are replayed in call order and cannot show overlap. Reports separate all

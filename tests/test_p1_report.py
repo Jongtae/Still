@@ -680,3 +680,88 @@ def test_sweep_and_task_metadata_record_selected_ids_after_filters_and_limit(mon
     assert captured['metadata']['scenario_ids'] == [ids[0]]
     assert captured['task'].metadata['scenario_ids'] == [ids[0]]
     assert len(captured['task'].dataset) == 1
+
+
+def _one_epoch_log(arm, index):
+    log = _cohort_log(declared=['s'])
+    log.samples = log.samples[:1]
+    log.eval.metadata.update(epochs=1, id=f'{arm}-run-{index}', started=1000 + index * 100,
+                             git_head=f'{arm}-head')
+    log.eval.config.epochs = 1
+    return log
+
+
+def test_cli_combines_three_logs_per_arm_in_epoch_order(tmp_path, monkeypatch):
+    import types
+    from agentos_eval import cli
+    logs = {f'{arm}-{i}.eval': _one_epoch_log(arm, i) for arm in ('limit1', 'limit4') for i in range(1, 4)}
+    read_paths = []
+    module = types.ModuleType('inspect_ai.log')
+
+    def read_log(path):
+        read_paths.append(path)
+        return logs[path]
+
+    module.read_eval_log = read_log
+    monkeypatch.setitem(sys.modules, 'inspect_ai.log', module)
+    out, md = tmp_path / 'multi.json', tmp_path / 'multi.md'
+    assert cli.main(['p1-report', '--arm', 'limit1=limit1-1.eval,limit1-2.eval,limit1-3.eval',
+                     '--arm', 'limit4=limit4-1.eval,limit4-2.eval,limit4-3.eval',
+                     '--json', str(out), '--md', str(md)]) == 0
+    result = json.loads(out.read_text())
+    assert result['comparison_complete'] is True
+    assert read_paths == [f'{arm}-{i}.eval' for arm in ('limit1', 'limit4') for i in range(1, 4)]
+    for arm in ('limit1', 'limit4'):
+        measured = result['arms'][arm]
+        assert measured['identity']['epochs'] == 3
+        assert measured['identity']['git_head'] == f'{arm}-head'
+        assert [r['epoch'] for r in measured['runs']] == [1, 2, 3]
+        assert measured['identity']['runs'] == [
+            {'id': f'{arm}-run-{i}', 'started': 1000 + i * 100, 'epochs': 1, 'epoch_offset': i - 1}
+            for i in range(1, 4)]
+        assert measured['summary']['latency']['n'] == 6
+        assert measured['missing'] == []
+        assert measured['complete'] is True
+        for i in range(1, 4):
+            assert f'{arm}-run-{i}' in md.read_text()
+            assert str(1000 + i * 100) in md.read_text()
+    # Input log epochs remain local: reporting must not mutate the logs.
+    assert all(log.samples[0].epoch == 1 for log in logs.values())
+
+
+@pytest.mark.parametrize('key,value', [('git_head', 'another-head'), ('worker', 'claude-code'),
+                                       ('scenario_ids', ['s', 'another-scenario'])])
+def test_cli_rejects_different_identities_within_one_arm(monkeypatch, key, value):
+    import types
+    from agentos_eval import cli
+    a, b = _one_epoch_log('limit1', 1), _one_epoch_log('limit1', 2)
+    b.eval.metadata[key] = value
+    if key == 'worker':
+        b.samples[0].scores['secretary'].metadata['worker'] = value
+    module = types.ModuleType('inspect_ai.log')
+    module.read_eval_log = {'a.eval': a, 'b.eval': b}.__getitem__
+    monkeypatch.setitem(sys.modules, 'inspect_ai.log', module)
+    with pytest.raises(SystemExit, match=f'Cannot combine arm limit1: {key} differs between log 1 and log 2'):
+        cli.main(['p1-report', '--arm', 'limit1=a.eval,b.eval', '--arm', 'limit4=a.eval'])
+
+
+def test_log_epoch_offsets_use_declared_counts_even_when_a_log_stops_early():
+    first, second = _one_epoch_log('limit1', 1), _one_epoch_log('limit1', 2)
+    first.eval.metadata['epochs'] = 2  # local epoch 2 did not run
+    combined = p1.combine_arm_logs([first, second], 'limit1')
+    assert combined['run']['epochs'] == 3
+    assert [r['epoch'] for r in combined['records']] == [1, 3]
+    assert [r['epoch_offset'] for r in combined['run']['runs']] == [0, 2]
+    result = p1.compare_arms({'limit1': combined, 'limit4': combined}, names=set())
+    assert result['comparison_complete'] is False
+    assert result['arms']['limit1']['missing'] == [['s', 2]]
+    assert result['paired_epochs']['s'] == [1, 3]
+
+
+def test_single_log_retains_epoch_and_identity():
+    log = _one_epoch_log('limit1', 1)
+    single = p1.combine_arm_logs([log], 'limit1')
+    assert single['run']['id'] == 'limit1-run-1'
+    assert single['run']['epochs'] == 1
+    assert single['records'][0]['epoch'] == 1
+    assert single['run']['runs'] == [{'id': 'limit1-run-1', 'started': 1100, 'epochs': 1, 'epoch_offset': 0}]

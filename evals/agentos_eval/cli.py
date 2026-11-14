@@ -203,25 +203,20 @@ def cmd_report(args):
 
 def cmd_p1_report(args):
     from inspect_ai.log import read_eval_log
-    from .p1_report import compare_arms, render_markdown, declared_cohort
+    from .p1_report import compare_arms, render_markdown, combine_arm_logs
     arms = {}
     for value in args.arm:
         label, separator, path = value.partition('=')
         if not separator or not label or not path or label in arms:
             raise SystemExit('--arm must be a unique label=<log.eval>')
-        log = read_eval_log(path)
-        run = dict(log.eval.metadata or {})
+        paths = [part.strip() for part in path.split(',')]
+        if any(not part for part in paths):
+            raise SystemExit('--arm must be label=<log.eval>[,<log.eval>...] with no empty paths')
+        logs = [read_eval_log(part) for part in paths]
         try:
-            scenario_ids, source = declared_cohort(log, getattr(args, 'scenarios', None))
+            arms[label] = combine_arm_logs(logs, label, getattr(args, 'scenarios', None))
         except ValueError as exc:
             raise SystemExit(str(exc)) from exc
-        if scenario_ids is not None:
-            run['scenario_ids'] = scenario_ids
-        run['cohort_source'] = source
-        config_epochs = getattr(getattr(log.eval, 'config', None), 'epochs', None)
-        if config_epochs is not None:
-            run.setdefault('epochs', config_epochs)
-        arms[label] = {'records': records_from_samples(log.samples), 'run': run}
     try:
         report = compare_arms(arms)
     except ValueError as exc:
@@ -297,7 +292,7 @@ def main(argv=None):
     rep = sub.add_parser('report', help='rebuild the trend report from an Inspect log')
     rep.add_argument('--log', required=True)
     p1 = sub.add_parser('p1-report', help='compare P1 read-concurrency arms from Inspect logs')
-    p1.add_argument('--arm', action='append', required=True, help='label=<log.eval> (twice)')
+    p1.add_argument('--arm', action='append', required=True, help='label=<log.eval>[,<log.eval>...] in epoch order (two arms)')
     p1.add_argument('--scenarios', default=None, help='declared comma-separated scenario ids for older logs')
     p1.add_argument('--json')
     p1.add_argument('--md')

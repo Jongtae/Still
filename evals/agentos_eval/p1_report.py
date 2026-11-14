@@ -218,6 +218,65 @@ def declared_cohort(log, scenarios=None):
     return declared, source
 
 
+def combine_arm_logs(logs, label, scenarios=None):
+    """Normalize Inspect logs and concatenate their declared epoch ranges in order."""
+    from .report import records_from_samples
+    pieces = []
+    for log in logs:
+        run = dict(log.eval.metadata or {})
+        scenario_ids, source = declared_cohort(log, scenarios)
+        if scenario_ids is not None:
+            run['scenario_ids'] = scenario_ids
+        run['cohort_source'] = source
+        config_epochs = getattr(getattr(log.eval, 'config', None), 'epochs', None)
+        if config_epochs is not None:
+            run.setdefault('epochs', config_epochs)
+        run.setdefault('id', getattr(log.eval, 'run_id', None))
+        run.setdefault('started', getattr(getattr(log, 'stats', None), 'started_at', None)
+                       or getattr(log.eval, 'created', None))
+        pieces.append({'records': records_from_samples(log.samples), 'run': run})
+    if not pieces:
+        raise ValueError(f'Cannot combine arm {label}: no logs supplied')
+    if len(pieces) == 1:
+        piece = pieces[0]
+        run = piece['run']
+        run['runs'] = [{'id': run.get('id'), 'started': run.get('started'),
+                        'epochs': run.get('epochs'), 'epoch_offset': 0}]
+        return piece
+
+    identities = []
+    for index, piece in enumerate(pieces, 1):
+        run = piece['run']
+        epochs = run.get('epochs')
+        if type(epochs) is not int or epochs < 1:
+            raise ValueError(f'Cannot combine arm {label}: log {index} lacks a positive declared epoch count')
+        if run.get('scenario_ids') is None:
+            raise ValueError(f'Cannot combine arm {label}: log {index} lacks scenario_ids; supply --scenarios')
+        if not run.get('git_head'):
+            raise ValueError(f'Cannot combine arm {label}: log {index} lacks git_head')
+        workers = sorted({r.get('worker') or run.get('worker') or 'unknown' for r in piece['records']}
+                         or {run.get('worker') or 'unknown'})
+        if workers == ['unknown']:
+            raise ValueError(f'Cannot combine arm {label}: log {index} lacks worker identity')
+        # A completed sample must agree with the declared single-worker route.
+        if run.get('worker') in ('codex', 'claude-code') and workers != [run['worker']]:
+            raise ValueError(f'Cannot combine arm {label}: log {index} worker metadata differs from samples')
+        identities.append({'worker': workers, 'scenario_ids': run['scenario_ids'], 'git_head': run['git_head']})
+        for key in ('worker', 'scenario_ids', 'git_head'):
+            if identities[-1][key] != identities[0][key]:
+                raise ValueError(f'Cannot combine arm {label}: {key} differs between log 1 and log {index}')
+
+    records, runs, offset = [], [], 0
+    for piece in pieces:
+        run = piece['run']
+        records.extend({**r, 'epoch': r.get('epoch', 1) + offset} for r in piece['records'])
+        runs.append({'id': run.get('id'), 'started': run.get('started'),
+                     'epochs': run['epochs'], 'epoch_offset': offset})
+        offset += run['epochs']
+    combined = {**pieces[0]['run'], 'id': None, 'epochs': offset, 'runs': runs}
+    return {'records': records, 'run': combined}
+
+
 def compare_arms(arms, names=None):
     """arms: label -> {'records': records_from_samples(...), 'run': log.eval.metadata}."""
     if len(arms) != 2:
@@ -237,7 +296,8 @@ def compare_arms(arms, names=None):
         observed = {(r['scenario'], r['epoch']) for r in measured if 'usage-limit' not in r['failure_classes']}
         missing = [list(pair) for pair in sorted(expected - observed)] if declared is not None else None
         output[label] = {'identity': {**{k: run.get(k) for k in ('id', 'git_head', 'seed', 'judge', 'model')},
-                                      'worker': workers, 'epochs': epochs, 'scenario_ids': scenarios},
+                                      'worker': workers, 'epochs': epochs, 'scenario_ids': scenarios,
+                                      'runs': run.get('runs', [{'id': run.get('id'), 'started': run.get('started')}])},
                          'complete': observed == expected if declared is not None else 'unknown', 'missing': missing,
                          'declared_runs': len(expected) if declared is not None else None,
                          'cohort_source': run.get('cohort_source', 'metadata' if declared is not None else 'unavailable'),
@@ -279,7 +339,7 @@ def compare_arms(arms, names=None):
                      'cost_usd': delta(x['cost_usd'], y['cost_usd']) if numeric(x['cost_usd']) and numeric(y['cost_usd']) else 'unavailable',
                      'usage': {k: y['usage'][k] - x['usage'][k] for k in sorted(x['usage'].keys() & y['usage'].keys())}
                               if isinstance(x['usage'], dict) and isinstance(y['usage'], dict) else 'unavailable'}
-    return {'schema_version': 6, 'arms': output,
+    return {'schema_version': 7, 'arms': output,
             'comparison_complete': ('unknown' if any(arm['complete'] == 'unknown' for arm in output.values())
                                     else all(arm['complete'] for arm in output.values())), 'paired_epochs': paired_epochs, 'read_names_source': source, 'read_names': sorted(names),
             'delta_direction': f'{labels[1]} − {labels[0]}', 'paired_deltas': deltas}
@@ -288,7 +348,7 @@ def compare_arms(arms, names=None):
 def render_markdown(report):
     import json
     lines = ['# P1 read concurrency report', '', '## Fixture support', '',
-             'P1 measurement schema v6. Test results and the harness revision are not embedded in the logs; '
+             'P1 measurement schema v7. Test results and the harness revision are not embedded in the logs; '
              'model-free fixtures do not establish live worker performance.', '',
              '## Live evidence', '']
     for label, arm in report['arms'].items():
