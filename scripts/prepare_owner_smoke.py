@@ -60,7 +60,7 @@ def prepare(root: Path, port: int, environ: dict[str, str]) -> dict:
 # tool call with provider/action and the alternative it was, the ``finish``
 # claim with its cited refs, the goal judgment, the final outcome and the
 # owner report.  Redaction reuses the existing passes: ``recorded_arguments``
-# (typed browser text), ``redact_private_values`` (values this Work saved
+# (typed browser text), exact literal replacement (values this Work saved
 # privately), ``redact_known_secrets`` (stored secret values and credential
 # shapes) and ``AgentService._redact_reason`` (bearer tokens, home paths).
 # Keys that name session or credential material are dropped outright.
@@ -185,7 +185,6 @@ def _import_runtime():
     except ImportError:
         sys.path.insert(0, str(ROOT / "src"))
     from personal_agent.agent_runtime import recorded_arguments, REDACTED_ARGUMENTS
-    from personal_agent.browser_session import redact_private_values
     from personal_agent.conversation_projection import (REPORT_NEXT_LABEL, REPORT_QUESTION_LABEL,
                                                         REPORT_STATED_FAILED_LABEL, REPORT_UNKNOWN_LABEL,
                                                         TERMINAL_UNFINISHED_LABEL)
@@ -193,7 +192,7 @@ def _import_runtime():
     from personal_agent.quickstart_service import AgentService
     from personal_agent.quickstart_store import QuickStore
     return {"recorded_arguments": recorded_arguments, "REDACTED_ARGUMENTS": REDACTED_ARGUMENTS,
-            "redact_private_values": redact_private_values, "redact_known_secrets": redact_known_secrets,
+            "redact_known_secrets": redact_known_secrets,
             "redact_reason": AgentService._redact_reason, "QuickStore": QuickStore,
             "labels": {"failed_steps": TERMINAL_UNFINISHED_LABEL, "failed_stated": REPORT_STATED_FAILED_LABEL,
                        "unknown": REPORT_UNKNOWN_LABEL, "question": REPORT_QUESTION_LABEL,
@@ -209,8 +208,7 @@ def _open_store(runtime, data: Path):
 
 
 def _work_private_values(store, job_id):
-    """Values this Work wrote to a private store (the #605 exclusion set of
-    ``agent_runtime.lookup_sources``: Memory candidates and notes)."""
+    """Values this Work wrote to a private store (export-only values: Memory candidates and notes)."""
     values = []
     with store.db() as db:
         values.extend(row["content"] for row in db.execute(
@@ -225,6 +223,30 @@ def _work_private_values(store, job_id):
     return [value for value in values if isinstance(value, str) and value.strip()]
 
 
+def _mask_saved_values(text, values):
+    """``text`` with tokens matching a value this Work saved replaced by ``[가림]``: export only (#818).
+
+    The probe record is evidence that may be published, not the owner's own view, so the saved
+    values stay out of it however they reappear: the runtime's #605 matcher (whole values,
+    contained spans, jamo keys and digit runs), applied per line.
+    """
+    from personal_agent.agent_runtime import lookup_norm, lookup_text_violations, lookup_words
+    values = [value for value in values if isinstance(value, str) and value.strip()]
+    if not text or not values:
+        return text
+    lines = []
+    for line in text.split("\n"):
+        bad, digits = lookup_text_violations(line, values) if line.strip() else (set(), False)
+        if not bad and not digits:
+            lines.append(line)
+            continue
+        lines.append("".join(
+            "[가림]" if token and not token.isspace() and (
+                any(word in bad for word in lookup_words(token)) or (digits and re.search(r"\d", lookup_norm(token))))
+            else token for token in re.split(r"(\s+)", line)))
+    return "\n".join(lines)
+
+
 def _redactor(runtime, store, job_id, omit_text):
     private = _work_private_values(store, job_id)
     roots = sorted({str(store.root), str(Path(store.root).resolve())}, key=len, reverse=True)
@@ -234,7 +256,7 @@ def _redactor(runtime, store, job_id, omit_text):
             return None
         value = str(value)
         try:
-            value, _count = runtime["redact_private_values"](value, private)
+            value = _mask_saved_values(value, private)
             value = runtime["redact_known_secrets"](store, value)
         except Exception:
             return "[redacted]"

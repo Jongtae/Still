@@ -416,6 +416,17 @@ class ApiRoute(_ServiceBase):
         self.assertEqual(matches, [None, None], 'comparison is deferred, not recorded')
         self.assertNotIn('1234', json.dumps(matches), 'the match record holds no value')
 
+    def test_a_note_saved_by_this_work_is_reported_when_sent_to_public_lookup(self):
+        self.wire = self.ProviderWire()
+        service = self.service(steps([('save_note', {'content': MEMBER}),
+                                      ('web_search', {'query': MEMBER + ' 회원 혜택'})]))
+        job = self.turn(service, '메모하고 회원 혜택 찾아줘')
+        self.assertEqual(self.wire.plans[0]['query'], MEMBER + ' 회원 혜택')
+        self.assertEqual(service.work_information_use(job)['sent_to']['held_value_matches'], [
+            {'source': 'work_write', 'key': '', 'tool': 'web_search',
+             'destination': 'brave', 'status': 'succeeded'}])
+
+
 
 class FailedAfterDispatch(ApiRoute):
     """A lookup that failed after it was dispatched may have carried a held value out: shown as an attempt."""

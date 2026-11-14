@@ -21,8 +21,8 @@ call of its own:
   clear, an expired or re-paired source or a deleted anchor refuses every
   later call.  This is a validity check, not a disclosure judgment: under the
   pilot an admitted place label or coordinate may go into a lookup, and the
-  only deterministic filter stays the lookup composition's exclusion of
-  saved private values (``Capabilities._compose``) plus the stored-secret
+  only deterministic filters are the lookup composition's exclusion of
+  withdrawn current context (``Capabilities._compose``) plus the stored-secret
   redaction below.
 
 Vocabulary is mapped, not installed: OWL-Time intervals (``effective_from``/
@@ -476,8 +476,7 @@ class CurrentContext:
         if predicate not in PREDICATES:
             raise refusal('unsupported_predicate')
         # Pilot boundary 1: a stored secret or credential shape never becomes
-        # a stored or returned hypothesis value (the caller also removes the
-        # Work's saved private values, ``Capabilities``).
+        # a stored or returned hypothesis value.
         value = ' '.join(redact_known_secrets(self.store, args.get('value') or '').split())
         if predicate == 'work_mode' and value not in WORK_MODES:
             raise refusal('invalid_value')
@@ -584,8 +583,8 @@ class CurrentContext:
         finished since the live note - or, with none, within ``SITUATION_SECONDS``
         - and before ``job_id`` are given to the same judgment instead of being
         lost (#1005 review).  At most ``SITUATION_TURNS``; preparation runs and
-        the live note's own sources are left out.  Raw texts: the caller scrubs
-        each with its own Work's private values.
+        the live note's own sources are left out.  Raw texts: the caller applies
+        the stored-secret redaction.
         """
         now = self.now() if now is None else now
         job = self.store.job(job_id) if job_id else None

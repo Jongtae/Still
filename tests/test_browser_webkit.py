@@ -2721,7 +2721,7 @@ class WebKitIntegrationTests(unittest.TestCase):
         return bs.WebKitWorkerDriver('p', cwd=self.tmp.name, allowed_origins_for_tests=origins, command=command)
 
     def session(self, work_id):
-        return bs.BrowserSession(self.profile.driver_factory(work_id), work_id=work_id, approvals=Approvals(), excluded=lambda: [PASSPORT], allowed_origins_for_tests=(self.fixture,))
+        return bs.BrowserSession(self.profile.driver_factory(work_id), work_id=work_id, approvals=Approvals(), allowed_origins_for_tests=(self.fixture,))
 
     def test_a_non_payment_page_confirm_is_accepted_whatever_the_declared_effect(self):
         """#619: a non-payment question is accepted after a step declared navigate as after mutate."""
@@ -2952,7 +2952,7 @@ class WebKitIntegrationTests(unittest.TestCase):
         stopped_at = []
         budget = WorkBudget(seconds=120, stop=lambda: bool(stopped_at) and time.monotonic() >= stopped_at[0])
         sess = bs.BrowserSession(self.profile.driver_factory('work-244'), work_id='work-244', approvals=Approvals(),
-                                 excluded=lambda: [PASSPORT], allowed_origins_for_tests=(self.fixture,),
+                                 allowed_origins_for_tests=(self.fixture,),
                                  budget=budget)
         try:
             sess.open({'url': self.origin + '/lazy-endless', 'effect': 'read'})
@@ -3102,7 +3102,6 @@ class WebKitIntegrationTests(unittest.TestCase):
             page = sess.open({'url': self.origin + '/product', 'effect': 'navigate'})
             self.assertEqual(page['state'], 'page')
             self.assertIn('세탁세제 3L', page['text'])
-            self.assertIn(bs.REDACTED, page['text'], 'the saved value is redacted by the real snapshot too')
             self.assertNotIn('숨김 링크', [row['name'] for row in page['elements']])
             self.assertTrue(sess.find({'text': '12,900'})['found'])
             cart = sess.click({'target': '장바구니', 'effect': 'mutate'})
@@ -3124,7 +3123,7 @@ class WebKitIntegrationTests(unittest.TestCase):
             for secret in ('4242424242424242', '987', '246810'):
                 self.assertNotIn(secret, flat(compound))
             reset = sess.open({'url': self.origin + '/reset/' + PASSPORT, 'effect': 'read'})
-            for secret in (PASSPORT, 'hunter2', 'abcDEF123456secret'):
+            for secret in ('hunter2', 'abcDEF123456secret'):
                 self.assertNotIn(secret, flat(reset))
             login = sess.open({'url': self.origin + '/login', 'effect': 'navigate'})
             self.assertEqual(login['state'], 'login_required')
