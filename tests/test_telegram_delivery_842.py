@@ -314,20 +314,47 @@ def test_sweep_login_respects_requested_age_and_opens_once(case, age):
 @pytest.mark.parametrize('approved', [False, True])
 def test_sweep_context_approval_uses_current_attachment(case, approved):
     c, work = _telegram(case)
+    c.store.put('model', {'endpoint': 'https://model.example/v1', 'model': 'fixture'})
+    c.store.attach_context(work, ['fixture-context'], c.service.context_assistant_id())
+    if approved:c.store.approve_context_attachment(work)
     _finish(c, work)
     with c.store.db() as db:
-        db.execute('INSERT INTO context_job_attachments VALUES (?,?,?,?,?)', (work, '[]', 'fixture', int(approved), time.time()))
+        db.execute("UPDATE tool_events SET detail=? WHERE job_id=? AND tool='after_work'",
+                   (json.dumps({'context_approval_needed': True}), work))
+    assert not c.store.notification_of(work, 'context_approval_needed')
+    service = _restart(c)
+    assert service.sweep_after_work() == 1
+    note = c.store.notification_of(work, 'context_approval_needed')
+    assert bool(note) is not approved
+    assert service.sweep_after_work(now=time.time() + 61) == 0
+    if not approved:
+        assert note['state'] == 'queued'
+        assert service.deliver_notification()
+        assert c.store.notification(note['id'])['state'] == 'sent'
+        assert not service.deliver_notification()
+        assert len(_sent(c)) == 1
+        assert not c.store.context_attachment(work)['approved']
+
+
+def test_sweep_context_prompt_is_cancelled_if_assistant_changes(case):
+    c, work = _telegram(case)
+    c.store.put('model', {'endpoint': 'https://model.example/v1', 'model': 'fixture'})
+    c.store.attach_context(work, ['fixture-context'], c.service.context_assistant_id())
+    attachment = c.store.context_attachment(work)
+    _finish(c, work)
+    with c.store.db() as db:
         db.execute("UPDATE tool_events SET detail=? WHERE job_id=? AND tool='after_work'",
                    (json.dumps({'context_approval_needed': True}), work))
     service = _restart(c)
     assert service.sweep_after_work() == 1
     note = c.store.notification_of(work, 'context_approval_needed')
-    assert bool(note) is not approved
-    if not approved:
-        assert note['state'] == 'queued'
-        assert service.deliver_notification()
-        assert not service.deliver_notification()
-        assert len(_sent(c)) == 1
+    assert note['state'] == 'queued'
+    c.store.put('model', {'endpoint': 'https://other.example/v1', 'model': 'fixture'})
+    assert service.deliver_notification()
+    assert c.store.notification(note['id'])['state'] == 'cancelled'
+    assert not service.deliver_notification()
+    assert not _sent(c)
+    assert c.store.context_attachment(work) == attachment
 
 
 def test_sweep_preparation_proposal_uses_existing_proposal(case):
