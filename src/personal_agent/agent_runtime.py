@@ -5986,19 +5986,24 @@ class ReadOverlap:
    self.capabilities.record=self.sink;self.sink=None
    self.evidence._hold=self.evidence_hold
 
-def run_agent(adapter,config,key,history,system,capabilities,record,scope='main',owner_context=None,images=None,judgment_history=None):
- """The direct-API tool loop.  ``owner_context`` (#833) is the turn context whose
- ``profile`` / ``current_context`` sections ``system`` already carries, so the outcome
- judgment reads the same owner model the worker was given; None reads ``none``."""
- messages=[{'role':'system','content':POLICY+'\n'+system},*history]
- definitions=capabilities.definitions();specs={d['function']['name']:d['function']['parameters'] for d in definitions}
+def loop_definitions(definitions):
+ """The tool list the direct-API loop sends for ``capabilities.definitions()`` (#825 records it)."""
  # #657: the loop-internal completion claim, offered beside the host tools.
  # `finish` is reserved (manifests.RESERVED_TOOL_IDS); should a tool of that
  # name ever reach this list, the loop's own definition replaces it.
- definitions=[d for d in definitions if d['function']['name']!=FINISH_ACTION]
- specs.pop(FINISH_ACTION,None)
+ return [*(d for d in definitions if d['function']['name']!=FINISH_ACTION),FINISH_DEFINITION]
+
+def run_agent(adapter,config,key,history,system,capabilities,record,scope='main',owner_context=None,images=None,judgment_history=None,definitions=None):
+ """The direct-API tool loop.  ``owner_context`` (#833) is the turn context whose
+ ``profile`` / ``current_context`` sections ``system`` already carries, so the outcome
+ judgment reads the same owner model the worker was given; None reads ``none``.
+ ``definitions`` (#825) is ``capabilities.definitions()`` as the caller already
+ materialised and recorded it, so discovery is not run a second time."""
+ messages=[{'role':'system','content':POLICY+'\n'+system},*history]
+ if definitions is None:definitions=capabilities.definitions()
+ definitions=loop_definitions(definitions)
+ specs={d['function']['name']:d['function']['parameters'] for d in definitions if d is not FINISH_DEFINITION}
  finish_offered=True
- definitions=[*definitions,FINISH_DEFINITION]
  sources=[];executions=[];failed=False;successful=0;invalid_calls=set()
  # #818: memory proposals recorded; they neither advance nor fail the Work (as in outcome_from_events).
  proposals=0

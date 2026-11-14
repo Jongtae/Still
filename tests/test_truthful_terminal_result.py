@@ -12,7 +12,7 @@ and never saw the outcome at all (#476).
 
 #752 (owner contract change): a failed or partial Work's AI answer reaches
 the owner, but never *as* the result.  #847 (owner observation 2026-09-28):
-the answer is the message; one closing note follows it - the Work's
+the answer is the message; a recorded closing note follows it - the Work's
 ``owner_note``: a count of the steps not confirmed, a withheld step's own
 next step (approve, log in), the worker's question - never a header, a
 tool name or a tool error.  Step detail stays in 상세 (``error``,
@@ -448,7 +448,7 @@ class UnsupportedTextNeverTerminalTests(TerminalResultTestCase):
 
     The end-to-end cases above each pin one scenario. This pins the rule they
     share, so a future scenario nobody wrote a test for is covered too: the
-    model text of a failed/partial turn is followed by exactly one closing
+    model text of a failed/partial turn keeps its recorded closing
     note, and the technical cause (tool ids) never enters the bubble (#847).
     """
 
@@ -470,12 +470,12 @@ class UnsupportedTextNeverTerminalTests(TerminalResultTestCase):
                                                  note='요청하신 작업은 끝내지 못했어요. 승인이 필요합니다.')
         self.assertAnswerThenNote(text, '요청하신 작업은 끝내지 못했어요. 승인이 필요합니다.')
 
-    def test_a_partial_outcome_renders_the_model_text_then_one_note(self):
+    def test_a_partial_outcome_renders_the_model_text_and_only_a_recorded_note(self):
         for cause in ('완료하지 못한 도구 실행 — read_file: 거부', '', None):
             with self.subTest(cause=cause):
                 text = AgentService.telegram_result_text(self.CLAIM, cause, 'partial', verified='찾은 파일:\n- a.txt')
                 # #1451: no step is said to have failed when none did.
-                self.assertAnswerThenNote(text, '이 답이 요청을 다 채웠는지는 확인하지 못했어요.')
+                self.assertEqual(text, self.CLAIM)
                 self.assertNotIn(TERMINAL_VERIFIED_LABEL, text)
         text = AgentService.telegram_result_text(self.CLAIM, None, 'partial', note='일부 단계는 끝내지 못했어요.')
         self.assertAnswerThenNote(text, '일부 단계는 끝내지 못했어요.')

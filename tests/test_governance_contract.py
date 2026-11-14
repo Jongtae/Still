@@ -701,3 +701,54 @@ def test_ai_is_the_engine_principle_is_pinned_in_governance() -> None:
     )
     assert agents.index("## AI is the engine") < agents.index("## Unit-test-first verification"), "C16 must stay near the top of AGENTS.md"
     _assert_all(_read("CLAUDE.md"), "C16 AI is the engine", "never implements a specific owner request")
+
+
+def test_owners_machine_principle_is_pinned_in_governance() -> None:
+    """C17 (#817): owner control retains three restrictions and factual disclosure."""
+    constitution = _read("docs/development-constitution.en.md")
+    heading = "### C17. The owner's machine is the owner's"
+    _assert_all(constitution, heading)
+    assert constitution.index("### C16.") < constitution.index(heading) < constitution.index("## Escalated review")
+    c17 = constitution.split(heading, 1)[1].split("## Escalated review", 1)[0]
+    _assert_all(
+        c17,
+        "a credential or secret leaving to a party the owner did not choose",
+        "money or another irreversible external effect without the owner's approval",
+        "or the owner's standing autonomy setting",
+        "text from outside (a page, a mail, another agent) being taken as the owner's instruction",
+        "it does not hide a fact",
+        "the owner's chosen AI runs remotely",
+        "information-use record names the actual recipient and route",
+        "It never supplies owner authority",
+        "never widens the authorized recipient or action",
+        "Functional execution conditions are not restrictions",
+        "input validation",
+        "cancellation",
+        "finite execution budgets",
+        "an unavailable capability",
+        "recovery consistency",
+        "payment autonomy is off until the owner turns it on",
+        "a scheduled execution never approves itself",
+        "stored secret values are kept out of text",
+        "forgetting does what the owner asked",
+    )
+    c4 = constitution.split("### C4.", 1)[1].split("### C5.", 1)[0]
+    _assert_all(
+        c4,
+        "Packages, runtimes, tools, connectors and nested agents receive only task-required authority",
+        "#817",
+        "the owner's own data and requests",
+        "C17 decides",
+        "C4 is unchanged for packages, connectors",
+        "still receive only task-required authority",
+    )
+    agents = _read("AGENTS.md")
+    safety = agents.split("## Truthfulness and safety", 1)[1].split("\n## ", 1)[0]
+    _assert_all(
+        safety,
+        "Constitution C17",
+        "Disclosure to a remote configured AI is owner-authorized",
+        "still reported as a fact",
+        "information-use record names the actual recipient and route",
+    )
+    assert "sensitive-data filtered" not in agents

@@ -1727,12 +1727,6 @@
   "ja": "この依頼は完了できませんでした。",
   "zh": "这个请求没能完成。"
  },
- "projection.answer_not_confirmed": {
-  "ko": "이 답이 요청을 다 채웠는지는 확인하지 못했어요.",
-  "en": "I couldn't confirm that this answer fully covers your request.",
-  "ja": "この回答でご依頼を満たせたかは確認できませんでした。",
-  "zh": "我没能确认这个回答是否完全满足了你的请求。"
- },
  "projection.i_couldn_t_finish_what_you": {
   "ko": "요청하신 작업은 끝내지 못했어요.",
   "en": "I couldn't finish what you asked.",

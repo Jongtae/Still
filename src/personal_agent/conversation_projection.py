@@ -47,8 +47,6 @@ TERMINAL_INTERRUPTED_NOTE = msg('projection.it_stopped_partway_so_i_could')
 #: when the outcome judgment gave no owner line of its own.  From the catalog: no count word, which
 #: was Korean grammar inside every language's line.
 TERMINAL_PARTIAL_NOTE = msg('projection.some_steps_unfinished')
-#: #1451: the closing line of a partial answer when no step failed and no gap was stated.
-TERMINAL_UNCONFIRMED_NOTE = msg('projection.answer_not_confirmed')
 #: One reason string in the owner's bubble: its first sentence, bounded.
 #: The full model-facing text stays in the Work record (상세).
 OWNER_REASON_CHARS = 120
@@ -360,7 +358,8 @@ def terminal_text(response, error=None, outcome=None, next_action=None, verified
 
     * ``failed`` / ``partial`` / ``interrupted`` with an AI answer (#752,
       #820, #847) - the AI's own answer first, then ``note`` (the Work's
-      recorded ``answer_note``) or one outcome sentence as the closing line.
+      recorded ``answer_note``), or the failed/interrupted outcome sentence.
+      A partial answer with no recorded note has no closing line.
       The answer is always delivered: hiding it protected nothing, and left
       the owner without the result.  No header, tool name or tool error
       appears; the steps stay in 상세.  ``error`` is not read here.
@@ -393,9 +392,9 @@ def terminal_text(response, error=None, outcome=None, next_action=None, verified
         elif outcome == 'interrupted':
             closing = TERMINAL_INTERRUPTED_NOTE
         else:
-            # #631: only NULL falls back; an empty note deliberately adds nothing.
+            # #631/#821: only a failed Work falls back; an empty note deliberately adds nothing.
             closing = ai_text(note.strip()) if note is not None else (TERMINAL_FAILED_NOTE if outcome == 'failed'
-                                                                    else TERMINAL_UNCONFIRMED_NOTE)
+                                                                    else '')
         text = answer + '\n\n' + closing if closing else answer
     elif outcome == 'failed':
         body = [TERMINAL_FAILED_HEADER]

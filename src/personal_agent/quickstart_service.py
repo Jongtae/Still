@@ -14,6 +14,7 @@ import sys
 import threading
 from pathlib import Path
 import time
+import uuid
 from contextlib import ExitStack, contextmanager
 from types import SimpleNamespace
 import hashlib
@@ -102,6 +103,7 @@ from . import preparations as prep
 # OWNER-MODEL-03 (#805): asynchronous, minimised post-Work owner-model upkeep.
 from . import owner_model as om
 from . import information_use
+from . import attempt_identity
 from . import remote_login
 from .browser_session import BrowserProfile, ascii_host, binding_digest, step_binding, keepalive_due_at, keepalive_interval, registrable_domain, page_reference, login_window_url
 from .browser_jar import unexpired
@@ -2448,6 +2450,15 @@ class AgentService:
             merged['owner_information']=information_use.merge_references(current['owner_information'],fields['owner_information'])
         if isinstance(fields.get('plan_context_messages'),int) and isinstance(current.get('plan_context_messages'),int):
             merged['plan_context_messages']=max(current['plan_context_messages'],fields['plan_context_messages'])
+        # #825: per-attempt rows are appended or changed against the stored list, in this transaction.
+        row=merged.pop('worker_append',None)
+        if isinstance(row,dict):merged.update(attempt_identity.appended(current,'workers',row,6))
+        row=merged.pop('attempt_input_append',None)
+        if isinstance(row,dict):
+            merged.update(attempt_identity.appended(current,'attempt_inputs',row,attempt_identity.ATTEMPT_INPUTS_KEEP))
+        change=merged.pop('attempt_input_update',None)
+        if isinstance(change,dict):
+            merged.update(attempt_identity.updated_entry(current,change.get('ref'),{'input':change.get('input')}))
         return merged
 
     def record_photo_attempt(self, job_id, *, status, count=1, route=None, engine=None, provider=None, attempt_id=None):
@@ -2522,8 +2533,15 @@ class AgentService:
                                            'conversation-history','unattributed-tool-evidence','owner-browser-session'})
 
     def record_turn_sent(self, job_id, *, sent, instructions, instructions_channel, private_sources=(), **fields):
-        """Record what a turn sent; computed inside the guard so it can never break the turn."""
+        """Record what a turn sent; computed inside the guard so it can never break the turn.
+
+        ``attempt_input`` (#825), when given, is this attempt's entry (``attempt``, ``route``, the
+        ``offered`` / ``served`` / ``native`` tool identities): it is appended to ``attempt_inputs``
+        with the instructions and prompt digests, as ``prepared`` until ``record_attempt_input``
+        says whether the input was sent.  Returns the entry's ``ref`` (None without one).
+        """
         try:
+            entry=fields.pop('attempt_input',None)
             withheld=sorted(set(private_sources)&self.PROVENANCE_WITHHELD_SOURCES)
             size=len(sent.encode())
             if withheld:
@@ -2540,9 +2558,29 @@ class AgentService:
                 fields.update(instructions=instructions,instructions_digest=hashlib.sha256(instructions.encode()).hexdigest()[:16])
             else:
                 fields.update(instructions_version=None)
+            ref=None
+            if isinstance(entry,dict):
+                # #825: per attempt, so a later attempt never overwrites an earlier one's identity
+                # (the top-level fields above stay last-writer, as historical readers expect).
+                ref=uuid.uuid4().hex[:12]
+                fields['attempt_input_append']={**{key:value for key,value in entry.items() if value is not None},'ref':ref,'input':'prepared',
+                                                'instructions_digest':attempt_identity.instructions_digest(instructions),
+                                                'instructions_channel':instructions_channel,
+                                                'prompt_digest':attempt_identity.short_digest(sent)}
             self.record_turn_provenance(job_id,**fields)
+            return ref
         except Exception:
             LOG.warning('turn provenance could not be recorded job=%s',job_id)
+
+    def record_attempt_input(self, job_id, ref, state):
+        """Whether attempt ``ref``'s recorded input reached its worker (#825).
+
+        ``sent``: the provider responded, or the launched CLI completed its turn; ``not-sent``: a
+        preflight failed before dispatch (or the run ended before any model turn); ``unknown``:
+        the dispatch failed and Still cannot tell whether the input reached the worker.
+        """
+        if not ref or state not in attempt_identity.INPUT_STATES:return
+        self.record_turn_provenance(job_id,attempt_input_update={'ref':ref,'input':state})
 
     def scrub_envelope(self, job_id, text):
         """A prompt envelope as the local turn record may keep it (#701).
@@ -2589,10 +2627,9 @@ class AgentService:
         """
         self.live_workers[job_id]=worker_line(entry,effort)
         try:
-            current=self.store.turn_provenance(job_id) or {}
-            workers=[row for row in current.get('workers') or [] if isinstance(row,dict)]
-            workers.append({key:value for key,value in entry.items() if value is not None})
-            self.record_turn_provenance(job_id,workers=workers[-6:])
+            # #825: appended inside the merge transaction (two writers keep each other's rows);
+            # ``workers_dropped`` counts the rows the bound of six removed.
+            self.record_turn_provenance(job_id,worker_append={key:value for key,value in entry.items() if value is not None})
         except Exception:
             LOG.warning('turn provenance could not be recorded job=%s',job_id)
 

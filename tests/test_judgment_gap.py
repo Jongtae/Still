@@ -11,7 +11,7 @@ import unittest
 
 from personal_agent import agent_runtime
 from personal_agent.conversation_handoff import ConversationJudgments
-from personal_agent.conversation_projection import report_statement, TERMINAL_UNCONFIRMED_NOTE, answer_note, terminal_text
+from personal_agent.conversation_projection import report_statement, answer_note, terminal_text
 from personal_agent.decision import (BinaryDecision, DecisionConfidence, DecisionContext, FixtureDecisionEngine,
                                      OUTCOME_DECIDED, SchemaDecisionEngine, fixture_confidence)
 from personal_agent.orchestrator import OBSERVATION_CHARS, Orchestration, observations_with_pages
@@ -242,12 +242,12 @@ class ClosingLine(unittest.TestCase):
     def test_a_work_waiting_for_approval_says_nothing_is_unconfirmed(self):
         """#1470 (live): an order waiting for the owner's tap ended with "확인하지 못했어요"."""
         self.assertEqual(terminal_text('승인을 요청했어요.', None, 'partial', waiting=True), '승인을 요청했어요.')
-        self.assertEqual(terminal_text('승인을 요청했어요.', None, 'partial'), '승인을 요청했어요.\n\n' + TERMINAL_UNCONFIRMED_NOTE)
+        self.assertEqual(terminal_text('승인을 요청했어요.', None, 'partial'), '승인을 요청했어요.')
 
     def test_with_no_gap_and_no_failed_step_nothing_claims_a_step_failed(self):
         self.assertIsNone(answer_note([], 'partial', report=agent_runtime.agency_report('r', [], [], ['x'], None)))
         text = terminal_text('answer', None, 'partial')
-        self.assertEqual(text, 'answer\n\n' + TERMINAL_UNCONFIRMED_NOTE)
+        self.assertEqual(text, 'answer')
         self.assertNotIn('단계는 끝내지 못했어요', text)
 
 

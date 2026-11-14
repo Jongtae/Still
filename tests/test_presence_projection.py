@@ -515,12 +515,12 @@ class TerminalTextTests(unittest.TestCase):
     """Rows H/I at the renderer level; transcript-level partial cases live in
     tests/test_truthful_terminal_result.py (#476) and are unchanged."""
 
-    def test_partial_puts_the_answer_first_and_one_note_last(self):
-        # #847: the AI answer is the message; the recorded note (or one outcome
-        # sentence) closes it.  The cause with tool words is not read here.
+    def test_partial_appends_only_a_recorded_note(self):
+        # #821: only a recorded note closes a partial answer.
+        # The cause with tool words is not read here.
         from personal_agent.conversation_projection import TERMINAL_NEXT_ACTION
         text = terminal_text('모델이 쓴 문장', '캘린더 조회 거부', 'partial')
-        self.assertEqual(text, '모델이 쓴 문장\n\n이 답이 요청을 다 채웠는지는 확인하지 못했어요.')
+        self.assertEqual(text, '모델이 쓴 문장')
         text = terminal_text('모델이 쓴 문장', '캘린더 조회 거부', 'partial', note='일부 단계는 끝내지 못했어요.')
         self.assertEqual(text, '모델이 쓴 문장\n\n일부 단계는 끝내지 못했어요.')
         self.assertNotIn(TERMINAL_NEXT_ACTION, text)
@@ -551,7 +551,7 @@ class TruthfulRepliesTests(unittest.TestCase):
         # #752/#847: with an AI answer, answer -> note; no header, no cause, no verified portion, no web pointer.
         from personal_agent.conversation_projection import TERMINAL_NEXT_ACTION, TERMINAL_VERIFIED_LABEL
         text = terminal_text('모델이 쓴 문장', '완료하지 못한 부분 — 파일 읽기: 거부', 'partial', verified='찾은 파일:\n- a.txt')
-        self.assertTrue(text.startswith('모델이 쓴 문장\n\n'))
+        self.assertEqual(text, '모델이 쓴 문장')
         self.assertNotIn(TERMINAL_PARTIAL_HEADER, text)
         self.assertNotIn('파일 읽기', text)
         self.assertNotIn(TERMINAL_VERIFIED_LABEL, text)

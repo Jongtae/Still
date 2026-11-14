@@ -14,7 +14,7 @@ import time
 from .messages import msg
 from .telegram_locale import owner_language
 from .work_execution import PROCEED, REDELEGATED, WorkRun
-from .agent_runtime import Capabilities, ToolError, cut_to_fit, run_agent, STEER_EVENT, steer_note, evidence_summary, turn_context, render_turn_prompt, attachment_facts, context_sections, ENGINE_UNMEDIATED, base_label, WorkLedger, NOTES_SUMMARY_COMMANDS
+from .agent_runtime import Capabilities, ToolError, cut_to_fit, loop_definitions, run_agent, STEER_EVENT, steer_note, evidence_summary, turn_context, render_turn_prompt, attachment_facts, context_sections, ENGINE_UNMEDIATED, base_label, WorkLedger, NOTES_SUMMARY_COMMANDS
 from .providers import NOT_REPORTED, ProviderError
 from .cloud_engines import BUDGET_EXCEEDED as CLOUD_BUDGET_EXCEEDED, NOT_CONFIGURED as CLOUD_NOT_CONFIGURED, CloudLaunchError
 from .conversation_projection import BLOCKER_CLOUD_PROFILE, BLOCKER_DOCUMENT_APPROVAL, BLOCKER_MODEL_UNVERIFIED, BLOCKER_NO_AI_ROUTE, TERMINAL_FAILED_HEADER, BlockedTurn, context_message, answer_note, owner_cause, report_statement, verified_portion
@@ -31,6 +31,7 @@ from .context_observations import continuation_request
 from . import preparations as prep
 from . import owner_model as om
 from . import information_use
+from . import attempt_identity
 from .cli_browser_relay import BrowserRelay
 from .quickstart_service import (
     CONTINUATION_EFFECT_NOTE_HEAD,
@@ -866,6 +867,11 @@ class WorkExecutor:
         run.record(STEER_EVENT,'continuation_failed','{}')
         return True
 
+    def _model_responded(self, work_id, since_event_id):
+        """Whether a direct model turn responded in this attempt; None when the store cannot say (#825)."""
+        try:return bool(self.service.photo_attempt_received_model_response(work_id,since_event_id))
+        except Exception:return None
+
     def _run_cli_attempt(self, run):
         """One attempt on a subscription CLI worker (the selected engine through its Still bridge)."""
         service=self.service
@@ -1033,7 +1039,18 @@ class WorkExecutor:
         photo_attempt_id=(service.record_photo_attempt(job['id'],status='staged',count=len(run.image_inputs),
                                                     route='subscription',engine=run.subscription['id'])
                           if run.image_inputs else None)
-        service.record_turn_sent(job['id'],sent=sent if separate else engine_prompt,
+        # #825: this attempt's input identity, from the listing above (discovery runs once here).
+        # What the bridge actually serves is a separate computation in its own process: the
+        # host bridge records it at ``tools/list``; the isolated sidecar's is not observable.
+        attempt_input={'attempt':run.attempt.number if run.attempt is not None else 1,
+                       'route':'isolated' if isolated else 'subscription','engine':run.subscription['id'],
+                       'offered':attempt_identity.identity_or_unavailable(offered,representation=('isolated-mcp' if isolated else 'still-host-mcp')+':parent-listing'),
+                       'served':attempt_identity.unavailable('isolated-mcp:sidecar','served inside the isolated sidecar; not observed by Still') if isolated else None,
+                       # Still decides only whether the CLI's own web search is on; its other
+                       # built-in tools follow its launch flags (the recorded argv).
+                       'native':{**attempt_identity.unavailable('cli-native',"the CLI's own tools; their definitions are not visible to Still"),
+                                 'web_search_on':bool(native_search)}}
+        input_ref=service.record_turn_sent(job['id'],sent=sent if separate else engine_prompt,attempt_input=attempt_input,
             exposed_tools=[tool.get('name') for tool in offered],build=service.build,
             capability_profile=facade.PROFILE,unavailable_tools=route_unavailable(facade.PROFILE),
             capability_trust=profile_status(facade.PROFILE)['trust'],
@@ -1071,6 +1088,8 @@ class WorkExecutor:
             'context_messages':len(engine_context['conversation']),'context_bytes':len(engine_prompt.encode()),
             'context_mode':engine_context.get('mode','shared-context')}))
         work_model=''
+        # #825: set just before the worker is handed its input; a failure before it is a failed preflight.
+        dispatched=False
         try:
             if isolated:
                 if run.image_inputs:
@@ -1090,6 +1109,7 @@ class WorkExecutor:
                     prompt=engine_prompt, engine_id=run.subscription['id'], task_id=job['id'])
                 service.isolated_mcp_registry.register(job['id'], tools, token=token)
                 try:
+                    dispatched=True
                     content=service.isolated_engine_adapter.execute(
                         prompt=engine_prompt, engine_id=run.subscription['id'], token=token, task_id=job['id'])
                 finally:
@@ -1136,6 +1156,7 @@ class WorkExecutor:
                     if work_model:execution_options['model']=work_model
                     # #1434: the reasoning effort the plan chose for that model.
                     if run.attempt is not None and getattr(run.attempt,'effort',''):execution_options['effort']=run.attempt.effort
+                    dispatched=True
                     run.result=service.execution_adapter.execute(run.subscription['id'],engine_prompt,served,**execution_options)
                     if run.image_inputs:
                         service.record_photo_attempt(job['id'],attempt_id=photo_attempt_id,status='included-in-request',
@@ -1148,6 +1169,8 @@ class WorkExecutor:
                     # The Work's browser session ends with the run (as on the direct route).
                     run.capabilities.close_browser()
         except (ExecutionError,EngineGatewayError) as exc:
+            # #825: an attempt whose CLI never launched was a failed preflight, not sent input.
+            service.record_attempt_input(job['id'],input_ref,'not-sent' if not dispatched or (getattr(exc,'meta',None) or {}).get('launched') is False else 'unknown')
             # #211: an admitted cloud call whose CLI never launched (a local preflight failed first)
             # is given back, so local failures never spend the owner's cloud limit.
             if cloud is not None and (getattr(exc,'meta',None) or {}).get('launched') is False:
@@ -1203,6 +1226,10 @@ class WorkExecutor:
                 run.attempt=following
                 return REDELEGATED
             raise
+        except Exception:
+            service.record_attempt_input(job['id'],input_ref,'unknown' if dispatched else 'not-sent')
+            raise
+        service.record_attempt_input(job['id'],input_ref,'sent')
         # #729: a bridge call the CLI never saw completed is a typed failure.
         service.close_incomplete_bridge_calls(job['id'],run.attempt_start,run.record)
         service.record_turn_provenance(job['id'],status='answered',exit_code=run.result.exit_code,**(getattr(run.result,'meta',None) or {}))
@@ -1324,9 +1351,14 @@ class WorkExecutor:
         photo_attempt_id=(service.record_photo_attempt(job['id'],status='staged',count=len(run.image_inputs),
                                                     route='direct-api',provider=runtime_config.get('provider'))
                           if run.image_inputs else None)
-        service.record_turn_sent(job['id'],sent=render_turn_prompt(api_context),instructions=api_context['instructions'],
+        # #825: materialised once; the loop below sends exactly this list (plus its ``finish``).
+        offered=run.capabilities.definitions()
+        input_ref=service.record_turn_sent(job['id'],sent=render_turn_prompt(api_context),instructions=api_context['instructions'],
             instructions_channel='system-message',build=service.build,
-            exposed_tools=[tool['function']['name'] for tool in run.capabilities.definitions()],
+            attempt_input={'attempt':run.attempt.number if run.attempt is not None else 1,'route':'direct-api',
+                           'provider':runtime_config.get('provider'),
+                           'offered':attempt_identity.identity_or_unavailable(loop_definitions(offered),representation='still-host-api')},
+            exposed_tools=[tool['function']['name'] for tool in offered],
             private_sources=set(run.turn_provenance)|{base_label(label) for label in run.capabilities.private_provenance}|({'connected-document'} if run.workspace_request or run.document_history else set())
                             # #658: see the CLI route - record-only label for the profile section.
                             |({'owner-profile'} if api_context.get('profile') else set())
@@ -1353,12 +1385,18 @@ class WorkExecutor:
             # #833: the outcome judgment reads the same profile / current-context sections.
             run_options={'owner_context':api_context,'judgment_history':judgment_history}
             if run.image_inputs:run_options['images']=run.image_inputs
-            run.result=run_agent(service.adapter,runtime_config,run.key,[*api_context['conversation'],{'role':'user','content':api_context['request']}],context_sections(api_context),run.capabilities,run.record,**run_options)
+            run.result=run_agent(service.adapter,runtime_config,run.key,[*api_context['conversation'],{'role':'user','content':api_context['request']}],context_sections(api_context),run.capabilities,run.record,definitions=offered,**run_options)
+            # #825: a run the budget ended before any model turn sent nothing.
+            received=self._model_responded(job['id'],run.attempt_start)
+            service.record_attempt_input(job['id'],input_ref,{True:'sent',False:'not-sent'}.get(received,'unknown'))
             if run.image_inputs:
                 service.record_photo_attempt(job['id'],attempt_id=photo_attempt_id,status='included-in-request',
                                           count=len(run.image_inputs),route='direct-api',
                                           provider=runtime_config.get('provider'))
         except Exception as exc:
+            # #825: a model response in this attempt shows the input was sent; without one the
+            # failure may have come before or after the request reached the provider.
+            service.record_attempt_input(job['id'],input_ref,'sent' if self._model_responded(job['id'],run.attempt_start) else 'unknown')
             if run.image_inputs:
                 received=service.photo_attempt_received_model_response(job['id'],run.attempt_start)
                 service.record_photo_attempt(job['id'],attempt_id=photo_attempt_id,
