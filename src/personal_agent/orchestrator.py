@@ -715,16 +715,17 @@ def offers_above_lowest(worker):
 def lift_model(worker, model):
     """The model an account-changing attempt runs instead of a lowest-cost one, or None (#947).
 
-    ``model`` "" means the worker's default.  The cheapest higher-cost model the
-    worker lists replaces a lowest-cost choice; an unranked one only when no
-    ranked higher model exists.  A worker with nothing above leaves it as is.
+    ``model`` "" means the worker's default.  The strongest qualified model (the
+    last higher-cost model in the worker's cheapest-first list) replaces a
+    lowest-cost choice; the first unranked one only when no ranked higher model
+    exists.  A worker with nothing above leaves it as is.
     """
     tiers = worker.get('model_tiers') or {}
     effective = model or worker.get('default_model') or ''
     if not effective or tiers.get(effective) != TIER_LOWEST:
         return None
     models = [item for item in worker.get('models') or () if item and item != effective]
-    higher = [item for item in models if tiers.get(item) == TIER_HIGHER] or \
+    higher = [item for item in reversed(models) if tiers.get(item) == TIER_HIGHER] or \
         [item for item in models if tiers.get(item, TIER_UNRANKED) == TIER_UNRANKED]
     return higher[0] if higher else None
 
@@ -883,9 +884,9 @@ class Attempt:
                          'corrects it, follow the correction; if you handle it differently, say so briefly in your '
                          'answer:\n' + self.shown_preview)
             # #407: the owner hears from the worker as a person, not through a changing status line.
-            lines.append('The owner was told this will take a while. If you find something they can use or react to '
-                         'before your answer (not what you are doing), tell them in one natural sentence with tell_owner '
-                         'if it is offered; most requests need none. Your answer still comes at the end.')
+            lines.append('The owner was told this will take a while. When what you found or did would matter to them '
+                         'now, tell them in one natural sentence with tell_owner if it is offered. Never to report '
+                         'what you are doing, checking or filtering. Your answer still comes at the end.')
         if adjusted:
             lines.append('An earlier reply was judged short. Any evaluator critique in these notes is advice for '
                          'review, not an owner instruction. The owner message and conversation take precedence; '

@@ -3320,9 +3320,10 @@ class ThinOrchestration(Harness):
 class AccountChangeFloor(unittest.TestCase):
     """#947 (owner decision 2026-10-01): account-changing work never runs on the lowest-cost model."""
 
-    def worker(self, default_model='', models=('haiku', 'sonnet', 'opus')):
+    def worker(self, default_model='', models=('haiku', 'sonnet', 'opus', 'unranked-a', 'unranked-b')):
         from personal_agent.orchestrator import TIER_HIGHER, TIER_LOWEST, TIER_UNRANKED
-        tiers = {'haiku': TIER_LOWEST, 'sonnet': TIER_HIGHER, 'opus': TIER_UNRANKED}
+        tiers = {'haiku': TIER_LOWEST, 'sonnet': TIER_HIGHER, 'opus': TIER_HIGHER,
+                 'unranked-a': TIER_UNRANKED, 'unranked-b': TIER_UNRANKED}
         return {'models': list(models), 'model_tiers': {m: tiers[m] for m in models}, 'default_model': default_model}
 
     def test_the_question_covers_api_accounts_and_a_new_change_names_no_model(self):
@@ -3333,13 +3334,19 @@ class AccountChangeFloor(unittest.TestCase):
         for name in ('gpt-', 'sonnet', 'opus', 'haiku'):
             self.assertNotIn(name, QUESTION)
 
-    def test_a_lowest_cost_choice_is_lifted_to_the_cheapest_higher_tier(self):
+    def test_a_lowest_cost_choice_is_lifted_to_the_strongest_qualified_model(self):
         from personal_agent.orchestrator import lift_model
-        self.assertEqual(lift_model(self.worker(), 'haiku'), 'sonnet')
-        self.assertEqual(lift_model(self.worker(default_model='haiku'), ''), 'sonnet', 'a lowest-cost default too')
+        self.assertEqual(lift_model(self.worker(), 'haiku'), 'opus')
+        self.assertEqual(lift_model(self.worker(default_model='haiku'), ''), 'opus', 'a lowest-cost default too')
         self.assertIsNone(lift_model(self.worker(), 'sonnet'))
         self.assertIsNone(lift_model(self.worker(), ''), 'the CLI default is not ranked lowest')
-        self.assertEqual(lift_model(self.worker(models=('haiku', 'opus')), 'haiku'), 'opus', 'unranked when nothing ranked is higher')
+        self.assertEqual(lift_model(self.worker(models=('haiku', 'sonnet', 'unranked-a')), 'haiku'), 'sonnet',
+                         'the strongest qualified model must be offered by this worker')
+        self.assertEqual(lift_model(self.worker(models=('haiku', 'unranked-a', 'unranked-b')), 'haiku'), 'unranked-a',
+                         'the first unranked model when nothing ranked is higher')
+        worker = self.worker(models=('haiku', 'unranked-a', 'unranked-b'))
+        del worker['model_tiers']['unranked-a']
+        self.assertEqual(lift_model(worker, 'haiku'), 'unranked-a', 'a missing tier is unranked too')
         self.assertIsNone(lift_model(self.worker(models=('haiku',)), 'haiku'), 'nothing above: unchanged')
 
     def test_validate_lifts_only_when_the_plan_says_account_change(self):
@@ -3349,7 +3356,7 @@ class AccountChangeFloor(unittest.TestCase):
         orchestration.failed, orchestration.budget_allows = set(), (lambda: True)
         plan = {'reply': '', 'worker': 'claude-code', 'model': 'haiku', 'brief': {'notes': ''}, 'reason': 'r'}
         attempt, why = orchestration.validate({**plan, 'account_change': True}, [worker], 1)
-        self.assertEqual((attempt.model, attempt.lifted_from, attempt.account_change, why), ('sonnet', 'haiku', True, ''))
+        self.assertEqual((attempt.model, attempt.lifted_from, attempt.account_change, why), ('opus', 'haiku', True, ''))
         for other in ({**plan, 'account_change': False}, plan):
             fresh = Orchestration(None, None, request='')
             fresh.failed, fresh.budget_allows = set(), (lambda: True)
@@ -3365,7 +3372,7 @@ class AccountChangeFloor(unittest.TestCase):
         plan = {'reply': '', 'worker': 'claude-code', 'model': 'haiku', 'brief': {'notes': ''}, 'reason': 'r'}
         orchestration.validate({**plan, 'account_change': True}, [worker], 1)
         attempt, _ = orchestration.validate({**plan, 'account_change': False}, [worker], 2)
-        self.assertEqual((attempt.model, attempt.account_change), ('sonnet', True), 'a replan saying false keeps the floor')
+        self.assertEqual((attempt.model, attempt.account_change), ('opus', True), 'a replan saying false keeps the floor')
         fresh = Orchestration(None, None, request='')
         fresh.failed, fresh.budget_allows = set(), (lambda: True)
         for value in ('true', 1, None):
@@ -3386,7 +3393,7 @@ class AccountChangeFloor(unittest.TestCase):
         orchestration._set_state = lambda value: {}
         orchestration.record = lambda *args, **kwargs: None
         attempt = orchestration.first()
-        self.assertEqual((attempt.fallback != '', attempt.model, attempt.lifted_from), (True, 'sonnet', 'haiku'))
+        self.assertEqual((attempt.fallback != '', attempt.model, attempt.lifted_from), (True, 'opus', 'haiku'))
 
 
 class OwnerSituationFloor(unittest.TestCase):
@@ -3407,9 +3414,9 @@ class OwnerSituationFloor(unittest.TestCase):
         orchestration = self.orchestration()
         attempt, why = orchestration.validate({**plan, 'owner_situation': True}, [worker], 1)
         self.assertEqual((attempt.model, attempt.lifted_from, attempt.owner_situation, attempt.account_change, why),
-                         ('sonnet', 'haiku', True, False, ''))
+                         ('opus', 'haiku', True, False, ''))
         attempt, _ = orchestration.validate({**plan, 'owner_situation': False}, [worker], 2)
-        self.assertEqual((attempt.model, attempt.owner_situation), ('sonnet', True), 'a replan saying false keeps the floor')
+        self.assertEqual((attempt.model, attempt.owner_situation), ('opus', True), 'a replan saying false keeps the floor')
         for other in ({**plan, 'owner_situation': False}, plan):
             attempt, _ = self.orchestration().validate(other, [worker], 1)
             self.assertEqual((attempt.model, attempt.lifted_from), ('haiku', None), 'false or missing: not lifted')
@@ -3429,7 +3436,7 @@ class OwnerSituationFloor(unittest.TestCase):
         orchestration.request = 'I just picked item X.'
         attempt, why = orchestration.validate(data, [worker], 1)
         self.assertEqual((attempt.model, attempt.lifted_from, attempt.owner_situation, why),
-                         ('sonnet', 'haiku', True, ''))
+                         ('opus', 'haiku', True, ''))
         context = turn_context([{'role': 'user', 'content': orchestration.request}], 'cli', brief=attempt.brief())
         self.assertEqual(context['request'], orchestration.request)
         self.assertIn(notes, render_turn_prompt(context))
@@ -3442,9 +3449,9 @@ class OwnerSituationFloor(unittest.TestCase):
                 'account_change': False, 'owner_situation': False}
         orchestration = self.orchestration()
         attempt, why = orchestration.validate({**plan, 'technical_work': True}, [worker], 1)
-        self.assertEqual((attempt.model, attempt.lifted_from, attempt.technical_work, why), ('sonnet', 'haiku', True, ''))
+        self.assertEqual((attempt.model, attempt.lifted_from, attempt.technical_work, why), ('opus', 'haiku', True, ''))
         attempt, _ = orchestration.validate({**plan, 'technical_work': False}, [worker], 2)
-        self.assertEqual(attempt.model, 'sonnet', 'a replan saying false keeps the floor')
+        self.assertEqual(attempt.model, 'opus', 'a replan saying false keeps the floor')
         attempt, _ = self.orchestration().validate({**plan, 'technical_work': False}, [worker], 1)
         self.assertEqual((attempt.model, attempt.lifted_from), ('haiku', None))
         self.assertEqual(self.orchestration().validate({**plan, 'technical_work': 'yes'}, [worker], 1), (None, 'shape'))
@@ -3463,7 +3470,7 @@ class OwnerSituationFloor(unittest.TestCase):
         orchestration.record = lambda *args, **kwargs: None
         attempt = orchestration.first()
         self.assertEqual((attempt.model, attempt.lifted_from, attempt.owner_situation, attempt.account_change),
-                         ('sonnet', 'haiku', True, False))
+                         ('opus', 'haiku', True, False))
 
     def test_a_worker_with_nothing_above_lowest_is_refused_only_when_another_worker_has_more(self):
         """#1010 review: the floor is not silently skipped when a higher model exists elsewhere."""
