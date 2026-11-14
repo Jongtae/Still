@@ -27,7 +27,10 @@ authority. Payment approval is a deliberate gate, not a Still blocker.
 Start at `untried`. A catalogue entry or static scenario does not upgrade it.
 Here that means no row-specific execution evidence was identified in this
 review, not proof that no person has ever tried it. A static-only row may have
-scenario and judgment links while remaining untried.
+scenario and judgment links while remaining untried. Both `untried` and
+`out-of-bounds-by-design` may cite only class S specification links of kind
+`scenario`, `judgment-case` or `doc`, never U/I/P/L. Keep those S links: lane G
+uses them to select regressions; they do not claim execution.
 
 `fixture-only` needs a concrete U or I citation. Its summary states the tested
 subtask and limitations. It never covers every activity under a broad row.
@@ -37,12 +40,34 @@ failed L attempt alongside cart fixtures, not evidence of live cart completion.
 The presence-eval record is explicitly fixture-only. Historical findings are
 checked against current tests before being treated as current failures.
 
-`blocked-by-still` needs evidence attributing the failure to Still's tool
-exposure, login, extra approval or routing. `engine-limit` needs evidence
-attributing it to the owner's AI. Unknown causes are not assigned either label.
+`blocked-by-still` requires a task that actually needs the blocked path, an
+open issue recording the block, an existing `path:symbol` in `code_ref`, and
+at least one evidence item showing it (S documentation/code inspection or a
+U test pinning the behavior). The four kinds are:
+
+- `tool-not-exposed`: the AI needs a capability Still does not offer, and no
+  offered tool covers it; for example the history capability requested in #31.
+- `login`: Still-side sign-in friction, not merely an owner being signed out.
+- `approval-boundary`: a Still approval, accept or budget gate stopping work
+  the owner asked for, beyond the deliberate per-action payment gate. #717
+  records this kind of complaint, but its owner-request scheduling gate is
+  already corrected in the inspected code.
+- `routing`: wrong routing or a Still orchestration judgment (including the
+  decision model or completion/goal check) that stops or discards valid work,
+  such as #767/#768. Scheduling defects that lose a promised watch report or
+  end a watch early (#813/#814) also belong here.
+
+The payment gate is a boundary note or `out-of-bounds-by-design`, never a
+blocker. Closed/merged fixes such as #761 are not current blockers. An open
+issue alone is insufficient when the inspected code already corrects the
+relevant behavior. A fixture-backed row is marked blocked only when the
+block stops the realistic task; notes name that path and preserve the narrower
+fixture result. A block on one route does not claim that every route fails.
+
+`engine-limit` needs evidence attributing failure to the owner's AI. Unknown
+causes are not assigned either label.
 Physical execution and personal security checks are `out-of-bounds-by-design`;
-linked advice scenarios do not change that boundary. Row notes retain relevant
-limitations that do not fit the contract's four blocker kinds.
+linked advice scenarios do not change that boundary.
 
 U is a model-free unit or fixture check. I crosses a real boundary without a
 model. S is static specification or structure. P is a live public read without
@@ -68,6 +93,14 @@ These are implementation pointers, not execution evidence for every row.
 | Code and optional skills | `src/personal_agent/code_run.py:CodeRunner.run`, `src/personal_agent/skills.py:SkillBinding.load`, `skills/` |
 
 Message delivery to the owner does not prove arbitrary third-party messaging.
+The built-in mail/drive connectors are read-only, and there is no dedicated
+host tool to message another person. Browser interaction can operate signed-in
+web mail in principle, so a missing dedicated send tool does not establish a
+`tool-not-exposed` blocker. Personal messages, invitations, colleague updates
+and external-contact drafts remain `untried`: no row-specific delivery run or
+browser-mail fixture was found. AppWorld's send-text scenario is S only; the
+injected Gmail-send effect records in `tests/test_owner_update_redelegation_466.py`
+test classification, not message delivery. Drafting and sending are distinct.
 A configured connector may extend the host catalogue. Skill installation or
 loading does not prove a task outcome. Every bundled scenario has row tags;
 existing tags and all other scenario content are preserved.

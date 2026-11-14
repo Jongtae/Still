@@ -2,7 +2,7 @@
 
 Issue [#462](https://github.com/Jongtae/Still/issues/462). A map of everyday and work activities, the evidence we have, and the Still blockers to remove.
 
-As of 2026-11-14; evidence read at revision `6ba8657`.
+As of 2026-11-14; evidence read at revision `6d542ab`.
 This is not a score: counts are rows in the map, never measures of task success.
 
 - `observed-live`: a dated live observation is cited.
@@ -37,7 +37,7 @@ PYTHONPATH=evals:src .venv/bin/python -m agentos_eval coverage --write docs/task
 | atus-2025 | 05 Work & Work Related Activities | 0 | 1 | 0 | 0 | 0 | 3 |
 | atus-2025 | 06 Education | 0 | 0 | 0 | 0 | 0 | 4 |
 | atus-2025 | 07 Consumer Purchases | 0 | 2 | 0 | 0 | 1 | 0 |
-| atus-2025 | 08 Professional & Personal Care Services | 0 | 1 | 0 | 0 | 1 | 6 |
+| atus-2025 | 08 Professional & Personal Care Services | 0 | 1 | 1 | 0 | 1 | 5 |
 | atus-2025 | 09 Household Services | 0 | 0 | 0 | 0 | 0 | 5 |
 | atus-2025 | 10 Government Services & Civic Obligations | 0 | 0 | 0 | 0 | 1 | 3 |
 | atus-2025 | 11 Eating and Drinking | 0 | 0 | 0 | 0 | 2 | 0 |
@@ -47,15 +47,15 @@ PYTHONPATH=evals:src .venv/bin/python -m agentos_eval coverage --write docs/task
 | atus-2025 | 15 Volunteer Activities | 0 | 0 | 0 | 0 | 3 | 5 |
 | atus-2025 | 16 Telephone Calls | 0 | 0 | 0 | 0 | 0 | 2 |
 | atus-2025 | 18 Traveling | 0 | 1 | 0 | 0 | 1 | 15 |
-| onet-31.0-gwa | 4.A.1.a Looking for and Receiving Job-Related Information | 0 | 1 | 0 | 0 | 0 | 1 |
+| onet-31.0-gwa | 4.A.1.a Looking for and Receiving Job-Related Information | 0 | 1 | 1 | 0 | 0 | 0 |
 | onet-31.0-gwa | 4.A.1.b Identifying and Evaluating Job-Relevant Information | 0 | 0 | 0 | 0 | 0 | 3 |
 | onet-31.0-gwa | 4.A.2.a Information and Data Processing | 0 | 0 | 0 | 0 | 0 | 4 |
-| onet-31.0-gwa | 4.A.2.b Reasoning and Decision Making | 0 | 1 | 0 | 0 | 0 | 5 |
+| onet-31.0-gwa | 4.A.2.b Reasoning and Decision Making | 0 | 1 | 1 | 0 | 0 | 4 |
 | onet-31.0-gwa | 4.A.3.a Performing Physical and Manual Work Activities | 0 | 0 | 0 | 0 | 4 | 0 |
 | onet-31.0-gwa | 4.A.3.b Performing Complex and Technical Activities | 0 | 2 | 0 | 0 | 2 | 1 |
 | onet-31.0-gwa | 4.A.4.a Communicating and Interacting | 0 | 0 | 0 | 0 | 0 | 8 |
 | onet-31.0-gwa | 4.A.4.b Coordinating, Developing, Managing, and Advising | 0 | 0 | 0 | 0 | 0 | 6 |
-| onet-31.0-gwa | 4.A.4.c Administering | 0 | 1 | 0 | 0 | 0 | 2 |
+| onet-31.0-gwa | 4.A.4.c Administering | 0 | 1 | 1 | 0 | 0 | 1 |
 
 ### Evidence inventory
 
@@ -97,7 +97,7 @@ PYTHONPATH=evals:src .venv/bin/python -m agentos_eval coverage --write docs/task
 | atus-2025:0702 | Researching Purchases: Compare products, prices and purchasing constraints with sources. | S: [scenario:line-change-stock-time](../evals/scenarios/continuity-experiments.json) — Synthetic scenario specification only: change stock time. No dated run is claimed. (2026-11-14, `6ba8657`)<br>S: [scenario:shopping-followup-constraint](../evals/scenarios/shopping.json) — Synthetic scenario specification only: Shopping follow-up adds a constraint. No dated run is claimed. (2026-11-14, `6ba8657`)<br>S: [scenario:shopping-lookup-compare](../evals/scenarios/shopping.json) — Synthetic scenario specification only: Shopping lookup with prices and where to buy. No dated run is claimed. (2026-11-14, `6ba8657`)<br>S: [scenario:new-request-after-lunch-topic](../evals/scenarios/topic-shift.json) — Synthetic scenario specification only: Unrelated new request after a lunch topic. No dated run is claimed. (2026-11-14, `6ba8657`)<br>S: [scenario:new-request-after-travel-topic](../evals/scenarios/topic-shift.json) — Synthetic scenario specification only: Unrelated new request after a travel topic. No dated run is claimed. (2026-11-14, `6ba8657`)<br>S: [scenario:standing-wish-is-not-a-memory](../evals/scenarios/watches.json) — Synthetic scenario specification only: The request sentence of a standing wish is not saved as a memory. No dated run is claimed. (2026-11-14, `6ba8657`)<br>S: [judgment:open-question-true-ko](../evals/judgments/cases-v1.json) — Synthetic answers_open_question input and expected judgment; not a task execution or a dated model run. (2026-11-14, `6ba8657`)<br>S: [judgment:open-question-true-en](../evals/judgments/cases-v1.json) — Synthetic answers_open_question input and expected judgment; not a task execution or a dated model run. (2026-11-14, `6ba8657`)<br>S: [judgment:goal-partial](../evals/judgments/cases-v1.json) — Synthetic goal_reached input and expected judgment; not a task execution or a dated model run. (2026-11-14, `6ba8657`)<br>S: [judgment:goal-partial-ko](../evals/judgments/cases-v1.json) — Synthetic goal_reached input and expected judgment; not a task execution or a dated model run. (2026-11-14, `6ba8657`)<br>S: [judgment:escalation-en](../evals/judgments/cases-v1.json) — Synthetic orchestration_escalation input and expected judgment; not a task execution or a dated model run. (2026-11-14, `6ba8657`)<br>S: [judgment:escalation-ko](../evals/judgments/cases-v1.json) — Synthetic orchestration_escalation input and expected judgment; not a task execution or a dated model run. (2026-11-14, `6ba8657`) | U: [tests/test_presence_eval_matrix.py::G_LongResearch::test_long_generation_is_one_stop_able_draft_then_one_durable_answer](../tests/test_presence_eval_matrix.py) — Scripted headphone research reads two fake public pages and delivers one sourced reply; no live comparison quality claim. (2026-11-14, `6ba8657`) | fixture-only |
 | atus-2025:0703 | Security Procedures Rel. to Consumer Purchases: Explain a purchase security procedure while I complete the identity check. | none | none | out-of-bounds-by-design |
 | atus-2025:0801 | Childcare Services: Find childcare services and help me arrange an appointment. | none | none | untried |
-| atus-2025:0802 | Financial Services and Banking: Help me review banking information and prepare an explicitly approved payment. | S: [scenario:world-appworld-pay-denied](../evals/scenarios/world-appworld.json) — Synthetic scenario specification only: Do not pay after the owner declines (M3c/e). No dated run is claimed. (2026-11-14, `6ba8657`)<br>S: [scenario:world-appworld-pay-approved](../evals/scenarios/world-appworld.json) — Synthetic scenario specification only: Pay someone after the owner approves (M3c/e). No dated run is claimed. (2026-11-14, `6ba8657`)<br>S: [judgment:effect-payment](../evals/judgments/cases-v1.json) — Synthetic connector_effect input and expected judgment; not a task execution or a dated model run. (2026-11-14, `6ba8657`) | none | untried |
+| atus-2025:0802 | Financial Services and Banking: Help me review banking information and prepare an explicitly approved payment. | S: [scenario:world-appworld-pay-denied](../evals/scenarios/world-appworld.json) — Synthetic scenario specification only: Do not pay after the owner declines (M3c/e). No dated run is claimed. (2026-11-14, `6ba8657`)<br>S: [scenario:world-appworld-pay-approved](../evals/scenarios/world-appworld.json) — Synthetic scenario specification only: Pay someone after the owner approves (M3c/e). No dated run is claimed. (2026-11-14, `6ba8657`)<br>S: [judgment:effect-payment](../evals/judgments/cases-v1.json) — Synthetic connector_effect input and expected judgment; not a task execution or a dated model run. (2026-11-14, `6ba8657`)<br>S: [src/personal_agent/quickstart_service.py#L5495](../src/personal_agent/quickstart_service.py#L5495) — Static inspection of AgentService.attempt_observations: the CLI completion check receives serialized evidence metadata, not the tool result body; open #767 records valid connected-account reads judged unsupported. (2026-11-14, `6d542ab`)<br>S: [src/personal_agent/code_run.py#L1069](../src/personal_agent/code_run.py#L1069) — Static inspection of evidence: persisted code_run evidence excludes stdout and request bodies, including the read fields needed to substantiate balance/order claims in #767; not a new execution. (2026-11-14, `6d542ab`) | none | blocked-by-still |
 | atus-2025:0803 | Legal Services: Help me find legal services and organize questions for the provider. | none | none | untried |
 | atus-2025:0804 | Medical and Care Services: Remind me about a medical appointment that I already arranged. | none | U: [tests/test_preparations.py::ReminderTests::test_a_reminder_from_the_request_is_delivered_once_and_survives_restart](../tests/test_preparations.py) — A scripted dental-appointment reminder is scheduled and delivered once after a restart with an injected clock and fake Telegram. (2026-11-14, `6ba8657`) | fixture-only |
 | atus-2025:0805 | Personal Care Services: Find personal care services and help me arrange an appointment. | none | none | untried |
@@ -153,7 +153,7 @@ PYTHONPATH=evals:src .venv/bin/python -m agentos_eval coverage --write docs/task
 | atus-2025:1816 | Travel Related to Telephone Calls: Help me plan travel associated with making a telephone call. | none | none | untried |
 | atus-2025:1818 | Security Procedures Related to Traveling: Explain a travel security procedure while I complete it. | none | none | out-of-bounds-by-design |
 | onet-31.0-gwa:4.A.1.a.1 | Getting Information: Gather source material for a work question. | none | U: [tests/test_file_workspace_worker_tools.py::WorkerFileWorkspaceTests::test_the_worker_finds_reads_and_saves_a_result_citing_what_it_read](../tests/test_file_workspace_worker_tools.py) — Temporary business-trip documents are found, read and summarized into a new file with source provenance; content is supplied by the fixture, not a live model. (2026-11-14, `6ba8657`) | fixture-only |
-| onet-31.0-gwa:4.A.1.a.2 | Monitoring Processes, Materials, or Surroundings: Monitor a specified information source for relevant changes. | none | none | untried |
+| onet-31.0-gwa:4.A.1.a.2 | Monitoring Processes, Materials, or Surroundings: Monitor a specified information source for relevant changes. | S: [src/personal_agent/preparations.py#L581](../src/personal_agent/preparations.py#L581) — Static inspection of window_report_reason: a promised report depends on elapsed % report_seconds == 0 for the settled slot, with no overdue-report cursor (#813). (2026-11-14, `6d542ab`)<br>S: [src/personal_agent/preparations.py#L483](../src/personal_agent/preparations.py#L483) — Static inspection of normalize_window: omitted max_runs silently becomes min(slots, MAX_WINDOW_RUNS); schedule_text renders until_at, so the requested end can exceed the last check (#814). (2026-11-14, `6d542ab`)<br>S: [docs/outcome-experiments.en.md#foundations-and-gaps](../docs/outcome-experiments.en.md#foundations-and-gaps) — The existing experiment design records #813 skipped-slot reports and #814 silent run-cap truncation as gaps; their trace steps are skipped, not passing execution evidence. (2026-11-14, `6d542ab`) | none | blocked-by-still |
 | onet-31.0-gwa:4.A.1.b.1 | Identifying Objects, Actions, and Events: Identify changes or categories in supplied information. | none | none | untried |
 | onet-31.0-gwa:4.A.1.b.2 | Inspecting Equipment, Structures, or Materials: Inspect supplied equipment records for signs of a defect. | none | none | untried |
 | onet-31.0-gwa:4.A.1.b.3 | Estimating the Quantifiable Characteristics of Products, Events, or Information: Estimate the time and resources needed for an activity. | none | none | untried |
@@ -161,7 +161,7 @@ PYTHONPATH=evals:src .venv/bin/python -m agentos_eval coverage --write docs/task
 | onet-31.0-gwa:4.A.2.a.2 | Processing Information: Compile and calculate information from supplied records. | none | none | untried |
 | onet-31.0-gwa:4.A.2.a.3 | Evaluating Information to Determine Compliance with Standards: Compare supplied records with an identified standard. | none | none | untried |
 | onet-31.0-gwa:4.A.2.a.4 | Analyzing Data or Information: Analyze a dataset and explain the findings. | none | none | untried |
-| onet-31.0-gwa:4.A.2.b.1 | Making Decisions and Solving Problems: Compare options and recommend a solution with reasons. | none | none | untried |
+| onet-31.0-gwa:4.A.2.b.1 | Making Decisions and Solving Problems: Compare options and recommend a solution with reasons. | S: [src/personal_agent/quickstart_service.py#L5206](../src/personal_agent/quickstart_service.py#L5206) — Static inspection of AgentService.continued_exchange: the linked Work contributes its request, final reply and sign-in notices, not its comparison tool results; corroborates the missing reasons in open #768. (2026-11-14, `6d542ab`)<br>S: [src/personal_agent/code_run.py#L1069](../src/personal_agent/code_run.py#L1069) — Static inspection of evidence: code_run output is excluded from persisted evidence, so a later Work cannot recover comparison fields from that record (#768). (2026-11-14, `6d542ab`) | none | blocked-by-still |
 | onet-31.0-gwa:4.A.2.b.2 | Thinking Creatively: Develop draft ideas for a new design. | none | none | untried |
 | onet-31.0-gwa:4.A.2.b.3 | Updating and Using Relevant Knowledge: Find current technical knowledge relevant to my work. | none | none | untried |
 | onet-31.0-gwa:4.A.2.b.4 | Developing Objectives and Strategies: Help me draft objectives and a strategy. | none | none | untried |
@@ -192,7 +192,7 @@ PYTHONPATH=evals:src .venv/bin/python -m agentos_eval coverage --write docs/task
 | onet-31.0-gwa:4.A.4.b.6 | Providing Consultation and Advice to Others: Prepare advice on a technical or process question with sources. | none | none | untried |
 | onet-31.0-gwa:4.A.4.c.1 | Performing Administrative Activities: Organize work files and prepare routine paperwork. | none | U: [tests/test_file_workspace_worker_tools.py::WorkerFileWorkspaceTests::test_the_worker_finds_reads_and_saves_a_result_citing_what_it_read](../tests/test_file_workspace_worker_tools.py) — Temporary business-trip documents are found, read and summarized into a new file with source provenance; content is supplied by the fixture, not a live model. (2026-11-14, `6ba8657`) | fixture-only |
 | onet-31.0-gwa:4.A.4.c.2 | Staffing Organizational Units: Help me compare applications against stated hiring criteria. | none | none | untried |
-| onet-31.0-gwa:4.A.4.c.3 | Monitoring and Controlling Resources: Help me review inventory and spending records. | none | none | untried |
+| onet-31.0-gwa:4.A.4.c.3 | Monitoring and Controlling Resources: Help me review inventory and spending records. | S: [src/personal_agent/quickstart_service.py#L5495](../src/personal_agent/quickstart_service.py#L5495) — Static inspection of AgentService.attempt_observations: the CLI completion check receives serialized evidence metadata, not the tool result body; open #767 records valid connected-account reads judged unsupported. (2026-11-14, `6d542ab`)<br>S: [src/personal_agent/code_run.py#L1069](../src/personal_agent/code_run.py#L1069) — Static inspection of evidence: persisted code_run evidence excludes stdout and request bodies, including the read fields needed to substantiate balance/order claims in #767; not a new execution. (2026-11-14, `6d542ab`) | none | blocked-by-still |
 
 ### Untried
 
@@ -214,7 +214,6 @@ PYTHONPATH=evals:src .venv/bin/python -m agentos_eval coverage --write docs/task
 - `atus-2025:0603`: Research/Homework
 - `atus-2025:0604`: Registration/Administrative activities
 - `atus-2025:0801`: Childcare Services
-- `atus-2025:0802`: Financial Services and Banking
 - `atus-2025:0803`: Legal Services
 - `atus-2025:0805`: Personal Care Services
 - `atus-2025:0806`: Real Estate
@@ -254,7 +253,6 @@ PYTHONPATH=evals:src .venv/bin/python -m agentos_eval coverage --write docs/task
 - `atus-2025:1814`: Travel Related to Religious/Spiritual Activities
 - `atus-2025:1815`: Travel Related to Volunteer Activities
 - `atus-2025:1816`: Travel Related to Telephone Calls
-- `onet-31.0-gwa:4.A.1.a.2`: Monitoring Processes, Materials, or Surroundings
 - `onet-31.0-gwa:4.A.1.b.1`: Identifying Objects, Actions, and Events
 - `onet-31.0-gwa:4.A.1.b.2`: Inspecting Equipment, Structures, or Materials
 - `onet-31.0-gwa:4.A.1.b.3`: Estimating the Quantifiable Characteristics of Products, Events, or Information
@@ -262,7 +260,6 @@ PYTHONPATH=evals:src .venv/bin/python -m agentos_eval coverage --write docs/task
 - `onet-31.0-gwa:4.A.2.a.2`: Processing Information
 - `onet-31.0-gwa:4.A.2.a.3`: Evaluating Information to Determine Compliance with Standards
 - `onet-31.0-gwa:4.A.2.a.4`: Analyzing Data or Information
-- `onet-31.0-gwa:4.A.2.b.1`: Making Decisions and Solving Problems
 - `onet-31.0-gwa:4.A.2.b.2`: Thinking Creatively
 - `onet-31.0-gwa:4.A.2.b.3`: Updating and Using Relevant Knowledge
 - `onet-31.0-gwa:4.A.2.b.4`: Developing Objectives and Strategies
@@ -283,13 +280,24 @@ PYTHONPATH=evals:src .venv/bin/python -m agentos_eval coverage --write docs/task
 - `onet-31.0-gwa:4.A.4.b.5`: Coaching and Developing Others
 - `onet-31.0-gwa:4.A.4.b.6`: Providing Consultation and Advice to Others
 - `onet-31.0-gwa:4.A.4.c.2`: Staffing Organizational Units
-- `onet-31.0-gwa:4.A.4.c.3`: Monitoring and Controlling Resources
 
 ### Still-side blockers
 
 The C16 work list: remove Still blockers so the owner's AI can do the work. Counts are rows only; the same issue can block several rows. Routing includes wrong routing and Still orchestration judgments, such as the completion check.
 
-- none
+#### By blocker kind
+
+| Blocker kind | Row count | Rows |
+| --- | --- | --- |
+| routing | 4 | `atus-2025:0802`, `onet-31.0-gwa:4.A.1.a.2`, `onet-31.0-gwa:4.A.2.b.1`, `onet-31.0-gwa:4.A.4.c.3` |
+
+#### By issue
+
+| Issue | Row count | Rows and blockers | Code references (by row) |
+| --- | --- | --- | --- |
+| [#767](https://github.com/Jongtae/Still/issues/767) | 2 | `atus-2025:0802`: routing — For banking information read through code_run, Still can judge a supported balance answer unsupported because the completion check lacks the returned fields (#767).<br>`onet-31.0-gwa:4.A.4.c.3`: routing — Reviewing connected-account balance/order records through code_run can end with a contradictory unsupported verdict because Still omits the read fields from completion evidence (#767). | `atus-2025:0802`: `src/personal_agent/quickstart_service.py:AgentService.attempt_observations`<br>`onet-31.0-gwa:4.A.4.c.3`: `src/personal_agent/quickstart_service.py:AgentService.attempt_observations` |
+| [#768](https://github.com/Jongtae/Still/issues/768) | 1 | `onet-31.0-gwa:4.A.2.b.1`: routing — When the owner asks why a previous recommendation was chosen, the linked follow-up lacks the earlier code_run comparison results needed to explain it (#768). | `onet-31.0-gwa:4.A.2.b.1`: `src/personal_agent/quickstart_service.py:AgentService.continued_exchange` |
+| [#813](https://github.com/Jongtae/Still/issues/813) | 1 | `onet-31.0-gwa:4.A.1.a.2`: routing — A watch loses a promised interval report when a long-running check skips its boundary (#813); a long requested watch also ends at the silent 96-check cap (#814). | `onet-31.0-gwa:4.A.1.a.2`: `src/personal_agent/preparations.py:window_report_reason` |
 
 ### Regression links
 
