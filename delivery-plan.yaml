@@ -935,14 +935,14 @@
           "status": "complete-on-merge",
           "pull_request": 835,
           "merge_commit": "f264f1e2fbf8c76908d9911137abfd8f2ad25822",
-          "decision": "Each worker attempt records the digests of the instructions and offered tool definitions it actually received, what a CLI bridge actually served, and whether the input was prepared, sent, not sent or unknown; what Still cannot observe is marked unavailable. Function-level ownership isolated it from #818\u2013#820, so it merged without waiting for #819/#820."
+          "decision": "Each worker attempt records the digests of the instructions and offered tool definitions it actually received, what a CLI bridge actually served, and whether the input was prepared, sent, not sent or unknown; what Still cannot observe is marked unavailable. Function-level ownership isolated it from #818\u2013#820, so it merged before them without waiting."
         },
         "FRONTIER-RECOVERY-01": {
           "issue": 826,
           "status": "complete-on-merge",
           "pull_request": 831,
           "merge_commit": "7c0417f32bad29c21ab3b6daafda9cfa56a6541a",
-          "decision": "docs/recovery-matrix.en.md records each Work state at each interruption point with its evidence class, and a fixture spike holds current behaviour. Adopt stdlib sqlite3 transactional receipts rather than LangGraph or Temporal; the selected next change is F-X4 (rows X4, X9), with F-W4 and F-P4 named next. #821 was reconciled with PR #816 on its own lane before the follow-up was filed."
+          "decision": "docs/recovery-matrix.en.md records each Work state at each interruption point with its evidence class, and a fixture spike holds current behaviour. Adopt stdlib sqlite3 transactional receipts rather than LangGraph or Temporal; the selected next change is F-X4 (rows X4, X9), with F-W4 and F-P4 named next. The matrix's Reconciliation section reconciles #821 with PR #816; F-X4 was filed as #841 after #821 C1 (#834) and #818/#819 merged."
         },
         "FRONTIER-CONTEXT-01": {
           "issue": 827,
@@ -1664,7 +1664,7 @@
           "owned_functions": [
             "Telegram delivery and callback handlers",
             "prompt and notification delivery state and web counts",
-            "telegram_presence.record_reply"
+            "telegram_presence.TelegramTurnAddressing.record_reply"
           ],
           "shared_files": [
             "docs/recovery-matrix.en.md",
@@ -1719,12 +1719,12 @@
         "first-wave-units-reconciled": {
           "issue": 822,
           "date": "2026-11-14",
-          "decision": "#825 (PR #835), #826 (PR #831) and #827 (PR #832) merged under the owner's direct 2026-11-14 instruction while their plan entries still read reserved; lane P records them complete-on-merge with their pull requests and merge commits. Their dependency dispositions are in their PRs: #825 was isolated from #818\u2013#820 by function ownership, #826 reconciled #821 with PR #816, and #827 needed only the first wave."
+          "decision": "#825 (PR #835), #826 (PR #831) and #827 (PR #832) merged under the owner's direct 2026-11-14 instruction while their plan entries still read reserved; lane P records them complete-on-merge with their pull requests and merge commits. Their dependency dispositions are in their PRs: #825 was isolated from #818\u2013#820 by function ownership, #826's matrix reconciled #821 with PR #816, and #827 needed only the first wave."
         },
         "m1-wave-2-selection": {
           "issue": 822,
           "date": "2026-11-14",
-          "decision": "The owner instructed on 2026-11-14 to proceed with M1 (reliable work) in parallel lanes. The #826 matrix selected F-X4 (#841) and named F-P4/F-D3 (#842) and F-W4 (#843) next; #722 is M1's remaining judgment-ownership gap (F10). These four are wave 2. Lanes and ownership are in frontier-delivery.en.md and the #822 coordinator comment."
+          "decision": "The owner instructed on 2026-11-14 to proceed with M1 (reliable work) in parallel lanes. The #826 matrix selected F-X4 (#841) and named F-W4 and F-P4 next; #842 takes F-P4 with the related F-D3 follow-up and the Telegram part of F-W4, and #843 takes F-W4 for Mattermost and Slack. #722 is M1's remaining judgment-ownership gap (F10). These four are wave 2. Lanes and ownership are in frontier-delivery.en.md and the #822 coordinator comment."
         }
       },
       "parallel_authorization": {
