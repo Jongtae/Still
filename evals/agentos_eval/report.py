@@ -255,6 +255,13 @@ def render_markdown(report):
             failed = [name for name, ok in row['still'].items() if not ok]
             lines.append(f"| {row['scenario']} | {row['name']} {row['task_id']} ({row['task_set']}) | {tests} | "
                          f"{approvals} | {row['payments_allowed']} | {'all hold' if not failed else 'failed: ' + ', '.join(failed)} |")
+    from .coverage import bundled_scenarios, coverage_markdown, load_map
+    try:
+        cmap = load_map()
+    except FileNotFoundError:
+        lines += ['', '## Task coverage map', '', 'Map not available in this checkout.']
+    else:
+        lines += ['', coverage_markdown(cmap, bundled_scenarios(cmap.root)).rstrip()]
     return '\n'.join(lines) + '\n'
 
 

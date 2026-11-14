@@ -1,0 +1,4635 @@
+{
+  "version": 1,
+  "revision": "6ba8657",
+  "as_of": "2026-11-14",
+  "rows": [
+    {
+      "id": "atus-2025:0101",
+      "taxonomy": "atus-2025",
+      "code": "0101",
+      "title": "Sleeping",
+      "parent": {
+        "code": "01",
+        "title": "Personal Care"
+      },
+      "still_task": "Help me set a bedtime reminder, while sleeping remains my own activity.",
+      "needs": {
+        "information": [
+          "private"
+        ],
+        "effects": [
+          "local-write"
+        ],
+        "account": "none",
+        "physical": "required"
+      },
+      "status": "out-of-bounds-by-design",
+      "blocker": null,
+      "bounds": "The activity requires a person’s physical participation; advice, preparation or reminders do not perform it.",
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "Any linked scenario or judgment covers adjacent advice or planning only; it does not establish execution of the physical activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:0102",
+      "taxonomy": "atus-2025",
+      "code": "0102",
+      "title": "Grooming",
+      "parent": {
+        "code": "01",
+        "title": "Personal Care"
+      },
+      "still_task": "Help me plan a grooming routine, while washing and dressing remain physical tasks.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "required"
+      },
+      "status": "out-of-bounds-by-design",
+      "blocker": null,
+      "bounds": "The activity requires a person’s physical participation; advice, preparation or reminders do not perform it.",
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "Any linked scenario or judgment covers adjacent advice or planning only; it does not establish execution of the physical activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:0103",
+      "taxonomy": "atus-2025",
+      "code": "0103",
+      "title": "Health-related Self Care",
+      "parent": {
+        "code": "01",
+        "title": "Personal Care"
+      },
+      "still_task": "Help me keep track of self-care instructions, while I perform the care.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "required"
+      },
+      "status": "out-of-bounds-by-design",
+      "blocker": null,
+      "bounds": "The activity requires a person’s physical participation; advice, preparation or reminders do not perform it.",
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "Any linked scenario or judgment covers adjacent advice or planning only; it does not establish execution of the physical activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:0104",
+      "taxonomy": "atus-2025",
+      "code": "0104",
+      "title": "Personal Activities",
+      "parent": {
+        "code": "01",
+        "title": "Personal Care"
+      },
+      "still_task": "Help me reserve private time, while the personal activity remains mine.",
+      "needs": {
+        "information": [
+          "private"
+        ],
+        "effects": [
+          "local-write"
+        ],
+        "account": "none",
+        "physical": "required"
+      },
+      "status": "out-of-bounds-by-design",
+      "blocker": null,
+      "bounds": "The activity requires a person’s physical participation; advice, preparation or reminders do not perform it.",
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "Any linked scenario or judgment covers adjacent advice or planning only; it does not establish execution of the physical activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:0105",
+      "taxonomy": "atus-2025",
+      "code": "0105",
+      "title": "Personal Care Emergencies",
+      "parent": {
+        "code": "01",
+        "title": "Personal Care"
+      },
+      "still_task": "Help me find emergency contact information, while a person handles the emergency.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "required"
+      },
+      "status": "out-of-bounds-by-design",
+      "blocker": null,
+      "bounds": "The activity requires a person’s physical participation; advice, preparation or reminders do not perform it.",
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "Any linked scenario or judgment covers adjacent advice or planning only; it does not establish execution of the physical activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:0201",
+      "taxonomy": "atus-2025",
+      "code": "0201",
+      "title": "Housework",
+      "parent": {
+        "code": "02",
+        "title": "Household Activities"
+      },
+      "still_task": "Remind me about housework, while a person does the cleaning.",
+      "needs": {
+        "information": [
+          "private"
+        ],
+        "effects": [
+          "local-write"
+        ],
+        "account": "none",
+        "physical": "required"
+      },
+      "status": "out-of-bounds-by-design",
+      "blocker": null,
+      "bounds": "The activity requires a person’s physical participation; advice, preparation or reminders do not perform it.",
+      "evidence": [
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:relative-time-reminder",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: Short relative-time reminder. No dated run is claimed."
+        }
+      ],
+      "judgment_cases": [],
+      "notes": "Any linked scenario or judgment covers adjacent advice or planning only; it does not establish execution of the physical activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:0202",
+      "taxonomy": "atus-2025",
+      "code": "0202",
+      "title": "Food & Drink Prep., Presentation, & Clean-up",
+      "parent": {
+        "code": "02",
+        "title": "Household Activities"
+      },
+      "still_task": "Help me plan food preparation, while a person cooks and cleans up.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "required"
+      },
+      "status": "out-of-bounds-by-design",
+      "blocker": null,
+      "bounds": "The activity requires a person’s physical participation; advice, preparation or reminders do not perform it.",
+      "evidence": [
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:allergy-then-meal-plan",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: Allergy stated after a meal plan request. No dated run is claimed."
+        }
+      ],
+      "judgment_cases": [],
+      "notes": "Any linked scenario or judgment covers adjacent advice or planning only; it does not establish execution of the physical activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:0203",
+      "taxonomy": "atus-2025",
+      "code": "0203",
+      "title": "Interior Maintenance, Repair, & Decoration",
+      "parent": {
+        "code": "02",
+        "title": "Household Activities"
+      },
+      "still_task": "Find instructions for an interior repair, while a person performs it.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "required"
+      },
+      "status": "out-of-bounds-by-design",
+      "blocker": null,
+      "bounds": "The activity requires a person’s physical participation; advice, preparation or reminders do not perform it.",
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "Any linked scenario or judgment covers adjacent advice or planning only; it does not establish execution of the physical activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:0204",
+      "taxonomy": "atus-2025",
+      "code": "0204",
+      "title": "Exterior Maintenance, Repair, & Decoration",
+      "parent": {
+        "code": "02",
+        "title": "Household Activities"
+      },
+      "still_task": "Find instructions for an exterior repair, while a person performs it.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "required"
+      },
+      "status": "out-of-bounds-by-design",
+      "blocker": null,
+      "bounds": "The activity requires a person’s physical participation; advice, preparation or reminders do not perform it.",
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "Any linked scenario or judgment covers adjacent advice or planning only; it does not establish execution of the physical activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:0205",
+      "taxonomy": "atus-2025",
+      "code": "0205",
+      "title": "Lawn, Garden, and Houseplants",
+      "parent": {
+        "code": "02",
+        "title": "Household Activities"
+      },
+      "still_task": "Find plant-care information, while a person tends the plants.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "required"
+      },
+      "status": "out-of-bounds-by-design",
+      "blocker": null,
+      "bounds": "The activity requires a person’s physical participation; advice, preparation or reminders do not perform it.",
+      "evidence": [
+        {
+          "class": "S",
+          "kind": "judgment-case",
+          "source": "judgment:followup-topic-ko",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic followup_relation input and expected judgment; not a task execution or a dated model run."
+        },
+        {
+          "class": "S",
+          "kind": "judgment-case",
+          "source": "judgment:followup-topic-en",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic followup_relation input and expected judgment; not a task execution or a dated model run."
+        },
+        {
+          "class": "S",
+          "kind": "judgment-case",
+          "source": "judgment:steer-unrelated-ko",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic steers_running_work input and expected judgment; not a task execution or a dated model run."
+        },
+        {
+          "class": "S",
+          "kind": "judgment-case",
+          "source": "judgment:steer-unrelated-en",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic steers_running_work input and expected judgment; not a task execution or a dated model run."
+        }
+      ],
+      "judgment_cases": [
+        "followup-topic-ko",
+        "followup-topic-en",
+        "steer-unrelated-ko",
+        "steer-unrelated-en"
+      ],
+      "notes": "Any linked scenario or judgment covers adjacent advice or planning only; it does not establish execution of the physical activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:0206",
+      "taxonomy": "atus-2025",
+      "code": "0206",
+      "title": "Animals and Pets",
+      "parent": {
+        "code": "02",
+        "title": "Household Activities"
+      },
+      "still_task": "Help me plan pet care, while a person feeds and exercises the animal.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "required"
+      },
+      "status": "out-of-bounds-by-design",
+      "blocker": null,
+      "bounds": "The activity requires a person’s physical participation; advice, preparation or reminders do not perform it.",
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "Any linked scenario or judgment covers adjacent advice or planning only; it does not establish execution of the physical activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:0207",
+      "taxonomy": "atus-2025",
+      "code": "0207",
+      "title": "Vehicles",
+      "parent": {
+        "code": "02",
+        "title": "Household Activities"
+      },
+      "still_task": "Find vehicle maintenance instructions, while a person performs the work.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "required"
+      },
+      "status": "out-of-bounds-by-design",
+      "blocker": null,
+      "bounds": "The activity requires a person’s physical participation; advice, preparation or reminders do not perform it.",
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "Any linked scenario or judgment covers adjacent advice or planning only; it does not establish execution of the physical activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:0208",
+      "taxonomy": "atus-2025",
+      "code": "0208",
+      "title": "Appliances, Tools, and Toys",
+      "parent": {
+        "code": "02",
+        "title": "Household Activities"
+      },
+      "still_task": "Find appliance maintenance instructions, while a person performs the repair.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "required"
+      },
+      "status": "out-of-bounds-by-design",
+      "blocker": null,
+      "bounds": "The activity requires a person’s physical participation; advice, preparation or reminders do not perform it.",
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "Any linked scenario or judgment covers adjacent advice or planning only; it does not establish execution of the physical activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:0209",
+      "taxonomy": "atus-2025",
+      "code": "0209",
+      "title": "Household Management",
+      "parent": {
+        "code": "02",
+        "title": "Household Activities"
+      },
+      "still_task": "Organize household records and reminders from the information I provide.",
+      "needs": {
+        "information": [
+          "private"
+        ],
+        "effects": [
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "fixture-only",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [
+        {
+          "class": "U",
+          "kind": "test",
+          "source": "tests/test_preparations.py::ReminderTests::test_a_reminder_from_the_request_is_delivered_once_and_survives_restart",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "A scripted dental-appointment reminder is scheduled and delivered once after a restart with an injected clock and fake Telegram."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:allergy-then-meal-plan",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: Allergy stated after a meal plan request. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:preference-then-recommendation",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: Uses a preference stated earlier in the conversation. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:workplace-statement-remember",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: A stated new workplace to remember. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:recall-correct-size",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: correct size. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:recall-parcel-again",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: parcel again. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:recall-correct-printer",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: correct printer. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:world-appworld-note-update",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: Write into the owner's own notes (M3a). No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "judgment-case",
+          "source": "judgment:followup-correction-ko",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic followup_relation input and expected judgment; not a task execution or a dated model run."
+        },
+        {
+          "class": "S",
+          "kind": "judgment-case",
+          "source": "judgment:followup-correction-en",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic followup_relation input and expected judgment; not a task execution or a dated model run."
+        },
+        {
+          "class": "S",
+          "kind": "judgment-case",
+          "source": "judgment:steer-correction-ko",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic steers_running_work input and expected judgment; not a task execution or a dated model run."
+        },
+        {
+          "class": "S",
+          "kind": "judgment-case",
+          "source": "judgment:steer-correction-en",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic steers_running_work input and expected judgment; not a task execution or a dated model run."
+        }
+      ],
+      "judgment_cases": [
+        "followup-correction-ko",
+        "followup-correction-en",
+        "steer-correction-ko",
+        "steer-correction-en"
+      ],
+      "notes": "Only the cited subtask is exercised by fixtures; no whole-category or live capability claim. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools. Scheduling: src/personal_agent/preparations_service.py:PreparationsService."
+    },
+    {
+      "id": "atus-2025:0301",
+      "taxonomy": "atus-2025",
+      "code": "0301",
+      "title": "Caring For & Helping HH Children",
+      "parent": {
+        "code": "03",
+        "title": "Caring For & Helping Household (HH) Members"
+      },
+      "still_task": "Help me plan care for a child in my household.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:0302",
+      "taxonomy": "atus-2025",
+      "code": "0302",
+      "title": "Activities Related to HH Children's Education",
+      "parent": {
+        "code": "03",
+        "title": "Caring For & Helping Household (HH) Members"
+      },
+      "still_task": "Help me organize a household child's schoolwork and school messages.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:0303",
+      "taxonomy": "atus-2025",
+      "code": "0303",
+      "title": "Activities Related to HH Children's Health",
+      "parent": {
+        "code": "03",
+        "title": "Caring For & Helping Household (HH) Members"
+      },
+      "still_task": "Help me organize a household child's health appointments.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:0304",
+      "taxonomy": "atus-2025",
+      "code": "0304",
+      "title": "Caring for Household Adults",
+      "parent": {
+        "code": "03",
+        "title": "Caring For & Helping Household (HH) Members"
+      },
+      "still_task": "Help me organize care for an adult in my household.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:0305",
+      "taxonomy": "atus-2025",
+      "code": "0305",
+      "title": "Helping Household Adults",
+      "parent": {
+        "code": "03",
+        "title": "Caring For & Helping Household (HH) Members"
+      },
+      "still_task": "Help me organize practical assistance for an adult in my household.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:0401",
+      "taxonomy": "atus-2025",
+      "code": "0401",
+      "title": "Caring For & Helping NonHH Children",
+      "parent": {
+        "code": "04",
+        "title": "Caring For & Helping Nonhousehold (NonHH) Members"
+      },
+      "still_task": "Help me plan care for a child outside my household.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:0402",
+      "taxonomy": "atus-2025",
+      "code": "0402",
+      "title": "Activities Related to Nonhh Children's Education",
+      "parent": {
+        "code": "04",
+        "title": "Caring For & Helping Nonhousehold (NonHH) Members"
+      },
+      "still_task": "Help me organize school-related assistance for a child outside my household.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:0403",
+      "taxonomy": "atus-2025",
+      "code": "0403",
+      "title": "Activities Related to Nonhh Children's Health",
+      "parent": {
+        "code": "04",
+        "title": "Caring For & Helping Nonhousehold (NonHH) Members"
+      },
+      "still_task": "Help me organize health appointments for a child outside my household.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:0404",
+      "taxonomy": "atus-2025",
+      "code": "0404",
+      "title": "Caring for Nonhousehold Adults",
+      "parent": {
+        "code": "04",
+        "title": "Caring For & Helping Nonhousehold (NonHH) Members"
+      },
+      "still_task": "Help me organize care for an adult outside my household.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:0405",
+      "taxonomy": "atus-2025",
+      "code": "0405",
+      "title": "Helping Nonhousehold Adults",
+      "parent": {
+        "code": "04",
+        "title": "Caring For & Helping Nonhousehold (NonHH) Members"
+      },
+      "still_task": "Help me organize practical assistance for an adult outside my household.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:0501",
+      "taxonomy": "atus-2025",
+      "code": "0501",
+      "title": "Working",
+      "parent": {
+        "code": "05",
+        "title": "Work & Work Related Activities"
+      },
+      "still_task": "Read my work documents and save a source-linked summary.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "fixture-only",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [
+        {
+          "class": "U",
+          "kind": "test",
+          "source": "tests/test_file_workspace_worker_tools.py::WorkerFileWorkspaceTests::test_the_worker_finds_reads_and_saves_a_result_citing_what_it_read",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Temporary business-trip documents are found, read and summarized into a new file with source provenance; content is supplied by the fixture, not a live model."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:recall-dated-studio",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: dated studio. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:recall-quiet-desk",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: quiet desk. No dated run is claimed."
+        }
+      ],
+      "judgment_cases": [],
+      "notes": "Only the cited subtask is exercised by fixtures; no whole-category or live capability claim. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools. File boundary: src/personal_agent/agent_runtime.py:Capabilities.execute."
+    },
+    {
+      "id": "atus-2025:0502",
+      "taxonomy": "atus-2025",
+      "code": "0502",
+      "title": "Work-Related Activities",
+      "parent": {
+        "code": "05",
+        "title": "Work & Work Related Activities"
+      },
+      "still_task": "Help me organize a work-related event.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:recall-hall-again",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: hall again. No dated run is claimed."
+        }
+      ],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:0503",
+      "taxonomy": "atus-2025",
+      "code": "0503",
+      "title": "Other Income-generating Activities",
+      "parent": {
+        "code": "05",
+        "title": "Work & Work Related Activities"
+      },
+      "still_task": "Help me compare options for an income-generating activity.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:0504",
+      "taxonomy": "atus-2025",
+      "code": "0504",
+      "title": "Job Search and Interviewing",
+      "parent": {
+        "code": "05",
+        "title": "Work & Work Related Activities"
+      },
+      "still_task": "Find job openings and help me prepare an application.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:0601",
+      "taxonomy": "atus-2025",
+      "code": "0601",
+      "title": "Taking Class",
+      "parent": {
+        "code": "06",
+        "title": "Education"
+      },
+      "still_task": "Help me organize materials for a class I attend.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:0602",
+      "taxonomy": "atus-2025",
+      "code": "0602",
+      "title": "Extracurricular School Activities (Except Sports)",
+      "parent": {
+        "code": "06",
+        "title": "Education"
+      },
+      "still_task": "Help me plan an extracurricular school activity.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:0603",
+      "taxonomy": "atus-2025",
+      "code": "0603",
+      "title": "Research/Homework",
+      "parent": {
+        "code": "06",
+        "title": "Education"
+      },
+      "still_task": "Help me research a homework question and cite the sources.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:0604",
+      "taxonomy": "atus-2025",
+      "code": "0604",
+      "title": "Registration/Administrative activities",
+      "parent": {
+        "code": "06",
+        "title": "Education"
+      },
+      "still_task": "Help me find course registration requirements and prepare the information needed.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:0701",
+      "taxonomy": "atus-2025",
+      "code": "0701",
+      "title": "Shopping (Store, Telephone, Internet)",
+      "parent": {
+        "code": "07",
+        "title": "Consumer Purchases"
+      },
+      "still_task": "Put a requested product in a shopping cart and read back the result.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "cart-hold"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "fixture-only",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [
+        {
+          "class": "U",
+          "kind": "test",
+          "source": "tests/test_skill_shop.py::FirstUseOnAFreshStore::test_supplied_knowledge_is_used_on_the_first_request_with_one_change_and_a_readback",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Scripted skill loads and a fixture browser add one product, then read the cart back; no real store or payment."
+        },
+        {
+          "class": "L",
+          "kind": "live-observation",
+          "source": "docs/skill-eval-01-coverage.en.md#5-live-sample-results",
+          "date": "2026-10-03",
+          "revision": "efb5977",
+          "summary": "Run 1 stopped at sign-in after loading two skills; zero cart mutations, later cases not run. This is a failed live attempt, not live cart completion."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:skill-add-reference-by-name",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: Owner asks for the shopping skill by name on a fresh install. No dated run is claimed."
+        }
+      ],
+      "judgment_cases": [],
+      "notes": "Only the cited subtask is exercised by fixtures; no whole-category or live capability claim. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools. Optional skill content: src/personal_agent/skills.py:SkillBinding.load; skills/shopping-cart/SKILL.md; skills/emart-ssg/SKILL.md; core does not choose a skill. Historical sign-in stop does not identify a current Still defect; no observed-live success or current blocked-by-still claim."
+    },
+    {
+      "id": "atus-2025:0702",
+      "taxonomy": "atus-2025",
+      "code": "0702",
+      "title": "Researching Purchases",
+      "parent": {
+        "code": "07",
+        "title": "Consumer Purchases"
+      },
+      "still_task": "Compare products, prices and purchasing constraints with sources.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "none"
+      },
+      "status": "fixture-only",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [
+        {
+          "class": "U",
+          "kind": "test",
+          "source": "tests/test_presence_eval_matrix.py::G_LongResearch::test_long_generation_is_one_stop_able_draft_then_one_durable_answer",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Scripted headphone research reads two fake public pages and delivers one sourced reply; no live comparison quality claim."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:line-change-stock-time",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: change stock time. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:shopping-followup-constraint",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: Shopping follow-up adds a constraint. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:shopping-lookup-compare",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: Shopping lookup with prices and where to buy. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:new-request-after-lunch-topic",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: Unrelated new request after a lunch topic. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:new-request-after-travel-topic",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: Unrelated new request after a travel topic. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:standing-wish-is-not-a-memory",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: The request sentence of a standing wish is not saved as a memory. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "judgment-case",
+          "source": "judgment:open-question-true-ko",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic answers_open_question input and expected judgment; not a task execution or a dated model run."
+        },
+        {
+          "class": "S",
+          "kind": "judgment-case",
+          "source": "judgment:open-question-true-en",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic answers_open_question input and expected judgment; not a task execution or a dated model run."
+        },
+        {
+          "class": "S",
+          "kind": "judgment-case",
+          "source": "judgment:goal-partial",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic goal_reached input and expected judgment; not a task execution or a dated model run."
+        },
+        {
+          "class": "S",
+          "kind": "judgment-case",
+          "source": "judgment:goal-partial-ko",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic goal_reached input and expected judgment; not a task execution or a dated model run."
+        },
+        {
+          "class": "S",
+          "kind": "judgment-case",
+          "source": "judgment:escalation-en",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic orchestration_escalation input and expected judgment; not a task execution or a dated model run."
+        },
+        {
+          "class": "S",
+          "kind": "judgment-case",
+          "source": "judgment:escalation-ko",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic orchestration_escalation input and expected judgment; not a task execution or a dated model run."
+        }
+      ],
+      "judgment_cases": [
+        "open-question-true-ko",
+        "open-question-true-en",
+        "goal-partial",
+        "goal-partial-ko",
+        "escalation-en",
+        "escalation-ko"
+      ],
+      "notes": "Only the cited subtask is exercised by fixtures; no whole-category or live capability claim. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools. Optional skill content: src/personal_agent/skills.py:SkillBinding.load; skills/shopping-cart/SKILL.md; skills/emart-ssg/SKILL.md; core does not choose a skill."
+    },
+    {
+      "id": "atus-2025:0703",
+      "taxonomy": "atus-2025",
+      "code": "0703",
+      "title": "Security Procedures Rel. to Consumer Purchases",
+      "parent": {
+        "code": "07",
+        "title": "Consumer Purchases"
+      },
+      "still_task": "Explain a purchase security procedure while I complete the identity check.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "required"
+      },
+      "status": "out-of-bounds-by-design",
+      "blocker": null,
+      "bounds": "Security screening and personal identity checks must be completed by the person; an explanation does not pass the check.",
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "Any linked scenario or judgment covers adjacent advice or planning only; it does not establish execution of the physical activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:0801",
+      "taxonomy": "atus-2025",
+      "code": "0801",
+      "title": "Childcare Services",
+      "parent": {
+        "code": "08",
+        "title": "Professional & Personal Care Services"
+      },
+      "still_task": "Find childcare services and help me arrange an appointment.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "reservation"
+        ],
+        "account": "sometimes",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:0802",
+      "taxonomy": "atus-2025",
+      "code": "0802",
+      "title": "Financial Services and Banking",
+      "parent": {
+        "code": "08",
+        "title": "Professional & Personal Care Services"
+      },
+      "still_task": "Help me review banking information and prepare an explicitly approved payment.",
+      "needs": {
+        "information": [
+          "private"
+        ],
+        "effects": [
+          "payment"
+        ],
+        "account": "required",
+        "physical": "none"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:world-appworld-pay-denied",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: Do not pay after the owner declines (M3c/e). No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:world-appworld-pay-approved",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: Pay someone after the owner approves (M3c/e). No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "judgment-case",
+          "source": "judgment:effect-payment",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic connector_effect input and expected judgment; not a task execution or a dated model run."
+        }
+      ],
+      "judgment_cases": [
+        "effect-payment"
+      ],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools. Payment requires exact-action approval by default; owner-enabled payment autonomy is separate. This gate is not classified as a Still blocker."
+    },
+    {
+      "id": "atus-2025:0803",
+      "taxonomy": "atus-2025",
+      "code": "0803",
+      "title": "Legal Services",
+      "parent": {
+        "code": "08",
+        "title": "Professional & Personal Care Services"
+      },
+      "still_task": "Help me find legal services and organize questions for the provider.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "reservation"
+        ],
+        "account": "sometimes",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:0804",
+      "taxonomy": "atus-2025",
+      "code": "0804",
+      "title": "Medical and Care Services",
+      "parent": {
+        "code": "08",
+        "title": "Professional & Personal Care Services"
+      },
+      "still_task": "Remind me about a medical appointment that I already arranged.",
+      "needs": {
+        "information": [
+          "private"
+        ],
+        "effects": [
+          "local-write"
+        ],
+        "account": "none",
+        "physical": "partial"
+      },
+      "status": "fixture-only",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [
+        {
+          "class": "U",
+          "kind": "test",
+          "source": "tests/test_preparations.py::ReminderTests::test_a_reminder_from_the_request_is_delivered_once_and_survives_restart",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "A scripted dental-appointment reminder is scheduled and delivered once after a restart with an injected clock and fake Telegram."
+        }
+      ],
+      "judgment_cases": [],
+      "notes": "Only the cited subtask is exercised by fixtures; no whole-category or live capability claim. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools. Scheduling: src/personal_agent/preparations_service.py:PreparationsService."
+    },
+    {
+      "id": "atus-2025:0805",
+      "taxonomy": "atus-2025",
+      "code": "0805",
+      "title": "Personal Care Services",
+      "parent": {
+        "code": "08",
+        "title": "Professional & Personal Care Services"
+      },
+      "still_task": "Find personal care services and help me arrange an appointment.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "reservation"
+        ],
+        "account": "sometimes",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:0806",
+      "taxonomy": "atus-2025",
+      "code": "0806",
+      "title": "Real Estate",
+      "parent": {
+        "code": "08",
+        "title": "Professional & Personal Care Services"
+      },
+      "still_task": "Help me compare real estate listings and organize enquiries.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "reservation"
+        ],
+        "account": "sometimes",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:0807",
+      "taxonomy": "atus-2025",
+      "code": "0807",
+      "title": "Veterinary Services (excluding grooming)",
+      "parent": {
+        "code": "08",
+        "title": "Professional & Personal Care Services"
+      },
+      "still_task": "Find veterinary services and help me arrange an appointment.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "reservation"
+        ],
+        "account": "sometimes",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:0808",
+      "taxonomy": "atus-2025",
+      "code": "0808",
+      "title": "Security Procedures Rel. to Professional/Personal Svcs.",
+      "parent": {
+        "code": "08",
+        "title": "Professional & Personal Care Services"
+      },
+      "still_task": "Explain a service security procedure while I complete the identity check.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "required"
+      },
+      "status": "out-of-bounds-by-design",
+      "blocker": null,
+      "bounds": "Security screening and personal identity checks must be completed by the person; an explanation does not pass the check.",
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "Any linked scenario or judgment covers adjacent advice or planning only; it does not establish execution of the physical activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:0901",
+      "taxonomy": "atus-2025",
+      "code": "0901",
+      "title": "Household Services (not done by self)",
+      "parent": {
+        "code": "09",
+        "title": "Household Services"
+      },
+      "still_task": "Help me find a household service provider.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "reservation"
+        ],
+        "account": "sometimes",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:0902",
+      "taxonomy": "atus-2025",
+      "code": "0902",
+      "title": "Home Maint/Repair/Décor/Construction (not done by self)",
+      "parent": {
+        "code": "09",
+        "title": "Household Services"
+      },
+      "still_task": "Help me compare contractors for home maintenance.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "reservation"
+        ],
+        "account": "sometimes",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:0903",
+      "taxonomy": "atus-2025",
+      "code": "0903",
+      "title": "Pet Services (not done by self, not vet)",
+      "parent": {
+        "code": "09",
+        "title": "Household Services"
+      },
+      "still_task": "Help me find pet care services.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "reservation"
+        ],
+        "account": "sometimes",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:0904",
+      "taxonomy": "atus-2025",
+      "code": "0904",
+      "title": "Lawn & Garden Services (not done by self)",
+      "parent": {
+        "code": "09",
+        "title": "Household Services"
+      },
+      "still_task": "Help me compare lawn and garden service providers.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "reservation"
+        ],
+        "account": "sometimes",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:0905",
+      "taxonomy": "atus-2025",
+      "code": "0905",
+      "title": "Vehicle Maint. & Repair Services (not done by self)",
+      "parent": {
+        "code": "09",
+        "title": "Household Services"
+      },
+      "still_task": "Help me find a vehicle repair service.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "reservation"
+        ],
+        "account": "sometimes",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:1001",
+      "taxonomy": "atus-2025",
+      "code": "1001",
+      "title": "Using Government Services",
+      "parent": {
+        "code": "10",
+        "title": "Government Services & Civic Obligations"
+      },
+      "still_task": "Find the requirements for a government service and help me prepare an application.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "identity-entry"
+        ],
+        "account": "sometimes",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:1002",
+      "taxonomy": "atus-2025",
+      "code": "1002",
+      "title": "Civic Obligations & Participation",
+      "parent": {
+        "code": "10",
+        "title": "Government Services & Civic Obligations"
+      },
+      "still_task": "Help me find information about a civic obligation or meeting.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "sometimes",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:1003",
+      "taxonomy": "atus-2025",
+      "code": "1003",
+      "title": "Waiting Associated w/Govt Svcs or Civic Obligations",
+      "parent": {
+        "code": "10",
+        "title": "Government Services & Civic Obligations"
+      },
+      "still_task": "Help me check an expected wait for a government service.",
+      "needs": {
+        "information": [
+          "public"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:1004",
+      "taxonomy": "atus-2025",
+      "code": "1004",
+      "title": "Security Procedures Rel. to Govt Svcs/Civic Obligations",
+      "parent": {
+        "code": "10",
+        "title": "Government Services & Civic Obligations"
+      },
+      "still_task": "Explain a government service security procedure while I complete it.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "required"
+      },
+      "status": "out-of-bounds-by-design",
+      "blocker": null,
+      "bounds": "Security screening and personal identity checks must be completed by the person; an explanation does not pass the check.",
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "Any linked scenario or judgment covers adjacent advice or planning only; it does not establish execution of the physical activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:1101",
+      "taxonomy": "atus-2025",
+      "code": "1101",
+      "title": "Eating and Drinking",
+      "parent": {
+        "code": "11",
+        "title": "Eating and Drinking"
+      },
+      "still_task": "Suggest a meal, while eating and drinking remain physical activities.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "required"
+      },
+      "status": "out-of-bounds-by-design",
+      "blocker": null,
+      "bounds": "The activity requires a person’s physical participation; advice, preparation or reminders do not perform it.",
+      "evidence": [
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:already-ate-dinner-next-meal",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: Already ate dinner, plan the next meal without repeating. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:already-ate-lunch",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: 'I already ate' after a lunch recommendation. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:weekday-lunch-near-workplace",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: Weekday lunch near a stated workplace. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:food-on-route-budget-correction",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: Rest-area recommendation corrected by a later budget. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:food-on-route-rest-area",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: Rest-area food on a stated route, with menu and price. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:preference-then-recommendation",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: Uses a preference stated earlier in the conversation. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:new-request-after-lunch-topic",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: Unrelated new request after a lunch topic. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:standing-wish-becomes-watch",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: A standing wish after a result becomes a proposed watch. No dated run is claimed."
+        }
+      ],
+      "judgment_cases": [],
+      "notes": "Any linked scenario or judgment covers adjacent advice or planning only; it does not establish execution of the physical activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:1102",
+      "taxonomy": "atus-2025",
+      "code": "1102",
+      "title": "Waiting associated with eating & drinking",
+      "parent": {
+        "code": "11",
+        "title": "Eating and Drinking"
+      },
+      "still_task": "Help me check a dining wait time, while a person waits at the venue.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "required"
+      },
+      "status": "out-of-bounds-by-design",
+      "blocker": null,
+      "bounds": "The activity requires a person’s physical participation; advice, preparation or reminders do not perform it.",
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "Any linked scenario or judgment covers adjacent advice or planning only; it does not establish execution of the physical activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:1201",
+      "taxonomy": "atus-2025",
+      "code": "1201",
+      "title": "Socializing and Communicating",
+      "parent": {
+        "code": "12",
+        "title": "Socializing, Relaxing, and Leisure"
+      },
+      "still_task": "Help me draft a personal message or respond in conversation.",
+      "needs": {
+        "information": [
+          "private"
+        ],
+        "effects": [
+          "local-write",
+          "send"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:presence-chat-short-reply-stays-short",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: Paired chat: a short exchange gets one reply and no preview. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:recall-dated-committee",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: dated committee. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:world-appworld-send-text",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: Send a message on the owner's behalf (M3b). No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "judgment-case",
+          "source": "judgment:owner-act-approve",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic owner_act_answer input and expected judgment; not a task execution or a dated model run."
+        },
+        {
+          "class": "S",
+          "kind": "judgment-case",
+          "source": "judgment:owner-act-decline",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic owner_act_answer input and expected judgment; not a task execution or a dated model run."
+        },
+        {
+          "class": "S",
+          "kind": "judgment-case",
+          "source": "judgment:owner-act-none",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic owner_act_answer input and expected judgment; not a task execution or a dated model run."
+        },
+        {
+          "class": "S",
+          "kind": "judgment-case",
+          "source": "judgment:goal-unknown-ko",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic goal_reached input and expected judgment; not a task execution or a dated model run."
+        }
+      ],
+      "judgment_cases": [
+        "owner-act-approve",
+        "owner-act-decline",
+        "owner-act-none",
+        "goal-unknown-ko"
+      ],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:1202",
+      "taxonomy": "atus-2025",
+      "code": "1202",
+      "title": "Attending or Hosting Social Events",
+      "parent": {
+        "code": "12",
+        "title": "Socializing, Relaxing, and Leisure"
+      },
+      "still_task": "Help me plan a social event and its invitations.",
+      "needs": {
+        "information": [
+          "private"
+        ],
+        "effects": [
+          "local-write",
+          "send"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:1203",
+      "taxonomy": "atus-2025",
+      "code": "1203",
+      "title": "Relaxing and Leisure",
+      "parent": {
+        "code": "12",
+        "title": "Socializing, Relaxing, and Leisure"
+      },
+      "still_task": "Help me find leisure reading or a hobby activity.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "sometimes",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:line-past-submission-deadline",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: past submission deadline. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:line-status-before-first-run",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: status before first run. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:line-cancel-watch",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: cancel watch. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:line-change-watch-time",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: change watch time. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:line-evening-watch",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: evening watch. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:recall-forget-project",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: forget project. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:recall-clay-language",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: clay language. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:recall-irrelevant-music",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: irrelevant music. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:recall-expired-pass",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: expired pass. No dated run is claimed."
+        }
+      ],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:1204",
+      "taxonomy": "atus-2025",
+      "code": "1204",
+      "title": "Arts and Entertainment (other than sports)",
+      "parent": {
+        "code": "12",
+        "title": "Socializing, Relaxing, and Leisure"
+      },
+      "still_task": "Help me find an exhibition or performance and plan a visit.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "sometimes",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:line-cancel-seat-watch",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: cancel seat watch. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:line-add-watch-rule",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: add watch rule. No dated run is claimed."
+        }
+      ],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:1205",
+      "taxonomy": "atus-2025",
+      "code": "1205",
+      "title": "Waiting Associated with Socializing, Relaxing, and Leisure",
+      "parent": {
+        "code": "12",
+        "title": "Socializing, Relaxing, and Leisure"
+      },
+      "still_task": "Help me check a social event wait time, while a person waits at the venue.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "required"
+      },
+      "status": "out-of-bounds-by-design",
+      "blocker": null,
+      "bounds": "The activity requires a person’s physical participation; advice, preparation or reminders do not perform it.",
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "Any linked scenario or judgment covers adjacent advice or planning only; it does not establish execution of the physical activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:1301",
+      "taxonomy": "atus-2025",
+      "code": "1301",
+      "title": "Participating in Sports, Exercise, or Recreation",
+      "parent": {
+        "code": "13",
+        "title": "Sports, Exercise, and Recreation"
+      },
+      "still_task": "Help me plan exercise or a sports reminder, while a person does the activity.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "required"
+      },
+      "status": "out-of-bounds-by-design",
+      "blocker": null,
+      "bounds": "The activity requires a person’s physical participation; advice, preparation or reminders do not perform it.",
+      "evidence": [
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:correct-earlier-advice-hiking",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: Correct earlier advice after a new personal fact. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:recall-forget-route",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: forget route. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:tee-time-reminder",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: Reminder the night before a stated tee time. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "judgment-case",
+          "source": "judgment:plan-schedule",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic orchestration_plan input and expected judgment; not a task execution or a dated model run."
+        }
+      ],
+      "judgment_cases": [
+        "plan-schedule"
+      ],
+      "notes": "Any linked scenario or judgment covers adjacent advice or planning only; it does not establish execution of the physical activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:1302",
+      "taxonomy": "atus-2025",
+      "code": "1302",
+      "title": "Attending Sporting/Recreational Events",
+      "parent": {
+        "code": "13",
+        "title": "Sports, Exercise, and Recreation"
+      },
+      "still_task": "Help me find a sporting event to attend.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "sometimes",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:1303",
+      "taxonomy": "atus-2025",
+      "code": "1303",
+      "title": "Waiting Associated with Sports, Exercise, & Recreation",
+      "parent": {
+        "code": "13",
+        "title": "Sports, Exercise, and Recreation"
+      },
+      "still_task": "Help me check an event wait time, while a person waits at the venue.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "required"
+      },
+      "status": "out-of-bounds-by-design",
+      "blocker": null,
+      "bounds": "The activity requires a person’s physical participation; advice, preparation or reminders do not perform it.",
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "Any linked scenario or judgment covers adjacent advice or planning only; it does not establish execution of the physical activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:1304",
+      "taxonomy": "atus-2025",
+      "code": "1304",
+      "title": "Security Procedures Rel. to Sports, Exercise, & Recreation",
+      "parent": {
+        "code": "13",
+        "title": "Sports, Exercise, and Recreation"
+      },
+      "still_task": "Explain an event security procedure while I complete it.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "required"
+      },
+      "status": "out-of-bounds-by-design",
+      "blocker": null,
+      "bounds": "Security screening and personal identity checks must be completed by the person; an explanation does not pass the check.",
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "Any linked scenario or judgment covers adjacent advice or planning only; it does not establish execution of the physical activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:1401",
+      "taxonomy": "atus-2025",
+      "code": "1401",
+      "title": "Religious/Spiritual Practices",
+      "parent": {
+        "code": "14",
+        "title": "Religious and Spiritual Activities"
+      },
+      "still_task": "Help me find information for a religious or spiritual practice I undertake.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "required"
+      },
+      "status": "out-of-bounds-by-design",
+      "blocker": null,
+      "bounds": "The activity requires a person’s physical participation; advice, preparation or reminders do not perform it.",
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "Any linked scenario or judgment covers adjacent advice or planning only; it does not establish execution of the physical activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:1501",
+      "taxonomy": "atus-2025",
+      "code": "1501",
+      "title": "Administrative & Support Activities",
+      "parent": {
+        "code": "15",
+        "title": "Volunteer Activities"
+      },
+      "still_task": "Help me organize records and communications for volunteer work.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:1502",
+      "taxonomy": "atus-2025",
+      "code": "1502",
+      "title": "Social Service & Care Activities (Except Medical)",
+      "parent": {
+        "code": "15",
+        "title": "Volunteer Activities"
+      },
+      "still_task": "Help me organize a volunteer care activity.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:1503",
+      "taxonomy": "atus-2025",
+      "code": "1503",
+      "title": "Indoor & Outdoor Maintenance, Building, & Clean-up Activities",
+      "parent": {
+        "code": "15",
+        "title": "Volunteer Activities"
+      },
+      "still_task": "Help me plan volunteer maintenance work, while people perform it.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "required"
+      },
+      "status": "out-of-bounds-by-design",
+      "blocker": null,
+      "bounds": "The activity requires a person’s physical participation; advice, preparation or reminders do not perform it.",
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "Any linked scenario or judgment covers adjacent advice or planning only; it does not establish execution of the physical activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:1504",
+      "taxonomy": "atus-2025",
+      "code": "1504",
+      "title": "Participating in Performance & Cultural Activities",
+      "parent": {
+        "code": "15",
+        "title": "Volunteer Activities"
+      },
+      "still_task": "Help me prepare material for a volunteer cultural performance.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:1505",
+      "taxonomy": "atus-2025",
+      "code": "1505",
+      "title": "Attending Meetings, Conferences, & Training",
+      "parent": {
+        "code": "15",
+        "title": "Volunteer Activities"
+      },
+      "still_task": "Help me organize attendance at volunteer meetings or training.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:1506",
+      "taxonomy": "atus-2025",
+      "code": "1506",
+      "title": "Public Health & Safety Activities",
+      "parent": {
+        "code": "15",
+        "title": "Volunteer Activities"
+      },
+      "still_task": "Help me find information for a volunteer public health activity.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:1507",
+      "taxonomy": "atus-2025",
+      "code": "1507",
+      "title": "Waiting Associated with Volunteer Activities",
+      "parent": {
+        "code": "15",
+        "title": "Volunteer Activities"
+      },
+      "still_task": "Help me check a volunteer activity wait time, while a person waits there.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "required"
+      },
+      "status": "out-of-bounds-by-design",
+      "blocker": null,
+      "bounds": "The activity requires a person’s physical participation; advice, preparation or reminders do not perform it.",
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "Any linked scenario or judgment covers adjacent advice or planning only; it does not establish execution of the physical activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:1508",
+      "taxonomy": "atus-2025",
+      "code": "1508",
+      "title": "Security Procedures related to volunteer activities",
+      "parent": {
+        "code": "15",
+        "title": "Volunteer Activities"
+      },
+      "still_task": "Explain a volunteer security procedure while I complete it.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "required"
+      },
+      "status": "out-of-bounds-by-design",
+      "blocker": null,
+      "bounds": "Security screening and personal identity checks must be completed by the person; an explanation does not pass the check.",
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "Any linked scenario or judgment covers adjacent advice or planning only; it does not establish execution of the physical activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:1601",
+      "taxonomy": "atus-2025",
+      "code": "1601",
+      "title": "Telephone Calls (to or from)",
+      "parent": {
+        "code": "16",
+        "title": "Telephone Calls"
+      },
+      "still_task": "Help me place a telephone call and relay my message.",
+      "needs": {
+        "information": [
+          "private"
+        ],
+        "effects": [
+          "send"
+        ],
+        "account": "required",
+        "physical": "none"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools. No dedicated telephone tool was found in the host catalogue; a configured connector might supply one, so absence of a tested call is recorded as untried."
+    },
+    {
+      "id": "atus-2025:1602",
+      "taxonomy": "atus-2025",
+      "code": "1602",
+      "title": "Waiting Associated with Telephone Calls",
+      "parent": {
+        "code": "16",
+        "title": "Telephone Calls"
+      },
+      "still_task": "Help me keep track of a telephone queue or callback.",
+      "needs": {
+        "information": [
+          "private"
+        ],
+        "effects": [
+          "send"
+        ],
+        "account": "required",
+        "physical": "none"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:1801",
+      "taxonomy": "atus-2025",
+      "code": "1801",
+      "title": "Travel Related to Personal Care",
+      "parent": {
+        "code": "18",
+        "title": "Traveling"
+      },
+      "still_task": "Help me plan travel for personal care.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:1802",
+      "taxonomy": "atus-2025",
+      "code": "1802",
+      "title": "Travel Related to Household Activities",
+      "parent": {
+        "code": "18",
+        "title": "Traveling"
+      },
+      "still_task": "Help me plan travel for household activities.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:1803",
+      "taxonomy": "atus-2025",
+      "code": "1803",
+      "title": "Travel Related to Caring For & Helping HH Members",
+      "parent": {
+        "code": "18",
+        "title": "Traveling"
+      },
+      "still_task": "Help me plan travel to care for a household member.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:1804",
+      "taxonomy": "atus-2025",
+      "code": "1804",
+      "title": "Travel Related to Caring For & Helping Nonhh Members",
+      "parent": {
+        "code": "18",
+        "title": "Traveling"
+      },
+      "still_task": "Help me plan travel to care for someone outside my household.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:1805",
+      "taxonomy": "atus-2025",
+      "code": "1805",
+      "title": "Travel Related to Work",
+      "parent": {
+        "code": "18",
+        "title": "Traveling"
+      },
+      "still_task": "Help me organize a business trip or commute.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "partial"
+      },
+      "status": "fixture-only",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [
+        {
+          "class": "U",
+          "kind": "test",
+          "source": "tests/test_file_workspace_worker_tools.py::WorkerFileWorkspaceTests::test_the_worker_finds_reads_and_saves_a_result_citing_what_it_read",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Temporary business-trip documents are found, read and summarized into a new file with source provenance; content is supplied by the fixture, not a live model."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:presence-chat-lookup-with-a-judgment",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: Paired chat: a lookup that ends in a recommendation. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:settings-change-with-confirmation",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: Change a setting in conversation with confirm-before-apply. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:travel-time-with-clock-note",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: Will I be late - travel time against a stated appointment. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:travel-time-after-event",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: Train time after an earlier-stated event. No dated run is claimed."
+        }
+      ],
+      "judgment_cases": [],
+      "notes": "Only the cited subtask is exercised by fixtures; no whole-category or live capability claim. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools. File boundary: src/personal_agent/agent_runtime.py:Capabilities.execute."
+    },
+    {
+      "id": "atus-2025:1806",
+      "taxonomy": "atus-2025",
+      "code": "1806",
+      "title": "Travel Related to Education",
+      "parent": {
+        "code": "18",
+        "title": "Traveling"
+      },
+      "still_task": "Help me plan travel to school or a class.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:1807",
+      "taxonomy": "atus-2025",
+      "code": "1807",
+      "title": "Travel Related to Consumer Purchases",
+      "parent": {
+        "code": "18",
+        "title": "Traveling"
+      },
+      "still_task": "Help me plan travel for shopping.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:1808",
+      "taxonomy": "atus-2025",
+      "code": "1808",
+      "title": "Travel Related to Using Professional and Personal Care Services",
+      "parent": {
+        "code": "18",
+        "title": "Traveling"
+      },
+      "still_task": "Help me plan travel to a professional or personal service.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:1809",
+      "taxonomy": "atus-2025",
+      "code": "1809",
+      "title": "Travel Related to Using Household Services",
+      "parent": {
+        "code": "18",
+        "title": "Traveling"
+      },
+      "still_task": "Help me plan travel to a household service provider.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:1810",
+      "taxonomy": "atus-2025",
+      "code": "1810",
+      "title": "Travel Related to Using Govt Services & Civic Obligations",
+      "parent": {
+        "code": "18",
+        "title": "Traveling"
+      },
+      "still_task": "Help me plan travel to a government service or civic activity.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:1811",
+      "taxonomy": "atus-2025",
+      "code": "1811",
+      "title": "Travel Related to Eating and Drinking",
+      "parent": {
+        "code": "18",
+        "title": "Traveling"
+      },
+      "still_task": "Help me plan a route to a meal stop.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:food-on-route-budget-correction",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: Rest-area recommendation corrected by a later budget. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:food-on-route-rest-area",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: Rest-area food on a stated route, with menu and price. No dated run is claimed."
+        }
+      ],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:1812",
+      "taxonomy": "atus-2025",
+      "code": "1812",
+      "title": "Travel Related to Socializing, Relaxing, and Leisure",
+      "parent": {
+        "code": "18",
+        "title": "Traveling"
+      },
+      "still_task": "Help me plan travel for a social or leisure visit.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:presence-chat-research-takes-a-while",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: Paired chat: a request that takes a while is taken on like a person would. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:new-request-after-travel-topic",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: Unrelated new request after a travel topic. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:travel-time-from-earlier-place",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: Travel time from a place named in the previous turn. No dated run is claimed."
+        }
+      ],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:1813",
+      "taxonomy": "atus-2025",
+      "code": "1813",
+      "title": "Travel Related to Sports, Exercise, & Recreation",
+      "parent": {
+        "code": "18",
+        "title": "Traveling"
+      },
+      "still_task": "Help me plan departure time for a sports outing.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:tee-time-departure-reminder",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: Departure reminder worked back from a tee time and home area. No dated run is claimed."
+        }
+      ],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:1814",
+      "taxonomy": "atus-2025",
+      "code": "1814",
+      "title": "Travel Related to Religious/Spiritual Activities",
+      "parent": {
+        "code": "18",
+        "title": "Traveling"
+      },
+      "still_task": "Help me plan travel to a religious activity.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:1815",
+      "taxonomy": "atus-2025",
+      "code": "1815",
+      "title": "Travel Related to Volunteer Activities",
+      "parent": {
+        "code": "18",
+        "title": "Traveling"
+      },
+      "still_task": "Help me plan travel to a volunteer activity.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:1816",
+      "taxonomy": "atus-2025",
+      "code": "1816",
+      "title": "Travel Related to Telephone Calls",
+      "parent": {
+        "code": "18",
+        "title": "Traveling"
+      },
+      "still_task": "Help me plan travel associated with making a telephone call.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "atus-2025:1818",
+      "taxonomy": "atus-2025",
+      "code": "1818",
+      "title": "Security Procedures Related to Traveling",
+      "parent": {
+        "code": "18",
+        "title": "Traveling"
+      },
+      "still_task": "Explain a travel security procedure while I complete it.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "required"
+      },
+      "status": "out-of-bounds-by-design",
+      "blocker": null,
+      "bounds": "Security screening and personal identity checks must be completed by the person; an explanation does not pass the check.",
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "Any linked scenario or judgment covers adjacent advice or planning only; it does not establish execution of the physical activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "onet-31.0-gwa:4.A.1.a.1",
+      "taxonomy": "onet-31.0-gwa",
+      "code": "4.A.1.a.1",
+      "title": "Getting Information",
+      "parent": {
+        "code": "4.A.1.a",
+        "title": "Looking for and Receiving Job-Related Information"
+      },
+      "still_task": "Gather source material for a work question.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "fixture-only",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [
+        {
+          "class": "U",
+          "kind": "test",
+          "source": "tests/test_file_workspace_worker_tools.py::WorkerFileWorkspaceTests::test_the_worker_finds_reads_and_saves_a_result_citing_what_it_read",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Temporary business-trip documents are found, read and summarized into a new file with source provenance; content is supplied by the fixture, not a live model."
+        }
+      ],
+      "judgment_cases": [],
+      "notes": "Only the cited subtask is exercised by fixtures; no whole-category or live capability claim. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools. File boundary: src/personal_agent/agent_runtime.py:Capabilities.execute."
+    },
+    {
+      "id": "onet-31.0-gwa:4.A.1.a.2",
+      "taxonomy": "onet-31.0-gwa",
+      "code": "4.A.1.a.2",
+      "title": "Monitoring Processes, Materials, or Surroundings",
+      "parent": {
+        "code": "4.A.1.a",
+        "title": "Looking for and Receiving Job-Related Information"
+      },
+      "still_task": "Monitor a specified information source for relevant changes.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools. Scheduling: src/personal_agent/preparations_service.py:PreparationsService."
+    },
+    {
+      "id": "onet-31.0-gwa:4.A.1.b.1",
+      "taxonomy": "onet-31.0-gwa",
+      "code": "4.A.1.b.1",
+      "title": "Identifying Objects, Actions, and Events",
+      "parent": {
+        "code": "4.A.1.b",
+        "title": "Identifying and Evaluating Job-Relevant Information"
+      },
+      "still_task": "Identify changes or categories in supplied information.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "onet-31.0-gwa:4.A.1.b.2",
+      "taxonomy": "onet-31.0-gwa",
+      "code": "4.A.1.b.2",
+      "title": "Inspecting Equipment, Structures, or Materials",
+      "parent": {
+        "code": "4.A.1.b",
+        "title": "Identifying and Evaluating Job-Relevant Information"
+      },
+      "still_task": "Inspect supplied equipment records for signs of a defect.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "onet-31.0-gwa:4.A.1.b.3",
+      "taxonomy": "onet-31.0-gwa",
+      "code": "4.A.1.b.3",
+      "title": "Estimating the Quantifiable Characteristics of Products, Events, or Information",
+      "parent": {
+        "code": "4.A.1.b",
+        "title": "Identifying and Evaluating Job-Relevant Information"
+      },
+      "still_task": "Estimate the time and resources needed for an activity.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "onet-31.0-gwa:4.A.2.a.1",
+      "taxonomy": "onet-31.0-gwa",
+      "code": "4.A.2.a.1",
+      "title": "Judging the Qualities of Objects, Services, or People",
+      "parent": {
+        "code": "4.A.2.a",
+        "title": "Information and Data Processing"
+      },
+      "still_task": "Assess the quality of alternatives using stated criteria.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "onet-31.0-gwa:4.A.2.a.2",
+      "taxonomy": "onet-31.0-gwa",
+      "code": "4.A.2.a.2",
+      "title": "Processing Information",
+      "parent": {
+        "code": "4.A.2.a",
+        "title": "Information and Data Processing"
+      },
+      "still_task": "Compile and calculate information from supplied records.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "onet-31.0-gwa:4.A.2.a.3",
+      "taxonomy": "onet-31.0-gwa",
+      "code": "4.A.2.a.3",
+      "title": "Evaluating Information to Determine Compliance with Standards",
+      "parent": {
+        "code": "4.A.2.a",
+        "title": "Information and Data Processing"
+      },
+      "still_task": "Compare supplied records with an identified standard.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "onet-31.0-gwa:4.A.2.a.4",
+      "taxonomy": "onet-31.0-gwa",
+      "code": "4.A.2.a.4",
+      "title": "Analyzing Data or Information",
+      "parent": {
+        "code": "4.A.2.a",
+        "title": "Information and Data Processing"
+      },
+      "still_task": "Analyze a dataset and explain the findings.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "onet-31.0-gwa:4.A.2.b.1",
+      "taxonomy": "onet-31.0-gwa",
+      "code": "4.A.2.b.1",
+      "title": "Making Decisions and Solving Problems",
+      "parent": {
+        "code": "4.A.2.b",
+        "title": "Reasoning and Decision Making"
+      },
+      "still_task": "Compare options and recommend a solution with reasons.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "onet-31.0-gwa:4.A.2.b.2",
+      "taxonomy": "onet-31.0-gwa",
+      "code": "4.A.2.b.2",
+      "title": "Thinking Creatively",
+      "parent": {
+        "code": "4.A.2.b",
+        "title": "Reasoning and Decision Making"
+      },
+      "still_task": "Develop draft ideas for a new design.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "onet-31.0-gwa:4.A.2.b.3",
+      "taxonomy": "onet-31.0-gwa",
+      "code": "4.A.2.b.3",
+      "title": "Updating and Using Relevant Knowledge",
+      "parent": {
+        "code": "4.A.2.b",
+        "title": "Reasoning and Decision Making"
+      },
+      "still_task": "Find current technical knowledge relevant to my work.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools. Optional skill content: src/personal_agent/skills.py:SkillBinding.load; skills/shopping-cart/SKILL.md; skills/emart-ssg/SKILL.md; core does not choose a skill."
+    },
+    {
+      "id": "onet-31.0-gwa:4.A.2.b.4",
+      "taxonomy": "onet-31.0-gwa",
+      "code": "4.A.2.b.4",
+      "title": "Developing Objectives and Strategies",
+      "parent": {
+        "code": "4.A.2.b",
+        "title": "Reasoning and Decision Making"
+      },
+      "still_task": "Help me draft objectives and a strategy.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "onet-31.0-gwa:4.A.2.b.5",
+      "taxonomy": "onet-31.0-gwa",
+      "code": "4.A.2.b.5",
+      "title": "Scheduling Work and Activities",
+      "parent": {
+        "code": "4.A.2.b",
+        "title": "Reasoning and Decision Making"
+      },
+      "still_task": "Schedule an activity and remind me when it is due.",
+      "needs": {
+        "information": [
+          "private"
+        ],
+        "effects": [
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "fixture-only",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [
+        {
+          "class": "U",
+          "kind": "test",
+          "source": "tests/test_preparations.py::ReminderTests::test_a_reminder_from_the_request_is_delivered_once_and_survives_restart",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "A scripted dental-appointment reminder is scheduled and delivered once after a restart with an injected clock and fake Telegram."
+        }
+      ],
+      "judgment_cases": [],
+      "notes": "Only the cited subtask is exercised by fixtures; no whole-category or live capability claim. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools. Scheduling: src/personal_agent/preparations_service.py:PreparationsService. Known timing gaps remain: docs/outcome-experiments.en.md#foundations-and-gaps (#813 skipped-slot reports; #814 silent run cap), src/personal_agent/preparations.py:window_report_reason and normalize_window. They do not fit the contract’s four blocker kinds, so they stay explicit limitations."
+    },
+    {
+      "id": "onet-31.0-gwa:4.A.2.b.6",
+      "taxonomy": "onet-31.0-gwa",
+      "code": "4.A.2.b.6",
+      "title": "Organizing, Planning, and Prioritizing Work",
+      "parent": {
+        "code": "4.A.2.b",
+        "title": "Reasoning and Decision Making"
+      },
+      "still_task": "Help me prioritize and organize a work plan.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "onet-31.0-gwa:4.A.3.a.1",
+      "taxonomy": "onet-31.0-gwa",
+      "code": "4.A.3.a.1",
+      "title": "Performing General Physical Activities",
+      "parent": {
+        "code": "4.A.3.a",
+        "title": "Performing Physical and Manual Work Activities"
+      },
+      "still_task": "Help me plan physical work that a person must carry out.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "required"
+      },
+      "status": "out-of-bounds-by-design",
+      "blocker": null,
+      "bounds": "The activity requires a person’s physical participation; advice, preparation or reminders do not perform it.",
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "Any linked scenario or judgment covers adjacent advice or planning only; it does not establish execution of the physical activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "onet-31.0-gwa:4.A.3.a.2",
+      "taxonomy": "onet-31.0-gwa",
+      "code": "4.A.3.a.2",
+      "title": "Handling and Moving Objects",
+      "parent": {
+        "code": "4.A.3.a",
+        "title": "Performing Physical and Manual Work Activities"
+      },
+      "still_task": "Help me plan moving objects that a person must handle.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "required"
+      },
+      "status": "out-of-bounds-by-design",
+      "blocker": null,
+      "bounds": "The activity requires a person’s physical participation; advice, preparation or reminders do not perform it.",
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "Any linked scenario or judgment covers adjacent advice or planning only; it does not establish execution of the physical activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "onet-31.0-gwa:4.A.3.a.3",
+      "taxonomy": "onet-31.0-gwa",
+      "code": "4.A.3.a.3",
+      "title": "Controlling Machines and Processes",
+      "parent": {
+        "code": "4.A.3.a",
+        "title": "Performing Physical and Manual Work Activities"
+      },
+      "still_task": "Help me prepare operating instructions for a machine a person controls.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "required"
+      },
+      "status": "out-of-bounds-by-design",
+      "blocker": null,
+      "bounds": "The activity requires a person’s physical participation; advice, preparation or reminders do not perform it.",
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "Any linked scenario or judgment covers adjacent advice or planning only; it does not establish execution of the physical activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "onet-31.0-gwa:4.A.3.a.4",
+      "taxonomy": "onet-31.0-gwa",
+      "code": "4.A.3.a.4",
+      "title": "Operating Vehicles, Mechanized Devices, or Equipment",
+      "parent": {
+        "code": "4.A.3.a",
+        "title": "Performing Physical and Manual Work Activities"
+      },
+      "still_task": "Help me plan a vehicle journey that a person must drive.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "required"
+      },
+      "status": "out-of-bounds-by-design",
+      "blocker": null,
+      "bounds": "The activity requires a person’s physical participation; advice, preparation or reminders do not perform it.",
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "Any linked scenario or judgment covers adjacent advice or planning only; it does not establish execution of the physical activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "onet-31.0-gwa:4.A.3.b.1",
+      "taxonomy": "onet-31.0-gwa",
+      "code": "4.A.3.b.1",
+      "title": "Working with Computers",
+      "parent": {
+        "code": "4.A.3.b",
+        "title": "Performing Complex and Technical Activities"
+      },
+      "still_task": "Run a bounded program or help me configure a computer tool.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "fixture-only",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [
+        {
+          "class": "U",
+          "kind": "test",
+          "source": "tests/test_skill_shop.py::OwnerAddsAReferenceSkillByName::test_adding_by_name_pins_the_commit_and_switches_skills_on_once_confirmed",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "A fake GitHub transport supplies a skill package; settings confirmation pins its revision and enables it. No live install or model-written program is exercised."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:settings-change-with-confirmation",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: Change a setting in conversation with confirm-before-apply. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:settings-read-in-conversation",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: Read a setting in conversation. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:skill-add-reference-by-name",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: Owner asks for the shopping skill by name on a fresh install. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "judgment-case",
+          "source": "judgment:plan-technical",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic orchestration_plan input and expected judgment; not a task execution or a dated model run."
+        },
+        {
+          "class": "S",
+          "kind": "judgment-case",
+          "source": "judgment:plan-password",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic orchestration_plan input and expected judgment; not a task execution or a dated model run."
+        }
+      ],
+      "judgment_cases": [
+        "plan-technical",
+        "plan-password"
+      ],
+      "notes": "Only reference-skill installation is exercised here; this is not evidence of general programming ability. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools. Code protocol: src/personal_agent/code_run.py:CodeRunner.run. No general programming outcome is claimed."
+    },
+    {
+      "id": "onet-31.0-gwa:4.A.3.b.2",
+      "taxonomy": "onet-31.0-gwa",
+      "code": "4.A.3.b.2",
+      "title": "Drafting, Laying Out, and Specifying Technical Devices, Parts, and Equipment",
+      "parent": {
+        "code": "4.A.3.b",
+        "title": "Performing Complex and Technical Activities"
+      },
+      "still_task": "Draft technical instructions or specifications from supplied requirements.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "onet-31.0-gwa:4.A.3.b.4",
+      "taxonomy": "onet-31.0-gwa",
+      "code": "4.A.3.b.4",
+      "title": "Repairing and Maintaining Mechanical Equipment",
+      "parent": {
+        "code": "4.A.3.b",
+        "title": "Performing Complex and Technical Activities"
+      },
+      "still_task": "Find maintenance guidance for mechanical equipment a person must repair.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "required"
+      },
+      "status": "out-of-bounds-by-design",
+      "blocker": null,
+      "bounds": "The activity requires a person’s physical participation; advice, preparation or reminders do not perform it.",
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "Any linked scenario or judgment covers adjacent advice or planning only; it does not establish execution of the physical activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "onet-31.0-gwa:4.A.3.b.5",
+      "taxonomy": "onet-31.0-gwa",
+      "code": "4.A.3.b.5",
+      "title": "Repairing and Maintaining Electronic Equipment",
+      "parent": {
+        "code": "4.A.3.b",
+        "title": "Performing Complex and Technical Activities"
+      },
+      "still_task": "Find maintenance guidance for electronic equipment a person must repair.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read"
+        ],
+        "account": "none",
+        "physical": "required"
+      },
+      "status": "out-of-bounds-by-design",
+      "blocker": null,
+      "bounds": "The activity requires a person’s physical participation; advice, preparation or reminders do not perform it.",
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "Any linked scenario or judgment covers adjacent advice or planning only; it does not establish execution of the physical activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "onet-31.0-gwa:4.A.3.b.6",
+      "taxonomy": "onet-31.0-gwa",
+      "code": "4.A.3.b.6",
+      "title": "Documenting/Recording Information",
+      "parent": {
+        "code": "4.A.3.b",
+        "title": "Performing Complex and Technical Activities"
+      },
+      "still_task": "Record supplied information in a source-linked file.",
+      "needs": {
+        "information": [
+          "private"
+        ],
+        "effects": [
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "fixture-only",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [
+        {
+          "class": "U",
+          "kind": "test",
+          "source": "tests/test_file_workspace_worker_tools.py::WorkerFileWorkspaceTests::test_the_worker_finds_reads_and_saves_a_result_citing_what_it_read",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Temporary business-trip documents are found, read and summarized into a new file with source provenance; content is supplied by the fixture, not a live model."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:recall-reading-format",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: reading format. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:recall-binding-language",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic scenario specification only: binding language. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "judgment-case",
+          "source": "judgment:goal-failed",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic goal_reached input and expected judgment; not a task execution or a dated model run."
+        },
+        {
+          "class": "S",
+          "kind": "judgment-case",
+          "source": "judgment:goal-failed-ko",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic goal_reached input and expected judgment; not a task execution or a dated model run."
+        },
+        {
+          "class": "S",
+          "kind": "judgment-case",
+          "source": "judgment:goal-unknown",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic goal_reached input and expected judgment; not a task execution or a dated model run."
+        }
+      ],
+      "judgment_cases": [
+        "goal-failed",
+        "goal-failed-ko",
+        "goal-unknown"
+      ],
+      "notes": "Only the cited subtask is exercised by fixtures; no whole-category or live capability claim. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools. File boundary: src/personal_agent/agent_runtime.py:Capabilities.execute."
+    },
+    {
+      "id": "onet-31.0-gwa:4.A.4.a.1",
+      "taxonomy": "onet-31.0-gwa",
+      "code": "4.A.4.a.1",
+      "title": "Interpreting the Meaning of Information for Others",
+      "parent": {
+        "code": "4.A.4.a",
+        "title": "Communicating and Interacting"
+      },
+      "still_task": "Explain supplied findings in language the intended reader can use.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [
+        {
+          "class": "S",
+          "kind": "judgment-case",
+          "source": "judgment:goal-served",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic goal_reached input and expected judgment; not a task execution or a dated model run."
+        },
+        {
+          "class": "S",
+          "kind": "judgment-case",
+          "source": "judgment:goal-served-ko",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic goal_reached input and expected judgment; not a task execution or a dated model run."
+        },
+        {
+          "class": "S",
+          "kind": "judgment-case",
+          "source": "judgment:plan-plain-en",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic orchestration_plan input and expected judgment; not a task execution or a dated model run."
+        },
+        {
+          "class": "S",
+          "kind": "judgment-case",
+          "source": "judgment:plan-plain-ko",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Synthetic orchestration_plan input and expected judgment; not a task execution or a dated model run."
+        }
+      ],
+      "judgment_cases": [
+        "goal-served",
+        "goal-served-ko",
+        "plan-plain-en",
+        "plan-plain-ko"
+      ],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "onet-31.0-gwa:4.A.4.a.2",
+      "taxonomy": "onet-31.0-gwa",
+      "code": "4.A.4.a.2",
+      "title": "Communicating with Supervisors, Peers, or Subordinates",
+      "parent": {
+        "code": "4.A.4.a",
+        "title": "Communicating and Interacting"
+      },
+      "still_task": "Draft a work update for a supervisor or colleague.",
+      "needs": {
+        "information": [
+          "private"
+        ],
+        "effects": [
+          "local-write",
+          "send"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "onet-31.0-gwa:4.A.4.a.3",
+      "taxonomy": "onet-31.0-gwa",
+      "code": "4.A.4.a.3",
+      "title": "Communicating with People Outside the Organization",
+      "parent": {
+        "code": "4.A.4.a",
+        "title": "Communicating and Interacting"
+      },
+      "still_task": "Draft a message to an external contact for my review.",
+      "needs": {
+        "information": [
+          "private"
+        ],
+        "effects": [
+          "local-write",
+          "send"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "onet-31.0-gwa:4.A.4.a.4",
+      "taxonomy": "onet-31.0-gwa",
+      "code": "4.A.4.a.4",
+      "title": "Establishing and Maintaining Interpersonal Relationships",
+      "parent": {
+        "code": "4.A.4.a",
+        "title": "Communicating and Interacting"
+      },
+      "still_task": "Help me prepare for a conversation with a colleague.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "onet-31.0-gwa:4.A.4.a.5",
+      "taxonomy": "onet-31.0-gwa",
+      "code": "4.A.4.a.5",
+      "title": "Assisting and Caring for Others",
+      "parent": {
+        "code": "4.A.4.a",
+        "title": "Communicating and Interacting"
+      },
+      "still_task": "Help me organize assistance for another person.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "onet-31.0-gwa:4.A.4.a.6",
+      "taxonomy": "onet-31.0-gwa",
+      "code": "4.A.4.a.6",
+      "title": "Selling or Influencing Others",
+      "parent": {
+        "code": "4.A.4.a",
+        "title": "Communicating and Interacting"
+      },
+      "still_task": "Draft a persuasive explanation for an intended audience.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "onet-31.0-gwa:4.A.4.a.7",
+      "taxonomy": "onet-31.0-gwa",
+      "code": "4.A.4.a.7",
+      "title": "Resolving Conflicts and Negotiating with Others",
+      "parent": {
+        "code": "4.A.4.a",
+        "title": "Communicating and Interacting"
+      },
+      "still_task": "Help me prepare options for resolving a disagreement.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "onet-31.0-gwa:4.A.4.a.8",
+      "taxonomy": "onet-31.0-gwa",
+      "code": "4.A.4.a.8",
+      "title": "Performing for or Working Directly with the Public",
+      "parent": {
+        "code": "4.A.4.a",
+        "title": "Communicating and Interacting"
+      },
+      "still_task": "Help me prepare information for a public-facing activity.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "partial"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "onet-31.0-gwa:4.A.4.b.1",
+      "taxonomy": "onet-31.0-gwa",
+      "code": "4.A.4.b.1",
+      "title": "Coordinating the Work and Activities of Others",
+      "parent": {
+        "code": "4.A.4.b",
+        "title": "Coordinating, Developing, Managing, and Advising"
+      },
+      "still_task": "Help me coordinate a group work plan.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "onet-31.0-gwa:4.A.4.b.2",
+      "taxonomy": "onet-31.0-gwa",
+      "code": "4.A.4.b.2",
+      "title": "Developing and Building Teams",
+      "parent": {
+        "code": "4.A.4.b",
+        "title": "Coordinating, Developing, Managing, and Advising"
+      },
+      "still_task": "Help me prepare a team-building activity.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "onet-31.0-gwa:4.A.4.b.3",
+      "taxonomy": "onet-31.0-gwa",
+      "code": "4.A.4.b.3",
+      "title": "Training and Teaching Others",
+      "parent": {
+        "code": "4.A.4.b",
+        "title": "Coordinating, Developing, Managing, and Advising"
+      },
+      "still_task": "Prepare a teaching outline from supplied learning goals.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "onet-31.0-gwa:4.A.4.b.4",
+      "taxonomy": "onet-31.0-gwa",
+      "code": "4.A.4.b.4",
+      "title": "Guiding, Directing, and Motivating Subordinates",
+      "parent": {
+        "code": "4.A.4.b",
+        "title": "Coordinating, Developing, Managing, and Advising"
+      },
+      "still_task": "Help me draft guidance and expectations for a team.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "onet-31.0-gwa:4.A.4.b.5",
+      "taxonomy": "onet-31.0-gwa",
+      "code": "4.A.4.b.5",
+      "title": "Coaching and Developing Others",
+      "parent": {
+        "code": "4.A.4.b",
+        "title": "Coordinating, Developing, Managing, and Advising"
+      },
+      "still_task": "Help me prepare a coaching plan.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "onet-31.0-gwa:4.A.4.b.6",
+      "taxonomy": "onet-31.0-gwa",
+      "code": "4.A.4.b.6",
+      "title": "Providing Consultation and Advice to Others",
+      "parent": {
+        "code": "4.A.4.b",
+        "title": "Coordinating, Developing, Managing, and Advising"
+      },
+      "still_task": "Prepare advice on a technical or process question with sources.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "onet-31.0-gwa:4.A.4.c.1",
+      "taxonomy": "onet-31.0-gwa",
+      "code": "4.A.4.c.1",
+      "title": "Performing Administrative Activities",
+      "parent": {
+        "code": "4.A.4.c",
+        "title": "Administering"
+      },
+      "still_task": "Organize work files and prepare routine paperwork.",
+      "needs": {
+        "information": [
+          "private"
+        ],
+        "effects": [
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "fixture-only",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [
+        {
+          "class": "U",
+          "kind": "test",
+          "source": "tests/test_file_workspace_worker_tools.py::WorkerFileWorkspaceTests::test_the_worker_finds_reads_and_saves_a_result_citing_what_it_read",
+          "date": "2026-11-14",
+          "revision": "6ba8657",
+          "summary": "Temporary business-trip documents are found, read and summarized into a new file with source provenance; content is supplied by the fixture, not a live model."
+        }
+      ],
+      "judgment_cases": [],
+      "notes": "Only the cited subtask is exercised by fixtures; no whole-category or live capability claim. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools. File boundary: src/personal_agent/agent_runtime.py:Capabilities.execute."
+    },
+    {
+      "id": "onet-31.0-gwa:4.A.4.c.2",
+      "taxonomy": "onet-31.0-gwa",
+      "code": "4.A.4.c.2",
+      "title": "Staffing Organizational Units",
+      "parent": {
+        "code": "4.A.4.c",
+        "title": "Administering"
+      },
+      "still_task": "Help me compare applications against stated hiring criteria.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    },
+    {
+      "id": "onet-31.0-gwa:4.A.4.c.3",
+      "taxonomy": "onet-31.0-gwa",
+      "code": "4.A.4.c.3",
+      "title": "Monitoring and Controlling Resources",
+      "parent": {
+        "code": "4.A.4.c",
+        "title": "Administering"
+      },
+      "still_task": "Help me review inventory and spending records.",
+      "needs": {
+        "information": [
+          "public",
+          "private"
+        ],
+        "effects": [
+          "public-read",
+          "local-write"
+        ],
+        "account": "sometimes",
+        "physical": "none"
+      },
+      "status": "untried",
+      "blocker": null,
+      "bounds": null,
+      "evidence": [],
+      "judgment_cases": [],
+      "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
+    }
+  ]
+}

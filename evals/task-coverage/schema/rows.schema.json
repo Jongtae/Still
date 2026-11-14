@@ -1,0 +1,383 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "revision": {
+      "type": "string",
+      "minLength": 1
+    },
+    "as_of": {
+      "type": "string",
+      "format": "date"
+    },
+    "rows": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "taxonomy": {
+            "type": "string",
+            "minLength": 1
+          },
+          "code": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "parent": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "code",
+              "title"
+            ],
+            "additionalProperties": false
+          },
+          "still_task": {
+            "type": "string",
+            "minLength": 1
+          },
+          "needs": {
+            "type": "object",
+            "properties": {
+              "information": {
+                "type": "array",
+                "items": {
+                  "enum": [
+                    "public",
+                    "private",
+                    "none"
+                  ]
+                }
+              },
+              "effects": {
+                "type": "array",
+                "items": {
+                  "enum": [
+                    "public-read",
+                    "cart-hold",
+                    "identity-entry",
+                    "reservation",
+                    "send",
+                    "payment",
+                    "local-write",
+                    "none"
+                  ]
+                }
+              },
+              "account": {
+                "enum": [
+                  "required",
+                  "sometimes",
+                  "none"
+                ]
+              },
+              "physical": {
+                "enum": [
+                  "required",
+                  "partial",
+                  "none"
+                ]
+              }
+            },
+            "required": [
+              "information",
+              "effects",
+              "account",
+              "physical"
+            ],
+            "additionalProperties": false
+          },
+          "status": {
+            "enum": [
+              "observed-live",
+              "fixture-only",
+              "blocked-by-still",
+              "engine-limit",
+              "out-of-bounds-by-design",
+              "untried"
+            ]
+          },
+          "blocker": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "tool-not-exposed",
+                      "login",
+                      "approval-boundary",
+                      "routing"
+                    ]
+                  },
+                  "detail": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "code_ref": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "issue": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^#[0-9]+$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "detail",
+                  "code_ref",
+                  "issue"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "bounds": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "class": {
+                  "enum": [
+                    "U",
+                    "I",
+                    "S",
+                    "P",
+                    "L"
+                  ]
+                },
+                "kind": {
+                  "enum": [
+                    "test",
+                    "scenario",
+                    "judgment-case",
+                    "doc",
+                    "live-observation"
+                  ]
+                },
+                "source": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "date": {
+                  "type": "string",
+                  "format": "date"
+                },
+                "revision": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "summary": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "class",
+                "kind",
+                "source",
+                "date",
+                "revision",
+                "summary"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "judgment_cases": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "notes": {
+            "type": "string"
+          },
+          "examples": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "taxonomy",
+          "code",
+          "title",
+          "parent",
+          "still_task",
+          "needs",
+          "status",
+          "evidence",
+          "judgment_cases"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "blocked-by-still"
+                }
+              },
+              "required": [
+                "status"
+              ]
+            },
+            "then": {
+              "required": [
+                "blocker"
+              ],
+              "properties": {
+                "blocker": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "enum": [
+                        "tool-not-exposed",
+                        "login",
+                        "approval-boundary",
+                        "routing"
+                      ]
+                    },
+                    "detail": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "code_ref": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "issue": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^#[0-9]+$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "detail",
+                    "code_ref",
+                    "issue"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "blocker": {
+                  "type": "null"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "out-of-bounds-by-design"
+                }
+              },
+              "required": [
+                "status"
+              ]
+            },
+            "then": {
+              "required": [
+                "bounds"
+              ],
+              "properties": {
+                "bounds": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "bounds": {
+                  "type": "null"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "enum": [
+                    "observed-live",
+                    "fixture-only",
+                    "blocked-by-still",
+                    "engine-limit"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "evidence": {
+                  "minItems": 1
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "required": [
+    "version",
+    "revision",
+    "as_of",
+    "rows"
+  ],
+  "additionalProperties": false
+}
