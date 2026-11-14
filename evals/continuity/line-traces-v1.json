@@ -360,14 +360,11 @@
         {
           "at_hours": 1.52,
           "do": "observe",
-          "args": {
-            "gap_reason": "A twenty-minute report slot skipped during downtime is still owed"
-          },
+          "args": {},
           "expect": {
             "report_reason": "promised-report-due",
             "reply_sent": true
-          },
-          "gap": 813
+          }
         },
         {
           "at_hours": 1.67,

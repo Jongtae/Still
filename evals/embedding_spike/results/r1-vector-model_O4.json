@@ -1,0 +1,278 @@
+{
+  "version": "recall-pairs/1",
+  "fixture": "720e8939da261a61f702be74bad195c2fa9c6f00658733ac15fbdf2f3ad89cda",
+  "rows": [
+    {
+      "id": "d-lex-instrument",
+      "split": "dev",
+      "kind": "lexical-control",
+      "needed_hit": 1,
+      "needed_total": 1,
+      "trap_hits": 0,
+      "noise_hits": 0,
+      "returned": [
+        "1e12479e-0c37-46b6-b8c6-a7b3451bb0d4"
+      ]
+    },
+    {
+      "id": "d-lex-last-day",
+      "split": "dev",
+      "kind": "lexical-control",
+      "needed_hit": 1,
+      "needed_total": 1,
+      "trap_hits": 0,
+      "noise_hits": 0,
+      "returned": [
+        "d40e6605-84ef-4cbf-af9a-be11ec6a486f"
+      ]
+    },
+    {
+      "id": "d-lex-desk",
+      "split": "dev",
+      "kind": "lexical-control",
+      "needed_hit": 1,
+      "needed_total": 1,
+      "trap_hits": 0,
+      "noise_hits": 0,
+      "returned": [
+        "ef74be93-dff5-4dd9-a7e8-9fb02f4e2241"
+      ]
+    },
+    {
+      "id": "d-para-focus",
+      "split": "dev",
+      "kind": "paraphrase",
+      "needed_hit": 1,
+      "needed_total": 1,
+      "trap_hits": 0,
+      "noise_hits": 0,
+      "returned": [
+        "59c789f6-6074-41d6-ba75-b99c136816bb"
+      ]
+    },
+    {
+      "id": "d-para-posture",
+      "split": "dev",
+      "kind": "paraphrase",
+      "needed_hit": 1,
+      "needed_total": 1,
+      "trap_hits": 0,
+      "noise_hits": 0,
+      "returned": [
+        "ef74be93-dff5-4dd9-a7e8-9fb02f4e2241"
+      ]
+    },
+    {
+      "id": "d-language",
+      "split": "dev",
+      "kind": "cross-language",
+      "needed_hit": 0,
+      "needed_total": 1,
+      "trap_hits": 0,
+      "noise_hits": 0,
+      "returned": []
+    },
+    {
+      "id": "d-follow",
+      "split": "dev",
+      "kind": "short-follow-up",
+      "needed_hit": 1,
+      "needed_total": 1,
+      "trap_hits": 0,
+      "noise_hits": 0,
+      "returned": [
+        "dc95fc58-3453-4b1f-8853-1261db28d303"
+      ]
+    },
+    {
+      "id": "d-dated-current",
+      "split": "dev",
+      "kind": "dated-contradiction",
+      "needed_hit": 1,
+      "needed_total": 1,
+      "trap_hits": 0,
+      "noise_hits": 0,
+      "returned": [
+        "71e17f2d-a8c1-48d4-bb19-813faeee0fe6"
+      ]
+    },
+    {
+      "id": "d-dated-old-token",
+      "split": "dev",
+      "kind": "dated-contradiction",
+      "needed_hit": 0,
+      "needed_total": 1,
+      "trap_hits": 0,
+      "noise_hits": 0,
+      "returned": []
+    },
+    {
+      "id": "d-correction",
+      "split": "dev",
+      "kind": "correction",
+      "needed_hit": 1,
+      "needed_total": 1,
+      "trap_hits": 0,
+      "noise_hits": 0,
+      "returned": [
+        "e859c3da-17d4-4b8a-96e5-5dfd1ca3d7f1"
+      ]
+    },
+    {
+      "id": "d-expired",
+      "split": "dev",
+      "kind": "currentness",
+      "needed_hit": 0,
+      "needed_total": 0,
+      "trap_hits": 0,
+      "noise_hits": 0,
+      "returned": []
+    },
+    {
+      "id": "d-expired-date",
+      "split": "dev",
+      "kind": "currentness",
+      "needed_hit": 0,
+      "needed_total": 0,
+      "trap_hits": 0,
+      "noise_hits": 1,
+      "returned": [
+        "53eb5a63-ea47-491c-b787-0fc6cc305441"
+      ]
+    },
+    {
+      "id": "d-forget-chain",
+      "split": "dev",
+      "kind": "forgetting",
+      "needed_hit": 0,
+      "needed_total": 0,
+      "trap_hits": 0,
+      "noise_hits": 0,
+      "returned": []
+    },
+    {
+      "id": "d-noise",
+      "split": "dev",
+      "kind": "harm-control",
+      "needed_hit": 0,
+      "needed_total": 0,
+      "trap_hits": 0,
+      "noise_hits": 1,
+      "returned": [
+        "a17e4a5d-af58-4947-b8ee-c87750315144"
+      ]
+    },
+    {
+      "id": "h-lex-tool",
+      "split": "heldout",
+      "kind": "lexical-control",
+      "needed_hit": 1,
+      "needed_total": 1,
+      "trap_hits": 0,
+      "noise_hits": 0,
+      "returned": [
+        "a297a4a3-42d8-48e6-9de4-cdbb80818cd0"
+      ]
+    },
+    {
+      "id": "h-para-layout",
+      "split": "heldout",
+      "kind": "paraphrase",
+      "needed_hit": 0,
+      "needed_total": 1,
+      "trap_hits": 0,
+      "noise_hits": 0,
+      "returned": []
+    },
+    {
+      "id": "h-language",
+      "split": "heldout",
+      "kind": "cross-language",
+      "needed_hit": 0,
+      "needed_total": 1,
+      "trap_hits": 0,
+      "noise_hits": 0,
+      "returned": []
+    },
+    {
+      "id": "h-follow",
+      "split": "heldout",
+      "kind": "short-follow-up",
+      "needed_hit": 1,
+      "needed_total": 1,
+      "trap_hits": 0,
+      "noise_hits": 0,
+      "returned": [
+        "9f2dc8b8-4122-4986-ae1f-c30fdad9da80"
+      ]
+    },
+    {
+      "id": "h-dated",
+      "split": "heldout",
+      "kind": "dated-contradiction",
+      "needed_hit": 1,
+      "needed_total": 1,
+      "trap_hits": 0,
+      "noise_hits": 0,
+      "returned": [
+        "53eb5a63-ea47-491c-b787-0fc6cc305441"
+      ]
+    },
+    {
+      "id": "h-correction",
+      "split": "heldout",
+      "kind": "correction",
+      "needed_hit": 1,
+      "needed_total": 1,
+      "trap_hits": 0,
+      "noise_hits": 0,
+      "returned": [
+        "635cb3a1-a82c-409e-b0a2-8ee54b49f043"
+      ]
+    },
+    {
+      "id": "h-expired",
+      "split": "heldout",
+      "kind": "currentness",
+      "needed_hit": 0,
+      "needed_total": 0,
+      "trap_hits": 0,
+      "noise_hits": 0,
+      "returned": []
+    },
+    {
+      "id": "h-forget-name",
+      "split": "heldout",
+      "kind": "forgetting",
+      "needed_hit": 0,
+      "needed_total": 0,
+      "trap_hits": 0,
+      "noise_hits": 0,
+      "returned": []
+    },
+    {
+      "id": "h-forget-role",
+      "split": "heldout",
+      "kind": "forgetting",
+      "needed_hit": 0,
+      "needed_total": 0,
+      "trap_hits": 0,
+      "noise_hits": 1,
+      "returned": [
+        "1e12479e-0c37-46b6-b8c6-a7b3451bb0d4"
+      ]
+    },
+    {
+      "id": "h-noise",
+      "split": "heldout",
+      "kind": "harm-control",
+      "needed_hit": 0,
+      "needed_total": 0,
+      "trap_hits": 0,
+      "noise_hits": 1,
+      "returned": [
+        "ad9cbd0c-24cc-4bb5-b68f-2feff0e947d1"
+      ]
+    }
+  ]
+}

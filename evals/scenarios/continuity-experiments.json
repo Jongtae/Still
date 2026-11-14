@@ -20,7 +20,8 @@
     ],
     "tags": [
       "exp-continuity",
-      "kind-entrust-with-report-promise"
+      "kind-entrust-with-report-promise",
+      "atus-2025:1203"
     ]
   },
   {
@@ -47,7 +48,8 @@
     ],
     "tags": [
       "exp-continuity",
-      "kind-change-preparation"
+      "kind-change-preparation",
+      "atus-2025:1203"
     ]
   },
   {
@@ -74,7 +76,8 @@
     ],
     "tags": [
       "exp-continuity",
-      "kind-rule-correction"
+      "kind-rule-correction",
+      "atus-2025:1204"
     ]
   },
   {
@@ -101,7 +104,8 @@
     ],
     "tags": [
       "exp-continuity",
-      "kind-cancellation"
+      "kind-cancellation",
+      "atus-2025:1203"
     ]
   },
   {
@@ -127,7 +131,8 @@
     ],
     "tags": [
       "exp-continuity",
-      "kind-status-without-run"
+      "kind-status-without-run",
+      "atus-2025:1203"
     ]
   },
   {
@@ -158,7 +163,8 @@
     ],
     "tags": [
       "exp-continuity",
-      "kind-deadline-passed"
+      "kind-deadline-passed",
+      "atus-2025:1203"
     ]
   },
   {
@@ -185,7 +191,8 @@
     ],
     "tags": [
       "exp-continuity",
-      "kind-change-preparation"
+      "kind-change-preparation",
+      "atus-2025:0702"
     ]
   },
   {
@@ -212,7 +219,8 @@
     ],
     "tags": [
       "exp-continuity",
-      "kind-cancellation"
+      "kind-cancellation",
+      "atus-2025:1204"
     ]
   }
 ]

@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "taxonomies": [
+    {
+      "id": "atus-2025",
+      "name": "American Time Use Survey Activity Lexicon",
+      "publisher": "U.S. Bureau of Labor Statistics",
+      "version": "2025",
+      "url": "https://www.bls.gov/tus/lexicons/lexiconnoex2025.pdf",
+      "retrieved": "2026-11-14",
+      "sha256": "b0a93e6b88daccf4344d4312f475a43ce3125f4f67d45ae43778ee5d57d39514",
+      "retrieval_note": "bls.gov refuses scripted downloads; the byte-identical (254911 bytes) Internet Archive capture of 2026-08-19 was used",
+      "licence": "U.S. Government work, public domain in the United States",
+      "attribution": "American Time Use Survey Activity Lexicon, 2025, U.S. Bureau of Labor Statistics.",
+      "changes": "Second-tier identifiers and titles transcribed from the supplied PDF text; n.e.c. second-tier rows and data codes omitted. Still adds task descriptions, needs, status and evidence.",
+      "depth": "tier 2",
+      "status": "adopted"
+    },
+    {
+      "id": "onet-31.0-gwa",
+      "name": "O*NET Content Model Reference: Generalized Work Activities",
+      "publisher": "U.S. Department of Labor, Employment and Training Administration",
+      "version": "31.0",
+      "url": "https://www.onetcenter.org/dl_files/database/db_31_0_csv/content_model_reference.csv",
+      "retrieved": "2026-11-14",
+      "sha256": "370033744006dbd5df048431d42a402f6741a00a229b6d0f4e4f4249b6399c04",
+      "retrieval_note": "Supplied offline CSV; SHA-256 identifies the unmodified downloaded bytes.",
+      "licence": "CC BY 4.0",
+      "attribution": "O*NET 31.0 Database by the U.S. Department of Labor, Employment and Training Administration (USDOL/ETA). Used under the CC BY 4.0 license. O*NET® is a trademark of USDOL/ETA.",
+      "changes": "Only Generalized Work Activity element IDs and names are used; Still adds its own status, needs and evidence columns.",
+      "depth": "Generalized Work Activities (five-part 4.A element IDs)",
+      "status": "adopted"
+    },
+    {
+      "id": "kostat-time-use",
+      "name": "Korean Time Use Survey activity classification (생활시간조사)",
+      "publisher": "Statistics Korea",
+      "status": "considered-not-adopted-yet",
+      "retrieval_note": "Deferred until an exact public release and its reuse terms are pinned; this offline pass has no Korean classification source."
+    }
+  ]
+}

@@ -18,7 +18,9 @@
   "good_secretary": "Finds the Still reference shopping skill (shopping-cart) in the skills settings even though skills are off, proposes adding it, and says what waits for confirmation. After the owner's yes, reports the pinned commit and that skills are now on. Never says it was added before the confirmation or result, and does not invent other skills.",
   "tags": [
    "skills",
-   "settings"
+   "settings",
+   "onet-31.0-gwa:4.A.3.b.1",
+   "atus-2025:0701"
   ]
  }
 ]
