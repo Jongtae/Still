@@ -315,3 +315,46 @@ Run each checkout in a fresh process; `--src` selects its production imports, Gi
 Reuse decision: **Adapt** the existing eval package. Standard-library JSON, argparse, hashing, file permissions and timing cover serialization/CLI/report needs; the shipped `ModelAdapter`, decision policy, orchestration and qualification runners cover the measured boundary. Existing sandbox, seed resolution, Git-head and report-folder conventions supply the thin eval glue. No new dependency, licence, runtime authority, data destination or production component is introduced (Still remains AGPL-3.0-only).
 
 #42 unavailable-route follow-up reuse review: **Adapt** the shipped `DecisionRoutes._queue_cli_update` / `run_due_qualification` job and `RoutedDecisionEngine` admission with the harness's `CallCap` and `_MeasuredEngine`. Search evidence: `decision_routes.py` qualification jobs, `decision_qualification.qualify`, `bounded_execution.strict_binding_mismatch`, and `Sandbox.prepare`. Platform/stdlib facilities cover copying, counting and reporting. Provider SDKs and external evaluation frameworks cannot replace Still's qualification/activation contract; no new component or dependency is needed. This reuses the repository's current maintained path and official CLI boundary; no external release/version claim or network research is made in this offline fix. Licence remains AGPL-3.0-only; platform compatibility, destinations and authority remain those of the shipped route. The thin glue supplies synchronous scheduling and call admission, avoiding a second qualification implementation.
+
+## Task coverage map
+
+`task-coverage/` pins public taxonomies and records each row's evidence class,
+status and blockers. Scenario tags and judgment-case links support regression
+selection; sweep results never upgrade the map's status. This is an inventory,
+not a score, ranking or target. O*NET data uses CC BY 4.0 with attribution in
+the generated report.
+
+Untried and out-of-bounds rows may link to S specifications (scenarios,
+judgment cases or docs), but cannot cite U/I/P/L execution evidence. The per-row
+table separates these links from execution evidence. The **Still-side blockers**
+section is the C16 work list: rows grouped by blocker kind and by issue, ordered
+by row count, with code references. Counts describe the map, not task success.
+The four blocker kinds are `tool-not-exposed`, `login`, `approval-boundary` and
+`routing`; routing includes Still orchestration judgments such as completion
+checks.
+
+Adopted taxonomies require source pins and attribution. A taxonomy considered
+for later adoption needs only its id, name, status and a deferral reason
+(`reason`, or the existing `retrieval_note`); it contributes no rows.
+
+From the repository root (requires the existing `schema-validation` extra):
+
+```sh
+PYTHONPATH=evals:src .venv/bin/python -m agentos_eval coverage --check
+PYTHONPATH=evals:src .venv/bin/python -m agentos_eval coverage --write docs/task-coverage-map.en.md
+PYTHONPATH=src .venv/bin/python -m pytest -q tests/test_task_coverage_map.py
+```
+
+Validation checks all bundled scenarios, including world scenarios, without
+loading owner-local cases or running models. The generated-document test checks
+that the checked-in report matches the map.
+
+U/I citations must resolve to test functions under `tests/`. Live observations
+require an existing doc source and an explicit outcome; only succeeded or
+partial P/L live observations support `observed-live`. Blockers require a linked
+issue, an AST-defined symbol under `src/`, and a U test or S doc/code citation.
+Engine limitations need U/I/P/L evidence. Taxonomy-shaped tags must use adopted
+prefixes. See `task-coverage/README.md` for the full static rules and the
+relevance/current-issue judgments that still need review. Invalid maps produce
+validation problems in the sweep section. The standalone generated document
+starts with an H1; the sweep keeps its H2 coverage section.

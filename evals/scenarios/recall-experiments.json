@@ -27,7 +27,8 @@
     ],
     "tags": [
       "exp-recall",
-      "kind-paraphrase"
+      "kind-paraphrase",
+      "onet-31.0-gwa:4.A.1.a.1"
     ]
   },
   {
@@ -62,7 +63,8 @@
     ],
     "tags": [
       "exp-recall",
-      "kind-cross-language"
+      "kind-cross-language",
+      "onet-31.0-gwa:4.A.3.b.6"
     ]
   },
   {
@@ -88,7 +90,8 @@
     ],
     "tags": [
       "exp-recall",
-      "kind-short-follow-up"
+      "kind-short-follow-up",
+      "atus-2025:0502"
     ]
   },
   {
@@ -126,7 +129,8 @@
     ],
     "tags": [
       "exp-recall",
-      "kind-dated-contradiction"
+      "kind-dated-contradiction",
+      "onet-31.0-gwa:4.A.1.a.1"
     ]
   },
   {
@@ -160,7 +164,8 @@
     ],
     "tags": [
       "exp-recall",
-      "kind-owner-correction"
+      "kind-owner-correction",
+      "atus-2025:0209"
     ]
   },
   {
@@ -190,7 +195,8 @@
     ],
     "tags": [
       "exp-recall",
-      "kind-currentness"
+      "kind-currentness",
+      "atus-2025:1203"
     ]
   },
   {
@@ -219,7 +225,8 @@
     ],
     "tags": [
       "exp-recall",
-      "kind-forgetting"
+      "kind-forgetting",
+      "atus-2025:1301"
     ]
   },
   {
@@ -249,7 +256,8 @@
     ],
     "tags": [
       "exp-recall",
-      "kind-harm-control"
+      "kind-harm-control",
+      "atus-2025:1203"
     ]
   },
   {
@@ -280,7 +288,8 @@
     ],
     "tags": [
       "exp-recall",
-      "kind-paraphrase"
+      "kind-paraphrase",
+      "onet-31.0-gwa:4.A.3.b.6"
     ]
   },
   {
@@ -312,7 +321,8 @@
     ],
     "tags": [
       "exp-recall",
-      "kind-cross-language"
+      "kind-cross-language",
+      "atus-2025:1203"
     ]
   },
   {
@@ -338,7 +348,8 @@
     ],
     "tags": [
       "exp-recall",
-      "kind-short-follow-up"
+      "kind-short-follow-up",
+      "atus-2025:0209"
     ]
   },
   {
@@ -376,7 +387,8 @@
     ],
     "tags": [
       "exp-recall",
-      "kind-dated-contradiction"
+      "kind-dated-contradiction",
+      "onet-31.0-gwa:4.A.1.a.1"
     ]
   },
   {
@@ -415,7 +427,8 @@
     ],
     "tags": [
       "exp-recall",
-      "kind-owner-correction"
+      "kind-owner-correction",
+      "atus-2025:0209"
     ]
   },
   {
@@ -444,7 +457,8 @@
     ],
     "tags": [
       "exp-recall",
-      "kind-forgetting"
+      "kind-forgetting",
+      "atus-2025:1203"
     ]
   }
 ]
