@@ -303,33 +303,34 @@ class EngineFailureDiagnosticsTests(unittest.TestCase):
         self.assertNotIn('종료 코드 2',str(error))
         self.assertEqual(error.diagnostics(), {'failure_class': 'engine-failed', 'exit_code': 2})
 
-    def test_secrets_and_prompt_text_never_reach_error_or_logs(self):
+    def test_credentials_are_removed_and_prompt_error_text_is_preserved(self):
         prompt = 'my private diary entry about tuesday'
         leak = json.dumps({'type': 'error', 'message': f'bad key sk-abcdefghijklmnop Bearer eyJhbGciOi and {prompt} \x1b[31m'})
         error, logs = self._run(leak, prompt=prompt)
         for text in (str(error), error.reason, logs):
             self.assertNotIn('sk-abcdefghijklmnop', text)
             self.assertNotIn('eyJhbGciOi', text)
-            self.assertNotIn(prompt, text)
             self.assertNotIn('\x1b', text)
+        self.assertIn(prompt, error.reason)
+        self.assertNotIn(prompt, logs, 'the log keeps structured fields only')
         self.assertLessEqual(len(error.reason), bounded_execution.MAX_REASON_CHARS)
 
-    def test_multiline_prompt_echo_is_withheld_not_partially_scrubbed(self):
+    def test_multiline_prompt_echo_keeps_actual_reason(self):
         prompt = 'Owner request:\n  my private diary entry about tuesday and more\n\nStill public search evidence: {}'
         echoed = json.dumps({'type': 'error', 'message': 'rejected: Owner request: my private diary entry about tuesday'})
         error, logs = self._run(echoed, prompt=prompt)
-        for text in (str(error), error.reason, logs):
-            self.assertNotIn('diary', text)
-        self.assertIn('요청 내용이 포함된 응답', error.reason)
+        self.assertIn('diary', error.reason)
+        self.assertNotIn('diary', logs)
+        self.assertNotIn('요청 내용이 포함된 응답', error.reason)
 
-    def test_suffix_or_unaligned_prompt_echo_is_withheld(self):
+    def test_suffix_or_unaligned_prompt_echo_is_bounded(self):
         prompt = 'x' * 50 + ' the confidential salary figure is 91234 for alice'
         for echo in ('confidential salary figure is 91', 'figure is 91234 for alice',
                      'E' * 280 + ' the confidential salary figure is 91234'):
             with self.subTest(echo=echo[-30:]):
-                out = bounded_execution.redact_reason('error: ' + echo, prompt)
-                self.assertNotIn('salary', out)
-                self.assertNotIn('91234', out)
+                out = bounded_execution.redact_reason('error: ' + echo)
+                self.assertEqual(out, ('error: ' + echo)[:bounded_execution.MAX_REASON_CHARS - 1] + '…'
+                                 if len('error: ' + echo) > bounded_execution.MAX_REASON_CHARS else 'error: ' + echo)
 
     def test_success_is_not_logged_for_unusable_output(self):
         class Done: returncode = 0; stdout = json.dumps({'type': 'turn.completed'}); stderr = ''
@@ -352,6 +353,26 @@ class EngineFailureDiagnosticsTests(unittest.TestCase):
                 self.assertIn('[redacted]', out)
                 for secret in ('abc123secretvalue', 'dXNlcjpwYXNz', 'AIzaSyA1234567890', 'AAHdqTcvCH1vGWJx', 'hunter2', 'abc.def.ghi', 'abcdefghijkl'):
                     self.assertNotIn(secret, out)
+
+    def test_control_folding_and_multiline_pem_keep_credentials_hidden(self):
+        samples = ('Authorization:\tBearer\tabc123',
+                   '-----BEGIN PRIVATE KEY-----\nPRIVATEKEYBODY819\n-----END PRIVATE KEY-----')
+        for text in samples:
+            with self.subTest(text=text):
+                result = bounded_execution.redact_reason(text)
+                self.assertIn('[redacted]', result)
+                self.assertNotIn('abc123', result)
+                self.assertNotIn('PRIVATEKEYBODY819', result)
+
+    def test_reason_is_bounded_before_credential_matching(self):
+        from unittest.mock import patch
+        pattern = bounded_execution.SECRET_PATTERN
+        with patch.object(bounded_execution, 'SECRET_PATTERN', wraps=pattern) as observed:
+            result = bounded_execution.redact_reason('curl ' * 40_000)
+        self.assertTrue(observed.sub.called)
+        for call in observed.sub.call_args_list:
+            self.assertLessEqual(len(call.args[1]), bounded_execution.MAX_REASON_CHARS * 2)
+        self.assertLessEqual(len(result), bounded_execution.MAX_REASON_CHARS)
 
     def test_oversized_output_is_bounded(self):
         noise = '\n'.join(json.dumps({'type': 'item.completed', 'n': i}) for i in range(8000))

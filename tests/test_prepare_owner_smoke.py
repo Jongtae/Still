@@ -171,6 +171,18 @@ class ProbeRecordTests(unittest.TestCase):
         self.assertEqual(record['checks'], {'succeeded_iff_judged_done_claim': True, 'cited_refs_all_succeeded': True,
                                             'repeat_paths_refused': 1})
 
+    def test_export_path_filter_is_separate_from_owner_failure_text(self):
+        from personal_agent.quickstart_service import AgentService
+        path = '/Users/owner/Documents/x.txt'
+        # The shared exporter redactor applies to the report and error fields.
+        store, job = self.store, self.job
+        clean, _tree, _evidence = smoke._redactor(smoke._import_runtime(), store, job, False)
+        self.assertNotIn(path, clean('file ' + path + ' not found'))
+        self.assertNotIn('/home/owner/x', clean('/home/owner/x'))
+        self.assertNotIn(str(store.root), clean(str(store.root) + '/private/x'))
+        self.assertEqual(AgentService._redact_reason('file ' + path + ' not found'),
+                         'file ' + path + ' not found')
+
     def test_record_never_carries_secrets_cookies_typed_text_or_saved_private_values(self):
         for omit in (False, True):
             with self.subTest(omit_text=omit):
@@ -183,7 +195,7 @@ class ProbeRecordTests(unittest.TestCase):
         # The saved private value (and its line's digit-bearing tokens) and the stored secret.
         self.assertEqual(record['requested'], '《리더는 언제 차이를 만들어내는가》 장바구니에 넣어줘 [가림] [가림] [가림]')
         self.assertEqual(record['report']['reply'], '장바구니에 담았습니다. [redacted]')
-        self.assertIn('[경로 가림]', record['tool_calls'][3]['error'])
+        self.assertIn('[owner path]', record['tool_calls'][3]['error'])
         self.assertEqual(record['finish']['cited'][1]['evidence'],
                          {'state': 'page', 'url': 'https://shop.example/cart', 'title': '장바구니', 'element_count': 12})
 
@@ -392,7 +404,7 @@ class ProbeRecordCliRouteTests(unittest.TestCase):
                                                 'redacted_values': 0, 'found': None})
         self.assertEqual((steps[1]['code'], steps[1]['retry'], steps[1]['effect']),
                          ('target_not_found', 'permanent', 'none'))
-        self.assertEqual(steps[1]['error'], '대상 12를 찾지 못했습니다 [redacted]')
+        self.assertEqual(steps[1]['error'], '대상 12를 찾지 못했습니다 Bearer [redacted]')
         self.assertEqual((steps[2]['code'], 'host_action' in steps[2]), ('unknown_tool', False))
         self.assertEqual(steps[3]['evidence']['qualifiers'], ['partial'])
         attempts = record['orchestration']['attempts']

@@ -39,6 +39,7 @@ GENERATION = 'g1'
 SECRET = 'zq9Wm4LtHv82PkXr'
 DRAFT_METHODS = ('sendMessageDraft', 'sendRichMessageDraft')
 from personal_agent.telegram_presence import DOTS_FRAMES
+from personal_agent.telegram_locale import ai_text
 
 #: The dots of the first three drafts, whatever the frame count (#921).
 DOTS = tuple(DOTS_FRAMES[index % len(DOTS_FRAMES)] for index in range(3))
@@ -137,24 +138,20 @@ class StepLineTests(unittest.TestCase):
         self.assertEqual(step_line({'action': 'weather'}), '날씨 보고 있어요')
         self.assertEqual(step_line({'action': 'unknown_kind'}), DEFAULT_STEP_TEXT)
 
-    def test_a_masking_mark_is_never_shown(self):
-        """#881: a status or target carrying a masking mark gives way to the plainer line."""
-        self.assertEqual(step_line({'action': 'browser_open', 'status': "'예약 - [가림]' 여는 중", 'host': 'shop.example'}),
-                         'shop.example 열어 보고 있어요')
-        self.assertEqual(step_line({'action': 'web_search', 'status': '[가림: 12자] 찾는 중', 'query': '[가림] 후기'}),
-                         '웹에서 찾아보고 있어요')
-        self.assertEqual(step_line({'action': 'read_file', 'status': '[경로 가림] 읽는 중'}), '파일 읽어 보고 있어요')
-        self.assertEqual(step_line({'action': 'web_search', 'status': '[redacted] 넣는 중'}), '웹에서 찾아보고 있어요')
-        # Display-time redaction that masks, or fails, moves on the same way.
-        clean = lambda text: text.replace('4719', '[가림]')
-        self.assertEqual(step_line({'action': 'web_search', 'status': '4719 찾는 중', 'query': '4719'}, clean=clean),
-                         '웹에서 찾아보고 있어요')
+    def test_a_masked_line_shows_the_rest_of_its_words(self):
+        """#819: a mark stands only where the credential was; the line is not replaced by the dots."""
+        self.assertEqual(step_line({'action': 'web_search', 'status': '[redacted] 넣는 중'}),
+                         ai_text('[redacted] 넣는 중'))
+        self.assertEqual(step_line({'action': 'browser_open', 'host': 'shop.example', 'status': "'예약 - [redacted]' 여는 중"}),
+                         ai_text("'예약 - [redacted]' 여는 중"))
+        self.assertNotEqual(step_line({'action': 'web_search', 'query': 'token [redacted] 후기'}), NO_STEP_LINE)
+        events = [running('web_search', {'action': 'web_search', 'status': '[redacted] 찾는 중'}, 'c1')]
+        self.assertEqual(draft_step(events), (ai_text('[redacted] 찾는 중'), False))
 
+    def test_a_line_that_could_not_be_redacted_is_never_shown(self):
         def broken(text):
             raise ValueError
         self.assertEqual(step_line({'action': 'web_search', 'status': '찾는 중'}, clean=broken), NO_STEP_LINE)
-        events = [running('web_search', {'action': 'web_search', 'status': '[가림] 찾는 중'}, 'c1')]
-        self.assertEqual(draft_step(events), ('웹에서 찾아보고 있어요', False))
 
     def test_a_step_is_shown_only_while_its_call_runs(self):
         events = [running('web_search', {'action': 'web_search', 'status': '찾는 중'}, 'c1')]

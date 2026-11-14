@@ -261,10 +261,12 @@ def _bounded_text(value,limit,redact=None):
  if not isinstance(value,str):return None
  text=' '.join(''.join(ch if ch.isprintable() else ' ' for ch in value[:_STATUS_INPUT_MAX]).split())
  if not text:return None
+ # #819: one redaction pass: ``redact`` (the stored-secret pass, which ends with the credential
+ # shapes) or, without one, the credential shapes alone.
  from .bounded_execution import SECRET_PATTERN
- try:text=str(redact(text)) if redact is not None else text
+ try:text=str(redact(text)) if redact is not None else SECRET_PATTERN.sub('[redacted]',text)
  except Exception:return None
- text=' '.join(SECRET_PATTERN.sub('[redacted]',text).split())
+ text=' '.join(text.split())
  if not text:return None
  return text if len(text)<=limit else text[:limit-1]+'…'
 
@@ -5342,12 +5344,12 @@ def _error_observation(exc,validated,action=None):
 
  Text, a stable code, the retry class, the effect, ``requires`` when
  known, ``ran: false`` when Still refused it before the tool ran (#1484) and ``executed: false``
- when the service said it did not execute it (#618).  An untyped transport failure gets Still's fixed text, never the
- exception's own (which may carry a URL or credential).
+ when the service said it did not execute it (#618).  #819: an untyped transport failure carries the exception's
+ own message too; the caller passes it through the stored-secret pass before the worker reads it.
  """
  if not validated:return {'error':str(exc),'code':getattr(exc,'code',None) or 'invalid_call','retry':'permanent','effect':'none',**ran_field(exc)}
  code,retry,effect=classify_failure(exc,action)
- text=TRANSIENT_FAILURE_TEXT if code=='transient_failure' and not isinstance(exc,(ProviderError,ToolError)) else str(exc)
+ text=str(exc) or (TRANSIENT_FAILURE_TEXT if code=='transient_failure' else type(exc).__name__)
  observation={'error':text,'code':code,'retry':retry,'effect':effect,**ran_field(exc),**executed_field(exc),**observed_field(exc)}
  if getattr(exc,'requires',None):observation['requires']=exc.requires
  return observation
@@ -6216,6 +6218,8 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
      if not dispatched:not_run(exc)
      action=(capabilities.tools.get(name) or {}).get('host_action',name) if validated else None
      result=_error_observation(exc,validated,action)
+     # #819: the worker reads the error as it was, after the stored-secret pass (a failing pass withholds it).
+     if callable(getattr(capabilities,'judgment_text',None)):result['error']=capabilities.judgment_text(result['error'])
      if dispatched:guard.settle(loop_outcome(action,args,result),*guarded)
      # #617: an advisory call (a method_gap note) that fails is recorded and answered, but is no
      # failed step of the Work: it neither lowers the outcome nor asks for a different path.
