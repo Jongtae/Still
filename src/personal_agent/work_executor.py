@@ -1114,7 +1114,9 @@ class WorkExecutor:
                 relay=None
                 if cli_browser:
                     try:
-                        relay=BrowserRelay(served)
+                        # #722: a judgment inside a relayed call belongs to this Work (decisions, budget, Stop).
+                        relay=BrowserRelay(served,scope=lambda work_id=job['id'],budget=run.work_budget:
+                                           service.work_decision_scope(work_id,budget))
                         served.browser_relay=relay.address
                         # #774: the relay serves the owner-state tools too; browser tools
                         # are listed only while the browser profile is available.

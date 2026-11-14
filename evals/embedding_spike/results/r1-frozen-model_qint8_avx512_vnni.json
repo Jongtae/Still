@@ -1,0 +1,22 @@
+{
+  "parameters": {
+    "vector": {
+      "top_k": 1,
+      "min_sim": 0.82,
+      "use_context": true,
+      "passage_form": "content"
+    },
+    "hybrid": {
+      "k": 60,
+      "top_k": 1,
+      "min_sim": 0.82,
+      "use_context": true,
+      "passage_form": "content",
+      "vector_only_when_empty": true
+    }
+  },
+  "model_file": "onnx/model_qint8_avx512_vnni.onnx",
+  "model_sha256": "dd476dd0c2514e9b9be83aeb3853fac0763e0bdf4a71645407587d77c48a2d88",
+  "tokenizer_sha256": "0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39",
+  "model_revision": "614241f622f53c4eeff9890bdc4f31cfecc418b3"
+}

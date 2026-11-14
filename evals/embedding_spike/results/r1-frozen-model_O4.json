@@ -1,0 +1,22 @@
+{
+  "parameters": {
+    "vector": {
+      "top_k": 1,
+      "min_sim": 0.82,
+      "use_context": true,
+      "passage_form": "content"
+    },
+    "hybrid": {
+      "k": 60,
+      "top_k": 1,
+      "min_sim": 0.82,
+      "use_context": true,
+      "passage_form": "content",
+      "vector_only_when_empty": true
+    }
+  },
+  "model_file": "onnx/model_O4.onnx",
+  "model_sha256": "4654c156f3e4171abc9c716cdb771bf9116455d15ac1aab364aeeede0e3205b0",
+  "tokenizer_sha256": "0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39",
+  "model_revision": "614241f622f53c4eeff9890bdc4f31cfecc418b3"
+}
