@@ -1,0 +1,34 @@
+{
+  "checks": {
+    "lexical_context_exact_service_query_and_fixture_date": true,
+    "no_context_arms_embed_query_only": true,
+    "hybrid_over_context_keeps_lexical_list_and_empty_only_rule": true,
+    "factories_and_queries_leave_memory_digest_unchanged": true,
+    "original_17_result_files_sha256_unchanged": true,
+    "frozen_parameters_unchanged": true,
+    "all_seven_arms_have_24_cases": true,
+    "both_reference_scores_paired_and_decisions_recomputed_and_consistent": true,
+    "returned_ids_and_diagnostic_ref_maps_consistent": true,
+    "original_returned_ids_copied_exactly": true,
+    "existing_r1_tests": "44 passed in 16.72s"
+  },
+  "original_result_sha256": {
+    "r1-validation.json": "a56662135a5291c3dc89df6ad5d8339f02a9c064f5b31b6bf070a2904e72ac42",
+    "r1-summary-model_O4.json": "287a61f9fdf59cbc05676f318ab870e43912a413b2e2d2912acafffa35cc614a",
+    "r1-vector-model_O4.json": "97f978b79431df774a9d075622e2531435960f7cc2174cb74c76ace0f2755763",
+    "r1-frozen-model_qint8_avx512_vnni.json": "05342a4f9aa48c537b8ac434c87d3c7b38184fcb86cbb5f8ed5ea3fb931c8d3d",
+    "r1-summary-model_qint8_avx512_vnni.json": "8e7fb984af57b11640154582e546e67ac5a9aaf1a8a2fcea868a9a47269af327",
+    "r1-hybrid.json": "bd278c0dcbefc3940320674628a44746b119f3ceb1e9ff4b1dfd50543b6c7d07",
+    "r1-vector.json": "167841692d8d7394a6df2e3f35e3612895609dd3c2c6ffe796e3ac28fbe4e8c3",
+    "r1-frozen-model_O4.json": "d7c7c4ecc8e447ce4c077f4a5e07520e4fc132f9c3aa112d1f7857db4c5c462c",
+    "r1-baseline-model_qint8_avx512_vnni.json": "6fcd55c11ca66b180f48eadc87656c37b02ae57078439da71c433d8a9b7fc94d",
+    "r1-baseline.json": "bb196cd589c2c846d9f62a1c1f1817755e1e782f41600227ee652220bd042434",
+    "r1-hybrid-model_qint8_avx512_vnni.json": "504a3905914d73edc4e711afea71b6305ec0219564c96743179ab535041b3c98",
+    "r1-vector-model_qint8_avx512_vnni.json": "0c08134f676369ac0360dc1232d0b67e19623cc39a7456bc27044a1ad0717b43",
+    "r1-summary.json": "a016c5631dcaa18ceb5fad3dd198b0f5f781f4fea06c5915df687ae93fb7bbb7",
+    "r1-hybrid-model_O4.json": "7807c5044b159bacf864b12fbc805253cc7fdad785dc41b5be41a8bb05ce7520",
+    "r1-frozen.json": "7aa89df3b92a017cb1b83a86c16f2d70571e4c584290802f3d0c5027262f0d61",
+    "r1-baseline-model_O4.json": "c942ead4e59eb52d51339ced84b49a67939eb33b3f49a35e7b6517f5c8202a65",
+    "r1-dev-sweep.json": "2a706e99d7934c3315999f55e48761daa17372f79ee317d135024dabb66bf1be"
+  }
+}

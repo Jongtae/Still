@@ -1,0 +1,21 @@
+{
+  "checks": {
+    "model_pin_refused": true,
+    "tokenizer_pin_refused": true,
+    "pins_checked_before_heavy_imports": true,
+    "module_import_without_site_packages": true,
+    "factory_and_query_do_not_write": true,
+    "owner_state_and_expiry_filtered": true,
+    "inclusive_last_day": true,
+    "query_rechecks_forget_supersede_expiry_delete_and_changed_content": true,
+    "baseline_tests": "44 passed in 39.89s; PYTHONPATH=src .venv/bin/python -m pytest -q tests/test_recall_pairs.py",
+    "final_dev_scores_equal_selected_sweep": true,
+    "secondary_per_case_metrics_and_verdicts_equal_fp32": true,
+    "python_socket_attempts_all_final_runs": 0
+  },
+  "versions": {
+    "onnxruntime": "1.31.1",
+    "tokenizers": "0.23.3",
+    "numpy": "2.5.4"
+  }
+}
