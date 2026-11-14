@@ -1,6 +1,6 @@
 # Still continuous evaluation loop (EVAL-LOOP-01, #821)
 
-> Owner decision 2026-09-28: sweeps run on Codex only by default, because the Claude subscription limit is shared with development work. Pass `--worker claude-code` or `--worker both` explicitly when Claude capacity allows.
+> Owner update 2026-11-14, [#822](https://github.com/Jongtae/Still/issues/822): both Codex and Claude are available for development and relevant comparisons. Ordinary scenarios support `--worker claude-code` and `--worker both`; the default remains `codex` for existing command compatibility. Simulated-world sweeps retain their currently supported Codex route. Record actual provider refusals and use an eligible alternate where possible. API judge spend remains governed by its own budget. This supersedes the earlier Codex-only capacity rationale.
 
 > Owner decision 2026-10-01 (#887): the eval is **on-demand triage**, not a scheduled loop and not a pass-rate target. The owner's real use is the primary signal. A sweep reproduces owner-reported failures and checks that a fix generalizes. Run it after a batch of merged fixes, normally only the affected `--scenarios` with `--epochs 1`. Use a full `--epochs 3` sweep only to support an improvement claim. A sweep stops at the first subscription usage limit (see *Capacity*).
 
