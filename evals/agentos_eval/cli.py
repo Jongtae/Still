@@ -329,8 +329,9 @@ def cmd_recall(args):
 
     if args.runs < 1:
         raise SystemExit('--runs must be a positive integer')
-    if (args.phraser_cmd is not None or args.phrasings is not None) and 'phrasing' not in (args.arm or []):
-        raise SystemExit('--phraser-cmd and --phrasings require --arm phrasing')
+    names = list(dict.fromkeys([args.baseline, *(args.arm or [])]))
+    if (args.phraser_cmd is not None or args.phrasings is not None) and 'phrasing' not in names:
+        raise SystemExit('--phraser-cmd and --phrasings require --arm phrasing or --baseline phrasing')
     folder = (args.out or eval_home() / 'reports').expanduser().resolve()
     if folder.is_relative_to(REPO.resolve()):
         raise SystemExit('Recall reports belong outside the repository; choose --out or AGENTOS_EVAL_HOME')
@@ -340,11 +341,10 @@ def cmd_recall(args):
         phraser = recall_report.command_phraser(shlex.split(args.phraser_cmd))
     elif args.phrasings:
         phraser = recall_report.replay_phraser(json.loads(args.phrasings.read_text(encoding='utf-8')), data=data)
-    names = list(dict.fromkeys(['lexical', *(args.arm or [])]))
     # Resolve everything before running any arm (especially before an opt-in model command).
     arms = {name: recall_report.resolve_arm(name, phraser=phraser) for name in names}
     results = {name: recall_report.run_arm(data, arm, args.runs) for name, arm in arms.items()}
-    result = recall_report.report(data, results)
+    result = recall_report.report(data, results, baseline=args.baseline)
     markdown = recall_report.report_markdown(result)
     folder.mkdir(parents=True, exist_ok=True)
     target = folder / ('recall-' + run_id())
@@ -413,6 +413,7 @@ def main(argv=None):
     sub.add_parser('budget', help="show today's judge spend")
     recall = sub.add_parser('recall', help='run R1 paired recall arms and write split-local reports')
     recall.add_argument('--arm', action='append', help='built-in name or module:factory (repeatable)')
+    recall.add_argument('--baseline', default='lexical', help='reference arm name (always run; default: lexical)')
     recall.add_argument('--runs', type=int, default=3, help='repetitions for sampling arms')
     from .recall_report import DEFAULT_FIXTURE
     recall.add_argument('--fixture', type=Path, default=DEFAULT_FIXTURE)
