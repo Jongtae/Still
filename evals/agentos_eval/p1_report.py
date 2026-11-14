@@ -33,23 +33,32 @@ def stats(values):
             'max': max(values) if values else None}
 
 
+DIRECT_PEAK_REASON = 'direct-route records are replayed in call order; overlap not observable from records'
+
+
 def overlap(rows, names):
-    """Governed peak in database id order; CLI-native rows are post-run replay.
+    """Only bridge rows expose an observed peak; direct/native rows are replayed.
 
     Call ids validate pairing when available. Without ids, balanced in-flight
     events still establish the peak, including interleaved same-tool calls.
     """
     if rows is None:
-        return {'calls': None, 'governed_calls': None, 'native_calls': None,
-                'peak': None, 'reason': 'tool timings unavailable'}
+        return {'calls': None, 'governed_calls': None, 'bridge_calls': None, 'direct_calls': None,
+                'native_calls': None, 'peak': None, 'bridge_peak': None, 'direct_peak': None,
+                'direct_peak_reason': 'tool timings unavailable', 'reason': 'tool timings unavailable'}
     reads = [r for r in rows if (r.get('host_action') or r.get('tool')) in names]
-    governed = [r for r in reads if r.get('scope') in (None, 'subscription-mcp-bridge')]
-    calls = sum(r.get('status') == 'running' for r in governed)
+    bridge = [r for r in reads if r.get('scope') == 'subscription-mcp-bridge']
+    direct = [r for r in reads if r.get('scope') not in ('subscription-mcp-bridge', 'cli-native')]
+    bridge_calls = sum(r.get('status') == 'running' for r in bridge)
+    direct_calls = sum(r.get('status') == 'running' for r in direct)
     native = sum(r.get('status') == 'running' and r.get('scope') == 'cli-native' for r in reads)
-    result = {'calls': calls, 'governed_calls': calls, 'native_calls': native, 'peak': None, 'reason': None}
+    calls = bridge_calls + direct_calls
+    result = {'calls': calls, 'governed_calls': calls, 'bridge_calls': bridge_calls, 'direct_calls': direct_calls,
+              'native_calls': native, 'peak': None, 'bridge_peak': None, 'direct_peak': None,
+              'direct_peak_reason': DIRECT_PEAK_REASON if direct else None, 'reason': None}
     pending, anonymous = set(), 0
     active = peak = 0
-    for row in governed:
+    for row in bridge:
         status, call_id = row.get('status'), row.get('call_id')
         if status not in ('running', 'succeeded', 'failed'):
             continue
@@ -73,8 +82,8 @@ def overlap(rows, names):
                 anonymous -= 1
             active -= 1
     if pending or anonymous:
-        return {**result, 'reason': 'missing terminal rows for governed read calls'}
-    return {**result, 'peak': peak}
+        return {**result, 'reason': 'missing terminal rows for bridge read calls'}
+    return {**result, 'peak': peak, 'bridge_peak': peak}
 
 
 def measure(record, names):
@@ -138,13 +147,21 @@ def summarize(runs):
             'epoch_latency_medians': {str(e): stats(v for r in runs if r['epoch'] == e for v in r['latencies'])['median'] for e in epochs},
             'ledger': {k: stats(r['ledger'][k] for r in runs) for k in ('turns', 'attempts', 'nudges')},
             'read_calls': stats(r['reads']['calls'] for r in runs),
+            'read_counts': {kind: sum(r['reads'][kind + '_calls'] for r in runs)
+                            if runs and all(r['reads'][kind + '_calls'] is not None for r in runs) else None
+                            for kind in ('bridge', 'direct', 'native', 'governed')},
+            'bridge_read_calls': stats(r['reads']['bridge_calls'] for r in runs),
+            'direct_read_calls': stats(r['reads']['direct_calls'] for r in runs),
+            'direct_peak': None,
+            'direct_peak_reason': DIRECT_PEAK_REASON if any(r['reads']['direct_peak_reason'] == DIRECT_PEAK_REASON for r in runs) else None,
             'native_read_calls': stats(r['reads']['native_calls'] for r in runs),
             'governed_read_calls': stats(r['reads']['governed_calls'] for r in runs),
             'stage_timings': {stage: stats(v for r in runs for v in r['stage_timings'][stage])
                               for stage in ('queue_wait', 'routed', 'finished')},
-            'read_peak': stats(r['reads']['peak'] for r in runs),
-            'runs_peak_ge_2': sum(r['reads']['peak'] is not None and r['reads']['peak'] >= 2 for r in runs),
-            'overlap_unknown': sum(r['reads']['peak'] is None for r in runs),
+            'read_peak': stats(r['reads']['bridge_peak'] for r in runs),
+            'bridge_peak': stats(r['reads']['bridge_peak'] for r in runs),
+            'runs_peak_ge_2': sum(r['reads']['bridge_peak'] is not None and r['reads']['bridge_peak'] >= 2 for r in runs),
+            'overlap_unknown': sum(r['reads']['bridge_peak'] is None for r in runs),
             'usage': dict(usage) or 'unavailable', 'cost_usd': sum(costs) if costs else 'unavailable',
             'usage_unavailable_runs': sum(r['usage'] == 'unavailable' for r in runs),
             'cost_unavailable_runs': sum(r['cost_usd'] == 'unavailable' for r in runs)}
@@ -196,14 +213,14 @@ def compare_arms(arms, names=None):
                      'cost_usd': delta(x['cost_usd'], y['cost_usd']) if numeric(x['cost_usd']) and numeric(y['cost_usd']) else 'unavailable',
                      'usage': {k: y['usage'][k] - x['usage'][k] for k in sorted(x['usage'].keys() & y['usage'].keys())}
                               if isinstance(x['usage'], dict) and isinstance(y['usage'], dict) else 'unavailable'}
-    return {'schema_version': 2, 'arms': output, 'read_names_source': source, 'read_names': sorted(names),
+    return {'schema_version': 3, 'arms': output, 'read_names_source': source, 'read_names': sorted(names),
             'delta_direction': f'{labels[1]} − {labels[0]}', 'paired_deltas': deltas}
 
 
 def render_markdown(report):
     import json
     lines = ['# P1 read concurrency report', '', '## Fixture support', '',
-             'P1 measurement schema v2. Test results and the harness revision are not embedded in the logs; '
+             'P1 measurement schema v3. Test results and the harness revision are not embedded in the logs; '
              'model-free fixtures do not establish live worker performance.', '',
              '## Live evidence', '', f"Read-name source: {report['read_names_source']}", '']
     def seconds(value):
@@ -211,7 +228,7 @@ def render_markdown(report):
 
     for label, arm in report['arms'].items():
         lines += [f'### {label}', '', 'Identity: ' + json.dumps(arm['identity'], ensure_ascii=False), '',
-                  '| scope | runs | verified | rate | latency n / median / mean / min / max (s) | turns median / mean / min / max | attempts median / mean / min / max | governed read calls median / mean / min / max | native read calls median / mean / min / max | governed read peak median / mean / min / max | peak ≥ 2 / unknown | usage | USD |',
+                  '| scope | runs | verified | rate | latency n / median / mean / min / max (s) | turns median / mean / min / max | attempts median / mean / min / max | governed read calls median / mean / min / max | native read calls median / mean / min / max | bridge read peak median / mean / min / max | bridge peak ≥ 2 / unknown | usage | USD |',
                   '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |']
         for scope, row in [('all', arm['summary']), *arm['per_scenario'].items()]:
             def cell(stat, keys=('median', 'mean', 'min', 'max'), timing=False):
@@ -220,6 +237,17 @@ def render_markdown(report):
                          f"{cell(row['latency'], ('n', 'median', 'mean', 'min', 'max'), timing=True)} | {cell(row['ledger']['turns'])} | "
                          f"{cell(row['ledger']['attempts'])} | {cell(row['read_calls'])} | {cell(row['native_read_calls'])} | {cell(row['read_peak'])} | "
                          f"{row['runs_peak_ge_2']} / {row['overlap_unknown']} | {row['usage']} | {row['cost_usd']} |")
+        lines += ['', '| read class | calls (arm total) |', '| --- | --- |']
+        for kind, count in arm['summary']['read_counts'].items():
+            lines.append(f"| {kind} | {count if count is not None else 'unavailable'} |")
+        lines += ['', '| scenario | epoch | bridge calls | direct calls | native calls | governed calls | bridge peak | direct peak |',
+                  '| --- | --- | --- | --- | --- | --- | --- | --- |']
+        for run in arm['runs']:
+            reads = run['reads']
+            values = [str(run['scenario']), str(run['epoch']),
+                      *[str(reads[k]) if reads[k] is not None else 'unavailable' for k in
+                        ('bridge_calls', 'direct_calls', 'native_calls', 'governed_calls', 'bridge_peak', 'direct_peak')]]
+            lines.append('| ' + ' | '.join(values) + ' |')
         lines += ['', '| response stage | n | median (ms) | min (ms) | max (ms) |',
                   '| --- | --- | --- | --- | --- |']
         for stage, timing in arm['summary']['stage_timings'].items():
@@ -239,7 +267,7 @@ def render_markdown(report):
         lines += ['- ' + json.dumps({k: r[k] for k in ('scenario', 'epoch', 'statuses', 'failure_classes', 'failed_checks')})
                   for r in arm['not_verified']] or ['- none']
     lines += ['', f"### Paired deltas ({report['delta_direction']})", '',
-              '| scenario | verified rate | median latency (s) | mean turns | mean attempts | mean governed read calls | mean native read calls | mean governed read peak | USD | usage |',
+              '| scenario | verified rate | median latency (s) | mean turns | mean attempts | mean governed read calls | mean native read calls | mean bridge read peak | USD | usage |',
               '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |']
     for scenario, row in report['paired_deltas'].items():
         lines.append('| ' + ' | '.join([scenario, *[seconds(v) if k == 'latency_median' else str(v) for k, v in row.items()]]) + ' |')
@@ -249,15 +277,19 @@ def render_markdown(report):
         for scenario, row in arm['per_scenario'].items():
             lines.append(f"- {label} / {scenario}: { {k: seconds(v) for k, v in row['epoch_latency_medians'].items()} }")
         for run in arm['runs']:
-            if run['reads']['reason']:
-                lines.append(f"- {label} / {run['scenario']} / epoch {run['epoch']}: {run['reads']['reason']}")
+            for reason in (run['reads']['reason'], run['reads']['direct_peak_reason']):
+                if reason:
+                    lines.append(f"- {label} / {run['scenario']} / epoch {run['epoch']}: {reason}")
     lines += ['', 'No significance or causal conclusion is inferred. Judge grades are excluded.', '',
               '## Unsupported paths', '',
               'Missing worker usage/cost is unavailable; reported totals cover reported runs only. '
               'API calls whose read effect depends on arguments cannot be classified from these rows. '
               'Native-search rows are replayed after the run and are not governed by CONCURRENT_READ_LIMIT; '
-              'they are counted separately and excluded from the governed peak. Without call ids, '
-              'the peak uses an in-flight event counter. Browser/code mutations, '
+              'they are counted separately. Governed calls are bridge + direct calls. '
+              'Observed peaks and peak ≥ 2 run counts cover bridge rows only. '
+              'Direct-route records are replayed in call order; overlap is not observable from records. '
+              'Neither direct nor native rows contribute to the bridge peak. Without call ids, '
+              'the bridge peak uses an in-flight event counter. Browser/code mutations, '
               'delegated specialists, approvals/interventions, judge/human agreement and budget/model equivalence '
               'are not established by this report. Identity and observed engine fields remain in JSON.']
     return '\n'.join(lines) + '\n'

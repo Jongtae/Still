@@ -311,8 +311,10 @@ Compare matching sweeps (no judge grades enter verified completion):
 python -m agentos_eval p1-report --arm limit1=<baseline.eval> --arm limit4=<parallel.eval> --json p1.json --md p1.md
 ```
 Missing usage/cost is `unavailable`. Native-search replay rows are counted separately
-from governed reads; only governed reads contribute to peak overlap. Stage timings
-and reported model/effort appear in the report; missing terminal rows make overlap unknown.
+from governed reads (bridge + direct). Only bridge rows expose observed peak overlap;
+direct records are replayed in call order and cannot show overlap. Reports separate all
+three read counts, stage timings and reported model/effort; missing bridge terminal rows
+make the bridge peak unknown.
 Reuse review: Adopt Inspect `read_eval_log`/`records_from_samples`, stdlib SQLite
 read-only URI and `statistics`; adapt the existing ledger schema. No new dependencies,
 runtime authority, or external calls. External maintenance research was unavailable offline.

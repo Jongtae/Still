@@ -99,6 +99,8 @@ def test_overlap_and_reported_usage():
                   event('read_file', 'running', 2), event('read_file', 'failed', 4)]
     concurrent = [event('web_search', 'running', 1), event('read_file', 'running', 2),
                   event('web_search', 'succeeded', 3), event('read_file', 'failed', 4)]
+    sequential = [{**r, 'scope': 'subscription-mcp-bridge'} for r in sequential]
+    concurrent = [{**r, 'scope': 'subscription-mcp-bridge'} for r in concurrent]
     a, b = record(rows=sequential), record(rows=concurrent)
     b['work']['t']['engine'] = [{'usage': {'input_tokens': 20}, 'cost_usd': .25},
                                {'usage': {'input_tokens': 5}, 'cost_usd': .1}]
@@ -113,6 +115,7 @@ def test_overlap_and_reported_usage():
     assert summary['cost_usd'] == pytest.approx(.35)
     interleaved = [event('web_search', 'running', 1), event('web_search', 'running', 2),
                  event('web_search', 'succeeded', 3), event('web_search', 'succeeded', 4)]
+    interleaved = [{**r, 'scope': 'subscription-mcp-bridge'} for r in interleaved]
     assert p1.overlap(interleaved, {'web_search'})['peak'] == 2
     assert p1.overlap(interleaved, {'web_search'})['reason'] is None
     assert p1.overlap(sequential[:-1], {'web_search', 'read_file'})['peak'] is None
@@ -288,3 +291,61 @@ def test_capture_safe_detail_fields_and_response_stages(tmp_path):
     assert 'CLI default (not reported)' in md
     assert 'replayed after the run' in md
     assert result['arms']['limit1']['runs'][0]['latencies'][0] == pytest.approx(6.123456)
+
+
+@pytest.mark.parametrize('scope', ['main', 'agent:x', None, 'other-scope'])
+def test_direct_scopes_count_without_an_observed_peak(scope):
+    rows = [{**event('web_search', status, at), **({'scope': scope} if scope is not None else {})}
+            for status, at in [('running', 1), ('succeeded', 2)]]
+    reads = p1.overlap(rows, {'web_search'})
+    assert reads['direct_calls'] == 1
+    assert reads['governed_calls'] == 1
+    assert reads['bridge_calls'] == 0
+    assert reads['direct_peak'] is None
+    assert reads['direct_peak_reason'] == 'direct-route records are replayed in call order; overlap not observable from records'
+    result = p1.compare_arms(arms([record(rows=rows)], [record(rows=rows)]), names={'web_search'})
+    summary = result['arms']['limit1']['summary']
+    assert summary['read_counts']['direct'] == 1
+    assert summary['read_counts']['governed'] == 1
+    assert summary['direct_peak'] is None
+    assert summary['direct_peak_reason'] == reads['direct_peak_reason']
+    assert summary['runs_peak_ge_2'] == 0
+    md = p1.render_markdown(result)
+    assert '| direct | 1 |' in md
+    assert '| s | 1 | 0 | 1 | 0 | 1 | 0 | unavailable |' in md
+    assert reads['direct_peak_reason'] in md
+
+
+@pytest.mark.parametrize('bridge_peak', [1, 2])
+def test_mixed_run_only_bridge_rows_determine_peak(bridge_peak):
+    bridge_order = [('a', 'running'), ('a', 'succeeded'), ('b', 'running'), ('b', 'succeeded')]
+    if bridge_peak == 2:
+        bridge_order = [('a', 'running'), ('b', 'running'), ('a', 'succeeded'), ('b', 'succeeded')]
+    bridge = [{**event('web_search', status, at), 'scope': 'subscription-mcp-bridge', 'call_id': call}
+              for at, (call, status) in enumerate(bridge_order)]
+    # Invalid/incomplete direct replay must not affect bridge pairing or peak.
+    direct = [{**event('web_search', 'running', 999), 'call_id': 'a',
+               **({'scope': scope} if scope is not None else {})}
+              for scope in ('main', 'agent:x', None)]
+    native = [{**event('web_search', status, 500), 'scope': 'cli-native', 'call_id': 'a'}
+              for status in ('running', 'succeeded')]
+    reads = p1.overlap(direct + native + bridge, {'web_search'})
+    assert reads['peak'] == reads['bridge_peak'] == bridge_peak
+    assert reads['bridge_calls'] == 2
+    assert reads['direct_calls'] == 3
+    assert reads['native_calls'] == 1
+    assert reads['governed_calls'] == 5
+    assert reads['direct_peak'] is None
+    assert reads['reason'] is None
+    run = record(rows=direct + native + bridge)
+    result = p1.compare_arms(arms([run, {**run, 'epoch': 2}], [run, {**run, 'epoch': 2}]), names={'web_search'})
+    summary = result['arms']['limit1']['summary']
+    assert summary['read_counts'] == {'bridge': 4, 'direct': 6, 'native': 2, 'governed': 10}
+    assert summary['bridge_peak']['max'] == bridge_peak
+    assert summary['runs_peak_ge_2'] == (2 if bridge_peak == 2 else 0)
+    assert summary['overlap_unknown'] == 0
+    md = p1.render_markdown(result)
+    assert '| bridge | 4 |' in md
+    assert '| direct | 6 |' in md
+    assert '| native | 2 |' in md
+    assert 'peak ≥ 2 run counts cover bridge rows only' in md
