@@ -499,20 +499,27 @@ class SlackSurface(DirectMessageSurface):
             self._acting.discard(key)
 
     def _apply_act(self, key, act):
-        if act['kind'] == 'press':
-            def answer():
-                try:
-                    self.answer_button(act['nid'], act['approve'], act['pressed'], act['owner'], act['generation'],
-                                       act['blocks'], tapped=act['tapped'])
-                finally:
-                    self._finish_act(key)
-            self.service.steer_spawn(answer)
-            return 'pressed'
-        result = self.ingest_reaction(act['message_id'], act['name'], act['owner'], act['generation'],
-                                      done=lambda: self._finish_act(key))
-        if result != 'owner_act':
-            self._finish_act(key)
-        return result
+        try:
+            if act['kind'] == 'press':
+                def answer():
+                    try:
+                        self.answer_button(act['nid'], act['approve'], act['pressed'], act['owner'], act['generation'],
+                                           act['blocks'], tapped=act['tapped'])
+                    finally:
+                        self._finish_act(key)
+                self.service.steer_spawn(answer)
+                return 'pressed'
+            result = self.ingest_reaction(act['message_id'], act['name'], act['owner'], act['generation'],
+                                          done=lambda: self._finish_act(key))
+            if result != 'owner_act':
+                self._finish_act(key)
+            return result
+        except Exception:
+            # No asynchronous worker took the act (e.g. Thread.start failed). Keep the receipt
+            # for the next receive, but do not leave it claimed by a nonexistent worker.
+            with self._act_lock:
+                self._acting.discard(key)
+            raise
 
     def _replay_acts(self, generation):
         with self.service.store.db() as db:
@@ -602,13 +609,7 @@ class SlackSurface(DirectMessageSurface):
                 if not self._first_time(key, act=act):
                     return None
                 self._acting.add(key)
-            try:
-                return self._apply_act(key, act)
-            except Exception:
-                with self._act_lock:
-                    self._forget(key)   # not taken: Slack's redelivery is read again (#316 review)
-                    self._acting.discard(key)
-                raise
+            return self._apply_act(key, act)
         return None
 
     def ingest_interaction(self, payload, generation, ack=None):

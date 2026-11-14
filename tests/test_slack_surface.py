@@ -379,6 +379,7 @@ class Ingest(SlackCase):
         with mock.patch.object(self.surface, 'ingest_reaction', flaky):
             self.socket.deliver('events_api', reaction)
             self.socket.deliver('events_api', reaction)
+            self.surface.receive()  # the durable receipt, not redelivery, retries the failed dispatch
         with self.store.db() as db:
             events = db.execute("SELECT COUNT(*) FROM tool_events WHERE job_id=? AND tool='owner_reaction'",
                                 (work['id'],)).fetchone()[0]
@@ -817,6 +818,141 @@ class Buttons(SlackCase):
             self.surface.receive()
         answered.assert_not_called()
         self.assertEqual(self.fake.posted().count(msg('slack.button_stale')), 1)
+        self.assertEqual(self.pending_acts(), [])
+
+    def test_failed_live_press_spawn_is_replayed_without_restart(self):
+        _, draft, notice = self.settings_notice()
+        before = len(self.socket.acks)
+        with mock.patch.object(self.service, 'steer_spawn', side_effect=RuntimeError('spawn failed')):
+            self.press(slack_ts(notice['message_id']), ACTION_APPROVE)
+        self.assertEqual(len(self.socket.acks), before + 1)
+        self.assertEqual(len(self.pending_acts()), 1)
+        self.assertEqual(self.surface._acting, set())
+        self.surface.receive()
+        self.assertEqual(self.service.settings_orchestrator._drafts()[draft]['state'], 'applied')
+        self.assertEqual(self.pending_acts(), [])
+
+    def test_failed_replay_spawn_is_retried_on_next_receive(self):
+        draft, _, _, _ = self.pending_press()
+        self.restart_pending()
+        with mock.patch.object(self.service, 'steer_spawn', side_effect=RuntimeError('spawn failed')):
+            with self.assertRaisesRegex(RuntimeError, 'spawn failed'):
+                self.surface.receive()
+        self.assertEqual(len(self.pending_acts()), 1)
+        self.assertEqual(self.surface._acting, set())
+        self.surface.receive()
+        self.assertEqual(self.service.settings_orchestrator._drafts()[draft]['state'], 'applied')
+
+    def test_replayed_press_racing_live_delivery_runs_one_worker(self):
+        draft, ts, action_ts, _ = self.pending_press()
+        self.restart_pending()
+        with mock.patch.object(self.surface, '_replay_acts'):
+            self.surface.receive()  # open the new SDK socket before racing its callback with replay
+        held = []
+        self.service.steer_spawn = held.append
+        gate = threading.Barrier(2)
+        errors = []
+        def run(action):
+            try:
+                gate.wait(timeout=20)
+                action()
+            except BaseException as exc:
+                errors.append(exc)
+        threads = [threading.Thread(target=run, args=(action,)) for action in (
+            self.surface.receive, lambda: self.press(ts, ACTION_APPROVE, action_ts=action_ts))]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=20)
+            self.assertFalse(thread.is_alive())
+        self.assertEqual(errors, [])
+        self.assertEqual(len(held), 1)
+        held[0]()
+        self.assertEqual(self.service.settings_orchestrator._drafts()[draft]['state'], 'applied')
+        self.assertEqual(self.pending_acts(), [])
+
+    def test_ack_once_on_duplicate_and_refused_presses(self):
+        _, ts, action_ts, held = self.pending_press()
+        before = len(self.socket.acks)
+        self.press(ts, ACTION_APPROVE, action_ts=action_ts)
+        self.assertEqual(len(self.socket.acks), before + 1)
+        self.press(ts, ACTION_APPROVE, user=INTRUDER)
+        self.assertEqual(len(self.socket.acks), before + 2)
+        self.assertEqual(len(held), 1)
+
+    def test_stored_press_round_trip_and_worker_exception_cleanup(self):
+        _, _, _, _ = self.pending_press()
+        stored = json.loads(self.pending_acts()[0]['act'])
+        self.restart_pending()
+        held = []
+        self.service.steer_spawn = held.append
+        self.surface.receive()
+        def fail(nid, approve, pressed, owner, generation, blocks, tapped):
+            self.assertEqual(blocks, stored['blocks'])
+            self.assertEqual(tapped, stored['tapped'])
+            self.assertEqual(len(self.pending_acts()), 1)
+            self.assertEqual(len(self.surface._acting), 1)
+            raise RuntimeError('answer failed')
+        with mock.patch.object(self.surface, 'answer_button', side_effect=fail):
+            with self.assertRaisesRegex(RuntimeError, 'answer failed'):
+                held[0]()
+        self.assertEqual(self.pending_acts(), [])
+        self.assertEqual(self.surface._acting, set())
+
+    def test_pending_budget_press_cannot_settle_a_reissued_offer(self):
+        from personal_agent.work_execution import WorkRun
+        self.owner_says('Continue the comparison')
+        job = self.sl_jobs()[0]
+        run = WorkRun(job, time.time())
+        budget = self.service.work_budget(job['id'])
+        budget.spend_attempt()
+        budget.ledger.pause()
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='partial',response='Partial comparison' WHERE id=?", (job['id'],))
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       (job['id'], 'read_file', 'succeeded', json.dumps({'evidence': {'count': 1}}), time.time()))
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       (job['id'], 'read_file', 'failed', json.dumps({'code': 'attempt_budget', 'ran': False}), time.time()))
+        run.outcome = 'partial'
+        self.assertTrue(self.service.offer_budget_continue(run))
+        self.service.deliver_notification()
+        note = self.store.notification_of(job['id'], 'budget_continue')
+        held = []
+        self.service.steer_spawn = held.append
+        self.press(slack_ts(note['message_id']), ACTION_APPROVE)
+        self.assertEqual(len(held), 1)
+        offer = self.service.budget_continue_offer(job['id'])
+        self.store.put('budget_continue:' + job['id'], {**offer, 'nonce': 'replacement'})
+        self.restart_pending()
+        with mock.patch.object(self.service, 'budget_continue_decision',
+                               wraps=self.service.budget_continue_decision) as decide:
+            self.surface.receive()
+            self.surface.receive()
+        decide.assert_not_called()
+        self.assertEqual(self.service.budget_continue_offer(job['id'])['state'], 'offered')
+        self.assertEqual(self.pending_acts(), [])
+
+    def test_reaction_worker_exception_clears_pending_and_claim(self):
+        _, _, notice = self.settings_notice()
+        held = []
+        self.service.steer_spawn = held.append
+        self.socket.deliver('events_api', self.reaction_payload(notice))
+        with mock.patch.object(self.service.owner_acts, 'answer_reaction', side_effect=RuntimeError('judgment failed')):
+            with self.assertRaisesRegex(RuntimeError, 'judgment failed'):
+                held[0]()
+        self.assertEqual(self.pending_acts(), [])
+        self.assertEqual(self.surface._acting, set())
+
+    def test_failed_reaction_spawn_keeps_receipt_for_receive(self):
+        _, draft, notice = self.settings_notice()
+        before = len(self.socket.acks)
+        with mock.patch.object(self.service, 'steer_spawn', side_effect=RuntimeError('spawn failed')):
+            self.socket.deliver('events_api', self.reaction_payload(notice))
+        self.assertEqual(len(self.socket.acks), before)
+        self.assertEqual(len(self.pending_acts()), 1)
+        self.assertEqual(self.surface._acting, set())
+        self.surface.receive()
+        self.assertEqual(self.service.settings_orchestrator._drafts()[draft]['state'], 'applied')
         self.assertEqual(self.pending_acts(), [])
 
     def test_an_existing_event_table_migrates_without_losing_receipts(self):

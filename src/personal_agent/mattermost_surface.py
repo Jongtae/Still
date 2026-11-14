@@ -329,16 +329,26 @@ class MattermostSurface(DirectMessageSurface):
         if keys:
             reacted = max(reacted_from, *keys.values())
         at_cursor = sorted({key for key, at in keys.items() if at == reacted}
-                           | (done_at if reacted == reacted_from else set()))[-50:]
+                           | (done_at if reacted == reacted_from else set()))
         with service.lock:
             current = self.config()
             pending = []
             if current.get('generation') == generation:
                 pending = [entry for entry in current.get('pending_reactions') or ()
                            if entry.get('generation', generation) == generation]
+                # A concurrent poll/worker may have advanced or cleared the snapshot already.
+                current_reacted = int(current.get('reaction_cursor') or 0)
+                current_done = set(current.get('reactions_at_cursor') or ())
                 pending_keys = {entry['key'] for entry in pending}
-                pending = (pending + [entry for _at, entry in sorted(acts, key=lambda act: act[0])
-                                      if entry['key'] not in pending_keys])[-50:]
+                pending += [entry for at, entry in sorted(acts, key=lambda act: act[0])
+                            if entry['key'] not in pending_keys and at >= current_reacted
+                            and not (at == current_reacted and entry['key'] in current_done)]
+                if current_reacted > reacted:
+                    reacted, at_cursor = current_reacted, sorted(current_done)
+                elif current_reacted == reacted:
+                    at_cursor = sorted(current_done | set(at_cursor))
+                cursor = max(cursor, int(current.get('cursor') or 0))
+                seen = max(seen, int(current.get('seen_created') or 0))
                 service.store.put(CONFIG_KEY, {**current, 'cursor': cursor, 'seen_created': seen,
                                                'reaction_cursor': reacted, 'reactions_at_cursor': at_cursor,
                                                'pending_reactions': pending})
@@ -377,16 +387,14 @@ class MattermostSurface(DirectMessageSurface):
 
     def _clear_reaction(self, key, generation):
         """Clear only this pairing's durable act before releasing its in-process claim (#843)."""
-        try:
-            with self.service.lock:
-                current = self.config()
-                if current.get('generation') == generation:
-                    pending = [entry for entry in current.get('pending_reactions') or ()
-                               if entry['key'] != key and entry.get('generation', generation) == generation]
-                    self.service.store.put(CONFIG_KEY, {**current, 'pending_reactions': pending})
-        finally:
-            with self._acting_lock:
-                self._acting.discard((generation, key))
+        with self.service.lock:
+            current = self.config()
+            if current.get('generation') == generation:
+                pending = [entry for entry in current.get('pending_reactions') or ()
+                           if entry['key'] != key and entry.get('generation', generation) == generation]
+                self.service.store.put(CONFIG_KEY, {**current, 'pending_reactions': pending})
+        with self._acting_lock:
+            self._acting.discard((generation, key))
 
     def _ingest_post(self, post, owner, generation):
         current = self.config()

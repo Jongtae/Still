@@ -469,6 +469,116 @@ class OwnerActs(MattermostCase):
         self.assertEqual(self.surface.config()['pending_reactions'], [])
         self.assertNotIn(self.surface._text('act_stale'), self.fake.bot_posts())
 
+    def test_pending_reactions_are_never_evicted_at_fifty(self):
+        _, _, note = self.settings_notice()
+        held = []
+        self.service.steer_spawn = held.append
+        self.fake.react(OWNER, note['message_id'], '+1')
+        self.surface.receive()
+        first = self.surface.config()['pending_reactions'][0]['key']
+        for index in range(51):
+            self.fake.react(OWNER, note['message_id'], f'emoji{index}')
+        self.surface.receive()
+        pending = self.surface.config()['pending_reactions']
+        self.assertIn(first, [entry['key'] for entry in pending])
+        self.assertEqual(len(pending), 52)
+        self.assertEqual(len(held), 52)
+
+    def test_all_reactions_at_one_cursor_remain_deduplicated(self):
+        _, _, note = self.settings_notice()
+        for index in range(51):
+            self.fake.react(OWNER, note['message_id'], f'emoji{index}')
+        post = self.fake.posts[note['message_id']]
+        for reaction in post['metadata']['reactions']:
+            reaction['create_at'] = post['update_at']
+        with mock.patch.object(self.surface, 'ingest_reaction', return_value=None) as read:
+            self.surface.receive()
+            self.assertEqual(read.call_count, 51)
+            self.surface.receive()
+            self.assertEqual(read.call_count, 51)
+
+    def test_stale_poll_snapshot_cannot_resurrect_a_cleared_reaction(self):
+        _, draft, note = self.settings_notice()
+        self.fake.react(OWNER, note['message_id'], '+1')
+        cfg = self.surface.config()
+        post = self.fake.posts[note['message_id']]
+        with mock.patch.object(self.surface, 'ingest_reaction', wraps=self.surface.ingest_reaction) as read:
+            self.surface.ingest([post], cfg)
+            before = list(self.fake.bot_posts())
+            self.surface.ingest([post], cfg)  # another poll began before the first committed
+            self.assertEqual(read.call_count, 1)
+        self.assertEqual(self.fake.bot_posts(), before)
+        self.assertEqual(self.service.settings_orchestrator._drafts()[draft]['state'], 'applied')
+
+    def test_stale_poll_merges_watermarks_and_equal_cursor_keys(self):
+        _, _, note = self.settings_notice()
+        cfg = self.surface.config()
+        self.fake.react(OWNER, note['message_id'], '+1')
+        self.service.steer_spawn = lambda target: None
+        self.surface.receive()
+        current = self.surface.config()
+        self.surface.ingest([], cfg)
+        for field in ('cursor', 'seen_created', 'reaction_cursor', 'reactions_at_cursor'):
+            self.assertEqual(self.surface.config()[field], current[field], field)
+
+    def test_failed_durable_clear_keeps_the_running_claim(self):
+        _, _, note = self.settings_notice()
+        held = []
+        self.service.steer_spawn = held.append
+        self.fake.react(OWNER, note['message_id'], '+1')
+        self.surface.receive()
+        pending = self.surface.config()['pending_reactions']
+        with mock.patch.object(self.store, 'put', side_effect=OSError('disk full')):
+            with self.assertRaisesRegex(OSError, 'disk full'):
+                self.surface._clear_reaction(pending[0]['key'], self.surface.owner_generation())
+        self.assertEqual(self.surface.config()['pending_reactions'], pending)
+        self.assertEqual(len(self.surface._acting), 1)
+
+    def test_removed_and_readded_reaction_has_a_new_key(self):
+        _, _, note = self.settings_notice()
+        self.fake.react(OWNER, note['message_id'], '+1')
+        with mock.patch.object(self.surface, 'ingest_reaction', return_value=None) as read:
+            self.surface.receive()
+            post = self.fake.posts[note['message_id']]
+            post['metadata']['reactions'][0]['delete_at'] = self.fake.tick()
+            post['update_at'] = self.fake.clock
+            self.surface.receive()
+            self.assertEqual(read.call_count, 1)
+            self.fake.react(OWNER, note['message_id'], '+1')
+            self.surface.receive()
+            self.surface.receive()
+            self.assertEqual(read.call_count, 2)
+
+    def test_judgment_exception_clears_only_after_worker_finishes(self):
+        _, _, note = self.settings_notice()
+        held = []
+        self.service.steer_spawn = held.append
+        self.fake.react(OWNER, note['message_id'], '+1')
+        self.surface.receive()
+        def fail(*args):
+            self.assertEqual(len(self.surface.config()['pending_reactions']), 1)
+            self.assertEqual(len(self.surface._acting), 1)
+            raise RuntimeError('judgment failed')
+        with mock.patch.object(self.service.owner_acts, 'answer_reaction', side_effect=fail):
+            with self.assertRaisesRegex(RuntimeError, 'judgment failed'):
+                held[0]()
+        self.assertEqual(self.surface.config()['pending_reactions'], [])
+        self.assertEqual(self.surface._acting, set())
+
+    def test_reconnect_during_in_flight_reaction_does_not_settle_or_retarget(self):
+        _, draft, note = self.settings_notice()
+        held = []
+        self.service.steer_spawn = held.append
+        self.fake.react(OWNER, note['message_id'], '+1')
+        self.surface.receive()
+        self.surface.disconnect()
+        self.connect()
+        before = list(self.fake.bot_posts())
+        held[0]()
+        self.assertEqual(self.fake.bot_posts(), before)
+        self.assertEqual(self.service.settings_orchestrator._drafts()[draft]['state'], 'awaiting-confirmation')
+        self.assertEqual(self.surface._acting, set())
+
     def test_an_action_approval_is_never_answered_here(self):
         """Owner decision 2026-10-25: an exact action approval is given at the Mac, never on Mattermost."""
         self.owner_says('결제해줘')
