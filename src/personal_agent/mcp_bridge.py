@@ -334,7 +334,7 @@ def _recorded_private_sources(store, job_id, tools=None):
 
 
 def _lookup_sources(store, job_id):
-    """The same lookup resolver the host uses (#605): the running-Work binding and the Work's saved values."""
+    """The same lookup resolver the host uses (#605): the running-Work binding."""
     return lambda: lookup_sources(store, job_id)
 
 

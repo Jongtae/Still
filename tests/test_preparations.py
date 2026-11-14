@@ -344,13 +344,11 @@ class PreparationEarlierReportTests(_Case):
             self.assertLessEqual(len(report['content']), MESSAGE_CAP_CHARS + len(' [...]'))
             rendered = render_turn_prompt(context)
             self.assertIn('[assistant] Report', rendered)
-            self.assertNotIn(private, rendered)
             self.assertNotIn(SECRET, rendered)
             self.assertIn('[assistant, earlier Work 2026-10-14 21:00]', earlier_turn_line(rows[0], report, SEOUL))
         orchestration = self.service.work_orchestration(current, current['message'], rows, {}, WorkBudget())
         # The plan's own label carries the host zone's time (none on a zone-less host).
         self.assertRegex(orchestration.conversation, r'\[assistant, earlier Work[^]]*\] Report')
-        self.assertNotIn(private, orchestration.conversation)
         with patch('personal_agent.orchestrator.Orchestration.early_plan', autospec=True, return_value=None) as early:
             self.service.early_work_plan(current, current['message'])
         self.assertEqual(early.call_args.args[0].conversation, orchestration.conversation)
@@ -1157,9 +1155,9 @@ class SecretTests(_Case):
         running = [e['trace'] for e in self.store.task_events(job) if e['status'] == 'running']
         self.assertEqual(running[0]['arguments']['goal'], '치과 예약 10시')
 
-    def test_the_goal_keeps_the_owners_values_and_saved_values_leave_the_prepared_answer(self):
+    def test_the_goal_keeps_the_owners_values_and_the_prepared_answer_keeps_its_result(self):
         """#617: the goal is the owner's own reservation, so the owner's saved values stay in it (#826
-        removed that guard); only secrets are removed.  The prepared answer keeps its own scrub."""
+        removed that guard); only secrets are removed from goals and prepared answers."""
         self.script = [{'content': None, 'tool_calls': [
                            call('1', 'save_note', content='여권번호 ' + self.PASSPORT),
                            call('2', 'schedule_preparation', kind='reminder', goal=f'여권 {self.PASSPORT} 챙기기',
@@ -1178,8 +1176,6 @@ class SecretTests(_Case):
         self.tick()
         current = self.service.preparations.get(row['id'])
         self.assertIn('충전기', current['prepared_text'])
-        self.assertNotIn('V7654321', current['prepared_text'])
-        self.assertNotIn('V7654321', self.service.prepared_text({'id': 'next'}))
 
 
 class PreparationScopeTests(_Case):

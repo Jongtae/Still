@@ -16,10 +16,12 @@ from urllib.parse import urlsplit
 MAX_CONTENT = 12000
 MAX_RETENTION = 90 * 24 * 60 * 60
 DEFAULT_RETENTION = 7 * 24 * 60 * 60
-SENSITIVE = re.compile(
+CREDENTIALS = re.compile(
     r"(?:\b(?:password|passwd|secret|api[_-]?key|access[_-]?token|otp)\b\s*[:=]\s*\S+|"
-    r"\b(?:\d[ -]*?){13,19}\b|-----BEGIN [A-Z ]*PRIVATE KEY-----|"
+    r"-----BEGIN [A-Z ]*PRIVATE KEY-----|"
     r"\beyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\.)", re.I)
+
+SENSITIVE = re.compile(CREDENTIALS.pattern + r"|\b(?:\d[ -]*?){13,19}\b", re.I)
 
 
 def _safe_url(value):
@@ -77,7 +79,7 @@ class ContextInbox:
         content = content.strip()
         if not self._enabled(kind): raise ValueError('이 소스의 수집을 먼저 명시적으로 켜세요.')
         if not content or len(content) > MAX_CONTENT: raise ValueError('수집 내용은 1~12,000자여야 합니다.')
-        if SENSITIVE.search(content): raise ValueError('민감한 정보로 보이는 내용은 저장하지 않았습니다.')
+        if CREDENTIALS.search(content): raise ValueError('민감한 정보로 보이는 내용은 저장하지 않았습니다.')
         if kind == 'url' and not _safe_url(content): raise ValueError('공용 HTTP/HTTPS URL만 저장할 수 있습니다.')
         retention = body.get('retention_seconds', DEFAULT_RETENTION)
         if not isinstance(retention, int) or not 60 <= retention <= MAX_RETENTION:

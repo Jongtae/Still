@@ -9,9 +9,7 @@ independently of anything the model says (pilot posture, #653):
 * **Output mediation.**  Nothing leaves ``PageDriver.snapshot`` before
   ``mediate_snapshot``: values of ``password`` inputs and of fields whose
   ``autocomplete`` names a credential, one-time code or card field are
-  dropped; the existing saved-private-value matcher of public lookups
-  (``lookup_text_violations``, #605) and the CLI prompt secret pattern redact
-  page text; the raw DOM, cookies,
+  dropped; the CLI prompt secret pattern redacts page text; the raw DOM, cookies,
   ``localStorage`` and storage state have no accessor at all.
 * **Payment guard.**  Typing into a card-number, CVC, card-expiry, one-time
   code or password field, pressing a button of a form that contains such a
@@ -78,7 +76,7 @@ import unicodedata
 from pathlib import Path
 from urllib.parse import parse_qsl, urlsplit, urlunsplit, unquote_plus
 
-from .agent_runtime import BROWSER_ACTIONS, ToolError, WorkBudget, lookup_norm, lookup_text_violations, lookup_words
+from .agent_runtime import BROWSER_ACTIONS, ToolError, WorkBudget
 from .bounded_execution import SECRET_PATTERN
 from .browser_jar import (JAR_NAME, SERVICE as JAR_SERVICE, CookieJar, JarError, latest_token_expiry, platform_key,
                           site_marks, store_account, unexpired)
@@ -576,41 +574,6 @@ def action_input_safe(store, values):
 
 # --- output mediation --------------------------------------------------------
 
-def redact_private_values(text, excluded=()):
-    """Redact tokens of ``text`` that match a saved or withheld private value.
-
-    The matcher is the existing #605 lookup check (``lookup_text_violations``,
-    kept by #654): whole values, contained spans, jamo keys and digit runs.  It is applied
-    per line, so its rule "a matching digit run withholds every digit-bearing
-    token" stays on the line that carries the value instead of blanking every
-    number on the page.  Returns ``(text, redacted_count)``.  A page with
-    nothing to compare against is returned unchanged.
-    """
-    text = str(text or '')
-    excluded = [value for value in excluded if isinstance(value, str) and value.strip()]
-    if not text or not excluded:
-        return text, 0
-    lines = []
-    removed = 0
-    for line in text.split('\n'):
-        bad, digits_joined = lookup_text_violations(line, excluded) if line.strip() else (set(), False)
-        if not bad and not digits_joined:
-            lines.append(line)
-            continue
-        out = []
-        for token in re.split(r'(\s+)', line):
-            if not token or token.isspace():
-                out.append(token)
-                continue
-            if any(word in bad for word in lookup_words(token)) or (digits_joined and re.search(r'\d', lookup_norm(token))):
-                out.append(REDACTED)
-                removed += 1
-            else:
-                out.append(token)
-        lines.append(''.join(out))
-    return '\n'.join(lines), removed
-
-
 def load_more_rounds(value):
     """``browser_read``'s ``load_more``: 0 when absent, else a count from 1 to ``LOAD_MORE_ROUNDS`` (#11)."""
     if value is None or (isinstance(value, str) and not value.strip()):
@@ -626,29 +589,27 @@ def load_more_rounds(value):
     return rounds
 
 
-def scrub(text, excluded=()):
-    """Redact saved private values, then credential-shaped tokens (the CLI prompt pattern)."""
-    text, removed = redact_private_values(text, excluded)
-    text, count = SECRET_PATTERN.subn(REDACTED, text)
-    return text, removed + count
+def scrub(text):
+    """Redact credential-shaped tokens with the CLI prompt pattern."""
+    return SECRET_PATTERN.subn(REDACTED, str(text or ''))
 
 
-def mediate_url(url, excluded=()):
+def mediate_url(url):
     """A model-visible URL: no userinfo, query or fragment; each path segment scrubbed.
 
-    Returns ``(url, redacted_count)``.  A path segment that carries a saved
-    private value or a credential-shaped token is replaced as a whole.
+    Returns ``(url, redacted_count)``.  A path segment that carries a
+    credential-shaped token is replaced as a whole.
     """
     try:
         parts = urlsplit(str(url or ''))
     except ValueError:
         return '', 0
     removed = 0
-    host, count = scrub(_host(parts), excluded)
+    host, count = scrub(_host(parts))
     removed += count
     segments = []
     for segment in parts.path.split('/'):
-        cleaned, count = scrub(segment, excluded)
+        cleaned, count = scrub(segment)
         if count:
             removed += count
             cleaned = REDACTED
@@ -656,7 +617,7 @@ def mediate_url(url, excluded=()):
     return urlunsplit((parts.scheme, host, '/'.join(segments), '', '')), removed
 
 
-def mediate_snapshot(raw, excluded=(), requested_url=None):
+def mediate_snapshot(raw, requested_url=None):
     """The only page state that may leave the driver.
 
     ``raw`` is a ``PageDriver.snapshot`` result.  Guarded field values are
@@ -667,7 +628,7 @@ def mediate_snapshot(raw, excluded=(), requested_url=None):
     """
     raw = raw if isinstance(raw, dict) else {}
     elements = [element for element in (raw.get('elements') or []) if isinstance(element, dict)]
-    text, redacted = scrub(str(raw.get('text') or '')[:TEXT_LIMIT * 2], excluded)
+    text, redacted = scrub(str(raw.get('text') or '')[:TEXT_LIMIT * 2])
     text = re.sub(r'\n{3,}', '\n\n', text).strip()
     truncated = len(text) > TEXT_LIMIT
     text = text[:TEXT_LIMIT]
@@ -678,21 +639,21 @@ def mediate_snapshot(raw, excluded=(), requested_url=None):
     for element in elements:
         if element.get('disabled'):
             continue
-        name, count = scrub(str(element.get('name') or '')[:NAME_LIMIT], excluded)
+        name, count = scrub(str(element.get('name') or '')[:NAME_LIMIT])
         redacted += count
         row = {'n': len(visible) + 1, 'role': str(element.get('role') or element.get('tag') or 'element'), 'name': name}
         if element.get('href'):
-            href, count = mediate_url(element['href'], excluded)
+            href, count = mediate_url(element['href'])
             redacted += count
             row['href'] = href[:400]
         if not guarded_field(element) and isinstance(element.get('value'), str) and element['value']:
-            value, count = scrub(element['value'][:VALUE_LIMIT], excluded)
+            value, count = scrub(element['value'][:VALUE_LIMIT])
             redacted += count
             row['value'] = value
         if element.get('offscreen') is True:
             # #1575: in a closed menu or panel; a press now is refused (open the menu, or its href).
             row['offscreen'] = True
-        near, count = scrub(' '.join(str(element.get('context') or '').split())[:NEAR_LIMIT], excluded)
+        near, count = scrub(' '.join(str(element.get('context') or '').split())[:NEAR_LIMIT])
         redacted += count
         if near:
             row['_near'] = near
@@ -707,9 +668,9 @@ def mediate_snapshot(raw, excluded=(), requested_url=None):
     for row in internal:
         row['submit_guarded'] = guarded_submit(row, elements)
         row['forwards_payment'] = forwards_to_payment_form(row, forms)
-    url, count = mediate_url(raw.get('url'), excluded)
+    url, count = mediate_url(raw.get('url'))
     redacted += count
-    title, count = scrub(str(raw.get('title') or '')[:200], excluded)
+    title, count = scrub(str(raw.get('title') or '')[:200])
     redacted += count
     # #925: the page state lists the first ELEMENT_LIMIT rows; browser_find and a click
     # reach every numbered row (a content-heavy page fills the first ones with menus).
@@ -731,7 +692,7 @@ def mediate_snapshot(raw, excluded=(), requested_url=None):
     snapshot['_page'] = page_reference(raw.get('url'))
     # #340: only the login window consumes this address; public_view drops it.
     snapshot['_window_url'] = login_window_url(raw.get('url'))
-    states, identities = page_states(raw, elements, text, excluded)
+    states, identities = page_states(raw, elements, text)
     snapshot['_states'] = states
     # Every payment form's identity and state (#698): part of every step's binding.
     snapshot['_payment_states'] = {identities[form_id]: states[form_id]
@@ -745,7 +706,7 @@ def form_identity(form):
     return f"form {form.get('dom', '')}|{str(form.get('method') or '').lower()}|{page_reference(form.get('action'))}"
 
 
-def page_states(raw, elements, text, excluded=()):
+def page_states(raw, elements, text):
     """``({form id: state, None: page state}, {form id: identity})`` approvals are bound to.
 
     A form's state is its identity (``form_identity``), its mediated visible
@@ -756,13 +717,13 @@ def page_states(raw, elements, text, excluded=()):
     forms, identities = {}, {}
     for form in raw.get('forms') or []:
         if isinstance(form, dict) and form.get('id') is not None:
-            forms[form['id']] = scrub(str(form.get('text') or '')[:TEXT_LIMIT], excluded)[0]
+            forms[form['id']] = scrub(str(form.get('text') or '')[:TEXT_LIMIT])[0]
             identities[form['id']] = form_identity(form)
     states = {None: text}
     referenced = {element.get(key) for element in elements for key in ('form', 'label_form')}
     for form_id in referenced - {None}:
         identities.setdefault(form_id, f'form ?{form_id}')
-        values = sorted((target_key(element), scrub(str(element.get('value') or ''), excluded)[0])
+        values = sorted((target_key(element), scrub(str(element.get('value') or ''))[0])
                         for element in elements if element.get('form') == form_id and not guarded_field(element))
         states[form_id] = (identities[form_id] + '\n' + forms.get(form_id, '') + '\n'
                            + '\n'.join(f'{key}={value}' for key, value in values))
@@ -861,13 +822,13 @@ class BrowserSession:
     ``WorkBudget`` (#620: a step spends one of its tool attempts, the Work's one
     step counter, only once it is handed to the browser - a step refused for an
     approval, a busy browser, a missing target or a blocked address spends none;
-    without one the session keeps its own default ``WorkBudget``); ``excluded`` returns the private values to redact;
+    without one the session keeps its own default ``WorkBudget``);
     ``approvals`` has ``consume(binding)`` and ``request(binding, text)``;
     ``judgments`` is the Work's ``ConversationJudgments`` (or None); #619
     removed the per-press payment judgment, so no browser step asks it.
     """
 
-    def __init__(self, driver_factory, *, work_id, budget=None, excluded=None, approvals=None, judgments=None,
+    def __init__(self, driver_factory, *, work_id, budget=None, approvals=None, judgments=None,
                  action_seconds=ACTION_TIMEOUT_SECONDS, allowed_origins_for_tests=()):
         self._factory = driver_factory
         # Test-only exact ``host:port`` allowance for a local fixture site; only
@@ -879,7 +840,6 @@ class BrowserSession:
         self.driver = None
         self.work_id = work_id
         self.budget = budget if budget is not None else WorkBudget()
-        self.excluded = excluded
         self.approvals = approvals or NoApprovals()
         self.action_seconds = action_seconds
         self.last = None
@@ -993,21 +953,12 @@ class BrowserSession:
             exc.observed_step = {'posted': exc.posted, 'approved': bool(approved)}
         return exc
 
-    def _excluded(self):
-        if self.excluded is None:
-            return ()
-        try:
-            return list(self.excluded())
-        except Exception:
-            return ()
-
     def _snapshot(self, requested_url=None):
-        excluded = self._excluded()
         raw = self._call(lambda timeout: self._driver().snapshot())
         if self._navigation_error and urlsplit(str((raw or {}).get('url') or '')).scheme not in ('http', 'https'):
             self.last = None
             raise ToolError(NO_PAGE_TEXT, 'no_page')
-        self.last = mediate_snapshot(raw, excluded, requested_url)
+        self.last = mediate_snapshot(raw, requested_url=requested_url)
         if isinstance(raw, dict):
             self._popup_results = getattr(self, '_popup_results', []) + list(raw.get('work_popup_results') or [])
         if isinstance(raw, dict) and raw.get('refused_submit'):
@@ -1639,7 +1590,7 @@ class BrowserSession:
         if stop is not None and stop():
             self.budget.check()   # stopped: the read fails as stopped and returns no page text
         answer = answer if isinstance(answer, dict) else {}
-        text = scrub(str(answer.get('text') or '')[:TEXT_LIMIT * 2], self._excluded())[0]
+        text = scrub(str(answer.get('text') or '')[:TEXT_LIMIT * 2])[0]
         text = re.sub(r'\n{3,}', '\n\n', text).strip()
         stopped = answer.get('stopped')
         loaded = {'rounds': min(rounds, max(0, int(answer.get('rounds') or 0))),
@@ -1679,7 +1630,7 @@ class BrowserSession:
             return renamed
         focused = getattr(exc, 'focused', None)
         if isinstance(focused, dict):
-            name = scrub(str(focused.get('name') or '')[:NAME_LIMIT], self._excluded())[0]
+            name = scrub(str(focused.get('name') or '')[:NAME_LIMIT])[0]
             return ToolError(target_text('focus_moved', {'name': name}), exc.code)
         cover = getattr(exc, 'cover', None)
         if not isinstance(cover, dict):
@@ -1689,13 +1640,12 @@ class BrowserSession:
     def _model_cover(self, cover, snapshot):
         """A cover the worker reported by raw index, in the model's element numbers, scrubbed (#1395)."""
         numbers = {row.get('index'): row.get('n') for row in snapshot.get('_elements') or () if isinstance(row, dict)}
-        excluded = self._excluded()
         controls = []
         for item in cover.get('controls') or ():
             n = numbers.get(item.get('index')) if isinstance(item, dict) else None
             if isinstance(n, int):
-                controls.append({'index': n, 'name': scrub(str(item.get('name') or '')[:NAME_LIMIT], excluded)[0]})
-        return {'text': scrub(str(cover.get('text') or '')[:400], excluded)[0], 'controls': controls}
+                controls.append({'index': n, 'name': scrub(str(item.get('name') or '')[:NAME_LIMIT])[0]})
+        return {'text': scrub(str(cover.get('text') or '')[:400])[0], 'controls': controls}
 
     def click(self, args):
         effect = self._effect(args)
@@ -1711,7 +1661,7 @@ class BrowserSession:
             # #758: the owner reads (and the approval binds) the purchase text that made it a
             # commitment and what is around it, not only a possibly neutral accessible name.
             matched, context = element.get('detail') or ('', '')
-            matched, context = scrub(matched, self._excluded())[0], scrub(context, self._excluded())[0]
+            matched, context = scrub(matched)[0], scrub(context)[0]
             state += '\n\x1ecommit ' + matched + '\n' + context
             # The purchase text leads, so the owner reads it within the stored label's 120 characters.
             name = str(element.get('name') or element.get('role') or '')
@@ -1753,8 +1703,7 @@ class BrowserSession:
             page['note'] = msg('browser.app_link_not_followed')
         rows = answer.get('dialogs') if isinstance(answer, dict) else None
         if rows:
-            excluded = self._excluded()
-            page['dialogs'] = [{'kind': row['kind'], 'message': scrub(row['message'], excluded)[0],
+            page['dialogs'] = [{'kind': row['kind'], 'message': scrub(row['message'])[0],
                                 'answer': DIALOG_OUTCOMES[row['outcome']]} for row in rows]
         return page
 
