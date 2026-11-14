@@ -156,7 +156,7 @@ Columns: **Inputs** are the authoritative facts the decision reads. **Effect** i
 
 | Id | Rows | Path |
 |---|---|---|
-| F-X4 | X4, X9 | A process from before the restart can spend, take the owner's steers and write records for a Work resumed under the same id; and a stop inside recovery can lose the interrupted reply. **Selected next change.** |
+| F-X4 | X4, X9 | **Done by #841:** recovery fences each interrupted Work's active ledger record in the same transaction that interrupts it and queues its reply, so a process from before the restart can no longer spend or take the owner's steers for a Work resumed under the same id, and a stop inside recovery cannot lose the interrupted reply. Residual (X4): a stale CLI that starts a new bridge after the resume. |
 | F-P4 | R4, W4, U4 | **Done by #842 (D1):** a cut-off prompt is offered once more only for Works created within the shared 24-hour window, and only while current at delivery; other unknown deliveries of recent Works are told once. `uncertain_deliveries` / `uncertain_notifications` clear as rows settle or the notice is sent; `interrupted_jobs` still keeps home in attention. Pairing/work-mode cancellation of a re-offer clears its uncertainty count without a conversation notice; the wait stays answerable on the web. |
 | F-W4 | W4 | Mattermost's cursor before reactions and steers, and Slack's press before answer, can lose an owner act or correction; a Telegram notice that is definitely not sent is never retried. |
 | F-D3 | I4, D3 | On Telegram, `sent` without `record_reply` loses the reply anchor; `_after_work` prompts have no sweeper. |
