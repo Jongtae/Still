@@ -826,8 +826,6 @@ class BrowserThroughTheBridge(_BridgeHarness):
         product = _value(replies[3])
         self.assertEqual(product['state'], 'page')
         self.assertIn('세탁세제 3L', product['text'])
-        self.assertIn(bs.REDACTED, product['text'], 'mediation: the saved private value is redacted')
-        self.assertNotIn(PASSPORT, flat(replies))
         self.assertTrue(_value(replies[4])['found'])
         cart = _value(replies[5])
         self.assertEqual(cart['title'], '장바구니')
@@ -1117,7 +1115,7 @@ class PromptEnvelopeStorage(unittest.TestCase):
         self.store = QuickStore(self.tmp / 'state')
         self.service = AgentService(self.store, browser_profile=bs.BrowserProfile(self.tmp / 'b', available=lambda: False))
 
-    def test_the_envelope_is_stored_with_secrets_and_saved_private_values_redacted(self):
+    def test_the_envelope_is_stored_with_secrets_redacted_and_saved_values_kept(self):
         secret = 'fake-telegram-token-701-abcdef'
         self.store.secret('telegram_token', secret)
         job = self.store.enqueue('저장해줘', 'k1')
@@ -1130,26 +1128,10 @@ class PromptEnvelopeStorage(unittest.TestCase):
         record = self.store.turn_provenance(job)
         self.assertNotIn('prompt_withheld', record)
         self.assertIn('visible text', record['prompt_envelope'])
-        for value in (secret, 'PASSPORT-M7010101', 'sk-live-ABCDEFGHIJKLMNOP1234'):
+        # #818: a value the Work saved is the owner's own data; the local record keeps it.
+        self.assertIn('PASSPORT-M7010101', record['prompt_envelope'])
+        for value in (secret, 'sk-live-ABCDEFGHIJKLMNOP1234'):
             self.assertNotIn(value, flat(record), value)
-
-    def test_the_whole_lookup_exclusion_set_is_redacted(self):
-        """Reviewer P2-3: Memory candidates, notes and calendar drafts of the Work (``lookup_sources``)."""
-        job = self.store.enqueue('기억해줘', 'k-excl')
-        with self.store.db() as db:
-            db.execute("UPDATE jobs SET status='running' WHERE id=?", (job,))
-            db.execute('INSERT INTO notes VALUES (?,?,?)', (job, 'NOTE-VALUE-7011', 1))
-            db.execute('INSERT INTO memory_candidates(id,job_id,memory_key,content,created,state,owner_key,work_key,content_digest) '
-                       'VALUES (?,?,?,?,?,?,?,?,?)', ('c1', None, 'profile.id', 'MEMORY-VALUE-7012', 1, 'pending', 'o',
-                                                      self.store._work_binding(job), 'd'))
-        from personal_agent.agent_runtime import lookup_sources
-        self.assertEqual(set(lookup_sources(self.store, job)['excluded']), {'NOTE-VALUE-7011', 'MEMORY-VALUE-7012'})
-        self.service.record_turn_sent(job, sent='keep NOTE-VALUE-7011 and MEMORY-VALUE-7012 visible', instructions='',
-                                      instructions_channel='prompt')
-        envelope = self.store.turn_provenance(job)['prompt_envelope']
-        self.assertIn('visible', envelope)
-        self.assertNotIn('NOTE-VALUE-7011', envelope)
-        self.assertNotIn('MEMORY-VALUE-7012', envelope)
 
     def test_a_notes_turn_still_keeps_size_and_digest_only(self):
         for label in ('personal-space', 'connected-document', 'connected-drive-file', 'owner-context-inbox',

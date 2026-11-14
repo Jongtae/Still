@@ -1732,7 +1732,7 @@ class Preparations:
         """Record one finished run and schedule the next slot, if any.
 
         A prepared answer is kept as ``scrub(job)`` - the service removes the
-        Work's saved private values and stored secrets - never raw.
+        stored secrets (#818: the Work's saved values are the owner's and stay).
 
         #719: for a ``when_needed`` row, ``decide(row, answer)`` is the
         service's DecisionEngine judgment (``'yes'``, ``'no'`` or None when

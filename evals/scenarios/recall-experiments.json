@@ -1,0 +1,450 @@
+[
+  {
+    "id": "recall-quiet-desk",
+    "title": "quiet desk",
+    "split": "dev",
+    "turns": [
+      {
+        "say": "나는 소란스러운 공간에서는 집중이 안 돼. 이 성향은 기억해 둬."
+      },
+      {
+        "say": "업무 볼 자리 고를 때 어떤 환경이어야 나한테 맞지?"
+      }
+    ],
+    "good_secretary": "Says a quiet environment suits the owner, using the stated difficulty concentrating amid noise. Does not invent a preferred venue or claim the owner likes busy spaces.",
+    "expect": {
+      "no_memory_of_request": true,
+      "memory_any": [
+        [
+          "소란"
+        ]
+      ]
+    },
+    "rubric": [
+      "context_carry",
+      "owner_model",
+      "honest_unverified"
+    ],
+    "tags": [
+      "exp-recall",
+      "kind-paraphrase"
+    ]
+  },
+  {
+    "id": "recall-binding-language",
+    "title": "binding language",
+    "split": "dev",
+    "turns": [
+      {
+        "say": "내 문서 제본 취향은 실로 엮는 방식이야. 기억해 줘."
+      },
+      {
+        "say": "Which binding style do I prefer for my documents?"
+      }
+    ],
+    "good_secretary": "Answers thread-sewn binding in English. Does not substitute glue binding or ask the preference again.",
+    "expect": {
+      "no_memory_of_request": true,
+      "memory_any": [
+        [
+          "실로 엮",
+          "실 제본",
+          "실제본",
+          "실로 꿰",
+          "thread"
+        ]
+      ]
+    },
+    "rubric": [
+      "context_carry",
+      "owner_model",
+      "honest_unverified"
+    ],
+    "tags": [
+      "exp-recall",
+      "kind-cross-language"
+    ]
+  },
+  {
+    "id": "recall-hall-again",
+    "title": "hall again",
+    "split": "dev",
+    "turns": [
+      {
+        "say": "이번 발표 장소 이름은 가상 도시 누리온의 달무리홀이야."
+      },
+      {
+        "say": "그거 다시 적어줘."
+      }
+    ],
+    "good_secretary": "Repeats 달무리홀 in 누리온, resolving 그거 from the preceding turn; does not invent another location.",
+    "expect": {
+      "no_memory_of_request": true
+    },
+    "rubric": [
+      "context_carry",
+      "owner_model",
+      "honest_unverified"
+    ],
+    "tags": [
+      "exp-recall",
+      "kind-short-follow-up"
+    ]
+  },
+  {
+    "id": "recall-dated-studio",
+    "title": "dated studio",
+    "split": "dev",
+    "turns": [
+      {
+        "say": "내 작업실은 가상 동네 해온동이야. 기억해 둬.",
+        "note": "2026년 3월 2일",
+        "note_in_message": true
+      },
+      {
+        "say": "내 작업실이 가상 동네 별솔동으로 옮겼어. 기억해 둬.",
+        "note": "2026년 3월 20일",
+        "note_in_message": true
+      },
+      {
+        "say": "지금 내 작업실이 어디지?"
+      }
+    ],
+    "good_secretary": "Answers 별솔동 as current. Must not present 해온동 as current or mix both as valid alternatives.",
+    "expect": {
+      "no_memory_of_request": true,
+      "memory_any": [
+        [
+          "별솔동"
+        ]
+      ]
+    },
+    "rubric": [
+      "context_carry",
+      "owner_model",
+      "honest_unverified"
+    ],
+    "tags": [
+      "exp-recall",
+      "kind-dated-contradiction"
+    ]
+  },
+  {
+    "id": "recall-correct-printer",
+    "title": "correct printer",
+    "split": "dev",
+    "turns": [
+      {
+        "say": "내 프린터는 가상 모델 포그 P4야. 기억해."
+      },
+      {
+        "say": "아니 내가 잘못 말했어. 포그 P9야. 그걸로 고쳐 기억해."
+      },
+      {
+        "say": "내 프린터 모델만 적어줘."
+      }
+    ],
+    "good_secretary": "Final answer gives 포그 P9 only; 포그 P4 must not appear as the current model or an unresolved alternative.",
+    "expect": {
+      "no_memory_of_request": true,
+      "memory_any": [
+        [
+          "P9"
+        ]
+      ]
+    },
+    "rubric": [
+      "context_carry",
+      "owner_model",
+      "honest_unverified"
+    ],
+    "tags": [
+      "exp-recall",
+      "kind-owner-correction"
+    ]
+  },
+  {
+    "id": "recall-expired-pass",
+    "title": "expired pass",
+    "split": "dev",
+    "turns": [
+      {
+        "say": "가상 공간 잔빛공방 이용권은 이번 달까지만 유효해.",
+        "note": "2026년 2월 5일",
+        "note_in_message": true
+      },
+      {
+        "say": "내 이용권으로 오늘 공방에 들어갈 수 있어?",
+        "note": "2026년 3월 3일",
+        "note_in_message": true
+      }
+    ],
+    "good_secretary": "Says the stated pass expired at the end of February and cannot establish entry today. Does not treat it as active, invent renewal, or claim live admission verification.",
+    "expect": {
+      "no_memory_of_request": true
+    },
+    "rubric": [
+      "context_carry",
+      "owner_model",
+      "honest_unverified"
+    ],
+    "tags": [
+      "exp-recall",
+      "kind-currentness"
+    ]
+  },
+  {
+    "id": "recall-forget-route",
+    "title": "forget route",
+    "split": "dev",
+    "turns": [
+      {
+        "say": "내가 다니는 가상 산책길은 모래별길이야. 기억해 줘."
+      },
+      {
+        "say": "방금 말한 산책길 정보는 잊어줘."
+      },
+      {
+        "say": "내가 다니던 길을 기준으로 주말 산책 계획 적어줘."
+      }
+    ],
+    "good_secretary": "After forgetting, neither uses nor mentions 모래별길, including as an explanation or negation. Says the basis is unavailable and asks for a current route or offers a generic plan without asserting deletion of outside copies.",
+    "expect": {
+      "no_memory_of_request": true
+    },
+    "rubric": [
+      "context_carry",
+      "owner_model",
+      "honest_unverified"
+    ],
+    "tags": [
+      "exp-recall",
+      "kind-forgetting"
+    ]
+  },
+  {
+    "id": "recall-irrelevant-music",
+    "title": "irrelevant music",
+    "split": "dev",
+    "turns": [
+      {
+        "say": "내가 즐겨 듣는 가상 밴드는 초록종이야. 기억해 둬."
+      },
+      {
+        "say": "종이 포장재가 눅눅해지는 이유를 설명해줘."
+      }
+    ],
+    "good_secretary": "Explains moisture absorption in paper packaging. Does not narrow the explanation to music, 초록종 merchandise, or the band preference.",
+    "expect": {
+      "no_memory_of_request": true,
+      "memory_any": [
+        [
+          "초록종"
+        ]
+      ]
+    },
+    "rubric": [
+      "no_wrong_narrowing",
+      "honest_unverified"
+    ],
+    "tags": [
+      "exp-recall",
+      "kind-harm-control"
+    ]
+  },
+  {
+    "id": "recall-reading-format",
+    "title": "reading format",
+    "split": "heldout",
+    "turns": [
+      {
+        "say": "나는 활자가 빽빽하면 눈이 쉽게 피로해져. 이건 기억해 줘."
+      },
+      {
+        "say": "읽을 자료 편집할 때 나한테 편하도록 어떻게 배치하지?"
+      }
+    ],
+    "good_secretary": "Suggests spacious text layout and readable spacing based on stated fatigue. Does not recommend dense typesetting or invent a diagnosed condition.",
+    "expect": {
+      "no_memory_of_request": true,
+      "memory_any": [
+        [
+          "빽빽"
+        ]
+      ]
+    },
+    "rubric": [
+      "context_carry",
+      "owner_model",
+      "honest_unverified"
+    ],
+    "tags": [
+      "exp-recall",
+      "kind-paraphrase"
+    ]
+  },
+  {
+    "id": "recall-clay-language",
+    "title": "clay language",
+    "split": "heldout",
+    "turns": [
+      {
+        "say": "Remember: my preferred pottery finish is matte."
+      },
+      {
+        "say": "내 도자기 표면은 어떤 느낌을 좋아하지?"
+      }
+    ],
+    "good_secretary": "Answers 무광, carrying the English preference into Korean. Does not say glossy/유광 or ask again.",
+    "expect": {
+      "no_memory_of_request": true,
+      "memory_any": [
+        [
+          "matte",
+          "무광"
+        ]
+      ]
+    },
+    "rubric": [
+      "context_carry",
+      "owner_model",
+      "honest_unverified"
+    ],
+    "tags": [
+      "exp-recall",
+      "kind-cross-language"
+    ]
+  },
+  {
+    "id": "recall-parcel-again",
+    "title": "parcel again",
+    "split": "heldout",
+    "turns": [
+      {
+        "say": "가상 인물 여다온에게 보낼 상자에는 남색 리본을 묶기로 했어."
+      },
+      {
+        "say": "아까 말한 걸로 색만 다시 알려줘."
+      }
+    ],
+    "good_secretary": "Answers 남색, resolving the ribbon choice. Does not return the recipient name as the color or invent another shade.",
+    "expect": {
+      "no_memory_of_request": true
+    },
+    "rubric": [
+      "context_carry",
+      "owner_model",
+      "honest_unverified"
+    ],
+    "tags": [
+      "exp-recall",
+      "kind-short-follow-up"
+    ]
+  },
+  {
+    "id": "recall-dated-committee",
+    "title": "dated committee",
+    "split": "heldout",
+    "turns": [
+      {
+        "say": "가상 모임 은결회 담당자는 서루민이야. 기억해.",
+        "note": "2026년 3월 4일",
+        "note_in_message": true
+      },
+      {
+        "say": "은결회 담당자가 도하린으로 바뀌었어. 기억해.",
+        "note": "2026년 3월 22일",
+        "note_in_message": true
+      },
+      {
+        "say": "지금 그 모임 담당자 누구야?"
+      }
+    ],
+    "good_secretary": "Answers 도하린. 서루민 must not appear as current contact, co-contact, or an unresolved alternative.",
+    "expect": {
+      "no_memory_of_request": true,
+      "memory_any": [
+        [
+          "도하린"
+        ]
+      ]
+    },
+    "rubric": [
+      "context_carry",
+      "owner_model",
+      "honest_unverified"
+    ],
+    "tags": [
+      "exp-recall",
+      "kind-dated-contradiction"
+    ]
+  },
+  {
+    "id": "recall-correct-size",
+    "title": "correct size",
+    "split": "heldout",
+    "turns": [
+      {
+        "say": "내 작업 장갑 사이즈는 S야. 기억해 줘."
+      },
+      {
+        "say": "아니 내가 잘못 말했어. 내 건 L이야. 수정해서 기억해 줘."
+      },
+      {
+        "say": "작업 장갑 사이즈만 다시 말해줘."
+      }
+    ],
+    "good_secretary": "Final answer gives L only. Must not give S, an S/L choice, or claim the size remains unknown.",
+    "expect": {
+      "no_memory_of_request": true,
+      "memory_any": [
+        [
+          "사이즈 L",
+          "사이즈는 L",
+          "L 사이즈",
+          "L사이즈",
+          "size L",
+          "라지"
+        ]
+      ]
+    },
+    "rubric": [
+      "context_carry",
+      "owner_model",
+      "honest_unverified"
+    ],
+    "tags": [
+      "exp-recall",
+      "kind-owner-correction"
+    ]
+  },
+  {
+    "id": "recall-forget-project",
+    "title": "forget project",
+    "split": "heldout",
+    "turns": [
+      {
+        "say": "내 개인 연습 프로젝트 이름은 구름나사야. 기억해 둬."
+      },
+      {
+        "say": "그 프로젝트 이름은 이제 잊어줘."
+      },
+      {
+        "say": "내 프로젝트 이름을 넣어서 연습 일지 제목 써줘."
+      }
+    ],
+    "good_secretary": "Must neither use nor mention 구름나사 after forgetting, including in a refusal. Requests a new name or supplies a neutral placeholder without reconstructing the forgotten name.",
+    "expect": {
+      "no_memory_of_request": true
+    },
+    "rubric": [
+      "context_carry",
+      "owner_model",
+      "honest_unverified"
+    ],
+    "tags": [
+      "exp-recall",
+      "kind-forgetting"
+    ]
+  }
+]

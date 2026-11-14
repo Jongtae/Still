@@ -49,7 +49,7 @@ from personal_agent.bounded_execution import ExecutionError, ExecutionResult
 from personal_agent.calendar import CALENDAR_SPEC, CALENDAR_WRITE_SPEC, CalendarConnector
 from personal_agent.connector_contract import ConnectorRegistry, ConnectorState
 from personal_agent.conversation_handoff import ConnectorHandoff, FOLLOWUP_RETRY, LOCAL_AUTHORITY_PREVIEWS, LOCAL_FOLDER_READ
-from personal_agent.conversation_projection import TERMINAL_FAILED_HEADER, TERMINAL_PARTIAL_HEADER, TERMINAL_UNCONFIRMED_NOTE
+from personal_agent.conversation_projection import TERMINAL_FAILED_HEADER, TERMINAL_PARTIAL_HEADER
 from personal_agent.decision import (OUTCOME_DECIDED, BinaryDecision, FixtureDecisionEngine, SelectionDecision,
                                      UnavailableDecisionEngine, fixture_confidence)
 from personal_agent.gmail import (GMAIL_CONNECTOR, GMAIL_CONNECTOR_ID, GMAIL_READONLY_SCOPE,
@@ -1624,8 +1624,8 @@ class ExtendedRegressions(PresenceEval):
         self.script = [('tool', 'find_files', {'query': '급여'})]
         capped, _ = self.turn('급여 명세 파일 찾아봐')
         self.assertEqual(capped['status'], 'partial', 'a capped search that found nothing is not "none exist"')
-        # #1451: no step failed, so the close says the answer is unconfirmed, not that steps failed.
-        self.assertTrue(self.texts()[-1].endswith(TERMINAL_UNCONFIRMED_NOTE), self.texts()[-1])
+        # #821: no failed step or recorded note, so the answer has no fixed closing line.
+        self.assertEqual(self.texts()[-1], capped['response'])
         self.assertNotIn('파일 찾기', self.texts()[-1])
 
     def test_481_a_reference_to_the_previous_result_does_not_replay_it(self):

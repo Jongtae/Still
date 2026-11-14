@@ -32,6 +32,7 @@ from .context_observations import answerable_work
 from .local_tools import LocalTools
 from .search_providers import ProviderRegistry
 from .quickstart_store import QuickStore
+from .attempt_identity import record_served
 
 
 def negotiated_protocol_version(offered):
@@ -333,7 +334,7 @@ def _recorded_private_sources(store, job_id, tools=None):
 
 
 def _lookup_sources(store, job_id):
-    """The same lookup resolver the host uses (#605): the running-Work binding and the Work's saved values."""
+    """The same lookup resolver the host uses (#605): the running-Work binding."""
     return lambda: lookup_sources(store, job_id)
 
 
@@ -547,6 +548,8 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
             # Never read-only: a client must not auto-approve a direct call to it (review on #1197).
             extra = [mcp_tool(CONNECTOR_PERMISSION_DEFINITION, 'bounded_write', profile)] if ai_connections and relay else []
             result = {'tools': tools.definitions() + extra}
+            # #825: the definitions this bridge actually served, on the host's turn record.
+            record_served(store, job_id, result['tools'], 'still-host-mcp:bridge')
         elif method == 'tools/call' and ai_connections and relay and (params or {}).get('name') == CONNECTOR_PERMISSION:
             # #1197: the service decides (reads allowed, everything else refused for now)
             # and records the call; nothing here is shown to the model as a tool result.

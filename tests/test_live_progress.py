@@ -516,44 +516,7 @@ class ScriptedLoopDraftTests(_TelegramCase):
         for event in self.store.task_events(job['id']):
             self.assertNotIn(SECRET, json.dumps(event['trace'], ensure_ascii=False))
 
-    def test_a_value_saved_in_this_work_never_reaches_the_draft(self):
-        self.script = [[('save_note', {'content': '사물함 번호는 4719-8826 입니다'})],
-                       [('list_notes', {'status': '4719-8826 메모 다시 확인 중'})], '끝']
-        self.ticks = {'model': [6], 'list_notes': [8]}
-        job = self.run_turn('사물함 정보 정리 부탁해')
-        saved = [e for e in self.store.task_events(job['id']) if e['tool'] == 'save_note' and e['status'] == 'succeeded']
-        self.assertTrue(saved, 'the note write ran, so its value is a saved private value of this Work')
-        shown = self.drafts()
-        # #445: neither the masked status nor the fallback line enters the draft.
-        self.assertEqual(shown, [DOTS[0]])
-        steps = [event['trace']['step'] for event in self.store.task_events(job['id'])
-                 if event['status'] == 'running' and event['tool'] == 'list_notes']
-        self.assertNotIn('4719', json.dumps(steps, ensure_ascii=False), 'redacted before it is recorded')
 
-    def test_display_redaction_repeats_the_saved_value_pass_on_a_recorded_line(self):
-        # A step recorded by another process (the CLI's bridge) is scrubbed
-        # again with this Work's saved values before it reaches Telegram.
-        import hashlib
-        self.script = [[('list_notes', {'status': '메모 보는 중'})], '끝']
-        self.ticks = {'model': [6]}
-        original_tick = self.tick
-        content = '사물함 번호는 4719-8826 입니다'
-
-        def tick(hook):
-            original_tick(hook)
-            if hook == 'list_notes':
-                job = [j for j in self.store.jobs() if j['status'] == 'running'][0]
-                with self.store.db() as db:
-                    db.execute('INSERT INTO notes(id,content,created) VALUES (?,?,?)',
-                               (hashlib.sha256((job['id'] + content).encode()).hexdigest(), content, time.time()))
-                    db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
-                               (job['id'], 'bridge_tool', 'running', json.dumps({'step': {
-                                   'action': 'list_notes', 'status': '4719-8826 확인 중'}}, ensure_ascii=False), time.time()))
-                self.service.acknowledge_long_work(now=job['created'] + 8)
-        self.tick = tick
-        self.run_turn('사물함 정보 보여줘')
-        # #445: neither the recorded status nor its fallback enters the draft.
-        self.assertEqual(self.drafts(), [DOTS[0]])
 
     def test_pending_approval_prompt_is_the_only_surface(self):
         self.script = [[('list_notes', {'status': '메모 보는 중'})], '끝']

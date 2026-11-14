@@ -68,6 +68,7 @@ Nothing here names a site, provider, task or request category.
 """
 
 from . import work_status as ws
+import contextlib
 import hashlib
 import json
 import re
@@ -1437,7 +1438,7 @@ class Upkeep:
 
     # -- one dream (#402) ---------------------------------------------------
     def run_dream(self, job, row, judgments, *, turns, profile, clock, diary_date, ends_after, cancelled=None, source_works=None,
-                  preparations='', suggest=None, earlier=()):
+                  preparations='', suggest=None, earlier=(), earlier_works=None, read_scope=None):
         """Look back over ``turns`` once and keep the owner model in order; returns ``(state, calls, event_status, detail)``.
 
         ``job`` is the anchor Work (the newest request the dream covers): what is kept is attributed to
@@ -1500,9 +1501,15 @@ class Upkeep:
             return rows, {row['id'][:MemoryService.SHORT_ID_CHARS]: row['memory_key'] for row in rows
                           if not row['memory_key'].startswith(LESSON_PREFIX)}
 
+        # #818: each call's audit row is also linked to the Works its bounded input actually carries
+        # (``read_scope``, ``AgentService.judgments_read``): the shown turns, and the shown earlier misses.
+        scope = read_scope or (lambda works: contextlib.nullcontext())
+        shown_works = [source_works[ref] for ref in refs if source_works and ref in source_works]
+        missed_works = [work for ref in earlier_refs for work in (earlier_works or {}).get(ref, ()) if work]
         # #416: the first pass only finds facts in the turns; what it keeps is in the profile the look back reads.
-        found, gather = judgments.owner_model_dream_gather('\n'.join(lines), snapshot(), clock, work_id=job['id'],
-                                                           cancelled=cancelled)
+        with scope(shown_works):
+            found, gather = judgments.owner_model_dream_gather('\n'.join(lines), snapshot(), clock, work_id=job['id'],
+                                                               cancelled=cancelled)
         calls = 1 if call_sent(gather) else 0
         self.count(job['id'], calls, KIND_DREAM)
         first = {'decision': gather.outcome, 'model': gather.confidence.model or None,
@@ -1524,10 +1531,11 @@ class Upkeep:
                                                        'dropped': [], 'notes': None, 'diary': None,
                                                        'stopped': stopped or STOPPED_DEADLINE,
                                                        'inputs': {'turns': len(lines)}}
-        data, decision = judgments.owner_model_dream('\n'.join(lines), snapshot(), current_text,
-                                                     previous['content'] if previous else '', clock,
-                                                     work_id=job['id'], cancelled=cancelled, preparations=preparations,
-                                                     earlier='\n'.join(line for _ref, _day, line in misses))
+        with scope([*shown_works, *missed_works]):
+            data, decision = judgments.owner_model_dream('\n'.join(lines), snapshot(), current_text,
+                                                         previous['content'] if previous else '', clock,
+                                                         work_id=job['id'], cancelled=cancelled, preparations=preparations,
+                                                         earlier='\n'.join(line for _ref, _day, line in misses))
         confidence = decision.confidence
         calls += 1 if call_sent(decision) else 0
         self.count(job['id'], calls, KIND_DREAM)

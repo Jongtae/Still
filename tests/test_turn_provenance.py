@@ -507,6 +507,21 @@ assert.match(ui.provenanceView({id:'w2'}).textContent,/No run record/);
 console.log('ok');""")
         self.assertIn('ok', out)
 
+    def test_view_lists_each_attempt_input_and_what_was_not_observed(self):
+        """#825: per-attempt identities are shown, with unobservable sets marked, not hidden."""
+        out = node_run(DOM + r"""
+const assert=require('node:assert/strict');
+const rows=[{attempt:1,route:'subscription',input:'not-sent',instructions_digest:'aaaa1111',offered:{digest:'bbbb2222',count:12},
+             served:{digest:null,unavailable:'no tools/list answer was observed for this attempt'},native:{digest:null,unavailable:"the CLI's own tools"}},
+            {attempt:2,route:'direct-api',input:'sent',instructions_digest:'cccc3333',offered:{digest:'dddd4444',count:9}}];
+const view=ui.provenanceView({id:'w3',provenance:{route:'direct-api',attempt_inputs:rows,attempt_inputs_dropped:2}}).textContent;
+assert.match(view,/Input per attempt/);
+assert.match(view,/#1 subscription · not-sent · instructions aaaa1111 · tools offered 12 \(sha256 bbbb2222\) · tools served by the bridge - \(no tools\/list answer was observed for this attempt\)/);
+assert.match(view,/#2 direct-api · sent · instructions cccc3333 · tools offered 9 \(sha256 dddd4444\)/);
+assert.match(view,/2 earlier attempts not kept/);
+console.log('ok');""")
+        self.assertIn('ok', out)
+
     def test_technical_info_adds_provenance_only_in_developer_mode(self):
         app = (WEB / 'app.js').read_text(encoding='utf-8')
         self.assertIn("if(developerMode())box.append(provenanceView(task));", app)

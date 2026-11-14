@@ -617,13 +617,18 @@ class Redelegation(Harness):
         self.assertEqual(row['status'], 'partial')
         self.assertIn(GOAL_NOT_SHOWN, row['owner_cause'])
 
-    def test_a_cli_attempt_that_could_not_be_judged_is_partial_with_the_unknown_stated(self):
+    def test_an_unavailable_judgment_is_recorded_without_a_fixed_reply_suffix(self):
         self.script([plan('codex', 'Look it up.')], goals=[])
         job, row = self.run_work('찾아줘')
         last = self.events(job, 'evaluated')[-1][1]
         self.assertEqual((last['outcome'], last['stop']), ('unjudged', 'unjudged'))
         self.assertEqual(row['status'], 'partial')
         self.assertIn(GOAL_UNJUDGED, row['owner_cause'])
+        self.assertEqual(len(self.asked_goals), 1, 'the outcome judgment still runs')
+        self.assertEqual(row['goal_outcome'], 'not_judged')
+        self.assertIsNone(row['owner_note'])
+        self.assertEqual(self.service.telegram_result_text(row['response'], row['owner_cause'], row['status'],
+                                                           note=row['owner_note']), row['response'])
 
     def test_a_complete_reply_on_the_last_turns_is_still_judged(self):
         # #1445 rehearsal: the right answer on the Work's last turns was left unjudged and the Work
@@ -730,7 +735,7 @@ class Redelegation(Harness):
 
     def test_a_later_attempt_keeps_this_works_private_reads_in_its_record(self):
         """Review P2-1 / #826: attempt 1 read notes; attempt 2 keeps the CLI's own web search and the
-        private reads together (owner decision), and the envelope stays size/digest only."""
+        private reads together (owner decision), and the local envelope is retained."""
         def read_notes(tools):
             if len(self.engine.turns) == 1:
                 tools.capabilities.record('list_notes', 'succeeded',
@@ -744,8 +749,6 @@ class Redelegation(Harness):
         self.assertTrue(second['native_search'])
         self.assertIn('list_notes', second['offered'])
         record = self.store.turn_provenance(job)
-        self.assertTrue(record['prompt_envelope'].startswith('[not stored'), record['prompt_envelope'])
-        self.assertIn('personal-space', record['prompt_withheld'])
         self.assertIn('personal-space', record['egress_taint'])
         self.assertEqual(row['status'], 'succeeded')
 
@@ -1034,14 +1037,14 @@ class ObservationsWithPages(unittest.TestCase):
     def test_pages_come_newest_first_redacted_and_within_the_bound(self):
         calls = []
 
-        def redact(text, private=True):
-            calls.append(private)
+        def redact(text):
+            calls.append(text)
             return text.replace('SECRET', '[redacted]')
         text = observations_with_pages(['- browser_open: {}'], [('https://s.test/cart', 'Cart', 'item SECRET\n\n  x  y'),
                                                                  ('https://s.test/', '', 'home')], redact)
         self.assertLess(text.index('Cart (https://s.test/cart)'), text.index('- https://s.test/:'))
         self.assertIn('item [redacted]\nx y', text)
-        self.assertEqual(set(calls), {False}, 'the secrets-only pass both routes use (#826)')
+        self.assertTrue(calls, 'page text passes the stored-secret redactor')
         self.assertLessEqual(len(text), OBSERVATION_CHARS)
 
     def test_a_long_page_and_many_steps_keep_the_floor_and_the_bound(self):
@@ -2931,8 +2934,8 @@ class StatedProfileInLookups(unittest.TestCase):
         self.assertFalse(owner_stated_profile('profile.place.work', {'state': 'pending', 'requires_owner_approval': True}))
         self.assertFalse(owner_stated_profile('passport', {'state': 'current', 'id': 'm2'}))
 
-    def test_work_written_values_skips_only_accepted_profile_facts(self):
-        from personal_agent.agent_runtime import work_written_values
+    def test_work_saved_values_skips_only_accepted_profile_facts(self):
+        from personal_agent.agent_runtime import work_saved_values
         with tempfile.TemporaryDirectory() as tmp:
             store = QuickStore(Path(tmp) / 's')
             job = store.enqueue('판교 카카오뱅크로 출근했어', 'k1')
@@ -2941,9 +2944,9 @@ class StatedProfileInLookups(unittest.TestCase):
             store.save_memory_candidate(job, 'passport', '여권번호 M1234')
             with store.db() as db:
                 db.execute("UPDATE memory_candidates SET state='accepted' WHERE id=?", (stated['id'],))
-            written = work_written_values(store, job)
+            written = work_saved_values(store, job)
             self.assertNotIn('판교 카카오뱅크', written)
-            self.assertIn('추론된 선호', written, 'a pending inference stays excluded')
+            self.assertIn('추론된 선호', written, 'a pending inference stays in the audit input')
             self.assertIn('여권번호 M1234', written)
 
 

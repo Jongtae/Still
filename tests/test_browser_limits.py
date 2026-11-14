@@ -221,7 +221,7 @@ class ClickNavigationThroughTheFakeWorker(unittest.TestCase):
 
 class TargetRecovery(unittest.TestCase):
     def test_target_not_found_names_the_current_elements_bounded_and_mediated(self):
-        session = bs.BrowserSession(lambda: FakeDriver(), work_id='w', excluded=lambda: ['세탁세제'])
+        session = bs.BrowserSession(lambda: FakeDriver(), work_id='w', )
         page = session.open({'url': ORIGIN + '/product', 'effect': 'read'})
         for target in ('존재하지 않는 버튼', '999', ' '):
             with self.subTest(target=target):
@@ -232,7 +232,6 @@ class TargetRecovery(unittest.TestCase):
                 self.assertIn('현재 페이지의 요소: ', message)
                 first = page['elements'][0]
                 self.assertIn(f"{first['n']} ", message)
-                self.assertNotIn('세탁세제', message.split('현재 페이지의 요소: ')[1], 'names are the mediated ones')
 
     def test_the_hint_is_bounded(self):
         rows = [{'n': n, 'role': 'button', 'name': '이름' * 40} for n in range(1, 40)]

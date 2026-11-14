@@ -19,7 +19,7 @@ Unchanged safety boundaries remain exact: secrets never enter model prompts, log
 
 ## Pilot posture — #653 (2026-09-26)
 
-The [Secretary Agency Contract](secretary-agency-contract.en.md) governs the pilot policy described here; current development selection is not asserted by this document. Its pilot posture removes the per-request lookup sensitivity judgment, the `uncertain` fail-closed path, the `/search` explicit-query requirement and per-provider gating described in the lookup/egress sections below (implemented by SEC-PILOT-01 #654). Deterministic redaction of saved private values, the document-sharing grant and Work/Event/Evidence semantics remain. The text below is preserved for traceability and returns to force only if a hardening program is activated.
+The [Secretary Agency Contract](secretary-agency-contract.en.md) governs the pilot policy described here; current development selection is not asserted by this document. Its pilot posture removes the per-request lookup sensitivity judgment, the `uncertain` fail-closed path, the `/search` explicit-query requirement and per-provider gating described in the lookup/egress sections below (implemented by SEC-PILOT-01 #654). The owner's saved values remain visible to the owner and their AI; stored-secret replacement, the document-sharing grant and Work/Event/Evidence semantics remain. The text below is preserved for traceability and returns to force only if a hardening program is activated.
 
 ## Status and authority
 

@@ -501,5 +501,18 @@ class ProbeRecordLoopIntegrationTests(unittest.TestCase):
                                             'repeat_paths_refused': 1})
 
 
+class ExportedSavedValues(unittest.TestCase):
+    """#818: the owner's views show saved values; the exported probe record still keeps them out."""
+
+    def test_a_value_that_reappears_only_in_part_is_masked_in_the_export(self):
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+        out = smoke._mask_saved_values('여권 M12345678 으로 담았습니다.', ['여권번호 M12345678'])
+        self.assertNotIn('M12345678', out)
+        self.assertIn('담았습니다.', out)
+        self.assertEqual(smoke._mask_saved_values('그냥 답입니다.', ['여권번호 M12345678']), '그냥 답입니다.')
+
+
 if __name__ == "__main__":
     unittest.main()
+
