@@ -1,22 +1,10 @@
-"""#583: the daily look-back sets up a standing preparation for what the owner keeps coming back to.
+"""#717: AI-judged, grounded and bounded dream initiative.
 
-The dream's one judgment may return up to ``om.DREAM_SUGGESTIONS`` ``suggestions``.  Still keeps a
-standing one only when it cites two turns the dream read (#717: on any owner dates), validates it with
-``schedule_preparation``'s normalisers, skips what an active preparation has or the owner declined,
-and (#717, owner direction 2026-11-07) stores it ``scheduled`` with ``accepted_by`` ``dream`` on the
-dream's anchor Work.  The owner is told once, with a cancel button, after the owner's next own Work;
-cancelling it is a decline.  Rows still ``proposed`` from before #717 keep the old proposal message:
-offered once, accepted with its button, lapsing unanswered after a week (not a decline).
-
-#638: the look back also looks ahead.  A one-off (``recurrence`` ``once``) for something dated the owner
-mentioned rests on one cited turn; a look back holding one is offered on the preparations tick in the
-owner's daytime, without waiting for the next Work, under the same daily cap and pause; one whose time
-passes unanswered lapses and is not a decline.
-
-Evidence class: model-free unit and service tests.  A scripted ``FixtureDecisionEngine`` plays the
-Judgment AI, a recording Telegram transport and a fake preparations clock replace only the wires;
-the real ``AgentService`` dream run, Work loop, notification delivery, callback handler and
-preparation tick run unchanged.  No live model or Telegram is contacted, and none is claimed.
+Every suggestion cites a read turn; each scheduled row is told once in waking hours with its own
+existing cancel notice before its first automatic start. Upkeep pause retains scheduled dream
+rows. Dream budgets reserve owner capacity and bound standing recurrence. Legacy proposals keep
+their acceptance and expiry paths. Evidence: model-free fake-clock/store/service tests, no live AI
+or messenger calls.
 """
 import json
 import unittest
@@ -39,7 +27,7 @@ def suggestion(goal='평일 아침 일정 요약', due=None, sources=('t1', 't2'
 
 
 class Gates(unittest.TestCase):
-    """``om.validate_suggestions``: a standing one needs two cited turns (#717: on any day), a one-off one."""
+    """``om.validate_suggestions``: grounding and budget, with interest judged by the AI."""
     refs = {'t1': 'a', 't2': 'b', 't3': 'c'}
     days = {'t1': '2026-10-30', 't2': '2026-10-31', 't3': '2026-10-31'}
 
@@ -50,9 +38,9 @@ class Gates(unittest.TestCase):
     def test_two_turns_of_different_days_are_kept(self):
         self.assertEqual(self.reasons(suggestion(sources=('t1', 't3'))), ([0], []))
 
-    def test_one_occasion_or_an_unread_turn_is_dropped(self):
+    def test_one_turn_is_enough_but_an_unread_or_empty_source_is_dropped(self):
         self.assertEqual(self.reasons(suggestion(sources=('t1',)), suggestion(sources=('t1', 't9')), suggestion(sources=())),
-                         ([], ['one-occasion', 'sources', 'sources']))
+                         ([0], ['sources', 'sources']))
 
     def test_two_turns_of_the_same_day_or_undated_are_kept(self):
         """#717: an interest shown on one busy day counts; two different dates are no longer required."""
@@ -105,7 +93,7 @@ class LookBack(Dream):
         [row] = self.rows()
         self.assertEqual((row['state'], row['origin'], row['created_from'], row['accepted_by'], row['offered_at']),
                          (prep.STATE_SCHEDULED, prep.ORIGIN_DREAM, newest, prep.ACCEPTED_DREAM, None))
-        self.assertEqual((row['kind'], row['recurrence'], row['title_text']), ('prepare', 'weekdays', '아침 일정 요약'))
+        self.assertEqual((row['kind'], row['recurrence'], row['title_text']), ('prepare', 'RRULE:FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR;COUNT=30', '아침 일정 요약'))
         [kept] = self.detail()['suggestions']['kept']
         self.assertEqual((kept['preparation_id'], kept['sources']), (row['id'], ['t1', 't2']))
         self.assertNotIn('일정', json.dumps(self.detail(), ensure_ascii=False), 'Evidence keeps no text')
@@ -115,16 +103,13 @@ class LookBack(Dream):
         self.assertEqual(self.service.work_waits_for_owner(self.store.job(newest)), (),
                          'the anchor Work itself does not wait for the suggestion')
 
-    def test_one_occasion_is_never_set_up_but_two_turns_of_one_day_are(self):
-        """#717: a standing interest shown twice on the same owner day is set up; one turn still is not."""
-        self.day('오늘 일정 정리해줘', '오늘 일정 다시 정리해줘', '다른 질문')
-        self.dreams = [{**dream(), 'suggestions': [suggestion(goal='매일 일정', sources=('t1',)),
-                                                    suggestion(sources=('t1', 't2'))]}]
+    def test_one_turn_can_ground_a_standing_interest(self):
+        self.day('이 주제는 계속 관심 있어', '다른 질문', '또 다른 질문')
+        self.dreams = [{**dream(), 'suggestions': [suggestion(sources=('t1',))]}]
         self.tick()
         [row] = self.rows()
-        self.assertEqual((row['goal_text'], row['state'], row['accepted_by']),
-                         ('평일 아침 일정 요약', prep.STATE_SCHEDULED, prep.ACCEPTED_DREAM))
-        self.assertEqual([item['reason'] for item in self.detail()['suggestions']['dropped']], ['one-occasion'])
+        self.assertEqual((row['state'], row['accepted_by']), (prep.STATE_SCHEDULED, prep.ACCEPTED_DREAM))
+        self.assertEqual(self.detail()['suggestions']['dropped'], [])
 
     def test_a_declined_or_active_goal_is_not_suggested_again(self):
         self.two_days()
@@ -158,11 +143,11 @@ class LookBack(Dream):
                                                                sources=('t1',)),
                                                     suggestion(goal='매일 일정', sources=('t1',))]}]
         self.tick()
-        [row] = self.rows()
+        row = next(row for row in self.rows() if row['recurrence'] is None)
         self.assertEqual((row['state'], row['accepted_by'], row['origin'], row['created_from'], row['kind'], row['recurrence']),
                          (prep.STATE_SCHEDULED, prep.ACCEPTED_DREAM, prep.ORIGIN_DREAM, newest, 'reminder', None))
-        self.assertEqual([item['reason'] for item in self.detail()['suggestions']['dropped']], ['one-occasion'],
-                         'a standing suggestion still needs two cited turns')
+        self.assertEqual(len(self.rows()), 2, 'the AI may also judge a standing interest from one turn')
+        self.assertEqual(self.detail()['suggestions']['dropped'], [])
 
     def test_a_paused_owner_model_suggests_nothing(self):
         self.two_days()
@@ -178,10 +163,14 @@ class LookBack(Dream):
 
 
 class Offer(_Case):
-    """#717: the owner is told once, with the owner's next own Work, through the scheduled message and its cancel button.
+    """#717: the owner is told once, through each row's scheduled message and cancel button.
 
     A row still ``proposed`` from before #717 (``legacy``) keeps the old proposal message and buttons.
     """
+
+    def setUp(self):
+        super().setUp()
+        self.store.put(TIMEZONE_CONFIG_KEY, 'Asia/Seoul')
 
     def suggest(self, anchor, **fields):
         outcomes, calls = self.service.suggest_preparations(anchor, [suggestion(due=self.due_iso(86400), **fields)])
@@ -202,8 +191,12 @@ class Offer(_Case):
 
     def notification(self, work, kind='preparation_scheduled'):
         with self.store.db() as db:
-            row = db.execute('SELECT * FROM telegram_notifications WHERE job_id=? AND kind=?', (work, kind)).fetchone()
+            row = db.execute('SELECT * FROM telegram_notifications WHERE (job_id=? OR job_id LIKE ?) AND kind=?',
+                             (work, work + '/dream:%', kind)).fetchone()
         return dict(row) if row else None
+
+    def row_notification(self, row):
+        return self.store.notification_of(f"{row['created_from']}/dream:{row['id']}", 'preparation_scheduled')
 
     def proposal_sends(self):
         """Every message that tells or offers a preparation (cancel or accept/decline buttons)."""
@@ -219,8 +212,8 @@ class Offer(_Case):
         self.deliver()
         row = self.suggest(anchor)
         self.assertEqual((row['state'], row['accepted_by']), (prep.STATE_SCHEDULED, prep.ACCEPTED_DREAM))
-        self.now += 3600
-        self.assertFalse(self.tick(), 'not due yet')
+        self.now += 1800
+        self.assertFalse(self.tick(), 'not due yet, still within waking hours')
         self.receive('다음 질문')
         self.deliver()
         [message] = self.proposal_sends()
@@ -252,23 +245,158 @@ class Offer(_Case):
         self.assertEqual(self.service.suggest_preparations(self.receive('셋째 질문'), [suggestion(due=self.due_iso(86400))]),
                          ([{'reason': 'declined_before'}], 0))
 
-    def test_at_most_one_suggestion_message_a_day(self):
+    def test_all_rows_are_queued_together_once_each_with_an_independent_cancel(self):
+        anchor = self.receive('첫 질문')
+        self.deliver()
+        items = [suggestion(goal=f'준비 {n}', title=f'준비 {n}', due=self.due_iso(86400))
+                 for n in range(om.DREAM_SUGGESTIONS)]
+        outcomes, calls = self.service.suggest_preparations(anchor, items)
+        rows = [self.service.preparations.get(outcome['preparation_id']) for outcome in outcomes]
+        self.assertEqual(calls, 0)
+        self.tick()
+        self.assertTrue(all(self.row_notification(row)['state'] == 'queued' for row in rows))
+        for _ in rows:
+            self.deliver()
+        messages = self.proposal_sends()
+        self.assertEqual(len(messages), len(rows))
+        for row in rows:
+            notice = self.row_notification(row)
+            self.assertEqual(notice['fingerprint'], 'ids:' + row['id'])
+            self.assertEqual(notice['created'], self.store.job(anchor)['created'])
+            message = next(m for m in messages if f"p7p:{notice['id']}:cancel" == self.cancel_button(m))
+            self.assertIn(row['title_text'], message['text'])
+        first = rows[0]
+        notice = self.row_notification(first)
+        self.tap(f"p7p:{notice['id']}:cancel", notice['message_id'])
+        self.assertEqual(self.service.preparations.get(first['id'])['state'], prep.STATE_CANCELLED)
+        self.assertTrue(all(self.service.preparations.get(row['id'])['state'] == prep.STATE_SCHEDULED for row in rows[1:]))
+        self.tick()
+        self.receive('다음 질문')
+        self.deliver()
+        self.assertEqual(len(self.proposal_sends()), len(rows), 'no second notice')
+
+    def test_all_anchors_are_told_and_later_rows_need_not_wait_a_day(self):
         first = self.receive('첫 질문')
-        self.suggest(first)
         second = self.receive('둘째 질문')
+        self.suggest(first)
         self.suggest(second, goal='주간 보고 정리', recurrence='weekly')
-        self.receive('셋째 질문')
-        self.deliver()
-        self.receive('넷째 질문')
-        self.deliver()
-        self.assertEqual(len(self.proposal_sends()), 1)
-        self.assertIsNotNone(self.notification(first), 'the oldest look back is told first')
-        self.assertIsNone(self.notification(second))
-        self.now += 86400
-        self.receive('다음 날 질문')
-        self.deliver()
-        self.assertEqual(len(self.proposal_sends()), 2)
+        self.tick()
+        self.assertIsNotNone(self.notification(first))
         self.assertIsNotNone(self.notification(second))
+        third = self.receive('셋째 질문')
+        row = self.suggest(third, goal='나중 준비')
+        self.tick()
+        self.assertIsNotNone(self.row_notification(row), 'another batch on the same day is told too')
+
+    def test_first_due_waits_for_its_notice_in_waking_hours_including_after_restart(self):
+        anchor = self.receive('첫 질문')
+        self.deliver()
+        self.now = prep_t.SEOUL_MIDNIGHT + 3 * 3600
+        outcomes, _ = self.service.suggest_preparations(anchor, [suggestion(
+            goal='밤에 마련한 준비', kind='reminder', recurrence='once', due=self.due_iso(60))])
+        row = self.service.preparations.get(outcomes[0]['preparation_id'])
+        self.now += 61
+        self.assertFalse(self.tick())
+        current = self.service.preparations.get(row['id'])
+        self.assertEqual((current['state'], current['run_count'], current['due_at']),
+                         (prep.STATE_SCHEDULED, 0, row['due_at']))
+        self.assertIsNone(self.row_notification(row))
+        self.service = self.make_service()
+        self.assertFalse(self.tick(), 'restart does not bypass the notice')
+        self.now = prep_t.SEOUL_MIDNIGHT + 8 * 3600
+        original = self.service.preparations.start
+        observed = []
+        def start(*args, **kwargs):
+            observed.append(self.row_notification(row))
+            return original(*args, **kwargs)
+        self.service.preparations.start = start
+        self.assertTrue(self.tick())
+        self.assertEqual(len(observed), 1)
+        self.assertEqual(observed[0]['state'], 'queued', 'its own notice precedes the first claim')
+        self.assertEqual(len(self.runs(row['id'])), 1)
+        self.assertIsNotNone(self.service.preparations.get(row['id'])['offered_at'])
+
+    def test_queue_failure_keeps_first_run_pending_and_retry_is_idempotent(self):
+        anchor = self.receive('첫 질문')
+        self.deliver()
+        row = self.suggest(anchor, kind='reminder', recurrence='once')
+        self.now = row['due_at'] + 1
+        original = self.store.telegram.queue_notification
+        self.store.telegram.queue_notification = lambda *args, **kwargs: None
+        self.assertFalse(self.tick())
+        self.assertIsNone(self.service.preparations.get(row['id'])['offered_at'])
+        self.assertEqual(self.runs(row['id']), [])
+        self.store.telegram.queue_notification = original
+        original_mark = self.service.preparations.mark_offered
+        self.service.preparations.mark_offered = lambda *args: None  # restart after queueing, before marking
+        self.assertFalse(self.tick())
+        first = self.row_notification(row)
+        self.service.preparations.mark_offered = original_mark
+        self.assertTrue(self.tick())
+        self.assertEqual(self.row_notification(row)['id'], first['id'])
+        # Settle the completed reminder before its notice is delivered: the receipt must survive.
+        self.service.deliver_one()
+        self.tick()
+        self.deliver()
+        self.assertEqual(self.row_notification(row)['state'], 'sent')
+        self.assertEqual(len(self.proposal_sends()), 1)
+
+    def test_paused_dream_rows_do_not_hide_owner_or_day_plan_rows_and_resume(self):
+        anchor = self.receive('첫 질문')
+        rows = [self.suggest(anchor, goal=f'꿈 준비 {n}') for n in range(prep.MAX_ACTIVE_DREAM)]
+        self.tick()  # tell all rows before pausing
+        self.service.owner_model.set_controls({'dream': False})
+        self.now = max(row['due_at'] for row in rows) + 1
+        owner = self.scheduled(seconds=-1, kind='reminder')
+        plan = self.service.preparations.create(kind='reminder', goal='계획이 마련한 준비', due_at=self.now - 1,
+            timezone='Asia/Seoul', recurrence=None, channel='web', created_from=anchor,
+            state=prep.STATE_SCHEDULED, accepted_by=prep.ACCEPTED_DAY_PLAN, origin=prep.ORIGIN_DAY_PLAN)
+        self.tick()
+        for row in rows:
+            current = self.service.preparations.get(row['id'])
+            self.assertEqual((current['state'], current['run_count'], current['due_at']),
+                             (prep.STATE_SCHEDULED, 0, row['due_at']))
+        self.assertEqual(len(self.runs(owner['id'])), 1)
+        self.assertEqual(len(self.runs(plan['id'])), 1)
+        self.service.owner_model.set_controls({'dream': True})
+        self.tick()
+        self.tick()  # keep the ordinary per-tick budget
+        self.assertTrue(all(len(self.runs(row['id'])) == 1 for row in rows))
+
+    def test_dream_budget_leaves_room_for_an_owner_schedule(self):
+        anchor = self.receive('첫 질문')
+        for n in range(prep.MAX_ACTIVE_DREAM):
+            self.suggest(anchor, goal=f'꿈 준비 {n}')
+        outcomes, _ = self.service.suggest_preparations(anchor, [suggestion(goal='초과 준비', due=self.due_iso(86400))])
+        self.assertEqual(outcomes, [{'reason': 'limit'}])
+        self.script = [{'content': None, 'tool_calls': [prep_t.call('schedule', 'schedule_preparation',
+            kind='reminder', goal='소유자가 요청한 준비', due=self.due_iso(600))]}, {'content': '예약했어요.'}]
+        owner_work = self.receive('10분 뒤 알려 줘')
+        [owner] = [row for row in self.service.preparations.rows() if row['created_from'] == owner_work]
+        self.assertEqual((owner['state'], owner['accepted_by']), (prep.STATE_SCHEDULED, prep.ACCEPTED_OWNER_REQUEST))
+        self.assertLess(prep.MAX_ACTIVE_DREAM, prep.MAX_ACTIVE)
+
+    def test_standing_dream_is_finite_and_owner_can_extend_it(self):
+        anchor = self.receive('첫 질문')
+        row = self.suggest(anchor, kind='reminder', recurrence='daily')
+        self.assertEqual(row['max_runs'], prep.DREAM_MAX_RUNS)
+        self.assertEqual(prep.rule_parts(row['recurrence'])['COUNT'], str(prep.DREAM_MAX_RUNS))
+        self.tick()  # queue its notice once
+        for _ in range(prep.DREAM_MAX_RUNS):
+            row = self.service.preparations.get(row['id'])
+            self.now = row['due_at'] + 1
+            work = self.service.preparations.start(row, channel='web', chat_id=None, now=self.now)
+            with self.store.db() as db:
+                db.execute("UPDATE jobs SET status='succeeded',delivery='none',response='done' WHERE id=?", (work,))
+            self.service.preparations.settle(self.service.preparations.get(row['id']), self.now)
+        current = self.service.preparations.get(row['id'])
+        self.assertEqual((current['state'], current['run_count']), (prep.STATE_DELIVERED, prep.DREAM_MAX_RUNS))
+        self.now += 86400
+        self.tick()
+        self.assertEqual(len(self.runs(row['id'])), prep.DREAM_MAX_RUNS)
+        other = self.suggest(anchor, goal='연장할 준비', recurrence='weekly')
+        extended = self.service.preparations.edit(other['id'], rrule='FREQ=WEEKLY;COUNT=60')
+        self.assertEqual((extended['recurrence'], extended['max_runs']), ('RRULE:FREQ=WEEKLY;COUNT=60', 60))
 
     def test_a_legacy_proposal_is_offered_once_and_accepted_with_its_button(self):
         anchor = self.receive('첫 질문')
@@ -360,7 +488,7 @@ class OneOff(Offer):
 
     def setUp(self):
         super().setUp()
-        # The offer hours and the daily cap read the owner's zone (``resolve_local_timezone``), not the host's.
+        # Offer hours read the owner's zone, not the host's.
         self.store.put(TIMEZONE_CONFIG_KEY, 'Asia/Seoul')
 
     def one_off(self, anchor, seconds=2 * 86400):
@@ -392,14 +520,14 @@ class OneOff(Offer):
         self.tick()
         self.assertEqual(len(self.runs(row['id'])), 1, 'a one-off runs once')
 
-    def test_a_standing_suggestion_still_waits_for_the_next_work(self):
+    def test_a_standing_suggestion_is_told_on_the_tick_without_a_new_work(self):
         anchor = self.receive('첫 질문')
         self.deliver()
         self.suggest(anchor)
         self.tick()
         self.deliver()
-        self.assertEqual(self.proposal_sends(), [])
-        self.assertIsNone(self.notification(anchor))
+        self.assertEqual(len(self.proposal_sends()), 1)
+        self.assertIsNotNone(self.notification(anchor))
 
     def test_not_offered_at_night_but_in_the_morning(self):
         anchor = self.receive('다음 주 화요일까지 서류 내야 해')
@@ -414,28 +542,19 @@ class OneOff(Offer):
         self.deliver()
         self.assertEqual(len(self.proposal_sends()), 1)
 
-    def test_the_daily_cap_and_the_pause_hold(self):
-        first = self.receive('첫 질문')
-        self.suggest(first)
-        self.receive('둘째 질문')
+    def test_the_pause_defers_notices_until_resume(self):
+        anchor = self.receive('첫 질문')
         self.deliver()
-        self.assertEqual(len(self.proposal_sends()), 1)
-        later = self.receive('다음 주 화요일까지 서류 내야 해')
-        self.deliver()
-        self.one_off(later)
-        self.tick()
-        self.deliver()
-        self.assertEqual(len(self.proposal_sends()), 1, 'one suggestion message per owner day')
+        self.suggest(anchor)
+        self.one_off(anchor)
         self.service.owner_model.set_controls({'enabled': False})
-        self.now = prep_t.SEOUL_MIDNIGHT + 9 * 3600
         self.tick()
-        self.deliver()
-        self.assertEqual(len(self.proposal_sends()), 1, 'none while upkeep is paused')
+        self.assertIsNone(self.notification(anchor))
         self.service.owner_model.set_controls({'enabled': True})
         self.tick()
-        self.deliver()
-        self.assertEqual(len(self.proposal_sends()), 2)
-        self.assertIsNotNone(self.notification(later))
+        with self.store.db() as db:
+            notices = db.execute("SELECT * FROM telegram_notifications WHERE kind='preparation_scheduled'").fetchall()
+        self.assertEqual(len(notices), 2)
 
     def test_a_legacy_one_off_whose_time_passed_lapses_and_is_not_a_decline(self):
         anchor = self.receive('다음 주 화요일까지 서류 내야 해')
