@@ -68,6 +68,29 @@ class ScheduledRequestContext(_Case):
         self.assertIn('prep:' + row['id'], continued)
         self.assertIn(self.GOAL, continued)
 
+    def test_a_follow_up_sees_the_sign_in_the_earlier_work_asked_for(self):
+        """#815 (live 2026-11-13): a login prompt is a Still notice, not a message, so a question about it
+        found nothing and the reply named another site.  The linked exchange carries it."""
+        row, job = self.saved_run()
+        current = self.store.enqueue('그 로그인은 왜 필요했어?', 'reference', owner_typed=True)
+        self.store.link_work_relation(current, job['id'], 'reference')
+        self.assertNotIn('[Still]', self.service.continued_exchange(self.store.job(current)))
+        evidence = {'evidence': {'state': 'login_required', 'url': 'https://news.example.test/article?id=7',
+                                 'requires': 'browser-login'}}
+        with self.store.db() as db:
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       (job['id'], 'browser_open', 'succeeded', json.dumps(evidence), self.now))
+        self.assertNotIn('[Still]', self.service.continued_exchange(self.store.job(current)),
+                         'a sign-in page the owner was never asked about is not a prompt')
+        with self.store.db() as db:
+            db.execute("INSERT INTO telegram_notifications(id,job_id,chat_id,generation,kind,state,created,sent_at) "
+                       "VALUES ('n1',?,'1','g','browser_login_needed','browser_login_expired',?,?)",
+                       (job['id'], self.now, self.now))
+        continued = self.service.continued_exchange(self.store.job(current))
+        self.assertTrue(continued.endswith('[Still] During that exchange Still asked the owner to sign in at: '
+                                           'news.example.test'))
+        self.assertNotIn('article', continued.split('[Still]')[1], 'the host only, never the page path')
+
     def test_current_scheduled_work_still_executes_its_exact_accepted_goal(self):
         row, job = self.saved_run()
         sent = self.model_calls[0]['messages']

@@ -40,6 +40,7 @@ The [Engineering hub](https://jongtae.github.io/Still/engineering/) is the publi
 | Relationship and collaboration | [Presence](presence-experience-contract.en.md), [local web presentation](web-management-contract.en.md) |
 | Connections, skills and delegation | [Connection and Delegation](connection-delegation-contract.en.md), [connection support](connection-support.en.md) |
 | Future distribution design | [Platform Foundation](agent-distribution-platform-foundation.en.md); not evidence of a shipped marketplace |
+| Frontier development program | [Requirements, milestones and Codex/Claude workflow](frontier-delivery.en.md) |
 | Repository delivery | [Development Governance](development-governance.en.md), [Goal Execution](goal-execution-contract.en.md), [Incremental Delivery](incremental-delivery.en.md) |
 
 Architecture, Decision and Presence now lead with topic-based current rules. Their dated source text remains at pinned pre-edit revisions, rather than as competing amendment chains. The Memory contract is shared by agency and presentation; a new memory rule belongs there, not in three parallel copies.

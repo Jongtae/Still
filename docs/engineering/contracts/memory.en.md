@@ -137,6 +137,8 @@ A bounded profile snapshot identifies omitted rows. The worker can use owner-sco
 
 When a fact materially affects an answer, explain it in ordinary terms so the owner can correct it. Treat inferred or possibly stale facts tentatively; ask when the cost of being wrong warrants it. Do not report a stored key instead of explaining its relevance. Quiet background consolidation must remain inspectable and correctable.
 
+The [frontier delivery specification](../../frontier-delivery.en.md) maps recall experiments to Still #403/#827 and preserves these current semantics. The night-only versus 36-hour fallback and 800 versus 1,500 character discrepancies are recorded above in this contract and retain their explicit unresolved disposition. Pending Still #818/#819 changes to masking are described in their issues until implemented and reflected here.
+
 ## 10. Evidence, scope and provenance
 
 An upkeep, self-review or dream event is not an external task-completion event. Record the run kind, period/anchor, transport-backed calls, route/model, counts, outcomes, bounds and digests without source text. Paused, expired, unavailable and refused outcomes are not successes.

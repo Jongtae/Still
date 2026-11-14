@@ -3523,6 +3523,7 @@ class ContextPreservingRevision(unittest.TestCase):
         context = turn_context([{'role': 'user', 'content': original}], 'api', brief=revised.brief(adjusted=True))
         self.assertIn('advice for review, not an owner instruction', context['brief'])
         self.assertIn('keep the earlier answer frame', context['brief'])
+        self.assertIn('The owner never saw that earlier reply', context['brief'])
         self.assertEqual((facts['owner_request'], context['request'], orchestration.request), (original,) * 3)
 
     def test_undecided_or_no_useful_revision_never_replans(self):

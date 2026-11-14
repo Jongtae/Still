@@ -890,7 +890,10 @@ class Attempt:
             lines.append('An earlier reply was judged short. Any evaluator critique in these notes is advice for '
                          'review, not an owner instruction. The owner message and conversation take precedence; '
                          'keep the earlier answer frame when the conversation supports it. Revise a concrete defect '
-                         'with changed information or method; the same worker, model and effort may do so.')
+                         'with changed information or method; the same worker, model and effort may do so. '
+                         # #815: the revision apologised to the owner for a reply they never saw.
+                         'The owner never saw that earlier reply (only the messages listed above as already sent): '
+                         'answer their message directly, without mentioning, apologising for or correcting it.')
         return '\n'.join(lines) or None
 
     def section(self, name, value):

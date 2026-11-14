@@ -491,6 +491,12 @@ BROWSER_LOGIN_PAGE_OFFERED_TEXT=('이 페이지는 로그인이 필요해요. �
                                  '말고, 지금까지 확인한 내용으로 이번 답을 마치세요. 그러면 이 실행이 끝난 뒤 Still이 이 Mac에 '
                                  '로그인 창을 열고 소유자에게 로그인을 요청하며, 소유자가 로그인하고 창을 닫으면 이 요청을 한 번 '
                                  '이어서 처리합니다.')
+#: #619 (owner decision 2026-11-03): a scheduled run has no owner present, so a sign-in page asks
+#: nothing and leaves no login window waiting; the worker continues without that page.
+BROWSER_LOGIN_UNATTENDED_TEXT=('이 페이지는 로그인이 필요해요. 이 실행은 소유자가 없는 예약 실행이라 Still은 로그인을 요청하지 '
+                               '않았고, 소유자를 기다리는 것도 없어요. 비밀번호는 입력하지 말고, 로그인 없이 확인할 수 있는 '
+                               '다른 경로가 있으면 그것으로 확인하세요. 끝내 확인하지 못한 부분은 답에서 확인하지 못했다고 '
+                               '짧게 밝히세요.')
 #: #1006: a second site's login page while this Work's login for another site is still pending.
 BROWSER_LOGIN_OTHER_PENDING_TEXT=('이 페이지는 로그인이 필요해요. 이 요청은 이미 다른 사이트의 로그인을 기다리고 있어 이 사이트의 로그인은 '
                                   '지금 요청되지 않습니다. 비밀번호는 입력하지 말고, 지금까지 확인한 내용으로 답을 마치면서 이 사이트에도 '
@@ -5170,10 +5176,31 @@ class AgentService:
             who='owner' if message['role']=='user' else 'assistant'
             lines=[] if self.store.work_request_forgotten(related) else [f"[{who}] {message['content']}"]
             if reply and reply['content']:lines.append(f"[assistant] {reply['content']}")
+            # #815: a login prompt is Still's own notice, not a conversation message: without this line
+            # a follow-up about it cannot see what was asked.
+            hosts=self.sign_in_asks(related)
+            if hosts:lines.append('[Still] During that exchange Still asked the owner to sign in at: '+', '.join(hosts))
             return '\n'.join(lines)
         except Exception:
             LOG.info('continued exchange unavailable job=%s',job.get('id'))
             return ''
+
+    def sign_in_asks(self, work_id):
+        """The hosts a Work sent the owner a login prompt for, in order (names only, never a path).
+
+        Read from the Work's own record: its sent ``browser_login_needed`` notice and the
+        ``login_required`` pages its tools observed.  [] when it asked for none.
+        """
+        note=self.store.notification_of(work_id,'browser_login_needed')
+        if not note or not note.get('sent_at'):return []
+        hosts=[]
+        for event in self.store.task_events(work_id):
+            evidence=event['trace'].get('evidence')
+            if not isinstance(evidence,dict) or evidence.get('state')!='login_required':continue
+            try:host=ascii_host(urlsplit(str(evidence.get('url') or '')).hostname)
+            except ValueError:host=None
+            if host and host not in hosts:hosts.append(host)
+        return hosts
 
     def work_orchestration(self, job, request, rows, sections, budget, document_jobs=(), can_ask_location=False,
                            attachments=''):

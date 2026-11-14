@@ -1,6 +1,6 @@
 # Still continuous evaluation loop (EVAL-LOOP-01, #821)
 
-> Owner decision 2026-09-28: sweeps run on Codex only by default, because the Claude subscription limit is shared with development work. Pass `--worker claude-code` or `--worker both` explicitly when Claude capacity allows.
+> Owner update 2026-11-14, [#822](https://github.com/Jongtae/Still/issues/822): both Codex and Claude are available for development and relevant comparisons. Ordinary scenarios support `--worker claude-code` and `--worker both`; the default remains `codex` for existing command compatibility. Simulated-world sweeps retain their currently supported Codex route. Record actual provider refusals and use an eligible alternate where possible. API judge spend remains governed by its own budget. This supersedes the earlier Codex-only capacity rationale.
 
 > Owner decision 2026-10-01 (#887): the eval is **on-demand triage**, not a scheduled loop and not a pass-rate target. The owner's real use is the primary signal. A sweep reproduces owner-reported failures and checks that a fix generalizes. Run it after a batch of merged fixes, normally only the affected `--scenarios` with `--epochs 1`. Use a full `--epochs 3` sweep only to support an improvement claim. A sweep stops at the first subscription usage limit (see *Capacity*).
 
@@ -282,6 +282,8 @@ PYTHONPATH=evals .venv/bin/python -m agentos_eval judgments compare /tmp/judgmen
 ```
 
 Use the generated `judgments-*.json` filenames in the comparison command. A **live run is opt-in and spends real model calls**: `plan` prints the maximum (74 for the bundled set: 70 cases, two escalation cases take up to three calls); `--max-calls N`, `--roles a,b` and `--trials N` bound/filter/repeat measurements. Trials are separate rows, not best-of-N passes. The default cap is the selected plan's maximum times trials. After a cap refusal the remaining cases are `not_run`. JSON and Markdown reports are owner-only files in the eval home's `reports/` folder or `--out`. Gap/note text is excluded unless `--keep-text` is set; note presence alone is recorded.
+
+Judgment reports fingerprint validated case inputs, expectations and the worker catalogue with canonical SHA-256 and record the configured reasoning effort (`null` means the route default). Comparison identifies content or effort changes even when case IDs and version are unchanged. Historical reports lacking either field remain readable, but `same_conditions` is false with an unverified-condition reason. Result deltas remain available for intentionally different configurations. Selected qualification definitions and suite version are fingerprinted too; unavailable definitions make equivalence unverified. Case content is not copied into reports.
 
 Unavailable or unsent judgments have no semantic/routing score (`not_run`, or an engine/budget failure); accuracy uses answered cases only. Zero answers means unmeasured, never 0% correct. Reports show answer and model-call counts, and explicitly flag an unavailable route. Malformed answers remain measured failures.
 
