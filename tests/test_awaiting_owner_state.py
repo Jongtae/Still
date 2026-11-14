@@ -21,7 +21,6 @@ from unittest import mock
 
 from personal_agent import owner_model as om
 from personal_agent.conversation_handoff import GOAL_REACHED_PROPOSITION, ConversationJudgments
-from personal_agent.conversation_projection import TERMINAL_UNCONFIRMED_NOTE
 from personal_agent.decision import FixtureDecisionEngine
 from personal_agent.orchestrator import QUESTION, Orchestration
 from personal_agent.quickstart_service import AgentService, awaiting_owner_rows
@@ -205,7 +204,7 @@ class WaitingState(RefusedWriteTestCase):
         self.assertTrue(self.service.work_awaits_owner_preview(job), 'the preview reading other surfaces call agrees')
         task = self.task(job['id'])
         self.assertEqual((task['waiting_for_owner'], task['waiting_for']), (True, ['settings-drafts']))
-        self.assertNotIn(TERMINAL_UNCONFIRMED_NOTE, bubble)
+        self.assertEqual(bubble, self.text)
         # The owner declines: nothing waits any more, and no surface keeps saying it does.
         [draft] = self.service.settings_orchestrator.pending_for_work(job['id'])
         self.service.settings_orchestrator.cancel(draft['owner'], draft['channel'], draft['id'])
@@ -253,15 +252,15 @@ class TelegramClosingLine(RefusedWriteTestCase):
         return self.sent[before]
 
     def test_the_closing_line_follows_the_typed_waiting_state(self):
-        self.assertNotIn(TERMINAL_UNCONFIRMED_NOTE, self.deliver(('preparation-proposal',)))
+        self.assertEqual(self.deliver(('preparation-proposal',)), '초안을 만들었어요.')
 
     def test_a_wait_with_an_unrelated_shortfall_delivers_the_judgments_line(self):
         # #631: the wait does not suppress a line about another unfinished part.
         note = 'The example attachment could not be checked.'
         self.assertEqual(self.deliver(('settings-drafts',), note=note), '초안을 만들었어요.\n\n' + note)
 
-    def test_a_work_with_nothing_waiting_keeps_its_closing_line(self):
-        self.assertTrue(self.deliver(()).endswith(TERMINAL_UNCONFIRMED_NOTE))
+    def test_a_work_with_nothing_waiting_has_no_fallback_closing_line(self):
+        self.assertEqual(self.deliver(()), '초안을 만들었어요.')
 
     def test_a_note_is_still_said_unless_a_step_approval_waits(self):
         self.assertTrue(self.deliver(('settings-drafts',), note='남은 일: 확인').endswith('남은 일: 확인'))

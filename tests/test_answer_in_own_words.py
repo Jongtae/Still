@@ -19,7 +19,7 @@ import unittest
 from personal_agent import telegram_locale
 from personal_agent.agent_runtime import GOAL_NOT_SHOWN, GOAL_UNJUDGED
 from personal_agent.conversation_projection import (TERMINAL_FAILED_HEADER, TERMINAL_FAILED_NOTE,
-                                                    TERMINAL_PARTIAL_NOTE, TERMINAL_UNCONFIRMED_NOTE, answer_note,
+                                                    TERMINAL_PARTIAL_NOTE, answer_note,
                                                     terminal_text)
 from personal_agent.messages import catalog, msg
 
@@ -36,7 +36,7 @@ class ClosingLineTests(unittest.TestCase):
         self.assertEqual(note, NOTE)
         text = terminal_text(ANSWER, None, 'partial', note=note)
         self.assertEqual(text, ANSWER + '\n\n' + NOTE)
-        for fixed in (TERMINAL_PARTIAL_NOTE, TERMINAL_UNCONFIRMED_NOTE, TERMINAL_FAILED_NOTE, '단계는 끝내지 못했어요'):
+        for fixed in (TERMINAL_PARTIAL_NOTE, TERMINAL_FAILED_NOTE, '단계는 끝내지 못했어요'):
             self.assertNotIn(fixed, text)
 
     def test_judged_silence_is_distinct_from_an_absent_note(self):
@@ -47,9 +47,9 @@ class ClosingLineTests(unittest.TestCase):
                 self.assertEqual(terminal_text('Example answer.', outcome=outcome, note=''), 'Example answer.')
                 floor = TERMINAL_FAILED_NOTE if outcome == 'failed' else TERMINAL_PARTIAL_NOTE
                 self.assertEqual(answer_note(STEPS, outcome, report={}), floor)
-                fallback = TERMINAL_FAILED_NOTE if outcome == 'failed' else TERMINAL_UNCONFIRMED_NOTE
+                fallback = '\n\n' + TERMINAL_FAILED_NOTE if outcome == 'failed' else ''
                 self.assertEqual(terminal_text('Example answer.', outcome=outcome, note=None),
-                                 'Example answer.\n\n' + fallback)
+                                 'Example answer.' + fallback)
         kept = 'Please confirm the draft.'
         self.assertEqual(answer_note([*STEPS, ('example_write', kept)], 'partial', kept={kept}, report={'note': ''}), kept)
         for key in ('question', 'next'):
@@ -66,11 +66,11 @@ class ClosingLineTests(unittest.TestCase):
         self.assertEqual(entry['ko'], '일부 단계는 끝내지 못했어요.')
         self.assertEqual(entry['en'], "Some steps didn't finish.")
         self.assertEqual(telegram_locale.translate(TERMINAL_PARTIAL_NOTE, 'en'), entry['en'])
-        # No step left a reason and the judgment said nothing: the unconfirmed floor, also from the catalog.
+        # No failed step and no judgment note: deliver the answer alone.
         text = terminal_text(ANSWER, None, 'partial')
-        self.assertEqual(text, ANSWER + '\n\n' + msg('projection.answer_not_confirmed'))
-        self.assertEqual(telegram_locale.translate(TERMINAL_UNCONFIRMED_NOTE, 'en'),
-                         msg('projection.answer_not_confirmed', 'en'))
+        self.assertEqual(text, ANSWER)
+        self.assertEqual(terminal_text(ANSWER, outcome='partial', note=answer_note(STEPS, 'partial')),
+                         ANSWER + '\n\n' + TERMINAL_PARTIAL_NOTE)
         self.assertFalse(any('{count}' in value for value in entry.values()), 'no Korean count word in any language')
 
     def test_a_failed_work_never_reads_as_success(self):

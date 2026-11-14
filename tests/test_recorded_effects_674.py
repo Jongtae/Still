@@ -17,7 +17,6 @@ from personal_agent.agent_runtime import (NOT_DONE_OTHER, RECORDED_EFFECT_FACT, 
 from personal_agent.conversation_handoff import (JUDGMENT_NO, JUDGMENT_UNAVAILABLE, JUDGMENT_YES, REJUDGED_DENIED_AGAIN,
                                                  REJUDGED_NOT_ALLOWED, REJUDGED_UNAVAILABLE, REJUDGED_YES,
                                                  ConversationJudgments, Judgment)
-from personal_agent.conversation_projection import TERMINAL_UNCONFIRMED_NOTE
 from personal_agent.decision import (OUTCOME_DECIDED, OUTCOME_UNAVAILABLE, BinaryDecision, FixtureDecisionEngine,
                                      SchemaDecisionEngine, fixture_confidence)
 
@@ -264,7 +263,7 @@ class CliRouteRecordedEffects(Harness):
                 self.assertNotEqual(row['status'], 'succeeded')
                 self.assertIsNone(row['owner_note'])
                 bubble = self.bubble(row)
-                self.assertEqual(bubble, row['response'] + '\n\n' + TERMINAL_UNCONFIRMED_NOTE)
+                self.assertEqual(bubble, row['response'])
                 for denial in (DENIAL_NOTE, DENIAL_GAP):
                     self.assertNotIn(denial, bubble)
                     self.assertNotIn(denial, row.get('owner_cause') or '')

@@ -16,7 +16,7 @@ from personal_agent import preparations as prep
 from personal_agent.agent_runtime import (AWAITING_OWNER_STEP_FACT, failed_steps_text,
                                           outcome_from_events, trail_steps)
 from personal_agent.bounded_execution import ExecutionResult
-from personal_agent.conversation_projection import (TERMINAL_FAILED_NOTE, TERMINAL_PARTIAL_NOTE, TERMINAL_UNCONFIRMED_NOTE,
+from personal_agent.conversation_projection import (TERMINAL_FAILED_NOTE, TERMINAL_PARTIAL_NOTE,
                                                     TERMINAL_UNFINISHED_LABEL)
 from personal_agent.providers import ModelAdapter
 from personal_agent.quickstart_service import AgentService
@@ -150,7 +150,7 @@ class ProposalRoutes(_Case):
                           if any(item.get('emoji') in (DONE_REACTION, WROTE_REACTION) for item in body.get('reaction') or ())])
         # The closing line never calls the waiting proposal unfinished or failed.
         reply = texts[0]
-        for unfinished in (TERMINAL_UNFINISHED_LABEL, TERMINAL_PARTIAL_NOTE, TERMINAL_FAILED_NOTE, TERMINAL_UNCONFIRMED_NOTE):
+        for unfinished in (TERMINAL_UNFINISHED_LABEL, TERMINAL_PARTIAL_NOTE, TERMINAL_FAILED_NOTE):
             self.assertNotIn(unfinished, reply)
         # The owner's next step is said: the proposal message with its accept button.
         self.assertTrue(any(GOAL in text for text in texts[1:]), texts)
