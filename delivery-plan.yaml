@@ -46,7 +46,8 @@
       "SIDE-ANSWER-01",
       "CLI-UPDATE-01",
       "RESPONSIVE-01",
-      "FRONTIER-SPEC-01"
+      "FRONTIER-SPEC-01",
+      "FRONTIER-EVAL-01"
     ]
   },
   "iterations": [
@@ -920,6 +921,11 @@
           "issue": 823,
           "status": "complete-on-merge",
           "decision": "The specification, current-contract reconciliation, capacity guidance, file ownership and finite first-wave selection are delivered by the #823 PR. This entry is conditional on that PR merging; GitHub records its actual integration status."
+        },
+        "FRONTIER-EVAL-01": {
+          "issue": 824,
+          "status": "complete-on-merge",
+          "decision": "Judgment reports fingerprint validated case content, the worker catalogue and selected qualification definitions, record reasoning effort, and comparisons disclose changed or unverified conditions; historical reports stay readable. This entry is conditional on the #824 PR merging; GitHub records its actual integration status."
         }
       }
     },
@@ -943,11 +949,11 @@
       "issue": 824,
       "milestone": "frontier-delivery",
       "kind": "implementation",
-      "activation_status": "parent-controlled",
+      "activation_status": "complete-on-merge",
       "tests": [
         "PYTHONPATH=src python3 -m pytest -q tests/test_eval_judgments.py"
       ],
-      "summary": "Record validated judgment-case identity and reasoning effort, and disclose changed or unknown comparison conditions while keeping legacy reports readable.",
+      "summary": "Record validated judgment-case identity and reasoning effort, and disclose changed or unknown comparison conditions while keeping legacy reports readable. This record takes effect when the #824 PR merges.",
       "depends_on": []
     },
     {
@@ -1485,11 +1491,10 @@
         "FRONTIER-SPEC-01",
         "FRONTIER-EVAL-01"
       ],
-      "active_substeps": [
-        "FRONTIER-EVAL-01"
-      ],
+      "active_substeps": [],
       "completed_substeps": [
-        "FRONTIER-SPEC-01"
+        "FRONTIER-SPEC-01",
+        "FRONTIER-EVAL-01"
       ],
       "parallel_eligible_substeps": [],
       "delegation": {
@@ -1557,6 +1562,6 @@
   "next_goal": {
     "id": "FRONTIER-01",
     "status": "owner-activated-goal-ready",
-    "action": "Owner-authorized FRONTIER-01 first wave (#822): on merge of the #823 specification PR, FRONTIER-SPEC-01 is complete-on-merge and FRONTIER-EVAL-01 (#824) becomes the selected integration substep using its already authorized worktree. This checked-in resting selection starts no heartbeat. #825\u2013#827 require their stated dependencies, concrete contracts and a recorded subsequent selection."
+    "action": "Owner-authorized FRONTIER-01 (#822): both first-wave substeps are complete-on-merge (#823 specification, #824 evaluation comparisons). No substep is selected; #825\u2013#827 stay reserved until their own PRs record their dependency disposition and selection, and the #817\u2013#821 lanes run under the owner's direct instruction on their own issues. This checked-in resting selection starts no heartbeat."
   }
 }
