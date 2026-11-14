@@ -28,12 +28,10 @@ class LocalApprovalCommit(HandoffTestCase):
         for key in (LOCAL_FOLDER_READ,LOCAL_REFERENCE_READ,LOCAL_RESULT_WRITE):
             with self.subTest(key=key):
                 work,row,_=self.selected(key)
-                self.store.put('document_sharing',{'original':True})
                 with patch.object(self.service,'_remember_work',side_effect=RuntimeError('crash before commit')):
                     with self.assertRaises(RuntimeError):
                         self.service.approve_local_folder({'handoff_id':row['handoff_id']})
                 self.assert_no_grant()
-                self.assertEqual(self.store.config('document_sharing'),{'original':True})
                 self.assertEqual(self.store.job(work)['status'],'awaiting_connection')
                 self.assertNotIn(work,self.store.config(LOCAL_RESUMED_KEY,[]))
                 self.assertIsNotNone(self.service.resume_index.record(key,work_id=work))

@@ -176,10 +176,7 @@ class TelegramDelivery:
     def notification_text(kind):
         return {'completed':msg('notice.completed'),
                 'failed':msg('notice.failed'),
-                'approval_needed':msg('service.approval_is_required_to_send_connected'),
                 'context_approval_needed':msg('service.approval_for_this_task_is_required'),
-                'approved':msg('notice.document_approved'),
-                'denied':msg('notice.document_denied'),
                 'browser_approval_needed':BROWSER_APPROVAL_PROMPT,
                 'browser_approved':msg('notice.step_approved'),
                 'browser_denied':msg('notice.step_denied'),

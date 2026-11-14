@@ -25,6 +25,7 @@ from urllib.error import HTTPError
 from urllib.parse import parse_qs, unquote, urlencode, urlsplit, urlunsplit
 from .browser_worker import EMBEDDED_UA_TOKEN
 from . import first_run
+from . import folder_grants
 from .quickstart_store import QuickStore
 from .calendar import CalendarConnector
 from .calendar_oauth import (GMAIL_FILTERS_GRANT, GMAIL_MODIFY_GRANT, GMAIL_MODIFY_SECRET_NAMESPACE, DRIVE_GRANT, DRIVE_SECRET_NAMESPACE, CalendarOAuth, EncryptedCalendarSecretStore,
@@ -1175,6 +1176,9 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                         return self.reply(200,save(body,local_surface=self.folder_settings_surface()))
                     except OwnerLocalRequired as exc:
                         return self.reply(403,{'error':str(exc),'reason':exc.reason})
+                    except folder_grants.ConfirmBroad as exc:
+                        # #820: nothing was saved; the owner confirms this folder once and saves again.
+                        return self.reply(409,{'error':exc.includes,'reason':exc.reason,'path':str(exc.path)})
                 if path=='/api/context-inbox/config':return self.reply(200,service.context_inbox().configure(body))
                 if path=='/api/context-inbox/capture':return self.reply(200,service.context_inbox().capture(body))
                 if path=='/api/context-inbox/delete':return self.reply(200,service.context_inbox().delete(body.get('id')))
@@ -1275,8 +1279,6 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                     if self.tunneled():return self.reply(400,{'error':msg('intranet.local_only')})
                     return self.reply(200,service.set_intranet_destination(body))
                 if path=='/api/owner-model/request':return self.reply(200,service.owner_model_request(body))
-                if path=='/api/documents/approval':return self.reply(200,service.approve_document_sharing_from_settings(body))
-                if path=='/api/public-pages/approval':return self.reply(200,service.set_public_page_approval(body))
                 if path=='/api/model':return self.reply(200,service.save_model(body,strict=True))
                 if path=='/api/model/test':return self.reply(200,service.test_model(body or None,strict=True))
                 if path=='/api/telegram':

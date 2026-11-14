@@ -172,7 +172,7 @@ class MattermostSurface(DirectMessageSurface):
     CONFIG_KEY, STATUS_KEY, TURNS_TABLE, SECRET_KEYS = CONFIG_KEY, 'mattermost_status', TURNS_TABLE, (SECRET_KEY,)
     REQUEST_KEY_PREFIX, MESSAGES = 'mm', 'mattermost'
     NOT_SENT, ERROR = MattermostNotSent, MattermostError
-    AT_THE_MAC = {'browser_approval_needed': 'mattermost.approve_at_mac', 'approval_needed': 'surface.answer_at_mac',
+    AT_THE_MAC = {'browser_approval_needed': 'mattermost.approve_at_mac',
                   'context_approval_needed': 'surface.answer_at_mac', 'browser_login_needed': 'surface.answer_at_mac'}
 
     def __init__(self, service, transport=None):

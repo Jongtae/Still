@@ -104,7 +104,7 @@ _STATUS_HINTS = (
 #
 # Discovery grants nothing: an offered tool still goes through
 # ``Capabilities.execute`` (declared/allowed tool, current package state,
-# provenance egress guard, owner-approved page scope, idempotent writes) on
+# provenance egress guard, idempotent writes) on
 # every call.  An action a profile does not offer has a *declared* reason, so a
 # missing binding is reported as a route limit, never as global incapability,
 # and an undeclared omission is a diagnosable defect (scripts/agentos_doctor.py).
@@ -228,9 +228,9 @@ CLI_PROFILES = {
         # relayed the same way and run under the service's unchanged gates:
         # #597 memory approval, calendar previews, #659 preparation acceptance.
         # #826 (owner decision 2026-09-28): the owner's connected-folder documents and
-        # approved public pages are offered here too, within the existing folder grants
-        # and page approvals the tools themselves enforce (``Capabilities.roots``,
-        # ``resolve_file``, ``page_scope``); they run in the bridge process.
+        # public pages are offered here too, within the existing folder grants the tools
+        # themselves enforce (``Capabilities.roots``, ``resolve_file``); they run in the
+        # bridge process.  #820: a page read takes any public address.
         # #961: the Work's pinned skills, read in the bridge process from the owner store
         # (the same content and revisions as the direct route; offered only with a binding).
         'actions': ('find_files', 'list_notes', 'list_roots', 'propose_current_state',
@@ -271,8 +271,7 @@ CLI_PROFILES = {
         'limitation': STRICT_ISOLATED_LIMITATION,
         # The bridge is told its profile (``--profile``, #701): the trusted-local
         # set without the browser tools, which this profile never offers.
-        # #23: public_page_read reads only this Work's search results here; the owner's
-        # approved page list is owner data and is not offered on this profile.
+        # #820: public_page_read takes any public address here too, as on every profile.
         'actions': ('list_notes', 'propose_current_state', 'public_page_read', 'save_note', 'weather', 'web_search'),
         'unavailable': {
             'find_files': _STRICT_FILES, 'read_file': _STRICT_FILES, 'list_roots': _STRICT_FILES, 'save_result': _STRICT_FILES,

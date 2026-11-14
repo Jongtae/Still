@@ -265,7 +265,7 @@ class ExposedToolWireBoundary(unittest.TestCase):
         # #774: the service relay serves the owner-state tools on the trusted-local route
         # (ask_location only to a Telegram Work: this turn is a web one).
         # #814: and the owner settings tools.
-        # #826: and the connected-folder documents, approved pages and the information-use audit.
+        # #826: and the connected-folder documents, public pages and the information-use audit.
         self.assertEqual(names, ["calendar_query", "capability_search", *CODE_RUN, "drive_read", "drive_search", "entrusted_line", "find_files", "forget_record", "information_use",
                                  "list_memory", "list_notes", "list_roots", "mail_read", "mail_search", "public_page_read", "read_file", "save_memory",
                                  "save_note", "save_result", "schedule_preparation", "search_conversation", "search_memory", "settings_change", "settings_read", "weather",
@@ -412,12 +412,13 @@ def _running_work(store, text="bridge turn"):
 
 
 class BoundedProfileHostInvocation(unittest.TestCase):
-    """#604: weather, search, search-result page follow-up and a private read
-    through the real bridge JSON-RPC loop and actual host invocation.
+    """#604: weather, search, public page reads and a private read through
+    the real bridge JSON-RPC loop and actual host invocation.
 
     Stubs replace only the public network: the search host, the weather host
     and page transport/DNS (the real ``PublicPageReader`` still enforces its
-    SSRF, redirect and approved-scope rules).  No model is involved.
+    SSRF and redirect rules; since #820 there is no approved-page scope).  No
+    model is involved.
     """
 
     RESULTS = [
@@ -506,43 +507,42 @@ class BoundedProfileHostInvocation(unittest.TestCase):
         # #386: independent reads overlap, so their order is not fixed; a page read still waits for the searches before it.
         self.assertEqual(sorted(self.searches), ["model a price", "today news"])
         self.assertEqual(self._value(replies[2])["location"]["name"], "Daejeon")
-        # #23: a page this Work's searches did not return is refused before the network ...
-        self.assertTrue(_refused(replies[4]))
-        # ... and a result of its own search is read.  The metadata address fails
-        # public-URL normalisation and never enters the scope; the redirect off a
-        # result leaves the scope and is refused by the shared reader, never followed.
-        self.assertIn("Model A costs", self._value(replies[6])["content"])
-        for ident in (7, 8):
+        # #820: a page no search returned is read, as is a search result, and a redirect
+        # to another public host is followed; the metadata address is refused by the
+        # reader before any request.
+        for ident in (4, 6, 7):
             with self.subTest(case=ident):
-                self.assertTrue(_refused(replies[ident]))
-        self.assertEqual(sorted(self.opened), ["https://example.com/a", "https://example.com/b"])
+                self.assertIn("Model A costs", self._value(replies[ident])["content"])
+        self.assertTrue(_refused(replies[8]))
+        self.assertEqual(sorted(self.opened), ["https://elsewhere.example/landing", "https://example.com/a",
+                                               "https://example.com/a", "https://example.com/b"])
         self.assertIn("granted private note", [note["content"] for note in self._value(replies[9])["notes"]])
         with self.store.db() as db:
             events = [tuple(row) for row in db.execute(
                 "SELECT tool,status FROM tool_events WHERE job_id=? AND status='succeeded' ORDER BY id", (self.job,))]
         self.assertEqual(sorted(events), sorted([("weather", "succeeded"), ("web_search", "succeeded"), ("web_search", "succeeded"),
+                                                 ("public_page_read", "succeeded"), ("public_page_read", "succeeded"),
                                                  ("public_page_read", "succeeded"), ("list_notes", "succeeded")]))
         # Review P1: the success trace carries the direct route's redacted
         # Evidence -- sources, no payload.
         traces = self._traces("succeeded")
-        self.assertEqual(traces["public_page_read"]["evidence"]["sources"], ["https://example.com/a"])
+        with self.store.db() as db:
+            page_sources = sorted(source for row in db.execute(
+                "SELECT detail FROM tool_events WHERE job_id=? AND tool='public_page_read' AND status='succeeded'", (self.job,))
+                for source in json.loads(row[0])["evidence"]["sources"])
+        self.assertEqual(page_sources, ["https://elsewhere.example/landing", "https://example.com/a", "https://example.com/a"])
         self.assertEqual(traces["weather"]["evidence"]["sources"], ["https://open-meteo.com/"])
         self.assertEqual(traces["list_notes"]["evidence"], {"note_count": 1})
         self.assertNotIn("granted private note", json.dumps(traces, ensure_ascii=False))
 
-    def test_strict_isolated_reads_search_results_but_never_the_owner_page_list(self):
-        """#23: strict-isolated serves public_page_read for this Work's own search results only."""
+    def test_both_profiles_read_a_public_page_no_search_returned(self):
+        """#820: trusted-local and strict-isolated alike read any public address, with no search first."""
         from personal_agent.bounded_execution import STRICT_PROFILE
-        self.store.put("public_page_sharing", {"approved": True, "urls": ["https://example.com/a"]})
         trusted = self._serve([self._call(2, "public_page_read", {"url": "https://example.com/a"})])
-        self.assertIn("Model A costs", self._value(trusted[2])["content"], "trusted-local keeps the owner's approval")
-        strict = self._serve([
-            self._call(2, "public_page_read", {"url": "https://example.com/a"}),
-            self._call(3, "web_search", {"query": "model a price"}),
-            self._call(4, "public_page_read", {"url": "https://example.com/a"}),
-        ], profile=STRICT_PROFILE)
-        self.assertTrue(_refused(strict[2]), "the owner's approved page list is not offered on strict")
-        self.assertIn("Model A costs", self._value(strict[4])["content"])
+        self.assertIn("Model A costs", self._value(trusted[2])["content"])
+        strict = self._serve([self._call(2, "public_page_read", {"url": "https://example.com/a"})], profile=STRICT_PROFILE)
+        self.assertIn("Model A costs", self._value(strict[2])["content"])
+        self.assertEqual(self.searches, [])
         self.assertEqual(self.opened, ["https://example.com/a", "https://example.com/a"])
 
     def _traces(self, status):
@@ -591,17 +591,17 @@ class BoundedProfileHostInvocation(unittest.TestCase):
             tools = [row[0] for row in db.execute("SELECT tool FROM tool_events WHERE job_id=?", (self.job,))]
         self.assertEqual(tools, ["unlisted"])
 
-    def test_out_of_scope_self_approving_and_stale_calls_are_refused_before_the_network(self):
+    def test_self_approving_and_stale_calls_are_refused_before_the_network(self):
         cases = [
-            self._call(2, "public_page_read", {"url": "https://example.com/a"}),        # no approval, no search result
+            # #820: no page approval exists; a client-supplied list is an unknown field, refused.
             self._call(3, "public_page_read", {"url": "https://evil.example/",
-                                               "approved_urls": ["https://evil.example/"]}),  # no approval channel
+                                               "approved_urls": ["https://evil.example/"]}),
             self._call(4, "weather", {"city": "Daejeon", "approved_urls": ["x"]}),     # unknown field
             self._call(5, "read_file", {"root_id": "r", "path": "a.md"}),               # private, not bound
             self._call(6, "weather", {"city": 7}),                                      # non-string
         ]
         replies = self._serve(cases)
-        for ident in range(2, 7):
+        for ident in range(3, 7):
             with self.subTest(case=ident):
                 self.assertTrue(_refused(replies[ident]))
         self.assertEqual((self.searches, self.weather, self.opened), ([], [], []))

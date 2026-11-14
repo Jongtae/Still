@@ -198,7 +198,7 @@ class PageRead(Case):
         with self.assertRaises(ValueError):
             tools.page_reader.read(f'https://{HOST}/')
 
-    def test_an_owner_approved_intranet_page_reaches_the_reader(self):
+    def test_a_declared_intranet_page_reaches_the_reader_without_approval(self):
         self.declare('jira.corp.internal')
         url = 'https://jira.corp.internal/browse/X-1'
         plans = []
@@ -209,9 +209,10 @@ class PageRead(Case):
             def execute(inner, plan):
                 plans.append(plan)
                 return {'tool': plan['tool'], 'url': plan['url'], 'content': 'ok', 'sources': [], 'results': []}
-        caps = Capabilities(self.store, None, CFG, '', 'job', lambda *a: None, network=Network(), public_page_scope=[url])
+        caps = Capabilities(self.store, None, CFG, '', 'job', lambda *a: None, network=Network())
         caps.execute('public_page_read', {'url': url})
-        self.assertEqual([plan['url'] for plan in plans], [url])
+        # #820: no page approval exists; the plan sends exactly the given address and nothing else.
+        self.assertEqual(plans, [{'tool': 'public_page_read', 'url': url}])
 
 
 class WorkMode(Case):

@@ -54,12 +54,22 @@ def test_cancel_writes_nothing(service):
     assert snapshot(service) == before
 
 
-@pytest.mark.parametrize('value', [str(Path.home()), '/nonexistent-still-settings-picker-folder'])
-def test_invalid_folder_writes_nothing(service, value):
+@pytest.mark.parametrize('value,kind', [('/nonexistent-still-settings-picker-folder', 'read'),
+                                        # #820: the home folder is never the result-write folder.
+                                        (str(Path.home()), 'result')])
+def test_invalid_folder_writes_nothing(service, value, kind):
     service.folder_picker = Mock(return_value=value)
     before = snapshot(service)
     with pytest.raises(ValueError):
-        service.pick_settings_folder({'kind': 'read'})
+        service.pick_settings_folder({'kind': kind})
+    assert snapshot(service) == before
+
+
+def test_a_broad_read_folder_is_a_draft_confirmed_at_save(service):
+    """#820: picking the home folder as a read folder returns a draft; nothing is granted until the save confirms it."""
+    service.folder_picker = Mock(return_value=str(Path.home()))
+    before = snapshot(service)
+    assert service.pick_settings_folder({'kind': 'read'})['path'] == str(Path.home().resolve())
     assert snapshot(service) == before
 
 

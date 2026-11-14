@@ -94,7 +94,6 @@ MIGRATED_MODULES = {
             'Search the owner\'s current saved Memory for a fact relevant to this request. Use concise terms from the request and likely synonyms (for example, sushi and 초밥); results include saved_at and a source reference with source_status, as in list_memory, so you can say why you know something. Search only when prior saved information can help. It returns a bounded set and never reads another owner\'s data.'
         ),
         '메모 요약',  # Owner-input command; never emitted.
-        '승인한 공개 페이지 범위를 벗어난',  # Recognizes a downstream error; compared, never emitted.
         'finish 인수가 올바르지 않습니다. status, evidence_refs(도구 호출 id 목록), summary를 지정하세요.',  # Model-only finish-claim retry guidance.
         '완료(done)에는 요청이 끝났음을 보여 주는 도구 호출 id가 evidence_refs에 하나 이상 필요합니다. 도구가 필요 없는 대화라면 finish 없이 바로 답하세요.',  # Model-only finish-claim retry guidance.
         'evidence_refs에 이 작업에서 실행되지 않은 도구 호출 id가 있습니다. 실제로 실행된 호출 id만 지정하세요.',  # Model-only finish-claim retry guidance.
