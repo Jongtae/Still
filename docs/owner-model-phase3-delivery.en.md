@@ -4,11 +4,11 @@ Governance: [GOV-DELIVERY-06 #1021](https://github.com/Jongtae/agentos/issues/10
 
 This is a bounded delivery refinement of the existing owner-model and [#918](https://github.com/Jongtae/agentos/issues/918) decisions, not a new memory architecture. It does not claim phase 3 is implemented.
 
-## 1. Current work and order
+## 1. Historical predecessor selection and current scope
 
-The next coding unit is **#794 phase 3 only**. Its iteration is enumerated under SECRETARY-01 and `parent-controlled`; the parent's `active_substeps` names `OWNER-MODEL-01`. The checked-in `next_goal` deliberately remains `owner-activated-goal-ready`. This resting planning state does not start Codex, enable a heartbeat or authorize an owner-live run. An execution controller must still follow the existing Goal Execution Contract and inspect current GitHub state before work.
+The predecessor selection recorded here was **Jongtae/agentos#794 phase 3 only**. Its iteration is enumerated under SECRETARY-01 and `parent-controlled`; the parent's `active_substeps` names `OWNER-MODEL-01`. The checked-in `next_goal` deliberately remains `owner-activated-goal-ready`. This resting planning state does not start Codex, enable a heartbeat or authorize an owner-live run. An execution controller must still follow the existing Goal Execution Contract and inspect current GitHub state before work.
 
-Current order:
+The historical predecessor order was:
 
 1. #794 phase 3: individual correction / forget and durable receipts.
 2. #660: owner-operated A/B/C and held-out D, plus phase-1 completion audit on the closeout head.
@@ -16,6 +16,8 @@ Current order:
 4. #661: family delegation through A2A.
 
 `OSS-MEMORY-01` in the root plan is a **reserved dependency gate without an implementation issue**, not permission to start coding. After #794 and #660, give it its own bounded issue, goal-ready scope, interfaces, ownership and acceptance before implementation. Do not skip the gate to reach #661. A new explicit owner re-plan can change this order; closing a child cannot.
+
+The current Still selection is owned by root `next_goal`; [FRONTIER-01](frontier-delivery.en.md) maps the new issue-based work. This predecessor sequence and its ownership list are historical context, and selecting FRONTIER-01 does not resume SECRETARY-01. Current forgetting/deletion semantics are in the [Memory contract](engineering/contracts/memory.en.md#3-currentness-invalidation-expiry-and-forgetting).
 
 ## 2. Reuse; do not repeat completed work
 
@@ -38,9 +40,9 @@ A clear request is handled in conversation; the owner does not navigate a manage
 
 **Correct.** For a request such as “that was remembered wrongly; it has changed to this now”, change the identified Memory or current-state claim through its owning service. Subsequent current retrieval uses the corrected information. Distinguish a correction from a fact that became outdated. Ask a clarifying question only when the target or requested change is genuinely unresolved.
 
-**Forget.** Apply #918 option B: the identified Memory, claim or observation is immediately excluded from current use, with a durable receipt and an exact 7-day undo; then purge the covered payload when the window expires. Resuming after a process restart must preserve the exclusion and execute overdue cleanup safely. Do not conflate this with the already-implemented undo of a newly saved Memory. *Superseded by #367 (owner decision 2026-10-28):* a forget is never purged and stays undoable, and transcript messages are covered too; the 7-day purge above is historical.
+**Forget.** Under Still #367 (owner decision 2026-10-28), the identified item is excluded from current use and retains an undoable record, including supported transcript targets. Restart preserves exclusion. The prior Jongtae/agentos#918 option B required a seven-day undo followed by payload purge; that requirement is superseded. A memory-notice button has its own expiry, as described in the current Memory contract.
 
-**Complete deletion.** An explicit request such as “delete it completely” uses the immediate-purge path without waiting for the undo window. Report success only for the deletion actually performed; stale targets, partial deletion and failure have distinct truthful results.
+**Complete deletion.** An explicit request such as “delete it completely” uses the immediate-purge path and keeps no undoable record. Report success only for the deletion actually performed; stale targets, partial deletion and failure have distinct truthful results.
 
 An undo binds to owner, exact item and version. It must not restore another owner's item, revive an expired/purged item, or overwrite a later correction. Repeated delivery or callbacks must not repeat the state change.
 
@@ -64,7 +66,7 @@ The subsequent implementation changes owner-state semantics and **requires escal
 
 Use temporary stores, injected model/tool transports and fake clocks. Extend the existing memory-service, memory-continuity/search, save-undo, current-context/observation, upkeep and information-use tests. Add only the small service/serialization integration checks needed to exercise the real affected boundary.
 
-Required phase-3 counterexamples cover: wrong owner; wrong or stale item/version; later correction before undo; repeated request/callback; restart during the undo window; overdue purge after restart; failed/partial purge; and exclusion from the declared current/derived reuse paths. Keep the no-scenario-code check. Do not mock away the actual database transition or claim fixture results as live owner operation.
+Required phase-3 counterexamples cover: wrong owner; wrong or stale item/version; later correction before undo; repeated request/callback; restart after more than seven days retaining forget exclusion and undo; explicit-delete cleanup after restart; failed/partial explicit deletion; and exclusion from the declared current/derived reuse paths. Keep the no-scenario-code check. Do not mock away the actual database transition or claim fixture results as live owner operation.
 
 No broad live-model sweep, new evaluator or repeated-trial quota is required. Required exact-head CI and the risk-triggered implementation review remain mandatory.
 

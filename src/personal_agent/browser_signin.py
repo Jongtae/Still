@@ -43,6 +43,7 @@ from .quickstart_service import (BROWSER_APPROVAL_PROMPT,
                                  BROWSER_LOGIN_REOPEN_TEXT,
                                  BROWSER_LOGIN_RESULT_TEXT,
                                  BROWSER_LOGIN_SECONDS,
+                                 BROWSER_LOGIN_UNATTENDED_TEXT,
                                  BROWSER_OWNER_SIGNINS_KEY,
                                  BROWSER_PROVIDERS_KEY,
                                  BROWSER_PROVIDER_SIGNIN_KEY,
@@ -484,8 +485,11 @@ class BrowserSignin:
         Nothing is recorded when this computer cannot show the window.
         ``explicit`` (#978): the model asked for the sign-in itself
         (``browser_sign_in``); the row is then offered however the Work ends.
+        #619: a scheduled run (no owner present) records nothing either and
+        leaves no window waiting; the model reads that it continues without the page.
         """
         service=self.service
+        if service.unattended_work(job):return BROWSER_LOGIN_UNATTENDED_TEXT
         try:
             parts=urlsplit(str(url or ''))
             host=parts.hostname
