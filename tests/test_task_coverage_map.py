@@ -66,6 +66,28 @@ class CoverageTests(unittest.TestCase):
             self.assertEqual(schema['$schema'], 'https://json-schema.org/draft/2020-12/schema')
             coverage.Draft202012Validator.check_schema(schema)
 
+    def test_adopted_taxonomy_requires_every_pin_field(self):
+        tax = self.cmap.taxonomies[0]
+        for field in ('version', 'url', 'retrieved', 'sha256', 'licence', 'attribution'):
+            with self.subTest(field=field):
+                value = tax.pop(field)
+                self.assertTrue(self.problems())
+                tax[field] = value
+
+    def test_considered_taxonomy_needs_only_identity_status_and_reason(self):
+        tax = {'id': 'considered', 'name': 'Possible future taxonomy',
+               'status': 'considered-not-adopted-yet', 'reason': 'Reuse terms not yet pinned.'}
+        self.cmap.taxonomies.append(tax)
+        self.assertEqual(self.problems(), [])
+        markdown = coverage.coverage_markdown(self.cmap, self.scenarios)
+        self.assertIn(tax['reason'], markdown)
+        self.assertNotIn('[Source]().', markdown)
+        reason = tax.pop('reason')
+        self.assertTrue(self.problems())
+        # The integrated map records its deferral reason in retrieval_note.
+        tax['retrieval_note'] = reason
+        self.assertEqual(self.problems(), [])
+
     def test_untagged_scenario_fails(self):
         self.scenarios[0]['tags'] = ['ordinary']
         self.assertTrue(any('no row tag' in p for p in self.problems()))
@@ -95,6 +117,9 @@ class CoverageTests(unittest.TestCase):
                                      ('blocked-by-still', 'blocker', self.cmap.rows[2]['blocker'])]:
             with self.subTest(status=status):
                 self.row['status'] = status
+                evidence = self.row['evidence']
+                if status == 'out-of-bounds-by-design':
+                    self.row['evidence'] = []
                 self.row.pop(field, None)
                 self.assertTrue(self.problems())
                 self.row[field] = value
@@ -102,6 +127,7 @@ class CoverageTests(unittest.TestCase):
                 self.row['status'] = 'fixture-only'
                 self.assertTrue(self.problems())
                 self.row.pop(field)
+                self.row['evidence'] = evidence
 
     def test_unknown_judgment_case_fails(self):
         self.row['judgment_cases'] = ['unknown']
@@ -118,6 +144,7 @@ class CoverageTests(unittest.TestCase):
         self.assertTrue(any('duplicate row' in p for p in self.problems()))
         self.cmap.rows.pop()
         self.cmap.taxonomies[0]['status'] = 'considered-not-adopted-yet'
+        self.cmap.taxonomies[0]['reason'] = 'Deferred.'
         self.assertTrue(any('adopted taxonomy' in p for p in self.problems()))
 
     def test_unknown_scenario_evidence_fails(self):
@@ -154,7 +181,27 @@ class CoverageTests(unittest.TestCase):
 
     def test_untried_cannot_carry_fixture_evidence(self):
         self.row['status'] = 'untried'
-        self.assertTrue(any('no Still evidence' in p for p in self.problems()))
+        self.assertTrue(self.problems())
+
+    def test_untried_and_out_of_bounds_accept_only_s_specification_links(self):
+        item = self.row['evidence'][0]
+        for status in ('untried', 'out-of-bounds-by-design'):
+            self.row['status'] = status
+            if status == 'out-of-bounds-by-design':
+                self.row['bounds'] = 'Physical execution is outside scope.'
+            for kind, source in [('scenario', 'scenario:demo-one'), ('judgment-case', 'judgment:case-one'),
+                                 ('doc', 'docs/scope.md')]:
+                with self.subTest(status=status, kind=kind):
+                    item.update(kind=kind, source=source, **{'class': 'S'})
+                    self.assertEqual(self.problems(), [])
+            for evidence_class in ('U', 'I', 'P', 'L'):
+                with self.subTest(status=status, evidence_class=evidence_class):
+                    item['class'] = evidence_class
+                    self.assertTrue(self.problems())
+            for kind in ('test', 'live-observation'):
+                with self.subTest(status=status, kind=kind):
+                    item.update(kind=kind, **{'class': 'S'})
+                    self.assertTrue(self.problems())
 
     def test_cases_for_rows_sorted_deduplicated_and_status_groups(self):
         self.assertEqual(coverage.cases_for_rows(self.cmap, [self.row['id'], self.cmap.rows[2]['id']], self.scenarios),
@@ -167,13 +214,53 @@ class CoverageTests(unittest.TestCase):
 
     def test_markdown_evidence_gaps_counts_and_links(self):
         markdown = coverage.coverage_markdown(self.cmap, self.scenarios)
-        for text in ['CC BY 4.0', 'O*NET', 'Evidence (class)', '### Untried', '### Blocked by Still',
+        for text in ['CC BY 4.0', 'O*NET', 'S specification links (not runs)', 'U/I/P/L evidence',
+                     '### Untried', '### Still-side blockers', '#### By blocker kind', '#### By issue',
                      'routing', 'Tool unavailable.', '#462', 'scenario:demo-one', 'judgment:case-one',
-                     'U:', 'test_read', '| 0 | 1 | 1 | 0 | 0 | 1 |']:
+                     'U:', 'test_read', '| 0 | 1 | 1 | 0 | 0 | 1 |', 'not a score',
+                     'PYTHONPATH=evals:src .venv/bin/python -m agentos_eval coverage --write',
+                     '`observed-live`:', '`fixture-only`:', '`engine-limit`:', '`out-of-bounds-by-design`:']:
             self.assertIn(text, markdown)
         self.assertEqual(markdown, coverage.coverage_markdown(self.cmap, self.scenarios))
         for forbidden in ['pass rate', 'ranking', 'target']:
             self.assertNotIn(forbidden, markdown)
+
+    def test_markdown_separates_specifications_from_execution_evidence(self):
+        spec = copy.deepcopy(self.row['evidence'][0])
+        spec.update(kind='scenario', source='scenario:demo-one', **{'class': 'S'})
+        self.row['evidence'].append(spec)
+        untried = self.cmap.rows[1]
+        untried['evidence'] = [spec]
+        self.assertEqual(self.problems(), [])
+        lines = coverage.coverage_markdown(self.cmap, self.scenarios).splitlines()
+        line = next(line for line in lines if line.startswith(f"| {self.row['id']} |"))
+        cells = line.split('|')
+        self.assertIn('S: [scenario:demo-one]', cells[3])
+        self.assertNotIn('test_demo.py', cells[3])
+        self.assertIn('U: [tests/test_demo.py', cells[4])
+        self.assertNotIn('scenario:', cells[4])
+        line = next(line for line in lines if line.startswith(f"| {untried['id']} |"))
+        self.assertEqual(line.split('|')[4].strip(), 'none')
+
+    def test_blocker_work_list_groups_kinds_and_issues_by_row_count(self):
+        for code, kind, issue in [('4', 'login', '#900'), ('5', 'login', '#900'),
+                                  ('6', 'tool-not-exposed', '#900'), ('7', 'approval-boundary', None)]:
+            row = copy.deepcopy(self.cmap.rows[2])
+            row.update(id=f'onet-31.0-gwa:{code}', code=code)
+            row['blocker'].update(kind=kind, issue=issue, code_ref=f'src/example.py:block_{code}')
+            self.cmap.rows.append(row)
+        self.assertEqual(self.problems(), [])
+        markdown = coverage.coverage_markdown(self.cmap, self.scenarios)
+        kinds, issues = markdown.split('#### By blocker kind')[1].split('#### By issue')
+        self.assertIn('| login | 2 |', kinds)
+        self.assertLess(kinds.index('| login |'), kinds.index('| routing |'))
+        self.assertIn('| [#900](https://github.com/Jongtae/Still/issues/900) | 3 |', issues)
+        self.assertLess(issues.index('| [#900]'), issues.index('| [#462]'))
+        self.assertIn('| No linked issue | 1 |', issues)
+        for code in ('4', '5', '6', '7'):
+            self.assertIn(f'`onet-31.0-gwa:{code}`: `src/example.py:block_{code}`', issues)
+        self.assertIn('completion check', markdown)
+        self.assertNotIn('%', markdown)
 
     def test_cli_checks_and_writes_only_valid_maps(self):
         output = Path(self.temp.name) / 'report.md'
@@ -206,8 +293,6 @@ class RuntimeIsolationTests(unittest.TestCase):
             self.assertIn('schema-validation', coverage.validate(None, [])[0])
 
 
-@unittest.skipUnless((ROOT / 'evals/task-coverage/rows.json').exists(),
-                     'Task A has not supplied rows.json yet; integrator must re-run when it lands.')
 @unittest.skipIf(coverage.Draft202012Validator is None, 'requires optional schema-validation extra')
 class RealMapTests(unittest.TestCase):
     def test_real_map_validates(self):

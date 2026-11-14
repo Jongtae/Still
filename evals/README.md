@@ -309,11 +309,24 @@ selection; sweep results never upgrade the map's status. This is an inventory,
 not a score, ranking or target. O*NET data uses CC BY 4.0 with attribution in
 the generated report.
 
+Untried and out-of-bounds rows may link to S specifications (scenarios,
+judgment cases or docs), but cannot cite U/I/P/L execution evidence. The per-row
+table separates these links from execution evidence. The **Still-side blockers**
+section is the C16 work list: rows grouped by blocker kind and by issue, ordered
+by row count, with code references. Counts describe the map, not task success.
+The four blocker kinds are `tool-not-exposed`, `login`, `approval-boundary` and
+`routing`; routing includes Still orchestration judgments such as completion
+checks.
+
+Adopted taxonomies require source pins and attribution. A taxonomy considered
+for later adoption needs only its id, name, status and a deferral reason
+(`reason`, or the existing `retrieval_note`); it contributes no rows.
+
 From the repository root (requires the existing `schema-validation` extra):
 
 ```sh
-PYTHONPATH=evals python -m agentos_eval coverage --check
-PYTHONPATH=evals python -m agentos_eval coverage --write docs/task-coverage-map.en.md
+PYTHONPATH=evals:src .venv/bin/python -m agentos_eval coverage --check
+PYTHONPATH=evals:src .venv/bin/python -m agentos_eval coverage --write docs/task-coverage-map.en.md
 PYTHONPATH=src .venv/bin/python -m pytest -q tests/test_task_coverage_map.py
 ```
 

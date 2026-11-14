@@ -99,8 +99,6 @@ def validate(cmap, scenarios) -> list[str]:
             problems.append(f'{ident}: observed-live needs dated P/L live evidence with revision')
         if status == 'fixture-only' and not any(item['class'] in ('U', 'I') for item in evidence):
             problems.append(f'{ident}: fixture-only needs U/I evidence')
-        if status == 'untried' and evidence:
-            problems.append(f'{ident}: untried must have no Still evidence')
         for case in row['judgment_cases']:
             if case not in judgment_ids:
                 problems.append(f'{ident}: unknown judgment case {case}')
@@ -178,15 +176,35 @@ def coverage_markdown(cmap, scenarios) -> str:
         for item in raw if isinstance(raw, list) else [raw]:
             scenario_files[item['id']] = path.relative_to(cmap.root).as_posix()
     lines = ['## Task coverage map', '',
+             'Issue [#462](https://github.com/Jongtae/Still/issues/462). '
+             'A map of everyday and work activities, the evidence we have, and the Still blockers to remove.', '',
              f"As of {cmap.document['as_of']}; evidence read at revision `{cmap.document['revision']}`.",
-             'This inventory records evidence and gaps, not a score. U: unit/fixture; I: model-free integration; '
-             'S: static/specification; P: live public read; L: live model/account.', '',
+             'This is not a score: counts are rows in the map, never measures of task success.', '',
+             '- `observed-live`: a dated live observation is cited.',
+             '- `fixture-only`: unit or model-free integration evidence, without a claim of live success.',
+             '- `blocked-by-still`: Still blocks the task; the work list below names the boundary.',
+             '- `engine-limit`: the cited limitation belongs to the owner\'s AI.',
+             '- `out-of-bounds-by-design`: an explicit scope boundary, explained in the map.',
+             '- `untried`: no Still execution evidence; specification links may describe a planned case.', '',
+             'Evidence classes: **U** unit/fixture, model-free; **I** model-free integration through a real boundary; '
+             '**S** static/specification; **P** live public read, no account; **L** live model or live account. '
+             'S links describe specifications, not recorded runs. Untried and out-of-bounds rows may cite only '
+             'S scenario, judgment-case or doc links.', '',
+             'Regenerate from the repository root (no live runs):', '',
+             '```sh',
+             'PYTHONPATH=evals:src .venv/bin/python -m agentos_eval coverage '
+             '--write docs/task-coverage-map.en.md',
+             '```', '',
              '### Taxonomies and attribution', '']
     for tax in cmap.taxonomies:
-        lines.append(f"- **{_cell(tax['id'])}** ({tax['status']}): {_cell(tax['name'])}; "
-                     f"{_cell(tax.get('version', 'unversioned'))}. "
-                     f"[Source]({tax.get('url', '')}). {_cell(tax.get('licence', ''))}. "
-                     f"{_cell(tax.get('attribution', ''))} Changes: {_cell(tax.get('changes', 'none recorded'))}")
+        text = f"- **{_cell(tax['id'])}** ({tax['status']}): {_cell(tax['name'])}."
+        if tax['status'] == 'adopted':
+            text += (f" Version {_cell(tax['version'])}. [Source]({tax['url']}). "
+                     f"{_cell(tax['licence'])}. {_cell(tax['attribution'])} "
+                     f"Changes: {_cell(tax.get('changes', 'none recorded'))}")
+        else:
+            text += ' ' + _cell(tax.get('reason') or tax.get('retrieval_note', ''))
+        lines.append(text)
     lines += ['', '### Tier-1 groups by status', '',
               '| Taxonomy | Group | ' + ' | '.join(STATUSES) + ' |',
               '| --- | --- | ' + ' | '.join('---' for _ in STATUSES) + ' |']
@@ -196,19 +214,43 @@ def coverage_markdown(cmap, scenarios) -> str:
                          if row['taxonomy'] == taxonomy and row['parent']['code'] == code)
         lines.append(f'| {_cell(taxonomy)} | {_cell(code)} {_cell(title)} | '
                      + ' | '.join(str(counts[status]) for status in STATUSES) + ' |')
-    lines += ['', '### Evidence inventory', '', '| Row | Inventory item | Evidence (class) | Status |',
-              '| --- | --- | --- | --- |']
+    lines += ['', '### Evidence inventory', '',
+              '| Row | Inventory item | S specification links (not runs) | U/I/P/L evidence | Status |',
+              '| --- | --- | --- | --- | --- |']
     for row in cmap.rows:
-        evidence = '<br>'.join(f"{item['class']}: {_link(item['source'], scenario_files)} — {_cell(item['summary'])} "
-                              f"({item['date']}, `{item['revision']}`)" for item in row['evidence']) or 'none'
+        specifications, evidence = [], []
+        for item in row['evidence']:
+            cell = (f"{item['class']}: {_link(item['source'], scenario_files)} — {_cell(item['summary'])} "
+                    f"({item['date']}, `{item['revision']}`)")
+            (specifications if item['class'] == 'S' else evidence).append(cell)
         lines.append(f"| {_cell(row['id'])} | {_cell(row['title'])}: {_cell(row['still_task'])} | "
-                     f"{evidence} | {row['status']} |")
+                     f"{'<br>'.join(specifications) or 'none'} | {'<br>'.join(evidence) or 'none'} | {row['status']} |")
     lines += ['', '### Untried', '']
     lines += [f"- `{row['id']}`: {_cell(row['title'])}" for row in rows_by_status(cmap)['untried']] or ['- none']
-    lines += ['', '### Blocked by Still', '']
-    lines += [f"- `{row['id']}`: {row['blocker']['kind']} — {_cell(row['blocker']['detail'])}; "
-              f"`{row['blocker']['code_ref']}`; issue {row['blocker']['issue'] or 'none'}"
-              for row in rows_by_status(cmap)['blocked-by-still']] or ['- none']
+    lines += ['', '### Still-side blockers', '',
+              'The C16 work list: remove Still blockers so the owner\'s AI can do the work. '
+              'Counts are rows only; the same issue can block several rows. '
+              'Routing includes wrong routing and Still orchestration judgments, such as the completion check.', '']
+    blocked = rows_by_status(cmap)['blocked-by-still']
+    if blocked:
+        lines += ['#### By blocker kind', '', '| Blocker kind | Row count | Rows |', '| --- | --- | --- |']
+        for kind, count in sorted(Counter(row['blocker']['kind'] for row in blocked).items(),
+                                  key=lambda pair: (-pair[1], pair[0])):
+            rows = ', '.join(f"`{row['id']}`" for row in sorted(blocked, key=lambda row: row['id'])
+                             if row['blocker']['kind'] == kind)
+            lines.append(f'| {kind} | {count} | {rows} |')
+        lines += ['', '#### By issue', '', '| Issue | Row count | Rows and blockers | Code references (by row) |',
+                  '| --- | --- | --- | --- |']
+        for issue, count in sorted(Counter(row['blocker']['issue'] for row in blocked).items(),
+                                   key=lambda pair: (-pair[1], pair[0] or '')):
+            rows = sorted((row for row in blocked if row['blocker']['issue'] == issue), key=lambda row: row['id'])
+            details = '<br>'.join(f"`{row['id']}`: {row['blocker']['kind']} — {_cell(row['blocker']['detail'])}"
+                                 for row in rows)
+            refs = '<br>'.join(f"`{row['id']}`: `{_cell(row['blocker']['code_ref'])}`" for row in rows)
+            issue_link = f'[{issue}](https://github.com/Jongtae/Still/issues/{issue[1:]})' if issue else 'No linked issue'
+            lines.append(f'| {issue_link} | {count} | {details} | {refs} |')
+    else:
+        lines.append('- none')
     lines += ['', '### Regression links', '', '| Row | Scenarios | Judgment cases |', '| --- | --- | --- |']
     for row in cmap.rows:
         cases = cases_for_rows(cmap, [row['id']], scenarios)

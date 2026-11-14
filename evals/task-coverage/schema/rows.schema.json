@@ -353,15 +353,25 @@
               "properties": {
                 "status": {
                   "enum": [
-                    "observed-live",
-                    "fixture-only",
-                    "blocked-by-still",
-                    "engine-limit"
+                    "untried",
+                    "out-of-bounds-by-design"
                   ]
                 }
               }
             },
             "then": {
+              "properties": {
+                "evidence": {
+                  "items": {
+                    "properties": {
+                      "class": {"const": "S"},
+                      "kind": {"enum": ["scenario", "judgment-case", "doc"]}
+                    }
+                  }
+                }
+              }
+            },
+            "else": {
               "properties": {
                 "evidence": {
                   "minItems": 1
