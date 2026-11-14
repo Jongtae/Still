@@ -2445,9 +2445,14 @@ class QuickStore:
 
     def recovery_summary(self):
         """Return counts only; recovery guidance must never reveal task content."""
+        # #842: an uncertainty the owner was told about in the conversation (its Work's
+        # ``delivery_unknown`` notice sent) is settled for the owner; a cut-off prompt offered
+        # again is no longer ``unknown``.  The rows themselves keep ``unknown``.
+        told="NOT EXISTS (SELECT 1 FROM telegram_notifications t WHERE t.job_id=%s AND t.kind='delivery_unknown' AND t.state='sent')"
         with self.db() as db:
             interrupted=db.execute("SELECT count(*) FROM jobs WHERE status='interrupted'").fetchone()[0]
-            uncertain=db.execute("SELECT count(*) FROM jobs WHERE delivery='unknown'").fetchone()[0]
-            notifications=db.execute("SELECT count(*) FROM telegram_notifications WHERE state='unknown'").fetchone()[0]
+            uncertain=db.execute("SELECT count(*) FROM jobs WHERE delivery='unknown' AND "+told%'jobs.id').fetchone()[0]
+            notifications=db.execute("SELECT count(*) FROM telegram_notifications n WHERE n.state='unknown' AND "
+                                     +told%'n.job_id').fetchone()[0]
         return {'interrupted_jobs':interrupted, 'uncertain_deliveries':uncertain,
                 'uncertain_notifications':notifications}

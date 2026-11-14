@@ -55,12 +55,52 @@ post-publication. Any formula committed before that point must carry the
 `__SHA256__` placeholder; a fabricated hex string would produce a formula that
 looks reviewable and installs nothing.
 
+## Release notes template
+
+Write the public notes in English. Put the Markdown below in the release's
+`carries` value in `docs/release-manifest.json`, using JSON newline escapes.
+Omit a feature or improvement section when it has no entries. Keep upgrade
+notes visible and state when no manual upgrade steps are needed.
+
+Start each entry with a short, bold noun phrase that names the capability,
+fix, or compatibility change. Follow it with one or two sentences about the
+previous limitation or unmet need, what changed, and what the owner can now
+do or expect. Use the linked issue to establish the prior behavior. If the
+issue establishes a need but no previous defect, describe that need. Finish
+with direct links to the relevant issues.
+
+Use upgrade notes for removals, changed defaults, migrations, and actions
+owners need to take. Record verification gaps separately in `not_claimed`.
+The workflow appends that evidence and the milestone link to the public notes.
+
+```markdown
+<One sentence on the main user-facing change in this release.>
+
+## New features
+
+- **<Capability name>.** <Owner need and what the new capability enables.> [#123](https://github.com/Jongtae/Still/issues/123)
+
+## Improvements and fixes
+
+- **<Area or behavior name>.** <Previous limitation. What now happens.> [#124](https://github.com/Jongtae/Still/issues/124)
+
+## Upgrade notes
+
+- **<Compatibility or migration name>.** <Who is affected and what they need to do or expect.> [#125](https://github.com/Jongtae/Still/issues/125)
+```
+
+For example, an improvement could read as follows.
+
+- **Consistent Work status.** Closing messages and Continue offers could disagree.
+  Both now use the recorded goal outcome and effect state.
+  [#632](https://github.com/Jongtae/Still/issues/632)
+
 ## Steps
 
 Steps 1–4 are reversible and form one release-preparation PR. Steps 5 onward
 publish. Since #1472 `.github/workflows/release.yml` performs steps 5–7 and 9–12
 after the owner approves its `release` environment; step 8 stays with the
-owner. The numbered steps below are what the workflow does and the manual
+owner, and step 13 with the preparing session and the owner. The numbered steps below are what the workflow does and the manual
 fallback when it cannot.
 
 1. **Decide the version.** Close or move the open issues of the `vX.Y.Z`
@@ -72,8 +112,9 @@ fallback when it cannot.
    indistinguishable from the shipped build.
 2. **Record what the release carries.** Replace the placeholder `unpublished`
    entry in `docs/release-manifest.json` with the release's own: `carries`
-   (the journeys/issues in it) and `not_claimed` (what was not observed, such
-   as a live external effect). The workflow refuses an entry without both.
+   (the English Markdown from the [release notes template](#release-notes-template))
+   and `not_claimed` (what was not observed, such as a live external effect).
+   The workflow refuses an entry without both.
 3. **Run the full suite and the verifier gates** on the exact commit:
    `pytest tests`, `python3 -m unittest discover -s tests -t tests`,
    `scripts/verify_master_plan_docs.py`, and `scripts/verify_src_layout.py`.
@@ -164,6 +205,25 @@ PR is accepted only when it is merged or still open (#313).
     close one that gained an open issue during the release: move that issue
     to the next milestone and re-run the job. By hand:
     `gh api -X PATCH repos/Jongtae/Still/milestones/<number> -f state=closed`.
+    The same job then closes the release issue named by the
+    `release/<issue>-vX.Y.Z` branch, with a comment naming the tag and release
+    (#844). The preparation PR only refers to that issue, because it merges
+    before publication; an issue already closed is left alone on a re-run.
+    By hand: `gh issue close <issue> --reason completed`.
+
+13. **Close out.** After the workflow finishes, before the release is reported
+    done (#844):
+    - The session that prepared the release did so in its own worktree, never
+      in the owner's main checkout. It removes its local `release/<issue>-vX.Y.Z`
+      branch and that worktree. The remote branches of the preparation, formula,
+      record and pin PRs are deleted at merge.
+    - The owner's own running Still moves to the release. An owner who runs
+      Still from the source checkout updates that checkout to `main` and
+      restarts Still; one who installed it with Homebrew does step 8. Until
+      then the running instance still runs the code it started with.
+
+    Step 8 has not been recorded as observed since v0.1.0, and the owner runs
+    Still from the source checkout, which step 8 does not cover.
 
 ## Maintenance releases
 

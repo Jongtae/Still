@@ -22,7 +22,8 @@
   "good_secretary": "After answering once, treats the second turn as a standing wish: proposes one watch that checks availability about three times a day (morning, afternoon, evening) until Tuesday evening and tells the owner only when a table opens, phrased as one question, and says exactly what it will check and until when.",
   "tags": [
    "watch",
-   "follow-through"
+   "follow-through",
+   "atus-2025:1101"
   ]
  },
  {
@@ -49,7 +50,8 @@
   "good_secretary": "Proposes a price watch with about three checks a day until the end of the month that reports only when the price drops below the threshold, as one question. Does not store the owner's request sentence as a memory; at most a fact about the owner in their own words.",
   "tags": [
    "watch",
-   "memory"
+   "memory",
+   "atus-2025:0702"
   ]
  }
 ]

@@ -95,6 +95,27 @@ def _payment(case):
     return c
 
 
+def _recording_telegram(store, first_message_id=900, user_id=42):
+    """A paired Telegram config plus a transport that records its sends (#842)."""
+    store.secret('telegram_token', '123456:TEST_TOKEN')
+    store.put('telegram', {'enabled': True, 'generation': 'g', 'user_id': user_id, 'cursor': 0})
+    sends = []
+
+    def transport(url, body, headers=None, timeout=60):
+        if url.endswith('/sendMessage'):
+            sends.append(body)
+            return {'ok': True, 'result': {'message_id': first_message_id + len(sends) - 1}}
+        return {'ok': True, 'result': True}
+    return transport, sends
+
+
+def _restart_wired(store, transport):
+    restarted = AgentService(QuickStore(store.root), telegram_transport=transport)
+    restarted.use_decision_engine(FixtureDecisionEngine())
+    restarted.recover_interrupted_work()
+    return restarted
+
+
 def _scheduled(env):
     """The schedule fixture's preparation setup without its unrelated HTTP UI."""
     store, service = env
@@ -212,15 +233,44 @@ def test_r3_receipt_does_not_recover_worker_reply(env):
     assert service.store.task_events(work)[0]['status'] == 'succeeded'
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason='#826 R4: sending prompts lose actionable delivery state on restart')
-def test_r4_sending_prompt_remains_actionable(case):
-    """R4 a prompt already shown should remain actionable after restart."""
+def test_r4_sending_prompt_is_offered_once_more_with_a_new_message(case):
+    """R4 (#842 D1) a prompt cut off while sending is re-sent once, unchanged, as a new message."""
     c = _payment(case)
-    note = c.store.queue_notification(c.job['id'], 42, 'g', 'browser_approval_needed',
-                                      c.service._browser_request(c.job['id'])['offer_digest'])
-    c.store.update_notification(note['id'], 'sending', 201)
-    service = _restart(c.store)
-    assert service.store.notification(note['id'])['state'] == 'sent'
+    transport, sends = _recording_telegram(c.store)
+    work = c.job['id']
+    note = c.store.queue_notification(work, 42, 'g', 'browser_approval_needed',
+                                      c.service._browser_request(work)['offer_digest'])
+    c.store.update_notification(note['id'], 'sending')   # receipt lost; message 201 exists only at Telegram
+    requests = c.store.config('browser_requests')
+    service = _restart_wired(c.store, transport)
+    assert service.store.notification(note['id'])['state'] == 'unknown'
+    assert not sends, 'a restart never resends by itself'
+    assert service.settle_unknown_deliveries()[0] == 1
+    queued = service.store.notification(note['id'])
+    assert (queued['state'], queued['message_id'], queued['sent_at']) == ('queued', None, None)
+
+    def tap(message_id, sender=42):
+        service.ingest_callback({'id': f'approve-{sender}-{message_id}', 'from': {'id': sender},
+            'message': {'chat': {'id': 42, 'type': 'private'}, 'message_id': message_id},
+            'data': f"p7w:{note['id']}:approve"}, 'g')
+    tap(201)
+    assert service.store.config('browser_requests') == requests
+    assert service.deliver_notification()
+    after = service.store.notification(note['id'])
+    assert (after['state'], len(sends)) == ('sent', 1)
+    assert after['message_id'] == 900 != 201
+    assert after['fingerprint'] == note['fingerprint']
+    assert service.store.config('browser_requests') == requests
+    assert service.settle_unknown_deliveries() == (0, 0)
+    assert not service.deliver_notification()
+    assert len(sends) == 1
+
+    tap(201)
+    tap(after['message_id'], sender=99)
+    assert service.store.config('browser_requests') == requests
+    tap(after['message_id'])
+    assert service.store.notification(note['id'])['state'] == 'browser_approved'
+    assert service._browser_request(work)['offer_digest'] == note['fingerprint']
 
 
 def test_r4_unknown_prompt_callback_does_not_apply_settings(case):
@@ -232,7 +282,7 @@ def test_r4_unknown_prompt_callback_does_not_apply_settings(case):
         'timezone', 'Asia/Tokyo', work_id=work)
     c.service.queue_settings_confirmation(job)
     note = c.store.notification_of(work, 'settings_change_proposed')
-    c.store.update_notification(note['id'], 'sending', 201)
+    c.store.update_notification(note['id'], 'sending')
     service = _restart(c.store, c.service)
     service.ingest_callback({'id': 'dead-prompt', 'from': {'id': 42},
         'message': {'chat': {'id': 42, 'type': 'private'}, 'message_id': 201},
@@ -240,6 +290,36 @@ def test_r4_unknown_prompt_callback_does_not_apply_settings(case):
     assert service.store.notification(note['id'])['state'] == 'unknown'
     assert service.store.config('settings_change_drafts')[draft['draft_id']]['state'] == 'awaiting-confirmation'
     assert service.context_observations.settings()['timezone'] == ''
+
+
+def test_r4_reoffered_settings_prompt_old_button_settles_nothing_new_one_applies(case):
+    """R4 (#842 D1) only the new message of a re-offered settings prompt applies the draft."""
+    c, work = _telegram(case, 'partial', 'sent')
+    job = c.store.job(work)
+    draft = c.service.settings_orchestrator.propose(
+        c.service.settings_owner(job), job['channel'], 'current_context',
+        'timezone', 'Asia/Tokyo', work_id=work)
+    c.service.queue_settings_confirmation(job)
+    note = c.store.notification_of(work, 'settings_change_proposed')
+    c.store.update_notification(note['id'], 'sending')
+    service = _restart(c.store, c.service)
+    assert service.settle_unknown_deliveries()[0] == 1
+    queued = service.store.notification(note['id'])
+    assert (queued['state'], queued['message_id'], queued['sent_at']) == ('queued', None, None)
+    assert service.deliver_notification()
+    new = service.store.notification(note['id'])
+    assert new['state'] == 'sent' and new['message_id'] not in (None, 201)
+
+    def tap(message_id):
+        service.ingest_callback({'id': f'tap-{message_id}', 'from': {'id': 42},
+            'message': {'chat': {'id': 42, 'type': 'private'}, 'message_id': message_id},
+            'data': f"p7s:{note['id']}:confirm"}, 'g')
+    tap(201)
+    assert service.store.config('settings_change_drafts')[draft['draft_id']]['state'] == 'awaiting-confirmation'
+    assert service.context_observations.settings()['timezone'] == ''
+    tap(new['message_id'])
+    assert service.store.config('settings_change_drafts')[draft['draft_id']]['state'] == 'applied'
+    assert service.context_observations.settings()['timezone'] == 'Asia/Tokyo'
 
 
 def test_w1_absolute_approval_expiry_withholds_on_restart(case):
@@ -435,6 +515,18 @@ def test_i4_interrupted_sending_reply_has_no_reply_anchor(case):
     assert service.store.job(work)['delivery'] == 'unknown'
     assert service.telegram_turns.get(work)['reply_message_id'] is None
     assert not [x for x in c.calls if x[0].endswith('/sendMessage')]
+    # #842 D1: conservative, but the owner is told once and the reply is still not resent.
+    assert service.settle_unknown_deliveries() == (0, 1)
+    assert service.deliver_notification()
+    assert len([x for x in c.calls if x[0].endswith('/sendMessage')]) == 1
+    assert service.store.job(work)['delivery'] == 'unknown'
+    assert service.settle_unknown_deliveries() == (0, 0)
+    assert not service.deliver_notification()
+    assert len([x for x in c.calls if x[0].endswith('/sendMessage')]) == 1
+
+    assert service.store.recovery_summary() == {'interrupted_jobs': 1, 'uncertain_deliveries': 0,
+                                                'uncertain_notifications': 0}
+    assert service.home()['state'] == 'attention'
 
 
 def test_u1_unknown_work_not_resumable(env):
@@ -495,6 +587,19 @@ def test_u4_unknown_delivery_is_not_retried(case):
     assert service.store.job(work)['delivery'] == 'unknown'
     assert service.store.notification(note['id'])['state'] == 'unknown'
     assert not [x for x in c.calls if x[0].endswith('/sendMessage')]
+    # #842 D1: the owner is told once; the reply is still never resent and retry stays refused.
+    assert service.store.recovery_summary()['uncertain_deliveries'] == 1
+    assert service.settle_unknown_deliveries() == (0, 1)
+    assert service.deliver_notification()
+    sends = [x[1]['text'] for x in c.calls if x[0].endswith('/sendMessage')]
+    assert len(sends) == 1 and 'fixture request' in sends[0] and 'original' not in sends[0]
+    assert service.store.job(work)['delivery'] == 'unknown'
+    assert not service.safe_retry(service.store.job(work))[0]
+    assert service.settle_unknown_deliveries() == (0, 0)
+    assert not service.deliver_notification()
+    assert len([x for x in c.calls if x[0].endswith('/sendMessage')]) == 1
+    assert service.store.recovery_summary() == {'interrupted_jobs': 0, 'uncertain_deliveries': 0,
+                                                'uncertain_notifications': 0}
 
 
 def test_d1_pending_reply_and_notice_sent_once_after_restart(case):
