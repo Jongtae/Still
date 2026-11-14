@@ -92,6 +92,11 @@ _VALUE = r"[^\s\\\"',};&<>]{1,8192}"
 # In ambiguous prose, require a numeric/mixed/punctuated value. Long letters
 # are tokens only in a credential context, never a standalone entropy rule.
 _SHAPED_VALUE = (r'(?=[^\s\\\"\',};&<>]{0,8192}(?:[0-9]|[a-z][A-Z]|[A-Za-z][_./+!=@-][A-Za-z0-9]))' + _VALUE)
+# An explicit ``Authorization: <scheme> <value>`` header with a known scheme is a credential context for
+# any value (Codex review on #839): the IANA HTTP Authentication Scheme Registry plus common unregistered
+# schemes.  An unknown scheme word still needs a credential-shaped value, so header-like prose survives.
+_AUTH_SCHEMES = (r'basic|bearer|concealed|dpop|gnap|hoba|mutual|negotiate|oauth|privatetoken|scram-sha-(?:1|256)|'
+                 r'vapid|token|bot|ssws|apikey|api-key|key|splunk|ntlm|aws4-hmac-sha256|hawk')
 _CONTEXT_VALUE = _PLACEHOLDER + r'(?!\$[0-9])(?:[A-Za-z]{20,8192}(?=[\s\"\',};&]|$)|' + _SHAPED_VALUE + ')'
 # Alternatives: bounded PEM; provider shapes; JWT; URL userinfo; auth headers;
 # quoted/YAML passwords; named fields and flags; command credential fragments.
@@ -111,7 +116,8 @@ _SECRET = re.compile(
     r'|\beyJ[A-Za-z0-9_-]{1,8192}\.[A-Za-z0-9_-]{1,8192}\.[A-Za-z0-9_-]{1,8192}'
     r'|\b[a-z][a-z0-9+.-]{0,30}://[^\s/@:]{0,1024}:[^\s/@]{1,8192}@'
     r'|(?i:\bauthorization)[\\\"\']{0,3} *[=:] *[\\\"\']{0,3}'
-    r'(?:(?i:digest) +[^\r\n]{1,2000}|[A-Za-z0-9_-]{1,128} +'+_CONTEXT_VALUE+r')'
+    r'(?:(?i:digest) +[^\r\n]{1,2000}|(?i:'+_AUTH_SCHEMES+r') +'+_PLACEHOLDER+_VALUE+
+    r'|[A-Za-z0-9_-]{1,128} +'+_CONTEXT_VALUE+r')'
     r'|\b(?i:bearer|basic) +'+_CONTEXT_VALUE+
     r'|(?i:[\"\'](?:'+_CREDENTIAL_NAME+r'|pin|auth))[\\\"\']{1,3} *: *[\"\']'
     +_PLACEHOLDER+r'[^\"\'\r\n]{1,8192}[\"\']'

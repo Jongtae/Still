@@ -335,6 +335,9 @@ SHOULD_NOT_MASK += [
 
 SHOULD_MASK += [
     ('s_otp_code', 'otp=482913', '482913'),
+    ('h_basic_short', 'Authorization: Basic YTph', 'YTph'),
+    ('h_bearer_lower', 'Authorization: Bearer abcdefghijklmnop', 'abcdefghijklmnop'),
+    ('h_token_scheme_short', 'authorization: Token abc123', 'abc123'),
     ('s_api_key_short_eq', 'https://mcp.example/api_key=abcdef', 'abcdef'),
     ('s_token_word_eq', 'token=word', 'word'),
     ('p_pem_truncated', '-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEAu1SU1LfVLPHCozMxH2Mo4lgOEePzNm0tRgeLezV6ffAt0gun', 'MIIEowIBAAKCAQEAu1SU1LfVLPHCozMxH2Mo4lgOEePzNm0tRgeLezV6ffAt0gun'),
