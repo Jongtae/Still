@@ -9,8 +9,8 @@
 
 Run from the ``evals`` folder (or with it on ``PYTHONPATH``).  ``sweep`` and
 ``report`` need the eval extra (``evals/requirements.txt``); a ``--world``
-sweep needs no Inspect or judge, only the world's own package; the rest is
-standard library.
+sweep needs no Inspect or judge, only the world's own package. Coverage
+validation uses the optional schema-validation extra; the rest is standard library.
 """
 import argparse
 import json
@@ -210,6 +210,60 @@ def cmd_judgments(args):
         judgments.live_run(args)
 
 
+def cmd_recall(args):
+    import shlex
+    from . import recall_pairs, recall_report
+
+    if args.runs < 1:
+        raise SystemExit('--runs must be a positive integer')
+    if (args.phraser_cmd is not None or args.phrasings is not None) and 'phrasing' not in (args.arm or []):
+        raise SystemExit('--phraser-cmd and --phrasings require --arm phrasing')
+    folder = (args.out or eval_home() / 'reports').expanduser().resolve()
+    if folder.is_relative_to(REPO.resolve()):
+        raise SystemExit('Recall reports belong outside the repository; choose --out or AGENTOS_EVAL_HOME')
+    data = recall_pairs.load(args.fixture)
+    phraser = None
+    if args.phraser_cmd:
+        phraser = recall_report.command_phraser(shlex.split(args.phraser_cmd))
+    elif args.phrasings:
+        phraser = recall_report.replay_phraser(json.loads(args.phrasings.read_text(encoding='utf-8')), data=data)
+    names = list(dict.fromkeys(['lexical', *(args.arm or [])]))
+    # Resolve everything before running any arm (especially before an opt-in model command).
+    arms = {name: recall_report.resolve_arm(name, phraser=phraser) for name in names}
+    results = {name: recall_report.run_arm(data, arm, args.runs) for name, arm in arms.items()}
+    result = recall_report.report(data, results)
+    markdown = recall_report.report_markdown(result)
+    folder.mkdir(parents=True, exist_ok=True)
+    target = folder / ('recall-' + run_id())
+    target.with_suffix('.json').write_text(json.dumps(result, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+    target.with_suffix('.md').write_text(markdown, encoding='utf-8')
+    print(markdown)
+    print(f"report: {target.with_suffix('.json')}")
+    return 0
+
+
+def cmd_coverage(args):
+    from .coverage import bundled_scenarios, coverage_markdown, load_map, validate
+    try:
+        cmap = load_map()
+        loaded = bundled_scenarios(cmap.root)
+        problems = validate(cmap, loaded)
+    except (OSError, ValueError) as exc:
+        print(f'Coverage map: {exc}', file=sys.stderr)
+        return 1
+    if problems:
+        print('\n'.join(problems), file=sys.stderr)
+        return 1
+    markdown = coverage_markdown(cmap, loaded, heading_level=1)
+    if args.write:
+        args.write.write_text(markdown, encoding='utf-8')
+    if args.check:
+        print('Task coverage map valid.')
+    elif not args.write:
+        print(markdown, end='')
+    return 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog='agentos_eval', description=__doc__.split('\n\n')[0])
     sub = parser.add_subparsers(dest='command', required=True)
@@ -239,7 +293,19 @@ def main(argv=None):
     sweep.add_argument('--world', default='', help='run the world scenarios of this world (e.g. appworld), on Codex')
     rep = sub.add_parser('report', help='rebuild the trend report from an Inspect log')
     rep.add_argument('--log', required=True)
+    coverage = sub.add_parser('coverage', help='validate or render the task coverage map (no live runs)')
+    coverage.add_argument('--check', action='store_true')
+    coverage.add_argument('--write', type=Path)
     sub.add_parser('budget', help="show today's judge spend")
+    recall = sub.add_parser('recall', help='run R1 paired recall arms and write split-local reports')
+    recall.add_argument('--arm', action='append', help='built-in name or module:factory (repeatable)')
+    recall.add_argument('--runs', type=int, default=3, help='repetitions for sampling arms')
+    from .recall_report import DEFAULT_FIXTURE
+    recall.add_argument('--fixture', type=Path, default=DEFAULT_FIXTURE)
+    recall.add_argument('--out', type=Path)
+    phrasers = recall.add_mutually_exclusive_group()
+    phrasers.add_argument('--phraser-cmd', help='explicit stdin/stdout worker command for the phrasing arm')
+    phrasers.add_argument('--phrasings', type=Path, help='recorded run -> case id -> words JSON for replay')
     judgments = sub.add_parser('judgments', help='measure shipped judgments (#42)')
     actions = judgments.add_subparsers(dest='action', required=True)
     from .judgments import DEFAULT_CASES
@@ -263,7 +329,8 @@ def main(argv=None):
     comparison.add_argument('head')
     args = parser.parse_args(argv)
     handler = {'snapshot': cmd_snapshot, 'scenarios': cmd_scenarios, 'sweep': cmd_sweep, 'report': cmd_report,
-               'budget': cmd_budget, 'judgments': cmd_judgments}[args.command]
+               'budget': cmd_budget, 'judgments': cmd_judgments, 'coverage': cmd_coverage,
+               'recall': cmd_recall}[args.command]
     return handler(args) or 0
 
 

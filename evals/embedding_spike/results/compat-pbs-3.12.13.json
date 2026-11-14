@@ -1,0 +1,5373 @@
+{
+  "schema_version": 1,
+  "started_utc": "2026-11-14T13:12:24.613759+00:00",
+  "evidence_class": "local operating observation",
+  "quick": false,
+  "harness_sha256": "e0e575daff06190d0736ae6e27ea1b3937002b1f886b9aaf4912aae3cb862ee2",
+  "model_dir": "../dl/model/intfloat-multilingual-e5-small@614241f622f53c4eeff9890bdc4f31cfecc418b3",
+  "environment": {
+    "python": "3.12.13 (main, Jul 18 2026, 16:55:18) [Clang 22.1.3 ]",
+    "python_build": [
+      "main",
+      "Jul 18 2026 16:55:18"
+    ],
+    "executable": "$VENV_PBS",
+    "platform": "macOS-27.0.1-arm64-arm-64bit",
+    "machine": "arm64",
+    "sqlite_version": "3.53.1",
+    "config_args": "'--build=aarch64-apple-darwin' '--host=aarch64-apple-darwin' '--prefix=/install' '--with-openssl=$SCRATCH/tmpvgh3_a86/tools/deps' '--with-system-expat' '--with-system-libmpdec' '--without-ensurepip' '--enable-static-libpython-for-interpreter' '--enable-shared' '--enable-optimizations' '--with-lto' '--with-build-python=$SCRATCH/tmpvgh3_a86/tools/host/bin/python3.12' 'ac_cv_lib_intl_textdomain=no' 'ac_cv_func_ptsname_r=no' '--with-dbmliborder=ndbm' 'build_alias=aarch64-apple-darwin' 'host_alias=aarch64-apple-darwin' 'PKG_CONFIG=pkg-config --static' 'PKG_CONFIG_PATH=$SCRATCH/tmpvgh3_a86/tools/deps/share/pkgconfig:$SCRATCH/tmpvgh3_a86/tools/deps/lib/pkgconfig' 'CC=clang' 'CFLAGS=-O3 -arch arm64 -mmacosx-version-min=11.0 -Wno-nullability-completeness -Wno-expansion-to-defined -Wno-undef-prefix -fPIC -Werror=unguarded-availability-new' 'LDFLAGS=-arch arm64 -mmacosx-version-min=11.0 -Wl,-headerpad,40' 'CPPFLAGS=-O3 -arch arm64 -mmacosx-version-min=11.0 -Wno-nullability-completeness -Wno-expansion-to-defined -Wno-undef-prefix -fPIC -Werror=unguarded-availability-new' 'PROFILE_TASK=-m test --pgo -j 9' 'BOLT_COMMON_FLAGS=' 'BOLT_APPLY_FLAGS='",
+    "enable_load_extension_present": true
+  },
+  "sqlite_vec": {
+    "enable_load_extension_present": true,
+    "loadable_path": "<site-packages>/sqlite_vec/vec0",
+    "binary": "<site-packages>/sqlite_vec/vec0.dylib",
+    "binary_sha256": "193e480c50b59a55977d166f4aaf0e1bc8832d6963516e5950f39e4d2ce0b793",
+    "vec_version": "v0.1.9",
+    "reload_after_disable": {
+      "raised": true,
+      "error_type": "OperationalError",
+      "error": "not authorized"
+    },
+    "plain_connection": {
+      "blob": {
+        "memories.insert": [],
+        "memories.select": [
+          [
+            1,
+            "fixture"
+          ]
+        ],
+        "memories.delete": [],
+        "messages.insert": [],
+        "messages.select": [
+          [
+            1,
+            "fixture"
+          ]
+        ],
+        "messages.delete": [],
+        "vectors.select": [
+          [
+            1
+          ]
+        ],
+        "vectors.insert": [],
+        "vectors.delete": [],
+        "vacuum": []
+      },
+      "vec0": {
+        "memories.insert": [],
+        "memories.select": [
+          [
+            1,
+            "fixture"
+          ]
+        ],
+        "memories.delete": [],
+        "messages.insert": [],
+        "messages.select": [
+          [
+            1,
+            "fixture"
+          ]
+        ],
+        "messages.delete": [],
+        "vectors.select": {
+          "error_type": "OperationalError",
+          "error": "no such module: vec0"
+        },
+        "vectors.insert": {
+          "error_type": "OperationalError",
+          "error": "no such module: vec0"
+        },
+        "vectors.delete": {
+          "error_type": "OperationalError",
+          "error": "no such module: vec0"
+        },
+        "vacuum": [],
+        "canonical_delete_with_vector_trigger": {
+          "error_type": "OperationalError",
+          "error": "no such module: vec0"
+        }
+      }
+    }
+  },
+  "disk": {
+    "distributions": {
+      "anyio": {
+        "version": "4.15.1",
+        "bytes": 539391,
+        "site_packages_directories": {
+          "anyio-4.15.1.dist-info": 10374,
+          "anyio": 529017
+        },
+        "license": "MIT"
+      },
+      "certifi": {
+        "version": "2026.10.23",
+        "bytes": 244811,
+        "site_packages_directories": {
+          "certifi-2026.10.23.dist-info": 4750,
+          "certifi": 240061
+        },
+        "license": "MPL-2.0"
+      },
+      "charset-normalizer": {
+        "version": "3.5.2",
+        "bytes": 1125957,
+        "site_packages_directories": {
+          "charset_normalizer-3.5.2.dist-info": 49843,
+          "charset_normalizer": 1076114
+        },
+        "license": "MIT"
+      },
+      "click": {
+        "version": "8.5.0",
+        "bytes": 447891,
+        "site_packages_directories": {
+          "click-8.5.0.dist-info": 5936,
+          "click": 441955
+        },
+        "license": "BSD-3-Clause"
+      },
+      "fastembed": {
+        "version": "0.9.1",
+        "bytes": 478920,
+        "site_packages_directories": {
+          "fastembed-0.9.1.dist-info": 30569,
+          "fastembed": 448351
+        },
+        "license": "Apache-2.0"
+      },
+      "filelock": {
+        "version": "4.2.5",
+        "bytes": 584078,
+        "site_packages_directories": {
+          "filelock-4.2.5.dist-info": 5537,
+          "filelock": 578541
+        },
+        "license": "MIT"
+      },
+      "flatbuffers": {
+        "version": "25.12.19",
+        "bytes": 88178,
+        "site_packages_directories": {
+          "flatbuffers-25.12.19.dist-info": 2435,
+          "flatbuffers": 85743
+        },
+        "license": "Apache 2.0"
+      },
+      "fsspec": {
+        "version": "2026.9.0",
+        "bytes": 810762,
+        "site_packages_directories": {
+          "fsspec-2026.9.0.dist-info": 17519,
+          "fsspec": 793243
+        },
+        "license": "BSD-3-Clause"
+      },
+      "h11": {
+        "version": "0.16.0",
+        "bytes": 104105,
+        "site_packages_directories": {
+          "h11-0.16.0.dist-info": 10981,
+          "h11": 93124
+        },
+        "license": "MIT"
+      },
+      "hf-xet": {
+        "version": "1.8.0",
+        "bytes": 7798696,
+        "site_packages_directories": {
+          "hf_xet-1.8.0.dist-info": 314685,
+          "hf_xet": 7484011
+        },
+        "license": "Apache-2.0"
+      },
+      "httpcore": {
+        "version": "1.0.9",
+        "bytes": 288194,
+        "site_packages_directories": {
+          "httpcore-1.0.9.dist-info": 26259,
+          "httpcore": 261935
+        },
+        "license": "BSD-3-Clause"
+      },
+      "httpx": {
+        "version": "0.28.1",
+        "bytes": 295551,
+        "site_packages_directories": {
+          "httpx-0.28.1.dist-info": 11155,
+          "httpx": 284396
+        },
+        "license": "BSD-3-Clause"
+      },
+      "huggingface-hub": {
+        "version": "1.33.0",
+        "bytes": 3291542,
+        "site_packages_directories": {
+          "huggingface_hub-1.33.0.dist-info": 47472,
+          "huggingface_hub": 3244070
+        },
+        "license": "Apache-2.0"
+      },
+      "idna": {
+        "version": "3.20",
+        "bytes": 342316,
+        "site_packages_directories": {
+          "idna-3.20.dist-info": 10277,
+          "idna": 332039
+        },
+        "license": "BSD-3-Clause"
+      },
+      "loguru": {
+        "version": "0.7.3",
+        "bytes": 225888,
+        "site_packages_directories": {
+          "loguru-0.7.3.dist-info": 24693,
+          "loguru": 201195
+        },
+        "license": null
+      },
+      "mmh3": {
+        "version": "5.3.1",
+        "bytes": 212169,
+        "site_packages_directories": {
+          "mmh3-5.3.1.dist-info": 16179,
+          "mmh3.cpython-312-darwin.so": 95176,
+          "mmh3": 100814
+        },
+        "license": "MIT License\n\nCopyright (c) 2011-2026 Hajime Senuma\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the \"Software\"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE."
+      },
+      "numpy": {
+        "version": "2.5.4",
+        "bytes": 20598241,
+        "site_packages_directories": {
+          "numpy-2.5.4.dist-info": 185074,
+          "numpy": 20413167
+        },
+        "license": "BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0"
+      },
+      "onnxruntime": {
+        "version": "1.31.1",
+        "bytes": 78012619,
+        "site_packages_directories": {
+          "onnxruntime-1.31.1.dist-info": 41389,
+          "onnxruntime": 77971230
+        },
+        "license": "MIT License"
+      },
+      "packaging": {
+        "version": "26.3",
+        "bytes": 499357,
+        "site_packages_directories": {
+          "packaging-26.3.dist-info": 17858,
+          "packaging": 481499
+        },
+        "license": "Apache-2.0 OR BSD-2-Clause"
+      },
+      "pillow": {
+        "version": "13.0.0",
+        "bytes": 11967486,
+        "site_packages_directories": {
+          "PIL": 11854932,
+          "pillow-13.0.0.dist-info": 112554
+        },
+        "license": "MIT-CMU"
+      },
+      "protobuf": {
+        "version": "7.36.2",
+        "bytes": 1662142,
+        "site_packages_directories": {
+          "google": 1653816,
+          "protobuf-7.36.2.dist-info": 8326
+        },
+        "license": "3-Clause BSD License"
+      },
+      "py-rust-stemmers": {
+        "version": "0.1.8",
+        "bytes": 688398,
+        "site_packages_directories": {
+          "py_rust_stemmers-0.1.8.dist-info": 33355,
+          "py_rust_stemmers": 655043
+        },
+        "license": null
+      },
+      "pyyaml": {
+        "version": "6.0.3",
+        "bytes": 606237,
+        "site_packages_directories": {
+          "_yaml": 1402,
+          "pyyaml-6.0.3.dist-info": 5561,
+          "yaml": 599274
+        },
+        "license": "MIT"
+      },
+      "requests": {
+        "version": "2.34.2",
+        "bytes": 234577,
+        "site_packages_directories": {
+          "requests-2.34.2.dist-info": 17293,
+          "requests": 217284
+        },
+        "license": "Apache-2.0"
+      },
+      "sqlite-vec": {
+        "version": "0.1.9",
+        "bytes": 164772,
+        "site_packages_directories": {
+          "sqlite_vec-0.1.9.dist-info": 971,
+          "sqlite_vec": 163801
+        },
+        "license": "MIT License, Apache License, Version 2.0"
+      },
+      "tokenizers": {
+        "version": "0.23.3",
+        "bytes": 9991742,
+        "site_packages_directories": {
+          "tokenizers-0.23.3.dist-info": 164234,
+          "tokenizers": 9827508
+        },
+        "license": null
+      },
+      "tqdm": {
+        "version": "4.70.1",
+        "bytes": 233724,
+        "site_packages_directories": {
+          "tqdm-4.70.1.dist-info": 62643,
+          "tqdm": 171081
+        },
+        "license": "MPL-2.0 AND MIT"
+      },
+      "typing-extensions": {
+        "version": "4.16.0",
+        "bytes": 182965,
+        "site_packages_directories": {
+          "typing_extensions-4.16.0.dist-info": 17953,
+          "typing_extensions.py": 165012
+        },
+        "license": "PSF-2.0"
+      },
+      "urllib3": {
+        "version": "2.8.0",
+        "bytes": 450637,
+        "site_packages_directories": {
+          "urllib3-2.8.0.dist-info": 12196,
+          "urllib3": 438441
+        },
+        "license": "MIT"
+      }
+    },
+    "sets": {
+      "thin_installed_closure": {
+        "packages": [
+          "anyio",
+          "certifi",
+          "click",
+          "filelock",
+          "flatbuffers",
+          "fsspec",
+          "h11",
+          "hf-xet",
+          "httpcore",
+          "httpx",
+          "huggingface-hub",
+          "idna",
+          "numpy",
+          "onnxruntime",
+          "packaging",
+          "protobuf",
+          "pyyaml",
+          "sqlite-vec",
+          "tokenizers",
+          "tqdm",
+          "typing-extensions"
+        ],
+        "bytes": 126787314
+      },
+      "full_installed_closure": {
+        "packages": [
+          "anyio",
+          "certifi",
+          "charset-normalizer",
+          "click",
+          "fastembed",
+          "filelock",
+          "flatbuffers",
+          "fsspec",
+          "h11",
+          "hf-xet",
+          "httpcore",
+          "httpx",
+          "huggingface-hub",
+          "idna",
+          "loguru",
+          "mmh3",
+          "numpy",
+          "onnxruntime",
+          "packaging",
+          "pillow",
+          "protobuf",
+          "py-rust-stemmers",
+          "pyyaml",
+          "requests",
+          "sqlite-vec",
+          "tokenizers",
+          "tqdm",
+          "typing-extensions",
+          "urllib3"
+        ],
+        "bytes": 142171346
+      }
+    },
+    "measurement": "sum of installed RECORD files inside site-packages, logical bytes, includes metadata; not wheel download sizes or an independently installed thin lock",
+    "model_files": {
+      "1_Pooling/config.json": {
+        "bytes": 200,
+        "sha256": "987f7a67a38fa564c849bb5d277c52ab9088a84368fc0be31a354125aebb12a0"
+      },
+      "README.md": {
+        "bytes": 497538,
+        "sha256": "0038de97aee16258cecbad7ffda4b4febd6953e747a00e0ddbc8e6ed241e9c1c"
+      },
+      "config.json": {
+        "bytes": 655,
+        "sha256": "69137736cab8b8903a07fe8afaafdda25aac55415a12a55d1bffa9f581abf959"
+      },
+      "modules.json": {
+        "bytes": 387,
+        "sha256": "c6e29747481e8b5dd2b58401966aeac910de39092f90cda9a704b1545f902b04"
+      },
+      "onnx/config.json": {
+        "bytes": 653,
+        "sha256": "bbb7c1333fc4b3e27fbc9cd5d2070aabcc1d4dfb99917c3633e772f97545a6b6"
+      },
+      "onnx/model.onnx": {
+        "bytes": 470268510,
+        "sha256": "ca456c06b3a9505ddfd9131408916dd79290368331e7d76bb621f1cba6bc8665"
+      },
+      "onnx/model_O4.onnx": {
+        "bytes": 235052531,
+        "sha256": "4654c156f3e4171abc9c716cdb771bf9116455d15ac1aab364aeeede0e3205b0"
+      },
+      "onnx/model_qint8_avx512_vnni.onnx": {
+        "bytes": 118346824,
+        "sha256": "dd476dd0c2514e9b9be83aeb3853fac0763e0bdf4a71645407587d77c48a2d88"
+      },
+      "onnx/tokenizer.json": {
+        "bytes": 17082730,
+        "sha256": "0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39"
+      },
+      "sentencepiece.bpe.model": {
+        "bytes": 5069051,
+        "sha256": "cfc8146abe2a0488e9e2a0c56de7952f7c11ab059eca145a0a727afce0db2865"
+      },
+      "special_tokens_map.json": {
+        "bytes": 167,
+        "sha256": "d05497f1da52c5e09554c0cd874037a083e1dc1b9cfd48034d1c717f1afc07a7"
+      },
+      "tokenizer.json": {
+        "bytes": 17082730,
+        "sha256": "0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39"
+      },
+      "tokenizer_config.json": {
+        "bytes": 443,
+        "sha256": "a1d6bc8734a6f635dc158508bef000f8e2e5a759c7d92f984b2c86e5ff53425b"
+      }
+    }
+  },
+  "source_scan": {
+    "fastembed": {
+      "version": "0.9.1",
+      "hits": [
+        {
+          "file": "fastembed/common/model_management.py",
+          "line": 15,
+          "function": "<module>",
+          "text": "from huggingface_hub import constants, snapshot_download, model_info, list_repo_tree"
+        },
+        {
+          "file": "fastembed/common/model_management.py",
+          "line": 48,
+          "function": "_hf_transport_errors",
+          "text": "return (httpx.TransportError,)"
+        },
+        {
+          "file": "fastembed/common/model_management.py",
+          "line": 140,
+          "function": "ModelManagement.download_file_from_gcs",
+          "text": "response = requests.get(url, stream=True, timeout=(10, 120))"
+        },
+        {
+          "file": "fastembed/common/model_management.py",
+          "line": 361,
+          "function": "ModelManagement.download_files_from_huggingface",
+          "text": "return snapshot_download("
+        },
+        {
+          "file": "fastembed/common/model_management.py",
+          "line": 383,
+          "function": "ModelManagement.download_files_from_huggingface",
+          "text": "# retry or fall back to another source. list_repo_tree and snapshot_download's own"
+        },
+        {
+          "file": "fastembed/common/model_management.py",
+          "line": 421,
+          "function": "ModelManagement.download_files_from_huggingface",
+          "text": "result = snapshot_download("
+        },
+        {
+          "file": "fastembed/common/model_management.py",
+          "line": 620,
+          "function": "ModelManagement.download_model",
+          "text": "def download_model(cls, model: T, cache_dir: str, retries: int = 3, **kwargs: Any) -> Path:"
+        },
+        {
+          "file": "fastembed/common/model_management.py",
+          "line": 649,
+          "function": "ModelManagement.download_model",
+          "text": "specific_model_path: str | None = kwargs.pop(\"specific_model_path\", None)"
+        },
+        {
+          "file": "fastembed/common/model_management.py",
+          "line": 650,
+          "function": "ModelManagement.download_model",
+          "text": "if specific_model_path:"
+        },
+        {
+          "file": "fastembed/common/model_management.py",
+          "line": 651,
+          "function": "ModelManagement.download_model",
+          "text": "return Path(specific_model_path)"
+        },
+        {
+          "file": "fastembed/common/model_management.py",
+          "line": 660,
+          "function": "ModelManagement.download_model",
+          "text": "# force_download: the hub's cache check is existence-only, so a plain snapshot_download"
+        },
+        {
+          "file": "fastembed/common/onnx_model.py",
+          "line": 138,
+          "function": "OnnxModel._load_onnx_model",
+          "text": "self.model = ort.InferenceSession("
+        },
+        {
+          "file": "fastembed/image/onnx_embedding.py",
+          "line": 73,
+          "function": "OnnxImageEmbedding.__init__",
+          "text": "specific_model_path: str | None = None,"
+        },
+        {
+          "file": "fastembed/image/onnx_embedding.py",
+          "line": 93,
+          "function": "OnnxImageEmbedding.__init__",
+          "text": "specific_model_path (Optional[str], optional): The specific path to the onnx model dir if it should be imported from somewhere else"
+        },
+        {
+          "file": "fastembed/image/onnx_embedding.py",
+          "line": 117,
+          "function": "OnnxImageEmbedding.__init__",
+          "text": "self._specific_model_path = specific_model_path"
+        },
+        {
+          "file": "fastembed/image/onnx_embedding.py",
+          "line": 122,
+          "function": "OnnxImageEmbedding.__init__",
+          "text": "specific_model_path=self._specific_model_path,"
+        },
+        {
+          "file": "fastembed/image/onnx_embedding.py",
+          "line": 186,
+          "function": "OnnxImageEmbedding.embed",
+          "text": "specific_model_path=self._specific_model_path,"
+        },
+        {
+          "file": "fastembed/image/onnx_image_model.py",
+          "line": 109,
+          "function": "OnnxImageModel._embed_images",
+          "text": "specific_model_path: str | None = None,"
+        },
+        {
+          "file": "fastembed/image/onnx_image_model.py",
+          "line": 138,
+          "function": "OnnxImageModel._embed_images",
+          "text": "\"specific_model_path\": specific_model_path,"
+        },
+        {
+          "file": "fastembed/late_interaction/colbert.py",
+          "line": 158,
+          "function": "Colbert.__init__",
+          "text": "specific_model_path: str | None = None,"
+        },
+        {
+          "file": "fastembed/late_interaction/colbert.py",
+          "line": 178,
+          "function": "Colbert.__init__",
+          "text": "specific_model_path (Optional[str], optional): The specific path to the onnx model dir if it should be imported from somewhere else"
+        },
+        {
+          "file": "fastembed/late_interaction/colbert.py",
+          "line": 203,
+          "function": "Colbert.__init__",
+          "text": "self._specific_model_path = specific_model_path"
+        },
+        {
+          "file": "fastembed/late_interaction/colbert.py",
+          "line": 208,
+          "function": "Colbert.__init__",
+          "text": "specific_model_path=self._specific_model_path,"
+        },
+        {
+          "file": "fastembed/late_interaction/colbert.py",
+          "line": 297,
+          "function": "Colbert.embed",
+          "text": "specific_model_path=self._specific_model_path,"
+        },
+        {
+          "file": "fastembed/late_interaction_multimodal/colmodernvbert.py",
+          "line": 61,
+          "function": "ColModernVBERT.__init__",
+          "text": "specific_model_path: Optional[str] = None,"
+        },
+        {
+          "file": "fastembed/late_interaction_multimodal/colmodernvbert.py",
+          "line": 103,
+          "function": "ColModernVBERT.__init__",
+          "text": "self._specific_model_path = specific_model_path"
+        },
+        {
+          "file": "fastembed/late_interaction_multimodal/colmodernvbert.py",
+          "line": 108,
+          "function": "ColModernVBERT.__init__",
+          "text": "specific_model_path=self._specific_model_path,"
+        },
+        {
+          "file": "fastembed/late_interaction_multimodal/colmodernvbert.py",
+          "line": 469,
+          "function": "ColModernVBERT.embed_text",
+          "text": "specific_model_path=self._specific_model_path,"
+        },
+        {
+          "file": "fastembed/late_interaction_multimodal/colmodernvbert.py",
+          "line": 506,
+          "function": "ColModernVBERT.embed_image",
+          "text": "specific_model_path=self._specific_model_path,"
+        },
+        {
+          "file": "fastembed/late_interaction_multimodal/colpali.py",
+          "line": 56,
+          "function": "ColPali.__init__",
+          "text": "specific_model_path: str | None = None,"
+        },
+        {
+          "file": "fastembed/late_interaction_multimodal/colpali.py",
+          "line": 100,
+          "function": "ColPali.__init__",
+          "text": "self._specific_model_path = specific_model_path"
+        },
+        {
+          "file": "fastembed/late_interaction_multimodal/colpali.py",
+          "line": 105,
+          "function": "ColPali.__init__",
+          "text": "specific_model_path=self._specific_model_path,"
+        },
+        {
+          "file": "fastembed/late_interaction_multimodal/colpali.py",
+          "line": 260,
+          "function": "ColPali.embed_text",
+          "text": "specific_model_path=self._specific_model_path,"
+        },
+        {
+          "file": "fastembed/late_interaction_multimodal/colpali.py",
+          "line": 296,
+          "function": "ColPali.embed_image",
+          "text": "specific_model_path=self._specific_model_path,"
+        },
+        {
+          "file": "fastembed/late_interaction_multimodal/onnx_multimodal_model.py",
+          "line": 140,
+          "function": "OnnxMultimodalModel._embed_documents",
+          "text": "specific_model_path: str | None = None,"
+        },
+        {
+          "file": "fastembed/late_interaction_multimodal/onnx_multimodal_model.py",
+          "line": 169,
+          "function": "OnnxMultimodalModel._embed_documents",
+          "text": "\"specific_model_path\": specific_model_path,"
+        },
+        {
+          "file": "fastembed/late_interaction_multimodal/onnx_multimodal_model.py",
+          "line": 213,
+          "function": "OnnxMultimodalModel._embed_images",
+          "text": "specific_model_path: str | None = None,"
+        },
+        {
+          "file": "fastembed/late_interaction_multimodal/onnx_multimodal_model.py",
+          "line": 242,
+          "function": "OnnxMultimodalModel._embed_images",
+          "text": "\"specific_model_path\": specific_model_path,"
+        },
+        {
+          "file": "fastembed/rerank/cross_encoder/custom_text_cross_encoder.py",
+          "line": 23,
+          "function": "CustomTextCrossEncoder.__init__",
+          "text": "specific_model_path: str | None = None,"
+        },
+        {
+          "file": "fastembed/rerank/cross_encoder/custom_text_cross_encoder.py",
+          "line": 35,
+          "function": "CustomTextCrossEncoder.__init__",
+          "text": "specific_model_path=specific_model_path,"
+        },
+        {
+          "file": "fastembed/rerank/cross_encoder/onnx_text_cross_encoder.py",
+          "line": 105,
+          "function": "OnnxTextCrossEncoder.__init__",
+          "text": "specific_model_path: str | None = None,"
+        },
+        {
+          "file": "fastembed/rerank/cross_encoder/onnx_text_cross_encoder.py",
+          "line": 125,
+          "function": "OnnxTextCrossEncoder.__init__",
+          "text": "specific_model_path (Optional[str], optional): The specific path to the onnx model dir if it should be imported from somewhere else"
+        },
+        {
+          "file": "fastembed/rerank/cross_encoder/onnx_text_cross_encoder.py",
+          "line": 154,
+          "function": "OnnxTextCrossEncoder.__init__",
+          "text": "self._specific_model_path = specific_model_path"
+        },
+        {
+          "file": "fastembed/rerank/cross_encoder/onnx_text_cross_encoder.py",
+          "line": 159,
+          "function": "OnnxTextCrossEncoder.__init__",
+          "text": "specific_model_path=self._specific_model_path,"
+        },
+        {
+          "file": "fastembed/rerank/cross_encoder/onnx_text_cross_encoder.py",
+          "line": 216,
+          "function": "OnnxTextCrossEncoder.rerank_pairs",
+          "text": "specific_model_path=self._specific_model_path,"
+        },
+        {
+          "file": "fastembed/rerank/cross_encoder/onnx_text_model.py",
+          "line": 114,
+          "function": "OnnxCrossEncoderModel._rerank_pairs",
+          "text": "specific_model_path: str | None = None,"
+        },
+        {
+          "file": "fastembed/rerank/cross_encoder/onnx_text_model.py",
+          "line": 143,
+          "function": "OnnxCrossEncoderModel._rerank_pairs",
+          "text": "\"specific_model_path\": specific_model_path,"
+        },
+        {
+          "file": "fastembed/sparse/bm25.py",
+          "line": 128,
+          "function": "Bm25.__init__",
+          "text": "specific_model_path: str | None = None,"
+        },
+        {
+          "file": "fastembed/sparse/bm25.py",
+          "line": 153,
+          "function": "Bm25.__init__",
+          "text": "self._specific_model_path = specific_model_path"
+        },
+        {
+          "file": "fastembed/sparse/bm25.py",
+          "line": 158,
+          "function": "Bm25.__init__",
+          "text": "specific_model_path=self._specific_model_path,"
+        },
+        {
+          "file": "fastembed/sparse/bm25.py",
+          "line": 212,
+          "function": "Bm25._embed_documents",
+          "text": "specific_model_path: str | None = None,"
+        },
+        {
+          "file": "fastembed/sparse/bm25.py",
+          "line": 244,
+          "function": "Bm25._embed_documents",
+          "text": "\"specific_model_path\": specific_model_path,"
+        },
+        {
+          "file": "fastembed/sparse/bm25.py",
+          "line": 284,
+          "function": "Bm25.embed",
+          "text": "specific_model_path=self._specific_model_path,"
+        },
+        {
+          "file": "fastembed/sparse/bm42.py",
+          "line": 77,
+          "function": "Bm42.__init__",
+          "text": "specific_model_path: str | None = None,"
+        },
+        {
+          "file": "fastembed/sparse/bm42.py",
+          "line": 99,
+          "function": "Bm42.__init__",
+          "text": "specific_model_path (Optional[str], optional): The specific path to the onnx model dir if it should be imported from somewhere else"
+        },
+        {
+          "file": "fastembed/sparse/bm42.py",
+          "line": 124,
+          "function": "Bm42.__init__",
+          "text": "self._specific_model_path = specific_model_path"
+        },
+        {
+          "file": "fastembed/sparse/bm42.py",
+          "line": 129,
+          "function": "Bm42.__init__",
+          "text": "specific_model_path=self._specific_model_path,"
+        },
+        {
+          "file": "fastembed/sparse/bm42.py",
+          "line": 329,
+          "function": "Bm42.embed",
+          "text": "specific_model_path=self._specific_model_path,"
+        },
+        {
+          "file": "fastembed/sparse/if_splade.py",
+          "line": 92,
+          "function": "IfSplade.__init__",
+          "text": "specific_model_path: str | None = None,"
+        },
+        {
+          "file": "fastembed/sparse/if_splade.py",
+          "line": 112,
+          "function": "IfSplade.__init__",
+          "text": "specific_model_path (Optional[str], optional): The specific path to the onnx model dir if it should be imported from somewhere else"
+        },
+        {
+          "file": "fastembed/sparse/if_splade.py",
+          "line": 136,
+          "function": "IfSplade.__init__",
+          "text": "self._specific_model_path = specific_model_path"
+        },
+        {
+          "file": "fastembed/sparse/if_splade.py",
+          "line": 141,
+          "function": "IfSplade.__init__",
+          "text": "specific_model_path=self._specific_model_path,"
+        },
+        {
+          "file": "fastembed/sparse/if_splade.py",
+          "line": 204,
+          "function": "IfSplade.embed",
+          "text": "specific_model_path=self._specific_model_path,"
+        },
+        {
+          "file": "fastembed/sparse/minicoil.py",
+          "line": 86,
+          "function": "MiniCOIL.__init__",
+          "text": "specific_model_path: str | None = None,"
+        },
+        {
+          "file": "fastembed/sparse/minicoil.py",
+          "line": 110,
+          "function": "MiniCOIL.__init__",
+          "text": "specific_model_path (Optional[str], optional): The specific path to the onnx model dir if it should be imported from somewhere else"
+        },
+        {
+          "file": "fastembed/sparse/minicoil.py",
+          "line": 141,
+          "function": "MiniCOIL.__init__",
+          "text": "self._specific_model_path = specific_model_path"
+        },
+        {
+          "file": "fastembed/sparse/minicoil.py",
+          "line": 146,
+          "function": "MiniCOIL.__init__",
+          "text": "specific_model_path=self._specific_model_path,"
+        },
+        {
+          "file": "fastembed/sparse/minicoil.py",
+          "line": 247,
+          "function": "MiniCOIL.embed",
+          "text": "specific_model_path=self._specific_model_path,"
+        },
+        {
+          "file": "fastembed/sparse/minicoil.py",
+          "line": 268,
+          "function": "MiniCOIL.query_embed",
+          "text": "specific_model_path=self._specific_model_path,"
+        },
+        {
+          "file": "fastembed/sparse/splade_pp.py",
+          "line": 81,
+          "function": "SpladePP.__init__",
+          "text": "specific_model_path: str | None = None,"
+        },
+        {
+          "file": "fastembed/sparse/splade_pp.py",
+          "line": 101,
+          "function": "SpladePP.__init__",
+          "text": "specific_model_path (Optional[str], optional): The specific path to the onnx model dir if it should be imported from somewhere else"
+        },
+        {
+          "file": "fastembed/sparse/splade_pp.py",
+          "line": 125,
+          "function": "SpladePP.__init__",
+          "text": "self._specific_model_path = specific_model_path"
+        },
+        {
+          "file": "fastembed/sparse/splade_pp.py",
+          "line": 130,
+          "function": "SpladePP.__init__",
+          "text": "specific_model_path=self._specific_model_path,"
+        },
+        {
+          "file": "fastembed/sparse/splade_pp.py",
+          "line": 180,
+          "function": "SpladePP.embed",
+          "text": "specific_model_path=self._specific_model_path,"
+        },
+        {
+          "file": "fastembed/text/custom_text_embedding.py",
+          "line": 40,
+          "function": "CustomTextEmbedding.__init__",
+          "text": "specific_model_path: str | None = None,"
+        },
+        {
+          "file": "fastembed/text/custom_text_embedding.py",
+          "line": 52,
+          "function": "CustomTextEmbedding.__init__",
+          "text": "specific_model_path=specific_model_path,"
+        },
+        {
+          "file": "fastembed/text/onnx_embedding.py",
+          "line": 231,
+          "function": "OnnxTextEmbedding.__init__",
+          "text": "specific_model_path: str | None = None,"
+        },
+        {
+          "file": "fastembed/text/onnx_embedding.py",
+          "line": 251,
+          "function": "OnnxTextEmbedding.__init__",
+          "text": "specific_model_path (Optional[str], optional): The specific path to the onnx model dir if it should be imported from somewhere else"
+        },
+        {
+          "file": "fastembed/text/onnx_embedding.py",
+          "line": 273,
+          "function": "OnnxTextEmbedding.__init__",
+          "text": "self._specific_model_path = specific_model_path"
+        },
+        {
+          "file": "fastembed/text/onnx_embedding.py",
+          "line": 278,
+          "function": "OnnxTextEmbedding.__init__",
+          "text": "specific_model_path=self._specific_model_path,"
+        },
+        {
+          "file": "fastembed/text/onnx_embedding.py",
+          "line": 316,
+          "function": "OnnxTextEmbedding.embed",
+          "text": "specific_model_path=self._specific_model_path,"
+        },
+        {
+          "file": "fastembed/text/onnx_text_model.py",
+          "line": 135,
+          "function": "OnnxTextModel._embed_documents",
+          "text": "specific_model_path: str | None = None,"
+        },
+        {
+          "file": "fastembed/text/onnx_text_model.py",
+          "line": 166,
+          "function": "OnnxTextModel._embed_documents",
+          "text": "\"specific_model_path\": specific_model_path,"
+        },
+        {
+          "file": "fastembed/text/static_embedding.py",
+          "line": 110,
+          "function": "StaticTextEmbedding.__init__",
+          "text": "specific_model_path: str | None = None,"
+        },
+        {
+          "file": "fastembed/text/static_embedding.py",
+          "line": 125,
+          "function": "StaticTextEmbedding.__init__",
+          "text": "specific_model_path (str, optional): A local directory with `model.safetensors` and"
+        },
+        {
+          "file": "fastembed/text/static_embedding.py",
+          "line": 157,
+          "function": "StaticTextEmbedding.__init__",
+          "text": "self._specific_model_path = specific_model_path"
+        },
+        {
+          "file": "fastembed/text/static_embedding.py",
+          "line": 163,
+          "function": "StaticTextEmbedding.__init__",
+          "text": "specific_model_path=self._specific_model_path,"
+        },
+        {
+          "file": "fastembed/text/static_embedding.py",
+          "line": 286,
+          "function": "StaticTextEmbedding.embed",
+          "text": "specific_model_path=self._specific_model_path,"
+        },
+        {
+          "file": "fastembed/text/static_embedding.py",
+          "line": 298,
+          "function": "StaticTextEmbedding._embed_documents",
+          "text": "specific_model_path: str | None = None,"
+        },
+        {
+          "file": "fastembed/text/static_embedding.py",
+          "line": 323,
+          "function": "StaticTextEmbedding._embed_documents",
+          "text": "\"specific_model_path\": specific_model_path,"
+        },
+        {
+          "file": "fastembed/text/text_embedding.py",
+          "line": 118,
+          "function": "TextEmbedding.__init__",
+          "text": "specific_model_path (str): A local directory with the model files to load"
+        }
+      ]
+    },
+    "huggingface-hub": {
+      "version": "1.33.0",
+      "hits": [
+        {
+          "file": "huggingface_hub/__init__.py",
+          "line": 122,
+          "function": "<module>",
+          "text": "\"_snapshot_download\": ["
+        },
+        {
+          "file": "huggingface_hub/__init__.py",
+          "line": 124,
+          "function": "<module>",
+          "text": "\"snapshot_download\","
+        },
+        {
+          "file": "huggingface_hub/__init__.py",
+          "line": 181,
+          "function": "<module>",
+          "text": "\"from_pretrained_fastai\","
+        },
+        {
+          "file": "huggingface_hub/__init__.py",
+          "line": 189,
+          "function": "<module>",
+          "text": "\"hf_hub_download\","
+        },
+        {
+          "file": "huggingface_hub/__init__.py",
+          "line": 1012,
+          "function": "<module>",
+          "text": "\"from_pretrained_fastai\","
+        },
+        {
+          "file": "huggingface_hub/__init__.py",
+          "line": 1040,
+          "function": "<module>",
+          "text": "\"hf_hub_download\","
+        },
+        {
+          "file": "huggingface_hub/__init__.py",
+          "line": 1132,
+          "function": "<module>",
+          "text": "\"snapshot_download\","
+        },
+        {
+          "file": "huggingface_hub/__init__.py",
+          "line": 1328,
+          "function": "<module>",
+          "text": "from ._snapshot_download import ("
+        },
+        {
+          "file": "huggingface_hub/__init__.py",
+          "line": 1330,
+          "function": "<module>",
+          "text": "snapshot_download,  # noqa: F401"
+        },
+        {
+          "file": "huggingface_hub/__init__.py",
+          "line": 1385,
+          "function": "<module>",
+          "text": "from_pretrained_fastai,  # noqa: F401"
+        },
+        {
+          "file": "huggingface_hub/__init__.py",
+          "line": 1393,
+          "function": "<module>",
+          "text": "hf_hub_download,  # noqa: F401"
+        },
+        {
+          "file": "huggingface_hub/_commit_api.py",
+          "line": 255,
+          "function": "CommitOperationAdd.as_file",
+          "text": "...     httpx.put(..., data=file)"
+        },
+        {
+          "file": "huggingface_hub/_hot_reload/client.py",
+          "line": 64,
+          "function": "ReloadClient.__init__",
+          "text": "self.client = httpx.Client("
+        },
+        {
+          "file": "huggingface_hub/_sandbox.py",
+          "line": 405,
+          "function": "SandboxFiles._parallel",
+          "text": "All workers share the sandbox's `httpx.Client`, which is thread-safe and pools"
+        },
+        {
+          "file": "huggingface_hub/_sandbox.py",
+          "line": 537,
+          "function": "_iter_events",
+          "text": "def _iter_events(response: httpx.Response) -> Iterator[dict]:"
+        },
+        {
+          "file": "huggingface_hub/_sandbox.py",
+          "line": 547,
+          "function": "_raise_for_status",
+          "text": "def _raise_for_status(response: httpx.Response) -> None:"
+        },
+        {
+          "file": "huggingface_hub/_sandbox.py",
+          "line": 557,
+          "function": "_check_server_protocol",
+          "text": "def _check_server_protocol(response: httpx.Response, job_id: str) -> None:"
+        },
+        {
+          "file": "huggingface_hub/_sandbox.py",
+          "line": 583,
+          "function": "_SandboxAuth",
+          "text": "class _SandboxAuth(httpx.Auth):"
+        },
+        {
+          "file": "huggingface_hub/_sandbox.py",
+          "line": 609,
+          "function": "_SandboxServer",
+          "text": "Owns the `httpx.Client`, the base URL and the auth headers."
+        },
+        {
+          "file": "huggingface_hub/_sandbox.py",
+          "line": 648,
+          "function": "_SandboxServer.__init__",
+          "text": "# httpx.Client is thread-safe, so a single client serves both sequential requests"
+        },
+        {
+          "file": "huggingface_hub/_sandbox.py",
+          "line": 650,
+          "function": "_SandboxServer.__init__",
+          "text": "self._client = httpx.Client("
+        },
+        {
+          "file": "huggingface_hub/_sandbox.py",
+          "line": 653,
+          "function": "_SandboxServer.__init__",
+          "text": "limits=httpx.Limits(max_connections=max_connections, max_keepalive_connections=max_connections),"
+        },
+        {
+          "file": "huggingface_hub/_sandbox.py",
+          "line": 701,
+          "function": "_SandboxServer.request",
+          "text": "def request(self, method: str, path: str, *, sandbox_token: str | None = None, **kwargs) -> httpx.Response:"
+        },
+        {
+          "file": "huggingface_hub/_sandbox.py",
+          "line": 703,
+          "function": "_SandboxServer.request",
+          "text": "timeout = kwargs.pop(\"timeout\", httpx.Timeout(60.0, connect=10.0))"
+        },
+        {
+          "file": "huggingface_hub/_sandbox.py",
+          "line": 713,
+          "function": "_SandboxServer.stream",
+          "text": ") -> Iterator[httpx.Response]:"
+        },
+        {
+          "file": "huggingface_hub/_sandbox.py",
+          "line": 715,
+          "function": "_SandboxServer.stream",
+          "text": "timeout = kwargs.pop(\"timeout\", httpx.Timeout(70.0, connect=10.0))  # server pings every 15s"
+        },
+        {
+          "file": "huggingface_hub/_sandbox.py",
+          "line": 748,
+          "function": "_SandboxServer.wait_ready",
+          "text": "response = self._client.get(self.base_url + \"/health\", timeout=httpx.Timeout(5.0))"
+        },
+        {
+          "file": "huggingface_hub/_sandbox.py",
+          "line": 752,
+          "function": "_SandboxServer.wait_ready",
+          "text": "except httpx.RequestError:"
+        },
+        {
+          "file": "huggingface_hub/_sandbox.py",
+          "line": 1304,
+          "function": "Sandbox._request",
+          "text": "def _request(self, method: str, resource: str, **kwargs) -> httpx.Response:"
+        },
+        {
+          "file": "huggingface_hub/_sandbox.py",
+          "line": 1308,
+          "function": "Sandbox._stream",
+          "text": "def _stream(self, method: str, resource: str, **kwargs) -> Iterator[httpx.Response]:"
+        },
+        {
+          "file": "huggingface_hub/_sandbox.py",
+          "line": 2001,
+          "function": "SandboxPool._discover_hosts",
+          "text": "except (SandboxError, httpx.HTTPError, HfHubHTTPError) as e:"
+        },
+        {
+          "file": "huggingface_hub/_sandbox.py",
+          "line": 2161,
+          "function": "SandboxPool._create_one",
+          "text": "except (SandboxError, httpx.HTTPError) as e:"
+        },
+        {
+          "file": "huggingface_hub/_sandbox.py",
+          "line": 2283,
+          "function": "SandboxPool._confirm_cached_host",
+          "text": "except httpx.HTTPStatusError as e:"
+        },
+        {
+          "file": "huggingface_hub/_snapshot_download.py",
+          "line": 25,
+          "function": "<module>",
+          "text": "hf_hub_download,"
+        },
+        {
+          "file": "huggingface_hub/_snapshot_download.py",
+          "line": 47,
+          "function": "snapshot_download",
+          "text": "def snapshot_download("
+        },
+        {
+          "file": "huggingface_hub/_snapshot_download.py",
+          "line": 72,
+          "function": "snapshot_download",
+          "text": "def snapshot_download("
+        },
+        {
+          "file": "huggingface_hub/_snapshot_download.py",
+          "line": 97,
+          "function": "snapshot_download",
+          "text": "def snapshot_download("
+        },
+        {
+          "file": "huggingface_hub/_snapshot_download.py",
+          "line": 123,
+          "function": "snapshot_download",
+          "text": "def snapshot_download("
+        },
+        {
+          "file": "huggingface_hub/_snapshot_download.py",
+          "line": 181,
+          "function": "snapshot_download",
+          "text": "data before giving up, which is passed to `httpx.request`."
+        },
+        {
+          "file": "huggingface_hub/_snapshot_download.py",
+          "line": 274,
+          "function": "snapshot_download",
+          "text": "# try/except logic to handle different errors => taken from `hf_hub_download`"
+        },
+        {
+          "file": "huggingface_hub/_snapshot_download.py",
+          "line": 280,
+          "function": "snapshot_download",
+          "text": "except httpx.ProxyError:"
+        },
+        {
+          "file": "huggingface_hub/_snapshot_download.py",
+          "line": 283,
+          "function": "snapshot_download",
+          "text": "except (httpx.ConnectError, httpx.TimeoutException, OfflineModeIsEnabled) as error:"
+        },
+        {
+          "file": "huggingface_hub/_snapshot_download.py",
+          "line": 358,
+          "function": "snapshot_download",
+          "text": "f\"Returning existing local_dir `{local_dir}` as remote repo cannot be accessed in `snapshot_download` ({api_call_error}).\""
+        },
+        {
+          "file": "huggingface_hub/_snapshot_download.py",
+          "line": 444,
+          "function": "snapshot_download",
+          "text": "name=\"huggingface_hub.snapshot_download.transfer\","
+        },
+        {
+          "file": "huggingface_hub/_snapshot_download.py",
+          "line": 456,
+          "function": "snapshot_download",
+          "text": "name=\"huggingface_hub.snapshot_download\","
+        },
+        {
+          "file": "huggingface_hub/_snapshot_download.py",
+          "line": 507,
+          "function": "snapshot_download",
+          "text": "# Pass the commit_hash as revision to hf_hub_download to skip network call if:"
+        },
+        {
+          "file": "huggingface_hub/_snapshot_download.py",
+          "line": 510,
+          "function": "snapshot_download._inner_hf_hub_download",
+          "text": "def _inner_hf_hub_download(repo_file: str) -> None:"
+        },
+        {
+          "file": "huggingface_hub/_snapshot_download.py",
+          "line": 512,
+          "function": "snapshot_download._inner_hf_hub_download",
+          "text": "hf_hub_download(  # type: ignore"
+        },
+        {
+          "file": "huggingface_hub/_snapshot_download.py",
+          "line": 533,
+          "function": "snapshot_download",
+          "text": "_inner_hf_hub_download,"
+        },
+        {
+          "file": "huggingface_hub/_snapshot_download.py",
+          "line": 606,
+          "function": "get_cached_repo_tree",
+          "text": "on disk as a side effect of [`snapshot_download`] (see the `trees/<commit_hash>.json` cache files) and is"
+        },
+        {
+          "file": "huggingface_hub/_snapshot_download.py",
+          "line": 674,
+          "function": "get_cached_repo_tree",
+          "text": "\"Download the repo (e.g. with `snapshot_download`) to populate the cache first.\""
+        },
+        {
+          "file": "huggingface_hub/_snapshot_download.py",
+          "line": 683,
+          "function": "get_cached_repo_tree",
+          "text": "f\"repo_type '{repo_type}') in '{tree_cache_folder}'. Download the repo (e.g. with `snapshot_download`) \""
+        },
+        {
+          "file": "huggingface_hub/cli/_cp.py",
+          "line": 193,
+          "function": "_download_single",
+          "text": "downloaded_path = api.hf_hub_download("
+        },
+        {
+          "file": "huggingface_hub/cli/_uv_script_header.py",
+          "line": 142,
+          "function": "_download_script",
+          "text": "except httpx.HTTPError as e:"
+        },
+        {
+          "file": "huggingface_hub/cli/download.py",
+          "line": 20,
+          "function": "<module>",
+          "text": "from huggingface_hub._snapshot_download import snapshot_download"
+        },
+        {
+          "file": "huggingface_hub/cli/download.py",
+          "line": 22,
+          "function": "<module>",
+          "text": "from huggingface_hub.file_download import DryRunFileInfo, hf_hub_download"
+        },
+        {
+          "file": "huggingface_hub/cli/download.py",
+          "line": 162,
+          "function": "download.run_download",
+          "text": "# Single file to download (not a subfolder): use `hf_hub_download`"
+        },
+        {
+          "file": "huggingface_hub/cli/download.py",
+          "line": 164,
+          "function": "download.run_download",
+          "text": "return hf_hub_download("
+        },
+        {
+          "file": "huggingface_hub/cli/download.py",
+          "line": 177,
+          "function": "download.run_download",
+          "text": "# Otherwise: use `snapshot_download` to ensure all files comes from same revision"
+        },
+        {
+          "file": "huggingface_hub/cli/download.py",
+          "line": 187,
+          "function": "download.run_download",
+          "text": "return snapshot_download("
+        },
+        {
+          "file": "huggingface_hub/cli/extensions.py",
+          "line": 623,
+          "function": "_github_request",
+          "text": ") -> httpx.Response:"
+        },
+        {
+          "file": "huggingface_hub/cli/extensions.py",
+          "line": 652,
+          "function": "_rate_limit_message",
+          "text": "def _rate_limit_message(headers: httpx.Headers) -> str:"
+        },
+        {
+          "file": "huggingface_hub/cli/extensions.py",
+          "line": 687,
+          "function": "_github_repo_exists",
+          "text": "except httpx.HTTPError as error:"
+        },
+        {
+          "file": "huggingface_hub/cli/extensions.py",
+          "line": 688,
+          "function": "_github_repo_exists",
+          "text": "if isinstance(error, httpx.HTTPStatusError) and error.response.status_code == 404:"
+        },
+        {
+          "file": "huggingface_hub/cli/spaces.py",
+          "line": 39,
+          "function": "<module>",
+          "text": "from huggingface_hub.file_download import hf_hub_download"
+        },
+        {
+          "file": "huggingface_hub/cli/spaces.py",
+          "line": 712,
+          "function": "spaces_hot_reload",
+          "text": "hf_hub_download(repo_type=\"space\", repo_id=space_id, filename=filename, local_dir=temp_dir.name)"
+        },
+        {
+          "file": "huggingface_hub/constants.py",
+          "line": 243,
+          "function": "<module>",
+          "text": "# Opt-out from telemetry requests"
+        },
+        {
+          "file": "huggingface_hub/errors.py",
+          "line": 29,
+          "function": "CachedRepoTreeNotFoundError",
+          "text": "The tree listing is populated as a side effect of [`snapshot_download`]."
+        },
+        {
+          "file": "huggingface_hub/errors.py",
+          "line": 400,
+          "function": "RevisionNotFoundError",
+          "text": ">>> from huggingface_hub import hf_hub_download"
+        },
+        {
+          "file": "huggingface_hub/errors.py",
+          "line": 401,
+          "function": "RevisionNotFoundError",
+          "text": ">>> hf_hub_download('bert-base-cased', 'config.json', revision='<non-existent-revision>')"
+        },
+        {
+          "file": "huggingface_hub/errors.py",
+          "line": 429,
+          "function": "EntryNotFoundError",
+          "text": ">>> from huggingface_hub import hf_hub_download"
+        },
+        {
+          "file": "huggingface_hub/errors.py",
+          "line": 430,
+          "function": "EntryNotFoundError",
+          "text": ">>> hf_hub_download('bert-base-cased', '<non-existent-file>')"
+        },
+        {
+          "file": "huggingface_hub/errors.py",
+          "line": 433,
+          "function": "EntryNotFoundError",
+          "text": ">>> hf_hub_download('bert-base-cased', '<non-existent-file>', local_files_only=True)"
+        },
+        {
+          "file": "huggingface_hub/errors.py",
+          "line": 454,
+          "function": "RemoteEntryNotFoundError",
+          "text": ">>> from huggingface_hub import hf_hub_download"
+        },
+        {
+          "file": "huggingface_hub/errors.py",
+          "line": 455,
+          "function": "RemoteEntryNotFoundError",
+          "text": ">>> hf_hub_download('bert-base-cased', '<non-existent-file>')"
+        },
+        {
+          "file": "huggingface_hub/errors.py",
+          "line": 475,
+          "function": "LocalEntryNotFoundError",
+          "text": ">>> from huggingface_hub import hf_hub_download"
+        },
+        {
+          "file": "huggingface_hub/errors.py",
+          "line": 476,
+          "function": "LocalEntryNotFoundError",
+          "text": ">>> hf_hub_download('bert-base-cased', '<non-cached-file>',  local_files_only=True)"
+        },
+        {
+          "file": "huggingface_hub/errors.py",
+          "line": 488,
+          "function": "IncompleteSnapshotError",
+          "text": "Raised by [`snapshot_download`] when the Hub cannot be reached (offline, connection issue, or"
+        },
+        {
+          "file": "huggingface_hub/errors.py",
+          "line": 511,
+          "function": "BadRequestError",
+          "text": ">>> resp = httpx.post(\"hf.co/api/check\", ...)"
+        },
+        {
+          "file": "huggingface_hub/fastai_utils.py",
+          "line": 9,
+          "function": "<module>",
+          "text": "from huggingface_hub import constants, snapshot_download"
+        },
+        {
+          "file": "huggingface_hub/fastai_utils.py",
+          "line": 56,
+          "function": "_check_fastai_fastcore_versions",
+          "text": "\"`push_to_hub_fastai` and `from_pretrained_fastai` require a\""
+        },
+        {
+          "file": "huggingface_hub/fastai_utils.py",
+          "line": 64,
+          "function": "_check_fastai_fastcore_versions",
+          "text": "\"`push_to_hub_fastai` and `from_pretrained_fastai` require a\""
+        },
+        {
+          "file": "huggingface_hub/fastai_utils.py",
+          "line": 78,
+          "function": "_check_fastai_fastcore_pyproject_versions",
+          "text": "that are compatible with `from_pretrained_fastai` and `push_to_hub_fastai`. If `pyproject.toml` does not exist"
+        },
+        {
+          "file": "huggingface_hub/fastai_utils.py",
+          "line": 102,
+          "function": "_check_fastai_fastcore_pyproject_versions",
+          "text": "\"`push_to_hub_fastai` and `from_pretrained_fastai` require the toml module.\""
+        },
+        {
+          "file": "huggingface_hub/fastai_utils.py",
+          "line": 147,
+          "function": "_check_fastai_fastcore_pyproject_versions",
+          "text": "\"`from_pretrained_fastai` requires\""
+        },
+        {
+          "file": "huggingface_hub/fastai_utils.py",
+          "line": 160,
+          "function": "_check_fastai_fastcore_pyproject_versions",
+          "text": "\"`from_pretrained_fastai` requires\""
+        },
+        {
+          "file": "huggingface_hub/fastai_utils.py",
+          "line": 290,
+          "function": "from_pretrained_fastai",
+          "text": "def from_pretrained_fastai("
+        },
+        {
+          "file": "huggingface_hub/fastai_utils.py",
+          "line": 307,
+          "function": "from_pretrained_fastai",
+          "text": "Revision at which the repo's files are downloaded. See documentation of `snapshot_download`."
+        },
+        {
+          "file": "huggingface_hub/fastai_utils.py",
+          "line": 315,
+          "function": "from_pretrained_fastai",
+          "text": "# `snapshot_download` returns the folder where the model was stored."
+        },
+        {
+          "file": "huggingface_hub/fastai_utils.py",
+          "line": 318,
+          "function": "from_pretrained_fastai",
+          "text": "storage_folder = snapshot_download("
+        },
+        {
+          "file": "huggingface_hub/file_download.py",
+          "line": 185,
+          "function": "DryRunFileInfo",
+          "text": "Returned by [`hf_hub_download`] when `dry_run=True`."
+        },
+        {
+          "file": "huggingface_hub/file_download.py",
+          "line": 198,
+          "function": "DryRunFileInfo",
+          "text": "Whether the file will be downloaded if `hf_hub_download` is called with `dry_run=False`."
+        },
+        {
+          "file": "huggingface_hub/file_download.py",
+          "line": 298,
+          "function": "_get_file_length_from_http_response",
+          "text": "def _get_file_length_from_http_response(response: httpx.Response) -> int | None:"
+        },
+        {
+          "file": "huggingface_hub/file_download.py",
+          "line": 306,
+          "function": "_get_file_length_from_http_response",
+          "text": "response (`httpx.Response`):"
+        },
+        {
+          "file": "huggingface_hub/file_download.py",
+          "line": 426,
+          "function": "http_get",
+          "text": "# aggregating wrapper such as snapshot_download's `_AggregatedTqdm` — still sees the file size."
+        },
+        {
+          "file": "huggingface_hub/file_download.py",
+          "line": 468,
+          "function": "http_get",
+          "text": "except (httpx.ConnectError, httpx.TimeoutException, httpx.RemoteProtocolError) as e:"
+        },
+        {
+          "file": "huggingface_hub/file_download.py",
+          "line": 483,
+          "function": "http_get",
+          "text": "# Reuse the existing progress bar across retries so a custom `tqdm_class` (e.g. snapshot_download's `_AggregatedTqdm`,"
+        },
+        {
+          "file": "huggingface_hub/file_download.py",
+          "line": 784,
+          "function": "hf_hub_download",
+          "text": "def hf_hub_download("
+        },
+        {
+          "file": "huggingface_hub/file_download.py",
+          "line": 808,
+          "function": "hf_hub_download",
+          "text": "def hf_hub_download("
+        },
+        {
+          "file": "huggingface_hub/file_download.py",
+          "line": 832,
+          "function": "hf_hub_download",
+          "text": "def hf_hub_download("
+        },
+        {
+          "file": "huggingface_hub/file_download.py",
+          "line": 857,
+          "function": "hf_hub_download",
+          "text": "def hf_hub_download("
+        },
+        {
+          "file": "huggingface_hub/file_download.py",
+          "line": 941,
+          "function": "hf_hub_download",
+          "text": "data before giving up, which is passed to `httpx.request`."
+        },
+        {
+          "file": "huggingface_hub/file_download.py",
+          "line": 1026,
+          "function": "hf_hub_download",
+          "text": "return _hf_hub_download_to_local_dir("
+        },
+        {
+          "file": "huggingface_hub/file_download.py",
+          "line": 1047,
+          "function": "hf_hub_download",
+          "text": "return _hf_hub_download_to_cache_dir("
+        },
+        {
+          "file": "huggingface_hub/file_download.py",
+          "line": 1068,
+          "function": "_hf_hub_download_to_cache_dir",
+          "text": "def _hf_hub_download_to_cache_dir("
+        },
+        {
+          "file": "huggingface_hub/file_download.py",
+          "line": 1090,
+          "function": "_hf_hub_download_to_cache_dir",
+          "text": "Method should not be called directly. Please use `hf_hub_download` instead."
+        },
+        {
+          "file": "huggingface_hub/file_download.py",
+          "line": 1313,
+          "function": "_hf_hub_download_to_local_dir",
+          "text": "def _hf_hub_download_to_local_dir("
+        },
+        {
+          "file": "huggingface_hub/file_download.py",
+          "line": 1336,
+          "function": "_hf_hub_download_to_local_dir",
+          "text": "Method should not be called directly. Please use `hf_hub_download` instead."
+        },
+        {
+          "file": "huggingface_hub/file_download.py",
+          "line": 1822,
+          "function": "_get_metadata_or_catch_error",
+          "text": "except httpx.ProxyError:"
+        },
+        {
+          "file": "huggingface_hub/file_download.py",
+          "line": 1825,
+          "function": "_get_metadata_or_catch_error",
+          "text": "except (httpx.ConnectError, httpx.TimeoutException, OfflineModeIsEnabled) as error:"
+        },
+        {
+          "file": "huggingface_hub/file_download.py",
+          "line": 1861,
+          "function": "_detach_tracebacks",
+          "text": "it was raised from, and each frame references its caller (up to the user code calling `hf_hub_download`) and its"
+        },
+        {
+          "file": "huggingface_hub/hf_api.py",
+          "line": 3677,
+          "function": "HfApi.resolve_revision",
+          "text": "> If you only need to download a full repo snapshot, a single [`snapshot_download`] call is enough and"
+        },
+        {
+          "file": "huggingface_hub/hf_api.py",
+          "line": 3713,
+          "function": "HfApi.resolve_revision",
+          "text": ">>> from huggingface_hub import hf_hub_download, resolve_revision"
+        },
+        {
+          "file": "huggingface_hub/hf_api.py",
+          "line": 3719,
+          "function": "HfApi.resolve_revision",
+          "text": ">>> config = hf_hub_download(\"openai-community/gpt2\", \"config.json\", revision=revision)"
+        },
+        {
+          "file": "huggingface_hub/hf_api.py",
+          "line": 3720,
+          "function": "HfApi.resolve_revision",
+          "text": ">>> weights = hf_hub_download(\"openai-community/gpt2\", \"model.safetensors\", revision=revision)"
+        },
+        {
+          "file": "huggingface_hub/hf_api.py",
+          "line": 3756,
+          "function": "HfApi.resolve_revision",
+          "text": "except httpx.ProxyError:"
+        },
+        {
+          "file": "huggingface_hub/hf_api.py",
+          "line": 3759,
+          "function": "HfApi.resolve_revision",
+          "text": "except (httpx.TransportError, OfflineModeIsEnabled) as e:"
+        },
+        {
+          "file": "huggingface_hub/hf_api.py",
+          "line": 6530,
+          "function": "HfApi.hf_hub_download",
+          "text": "def hf_hub_download("
+        },
+        {
+          "file": "huggingface_hub/hf_api.py",
+          "line": 6549,
+          "function": "HfApi.hf_hub_download",
+          "text": "def hf_hub_download("
+        },
+        {
+          "file": "huggingface_hub/hf_api.py",
+          "line": 6568,
+          "function": "HfApi.hf_hub_download",
+          "text": "def hf_hub_download("
+        },
+        {
+          "file": "huggingface_hub/hf_api.py",
+          "line": 6642,
+          "function": "HfApi.hf_hub_download",
+          "text": "data before giving up which is passed to `httpx.request`."
+        },
+        {
+          "file": "huggingface_hub/hf_api.py",
+          "line": 6682,
+          "function": "HfApi.hf_hub_download",
+          "text": "from .file_download import hf_hub_download"
+        },
+        {
+          "file": "huggingface_hub/hf_api.py",
+          "line": 6688,
+          "function": "HfApi.hf_hub_download",
+          "text": "return hf_hub_download("
+        },
+        {
+          "file": "huggingface_hub/hf_api.py",
+          "line": 6710,
+          "function": "HfApi.snapshot_download",
+          "text": "def snapshot_download("
+        },
+        {
+          "file": "huggingface_hub/hf_api.py",
+          "line": 6730,
+          "function": "HfApi.snapshot_download",
+          "text": "def snapshot_download("
+        },
+        {
+          "file": "huggingface_hub/hf_api.py",
+          "line": 6750,
+          "function": "HfApi.snapshot_download",
+          "text": "def snapshot_download("
+        },
+        {
+          "file": "huggingface_hub/hf_api.py",
+          "line": 6798,
+          "function": "HfApi.snapshot_download",
+          "text": "data before giving up which is passed to `httpx.request`."
+        },
+        {
+          "file": "huggingface_hub/hf_api.py",
+          "line": 6844,
+          "function": "HfApi.snapshot_download",
+          "text": "from ._snapshot_download import snapshot_download"
+        },
+        {
+          "file": "huggingface_hub/hf_api.py",
+          "line": 6850,
+          "function": "HfApi.snapshot_download",
+          "text": "return snapshot_download("
+        },
+        {
+          "file": "huggingface_hub/hf_api.py",
+          "line": 6979,
+          "function": "HfApi.get_safetensors_metadata",
+          "text": "index_file = self.hf_hub_download("
+        },
+        {
+          "file": "huggingface_hub/hf_api.py",
+          "line": 7740,
+          "function": "HfApi._post_discussion_changes",
+          "text": ") -> httpx.Response:"
+        },
+        {
+          "file": "huggingface_hub/hf_api.py",
+          "line": 8705,
+          "function": "HfApi._stream_sse_events",
+          "text": "except httpx.DecodingError:"
+        },
+        {
+          "file": "huggingface_hub/hf_api.py",
+          "line": 8710,
+          "function": "HfApi._stream_sse_events",
+          "text": "except (httpx.HTTPError, httpcore.TimeoutException) as err:"
+        },
+        {
+          "file": "huggingface_hub/hf_api.py",
+          "line": 8711,
+          "function": "HfApi._stream_sse_events",
+          "text": "is_no_new_line_timeout = isinstance(err, (httpx.ReadTimeout, httpcore.ReadTimeout))"
+        },
+        {
+          "file": "huggingface_hub/hf_api.py",
+          "line": 12512,
+          "function": "HfApi.fetch_job_metrics",
+          "text": "# - the stream doesn't end when the job finishes, so we rely on timeouts (httpx.NetworkError with Timeout as cause)"
+        },
+        {
+          "file": "huggingface_hub/hf_api.py",
+          "line": 12513,
+          "function": "HfApi.fetch_job_metrics",
+          "text": "# - httpx.ReadTimeout can happen if the job is marked as running but the hardware is not available yet, that we can ignore"
+        },
+        {
+          "file": "huggingface_hub/hf_api.py",
+          "line": 14456,
+          "function": "HfApi._copy_to_bucket._download_and_collect",
+          "text": "local_path = self.hf_hub_download("
+        },
+        {
+          "file": "huggingface_hub/hf_api.py",
+          "line": 15197,
+          "function": "_bucket_batch_error",
+          "text": "bucket_id: str, failures: list[dict[str, str]], *, sent: int, response: httpx.Response"
+        },
+        {
+          "file": "huggingface_hub/hf_file_system.py",
+          "line": 1085,
+          "function": "HfFileSystem.get_file",
+          "text": "> Note: When possible, use `HfApi.hf_hub_download()` or `HfApi.download_bucket_files` for better performance."
+        },
+        {
+          "file": "huggingface_hub/hf_file_system.py",
+          "line": 1278,
+          "function": "HfFileSystemStreamFile.__init__",
+          "text": "self.response: httpx.Response | None = None"
+        },
+        {
+          "file": "huggingface_hub/hub_mixin.py",
+          "line": 13,
+          "function": "<module>",
+          "text": "from .file_download import hf_hub_download"
+        },
+        {
+          "file": "huggingface_hub/hub_mixin.py",
+          "line": 71,
+          "function": "ModelHubMixin",
+          "text": "have to be overwritten in  [`_from_pretrained`] and [`_save_pretrained`]. [`PyTorchModelHubMixin`] is a good example"
+        },
+        {
+          "file": "huggingface_hub/hub_mixin.py",
+          "line": 137,
+          "function": "ModelHubMixin",
+          "text": "...     def from_pretrained("
+        },
+        {
+          "file": "huggingface_hub/hub_mixin.py",
+          "line": 160,
+          "function": "ModelHubMixin",
+          "text": ">>> reloaded_model = MyCustomModel.from_pretrained(\"username/my-awesome-model\")"
+        },
+        {
+          "file": "huggingface_hub/hub_mixin.py",
+          "line": 175,
+          "function": "ModelHubMixin",
+          "text": "# ^ optional config attribute automatically set in `from_pretrained`"
+        },
+        {
+          "file": "huggingface_hub/hub_mixin.py",
+          "line": 178,
+          "function": "ModelHubMixin",
+          "text": "_hub_mixin_inject_config: bool  # whether `_from_pretrained` expects `config` or not"
+        },
+        {
+          "file": "huggingface_hub/hub_mixin.py",
+          "line": 278,
+          "function": "ModelHubMixin.__init_subclass__",
+          "text": "cls._hub_mixin_inject_config = \"config\" in inspect.signature(cls._from_pretrained).parameters"
+        },
+        {
+          "file": "huggingface_hub/hub_mixin.py",
+          "line": 453,
+          "function": "ModelHubMixin.from_pretrained",
+          "text": "def from_pretrained("
+        },
+        {
+          "file": "huggingface_hub/hub_mixin.py",
+          "line": 497,
+          "function": "ModelHubMixin.from_pretrained",
+          "text": "config_file = hf_hub_download("
+        },
+        {
+          "file": "huggingface_hub/hub_mixin.py",
+          "line": 546,
+          "function": "ModelHubMixin.from_pretrained",
+          "text": "# Finally, also inject if `_from_pretrained` expects it"
+        },
+        {
+          "file": "huggingface_hub/hub_mixin.py",
+          "line": 550,
+          "function": "ModelHubMixin.from_pretrained",
+          "text": "instance = cls._from_pretrained("
+        },
+        {
+          "file": "huggingface_hub/hub_mixin.py",
+          "line": 568,
+          "function": "ModelHubMixin._from_pretrained",
+          "text": "def _from_pretrained("
+        },
+        {
+          "file": "huggingface_hub/hub_mixin.py",
+          "line": 581,
+          "function": "ModelHubMixin._from_pretrained",
+          "text": "Use [`hf_hub_download`] or [`snapshot_download`] to download files from the Hub before loading them. Most"
+        },
+        {
+          "file": "huggingface_hub/hub_mixin.py",
+          "line": 583,
+          "function": "ModelHubMixin._from_pretrained",
+          "text": "method using \"model_kwargs\". For example [`PyTorchModelHubMixin._from_pretrained`] takes as input a `map_location`"
+        },
+        {
+          "file": "huggingface_hub/hub_mixin.py",
+          "line": 605,
+          "function": "ModelHubMixin._from_pretrained",
+          "text": "Additional keyword arguments passed along to the [`~ModelHubMixin._from_pretrained`] method."
+        },
+        {
+          "file": "huggingface_hub/hub_mixin.py",
+          "line": 732,
+          "function": "PyTorchModelHubMixin",
+          "text": ">>> model = MyModel.from_pretrained(\"username/my-awesome-model\")"
+        },
+        {
+          "file": "huggingface_hub/hub_mixin.py",
+          "line": 752,
+          "function": "PyTorchModelHubMixin._from_pretrained",
+          "text": "def _from_pretrained("
+        },
+        {
+          "file": "huggingface_hub/hub_mixin.py",
+          "line": 773,
+          "function": "PyTorchModelHubMixin._from_pretrained",
+          "text": "model_file = hf_hub_download("
+        },
+        {
+          "file": "huggingface_hub/hub_mixin.py",
+          "line": 784,
+          "function": "PyTorchModelHubMixin._from_pretrained",
+          "text": "model_file = hf_hub_download("
+        },
+        {
+          "file": "huggingface_hub/inference/_common.py",
+          "line": 353,
+          "function": "_async_yield_from",
+          "text": "async def _async_yield_from(client: httpx.AsyncClient, response: httpx.Response) -> AsyncIterable[str]:"
+        },
+        {
+          "file": "huggingface_hub/inference/_generated/_async_client.py",
+          "line": 229,
+          "function": "AsyncInferenceClient.__init__",
+          "text": "self._async_client: Optional[httpx.AsyncClient] = None"
+        },
+        {
+          "file": "huggingface_hub/inference/_mcp/utils.py",
+          "line": 11,
+          "function": "<module>",
+          "text": "from huggingface_hub import snapshot_download"
+        },
+        {
+          "file": "huggingface_hub/inference/_mcp/utils.py",
+          "line": 120,
+          "function": "_load_agent_config",
+          "text": "snapshot_download("
+        },
+        {
+          "file": "huggingface_hub/repocard.py",
+          "line": 8,
+          "function": "<module>",
+          "text": "from huggingface_hub.file_download import hf_hub_download"
+        },
+        {
+          "file": "huggingface_hub/repocard.py",
+          "line": 175,
+          "function": "RepoCard.load",
+          "text": "hf_hub_download("
+        },
+        {
+          "file": "huggingface_hub/serialization/_dduf.py",
+          "line": 200,
+          "function": "export_entries_as_dduf",
+          "text": ">>> pipe = DiffusionPipeline.from_pretrained(\"CompVis/stable-diffusion-v1-4\")"
+        },
+        {
+          "file": "huggingface_hub/utils/__init__.py",
+          "line": 162,
+          "function": "<module>",
+          "text": "\"_telemetry\": ["
+        },
+        {
+          "file": "huggingface_hub/utils/__init__.py",
+          "line": 163,
+          "function": "<module>",
+          "text": "\"send_telemetry\","
+        },
+        {
+          "file": "huggingface_hub/utils/__init__.py",
+          "line": 395,
+          "function": "<module>",
+          "text": "from ._telemetry import send_telemetry  # noqa: F401"
+        },
+        {
+          "file": "huggingface_hub/utils/_auth.py",
+          "line": 99,
+          "function": "_get_token_from_google_colab",
+          "text": "# (typically when using `snapshot_download`)"
+        },
+        {
+          "file": "huggingface_hub/utils/_detect_agent.py",
+          "line": 48,
+          "function": "<module>",
+          "text": "# Short timeout: fetching the registry is best-effort telemetry, never block the caller for long."
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 258,
+          "function": "flag_as_download_call",
+          "text": "Applied on `hf_hub_download`, `snapshot_download`, etc. so that every call they make through [`get_session`]"
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 273,
+          "function": "hf_request_event_hook",
+          "text": "def hf_request_event_hook(request: httpx.Request) -> None:"
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 310,
+          "function": "async_hf_request_event_hook",
+          "text": "async def async_hf_request_event_hook(request: httpx.Request) -> None:"
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 317,
+          "function": "async_hf_response_event_hook",
+          "text": "async def async_hf_response_event_hook(response: httpx.Response) -> None:"
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 331,
+          "function": "default_client_factory",
+          "text": "def default_client_factory() -> httpx.Client:"
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 333,
+          "function": "default_client_factory",
+          "text": "Factory function to create a `httpx.Client` with the default transport."
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 335,
+          "function": "default_client_factory",
+          "text": "return httpx.Client("
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 342,
+          "function": "default_async_client_factory",
+          "text": "def default_async_client_factory() -> httpx.AsyncClient:"
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 344,
+          "function": "default_async_client_factory",
+          "text": "Factory function to create a `httpx.AsyncClient` with the default transport."
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 346,
+          "function": "default_async_client_factory",
+          "text": "return httpx.AsyncClient("
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 353,
+          "function": "<module>",
+          "text": "CLIENT_FACTORY_T = Callable[[], httpx.Client]"
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 354,
+          "function": "<module>",
+          "text": "ASYNC_CLIENT_FACTORY_T = Callable[[], httpx.AsyncClient]"
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 359,
+          "function": "<module>",
+          "text": "_GLOBAL_CLIENT: httpx.Client | None = None"
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 366,
+          "function": "set_client_factory",
+          "text": "The client factory is a method that returns a `httpx.Client` object. On the first call to [`get_session`] the client factory"
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 367,
+          "function": "set_client_factory",
+          "text": "will be used to create a new `httpx.Client` object that will be shared between all calls made by `huggingface_hub`."
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 371,
+          "function": "set_client_factory",
+          "text": "Use [`get_session`] to get a correctly configured `httpx.Client`."
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 383,
+          "function": "set_async_client_factory",
+          "text": "The async client factory is a method that returns a `httpx.AsyncClient` object."
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 385,
+          "function": "set_async_client_factory",
+          "text": "Use [`get_async_client`] to get a correctly configured `httpx.AsyncClient`."
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 388,
+          "function": "set_async_client_factory",
+          "text": "> Contrary to the `httpx.Client` that is shared between all calls made by `huggingface_hub`, the `httpx.AsyncClient` is not shared."
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 395,
+          "function": "get_session",
+          "text": "def get_session() -> httpx.Client:"
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 397,
+          "function": "get_session",
+          "text": "Get a `httpx.Client` object, using the transport factory from the user."
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 401,
+          "function": "get_session",
+          "text": "Use [`set_client_factory`] to customize the `httpx.Client`."
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 411,
+          "function": "get_async_session",
+          "text": "def get_async_session() -> httpx.AsyncClient:"
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 413,
+          "function": "get_async_session",
+          "text": "Return a `httpx.AsyncClient` object, using the transport factory from the user."
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 415,
+          "function": "get_async_session",
+          "text": "Use [`set_async_client_factory`] to customize the `httpx.AsyncClient`."
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 418,
+          "function": "get_async_session",
+          "text": "> Contrary to the `httpx.Client` that is shared between all calls made by `huggingface_hub`, the `httpx.AsyncClient` is not shared."
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 426,
+          "function": "close_session",
+          "text": "Close the global `httpx.Client` used by `huggingface_hub`."
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 452,
+          "function": "<module>",
+          "text": "httpx.TimeoutException,"
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 453,
+          "function": "<module>",
+          "text": "httpx.NetworkError,"
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 454,
+          "function": "<module>",
+          "text": "httpx.RemoteProtocolError,"
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 470,
+          "function": "_http_backoff_base",
+          "text": ") -> Generator[httpx.Response, None, None]:"
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 493,
+          "function": "_http_backoff_base",
+          "text": "# and closed `httpx.Client` objects cannot be reused."
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 502,
+          "function": "_http_backoff_base._should_retry",
+          "text": "def _should_retry(response: httpx.Response) -> bool:"
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 543,
+          "function": "_http_backoff_base",
+          "text": "if isinstance(err, httpx.ConnectError):"
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 544,
+          "function": "_http_backoff_base",
+          "text": "close_session()  # In case of SSLError it's best to close the shared httpx.Client objects"
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 572,
+          "function": "http_backoff",
+          "text": ") -> httpx.Response:"
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 598,
+          "function": "http_backoff",
+          "text": "By default, retry on `httpx.TimeoutException`, `httpx.NetworkError` and `httpx.RemoteProtocolError`."
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 603,
+          "function": "http_backoff",
+          "text": "kwargs to pass to `httpx.request`."
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 609,
+          "function": "http_backoff",
+          "text": "# Same usage as \"httpx.request\"."
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 653,
+          "function": "http_stream_backoff",
+          "text": ") -> Generator[httpx.Response, None, None]:"
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 679,
+          "function": "http_stream_backoff",
+          "text": "By default, retry on `httpx.TimeoutException`, `httpx.NetworkError` and `httpx.RemoteProtocolError`."
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 684,
+          "function": "http_stream_backoff",
+          "text": "kwargs to pass to `httpx.request`."
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 690,
+          "function": "http_stream_backoff",
+          "text": "# Same usage as \"httpx.stream\"."
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 727,
+          "function": "_httpx_follow_hub_redirects_with_backoff",
+          "text": ") -> httpx.Response:"
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 746,
+          "function": "_httpx_follow_hub_redirects_with_backoff",
+          "text": "Params to pass to `httpx.request`."
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 774,
+          "function": "_httpx_follow_hub_redirects_with_backoff",
+          "text": "raise httpx.TooManyRedirects(f\"Exceeded {_MAX_REDIRECTS} redirects while resolving '{url}'.\")"
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 796,
+          "function": "hf_raise_for_status",
+          "text": "def hf_raise_for_status(response: httpx.Response, endpoint_name: str | None = None) -> None:"
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 837,
+          "function": "hf_raise_for_status",
+          "text": "except httpx.HTTPStatusError as e:"
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 972,
+          "function": "_warn_on_warning_headers",
+          "text": "def _warn_on_warning_headers(response: httpx.Response) -> None:"
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 982,
+          "function": "_warn_on_warning_headers",
+          "text": "response (`httpx.Response`):"
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 1000,
+          "function": "_format",
+          "text": "error_type: type[_HfHubHTTPErrorT], custom_message: str, response: httpx.Response, **attrs: Any"
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 1014,
+          "function": "_format",
+          "text": "except httpx.ResponseNotRead:"
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 1023,
+          "function": "_format",
+          "text": "# Here, we are skipping reading the response to avoid RuntimeError but it happens only if async + stream + used httpx.AsyncClient directly."
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 1123,
+          "function": "_curlify",
+          "text": "def _curlify(request: httpx.Request) -> str:"
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 1124,
+          "function": "_curlify",
+          "text": "\"\"\"Convert a `httpx.Request` into a curl command (str)."
+        },
+        {
+          "file": "huggingface_hub/utils/_http.py",
+          "line": 1148,
+          "function": "_curlify",
+          "text": "except httpx.RequestNotRead:"
+        },
+        {
+          "file": "huggingface_hub/utils/_oauth_device.py",
+          "line": 72,
+          "function": "request_device_code",
+          "text": "except httpx.HTTPError as e:"
+        },
+        {
+          "file": "huggingface_hub/utils/_oauth_device.py",
+          "line": 122,
+          "function": "poll_device_token",
+          "text": "except (httpx.HTTPError, ValueError):"
+        },
+        {
+          "file": "huggingface_hub/utils/_oauth_device.py",
+          "line": 178,
+          "function": "refresh_access_token",
+          "text": "except httpx.HTTPError as e:"
+        },
+        {
+          "file": "huggingface_hub/utils/_oauth_device.py",
+          "line": 190,
+          "function": "_parse_token_response",
+          "text": "def _parse_token_response(response: httpx.Response) -> dict:"
+        },
+        {
+          "file": "huggingface_hub/utils/_pagination.py",
+          "line": 51,
+          "function": "_get_next_page",
+          "text": "def _get_next_page(response: httpx.Response) -> str | None:"
+        },
+        {
+          "file": "huggingface_hub/utils/_telemetry.py",
+          "line": 19,
+          "function": "send_telemetry",
+          "text": "def send_telemetry("
+        },
+        {
+          "file": "huggingface_hub/utils/_telemetry.py",
+          "line": 27,
+          "function": "send_telemetry",
+          "text": "Sends telemetry that helps track usage of different HF libraries."
+        },
+        {
+          "file": "huggingface_hub/utils/_telemetry.py",
+          "line": 30,
+          "function": "send_telemetry",
+          "text": "to share additional information, and we respect your privacy. You can disable telemetry collection by setting the"
+        },
+        {
+          "file": "huggingface_hub/utils/_telemetry.py",
+          "line": 49,
+          "function": "send_telemetry",
+          "text": ">>> from huggingface_hub.utils import send_telemetry"
+        },
+        {
+          "file": "huggingface_hub/utils/_telemetry.py",
+          "line": 51,
+          "function": "send_telemetry",
+          "text": "# Send telemetry without library information"
+        },
+        {
+          "file": "huggingface_hub/utils/_telemetry.py",
+          "line": 52,
+          "function": "send_telemetry",
+          "text": ">>> send_telemetry(\"ping\")"
+        },
+        {
+          "file": "huggingface_hub/utils/_telemetry.py",
+          "line": 54,
+          "function": "send_telemetry",
+          "text": "# Send telemetry to subtopic with library information"
+        },
+        {
+          "file": "huggingface_hub/utils/_telemetry.py",
+          "line": 55,
+          "function": "send_telemetry",
+          "text": ">>> send_telemetry(\"gradio/local_link\", library_name=\"gradio\", library_version=\"3.22.1\")"
+        },
+        {
+          "file": "huggingface_hub/utils/_telemetry.py",
+          "line": 57,
+          "function": "send_telemetry",
+          "text": "# Send telemetry with additional data"
+        },
+        {
+          "file": "huggingface_hub/utils/_telemetry.py",
+          "line": 58,
+          "function": "send_telemetry",
+          "text": ">>> send_telemetry("
+        },
+        {
+          "file": "huggingface_hub/utils/_telemetry.py",
+          "line": 69,
+          "function": "send_telemetry",
+          "text": "_start_telemetry_thread()  # starts thread only if doesn't exist yet"
+        },
+        {
+          "file": "huggingface_hub/utils/_telemetry.py",
+          "line": 75,
+          "function": "_start_telemetry_thread",
+          "text": "def _start_telemetry_thread():"
+        },
+        {
+          "file": "huggingface_hub/utils/_telemetry.py",
+          "line": 76,
+          "function": "_start_telemetry_thread",
+          "text": "\"\"\"Start a daemon thread to consume tasks from the telemetry queue."
+        },
+        {
+          "file": "huggingface_hub/utils/_telemetry.py",
+          "line": 83,
+          "function": "_start_telemetry_thread",
+          "text": "_TELEMETRY_THREAD = Thread(target=_telemetry_worker, daemon=True)"
+        },
+        {
+          "file": "huggingface_hub/utils/_telemetry.py",
+          "line": 87,
+          "function": "_telemetry_worker",
+          "text": "def _telemetry_worker():"
+        },
+        {
+          "file": "huggingface_hub/utils/_telemetry.py",
+          "line": 91,
+          "function": "_telemetry_worker",
+          "text": "_send_telemetry_in_thread(**kwargs)"
+        },
+        {
+          "file": "huggingface_hub/utils/_telemetry.py",
+          "line": 95,
+          "function": "_send_telemetry_in_thread",
+          "text": "def _send_telemetry_in_thread("
+        },
+        {
+          "file": "huggingface_hub/utils/_telemetry.py",
+          "line": 105,
+          "function": "_send_telemetry_in_thread",
+          "text": "it is not possible to send telemetry from a daemon thread."
+        },
+        {
+          "file": "huggingface_hub/utils/_telemetry.py",
+          "line": 114,
+          "function": "_send_telemetry_in_thread",
+          "text": "f\"{constants.ENDPOINT}/api/telemetry/{path}\","
+        },
+        {
+          "file": "huggingface_hub/utils/_telemetry.py",
+          "line": 116,
+          "function": "_send_telemetry_in_thread",
+          "text": "token=False,  # no need to send a token for telemetry"
+        },
+        {
+          "file": "huggingface_hub/utils/_telemetry.py",
+          "line": 125,
+          "function": "_send_telemetry_in_thread",
+          "text": "logger.debug(f\"Error while sending telemetry: {e}\")"
+        },
+        {
+          "file": "huggingface_hub/utils/_validators.py",
+          "line": 160,
+          "function": "smoothly_deprecate_legacy_arguments",
+          "text": "To set up proxies, user must either use the HTTP_PROXY environment variable or configure the `httpx.Client`"
+        },
+        {
+          "file": "huggingface_hub/utils/_validators.py",
+          "line": 163,
+          "function": "smoothly_deprecate_legacy_arguments",
+          "text": "In huggingface_hub 0.x, `proxies` was a dictionary directly passed to `requests.request`."
+        },
+        {
+          "file": "huggingface_hub/utils/_validators.py",
+          "line": 169,
+          "function": "smoothly_deprecate_legacy_arguments",
+          "text": "- https://www.python-httpx.org/advanced/proxies/"
+        },
+        {
+          "file": "huggingface_hub/utils/_validators.py",
+          "line": 170,
+          "function": "smoothly_deprecate_legacy_arguments",
+          "text": "- https://www.python-httpx.org/compatibility/#proxy-keys."
+        },
+        {
+          "file": "huggingface_hub/utils/_validators.py",
+          "line": 183,
+          "function": "smoothly_deprecate_legacy_arguments",
+          "text": "\" environment variables or configure the `httpx.Client` manually using `huggingface_hub.set_client_factory`.\""
+        },
+        {
+          "file": "huggingface_hub/utils/_validators.py",
+          "line": 184,
+          "function": "smoothly_deprecate_legacy_arguments",
+          "text": "\" See https://www.python-httpx.org/advanced/proxies/ for more details.\""
+        },
+        {
+          "file": "huggingface_hub/utils/_xet.py",
+          "line": 48,
+          "function": "parse_xet_file_data_from_response",
+          "text": "def parse_xet_file_data_from_response(response: httpx.Response, endpoint: str | None = None) -> XetFileData | None:"
+        },
+        {
+          "file": "huggingface_hub/utils/_xet.py",
+          "line": 56,
+          "function": "parse_xet_file_data_from_response",
+          "text": "response (`httpx.Response`):"
+        },
+        {
+          "file": "huggingface_hub/utils/tqdm.py",
+          "line": 293,
+          "function": "tqdm_stream_file",
+          "text": ">>>     httpx.put(url, data=f)"
+        },
+        {
+          "file": "huggingface_hub/utils/tqdm.py",
+          "line": 385,
+          "function": "_make_thread_pool_executor",
+          "text": "`snapshot_download`) don't race on concurrent `update()` calls. `get_lock()` creates the shared"
+        }
+      ]
+    },
+    "tokenizers": {
+      "version": "0.23.3",
+      "hits": []
+    },
+    "onnxruntime": {
+      "version": "1.31.1",
+      "hits": [
+        {
+          "file": "onnxruntime/__init__.py",
+          "line": 54,
+          "function": "<module>",
+          "text": "disable_telemetry_events,  # noqa: F401"
+        },
+        {
+          "file": "onnxruntime/__init__.py",
+          "line": 55,
+          "function": "<module>",
+          "text": "enable_telemetry_events,  # noqa: F401"
+        },
+        {
+          "file": "onnxruntime/backend/backend.py",
+          "line": 151,
+          "function": "OnnxRuntimeBackend.prepare",
+          "text": "inf = InferenceSession(model, sess_options=options, providers=providers)"
+        },
+        {
+          "file": "onnxruntime/capi/onnxruntime_inference_collection.py",
+          "line": 618,
+          "function": "InferenceSession",
+          "text": "class InferenceSession(Session):"
+        },
+        {
+          "file": "onnxruntime/capi/onnxruntime_inference_collection.py",
+          "line": 763,
+          "function": "InferenceSession._create_inference_session",
+          "text": "# Print a warning if user passed providers to InferenceSession() but the SessionOptions instance"
+        },
+        {
+          "file": "onnxruntime/capi/onnxruntime_inference_collection.py",
+          "line": 770,
+          "function": "InferenceSession._create_inference_session",
+          "text": "\"passed to InferenceSession().\""
+        },
+        {
+          "file": "onnxruntime/capi/onnxruntime_inference_collection.py",
+          "line": 778,
+          "function": "InferenceSession._create_inference_session",
+          "text": "sess = C.InferenceSession(session_options, self._model_path, True, self._read_config_from_model)"
+        },
+        {
+          "file": "onnxruntime/capi/onnxruntime_inference_collection.py",
+          "line": 780,
+          "function": "InferenceSession._create_inference_session",
+          "text": "sess = C.InferenceSession(session_options, self._model_bytes, False, self._read_config_from_model)"
+        },
+        {
+          "file": "onnxruntime/quantization/calibrate.py",
+          "line": 321,
+          "function": "CalibraterBase.create_inference_session",
+          "text": "self.infer_session = onnxruntime.InferenceSession("
+        },
+        {
+          "file": "onnxruntime/quantization/matmul_nbits_quantizer.py",
+          "line": 451,
+          "function": "NVAWQWeightOnlyQuantConfig.get_calib_inputs",
+          "text": "config = auto_config.from_pretrained("
+        },
+        {
+          "file": "onnxruntime/quantization/matmul_nbits_quantizer.py",
+          "line": 454,
+          "function": "NVAWQWeightOnlyQuantConfig.get_calib_inputs",
+          "text": "tokenizer = auto_tokenizer.from_pretrained("
+        },
+        {
+          "file": "onnxruntime/quantization/neural_compressor/onnx_model.py",
+          "line": 63,
+          "function": "ONNXModel.__init__",
+          "text": "self._config = AutoConfig.from_pretrained(Path(model).parent.as_posix())"
+        },
+        {
+          "file": "onnxruntime/quantization/neural_compressor/weight_only.py",
+          "line": 579,
+          "function": "prepare_inputs",
+          "text": "ort.InferenceSession(model.model.SerializeToString(), so, providers=providers)"
+        },
+        {
+          "file": "onnxruntime/quantization/neural_compressor/weight_only.py",
+          "line": 581,
+          "function": "prepare_inputs",
+          "text": "else ort.InferenceSession(model.model_path + \"_augment.onnx\", so, providers=providers)"
+        },
+        {
+          "file": "onnxruntime/quantization/neural_compressor/weight_only.py",
+          "line": 818,
+          "function": "gptq_quantize",
+          "text": "ort.InferenceSession(model.model.SerializeToString(), so, providers=providers)"
+        },
+        {
+          "file": "onnxruntime/quantization/neural_compressor/weight_only.py",
+          "line": 820,
+          "function": "gptq_quantize",
+          "text": "else ort.InferenceSession(model.model_path + \"_augment.onnx\", so, providers=providers)"
+        },
+        {
+          "file": "onnxruntime/quantization/qdq_loss_debug.py",
+          "line": 142,
+          "function": "collect_activations",
+          "text": "inference_session = onnxruntime.InferenceSession("
+        },
+        {
+          "file": "onnxruntime/quantization/quant_utils.py",
+          "line": 1103,
+          "function": "optimize_model",
+          "text": "_ = InferenceSession(model_path.as_posix(), sess_option, providers=[\"CPUExecutionProvider\"], **kwargs)"
+        },
+        {
+          "file": "onnxruntime/quantization/shape_inference.py",
+          "line": 150,
+          "function": "quant_pre_process",
+          "text": "sess = onnxruntime.InferenceSession("
+        },
+        {
+          "file": "onnxruntime/quantization/static_quantize_runner.py",
+          "line": 19,
+          "function": "OnnxModelCalibrationDataReader.__init__",
+          "text": "model_inputs = onnxruntime.InferenceSession(model_path).get_inputs()"
+        },
+        {
+          "file": "onnxruntime/tools/convert_onnx_models_to_ort.py",
+          "line": 148,
+          "function": "_convert",
+          "text": "_ = ort.InferenceSession("
+        },
+        {
+          "file": "onnxruntime/tools/convert_onnx_models_to_ort.py",
+          "line": 161,
+          "function": "_convert",
+          "text": "_ = ort.InferenceSession("
+        },
+        {
+          "file": "onnxruntime/tools/onnx_model_utils.py",
+          "line": 127,
+          "function": "optimize_model",
+          "text": "_ = ort.InferenceSession(str(model_path.resolve(strict=True)), so, providers=[\"CPUExecutionProvider\"])"
+        },
+        {
+          "file": "onnxruntime/tools/onnxruntime_test.py",
+          "line": 88,
+          "function": "run_model",
+          "text": "sess = onnxrt.InferenceSession("
+        },
+        {
+          "file": "onnxruntime/tools/ort_format_model/ort_flatbuffers_py/fbs/InferenceSession.py",
+          "line": 9,
+          "function": "InferenceSession",
+          "text": "class InferenceSession(object):"
+        },
+        {
+          "file": "onnxruntime/tools/ort_format_model/ort_flatbuffers_py/fbs/InferenceSession.py",
+          "line": 15,
+          "function": "InferenceSession.GetRootAs",
+          "text": "x = InferenceSession()"
+        },
+        {
+          "file": "onnxruntime/tools/ort_format_model/ort_flatbuffers_py/fbs/InferenceSession.py",
+          "line": 20,
+          "function": "InferenceSession.GetRootAsInferenceSession",
+          "text": "def GetRootAsInferenceSession(cls, buf, offset=0):"
+        },
+        {
+          "file": "onnxruntime/tools/ort_format_model/ort_model_processor.py",
+          "line": 24,
+          "function": "OrtFormatModelProcessor.__init__",
+          "text": "self._model = fbs.InferenceSession.InferenceSession.GetRootAsInferenceSession(self._buffer, 0).Model()"
+        },
+        {
+          "file": "onnxruntime/transformers/benchmark.py",
+          "line": 222,
+          "function": "run_onnxruntime",
+          "text": "config = AutoConfig.from_pretrained(model_name, cache_dir=cache_dir)"
+        },
+        {
+          "file": "onnxruntime/transformers/benchmark.py",
+          "line": 335,
+          "function": "run_pytorch",
+          "text": "config = AutoConfig.from_pretrained(model_name, torchscript=torchscript, cache_dir=cache_dir)"
+        },
+        {
+          "file": "onnxruntime/transformers/benchmark.py",
+          "line": 348,
+          "function": "run_pytorch",
+          "text": "tokenizer = AutoTokenizer.from_pretrained(model_name, cache_dir=cache_dir)"
+        },
+        {
+          "file": "onnxruntime/transformers/benchmark.py",
+          "line": 489,
+          "function": "run_tensorflow",
+          "text": "config = AutoConfig.from_pretrained(model_name, cache_dir=cache_dir)"
+        },
+        {
+          "file": "onnxruntime/transformers/benchmark.py",
+          "line": 500,
+          "function": "run_tensorflow",
+          "text": "tokenizer = AutoTokenizer.from_pretrained(model_name, cache_dir=cache_dir)"
+        },
+        {
+          "file": "onnxruntime/transformers/benchmark_helper.py",
+          "line": 140,
+          "function": "create_onnxruntime_session",
+          "text": "session = onnxruntime.InferenceSession(onnx_model_path, sess_options, providers=providers)"
+        },
+        {
+          "file": "onnxruntime/transformers/bert_perf_test.py",
+          "line": 123,
+          "function": "create_session",
+          "text": "session = onnxruntime.InferenceSession(model_path, sess_options, providers=execution_providers)"
+        },
+        {
+          "file": "onnxruntime/transformers/bert_test_data.py",
+          "line": 589,
+          "function": "create_and_save_test_data",
+          "text": "session = onnxruntime.InferenceSession(model, providers=providers)"
+        },
+        {
+          "file": "onnxruntime/transformers/convert_generation.py",
+          "line": 703,
+          "function": "create_ort_session",
+          "text": "ort_session = InferenceSession(model_path, sess_options, providers=execution_providers)"
+        },
+        {
+          "file": "onnxruntime/transformers/convert_generation.py",
+          "line": 2695,
+          "function": "convert_generation_model",
+          "text": "config = GPT2Config.from_pretrained(args.model_name_or_path, cache_dir=args.cache_dir)"
+        },
+        {
+          "file": "onnxruntime/transformers/convert_generation.py",
+          "line": 2697,
+          "function": "convert_generation_model",
+          "text": "config = T5Config.from_pretrained(args.model_name_or_path, cache_dir=args.cache_dir)"
+        },
+        {
+          "file": "onnxruntime/transformers/convert_generation.py",
+          "line": 2699,
+          "function": "convert_generation_model",
+          "text": "config = MT5Config.from_pretrained(args.model_name_or_path, cache_dir=args.cache_dir)"
+        },
+        {
+          "file": "onnxruntime/transformers/convert_generation.py",
+          "line": 3158,
+          "function": "test_gpt_model",
+          "text": "tokenizer = GPT2Tokenizer.from_pretrained(args.model_name_or_path, cache_dir=args.cache_dir)"
+        },
+        {
+          "file": "onnxruntime/transformers/convert_generation.py",
+          "line": 3162,
+          "function": "test_gpt_model",
+          "text": "model = GPT2LMHeadModel.from_pretrained("
+        },
+        {
+          "file": "onnxruntime/transformers/convert_generation.py",
+          "line": 3373,
+          "function": "test_t5_model",
+          "text": "tokenizer = T5Tokenizer.from_pretrained(args.model_name_or_path, cache_dir=args.cache_dir)"
+        },
+        {
+          "file": "onnxruntime/transformers/convert_generation.py",
+          "line": 3377,
+          "function": "test_t5_model",
+          "text": "model = T5ForConditionalGeneration.from_pretrained("
+        },
+        {
+          "file": "onnxruntime/transformers/convert_generation.py",
+          "line": 3382,
+          "function": "test_t5_model",
+          "text": "model = MT5ForConditionalGeneration.from_pretrained("
+        },
+        {
+          "file": "onnxruntime/transformers/convert_tf_models_to_pytorch.py",
+          "line": 60,
+          "function": "download_compressed_file",
+          "text": "r = requests.get(tf_ckpt_url)"
+        },
+        {
+          "file": "onnxruntime/transformers/convert_tf_models_to_pytorch.py",
+          "line": 170,
+          "function": "download_tf_checkpoint",
+          "text": "r = requests.get(tf_ckpt_url + \"/\" + filename)"
+        },
+        {
+          "file": "onnxruntime/transformers/large_model_exporter.py",
+          "line": 60,
+          "function": "initialize_model_and_sample_inputs",
+          "text": "model = transformers.AutoModelForCausalLM.from_pretrained(  # type: ignore"
+        },
+        {
+          "file": "onnxruntime/transformers/large_model_exporter.py",
+          "line": 65,
+          "function": "initialize_model_and_sample_inputs",
+          "text": "tokenizer = transformers.AutoTokenizer.from_pretrained(tokenizer)  # type: ignore"
+        },
+        {
+          "file": "onnxruntime/transformers/models/bert/eval_squad.py",
+          "line": 79,
+          "function": "load_onnx_model",
+          "text": "model = ORTModelForQuestionAnswering.from_pretrained("
+        },
+        {
+          "file": "onnxruntime/transformers/models/bert/eval_squad.py",
+          "line": 87,
+          "function": "load_onnx_model",
+          "text": "model = ORTModelForQuestionAnswering.from_pretrained("
+        },
+        {
+          "file": "onnxruntime/transformers/models/bert/eval_squad.py",
+          "line": 220,
+          "function": "main",
+          "text": "tokenizer = AutoTokenizer.from_pretrained(pretrained_model_name)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/gpt2/benchmark_gpt2.py",
+          "line": 193,
+          "function": "main",
+          "text": "config = AutoConfig.from_pretrained(args.model_name_or_path, torchscript=args.torchscript, cache_dir=cache_dir)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/gpt2/benchmark_gpt2.py",
+          "line": 194,
+          "function": "main",
+          "text": "model = model_class.from_pretrained(args.model_name_or_path, config=config, cache_dir=cache_dir)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/gpt2/convert_to_onnx.py",
+          "line": 288,
+          "function": "main",
+          "text": "config = AutoConfig.from_pretrained(args.model_name_or_path, cache_dir=cache_dir)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/gpt2/convert_to_onnx.py",
+          "line": 289,
+          "function": "main",
+          "text": "model = model_class.from_pretrained(args.model_name_or_path, config=config, cache_dir=cache_dir)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/llama/benchmark.py",
+          "line": 197,
+          "function": "get_model",
+          "text": "model = AutoModelForCausalLM.from_pretrained("
+        },
+        {
+          "file": "onnxruntime/transformers/models/llama/benchmark.py",
+          "line": 239,
+          "function": "get_model",
+          "text": "model = ORTModelForCausalLM.from_pretrained("
+        },
+        {
+          "file": "onnxruntime/transformers/models/llama/benchmark.py",
+          "line": 257,
+          "function": "get_model",
+          "text": "model = ort.InferenceSession("
+        },
+        {
+          "file": "onnxruntime/transformers/models/llama/benchmark.py",
+          "line": 660,
+          "function": "main",
+          "text": "tokenizer = AutoTokenizer.from_pretrained("
+        },
+        {
+          "file": "onnxruntime/transformers/models/llama/benchmark.py",
+          "line": 663,
+          "function": "main",
+          "text": "config = AutoConfig.from_pretrained("
+        },
+        {
+          "file": "onnxruntime/transformers/models/llama/benchmark_e2e.py",
+          "line": 67,
+          "function": "get_model",
+          "text": "model = AutoModelForCausalLM.from_pretrained("
+        },
+        {
+          "file": "onnxruntime/transformers/models/llama/benchmark_e2e.py",
+          "line": 80,
+          "function": "get_model",
+          "text": "model = AutoModelForCausalLM.from_pretrained("
+        },
+        {
+          "file": "onnxruntime/transformers/models/llama/benchmark_e2e.py",
+          "line": 93,
+          "function": "get_model",
+          "text": "model = AutoModelForCausalLM.from_pretrained("
+        },
+        {
+          "file": "onnxruntime/transformers/models/llama/benchmark_e2e.py",
+          "line": 115,
+          "function": "get_model",
+          "text": "model = ort.InferenceSession(args.onnx_model_path, sess_options=sess_options, providers=[ep])"
+        },
+        {
+          "file": "onnxruntime/transformers/models/llama/benchmark_e2e.py",
+          "line": 230,
+          "function": "get_args",
+          "text": "help=\"Path to directory containing all Hugging Face files (e.g. config, tokenizer, PyTorch model). Use when loading model as `AutoModel.from_pretrained(model_name, cache_dir=cache_dir)`.\","
+        },
+        {
+          "file": "onnxruntime/transformers/models/llama/benchmark_e2e.py",
+          "line": 237,
+          "function": "get_args",
+          "text": "help=\"Path to directory containing all Hugging Face files (e.g. config, tokenizer, PyTorch model). Use when loading model as `AutoModel.from_pretrained(folder_path)`.\","
+        },
+        {
+          "file": "onnxruntime/transformers/models/llama/benchmark_e2e.py",
+          "line": 365,
+          "function": "main",
+          "text": "config = AutoConfig.from_pretrained("
+        },
+        {
+          "file": "onnxruntime/transformers/models/llama/benchmark_e2e.py",
+          "line": 371,
+          "function": "main",
+          "text": "tokenizer = AutoTokenizer.from_pretrained("
+        },
+        {
+          "file": "onnxruntime/transformers/models/llama/convert_to_onnx.py",
+          "line": 842,
+          "function": "main",
+          "text": "config = AutoConfig.from_pretrained(args.original_model_name, cache_dir=args.cache_dir)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/llama/llama_parity.py",
+          "line": 156,
+          "function": "verify_parity",
+          "text": "ort_model = ort.InferenceSession("
+        },
+        {
+          "file": "onnxruntime/transformers/models/llama/llama_torch.py",
+          "line": 27,
+          "function": "setup_torch_model",
+          "text": "l_config = AutoConfig.from_pretrained("
+        },
+        {
+          "file": "onnxruntime/transformers/models/llama/llama_torch.py",
+          "line": 32,
+          "function": "setup_torch_model",
+          "text": "llama = AutoModelForCausalLM.from_pretrained("
+        },
+        {
+          "file": "onnxruntime/transformers/models/llama/quant_kv_dataloader.py",
+          "line": 23,
+          "function": "QuantKVDataLoader.__init__",
+          "text": "tokenizer = LlamaTokenizer.from_pretrained(args.original_model_name, use_auth_token=args.use_auth_token)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/longformer/benchmark_longformer.py",
+          "line": 293,
+          "function": "load_torch_model",
+          "text": "model = LongformerModel.from_pretrained(torch_model_name_or_dir)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/longformer/convert_to_onnx.py",
+          "line": 401,
+          "function": "main",
+          "text": "model = LongformerModel.from_pretrained(PRETRAINED_LONGFORMER_MODELS[model_name])"
+        },
+        {
+          "file": "onnxruntime/transformers/models/phi2/convert_to_onnx.py",
+          "line": 39,
+          "function": "ConvertPhi2ToONNX.__init__",
+          "text": "self.phi_config = AutoConfig.from_pretrained(self.model_class, trust_remote_code=True, cache_dir=self.cache_dir)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/phi2/convert_to_onnx.py",
+          "line": 78,
+          "function": "ConvertPhi2ToONNX.get_phi2_torch_model",
+          "text": "self.phi_model = AutoModelForCausalLM.from_pretrained("
+        },
+        {
+          "file": "onnxruntime/transformers/models/phi2/inference_example.py",
+          "line": 214,
+          "function": "ORTGenerator.create_session",
+          "text": "self.sess = ort.InferenceSession(self.onnx_decoder_path, sess_options=sess_options, providers=[ep])"
+        },
+        {
+          "file": "onnxruntime/transformers/models/phi2/inference_example.py",
+          "line": 223,
+          "function": "ORTGenerator.create_session",
+          "text": "self.tokenizer = AutoTokenizer.from_pretrained(\"microsoft/phi-2\", trust_remote_code=True)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/sam2/benchmark_sam2.py",
+          "line": 130,
+          "function": "create_ort_session",
+          "text": "ort_session = InferenceSession(config.onnx_path, session_options, providers=providers)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/sam2/image_decoder.py",
+          "line": 249,
+          "function": "test_decoder_onnx",
+          "text": "ort_session = onnxruntime.InferenceSession(onnx_model_path, providers=[\"CPUExecutionProvider\"])"
+        },
+        {
+          "file": "onnxruntime/transformers/models/sam2/image_encoder.py",
+          "line": 186,
+          "function": "test_image_encoder_onnx",
+          "text": "ort_session = onnxruntime.InferenceSession(onnx_model_path, providers=[\"CPUExecutionProvider\"])"
+        },
+        {
+          "file": "onnxruntime/transformers/models/sam2/mask_decoder.py",
+          "line": 180,
+          "function": "test_mask_decoder_onnx",
+          "text": "ort_session = onnxruntime.InferenceSession(onnx_model_path, providers=[\"CPUExecutionProvider\"])"
+        },
+        {
+          "file": "onnxruntime/transformers/models/sam2/prompt_encoder.py",
+          "line": 149,
+          "function": "test_prompt_encoder_onnx",
+          "text": "ort_session = onnxruntime.InferenceSession(onnx_model_path, providers=[\"CPUExecutionProvider\"])"
+        },
+        {
+          "file": "onnxruntime/transformers/models/sam2/sam2_image_onnx_predictor.py",
+          "line": 36,
+          "function": "create_ort_session",
+          "text": "return InferenceSession(onnx_path, session_options, providers=providers)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/stable_diffusion/benchmark.py",
+          "line": 73,
+          "function": "get_ort_pipeline",
+          "text": "pipe = OnnxStableDiffusionPipeline.from_pretrained("
+        },
+        {
+          "file": "onnxruntime/transformers/models/stable_diffusion/benchmark.py",
+          "line": 79,
+          "function": "get_ort_pipeline",
+          "text": "pipe = OnnxStableDiffusionPipeline.from_pretrained("
+        },
+        {
+          "file": "onnxruntime/transformers/models/stable_diffusion/benchmark.py",
+          "line": 99,
+          "function": "get_torch_pipeline",
+          "text": "pipe = FluxPipeline.from_pretrained(model_name, torch_dtype=torch.bfloat16).to(\"cuda\")"
+        },
+        {
+          "file": "onnxruntime/transformers/models/stable_diffusion/benchmark.py",
+          "line": 108,
+          "function": "get_torch_pipeline",
+          "text": "pipe = StableDiffusion3Pipeline.from_pretrained(model_name, torch_dtype=torch.bfloat16).to(\"cuda\")"
+        },
+        {
+          "file": "onnxruntime/transformers/models/stable_diffusion/benchmark.py",
+          "line": 117,
+          "function": "get_torch_pipeline",
+          "text": "pipe = StableDiffusionPipeline.from_pretrained(model_name, torch_dtype=float16).to(\"cuda\")"
+        },
+        {
+          "file": "onnxruntime/transformers/models/stable_diffusion/benchmark.py",
+          "line": 374,
+          "function": "get_optimum_ort_pipeline",
+          "text": "pipeline = ORTPipelineForText2Image.from_pretrained(directory, provider=provider, use_io_binding=use_io_binding)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/stable_diffusion/benchmark.py",
+          "line": 376,
+          "function": "get_optimum_ort_pipeline",
+          "text": "pipeline = ORTPipelineForText2Image.from_pretrained("
+        },
+        {
+          "file": "onnxruntime/transformers/models/stable_diffusion/benchmark_controlnet.py",
+          "line": 87,
+          "function": "load_pipeline",
+          "text": "scheduler = EulerAncestralDiscreteScheduler.from_pretrained(name, subfolder=\"scheduler\")"
+        },
+        {
+          "file": "onnxruntime/transformers/models/stable_diffusion/benchmark_controlnet.py",
+          "line": 88,
+          "function": "load_pipeline",
+          "text": "vae = AutoencoderKL.from_pretrained(\"madebyollin/sdxl-vae-fp16-fix\", torch_dtype=torch.float16).to(\"cuda\")"
+        },
+        {
+          "file": "onnxruntime/transformers/models/stable_diffusion/benchmark_controlnet.py",
+          "line": 92,
+          "function": "load_pipeline",
+          "text": "controlnet = ControlNetModel.from_pretrained(\"diffusers/controlnet-canny-sdxl-1.0\", torch_dtype=torch.float16)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/stable_diffusion/benchmark_controlnet.py",
+          "line": 93,
+          "function": "load_pipeline",
+          "text": "pipeline = StableDiffusionXLControlNetPipeline.from_pretrained("
+        },
+        {
+          "file": "onnxruntime/transformers/models/stable_diffusion/benchmark_controlnet.py",
+          "line": 103,
+          "function": "load_pipeline",
+          "text": "pipeline = DiffusionPipeline.from_pretrained("
+        },
+        {
+          "file": "onnxruntime/transformers/models/stable_diffusion/demo_utils.py",
+          "line": 615,
+          "function": "get_depth_image",
+          "text": "depth_estimator = DPTForDepthEstimation.from_pretrained(\"Intel/dpt-hybrid-midas\").to(\"cuda\")"
+        },
+        {
+          "file": "onnxruntime/transformers/models/stable_diffusion/demo_utils.py",
+          "line": 616,
+          "function": "get_depth_image",
+          "text": "feature_extractor = DPTImageProcessor.from_pretrained(\"Intel/dpt-hybrid-midas\")"
+        },
+        {
+          "file": "onnxruntime/transformers/models/stable_diffusion/demo_utils.py",
+          "line": 714,
+          "function": "process_controlnet_image",
+          "text": "normal_image = controlnet_aux.NormalBaeDetector.from_pretrained(\"lllyasviel/Annotators\")(image)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/stable_diffusion/demo_utils.py",
+          "line": 717,
+          "function": "process_controlnet_image",
+          "text": "depth_image = controlnet_aux.LeresDetector.from_pretrained(\"lllyasviel/Annotators\")(image)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/stable_diffusion/demo_utils.py",
+          "line": 720,
+          "function": "process_controlnet_image",
+          "text": "mlsd_image = controlnet_aux.MLSDdetector.from_pretrained(\"lllyasviel/Annotators\")(image)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/stable_diffusion/demo_utils.py",
+          "line": 723,
+          "function": "process_controlnet_image",
+          "text": "openpose_image = controlnet_aux.OpenposeDetector.from_pretrained(\"lllyasviel/Annotators\")(image)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/stable_diffusion/demo_utils.py",
+          "line": 726,
+          "function": "process_controlnet_image",
+          "text": "scribble_image = controlnet_aux.HEDdetector.from_pretrained(\"lllyasviel/Annotators\")(image, scribble=True)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/stable_diffusion/demo_utils.py",
+          "line": 729,
+          "function": "process_controlnet_image",
+          "text": "seg_image = controlnet_aux.SamDetector.from_pretrained(\"ybelkada/segment-anything\", subfolder=\"checkpoints\")("
+        },
+        {
+          "file": "onnxruntime/transformers/models/stable_diffusion/diffusion_models.py",
+          "line": 348,
+          "function": "BaseModel.from_pretrained",
+          "text": "def from_pretrained(self, model_class, framework_model_dir, subfolder=None, model_name=None, **kwargs):"
+        },
+        {
+          "file": "onnxruntime/transformers/models/stable_diffusion/diffusion_models.py",
+          "line": 358,
+          "function": "BaseModel.from_pretrained",
+          "text": "model = model_class.from_pretrained("
+        },
+        {
+          "file": "onnxruntime/transformers/models/stable_diffusion/diffusion_models.py",
+          "line": 368,
+          "function": "BaseModel.from_pretrained",
+          "text": "model = model_class.from_pretrained(model_dir).to(self.device)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/stable_diffusion/diffusion_models.py",
+          "line": 677,
+          "function": "CLIP.load_model",
+          "text": "return self.from_pretrained(CLIPTextModel, framework_model_dir, subfolder)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/stable_diffusion/diffusion_models.py",
+          "line": 699,
+          "function": "CLIPWithProj.load_model",
+          "text": "return self.from_pretrained(CLIPTextModelWithProjection, framework_model_dir, subfolder)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/stable_diffusion/diffusion_models.py",
+          "line": 835,
+          "function": "UNet.load_model",
+          "text": "model = self.from_pretrained(UNet2DConditionModel, framework_model_dir, subfolder, **options)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/stable_diffusion/diffusion_models.py",
+          "line": 840,
+          "function": "UNet.load_model",
+          "text": "controlnet = self.from_pretrained("
+        },
+        {
+          "file": "onnxruntime/transformers/models/stable_diffusion/diffusion_models.py",
+          "line": 993,
+          "function": "UNetXL.load_model",
+          "text": "unet = UNet2DConditionModel.from_pretrained(self.custom_unet, **options)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/stable_diffusion/diffusion_models.py",
+          "line": 996,
+          "function": "UNetXL.load_model",
+          "text": "unet = UNet2DConditionModel.from_pretrained(model_dir, **options)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/stable_diffusion/diffusion_models.py",
+          "line": 999,
+          "function": "UNetXL.load_model",
+          "text": "model = self.from_pretrained(UNet2DConditionModel, framework_model_dir, subfolder, **options)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/stable_diffusion/diffusion_models.py",
+          "line": 1007,
+          "function": "UNetXL.load_model",
+          "text": "[ControlNetModel.from_pretrained(path, **cnet_model_opts).to(self.device) for path in self.controlnet]"
+        },
+        {
+          "file": "onnxruntime/transformers/models/stable_diffusion/diffusion_models.py",
+          "line": 1173,
+          "function": "VAE.load_model",
+          "text": "vae = AutoencoderKL.from_pretrained(self.custom_fp16_vae, torch_dtype=torch.float16).to(self.device)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/stable_diffusion/diffusion_models.py",
+          "line": 1175,
+          "function": "VAE.load_model",
+          "text": "vae = AutoencoderKL.from_pretrained("
+        },
+        {
+          "file": "onnxruntime/transformers/models/stable_diffusion/diffusion_models.py",
+          "line": 1184,
+          "function": "VAE.load_model",
+          "text": "vae = AutoencoderKL.from_pretrained(model_dir, torch_dtype=torch.float16).to(self.device)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/stable_diffusion/diffusion_models.py",
+          "line": 1186,
+          "function": "VAE.load_model",
+          "text": "vae = AutoencoderKL.from_pretrained(model_dir).to(self.device)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/stable_diffusion/diffusion_models.py",
+          "line": 1242,
+          "function": "get_tokenizer",
+          "text": "model = CLIPTokenizer.from_pretrained("
+        },
+        {
+          "file": "onnxruntime/transformers/models/stable_diffusion/diffusion_models.py",
+          "line": 1250,
+          "function": "get_tokenizer",
+          "text": "model = CLIPTokenizer.from_pretrained(tokenizer_dir)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/stable_diffusion/diffusion_models.py",
+          "line": 1273,
+          "function": "VAEEncoder.load_model",
+          "text": "vae = self.from_pretrained(AutoencoderKL, framework_model_dir, subfolder)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/stable_diffusion/engine_builder.py",
+          "line": 148,
+          "function": "EngineBuilder.load_pipeline_with_lora",
+          "text": "pipeline = DiffusionPipeline.from_pretrained("
+        },
+        {
+          "file": "onnxruntime/transformers/models/stable_diffusion/engine_builder_ort_cuda.py",
+          "line": 43,
+          "function": "OrtCudaEngine.__init__",
+          "text": "ort_session = ort.InferenceSession("
+        },
+        {
+          "file": "onnxruntime/transformers/models/stable_diffusion/engine_builder_ort_trt.py",
+          "line": 47,
+          "function": "OrtTensorrtEngine.__init__",
+          "text": "ort_session = ort.InferenceSession("
+        },
+        {
+          "file": "onnxruntime/transformers/models/t5/t5_helper.py",
+          "line": 97,
+          "function": "T5Helper.load_model",
+          "text": "model = T5ForConditionalGeneration.from_pretrained(model_name_or_path, cache_dir=cache_dir)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/t5/t5_helper.py",
+          "line": 99,
+          "function": "T5Helper.load_model",
+          "text": "model = MT5ForConditionalGeneration.from_pretrained(model_name_or_path, cache_dir=cache_dir)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/whisper/benchmark.py",
+          "line": 116,
+          "function": "get_model",
+          "text": "model = AutoModelForSpeechSeq2Seq.from_pretrained("
+        },
+        {
+          "file": "onnxruntime/transformers/models/whisper/benchmark.py",
+          "line": 143,
+          "function": "get_model",
+          "text": "model = ORTModelForSpeechSeq2Seq.from_pretrained("
+        },
+        {
+          "file": "onnxruntime/transformers/models/whisper/benchmark.py",
+          "line": 156,
+          "function": "get_model",
+          "text": "model = ort.InferenceSession("
+        },
+        {
+          "file": "onnxruntime/transformers/models/whisper/benchmark.py",
+          "line": 554,
+          "function": "main",
+          "text": "config = WhisperConfig.from_pretrained(args.model_name)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/whisper/benchmark.py",
+          "line": 555,
+          "function": "main",
+          "text": "processor = WhisperProcessor.from_pretrained(args.model_name)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/whisper/benchmark_all.py",
+          "line": 370,
+          "function": "main",
+          "text": "config = WhisperConfig.from_pretrained(args.model_name)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/whisper/benchmark_all.py",
+          "line": 371,
+          "function": "main",
+          "text": "processor = WhisperProcessor.from_pretrained(args.model_name)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/whisper/whisper_chain.py",
+          "line": 54,
+          "function": "chain_model",
+          "text": "config = WhisperConfig.from_pretrained(args.model_name_or_path, cache_dir=args.cache_dir)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/whisper/whisper_chain.py",
+          "line": 55,
+          "function": "chain_model",
+          "text": "tokenizer = WhisperTokenizer.from_pretrained(args.model_name_or_path, cache_dir=args.cache_dir)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/whisper/whisper_decoder.py",
+          "line": 455,
+          "function": "WhisperDecoder.verify_onnx",
+          "text": "sess = InferenceSession(onnx_model_path, providers=[provider])"
+        },
+        {
+          "file": "onnxruntime/transformers/models/whisper/whisper_encoder.py",
+          "line": 159,
+          "function": "WhisperEncoder.verify_onnx",
+          "text": "sess = InferenceSession(onnx_model_path, providers=[provider])"
+        },
+        {
+          "file": "onnxruntime/transformers/models/whisper/whisper_encoder_decoder_init.py",
+          "line": 365,
+          "function": "WhisperEncoderDecoderInit.verify_onnx",
+          "text": "sess = InferenceSession(onnx_model_path, providers=[provider])"
+        },
+        {
+          "file": "onnxruntime/transformers/models/whisper/whisper_helper.py",
+          "line": 82,
+          "function": "WhisperHelper.save_processing",
+          "text": "config = WhisperConfig.from_pretrained(model_name_or_path, cache_dir=cache_dir)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/whisper/whisper_helper.py",
+          "line": 85,
+          "function": "WhisperHelper.save_processing",
+          "text": "tokenizer = AutoTokenizer.from_pretrained(model_name_or_path, cache_dir=cache_dir)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/whisper/whisper_helper.py",
+          "line": 88,
+          "function": "WhisperHelper.save_processing",
+          "text": "processor = WhisperProcessor.from_pretrained(model_name_or_path, cache_dir=cache_dir)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/whisper/whisper_helper.py",
+          "line": 652,
+          "function": "WhisperHelper.load_model",
+          "text": "model = WhisperForConditionalGeneration.from_pretrained("
+        },
+        {
+          "file": "onnxruntime/transformers/models/whisper/whisper_helper.py",
+          "line": 669,
+          "function": "WhisperHelper.load_model",
+          "text": "config = WhisperConfig.from_pretrained(model_name_or_path, cache_dir=cache_dir)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/whisper/whisper_helper.py",
+          "line": 940,
+          "function": "WhisperHelper.verify_onnx",
+          "text": "pt_model = WhisperForConditionalGeneration.from_pretrained("
+        },
+        {
+          "file": "onnxruntime/transformers/models/whisper/whisper_helper.py",
+          "line": 943,
+          "function": "WhisperHelper.verify_onnx",
+          "text": "processor = WhisperProcessor.from_pretrained(model_name_or_path, cache_dir=cache_dir)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/whisper/whisper_helper.py",
+          "line": 944,
+          "function": "WhisperHelper.verify_onnx",
+          "text": "config = WhisperConfig.from_pretrained(model_name_or_path, cache_dir=cache_dir)"
+        },
+        {
+          "file": "onnxruntime/transformers/models/whisper/whisper_jump_times.py",
+          "line": 473,
+          "function": "WhisperJumpTimes.verify_onnx",
+          "text": "sess = InferenceSession(onnx_model_path, providers=[provider])"
+        },
+        {
+          "file": "onnxruntime/transformers/onnx_exporter.py",
+          "line": 328,
+          "function": "load_pretrained_model",
+          "text": "return TFGPT2ModelNoPastState.from_pretrained(model_name, config=config, cache_dir=cache_dir)"
+        },
+        {
+          "file": "onnxruntime/transformers/onnx_exporter.py",
+          "line": 330,
+          "function": "load_pretrained_model",
+          "text": "return GPT2ModelNoPastState.from_pretrained(model_name, config=config, cache_dir=cache_dir)"
+        },
+        {
+          "file": "onnxruntime/transformers/onnx_exporter.py",
+          "line": 339,
+          "function": "load_pretrained_model",
+          "text": "return model_class.from_pretrained(model_name, config=config, cache_dir=cache_dir)"
+        },
+        {
+          "file": "onnxruntime/transformers/onnx_exporter.py",
+          "line": 343,
+          "function": "load_pt_model",
+          "text": "config = AutoConfig.from_pretrained(model_name, cache_dir=cache_dir)"
+        },
+        {
+          "file": "onnxruntime/transformers/onnx_exporter.py",
+          "line": 357,
+          "function": "load_tf_model",
+          "text": "config = AutoConfig.from_pretrained(model_name, cache_dir=cache_dir)"
+        },
+        {
+          "file": "onnxruntime/transformers/onnx_exporter.py",
+          "line": 511,
+          "function": "export_onnx_model_from_pt",
+          "text": "image_processor = AutoFeatureExtractor.from_pretrained(model_name, cache_dir=cache_dir)"
+        },
+        {
+          "file": "onnxruntime/transformers/onnx_exporter.py",
+          "line": 518,
+          "function": "export_onnx_model_from_pt",
+          "text": "tokenizer = AutoTokenizer.from_pretrained(model_name, cache_dir=cache_dir)"
+        },
+        {
+          "file": "onnxruntime/transformers/onnx_exporter.py",
+          "line": 624,
+          "function": "export_onnx_model_from_tf",
+          "text": "tokenizer = AutoTokenizer.from_pretrained(model_name, cache_dir=cache_dir)"
+        },
+        {
+          "file": "onnxruntime/transformers/optimizer.py",
+          "line": 206,
+          "function": "optimize_by_onnxruntime",
+          "text": "onnxruntime.InferenceSession(onnx_model, sess_options, providers=providers, **kwargs)"
+        },
+        {
+          "file": "onnxruntime/transformers/shape_optimizer.py",
+          "line": 208,
+          "function": "BertOnnxModelShapeOptimizer.shape_optimization",
+          "text": "session = onnxruntime.InferenceSession("
+        }
+      ]
+    }
+  },
+  "fallback": {
+    "fts_ids": [
+      2,
+      1
+    ],
+    "available": [
+      [
+        2,
+        1,
+        3
+      ],
+      "fts5+vector"
+    ],
+    "missing_import": {
+      "error_type": "ModuleNotFoundError",
+      "error": "simulated missing onnxruntime",
+      "ids": [
+        2,
+        1
+      ],
+      "mode": "fts5",
+      "unchanged": true
+    },
+    "missing_model_dir": {
+      "error_type": "NoSuchFile",
+      "error": "[ONNXRuntimeError] : 3 : NO_SUCHFILE : Load model from $SCRATCH/tmpw4h7pja1/absent/onnx/model.onnx failed:Load model $SCRATCH/tmpw4h7pja1/absent/onnx/model.onnx failed. File doesn't exist",
+      "ids": [
+        2,
+        1
+      ],
+      "mode": "fts5",
+      "unchanged": true
+    }
+  },
+  "search": {
+    "1000": {
+      "vector_bytes": 1536000,
+      "extension": "<site-packages>/sqlite_vec/vec0",
+      "methods": {
+        "numpy_blob": {
+          "median_s": 0.009864999912679195,
+          "samples_s": [
+            0.1593544171191752,
+            0.08592558279633522,
+            0.009864999912679195,
+            0.009811833035200834,
+            0.0021812920458614826
+          ],
+          "top20": [
+            406,
+            850,
+            359,
+            4,
+            546,
+            122,
+            154,
+            665,
+            326,
+            520,
+            864,
+            273,
+            922,
+            559,
+            968,
+            195,
+            336,
+            742,
+            375,
+            949
+          ]
+        },
+        "vec_distance_cosine_blob": {
+          "median_s": 0.005364874843508005,
+          "samples_s": [
+            0.0014252918772399426,
+            0.023095082957297564,
+            0.005364874843508005,
+            0.03184841712936759,
+            0.0012476667761802673
+          ],
+          "top20": [
+            406,
+            850,
+            359,
+            4,
+            546,
+            122,
+            154,
+            665,
+            326,
+            520,
+            864,
+            273,
+            922,
+            559,
+            968,
+            195,
+            336,
+            742,
+            375,
+            949
+          ]
+        },
+        "vec0_knn": {
+          "median_s": 0.001684832852333784,
+          "samples_s": [
+            0.001684832852333784,
+            0.015753749758005142,
+            0.0009180000051856041,
+            0.003300874959677458,
+            0.0016828342340886593
+          ],
+          "top20": [
+            406,
+            850,
+            359,
+            4,
+            546,
+            122,
+            154,
+            665,
+            326,
+            520,
+            864,
+            273,
+            922,
+            559,
+            968,
+            195,
+            336,
+            742,
+            375,
+            949
+          ]
+        }
+      },
+      "vec0_setup": true,
+      "numpy_read_and_materialize_median_s": 0.009734041057527065,
+      "exact_top20_agreement": {
+        "numpy_blob": true,
+        "vec_distance_cosine_blob": true,
+        "vec0_knn": true
+      },
+      "database_bytes": 3678208
+    },
+    "10000": {
+      "vector_bytes": 15360000,
+      "extension": "<site-packages>/sqlite_vec/vec0",
+      "methods": {
+        "numpy_blob": {
+          "median_s": 0.2566289999522269,
+          "samples_s": [
+            0.4556514169089496,
+            0.2566289999522269,
+            0.2200533328577876,
+            0.316898750141263,
+            0.15645950008183718
+          ],
+          "top20": [
+            1091,
+            4818,
+            4222,
+            2987,
+            7480,
+            3326,
+            9706,
+            4016,
+            6891,
+            3162,
+            5349,
+            4201,
+            9621,
+            6747,
+            9489,
+            2344,
+            571,
+            7594,
+            1988,
+            6167
+          ]
+        },
+        "vec_distance_cosine_blob": {
+          "median_s": 0.13419208396226168,
+          "samples_s": [
+            0.18545362539589405,
+            0.13419208396226168,
+            0.19324154127389193,
+            0.07785483309999108,
+            0.07159654190763831
+          ],
+          "top20": [
+            1091,
+            4818,
+            4222,
+            2987,
+            7480,
+            3326,
+            9706,
+            4016,
+            6891,
+            3162,
+            5349,
+            4201,
+            9621,
+            6747,
+            9489,
+            2344,
+            571,
+            7594,
+            1988,
+            6167
+          ]
+        },
+        "vec0_knn": {
+          "median_s": 0.04239045828580856,
+          "samples_s": [
+            0.026066832710057497,
+            0.21320124994963408,
+            0.029327457770705223,
+            0.04239045828580856,
+            0.15577962528914213
+          ],
+          "top20": [
+            1091,
+            4818,
+            4222,
+            2987,
+            7480,
+            3326,
+            9706,
+            4016,
+            6891,
+            3162,
+            5349,
+            4201,
+            9621,
+            6747,
+            9489,
+            2344,
+            571,
+            7594,
+            1988,
+            6167
+          ]
+        }
+      },
+      "vec0_setup": true,
+      "numpy_read_and_materialize_median_s": 0.25188812520354986,
+      "exact_top20_agreement": {
+        "numpy_blob": true,
+        "vec_distance_cosine_blob": true,
+        "vec0_knn": true
+      },
+      "database_bytes": 36532224
+    },
+    "50000": {
+      "vector_bytes": 76800000,
+      "extension": "<site-packages>/sqlite_vec/vec0",
+      "methods": {
+        "numpy_blob": {
+          "median_s": 2.9572432078421116,
+          "samples_s": [
+            2.9572432078421116,
+            3.342405959032476,
+            2.8276100419461727,
+            0.7947198748588562,
+            3.7352171251550317
+          ],
+          "top20": [
+            10285,
+            12636,
+            40460,
+            48239,
+            30650,
+            19499,
+            15926,
+            32115,
+            27455,
+            45716,
+            10855,
+            10373,
+            39132,
+            43328,
+            35380,
+            18174,
+            21963,
+            14940,
+            7183,
+            29312
+          ]
+        },
+        "vec_distance_cosine_blob": {
+          "median_s": 0.9898515837267041,
+          "samples_s": [
+            0.5983556248247623,
+            0.9898515837267041,
+            0.6474371249787509,
+            1.7672905828803778,
+            1.1237988332286477
+          ],
+          "top20": [
+            10285,
+            12636,
+            40460,
+            48239,
+            30650,
+            19499,
+            15926,
+            32115,
+            27455,
+            45716,
+            10855,
+            10373,
+            39132,
+            43328,
+            35380,
+            18174,
+            21963,
+            14940,
+            7183,
+            29312
+          ]
+        },
+        "vec0_knn": {
+          "median_s": 0.9130411669611931,
+          "samples_s": [
+            0.7187047498300672,
+            1.1550694173201919,
+            2.429002749733627,
+            0.9130411669611931,
+            0.8677412499673665
+          ],
+          "top20": [
+            10285,
+            12636,
+            40460,
+            48239,
+            30650,
+            19499,
+            15926,
+            32115,
+            27455,
+            45716,
+            10855,
+            10373,
+            39132,
+            43328,
+            35380,
+            18174,
+            21963,
+            14940,
+            7183,
+            29312
+          ]
+        }
+      },
+      "vec0_setup": true,
+      "numpy_read_and_materialize_median_s": 2.367335167247802,
+      "exact_top20_agreement": {
+        "numpy_blob": true,
+        "vec_distance_cosine_blob": true,
+        "vec0_knn": true
+      },
+      "database_bytes": 180969472
+    }
+  },
+  "embedding": {
+    "thin_fp32": {
+      "path": "thin",
+      "variant": "model.onnx",
+      "threads": 2,
+      "batch_size": 16,
+      "cold_definition": "fresh process; imports + constructor; OS file cache not flushed",
+      "in_progress": "batch_1000",
+      "attempted_connections": [],
+      "peak_rss_bytes": 508821504,
+      "offline_env": {
+        "HF_HUB_OFFLINE": "1",
+        "HF_HUB_DISABLE_TELEMETRY": "1",
+        "HF_HUB_DISABLE_IMPLICIT_TOKEN": "1",
+        "ORT_DISABLE_TELEMETRY": "1"
+      },
+      "cold_load_s": 18.573754332959652,
+      "rss_after_cold_load_bytes": 333742080,
+      "first_query_s": 1.0677760830149055,
+      "warm_reload_s": 15.126941042020917,
+      "query_s": {
+        "samples": [
+          0.1139744590036571,
+          0.6819653329439461,
+          0.324069291818887,
+          0.29216604214161634,
+          0.44305966701358557
+        ],
+        "median": 0.324069291818887
+      },
+      "search_scores": [
+        [
+          0.882756233215332,
+          0.8231562376022339,
+          0.802878737449646,
+          0.7916296720504761,
+          0.7031028866767883,
+          0.7706342935562134,
+          0.7465994358062744,
+          0.7865264415740967,
+          0.7815462350845337,
+          0.7969141006469727
+        ],
+        [
+          0.8199361562728882,
+          0.8626130819320679,
+          0.7863950729370117,
+          0.7952138781547546,
+          0.7221996784210205,
+          0.7846164703369141,
+          0.7274519205093384,
+          0.7992334961891174,
+          0.7456648945808411,
+          0.8019787073135376
+        ],
+        [
+          0.8216666579246521,
+          0.8198738098144531,
+          0.8934682011604309,
+          0.7804142236709595,
+          0.6763211488723755,
+          0.746186375617981,
+          0.7363369464874268,
+          0.77914959192276,
+          0.7717716693878174,
+          0.8049416542053223
+        ],
+        [
+          0.7880252599716187,
+          0.7794761657714844,
+          0.7558214068412781,
+          0.8828377723693848,
+          0.6888176202774048,
+          0.6860782504081726,
+          0.741963267326355,
+          0.7697544097900391,
+          0.6927294731140137,
+          0.8178552985191345
+        ],
+        [
+          0.751359760761261,
+          0.7585957050323486,
+          0.7317677140235901,
+          0.7386377453804016,
+          0.822463870048523,
+          0.7153865098953247,
+          0.7642513513565063,
+          0.759019136428833,
+          0.7571271061897278,
+          0.7443320155143738
+        ],
+        [
+          0.7382969260215759,
+          0.7670350670814514,
+          0.7048338651657104,
+          0.6942236423492432,
+          0.7057393193244934,
+          0.7948965430259705,
+          0.7104791402816772,
+          0.7097243666648865,
+          0.7410597801208496,
+          0.6813373565673828
+        ],
+        [
+          0.7579715251922607,
+          0.7558693885803223,
+          0.7339633107185364,
+          0.7820836305618286,
+          0.7281891703605652,
+          0.7097737193107605,
+          0.853628396987915,
+          0.7342510223388672,
+          0.7506391406059265,
+          0.7394342422485352
+        ],
+        [
+          0.7227975130081177,
+          0.7204996347427368,
+          0.7095130085945129,
+          0.7108860015869141,
+          0.7471058964729309,
+          0.7080178260803223,
+          0.7424116134643555,
+          0.8016111254692078,
+          0.7633022665977478,
+          0.7261664271354675
+        ],
+        [
+          0.8215788006782532,
+          0.8369221091270447,
+          0.8114980459213257,
+          0.7708595395088196,
+          0.6961628198623657,
+          0.7538332343101501,
+          0.7260972857475281,
+          0.7881518602371216,
+          0.7650130391120911,
+          0.79189532995224
+        ],
+        [
+          0.7546572685241699,
+          0.7565691471099854,
+          0.7558706998825073,
+          0.7639790773391724,
+          0.7103888988494873,
+          0.7091770172119141,
+          0.7836298942565918,
+          0.7430197596549988,
+          0.7445343732833862,
+          0.8083893656730652
+        ]
+      ],
+      "search_ranks": [
+        [
+          0,
+          1,
+          2,
+          9,
+          3,
+          7,
+          8,
+          5,
+          6,
+          4
+        ],
+        [
+          1,
+          0,
+          9,
+          7,
+          3,
+          2,
+          5,
+          8,
+          6,
+          4
+        ],
+        [
+          2,
+          0,
+          1,
+          9,
+          3,
+          7,
+          8,
+          5,
+          6,
+          4
+        ],
+        [
+          3,
+          9,
+          0,
+          1,
+          7,
+          2,
+          6,
+          8,
+          4,
+          5
+        ],
+        [
+          4,
+          6,
+          7,
+          1,
+          8,
+          0,
+          9,
+          3,
+          2,
+          5
+        ],
+        [
+          5,
+          1,
+          8,
+          0,
+          6,
+          7,
+          4,
+          2,
+          3,
+          9
+        ],
+        [
+          6,
+          3,
+          0,
+          1,
+          8,
+          9,
+          7,
+          2,
+          4,
+          5
+        ],
+        [
+          7,
+          8,
+          4,
+          6,
+          9,
+          0,
+          1,
+          3,
+          2,
+          5
+        ],
+        [
+          1,
+          0,
+          2,
+          9,
+          7,
+          3,
+          8,
+          5,
+          6,
+          4
+        ],
+        [
+          9,
+          6,
+          3,
+          1,
+          2,
+          0,
+          8,
+          7,
+          4,
+          5
+        ]
+      ],
+      "paired_top1_count": 9,
+      "truncation": {
+        "max_length": 512,
+        "stride": 0,
+        "strategy": "longest_first",
+        "direction": "right"
+      },
+      "long_input_tokens": 512,
+      "actual_providers": [
+        "CPUExecutionProvider"
+      ],
+      "batches": {
+        "100": {
+          "seconds": 94.61770470812917,
+          "shape": [
+            100,
+            384
+          ],
+          "min_chars": 30,
+          "max_chars": 199,
+          "peak_rss_bytes": 508821504
+        },
+        "1000": {
+          "error_type": "TimeoutExpired",
+          "error": "Command '['$VENV_PBS', '-B', '-m', 'evals.embedding_spike.compat', '--worker', 'thin', '--model-dir', '../dl/model/intfloat-multilingual-e5-small@614241f622f53c4eeff9890bdc4f31cfecc418b3', '--variant', 'model.onnx']' timed out after 210 seconds"
+        }
+      },
+      "worker_timeout": {
+        "error_type": "TimeoutExpired",
+        "error": "Command '['$VENV_PBS', '-B', '-m', 'evals.embedding_spike.compat', '--worker', 'thin', '--model-dir', '../dl/model/intfloat-multilingual-e5-small@614241f622f53c4eeff9890bdc4f31cfecc418b3', '--variant', 'model.onnx']' timed out after 210 seconds"
+      },
+      "process_wall_s": 211.7616652091965,
+      "returncode": null,
+      "stderr": null
+    },
+    "fastembed_fp32": {
+      "path": "fastembed",
+      "variant": "model.onnx",
+      "threads": 2,
+      "batch_size": 16,
+      "cold_definition": "fresh process; imports + constructor; OS file cache not flushed",
+      "in_progress": "batch_1000",
+      "attempted_connections": [],
+      "peak_rss_bytes": 563265536,
+      "offline_env": {
+        "HF_HUB_OFFLINE": "1",
+        "HF_HUB_DISABLE_TELEMETRY": "1",
+        "HF_HUB_DISABLE_IMPLICIT_TOKEN": "1",
+        "ORT_DISABLE_TELEMETRY": "1"
+      },
+      "cold_load_s": 20.641034208238125,
+      "rss_after_cold_load_bytes": 466747392,
+      "first_query_s": 0.8394300839863718,
+      "warm_reload_s": 10.010657667182386,
+      "query_s": {
+        "samples": [
+          0.5763975828886032,
+          0.8196010841056705,
+          0.4162772921845317,
+          0.609805959276855,
+          0.030169041827321053
+        ],
+        "median": 0.5763975828886032
+      },
+      "search_scores": [
+        [
+          0.882756233215332,
+          0.8231562376022339,
+          0.802878737449646,
+          0.7916296720504761,
+          0.7031028866767883,
+          0.7706342935562134,
+          0.7465994358062744,
+          0.7865264415740967,
+          0.7815462350845337,
+          0.7969141006469727
+        ],
+        [
+          0.8199361562728882,
+          0.8626130819320679,
+          0.7863950729370117,
+          0.7952138781547546,
+          0.7221996784210205,
+          0.7846164703369141,
+          0.7274519205093384,
+          0.7992334961891174,
+          0.7456648945808411,
+          0.8019787073135376
+        ],
+        [
+          0.8216666579246521,
+          0.8198738098144531,
+          0.8934682011604309,
+          0.7804142236709595,
+          0.6763211488723755,
+          0.746186375617981,
+          0.7363369464874268,
+          0.77914959192276,
+          0.7717716693878174,
+          0.8049416542053223
+        ],
+        [
+          0.7880252599716187,
+          0.7794761657714844,
+          0.7558214068412781,
+          0.8828377723693848,
+          0.6888176202774048,
+          0.6860782504081726,
+          0.741963267326355,
+          0.7697544097900391,
+          0.6927294731140137,
+          0.8178552985191345
+        ],
+        [
+          0.751359760761261,
+          0.7585957050323486,
+          0.7317677140235901,
+          0.7386377453804016,
+          0.822463870048523,
+          0.7153865098953247,
+          0.7642513513565063,
+          0.759019136428833,
+          0.7571271061897278,
+          0.7443320155143738
+        ],
+        [
+          0.7382969260215759,
+          0.7670350670814514,
+          0.7048338651657104,
+          0.6942236423492432,
+          0.7057393193244934,
+          0.7948965430259705,
+          0.7104791402816772,
+          0.7097243666648865,
+          0.7410597801208496,
+          0.6813373565673828
+        ],
+        [
+          0.7579715251922607,
+          0.7558693885803223,
+          0.7339633107185364,
+          0.7820836305618286,
+          0.7281891703605652,
+          0.7097737193107605,
+          0.853628396987915,
+          0.7342510223388672,
+          0.7506391406059265,
+          0.7394342422485352
+        ],
+        [
+          0.7227975130081177,
+          0.7204996347427368,
+          0.7095130085945129,
+          0.7108860015869141,
+          0.7471058964729309,
+          0.7080178260803223,
+          0.7424116134643555,
+          0.8016111254692078,
+          0.7633022665977478,
+          0.7261664271354675
+        ],
+        [
+          0.8215788006782532,
+          0.8369221091270447,
+          0.8114980459213257,
+          0.7708595395088196,
+          0.6961628198623657,
+          0.7538332343101501,
+          0.7260972857475281,
+          0.7881518602371216,
+          0.7650130391120911,
+          0.79189532995224
+        ],
+        [
+          0.7546572685241699,
+          0.7565691471099854,
+          0.7558706998825073,
+          0.7639790773391724,
+          0.7103888988494873,
+          0.7091770172119141,
+          0.7836298942565918,
+          0.7430197596549988,
+          0.7445343732833862,
+          0.8083893656730652
+        ]
+      ],
+      "search_ranks": [
+        [
+          0,
+          1,
+          2,
+          9,
+          3,
+          7,
+          8,
+          5,
+          6,
+          4
+        ],
+        [
+          1,
+          0,
+          9,
+          7,
+          3,
+          2,
+          5,
+          8,
+          6,
+          4
+        ],
+        [
+          2,
+          0,
+          1,
+          9,
+          3,
+          7,
+          8,
+          5,
+          6,
+          4
+        ],
+        [
+          3,
+          9,
+          0,
+          1,
+          7,
+          2,
+          6,
+          8,
+          4,
+          5
+        ],
+        [
+          4,
+          6,
+          7,
+          1,
+          8,
+          0,
+          9,
+          3,
+          2,
+          5
+        ],
+        [
+          5,
+          1,
+          8,
+          0,
+          6,
+          7,
+          4,
+          2,
+          3,
+          9
+        ],
+        [
+          6,
+          3,
+          0,
+          1,
+          8,
+          9,
+          7,
+          2,
+          4,
+          5
+        ],
+        [
+          7,
+          8,
+          4,
+          6,
+          9,
+          0,
+          1,
+          3,
+          2,
+          5
+        ],
+        [
+          1,
+          0,
+          2,
+          9,
+          7,
+          3,
+          8,
+          5,
+          6,
+          4
+        ],
+        [
+          9,
+          6,
+          3,
+          1,
+          2,
+          0,
+          8,
+          7,
+          4,
+          5
+        ]
+      ],
+      "paired_top1_count": 9,
+      "truncation": {
+        "max_length": 512,
+        "stride": 0,
+        "strategy": "longest_first",
+        "direction": "right"
+      },
+      "long_input_tokens": 512,
+      "actual_providers": [
+        "CPUExecutionProvider"
+      ],
+      "batches": {
+        "100": {
+          "seconds": 43.754221958108246,
+          "shape": [
+            100,
+            384
+          ],
+          "min_chars": 30,
+          "max_chars": 199,
+          "peak_rss_bytes": 563265536
+        },
+        "1000": {
+          "error_type": "TimeoutExpired",
+          "error": "Command '['$VENV_PBS', '-B', '-m', 'evals.embedding_spike.compat', '--worker', 'fastembed', '--model-dir', '../dl/model/intfloat-multilingual-e5-small@614241f622f53c4eeff9890bdc4f31cfecc418b3', '--variant', 'model.onnx']' timed out after 210 seconds"
+        }
+      },
+      "worker_timeout": {
+        "error_type": "TimeoutExpired",
+        "error": "Command '['$VENV_PBS', '-B', '-m', 'evals.embedding_spike.compat', '--worker', 'fastembed', '--model-dir', '../dl/model/intfloat-multilingual-e5-small@614241f622f53c4eeff9890bdc4f31cfecc418b3', '--variant', 'model.onnx']' timed out after 210 seconds"
+      },
+      "process_wall_s": 210.21770766703412,
+      "returncode": null,
+      "stderr": null
+    },
+    "thin_O4": {
+      "path": "thin",
+      "variant": "model_O4.onnx",
+      "threads": 2,
+      "batch_size": 16,
+      "cold_definition": "fresh process; imports + constructor; OS file cache not flushed",
+      "in_progress": null,
+      "attempted_connections": [],
+      "peak_rss_bytes": 723025920,
+      "offline_env": {
+        "HF_HUB_OFFLINE": "1",
+        "HF_HUB_DISABLE_TELEMETRY": "1",
+        "HF_HUB_DISABLE_IMPLICIT_TOKEN": "1",
+        "ORT_DISABLE_TELEMETRY": "1"
+      },
+      "cold_load_s": 10.958880957681686,
+      "rss_after_cold_load_bytes": 427393024,
+      "first_query_s": 0.27026375010609627,
+      "warm_reload_s": 9.611429125070572,
+      "query_s": {
+        "samples": [
+          0.1627216669730842,
+          0.36671091709285975,
+          0.22647775011137128,
+          0.24296708265319467,
+          0.015015916898846626
+        ],
+        "median": 0.22647775011137128
+      },
+      "search_scores": [
+        [
+          0.882710874080658,
+          0.8230419754981995,
+          0.8027803301811218,
+          0.7916216850280762,
+          0.7031081318855286,
+          0.7706694006919861,
+          0.7464900016784668,
+          0.7864146828651428,
+          0.7815913558006287,
+          0.7967909574508667
+        ],
+        [
+          0.8199849128723145,
+          0.862586498260498,
+          0.7863832712173462,
+          0.7952932119369507,
+          0.7222042679786682,
+          0.7847071886062622,
+          0.7274211645126343,
+          0.7991713285446167,
+          0.7457736730575562,
+          0.8019830584526062
+        ],
+        [
+          0.8216137290000916,
+          0.8196814656257629,
+          0.8933785557746887,
+          0.7803238034248352,
+          0.676241934299469,
+          0.7461280226707458,
+          0.7362033128738403,
+          0.7789920568466187,
+          0.7717917561531067,
+          0.8047757148742676
+        ],
+        [
+          0.787992537021637,
+          0.7793962359428406,
+          0.7557473182678223,
+          0.8827164173126221,
+          0.6887964010238647,
+          0.6861748099327087,
+          0.741834819316864,
+          0.7696524262428284,
+          0.6927456259727478,
+          0.817807137966156
+        ],
+        [
+          0.7513135671615601,
+          0.7585505843162537,
+          0.7316243648529053,
+          0.7386189103126526,
+          0.8224058747291565,
+          0.7153416275978088,
+          0.7640992999076843,
+          0.7588900923728943,
+          0.757054328918457,
+          0.7441771030426025
+        ],
+        [
+          0.7382903099060059,
+          0.7670296430587769,
+          0.7047610282897949,
+          0.694281816482544,
+          0.705782413482666,
+          0.7949751615524292,
+          0.7103944420814514,
+          0.7096516489982605,
+          0.741030752658844,
+          0.6812842488288879
+        ],
+        [
+          0.7580130100250244,
+          0.7559574246406555,
+          0.7339572310447693,
+          0.7821322679519653,
+          0.7282145023345947,
+          0.7098094820976257,
+          0.8534592986106873,
+          0.7342556715011597,
+          0.7506619691848755,
+          0.739414632320404
+        ],
+        [
+          0.7227566242218018,
+          0.7205186486244202,
+          0.7094537019729614,
+          0.7109172940254211,
+          0.7471207976341248,
+          0.7079873085021973,
+          0.7423204779624939,
+          0.801493763923645,
+          0.7632821202278137,
+          0.7261050343513489
+        ],
+        [
+          0.8215330839157104,
+          0.8368039727210999,
+          0.8113614320755005,
+          0.7707552313804626,
+          0.6960555911064148,
+          0.7538028955459595,
+          0.725893497467041,
+          0.7880034446716309,
+          0.7649080753326416,
+          0.7917605042457581
+        ],
+        [
+          0.7546445727348328,
+          0.7565135955810547,
+          0.7557079195976257,
+          0.7639842629432678,
+          0.710375189781189,
+          0.7091711163520813,
+          0.783484697341919,
+          0.7429801821708679,
+          0.7444633841514587,
+          0.808265745639801
+        ]
+      ],
+      "search_ranks": [
+        [
+          0,
+          1,
+          2,
+          9,
+          3,
+          7,
+          8,
+          5,
+          6,
+          4
+        ],
+        [
+          1,
+          0,
+          9,
+          7,
+          3,
+          2,
+          5,
+          8,
+          6,
+          4
+        ],
+        [
+          2,
+          0,
+          1,
+          9,
+          3,
+          7,
+          8,
+          5,
+          6,
+          4
+        ],
+        [
+          3,
+          9,
+          0,
+          1,
+          7,
+          2,
+          6,
+          8,
+          4,
+          5
+        ],
+        [
+          4,
+          6,
+          7,
+          1,
+          8,
+          0,
+          9,
+          3,
+          2,
+          5
+        ],
+        [
+          5,
+          1,
+          8,
+          0,
+          6,
+          7,
+          4,
+          2,
+          3,
+          9
+        ],
+        [
+          6,
+          3,
+          0,
+          1,
+          8,
+          9,
+          7,
+          2,
+          4,
+          5
+        ],
+        [
+          7,
+          8,
+          4,
+          6,
+          9,
+          0,
+          1,
+          3,
+          2,
+          5
+        ],
+        [
+          1,
+          0,
+          2,
+          9,
+          7,
+          3,
+          8,
+          5,
+          6,
+          4
+        ],
+        [
+          9,
+          6,
+          3,
+          1,
+          2,
+          0,
+          8,
+          7,
+          4,
+          5
+        ]
+      ],
+      "paired_top1_count": 9,
+      "truncation": {
+        "max_length": 512,
+        "stride": 0,
+        "strategy": "longest_first",
+        "direction": "right"
+      },
+      "long_input_tokens": 512,
+      "actual_providers": [
+        "CPUExecutionProvider"
+      ],
+      "batches": {},
+      "cache_files": [],
+      "process_wall_s": 33.63850691728294,
+      "returncode": 0,
+      "stderr": ""
+    },
+    "thin_qint8": {
+      "path": "thin",
+      "variant": "model_qint8_avx512_vnni.onnx",
+      "threads": 2,
+      "batch_size": 16,
+      "cold_definition": "fresh process; imports + constructor; OS file cache not flushed",
+      "in_progress": null,
+      "attempted_connections": [],
+      "peak_rss_bytes": 622264320,
+      "offline_env": {
+        "HF_HUB_OFFLINE": "1",
+        "HF_HUB_DISABLE_TELEMETRY": "1",
+        "HF_HUB_DISABLE_IMPLICIT_TOKEN": "1",
+        "ORT_DISABLE_TELEMETRY": "1"
+      },
+      "cold_load_s": 6.4871984999626875,
+      "rss_after_cold_load_bytes": 408469504,
+      "first_query_s": 0.15257908264175057,
+      "warm_reload_s": 2.7706233328208327,
+      "query_s": {
+        "samples": [
+          0.055106333922594786,
+          0.02445883397012949,
+          0.3240703749470413,
+          0.022079667076468468,
+          0.03492766711860895
+        ],
+        "median": 0.03492766711860895
+      },
+      "search_scores": [
+        [
+          0.8752536773681641,
+          0.8127225041389465,
+          0.7978929877281189,
+          0.7950499057769775,
+          0.7075065970420837,
+          0.772072970867157,
+          0.7609302401542664,
+          0.7787399291992188,
+          0.7831045985221863,
+          0.797391951084137
+        ],
+        [
+          0.8229418396949768,
+          0.8644995093345642,
+          0.7928722500801086,
+          0.804394543170929,
+          0.7185904383659363,
+          0.7759175300598145,
+          0.7335290908813477,
+          0.7979589104652405,
+          0.7426037192344666,
+          0.8038146495819092
+        ],
+        [
+          0.8179987072944641,
+          0.818449079990387,
+          0.8931921720504761,
+          0.786085307598114,
+          0.68092942237854,
+          0.7521742582321167,
+          0.7416351437568665,
+          0.7763752341270447,
+          0.7684659957885742,
+          0.8107903599739075
+        ],
+        [
+          0.7898239493370056,
+          0.7877275347709656,
+          0.7580593228340149,
+          0.8834183812141418,
+          0.6967983841896057,
+          0.6931042075157166,
+          0.7466899156570435,
+          0.7699944972991943,
+          0.6990551948547363,
+          0.8185770511627197
+        ],
+        [
+          0.7459771037101746,
+          0.7563016414642334,
+          0.7344503402709961,
+          0.7457217574119568,
+          0.8126411437988281,
+          0.7167150378227234,
+          0.7774906754493713,
+          0.7574455142021179,
+          0.7650174498558044,
+          0.7426995635032654
+        ],
+        [
+          0.7456190586090088,
+          0.7773134112358093,
+          0.7146241068840027,
+          0.6988009810447693,
+          0.7058302164077759,
+          0.7944616079330444,
+          0.724706768989563,
+          0.7171551585197449,
+          0.7505631446838379,
+          0.689893364906311
+        ],
+        [
+          0.7580509781837463,
+          0.7579596638679504,
+          0.7410416007041931,
+          0.7888055443763733,
+          0.7329064607620239,
+          0.7151119709014893,
+          0.8581569790840149,
+          0.731313169002533,
+          0.7573164701461792,
+          0.7494790554046631
+        ],
+        [
+          0.7217933535575867,
+          0.7247856259346008,
+          0.7119359374046326,
+          0.7188835740089417,
+          0.7442989349365234,
+          0.7063095569610596,
+          0.7488805055618286,
+          0.8042209148406982,
+          0.7709327340126038,
+          0.7278225421905518
+        ],
+        [
+          0.8268629312515259,
+          0.8356283903121948,
+          0.8075389862060547,
+          0.7771201729774475,
+          0.6967387199401855,
+          0.7538316249847412,
+          0.7332639694213867,
+          0.7927041053771973,
+          0.7598903179168701,
+          0.7957926392555237
+        ],
+        [
+          0.7541886568069458,
+          0.7599573731422424,
+          0.7549756169319153,
+          0.7690193057060242,
+          0.7165908217430115,
+          0.7103120684623718,
+          0.7901213765144348,
+          0.7435541152954102,
+          0.7479869723320007,
+          0.8038304448127747
+        ]
+      ],
+      "search_ranks": [
+        [
+          0,
+          1,
+          2,
+          9,
+          3,
+          8,
+          7,
+          5,
+          6,
+          4
+        ],
+        [
+          1,
+          0,
+          3,
+          9,
+          7,
+          2,
+          5,
+          8,
+          6,
+          4
+        ],
+        [
+          2,
+          1,
+          0,
+          9,
+          3,
+          7,
+          8,
+          5,
+          6,
+          4
+        ],
+        [
+          3,
+          9,
+          0,
+          1,
+          7,
+          2,
+          6,
+          8,
+          4,
+          5
+        ],
+        [
+          4,
+          6,
+          8,
+          7,
+          1,
+          0,
+          3,
+          9,
+          2,
+          5
+        ],
+        [
+          5,
+          1,
+          8,
+          0,
+          6,
+          7,
+          2,
+          4,
+          3,
+          9
+        ],
+        [
+          6,
+          3,
+          0,
+          1,
+          8,
+          9,
+          2,
+          4,
+          7,
+          5
+        ],
+        [
+          7,
+          8,
+          6,
+          4,
+          9,
+          1,
+          0,
+          3,
+          2,
+          5
+        ],
+        [
+          1,
+          0,
+          2,
+          9,
+          7,
+          3,
+          8,
+          5,
+          6,
+          4
+        ],
+        [
+          9,
+          6,
+          3,
+          1,
+          2,
+          0,
+          8,
+          7,
+          4,
+          5
+        ]
+      ],
+      "paired_top1_count": 9,
+      "truncation": {
+        "max_length": 512,
+        "stride": 0,
+        "strategy": "longest_first",
+        "direction": "right"
+      },
+      "long_input_tokens": 512,
+      "actual_providers": [
+        "CPUExecutionProvider"
+      ],
+      "batches": {},
+      "cache_files": [],
+      "process_wall_s": 18.422631999943405,
+      "returncode": 0,
+      "stderr": ""
+    }
+  },
+  "agreement": {
+    "fastembed_fp32": {
+      "cosines": [
+        1.0,
+        1.0000000000000002,
+        1.0000000000000002,
+        1.0,
+        1.0000000000000002,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0000000000000002,
+        1.0000000000000002,
+        1.0,
+        1.0,
+        1.0000000000000002,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0000000000000002
+      ],
+      "min_cosine": 1.0,
+      "mean_cosine": 1.0,
+      "top1_agreement": 1.0,
+      "mean_spearman_rho": 1.0,
+      "fixture_pairs": [
+        [
+          "내일 병원 예약이 몇 시인지 알려 줘",
+          "내일 오후 세 시에 치과 진료를 예약했다."
+        ],
+        [
+          "지난 회의의 결정 사항을 찾아 줘",
+          "지난 팀 회의에서 출시를 다음 달로 미루기로 했다."
+        ],
+        [
+          "주말에 어디서 자전거를 타기로 했지",
+          "토요일 아침 한강 공원에서 자전거를 타기로 했다."
+        ],
+        [
+          "내가 피해야 하는 음식은 무엇인가",
+          "나는 땅콩 알레르기가 있어서 땅콩이 든 음식을 피한다."
+        ],
+        [
+          "Where did I put my spare keys?",
+          "The spare house keys are in the blue kitchen drawer."
+        ],
+        [
+          "When is the project deadline?",
+          "The final project report is due next Friday afternoon."
+        ],
+        [
+          "What kind of coffee do I prefer?",
+          "I usually order decaffeinated coffee with oat milk."
+        ],
+        [
+          "Where is my passport stored?",
+          "여권은 침실 서랍 안의 초록색 파일에 보관하고 있다."
+        ],
+        [
+          "다음 주 기차는 언제 출발하지",
+          "My train to Busan departs at nine on Monday morning."
+        ],
+        [
+          "What should I bring to the hiking trip?",
+          "등산 갈 때는 물 두 병과 방수 재킷을 챙기기로 했다."
+        ]
+      ]
+    },
+    "thin_O4": {
+      "cosines": [
+        0.9999993836700899,
+        0.9999995364204347,
+        0.9999992870582378,
+        0.9999993286373142,
+        0.9999994404527499,
+        0.9999993242014406,
+        0.9999993657219061,
+        0.999999561087072,
+        0.9999992198925514,
+        0.9999994745436913,
+        0.9999993177199428,
+        0.9999994219052064,
+        0.9999993948505179,
+        0.9999994219682938,
+        0.999999497673295,
+        0.9999994840034567,
+        0.9999995200038873,
+        0.9999992724746005,
+        0.9999995527096567,
+        0.999999188171235
+      ],
+      "min_cosine": 0.999999188171235,
+      "mean_cosine": 0.999999399658279,
+      "top1_agreement": 1.0,
+      "mean_spearman_rho": 1.0,
+      "fixture_pairs": [
+        [
+          "내일 병원 예약이 몇 시인지 알려 줘",
+          "내일 오후 세 시에 치과 진료를 예약했다."
+        ],
+        [
+          "지난 회의의 결정 사항을 찾아 줘",
+          "지난 팀 회의에서 출시를 다음 달로 미루기로 했다."
+        ],
+        [
+          "주말에 어디서 자전거를 타기로 했지",
+          "토요일 아침 한강 공원에서 자전거를 타기로 했다."
+        ],
+        [
+          "내가 피해야 하는 음식은 무엇인가",
+          "나는 땅콩 알레르기가 있어서 땅콩이 든 음식을 피한다."
+        ],
+        [
+          "Where did I put my spare keys?",
+          "The spare house keys are in the blue kitchen drawer."
+        ],
+        [
+          "When is the project deadline?",
+          "The final project report is due next Friday afternoon."
+        ],
+        [
+          "What kind of coffee do I prefer?",
+          "I usually order decaffeinated coffee with oat milk."
+        ],
+        [
+          "Where is my passport stored?",
+          "여권은 침실 서랍 안의 초록색 파일에 보관하고 있다."
+        ],
+        [
+          "다음 주 기차는 언제 출발하지",
+          "My train to Busan departs at nine on Monday morning."
+        ],
+        [
+          "What should I bring to the hiking trip?",
+          "등산 갈 때는 물 두 병과 방수 재킷을 챙기기로 했다."
+        ]
+      ]
+    },
+    "thin_qint8": {
+      "cosines": [
+        0.9951787029777005,
+        0.9970049396803465,
+        0.9958802664193405,
+        0.9967748076873271,
+        0.9963232815207306,
+        0.9962727542821487,
+        0.9968313221743371,
+        0.9961358755146237,
+        0.9954231115949496,
+        0.9965392128326906,
+        0.996000914511404,
+        0.9961653487261455,
+        0.9963631127064332,
+        0.9963541306911913,
+        0.996720098739922,
+        0.9967289747586416,
+        0.9974983365919352,
+        0.9939669950845801,
+        0.9964053099874053,
+        0.9959163928617549
+      ],
+      "min_cosine": 0.9939669950845801,
+      "mean_cosine": 0.9962241944671805,
+      "top1_agreement": 1.0,
+      "mean_spearman_rho": 0.9818181818181818,
+      "fixture_pairs": [
+        [
+          "내일 병원 예약이 몇 시인지 알려 줘",
+          "내일 오후 세 시에 치과 진료를 예약했다."
+        ],
+        [
+          "지난 회의의 결정 사항을 찾아 줘",
+          "지난 팀 회의에서 출시를 다음 달로 미루기로 했다."
+        ],
+        [
+          "주말에 어디서 자전거를 타기로 했지",
+          "토요일 아침 한강 공원에서 자전거를 타기로 했다."
+        ],
+        [
+          "내가 피해야 하는 음식은 무엇인가",
+          "나는 땅콩 알레르기가 있어서 땅콩이 든 음식을 피한다."
+        ],
+        [
+          "Where did I put my spare keys?",
+          "The spare house keys are in the blue kitchen drawer."
+        ],
+        [
+          "When is the project deadline?",
+          "The final project report is due next Friday afternoon."
+        ],
+        [
+          "What kind of coffee do I prefer?",
+          "I usually order decaffeinated coffee with oat milk."
+        ],
+        [
+          "Where is my passport stored?",
+          "여권은 침실 서랍 안의 초록색 파일에 보관하고 있다."
+        ],
+        [
+          "다음 주 기차는 언제 출발하지",
+          "My train to Busan departs at nine on Monday morning."
+        ],
+        [
+          "What should I bring to the hiking trip?",
+          "등산 갈 때는 물 두 병과 방수 재킷을 챙기기로 했다."
+        ]
+      ]
+    }
+  },
+  "offline": {
+    "parent_attempted_connections": [],
+    "worker_attempt_count": 0,
+    "flags": {
+      "HF_HUB_OFFLINE": "1",
+      "HF_HUB_DISABLE_TELEMETRY": "1",
+      "HF_HUB_DISABLE_IMPLICIT_TOKEN": "1",
+      "ORT_DISABLE_TELEMETRY": "1"
+    },
+    "scope": "Python socket.connect/create_connection/getaddrinfo guard; ORT telemetry disabled via API. No OS-level packet capture or native socket interception."
+  },
+  "elapsed_s": 562.6327846669592
+}

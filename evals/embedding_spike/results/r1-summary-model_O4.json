@@ -1,0 +1,962 @@
+{
+  "model_file": "onnx/model_O4.onnx",
+  "parameters": {
+    "vector": {
+      "top_k": 1,
+      "min_sim": 0.82,
+      "use_context": true,
+      "passage_form": "content"
+    },
+    "hybrid": {
+      "k": 60,
+      "top_k": 1,
+      "min_sim": 0.82,
+      "use_context": true,
+      "passage_form": "content",
+      "vector_only_when_empty": true
+    }
+  },
+  "fixture": "720e8939da261a61f702be74bad195c2fa9c6f00658733ac15fbdf2f3ad89cda",
+  "scores": {
+    "baseline": {
+      "dev": {
+        "total": {
+          "needed_hit": 6,
+          "needed_total": 10,
+          "needed_recall": 0.6,
+          "cases_with_trap": 0,
+          "noise_count": 2,
+          "cases": 14
+        },
+        "by_kind": {
+          "correction": {
+            "needed_hit": 1,
+            "needed_total": 1,
+            "needed_recall": 1.0,
+            "cases_with_trap": 0,
+            "noise_count": 0,
+            "cases": 1
+          },
+          "cross-language": {
+            "needed_hit": 1,
+            "needed_total": 1,
+            "needed_recall": 1.0,
+            "cases_with_trap": 0,
+            "noise_count": 1,
+            "cases": 1
+          },
+          "currentness": {
+            "needed_hit": 0,
+            "needed_total": 0,
+            "needed_recall": null,
+            "cases_with_trap": 0,
+            "noise_count": 0,
+            "cases": 2
+          },
+          "dated-contradiction": {
+            "needed_hit": 1,
+            "needed_total": 2,
+            "needed_recall": 0.5,
+            "cases_with_trap": 0,
+            "noise_count": 0,
+            "cases": 2
+          },
+          "forgetting": {
+            "needed_hit": 0,
+            "needed_total": 0,
+            "needed_recall": null,
+            "cases_with_trap": 0,
+            "noise_count": 0,
+            "cases": 1
+          },
+          "harm-control": {
+            "needed_hit": 0,
+            "needed_total": 0,
+            "needed_recall": null,
+            "cases_with_trap": 0,
+            "noise_count": 1,
+            "cases": 1
+          },
+          "lexical-control": {
+            "needed_hit": 3,
+            "needed_total": 3,
+            "needed_recall": 1.0,
+            "cases_with_trap": 0,
+            "noise_count": 0,
+            "cases": 3
+          },
+          "paraphrase": {
+            "needed_hit": 0,
+            "needed_total": 2,
+            "needed_recall": 0.0,
+            "cases_with_trap": 0,
+            "noise_count": 0,
+            "cases": 2
+          },
+          "short-follow-up": {
+            "needed_hit": 0,
+            "needed_total": 1,
+            "needed_recall": 0.0,
+            "cases_with_trap": 0,
+            "noise_count": 0,
+            "cases": 1
+          }
+        }
+      },
+      "heldout": {
+        "total": {
+          "needed_hit": 4,
+          "needed_total": 6,
+          "needed_recall": 0.6666666666666666,
+          "cases_with_trap": 0,
+          "noise_count": 4,
+          "cases": 10
+        },
+        "by_kind": {
+          "correction": {
+            "needed_hit": 1,
+            "needed_total": 1,
+            "needed_recall": 1.0,
+            "cases_with_trap": 0,
+            "noise_count": 1,
+            "cases": 1
+          },
+          "cross-language": {
+            "needed_hit": 1,
+            "needed_total": 1,
+            "needed_recall": 1.0,
+            "cases_with_trap": 0,
+            "noise_count": 1,
+            "cases": 1
+          },
+          "currentness": {
+            "needed_hit": 0,
+            "needed_total": 0,
+            "needed_recall": null,
+            "cases_with_trap": 0,
+            "noise_count": 0,
+            "cases": 1
+          },
+          "dated-contradiction": {
+            "needed_hit": 1,
+            "needed_total": 1,
+            "needed_recall": 1.0,
+            "cases_with_trap": 0,
+            "noise_count": 0,
+            "cases": 1
+          },
+          "forgetting": {
+            "needed_hit": 0,
+            "needed_total": 0,
+            "needed_recall": null,
+            "cases_with_trap": 0,
+            "noise_count": 1,
+            "cases": 2
+          },
+          "harm-control": {
+            "needed_hit": 0,
+            "needed_total": 0,
+            "needed_recall": null,
+            "cases_with_trap": 0,
+            "noise_count": 1,
+            "cases": 1
+          },
+          "lexical-control": {
+            "needed_hit": 1,
+            "needed_total": 1,
+            "needed_recall": 1.0,
+            "cases_with_trap": 0,
+            "noise_count": 0,
+            "cases": 1
+          },
+          "paraphrase": {
+            "needed_hit": 0,
+            "needed_total": 1,
+            "needed_recall": 0.0,
+            "cases_with_trap": 0,
+            "noise_count": 0,
+            "cases": 1
+          },
+          "short-follow-up": {
+            "needed_hit": 0,
+            "needed_total": 1,
+            "needed_recall": 0.0,
+            "cases_with_trap": 0,
+            "noise_count": 0,
+            "cases": 1
+          }
+        }
+      }
+    },
+    "vector": {
+      "dev": {
+        "total": {
+          "needed_hit": 8,
+          "needed_total": 10,
+          "needed_recall": 0.8,
+          "cases_with_trap": 0,
+          "noise_count": 2,
+          "cases": 14
+        },
+        "by_kind": {
+          "correction": {
+            "needed_hit": 1,
+            "needed_total": 1,
+            "needed_recall": 1.0,
+            "cases_with_trap": 0,
+            "noise_count": 0,
+            "cases": 1
+          },
+          "cross-language": {
+            "needed_hit": 0,
+            "needed_total": 1,
+            "needed_recall": 0.0,
+            "cases_with_trap": 0,
+            "noise_count": 0,
+            "cases": 1
+          },
+          "currentness": {
+            "needed_hit": 0,
+            "needed_total": 0,
+            "needed_recall": null,
+            "cases_with_trap": 0,
+            "noise_count": 1,
+            "cases": 2
+          },
+          "dated-contradiction": {
+            "needed_hit": 1,
+            "needed_total": 2,
+            "needed_recall": 0.5,
+            "cases_with_trap": 0,
+            "noise_count": 0,
+            "cases": 2
+          },
+          "forgetting": {
+            "needed_hit": 0,
+            "needed_total": 0,
+            "needed_recall": null,
+            "cases_with_trap": 0,
+            "noise_count": 0,
+            "cases": 1
+          },
+          "harm-control": {
+            "needed_hit": 0,
+            "needed_total": 0,
+            "needed_recall": null,
+            "cases_with_trap": 0,
+            "noise_count": 1,
+            "cases": 1
+          },
+          "lexical-control": {
+            "needed_hit": 3,
+            "needed_total": 3,
+            "needed_recall": 1.0,
+            "cases_with_trap": 0,
+            "noise_count": 0,
+            "cases": 3
+          },
+          "paraphrase": {
+            "needed_hit": 2,
+            "needed_total": 2,
+            "needed_recall": 1.0,
+            "cases_with_trap": 0,
+            "noise_count": 0,
+            "cases": 2
+          },
+          "short-follow-up": {
+            "needed_hit": 1,
+            "needed_total": 1,
+            "needed_recall": 1.0,
+            "cases_with_trap": 0,
+            "noise_count": 0,
+            "cases": 1
+          }
+        }
+      },
+      "heldout": {
+        "total": {
+          "needed_hit": 4,
+          "needed_total": 6,
+          "needed_recall": 0.6666666666666666,
+          "cases_with_trap": 0,
+          "noise_count": 2,
+          "cases": 10
+        },
+        "by_kind": {
+          "correction": {
+            "needed_hit": 1,
+            "needed_total": 1,
+            "needed_recall": 1.0,
+            "cases_with_trap": 0,
+            "noise_count": 0,
+            "cases": 1
+          },
+          "cross-language": {
+            "needed_hit": 0,
+            "needed_total": 1,
+            "needed_recall": 0.0,
+            "cases_with_trap": 0,
+            "noise_count": 0,
+            "cases": 1
+          },
+          "currentness": {
+            "needed_hit": 0,
+            "needed_total": 0,
+            "needed_recall": null,
+            "cases_with_trap": 0,
+            "noise_count": 0,
+            "cases": 1
+          },
+          "dated-contradiction": {
+            "needed_hit": 1,
+            "needed_total": 1,
+            "needed_recall": 1.0,
+            "cases_with_trap": 0,
+            "noise_count": 0,
+            "cases": 1
+          },
+          "forgetting": {
+            "needed_hit": 0,
+            "needed_total": 0,
+            "needed_recall": null,
+            "cases_with_trap": 0,
+            "noise_count": 1,
+            "cases": 2
+          },
+          "harm-control": {
+            "needed_hit": 0,
+            "needed_total": 0,
+            "needed_recall": null,
+            "cases_with_trap": 0,
+            "noise_count": 1,
+            "cases": 1
+          },
+          "lexical-control": {
+            "needed_hit": 1,
+            "needed_total": 1,
+            "needed_recall": 1.0,
+            "cases_with_trap": 0,
+            "noise_count": 0,
+            "cases": 1
+          },
+          "paraphrase": {
+            "needed_hit": 0,
+            "needed_total": 1,
+            "needed_recall": 0.0,
+            "cases_with_trap": 0,
+            "noise_count": 0,
+            "cases": 1
+          },
+          "short-follow-up": {
+            "needed_hit": 1,
+            "needed_total": 1,
+            "needed_recall": 1.0,
+            "cases_with_trap": 0,
+            "noise_count": 0,
+            "cases": 1
+          }
+        }
+      }
+    },
+    "hybrid": {
+      "dev": {
+        "total": {
+          "needed_hit": 9,
+          "needed_total": 10,
+          "needed_recall": 0.9,
+          "cases_with_trap": 0,
+          "noise_count": 3,
+          "cases": 14
+        },
+        "by_kind": {
+          "correction": {
+            "needed_hit": 1,
+            "needed_total": 1,
+            "needed_recall": 1.0,
+            "cases_with_trap": 0,
+            "noise_count": 0,
+            "cases": 1
+          },
+          "cross-language": {
+            "needed_hit": 1,
+            "needed_total": 1,
+            "needed_recall": 1.0,
+            "cases_with_trap": 0,
+            "noise_count": 1,
+            "cases": 1
+          },
+          "currentness": {
+            "needed_hit": 0,
+            "needed_total": 0,
+            "needed_recall": null,
+            "cases_with_trap": 0,
+            "noise_count": 1,
+            "cases": 2
+          },
+          "dated-contradiction": {
+            "needed_hit": 1,
+            "needed_total": 2,
+            "needed_recall": 0.5,
+            "cases_with_trap": 0,
+            "noise_count": 0,
+            "cases": 2
+          },
+          "forgetting": {
+            "needed_hit": 0,
+            "needed_total": 0,
+            "needed_recall": null,
+            "cases_with_trap": 0,
+            "noise_count": 0,
+            "cases": 1
+          },
+          "harm-control": {
+            "needed_hit": 0,
+            "needed_total": 0,
+            "needed_recall": null,
+            "cases_with_trap": 0,
+            "noise_count": 1,
+            "cases": 1
+          },
+          "lexical-control": {
+            "needed_hit": 3,
+            "needed_total": 3,
+            "needed_recall": 1.0,
+            "cases_with_trap": 0,
+            "noise_count": 0,
+            "cases": 3
+          },
+          "paraphrase": {
+            "needed_hit": 2,
+            "needed_total": 2,
+            "needed_recall": 1.0,
+            "cases_with_trap": 0,
+            "noise_count": 0,
+            "cases": 2
+          },
+          "short-follow-up": {
+            "needed_hit": 1,
+            "needed_total": 1,
+            "needed_recall": 1.0,
+            "cases_with_trap": 0,
+            "noise_count": 0,
+            "cases": 1
+          }
+        }
+      },
+      "heldout": {
+        "total": {
+          "needed_hit": 5,
+          "needed_total": 6,
+          "needed_recall": 0.8333333333333334,
+          "cases_with_trap": 0,
+          "noise_count": 4,
+          "cases": 10
+        },
+        "by_kind": {
+          "correction": {
+            "needed_hit": 1,
+            "needed_total": 1,
+            "needed_recall": 1.0,
+            "cases_with_trap": 0,
+            "noise_count": 1,
+            "cases": 1
+          },
+          "cross-language": {
+            "needed_hit": 1,
+            "needed_total": 1,
+            "needed_recall": 1.0,
+            "cases_with_trap": 0,
+            "noise_count": 1,
+            "cases": 1
+          },
+          "currentness": {
+            "needed_hit": 0,
+            "needed_total": 0,
+            "needed_recall": null,
+            "cases_with_trap": 0,
+            "noise_count": 0,
+            "cases": 1
+          },
+          "dated-contradiction": {
+            "needed_hit": 1,
+            "needed_total": 1,
+            "needed_recall": 1.0,
+            "cases_with_trap": 0,
+            "noise_count": 0,
+            "cases": 1
+          },
+          "forgetting": {
+            "needed_hit": 0,
+            "needed_total": 0,
+            "needed_recall": null,
+            "cases_with_trap": 0,
+            "noise_count": 1,
+            "cases": 2
+          },
+          "harm-control": {
+            "needed_hit": 0,
+            "needed_total": 0,
+            "needed_recall": null,
+            "cases_with_trap": 0,
+            "noise_count": 1,
+            "cases": 1
+          },
+          "lexical-control": {
+            "needed_hit": 1,
+            "needed_total": 1,
+            "needed_recall": 1.0,
+            "cases_with_trap": 0,
+            "noise_count": 0,
+            "cases": 1
+          },
+          "paraphrase": {
+            "needed_hit": 0,
+            "needed_total": 1,
+            "needed_recall": 0.0,
+            "cases_with_trap": 0,
+            "noise_count": 0,
+            "cases": 1
+          },
+          "short-follow-up": {
+            "needed_hit": 1,
+            "needed_total": 1,
+            "needed_recall": 1.0,
+            "cases_with_trap": 0,
+            "noise_count": 0,
+            "cases": 1
+          }
+        }
+      }
+    }
+  },
+  "paired": {
+    "baseline": {
+      "dev": {
+        "changes": [
+          {
+            "id": "d-lex-instrument",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-last-day",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-desk",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-para-focus",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-para-posture",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-follow",
+            "kind": "short-follow-up",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-dated-current",
+            "kind": "dated-contradiction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-dated-old-token",
+            "kind": "dated-contradiction",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-correction",
+            "kind": "correction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired-date",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-forget-chain",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-noise",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          }
+        ],
+        "trap_regressions": []
+      },
+      "heldout": {
+        "changes": [
+          {
+            "id": "h-lex-tool",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-para-layout",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-follow",
+            "kind": "short-follow-up",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-dated",
+            "kind": "dated-contradiction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-correction",
+            "kind": "correction",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-name",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-role",
+            "kind": "forgetting",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-noise",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          }
+        ],
+        "trap_regressions": []
+      }
+    },
+    "vector": {
+      "dev": {
+        "changes": [
+          {
+            "id": "d-lex-instrument",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-last-day",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-desk",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-para-focus",
+            "kind": "paraphrase",
+            "change": "fixed"
+          },
+          {
+            "id": "d-para-posture",
+            "kind": "paraphrase",
+            "change": "fixed"
+          },
+          {
+            "id": "d-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-follow",
+            "kind": "short-follow-up",
+            "change": "fixed"
+          },
+          {
+            "id": "d-dated-current",
+            "kind": "dated-contradiction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-dated-old-token",
+            "kind": "dated-contradiction",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-correction",
+            "kind": "correction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired-date",
+            "kind": "currentness",
+            "change": "regressed"
+          },
+          {
+            "id": "d-forget-chain",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-noise",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          }
+        ],
+        "trap_regressions": []
+      },
+      "heldout": {
+        "changes": [
+          {
+            "id": "h-lex-tool",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-para-layout",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-follow",
+            "kind": "short-follow-up",
+            "change": "fixed"
+          },
+          {
+            "id": "h-dated",
+            "kind": "dated-contradiction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-correction",
+            "kind": "correction",
+            "change": "fixed"
+          },
+          {
+            "id": "h-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-name",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-role",
+            "kind": "forgetting",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-noise",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          }
+        ],
+        "trap_regressions": []
+      }
+    },
+    "hybrid": {
+      "dev": {
+        "changes": [
+          {
+            "id": "d-lex-instrument",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-last-day",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-desk",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-para-focus",
+            "kind": "paraphrase",
+            "change": "fixed"
+          },
+          {
+            "id": "d-para-posture",
+            "kind": "paraphrase",
+            "change": "fixed"
+          },
+          {
+            "id": "d-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-follow",
+            "kind": "short-follow-up",
+            "change": "fixed"
+          },
+          {
+            "id": "d-dated-current",
+            "kind": "dated-contradiction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-dated-old-token",
+            "kind": "dated-contradiction",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-correction",
+            "kind": "correction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired-date",
+            "kind": "currentness",
+            "change": "regressed"
+          },
+          {
+            "id": "d-forget-chain",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-noise",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          }
+        ],
+        "trap_regressions": []
+      },
+      "heldout": {
+        "changes": [
+          {
+            "id": "h-lex-tool",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-para-layout",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-follow",
+            "kind": "short-follow-up",
+            "change": "fixed"
+          },
+          {
+            "id": "h-dated",
+            "kind": "dated-contradiction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-correction",
+            "kind": "correction",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-name",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-role",
+            "kind": "forgetting",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-noise",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          }
+        ],
+        "trap_regressions": []
+      }
+    }
+  },
+  "decision": {
+    "baseline": {
+      "rules": {
+        "zero_traps_both_splits": true,
+        "no_lost_lexical_control": true,
+        "heldout_recall_and_fixed": false,
+        "no_heldout_regressed": true
+      },
+      "preferred": false
+    },
+    "vector": {
+      "rules": {
+        "zero_traps_both_splits": true,
+        "no_lost_lexical_control": true,
+        "heldout_recall_and_fixed": true,
+        "no_heldout_regressed": true
+      },
+      "preferred": true
+    },
+    "hybrid": {
+      "rules": {
+        "zero_traps_both_splits": true,
+        "no_lost_lexical_control": true,
+        "heldout_recall_and_fixed": true,
+        "no_heldout_regressed": true
+      },
+      "preferred": true
+    }
+  },
+  "elapsed_seconds": 39.00947425002232,
+  "network_attempts": [],
+  "memory_digest_unchanged": true
+}
