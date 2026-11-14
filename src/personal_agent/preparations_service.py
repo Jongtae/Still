@@ -506,17 +506,23 @@ class PreparationsService:
         now=service.preparations.clock() if now is None else now
         # #583: an unanswered look-back suggestion lapses after a week (one read when there is none).
         service.preparations.expire_suggestions(now)
-        # #638: a look back's one-off suggestion is offered without waiting for the owner (one read when there is none).
+        # Tell each untold dream row in waking hours, without waiting for another owner Work.
         try:service.offer_one_off_suggestion(now)
         except Exception as exc:  # noqa: BLE001 - an offer never stops the preparations tick
-            LOG.warning('one-off suggestion not offered kind=%s',type(exc).__name__)
+            LOG.warning('dream suggestion not told kind=%s',type(exc).__name__)
         # #780: the daily plan exists once the look back is on (one read when it already does).
         try:self.ensure_day_plan(now)
         except Exception as exc:  # noqa: BLE001 - setting the plan up never stops the preparations tick
             LOG.warning('daily plan not set up kind=%s',type(exc).__name__)
-        rows=service.preparations.due(now)
-        if not rows:return False
+        # Fetch enough to skip paused/untold dream rows without hiding due owner work.
+        rows=service.preparations.due(now,limit=prep.MAX_ACTIVE+prep.TICK_LIMIT)
+        picked=0
         for row in rows:
+            if row['state']==prep.STATE_SCHEDULED and row.get('accepted_by')==prep.ACCEPTED_DREAM:
+                if not self.look_back_on() or row.get('offered_at') is None:
+                    continue
+            if picked>=prep.TICK_LIMIT:break
+            picked+=1
             try:
                 # #306 review: delivered on the surface the preparation was made for, through its pairing now.
                 surface=next((item for item in service.surfaces if item.name==row['channel']),None)
@@ -571,7 +577,7 @@ class PreparationsService:
                 if work_id:LOG.info('preparation started id=%s work=%s kind=%s',row['id'],work_id,row['kind'])
             except Exception as exc:
                 LOG.warning('preparation tick failed id=%s kind=%s',row['id'],type(exc).__name__)
-        return True
+        return bool(picked)
 
     def watch_judgment(self, row, answer):
         """``'yes'`` / ``'no'`` / None: should this watch run reach the owner (#719)?
@@ -779,7 +785,7 @@ class PreparationsService:
     def suggest_preparations(self, anchor_id, items, judgments=None):
         """Schedule the look-back's preparations (#583, #717) as rows of its anchor Work; ``(outcomes, calls)``.
 
-        ``items`` passed ``om.validate_suggestions`` (two cited turns, or one for a one-off, #638).  Each
+        ``items`` passed ``om.validate_suggestions`` (at least one cited turn).  Each
         is then validated by ``schedule_preparation``'s own normalisers and skipped when a preparation
         with the same goal is active or the owner declined it recently (``declined_before``, whose
         judgment is the only model call here, counted in ``calls`` and asked only while the upkeep
@@ -821,7 +827,7 @@ class PreparationsService:
                                              channel=service.preparation_channel(anchor,fields['kind'],args['delivery']),
                                              created_from=anchor_id,state=prep.STATE_SCHEDULED,accepted_by=prep.ACCEPTED_DREAM,
                                              delivery_mode=fields['delivery_mode'],title=fields['title'],offer=fields['offer'],
-                                             origin=prep.ORIGIN_DREAM)
+                                             origin=prep.ORIGIN_DREAM,max_runs=None if once else prep.DREAM_MAX_RUNS)
             except prep.PreparationRefusal as exc:
                 outcomes.append({'reason':exc.code})
                 continue
@@ -833,58 +839,57 @@ class PreparationsService:
         return outcomes,calls
 
     def queue_preparation_suggestion(self, job, one_off=False):
-        """With the owner's own Work, tell once what the look back set up (#583, #717), or offer what it proposed.
+        """Tell every untold scheduled dream once, each with its own existing cancel notice.
 
-        #717: scheduled rows get one ``preparation_scheduled`` message with a cancel button; rows still
-        proposed from before get the proposal message below.
-
-        One ``preparation_proposed`` message on ``job``'s conversation, with the usual accept/decline
-        buttons, bound (digest) to exactly the suggestions of one look back and recorded on their anchor
-        Work, so ``offered_proposals`` and the answer paths act on those rows only.  At most one such
-        message per owner day, none while the owner paused upkeep; a message queued marks its rows
-        offered, so each is offered once.  #638: ``one_off`` (``offer_one_off_suggestion``) takes only a
-        look back that holds a one-off and, with no ``job``, uses the anchor Work's own conversation.
-        Returns the notification or None.
+        All anchors are considered together in waking hours.  A stable per-row notice key uses
+        the queue's existing uniqueness, including when a restart follows queueing but precedes
+        mark_offered.  Legacy unaccepted proposals keep their existing acceptance path.
+        ``one_off`` remains a compatibility argument; standing rows are told on the tick too.
         """
         service=self.service
-        from .current_context import owner_today
         now=service.preparations.clock()
-        last=service.preparations.last_suggestion_offered()
-        if last is not None and owner_today(service.store,last)==owner_today(service.store,now):return None
-        if not service.owner_model.settings()['enabled']:return None
-        anchor,rows=service.preparations.unoffered_suggestions(now,one_off=one_off)
-        if not rows:return None
-        job=job or service.store.job(anchor)
-        if not job:return None
-        scheduled=[row for row in rows if row['state']==prep.STATE_SCHEDULED]
-        if scheduled:
-            # #717: what the look back set up is told with a cancel button; it is not asked about.
-            rows=scheduled
-            service.queue_notification({**job,'id':anchor},'preparation_scheduled',
-                                    fingerprint=PREPARED_IDS_PREFIX+','.join(row['id'] for row in rows))
-            notification=service.store.notification_of(anchor,'preparation_scheduled')
-        else:
-            rows=prep.proposal_page(rows)[0]
-            service.queue_notification({**job,'id':anchor},'preparation_proposed',fingerprint=prep.digest(rows))
-            # A surface queues it only for its current paired conversation (and not every surface returns the row).
-            notification=service.store.notification_of(anchor,'preparation_proposed')
-        if notification is None:return None
-        service.preparations.mark_offered(rows,now)
-        LOG.info('preparation suggestion told work=%s anchor=%s count=%s',job['id'],anchor,len(rows))
-        return notification
+        if not self.look_back_on():
+            return None
+        first=None
+        tellable=service._owner_local_hour(now) in prep.SUGGESTION_OFFER_HOURS
+        rows=service.preparations.untold_scheduled_suggestions() if tellable else []
+        for row in rows:
+            anchor=service.store.job(row['created_from'])
+            if not anchor:continue
+            surface=service.surface_of(anchor)
+            if surface is None:continue
+            notice_key=f"{row['created_from']}/dream:{row['id']}"
+            # Preserve the anchor's content time for the existing work-mode delivery guard,
+            # even though each row needs its own unique notification key.
+            notification=service.store.telegram.queue_notification(
+                notice_key,anchor['chat_id'],surface.owner_generation(),'preparation_scheduled',
+                fingerprint=PREPARED_IDS_PREFIX+row['id'],surface=surface.name,created=anchor['created'])
+            if notification is None:continue
+            service.preparations.mark_offered([row],now)
+            first=first or notification
+            LOG.info('preparation suggestion told anchor=%s id=%s',row['created_from'],row['id'])
+        # Only legacy proposals still need the old grouped offer/acceptance message.
+        anchor,rows=service.preparations.unoffered_suggestions(now,one_off=job is None)
+        if rows:
+            target=job or service.store.job(anchor)
+            if target:
+                rows=prep.proposal_page(rows)[0]
+                service.queue_notification({**target,'id':anchor},'preparation_proposed',fingerprint=prep.digest(rows))
+                notification=service.store.notification_of(anchor,'preparation_proposed')
+                if notification is not None:
+                    service.preparations.mark_offered(rows,now)
+                    first=first or notification
+        return first
 
     def offer_one_off_suggestion(self, now=None):
-        """#638: a look back that holds a one-off suggestion is offered without waiting for the owner's next Work.
+        """Tell all untold dream rows on the tick, within the owner's waking hours.
 
-        A dated need cannot wait for the owner to come back, so on the preparations tick, inside the owner's
-        ``prep.SUGGESTION_OFFER_HOURS``, ``queue_preparation_suggestion`` offers it on its anchor Work's
-        conversation under the same cap and pause.  Nothing unoffered is one read.  Returns the notification or None.
+        The historical entry point also tells standing rows so they do not wait for a new Work.
         """
         service=self.service
-        if not service.preparations.has_unoffered_one_off():return None
         now=service.preparations.clock() if now is None else now
         if service._owner_local_hour(now) not in prep.SUGGESTION_OFFER_HOURS:return None
-        return service.queue_preparation_suggestion(None,one_off=True)
+        return service.queue_preparation_suggestion(None)
 
     def preparation_cancel_markup(self, notification_id):
         """#1455: the one button that cancels exactly the reservations a message confirmed."""
@@ -902,7 +907,11 @@ class PreparationsService:
     def scheduled_notice_text(self, ids):
         """#1455: what a directly scheduled message says: each reservation, and that it is cancelled here."""
         service=self.service
-        rows=[row for row in (service.preparations.get(item) for item in ids) if row and row['state'] in prep.ACTIVE_STATES]
+        # A one-off can finish while its already-queued notice is still waiting for delivery.
+        # Keep that receipt visible too, so settling the first run cannot silently erase it.
+        rows=[row for row in (service.preparations.get(item) for item in ids) if row and (
+            row['state'] in prep.ACTIVE_STATES or row.get('accepted_by')==prep.ACCEPTED_DREAM
+            and row['state'] in (prep.STATE_DELIVERED,prep.STATE_FAILED,prep.STATE_UNKNOWN))]
         if not rows:return None
         return (msg('notice.preparation_scheduled')+'\n'+'\n'.join(service._redact_known_secrets(prep.proposal_summary(row,service.home_zone(),brief=False)) for row in rows)
                 +'\n'+msg('notice.preparation_cancel_hint'))

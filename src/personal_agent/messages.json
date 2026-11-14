@@ -1,4 +1,10 @@
 {
+ "preparations.dream_limit": {
+  "ko": "돌아보기에서 마련한 진행 중인 준비가 {maximum}개라 더 만들지 않았어요.",
+  "en": "There are already {maximum} active preparations from look-back, so no more were added.",
+  "ja": "振り返りで用意した進行中の準備がすでに{maximum}件あるため、追加しませんでした。",
+  "zh": "回顾安排的准备已有{maximum}项正在进行，因此没有再添加。"
+ },
  "button.restore_reservation": {
   "ko": "취소 되돌리기",
   "en": "Undo cancel",

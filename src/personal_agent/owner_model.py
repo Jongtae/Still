@@ -537,10 +537,8 @@ def dream_shape(data):
 def validate_suggestions(suggestions, refs, turn_days, limit=DREAM_SUGGESTIONS):
     """``(kept, dropped)`` of a look back's preparation suggestions (#583, deterministic).
 
-    A standing suggestion (a rhythm or, #717, a standing interest) rests on at least two turns the dream
-    read (``refs``); #717 dropped the different-owner-dates rule, so an interest shown on one busy day
-    counts.  #638: a one-off (``SUGGESTION_ONCE``) cannot repeat; it rests on at least one turn the
-    dream read, where the owner said what is coming.  At most ``limit`` are kept.  What the
+    Every suggestion rests on at least one turn the dream read (``refs``).  The owner's AI judges
+    whether those turns show a standing interest, a rhythm or a dated need.  At most ``limit`` are kept.  What the
     suggestion asks for is the AI's (C16); its fields are validated where it is stored, by
     ``schedule_preparation``'s own normalisers.  A dropped entry names its position and reason, never its text.
     """
@@ -552,10 +550,6 @@ def validate_suggestions(suggestions, refs, turn_days, limit=DREAM_SUGGESTIONS):
             reason = 'shape'
         elif not named:
             reason = 'sources'
-        elif item.get('recurrence') == SUGGESTION_ONCE:
-            pass  # #638: one cited turn is the evidence of a dated need
-        elif len(named) < 2:
-            reason = 'one-occasion'
         if reason is None and len(kept) >= limit:
             reason = 'limit'
         if reason:
