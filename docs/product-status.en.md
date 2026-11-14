@@ -38,7 +38,7 @@ Source: the `carries`, `observed` and `not_claimed` fields in the [manifest](rel
 
 ### Newer main source, not a new release
 
-At the reviewed revision, main includes a Linux desktop Chromium browser path, peer-agent work under the current connection/delegation design, retirement of the old same-host family setup/sharing paths, and additional result/recovery fixes. These changes must not be advertised as included in the published build. The source version `0.5.1` is a placeholder, not a published tag or a selection of the next release version.
+At the reviewed revision, main includes the #817 owner's-machine changes (the owner's own data is not masked; public pages are read at any public address; a broad folder such as home is granted after one confirmation; a direct-API model reads documents without a separate consent; a scheduled run of an accepted preparation may ask for sign-in and continue once, while work Still set up itself never pays), a Linux desktop Chromium browser path, peer-agent work under the current connection/delegation design, retirement of the old same-host family setup/sharing paths, and additional result/recovery fixes. These changes must not be advertised as included in the published build. The source version `0.5.1` is a placeholder, not a published tag or a selection of the next release version.
 
 The [Linux platform guide](guide/platforms.en.md#browser-on-a-linux-desktop) states display, sandbox and keyring requirements and separates CI evidence from an owner's desktop session. For peer delegation, use the [current connection contract](connection-delegation-contract.en.md), not a retired family setup prompt. Current support still depends on the exact route, configuration and named tests or observations.
 
