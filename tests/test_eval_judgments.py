@@ -342,6 +342,78 @@ class JudgmentTests(unittest.TestCase):
             for path in paths:
                 self.assertEqual(path.stat().st_mode & 0o777, 0o600)
 
+    def test_comparison_checks_case_content_and_effort(self):
+        cases = subset(self.cases, 'goal-served')
+        rows, _, _ = self.measure(cases)
+        runtime = {'active': {'transport': 'fixture', 'effort': 'low'}}
+        baseline = j.report(rows, {}, runtime, cases=cases)
+        self.assertTrue(j.compare(baseline, copy.deepcopy(baseline))['same_conditions'])
+        for field in ('input', 'expect', 'catalogue'):
+            changed = copy.deepcopy(cases)
+            if field == 'input':
+                changed['cases'][0]['input']['request'] = 'CASE-PRIVATE-824'
+            elif field == 'expect':
+                changed['cases'][0]['expect']['outcome'] = 'no'
+            else:
+                changed['catalogue']['workers'][0]['name'] = 'CASE-PRIVATE-824'
+            with self.subTest(field=field):
+                head = j.report(rows, {}, runtime, cases=changed)
+                comparison = j.compare(baseline, head)
+                self.assertFalse(comparison['same_conditions'])
+                self.assertIn('case_set_digest differs', comparison['reasons'])
+                self.assertNotIn('CASE-PRIVATE-824', json.dumps(head))
+        head = copy.deepcopy(baseline)
+        head['runtime']['active']['effort'] = 'high'
+        comparison = j.compare(baseline, head)
+        self.assertFalse(comparison['same_conditions'])
+        self.assertIn('runtime.effort differs', comparison['reasons'])
+        self.assertIn('changes', comparison, 'configuration comparisons still expose result deltas')
+
+    def test_case_digest_ignores_dictionary_key_order(self):
+        cases = subset(self.cases, 'goal-served')
+        # Reorder every JSON object's keys while preserving array order.
+        reordered = json.loads(json.dumps(cases), object_pairs_hook=lambda pairs: dict(reversed(pairs)))
+        rows, _, _ = self.measure(cases)
+        runtime = {'active': {'transport': 'fixture', 'effort': None}}
+        baseline = j.report(rows, {}, runtime, cases=cases)
+        head = j.report(rows, {}, runtime, cases=reordered)
+        self.assertEqual(baseline['case_set_digest'], head['case_set_digest'])
+        self.assertTrue(j.compare(baseline, head)['same_conditions'])
+
+    def test_qualification_identity_missing_or_unavailable_is_unverified(self):
+        cases = subset(self.cases, 'goal-served')
+        rows, _, _ = self.measure(cases)
+        current = j.report(rows, {}, {'active': {'effort': None}}, cases=cases)
+        legacy = copy.deepcopy(current)
+        del legacy['qualification_identity']
+        self.assertFalse(j.compare(legacy, current)['same_conditions'])
+        with patch.object(j.inspect, 'getsource', side_effect=OSError('source unavailable')):
+            unavailable = j.report(rows, {}, {'active': {'effort': None}}, cases=cases)
+        comparison = j.compare(unavailable, unavailable)
+        self.assertFalse(comparison['same_conditions'])
+        self.assertIn('qualification identity missing; qualification equivalence is unverified', comparison['reasons'])
+        changed = copy.deepcopy(current)
+        changed['runtime']['suite_version'] = 'changed'
+        self.assertIn('runtime.suite_version differs', j.compare(current, changed)['reasons'])
+
+    def test_legacy_comparison_discloses_missing_conditions(self):
+        cases = subset(self.cases, 'goal-served')
+        rows, _, _ = self.measure(cases)
+        current = j.report(rows, {}, {'active': {'effort': None}}, cases=cases)
+        for missing in ('case_set_digest', 'effort', 'both'):
+            legacy = copy.deepcopy(current)
+            if missing in ('case_set_digest', 'both'):
+                del legacy['case_set_digest']
+            if missing in ('effort', 'both'):
+                del legacy['runtime']['active']['effort']
+            for before, after in ((legacy, current), (current, legacy), (legacy, legacy)):
+                with self.subTest(missing=missing, before=before is legacy, after=after is legacy):
+                    comparison = j.compare(before, after)
+                    self.assertFalse(comparison['same_conditions'])
+                    self.assertTrue(any('missing' in reason and 'unverified' in reason
+                                        for reason in comparison['reasons']))
+                    self.assertIn('unverified', j.compare_markdown(comparison))
+
     def test_cli_plan_missing_seed_and_fake_live_run(self):
         with redirect_stdout(io.StringIO()) as out:
             self.assertEqual(cli.main(['judgments', 'plan']), 0)
@@ -354,6 +426,7 @@ class JudgmentTests(unittest.TestCase):
             (seed / 'private').mkdir(parents=True)
             (seed / 'private/quickstart.db').write_bytes(b'synthetic seed')
             created = []
+            qualification_only = False
 
             def factory(data):
                 self.assertNotEqual(data, seed)
@@ -368,7 +441,8 @@ class JudgmentTests(unittest.TestCase):
                     finally:
                         service.cap = None
                 service.work_decision_scope = scope
-                transport = Transport([a for c in self.cases['cases'] if c['role'] == 'goal_reached' for a in answers(c)])
+                transport = Transport([] if qualification_only else
+                                      [a for c in self.cases['cases'] if c['role'] == 'goal_reached' for a in answers(c)])
                 inner = d.ModelDecisionEngine(ModelAdapter(transport=transport),
                                              lambda: ({'provider': 'openai', 'endpoint': 'https://api.openai.com/v1', 'model': 'gpt-4o-mini'}, 'fixture-key'),
                                              audit=lambda record: service.record_decision(record), now=transport.clock)
@@ -384,6 +458,11 @@ class JudgmentTests(unittest.TestCase):
             pin.assert_called_once()
             self.assertEqual(pin.call_args.args[1], 'fixture-model')
             saved = json.loads(next((root / 'reports').glob('*.json')).read_text())
+            expected = j.report(saved['rows'], {}, saved['runtime'], cases=self.cases)
+            self.assertEqual(saved['case_set_digest'], expected['case_set_digest'])
+            self.assertRegex(saved['case_set_digest'], r'^[0-9a-f]{64}$')
+            self.assertIsNone(saved['runtime']['active']['effort'])
+            self.assertTrue(j.compare(saved, copy.deepcopy(saved))['same_conditions'])
             self.assertEqual(saved['pinned_model'], 'fixture-model')
             self.assertIn('Pinned model: fixture-model', out.getvalue())
             self.assertEqual(saved['evidence_class'], 'fixture')
@@ -394,6 +473,31 @@ class JudgmentTests(unittest.TestCase):
             self.assertFalse(created[0][0].exists())
             self.assertTrue(seed.exists())
             self.assertIn('report:', out.getvalue())
+            qualification_only = True
+            qualification_reports = []
+            for variant, detail, expected in (('baseline', 'first', 'failed'),
+                                              ('input', 'QUALIFICATION-PRIVATE-824', 'failed'),
+                                              ('expectation', 'first', 'partial')):
+                case = s.decision_qualification._choose(
+                    'conversation-projection', {'observed_status': 'failed', 'observed_detail': detail},
+                    ('failed', 'partial'), 'Report the observed status.', expected=expected)
+                destination = root / variant
+                with patch.dict(os.environ, {'AGENTOS_EVAL_HOME': str(root / 'home')}), \
+                        patch.object(j, 'service_factory', factory), \
+                        patch.object(s.decision_qualification, 'CASES', (('same-id', case),)), \
+                        redirect_stdout(io.StringIO()):
+                    cli.main(['judgments', 'run', '--seed', str(seed), '--roles', 'qualification-suite',
+                              '--out', str(destination)])
+                qualification_reports.append(json.loads(next(destination.glob('*.json')).read_text()))
+            baseline = qualification_reports[0]
+            self.assertTrue(j.compare(baseline, baseline)['same_conditions'])
+            for changed in qualification_reports[1:]:
+                self.assertEqual(baseline['case_set_digest'], changed['case_set_digest'])
+                self.assertEqual(baseline['rows'][0]['id'], changed['rows'][0]['id'])
+                comparison = j.compare(baseline, changed)
+                self.assertFalse(comparison['same_conditions'])
+                self.assertIn('qualification identity differs', comparison['reasons'])
+                self.assertNotIn('QUALIFICATION-PRIVATE-824', json.dumps(changed))
 
 
 class RequalificationTests(ServiceFixture):
