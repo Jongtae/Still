@@ -44,18 +44,21 @@ class DocumentTests(unittest.TestCase):
  def test_rejects_bad_office_document(self):
   (self.root/'bad.docx').write_text('not a zip')
   with self.assertRaises(ValueError):self.caps.read_file('root','bad.docx')
- def test_external_document_boundary_requires_current_approval(self):
+ def test_an_external_model_reads_documents_without_a_sharing_approval(self):
+  # #820: the configured model reads the owner's documents; there is no document-sharing consent.
   service=AgentService(self.store)
   service.save_model({'provider':'compatible','endpoint':'https://example.test/v1','model':'test','api_key':'test-key'})
-  boundary=service.document_boundary();self.assertTrue(boundary['requires_approval'])
-  blocked=Capabilities(self.store,None,{},'','job',lambda *args:None,document_access=not boundary['requires_approval'])
-  with self.assertRaisesRegex(ValueError,'문서 공유를 승인'):blocked.find_files('Aurora')
-  self.assertTrue(service.set_document_approval({'approved':True})['approved'])
-  allowed=Capabilities(self.store,None,{},'','job',lambda *args:None,document_access=not service.document_boundary()['requires_approval'])
-  self.assertTrue(allowed.find_files('Aurora')['files'])
-  service.save_roots({'paths':[str(self.root)]});self.assertTrue(service.document_boundary()['requires_approval'])
+  self.assertEqual(service.document_boundary(),{'external_model':True,'requires_approval':False})
+  self.assertFalse(hasattr(service,'set_document_approval'))
+  self.assertTrue(Capabilities(self.store,None,{},'','job',lambda *args:None).find_files('Aurora')['files'])
+  service.save_roots({'paths':[str(self.root)]});self.assertFalse(service.document_boundary()['requires_approval'])
   service.save_model({'provider':'ollama','endpoint':'http://127.0.0.1:11434','model':'local'})
   self.assertFalse(service.document_boundary()['external_model'])
+ def test_a_route_without_documents_still_refuses_a_document_read(self):
+  # The route boundary (strict-isolated CLI, an a2a scope without folders) is not the removed consent.
+  blocked=Capabilities(self.store,None,{},'','job',lambda *args:None,document_access=False)
+  with self.assertRaisesRegex(ValueError,'연결 문서 읽기가 포함되지 않아'):blocked.find_files('Aurora')
+  with self.assertRaisesRegex(ValueError,'연결 문서 읽기가 포함되지 않아'):blocked.read_file('root','brief.txt')
  def test_document_evidence_no_longer_blocks_a_web_search(self):
   # #826 (owner decision): a document read and a web search may share a Work; the label is still recorded.
   plans=[]

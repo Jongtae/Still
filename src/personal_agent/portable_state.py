@@ -15,7 +15,7 @@ from .manifests import validate
 FORMAT = "agentos-owner-state-v1"
 ROOT = "agentos-owner-state"
 DB_RELATIVE = "private/quickstart.db"
-_RESET_CONFIG = ("telegram", "telegram_status", "model", "model_test", "model_draft_test", "subscription_engine", "document_sharing", "tool_run", "file_roots", "file_workspace", "file_workspace_document_jobs", "capability_registry", "connector_contract_state", "connector_pending_work", "a2a_peers")
+_RESET_CONFIG = ("telegram", "telegram_status", "model", "model_test", "model_draft_test", "subscription_engine", "tool_run", "file_roots", "file_workspace", "file_workspace_document_jobs", "capability_registry", "connector_contract_state", "connector_pending_work", "a2a_peers")
 
 def _sha256(path):
     digest = hashlib.sha256()

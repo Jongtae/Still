@@ -3710,7 +3710,7 @@ class JudgmentHistoryAudit(Harness):
         self.assertTrue(self.store.work_decisions(ident))
         self.assertTrue(all('context_messages' not in record for record in self.store.work_decisions(ident)))
 
-    def test_direct_evaluator_excludes_document_history_and_counts_its_actual_input(self):
+    def test_direct_worker_keeps_document_history_and_the_evaluator_counts_its_actual_input(self):
         import test_agency_loop as loop
         self.history()
         self.use_main('openai')
@@ -3723,7 +3723,8 @@ class JudgmentHistoryAudit(Harness):
         self.assertEqual(row['status'], 'succeeded')
         worker = json.dumps(script.bodies[0]['messages'])
         for hidden in ('DOCUMENT-REQUEST', 'DOCUMENT-EXCERPT'):
-            self.assertNotIn(hidden, worker, 'the existing API document-sharing boundary is unchanged')
+            # #820: the configured model sees the earlier document Work; the judgments still do not (#826).
+            self.assertIn(hidden, worker)
             self.assertNotIn(hidden, self.asked_plans[-1][0].facts['recent_conversation'])
             self.assertNotIn(hidden, self.asked_goals[-1].facts['recent_conversation'])
         self.assertIn('VISIBLE-ANSWER', worker)

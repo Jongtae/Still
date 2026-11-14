@@ -288,7 +288,6 @@ class DirectMessageSurface(ConversationSurface):
         service = self.service
         if not self.owns(job):
             return None
-        fingerprint = service.document_fingerprint() if kind == 'approval_needed' else fingerprint
         return service.store.queue_notification(job['id'], job['chat_id'], self.owner_generation(), kind, fingerprint,
                                                 surface=self.name)
 

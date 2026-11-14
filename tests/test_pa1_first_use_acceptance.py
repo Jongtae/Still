@@ -114,9 +114,11 @@ JOURNEY_EVIDENCE = {
     'J5': 'covered offline through the generic tools (#23 retired the '
           'category tool `bounded_public_research` and its price/fee/'
           'inventory classifier). The worker searches with web_search and '
-          'reads results with public_page_read, which accepts a result URL '
-          'this Work\'s own search returned or an owner-approved page; the '
-          'reader re-checks that set on every redirect. Which facts a page '
+          'reads pages with public_page_read, which since #820 takes any '
+          'public address with no owner approval or search-result scope; the '
+          'reader refuses loopback, private and link-local destinations, '
+          'checked again on every redirect, and an address carrying a stored '
+          'secret is not requested. Which facts a page '
           'supports is the worker\'s judgment, not Still code, so no '
           'discrimination is claimed here. No network was touched.',
     'J6': 'covered: prose capture as canonical Memory, correction by '
@@ -168,7 +170,7 @@ class _FakeEgress:
     leave the machine.  Replacing it is the same kind of substitution as the
     Telegram and Gmail transports above: an outbound transport, not a policy
     object.  Every authority decision - whether a read is allowed at all,
-    which URLs are in scope - stays in the shipped code being tested.
+    what its plan carries - stays in the shipped code being tested.
     """
 
     def __init__(self):
@@ -555,7 +557,7 @@ class FirstUseEndToEndAcceptance(unittest.TestCase):
             self.assertTrue(self.web('/api/home')['model_connected'])
 
         with self.subTest('J5 bounded public research cites what it observed'):
-            self.web('/api/public-pages/approval', {'approved': True, 'urls': [PAGE_URL]})
+            # #820: no page approval is set up first; the page is read at its public address.
             self.model_plan = [('web_search', '{"query": "노이즈캔슬링 헤드폰 비교"}'),
                                ('public_page_read', json.dumps({'url': PAGE_URL}))]
             self.model_text = ('관찰됨: Model A 재생 시간 30시간. '
@@ -579,10 +581,10 @@ class FirstUseEndToEndAcceptance(unittest.TestCase):
             # so the citation was appended by the product.
             self.assertIn(PAGE_URL, job['response'])
             # The egress layer was asked for exactly the bounded plan, and
-            # the page read carried the owner-approved scope with it.
+            # the page read carried only its address (#820: no approved scope).
             self.assertEqual([plan['tool'] for plan in self.network.plans],
                              ['web_search', 'public_page_read'])
-            self.assertEqual(self.network.plans[1]['approved_urls'], [PAGE_URL])
+            self.assertEqual(self.network.plans[1], {'tool': 'public_page_read', 'url': PAGE_URL})
             # Per-source evidence is durable and visible on the web surface.
             sources = [event['trace']['evidence']['sources']
                        for event in self.store.task_events(research)
@@ -669,8 +671,7 @@ class FirstUseEndToEndAcceptance(unittest.TestCase):
             configured = self.web('/api/file-workspace', {'references': [str(self.reference)],
                                                           'workspace': str(self.workspace)})
             self.assertEqual(len(configured['references']), 1)
-            # Connecting a folder re-opened the document-sharing question, and
-            # the local model answers it without an external boundary.
+            # #820: connecting a folder asks no document-sharing question.
             self.assertFalse(self.service.document_boundary()['requires_approval'])
 
             # #182: the worker finds and reads the reference itself, then saves its summary.
@@ -832,33 +833,27 @@ class FirstUseEndToEndAcceptance(unittest.TestCase):
                 self.web('/api/state', opener=build_opener())
             self.assertEqual(refused.exception.code, 401)
 
-        with self.subTest('negative: an unapproved external model gets no owner document'):
+        with self.subTest('#820: an external model reads the granted document without a sharing approval'):
             self.connect_model('https://example.test/v1', 'external-model-key')
-            self.assertTrue(self.service.document_boundary()['requires_approval'])
+            self.assertFalse(self.service.document_boundary()['requires_approval'])
             outbound = len(self.calls)
-            # #182: the request reaches the worker; its document read is refused before any
-            # document text is read, so none reaches the external model and nothing is saved.
-            self.model_plan = [('find_files', '{"query": "출장 계획"}'),
-                               ('save_result', json.dumps({'title': '외부 전송 시도', 'content': MODEL_ANSWER},
-                                                          ensure_ascii=False))]
-            blocked = self.says(25, '“출장 계획” 자료를 요약해 “외부 전송 시도”로 저장해줘')
+            self.model_plan = [('read_file', json.dumps({'root_id': reference_root, 'path': 'trip.md'}))]
+            external_read = self.says(25, '“출장 계획” 자료를 읽어줘')
             self.drain()
             self.model_plan = []
-            # The worker's document search was refused naming the approval, and the owner was asked for it.
-            refused = [event['trace'] for event in self.store.task_events(blocked)
-                       if event['tool'] == 'find_files' and event['status'] == 'failed']
-            self.assertIn('문서 공유를 승인', refused[0]['error'])
-            self.assertEqual([row['kind'] for row in self.store.task_notifications(blocked)], ['approval_needed'])
-            self.assertEqual(self.store.task_artifacts(blocked), [])
-            self.assertNotIn('출장 계획 초안',
-                             json.dumps(self.calls[outbound:], ensure_ascii=False))
+            refused = [event for event in self.store.task_events(external_read)
+                       if event['tool'] in ('find_files', 'read_file') and event['status'] == 'failed']
+            self.assertEqual(refused, [])
+            self.assertNotIn('approval_needed', [row['kind'] for row in self.store.task_notifications(external_read)])
+            # The configured model received what it read; the original is unchanged and nothing new was saved.
+            self.assertIn('출장 계획 초안', json.dumps(self.calls[outbound:], ensure_ascii=False))
             self.assertEqual(sorted(path.name for path in self.workspace.glob('*.md')),
                              ['9월 출장 정리.md'])
 
         with self.subTest('J8 restart preserves what the contracts promise'):
             # Leave one Work mid-flight so recovery has something to decide.
             with self.store.db() as db:
-                db.execute("UPDATE jobs SET status='running' WHERE id=?", (blocked,))
+                db.execute("UPDATE jobs SET status='running' WHERE id=?", (external_read,))
             restarted_store = QuickStore(str(self.root / 'data'))
             restarted = self.boot(restarted_store)
             # `AgentService.start` runs `store.recover()` as its first
@@ -866,9 +861,9 @@ class FirstUseEndToEndAcceptance(unittest.TestCase):
             restarted_store.recover()
 
             # C8: an interrupted Work stays explicit and is not auto-retried.
-            self.assertEqual(restarted_store.job(blocked)['status'], 'interrupted')
+            self.assertEqual(restarted_store.job(external_read)['status'], 'interrupted')
             self.assertEqual(restarted_store.recovery_summary()['interrupted_jobs'], 1)
-            self.assertEqual(restarted.task_progress(blocked)['selected']['status_label'],
+            self.assertEqual(restarted.task_progress(external_read)['selected']['status_label'],
                              '확인 필요')
             self.assertEqual(restarted.home()['state'], 'attention')
 

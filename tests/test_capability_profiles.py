@@ -115,7 +115,7 @@ class OneActionSource(_Store):
                                  'search_memory': True, 'search_conversation': True, 'save_memory': False,
                                  # #794 phase 3: the owner's exact forget/delete/undo.
                                  'forget_record': False,
-                                 # #826: the connected-folder documents and approved pages.
+                                 # #826: the connected-folder documents and public pages.
                                  'find_files': True, 'list_roots': True, 'read_file': True, 'public_page_read': True,
                                  # #1172: the owner's Drive reads.
                                  'drive_search': True, 'drive_read': True,
@@ -403,16 +403,20 @@ class EffectiveAvailability(_Store):
             caps.execute('delegate_agent', {'agent_id': 'scout', 'task': 'again'})
         caps.execute('delegate_agent', {'agent_id': 'researcher', 'task': 'built-in control'})
 
-    def test_an_owner_page_approval_serves_the_cli_route_within_its_scope(self):
-        """#826: the owner's page approval is the grant on every route; it still bounds each read."""
-        caps = self.caps(public_page_scope=['https://example.com/a'])
+    def test_a_page_read_serves_the_cli_route_at_any_public_address(self):
+        """#820: no page approval bounds the CLI route; a stored secret in the address is still refused there."""
+        caps = self.caps(secret_redactor=lambda text: text.replace('OWNERSECRET99', '[redacted]'))
         tools = AgentOSMcpTools(caps)
         self.assertIn('public_page_read', [t['name'] for t in tools.definitions()])
         self.assertNotIn('public_page_read', route_unavailable(BOUNDED_PROFILE))
         tools.call('public_page_read', {'url': 'https://example.com/a'})
-        with self.assertRaises(ValueError):
-            tools.call('public_page_read', {'url': 'https://example.com/b'})
-        self.assertEqual([plan['url'] for plan in self.network.plans], ['https://example.com/a'])
+        tools.call('public_page_read', {'url': 'https://example.com/b'})
+        with self.assertRaises(ValueError) as caught:
+            tools.call('public_page_read', {'url': 'https://example.com/c?k=OWNERSECRET99'})
+        self.assertEqual(getattr(caught.exception, 'code', None), 'secret_in_address')
+        self.assertIs(getattr(caught.exception, 'ran', None), False)
+        self.assertEqual(self.network.plans, [{'tool': 'public_page_read', 'url': 'https://example.com/a'},
+                                              {'tool': 'public_page_read', 'url': 'https://example.com/b'}])
 
 
 class SettingsProjection(_Store):

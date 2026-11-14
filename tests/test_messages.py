@@ -28,7 +28,7 @@ MIGRATED_MODULES = {
         '(?:api[ _-]?key|password|token|secret|비밀번호|토큰|키)',  # Recognizes credential-shaped input; never emitted.
         '이 페이지는 로그인이 필요해요. 이 실행이 끝나면 Still이 이 Mac에 로그인 창을 열고 소유자에게 로그인을 요청합니다. 소유자가 로그인하고 창을 닫으면 이 요청을 한 번 이어서 처리합니다. 비밀번호는 입력하지 말고, 지금까지 확인한 내용으로 이번 답을 마치세요.',  # Model-only browser sign-in instructions.
         '이 페이지는 로그인이 필요해요. 이 페이지에 소유자가 이미 쓰는 다른 계정으로 계속하는 선택지(계정 제공자의 로그인 버튼)가 있으면 눌러 보세요. 그 계정에 로그인되어 있으면 비밀번호 없이 로그인되고, 그대로 요청을 이어서 처리하면 됩니다. 그런 선택지가 없거나 비밀번호·추가 인증을 요구하면 입력하지 말고, 지금까지 확인한 내용으로 이번 답을 마치세요. 그러면 이 실행이 끝난 뒤 Still이 이 Mac에 로그인 창을 열고 소유자에게 로그인을 요청하며, 소유자가 로그인하고 창을 닫으면 이 요청을 한 번 이어서 처리합니다.',  # Model-only browser sign-in instructions.
-        '이 페이지는 로그인이 필요해요. 이 실행은 소유자가 없는 예약 실행이라 Still은 로그인을 요청하지 않았고, 소유자를 기다리는 것도 없어요. 비밀번호는 입력하지 말고, 로그인 없이 확인할 수 있는 다른 경로가 있으면 그것으로 확인하세요. 끝내 확인하지 못한 부분은 답에서 확인하지 못했다고 짧게 밝히세요.',  # Model-only browser sign-in instructions (#815).
+        '이 페이지는 로그인이 필요해요. 이 실행은 소유자에게 묻지 않는 예약 실행이라 Still은 로그인을 요청하지 않았고, 소유자를 기다리는 것도 없어요. 비밀번호는 입력하지 말고, 로그인 없이 확인할 수 있는 다른 경로가 있으면 그것으로 확인하세요. 끝내 확인하지 못한 부분은 답에서 확인하지 못했다고 짧게 밝히세요.',  # Model-only browser sign-in instructions (#815).
         '이 페이지는 로그인이 필요해요. 이 요청은 이미 다른 사이트의 로그인을 기다리고 있어 이 사이트의 로그인은 지금 요청되지 않습니다. 비밀번호는 입력하지 말고, 지금까지 확인한 내용으로 답을 마치면서 이 사이트에도 로그인이 필요하다고 말하세요.',  # Model-only browser sign-in instructions.
         '이름만 확인했습니다. 서버 실행·인증·도구 준비 여부는 검증하지 않았습니다. AI 제공 연결은 현재 작업의 도구 목록에서 별도로 확인하세요.',  # Model-only tool result or next_step guidance.
         'configured 또는 registry를 선택하세요.',  # Model-only tool result or next_step guidance.
@@ -94,7 +94,6 @@ MIGRATED_MODULES = {
             'Search the owner\'s current saved Memory for a fact relevant to this request. Use concise terms from the request and likely synonyms (for example, sushi and 초밥); results include saved_at and a source reference with source_status, as in list_memory, so you can say why you know something. Search only when prior saved information can help. It returns a bounded set and never reads another owner\'s data.'
         ),
         '메모 요약',  # Owner-input command; never emitted.
-        '승인한 공개 페이지 범위를 벗어난',  # Recognizes a downstream error; compared, never emitted.
         'finish 인수가 올바르지 않습니다. status, evidence_refs(도구 호출 id 목록), summary를 지정하세요.',  # Model-only finish-claim retry guidance.
         '완료(done)에는 요청이 끝났음을 보여 주는 도구 호출 id가 evidence_refs에 하나 이상 필요합니다. 도구가 필요 없는 대화라면 finish 없이 바로 답하세요.',  # Model-only finish-claim retry guidance.
         'evidence_refs에 이 작업에서 실행되지 않은 도구 호출 id가 있습니다. 실제로 실행된 호출 id만 지정하세요.',  # Model-only finish-claim retry guidance.

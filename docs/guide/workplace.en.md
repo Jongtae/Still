@@ -20,7 +20,7 @@ Private-use destinations are refused unless the owner declares an exact host in 
 
 An entry is a hostname with an optional port, such as `jira.corp.example` or `gitlab.corp.example:8443`. IP literals, wildcards and `localhost` are not accepted. Without an explicit port, only 443 and 80 are allowed. A declared hostname may resolve to admitted private-use address ranges, but never loopback, link-local or cloud metadata addresses. Undeclared private addresses remain refused.
 
-This declaration affects approved page reads, browser access, MCP setup, API probes and code runs where their respective controls permit them. A code run naming intranet hosts may name only intranet hosts. Reachability does not create credentials, write permission or an action approval. Removing a host takes effect on the next request; dependent settings remain stored but cannot use the removed destination.
+This declaration affects public page reads (which, since #820, take any public or declared address without an approval), browser access, MCP setup, API probes and code runs where their respective controls permit them. A code run naming intranet hosts may name only intranet hosts. Reachability does not create credentials, write permission or an action approval. Removing a host takes effect on the next request; dependent settings remain stored but cannot use the removed destination.
 
 ### Proxy and certificate boundaries
 

@@ -495,7 +495,7 @@ finally:
             request(client,base,'/api/model',{**model,'test_proof':tested['test_proof']})
             self.assertTrue(request(client,base,'/api/model/test',{})['ok'])
             request(client,base,'/api/file-workspace',{'references':[str(reference)],'workspace':str(workspace)})
-            request(client,base,'/api/documents/approval',{'approved':True})
+            # #820: no document-sharing approval precedes the external model's reads.
             self.script_worker(('find_files',{'query':'Launch review'}),
                                ('read_file',lambda:{'root_id':self.reference_root(),'path':'launch.md'}),
                                ('save_result',{'title':'Launch notes','content':'Launch review summary: ship October 12.'}))
@@ -597,17 +597,19 @@ finally:
         self.assertEqual(len(files.search('recovery')),1)
         with self.store.db() as db:self.assertEqual(db.execute("SELECT count(*) FROM file_workspace_results WHERE state='current'").fetchone()[0],1)
 
-    def test_workspace_summary_blocks_unapproved_external_model_before_send(self):
+    def test_workspace_summary_reaches_an_external_model_without_a_sharing_approval(self):
+        # #820: the configured model reads the owner's documents; a changed folder set asks nothing again.
         reference=Path(self.temp.name)/'reference';workspace=Path(self.temp.name)/'workspace';reference.mkdir();workspace.mkdir()
         (reference/'source.md').write_text('Aurora external boundary',encoding='utf-8')
         self.service.configure_file_workspace({'references':[str(reference)],'workspace':str(workspace)})
         self.model('compatible','https://example.test/v1','test-key');self.assertTrue(self.service.test_model()['ok'])
-        self.assertFalse(self.service.set_document_approval({'approved':True})['requires_approval'])
         self.service.configure_file_workspace({'references':[str(reference)],'workspace':str(workspace)})
-        self.assertTrue(self.service.document_boundary()['requires_approval'])
+        self.assertFalse(self.service.document_boundary()['requires_approval'])
         before=len(self.calls);job_id=self.store.enqueue('/workspace-summary Aurora :: External summary','external-workspace')
         self.service.run_one();job=self.store.job(job_id)
-        self.assertEqual(job['status'],'failed');self.assertIn('문서 공유 승인',job['error']);self.assertEqual(len(self.calls),before);self.assertEqual(list(workspace.glob('*.md')),[])
+        self.assertGreater(len(self.calls),before,'the external model was called')
+        self.assertNotIn('approval_needed',[row['kind'] for row in self.store.task_notifications(job_id)])
+        self.assertNotIn('문서 공유',job.get('error') or '')
 
     def test_workspace_save_failure_never_reports_success(self):
         reference=Path(self.temp.name)/'reference';workspace=Path(self.temp.name)/'workspace';reference.mkdir();workspace.mkdir()
@@ -619,7 +621,7 @@ finally:
         job=self.store.job(job_id)
         self.assertEqual(job['status'],'failed');self.assertIn('disk full',job['error']);self.assertEqual(list(workspace.glob('*.md')),[])
 
-    def test_natural_workspace_conversation_and_unapproved_history_boundary(self):
+    def test_natural_workspace_conversation_and_history_keeps_document_works(self):
         reference=Path(self.temp.name)/'reference';workspace=Path(self.temp.name)/'workspace';reference.mkdir();workspace.mkdir()
         (reference/'source.txt').write_text('Aurora private source',encoding='utf-8')
         state=self.service.configure_file_workspace({'references':[str(reference)],'workspace':str(workspace)})
@@ -645,7 +647,9 @@ finally:
         self.model('compatible','https://example.test/v1','test-key');self.assertTrue(self.service.test_model()['ok']);before=len(self.calls)
         ordinary=self.store.enqueue('일반적인 다음 질문입니다.','ordinary-after-document');self.service.run_one()
         self.assertEqual(self.store.job(ordinary)['status'],'succeeded')
-        self.assertNotIn('PRIVATE-DOCUMENT-TEXT',json.dumps(self.calls[before:],ensure_ascii=False))
+        # #820: the earlier document Works stay in the external model's history.
+        worker=[body for url,body,_headers in self.calls[before:] if url.endswith('/chat/completions') and body.get('tools')]
+        self.assertIn('저장된 결과: Stored.md',json.dumps(worker,ensure_ascii=False))
 
     def test_workspace_summary_runs_on_a_subscription_engine(self):
         # #826 (owner decision): the approved reference excerpt reaches the CLI worker like any other worker.
@@ -883,38 +887,37 @@ finally:
         self.service.ingest_callback({'id':'late','from':{'id':42},'message':{'chat':{'id':42,'type':'private'},'message_id':card['message_id']},'data':f"p7c:{job['id']}"},generation)
         self.assertIn(self.store.jobs()[0]['status'],('succeeded','failed'))
 
-    def test_document_approval_notification_is_owner_bound_and_safe(self):
+    def test_a_document_request_on_an_external_model_reads_without_an_approval_prompt(self):
+        # #820: the external model reads the granted folder; no document-sharing prompt is sent.
         generation=self.pair()
         self.service.run_one();self.service.deliver_one()
         while self.service.deliver_notification():pass
+        shown=[]
         def document_model(url,body,headers=None,timeout=60):
             if body.get('tools') and any((tool.get('function',{}).get('name') or tool.get('name'))=='agentos_connection_probe' for tool in body['tools']):
                 return {'choices':[{'message':{'tool_calls':[{'id':'probe','function':{'name':'agentos_connection_probe','arguments':'{}'}}]}}]}
-            if any(message.get('role')=='tool' for message in body.get('messages',[])):
-                return {'choices':[{'message':{'content':'I need approval.'}}]}
+            tool_results=[message['content'] for message in body.get('messages',[]) if message.get('role')=='tool']
+            if tool_results:
+                shown.extend(tool_results)
+                return {'choices':[{'message':{'content':'The plan is here.'}}]}
             if body.get('tools'):
-                return {'choices':[{'message':{'tool_calls':[{'id':'files','function':{'name':'find_files','arguments':'{"query":"confidential document"}'}}]}}]}
-            return {'choices':[{'message':{'content':'I need approval.'}}]}
+                return {'choices':[{'message':{'tool_calls':[{'id':'files','function':{'name':'find_files','arguments':'{"query":"plan"}'}}]}}]}
+            return {'choices':[{'message':{'content':'The plan is here.'}}]}
         self.service.adapter=ModelAdapter(document_model)
         self.model('compatible','https://example.test/v1','private-api-key')
         self.assertTrue(self.service.test_model()['ok'])
         # A folder is granted first: with no folder at all the request is parked
-        # for a folder grant (#505) before document sharing is ever relevant.
-        docs=Path(self.temp.name).resolve()/'docs';docs.mkdir();(docs/'plan.txt').write_text('plan')
+        # for a folder grant (#505).
+        docs=Path(self.temp.name).resolve()/'docs';docs.mkdir();(docs/'plan.txt').write_text('plan for Aurora')
         self.service.save_roots({'paths':[str(docs)]})
         self.service.ingest_update({'update_id':11,'message':{'from':{'id':42},'chat':{'id':42,'type':'private'},'text':'문서를 찾아 줘'}},generation)
-        self.make_due(self.store.jobs()[0]['id'])
+        job_id=self.store.jobs()[0]['id']
+        self.make_due(job_id)
         self.service.run_one()
-        self.assertTrue(self.service.deliver_notification())
-        approval=[c for c in self.calls if c[0].endswith('/sendMessage') and c[1]['text'].startswith('연결 문서를')][-1]
-        self.assertNotIn('private-api-key',json.dumps(approval[1]))
-        self.assertNotIn('confidential document',json.dumps(approval[1]))
-        approval_row=self.store.notification(approval[1]['reply_markup']['inline_keyboard'][0][0]['callback_data'].split(':')[1])
-        callback_message={'chat':{'id':42,'type':'private'},'message_id':approval_row['message_id']}
-        self.service.ingest_callback({'id':'foreign-approval','from':{'id':99},'message':{'chat':{'id':99,'type':'private'},'message_id':approval_row['message_id']},'data':f"p7a:{approval_row['id']}:approve"},generation)
-        self.assertTrue(self.service.document_boundary()['requires_approval'])
-        self.service.ingest_callback({'id':'approve','from':{'id':42},'message':callback_message,'data':f"p7a:{approval_row['id']}:approve"},generation)
-        self.assertFalse(self.service.document_boundary()['requires_approval'])
+        self.assertTrue(any('plan.txt' in result for result in shown),'the find_files result reached the model')
+        self.assertNotIn('approval_needed',[row['kind'] for row in self.store.task_notifications(job_id)])
+        while self.service.deliver_notification():pass
+        self.assertFalse([c for c in self.calls if c[0].endswith('/sendMessage') and c[1]['text'].startswith('연결 문서를')])
 
     def test_telegram_context_command_guides_the_choice_without_exposing_content(self):
         generation=self.pair()
@@ -1097,7 +1100,7 @@ finally:
         self.service.ingest_update({'update_id':11,'message':{'from':{'id':42},'chat':{'id':42,'type':'private'},'text':'secret request'}},generation)
         job=self.store.jobs()[0];card=self.old_card(job['id'])  # historical P7-03 evidence used the card's cancel
         self.service.ingest_callback({'id':'cancel','from':{'id':42},'message':{'chat':{'id':42,'type':'private'},'message_id':card['message_id']},'data':f"p7c:{job['id']}"},generation)
-        approval=self.store.queue_notification(job['id'],42,generation,'approval_needed',self.service.document_fingerprint())
+        approval=self.store.queue_notification(job['id'],42,generation,'approval_needed','historical-p7-fingerprint')  # historical P7-03 evidence row
         self.store.update_notification(approval['id'],'approved')
         completed=self.store.queue_notification('another-job',42,generation,'completed')
         self.store.update_notification(completed['id'],'sent',123)
@@ -1277,7 +1280,8 @@ finally:
             self.service.stop.set();server.shutdown();thread.join();server.server_close()
             for worker in self.service.threads:worker.join(timeout=2)
 
-    def test_document_approval_http_api(self):
+    def test_the_document_approval_http_api_is_gone(self):
+        # #820: there is no document-sharing consent left to approve.
         self.store.claim(self.store.bootstrap.read_text(),'long-password-test')
         self.service.save_model({'provider':'compatible','endpoint':'https://example.test/v1','model':'test-model','api_key':'test-key'})
         server=ThreadingHTTPServer(('127.0.0.1',0),make_handler(self.service))
@@ -1288,8 +1292,9 @@ finally:
             with client.open(request,timeout=3) as response:return json.load(response)
         try:
             post('/api/login',{'password':'long-password-test'})
-            self.assertTrue(post('/api/documents/approval',{'approved':True})['approved'])
-            self.assertFalse(self.service.document_boundary()['requires_approval'])
+            with self.assertRaises(HTTPError):post('/api/documents/approval',{'approved':True})
+            self.assertIsNone(self.store.config('document_sharing'))
+            self.assertEqual(self.service.settings()['document_boundary'],{'external_model':True,'requires_approval':False})
         finally:
             server.shutdown();thread.join();server.server_close()
 

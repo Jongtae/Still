@@ -4,8 +4,7 @@ After an outbound call Still mediates (a search or weather lookup, a public
 page read, ``browser_open``, ``browser_type``, ``api_request``, a code run's
 requests), its outbound text is compared with the values Still holds for the
 owner - current Memory whichever Work saved it, and this Work's own private
-writes - using the #605 matcher.  Each match is recorded on the call's
-Evidence as labels only (where the value is kept, the tool, the destination
+writes - using the #605 matcher.  Each match is computed when the audit opens as labels only (where the value is kept, the tool, the destination
 host) and shown in the information-use view.  Nothing is blocked or changed,
 and neither the value nor the outbound text is stored.
 
@@ -39,6 +38,25 @@ PLACE = '합정 분짜집 비밀메뉴'
 
 def held(*rows):
     return [('memory', key, value) for key, value in rows]
+
+
+def compared(caps, action, args, result):
+    with tempfile.TemporaryDirectory() as folder:
+        store = QuickStore(Path(folder) / 'state')
+        for source, key, value in caps.values:
+            if source == 'memory':
+                with mock.patch('personal_agent.quickstart_store.time.time', return_value=0.5):
+                    store.save_memory(key, value)
+        job = store.enqueue('compare', 'comparison')
+        found, cuts = information_use.deferred_comparison(store, job, action, args, result, 1)
+    out = {key: value for key, value in outbound_evidence(caps, action, args, result).items() if key != 'outbound_comparison'}
+    if found:
+        out['outbound_matches'] = [{**row, 'tool': action} for row in found]
+    # Ordinary pure matcher tests inspect only the historic size cuts.
+    cuts = [row for row in cuts if row['kind'] in ('memory_rows', 'text_chars')]
+    if cuts:
+        out['outbound_comparison_cut'] = cuts
+    return out
 
 
 class Matcher(unittest.TestCase):
@@ -127,35 +145,28 @@ class ComparisonCut(unittest.TestCase):
 
     def test_text_past_the_compared_length_is_named_and_text_within_it_is_not(self):
         caps = Recording.Caps(held(('member-number', MEMBER)))
-        long_text = '가' * agent_runtime.OUTBOUND_TEXT_MAX + ' ' + MEMBER
-        added = outbound_evidence(caps, 'browser_type', {'text': long_text}, {'url': 'https://a.example/'})
-        self.assertNotIn('outbound_matches', added, 'the value after the compared characters is not seen')
-        self.assertEqual(added['outbound_comparison_cut'], [{'kind': 'text_chars', 'limit': agent_runtime.OUTBOUND_TEXT_MAX}])
-        short = outbound_evidence(caps, 'browser_type', {'text': MEMBER}, {'url': 'https://a.example/'})
+        text = '가' * agent_runtime.OUTBOUND_TEXT_MAX + ' ' + MEMBER
+        added = compared(caps, 'web_search', {'query': text}, {'provider': 'brave'})
+        self.assertNotIn('outbound_matches', added)
+        self.assertEqual(added['outbound_comparison_cut'], [{'kind': 'text_chars', 'limit': information_use.COMPARISON_TEXT_MAX}])
+        short = compared(caps, 'web_search', {'query': MEMBER}, {'provider': 'brave'})
         self.assertNotIn('outbound_comparison_cut', short)
-        self.assertEqual(outbound_evidence(Recording.Caps(), 'browser_type', {'text': long_text}, {'url': 'https://a.example/'}), {},
-                         'nothing held: nothing was compared, so nothing was cut off')
-        self.assertEqual(agent_runtime.attempted_outbound(caps, 'browser_type', {'text': long_text}, RuntimeError('x')),
-                         {'outbound_comparison_cut': [{'kind': 'text_chars', 'limit': agent_runtime.OUTBOUND_TEXT_MAX}]},
-                         'a failed attempt names the cut too')
+        self.assertTrue(short['outbound_matches'])
 
     def test_memory_past_the_compared_rows_is_named(self):
         with tempfile.TemporaryDirectory() as folder:
             store = QuickStore(Path(folder) / 'state')
             for index in range(agent_runtime.HELD_MEMORY_MAX):
                 store.save_memory(f'fact-{index}', f'value {index:04d} kept')
-            job = store.enqueue('찾아줘', 'cut')
-            caps = Capabilities(store, None, {}, '', job, lambda *a: None)
-            self.assertEqual(len(caps.held_values()), agent_runtime.HELD_MEMORY_MAX)
-            self.assertNotIn('outbound_comparison_cut', outbound_evidence(caps, 'browser_type', {'text': 'hello'}, {}),
-                             'exactly the compared number of rows: nothing left out')
+            job = store.enqueue('find', 'cut')
+            def cuts():
+                return information_use.deferred_comparison(store, job, 'web_search', {'query': 'hello'}, {}, time.time())[1]
+            self.assertNotIn('memory_rows', [row['kind'] for row in cuts()])
             store.save_memory('newest', 'value 9999 newest')
-            self.assertEqual(len(caps.held_values()), agent_runtime.HELD_MEMORY_MAX)
-            added = outbound_evidence(caps, 'browser_type', {'text': 'hello'}, {})
-            self.assertEqual(added['outbound_comparison_cut'], [{'kind': 'memory_rows', 'limit': agent_runtime.HELD_MEMORY_MAX}])
+            self.assertIn({'kind': 'memory_rows', 'limit': agent_runtime.HELD_MEMORY_MAX}, cuts())
 
     def test_the_view_says_where_the_comparison_was_cut_off_even_without_a_match(self):
-        self.assertEqual(information_use.COMPARISON_CUTS,
+        self.assertEqual(information_use.COMPARISON_CUTS[:2],
                          (agent_runtime.COMPARISON_CUT_MEMORY, agent_runtime.COMPARISON_CUT_TEXT))
         with tempfile.TemporaryDirectory() as folder:
             store = QuickStore(Path(folder) / 'state')
@@ -224,15 +235,15 @@ class Recording(unittest.TestCase):
 
     def test_matches_are_added_with_the_tool_and_browser_open_names_its_destination(self):
         caps = self.Caps(held(('member-number', MEMBER)))
-        added = outbound_evidence(caps, 'browser_open', {'url': 'https://shop.example/find?no=M1234-5678'}, {})
+        added = compared(caps, 'browser_open', {'url': 'https://shop.example/find?no=M1234-5678'}, {})
         self.assertEqual(added, {'destination': 'shop.example', 'outbound_matches': [
             {'source': 'memory', 'key': 'member-number', 'destination': 'shop.example', 'tool': 'browser_open'}]})
-        self.assertEqual(outbound_evidence(caps, 'browser_open', {'url': 'https://shop.example/'}, {}),
+        self.assertEqual(compared(caps, 'browser_open', {'url': 'https://shop.example/'}, {}),
                          {'destination': 'shop.example'})
 
     def test_a_redirect_to_another_host_is_compared_and_named_too(self):
         caps = self.Caps(held(('member-number', MEMBER)))
-        added = outbound_evidence(caps, 'browser_open', {'url': 'http://shop.example/find?no=M1234-5678'},
+        added = compared(caps, 'browser_open', {'url': 'http://shop.example/find?no=M1234-5678'},
                                   {'url': 'https://www.shop-cdn.example/find?no=M1234-5678'})
         self.assertEqual((added['destination'], added['landed']), ('shop.example', 'www.shop-cdn.example'))
         self.assertEqual([row['destination'] for row in added['outbound_matches']], ['shop.example', 'www.shop-cdn.example'])
@@ -240,6 +251,8 @@ class Recording(unittest.TestCase):
     def test_a_withheld_browser_open_still_shows_its_match_and_host_as_an_attempt(self):
         with tempfile.TemporaryDirectory() as folder:
             store = QuickStore(Path(folder) / 'state')
+            with mock.patch('personal_agent.quickstart_store.time.time', return_value=0.5):
+                store.save_memory('member-number', MEMBER)
             job = store.enqueue('열어줘', 'withheld')
             detail = {'call_id': 'c1', 'host_action': 'browser_open', 'state': 'withheld', 'error': 'login required',
                       'evidence': {'state': 'login_required', 'url': 'https://shop.example/login', 'destination': 'shop.example',
@@ -255,7 +268,7 @@ class Recording(unittest.TestCase):
 
     def test_a_url_fragment_is_not_compared_because_it_is_not_sent(self):
         caps = self.Caps(held(('member-number', MEMBER)))
-        self.assertEqual(outbound_evidence(caps, 'browser_open', {'url': 'https://shop.example/page#M1234-5678'}, {}),
+        self.assertEqual(compared(caps, 'browser_open', {'url': 'https://shop.example/page#M1234-5678'}, {}),
                          {'destination': 'shop.example'})
 
     def test_a_code_run_compares_the_query_body_and_headers_its_runner_held(self):
@@ -264,14 +277,27 @@ class Recording(unittest.TestCase):
                                                          ('/v1/x\n{"tel": "010 9876 5432"}', 'other.example')]})()
         result = {'requests': [{'phase': 'run', 'method': 'GET', 'host': 'data.example', 'path': '/v1/find', 'allowed': True}]}
         added = outbound_evidence(caps, 'code_run', {'code': 'x'}, result)
-        self.assertEqual(added['outbound_matches'], [
-            {'source': 'memory', 'key': 'member-number', 'destination': 'data.example', 'tool': 'code_run'},
-            {'source': 'memory', 'key': 'phone', 'destination': 'other.example', 'tool': 'code_run'}])
+        self.assertNotIn('outbound_matches', added)
+        found, cuts = information_use.deferred_comparison(type('Store', (), {})(), '', 'code_run', {}, evidence_summary('code_run', result), 1)
+        self.assertEqual(found, [])
+        self.assertIn('outbound_unrecorded', [row['kind'] for row in cuts])
         self.assertNotIn('5678', json.dumps({**evidence_summary('code_run', result), **added}))
 
     def test_a_failing_comparison_leaves_the_evidence_as_before(self):
-        caps = self.Caps(error=RuntimeError('store gone'))
-        self.assertEqual(outbound_evidence(caps, 'browser_type', {'text': MEMBER}, {'url': 'https://a.example/'}), {})
+        with tempfile.TemporaryDirectory() as folder:
+            store = QuickStore(Path(folder) / 'state')
+            store.save_memory('member-number', MEMBER)
+            job = store.enqueue('compare', 'comparison-failed')
+            detail = {'host_action': 'web_search', 'arguments': {'query': MEMBER},
+                      'evidence': {'outbound_comparison': 'deferred'}}
+            with store.db() as db:
+                db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                           (job, 'web_search', 'succeeded', json.dumps(detail), time.time()))
+            with mock.patch.object(store, 'comparison_work_writes', side_effect=RuntimeError('store gone')):
+                audit = information_use.work_information_use(store, job)
+            self.assertEqual(audit['sent_to']['held_value_matches'], [])
+            self.assertIn({'kind': 'comparison_failed', 'limit': 0}, audit['sent_to']['held_value_comparison_cut'])
+            self.assertTrue(audit['results'])
 
     def test_an_api_request_keeps_its_body_out_of_the_evidence(self):
         caps = self.Caps(held(('phone', PHONE)))
@@ -279,8 +305,10 @@ class Recording(unittest.TestCase):
         result = {'data': {}, 'provenance': {'source': {'slot': 'crm', 'host': 'api.example', 'path': '/v1/contacts'}},
                   'sources': ['https://api.example/v1/contacts']}
         evidence = {**evidence_summary('api_request', result), **outbound_evidence(caps, 'api_request', args, result)}
-        self.assertEqual(evidence['outbound_matches'], [{'source': 'memory', 'key': 'phone', 'destination': 'api.example',
-                                                         'tool': 'api_request'}])
+        self.assertNotIn('outbound_matches', evidence)
+        found, cuts = information_use.deferred_comparison(type('Store', (), {})(), '', 'api_request', agent_runtime.recorded_arguments('api_request', args), evidence, 1)
+        self.assertEqual(found, [])
+        self.assertIn('outbound_unrecorded', [row['kind'] for row in cuts])
         recorded = json.dumps({'arguments': agent_runtime.recorded_arguments('api_request', args), 'evidence': evidence},
                               ensure_ascii=False)
         self.assertNotIn('9876', recorded, 'the body stays length-only and the match is a label')
@@ -334,11 +362,9 @@ class BrowserRoute(unittest.TestCase):
         self.assertTrue(any('m1234 5678' in values.values() for values in typed), 'the text was typed as written')
         audit = information_use.work_information_use(self.store, self.job)
         self.assertEqual(audit['sent_to']['browser_destinations'], ['fixture.test'])
-        self.assertEqual(audit['sent_to']['held_value_matches'], [
-            {'source': 'memory', 'key': 'member-number', 'tool': 'browser_type', 'destination': 'fixture.test',
-             'status': 'succeeded'}])
+        self.assertEqual(audit['sent_to']['held_value_matches'], [])
+        self.assertIn('outbound_unrecorded', [row['kind'] for row in audit['sent_to']['held_value_comparison_cut']])
         text = information_use.render_korean(audit)
-        self.assertIn("- browser_type → fixture.test: 기억 'member-number'의 값과 겹치는 내용이 들어 있었어요", text)
         self.assertIn('- 브라우저로 연 곳: fixture.test', text)
         # Negative: no persisted row and no Evidence holds the value or the typed text.
         with self.store.db() as db:
@@ -372,7 +398,8 @@ class ApiRoute(_ServiceBase):
         self.turn(service, f'내 회원번호는 {MEMBER}야. 기억해')
         service = self.service(steps([('web_search', {'query': 'm1234 5678 회원 혜택'}),
                                       ('web_search', {'query': '서울 내일 날씨'})]))
-        job = self.turn(service, '회원 혜택이랑 날씨 찾아줘')
+        with mock.patch.object(agent_runtime, 'held_value_matches', side_effect=AssertionError('recording compared')), mock.patch.object(Capabilities, 'held_values', side_effect=AssertionError('recording read Memory')):
+            job = self.turn(service, '회원 혜택이랑 날씨 찾아줘')
         self.assertEqual(sorted(plan['query'] for plan in self.wire.plans), ['m1234 5678 회원 혜택', '서울 내일 날씨'],
                          'detection only: both lookups went out as written')
         audit = service.work_information_use(job)
@@ -386,8 +413,7 @@ class ApiRoute(_ServiceBase):
             rows = [json.loads(row['detail']) for row in db.execute(
                 "SELECT detail FROM tool_events WHERE job_id=? AND status='succeeded' AND tool='web_search'", (job,))]
         matches = sorted((row['evidence'].get('outbound_matches') for row in rows), key=lambda found: found is None)
-        self.assertEqual(matches, [[{'source': 'memory', 'key': 'member-number', 'destination': 'brave', 'tool': 'web_search'}],
-                                   None])
+        self.assertEqual(matches, [None, None], 'comparison is deferred, not recorded')
         self.assertNotIn('1234', json.dumps(matches), 'the match record holds no value')
 
     def test_a_note_saved_by_this_work_is_reported_when_sent_to_public_lookup(self):
@@ -396,9 +422,10 @@ class ApiRoute(_ServiceBase):
                                       ('web_search', {'query': MEMBER + ' 회원 혜택'})]))
         job = self.turn(service, '메모하고 회원 혜택 찾아줘')
         self.assertEqual(self.wire.plans[0]['query'], MEMBER + ' 회원 혜택')
+        # #820 B2: a value this Work wrote is compared when the view opens, so it is labelled a later comparison.
         self.assertEqual(service.work_information_use(job)['sent_to']['held_value_matches'], [
             {'source': 'work_write', 'key': '', 'tool': 'web_search',
-             'destination': 'brave', 'status': 'succeeded'}])
+             'destination': 'brave', 'status': 'succeeded', 'comparison': 'later_work_writes'}])
 
 
 
@@ -426,7 +453,7 @@ class FailedAfterDispatch(ApiRoute):
         with self.store.db() as db:
             details = [row['detail'] for row in db.execute("SELECT detail FROM tool_events WHERE job_id=? AND status='failed'", (job,))]
         recorded = [json.loads(detail).get('outbound_matches') for detail in details]
-        self.assertIn([{'source': 'memory', 'key': 'member-number', 'destination': '', 'tool': 'web_search'}], recorded)
+        self.assertEqual(recorded, [None], 'comparison is deferred')
         self.assertNotIn('1234', json.dumps(recorded), 'the match record holds no value')
 
     test_an_earlier_works_memory_in_a_later_search_is_shown_and_the_search_still_goes_out = None
@@ -514,15 +541,25 @@ class HandOff(unittest.TestCase):
                 raise self.error
             return {'tool': plan['tool'], 'url': plan.get('url'), 'text': 'page', 'sources': [], 'retrieved_at': 1}
 
-    def test_out_of_scope_page_reads_carrying_memory_record_no_attempt(self):
+    def test_locally_refused_page_reads_carrying_memory_record_no_attempt(self):
+        # #820: any public address is read, so the local refusal here is the reader's own
+        # boundary: a loopback literal, and a host that resolves to private-use space.
         # Two consecutive reads start together (#16), so each refusal is marked on its own thread.
-        script = Script({'tool_calls': [call('1', 'public_page_read', url='https://shop.example/find?no=M1234-5678'),
+        from personal_agent.local_tools import LocalTools, PublicPageReader
+        opened = []
+
+        class Opener:
+            def open(self, request, timeout=None):
+                opened.append(request.full_url)
+                raise AssertionError('never reached')
+        script = Script({'tool_calls': [call('1', 'public_page_read', url='https://127.0.0.1/find?no=M1234-5678'),
                                         call('2', 'public_page_read', url='https://other.example/q?m=m1234%205678')]},
                         {'content': '읽지 못했습니다.'})
-        network = self.Network()
+        network = LocalTools(page_reader=PublicPageReader(
+            opener=Opener(), resolver=lambda host, port, type=None, timeout=None: [(None, None, None, None, ('10.0.0.5', port))]))
         caps = Capabilities(self.store, ModelAdapter(script), BROWSER_CFG, '', self.job, self.record, network=network)
         run_agent(caps.adapter, BROWSER_CFG, '', [{'role': 'user', 'content': '회원 혜택 찾아줘'}], '', caps, self.record)
-        self.assertEqual(network.plans, [], 'nothing was sent')
+        self.assertEqual(opened, [], 'nothing was sent')
         failed = self.failed('public_page_read')
         self.assertEqual(len(failed), 2)
         for detail in failed:
@@ -534,14 +571,13 @@ class HandOff(unittest.TestCase):
         url = 'https://shop.example/find?no=M1234-5678'
         script = Script({'tool_calls': [call('1', 'public_page_read', url=url)]}, {'content': '읽지 못했습니다.'})
         network = self.Network(error=ValueError('response rejected after the request was sent'))
-        caps = Capabilities(self.store, ModelAdapter(script), BROWSER_CFG, '', self.job, self.record, network=network,
-                            public_page_scope=[url])
+        caps = Capabilities(self.store, ModelAdapter(script), BROWSER_CFG, '', self.job, self.record, network=network)
         run_agent(caps.adapter, BROWSER_CFG, '', [{'role': 'user', 'content': '회원 혜택 찾아줘'}], '', caps, self.record)
         self.assertEqual(len(network.plans), 1, 'the read was sent')
         [detail] = self.failed('public_page_read')
         self.assertNotIn('ran', detail)
-        self.assertEqual(detail['outbound_matches'], [{'source': 'memory', 'key': 'member-number',
-                                                       'destination': 'shop.example', 'tool': 'public_page_read'}])
+        self.assertNotIn('outbound_matches', detail)
+        self.assertEqual(information_use.work_information_use(self.store, self.job)['sent_to']['held_value_matches'], [{'source': 'memory', 'key': 'member-number', 'destination': 'shop.example', 'tool': 'public_page_read', 'status': 'failed'}])
 
     def test_local_refusals_of_each_outbound_tool_are_marked_not_run_and_carry_nothing(self):
         caps = Capabilities(self.store, None, {}, '', self.job, self.record, network=self.Network())
@@ -560,10 +596,12 @@ class HandOff(unittest.TestCase):
     def test_a_bridge_page_read_refused_locally_records_no_attempt(self):
         requests = [{'jsonrpc': '2.0', 'id': 0, 'method': 'initialize', 'params': {}},
                     {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call',
-                     'params': {'name': 'public_page_read', 'arguments': {'url': 'https://shop.example/find?no=M1234-5678'}}}]
+                     'params': {'name': 'public_page_read', 'arguments': {'url': 'https://127.0.0.1/find?no=M1234-5678'}}}]
         sent = []
         out = io.StringIO()
-        with mock.patch('personal_agent.local_tools.LocalTools.execute', lambda self, plan, budget=None: sent.append(plan)), \
+        # #820: the bridge reads any public address; a loopback one is refused by the reader before any request.
+        with mock.patch('personal_agent.local_tools.PublicPageReader._open_pinned',
+                        lambda self, url, addresses, deadline=None: sent.append(url)), \
                 mock.patch.object(sys, 'stdin', io.StringIO(''.join(json.dumps(r) + '\n' for r in requests))), \
                 contextlib.redirect_stdout(out):
             mcp_bridge.serve(str(self.store.root), self.job)
@@ -630,8 +668,7 @@ class HandOff(unittest.TestCase):
             with self.assertRaises(ValueError) as caught:
                 caps.execute('code_run', args)
         self.assertEqual(agent_runtime.ran_field(caught.exception), {}, 'the code ran: not a local refusal')
-        self.assertEqual(agent_runtime.attempted_outbound(caps, 'code_run', args, caught.exception)['outbound_matches'],
-                         [{'source': 'memory', 'key': 'member-number', 'destination': 'api.example.com', 'tool': 'code_run'}])
+        self.assertEqual(agent_runtime.attempted_outbound(caps, 'code_run', args, caught.exception), {'outbound_comparison': 'deferred'})
 
     def test_a_code_run_refused_after_a_sending_run_reports_nothing_stale(self):
         from test_code_run import FakeProcess, runner
@@ -647,7 +684,7 @@ class HandOff(unittest.TestCase):
         with self.assertRaises(CodeRunError):
             run.run({'code': 'print(1)', 'hosts': 'not a host!'})
         self.assertEqual(run.sent, [])
-        self.assertEqual(outbound_evidence(caps, 'code_run', {'code': 'print(1)'}, {}), {})
+        self.assertEqual(outbound_evidence(caps, 'code_run', {'code': 'print(1)'}, {}), {'outbound_comparison': 'deferred'})
 
 
 class NetworkLocalRefusals(HandOff):
@@ -662,7 +699,7 @@ class NetworkLocalRefusals(HandOff):
     def reader_caps(self, address, opener=None):
         from personal_agent.local_tools import LocalTools, PublicPageReader
         network = LocalTools(page_reader=PublicPageReader(opener=opener, resolver=self.resolver(address)))
-        return Capabilities(self.store, None, {}, '', self.job, self.record, network=network, public_page_scope=[self.PAGE])
+        return Capabilities(self.store, None, {}, '', self.job, self.record, network=network)
 
     def execute(self, caps, name, args):
         from personal_agent.providers import ProviderError
@@ -702,8 +739,8 @@ class NetworkLocalRefusals(HandOff):
                 raise OSError('connection reset after the request was written')
         exc, attempted = self.execute(self.reader_caps('93.184.216.34', Opener()), 'public_page_read', {'url': self.PAGE})
         self.assertEqual(agent_runtime.ran_field(exc), {})
-        self.assertEqual(attempted['outbound_matches'], [{'source': 'memory', 'key': 'member-number',
-                                                          'destination': 'shop.example', 'tool': 'public_page_read'}])
+        self.assertEqual(attempted, {'outbound_comparison': 'deferred'})
+        self.assertNotIn('outbound_matches', attempted)
 
     def test_a_redirect_refused_after_the_first_request_is_an_attempt(self):
         class Response:
@@ -722,18 +759,18 @@ class NetworkLocalRefusals(HandOff):
         exc, attempted = self.execute(self.reader_caps('93.184.216.34', Opener()), 'public_page_read', {'url': self.PAGE})
         self.assertIn('개인 네트워크', str(exc))
         self.assertEqual(agent_runtime.ran_field(exc), {}, 'the first request was sent')
-        self.assertTrue(attempted.get('outbound_matches'))
+        self.assertEqual(attempted, {'outbound_comparison': 'deferred'})
 
     def test_a_network_implementation_that_marks_nothing_is_an_attempt(self):
         url = self.PAGE
         for error in (ValueError('refused inside an unknown implementation'), OSError('socket closed')):
             with self.subTest(error=type(error).__name__):
                 network = self.Network(error=error)
-                caps = Capabilities(self.store, None, {}, '', self.job, self.record, network=network, public_page_scope=[url])
+                caps = Capabilities(self.store, None, {}, '', self.job, self.record, network=network)
                 exc, attempted = self.execute(caps, 'public_page_read', {'url': url})
                 self.assertTrue(network.plans, 'handed to the network (a transient failure is retried once)')
                 self.assertEqual(agent_runtime.ran_field(exc), {})
-                self.assertTrue(attempted.get('outbound_matches'))
+                self.assertEqual(attempted, {'outbound_comparison': 'deferred'})
 
     def test_a_city_weather_whose_geocoding_answer_is_refused_is_an_attempt(self):
         from personal_agent.local_tools import LocalTools
@@ -747,8 +784,8 @@ class NetworkLocalRefusals(HandOff):
             exc, attempted = self.execute(caps, 'weather', {'city': MEMBER})
         self.assertEqual(len(sent), 1, 'the city went to the geocoding host')
         self.assertEqual(agent_runtime.ran_field(exc), {}, 'refused after a request of this call')
-        self.assertEqual(attempted['outbound_matches'], [{'source': 'memory', 'key': 'member-number',
-                                                          'destination': 'geocoding-api.open-meteo.com', 'tool': 'weather'}])
+        self.assertEqual(attempted, {'outbound_comparison': 'deferred'})
+        self.assertNotIn('outbound_matches', attempted)
 
     def test_a_forecast_for_bad_coordinates_of_the_callers_own_is_refused_before_sending(self):
         from personal_agent.local_tools import LocalTools
@@ -770,14 +807,14 @@ class NetworkLocalRefusals(HandOff):
                 raise OSError('connection reset after the request was written')
         from personal_agent.local_tools import LocalTools, PublicPageReader
         network = LocalTools(page_reader=PublicPageReader(opener=Opener(), resolver=resolver))
-        caps = Capabilities(self.store, None, {}, '', self.job, self.record, network=network, public_page_scope=[self.PAGE])
+        caps = Capabilities(self.store, None, {}, '', self.job, self.record, network=network)
         exc, attempted = self.execute(caps, 'public_page_read', {'url': self.PAGE})
         self.assertIn('개인 네트워크', str(exc), 'the retry was refused before its own request')
         self.assertEqual(agent_runtime.ran_field(exc), {}, 'the first attempt was sent')
-        self.assertTrue(attempted.get('outbound_matches'))
+        self.assertEqual(attempted, {'outbound_comparison': 'deferred'})
 
     # The inherited cases already ran in ``HandOff``.
-    test_out_of_scope_page_reads_carrying_memory_record_no_attempt = None
+    test_locally_refused_page_reads_carrying_memory_record_no_attempt = None
     test_the_same_read_failing_after_it_was_sent_is_still_shown_as_an_attempt = None
     test_local_refusals_of_each_outbound_tool_are_marked_not_run_and_carry_nothing = None
     test_a_bridge_page_read_refused_locally_records_no_attempt = None

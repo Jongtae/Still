@@ -188,7 +188,7 @@ class BudgetContinueTests(unittest.TestCase):
             with self.subTest(wait=wait):
                 service,store,job,run,_=self.stopped()
                 if wait=='question':run.agency_report={'question':'Which source should I use?'}
-                elif wait=='approval':run.approval_needed[0]=True
+                elif wait=='approval':run.context_approval_needed[0]=True
                 elif wait=='login':run.waits_for_sign_in=True
                 elif wait=='connection':
                     with store.db() as db:db.execute("UPDATE jobs SET status='awaiting_connection' WHERE id=?",(job,))

@@ -250,7 +250,9 @@ class BrowserSettlement(unittest.TestCase):
             accepted_by=prep.ACCEPTED_OWNER_SETTINGS,window=(600,now[0]+3600,1))
         self.work=self.service.preparations.start(row,channel='web',chat_id=None,now=now[0])
         with self.store.db() as db:db.execute("UPDATE jobs SET status='partial' WHERE id=?",(self.work,))
-        self.row={**self.row,'work_id':self.work}
+        # #821: a scheduled run's login row carries the preparation version it was asked under.
+        self.row={**self.row,'work_id':self.work,
+                  'preparation':self.service.preparations.wait_stamp(self.service.preparations.get(row['id']))}
         self.service._put_browser_login(self.work,self.row)
         self.assertEqual(self.settle(),'resumed')
         current=self.service.preparations.get(row['id'])

@@ -1433,18 +1433,6 @@
   "ja": "完了しました。結果の全体は Still のウェブで確認してください。",
   "zh": "已完成。完整结果请在 Still 网页上查看。"
  },
- "notice.document_approved": {
-  "ko": "문서 공유를 승인했어요. 같은 요청을 다시 보내 주세요.",
-  "en": "Document sharing approved. Please send the same request again.",
-  "ja": "ドキュメントの共有を承認しました。同じ依頼をもう一度送ってください。",
-  "zh": "已批准共享文档。请再次发送同样的请求。"
- },
- "notice.document_denied": {
-  "ko": "문서 공유를 허용하지 않았어요.",
-  "en": "Document sharing was not allowed.",
-  "ja": "ドキュメントの共有は許可されませんでした。",
-  "zh": "未允许共享文档。"
- },
  "notice.failed": {
   "ko": "작업을 완료하지 못했어요. 자세한 내용은 Still 웹에서 확인해 주세요.",
   "en": "I couldn't complete it. See the details in the Still web app.",
@@ -2069,12 +2057,6 @@
   "ja": "個人コンテキストを外部モデルに送るには、この作業への承認が必要です。コンテキストの内容は送信していません。",
   "zh": "将个人上下文发送给外部模型需要批准此任务。尚未发送上下文内容。"
  },
- "service.approval_is_required_to_send_connected": {
-  "ko": "연결 문서를 외부 모델에 전달하려면 승인이 필요해요. 문서 내용은 전송되지 않았어요.",
-  "en": "Approval is required to send connected documents to an external model. No document content was sent.",
-  "ja": "接続した文書を外部モデルに送るには承認が必要です。文書の内容は送信していません。",
-  "zh": "将已连接文档发送给外部模型需要批准，尚未发送文档内容。"
- },
  "service.check_the_telegram_connection_receiving_will": {
   "ko": "Telegram 연결을 확인해 주세요. 수신을 다시 시도해요.",
   "en": "Check the Telegram connection. Receiving will be retried.",
@@ -2134,18 +2116,6 @@
   "en": "Disconnected Telegram.",
   "ja": "Telegram の接続を解除しました。",
   "zh": "已断开 Telegram 连接。"
- },
- "service.document_sharing_approval_is_required_to": {
-  "ko": "승인된 참고 자료를 외부 모델에 전달하려면 문서 공유 승인이 필요해요.",
-  "en": "Document-sharing approval is required to send approved reference material to an external model.",
-  "ja": "承認済みの参考資料を外部モデルに送るには、文書共有の承認が必要です。",
-  "zh": "将已批准的参考资料发送给外部模型，需要文档共享批准。"
- },
- "service.document_sharing_was_approved_the_request": {
-  "ko": "문서 공유를 승인했어요. 폴더를 허용한 요청을 한 번만 이어서 처리해요.",
-  "en": "Document sharing was approved. The request for which you allowed the folder will resume just once.",
-  "ja": "文書の共有を承認しました。フォルダーを許可した依頼を一度だけ再開します。",
-  "zh": "已批准文档共享，将继续刚才授权文件夹的请求一次。"
  },
  "service.done": {
   "ko": "처리했어요.",
@@ -2368,12 +2338,6 @@
   "en": "This request was already retried once. I did not run it again.",
   "ja": "この依頼はすでに一度やり直しました。同じ依頼を重ねて実行していません。",
   "zh": "这个请求已经重试过一次，没有重复执行。"
- },
- "service.to_continue_the_request_for_which": {
-  "ko": "폴더를 허용한 방금 요청을 계속하려면 연결 문서 발췌문을 외부 모델에 보내는 승인이 필요해요. 승인하면 그 요청을 한 번만 이어서 처리해요. 아직 문서 내용은 전송되지 않았어요.",
-  "en": "To continue the request for which you just allowed the folder, approval is needed to send excerpts from connected documents to an external model. Once approved, that request will resume just once. No document content has been sent yet.",
-  "ja": "フォルダーを許可した直前の依頼を続けるには、接続した文書の抜粋を外部モデルに送る承認が必要です。承認後、その依頼を一度だけ再開します。文書の内容はまだ送信していません。",
-  "zh": "要继续刚才授权文件夹的请求，需要批准将已连接文档的摘录发送给外部模型。批准后只会继续该请求一次。尚未发送文档内容。"
  },
  "service.trying_again_runs_the_same_request": {
   "ko": "다시 시도하면 같은 요청을 한 번 다시 실행해요.",
@@ -7558,12 +7522,6 @@
   "ja": "前のリクエストをキャンセルしました。設定の確認後も実行しません。",
   "zh": "已取消上次请求。设置确认后也不会执行。"
  },
- "quickstart_service.cancelled_document": {
-  "ko": "이전 요청을 취소했어요. 문서 공유를 승인해도 이어서 처리하지 않아요.",
-  "en": "The previous request was cancelled. It will not resume after document sharing approval.",
-  "ja": "前のリクエストをキャンセルしました。文書共有を承認しても再開しません。",
-  "zh": "已取消上次请求。批准文档共享后也不会继续。"
- },
  "quickstart_service.cancelled_connection": {
   "ko": "이전 요청을 취소했어요. 연결이 끝나도 실행하지 않아요.",
   "en": "The previous request was cancelled. It will not run after connection.",
@@ -7840,35 +7798,11 @@
   "ja": "スキル「{skill}」を削除しました。次のリクエストから使いません。",
   "zh": "已移除技能“{skill}”。后续请求将不再使用。"
  },
- "quickstart_service.document_approval_label": {
-  "ko": "현재 선택 모델과 연결 폴더의 문서 발췌문",
-  "en": "Currently selected model and excerpts from connected folders",
-  "ja": "現在選択中のモデルと接続フォルダーの文書抜粋",
-  "zh": "当前所选模型及已连接文件夹的文档摘录"
- },
- "quickstart_service.document_approval_only": {
-  "ko": "문서 공유 승인만 설정할 수 있어요.",
-  "en": "Only document sharing approval can be set here.",
-  "ja": "ここでは文書共有の承認のみ設定できます。",
-  "zh": "这里只能设置文档共享批准。"
- },
- "quickstart_service.public_url_approval_label": {
-  "ko": "소유자가 승인한 정규화된 공개 페이지 주소와 매개변수",
-  "en": "Owner-approved normalized public page addresses and parameters",
-  "ja": "所有者が承認した正規化済みの公開ページアドレスとパラメーター",
-  "zh": "所有者批准的规范化公开页面地址和参数"
- },
- "quickstart_service.explicit_public_url_approval": {
-  "ko": "공개 페이지 주소 승인은 명시적으로 설정해야 해요.",
-  "en": "Public page address approval must be set explicitly.",
-  "ja": "公開ページアドレスの承認は明示的に設定してください。",
-  "zh": "请明确设置公开页面地址批准。"
- },
- "quickstart_service.public_url_count": {
-  "ko": "승인할 공개 페이지 주소를 1~20개 입력하세요.",
-  "en": "Enter 1–20 public page addresses to approve.",
-  "ja": "承認する公開ページアドレスを1～20件入力してください。",
-  "zh": "请输入1至20个要批准的公开页面地址。"
+ "folder_grants.broad_includes": {
+  "ko": "{path} 폴더를 연결하면 AI가 그 아래의 모든 문서를 읽을 수 있어요. 숨김 폴더, 인증 정보와 시스템 위치(Library/Keychains 등), Still 데이터 폴더는 계속 제외돼요. 이 폴더를 연결할까요?",
+  "en": "Connecting {path} lets the AI read every document under it. Hidden folders, credential and system locations (such as Library/Keychains) and Still's data folder stay excluded. Connect this folder?",
+  "ja": "{path} を接続すると、AIはその下のすべての文書を読めるようになります。隠しフォルダー、認証情報やシステムの場所（Library/Keychainsなど）、Stillのデータフォルダーは引き続き除外されます。このフォルダーを接続しますか？",
+  "zh": "连接 {path} 后，AI 可以读取其下的所有文档。隐藏文件夹、凭据和系统位置（如 Library/Keychains）以及 Still 的数据文件夹仍会被排除。要连接此文件夹吗？"
  },
  "quickstart_service.folder_limit": {
   "ko": "폴더는 최대 8개까지 연결할 수 있어요.",
@@ -9028,17 +8962,11 @@
   "ja": "認証情報と思われるため、記憶として保存しませんでした。",
   "zh": "内容疑似凭据，未保存为记忆。"
  },
- "agent_runtime.page_outside_scope": {
-  "ko": "이 Work의 web_search 결과에 나온 주소나 소유자가 승인한 공개 페이지가 아니어서 조회하지 않았어요. 먼저 web_search로 찾은 결과 주소를 읽으세요.",
-  "en": "This URL was not in this Work's web_search results or among your approved public pages, so it was not read. Read a URL from web_search first.",
-  "ja": "このURLはこの作業のweb_search結果にも承認済み公開ページにもないため読みませんでした。まずweb_searchの結果URLを読んでください。",
-  "zh": "此网址不在本次工作的web_search结果或你批准的公开页面中，因此未读取。请先读取web_search结果中的网址。"
- },
- "agent_runtime.page_redirect_left_scope": {
-  "ko": "검색 결과 주소가 다른 주소로 이동해 읽지 않았어요. 소유자 승인 범위와는 무관해요.",
-  "en": "The search result redirected to another URL, so it was not read. This is unrelated to your approval scope.",
-  "ja": "検索結果が別のURLに移動したため読みませんでした。承認範囲とは無関係です。",
-  "zh": "搜索结果跳转到了其他网址，因此未读取。这与批准范围无关。"
+ "agent_runtime.page_address_holds_secret": {
+  "ko": "주소에 저장된 비밀값이나 인증 정보 형태의 값이 들어 있어 페이지를 읽지 않았어요. 그 값을 뺀 주소로 다시 시도하세요.",
+  "en": "The address contains a stored secret or a credential-shaped value, so the page was not read. Try again with an address without it.",
+  "ja": "アドレスに保存済みの秘密情報または認証情報の形の値が含まれているため、ページを読みませんでした。その値を除いたアドレスで再試行してください。",
+  "zh": "地址中含有已保存的秘密信息或凭据形式的值，因此未读取该页面。请使用不含该值的地址重试。"
  },
  "agent_runtime.public_query_empty": {
   "ko": "공개 조회에 보낼 검색어(또는 도시)가 비어 있거나 비밀값뿐이라 보내지 않았어요. 조회할 내용을 직접 적어 주세요.",
@@ -9173,10 +9101,10 @@
   "zh": "支持的格式：TXT、MD、PDF、DOCX和XLSX。"
  },
  "agent_runtime.document_excerpt_sharing": {
-  "ko": "연결 문서 발췌문을 외부 AI에 전달하려면 설정에서 문서 공유를 승인하세요.",
-  "en": "Approve document sharing in Settings to send excerpts from connected documents to an external AI.",
-  "ja": "接続文書の抜粋を外部AIに送るには、設定で文書共有を承認してください。",
-  "zh": "要将已连接文档的摘录发送给外部AI，请在设置中批准文档共享。"
+  "ko": "이 작업의 실행 경로에는 연결 문서 읽기가 포함되지 않아 문서를 읽을 수 없어요.",
+  "en": "This Work's route does not include reading connected documents, so the document cannot be read.",
+  "ja": "この作業の実行経路には接続文書の読み取りが含まれていないため、文書を読めません。",
+  "zh": "此任务的执行路径不包括读取已连接的文档，因此无法读取该文档。"
  },
  "agent_runtime.file_source_location": {
   "ko": "파일: {path} · {location}",
@@ -9239,10 +9167,10 @@
   "zh": "请先在连接设置中连接要访问的文件夹。"
  },
  "agent_runtime.document_search_sharing": {
-  "ko": "연결 문서 검색 결과를 외부 AI에 전달하려면 설정에서 문서 공유를 승인하세요.",
-  "en": "Approve document sharing in Settings to send connected-document search results to an external AI.",
-  "ja": "接続文書の検索結果を外部AIに送るには、設定で文書共有を承認してください。",
-  "zh": "要将已连接文档的搜索结果发送给外部AI，请在设置中批准文档共享。"
+  "ko": "이 작업의 실행 경로에는 연결 문서 읽기가 포함되지 않아 문서를 검색할 수 없어요.",
+  "en": "This Work's route does not include reading connected documents, so documents cannot be searched.",
+  "ja": "この作業の実行経路には接続文書の読み取りが含まれていないため、文書を検索できません。",
+  "zh": "此任务的执行路径不包括读取已连接的文档，因此无法搜索文档。"
  },
  "agent_runtime.query_length": {
   "ko": "검색어는 1~200자로 입력하세요.",
@@ -10816,6 +10744,12 @@
   "ja": "繰り返しの確認時間帯は、現地時間で同じ日のうちに開始・終了してください。",
   "zh": "重复监测时段的开始和结束必须在同一个当地日期。"
  },
+ "preparations.wait_changed": {
+  "ko": "기다리는 동안 이 예약 작업이 바뀌어서, 로그인 뒤에 원래 요청을 이어서 처리하지 않았어요.",
+  "en": "This scheduled task changed while it was waiting, so I didn't continue the original request after the sign-in.",
+  "ja": "待っている間にこの予約タスクが変更されたため、ログイン後に元の依頼の続きは処理しませんでした。",
+  "zh": "这个计划任务在等待期间被更改了，所以登录后没有继续处理原来的请求。"
+ },
  "preparations.notice_waiting": {
   "ko": "예약한 ‘{title}’ 작업이 연결을 기다리고 있어요. Still 설정에서 필요한 연결을 완료해 주세요.",
   "en": "The scheduled task “{title}” is waiting for a connection. Complete the required connection in Still Settings.",
@@ -11379,5 +11313,95 @@
   "en": "Opened line {line}. Now schedule its work with schedule_preparation line={line}. Still cannot send its own message in this conversation, so say this in your reply, as written: {text}",
   "ja": "任された仕事 {line} を開きました。schedule_preparation に line={line} を渡して実行を予約してください。この会話では Still が別に送れないため、返答でこの文をそのまま伝えてください: {text}",
   "zh": "已开启受托事项 {line}。现在请用 schedule_preparation 并设置 line={line} 安排其运行。在此对话中 Still 无法单独发送消息，请在回复中原样转达这句话：{text}"
- }
+ },
+ "information_use.comparison_cut_calls": {
+  "ko": "- 이 보기에서는 처음 {limit}개 호출까지만 비교했어요. 나머지는 확인하지 않았어요.",
+  "en": "- This view compared only the first {limit} calls; remaining calls were not checked.",
+  "ja": "- この表示では最初の {limit} 件だけ照合しました。残りは未確認です。",
+  "zh": "- 此视图仅比对了前 {limit} 次调用，其余未检查。"
+ },
+ "information_use.comparison_cut_outbound_unrecorded": {
+  "ko": "- 기록하지 않은 입력이나 가려진 내용은 비교하지 않았어요. 전송되지 않았다는 뜻은 아니에요.",
+  "en": "- Unrecorded or redacted outbound input was not compared. This does not mean nothing was sent.",
+  "ja": "- 未記録または伏せられた送信内容は照合していません。未送信という意味ではありません。",
+  "zh": "- 未记录或已遮蔽的发送内容未作比对。这不代表没有发送内容。"
+ },
+ "information_use.comparison_cut_work_writes_unavailable": {
+  "ko": "- 이 작업의 저장 값은 지금 복구할 수 있는 것만 나중 비교로 확인했어요. 상속·대기 중인 값과 복구하지 못한 저장 값은 확인하지 않았어요.",
+  "en": "- Recoverable Work writes were checked as a later comparison only. Inherited, pending and unrecoverable writes were not checked.",
+  "ja": "- 復元できる作業の保存値のみ、後の照合として確認しました。継承・保留中・復元不能の値は未確認です。",
+  "zh": "- 仅将可恢复的任务写入值作为事后比对。继承、待处理和无法恢复的写入值未检查。"
+ },
+ "information_use.comparison_cut_memory_history_unavailable": {
+  "ko": "- 기억은 호출 시각의 생성·교체 기록으로 비교했어요. 잊거나 삭제한 기억과 되돌리기 때문에 복원할 수 없는 과거 상태는 확인하지 않았어요.",
+  "en": "- Memory comparison uses creation and supersession at call time. Forgotten/deleted Memory and historical states unavailable after undo were not checked.",
+  "ja": "- 記憶は呼出時点の作成・置換記録で照合しました。忘却・削除済みの記憶や取り消し後に復元できない過去の状態は未確認です。",
+  "zh": "- 记忆按调用时的创建和替代记录比对。已遗忘、删除的记忆和撤销后无法恢复的历史状态未检查。"
+ },
+ "information_use.comparison_cut_texts": {
+  "ko": "- 호출마다 처음 {limit}개 텍스트까지만 비교했어요.",
+  "en": "- Compared only the first {limit} texts per call.",
+  "ja": "- 呼出ごとに最初の {limit} 件のテキストのみ照合しました。",
+  "zh": "- 每次调用仅比对前 {limit} 条文本。"
+ },
+ "information_use.comparison_cut_matches": {
+  "ko": "- 호출마다 일치 표시는 {limit}개까지만 보여요.",
+  "en": "- Match labels are limited to {limit} per call.",
+  "ja": "- 一致ラベルは呼出ごとに {limit} 件までです。",
+  "zh": "- 每次调用的匹配标签限于 {limit} 个。"
+ },
+ "information_use.later_work_writes": {
+  "ko": "나중 비교: 현재 복구한 작업 저장 값과의 겹침이며 호출 당시의 증거는 아니에요",
+  "en": "Later comparison against recoverable Work writes; not call-time evidence",
+  "ja": "後の照合：復元できた作業の保存値との一致であり、呼出時点の証拠ではありません",
+  "zh": "事后比对：与当前可恢复任务写入值重叠，并非调用时证据"
+ },
+ "information_use.later_memory": {
+  "ko": "나중 비교: 현재 기억과의 겹침이며 호출 당시의 증거는 아니에요",
+  "en": "Later comparison against current Memory; not call-time evidence",
+  "ja": "後の照合：現在の記憶との一致であり、呼出時点の証拠ではありません",
+  "zh": "事后比对：与当前记忆重叠，并非调用时证据"
+ },
+ "information_use.view_time_comparison": {
+ "ko": "새 비교는 감사 보기를 열 때 남아 있는 호출·기억 기록으로 해요. 기록이 그대로면 이전 비교 표시를 재사용해요. 호출 당시의 결과는 아니며, 삭제되거나 되돌린 과거 기록은 빠질 수 있어요. 예전에 기록한 호출 당시 결과는 그대로 표시해요.",
+ "en": "New comparisons use retained call and Memory history when the audit is opened; unchanged records reuse cached labels. These are not call-time results and deleted or undone history may be missing. Earlier call-time results stay as recorded.",
+ "ja": "新しい照合は監査表示を開いた時に残存する呼出・記憶記録で行い、記録が同じならキャッシュしたラベルを再利用します。呼出時点の結果ではなく、削除・取り消し済みの履歴は欠ける場合があります。以前の呼出時点の結果は記録どおり表示します。",
+ "zh": "打开审计视图时使用保留的调用和记忆历史进行新比对；记录未变化时复用缓存标签。这并非调用时的结果，已删除或撤销的历史可能缺失。先前调用时的结果按原记录显示。"
+},
+ "information_use.comparison_cut_comparison_time": {
+ "ko": "- 보관 정보 비교 시간이 {limit}ms에 도달해 나머지는 확인하지 않았어요.",
+ "en": "- Held-value comparison reached its {limit} ms time limit; the remainder was not checked.",
+ "ja": "- 保管情報の照合は制限時間 {limit} ms に達したため、残りは未確認です。",
+ "zh": "- 已保存信息的比对已达到 {limit} 毫秒时限，其余未检查。"
+},
+ "information_use.comparison_cut_comparison_failed": {
+ "ko": "- 이 호출의 보관 정보 비교에 실패했어요. 전송된 내용이 없었다는 뜻은 아니에요.",
+ "en": "- Held-value comparison failed for a call. This does not mean nothing was sent.",
+ "ja": "- 呼出の保管情報の照合に失敗しました。未送信という意味ではありません。",
+ "zh": "- 某次调用的已保存信息比对失败。这不代表没有发送内容。"
+},
+ "information_use.comparison_cut_value_chars": {
+ "ko": "- 저장 값마다 앞 {limit}자까지만 비교했어요. 그 뒤는 확인하지 않았어요.",
+ "en": "- Only the first {limit} characters of each held value were compared; the rest was not checked.",
+ "ja": "- 保存値ごとに先頭 {limit} 文字のみ照合しました。残りは未確認です。",
+ "zh": "- 每个保存值仅比对前 {limit} 个字符，其余未检查。"
+},
+ "information_use.comparison_cut_held_values": {
+ "ko": "- 기억과 작업 저장 값을 합해 {limit}개까지만 비교했어요.",
+ "en": "- Compared at most {limit} Memory and Work-written values combined.",
+ "ja": "- 記憶と作業の保存値は合計 {limit} 件まで照合しました。",
+ "zh": "- 记忆和任务写入值合计最多比对 {limit} 个。"
+},
+ "information_use.comparison_cut_legacy_match_withheld": {
+ "ko": "- 기록된 기억 일치 표시 일부를 숨겼어요. 호출 뒤에 기억을 수정하거나 잊거나 삭제했거나, 남아 있는 이력에서 당시의 기억을 확인할 수 없어요.",
+ "en": "- Some recorded Memory matches were withheld because the Memory was updated, forgotten or deleted since the call, or its retained history could not be confirmed.",
+ "ja": "- 呼出後に記憶が更新・忘却・削除されたか、残存履歴から当時の記憶を確認できないため、記録済みの記憶一致の一部を非表示にしました。",
+ "zh": "- 部分已记录的记忆匹配已隐藏：该记忆在调用后已更新、遗忘或删除，或无法从保留的历史确认当时的记忆。"
+},
+ "information_use.comparison_cut_legacy_display": {
+ "ko": "- 기록된 보관 정보 일치 표시는 {limit}개까지만 보여요. 나머지는 표시하지 않았어요.",
+ "en": "- Only {limit} recorded held-value match labels are shown; remaining labels were not displayed.",
+ "ja": "- 記録済みの保管情報の一致ラベルは {limit} 件まで表示します。残りは表示していません。",
+ "zh": "- 最多显示 {limit} 个已记录的保存值匹配标签，其余未显示。"
+}
 }

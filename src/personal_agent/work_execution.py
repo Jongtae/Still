@@ -46,7 +46,6 @@ class WorkRun:
         # still reach the shared completion path without entering that branch.
         self.waits_for_sign_in = False
         self.resolved_blocker = False
-        self.approval_needed = [False]
         self.context_approval_needed = [False]
         self.refusals = []
         self.owner_steps = []
@@ -108,7 +107,6 @@ class WorkRun:
         self.turn_provenance = None
         self.workspace_request = None
         self.context_sources = None
-        self.prepared_latest = None
         self.record = None
         self.section_values = None
         self.skill_binding = None
@@ -125,7 +123,6 @@ class WorkRun:
         self.unmediated_turn = False
         self.engine_meta = None
         self.work_private = None
-        self.boundary = None
         #: #308 S1: when the current attempt started (steers claimed since are its to answer), the
         #: steer continuation's note (the steers and the unsent reply), and what a failed one restores.
         self.attempt_started_at = None

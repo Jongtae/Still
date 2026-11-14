@@ -56,7 +56,7 @@ class TerminalSurface(DirectMessageSurface):
     CONFIG_KEY, STATUS_KEY, TURNS_TABLE, SECRET_KEYS = CONFIG_KEY, 'terminal_status', 'terminal_turns', ()
     REQUEST_KEY_PREFIX, MESSAGES = 'tty', 'terminal'
     NOT_SENT, ERROR = TerminalNotSent, ProviderError
-    AT_THE_MAC = {'browser_approval_needed': 'surface.answer_at_mac', 'approval_needed': 'surface.answer_at_mac',
+    AT_THE_MAC = {'browser_approval_needed': 'surface.answer_at_mac',
                   'context_approval_needed': 'surface.answer_at_mac', 'browser_login_needed': 'surface.answer_at_mac'}
 
     def __init__(self, service):
