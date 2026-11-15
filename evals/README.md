@@ -190,7 +190,7 @@ A run passes when the world's tests end as the scenario expects (`expect_world_p
 3. Log in the way the local web page does (`POST /api/local-login`, or the first local `/api/claim` of a fresh folder), then select the worker (`POST /api/subscription-engines/connect`).
 4. **Judgment AI.** A qualification is bound to the store path, so a copied seed starts unqualified.
    - If the Judgment AI is not qualified for this worker, the sandbox asks Still to qualify it through the owner's own routes: `POST /api/main-ai/activate` when it follows the Main AI, else `POST /api/decision-route/activate`.
-   - It then waits up to 300 s.
+   - It then waits up to `--judgment-timeout` (default 900 s).
    - It caches the qualified config rows per slot, worker and seed, so later runs in that slot skip the roughly one minute and dozen model calls. Seeded slots apply them before start; seedless slots apply them once healthy, when the server has created its store (route config is read on demand). Records retain `cache_applied`, `initially_ready`, and bounded `qualification` state/failure/message alongside the existing fields.
    - A qualification that does not become ready is reported as the `infra:judgment_ai` cluster.
 5. Snapshot the owner state:
