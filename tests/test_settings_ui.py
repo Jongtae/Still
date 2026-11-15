@@ -713,3 +713,35 @@ def test_the_work_mode_switch_is_serialized_and_shows_the_returned_state():
         return
     subprocess.run([node, "-e", WORK_MODE_CHECKS, str(ROOT / "app.js")], check=True, capture_output=True, text=True,
                    timeout=20)
+
+
+def test_report_times_controls_keep_edits_and_submit_ordered_owner_times():
+    node = shutil.which('node')
+    if not node:
+        import pytest
+        pytest.skip('node unavailable')
+    checks = DOM_CHECKS.split('// #781:')[0] + r"""
+const same=(a,b,m)=>assert.equal(JSON.stringify(a),JSON.stringify(b),m);
+const pane=new Element('section');pane.id='settings-privacy';pane._root=true;
+vm.runInContext(part('// #799: the existing owner-model controls','function renderCurrentContext('),ctx);
+ctx.renderReportControls({dream:true,report_times:['09:00','18:00']});
+assert.equal($('report-look-back').checked,true);
+assert.equal($('report-times').value,'09:00, 18:00');
+const input=$('report-times'),form=input.parentNode;
+input.value='08:15, 20:45';input.oninput();
+ctx.renderReportControls({dream:false,report_times:['09:00']});
+assert.equal(input.value,'08:15, 20:45','polling preserves unsaved times');
+assert.equal($('report-look-back').checked,false);
+(async()=>{
+ await form.onsubmit({preventDefault(){}});
+ same(calls.at(-1),{path:'/api/owner-model/request',body:{operation:'set',report_times:['08:15','20:45']}},'only the owner-model setting is posted');
+ ctx.renderReportControls({dream:true,report_times:['08:15','20:45']});
+ assert.equal(input.value,'08:15, 20:45');
+ failRoute=true;input.value='24:00';input.oninput();await form.onsubmit({preventDefault(){}});
+ assert.equal(input.value,'24:00','failed validation preserves the draft');
+ assert($('report-feedback').textContent.includes('refused'));
+ failRoute=false;const toggle=$('report-look-back');toggle.checked=false;await toggle.onchange();
+ same(calls.at(-1).body,{operation:'set',dream:false},'the adjacent look-back switch uses the existing control');
+})().catch(error=>{console.error(error);process.exitCode=1;});
+"""
+    subprocess.run([node, '-e', checks, str(ROOT / 'app.js')], check=True, capture_output=True, text=True, timeout=30)

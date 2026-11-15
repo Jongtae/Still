@@ -39,6 +39,9 @@ DAY_PLAN_KEY = 'day_plan'
 PLAN_HISTORY_MESSAGES = 16
 #: #798: the periodic account's brief: a method for giving an account of a line, never a topic.
 LINE_ACCOUNT_GOAL = prompt('line_account')
+BUNDLE_SETTLE_SECONDS = 1800
+BUNDLE_CHARS = 3500
+BUNDLE_LINE_LIMIT = 8
 
 
 class PreparationsService:
@@ -468,9 +471,9 @@ class PreparationsService:
             items.append(item)
         return 'earlier_plans: '+service._redact_known_secrets(json.dumps(items,ensure_ascii=False,separators=(',',':')))
 
-    @staticmethod
-    def preparation_delivery(row):
-        """``send`` / ``keep`` / ``when_needed`` (#719) for one preparation row."""
+    def preparation_delivery(self, row):
+        """``send`` / ``keep`` / ``when_needed`` / ``bundle`` for one preparation row."""
+        if self.held_row(row):return 'bundle'
         if row.get('delivery_mode')==prep.DELIVERY_WHEN_NEEDED:return prep.DELIVERY_WHEN_NEEDED
         return 'send' if row['channel']!=prep.CHANNEL_WEB else 'keep'
 
@@ -608,6 +611,8 @@ class PreparationsService:
             if picked>=prep.TICK_LIMIT:break
             picked+=1
             try:
+                # If holding itself failed, leave legacy stood rows due until the hold can commit.
+                if row['channel']!=prep.CHANNEL_WEB and self.held_row(row):continue
                 # #306 review: delivered on the surface the preparation was made for, through its pairing now.
                 surface=next((item for item in service.surfaces if item.name==row['channel']),None)
                 pairing=surface.pairing() if surface is not None else None
@@ -771,7 +776,7 @@ class PreparationsService:
             if skipped:
                 facts={**skipped, 'first_slot':local(skipped['first_slot_at']), 'last_slot':local(skipped['last_slot_at'])}
                 schedule+='\n'+msg('preparations.run_budget_skipped',facts=json.dumps(facts,ensure_ascii=False))
-            delivery=msg('preparations.run_delivery_needed' if row.get('delivery_mode')==prep.DELIVERY_WHEN_NEEDED
+            delivery=msg('preparations.run_delivery_bundle') if self.held_row(row) else msg('preparations.run_delivery_needed' if row.get('delivery_mode')==prep.DELIVERY_WHEN_NEEDED
                          else 'preparations.run_delivery',channel=row['channel'])
             return msg('preparations.run_record', id=preparation_id,
                        position=msg('preparations.run_bounded',run=count,maximum=maximum) if maximum else str(count),
@@ -1461,7 +1466,8 @@ class PreparationsService:
                             if due<=now:due=prep.next_due(due,first['timezone'],first['recurrence'],now)
                             if due is None:continue
                             row=service.preparations.create(kind=first['kind'],goal=first['goal'],due_at=due,timezone=first['timezone'],
-                                                           recurrence=first['recurrence'],channel=service.preparation_channel(anchor,first['kind'],first['delivery']),
+                                                           recurrence=first['recurrence'],channel=prep.CHANNEL_WEB,
+                                                           bundle_channel=service.preparation_channel(anchor,first['kind'],first['delivery']),
                                                            created_from=anchor['id'],state=prep.STATE_SCHEDULED,accepted_by=prep.ACCEPTED_DREAM,
                                                            delivery_mode=first['delivery_mode'],title=first['title'],offer=first['offer'],
                                                            origin=prep.ORIGIN_DREAM,line_id=brief['line_id'],
@@ -1471,7 +1477,8 @@ class PreparationsService:
                 # A cancelled work/account row is an owner decision, not a missing row to repair.
                 # If creating the account failed, an active first row may retry that creation only.
                 if any(row['state'] in prep.ACTIVE_STATES for row in work):
-                    self.ensure_line_account(anchor,brief,accepted_by=prep.ACCEPTED_DREAM)
+                    self.ensure_line_account(anchor,brief,accepted_by=prep.ACCEPTED_DREAM,channel=prep.CHANNEL_WEB,
+                                             bundle_channel=service.preparation_channel(anchor,prep.KIND_PREPARE,'send'))
             except (prep.PreparationRefusal,el.LineRefusal) as exc:
                 LOG.warning('line rows not started id=%s code=%s',brief['line_id'],exc.code)
 
@@ -1503,11 +1510,182 @@ class PreparationsService:
                 LOG.warning('line not withdrawn id=%s code=%s',brief['line_id'],exc.code)
 
     def line_tick(self, now):
-        for step in (self.withdraw_unannounced,self.announce_stood_line,self.start_announced_lines):
-            try:step(now)
+        for step in ('withdraw_unannounced','announce_stood_line','start_announced_lines',
+                     'hold_line_rows','flush_line_bundles'):
+            try:getattr(self,step)(now)
             except (prep.PreparationRefusal,el.LineRefusal) as exc:
-                LOG.warning('line tick step not applied step=%s code=%s',step.__name__,exc.code)
+                LOG.warning('line tick step not applied step=%s code=%s',step,exc.code)
+            except Exception as exc:
+                # Upkeep failure must never skip holding or flushing already-held reports.
+                LOG.warning('line tick step unavailable step=%s kind=%s',step,type(exc).__name__)
 
+    def bundle_report_times(self, row, db):
+        """Read-only display metadata using the same eligibility and frozen daily times as flushing."""
+        if not self.held_row(row,db):return None
+        from .current_context import host_zone
+        tz=prep.zone(self.home_zone()) if self.home_zone() else host_zone(self.service.store)[1]
+        day=datetime.fromtimestamp(self.service.preparations.clock(),tz).date().isoformat()
+        bundle=db.execute("SELECT e.detail FROM jobs j JOIN tool_events e ON e.job_id=j.id "
+                          "WHERE e.tool='line_bundle' AND j.request_key LIKE ? ORDER BY j.created LIMIT 1",
+                          ('line-bundle:'+day+':%',)).fetchone()
+        return json.loads(bundle['detail'])['report_times'] if bundle else self.service.owner_model.settings(db)['report_times']
+
+
+    def held_row(self, row, db=None):
+        """Only unattended read/report rows of a look-back line spend the bundle budget.
+
+        An event retains the send intent after routing the row to web. Owner-Work acceptance
+        is deliberately excluded even though it is SELF_SET for payment purposes.
+        """
+        if (not row.get('line_id') or row.get('kind') != prep.KIND_PREPARE
+                or row.get('accepted_by') not in (prep.ACCEPTED_DREAM, prep.ACCEPTED_DAY_PLAN)
+                or row.get('recurrence') == prep.RECURRENCE_WINDOW):return False
+        if self.service.lines.provenance(row['line_id']).get('by') != 'look-back':return False
+        if row['channel'] != prep.CHANNEL_WEB or row.get('delivery_mode') == prep.DELIVERY_WHEN_NEEDED:return True
+        if db is None:
+            with self.service.store.db() as db:return self.held_row(row, db)
+        return db.execute("SELECT 1 FROM tool_events WHERE tool='line_held' "
+                          "AND json_extract(detail,'$.preparation_id')=?", (row['id'],)).fetchone() is not None
+
+    def hold_line_rows(self, now):
+        """Route held rows before the existing start/settle loop, without changing its slot logic."""
+        with self.service.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            rows=[dict(r) for r in db.execute('SELECT * FROM preparations WHERE line_id IS NOT NULL')]
+            for row in rows:
+                if not self.held_row(row, db):
+                    if row['accepted_by'] in (*prep.OWNER_ACCEPTED,prep.ACCEPTED_OWNER_WORK) and row['channel']==prep.CHANNEL_WEB:
+                        held=db.execute("SELECT detail FROM tool_events WHERE tool='line_held' "
+                                        "AND json_extract(detail,'$.preparation_id')=? ORDER BY id LIMIT 1",(row['id'],)).fetchone()
+                        if held:
+                            channel=json.loads(held['detail'])['channel']
+                            db.execute('UPDATE preparations SET channel=? WHERE id=?',(channel,row['id']))
+                    continue
+                if not db.execute("SELECT 1 FROM tool_events WHERE tool='line_held' "
+                                  "AND json_extract(detail,'$.preparation_id')=?", (row['id'],)).fetchone():
+                    db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                               (row['created_from'],'line_held','succeeded',json.dumps({'preparation_id':row['id'],'channel':row['channel']}),now))
+                db.execute('UPDATE preparations SET channel=? WHERE id=?', (prep.CHANNEL_WEB,row['id']))
+
+    def line_bundle_parts(self, db, slot):
+        """Re-read settled parts under the flush transaction; no latest-run pointer can lose a burst."""
+        service=self.service
+        parts=[]
+        rows=[dict(r) for r in db.execute(
+            "SELECT j.*, e.detail AS settlement, e.created AS settled_at FROM tool_events e JOIN jobs j ON j.id=e.job_id "
+            "WHERE e.tool='preparation' AND json_type(e.detail,'$.outcome') IS NOT NULL "
+            "AND j.delivery='none' AND trim(COALESCE(j.response,''))!='' "
+            "AND EXISTS(SELECT 1 FROM tool_events h WHERE h.tool='line_held' "
+            "AND json_extract(h.detail,'$.preparation_id')=json_extract(e.detail,'$.preparation_id') AND h.created<=e.created) "
+            "AND NOT EXISTS(SELECT 1 FROM telegram_notifications n WHERE n.job_id=j.id AND n.kind=?) "
+            "AND NOT EXISTS(SELECT 1 FROM tool_events b WHERE b.job_id=j.id AND b.tool='line_bundled') "
+            "AND NOT EXISTS(SELECT 1 FROM messages m JOIN forgotten_messages f ON f.message_id=m.id WHERE m.job_id=j.id) "
+            "ORDER BY j.created,j.id",(prep.NOTIFY_KIND,))]
+        seen=set()
+        for job in rows:
+            if job['id'] in seen or not ws.has_delivered_result(job['status']):continue
+            row=service.preparations.get(prep.preparation_of(job['request_key']))
+            if not row or row['state']==prep.STATE_CANCELLED:continue
+            # L1 runs may already be in flight when the row is held. A report already handed
+            # to notification delivery is excluded above, whatever that delivery's state.
+            started=db.execute("SELECT detail FROM tool_events WHERE job_id=? AND tool='preparation' "
+                               "AND json_type(detail,'$.slot') IS NOT NULL ORDER BY id LIMIT 1",(job['id'],)).fetchone()
+            if started is None:continue
+            run=json.loads(started['detail'])
+            # Eligibility belongs to the run, not the row's later owner acceptance/channel.
+            if run.get('accepted_by') not in (prep.ACCEPTED_DREAM,prep.ACCEPTED_DAY_PLAN) or run.get('channel')!=prep.CHANNEL_WEB:continue
+            due=datetime.fromisoformat(run['slot']).timestamp()
+            # An empty slot is not a licence to send a later report immediately. Only its
+            # due work, finished within the settle allowance, can spend this slot.
+            if due>slot or job['settled_at']>slot+BUNDLE_SETTLE_SECONDS:continue
+            brief=service.lines.readable(row['line_id'])
+            if not brief or brief['state']!=el.STATE_ACTIVE:continue
+            # A stop discards old held parts permanently, including after an explicit restart.
+            if db.execute("SELECT 1 FROM procedure_versions WHERE slot=? AND json_extract(stats_json,'$.change')='stopped' "
+                          "AND saved>=?", (el.slot(row['line_id']),job['created'])).fetchone():continue
+            if (run.get('delivery_mode')==prep.DELIVERY_WHEN_NEEDED
+                    and json.loads(job['settlement']).get('decision')!=prep.DECISION_NOTIFY):continue
+            text=service.scrub_work_text(job['id'],job['response']).strip()
+            if not text:continue
+            seen.add(job['id'])
+            parts.append({'job':job,'row':row,'brief':brief,'text':text})
+        return parts
+
+    def compose_line_bundle(self, parts):
+        """Plain bounded composition of the runs' own words; no topic logic or model call."""
+        groups={}
+        for part in parts:groups.setdefault(part['brief']['line_id'],[]).append(part)
+        groups=sorted(groups.values(),key=lambda group:(self.service.lines.first_saved(group[0]['brief']['line_id']),
+                                                        group[0]['brief']['line_id']))
+        heading=msg('lines.bundle_heading',count=len(groups))
+        footer=msg('lines.bundle_footer')
+        shown=groups[:BUNDLE_LINE_LIMIT]
+        more=(msg('lines.bundle_more',tasks=', '.join(el.excerpt(self.service._redact_known_secrets(g[0]['brief']['task']),40)
+                                                     for g in groups[BUNDLE_LINE_LIMIT:])) if len(groups)>len(shown) else '')
+        # Reserve space for labels/footer first; split the remaining report space fairly.
+        more=el.excerpt(more,400) if more else ''
+        labels=[el.excerpt(self.service._redact_known_secrets(g[0]['brief']['task']),100) for g in shown]
+        share=max(200,(BUNDLE_CHARS-len(heading)-len(footer)-len(more)-sum(map(len,labels))-60)//len(shown))
+        blocks=[]
+        for label,group in zip(labels,shown):
+            newest=group[-1]
+            older=[prep.local_text(p['job']['created'],p['row']['timezone'])+' '+el.excerpt(' '.join(p['text'].split()),80)
+                   for p in group[:-1]]
+            # Older runs remain one-line excerpts; the newest retains at least 200 characters.
+            old_text='\n'.join(older) if older else ''
+            old_limit=max(0,share-201)
+            if len(old_text)>old_limit:old_text=old_text[:old_limit-1]+'…' if old_limit else ''
+            lead=el.excerpt(newest['text'],max(200,share-len(old_text)-1))
+            blocks.append('\n'.join(x for x in (label,lead,old_text) if x))
+        return self.service._redact_known_secrets('\n\n'.join(x for x in (heading,*blocks,more,footer) if x))
+
+    def flush_line_bundles(self, now):
+        """Atomically hand one local slot's parts to the same builtin pending-Work path as reminders."""
+        from .current_context import host_zone
+        service=self.service
+        with service.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            # Ordinary preparations pay no per-run scan for a budget they do not use.
+            if not db.execute("SELECT 1 FROM tool_events WHERE tool='line_held' LIMIT 1").fetchone():return None
+            tz=prep.zone(self.home_zone()) if self.home_zone() else host_zone(service.store)[1]
+            local=datetime.fromtimestamp(now,tz)
+            day=local.date().isoformat()
+            bundles=[dict(r) for r in db.execute("SELECT j.request_key,j.created,e.detail FROM jobs j JOIN tool_events e ON e.job_id=j.id "
+                                                "WHERE e.tool='line_bundle' AND j.request_key LIKE ? ORDER BY j.created",('line-bundle:'+day+':%',))]
+            # Freeze today's schedule once it has spent a slot. Edits take effect tomorrow;
+            # replacing times must not replenish a day's already-used attention budget.
+            times=json.loads(bundles[0]['detail'])['report_times'] if bundles else service.owner_model.settings(db)['report_times']
+            due=[t for t in times if t<=local.strftime('%H:%M')]
+            if not due:return None
+            at=due[-1]
+            key='line-bundle:'+day+':'+at.replace(':','')
+            # Never backfill an earlier slot after the latest one was consumed.
+            if db.execute('SELECT 1 FROM jobs WHERE request_key=?',(key,)).fetchone():return None
+            slot=local.replace(hour=int(at[:2]),minute=int(at[3:]),second=0,microsecond=0).timestamp()
+            if now<slot+BUNDLE_SETTLE_SECONDS:
+                running=[dict(r) for r in db.execute('SELECT * FROM preparations WHERE state=? AND due_at<=?',(prep.STATE_RUNNING,slot))]
+                if any(self.held_row(r,db) for r in running):return None
+            parts=self.line_bundle_parts(db,slot)
+            if not parts:return None
+            anchor=self.owner_last_work()
+            if not anchor:return None
+            surface=next((s for s in service.surfaces if s.name==anchor['channel'].split(':',1)[0]),None)
+            pairing=surface.pairing() if surface is not None else None
+            if anchor['channel']!=prep.CHANNEL_WEB and pairing is None:return None
+            channel=pairing.channel if pairing else prep.CHANNEL_WEB
+            chat=pairing.owner if pairing else None
+            text=self.compose_line_bundle(parts)
+            work_id=uuid.uuid4().hex
+            db.execute('INSERT INTO jobs(id,request_key,message,channel,chat_id,status,response,delivery,provider,model,created) '
+                       "VALUES (?,?,?,?,?,'succeeded',?,?,'builtin','line-bundle',?)",
+                       (work_id,key,'',channel,chat,text,'pending' if chat else 'none',now))
+            db.execute("INSERT INTO messages(job_id,role,content,channel,created) VALUES (?,'assistant',?,?,?)",(work_id,text,channel,now))
+            for part in parts:
+                db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                           (part['job']['id'],'line_bundled','succeeded',json.dumps({'bundle_id':work_id,'line_id':part['brief']['line_id']}),now))
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       (work_id,'line_bundle','succeeded',json.dumps({'day':day,'slot':at,'report_times':times,'parts':len(parts)}),now))
+            return work_id
 
     # -- #798: entrusted lines ---------------------------------------------------------------------
 
@@ -1534,14 +1712,15 @@ class PreparationsService:
             keys=' OR '.join('j.request_key LIKE ?' for _ in ids)
             jobs=[dict(row) for row in db.execute(
                 f"SELECT j.*,EXISTS(SELECT 1 FROM telegram_notifications n WHERE n.job_id=j.id AND n.kind=? AND n.state='sent') "
-                f"AS notified FROM jobs j WHERE ({keys}) AND j.id IS NOT ? ORDER BY j.created DESC,j.id DESC LIMIT ?",
+                f"AS notified, EXISTS(SELECT 1 FROM tool_events b JOIN jobs bundle ON bundle.id=json_extract(b.detail,'$.bundle_id') "
+                f"WHERE b.job_id=j.id AND b.tool='line_bundled' AND (bundle.delivery='sent' OR (bundle.channel='web' AND bundle.delivery='none'))) AS bundled FROM jobs j WHERE ({keys}) AND j.id IS NOT ? ORDER BY j.created DESC,j.id DESC LIMIT ?",
                 (prep.NOTIFY_KIND,*(prep.REQUEST_KEY_PREFIX+item+':%' for item in ids),exclude,limit*4 if limit is not None else -1))]
         out=[]
         for job in jobs:
             if prep.preparation_of(job.get('request_key')) not in ids or service.store.work_request_forgotten(job['id']):
                 continue
             # Reached the owner: its own reply was sent, or its watch notification was.
-            label=el.outcome_label(job.get('status'),job.get('delivery')=='sent' or bool(job.get('notified')))
+            label=el.outcome_label(job.get('status'),job.get('delivery')=='sent' or bool(job.get('notified')) or bool(job.get('bundled')))
             if label is None:continue
             text=(job.get('response') if label in (el.OUTCOME_DELIVERED,el.OUTCOME_KEPT)
                   else job.get('owner_cause') or job.get('error') or '')
@@ -1641,7 +1820,7 @@ class PreparationsService:
         return next((row for row in self.line_rows(line_id) if row.get('origin')==prep.ORIGIN_LINE_ACCOUNT
                      and row['state'] in prep.ACTIVE_STATES),None)
 
-    def ensure_line_account(self, job, brief, *, accepted_by=prep.ACCEPTED_OWNER_WORK, channel=None):
+    def ensure_line_account(self, job, brief, *, accepted_by=prep.ACCEPTED_OWNER_WORK, channel=None, bundle_channel=None):
         """The line's periodic account: one repeating ``prepare`` row of the line, delivered every time.
 
         It runs as any other row of the line (its brief and outcomes are its input), never pays
@@ -1663,6 +1842,7 @@ class PreparationsService:
                                            due_at=now+brief['account_every_days']*86400,timezone=zone_name,
                                            recurrence=prep.normalize_rrule(rule),
                                            channel=channel or service.preparation_channel(job,prep.KIND_PREPARE,'send'),
+                                           bundle_channel=bundle_channel,
                                            created_from=job['id'],state=prep.STATE_SCHEDULED,
                                            accepted_by=accepted_by,origin=prep.ORIGIN_LINE_ACCOUNT,
                                            title=el.excerpt(msg('lines.account_title',task=brief['task']),prep.TITLE_MAX_CHARS),

@@ -78,6 +78,7 @@ from datetime import datetime, timezone
 from .memory_service import _PROFILE_ROWS_CAP, PROFILE_SECTION_CHARS, MemoryService
 from .owner_forget import OwnerForget
 from .prompt_files import prompt
+from .messages import msg
 from . import preparations as prep
 
 #: The source Work's tool-event name of every upkeep run (#794 shows it).
@@ -895,17 +896,30 @@ class Upkeep:
 
     # -- controls -----------------------------------------------------------
     @staticmethod
+    def report_times(value):
+        """Canonical owner-local times; reject rather than silently reorder the owner's input."""
+        if (not isinstance(value, list) or not 1 <= len(value) <= 4
+                or any(not isinstance(t, str) or len(t) != 5 or t[2] != ':'
+                       or any(c not in '0123456789' for c in t[:2]+t[3:])
+                       or t[:2] > '23' or t[3:] > '59' for t in value)
+                or value != sorted(set(value))):
+            raise ValueError(msg('settings_orchestrator.report_times_format'))
+        return list(value)
+
+    @staticmethod
     def _controls(value):
         value = value if isinstance(value, dict) else {}
         cap = value.get('daily_calls', DEFAULT_DAILY_CALLS)
         if isinstance(cap, bool) or not isinstance(cap, int):
             cap = DEFAULT_DAILY_CALLS
-        return {'enabled': value.get('enabled', True) is not False, 'daily_calls': max(0, min(MAX_DAILY_CALLS, cap)),
+        try: times = Upkeep.report_times(value.get('report_times', ['09:00', '18:00']))
+        except ValueError: times = ['09:00', '18:00']
+        return {'report_times': times, 'enabled': value.get('enabled', True) is not False, 'daily_calls': max(0, min(MAX_DAILY_CALLS, cap)),
                 # #402: the once-a-day look back has its own switch; the pause above stops it too.
                 'dream': value.get('dream', True) is not False}
 
     def settings(self, db=None):
-        """``{'enabled', 'daily_calls'}``: enabled by default (#805)."""
+        """Normalised owner-model switches, call cap and local report times; enabled by default (#805)."""
         if db is None:
             return self._controls(self.store.config(CONFIG_KEY))
         row = db.execute('SELECT value FROM config WHERE key=?', (CONFIG_KEY,)).fetchone()
@@ -915,7 +929,7 @@ class Upkeep:
             return self._controls(None)
 
     def set_controls(self, body):
-        """The owner's pause switch and call cap; nothing else."""
+        """The owner's pause/look-back switches, call cap and report times."""
         body = body if isinstance(body, dict) else {}
         current = self.settings()
         if 'enabled' in body:
@@ -931,6 +945,8 @@ class Upkeep:
             if isinstance(cap, bool) or not isinstance(cap, int) or not 0 <= cap <= MAX_DAILY_CALLS:
                 raise ValueError(f'하루 판단 횟수는 0~{MAX_DAILY_CALLS} 사이로 입력하세요.')
             current['daily_calls'] = cap
+        if 'report_times' in body:
+            current['report_times'] = self.report_times(body['report_times'])
         self.store.put(CONFIG_KEY, current)
         return self.status()
 

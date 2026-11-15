@@ -711,7 +711,8 @@ class AgentService:
         # #659: owner-accepted preparations, run by the existing work loop.
         self.preparations=prep.Preparations(
             store,notice_destination=lambda channel:self.preparations_service.notice_destination(channel),
-            budget_notice_destinations=lambda:self.preparations_service.budget_notice_destinations())
+            budget_notice_destinations=lambda:self.preparations_service.budget_notice_destinations(),
+            bundle_report_times=lambda row,db:self.preparations_service.bundle_report_times(row,db))
         # #798: entrusted lines (one continuing responsibility each) on the preparations' clock.
         from .entrusted_lines import EntrustedLines
         self.lines=EntrustedLines(store,clock=lambda:self.preparations.clock())
@@ -1420,11 +1421,9 @@ class AgentService:
         """#798: what a run of an entrusted line reads before its next step when the brief changed, or None."""
         return self.preparations_service.line_note(job)
 
-    @staticmethod
-    def preparation_delivery(row):
-        """``send`` / ``keep`` / ``when_needed`` (#719) for one preparation row."""
-        from .preparations_service import PreparationsService
-        return PreparationsService.preparation_delivery(row)
+    def preparation_delivery(self, row):
+        """The row's own delivery, or its held line bundle (#799)."""
+        return self.preparations_service.preparation_delivery(row)
 
     def run_due_preparation(self, now=None):
         """One tick of owner-accepted preparations (#659).

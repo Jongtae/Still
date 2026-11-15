@@ -108,6 +108,157 @@
         {"at_hours": 0.9, "do": "announce", "args": {"delivery": "sent"}, "expect": {"notice_count": 0, "line_count": 0, "rows_total": 0}},
         {"at_hours": 3, "do": "run_due", "args": {}, "expect": {"run_started": false, "line_count": 0}}
       ]
+    },
+    {
+      "id": "budget_burst",
+      "split": "heldout",
+      "title": "Repeated reports merge within the owner-local daily budget, including restart and late parts",
+      "steps": [
+        {
+          "at_hours": 0,
+          "do": "owner_turn",
+          "args": {
+            "tag": "t1",
+            "text": "Please read the current result"
+          },
+          "expect": {}
+        },
+        {
+          "at_hours": 23.9,
+          "do": "owner_turn",
+          "args": {
+            "tag": "t2",
+            "text": "Please read the result again"
+          },
+          "expect": {}
+        },
+        {
+          "at_hours": 24,
+          "do": "look_back",
+          "args": {
+            "action": "stand",
+            "task": "Read and report the result",
+            "sources": [
+              "t1",
+              "t2"
+            ]
+          },
+          "expect": {
+            "outcome_stood": true
+          }
+        },
+        {
+          "at_hours": 24,
+          "do": "announce",
+          "args": {
+            "delivery": "sent"
+          },
+          "expect": {
+            "announced": true
+          }
+        },
+        {
+          "at_hours": 34,
+          "do": "report",
+          "args": {
+            "text": "First result"
+          },
+          "expect": {
+            "parts": 0
+          }
+        },
+        {
+          "at_hours": 35,
+          "do": "report",
+          "args": {
+            "text": "Second result"
+          },
+          "expect": {
+            "parts": 0
+          }
+        },
+        {
+          "at_hours": 36,
+          "do": "flush",
+          "args": {},
+          "expect": {
+            "bundles_today": 1,
+            "parts": 2,
+            "parts_once": true
+          }
+        },
+        {
+          "at_hours": 36.2,
+          "do": "report",
+          "args": {
+            "text": "Third result"
+          },
+          "expect": {
+            "bundles_today": 1,
+            "parts": 2
+          }
+        },
+        {
+          "at_hours": 37,
+          "do": "restart",
+          "args": {},
+          "expect": {
+            "bundles_today": 1,
+            "parts": 2
+          }
+        },
+        {
+          "at_hours": 40,
+          "do": "report",
+          "args": {
+            "text": "Fourth result"
+          },
+          "expect": {
+            "bundles_today": 1,
+            "parts": 2
+          }
+        },
+        {
+          "at_hours": 45,
+          "do": "flush",
+          "args": {},
+          "expect": {
+            "bundles_today": 2,
+            "parts": 4,
+            "parts_once": true
+          }
+        },
+        {
+          "at_hours": 46,
+          "do": "report",
+          "args": {
+            "text": "Fifth result"
+          },
+          "expect": {
+            "bundles_today": 2,
+            "parts": 4
+          }
+        },
+        {
+          "at_hours": 48,
+          "do": "flush",
+          "args": {},
+          "expect": {
+            "bundles_today": 2,
+            "parts": 4
+          }
+        },
+        {
+          "at_hours": 60,
+          "do": "flush",
+          "args": {},
+          "expect": {
+            "bundles_today": 1,
+            "parts": 5,
+            "parts_once": true
+          }
+        }
+      ]
     }
   ]
 }

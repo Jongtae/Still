@@ -1054,6 +1054,10 @@ def schedule_text(row, home_zone=None, lang='ko'):
                    interval=_minutes_text(terms['report_seconds'] // 60, lang))
     if row['kind'] == KIND_REMINDER:
         return when
+    if row.get('bundle_report_times'):
+        return msg('preparations.schedule_delivery_bundle', lang,
+                   owner_preparation_schedule_with_delivery=when,
+                   report_times=', '.join(row['bundle_report_times']))
     if row.get('delivery_mode') == DELIVERY_WHEN_NEEDED:
         mode = 'when_needed'
     elif row.get('channel') == CHANNEL_WEB:
@@ -1194,10 +1198,12 @@ def digest(rows):
 class Preparations:
     """The ``preparations`` rows of one owner store.  No model, no network."""
 
-    def __init__(self, store, clock=time.time, notice_destination=None, budget_notice_destinations=None):
+    def __init__(self, store, clock=time.time, notice_destination=None, budget_notice_destinations=None,
+                 bundle_report_times=None):
         self.store, self.clock = store, clock
         self.notice_destination = notice_destination
         self.budget_notice_destinations = budget_notice_destinations
+        self.bundle_report_times = bundle_report_times
         self._invalid_budget_logged = False
 
     def budget_settings(self, db=None):
@@ -1314,6 +1320,15 @@ class Preparations:
                            (job['id'], SCHEDULED_BUDGET_KEY, 'unchecked-slots', json.dumps(pending), self.clock()))
             return pending
 
+    def _schedule_row(self, row, db):
+        """Decorate a read for owner-facing schedules; nothing new is persisted."""
+        if row is None:return None
+        row = dict(row)
+        if self.bundle_report_times:
+            times = self.bundle_report_times(row, db)
+            if times:row['bundle_report_times'] = times
+        return row
+
     def _queue_status_notice(self, db, row, job_id, kind, created):
         if self.notice_destination is None or not row['accepted_by']:
             return
@@ -1338,11 +1353,11 @@ class Preparations:
     def get(self, preparation_id):
         with self.store.db() as db:
             row = db.execute('SELECT * FROM preparations WHERE id=?', (str(preparation_id or ''),)).fetchone()
-            return dict(row) if row else None
+            return self._schedule_row(row, db)
 
     def create(self, *, kind, goal, due_at, timezone, recurrence, channel, created_from, state,
                accepted_by=None, owner=OWNER, window=None, delivery_mode=None, title=None, offer=None, origin=None,
-               report_every_minutes=None, line_id=None, max_runs=None, requested_until=None, db=None):
+               report_every_minutes=None, line_id=None, max_runs=None, requested_until=None, bundle_channel=None, db=None):
         """One new row (idempotent for the same Work, kind, goal and slot).
 
         #574: when another Work already proposed the same kind, goal, due and
@@ -1429,6 +1444,11 @@ class Preparations:
                    'last_notified_digest': None, 'last_notified_text': None, 'last_notified_at': None,
                    'title_text': title, 'offer_text': offer, 'origin': origin, 'offered_at': None, 'line_id': line_id}
             db.execute(f"INSERT INTO preparations({','.join(row)}) VALUES ({','.join('?' * len(row))})", tuple(row.values()))
+            if bundle_channel is not None:
+                # The stood row and its original send intent commit together, already on web.
+                db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                           (created_from, 'line_held', 'succeeded',
+                            json.dumps({'preparation_id': row['id'], 'channel': bundle_channel}), now))
             return row
 
     def accept(self, preparation_id, accepted_by):
@@ -2109,7 +2129,7 @@ class Preparations:
     def rows(self, limit=100):
         """Every row with its last run's Work status and delivery, active first."""
         with self.store.db() as db:
-            return [dict(row) for row in db.execute(
+            return [self._schedule_row(row, db) for row in db.execute(
                 'SELECT p.*, j.status AS last_status, j.delivery AS last_delivery, j.response AS last_response '
                 'FROM preparations p LEFT JOIN jobs j ON j.id=p.last_run_job_id '
                 "ORDER BY CASE p.state WHEN 'proposed' THEN 0 WHEN 'running' THEN 1 WHEN 'scheduled' THEN 2 WHEN 'paused' THEN 3 ELSE 4 END, "

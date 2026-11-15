@@ -11673,5 +11673,65 @@
   "en": "The allowed connection rejected the request: {connection} · {operation} · {target}.",
   "ja": "許可された接続がリクエストを拒否しました: {connection} · {operation} · {target}。",
   "zh": "获准的连接拒绝了请求：{connection} · {operation} · {target}。"
+ },
+ "lines.bundle_heading": {
+  "ko": "보고 {count}건",
+  "en": "{count} reports",
+  "ja": "報告 {count}件",
+  "zh": "{count} 份报告"
+ },
+ "lines.bundle_footer": {
+  "ko": "전체 보고는 Still에 있어요. 그만 보려면 그 일을 멈춰 달라고 하세요.",
+  "en": "Full reports are in Still. To stop, ask to stop the responsibility.",
+  "ja": "全文はStillにあります。停止するには、その責任を停止するよう伝えてください。",
+  "zh": "完整报告在 Still 中。如需停止，请要求停止相应职责。"
+ },
+ "preparations.schedule_delivery_bundle": {
+  "ko": "{owner_preparation_schedule_with_delivery} · 보고 시간({report_times})의 묶음 업데이트로 알려 드려요.",
+  "en": "{owner_preparation_schedule_with_delivery} · Reports arrive in bundled updates at the report times ({report_times}).",
+  "ja": "{owner_preparation_schedule_with_delivery} · 報告時刻（{report_times}）のまとめ報告でお知らせします。",
+  "zh": "{owner_preparation_schedule_with_delivery} · 报告将在报告时间（{report_times}）的汇总更新中送达。"
+ },
+ "lines.bundle_more": {
+  "ko": "Still에 더 있음: {tasks}",
+  "en": "Also in Still: {tasks}",
+  "ja": "Stillにさらにあります: {tasks}",
+  "zh": "Still 中还有：{tasks}"
+ },
+ "preparations.run_delivery_bundle": {
+  "ko": "답은 Still에 남고, 정해진 시간에 묶음 보고의 한 부분이 돼요. 첫머리에 짧은 요지를 쓰세요.",
+  "en": "Your reply stays in Still and becomes one part of a scheduled report bundle. Write a short lead.",
+  "ja": "返答はStillに保存され、定時のまとめ報告の一部になります。冒頭に短い要点を書いてください。",
+  "zh": "回复保存在 Still 中，将成为定时报告汇总的一部分。请在开头简述要点。"
+ },
+ "preparations.delivery_bundle": {
+  "ko": "묶음 보고",
+  "en": "Report bundle",
+  "ja": "まとめ報告",
+  "zh": "报告汇总"
+ },
+ "settings_orchestrator.report_times_label": {
+  "ko": "보고 시간",
+  "en": "Report times",
+  "ja": "報告時刻",
+  "zh": "报告时间"
+ },
+ "settings_orchestrator.report_times_format": {
+  "ko": "현지 시각 HH:MM을 이른 순서로 1~4개, 쉼표로 구분해 입력하세요.",
+  "en": "Enter 1–4 local HH:MM times in increasing order, separated by commas.",
+  "ja": "現地時刻HH:MMを早い順に1〜4個、カンマで区切って入力してください。",
+  "zh": "请输入 1–4 个当地 HH:MM 时间，按先后顺序以逗号分隔。"
+ },
+ "settings_orchestrator.report_times_saved": {
+  "ko": "보고 시간을 저장했어요. 오늘 이미 보고를 받았다면 내일부터 적용돼요.",
+  "en": "Report times saved. If a bundle arrived today, changes apply tomorrow.",
+  "ja": "報告時刻を保存しました。今日すでに報告を受け取った場合は明日から適用されます。",
+  "zh": "报告时间已保存。如今天已收到汇总，更改将从明天生效。"
+ },
+ "settings_orchestrator.report_times_save": {
+  "ko": "보고 시간 저장",
+  "en": "Save report times",
+  "ja": "報告時刻を保存",
+  "zh": "保存报告时间"
  }
 }

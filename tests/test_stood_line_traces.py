@@ -21,13 +21,14 @@ import test_lines_from_conversation_799 as base
 
 FIXTURE = Path(__file__).resolve().parents[1] / 'evals/continuity/stood-line-traces-v1.json'
 KINDS = frozenset(('owner_turn', 'look_back', 'announce', 'run_due', 'owner_rule', 'owner_stop',
-                   'owner_restart', 'enable_payment_autonomy', 'attempt_payment', 'observe'))
+                   'owner_restart', 'enable_payment_autonomy', 'attempt_payment', 'observe', 'report', 'flush', 'restart'))
 EXPECT = frozenset((
     'line_count', 'line_state', 'line_version', 'same_line_id', 'announced', 'notice_count', 'rows_active',
     'rows_total', 'rows_all_cancelled', 'accepted_by_dream', 'run_started', 'run_read_version',
     'rule_present', 'rule_absent', 'brief_rule_present', 'inferred_rule_present', 'outcome_stood',
     'outcome_amended', 'refused_reason', 'provenance_days', 'owner_written', 'self_set_run',
-    'payment_authorized', 'approval_refused', 'approval_raised', 'authority_unchanged'))
+    'payment_authorized', 'approval_refused', 'approval_raised', 'authority_unchanged',
+    'bundles_today', 'parts', 'parts_once'))
 
 
 def validate(document):
@@ -62,9 +63,9 @@ DOCUMENT = json.loads(FIXTURE.read_text())
 class ValidationTests(unittest.TestCase):
     def test_fixture_and_rejected_vocabulary(self):
         traces = validate(DOCUMENT)
-        self.assertEqual(len(traces), 6)
+        self.assertEqual(len(traces), 7)
         self.assertEqual([t['split'] for t in traces].count('dev'), 3)
-        self.assertEqual([t['split'] for t in traces].count('heldout'), 3)
+        self.assertEqual([t['split'] for t in traces].count('heldout'), 4)
         for mutation in ('kind', 'expect', 'split', 'order', 'one_split', 'version'):
             with self.subTest(mutation=mutation):
                 bad = copy.deepcopy(DOCUMENT)
@@ -134,7 +135,13 @@ class StoodLineTraceTests(base.Lines):
         read = self.helper.line_version_read(run_id) if run_id else None
         runs_now = self.runs_of(rows)
         lines = self.service.lines.lines()
+        from personal_agent.current_context import owner_today
+        with self.store.db() as db:
+            bundles=db.execute("SELECT created FROM jobs WHERE model='line-bundle'").fetchall()
+            parts=db.execute("SELECT job_id FROM tool_events WHERE tool='line_bundled'").fetchall()
         return {
+            'bundles_today': sum(owner_today(self.store,b['created'])==owner_today(self.store,self.now) for b in bundles),
+            'parts': len(parts), 'parts_once':len(parts)==len({p['job_id'] for p in parts}),
             'line_count': len(lines),
             'line_state': brief['state'] if brief else None,
             'line_version': brief['version'] if brief else None,
@@ -248,6 +255,23 @@ class StoodLineTraceTests(base.Lines):
         if users:
             self.run_input = users[-1]['content']
 
+    def do_report(self, args):
+        row=self.work_rows(self.brief())[0]
+        with self.store.db() as db:
+            db.execute('UPDATE preparations SET due_at=?,state=? WHERE id=?',(self.now,prep.STATE_SCHEDULED,row['id']))
+        self.script=[{'content':args['text']}]*4
+        self.service.run_due_preparation()
+        self.assertTrue(self.service.run_one())
+        self.service.run_due_preparation()
+
+    def do_flush(self, args):
+        self.helper.line_tick(self.now)
+        self.deliver_all()
+
+    def do_restart(self, args):
+        self.service=self.make_service()
+        self.helper=self.service.preparations_service
+
     def do_owner_rule(self, args):
         brief = self.brief()
         # The latest owner turn is the typed Work that carries the revision.
@@ -299,7 +323,8 @@ class StoodLineTraceTests(base.Lines):
         handler = {'owner_turn': self.do_owner_turn, 'look_back': self.do_look_back, 'announce': self.do_announce,
                    'run_due': self.do_run_due, 'owner_rule': self.do_owner_rule, 'owner_stop': self.do_owner_stop,
                    'owner_restart': self.do_owner_restart, 'enable_payment_autonomy': self.do_enable_payment_autonomy,
-                   'attempt_payment': self.do_attempt_payment, 'observe': lambda a: None}[step['do']]
+                   'attempt_payment': self.do_attempt_payment, 'observe': lambda a: None,
+                   'report':self.do_report, 'flush':self.do_flush, 'restart':self.do_restart}[step['do']]
         handler(step['args'])
         if step['do'] == 'run_due' and 'self_set_run' in step['expect']:
             run = self.last_run()
