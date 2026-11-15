@@ -125,9 +125,19 @@ def _effect_replayed(db, work_id, digest):
         (work_id, ACTION)))
 
 
-def authorize(service, job, binding, connection, operation, target, names=(), *, effect=None, description=None, request=True):
+def authorize(service, job, binding, connection, operation, target, names=(), *, effect=None, description=None, request=True, values=None):
     if not service.unattended_work(job) or not service.self_set_run(job):
         return None
+    from .browser_session import action_input_safe
+    scopes = list(connection) if isinstance(connection, (list, tuple)) else [connection] if connection else []
+    known = connections(service) if scopes else {}
+    connection_labels = [known.get(key, {}).get('label', key) for key in scopes]
+    # Check the original values, not their display rendering: JSON/URL escapes
+    # can hide a stored secret from literal redaction. Nothing unsafe may reach
+    # a judgment, approval card, ticket or the worker's continuation prompt.
+    if not action_input_safe(service.store, {'connection': scopes, 'operation': operation, 'target': target,
+            'names': list(names), 'description': description, 'values': values, 'connection_labels': connection_labels}):
+        raise not_run(ToolError(msg('write_allowances.unrepresentable'), 'api_approval_unrepresentable'))
     if effect is None:
         try:
             metadata=operation
@@ -148,8 +158,6 @@ def authorize(service, job, binding, connection, operation, target, names=(), *,
     digest = service._browser_step_keys(scoped)['digest']
     label = service._redact_known_secrets(f'{connection or "browser"} / {operation} / {target}' +
                                         ('\n' + description if description else ''))
-    scopes = list(connection) if isinstance(connection, (list, tuple)) else [connection] if connection else []
-    known = connections(service) if scopes else {}
     modes = {key: allowance(service,key) for key in scopes}
     allowed = bool(scopes) and all(key in known and modes[key]['enabled'] and
         modes[key]['connection_revision'] == known[key]['connection_revision'] for key in scopes)
@@ -169,7 +177,7 @@ def authorize(service, job, binding, connection, operation, target, names=(), *,
         if _effect_replayed(db, job['id'], digest):
             raise not_run(ToolError(msg('write_allowances.replayed'), 'effect_replayed'))
         ticket = {'digest': digest, 'connection': connection, 'operation': operation,
-                  'connection_label': service._redact_known_secrets(', '.join(known.get(key, {}).get('label', key) for key in scopes)),
+                  'connection_label': service._redact_known_secrets(', '.join(connection_labels)),
                   'target': service._redact_known_secrets(str(target)), 'allowance': allowed,
                   'revision': next(iter(modes.values()))['revision'] if allowed and len(modes)==1 else None,
                   'allowances': {key: value['revision'] for key,value in modes.items()} if allowed else {},
@@ -208,10 +216,9 @@ def finished(service, job, ticket, *, observed=True, rejected=False, held=False)
     if not ticket:
         return
     service.__dict__.get('_self_set_unspent', {}).pop(ticket['event'], None)
-    keys = ticket['connection'] if isinstance(ticket['connection'], (list, tuple)) else [ticket['connection']]
-    known = connections(service)
-    label = service._redact_known_secrets(ticket.get('connection_label') or
-                                          ', '.join(known.get(key, {}).get('label', str(key)) for key in keys))
+    # Use the checked snapshot; a connection's current display name may have
+    # changed since authorization and has not passed the decoded-value guard.
+    label = service._redact_known_secrets(ticket['connection_label'])
     text = msg('write_allowances.rejected_notice' if rejected else 'write_allowances.notice' if observed else 'write_allowances.unknown_notice', connection=label, operation=ticket['operation'], target=ticket['target'])
     with service.store.db() as db:
         db.execute('BEGIN IMMEDIATE')

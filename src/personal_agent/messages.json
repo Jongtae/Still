@@ -11464,6 +11464,12 @@
   "ja": "この変更は所有者の承認を待っています。承認後に一度だけ続行します。",
   "zh": "此更改正在等待所有者批准。批准后仅继续执行一次。"
  },
+ "write_allowances.unrepresentable": {
+  "ko": "실행 내용을 비밀값 없이 온전히 확인할 수 없어 실행하거나 승인을 요청하지 않았어요.",
+  "en": "The request cannot be reviewed in full without secret values, so it was not run or offered for approval.",
+  "ja": "秘密の値を含めずに実行内容の全体を確認できないため、実行も承認の依頼もしていません。",
+  "zh": "无法在不包含秘密值的情况下完整审核请求，因此未执行，也未请求批准。"
+ },
  "write_allowances.replayed": {
   "ko": "이미 보낸 변경은 다시 보내지 않아요.",
   "en": "This change has already been dispatched and will not be repeated.",

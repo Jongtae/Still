@@ -1279,9 +1279,14 @@ class ApiRequests:
                 binding=step_binding(self.work_id,'api_request',url,f"{slot['name']}|{method}|{url}",
                                      argument=body or '',state=str(slot.get('revision','')))
                 try:
-                    write_ticket=gate(binding,'slot:'+slot['name'],method,url,('body',) if body else (),description=body)
+                    write_ticket=gate(binding,'slot:'+slot['name'],method,url,('body',) if body else (),description=body,
+                                      values={'connection': slot['name'], 'url': url, 'body': body or ''})
                 except ValueError as exc:
-                    raise ApiError(str(exc),getattr(exc,'code','approval_required')) from None
+                    error = ApiError(str(exc),getattr(exc,'code','approval_required'))
+                    if getattr(exc, 'ran', None) is False:
+                        from .agent_runtime import not_run
+                        not_run(error)
+                    raise error from None
             if identity:
                 try:
                     claim = self._effect_guard(slot, identity, method=method, effect=effect, destination=named)

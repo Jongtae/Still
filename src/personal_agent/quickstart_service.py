@@ -7076,9 +7076,9 @@ class AgentService:
         with self.store.db() as db:
             return self.preparations.wait_refusal(db,job['id'],stamp,self_set_write=True) is None
 
-    def self_set_write(self, job, binding, connection, operation, target, names=(), *, effect=None, description=None, request=True):
+    def self_set_write(self, job, binding, connection, operation, target, names=(), *, effect=None, description=None, request=True, values=None):
         from .self_set_writes import authorize
-        return authorize(self,job,binding,connection,operation,target,names,effect=effect,description=description,request=request)
+        return authorize(self,job,binding,connection,operation,target,names,effect=effect,description=description,request=request,values=values)
 
     def self_set_write_check(self, job, ticket, *, db=None):
         from .self_set_writes import recheck
@@ -8077,7 +8077,7 @@ class AgentService:
             if allow and self.self_set_run(job):
                 try:
                     write_ticket=self.self_set_write(job,binding,f'connector:{engine}|{kind}|{identity}',operation,
-                        json.dumps(values,ensure_ascii=False,sort_keys=True),(),effect=reversibility or 'irreversible')
+                        json.dumps(values,ensure_ascii=False,sort_keys=True),(),effect=reversibility or 'irreversible',values=values)
                 except ToolError as exc:
                     return {'behavior':'deny','message':str(exc)}
             if effect=='payment':

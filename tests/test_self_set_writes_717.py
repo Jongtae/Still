@@ -76,6 +76,164 @@ class Writes(_Runs):
     def started_self(self):
         return self.started(accepted_by=prep.ACCEPTED_DREAM)
 
+    @staticmethod
+    def encoded_bodies(value):
+        # Encode every character: quote() leaves letters and digits unchanged.
+        return ('{"note":"' + ''.join('\\u%04x' % ord(c) for c in value) + '"}',
+                '{"note":"' + ''.join('%%%02X' % ord(c) for c in value) + '"}')
+
+    def assert_no_write_approval(self, job):
+        self.assertIsNone(self.service._browser_request(job['id']))
+        self.assertEqual(self.service.browser_step_requests(), [])
+        with self.store.db() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM tool_events WHERE tool='self_set_write'").fetchone()[0], 0)
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM memory_approvals WHERE work_key=?',
+                                        (job['id'],)).fetchone()[0], 0)
+
+    def test_encoded_api_body_never_enters_approval_or_continuation(self):
+        _, job = self.started_self()
+        bodies = self.encoded_bodies('secret-notes-123456789')
+        with mock.patch.object(self.service.decision_judge, 'connector_effect', return_value='irreversible'):
+            for allowed in (False, True):
+                if allowed:
+                    set_allowance(self.service, 'slot:notes', True, 0, 'owner')
+                for body in bodies:
+                    with self.subTest(allowed=allowed, encoding=bodies.index(body)):
+                        with self.assertRaises(ApiError) as raised:
+                            self.api(job).call(self.args(body))
+                        self.assertEqual(raised.exception.code, 'api_approval_unrepresentable')
+                        self.assertIs(getattr(raised.exception, 'ran', None), False)
+                        self.assert_no_write_approval(job)
+                        self.assertEqual(self.sent, [])
+            set_allowance(self.service, 'slot:notes', False, 1, 'owner')
+            clean = '{"note":"reviewable value"}'
+            with self.assertRaises(ApiError) as raised:
+                self.api(job).call(self.args(clean))
+            self.assertEqual(raised.exception.code, 'approval_required')
+        offered = self.service._browser_request(job['id'])
+        self.assertIn(clean, offered['label'])
+        self.ended_waiting(job)
+        self.assertTrue(self.service._decide_browser_step(job['id'], True, offered['offer_digest'])['resumed'])
+        prompt = self.service.action_continuation_note(job)
+        self.assertIn(clean, prompt)
+        approvals = json.dumps(self.service.browser_step_requests())
+        for value in ('secret-notes-123456789', *bodies):
+            self.assertNotIn(value, prompt)
+            self.assertNotIn(value, approvals)
+
+    def test_encoded_in_code_body_never_enters_approval_or_continuation(self):
+        from personal_agent.api_requests import slots
+        from personal_agent.browser_jar import MemoryKey
+        from personal_agent.code_run import CodeRunner
+        self.store.api_slot_key = MemoryKey()
+        value = 'fixture-account-123456789'
+        save_slot(self.store, 'code-notes', ['notes.test'], {'ACCOUNT': value}, money=False,
+                  encrypted=True, code={'fields': [{'name': 'ACCOUNT', 'use': 'in_code'}], 'reads': []})
+        _, job = self.started_self()
+        runner = CodeRunner(self.store, job['id'], approvals=self.service.browser_approvals_for(job))
+        runner._owners = {'notes.test': [('code-notes', slots(self.store)['code-notes'])]}
+        runner._fields = []
+        request = {'method': 'POST', 'host': 'notes.test', 'path': '/items', 'query': ''}
+        bodies = self.encoded_bodies(value)
+        with mock.patch.object(self.service.decision_judge, 'connector_effect', return_value='irreversible'):
+            for allowed in (False, True):
+                if allowed:
+                    set_allowance(self.service, 'slot:code-notes', True, 0, 'owner')
+                for body in bodies:
+                    with self.subTest(allowed=allowed, encoding=bodies.index(body)):
+                        permitted, reason = runner._decide({**request, 'bodyText': body}, {'notes.test': []})
+                        self.assertFalse(permitted)
+                        self.assertIn('비밀값', reason)
+                        self.assertEqual(runner._asked, [])
+                        self.assertEqual(runner._claims, [])
+                        self.assert_no_write_approval(job)
+            set_allowance(self.service, 'slot:code-notes', False, 1, 'owner')
+            clean = '{"note":"reviewable code value"}'
+            self.assertFalse(runner._decide({**request, 'bodyText': clean}, {'notes.test': []})[0])
+        offered = self.service._browser_request(job['id'])
+        self.assertIn(clean, offered['label'])
+        self.ended_waiting(job)
+        self.assertTrue(self.service._decide_browser_step(job['id'], True, offered['offer_digest'])['resumed'])
+        prompt = self.service.action_continuation_note(job)
+        self.assertIn(clean, prompt)
+        approvals = json.dumps(self.service.browser_step_requests())
+        for text in (value, *bodies):
+            self.assertNotIn(text, prompt)
+            self.assertNotIn(text, approvals)
+
+    def test_decoded_metadata_and_raw_values_are_checked_before_judgment(self):
+        from personal_agent import self_set_writes
+        _, job = self.started_self()
+        binding = step_binding(job['id'], 'api_request', 'https://notes.test/items', 'target')
+        body, percent_body = self.encoded_bodies('secret-notes-123456789')
+        encoded = json.loads(percent_body)['note']
+        inputs = {'connection': 'slot:notes', 'operation': 'POST', 'target': '/items'}
+        known = self_set_writes.connections(self.service)
+        cases = [({'description': body}, known),
+                 ({'values': {'note': body}}, known),
+                 ({'connection': 'slot:' + encoded}, known),
+                 ({'target': '/items?note=' + encoded}, known),
+                 ({'operation': encoded}, known),
+                 ({'names': [percent_body]}, known),
+                 ({}, {**known, 'slot:notes': {**known['slot:notes'], 'label': body}})]
+        with mock.patch.object(self.service.decision_judge, 'connector_effect') as judge:
+            for index, (changes, connections) in enumerate(cases):
+                with self.subTest(field=index), mock.patch.object(self_set_writes, 'connections', return_value=connections):
+                    with self.assertRaises(ToolError) as raised:
+                        self.service.self_set_write(job, binding, **{**inputs, **changes})
+                    self.assertEqual(raised.exception.code, 'api_approval_unrepresentable')
+                    self.assertIs(raised.exception.ran, False)
+                    self.assert_no_write_approval(job)
+            judge.assert_not_called()
+
+    def test_notice_uses_checked_connection_label_even_when_empty(self):
+        from personal_agent import self_set_writes
+        _, job = self.started_self()
+        known = self_set_writes.connections(self.service)
+        known['slot:notes']['label'] = ''
+        binding = step_binding(job['id'], 'api_request', 'https://notes.test/items', 'target')
+        with mock.patch.object(self_set_writes, 'connections', return_value=known):
+            set_allowance(self.service, 'slot:notes', True, 0, 'owner')
+            ticket = self.service.self_set_write(job, binding, 'slot:notes', 'POST', '/items', effect='irreversible')
+            known['slot:notes']['label'] = self.encoded_bodies('secret-notes-123456789')[1]
+            with mock.patch.object(self.service, 'record_conversation_notice', wraps=self.service.record_conversation_notice) as notice:
+                self.service.self_set_write_finished(job, ticket)
+        self.assertEqual(ticket['target'], '/items')
+        self.assertEqual(ticket['connection_label'], '')
+        notice.assert_called_once()
+        self.assertNotIn(known['slot:notes']['label'], notice.call_args.args[0])
+        self.assertNotIn('secret-notes-123456789', notice.call_args.args[0])
+
+    def test_browser_checks_raw_text_and_submit_url_before_display_minimization(self):
+        from personal_agent import browser_session as bs
+        from test_browser_session import FakeDriver, ORIGIN
+        _, job = self.started_self()
+        driver = FakeDriver()
+        browser = bs.BrowserSession(lambda: driver, work_id=job['id'], approvals=self.service.browser_approvals_for(job))
+        self.addCleanup(browser.close)
+        browser.open({'url': ORIGIN + '/one-press', 'effect': 'navigate'})
+        raw = {'url': ORIGIN + '/form', 'elements': [
+            {'index': 0, 'role': 'textbox', 'name': 'Note', 'fieldName': 'note', 'form': 0, 'value': ''}]}
+        with mock.patch.object(browser, '_snapshot', return_value=bs.mediate_snapshot(raw)), \
+                mock.patch.object(self.service.decision_judge, 'connector_effect') as judge:
+            for body in self.encoded_bodies('secret-notes-123456789'):
+                with self.assertRaises(ToolError) as raised:
+                    browser.type({'target': 'Note', 'text': body, 'effect': 'mutate'})
+                self.assertEqual(raised.exception.code, 'api_approval_unrepresentable')
+                self.assertIs(raised.exception.ran, False)
+                self.assert_no_write_approval(job)
+            encoded = json.loads(self.encoded_bodies('secret-notes-123456789')[1])['note']
+            record = {'page': ORIGIN + '/form', 'action': ORIGIN + '/submit?note=' + encoded,
+                      'method': 'POST', 'dom': 0, 'state': 'digest', 'payment': False, 'fieldNames': ['note']}
+            driver.release_submit = mock.Mock()
+            with self.assertRaises(ToolError) as raised:
+                browser._cancelled_submit(record, 'submit')
+            self.assertEqual(raised.exception.code, 'api_approval_unrepresentable')
+            self.assert_no_write_approval(job)
+            driver.release_submit.assert_not_called()
+            judge.assert_not_called()
+        self.assertEqual(driver.approved, [])
+
     def gmail_slot_revisions(self, grants):
         from types import SimpleNamespace
         from personal_agent import connection_slots
@@ -728,8 +886,12 @@ class VerifierRegressions(_Runs):
         rows['slot:notes']['label']='Notes '+secret
         binding=step_binding(job['id'],'api_request','https://notes.test/items','target',argument='body')
         with mock.patch.object(self_set_writes,'connections',return_value=rows):
-            ticket=self.service.self_set_write(job,binding,'slot:notes','POST','/items',effect='irreversible')
-        self.assertNotIn(secret,json.dumps(ticket))
+            with self.assertRaises(ToolError) as raised:
+                self.service.self_set_write(job,binding,'slot:notes','POST','/items',effect='irreversible')
+        self.assertEqual(raised.exception.code,'api_approval_unrepresentable')
+        self.assertIs(raised.exception.ran,False)
+        self.assertIsNone(self.service._browser_request(job['id']))
+        self.assertEqual(self.events(),[])
         self.assertNotIn(secret,json.dumps(self.events()))
 
     def test_allowance_category_is_available_to_conversation(self):

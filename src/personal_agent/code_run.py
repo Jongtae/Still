@@ -952,7 +952,8 @@ class CodeRunner:
         gate=getattr(self.approvals,'self_set_write',None)
         ticket=None
         if callable(gate):
-            try:ticket=gate(binding,['slot:'+owner[0] for owner in owners],method,url,('body',),description=body)
+            try:ticket=gate(binding,['slot:'+owner[0] for owner in owners],method,url,('body',),description=body,
+                            values={'url': url, 'body': body})
             except ValueError as exc:
                 if getattr(exc,'code',None)=='approval_required':
                     self._asked.append({'method':method,'host':host,'path':redact_known_secrets(self.store,path)})

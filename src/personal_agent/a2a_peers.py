@@ -563,7 +563,8 @@ class A2APeers:
         from .browser_session import step_binding
         binding=step_binding(work_id,'a2a_message',url,peer_id,argument=text,state=row['revision'])
         ticket=self.service.self_set_write(self.store.job(work_id),binding,'peer:'+peer_id,
-                                           'a2a_message',peer_id,effect='irreversible',description=text)
+                                           'a2a_message',peer_id,effect='irreversible',description=text,
+                                           values={'url': url, 'message_id': message_id, 'text': text})
         try:
             turn, fresh = self.admit(peer_id, message_id, None, text, 'outbound', work_id)
         except Exception:

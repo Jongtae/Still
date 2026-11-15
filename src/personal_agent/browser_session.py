@@ -1025,6 +1025,7 @@ class BrowserSession:
             try:
                 ticket=gate(binding,None,'browser_submit',page_reference(record.get('page')),record.get('fieldNames',()),
                             description=description+cancelled_note(record),
+                            values=record,
                             **({'effect':'irreversible','request':False} if resuming else {}))
             except ToolError as exc:
                 if exc.code == 'approval_required' and not resuming:
@@ -1732,7 +1733,8 @@ class BrowserSession:
         gate=getattr(self.approvals,'self_set_write',None)
         if not required and callable(gate):
             write_ticket=gate(binding,None,'browser_click',page_reference(snapshot['_page']),
-                 self._write_metadata(snapshot, element),description=description)
+                 self._write_metadata(snapshot, element),description=description,
+                 values={'url': snapshot['_page'], 'target': key, 'state': state})
         try:
             if write_ticket:
                 # Judgment can yield while the page changes. Dispatch only the input
@@ -1810,7 +1812,9 @@ class BrowserSession:
         gate = getattr(self.approvals, 'self_set_write', None)
         if not required and callable(gate) and (effect == 'mutate' or args.get('submit') or args.get('key') == 'Enter'):
             write_ticket = gate(binding, None, 'browser_type', page_reference(snapshot['_page']),
-                                self._write_metadata(snapshot, element), description=description)
+                                self._write_metadata(snapshot, element), description=description,
+                                values={'url': snapshot['_page'], 'target': target_key(element), 'text': text,
+                                        'state': self._state_of(snapshot, element)})
         try:
             if write_ticket:
                 current = self._snapshot()
