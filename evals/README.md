@@ -4,7 +4,7 @@
 
 > Owner decision 2026-10-01 (#887): the eval is **on-demand triage**, not a scheduled loop and not a pass-rate target. The owner's real use is the primary signal. A sweep reproduces owner-reported failures and checks that a fix generalizes. Run it after a batch of merged fixes, normally only the affected `--scenarios` with `--epochs 1`. Use a full `--epochs 3` sweep only to support an improvement claim. A sweep stops at the first subscription usage limit (see *Capacity*).
 
-Machines, not the owner, should find the failures. This folder runs owner-realistic, multi-turn conversations against **isolated Still sandboxes**. The sandboxes run on the owner's Codex and Claude Code subscriptions. Each run is scored with deterministic checks and a secretary-rubric judge, and every sweep produces a trend report that groups failures by root cause.
+Machines, not the owner, should find the failures. This folder runs owner-realistic, multi-turn conversations against **isolated Still sandboxes**. The sandboxes run on the owner's Codex and Claude Code subscriptions. Each run is scored with deterministic checks and, only when explicitly selected, a secretary-rubric judge, and every sweep produces a trend report that groups failures by root cause.
 
 This is development tooling. It is never imported by `src/personal_agent` and never installed into the Still runtime. A sweep result is a **live local observation** of the exact code checkout, seed and subscription workers it ran with. It is not a calibrated quality score (see Limitations).
 
@@ -53,15 +53,15 @@ Without `--seed`, a sweep starts from an empty data folder. That works for Codex
 
 ### Judge key and spend cap
 
-The judge is any Inspect model name. The default is `openai/gpt-6.1-terra`; set another with `--judge` or `AGENTOS_EVAL_JUDGE_MODEL`, or pass `--judge none` for checks only.
+There is no default eval judge. Sweeps and direct Inspect task runs use deterministic checks only unless the contributor names an Inspect model with `--judge <model>` (direct Inspect: `-T judge=<model>`) or `AGENTOS_EVAL_JUDGE_MODEL=<model>`. `--judge none` explicitly keeps it off. Checks-only runs print a notice and never load a judge provider key. `continuity run` requires an explicitly selected judge for its measures.
 
-The key is read at run time from the environment (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, ...). If it is not there, the key is read from the login Keychain:
+An explicitly selected judge uses the contributor's own provider key, read at run time from the environment (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, ...). If it is not there, the key is read from the login Keychain:
 
 ```sh
 security add-generic-password -s agentos-evals -a openai -w   # prompts for the key
 ```
 
-The key is never written anywhere by this tool.
+The key is never written anywhere by this tool. Before Inspect starts, one notice names the judge, key source (environment or Keychain), daily USD cap, and effective input/output prices per million tokens; it flags either price that uses the 2/8 placeholder defaults. Sweeps and continuity runs end with judge calls, tokens and settled USD from score metadata, or a judge-off line. Reports retain the requested judge and provider-reported resolved model ids when available. Comparisons refuse different judges, judged versus checks-only runs, and unknown historical judges paired with known ones.
 
 Judge spend is capped per day (default **USD 10**; `--cap-usd` or `AGENTOS_EVAL_JUDGE_CAP_USD`).
 

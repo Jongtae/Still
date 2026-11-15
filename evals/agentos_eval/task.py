@@ -36,8 +36,6 @@ from agentos_eval.sandbox import SandboxPool
 from agentos_eval.scoring import JUDGE_MAX_TOKENS, score_run
 
 
-DEFAULT_JUDGE = 'openai/gpt-6.1-terra'
-
 def workers_for(worker):
     if worker in ('both', 'split'):
         return WORKERS
@@ -77,9 +75,10 @@ def agentos_blackbox(pool, turn_timeout=900, judgment_timeout=300):
 
 
 @scorer(metrics={'*': [mean()]})
-def secretary(judge='grader', budget_path=None, seed=None, measures=''):
-    budget = JudgeBudget.from_environ(budget_path or eval_home() / 'judge-budget.json')
-    redact = Redactor.for_seed(seed)
+def secretary(judge='none', budget_path=None, seed=None, measures=''):
+    enabled = bool(judge) and judge != 'none'
+    budget = JudgeBudget.from_environ(budget_path or eval_home() / 'judge-budget.json') if enabled else None
+    redact = Redactor.for_seed(seed) if enabled else None
     if measures:
         from agentos_eval.continuity import load_rubric
         rubric = load_rubric(measures)
@@ -107,10 +106,13 @@ def secretary(judge='grader', budget_path=None, seed=None, measures=''):
 @task
 def agentos_secretary(scenarios='', split='', worker='codex', instances=3, seed='', judge='',
                       turn_timeout=900, judgment_timeout=300, include_local=True, keep_sandboxes=False, measures='',
-                      sample_limit=None):
+                      sample_limit=None, judge_notice=True):
     """Multi-turn owner scenarios against fresh Still sandboxes, on Codex and/or Claude Code."""
     seed = seed or os.environ.get('AGENTOS_EVAL_SEED', '')
-    judge = judge or os.environ.get('AGENTOS_EVAL_JUDGE_MODEL', DEFAULT_JUDGE)
+    from agentos_eval.cli import judge_notice as announce_judge, selected_judge
+    judge = selected_judge(judge)
+    if str(judge_notice).lower() not in ('0', 'false', 'no'):
+        announce_judge(judge)
     pool = SandboxPool(size=int(instances), seed=Path(seed).expanduser() if seed else None,
                        keep=str(keep_sandboxes).lower() in ('1', 'true', 'yes'))
     include_local = str(include_local).lower() not in ('0', 'false', 'no')

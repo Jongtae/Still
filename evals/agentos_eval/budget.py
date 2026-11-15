@@ -21,6 +21,16 @@ DEFAULT_PRICE_IN = 2.0
 DEFAULT_PRICE_OUT = 8.0
 
 
+def judge_totals(records):
+    """Run-local totals from scorer settlements, never a daily-ledger delta."""
+    calls = [call for row in records for call in row.get('judge_usage', {}).values() if call]
+    totals = {'calls': len(calls)}
+    for metric in ('input_tokens', 'output_tokens', 'usd'):
+        values = [call.get(metric, 'unavailable') for call in calls]
+        totals[metric] = sum(values) if all(type(v) in (float, int) for v in values) else 'unavailable'
+    return totals
+
+
 def estimate_tokens(text):
     """A deliberately high token estimate for mixed Korean/English text (no tokenizer needed)."""
     return max(1, len(text) // 2)

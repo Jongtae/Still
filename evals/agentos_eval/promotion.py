@@ -160,6 +160,8 @@ def validate_record(record, *, root=REPO):
     Draft202012Validator(schema).validate(record)
     # JSON Schema numbers alone also accept Python NaN; receipts must be portable JSON.
     json.dumps(record, allow_nan=False)
+    from .report import require_same_judge
+    require_same_judge(record['conditions']['baseline'], record['conditions']['candidate'])
     if record['evidence_class'] != _evidence_class(record['evidence']):
         raise ValueError('Record evidence class disagrees with arm evidence')
     if record['change_identity']['run'] != _run_identity(record['plan']):
@@ -218,6 +220,8 @@ def build_record(selection, paired, change_identity=None, *, budget=None, eviden
     Rollback and rerun use Git rev-list and the recorded run inputs, never typed commands.
     Unknown identity fields are null, not an inferred model/CLI/prompt identity.
     """
+    from .report import require_same_judge
+    require_same_judge(paired['conditions']['baseline'], paired['conditions']['candidate'])
     evidence = dict(classes=deepcopy(paired.get('evidence_class', {})),
                     seed_manifests=deepcopy(paired.get('seed_manifests', {})))
     derived_class = _evidence_class(evidence)

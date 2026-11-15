@@ -244,6 +244,10 @@ def combine(scenario, run, checks, failures, judgment=None, judge_status='skippe
                     message_ids=sorted(message_ids(run)),
                     latency=[{'turn': i, 'sent_at': t.get('sent_at'), 'elapsed': t.get('elapsed')}
                                   for i, t in enumerate(run.get('turns') or [], 1)])
+    resolved = sorted({call['judge_model_resolved'] for call in (judge_usage or {}).values()
+                       if call.get('judge_model_resolved')})
+    if resolved:
+        metadata['judge_model_resolved'] = resolved
     return value, metadata
 
 
@@ -414,11 +418,14 @@ async def judge_call(prompt, parse, generate, budget, redact, system=JUDGE_SYSTE
              'basis': 'reservation'}
     try:
         output = await generate(system, prompt)
+        resolved = getattr(output, 'model', None)
+        if resolved:
+            usage['judge_model_resolved'] = resolved
         tokens = output.usage
         usd = budget.settle(reserved, tokens.input_tokens if tokens else None, tokens.output_tokens if tokens else None)
         if tokens:
-            usage = {'input_tokens': tokens.input_tokens, 'output_tokens': tokens.output_tokens,
-                     'usd': usd, 'basis': 'observed'}
+            usage.update(input_tokens=tokens.input_tokens, output_tokens=tokens.output_tokens,
+                         usd=usd, basis='observed')
         return parse(output.completion), 'judged', usage, None
     except Exception as exc:  # a judge outage or malformed reply stays unscored
         return None, 'judge_error', usage, redact(f'{type(exc).__name__}: {exc}')[:200]
@@ -437,7 +444,7 @@ async def score_run(scenario, run, judge, budget, redact, generate, rubric=None)
     checks, failures = deterministic_checks(scenario, run)
     judgment, judge_status = None, 'skipped'
     measured, measures_status, usage = None, 'skipped', {}
-    eligible = judge != 'none' and not run.get('error') and not usage_limited(run)
+    eligible = bool(judge) and judge != 'none' and not run.get('error') and not usage_limited(run)
     infra = any(f['kind'] == 'infra' for f in failures)
     if eligible:
         judgment, judge_status, usage['rubric'], error = await judge_call(
