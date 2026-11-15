@@ -810,13 +810,17 @@ class TelegramTurnAddressing:
         row = self.get(job_id)
         return row.get('reply_to_message_id') if row else None
 
-    def record_reply(self, job_id, chat_id, message_id):
+    def record_reply(self, job_id, chat_id, message_id, db=None):
         if not isinstance(message_id, int):
             return
-        with self.store.db() as db:
-            db.execute('INSERT INTO telegram_turns(job_id,chat_id,reply_message_id,created) VALUES (?,?,?,?) '
-                       'ON CONFLICT(job_id) DO UPDATE SET reply_message_id=excluded.reply_message_id',
-                       (job_id, chat_id, message_id, time.time()))
+        statement = ('INSERT INTO telegram_turns(job_id,chat_id,reply_message_id,created) VALUES (?,?,?,?) '
+                     'ON CONFLICT(job_id) DO UPDATE SET reply_message_id=excluded.reply_message_id')
+        values = (job_id, chat_id, message_id, time.time())
+        if db is not None:
+            db.execute(statement, values)
+            return
+        with self.store.db() as conn:
+            conn.execute(statement, values)
 
     def get(self, job_id):
         with self.store.db() as db:
