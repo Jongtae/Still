@@ -24,7 +24,7 @@ from .prompt_files import prompt
 from .providers import ProviderError
 from .quickstart_service import (LOG, PREPARATION_CONVERSATION_CHARS,
                                  PREPARATION_CONVERSATION_TURNS, PREPARED_IDS_PREFIX,
-                                 UNATTENDED_APPROVAL_TEXT)
+                                 UNATTENDED_APPROVAL_TEXT, prepared_ids)
 
 
 #: #780: the daily plan's brief: a method for reading the day, never a topic.
@@ -539,6 +539,11 @@ class PreparationsService:
                 continue
             notice = service.store.notification_of(
                 f"{suggestion['created_from']}/dream:{suggestion['id']}", 'preparation_scheduled')
+            if not notice or notice.get('sent_at') is None:
+                # Before per-row keys, a confirmed notice could cover several rows on the anchor.
+                legacy = service.store.notification_of(suggestion['created_from'], 'preparation_scheduled')
+                if suggestion['id'] in prepared_ids(legacy):
+                    notice = legacy
             sent_at = notice.get('sent_at') if notice else None
             if suggestion.get('offered_at') != sent_at:
                 # Repair old queue-time marks too: only the existing send receipt is evidence.

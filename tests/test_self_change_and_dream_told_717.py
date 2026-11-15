@@ -125,6 +125,61 @@ class DreamFindings(pt._Case):
     deliver = sugg.Offer.deliver
     row_notification = sugg.Offer.row_notification
 
+    def legacy_scheduled_dream(self, anchor, goal):
+        """An unbounded, already-offered recurring row from before per-row notices."""
+        row = self.service.preparations.create(
+            kind=prep.KIND_PREPARE, goal=goal, due_at=self.now + prep.SUGGESTION_EXPIRY_SECONDS + 86400,
+            timezone='Asia/Seoul', recurrence='daily', channel=prep.CHANNEL_TELEGRAM, created_from=anchor,
+            state=prep.STATE_SCHEDULED, accepted_by=prep.ACCEPTED_DREAM, origin=prep.ORIGIN_DREAM)
+        self.service.preparations.mark_offered([row], self.now)
+        return row
+
+    def test_confirmed_legacy_notice_preserves_old_offered_dreams(self):
+        offered_at = self.now
+        rows = []
+        for queued in (False, True):
+            anchor = self.receive(f'question {queued}')
+            row = self.legacy_scheduled_dream(anchor, f'legacy goal {queued}')
+            notice = self.store.queue_notification(anchor, pt.CHAT, pt.GENERATION, 'preparation_scheduled',
+                                                   fingerprint='ids:' + row['id'])
+            with mock.patch('time.time', return_value=offered_at):
+                self.store.update_notification(notice['id'], 'sent', message_id=9001, delivered=True)
+            if queued:
+                self.store.queue_notification(f"{anchor}/dream:{row['id']}", pt.CHAT, pt.GENERATION,
+                                              'preparation_scheduled', fingerprint='ids:' + row['id'])
+            rows.append((row, queued))
+        self.now += prep.SUGGESTION_EXPIRY_SECONDS + 1
+        self.service = self.make_service()  # Upgrade/restart consumes the persisted legacy receipts.
+        self.model_calls.clear()
+        self.tick()
+        for row, queued in rows:
+            current = self.service.preparations.get(row['id'])
+            self.assertEqual(current['offered_at'], offered_at)
+            self.assertEqual(current['state'], prep.STATE_SCHEDULED)
+            self.assertEqual(self.row_notification(row) is not None, queued)
+        self.assertEqual(self.model_calls, [])
+
+    def test_legacy_notice_requires_exact_coverage_and_confirmed_delivery(self):
+        rows = []
+        for binding, confirmed in (('other-row', True), ('suffix', True), ('covered', False)):
+            anchor = self.receive('question ' + binding)
+            row = self.legacy_scheduled_dream(anchor, 'legacy goal ' + binding)
+            notice = self.store.queue_notification(
+                anchor, pt.CHAT, pt.GENERATION, 'preparation_scheduled',
+                fingerprint='ids:' + (row['id'] if binding == 'covered' else
+                                      row['id'] + '-other' if binding == 'suffix' else 'other-row'))
+            with mock.patch('time.time', return_value=self.now):
+                self.store.update_notification(notice['id'], 'sent', message_id=9001, delivered=confirmed)
+            rows.append(row)
+        self.now += prep.SUGGESTION_EXPIRY_SECONDS + 1
+        self.tick()
+        for row in rows:
+            current = self.service.preparations.get(row['id'])
+            self.assertIsNone(current['offered_at'])
+            self.assertEqual(current['state'], prep.STATE_EXPIRED)
+            self.assertEqual(self.runs(row['id']), [])
+            self.assertIsNone(self.row_notification(row))
+
     def test_queued_or_cancelled_notice_never_releases_row(self):
         anchor = self.receive('question')
         row = self.suggest(anchor)
