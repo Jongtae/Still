@@ -531,8 +531,8 @@ class UnattendedRuns(_Case):
     def test_it_cannot_pause_another_running_preparation(self):
         row, run = self.started_run()
         other, _other_run = self.started_run()
-        with self.assertRaises(SettingsError):
-            self.change('pause', other['id'], run)
+        result = self.change('pause', other['id'], run)
+        self.assertEqual((result['state'], result['applied']), ('not_proposed', False))
         with self.assertRaises(prep.PreparationRefusal):
             self.service.preparations.pause(other['id'], work_id=run['id'])
         with self.assertRaises(prep.PreparationRefusal):

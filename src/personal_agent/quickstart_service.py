@@ -1778,7 +1778,7 @@ class AgentService:
     def suggest_preparations(self, anchor_id, items, judgments=None):
         """Schedule the look-back's preparations (#583, #717) as rows of its anchor Work; ``(outcomes, calls)``.
 
-        ``items`` passed ``om.validate_suggestions`` (two cited turns, or one for a one-off, #638).  Each
+        ``items`` passed ``om.validate_suggestions`` (at least one cited turn).  Each
         is then validated by ``schedule_preparation``'s own normalisers and skipped when a preparation
         with the same goal is active or the owner declined it recently (``declined_before``, whose
         judgment is the only model call here, counted in ``calls`` and asked only while the upkeep
@@ -1790,28 +1790,14 @@ class AgentService:
         return self.preparations_service.suggest_preparations(anchor_id, items, judgments)
 
     def queue_preparation_suggestion(self, job, one_off=False):
-        """With the owner's own Work, tell once what the look back set up (#583, #717), or offer what it proposed.
+        """Tell all untold dream rows once in waking hours, each with its own cancel notice.
 
-        #717: scheduled rows get one ``preparation_scheduled`` message with a cancel button; rows still
-        proposed from before get the proposal message below.
-
-        One ``preparation_proposed`` message on ``job``'s conversation, with the usual accept/decline
-        buttons, bound (digest) to exactly the suggestions of one look back and recorded on their anchor
-        Work, so ``offered_proposals`` and the answer paths act on those rows only.  At most one such
-        message per owner day, none while the owner paused upkeep; a message queued marks its rows
-        offered, so each is offered once.  #638: ``one_off`` (``offer_one_off_suggestion``) takes only a
-        look back that holds a one-off and, with no ``job``, uses the anchor Work's own conversation.
-        Returns the notification or None.
+        Legacy proposals keep their existing acceptance path. ``one_off`` is a compatibility argument.
         """
         return self.preparations_service.queue_preparation_suggestion(job, one_off)
 
     def offer_one_off_suggestion(self, now=None):
-        """#638: a look back that holds a one-off suggestion is offered without waiting for the owner's next Work.
-
-        A dated need cannot wait for the owner to come back, so on the preparations tick, inside the owner's
-        ``prep.SUGGESTION_OFFER_HOURS``, ``queue_preparation_suggestion`` offers it on its anchor Work's
-        conversation under the same cap and pause.  Nothing unoffered is one read.  Returns the notification or None.
-        """
+        """Tell untold dream rows on the tick, including standing rows, within waking hours."""
         return self.preparations_service.offer_one_off_suggestion(now)
 
     def preparation_cancel_markup(self, notification_id):

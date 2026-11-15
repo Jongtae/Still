@@ -59,6 +59,13 @@ class _Runs(_Case):
 
     def started(self, **kwargs):
         row = self.preparation(**kwargs)
+        if row['accepted_by'] == prep.ACCEPTED_DREAM:  # #717: a dream row runs once told, with the look back on
+            self.service.owner_model.set_controls({'dream': True})
+            notice = self.store.telegram.queue_notification(
+                f"{row['created_from']}/dream:{row['id']}", CHAT, GENERATION, 'preparation_scheduled',
+                fingerprint='ids:' + row['id'], created=self.now)
+            with mock.patch('time.time', return_value=self.now):
+                self.store.telegram.update_notification(notice['id'], 'sent', message_id=900, delivered=True)
         self.now = row['due_at'] + 1
         self.assertTrue(self.tick())
         [run] = self.runs(row['id'])
