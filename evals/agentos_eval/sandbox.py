@@ -319,11 +319,29 @@ def confirm_world(data, spec, python, src=SRC, runner=subprocess.run):
     return json.loads(done.stdout)
 
 
+def initialize_store(data, python, src=SRC, timeout=60):
+    """Let Still's own interpreter/migrations create an empty sandbox store.
+
+    Keep runtime imports out of the eval venv and finish initialization before
+    pairing or launching the server. Existing seeded stores skip this step.
+    """
+    code = 'import sys\nfrom personal_agent.quickstart_store import QuickStore\nQuickStore(sys.argv[1])\n'
+    try:
+        done = subprocess.run([python, '-c', code, str(data)], cwd=str(data),
+                              env=sandbox_environment(data, src=src),
+                              capture_output=True, text=True, timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise SandboxError(f'sandbox store initialization failed: {type(exc).__name__}') from exc
+    if done.returncode != 0:
+        raise SandboxError('sandbox store initialization failed: ' + (done.stderr or '').strip()[-300:])
+
+
 def pair_fake_telegram(data, token):
-    """Re-enable the seed's paired chat against the eval's stand-in: its made-up token, a fresh cursor.
+    """Pair an initialized store with the stand-in: its made-up token, a fresh cursor.
 
     The seed keeps the owner's chat id and generation (so the history reads as one conversation)
-    but has no token and Telegram disabled (``sanitize_database``).  Returns the paired chat id.
+    but has no token and Telegram disabled (``sanitize_database``). Fresh stores
+    use chat 77 and generation 'eval'. Returns the paired chat id.
     """
     db = sqlite3.connect(Path(data) / 'private' / 'quickstart.db')
     try:
@@ -452,6 +470,8 @@ class Sandbox:
                 self._pending_judgment = {key: value for key, value in config.items() if key in JUDGMENT_KEYS}
             if self.telegram is not None:
                 from .fake_telegram import TOKEN
+                if not (self.data / 'private' / 'quickstart.db').is_file():
+                    initialize_store(self.data, self.python, src=self.src, timeout=self.start_timeout)
                 self.telegram.chat_id = pair_fake_telegram(self.data, TOKEN)
             if self.world is not None:
                 world = self.world['world']

@@ -216,3 +216,78 @@ def test_chat_turn_busy_receipt_read_retries_without_losing_messages(tmp_path, m
         assert [m['text'] for m in before] == ['preview'] and delivered['text'] == 'the reply'
     assert all('FROM telegram_turns' in query for query in attempts)
     assert attempts and clock.now <= runner.DELIVERY_WAIT_SECONDS
+
+
+@pytest.mark.parametrize('seeded', [False, True])
+def test_sandbox_pairs_real_store_before_server_start_and_readiness(tmp_path, monkeypatch, seeded):
+    """Real schema/bootstrap subprocess; no server, model, socket or Bot API calls."""
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    from personal_agent.quickstart_store import QuickStore
+
+    seed = tmp_path / 'seed' if seeded else None
+    if seed:
+        store = QuickStore(seed)
+        store.put('telegram', {'enabled': False, 'user_id': 4242, 'generation': 'g7', 'cursor': 99})
+        store.put('telegram_status', {'state': 'error'})
+        store.secret('other', 'kept')
+        original_config = store.config('telegram')
+        original_secrets = store.secret_path.read_bytes()
+    telegram = SimpleNamespace(chat_id=0, root='http://127.0.0.1:1')
+    process = Mock(poll=Mock(return_value=0), returncode=0)
+    reservation = Mock(port=18900)
+    monkeypatch.setattr(sandbox, 'reserve_port', lambda **kwargs: reservation)
+    box = sandbox.Sandbox(tmp_path / 'boxes', seed=seed, slot=0, python=sys.executable,
+                          src=ROOT / 'src', telegram=telegram, keep=True)
+    expected_chat = 4242 if seeded else 77
+    bootstrap = []
+    server = []
+    popen = subprocess.Popen
+
+    def assert_pairing():
+        with sqlite3.connect(box.data / 'private' / 'quickstart.db') as db:
+            config = json.loads(db.execute("SELECT value FROM config WHERE key='telegram'").fetchone()[0])
+            assert config == {'enabled': True, 'user_id': expected_chat, 'cursor': 0,
+                              'generation': 'g7' if seeded else 'eval'}
+            assert db.execute("SELECT 1 FROM config WHERE key='telegram_status'").fetchone() is None
+            # Genuine migrations exist; no hand-built config-only store.
+            assert 'created_from' in {row[1] for row in db.execute('PRAGMA table_info(preparations)')}
+            assert 'sent_at' in {row[1] for row in db.execute('PRAGMA table_info(telegram_notifications)')}
+        secrets = box.data / 'private' / 'connections.json'
+        assert json.loads(secrets.read_text())['telegram_token'] == TOKEN
+        if seeded:
+            assert json.loads(secrets.read_text())['other'] == 'kept'
+        assert secrets.stat().st_mode & 0o777 == 0o600
+        assert telegram.chat_id == expected_chat
+
+    def spawn(argv, *args, **kwargs):
+        assert argv[0] == box.python
+        if argv[1:3] == ['-m', 'personal_agent.quickstart']:
+            # Pairing must be complete before the service can begin polling.
+            assert_pairing()
+            server.append(argv)
+            return process
+        bootstrap.append(argv)
+        assert 'from personal_agent.quickstart_store import QuickStore' in argv[2]
+        assert argv[-1] == str(box.data)
+        assert str(box.src) in kwargs['env']['PYTHONPATH'].split(os.pathsep)
+        return popen(argv, *args, **kwargs)
+
+    monkeypatch.setattr(sandbox.subprocess, 'Popen', spawn)
+    try:
+        box.start()
+        assert len(bootstrap) == (0 if seeded else 1)
+        assert len(server) == 1
+        assert_pairing()
+        process.poll.return_value = None
+        class Client:
+            def healthy(self):
+                assert_pairing()
+                return True
+        assert box.wait_healthy(Client()) is True
+        if seed:
+            assert store.config('telegram') == original_config
+            assert store.secret_path.read_bytes() == original_secrets
+    finally:
+        process.poll.return_value = 0
+        box.stop()
