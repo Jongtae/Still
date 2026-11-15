@@ -1275,12 +1275,13 @@ class StartLatencyTests(NativePresenceTestCase):
             return SelectionDecision(OUTCOME_DECIDED, 'none-of-these', tuple(candidates), fixture_confidence())
 
         self.service.use_decision_engine(FixtureDecisionEngine(choose=choose))
-        # As on the sequential path, the routing judgment's own error leaves `run_one`
-        # at the routing decision; the Future re-raises it there, nowhere earlier.
-        with self.assertRaisesRegex(RuntimeError, 'judge down'):
-            self.turn('오늘 저녁 메뉴 추천해줘')
+        # The Future re-raises the routing judgment's own error at the routing decision,
+        # nowhere earlier; #893 logs it and fails the Work without raising from `run_one`.
+        with self.assertLogs('personal_agent.service', 'WARNING') as logs:
+            job, _ = self.turn('오늘 저녁 메뉴 추천해줘')
         self.assertEqual(log, ['capability-need'])
-        self.assertEqual(self.store.jobs()[0]['status'], 'running')
+        self.assertEqual(job['status'], 'failed')
+        self.assertIn(f"work failed job={job['id']} kind=RuntimeError", '\n'.join(logs.output))
 
 
 class LiveWaitTests(NativePresenceTestCase):

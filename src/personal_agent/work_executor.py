@@ -83,35 +83,67 @@ class WorkExecutor:
         with service.worker_lock:
             job=service._claim_queued_work()
             if not isinstance(job,dict):return job
-            if service.fold_delivered_steer(job):return True
-            service.current_work_id=job['id']
-            claimed_at=time.time()
-            service.record_stage(job['id'],'queue_wait',job.get('created') or claimed_at)
-            service.update_task_card(job,'running')
-            run=WorkRun(job,claimed_at,retry_note=service.action_continuation_note(job))
-            # #308 S4: a message meant for an earlier Work says first why it is answered on its own.
-            notice=service.steer_disposition_notice(job)
-            if notice:run.reply_notice=notice+'\n\n'
+            run=WorkRun(job,time.time())
             try:
-                for phase in (service._route_work,service._load_work_photos,service._run_rule_intent):
-                    step=phase(run)
-                    if step is not PROCEED:return step
-                if not run.handled:
-                    for phase in (service._prepare_worker_turn,service._run_worker_attempts):
+                try:
+                    if service.fold_delivered_steer(job):return True
+                    service.current_work_id=job['id']
+                    service.record_stage(job['id'],'queue_wait',job.get('created') or run.claimed_at)
+                    service.update_task_card(job,'running')
+                    run.retry_note=service.action_continuation_note(job)
+                    # #308 S4: a message meant for an earlier Work says first why it is answered on its own.
+                    notice=service.steer_disposition_notice(job)
+                    if notice:run.reply_notice=notice+'\n\n'
+                    for phase in (service._route_work,service._load_work_photos,service._run_rule_intent):
                         step=phase(run)
                         if step is not PROCEED:return step
-                    if not run.handled:service._settle_worker_outcome(run)
-                service._finish_work(run)
-            except (ValueError,ProviderError,ExecutionError,OSError) as exc:
-                service._fail_work(run,exc)
-            finally:
-                service._settle_work_judgments(run)
-                service.steer_closed.discard(job['id'])
-                service.live_workers.pop(job['id'],None)
-            service._after_work(run)
+                    if not run.handled:
+                        for phase in (service._prepare_worker_turn,service._run_worker_attempts):
+                            step=phase(run)
+                            if step is not PROCEED:return step
+                        if not run.handled:service._settle_worker_outcome(run)
+                    service._finish_work(run)
+                except Exception as exc:
+                    # #893: a claimed Work must not be stranded by an untyped phase failure.
+                    if service._fail_work(run,exc) is False:return True
+                finally:
+                    try:service._settle_work_judgments(run)
+                    finally:
+                        service.steer_closed.discard(job['id'])
+                        service.live_workers.pop(job['id'],None)
+                service._after_work(run)
+            except Exception as exc:
+                # The failure handler, judgment cleanup or tail can itself fail.
+                # Never replace a committed outcome or catch process-exit signals.
+                LOG.warning('work finalization failed job=%s kind=%s',job['id'],type(exc).__name__)
+                self._fail_work_terminal(run)
             # The result delivery is the one terminal Telegram bubble.
             # Do not append a second generic completion notification.
             return True
+
+    def _fail_work_terminal(self, run):
+        """Last resort after a failed finalizer: commit the terminal reply, state and recoverable tail."""
+        service=self.service
+        job=run.job
+        try:
+            outcome='unknown' if service._work_has_unknown_effect(job['id']) else 'failed'
+            reason=msg('projection.i_couldn_t_complete_this_request')
+            with service.store.db() as db:
+                changed=db.execute("UPDATE jobs SET status=?,error=?,delivery=? WHERE id=? AND status='running'",
+                                   (outcome,reason,service.reply_delivery(job),job['id'])).rowcount
+                if changed:
+                    transcript=run.reply_notice+(msg('compose.i_couldn_t_complete_this_request', reason=run.response or reason)
+                                                 if outcome=='unknown' else reason)
+                    if prep.preparation_of(job.get('request_key')):
+                        transcript=service.scrub_work_text(job['id'],transcript)
+                    db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id,delivery_projection) VALUES (?,?,?,?,?,?,?)',
+                               ('assistant',transcript,job['channel'],time.time(),job.get('workspace_id'),job['id'],None))
+                    run.outcome=outcome
+                    self._record_after_work(run,db)
+        except Exception as exc:
+            # An unavailable store cannot accept a terminal commit. Leave recovery's
+            # running-row fence intact and keep the worker available for other work.
+            LOG.warning('work terminal state not saved job=%s kind=%s',run.job['id'],type(exc).__name__)
 
     def _claim_queued_work(self):
         """The oldest queued Work marked running, or False (nothing runnable now) / True (settled without running)."""
@@ -1627,7 +1659,7 @@ class WorkExecutor:
         service.record_turn_provenance(job['id'],goal=service.work_goal(job['id'],run.work_capabilities[0],run.outcome))
 
     def _fail_work(self, run, exc):
-        """The Work failed: the owner-facing failure, its report and the Work row."""
+        """Settle a still-running Work; return False when another outcome already won."""
         service=self.service
         job=run.job
         run.resolved_blocker=False
@@ -1669,10 +1701,13 @@ class WorkExecutor:
             if run.outcome=='failed' and service._work_has_unknown_effect(job['id']):
                 run.outcome,report='unknown',None
                 transcript=run.reply_notice+msg('compose.i_couldn_t_complete_this_request', reason=run.response)
-            db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id,delivery_projection) VALUES (?,?,?,?,?,?,?)',('assistant',transcript,job['channel'],time.time(),job.get('workspace_id'),job['id'],'blocked-turn' if isinstance(exc,BlockedTurn) else None))
             goal_outcome,effect_state=service.run_goal_outcome(run),service.work_effect_state(job['id'],run.claimed_at)
-            db.execute("UPDATE jobs SET status=?,error=?,delivery=?,owner_cause=COALESCE(?,owner_cause),goal_outcome=?,effect_state=? WHERE id=?",
-                       (run.outcome,run.response,service.reply_delivery(job),report,goal_outcome,effect_state,job['id']))
+            changed=db.execute("UPDATE jobs SET status=?,error=?,delivery=?,owner_cause=COALESCE(?,owner_cause),goal_outcome=?,effect_state=? WHERE id=? AND status='running'",
+                               (run.outcome,run.response,service.reply_delivery(job),report,goal_outcome,effect_state,job['id'])).rowcount
+            # A phase can commit before its presence/card cleanup fails. As in
+            # _fail_work_terminal, only the claimed state admits a failure and tail.
+            if not changed:return False
+            db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id,delivery_projection) VALUES (?,?,?,?,?,?,?)',('assistant',transcript,job['channel'],time.time(),job.get('workspace_id'),job['id'],'blocked-turn' if isinstance(exc,BlockedTurn) else None))
             # #998: a worker attempt failed and nothing followed: one self-review, settled with the Work.
             # A blocker the owner resolves (BlockedTurn) is a setup need, not a miss.
             if (run.outcome=='failed' and not isinstance(exc,BlockedTurn) and service.self_review_eligible(job,run.outcome,None)

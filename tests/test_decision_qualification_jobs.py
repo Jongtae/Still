@@ -535,12 +535,23 @@ class QualificationJobTests(JobFixture):
         self.assertFalse(service.run_due_qualification())
 
     def test_the_work_loop_and_settings_are_wired(self):
+        service = self.service()
+        calls = []
+        service.run_due_qualification = lambda: calls.append('qualification')
+        for name in (
+                'run_due_preparation', 'run_one', 'deliver_one', 'deliver_notification',
+                'expire_memory_prompts', 'release_memory_saved_notices', 'sweep_after_work',
+                'process_browser_logins', 'start_session_keepalive', 'purge_forgotten',
+                'settle_unknown_deliveries', 'run_owner_model_upkeep'):
+            setattr(service, name, lambda: None)
+        service._work_iteration(0.0, 0.0)
+        self.assertEqual(calls, ['qualification'])
         root = Path(__file__).resolve().parents[1] / 'src' / 'personal_agent'
         service_source = (root / 'quickstart_service.py').read_text(encoding='utf-8')
         start = service_source[service_source.index('    def start(self):'):]
         start = start[:start.index('self.threads=')]
         self.assertIn('self.decision_routes.recover_qualification()', start)
-        self.assertIn('self.run_due_qualification()', start)
+        self.assertIn('self._work_iteration(', start)
         server = (root / 'quickstart.py').read_text(encoding='utf-8')
         self.assertIn("'/api/decision-route/qualification/cancel'", server)
         app = (root / 'web' / 'app.js').read_text(encoding='utf-8')
