@@ -232,6 +232,7 @@ def cmd_sweep(args, folder=None, inspect_eval=None, task_factory=None, key_loade
            'seed': seed.name if seed else 'fresh'}
     if getattr(args, 'continuity', None):
         run['continuity'] = args.continuity
+        run['observation_version'] = args.continuity['observation_version']
     task = task_factory(scenarios=args.scenarios, split=args.split, worker=args.worker,
                              instances=args.instances, seed=str(seed or ''), judge=judge,
                              turn_timeout=args.turn_timeout, judgment_timeout=run['judgment_timeout'],

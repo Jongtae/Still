@@ -131,3 +131,39 @@ class ChatTurn(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def test_response_identity_round_trip_and_meaningful_edits():
+    tg=FakeTelegram(42,clock=lambda:100)
+    first=tg._call('sendMessage',{'chat_id':42,'text':'same words'})
+    second=tg._call('sendMessage',{'chat_id':42,'text':'same words'})
+    assert first['message_id'] != second['message_id']
+    tg._call('editMessageText',{'chat_id':42,'message_id':first['message_id'],'text':'same words','reply_markup':{}})
+    changed=tg._call('editMessageText',{'chat_id':42,'message_id':first['message_id'],'text':'meaningful new words'})
+    tg._call('sendChatAction',{'chat_id':42,'action':'typing'})
+    messages=tg.chat_since(100)
+    assert [m['text'] for m in messages]==['same words','same words','meaningful new words']
+    assert [m['sequence'] for m in messages]==[1,2,4]
+    assert [m['message_id'] for m in messages]==[first['message_id'],second['message_id'],changed['message_id']]
+    assert len({m['delivery_id'] for m in messages})==3
+    assert tg.calls_since(100)[0]['result']==first
+    assert tg.chat_since(101)==[]
+    assert tg.chat_since(100)==messages  # stateless collector; consumer owns its cursor
+
+
+def test_unknown_or_unacknowledged_call_is_not_delivery():
+    tg=FakeTelegram(42,clock=lambda:100)
+    tg._call('sendDocument',{'chat_id':42})
+    tg.calls.append({'at':100,'sequence':2,'method':'sendMessage','body':{'text':'unacknowledged'}})
+    assert tg.chat_since(100)==[]
+
+
+def test_sequence_collection_survives_backward_clock():
+    now=[100]
+    tg=FakeTelegram(42,clock=lambda:now[0])
+    tg._call('sendMessage',{'chat_id':42,'text':'before sample'})
+    cursor=tg.sequence()
+    now[0]=1
+    tg._call('sendMessage',{'chat_id':42,'text':'after clock jumped'})
+    assert tg.chat_since(100,after_sequence=cursor)[0]['text']=='after clock jumped'
+    assert tg.calls_since(100,after_sequence=cursor)[0]['sequence']==cursor+1

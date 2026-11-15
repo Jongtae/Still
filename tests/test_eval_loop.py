@@ -911,3 +911,71 @@ class BoundaryTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+# #887: complete runner boundary with injected clocks and fixture-only clients.
+def test_wait_dispatch_sends_no_owner_message_and_followup_once(tmp_path, monkeypatch):
+    from test_eval_come_due import Trace, BASE, SPEC
+    from agentos_eval.fake_telegram import FakeTelegram
+    trace = Trace(tmp_path)
+    sent = []
+    def chat(client, telegram, text, *args, **kwargs):
+        sent.append((text, trace.clock.now))
+        telegram.say(text)
+        response = telegram._call('sendMessage', {'chat_id':42,'text':'owner reply '+text})
+        message = telegram.chat_since(BASE)[-1]
+        if len(sent) == 1:
+            # Gap after the final owner reply, before entry to the barrier.
+            trace.clock.sleep(1)
+            telegram._call('sendMessage', {'chat_id':42,'text':'gap ping'})
+        return ('owner' if len(sent)==1 else 'follow'), {'status':'succeeded'}, [], message
+    monkeypatch.setattr(runner,'chat_turn',chat)
+    trace.answer=lambda task:{'response':'requested reply'}
+    case={'id':'s','channel':'telegram','expect':{},'turns':[{'say':'entrust'},{'wait_due':SPEC},{'say':'follow'}]}
+    turns=runner.run_turns(trace,case,telegram=trace.telegram,data=tmp_path,before={},
+                           clock=trace.clock.mono,wall=trace.clock.wall,sleep=trace.clock.sleep)
+    assert [t[0] for t in sent]==['entrust','follow']
+    assert sent[1][1]>=30
+    wait=turns[1]
+    assert 'say' not in wait and 'task_id' not in wait and 'answer' not in wait
+    assert wait['before_answer'][0]['text']=='gap ping'
+    checks,_=scoring.deterministic_checks(case,{'turns':turns})
+    assert checks['due_completed'] and checks['delivered'] and checks['not_failed']
+    text='\n'.join(scoring._transcript({'title':'s'}, {'turns':turns}, labelled=True))
+    assert 'OWNER 2' not in text and 'AGENTOS t2 (' not in text
+    assert 'harness wait, no owner message' in text
+    assert text.count('gap ping')==1 and text.count('observed result')==1
+
+
+def test_early_delivery_stays_at_earlier_message_and_failure_skips_followup(tmp_path, monkeypatch):
+    from test_eval_come_due import Trace, BASE, SPEC
+    trace=Trace(tmp_path)
+    calls=[]
+    def chat(client,telegram,text,*args,**kwargs):
+        calls.append(text)
+        trace.clock.now=12
+        trace.update()
+        before=telegram.chat_since(BASE)
+        reply=telegram._call('sendMessage',{'chat_id':42,'text':'owner reply'})
+        return 'owner',{'status':'succeeded'},before,telegram.chat_since(BASE)[-1]
+    monkeypatch.setattr(runner,'chat_turn',chat)
+    trace.answer=lambda task:{'response':'owner reply'}
+    case={'id':'s','channel':'telegram','turns':[{'say':'one'},{'wait_due':{**SPEC,'timeout_seconds':10}},{'say':'skip'}]}
+    turns=runner.run_turns(trace,case,telegram=trace.telegram,data=tmp_path,clock=trace.clock.mono,
+                           wall=trace.clock.wall,sleep=trace.clock.sleep)
+    assert calls==['one'] and turns[1]['status']=='timed_out'
+    assert turns[1]['before_answer']==[]
+    prompt='\n'.join(scoring._transcript({'title':'s'},{'turns':turns},True))
+    assert prompt.count('observed result')==1 and 'AGENTOS t1.b1' in prompt
+    assert turns[1]['due_observation']['deliveries'][0]['message_id']==turns[0]['before_answer'][0]['message_id']
+
+
+def test_client_barrier_timeout_plumbing_is_explicit():
+    seen=[]
+    def transport(*args,**kwargs):
+        seen.append(kwargs)
+        return 200,{},b'{}'
+    client=AgentOSClient('http://fixture',transport=transport)
+    client.get('/api/preparations',timeout=.75)
+    client.get('/api/preparations')
+    assert seen==[{'timeout':.75},{}]

@@ -370,7 +370,7 @@ runtime authority, or external calls. External maintenance research was unavaila
 
 ## C2 continuity
 
-From `evals/` (with the eval extra installed), C2 runs exactly the eight bundled
+From `evals/` (with the eval extra installed), C2 runs exactly 11 bundled (7 dev, 4 held-out)
 `exp-continuity` scenarios on fresh folders, using Codex and three epochs by default:
 
 ```sh
@@ -382,7 +382,7 @@ python -m agentos_eval continuity labels-template <report.c2.json> [extra-scenar
 
 `--seed` and `AGENTOS_EVAL_SEED` are refused, as is `--judge none`; local scenarios
 are never loaded. `--rubric PATH` overrides the default
-[initiative rubric](continuity/initiative-rubric-v1.json), which defines:
+[initiative rubric v2](continuity/initiative-rubric-v2.json), which defines:
 
 - **Avoidable interventions:** AI asks for known facts or reconfirms entrusted actions, indexed by turn and kind.
 - **Required approvals:** genuine owner gates, counted separately by the judge and by observed tool requests; never offsets to interventions.
@@ -421,19 +421,45 @@ scenario, using sorted relative paths and exact contents; the report lists each
 file and its SHA-256.
 
 The sweep's evidence class is **live local observation of the sandbox, judged**;
-model-free fixture tests provide fixture evidence only. New preparation rows can retain a bounded `last_result` excerpt and
-`last_delivery`/`last_work_id`. A typed `line_account` row whose reply was sent
-on a distinct Work establishes an observed account output. Generic preparation
-receipts lack scheduled-versus-run-now origin and delivery time; `before_answer`
-text alone proves no unsolicited delivery. Existing-row updates, separate
-notifications and full report bodies remain unsupported. C2 cases whose
-reports never come due remain `not_observed`. Approval event counts are lower bounds:
-the public task endpoint hides some approval codes, and the recorder caps tool
-events at 40 per turn. Judge token usage and settled charges are reported;
-subscription-worker usage is explicitly **unavailable**, never zero. Fixture
-examples of unrecorded proactive deliveries are unsupported and excluded from
-record-supported judge/human calibration. No live acceptance claim follows
-from these tests.
+model-free fixture tests provide fixture evidence only. The #827 “nothing comes
+due” description still applies to the original eight, whose bytes are unchanged.
+The three frozen additions in `scenarios/continuity-come-due.json` entrust one
+check for three minutes later, then use a real-clock `wait_due` barrier without
+sending an owner message. No schedule is edited or run-now invoked. The observer
+polls every two seconds, requires typed admission/start/settlement evidence and
+collects Telegram response ids. Ordinary Work replies and conditional notifications
+have separate read-only SQLite receipt joins. `line_account` retains its original
+meaning; generic rows, text similarity and API `last_result` alone prove no delivery.
+Builtin reminder provenance, existing-row updates and unlinked multipart bodies
+remain unsupported. Unknown messages are retained as possible interruptions.
+
+Each barrier has a seven-minute hard cap, including bounded HTTP/SQLite reads
+and a full 20-second post-settlement drain. Failure/timeout skips the dependent
+follow-up and remains in the applicable `due_completed` denominator. Successful
+quiet checks are reported separately from missing runs: both have proactive
+usefulness `not_observed`, never a numeric grade. A later requested reply cannot
+be proactive output. The drain establishes only bounded silence. Each epoch
+retains created/started/settled/delivery states, observed times, shortfall reason
+and message references; wait duration is separate from owner response latency.
+
+The added wait component is estimated at 3–5 minutes per sample (at most seven),
+9–15 wall minutes for nine added samples at three balanced slots, at most 21 for
+three all-timeout waves. Aggregate occupied-slot time can reach 63 minutes;
+setup, owner execution, qualification and judging are additional. Three epochs
+now mean 33 samples and at most 66 eval judge calls per arm: still exactly two
+calls per eligible sample, none per poll or delivery. Worker usage remains
+**unavailable**, never zero. A paired run doubles sample and judge costs. These
+are planning estimates, not observed timings or live authorization.
+
+Both fixture files' paths and exact bytes are hashed. The default is
+`initiative-rubric-v2`; v1 remains frozen for historical logs. Metadata also records
+`continuity-observation-v2`. Comparisons refuse different fixtures, rubrics or
+observation versions; old logs are not silently upgraded. Incomplete due observation
+or lost observable-result coverage prevents a `better` verdict and is partial.
+Dev and held-out coverage and not-observed counts stay separate from infrastructure
+and unscored samples. The held-out policy is unchanged. Approval event counts
+remain lower bounds because ordinary public task events are capped at 40; dedicated
+due provenance is read separately. No live acceptance claim follows from fixture tests.
 
 Reuse review for #853: **Adapt** the existing Inspect task/log and sweep APIs,
 `scoring._transcript`, `JudgeBudget.reserve`/`settle`, `Redactor.for_seed`,

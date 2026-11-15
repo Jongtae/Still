@@ -8,6 +8,7 @@ import re
 import sqlite3
 import time
 import uuid
+from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -93,7 +94,7 @@ def sent_time(timestamp, zone=None):
 DELIVERY_WAIT_SECONDS = 20
 
 
-def chat_turn(client, telegram, text, turn_timeout, poll_interval, wall=time.time, sleep=time.sleep):
+def chat_turn(client, telegram, text, turn_timeout, poll_interval, wall=time.time, sleep=time.sleep, data=None):
     """One owner turn through the eval's Bot API stand-in: ``(task_id, detail, before_answer, delivered)``.
 
     ``before_answer`` is every message the owner read before the reply (a plan preview, the worker's
@@ -107,13 +108,210 @@ def chat_turn(client, telegram, text, turn_timeout, poll_interval, wall=time.tim
     reply = (client.answer(task_id).get('response') or '').strip()
     deadline = wall() + DELIVERY_WAIT_SECONDS
     chat = telegram.chat_since(since)
-    while reply and not any(_same_reply(message['text'], reply) for message in chat) and wall() < deadline:
+    def matches(message):
+        if data is None:
+            return reply and _same_reply(message['text'], reply)
+        path = Path(data) / 'private' / 'quickstart.db'
+        with closing(sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True, timeout=.1)) as db:
+            row = db.execute('SELECT chat_id,reply_message_id FROM telegram_turns WHERE job_id=?', (task_id,)).fetchone()
+        return row and (message.get('chat_id'), message.get('message_id')) == tuple(row)
+    while reply and not any(matches(message) for message in chat) and wall() < deadline:
         sleep(1.0)
         chat = telegram.chat_since(since)
-    delivered = next((message for message in reversed(chat) if reply and _same_reply(message['text'], reply)), None)
-    before = [{'after_s': round(message['at'] - since, 1), 'text': message['text']}
+    delivered = next((message for message in reversed(chat) if matches(message)), None)
+    before = [{**message, 'after_s': round(message['at'] - since, 1)}
               for message in chat if message is not delivered and (delivered is None or message['at'] <= delivered['at'])]
     return task_id, detail, before, delivered
+
+
+def due_evidence(data, source_id, since, *, timeout, clock=time.monotonic):
+    """Fresh read-only transaction; explicit projections of genuine store schemas.
+
+    No runtime imports, writes, unbounded response/brief dumps, or compact-event
+    cap. A progress handler and short busy timeout share the caller's budget.
+    """
+    deadline = clock() + timeout
+    path = Path(data) / 'private' / 'quickstart.db'
+    with closing(sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True,
+                         timeout=min(.1, timeout))) as db:
+        db.row_factory = sqlite3.Row
+        db.set_progress_handler(lambda: int(clock() >= deadline), 100)
+        db.execute('BEGIN')
+
+        def rows(sql, args=()):
+            if clock() >= deadline:
+                raise TimeoutError('observation deadline')
+            # Busy handlers are connection-local; clip again before each SQL
+            # operation, because several reads share this one deadline.
+            remaining_ms = max(0, int(min(.1, deadline - clock()) * 1000))
+            db.execute(f'PRAGMA busy_timeout={remaining_ms}')
+            found = [dict(r) for r in db.execute(sql + ' LIMIT 257', args)]
+            if len(found) > 256:
+                raise ValueError('observation coverage exceeds 256 rows')
+            return found
+
+        preparations = rows('SELECT id,created_from,created_at,due_at,kind,state,run_count,last_run_job_id,'
+                            'delivery_mode,last_decision,last_decision_reason,prepared_at FROM preparations '
+                            'WHERE created_from=? AND created_at>=?', (source_id, since))
+        events = rows("SELECT e.id,e.job_id,e.tool,e.status,e.detail,e.created FROM tool_events e "
+                      "WHERE e.created>=? AND e.tool IN ('preparation','scheduled_work_budget') ORDER BY e.id", (since,))
+        # Allowlist only provenance fields; other event payloads never leave SQLite.
+        for event in events:
+            raw = json.loads(event.pop('detail'))
+            event['facts'] = {k: raw[k] for k in ('preparation_id', 'slot', 'outcome', 'delivery',
+                             'decision', 'reason', 'notification_queued', 'slot_at', 'next_due') if k in raw}
+        ids = [r['last_run_job_id'] for r in preparations if r['last_run_job_id']]
+        jobs, replies, notifications = [], [], []
+        if ids:
+            marks = ','.join('?' for _ in ids)
+            jobs = rows(f'SELECT id,request_key,created,status,delivery FROM jobs WHERE id IN ({marks})', ids)
+            replies = rows(f'SELECT job_id,chat_id,reply_message_id FROM telegram_turns WHERE job_id IN ({marks})', ids)
+            notifications = rows('SELECT id,job_id,chat_id,kind,state,message_id,created,sent_at '
+                                 f"FROM telegram_notifications WHERE kind='preparation_notify' AND job_id IN ({marks})", ids)
+        return {'preparations': preparations, 'events': events, 'jobs': jobs,
+                'replies': replies, 'notifications': notifications}
+
+
+def _slot_epoch(value):
+    try:
+        return datetime.fromisoformat(value.replace('Z', '+00:00')).timestamp()
+    except (AttributeError, ValueError, TypeError):
+        return None
+
+
+def wait_due(client, telegram, spec, source, owner_ids, before, data, *, step=2,
+             sample_start=None, clock=time.monotonic, wall=time.time, sleep=time.sleep,
+             reader=due_evidence, poll_interval=2.0, capture_sequence=None):
+    """Observe one scheduled slot; never send, repair, run-now, or advance Still's clock."""
+    entered, started = wall(), clock()
+    deadline = started + spec['timeout_seconds']
+    since = sample_start if sample_start is not None else source['sent_epoch']
+    # Freeze the wall horizon once. Clock adjustments cannot widen it or the budget.
+    horizon = entered + spec['timeout_seconds']
+    old = {r['id'] for r in (before.get('preparations', {}).get('preparations') or before.get('preparations', {}).get('items') or [])}
+    result = {'kind': 'wait_due', 'step': step, 'after_turn': spec['after_turn'], 'until': spec['until'],
+              'start_epoch': entered, 'sample_start_epoch': since, 'end_epoch': None,
+              'elapsed': 0, 'timed_out': False, 'completed': False, 'stage': 'no_preparation',
+              'status': 'waiting', 'events': [], 'messages': [], 'deliveries': [], 'coverage': 'unsupported'}
+    drain = None
+    try:
+        while clock() < deadline:
+            api = client.get('/api/preparations', timeout=max(.001, deadline - clock()))
+            if clock() >= deadline:
+                break
+            evidence = reader(data, source['task_id'], since, timeout=deadline - clock(), clock=clock)
+            result['messages'] = telegram.chat_since(since, **({'after_sequence': capture_sequence} if capture_sequence is not None else {}))
+            result['events'] = evidence['events']
+            result['preparations'] = evidence['preparations']
+            candidates = []
+            for row in evidence['preparations']:
+                job_row = next((j for j in evidence['jobs'] if j['id'] == row['last_run_job_id']), {})
+                prefix = f'preparation:{row["id"]}:'
+                key = job_row.get('request_key') or ''
+                suffix = key[len(prefix):] if key.startswith(prefix) else ''
+                slot = int(suffix) if suffix.isdigit() else row['due_at']
+                if row['id'] not in old and row['created_from'] == source['task_id'] and row['created_at'] >= since:
+                    if since <= slot <= horizon:
+                        candidates.append((row, slot))
+            if len(candidates) > 1:
+                result.update(status='unsupported', reason='ambiguous_preparation')
+                break
+            if not candidates:
+                result['reason'] = 'out_of_horizon' if evidence['preparations'] else 'no_preparation'
+            else:
+                row, slot = candidates[0]
+                work = row['last_run_job_id']
+                result.update(preparation_id=row['id'], created_epoch=row['created_at'], work_id=work, due_epoch=slot, row_due_epoch=row['due_at'],
+                              last_decision=row['last_decision'], last_decision_reason=row['last_decision_reason'])
+                api_row = next((r for r in api.get('preparations', []) if r['id'] == row['id']), {})
+                result['api_excerpt'] = {k: api_row.get(k) for k in ('last_result', 'last_delivery', 'line_account')}
+                result['api_excerpt']['label'] = 'API excerpt, not delivery evidence'
+                events = [e for e in evidence['events'] if e['facts'].get('preparation_id') == row['id']]
+                admitted = next((e for e in events if e['tool'] == 'scheduled_work_budget' and e['status'] == 'admitted'
+                                 and e['job_id'] == work and _slot_epoch(e['facts'].get('slot')) == int(slot // 60) * 60), None)
+                start = next((e for e in events if e['tool'] == 'preparation' and e['status'] == 'succeeded'
+                              and e['job_id'] == work and _slot_epoch(e['facts'].get('slot')) == int(slot // 60) * 60), None)
+                job = next((j for j in evidence['jobs'] if j['id'] == work), None)
+                settlement = next((e for e in events if e['tool'] == 'preparation' and e['job_id'] == work
+                                   and 'outcome' in e['facts']), None)
+                result.update(stage='not_started', reason='unsupported_origin')
+                if any(e['tool'] == 'scheduled_work_budget' and e['status'] in ('skipped', 'refused') for e in events):
+                    result.update(status='failed', reason='budget_refusal')
+                    break
+                valid = (admitted and start and job and work not in owner_ids and job['created'] >= since
+                         and job['request_key'] == f'preparation:{row["id"]}:{int(slot)}'
+                         and admitted['created'] <= start['created']
+                         and (int(row['due_at']) == slot or (settlement and row['due_at'] > slot
+                              and _slot_epoch(settlement['facts'].get('next_due')) == int(row['due_at'] // 60) * 60)))
+                if valid:
+                    result.update(admission=admitted, start=start, stage='not_settled', reason='not_settled',
+                                  result_status=job['status'])
+                    if clock() >= deadline:
+                        break
+                    detail = client.get('/api/tasks/' + work, timeout=deadline - clock())
+                    result['work_events'] = compact_events(detail)
+                    result['failure_class'] = detail.get('failure_class')
+                    if detail.get('failure_class') == USAGE_LIMIT:
+                        result.update(status='failed', reason=USAGE_LIMIT)
+                        break
+                    if settlement and settlement['created'] >= start['created'] and job['status'] in ('succeeded', 'partial', 'failed', 'cancelled') and job['delivery'] not in ('pending', 'sending'):
+                        result['settlement'] = settlement
+                        result['coverage'] = 'scheduled'
+                        result.update(stage='not_delivered', reason='not_delivered')
+                        result['delivery_receipts'] = {'work': job, 'replies': evidence['replies'],
+                                                       'notifications': evidence['notifications']}
+                        receipts = []
+                        if job['delivery'] == 'sent':
+                            receipts.extend({'kind': 'work_reply', 'message_id': r['reply_message_id'], 'chat_id': r['chat_id']}
+                                            for r in evidence['replies'] if r['job_id'] == work and r['reply_message_id'] is not None)
+                        notices = [n for n in evidence['notifications'] if n['job_id'] == work]
+                        receipts.extend({'kind': 'preparation_notify', 'message_id': n['message_id'], 'chat_id': n['chat_id']}
+                                        for n in notices if n['state'] == 'sent' and n['sent_at'] is not None
+                                        and n['message_id'] is not None and n['created'] >= start['created']
+                                        and n['sent_at'] >= n['created'])
+                        delivered = []
+                        for receipt in receipts:
+                            for message in result['messages']:
+                                if all(message[k] == receipt[k] for k in ('message_id', 'chat_id')) and message['text'].strip() and message['at'] >= start['created']:
+                                    delivered.append({**message, 'kind': receipt['kind']})
+                        delivered = list({m['delivery_id']: m for m in [*result['deliveries'], *delivered]}.values())
+                        result['deliveries'] = delivered
+                        if job['status'] != 'succeeded' or settlement['facts']['outcome'] != 'delivered':
+                            result.update(status='failed', reason='execution_failed')
+                            break
+                        result['delivery_disposition'] = [n['state'] for n in notices] or [job['delivery']]
+                        # A notification of unknown/queued disposition is not silent success.
+                        pending = any(n['state'] not in ('sent', 'cancelled', 'failed') for n in notices)
+                        quiet = (spec['until'] == 'settled' and row['last_decision'] == 'quiet'
+                                 and job['delivery'] == 'none' and not notices)
+                        ready = not pending and (bool(delivered) or quiet)
+                        if not ready:
+                            drain = None
+                        if ready:
+                            result['coverage'] = 'linked_excerpt' if delivered else 'quiet'
+                            result['coverage_limit'] = 'Only receipt-linked text collected; unlinked multipart bodies unsupported.'
+                            if drain is None:
+                                drain = clock()
+                            result.update(stage='drain_incomplete', reason='drain_incomplete')
+                            if clock() - drain >= DELIVERY_WAIT_SECONDS and clock() <= deadline:
+                                result.update(completed=True, status='completed', stage='completed',
+                                              reason='delivered' if delivered else 'quiet')
+                                break
+            if clock() >= deadline:
+                break
+            sleep(min(poll_interval, deadline - clock()))
+        if result['status'] == 'waiting':
+            if drain is not None and clock() - drain >= DELIVERY_WAIT_SECONDS and clock() <= deadline:
+                result.update(completed=True, status='completed', stage='completed',
+                              reason='delivered' if result['deliveries'] else 'quiet')
+            else:
+                result.update(status='timed_out', timed_out=True)
+    except (ClientError, OSError, sqlite3.Error, ValueError, TimeoutError) as exc:
+        result.update(status='observation_error', reason=f'{type(exc).__name__}: {exc}'[:300])
+    result.update(end_epoch=wall(), elapsed=round(clock() - started, 3))
+    # Capture messages arriving between reads, including on shortfall/error.
+    result['messages'] = telegram.chat_since(since, **({'after_sequence': capture_sequence} if capture_sequence is not None else {}))
+    return result
 
 
 def _same_reply(sent, reply):
@@ -123,17 +321,43 @@ def _same_reply(sent, reply):
 
 
 def run_turns(client, scenario, turn_timeout=900, poll_interval=2.0, clock=time.monotonic, wall=time.time, zone=None,
-              telegram=None):
+              telegram=None, data=None, before=None, sleep=time.sleep, reader=due_evidence):
     turns = []
-    for turn in scenario['turns']:
+    captured = set()
+    sample_start = None
+    has_wait = any('wait_due' in t for t in scenario['turns'])
+    capture_sequence = telegram.sequence() if has_wait and telegram is not None else None
+    for step, turn in enumerate(scenario['turns'], 1):
+        if 'wait_due' in turn:
+            receipt = wait_due(client, telegram, turn['wait_due'], turns[turn['wait_due']['after_turn'] - 1],
+                               {t['task_id'] for t in turns if t.get('task_id')}, before or {}, data,
+                               step=step, sample_start=sample_start, clock=clock, wall=wall, sleep=sleep,
+                               reader=reader, poll_interval=poll_interval, capture_sequence=capture_sequence)
+            messages = [m for m in receipt['messages'] if m.get('sequence') not in captured]
+            captured.update(m.get('sequence') for m in messages)
+            turns.append({'kind': 'wait_due', 'status': receipt['status'], 'elapsed': receipt['elapsed'],
+                          'timed_out': receipt['timed_out'], 'failure_class': receipt.get('failure_class'),
+                          'events': receipt.get('work_events', []), 'due_observation': receipt,
+                          'before_answer': messages})
+            if not receipt['completed']:
+                break
+            continue
         started = clock()
         # #392: the sandbox runs on the real clock; the judge reads timing against this, not the scenario note.
         sent_epoch = wall()
+        if sample_start is None:
+            sample_start = sent_epoch
         sent_at = sent_time(sent_epoch, zone)
-        before = None
+        interim = None
+        _delivered = None
         if scenario.get('channel') == 'telegram' and telegram is not None:
-            task_id, detail, before, _delivered = chat_turn(client, telegram, owner_message(turn), turn_timeout,
-                                                            poll_interval)
+            task_id, detail, interim, _delivered = chat_turn(client, telegram, owner_message(turn), turn_timeout,
+                                                            poll_interval, wall=wall, sleep=sleep,
+                                                            data=data if has_wait else None)
+            interim = [m for m in interim if m.get('sequence') is None or m['sequence'] not in captured]
+            captured.update(m['sequence'] for m in interim if m.get('sequence') is not None)
+            if _delivered and _delivered.get('sequence') is not None:
+                captured.add(_delivered['sequence'])
         else:
             task_id = client.send(owner_message(turn), f'eval-{scenario["id"]}-{uuid.uuid4().hex[:12]}')
             detail = client.wait(task_id, timeout=turn_timeout, interval=poll_interval)
@@ -146,11 +370,22 @@ def run_turns(client, scenario, turn_timeout=900, poll_interval=2.0, clock=time.
                       'timed_out': bool(detail.get('timed_out')), 'failure_class': detail.get('failure_class'),
                       'error': (detail.get('error') or '')[:300] if isinstance(detail.get('error'), str) else None,
                       'events': compact_events(detail), 'elapsed': round(clock() - started, 1),
-                      **({'before_answer': before} if before is not None else {})})
+                      **({'before_answer': interim} if interim is not None else {}),
+                      **({'answer_message': _delivered} if _delivered else {})})
         if detail.get('timed_out'):
             break  # the sandbox is still busy with this turn; later turns would queue behind it
         if detail.get('failure_class') == USAGE_LIMIT:
             break  # #887: later turns would only spend more of the owner's exhausted subscription
+    references = {}
+    for i, observed in enumerate(turns, 1):
+        for j, message in enumerate(observed.get('before_answer') or [], 1):
+            if message.get('delivery_id'):
+                references[message['delivery_id']] = f't{i}.b{j}'
+        if (observed.get('answer_message') or {}).get('delivery_id'):
+            references[observed['answer_message']['delivery_id']] = f't{i}'
+    for observed in turns:
+        for message in observed.get('due_observation', {}).get('deliveries', []):
+            message['transcript_ref'] = references.get(message['delivery_id'])
     return turns
 
 
@@ -207,7 +442,7 @@ def run_scenario(scenario, worker, pool, client_factory=AgentOSClient, turn_time
     """One clean-state trial: fresh sandbox, login, select worker, turns, owner-state diff."""
     if worker not in WORKERS:
         raise ValueError(f'worker must be one of {WORKERS}')
-    record = {'worker': worker, 'turns': [], 'diff': {}, 'error': None, 'judgment': None, 'upkeep': None}
+    record = {'observation_version': 'continuity-observation-v2', 'worker': worker, 'turns': [], 'diff': {}, 'error': None, 'judgment': None, 'upkeep': None}
     telegram = None
     try:
         if scenario.get('channel') == 'telegram':
@@ -221,8 +456,14 @@ def run_scenario(scenario, worker, pool, client_factory=AgentOSClient, turn_time
             record['judgment'] = prepare_judgment(client, pool, box, worker, judgment_timeout)
             before = client.snapshot()
             record['turns'] = run_turns(client, scenario, turn_timeout, poll_interval, zone=sandbox_zone(before, box),
-                                        telegram=telegram)
-            record['work'] = work_measurements(box.data, [turn['task_id'] for turn in record['turns']])
+                                        telegram=telegram, data=box.data, before=before)
+            record['due_observations'] = [t['due_observation'] for t in record['turns'] if 'due_observation' in t]
+            for receipt in record['due_observations']:
+                if receipt['status'] == 'observation_error':
+                    record['error'] = receipt['reason']
+            ids = {t['task_id'] for t in record['turns'] if t.get('task_id')}
+            ids.update(r['work_id'] for r in record['due_observations'] if r.get('admission') and r.get('work_id'))
+            record['work'] = work_measurements(box.data, sorted(ids))
             # #832: upkeep proposes Memory asynchronously after a Work (#805); let it settle first.
             record['upkeep'] = client.wait_upkeep_idle(upkeep_timeout, poll_interval)
             record['diff'] = state_diff(before, client.snapshot())

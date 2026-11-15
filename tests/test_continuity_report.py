@@ -358,7 +358,7 @@ def test_runner_refuses_seed_and_no_judge(rubric):
             cli.run_continuity(args(rubric, **changes), sweep=lambda *a, **k: pytest.fail('must not sweep'), )
 
 
-def test_runner_selects_exact_eight_bundled_ids(rubric, tmp_path):
+def test_runner_selects_exact_eleven_bundled_ids(rubric, tmp_path):
     captured = []
     def sweep(ns, folder=None):
         captured.append(ns)
@@ -367,14 +367,14 @@ def test_runner_selects_exact_eight_bundled_ids(rubric, tmp_path):
     with patch.object(scenarios, 'load', wraps=scenarios.load) as load:
         assert cli.run_continuity(args(rubric), sweep=sweep, folder=tmp_path, ) == 2
     load.assert_called_once_with(include_local=False)
-    selected = scenarios.load_file(c.SCENARIOS)
-    assert len(selected) == 8
+    selected = [r for r in scenarios.load(include_local=False) if 'exp-continuity' in r['tags']]
+    assert len(selected) == 11
     assert set(captured[0].scenarios.split(',')) == {r['id'] for r in selected}
     assert captured[0].no_local and captured[0].seed == ''
     assert captured[0].measures == str(rubric[1])
     fixture = captured[0].continuity
     assert len(fixture['scenario_digest']) == 64
-    assert {s: len(ids) for s, ids in fixture['scenario_ids'].items()} == {'dev': 5, 'heldout': 3}
+    assert {s: len(ids) for s, ids in fixture['scenario_ids'].items()} == {'dev': 7, 'heldout': 4}
 
 
 def test_actual_sweep_path_is_injectable_and_writes_c2(rubric, tmp_path, monkeypatch):
@@ -389,7 +389,7 @@ def test_actual_sweep_path_is_injectable_and_writes_c2(rubric, tmp_path, monkeyp
         assert task == 'task'
         run_meta = kwargs['metadata']
         assert run_meta['seed'] == 'fresh'
-        assert sum(map(len, run_meta['continuity']['scenario_ids'].values())) == 8
+        assert sum(map(len, run_meta['continuity']['scenario_ids'].values())) == 11
         return [SimpleNamespace(samples=[], location='fixture.eval', results=None)]
     def sweep(ns, folder=None):
         return cli.cmd_sweep(ns, folder=folder, task_factory=factory, inspect_eval=inspect_eval,
@@ -400,7 +400,7 @@ def test_actual_sweep_path_is_injectable_and_writes_c2(rubric, tmp_path, monkeyp
     assert calls[0]['measures'] == str(rubric[1])
     report = json.loads(next(tmp_path.glob('*.c2.json')).read_text())
     assert report['live_evidence']['seed'] == 'fresh'
-    assert report['uncertainty']['missing_samples'] == 24
+    assert report['uncertainty']['missing_samples'] == 33
     assert str(next(tmp_path.glob('*.c2.md'))) in output.getvalue()
 
 
@@ -444,7 +444,7 @@ def test_real_rubric_prompt_and_default_runner(monkeypatch):
     captured = []
     monkeypatch.setattr(cli, 'cmd_sweep', lambda args: captured.append(args) or 0)
     assert cli.main(['continuity', 'run', '--judge', 'fixture-judge']) == 0
-    assert Path(captured[0].measures) == FIXTURE_FOLDER / 'initiative-rubric-v1.json'
+    assert Path(captured[0].measures) == FIXTURE_FOLDER / 'initiative-rubric-v2.json'
     assert captured[0].continuity['rubric'] == REAL_RUBRIC
 
 
@@ -569,7 +569,7 @@ def test_sweep_records_survive_to_c2_and_usage_stop_refuses_comparison(rubric, t
     with redirect_stdout(io.StringIO()):
         assert cli.run_continuity(args(rubric, epochs=1), sweep=sweep, folder=tmp_path) == 2
     result = json.loads(next(tmp_path.glob('*.c2.json')).read_text())
-    assert len(result['samples']) == 8
+    assert len(result['samples']) == 11
     assert result['live_evidence']['stopped']['skipped'] == 1
     assert result['samples'][0]['measures_status'] == 'judged'
     assert result['samples'][0]['latency'][0]['elapsed'] == 1
@@ -969,3 +969,133 @@ def test_compare_cli_allow_partial_and_clean_comparison(rubric, tmp_path):
     compared = json.loads((tmp_path / 'after.c2.compare.json').read_text())
     assert compared['partial'] and compared['verdict'] == 'not better'
     assert 'PARTIAL' in output.getvalue()
+
+
+@pytest.mark.parametrize('grade', [0, 1, 2, None])
+def test_due_grade_provenance_two_calls_and_wait_ask_attribution(tmp_path, grade):
+    from test_eval_come_due import Trace, SPEC, SOURCE
+    trace=Trace(tmp_path,quiet=grade is None)
+    receipt=trace.wait(spec={'until':'settled' if grade is None else 'delivered'})
+    case=scenarios.validate({'id':'due-fixture','channel':'telegram','rubric':['follow_through'],
+                             'turns':['entrust',{'wait_due':SPEC},'requested followup']})
+    messages=[{'text':'Please supply that known fact?', 'delivery_id':'ask'},
+              {'text':'Still working', 'delivery_id':'ping'}]
+    r={'worker':'codex','turns':[
+        {**SOURCE,'say':'entrust','status':'succeeded','answer':'accepted'},
+        {'kind':'wait_due','status':receipt['status'],'due_observation':receipt,
+         'events':[{'tool':'local_authority','status':'requested'}], 'before_answer':messages},
+        {'say':'requested followup','status':'succeeded','answer':'requested result'}],
+       'due_observations':[receipt], 'diff':{}}
+    rr=c.load_rubric(c.DEFAULT_RUBRIC)
+    generated=[]
+    async def generate(system,prompt):
+        generated.append(prompt)
+        completion=({'dimensions':{'follow_through':{'score':2,'reason':'fixture'}},'summary':'fixture'} if len(generated)==1
+                    else {'avoidable_interventions':[{'turn':2,'kind':'asked_known_fact','reason':'t2.b1 asks again'}],
+                          'required_approvals':[],
+                          'unnecessary_interruptions':[{'message':'t2.b1','reason':'same ask'}, {'message':'t2.b2','reason':'separate ping'}],
+                          'proactive_usefulness':{'score':grade,'reason':'shown result'}})
+        return SimpleNamespace(completion=json.dumps(completion),usage=None,model='fixture')
+    value,meta=asyncio.run(s.score_run(case,r,'fixture',JudgeBudget(tmp_path/'budget'),lambda x:x,generate,rr))
+    assert len(generated)==2
+    assert value['check_due_completed']==1
+    assert 't2' not in meta['message_ids'] and 't2.b1' in meta['message_ids'] and 't3' in meta['message_ids']
+    assert value['measure_avoidable_interventions']==1
+    assert value['measure_unnecessary_interruptions']==1
+    assert meta['measures']['unnecessary_interruptions'][0]['message']=='t2.b2'
+    assert len(meta['required_approvals_events'])==1  # independent, never auto-approved
+    if grade is None:
+        assert math.isnan(value['measure_proactive_usefulness'])
+    else:
+        assert value['measure_proactive_usefulness']==grade/2
+    # No requested follow-up reply was in the proactive observation.
+    assert all(o['text']!='requested result' for o in meta['proactive_observation'].get('outputs',[]))
+
+
+@pytest.mark.parametrize('failure', ['usage-limit', 'observation_error'])
+def test_due_outage_or_limit_makes_no_judge_calls(tmp_path,failure):
+    r=run()
+    r['turns'].insert(1,{'kind':'wait_due','failure_class':failure if failure=='usage-limit' else None,
+                         'due_observation':{'status':failure,'reason':'fixture failure','completed':False}})
+    async def forbidden(*args): raise AssertionError('judge called')
+    values,metadata=asyncio.run(s.score_run(scenario(),r,'fixture',JudgeBudget(tmp_path/'budget'),lambda x:x,forbidden,REAL_RUBRIC))
+    assert metadata['judge_status']=='skipped' and metadata['measures_status']=='not_scored'
+    if failure=='usage-limit': assert failure in metadata['failure_classes']
+    else: assert metadata['failures'][0]['kind']=='infra'
+
+
+def test_due_round_trip_applicable_denominators_labels_and_versions(rubric,tmp_path):
+    from test_eval_come_due import Trace
+    receipt=Trace(tmp_path/'db').wait()
+    base=make_report(rubric)
+    raw=copy.deepcopy(base['samples'])
+    for row in raw:
+        if row['epoch']==1:
+            row['due_observations']=[receipt]
+            row['checks']['due_completed']=True
+    raw[1]['checks']['due_completed']=False
+    raw[1]['due_observations']=[{**receipt,'completed':False,'status':'timed_out','reason':'not_delivered'}]
+    fixture={**base['fixture_support'],'observation_version':c.OBSERVATION_VERSION}
+    report=c.build_report(raw,base['live_evidence'],fixture)
+    for split,block in report['live_evidence']['splits'].items():
+        assert block['totals']['checks']['due_completed']['n']==(2 if split=='dev' else 1)
+        assert block['totals']['due']['created']
+        assert len(block['totals']['latency'])==3
+    text=c.render_markdown(report)
+    assert 'not_delivered' in text and 'wait duration' in text and 'message references' in text
+    template=c.labels_template(report)
+    assert template['references'] and template['references'][0]['due_observations']
+    for suffix in ('a','b'):
+        sample=SimpleNamespace(id='x',epoch=1,scores=None if suffix=='b' else {'secretary':SimpleNamespace(value={},metadata={})},
+                               metadata={'run':{'turns':[{'kind':'wait_due','due_observation':receipt}], 'due_observations':[receipt]}})
+        record=records_from_samples([sample])[0]
+        assert record['turns'][0]['due_observation']==receipt and record['due_observations']==[receipt]
+    jp,_=c.write_report(report,tmp_path/'reports')
+    assert json.loads(jp.read_text())==report
+    other=copy.deepcopy(report)
+    other['observation_version']='continuity-observation-v1'
+    with pytest.raises(ValueError,match='observation'): c.compare(report,other)
+
+
+def test_due_shortfall_and_coverage_loss_cannot_win(rubric):
+    a=make_report(rubric)
+    b=make_report(rubric,ident='after',head='def',dev=(1,1,1),held=(1,1,1))
+    assert c.compare(a,b)['verdict']=='better'
+    a['samples'][0]['proactive_observation']={'observed':True}
+    result=c.compare(a,b)
+    assert result['verdict']=='not better' and result['partial']
+    assert 'proactive_coverage_preserved' in result['failed_conditions']
+    a['samples'][0]['proactive_observation']={'observed':False}
+    b['samples'][0]['checks']['due_completed']=False
+    assert c.compare(a,b)['verdict']=='not better'  # lost receipt still fails its applicable check
+    for status in ('timed_out','unsupported'):
+        b['samples'][0]['due_observations']=[{'status':status,'completed':False}]
+        result=c.compare(a,b)
+        assert result['verdict']=='not better' and result['partial']
+        assert 'complete_due_observation' in result['failed_conditions']
+
+
+def test_account_and_due_routes_deduplicate_same_preparation_work(tmp_path):
+    from test_eval_come_due import Trace
+    receipt=Trace(tmp_path).wait()
+    r={'due_observations':[receipt], 'diff':{'preparations':[{'id':'p','last_work_id':'due',
+        'line_account':True,'last_delivery':'sent','last_result':'API excerpt'}]}}
+    observation=s.proactive_observation(r)
+    assert len(observation['outputs'])==1
+    assert observation['outputs'][0]['text']=='observed result'
+    # Changes to a final row cannot erase the retained delivery receipt.
+    r['diff']['preparations'][0].update(last_delivery='none',last_result='')
+    assert s.proactive_observation(r)['observed']
+
+
+def test_wait_asks_require_message_attribution_and_keep_separate_gate(rubric):
+    r={'turns':[{'kind':'wait_due','before_answer':[{'text':'redundant ask?'},{'text':'ping'},{'text':'real gate?'}]}]}
+    data={'avoidable_interventions':[{'turn':1,'kind':'asked_known_fact','reason':'t1.b1 asks a known fact'}],
+          'required_approvals':[{'turn':1,'reason':'t1.b3 requires a gate'}],
+          'unnecessary_interruptions':[{'message':'t1.b1','reason':'ask'},{'message':'t1.b2','reason':'ping'},{'message':'t1.b3','reason':'gate'}],
+          'proactive_usefulness':{'score':None,'reason':'absent'}}
+    parsed=s.parse_measures(json.dumps(data),rubric[0],r)
+    assert len(parsed['avoidable_interventions'])==len(parsed['required_approvals'])==1
+    assert [m['message'] for m in parsed['unnecessary_interruptions']]==['t1.b2']
+    data['avoidable_interventions'][0]['reason']='unattributed ask'
+    with pytest.raises(ValueError,match='actual tN.bJ'):s.parse_measures(json.dumps(data),rubric[0],r)
