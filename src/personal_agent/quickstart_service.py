@@ -9542,6 +9542,35 @@ class AgentService:
         if purged:LOG.info('purged forgotten owner state receipts=%s',purged)
         return purged
 
+    def _work_iteration(self, next_purge_check, next_unknown_check):
+        """One worker tick: each independent step survives another step's failure (#893)."""
+        def run(name):
+            try:getattr(self,name)()
+            except Exception as exc:
+                LOG.warning('work loop step failed step=%s kind=%s',name,type(exc).__name__)
+
+        for name in (
+                # #659/#685: cheap due checks; qualification runs off this thread.
+                'run_due_preparation','run_due_qualification','run_one',
+                'deliver_one','deliver_notification',
+                # #818/#918: expire old prompts and release saved notices after uncertain sends.
+                'expire_memory_prompts','release_memory_saved_notices','sweep_after_work',
+                # #709/#990: settle in-flow logins; start at most one idle keepalive off-thread.
+                'process_browser_logins','start_session_keepalive'):
+            run(name)
+        now=time.monotonic()
+        if now>=next_purge_check:
+            # #794 phase 3 / #367: the forget purge hook; a forget is never purged now.
+            run('purge_forgotten')
+            next_purge_check=now+30
+        if now>=next_unknown_check:
+            # #842: the first pass follows restart recovery; later ones catch uncertain sends.
+            run('settle_unknown_deliveries')
+            next_unknown_check=now+self.UNKNOWN_DELIVERY_SWEEP_SECONDS
+        # #805: claim pending owner-model upkeep when idle; it runs off this thread.
+        run('run_owner_model_upkeep')
+        return next_purge_check,next_unknown_check
+
     def start(self):
         self.a2a_peers.recover()
         self.recover_interrupted_work()
@@ -9579,39 +9608,7 @@ class AgentService:
             next_purge_check=0.0
             next_unknown_check=0.0
             while not self.stop.is_set():
-                # #659: one indexed query; nothing due costs no model or network call.
-                self.run_due_preparation()
-                # #685: a queued Judgment AI qualification starts off this thread; nothing queued is a config read.
-                self.run_due_qualification()
-                self.run_one()
-                self.deliver_one()
-                self.deliver_notification()
-                # #818: memory prompts whose buttons outlived their TTL are closed.
-                self.expire_memory_prompts()
-                # #918 review: saved-notices a crash or an unknown delivery left behind are released.
-                self.release_memory_saved_notices()
-                try:
-                    self.sweep_after_work()
-                except Exception as exc:
-                    LOG.warning('after work recovery failed (%s)',type(exc).__name__)
-                # #709: close and settle in-flow logins (decisions, owner closes, timeouts).
-                self.process_browser_logins()
-                # #990: keep signed-in sites signed in while idle; off this thread (the jar read may wait
-                # on the Keychain), one at a time, at most one check a minute.
-                self.start_session_keepalive()
-                now=time.monotonic()
-                if now>=next_purge_check:
-                    # #794 phase 3 / #367: the forget purge hook; a forget is never purged now, so this finds nothing.
-                    self.purge_forgotten()
-                    next_purge_check=now+30
-                if now>=next_unknown_check:
-                    # #842: the first pass follows the restart's recovery; later ones catch uncertain sends.
-                    try:self.settle_unknown_deliveries()
-                    except Exception as exc:
-                        LOG.warning('unknown deliveries not settled (%s)',type(exc).__name__)
-                    next_unknown_check=now+self.UNKNOWN_DELIVERY_SWEEP_SECONDS
-                # #805: claim one pending owner-model upkeep when idle; it runs off this thread.
-                self.run_owner_model_upkeep()
+                next_purge_check,next_unknown_check=self._work_iteration(next_purge_check,next_unknown_check)
                 self.stop.wait(.3)
         def poll():
             while not self.stop.is_set():

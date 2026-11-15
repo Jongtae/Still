@@ -82,35 +82,59 @@ class WorkExecutor:
         with service.worker_lock:
             job=service._claim_queued_work()
             if not isinstance(job,dict):return job
-            if service.fold_delivered_steer(job):return True
-            service.current_work_id=job['id']
-            claimed_at=time.time()
-            service.record_stage(job['id'],'queue_wait',job.get('created') or claimed_at)
-            service.update_task_card(job,'running')
-            run=WorkRun(job,claimed_at,retry_note=service.action_continuation_note(job))
-            # #308 S4: a message meant for an earlier Work says first why it is answered on its own.
-            notice=service.steer_disposition_notice(job)
-            if notice:run.reply_notice=notice+'\n\n'
+            run=WorkRun(job,time.time())
             try:
-                for phase in (service._route_work,service._load_work_photos,service._run_rule_intent):
-                    step=phase(run)
-                    if step is not PROCEED:return step
-                if not run.handled:
-                    for phase in (service._prepare_worker_turn,service._run_worker_attempts):
+                try:
+                    if service.fold_delivered_steer(job):return True
+                    service.current_work_id=job['id']
+                    service.record_stage(job['id'],'queue_wait',job.get('created') or run.claimed_at)
+                    service.update_task_card(job,'running')
+                    run.retry_note=service.action_continuation_note(job)
+                    # #308 S4: a message meant for an earlier Work says first why it is answered on its own.
+                    notice=service.steer_disposition_notice(job)
+                    if notice:run.reply_notice=notice+'\n\n'
+                    for phase in (service._route_work,service._load_work_photos,service._run_rule_intent):
                         step=phase(run)
                         if step is not PROCEED:return step
-                    if not run.handled:service._settle_worker_outcome(run)
-                service._finish_work(run)
-            except (ValueError,ProviderError,ExecutionError,OSError) as exc:
-                service._fail_work(run,exc)
-            finally:
-                service._settle_work_judgments(run)
-                service.steer_closed.discard(job['id'])
-                service.live_workers.pop(job['id'],None)
-            service._after_work(run)
+                    if not run.handled:
+                        for phase in (service._prepare_worker_turn,service._run_worker_attempts):
+                            step=phase(run)
+                            if step is not PROCEED:return step
+                        if not run.handled:service._settle_worker_outcome(run)
+                    service._finish_work(run)
+                except Exception as exc:
+                    # #893: a claimed Work must not be stranded by an untyped phase failure.
+                    service._fail_work(run,exc)
+                finally:
+                    try:service._settle_work_judgments(run)
+                    finally:
+                        service.steer_closed.discard(job['id'])
+                        service.live_workers.pop(job['id'],None)
+                service._after_work(run)
+            except Exception as exc:
+                # The failure handler, judgment cleanup or tail can itself fail.
+                # Never replace a committed outcome or catch process-exit signals.
+                LOG.warning('work finalization failed job=%s kind=%s',job['id'],type(exc).__name__)
+                self._fail_work_terminal(run)
             # The result delivery is the one terminal Telegram bubble.
             # Do not append a second generic completion notification.
             return True
+
+    def _fail_work_terminal(self, run):
+        """Last resort after a failed finalizer: commit only the terminal state and recoverable tail."""
+        service=self.service
+        try:
+            outcome='unknown' if service._work_has_unknown_effect(run.job['id']) else 'failed'
+            with service.store.db() as db:
+                changed=db.execute("UPDATE jobs SET status=?,error=? WHERE id=? AND status='running'",
+                                   (outcome,msg('projection.i_couldn_t_complete_this_request'),run.job['id'])).rowcount
+                if changed:
+                    run.outcome=outcome
+                    self._record_after_work(run,db)
+        except Exception as exc:
+            # An unavailable store cannot accept a terminal commit. Leave recovery's
+            # running-row fence intact and keep the worker available for other work.
+            LOG.warning('work terminal state not saved job=%s kind=%s',run.job['id'],type(exc).__name__)
 
     def _claim_queued_work(self):
         """The oldest queued Work marked running, or False (nothing runnable now) / True (settled without running)."""

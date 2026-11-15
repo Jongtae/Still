@@ -197,12 +197,15 @@ class EarlyRequestBudget(fixtures.Harness):
             return original(work_id, call, *args, **kwargs)
         self.service.start_early_judgment = start
         # #1389: an explicit command no longer starts a plan (test above), so this Work
-        # ends before reading its plan by a step after routing that fails.
+        # fails after routing before reading its plan; #893 logs the error and fails
+        # the Work without raising from `run_one`.
         def stop(job):raise RuntimeError('stopped before the worker')
         self.service.present_turn = stop
         job = self.store.enqueue('Complete this synthetic request', 'unread-plan')
-        with self.assertRaisesRegex(RuntimeError, 'stopped before the worker'):
+        with self.assertLogs('personal_agent.service', 'WARNING') as logs:
             self.service.run_one()
+        self.assertEqual(self.store.job(job)['status'], 'failed')
+        self.assertIn(f"work failed job={job} kind=RuntimeError", '\n'.join(logs.output))
         self.assertEqual(self.engine.turns, [])
         self.assertEqual(settled, [True])
         saved = self.store.config('work_budget:' + job)
