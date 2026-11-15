@@ -248,7 +248,7 @@ def _claim_run_identities(identities, seen, origin):
 
 def combine_arm_logs(logs, label, scenarios=None, paths=None, seen_identities=None):
     """Normalize Inspect logs and concatenate their declared epoch ranges in order."""
-    from .report import records_from_samples
+    from .report import judge_provenance, records_from_samples, require_same_judge
     pieces = []
     seen = {} if seen_identities is None else seen_identities
     for index, log in enumerate(logs, 1):
@@ -267,7 +267,11 @@ def combine_arm_logs(logs, label, scenarios=None, paths=None, seen_identities=No
         run.setdefault('id', getattr(log.eval, 'run_id', None))
         run.setdefault('started', getattr(getattr(log, 'stats', None), 'started_at', None)
                        or getattr(log.eval, 'created', None))
-        pieces.append({'records': records_from_samples(log.samples), 'run': run})
+        records = records_from_samples(log.samples)
+        run = judge_provenance(records, run)
+        for piece in pieces:
+            require_same_judge(piece['run'], run)
+        pieces.append({'records': records, 'run': run})
     if not pieces:
         raise ValueError(f'Cannot combine arm {label}: no logs supplied')
     if len(pieces) == 1:
@@ -315,6 +319,9 @@ def compare_arms(arms, names=None):
     """arms: label -> {'records': records_from_samples(...), 'run': log.eval.metadata}."""
     if len(arms) != 2:
         raise ValueError('P1 requires exactly two arms')
+    from .report import judge_provenance, require_same_judge
+    runs = [judge_provenance(arm['records'], arm.get('run') or {}) for arm in arms.values()]
+    require_same_judge(*runs)
     names, source = read_names() if names is None else (frozenset(names), 'explicit argument')
     seen = {}
     for label, arm in arms.items():
@@ -326,7 +333,8 @@ def compare_arms(arms, names=None):
             _claim_run_identities(identities, seen, f'arm {label}, log {index}')
     output = {}
     for label, arm in arms.items():
-        records, run = arm['records'], arm.get('run') or {}
+        records = arm['records']
+        run = judge_provenance(records, arm.get('run') or {})
         declared = run.get('scenario_ids')
         scenarios = sorted(set(declared if declared is not None else [r['scenario'] for r in records]))
         workers = sorted({r.get('worker') or run.get('worker') or 'unknown' for r in records}
@@ -337,7 +345,7 @@ def compare_arms(arms, names=None):
         expected = {(scenario, epoch) for scenario in scenarios for epoch in range(1, epochs + 1)}
         observed = {(r['scenario'], r['epoch']) for r in measured if 'usage-limit' not in r['failure_classes']}
         missing = [list(pair) for pair in sorted(expected - observed)] if declared is not None else None
-        output[label] = {'identity': {**{k: run.get(k) for k in ('id', 'git_head', 'seed', 'judge', 'model')},
+        output[label] = {'identity': {**{k: run.get(k) for k in ('id', 'git_head', 'seed', 'judge', 'judge_model_resolved', 'model')},
                                       'worker': workers, 'epochs': epochs, 'scenario_ids': scenarios,
                                       'runs': run.get('runs', [{'id': run.get('id'), 'started': run.get('started')}])},
                          'complete': observed == expected if declared is not None else 'unknown', 'missing': missing,

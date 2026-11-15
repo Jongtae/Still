@@ -20,6 +20,27 @@ SCORER = 'secretary'
 REGRESSION_DROP = 0.10
 
 
+def require_same_judge(baseline, candidate, error=ValueError):
+    """Compare explicit provenance; absent historical judge fields stay unknown."""
+    a, b = baseline.get('judge') or None, candidate.get('judge') or None
+    if a != b:
+        reason = 'missing judge field is unknown' if a is None or b is None else 'different judge models or judged/checks-only runs'
+        raise error(f'Cannot compare eval judges: {a or "unknown"!r} vs {b or "unknown"!r}; {reason}')
+    ar, br = baseline.get('judge_model_resolved'), candidate.get('judge_model_resolved')
+    if ar and br and ar != br:
+        raise error(f'Cannot compare different resolved judge models: {ar!r} vs {br!r}')
+
+
+def judge_provenance(records, run):
+    """Carry all provider-reported model ids next to the requested judge."""
+    resolved = set()
+    for row in records:
+        value = row.get('judge_model_resolved')
+        if value:
+            resolved.update([value] if isinstance(value, str) else value)
+    return {**run, **({'judge_model_resolved': sorted(resolved)} if resolved else {})}
+
+
 def records_from_samples(samples, scorer=SCORER):
     """Per-run records from Inspect eval-log samples (duck-typed: ``id``, ``epoch``, ``scores``).
 
@@ -168,13 +189,15 @@ def world_section(records):
 
 
 def aggregate(records, run=None):
+    from .budget import judge_totals
     by_worker = defaultdict(list)
     by_scenario = defaultdict(list)
     for record in records:
         by_worker[record.get('worker') or 'unknown'].append(record)
         by_scenario[record.get('scenario')].append(record)
     judge = Counter(record.get('judge_status') or 'unknown' for record in records)
-    return {'run': dict(run or {}), 'cohort': cohort(records), 'generated_at': time.time(), 'totals': _group(records),
+    return {'run': judge_provenance(records, run or {}), 'judge_usage': judge_totals(records),
+            'cohort': cohort(records), 'generated_at': time.time(), 'totals': _group(records),
             'by_worker': {worker: _group(rows) for worker, rows in sorted(by_worker.items())},
             'scenarios': {scenario: {'runs': len(rows), 'pass_rate': _rate([row['value'].get('passed', 0) for row in rows]),
                                      'source': rows[0].get('source'), 'split': rows[0].get('split')}
@@ -188,6 +211,7 @@ def compare(current, previous):
     if not previous:
         return {'previous_run': None, 'regressions': [], 'new_clusters': [c['key'] for c in current['clusters']],
                 'resolved_clusters': []}
+    require_same_judge(previous.get('run', {}), current.get('run', {}))
     regressions = []
 
     def check(label, now, before):
@@ -219,6 +243,8 @@ def render_markdown(report):
              f"- judge: {', '.join(f'{k} {v}' for k, v in sorted(report['judge'].items()))}"]
     if run.get('git_head'):
         lines.append(f"- code: {run['git_head']}")
+    if run.get('judge_model_resolved'):
+        lines.append(f"- judge requested: {run.get('judge')}; resolved: {run['judge_model_resolved']}")
     if run.get('stopped'):
         lines.append(f"- STOPPED on a usage limit in {run['stopped'].get('tripped_by')}: "
                      f"{run['stopped'].get('skipped')} runs not started; not used as a trend baseline")
@@ -280,8 +306,8 @@ def render_markdown(report):
     return '\n'.join(lines) + '\n'
 
 
-def latest_report(folder, of_cohort=None):
-    """The newest complete report in ``folder``, of ``of_cohort`` when given."""
+def latest_report(folder, of_cohort=None, judge_run=None):
+    """Newest complete report matching the supplied cohort and judge provenance."""
     folder = Path(folder)
     reports = sorted(folder.glob('*.json')) if folder.is_dir() else []
     for path in reversed(reports):
@@ -293,6 +319,11 @@ def latest_report(folder, of_cohort=None):
             continue
         if (data.get('run') or {}).get('stopped'):
             continue  # #887: stopped on a usage limit, so incomplete; never a baseline
+        if judge_run is not None:
+            try:
+                require_same_judge(data.get('run') or {}, judge_run)
+            except ValueError:
+                continue  # Incompatible judges start separate trend histories.
         if of_cohort is None or data.get('cohort') == of_cohort:
             return data
     return None
@@ -302,7 +333,7 @@ def write_report(records, folder, run):
     """Aggregate, compare with the previous report, write ``<run id>.json`` and ``.md``; returns the paths."""
     folder = Path(folder)
     report = aggregate(records, run)
-    previous = latest_report(folder, report['cohort'])
+    previous = latest_report(folder, report['cohort'], judge_run=report['run'])
     report['trend'] = compare(report, previous)
     folder.mkdir(parents=True, exist_ok=True, mode=0o700)
     json_path = folder / f"{run['id']}.json"

@@ -51,7 +51,7 @@ def keychain_secret(account, service=KEYCHAIN_SERVICE, runner=subprocess.run):
 def ensure_judge_key(judge, environ=None, keychain=keychain_secret):
     """Make the judge provider's key available to this process only; returns where it came from."""
     environ = os.environ if environ is None else environ
-    if judge == 'none':
+    if not judge or judge == 'none':
         return 'none'
     provider = judge.split('/', 1)[0]
     name = KEY_ENV.get(provider)
@@ -66,6 +66,45 @@ def ensure_judge_key(judge, environ=None, keychain=keychain_secret):
     raise SystemExit(f'No judge key: set {name} or store it with '
                      f'`security add-generic-password -s {KEYCHAIN_SERVICE} -a {provider} -w` '
                      f'(or pass --judge none for checks only).')
+
+
+def selected_judge(value='', environ=None):
+    environ = os.environ if environ is None else environ
+    return (value or environ.get('AGENTOS_EVAL_JUDGE_MODEL') or 'none').strip() or 'none'
+
+
+def task_judge_settings(judge='', judge_notice=True):
+    """Inspect task wiring without importing Inspect or loading credentials."""
+    judge = selected_judge(judge)
+    scorer_judge = 'none' if judge == 'none' else 'grader'
+    model_roles = None if judge == 'none' else {'grader': judge}
+    announce = str(judge_notice).lower() not in ('0', 'false', 'no')
+    return judge, scorer_judge, model_roles, announce
+
+
+def judge_notice(judge, key_loader=None):
+    """Resolve credentials only after opt-in, and disclose the effective budget once."""
+    if judge == 'none':
+        print('Checks only; eval judge is off. Enable with --judge <model> or AGENTOS_EVAL_JUDGE_MODEL=<model>.')
+        return 'none'
+    source = (key_loader or ensure_judge_key)(judge)
+    budget = JudgeBudget.from_environ(eval_home() / 'judge-budget.json')
+    placeholders = [name for name in ('IN', 'OUT') if f'AGENTOS_EVAL_JUDGE_PRICE_{name}' not in os.environ]
+    suffix = f"; placeholder default prices: {', '.join(placeholders)} (2/8 USD per million)" if placeholders else ''
+    print(f"Eval judge: {judge}; key source: {'Keychain' if source == 'keychain' else source}; "
+          f"daily cap: USD {budget.cap:g}; prices per million tokens: input USD {budget.price_in:g}, "
+          f"output USD {budget.price_out:g}{suffix}.")
+    return source
+
+
+def judge_totals_line(judge, records):
+    from .budget import judge_totals
+    if judge == 'none':
+        print('Eval judge totals: off (checks only).')
+        return
+    totals = judge_totals(records)
+    print(f"Eval judge totals: {judge}; calls: {totals['calls']}; input tokens: {totals['input_tokens']}; "
+          f"output tokens: {totals['output_tokens']}; settled USD: {totals['usd']}.")
 
 
 def resolve_seed(value):
@@ -130,6 +169,10 @@ def run_world_sweep(args, run_scenario=None, pool_factory=None, folder=None):
     from .runner import USAGE_LIMIT, run_world_scenario
     from .sandbox import SandboxPool
     from .worlds import EVIDENCE_CLASS
+    notice = 'World sweep is checks only; the eval judge is not used.'
+    if selected_judge(getattr(args, 'judge', '')) != 'none':
+        notice += ' The named judge is ignored for world sweeps.'
+    print(notice)
     if args.worker != WORLD_WORKER:
         raise SystemExit('A world sweep runs on the Codex worker only.')
     ids = [item for item in args.scenarios.split(',') if item]
@@ -165,6 +208,7 @@ def run_world_sweep(args, run_scenario=None, pool_factory=None, folder=None):
     json_path, md_path, report = write_report(world_records(done), folder or eval_home() / 'reports', run)
     print(md_path.read_text(encoding='utf-8'))
     print(f'report: {json_path}')
+    judge_totals_line('none', [])
     if tripped.is_set():
         return 2
     return 1 if report['trend']['regressions'] else 0
@@ -177,10 +221,10 @@ def cmd_sweep(args, folder=None, inspect_eval=None, task_factory=None, key_loade
         from .task import agentos_secretary, inspect_eval as default_eval
         inspect_eval = inspect_eval or default_eval
         task_factory = task_factory or agentos_secretary
-    judge = args.judge or os.environ.get('AGENTOS_EVAL_JUDGE_MODEL') or 'openai/gpt-6.1-terra'
-    key_source = (key_loader or ensure_judge_key)(judge)
+    judge = selected_judge(args.judge)
     if args.cap_usd is not None:
         os.environ['AGENTOS_EVAL_JUDGE_CAP_USD'] = str(args.cap_usd)
+    key_source = judge_notice(judge, key_loader)
     seed = resolve_seed(args.seed)
     run = {'id': run_id(), 'started': time.time(), 'git_head': git_head(), 'worker': args.worker,
            'instances': args.instances, 'epochs': args.epochs, 'judge': judge, 'judge_key': key_source,
@@ -193,7 +237,7 @@ def cmd_sweep(args, folder=None, inspect_eval=None, task_factory=None, key_loade
                              turn_timeout=args.turn_timeout, judgment_timeout=run['judgment_timeout'],
                              include_local=not args.no_local,
                              keep_sandboxes=args.keep_sandboxes, measures=getattr(args, 'measures', ''),
-                             sample_limit=args.limit)
+                             sample_limit=args.limit, judge_notice=False)
     if 'scenario_ids' in (getattr(task, 'metadata', None) or {}):
         run['scenario_ids'] = task.metadata['scenario_ids']
     if getattr(args, 'continuity', None) and getattr(task, 'metadata', None) is not None:
@@ -203,7 +247,10 @@ def cmd_sweep(args, folder=None, inspect_eval=None, task_factory=None, key_loade
     logs = inspect_eval(task, epochs=args.epochs, max_samples=args.instances, limit=args.limit,
                         log_dir=str(eval_home() / 'logs'), display=args.display, fail_on_error=False,
                         tags=['agentos-eval', args.worker], metadata=run)
-    report = _write(logs[0], run, folder)
+    try:
+        report = _write(logs[0], run, folder)
+    finally:
+        judge_totals_line(judge, records_from_samples(getattr(logs[0], 'samples', None)))
     if usage_limit_stops(logs[0]):
         return 2
     return 1 if report['trend']['regressions'] else 0
@@ -300,9 +347,9 @@ def run_continuity(args, sweep=None, folder=None):
     from . import continuity
     if getattr(args, 'seed', None) is not None or os.environ.get('AGENTOS_EVAL_SEED'):
         raise SystemExit('C2 refuses --seed/AGENTOS_EVAL_SEED: use a fresh data folder.')
-    judge = args.judge or os.environ.get('AGENTOS_EVAL_JUDGE_MODEL') or 'openai/gpt-6.1-terra'
+    judge = selected_judge(args.judge)
     if judge == 'none':
-        raise SystemExit('C2 refuses --judge none: judged measures need a judge.')
+        raise SystemExit('C2 refuses checks-only runs: judged measures need --judge <model> or AGENTOS_EVAL_JUDGE_MODEL=<model> (none is off).')
     if args.epochs < 1 or args.instances < 1:
         raise SystemExit('C2 epochs and instances must be positive.')
     loaded = [s for s in scenario_module.load(include_local=False) if 'exp-continuity' in s['tags']]

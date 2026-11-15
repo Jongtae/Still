@@ -177,6 +177,9 @@ def _conditions(report):
     result = {key: report.get(key) for key in
               ('harness_version', 'case_set_version', 'case_set_digest', 'catalogue_digest', 'evidence_class',
                'pinned_model')}
+    for key in ('judge', 'judge_model_resolved'):
+        if key in report:
+            result[key] = report[key]
     for key in ('transport', 'requested_model', 'effort', 'destination'):
         if key in active:
             result['runtime.' + key] = active[key]
@@ -253,6 +256,8 @@ def compare_paired(baseline_report, candidate_report, *, splits):
     held-out rate change) are DISPLAY ONLY; uncertainty is assessed per case.
     """
     before, after = baseline_report, candidate_report
+    from .report import require_same_judge
+    require_same_judge(before, after)
     a, b = _conditions(before), _conditions(after)
     required = {'runtime.transport', 'runtime.requested_model', 'runtime.effort', 'runtime.destination'}
     differences, unknown = [], []

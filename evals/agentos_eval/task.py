@@ -28,15 +28,11 @@ from inspect_ai.solver import Generate, TaskState, solver
 from inspect_ai.util import EarlyStop
 
 from agentos_eval import scenarios as scenario_module
-from agentos_eval.budget import JudgeBudget
-from agentos_eval.paths import eval_home
-from agentos_eval.redaction import Redactor
+from agentos_eval.budget import scorer_judge_resources
 from agentos_eval.runner import WORKERS, StopOnUsageLimit, run_scenario
 from agentos_eval.sandbox import SandboxPool
 from agentos_eval.scoring import JUDGE_MAX_TOKENS, score_run
 
-
-DEFAULT_JUDGE = 'openai/gpt-6.1-terra'
 
 def workers_for(worker):
     if worker in ('both', 'split'):
@@ -77,9 +73,8 @@ def agentos_blackbox(pool, turn_timeout=900, judgment_timeout=300):
 
 
 @scorer(metrics={'*': [mean()]})
-def secretary(judge='grader', budget_path=None, seed=None, measures=''):
-    budget = JudgeBudget.from_environ(budget_path or eval_home() / 'judge-budget.json')
-    redact = Redactor.for_seed(seed)
+def secretary(judge='none', budget_path=None, seed=None, measures=''):
+    budget, redact = scorer_judge_resources(judge, budget_path, seed)
     if measures:
         from agentos_eval.continuity import load_rubric
         rubric = load_rubric(measures)
@@ -107,10 +102,13 @@ def secretary(judge='grader', budget_path=None, seed=None, measures=''):
 @task
 def agentos_secretary(scenarios='', split='', worker='codex', instances=3, seed='', judge='',
                       turn_timeout=900, judgment_timeout=300, include_local=True, keep_sandboxes=False, measures='',
-                      sample_limit=None):
+                      sample_limit=None, judge_notice=True):
     """Multi-turn owner scenarios against fresh Still sandboxes, on Codex and/or Claude Code."""
     seed = seed or os.environ.get('AGENTOS_EVAL_SEED', '')
-    judge = judge or os.environ.get('AGENTOS_EVAL_JUDGE_MODEL', DEFAULT_JUDGE)
+    from agentos_eval.cli import judge_notice as announce_judge, task_judge_settings
+    judge, scorer_judge, model_roles, announce = task_judge_settings(judge, judge_notice)
+    if announce:
+        announce_judge(judge)
     pool = SandboxPool(size=int(instances), seed=Path(seed).expanduser() if seed else None,
                        keep=str(keep_sandboxes).lower() in ('1', 'true', 'yes'))
     include_local = str(include_local).lower() not in ('0', 'false', 'no')
@@ -120,10 +118,10 @@ def agentos_secretary(scenarios='', split='', worker='codex', instances=3, seed=
     scenario_ids = sorted({sample.metadata['scenario']['id'] for sample in selected})
     return Task(dataset=selected,
                 solver=agentos_blackbox(pool, int(turn_timeout), int(judgment_timeout)),
-                scorer=secretary('none' if judge == 'none' else 'grader', seed=Path(seed).expanduser() if seed else None,
+                scorer=secretary(scorer_judge, seed=Path(seed).expanduser() if seed else None,
                                  measures=measures),
                 model='none/none',
                 early_stopping=StopOnUsageLimit(EarlyStop),
-                model_roles=None if judge == 'none' else {'grader': judge},
+                model_roles=model_roles,
                 metadata={'worker': worker, 'instances': int(instances), 'seed': bool(seed), 'judge': judge,
                           'scenario_ids': scenario_ids})
