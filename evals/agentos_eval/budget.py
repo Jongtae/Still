@@ -31,6 +31,16 @@ def judge_totals(records):
     return totals
 
 
+def scorer_judge_resources(judge, budget_path=None, seed=None):
+    """Checks-only scorers need neither a budget nor stored-secret redaction."""
+    if not judge or judge == 'none':
+        return None, None
+    from .paths import eval_home
+    from .redaction import Redactor
+    return (JudgeBudget.from_environ(budget_path or eval_home() / 'judge-budget.json'),
+            Redactor.for_seed(seed))
+
+
 def estimate_tokens(text):
     """A deliberately high token estimate for mixed Korean/English text (no tokenizer needed)."""
     return max(1, len(text) // 2)

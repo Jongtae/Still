@@ -63,6 +63,8 @@ security add-generic-password -s agentos-evals -a openai -w   # prompts for the 
 
 The key is never written anywhere by this tool. Before Inspect starts, one notice names the judge, key source (environment or Keychain), daily USD cap, and effective input/output prices per million tokens; it flags either price that uses the 2/8 placeholder defaults. Sweeps and continuity runs end with judge calls, tokens and settled USD from score metadata, or a judge-off line. Reports retain the requested judge and provider-reported resolved model ids when available. Comparisons refuse different judges, judged versus checks-only runs, and unknown historical judges paired with known ones.
 
+Direct Inspect runs show the notice and retain totals in the eval log's score metadata; the sweep commands print those totals.
+
 Judge spend is capped per day (default **USD 10**; `--cap-usd` or `AGENTOS_EVAL_JUDGE_CAP_USD`).
 
 - Before each judge call, its worst-case cost is reserved: the estimated input plus the output ceiling. A reservation that would cross the cap is refused. The run is then scored by checks only and marked `budget_refused`.

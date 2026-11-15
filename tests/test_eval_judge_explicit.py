@@ -11,7 +11,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'evals'))
 from agentos_eval import cli, report, scoring, continuity, paired, promotion, p1_report
-from agentos_eval.budget import JudgeBudget, judge_totals
+from agentos_eval.budget import JudgeBudget, judge_totals, scorer_judge_resources
+from agentos_eval.redaction import Redactor
 from test_continuity_report import rubric, make_report, scenario, run, args as continuity_args
 from test_eval_paired import report as judgment_report, SPLITS
 from test_eval_promotion import inputs as promotion_inputs, fixture_commit_range
@@ -163,6 +164,91 @@ def test_continuity_announces_once_and_prints_settlements(rubric, tmp_path, monk
     assert str(judge_totals(calls)['usd']) in output
 
 
+@pytest.mark.parametrize('argument', ['', 'none'])
+def test_task_judge_default_without_inspect_has_no_roles_keys_or_calls(argument, monkeypatch, capsys):
+    keychain = Mock(return_value='would-be-key')
+    ensure_key = cli.ensure_judge_key
+    ensure = Mock(side_effect=lambda judge: ensure_key(judge, keychain=keychain))
+    monkeypatch.setattr(cli, 'ensure_judge_key', ensure)
+    judge, scorer_judge, roles, announce = cli.task_judge_settings(argument, True)
+    assert judge == scorer_judge == 'none' and roles is None and announce is True
+    if announce:
+        cli.judge_notice(judge)
+    generate = Mock(side_effect=AssertionError('no judge call'))
+    _, metadata = asyncio.run(scoring.score_run(scenario(), run(), scorer_judge, None, None, generate))
+    assert metadata['judge_status'] == 'skipped'
+    ensure.assert_not_called()
+    keychain.assert_not_called()
+    generate.assert_not_called()
+    assert 'Checks only;' in capsys.readouterr().out
+
+
+@pytest.mark.parametrize('selection', ['argument', 'environment'])
+def test_task_named_judge_without_inspect_uses_grader_role(selection, monkeypatch):
+    argument = 'openai/named-model' if selection == 'argument' else ''
+    if selection == 'environment':
+        monkeypatch.setenv('AGENTOS_EVAL_JUDGE_MODEL', 'openai/named-model')
+    ensure = Mock(side_effect=AssertionError('selection must not load a key'))
+    monkeypatch.setattr(cli, 'ensure_judge_key', ensure)
+    assert cli.task_judge_settings(argument, True) == (
+        'openai/named-model', 'grader', {'grader': 'openai/named-model'}, True)
+    ensure.assert_not_called()
+
+
+@pytest.mark.parametrize('flag,announce', [(False, False), ('false', False), ('0', False), (True, True)])
+def test_task_notice_flag_and_explicit_off_override_without_inspect(flag, announce, monkeypatch):
+    monkeypatch.setenv('AGENTOS_EVAL_JUDGE_MODEL', 'openai/named-model')
+    assert cli.task_judge_settings('none', flag) == ('none', 'none', None, announce)
+
+
+@pytest.mark.parametrize('judge', ['', None, 'none'])
+def test_checks_only_scorer_loads_no_budget_or_redactor_without_inspect(judge, monkeypatch):
+    budget = Mock(side_effect=AssertionError('checks-only must not load a budget'))
+    redactor = Mock(side_effect=AssertionError('checks-only must not read stored secrets'))
+    monkeypatch.setattr(JudgeBudget, 'from_environ', budget)
+    monkeypatch.setattr(Redactor, 'for_seed', redactor)
+    assert scorer_judge_resources(judge) == (None, None)
+    budget.assert_not_called()
+    redactor.assert_not_called()
+
+
+def test_named_scorer_resources_reuse_existing_factories_without_inspect(tmp_path, monkeypatch):
+    budget, redact = object(), object()
+    budget_factory, redact_factory = Mock(return_value=budget), Mock(return_value=redact)
+    monkeypatch.setattr(JudgeBudget, 'from_environ', budget_factory)
+    monkeypatch.setattr(Redactor, 'for_seed', redact_factory)
+    path, seed = tmp_path / 'budget.json', tmp_path / 'seed'
+    assert scorer_judge_resources('grader', path, seed) == (budget, redact)
+    budget_factory.assert_called_once_with(path)
+    redact_factory.assert_called_once_with(seed)
+
+
+@pytest.mark.parametrize('selection', ['off', 'argument', 'environment'])
+def test_world_sweep_notice_never_loads_judge_credentials(selection, tmp_path, monkeypatch, capsys):
+    extra = ['--world', 'fake']
+    if selection == 'argument':
+        extra += ['--judge', 'openai/named-model']
+    elif selection == 'environment':
+        monkeypatch.setenv('AGENTOS_EVAL_JUDGE_MODEL', 'openai/named-model')
+    args = sweep_args(extra)
+    ensure = Mock(side_effect=AssertionError('world sweeps never load judge keys'))
+    keychain = Mock(side_effect=AssertionError('world sweeps never read Keychain'))
+    monkeypatch.setattr(cli, 'ensure_judge_key', ensure)
+    monkeypatch.setattr(cli, 'keychain_secret', keychain)
+    monkeypatch.setattr(cli.scenario_module, 'load', lambda **kw: [
+        {'id': 'world-fixture', 'world': {'expect_world_pass': True}}])
+    fake_run = lambda *a, **kw: {'worker': 'codex', 'turns': [], 'still': {'check': True},
+                               'world': {'name': 'fake', 'result': {'passed': True, 'failures': []}}}
+    assert cli.run_world_sweep(args, run_scenario=fake_run, pool_factory=lambda **kw: None,
+                               folder=tmp_path / 'reports') == 0
+    notice, = [line for line in capsys.readouterr().out.splitlines() if line.startswith('World sweep')]
+    assert 'checks only' in notice and 'eval judge is not used' in notice
+    assert ('ignored for world sweeps' in notice) == (selection != 'off')
+    assert '--judge' not in notice and 'Enable' not in notice
+    ensure.assert_not_called()
+    keychain.assert_not_called()
+
+
 def test_direct_task_default_has_no_roles_or_judge_calls(tmp_path, monkeypatch, capsys):
     pytest.importorskip('inspect_ai')
     from agentos_eval import task
@@ -172,7 +258,7 @@ def test_direct_task_default_has_no_roles_or_judge_calls(tmp_path, monkeypatch, 
     transport = Mock(side_effect=AssertionError('no model should be loaded'))
     monkeypatch.setattr(task, 'get_model', transport)
     redactor = Mock(side_effect=AssertionError('checks-only must not read stored provider secrets'))
-    monkeypatch.setattr(task.Redactor, 'for_seed', redactor)
+    monkeypatch.setattr(Redactor, 'for_seed', redactor)
     original = task.secretary
     selected = []
     def scorer(judge, **kwargs):
@@ -199,7 +285,7 @@ def test_task_uses_inspect_grader_role_and_records_resolved_id(tmp_path, monkeyp
     from agentos_eval import task
     monkeypatch.setenv('AGENTOS_EVAL_JUDGE_MODEL', 'openai/explicit-model')
     monkeypatch.setenv('OPENAI_API_KEY', 'fake-key')
-    monkeypatch.setattr(task.Redactor, 'for_seed', lambda seed: lambda text: text)
+    monkeypatch.setattr(Redactor, 'for_seed', lambda seed: lambda text: text)
     async def generate(*args, **kwargs):
         return NS(model='answered-model-id', usage=NS(input_tokens=12, output_tokens=4),
                   completion=json.dumps({'dimensions': {dim: {'score': 2, 'reason': 'ok'}
@@ -221,6 +307,26 @@ def test_task_uses_inspect_grader_role_and_records_resolved_id(tmp_path, monkeyp
     assert score.metadata['judge_model_resolved'] == ['answered-model-id']
     assert score.metadata['judge_usage']['rubric']['judge_model_resolved'] == 'answered-model-id'
     assert 'Eval judge: openai/explicit-model' in capsys.readouterr().out
+
+
+@pytest.mark.parametrize('models', [(None, 'model-A', 'model-B'), ('model-B', None, 'model-A')])
+def test_p1_combining_checks_all_prior_resolved_judges(models):
+    logs = [_one_epoch_log('arm', i) for i in range(1, 4)]
+    for log, model in zip(logs, models):
+        log.eval.metadata['judge'] = 'openai/alias'
+        if model:
+            log.eval.metadata['judge_model_resolved'] = [model]
+    with pytest.raises(ValueError, match='different resolved judge models'):
+        p1_report.combine_arm_logs(logs, 'arm')
+
+
+def test_p1_combining_accepts_unknown_then_matching_resolved_judges():
+    logs = [_one_epoch_log('arm', i) for i in range(1, 4)]
+    for log in logs:
+        log.eval.metadata['judge'] = 'openai/alias'
+    for log in logs[1:]:
+        log.eval.metadata['judge_model_resolved'] = ['model-A']
+    assert p1_report.combine_arm_logs(logs, 'arm')['run']['epochs'] == 3
 
 
 # Exercise each public comparison boundary with valid matching fixtures first.

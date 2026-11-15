@@ -73,6 +73,15 @@ def selected_judge(value='', environ=None):
     return (value or environ.get('AGENTOS_EVAL_JUDGE_MODEL') or 'none').strip() or 'none'
 
 
+def task_judge_settings(judge='', judge_notice=True):
+    """Inspect task wiring without importing Inspect or loading credentials."""
+    judge = selected_judge(judge)
+    scorer_judge = 'none' if judge == 'none' else 'grader'
+    model_roles = None if judge == 'none' else {'grader': judge}
+    announce = str(judge_notice).lower() not in ('0', 'false', 'no')
+    return judge, scorer_judge, model_roles, announce
+
+
 def judge_notice(judge, key_loader=None):
     """Resolve credentials only after opt-in, and disclose the effective budget once."""
     if judge == 'none':
@@ -160,7 +169,10 @@ def run_world_sweep(args, run_scenario=None, pool_factory=None, folder=None):
     from .runner import USAGE_LIMIT, run_world_scenario
     from .sandbox import SandboxPool
     from .worlds import EVIDENCE_CLASS
-    judge_notice('none')
+    notice = 'World sweep is checks only; the eval judge is not used.'
+    if selected_judge(getattr(args, 'judge', '')) != 'none':
+        notice += ' The named judge is ignored for world sweeps.'
+    print(notice)
     if args.worker != WORLD_WORKER:
         raise SystemExit('A world sweep runs on the Codex worker only.')
     ids = [item for item in args.scenarios.split(',') if item]

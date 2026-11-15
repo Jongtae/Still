@@ -269,8 +269,8 @@ def combine_arm_logs(logs, label, scenarios=None, paths=None, seen_identities=No
                        or getattr(log.eval, 'created', None))
         records = records_from_samples(log.samples)
         run = judge_provenance(records, run)
-        if pieces:
-            require_same_judge(pieces[0]['run'], run)
+        for piece in pieces:
+            require_same_judge(piece['run'], run)
         pieces.append({'records': records, 'run': run})
     if not pieces:
         raise ValueError(f'Cannot combine arm {label}: no logs supplied')
