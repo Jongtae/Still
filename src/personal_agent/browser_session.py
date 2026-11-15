@@ -1819,6 +1819,7 @@ class BrowserSession:
                                        text, self._state_of(current, current_element))
                 if rebound != binding or current_element.get('payment') or current_element.get('forwards_payment'):
                     raise ToolError(TARGET_TEXT, 'target_unavailable')
+                snapshot, element = current, current_element
             approved = self._guard(binding, description, required, autonomy=not element['guarded'])
             self._spend_step()   # #620: typing held for approval, or into a missing field, spends nothing
         except Exception:

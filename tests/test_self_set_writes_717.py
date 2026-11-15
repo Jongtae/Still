@@ -600,6 +600,49 @@ class VerifierRegressions(_Runs):
             self.assertEqual(self.events()[0]['status'],'not_run')
             self.assertTrue(runner._decide(request,{'notes.test':[]})[0])
 
+    def test_review875_typing_uses_target_refreshed_after_judgment(self):
+        from personal_agent import browser_session as bs
+        from test_browser_session import FakeDriver, ORIGIN
+        _,job=self.started_self()
+        intended='<input aria-label="Intended field" name="intended">'
+        other='<input aria-label="Other field" name="other">'
+        def page(fields):return '<form method="post" action="/save">'+fields+'</form>'
+        fixture=FakeDriver(pages={'/edit':page(intended+other)})
+        # Keep the real snapshot/_expect/type boundary; only the worker transport
+        # is fake. It validates the refreshed descriptor just as the native guard does.
+        with mock.patch.object(bs.WebKitWorkerDriver,'_start'):
+            driver=bs.WebKitWorkerDriver()
+        browser=bs.BrowserSession(lambda:driver,work_id=job['id'],approvals=self.service.browser_approvals_for(job))
+        self.addCleanup(browser.close)
+        dispatched=[]
+        def worker(op,timeout,**args):
+            if op=='navigate':fixture.goto(args['url'],timeout)
+            elif op=='snapshot':return {'page':fixture.snapshot()}
+            elif op=='type':
+                live=next(e for e in fixture.snapshot()['elements'] if e['index']==args['index'])
+                self.assertEqual(args['expect']['name'],live['name'])
+                dispatched.append(args)
+                fixture.type(args['index'],args['text'],timeout)
+            else:self.assertIn(op,('self_set_writes','settle'))
+            return {}
+        def reorder(*args):
+            fixture.pages['/edit']=page(other+intended)
+            return 'reversible'
+        with mock.patch.object(driver,'_request',side_effect=worker):
+            browser.open({'url':ORIGIN+'/edit','effect':'navigate'})
+            before=browser._snapshot()
+            before_element=bs.resolve_target(before,'Intended field')
+            with mock.patch.object(self.service.decision_judge,'connector_effect',side_effect=reorder):
+                browser.type({'target':'Intended field','text':'approved text','effect':'mutate'})
+            after=bs.mediate_snapshot(fixture.snapshot())
+            after_element=bs.resolve_target(after,'Intended field')
+            self.assertNotEqual(before_element['index'],after_element['index'])
+            self.assertEqual(len(dispatched),1)
+            self.assertEqual(dispatched[0]['expect']['name'],'Intended field')
+            self.assertEqual(dispatched[0]['index'],after_element['index'])
+            self.assertEqual({e['name']:e['value'] for e in fixture.snapshot()['elements']},
+                             {'Intended field':'approved text','Other field':''})
+
     def test_review875_api_revoked_during_final_dns_check(self):
         _,job=self.started_self()
         set_allowance(self.service,'slot:notes',True,0,'owner')

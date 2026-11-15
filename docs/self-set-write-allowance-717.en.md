@@ -515,3 +515,60 @@ PYTHONPATH=src:/tmp /Users/jongtaelee/Documents/project/Still/.venv/bin/python -
 ```
 
 `git diff --check` passed. Existing tests were not changed. No commit was created.
+
+
+## Refreshed typing target correction (PR #875, head `5b30ee5`)
+
+The self-set typing recheck resolved the intended control again but left the
+original dispatch descriptor in place. Reordering controls during judgment
+could preserve the exact binding and form state while moving that field to a
+new index. The worker driver's refreshed `_expect` map would then validate the
+other control now occupying the old index. `BrowserSession.type` now assigns
+both `snapshot` and `element` from the successful recheck, as `click` already
+does. Native dispatch, confirmation context and error reporting therefore use
+the same refreshed snapshot.
+
+The other recheck-to-dispatch paths were inspected:
+
+- `click` already updates both descriptors after comparing the binding, before
+  `_input` dispatches its index. Submit buttons use that same click path.
+- `_cancelled_submit` and `_resume_self_set_submit` dispatch an exact held-form
+  record through `WebKitWorkerDriver.release_submit`, not `_expect` or a cached
+  control index. `Worker.op_release_submit` checks the recorded form identity
+  and state before invoking the shared `RELEASE_SCRIPT` by hold ID. That script
+  dereferences the original form/submitter, checks that they remain connected
+  to the document with matching identity and live form state, then consumes
+  the hold once. Both browser engines use this
+  shared release path. No stale-index dispatch was found there.
+
+C15: N/A for introducing machinery: this is a one-line correction to consume
+an existing successful recheck, with no new component, dependency or policy
+case. It reuses the assignment already present in `BrowserSession.click`.
+The regression reuses `FakeDriver`'s HTML parser and the real
+`WebKitWorkerDriver.snapshot`/`_target`/`type` methods, replacing only worker
+startup and transport. The injected judgment swaps two fields in one form;
+its binding remains valid, and the test verifies the descriptor, new index
+and which field actually receives the text. It failed before the correction
+with `Other field != Intended field` and passes afterwards.
+
+Focused command (model-free, unchanged sandbox socket-skip fixture):
+
+```sh
+PYTHONPATH=src:/tmp /Users/jongtaelee/Documents/project/Still/.venv/bin/python -m pytest -q -p no:cacheprovider -p skip_socket717 tests/test_self_set_writes_717.py::VerifierRegressions::test_review875_typing_uses_target_refreshed_after_judgment
+```
+
+Result: **1 passed** after the fix (**1 failed** before it). The broader run
+uses `python3 /tmp/run875typing.py`, the preceding 48-file selection plus
+all `tests/test_browser*.py`, with the same `-n 4` prefix and
+`-k 'not WebKitIntegrationTests'`. Final results follow below. Payment tests
+are unchanged. No commit is created by this correction session.
+
+
+The 49-file sweep finished with **1,833 passed, 254 skipped, 3 failed, 16,433
+subtests passed** in 92.09 seconds. The browser/self-set tests passed. The
+three failures were the same socket-skip-induced subtests in the two
+`UnmediatedEngine` tests named above. Re-running those two nodes with the
+same fixture and `-n 2` against `git archive HEAD src` extracted from unchanged
+`5b30ee5` reproduced **3 failed, 2 passed, 2 skipped**. No test was weakened or
+removed. `git diff --check` passed. Real WebKit/socket integration remains
+unavailable in this sandbox; no live-model or remote-CI result is claimed.
