@@ -314,7 +314,8 @@ class EntrustedLines:
     def suppress_pending_bundles(self, line_id, db):
         """Remove stopped/forgotten parts in the owner's stop/forget transaction.
 
-        The receipts stay consumed; delivery that has already claimed a bundle stays untouched.
+        Consumption receipts stay; each removed part gets separate suppression Evidence.
+        Delivery that has already claimed a bundle stays untouched.
         """
         from . import preparations as prep
         from .context_observations import CONFIG_KEY, ContextObservations
@@ -327,19 +328,27 @@ class EntrustedLines:
             parts=[]
             jobs=db.execute("SELECT j.*,json_extract(e.detail,'$.line_id') AS bundle_line_id "
                             "FROM tool_events e JOIN jobs j ON j.id=e.job_id WHERE e.tool='line_bundled' "
-                            "AND json_extract(e.detail,'$.bundle_id')=? ORDER BY j.created,j.id",(bundle['id'],)).fetchall()
+                            "AND json_extract(e.detail,'$.bundle_id')=? "
+                            "AND NOT EXISTS(SELECT 1 FROM tool_events s WHERE s.job_id=e.job_id "
+                            "AND s.tool='line_bundle_suppressed' "
+                            "AND json_extract(s.detail,'$.bundle_id')=json_extract(e.detail,'$.bundle_id') "
+                            "AND json_extract(s.detail,'$.line_id')=json_extract(e.detail,'$.line_id')) "
+                            "ORDER BY j.created,j.id",(bundle['id'],)).fetchall()
             for job in jobs:
-                if job['bundle_line_id']==line_id:continue
-                try:brief=self.current(job['bundle_line_id'],db)
+                try:brief=self.current(job['bundle_line_id'],db) if job['bundle_line_id']!=line_id else None
                 except LineRefusal:brief=None
-                if not brief or brief['state']!=STATE_ACTIVE:continue
-                # A restart/forget undo must not put a previously removed part back
-                # when another line is later removed from this same pending bundle.
-                if db.execute("SELECT 1 FROM procedure_versions WHERE slot=? AND saved>=? "
+                # Also honour removals made before suppression Evidence was recorded.
+                # A restart/forget undo cannot restore an old part to the pending bundle.
+                if not brief or brief['state']!=STATE_ACTIVE or db.execute(
+                              "SELECT 1 FROM procedure_versions WHERE slot=? AND saved>=? "
                               "AND json_extract(stats_json,'$.change')='stopped' "
                               "UNION ALL SELECT 1 FROM owner_state_receipts WHERE kind='line' "
                               "AND created>=? AND json_extract(items_json,'$.line')=? LIMIT 1",
-                              (slot(brief['line_id']),bundle['created'],bundle['created'],brief['line_id'])).fetchone():continue
+                              (slot(brief['line_id']),bundle['created'],bundle['created'],brief['line_id'])).fetchone():
+                    db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                               (job['id'],'line_bundle_suppressed','succeeded',
+                                json.dumps({'bundle_id':bundle['id'],'line_id':job['bundle_line_id']}),self.clock()))
+                    continue
                 row=db.execute('SELECT timezone FROM preparations WHERE id=?',
                                (prep.preparation_of(job['request_key']),)).fetchone()
                 if row is None:

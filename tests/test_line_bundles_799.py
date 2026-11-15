@@ -280,6 +280,70 @@ class Bundles(_LinesCase):
                     [dict(r) for r in db.execute("SELECT * FROM tool_events WHERE job_id=? OR "
                         "(tool='line_bundled' AND json_extract(detail,'$.bundle_id')=?) ORDER BY id",(bundle,bundle))])
 
+    def suppressions(self, bundle):
+        with self.store.db() as db:
+            return [{'work_id':r['job_id'],**json.loads(r['detail'])} for r in db.execute(
+                "SELECT job_id,detail FROM tool_events WHERE tool='line_bundle_suppressed' "
+                "AND json_extract(detail,'$.bundle_id')=? ORDER BY id",(bundle,))]
+
+    def assert_bundle_outcomes(self, brief, bundle, outcome):
+        works={work for work,receipt in self.receipts() if receipt==bundle
+               and self.store.job(work)['response'].startswith(
+                   'Stopped' if outcome==el.OUTCOME_KEPT else 'Remaining')}
+        outcomes=self.helper.line_outcomes(brief['line_id'])
+        self.assertEqual({o['work_id'] for o in outcomes},works)
+        self.assertEqual(len(outcomes),2)
+        self.assertEqual([o['outcome'] for o in outcomes],[outcome]*2)
+        delivered=outcome==el.OUTCOME_DELIVERED
+        entry=self.helper.line_entry(self.service.lines.current(brief['line_id']))
+        self.assertEqual(entry['last_report'],prep.local_text(outcomes[0]['at'],'Asia/Seoul') if delivered else None)
+        block,_=self.helper.line_judgment_input(self.now,refs=False)
+        use=next(line['use'] for line in json.loads(block)['lines'] if line['line_id']==brief['line_id'])
+        self.assertEqual(use['runs'],2)
+        self.assertEqual(use['reached_owner'],2 if delivered else 0)
+        self.assertEqual(use['kept'],0 if delivered else 2)
+        self.assertEqual(use['last_report'] is not None,delivered)
+
+    def test_suppressed_mixed_parts_stay_kept_in_every_delivery_reader_after_restart(self):
+        brief,other,bundle=self.pending_bundle(mixed=True)
+        self.helper.stop_line(brief['line_id'],self.b)
+        self.service.deliver_one()
+        self.assertEqual(self.store.job(bundle)['delivery'],'sent')
+        for restarted in (False,True):
+            with self.subTest(restarted=restarted):
+                if restarted:
+                    self.helper.line_handler(self.store.job(self.b))({'action':'restart','line':brief['line_id']})
+                    self.service=self.make_service();self.helper=self.service.preparations_service
+                self.assert_bundle_outcomes(brief,bundle,el.OUTCOME_KEPT)
+                self.assert_bundle_outcomes(other,bundle,el.OUTCOME_DELIVERED)
+
+    def test_cancelled_single_line_bundle_records_every_part_as_suppressed_and_kept(self):
+        brief,_,bundle=self.pending_bundle()
+        self.helper.stop_line(brief['line_id'],self.b)
+        self.assertEqual(self.store.job(bundle)['delivery'],'cancelled')
+        self.service.deliver_one()
+        self.assertEqual(self.sends(),[])
+        self.assert_bundle_outcomes(brief,bundle,el.OUTCOME_KEPT)
+        self.assertEqual(self.suppressions(bundle),[
+            {'work_id':work,'bundle_id':bundle,'line_id':brief['line_id']} for work,_ in self.receipts()])
+
+    def test_suppressed_parts_stay_consumed_and_are_never_bundled_again(self):
+        brief,_,bundle=self.pending_bundle(mixed=True)
+        self.helper.stop_line(brief['line_id'],self.b)
+        consumed=self.receipts()
+        suppressed=self.suppressions(bundle)
+        self.assertEqual(len(suppressed),2)
+        self.helper.line_handler(self.store.job(self.b))({'action':'restart','line':brief['line_id']})
+        self.helper.stop_line(brief['line_id'],self.b) # Repeated suppression is idempotent.
+        self.assertEqual(self.suppressions(bundle),suppressed)
+        self.helper.line_handler(self.store.job(self.b))({'action':'restart','line':brief['line_id']})
+        self.service=self.make_service();self.helper=self.service.preparations_service
+        self.service.deliver_one()
+        self.now+=86400;self.at(9)
+        self.assertIsNone(self.helper.flush_line_bundles(self.now))
+        self.assertEqual(self.receipts(),consumed)
+        self.assertEqual(self.suppressions(bundle),suppressed)
+
     def assert_pending_line_removed(self, *, forget=False, mixed=False):
         brief,other,bundle=self.pending_bundle(mixed=mixed)
         before,messages,events=self.bundle_record(bundle)
@@ -291,6 +355,9 @@ class Bundles(_LinesCase):
         self.assertEqual(after['id'],before['id'])
         self.assertEqual(after['request_key'],before['request_key'])
         self.assertEqual(receipts,events)
+        self.assertEqual(self.suppressions(bundle),[
+            {'work_id':work,'bundle_id':bundle,'line_id':brief['line_id']} for work,_ in self.receipts()
+            if self.store.job(work)['response'].startswith('Stopped')])
         if mixed:
             self.assertEqual(after['delivery'],'pending')
             older=next(self.store.job(work) for work,_ in self.receipts()
@@ -358,6 +425,7 @@ class Bundles(_LinesCase):
             else:self.helper.stop_line(brief['line_id'],self.b)
         self.assertEqual(self.bundle_record(bundle),before)
         self.assertEqual(self.service.lines.current(brief['line_id']),brief)
+        self.assertEqual(self.suppressions(bundle),[])
 
     def test_stop_and_bundle_rewrite_roll_back_together(self):
         self.assert_bundle_rewrite_rolls_back()

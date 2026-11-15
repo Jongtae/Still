@@ -1577,6 +1577,7 @@ class PreparationsService:
             "AND EXISTS(SELECT 1 FROM tool_events h WHERE h.tool='line_held' "
             "AND json_extract(h.detail,'$.preparation_id')=json_extract(e.detail,'$.preparation_id') AND h.created<=e.created) "
             "AND NOT EXISTS(SELECT 1 FROM telegram_notifications n WHERE n.job_id=j.id AND n.kind=?) "
+            # Consumption survives suppression: removed parts must never be bundled again.
             "AND NOT EXISTS(SELECT 1 FROM tool_events b WHERE b.job_id=j.id AND b.tool='line_bundled') "
             "AND NOT EXISTS(SELECT 1 FROM messages m JOIN forgotten_messages f ON f.message_id=m.id WHERE m.job_id=j.id) "
             "ORDER BY j.created,j.id",(prep.NOTIFY_KIND,))]
@@ -1706,7 +1707,12 @@ class PreparationsService:
             jobs=[dict(row) for row in db.execute(
                 f"SELECT j.*,EXISTS(SELECT 1 FROM telegram_notifications n WHERE n.job_id=j.id AND n.kind=? AND n.state='sent') "
                 f"AS notified, EXISTS(SELECT 1 FROM tool_events b JOIN jobs bundle ON bundle.id=json_extract(b.detail,'$.bundle_id') "
-                f"WHERE b.job_id=j.id AND b.tool='line_bundled' AND (bundle.delivery='sent' OR (bundle.channel='web' AND bundle.delivery='none'))) AS bundled FROM jobs j WHERE ({keys}) AND j.id IS NOT ? ORDER BY j.created DESC,j.id DESC LIMIT ?",
+                f"WHERE b.job_id=j.id AND b.tool='line_bundled' "
+                f"AND NOT EXISTS(SELECT 1 FROM tool_events s WHERE s.job_id=b.job_id AND s.tool='line_bundle_suppressed' "
+                f"AND json_extract(s.detail,'$.bundle_id')=bundle.id "
+                f"AND json_extract(s.detail,'$.line_id')=json_extract(b.detail,'$.line_id')) "
+                f"AND (bundle.delivery='sent' OR (bundle.channel='web' AND bundle.delivery='none'))) "
+                f"AS bundled FROM jobs j WHERE ({keys}) AND j.id IS NOT ? ORDER BY j.created DESC,j.id DESC LIMIT ?",
                 (prep.NOTIFY_KIND,*(prep.REQUEST_KEY_PREFIX+item+':%' for item in ids),exclude,limit*4 if limit is not None else -1))]
         out=[]
         for job in jobs:
