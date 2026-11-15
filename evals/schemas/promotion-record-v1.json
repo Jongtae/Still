@@ -1,0 +1,1075 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Still change-triggered promotion record",
+  "type": "object",
+  "properties": {
+    "version": {
+      "const": "promotion-record/1"
+    },
+    "change_identity": {
+      "type": "object",
+      "properties": {
+        "base_sha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+        },
+        "head_sha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+        },
+        "model_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "route": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "effort": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cli_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "prompt_digests": {
+          "type": "object",
+          "properties": {
+            "baseline": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "candidate": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          "required": [
+            "baseline",
+            "candidate"
+          ],
+          "additionalProperties": false
+        },
+        "instructions_digests": {
+          "type": "object",
+          "properties": {
+            "baseline": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "candidate": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "baseline",
+            "candidate"
+          ],
+          "additionalProperties": false
+        },
+        "tool_schema_digests": {
+          "type": "object",
+          "properties": {
+            "baseline": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "candidate": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "additionalProperties": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          "required": [
+            "baseline",
+            "candidate"
+          ],
+          "additionalProperties": false
+        },
+        "digest_unavailable_reasons": {
+          "type": "object",
+          "properties": {
+            "instructions_digests": {
+              "type": "string",
+              "minLength": 1
+            },
+            "tool_schema_digests": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "instructions_digests",
+            "tool_schema_digests"
+          ],
+          "additionalProperties": false
+        },
+        "run": {
+          "type": "object",
+          "properties": {
+            "cases": {
+              "type": "string",
+              "minLength": 1
+            },
+            "seed": {
+              "type": "string",
+              "minLength": 1
+            },
+            "model": {
+              "type": "string",
+              "minLength": 1
+            },
+            "repetitions": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "max_calls": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "requalify_attempts": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3
+            },
+            "reuse_arm": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "cases",
+            "seed",
+            "model",
+            "repetitions",
+            "max_calls",
+            "requalify_attempts"
+          ],
+          "additionalProperties": false
+        },
+        "commits": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "base_sha",
+        "head_sha",
+        "model_id",
+        "route",
+        "effort",
+        "cli_version",
+        "prompt_digests",
+        "instructions_digests",
+        "tool_schema_digests",
+        "digest_unavailable_reasons",
+        "run"
+      ],
+      "additionalProperties": false
+    },
+    "comparable": {
+      "type": "boolean"
+    },
+    "conditions": {
+      "type": "object",
+      "properties": {
+        "baseline": {
+          "type": "object"
+        },
+        "candidate": {
+          "type": "object"
+        },
+        "differences": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "field": {
+                "type": "string",
+                "minLength": 1
+              },
+              "baseline": {},
+              "candidate": {}
+            },
+            "required": [
+              "field",
+              "baseline",
+              "candidate"
+            ],
+            "additionalProperties": true
+          }
+        },
+        "unknown": {
+          "type": "array",
+          "items": {
+            "type": [
+              "string",
+              "object"
+            ]
+          }
+        }
+      },
+      "required": [
+        "baseline",
+        "candidate",
+        "differences",
+        "unknown"
+      ],
+      "additionalProperties": true
+    },
+    "selection": {
+      "type": "object",
+      "properties": {
+        "change": {
+          "type": "object",
+          "properties": {
+            "kinds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "paths": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "prompt_fragments": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "propositions": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "routes": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "tags": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "description": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kinds",
+            "paths",
+            "prompt_fragments",
+            "propositions",
+            "routes",
+            "description"
+          ],
+          "additionalProperties": false
+        },
+        "selected": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "set": {
+                "enum": [
+                  "judgments",
+                  "qualification",
+                  "scenarios",
+                  "recall"
+                ]
+              },
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "split": {
+                "enum": [
+                  "dev",
+                  "heldout",
+                  null
+                ]
+              },
+              "reasons": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "minItems": 1
+              }
+            },
+            "required": [
+              "set",
+              "id",
+              "split",
+              "reasons"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "unmatched": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "field": {
+                "type": "string",
+                "minLength": 1
+              },
+              "value": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "field",
+              "value"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "change",
+        "selected",
+        "unmatched"
+      ],
+      "additionalProperties": false
+    },
+    "cases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "split": {
+            "enum": [
+              "dev",
+              "heldout",
+              null
+            ]
+          },
+          "baseline": {
+            "type": "object",
+            "properties": {
+              "passed": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "trials": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "passed",
+              "trials"
+            ],
+            "additionalProperties": true
+          },
+          "candidate": {
+            "type": "object",
+            "properties": {
+              "passed": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "trials": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "passed",
+              "trials"
+            ],
+            "additionalProperties": true
+          },
+          "change": {
+            "enum": [
+              "fixed",
+              "uncertain-fixed",
+              "regressed",
+              "uncertain-regressed",
+              "same",
+              "mixed"
+            ]
+          },
+          "spread": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "difference": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "split",
+          "baseline",
+          "candidate",
+          "change",
+          "spread",
+          "difference"
+        ],
+        "additionalProperties": true
+      }
+    },
+    "heldout": {
+      "type": "object",
+      "properties": {
+        "verdict": {
+          "enum": [
+            "better",
+            "worse",
+            "no-gain",
+            "inconclusive",
+            "incomparable"
+          ]
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "fixed": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "regressed": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "spread": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "difference": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "counts": {
+          "type": "object",
+          "propertyNames": {
+            "enum": [
+              "fixed",
+              "uncertain-fixed",
+              "regressed",
+              "uncertain-regressed",
+              "same",
+              "mixed"
+            ]
+          },
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "required": [
+        "verdict",
+        "reasons",
+        "fixed",
+        "regressed",
+        "spread",
+        "difference"
+      ],
+      "additionalProperties": true
+    },
+    "cost": {
+      "type": "object",
+      "properties": {
+        "calls": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "usage": {
+          "oneOf": [
+            {
+              "const": "unavailable"
+            },
+            {
+              "type": "object"
+            }
+          ]
+        },
+        "baseline": {
+          "type": "object",
+          "properties": {
+            "calls": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "usage": {
+              "oneOf": [
+                {
+                  "const": "unavailable"
+                },
+                {
+                  "type": "object"
+                }
+              ]
+            }
+          },
+          "required": [
+            "calls",
+            "usage"
+          ],
+          "additionalProperties": true
+        },
+        "candidate": {
+          "type": "object",
+          "properties": {
+            "calls": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "usage": {
+              "oneOf": [
+                {
+                  "const": "unavailable"
+                },
+                {
+                  "type": "object"
+                }
+              ]
+            }
+          },
+          "required": [
+            "calls",
+            "usage"
+          ],
+          "additionalProperties": true
+        },
+        "new_calls": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reused_calls": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "calls",
+        "usage",
+        "baseline",
+        "candidate"
+      ],
+      "additionalProperties": true
+    },
+    "latency": {
+      "type": "object",
+      "properties": {
+        "baseline": {
+          "type": "object",
+          "properties": {
+            "p50_ms": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "p95_ms": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0
+            }
+          },
+          "required": [
+            "p50_ms",
+            "p95_ms"
+          ],
+          "additionalProperties": true
+        },
+        "candidate": {
+          "type": "object",
+          "properties": {
+            "p50_ms": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "p95_ms": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0
+            }
+          },
+          "required": [
+            "p50_ms",
+            "p95_ms"
+          ],
+          "additionalProperties": true
+        }
+      },
+      "required": [
+        "baseline",
+        "candidate"
+      ],
+      "additionalProperties": false
+    },
+    "budget": {
+      "type": "object",
+      "properties": {
+        "calls_cap": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "actual": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "exceeded": {
+          "type": "boolean"
+        },
+        "planned_calls": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "calls_cap",
+        "actual",
+        "exceeded",
+        "planned_calls"
+      ],
+      "additionalProperties": false
+    },
+    "evidence_class": {
+      "enum": [
+        "fixture",
+        "actual-cli-synthetic",
+        "owner-live"
+      ]
+    },
+    "decision": {
+      "enum": [
+        "promote",
+        "roll-back",
+        "inconclusive"
+      ]
+    },
+    "decision_reason": {
+      "type": "string",
+      "minLength": 1
+    },
+    "rollback": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "git-revert",
+            "setting"
+          ]
+        },
+        "command": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rerun": {
+          "type": "string",
+          "minLength": 1
+        },
+        "commits": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}([0-9a-f]{24})?$"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "setting": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "kind",
+        "command",
+        "rerun"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "git-revert"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "commits"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "setting"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "setting"
+            ]
+          }
+        }
+      ]
+    },
+    "counts": {
+      "type": "object",
+      "propertyNames": {
+        "enum": [
+          "fixed",
+          "uncertain-fixed",
+          "regressed",
+          "uncertain-regressed",
+          "same",
+          "mixed"
+        ]
+      },
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "selected_not_run": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "set": {
+            "enum": [
+              "scenarios",
+              "recall"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "split": {
+            "enum": [
+              "dev",
+              "heldout",
+              null
+            ]
+          },
+          "reason": {
+            "const": "no runner for this set in paired.py; run it with its own runner"
+          }
+        },
+        "required": [
+          "set",
+          "id",
+          "split",
+          "reason"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "properties": {
+        "classes": {
+          "type": "object",
+          "properties": {
+            "baseline": {
+              "type": "string",
+              "minLength": 1
+            },
+            "candidate": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "baseline",
+            "candidate"
+          ],
+          "additionalProperties": false
+        },
+        "seed_manifests": {
+          "type": "object",
+          "properties": {
+            "baseline": {
+              "type": [
+                "object",
+                "null"
+              ]
+            },
+            "candidate": {
+              "type": [
+                "object",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "classes",
+        "seed_manifests"
+      ],
+      "additionalProperties": false
+    },
+    "plan": {
+      "type": "object",
+      "properties": {
+        "max_calls": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "planned_calls": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cases_argument": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "seed": {
+          "type": "string",
+          "minLength": 1
+        },
+        "repetitions": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "reused_arm": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "arm": {
+              "enum": [
+                "baseline",
+                "candidate"
+              ]
+            },
+            "report_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "report_content_digest": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "measured_at": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "report_path": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "arm",
+            "report_sha256",
+            "measured_at"
+          ],
+          "additionalProperties": true
+        },
+        "requalify_attempts": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3
+        }
+      },
+      "required": [
+        "max_calls",
+        "planned_calls",
+        "cases_argument",
+        "seed",
+        "model",
+        "repetitions"
+      ],
+      "additionalProperties": true
+    },
+    "reused_arm": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "arm": {
+          "enum": [
+            "baseline",
+            "candidate"
+          ]
+        },
+        "report_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "report_content_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "measured_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "report_path": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "arm",
+        "report_sha256",
+        "measured_at"
+      ],
+      "additionalProperties": true
+    },
+    "time_gap_seconds": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "time_gap_proxy_seconds": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "time_gap_source": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "version",
+    "change_identity",
+    "comparable",
+    "conditions",
+    "selection",
+    "cases",
+    "heldout",
+    "cost",
+    "latency",
+    "budget",
+    "evidence_class",
+    "decision",
+    "decision_reason",
+    "rollback",
+    "counts",
+    "selected_not_run",
+    "evidence",
+    "plan"
+  ],
+  "additionalProperties": false
+}
