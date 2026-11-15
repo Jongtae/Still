@@ -822,8 +822,11 @@ class PreparationsService:
             if skipped:
                 facts={**skipped, 'first_slot':local(skipped['first_slot_at']), 'last_slot':local(skipped['last_slot_at'])}
                 schedule+='\n'+msg('preparations.run_budget_skipped',facts=json.dumps(facts,ensure_ascii=False))
-            delivery=msg('preparations.run_delivery_bundle') if self.held_row(row) else msg('preparations.run_delivery_needed' if row.get('delivery_mode')==prep.DELIVERY_WHEN_NEEDED
-                         else 'preparations.run_delivery',channel=row['channel'])
+            if self.owner_requested_held_run(job):
+                delivery=msg('preparations.run_delivery',channel=job['channel'].split(':',1)[0])
+            else:
+                delivery=msg('preparations.run_delivery_bundle') if self.held_row(row) else msg('preparations.run_delivery_needed' if row.get('delivery_mode')==prep.DELIVERY_WHEN_NEEDED
+                             else 'preparations.run_delivery',channel=row['channel'])
             return msg('preparations.run_record', id=preparation_id,
                        position=msg('preparations.run_bounded',run=count,maximum=maximum) if maximum else str(count),
                        schedule=schedule,delivery=delivery)
@@ -1231,10 +1234,17 @@ class PreparationsService:
         elif operation=='run_now':
             row=service.preparations.get(preparation_id)
             if not row:raise prep.PreparationRefusal('not_found')
-            surface=next((item for item in service.surfaces if item.name==row['channel']),None)
+            held=self.held_row(row)
+            channel=service.preparations.notice_channel(row) if held else row['channel']
+            surface=next((item for item in service.surfaces if item.name==channel),None)
             pairing=surface.pairing() if surface is not None else None
-            send=pairing is not None and row.get('delivery_mode')!=prep.DELIVERY_WHEN_NEEDED
-            service.preparations.run_now(preparation_id,channel=pairing.channel if send else 'web',chat_id=pairing.owner if send else None)
+            # The owner asked for this answer now. Only scheduled runs remain held;
+            # the ordinary reply path rechecks work mode and this bound pairing.
+            send=pairing is not None and (held or row.get('delivery_mode')!=prep.DELIVERY_WHEN_NEEDED)
+            work_id=service.preparations.run_now(preparation_id,channel=pairing.channel if send else 'web',chat_id=pairing.owner if send else None)
+            if held and work_id:
+                destination=(pairing.owner,pairing.channel[len(surface.channel_prefix):],surface.name) if send else []
+                self.record_held_pairing(row,work_id,destination,'owner_requested',service.preparations.clock())
         else:raise ValueError(msg('quickstart_service.unsupported_preparation'))
         LOG.info('preparation %s id=%s by owner settings',operation,preparation_id)
         return service.preparations_status()
@@ -1629,6 +1639,19 @@ class PreparationsService:
                        (work_id,'line_held','succeeded',json.dumps({'preparation_id':row['id'],
                         'bundle_to':destination,'phase':phase}),now))
 
+    def owner_requested_held_run(self, job, db=None):
+        """Run-now delivery belongs to the request, including its input continuations.
+
+        Keep the local fallback out of bundles too: pairing later must neither
+        readdress nor cancel an owner-requested answer that already stayed local.
+        """
+        if db is None:
+            with self.service.store.db() as db:return self.owner_requested_held_run(job,db)
+        try:origin=WorkLedger.request_chain(db,job['id'])[-1]
+        except ValueError:return False
+        return db.execute("SELECT 1 FROM tool_events WHERE job_id=? AND tool='line_held' "
+                          "AND json_extract(detail,'$.phase')='owner_requested' LIMIT 1",(origin['id'],)).fetchone() is not None
+
     def line_bundle_parts(self, db, slot):
         """Re-read settled parts under the flush transaction; no latest-run pointer can lose a burst."""
         from . import work_mode
@@ -1670,6 +1693,7 @@ class PreparationsService:
             # start/pairing still owns bundle eligibility and the work-mode interval.
             try:origin = WorkLedger.request_chain(db, job['id'])[-1]
             except ValueError:continue
+            if self.owner_requested_held_run(origin,db):continue
             started=db.execute("SELECT detail,created FROM tool_events WHERE job_id=? AND tool='preparation' "
                                "AND json_type(detail,'$.slot') IS NOT NULL ORDER BY id LIMIT 1",(origin['id'],)).fetchone()
             if started is None:continue

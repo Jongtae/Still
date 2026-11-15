@@ -1334,7 +1334,8 @@ class Preparations:
 
         ``line_held.channel`` (including create's ``bundle_channel``) is the
         original intent. Per-run holding receipts have no channel of their own.
-        Never use this for a completed report or to change a Work's address.
+        Used also to address an owner's explicit run-now before it starts.
+        Never use this to readdress an existing Work or a completed report.
         """
         if row['channel'] != CHANNEL_WEB:
             return row['channel']

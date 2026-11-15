@@ -67,6 +67,162 @@ class Bundles(_LinesCase):
         self.assertEqual(outcome['outcome'],el.OUTCOME_KEPT)
         self.assertNotIn(work,[part for part,_ in self.receipts()])
 
+    def request_held_run(self, *, destination='telegram', when_needed=False, work_mode_on=False, unpaired=False):
+        self.at(10);brief,row=self.line();self.now+=86400;self.at(8)
+        with self.store.db() as db:
+            db.execute('UPDATE preparations SET due_at=?',(self.now+10800,))
+            db.execute("UPDATE tool_events SET detail=json_set(detail,'$.channel',?) "
+                       "WHERE tool='line_held' AND json_extract(detail,'$.preparation_id')=?",
+                       (destination,row['id']))
+            if when_needed:
+                db.execute('UPDATE preparations SET delivery_mode=? WHERE id=?',(prep.DELIVERY_WHEN_NEEDED,row['id']))
+        self.telegram.clear()
+        if unpaired:self.store.put('telegram',{'enabled':False})
+        if work_mode_on:
+            from personal_agent import work_mode
+            work_mode.set_enabled(self.store,True,surface='settings',clock=lambda:self.now-1)
+        with patch('personal_agent.quickstart_store.time.time',return_value=self.now):
+            self.service.preparation_request({'operation':'run_now','id':row['id']})
+        row=self.service.preparations.get(row['id'])
+        return brief,row,self.store.job(row['last_run_job_id'])
+
+    def finish_owner_run(self, job, text='Owner requested result'):
+        self.script=[{'content':text}]*4
+        self.assertTrue(self.service.run_one())
+        self.service.deliver_one()
+        self.service.run_due_preparation()
+        self.assertEqual(self.store.job(job['id'])['response'],text)
+
+    def test_run_now_held_send_delivers_once_now_and_never_bundles(self):
+        brief,row,job=self.request_held_run()
+        self.finish_owner_run(job)
+        self.assertEqual([s['chat_id'] for s in self.sends()],[77])
+        self.assertIn('Owner requested result',self.sends()[0]['text'])
+        self.assertEqual(self.store.job(job['id'])['delivery'],'sent')
+        self.assertNotIn(msg('preparations.run_delivery_bundle'),self.helper.preparation_run_fact(job))
+        self.assertIn(msg('preparations.run_delivery',channel='telegram'),self.helper.preparation_run_fact(job))
+        self.service=self.make_service();self.helper=self.service.preparations_service
+        for hour in (9,18):
+            self.at(hour);self.assertIsNone(self.flush())
+        self.assertEqual(len(self.sends()),1)
+        self.assertEqual(self.receipts(),[])
+        self.assertEqual(self.store.job(job['id'])['delivery'],'sent')
+        self.assertEqual(self.service.preparations.get(row['id'])['channel'],'web')
+        self.assertEqual(self.helper.line_outcomes(brief['line_id'])[0]['outcome'],el.OUTCOME_DELIVERED)
+
+    def test_run_now_held_send_uses_normal_work_mode_rule(self):
+        from personal_agent import work_mode
+        _,row,job=self.request_held_run(work_mode_on=True)
+        self.finish_owner_run(job)
+        # Telegram's ordinary pairing() is unavailable in work mode, so this
+        # starts locally, exactly like an unheld run-now in work mode.
+        self.assertEqual((job['channel'],self.store.job(job['id'])['delivery']),('web','none'))
+        self.assertEqual(self.sends(),[])
+        self.assertEqual(self.store.last_reply(job['id'])['content'],'Owner requested result')
+        work_mode.set_enabled(self.store,False,surface='settings',clock=lambda:self.now+1)
+        self.at(9);self.assertIsNone(self.flush())
+        self.assertEqual(self.sends(),[])
+        self.assertEqual(self.store.job(job['id'])['delivery'],'none')
+
+    def test_run_now_held_rechecks_work_mode_at_normal_reply_delivery(self):
+        from personal_agent import work_mode
+        _,row,job=self.request_held_run()
+        work_mode.set_enabled(self.store,True,surface='settings',clock=lambda:self.now+1)
+        self.finish_owner_run(job)
+        self.assertEqual(self.store.job(job['id'])['delivery'],'cancelled')
+        self.assertEqual(self.sends(),[])
+        work_mode.set_enabled(self.store,False,surface='settings',clock=lambda:self.now+2)
+        self.at(9);self.assertIsNone(self.flush())
+
+    def test_scheduled_run_after_run_now_is_still_held_and_bundled(self):
+        _,row,job=self.request_held_run()
+        self.finish_owner_run(job)
+        self.assertEqual(self.store.job(job['id'])['delivery'],'sent')
+        self.assertEqual(self.service.preparations.get(row['id'])['due_at'],self.now+10800)
+        self.telegram.clear();self.at(11)
+        scheduled=self.report(row,'Scheduled report after owner run')
+        self.assertNotEqual(scheduled,job['id'])
+        self.assertEqual(self.sends(),[])
+        self.assertEqual(self.store.job(scheduled)['channel'],'web')
+        with self.store.db() as db:
+            receipt=db.execute("SELECT detail FROM tool_events WHERE job_id=? AND tool='line_held' "
+                               "AND json_extract(detail,'$.phase')='started'",(scheduled,)).fetchone()
+        self.assertEqual(json.loads(receipt['detail'])['bundle_to'],[77,'gen-1','telegram'])
+        self.at(18);bundle=self.flush()
+        self.assertEqual(self.receipts(),[(scheduled,bundle)])
+        self.assertIn('Scheduled report after owner run',self.sends()[0]['text'])
+        self.assertNotIn('Owner requested result',self.sends()[0]['text'])
+
+    def test_run_now_unpaired_stays_local_when_paired_later_without_bundle_or_cancellation(self):
+        _,row,job=self.request_held_run(unpaired=True)
+        self.finish_owner_run(job)
+        self.store.put('telegram',{'enabled':True,'user_id':77,'generation':'gen-1','cursor':0})
+        self.service=self.make_service();self.helper=self.service.preparations_service
+        self.at(9);self.assertIsNone(self.flush())
+        self.assertEqual(self.store.job(job['id'])['delivery'],'none')
+        self.assertEqual(self.sends(),[])
+        self.assertEqual(self.receipts(),[])
+
+    def test_run_now_held_uses_recorded_send_surface(self):
+        self.store.put('mattermost',{'enabled':True,'owner_user_id':'owner','channel_id':'dm','generation':'mm-1'})
+        _,row,job=self.request_held_run(destination='mattermost')
+        surface=next(s for s in self.service.surfaces if s.name=='mattermost')
+        with patch.object(surface,'_post',return_value='posted-799') as wire:
+            self.finish_owner_run(job)
+            self.assertFalse(self.service.deliver_one())
+        self.assertEqual(wire.call_count,1)
+        self.assertIn('Owner requested result',str(wire.call_args))
+        self.assertEqual(self.store.job(job['id'])['delivery'],'sent')
+        self.assertEqual(self.sends(),[])
+
+    def test_run_now_held_rechecks_pairing_at_normal_reply_delivery(self):
+        _,row,job=self.request_held_run()
+        self.script=[{'content':'Result for original owner'}]*4
+        self.assertTrue(self.service.run_one())
+        self.store.put('telegram',{'enabled':True,'user_id':88,'generation':'gen-2','cursor':0})
+        self.service.deliver_one();self.service.run_due_preparation()
+        self.assertEqual(self.store.job(job['id'])['delivery'],'cancelled')
+        self.assertEqual(self.sends(),[])
+        self.at(9);self.assertIsNone(self.flush())
+
+    def test_run_now_held_when_needed_is_an_owner_reply_not_a_scheduled_notify(self):
+        _,row,job=self.request_held_run(when_needed=True)
+        with patch.object(self.service,'watch_judgment',return_value='yes'):
+            self.finish_owner_run(job)
+        self.assertEqual(self.store.job(job['id'])['delivery'],'sent')
+        self.assertEqual(len(self.sends()),1)
+        self.assertIsNone(self.store.notification_of(job['id'],prep.NOTIFY_KIND))
+        self.at(9);self.assertIsNone(self.flush())
+        self.assertEqual(self.receipts(),[])
+
+    def test_run_now_held_connection_resume_keeps_direct_delivery_after_restart(self):
+        _,row,job=self.request_held_run()
+        with patch.object(self.service,'_park_for_connector',return_value='private connection guidance'):
+            self.assertTrue(self.service.park_for_connector_read(job,'fixture-connector'))
+        self.service=self.make_service();self.helper=self.service.preparations_service
+        self.assertTrue(self.service._schedule_resumed_work(job['id']))
+        self.finish_owner_run(job)
+        self.assertEqual(self.store.job(job['id'])['delivery'],'sent')
+        self.assertEqual(sum('Owner requested result' in s['text'] for s in self.sends()),1)
+        self.at(9);self.assertIsNone(self.flush())
+
+    def test_run_now_held_location_continuation_keeps_direct_delivery(self):
+        from test_ask_location import _LocationCase
+        _,row,job=self.request_held_run()
+        ask=self.service.location_requester(job)
+        self.assertIsNotNone(ask)
+        ask('Share the current position for this run.')
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='partial',response='Waiting for position' WHERE id=?",(job['id'],))
+        _LocationCase.location(self)
+        continued=self.store.job(self.service.preparations.get(row['id'])['last_run_job_id'])
+        self.assertNotEqual(continued['id'],job['id'])
+        self.telegram.clear()
+        self.finish_owner_run(continued)
+        self.assertEqual(self.store.job(continued['id'])['delivery'],'sent')
+        self.assertEqual(len(self.sends()),1)
+        self.at(9);self.assertIsNone(self.flush())
+
     def start_held_notice_run(self, destination='telegram'):
         self.at(10);_,row=self.line('Notice responsibility '+str(self.counter));self.now+=86400;self.at(8)
         with self.store.db() as db:
