@@ -508,7 +508,7 @@ Array.from(document.querySelectorAll(SELECTOR)).forEach((el, index) => {
   const control = labelControl(el);
   const type = typeOf(el);
   const takesValue = (tag === 'input' && !NO_VALUE.includes(type)) || tag === 'textarea' || tag === 'select';
-  elements.push({index, role: well(roleOf(el)), name: nameOf(el), href: tag === 'a' ? cut(el.href, 2000) : null, tag, type: well(type),
+  elements.push({index, fieldName: attr(el, 'name'), role: well(roleOf(el)), name: nameOf(el), href: tag === 'a' ? cut(el.href, 2000) : null, tag, type: well(type),
     autocomplete: well(autocompleteOf(el)), value: takesValue ? cut(el.value || '', 200) : null, form: formId,
     label_form: idOf(control ? formOf(control) : null), own_text: ownText(el), label_name: labelName(el),
     ancestor_text: ancestorText(el), pressable: buttonish(el), nav_link: navLink(el), context: contextOf(el),
@@ -1891,18 +1891,16 @@ class Worker:
 
     def take_cancelled(self, record=None):
         """The cancelled submit not yet reported, once; ``record`` is one a script just read."""
+        if getattr(self, '_held_until', float('inf')) <= time.monotonic():
+            self.held = None
         if record is not None:
             self.receive_cancelled(record)
         found, self.cancelled = self.cancelled, None
         if found is None:
-            # A self-set non-payment form waits across worker/session continuations.
-            # Keep its exact held digest available until released, without exposing values.
-            held=getattr(self,'held',None)
-            if getattr(self,'self_set_writes',False) and held and held.get('payment') is False:
-                return {key:value for key,value in held.items() if key!='id'}
             return None
         self.reported = (self.reported + [found['id']])[-64:]
         self.held = found
+        self._held_until = time.monotonic() + 600 if found.get('payment') is False else float('inf')
         return {key: found[key] for key in ('dom', 'method', 'action', 'page', 'state', 'payment', 'fieldNames') if key in found}
 
     def check_form_navigation(self, url, method, then, into_frame=False):
@@ -2577,6 +2575,8 @@ class Worker:
         submit, or ``submit_changed``.
         """
         form = command.get('form') if isinstance(command.get('form'), dict) else {}
+        if getattr(self, '_held_until', float('inf')) <= time.monotonic():
+            self.held = None
         held = self.held
         if held is None or any(str(form.get(key)) != str(held.get(key)) for key in ('dom', 'method', 'action', 'page', 'state')):
             return self.fail(ident, 'submit_changed')

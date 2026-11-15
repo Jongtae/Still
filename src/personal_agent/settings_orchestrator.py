@@ -1453,6 +1453,8 @@ class SettingsOrchestrator:
 
     def _before_covered(self, row, current_before):
         """Exact prior state, or the sole commuting-new-read exception, for apply and renewal."""
+        if row['category'] == 'write_allowances' and row['setting'] == 'revoke':
+            return True
         if current_before == row['before']:
             return True
         if row['category'] != 'ai_connections' or row['setting'] != 'review':

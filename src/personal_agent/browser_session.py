@@ -685,6 +685,8 @@ def mediate_snapshot(raw, requested_url=None):
         snapshot['elements_capped'] = True
     snapshot['_rows'] = visible
     snapshot['_elements'] = internal
+    snapshot['_form_field_names'] = {form: sorted({str(e.get('fieldName') or '') for e in elements if e.get('form') == form and e.get('fieldName')})
+                                     for form in {e.get('form') for e in elements} if form is not None}
     snapshot['_form_actions'] = {form['id']: form.get('action') for form in raw.get('forms') or []
                                  if isinstance(form, dict) and 'id' in form}
     # Internal only (never returned): the unmediated page reference the
@@ -1006,7 +1008,9 @@ class BrowserSession:
             ticket=gate(binding,None,'browser_submit',page_reference(record.get('page')),record.get('fieldNames',()),
                         description=description+cancelled_note(record))
             release=getattr(self._driver(),'release_submit',None)
-            if not callable(release):raise ToolError(FAILED_TEXT,'browser_failed')
+            if not callable(release):
+                self.approvals.self_set_write_release(ticket)
+                raise ToolError(FAILED_TEXT,'browser_failed')
             try:
                 answer=self._call(lambda timeout:release(record,timeout))
             except ToolError:
@@ -1689,28 +1693,33 @@ class BrowserSession:
         # #758: a control whose name commits a purchase needs approval whatever form it
         # is in (a stored payment method or a fetch charge leaves no card field to see).
         # #619: this deterministic floor, the payment form and the worker's ``payment``
-        # declaration are the whole press check; no AI judgment is asked per press.
+        # declaration remain the payment floor; self-set non-payment presses also
+        # receive the minimized reversibility judgment below (#717).
         required = bool(element['submit_guarded'] or element['commit'] or effect == 'payment')
         binding = step_binding(self.work_id, 'browser_click', snapshot['_page'], key, key, state)
         write_ticket=None
         gate=getattr(self.approvals,'self_set_write',None)
-        if not required and callable(gate) and effect=='mutate':
+        if not required and callable(gate):
             write_ticket=gate(binding,None,'browser_click',page_reference(snapshot['_page']),
-                 (str(element.get('role') or ''),str(element.get('name') or '')),description=description)
-        if write_ticket:
-            # Judgment can yield while the page changes. Dispatch only the input
-            # state the owner saw; non-payment consent never covers a new payment.
-            current = self._snapshot()
-            current_element = resolve_target(current, args.get('target'))
-            current_key = target_key(current_element)
-            current_binding = step_binding(self.work_id, 'browser_click', current['_page'],
-                                           current_key, current_key, self._state_of(current, current_element))
-            if (current_binding != binding or current_element.get('commit') or
-                    current_element.get('submit_guarded')):
-                raise ToolError(TARGET_TEXT, 'target_unavailable')
-            snapshot, element = current, current_element
-        approved = False if write_ticket else self._guard(binding, description, required)
-        self._spend_step()   # #620: a press held for approval, or on a missing target, spends nothing
+                 self._write_metadata(snapshot, element),description=description)
+        try:
+            if write_ticket:
+                # Judgment can yield while the page changes. Dispatch only the input
+                # state the owner saw; non-payment consent never covers a new payment.
+                current = self._snapshot()
+                current_element = resolve_target(current, args.get('target'))
+                current_key = target_key(current_element)
+                current_binding = step_binding(self.work_id, 'browser_click', current['_page'],
+                                               current_key, current_key, self._state_of(current, current_element))
+                if (current_binding != binding or current_element.get('commit') or
+                        current_element.get('submit_guarded')):
+                    raise ToolError(TARGET_TEXT, 'target_unavailable')
+                snapshot, element = current, current_element
+            approved = False if write_ticket else self._guard(binding, description, required)
+            self._spend_step()   # #620: a press held for approval, or on a missing target, spends nothing
+        except Exception:
+            if write_ticket:self.approvals.self_set_write_release(write_ticket)
+            raise
         before = page_reference(snapshot.get('url'))
         confirm_ok = not page_shows_payment(snapshot)
         try:
@@ -1742,6 +1751,11 @@ class BrowserSession:
                                 'answer': DIALOG_OUTCOMES[row['outcome']]} for row in rows]
         return page
 
+    @staticmethod
+    def _write_metadata(snapshot, element):
+        return (str(element.get('role') or ''), str(element.get('name') or ''),
+                *snapshot.get('_form_field_names', {}).get(element.get('form'), ()))
+
     def type(self, args):
         effect = self._effect(args)
         self._require_page()
@@ -1757,15 +1771,35 @@ class BrowserSession:
         description = f"'{element.get('name') or element.get('role')}' 입력란에 입력"
         # Typing presses the field first, so a label forwarding that press is guarded too.
         required = element['payment'] or element.get('forwards_payment') or effect == 'payment'
-        approved = self._guard(binding, description, required, autonomy=not element['guarded'])
-        self._spend_step()   # #620: typing held for approval, or into a missing field, spends nothing
+        # insertText is not a keyboard Enter: multiline local input stays local.
+        # Any page-triggered submit is separately caught by the native form guard.
+        write_ticket = None
+        gate = getattr(self.approvals, 'self_set_write', None)
+        if not required and callable(gate) and (effect == 'mutate' or args.get('submit') or args.get('key') == 'Enter'):
+            write_ticket = gate(binding, None, 'browser_type', page_reference(snapshot['_page']),
+                                self._write_metadata(snapshot, element), description=description)
+        try:
+            if write_ticket:
+                current = self._snapshot()
+                current_element = resolve_target(current, args.get('target'))
+                rebound = step_binding(self.work_id, 'browser_type', current['_page'], target_key(current_element),
+                                       text, self._state_of(current, current_element))
+                if rebound != binding or current_element.get('payment') or current_element.get('forwards_payment'):
+                    raise ToolError(TARGET_TEXT, 'target_unavailable')
+            approved = self._guard(binding, description, required, autonomy=not element['guarded'])
+            self._spend_step()   # #620: typing held for approval, or into a missing field, spends nothing
+        except Exception:
+            if write_ticket:self.approvals.self_set_write_release(write_ticket)
+            raise
         confirm_ok = not page_shows_payment(snapshot)
         try:
             answer = self._input(lambda timeout: self._driver().type(element['index'], text, timeout, approved=approved,
                                                                      confirm_ok=confirm_ok, effect=effect),
                                  description)
         except ToolError as exc:
+            if write_ticket:self.approvals.self_set_write_finished(write_ticket,observed=False)
             raise self._named_cover(self._observed(exc, approved), snapshot) from None
+        if write_ticket:self.approvals.self_set_write_finished(write_ticket)
         return self._with_dialogs(observe_step(self._page_state(), answer, approved), answer)
 
 

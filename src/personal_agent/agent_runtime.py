@@ -476,7 +476,7 @@ TELL_OWNER_DESCRIPTION=('Send the owner one short message now, in their paired c
 #: setting (preparations cancel/accept, browser close_login/use_mobile) cannot be missing from the schema.
 from .settings_orchestrator import SETTINGS as _OWNER_SETTINGS
 SETTING_NAMES=list(dict.fromkeys(name for names in _OWNER_SETTINGS.values() for name in names))
-SETTINGS_CATEGORIES=['payment_autonomy','main_ai','judgment_ai','current_context','owner_model','developer_mode','skills','ai_connections','api_connections','phone_link','preparations','browser','connections']
+SETTINGS_CATEGORIES=['write_allowances','payment_autonomy','main_ai','judgment_ai','current_context','owner_model','developer_mode','skills','ai_connections','api_connections','phone_link','preparations','browser','connections']
 #: #826: the owner's audit of what an answer used, readable in conversation.
 INFORMATION_USE_DESCRIPTION=('Show which owner information an earlier answer (Work) used and where it went, from Still\'s own records: '
                              'the owner profile keys, memory rows, calendar entries, files, current-context claims and earlier '

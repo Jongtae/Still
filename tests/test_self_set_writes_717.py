@@ -39,6 +39,13 @@ class Settings(_Case):
         self.assertEqual(history[0]['authorized_by'],'owner')
         self.assertEqual(history[0]['connection'],'slot:notes')
 
+    def test_stale_connection_does_not_block_conversation_revocation(self):
+        self.confirm(self.draft())
+        revoke = self.draft('revoke')
+        save_slot(self.store,'notes',['notes.test'],'replacement-secret-123456789',money=False)
+        self.confirm(revoke)
+        self.assertFalse(allowance(self.service,'slot:notes')['enabled'])
+
     def test_ai_cannot_apply_enable_and_continuation_replay_cannot_draft(self):
         self.assertFalse(direct_request_setting('write_allowances','allow','slot:notes'))
         args={'category':'write_allowances','setting':'allow','value':'slot:notes'}
@@ -251,7 +258,8 @@ class Writes(_Runs):
             changed['_states'][None]='changed during judgment'
             with mock.patch.object(browser,'_snapshot',side_effect=[original,changed]):
                 with self.assertRaises(ToolError):browser.click(args)
-        self.assertEqual(driver.approved,[])
+            browser.click(args)
+        self.assertEqual(len(driver.approved),1)
 
     def test_code_run_non_money_boundary_and_allowance(self):
         from personal_agent.code_run import CodeRunner
@@ -300,15 +308,15 @@ class Writes(_Runs):
         peer=peers.register({'card':MessageToDict(remote_card)})['peer']['id']
         app=application(remote_card)
         app.router.routes.extend(create_agent_card_routes(remote_card))
-        async def send():
+        async def send(text="hello", message_id="exact-message"):
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app)) as http:
-                return await peers.send(peer,job['id'],'hello','exact-message',http=http)
+                return await peers.send(peer,job['id'],text,message_id,http=http)
         with self.assertRaises(ToolError):asyncio.run(send())
         self.assertEqual(peers.conversations()['turns'],[])
         self.assertEqual(self.service._browser_request(job['id'])['state'],'requested')
         set_allowance(self.service,'peer:'+peer,True,0,'owner')
         self.assertEqual(asyncio.run(send())['answer'],'answer: hello')
-        with self.assertRaises(ToolError):asyncio.run(send())
+        self.assertEqual(asyncio.run(send())['answer'],'answer: hello')
         self.assertEqual(len(peers.conversations()['turns']),1)
 
     def test_worker_preserves_only_nonpayment_form_names_across_wait(self):
@@ -322,7 +330,11 @@ class Writes(_Runs):
         self.assertNotIn('private-value',json.dumps(first))
         self.assertEqual(first['fieldNames'],['note'])
         self.assertIs(first['payment'],False)
-        self.assertEqual(worker.take_cancelled(),first)
+        self.assertIsNone(worker.take_cancelled())
+        self.assertIsNotNone(worker.held)
+        with mock.patch('personal_agent.browser_worker.time.monotonic', return_value=worker._held_until+1):
+            self.assertIsNone(worker.take_cancelled())
+        self.assertIsNone(worker.held)
         worker.held=None
         self.assertIsNone(worker.take_cancelled())
 
@@ -389,3 +401,201 @@ console.log(JSON.stringify([run(false,'post',false),run(true,'get',false),run(tr
             result=self.service.connector_permission(job,{'engine':'codex','tool_name':ACTION,'input':INPUT})
         self.assertEqual(result['behavior'],'deny')
         self.assertEqual(self.service._browser_request(job['id'])['state'],'requested')
+
+
+class VerifierRegressions(_Runs):
+    def setUp(self):
+        super().setUp()
+        save_slot(self.store,'notes',['notes.test'],'secret-notes-123456789',money=False)
+        self.sent=[]
+    api = Writes.api
+    args = Writes.args
+    started_self = Writes.started_self
+    def events(self):
+        with self.store.db() as db:
+            return [dict(row) for row in db.execute("SELECT * FROM tool_events WHERE tool='self_set_write'")]
+
+    def peer_fixture(self):
+        import importlib.util
+        if importlib.util.find_spec('a2a') is None:self.skipTest('optional A2A extra unavailable')
+        import asyncio
+        import httpx
+        from cryptography.fernet import Fernet
+        from google.protobuf.json_format import MessageToDict
+        from a2a.server.routes import create_agent_card_routes
+        from personal_agent.a2a_peers import A2APeers
+        from test_a2a_compatibility import card, application
+        _,job=self.started_self()
+        self.service.record_turn_provenance(job['id'],owner_information={},context_messages=0)
+        peers=A2APeers(self.service,secret_key=Fernet.generate_key())
+        self.service.__dict__['a2a_peers']=peers
+        remote_card=card('http://127.0.0.1/')
+        peer=peers.register({'card':MessageToDict(remote_card)})['peer']['id']
+        app=application(remote_card)
+        app.router.routes.extend(create_agent_card_routes(remote_card))
+        async def send(text="hello", message_id="exact-message"):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app)) as http:
+                return await peers.send(peer,job['id'],text,message_id,http=http)
+        set_allowance(self.service,'peer:'+peer,True,0,'owner')
+        return job, peers, send
+
+    def test_peer_work_mode_refusal_releases_ticket(self):
+        import asyncio
+        from personal_agent.work_mode import WorkModeRefused
+        job,peers,send=self.peer_fixture()
+        async def refused(*args,**kwargs):raise WorkModeRefused('a2a')
+        with mock.patch.object(peers.transport(),'send_message',side_effect=refused):
+            with self.assertRaises(WorkModeRefused):asyncio.run(send())
+        self.assertEqual([row['status'] for row in self.events()],['not_run'])
+
+    def test_peer_not_fresh_race_releases_ticket(self):
+        import asyncio
+        job,peers,send=self.peer_fixture()
+        with mock.patch.object(peers,'admit',return_value=({'state':'completed','answer':'cached'},False)):
+            self.assertEqual(asyncio.run(send())['answer'],'cached')
+        self.assertEqual([row['status'] for row in self.events()],['not_run'])
+
+    def test_all_press_labels_are_judged_without_values(self):
+        from personal_agent import browser_session as bs
+        from test_browser_session import FakeDriver, ORIGIN
+        _,job=self.started_self()
+        for label in ('read','navigate','mutate'):
+            driver=FakeDriver()
+            browser=bs.BrowserSession(lambda:driver,work_id=job['id'],approvals=self.service.browser_approvals_for(job))
+            browser.open({'url':ORIGIN+'/one-press','effect':'navigate'})
+            with mock.patch.object(self.service.decision_judge,'connector_effect',return_value='irreversible') as judge:
+                with self.assertRaises(ToolError):browser.click({'target':'메모 저장','effect':label})
+                self.assertEqual(judge.call_count,1)
+                self.assertEqual(driver.approved,[])
+        raw={'url':ORIGIN+'/private-path?private=query','text':'private page text',
+             'elements':[{'index':0,'role':'textbox','name':'Note','fieldName':'note','form':0,'value':'private typed value'}]}
+        snapshot=bs.mediate_snapshot(raw)
+        self.assertEqual(browser._write_metadata(snapshot,snapshot['_elements'][0]),('textbox','Note','note'))
+
+    def test_judged_read_press_goes_ahead_without_write_receipt(self):
+        from personal_agent import browser_session as bs
+        from test_browser_session import FakeDriver, ORIGIN
+        _,job=self.started_self()
+        for effect in ('read','navigate'):
+            driver=FakeDriver()
+            browser=bs.BrowserSession(lambda:driver,work_id=job['id'],approvals=self.service.browser_approvals_for(job))
+            browser.open({'url':ORIGIN+'/one-press','effect':'navigate'})
+            with mock.patch.object(self.service.decision_judge,'connector_effect',return_value=effect) as judge:
+                browser.click({'target':'메모 저장','effect':'mutate'})
+            self.assertEqual(judge.call_count,1)
+            self.assertEqual(len(driver.approved),1)
+        self.assertEqual(self.events(),[])
+
+    def test_type_gate_and_local_typing(self):
+        from personal_agent import browser_session as bs
+        from test_browser_session import FakeDriver, ORIGIN
+        _,job=self.started_self()
+        driver=FakeDriver()
+        browser=bs.BrowserSession(lambda:driver,work_id=job['id'],approvals=self.service.browser_approvals_for(job))
+        browser.open({'url':ORIGIN+'/one-press','effect':'navigate'})
+        raw={'url':ORIGIN+'/form','elements':[{'index':0,'role':'textbox','name':'Note','fieldName':'note','form':0,'value':'old secret value'}]}
+        with mock.patch.object(browser,'_snapshot',return_value=bs.mediate_snapshot(raw)):
+            for args in ({'text':'private text','effect':'mutate'},
+                         {'text':'private text','effect':'navigate','submit':True}, {'text':'private text','effect':'read','key':'Enter'}):
+                with mock.patch.object(self.service.decision_judge,'connector_effect',return_value=None) as judge:
+                    with self.assertRaises(ToolError):browser.type({'target':'Note',**args})
+                    self.assertNotIn('private text',str(judge.call_args))
+                    self.assertNotIn('old secret value',str(judge.call_args))
+                    self.assertEqual(judge.call_args.args[1],['Note','note','textbox'])
+            with mock.patch.object(self.service.decision_judge,'connector_effect',side_effect=AssertionError('local')):
+                browser.type({'target':'Note','text':'private text\nsecond line','effect':'read'})
+        self.assertEqual(len(driver.approved),1)
+
+    def test_api_preflight_refusal_restores_exact_approval(self):
+        _,job=self.started_self()
+        with mock.patch.object(self.service.decision_judge,'connector_effect',return_value='irreversible'):
+            with self.assertRaises(ApiError):self.api(job).call(self.args())
+            self.ended_waiting(job)
+            offered=self.service._browser_request(job['id'])
+            self.service._decide_browser_step(job['id'],True,offered['offer_digest'])
+            with self.store.db() as db:db.execute("UPDATE jobs SET status='running' WHERE id=?",(job['id'],))
+            for seam in ('_effect_guard','work_mode','intranet'):
+                api=self.api(job)
+                patch=(mock.patch.object(api,'_effect_guard',side_effect=ApiError('refused','test')) if seam=='_effect_guard' else
+                       mock.patch('personal_agent.api_requests.'+('refuse_in_work_mode' if seam=='work_mode' else 'intranet_addresses'),side_effect=ApiError('refused','test')))
+                with patch:
+                    with self.assertRaises(ApiError):api.call(self.args())
+                self.assertEqual(self.sent,[])
+                self.assertTrue(all(row['status']=='not_run' for row in self.events()))
+                self.assertEqual(self.service._browser_request(job['id'])['state'],'issued')
+            self.api(job).call(self.args())
+        self.assertEqual(len(self.sent),1)
+
+    def test_connector_claim_refusal_can_retry(self):
+        from personal_agent import owner_mcp, trust_record
+        from test_connect_effects import ACTION, INPUT
+        _,job=self.started_self()
+        self.service.set_ai_connections({'enabled':True})
+        owner_mcp.set_confirmed(self.store,'codex',['synthetic'])
+        trust_record.set_operation(self.store,trust_record.connection('codex','owner-mcp','synthetic'),'apply_change','mutate')
+        args={'engine':'codex','tool_name':ACTION,'input':INPUT}
+        with mock.patch.object(self.service.decision_judge,'connector_effect',return_value='reversible'):
+            with mock.patch.object(self.service,'_connector_effect_claim',return_value=None):
+                self.assertEqual(self.service.connector_permission(job,args)['behavior'],'deny')
+            self.assertEqual(self.events()[0]['status'],'not_run')
+            self.assertEqual(self.service.connector_permission(job,args)['behavior'],'allow')
+
+    def test_rejected_http_has_label_and_known_outcome(self):
+        _,job=self.started_self()
+        set_allowance(self.service,'slot:notes',True,0,'owner')
+        for status in (422,404):
+            api=self.api(job)
+            api.transport=lambda *a,**k:(status,{},b'{}')
+            with mock.patch.object(self.service.decision_judge,'connector_effect',return_value='irreversible'), mock.patch.object(self.service,'record_conversation_notice') as notice:
+                with self.assertRaises(ApiError) as raised:api.call(self.args(json.dumps({'status':status})))
+            self.assertNotEqual(getattr(raised.exception,'effect',None),'unknown')
+            self.assertEqual(self.events()[-1]['status'],'rejected')
+            self.assertNotIn('slot:notes',notice.call_args.args[0])
+            self.assertIn('notes',notice.call_args.args[0])
+
+    def test_mcp_revision_lapse_is_visible_and_off_is_unconditional(self):
+        from personal_agent import owner_mcp, trust_record, self_set_writes
+        _,job=self.started_self()
+        owner_mcp.set_confirmed(self.store,'codex',['synthetic'])
+        key='connector:codex|owner-mcp|synthetic'
+        old=self_set_writes.connections(self.service)[key]['connection_revision']
+        set_allowance(self.service,key,True,0,'owner')
+        trust_record.set_operation(self.store,trust_record.connection('codex','owner-mcp','synthetic'),'apply_change','mutate')
+        row=next(row for row in self_set_writes.settings(self.service)['connections'] if row['connection']==key)
+        self.assertFalse(row['enabled'])
+        self.assertTrue(row['reason'])
+        set_allowance(self.service,key,False,0,'owner',connection_revision=old)
+        self.assertFalse(allowance(self.service,key)['enabled'])
+
+    def test_connection_display_label_cannot_leak_a_stored_secret(self):
+        from personal_agent import self_set_writes
+        _,job=self.started_self()
+        set_allowance(self.service,'slot:notes',True,0,'owner')
+        rows=self_set_writes.connections(self.service)
+        secret='secret-notes-123456789'
+        rows['slot:notes']['label']='Notes '+secret
+        binding=step_binding(job['id'],'api_request','https://notes.test/items','target',argument='body')
+        with mock.patch.object(self_set_writes,'connections',return_value=rows):
+            ticket=self.service.self_set_write(job,binding,'slot:notes','POST','/items',effect='irreversible')
+        self.assertNotIn(secret,json.dumps(ticket))
+        self.assertNotIn(secret,json.dumps(self.events()))
+
+    def test_allowance_category_is_available_to_conversation(self):
+        from personal_agent.agent_runtime import SETTINGS_CATEGORIES
+        self.assertIn('write_allowances',SETTINGS_CATEGORIES)
+        self.assertTrue(direct_request_setting('write_allowances','revoke','slot:notes'))
+        self.assertFalse(direct_request_setting('write_allowances','allow','slot:notes'))
+
+    def test_code_run_claim_refusal_releases_ticket(self):
+        from personal_agent.code_run import CodeRunner
+        from personal_agent.api_requests import slots
+        _,job=self.started_self()
+        runner=CodeRunner(self.store,job['id'],approvals=self.service.browser_approvals_for(job))
+        runner._owners={'notes.test':[('notes',slots(self.store)['notes'])]}
+        runner._fields=[]
+        request={'method':'POST','host':'notes.test','path':'/items','query':'','bodyText':'{}'}
+        with mock.patch.object(self.service.decision_judge,'connector_effect',return_value='reversible'):
+            with mock.patch.object(runner,'_claim_state_change',return_value=(False,'refused')):
+                self.assertFalse(runner._decide(request,{'notes.test':[]})[0])
+            self.assertEqual(self.events()[0]['status'],'not_run')
+            self.assertTrue(runner._decide(request,{'notes.test':[]})[0])

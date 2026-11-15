@@ -603,7 +603,7 @@ def test_operation_internal_deadline_also_bounds_unanswered_script(worker, monke
 def test_every_shared_dispatch_op_has_an_implementation_and_unknown_is_typed(worker):
     ops = {name for name in vars(shared.Worker) if name.startswith('op_')}
     assert {name.removeprefix('op_') for name in ops} == {
-        'navigate', 'settle', 'snapshot', 'click', 'type', 'release_submit',
+        'navigate', 'settle', 'snapshot', 'click', 'type', 'release_submit', 'self_set_writes',
         'load_more', 'load_more_stop', 'show', 'hide', 'state', 'frame',
         'remote_begin', 'remote_end', 'remote_tap', 'remote_text', 'remote_key', 'remote_nav', 'remote_dialog',
         'remote_bind', 'remote_layout',
@@ -2170,3 +2170,35 @@ def test_chromium_guard_wait_progress_precedes_policy_answer(worker):
     worker.take_vetted = lambda *args: True
     worker.check_form_navigation('https://public.test/submit', 'GET', lambda allowed: events.append(allowed))
     assert events == [{'event': 'step', 'id': 42, 'posted': True}, True]
+
+
+def test_self_set_submit_guard_survives_navigation(worker):
+    """Execute the installed document-start submit listener after a fake CDP navigation."""
+    import shutil
+    import subprocess
+    node = shutil.which('node')
+    if not node:
+        pytest.skip('Node unavailable')
+    command(worker, 'self_set_writes', enabled=True)
+    worker.engine.browser.navigate_result = {'frameId': worker.main_target.main_frame, 'loaderId': 'next'}
+    command(worker, 'navigate', url='https://new.test/')
+    navigation_load(worker.main_target, 'next')
+    source = next(p['source'] for p in reversed(packets(worker, 'Page.addScriptToEvaluateOnNewDocument'))
+                  if p.get('worldName') == chromium.WORLD)
+    assignment = source[source.index('state().selfSetWrites = '):].split(';', 1)[0] + ';'
+    listener = source[source.index('const armSubmitGuard ='):source.index('const takeCancelled =')]
+    script = '''
+let current={}, listener, held=0;
+class HTMLFormElement {}
+const state=()=>current, holdsPayment=form=>false;
+const effective=form=>({method:'post'}), vet=()=>{}, allows=()=>null;
+const hold=()=>{held++};
+const window={addEventListener:(type,fn)=>{if(type==='submit')listener=fn}};
+''' + assignment + listener + '''
+armSubmitGuard(); let prevented=false;
+listener({type:'submit',target:new HTMLFormElement(),preventDefault(){prevented=true},stopImmediatePropagation(){}});
+console.log(JSON.stringify({prevented,held}));
+'''
+    result = subprocess.run([node, '-e', script], capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {'prevented': True, 'held': 1}

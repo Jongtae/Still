@@ -1585,7 +1585,7 @@ function renderWriteAllowances(data){
   const note=document.createElement('p');note.textContent=data.note;list.append(note);
   for(const row of data.connections||[]){
     const line=document.createElement('div'),label=document.createElement('span'),button=document.createElement('button');
-    label.textContent=row.label+' ';button.textContent=row.enabled?data.disable:data.enable;
+    label.textContent=row.label+' '+(row.reason||'')+' ';button.textContent=row.enabled?data.disable:data.enable;
     button.onclick=()=>{const enabled=!row.enabled;
       const save=async()=>{await api('/api/write-allowances',{connection:row.connection,enabled,revision:row.revision,connection_revision:row.connection_revision});await refresh();};
       if(!enabled)return busy(button,save);

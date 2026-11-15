@@ -551,12 +551,26 @@ class A2APeers:
         from .bounded_execution import mask_owner_paths
         if isinstance(text, str):
             text = mask_owner_paths(text, self._owner_roots())
+        self.initialize()
+        with self.store.db() as db:
+            cached = db.execute("SELECT 1 FROM a2a_turns WHERE peer_id=? AND direction='outbound' AND message_id=?",
+                                (peer_id, message_id)).fetchone()
+        if cached:
+            turn, _ = self.admit(peer_id, message_id, None, text, 'outbound', work_id)
+            if turn['state'] != 'completed':
+                raise PeerError('peer_outcome_unknown' if turn['state'] == 'working' else 'peer_exchange_failed')
+            return {'answer': turn['answer'], 'origin': 'third-party', 'peer_id': peer_id}
         from .browser_session import step_binding
         binding=step_binding(work_id,'a2a_message',url,peer_id,argument=text,state=row['revision'])
         ticket=self.service.self_set_write(self.store.job(work_id),binding,'peer:'+peer_id,
                                            'a2a_message',peer_id,effect='irreversible',description=text)
-        turn, fresh = self.admit(peer_id, message_id, None, text, 'outbound', work_id)
+        try:
+            turn, fresh = self.admit(peer_id, message_id, None, text, 'outbound', work_id)
+        except Exception:
+            self.service.self_set_write_release(self.store.job(work_id), ticket)
+            raise
         if not fresh:
+            self.service.self_set_write_release(self.store.job(work_id), ticket)
             if turn['state'] != 'completed':
                 raise PeerError('peer_outcome_unknown' if turn['state'] == 'working' else 'peer_exchange_failed')
             return {'answer': turn['answer'], 'origin': 'third-party', 'peer_id': peer_id}
@@ -580,10 +594,12 @@ class A2APeers:
                         'destination': row['card']['supportedInterfaces'][0]['url'], 'sections': sent_sections, 'state': 'response-observed'})
             return {'answer': answer, 'origin': 'third-party', 'peer_id': peer_id}
         except WorkModeRefused:
+            self.service.self_set_write_release(self.store.job(work_id), ticket)
             self.fail(turn, 'work_mode')
             raise
         except Exception:
             if dispatched:self.service.self_set_write_finished(self.store.job(work_id),ticket,observed=False)
+            else:self.service.self_set_write_release(self.store.job(work_id),ticket)
             self.record(work_id, 'failed', {'peer_id': peer_id, 'direction': 'outbound',
                         'destination': row['card']['supportedInterfaces'][0]['url'],
                         'sections': sent_sections, 'state': 'outcome-unknown'})

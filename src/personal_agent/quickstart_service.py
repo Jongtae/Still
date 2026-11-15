@@ -7080,6 +7080,10 @@ class AgentService:
         from .self_set_writes import authorize
         return authorize(self,job,binding,connection,operation,target,names,effect=effect,description=description)
 
+    def self_set_write_release(self, job, ticket):
+        from .self_set_writes import release
+        return release(self, job, ticket)
+
     def self_set_write_finished(self, job, ticket, **kwargs):
         from .self_set_writes import finished
         return finished(self,job,ticket,**kwargs)
@@ -7183,11 +7187,18 @@ class AgentService:
             db.execute("UPDATE tool_events SET status='not_run' WHERE id=? AND job_id=? AND tool='payment_autonomy' "
                        "AND status='authorized'",(receipt,job['id']))
 
+    @staticmethod
+    def _deliver_authority_notice(surface, text, on_failure=None):
+        if surface is not None:
+            try:surface.deliver_conversation_notice(text() if callable(text) else text)
+            except Exception:
+                if on_failure is not None:on_failure()
+
     def _deliver_payment_autonomy_notice(self, job, authorization):
         surface=self.surface_of(job)
         if surface is not None:
-            try:surface.deliver_conversation_notice(payment_autonomy_notice(authorization))
-            except Exception:LOG.warning('payment autonomy notice delivery failed')
+            self._deliver_authority_notice(surface, lambda: payment_autonomy_notice(authorization),
+                                           lambda: LOG.warning('payment autonomy notice delivery failed'))
 
     def browser_approvals_for(self, job):
         """The runtime's per-step approval surface for one Work: consume or request."""
@@ -7196,6 +7207,7 @@ class AgentService:
             def self_set_writes_required(self):return service.self_set_run(job)
             def self_set_write(self,binding,connection,operation,target,names=(),**kwargs):
                 return service.self_set_write(job,binding,connection,operation,target,names,**kwargs)
+            def self_set_write_release(self,ticket):return service.self_set_write_release(job,ticket)
             def self_set_write_finished(self,ticket,**kwargs):return service.self_set_write_finished(job,ticket,**kwargs)
             def consume(self,binding):return service._consume_browser_step(job,binding)
             def payment_autonomy(self,binding,description,**kwargs):
@@ -8029,6 +8041,7 @@ class AgentService:
         if allow and effect in ('mutate','payment'):
             event_id=self._connector_effect_claim(job,detail,input_digest,binding,target)
             if event_id is None:
+                self.self_set_write_release(job,write_ticket)
                 return {'behavior':'deny','message':'현재 권한이나 기존 실행 기록이 달라져 실행하지 않았습니다. 권한과 기존 결과를 확인하고 남은 일만 진행하세요.'}
             if effect=='payment' and not autonomy and not self._consume_browser_step(job,binding):
                 allow=False
@@ -8059,6 +8072,7 @@ class AgentService:
                     detail['evidence'].update(decision='deny',effect='none')
                     db.execute('UPDATE tool_events SET status=?,detail=? WHERE id=?',
                                ('denied',json.dumps(detail,ensure_ascii=False),event_id))
+        if not allow:self.self_set_write_release(job,write_ticket)
         if allow:
             return {'behavior':'allow','updatedInput':values if isinstance(values,dict) else {}}
         if effect=='payment':

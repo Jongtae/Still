@@ -957,8 +957,13 @@ class CodeRunner:
                 if getattr(exc,'code',None)=='approval_required':
                     self._asked.append({'method':method,'host':host,'path':redact_known_secrets(self.store,path)})
                 return False,str(exc)
-        result=self._claim_state_change(api, slot, identity, method, effect, host, path)
+        try:
+            result=self._claim_state_change(api, slot, identity, method, effect, host, path)
+        except Exception:
+            if ticket:self.approvals.self_set_write_release(ticket)
+            raise
         if result[0] and ticket:self.__dict__.setdefault('_write_tickets',[]).append(ticket)
+        elif ticket:self.approvals.self_set_write_release(ticket)
         return result
 
     def _claim_state_change(self, api, slot, identity, method, effect, host, path):

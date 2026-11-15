@@ -192,4 +192,171 @@ Baseline checks replace `src` in `PYTHONPATH` with the extracted
 where the baseline test requires it.
 
 No live model/account call, real browser integration, remote CI or independent
-escalated final-head review was performed. No commit was created.
+escalated final-head review was performed. The implementation was committed as `0083166`; the verifier fixes below are uncommitted.
+
+
+## Fresh-context verifier fixes (2026-11-15)
+
+Scope remains #717 option ④. **State-changing GETs (`browser_open` and link
+GETs) are out of scope.** The owner's configured decision AI judges browser
+presses and submitting/mutate-labeled typing from origin, role, accessible
+label and form field names. Typed values, page text, URL paths/query and form
+state digests are not judgment inputs. A judged read/navigation proceeds;
+irreversible/unknown writes wait. Plain local typing, typed Works,
+owner-accepted runs, payment gates and sign-in eligibility retain their paths.
+No keyword classifier or task/site/provider rule was added. The worker uses
+`insertText`, not keyboard Enter; multiline local text remains local. Explicit
+submit/Enter intent is gated, and page-triggered submits use the native guard.
+
+- Chromium now installs the self-set state in every document-start guard,
+  including after navigation, using the same guard source as WebKit.
+- A cancelled non-payment form is reported once, for its submitting step.
+  Its host-held reference expires after the approval window (600 seconds),
+  without making a new approval request. Other reads/navigation continue;
+  submitting again is a new attempt. Payment holds retain their behavior.
+- Pre-dispatch API effect/work-mode/intranet checks (including code-run claims), connector claim/authority
+  checks and browser target rechecks release unused write receipts to
+  `not_run`. They restore only the original unexpired exact approval when no
+  newer request occupies the Work, with its original owner/generation and
+  preparation checks. A release is idempotent and never grants payment
+  authority. Dispatch/unknown receipts still prevent duplicate writes.
+- A2A cached messages go through existing `admit` identity/revision/input
+  validation and return the cached answer without reserving another write.
+  A not-fresh admission race and WorkModeRefused release unused tickets.
+- Connection revision changes visibly turn an allowance off with a localized
+  explanation. Revocation ignores stale connection/allowance revisions;
+  enabling still checks both and requires owner confirmation. The Settings
+  conversation schema exposes `write_allowances`.
+- After-notices retain the owner-facing connection label even if the
+  connection changes during transport. HTTP 4xx receipts/notices report a
+  known rejection, not an unknown outcome, in both the allowance notice and
+  the Work/API effect record. The existing non-self-set/payment response
+  classification is unchanged.
+
+Changed implementation files in this follow-up: `self_set_writes.py`
+(authority release, Settings projection and receipts), `api_requests.py`
+(preflight release and HTTP outcome), `a2a_peers.py` (cached return and release),
+`browser_session.py` (press/type judgment and target recheck),
+`code_run.py` (release on a refused state-change claim),
+`browser_worker.py` (field-name metadata and one-shot held-form reports),
+`browser_worker_chromium.py` (new-document state), `agent_runtime.py`
+(Settings category), `quickstart_service.py` (release wiring and shared notice
+helper), `settings_orchestrator.py` (stale revocation), `messages.json` and
+`web/app.js` (visible lapse reason and rejected outcome). Regression tests are
+in `tests/test_self_set_writes_717.py` and
+`tests/test_browser_worker_chromium.py`. The latter also corrects the branch's
+old exhaustive operation inventory to include `self_set_writes`.
+
+### C15 follow-up review
+
+Adapt the existing standard-library SQLite transaction path (`QuickStore.db`,
+`consume_browser_step_approval`) and existing A2A SDK/`admit` boundary. The
+external candidates and licence/platform/security review above still apply:
+no package, protocol implementation or deployment changes are introduced.
+SQLite transactions cover atomic state changes, but neither SQLite, the MCP
+SDK nor the A2A SDK owns Still's exact owner approval, generation/preparation
+binding or revision-specific allowance. This bounded sovereign-policy repair
+therefore remains Build, using those adopted mechanisms. No new framework or
+store is appropriate for this boundary.
+
+The overlapping notice delivery shape is extracted into
+`AgentService._deliver_authority_notice`, used by both payment autonomy and
+self-set completion. Payment retains `surface_of`, its exact notice text,
+logging and timing; self-set completion retains `surface_claiming` and the
+durable fallback. Tickets and receipts cannot be unified without changing
+payment behavior: payment's two-phase ticket rechecks mode revision and
+records authorization/notice **before dispatch**, while self-set completion
+records observed/rejected/unknown outcomes and notices **after transport**.
+Their replay holds (`authorized` versus `dispatching`/terminal outcomes),
+payloads and approval sources differ. Those are concrete existing contracts,
+not a reason to duplicate the delivery helper. Payment tests are unchanged.
+
+The installed Python 3.12 `http.HTTPStatus` documentation/classification was
+also checked (`HTTPStatus.NOT_FOUND.is_client_error` is true). The existing
+transport's numeric 4xx class is sufficient for this self-set rejection rule,
+including non-enumerated 4xx values; another HTTP client/parser would not add
+owner-authority semantics. Non-self-set and payment response handling retain
+the existing refusal set for compatibility.
+
+### Follow-up verification
+
+All follow-up commands use
+`PYTHONPATH=src:/tmp /Users/jongtaelee/Documents/project/Still/.venv/bin/python
+-m pytest -q -n 4 -p no:cacheprovider -p skip_socket717`, except the two single
+test runs (no `-n`). The temporary socket-skip fixture described above is
+unchanged. No live model/account operation or remote CI is claimed.
+
+- Original-source counterchecks use `git archive HEAD src` extracted into
+  `/tmp/still717-verifier-baseline`, replacing `src` in `PYTHONPATH` with that
+  directory's `src`. All **16 targeted regressions failed** against original
+  commit `0083166`: the eight initial `VerifierRegressions` tests, the updated
+  worker hold/browser mismatch/A2A cache tests, the Chromium navigation test,
+  stale conversation revocation, the two separate A2A refusal/race tests, and
+  the code-run claim-refusal test. These are model-free failure observations.
+- `tests/test_self_set_writes_717.py tests/test_browser_worker_chromium.py
+  tests/test_payment_autonomy_662.py tests/test_settings_orchestrator.py`:
+  **325 passed, 1 skipped, 22 subtests passed**. Subsequent focused runs below
+  include the final typing and notice-helper refinements.
+- `tests/test_self_set_writes_717.py`: **31 passed** after splitting the A2A
+  refusal/race tests and adding stale conversation revocation.
+- `tests/test_self_set_writes_717.py::VerifierRegressions::test_type_gate_and_local_typing`:
+  **1 passed** with multiline input kept local.
+- `tests/test_self_set_writes_717.py tests/test_code_run.py
+  tests/test_payment_autonomy_662.py tests/test_action_bound_approvals_619.py`:
+  **123 passed, 1 skipped, 88 subtests passed**, including the code-run release.
+- `node --check src/personal_agent/web/app.js` and `git diff --check`: passed.
+
+The requested broad sweep selects the root `tests/test_*.py` files containing
+`browser_worker` or `browser_session` (equivalent to `rg -l` on those root
+files), all `tests/test_a2a*.py`, the seven explicitly requested files, and
+`test_settings_orchestrator.py` and `test_messages.py`: 46 files. It uses the
+same prefix and `-k 'not WebKitIntegrationTests'`. Socket binds are skipped
+per common.md; real WebKit integration is unavailable in this sandbox.
+Final affected-path rerun:
+`tests/test_self_set_writes_717.py tests/test_browser_session.py
+ tests/test_browser_worker_chromium.py tests/test_payment_autonomy_662.py
+ tests/test_action_bound_approvals_619.py tests/test_settings_orchestrator.py`:
+**465 passed, 2 skipped, 110 subtests passed**. Payment tests are unchanged.
+The expanded HTTP test also failed on the intermediate implementation that
+fixed the notice but still surfaced HTTP 404 as an unknown Work effect.
+After aligning the self-set API effect record, the final run of
+`tests/test_self_set_writes_717.py tests/test_api_requests.py
+ tests/test_connect_api_effects.py tests/test_payment_autonomy_662.py` passed:
+**132 passed, 1 skipped, 40 subtests passed**. Both 422 and 404 are covered;
+non-self-set/payment behavior is unchanged.
+
+Final notice checks:
+`tests/test_self_set_writes_717.py::VerifierRegressions::test_connection_display_label_cannot_leak_a_stored_secret
+ tests/test_self_set_writes_717.py::VerifierRegressions::test_rejected_http_has_label_and_known_outcome`
+with `-n 2`: **2 passed**. Connection labels use the existing known-secret
+redactor before entering tickets/receipts or after-notices.
+
+Broad sweep: **1,787 passed, 253 skipped, 5 failed, 16,415 subtests passed**
+in 2,563.50 seconds. This was not a clean final-source run: it collected the
+old Chromium exhaustive-operation expectation and the earlier combined A2A
+test fixture before their corrections. The A2A fixture used an invalid
+WorkModeRefused egress name; the final tests use `a2a` and test the cached,
+not-fresh and refused paths separately.
+
+The final rerun of these cases (same prefix, `-n 2`) passed **4 tests**:
+
+- `tests/test_browser_worker_chromium.py::test_every_shared_dispatch_op_has_an_implementation_and_unknown_is_typed`
+- `tests/test_self_set_writes_717.py::Writes::test_peer_send_waits_and_allowance_dispatches_only_once`
+- `tests/test_self_set_writes_717.py::VerifierRegressions::test_peer_work_mode_refusal_releases_ticket`
+- `tests/test_self_set_writes_717.py::VerifierRegressions::test_peer_not_fresh_race_releases_ticket`
+
+The remaining three subtest failures reproduce on the extracted original
+`0083166` source with the same socket-skip fixture and `-n 2`:
+
+- `tests/test_orchestrator.py::UnmediatedEngine::test_a_trusted_local_attempt_recorded_unmediated_without_a_cli_report_stops_with_effect`
+- `tests/test_orchestrator.py::UnmediatedEngine::test_a_trusted_local_attempt_whose_cli_ran_a_host_action_stops_with_effect`
+
+Baseline result: **3 failed, 2 passed, 2 skipped**. As in the earlier record
+above, a Unix-socket skip leaves subsequent subtests with a partial fixture;
+they fail the same `run_one()` assertion. These unrelated harness tests were
+not changed or weakened. The broad sweep is reported with its actual failures,
+not represented as green. The corrected paths have the passing reruns above.
+
+All follow-up changes remain uncommitted. Real socket/browser integration,
+live model/account operations, remote CI and a final-head Codex review were
+not performed in this sandbox.
