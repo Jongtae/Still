@@ -494,7 +494,8 @@ class ReportTest(unittest.TestCase):
                          epochs=2, limit=None, turn_timeout=10, keep_sandboxes=False)
         ran = []
 
-        def fake_run(scenario, pool, turn_timeout):
+        def fake_run(scenario, pool, turn_timeout, judgment_timeout):
+            self.assertEqual(judgment_timeout, 900)
             ran.append(scenario['id'])
             return self.run_record()
 

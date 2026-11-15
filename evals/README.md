@@ -182,7 +182,7 @@ A run passes when the world's tests end as the scenario expects (`expect_world_p
 
 ## What one run does
 
-1. Claim a free sandbox slot and a free loopback port. Slots use `~/.local/share/agentos-evals/sandboxes/slot-N`, with one file lock per slot so two sweeps never share one. Port 8787/8788 and the live data folder are refused.
+1. Claim a free sandbox slot and a free loopback port. Slots use `~/.local/share/agentos-evals/sandboxes/slot-N`, with one file lock per slot so two sweeps never share one. Port pairs are probed and reserved until stop with POSIX `flock` under `/tmp/still-eval-ports-<uid>` (override: `AGENTOS_EVAL_PORT_LOCK_DIR`, shared by all sweeps even with different eval roots); lock files must not be deleted while sweeps run. Quickstart binds only the first port; the existing pair allocation is preserved. Port 8787/8788 and the live data folder are refused.
 2. Copy the seed into the slot and start `python3 -m personal_agent.quickstart start --no-browser` with a minimal environment:
    - its own engine-run folder;
    - no inherited `AGENTOS_*` or connector settings;
@@ -190,8 +190,8 @@ A run passes when the world's tests end as the scenario expects (`expect_world_p
 3. Log in the way the local web page does (`POST /api/local-login`, or the first local `/api/claim` of a fresh folder), then select the worker (`POST /api/subscription-engines/connect`).
 4. **Judgment AI.** A qualification is bound to the store path, so a copied seed starts unqualified.
    - If the Judgment AI is not qualified for this worker, the sandbox asks Still to qualify it through the owner's own routes: `POST /api/main-ai/activate` when it follows the Main AI, else `POST /api/decision-route/activate`.
-   - It then waits up to 300 s.
-   - It caches the qualified config rows per slot, worker and seed, so later runs in that slot skip the roughly one minute and dozen model calls.
+   - It then waits up to `--judgment-timeout` (default 900 s).
+   - It caches the qualified config rows per slot, worker and seed, so later runs in that slot skip the roughly one minute and dozen model calls. Seeded slots apply them before start; seedless slots apply them once healthy, when the server has created its store (route config is read on demand). Records retain `cache_applied`, `initially_ready`, and bounded `qualification` state/failure/message alongside the existing fields.
    - A qualification that does not become ready is reported as the `infra:judgment_ai` cluster.
 5. Snapshot the owner state:
    - `GET /api/personal-space` and `/api/personal-space/memory-candidates`;
@@ -417,12 +417,14 @@ review uses the existing pinned evaluation stack; no external maintenance or
 release claim is made.
 
 `--judgment-timeout SECONDS` controls the wait for Still's Judgment AI
-qualification, separately from `--turn-timeout`. It defaults to 300 seconds for
-`sweep` and 900 for `continuity run`; the chosen value is recorded in run
-metadata and passed to the Inspect task. Fresh-sandbox qualification can take
-longer than 300 seconds, so a shorter wait can leave the Judgment AI unavailable
-and C2 measures unscored. The report prominently counts these samples under
-Live evidence and Uncertainty and marks the observation unrepresentative.
+qualification, separately from `--turn-timeout`. Both `sweep` and `continuity run`
+default to 900 seconds: fresh-sandbox qualification took about 410 seconds on
+2026-11-15 (11 cases on each of two models), leaving about 2× margin for a loaded
+machine and concurrent slots (#868). The chosen value is recorded in run metadata
+and passed to the Inspect task or world runner. A shorter wait can leave the
+Judgment AI unavailable and C2 measures unscored. The report prominently counts
+these samples under Live evidence and Uncertainty and marks the observation
+unrepresentative.
 `continuity compare` refuses an arm with missing measures caused by
 `infra:judgment_ai`. `--allow-partial` permits inspecting such a comparison,
 but marks it **partial** and its verdict can never be `better`. Existing

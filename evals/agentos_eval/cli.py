@@ -33,6 +33,10 @@ from .sandbox import WORLD_WORKER, run_id, snapshot_seed
 KEY_ENV = {'openai': 'OPENAI_API_KEY', 'anthropic': 'ANTHROPIC_API_KEY', 'google': 'GOOGLE_API_KEY'}
 KEYCHAIN_SERVICE = 'agentos-evals'
 
+# #868: fresh qualification took ~410 s on 2026-11-15; allow about 2× margin
+# for a loaded machine and concurrent slots.
+JUDGMENT_TIMEOUT = 900
+
 
 def keychain_secret(account, service=KEYCHAIN_SERVICE, runner=subprocess.run):
     """Read one generic password from the login Keychain; '' when absent.  Never logged."""
@@ -136,7 +140,8 @@ def run_world_sweep(args, run_scenario=None, pool_factory=None, folder=None):
     seed = resolve_seed(args.seed)
     run = {'id': run_id(), 'started': time.time(), 'git_head': git_head(), 'worker': WORLD_WORKER,
            'instances': args.instances, 'epochs': args.epochs, 'judge': 'none', 'world': args.world,
-           'evidence_class': EVIDENCE_CLASS, 'seed': seed.name if seed else 'fresh'}
+           'evidence_class': EVIDENCE_CLASS, 'seed': seed.name if seed else 'fresh',
+           'judgment_timeout': getattr(args, 'judgment_timeout', JUDGMENT_TIMEOUT)}
     pool = (pool_factory or SandboxPool)(size=args.instances, seed=seed, keep=args.keep_sandboxes)
     run_scenario = run_scenario or run_world_scenario
     jobs = [(scenario, epoch) for epoch in range(1, args.epochs + 1) for scenario in loaded][:args.limit]
@@ -147,7 +152,8 @@ def run_world_sweep(args, run_scenario=None, pool_factory=None, folder=None):
         # #887: past a usage limit every run fails the same way; start no more.
         if tripped.is_set():
             return None
-        record = run_scenario(job[0], pool, turn_timeout=args.turn_timeout)
+        record = run_scenario(job[0], pool, turn_timeout=args.turn_timeout,
+                              judgment_timeout=run['judgment_timeout'])
         if any(turn.get('failure_class') == USAGE_LIMIT for turn in record.get('turns') or ()):
             tripped.set()
         return job[0], record, job[1]
@@ -178,7 +184,7 @@ def cmd_sweep(args, folder=None, inspect_eval=None, task_factory=None, key_loade
     seed = resolve_seed(args.seed)
     run = {'id': run_id(), 'started': time.time(), 'git_head': git_head(), 'worker': args.worker,
            'instances': args.instances, 'epochs': args.epochs, 'judge': judge, 'judge_key': key_source,
-           'judgment_timeout': getattr(args, 'judgment_timeout', 300),
+           'judgment_timeout': getattr(args, 'judgment_timeout', JUDGMENT_TIMEOUT),
            'seed': seed.name if seed else 'fresh'}
     if getattr(args, 'continuity', None):
         run['continuity'] = args.continuity
@@ -304,7 +310,7 @@ def run_continuity(args, sweep=None, folder=None):
         raise SystemExit('No bundled C2 scenarios.')
     args.seed, args.no_local, args.world, args.split = '', True, '', ''
     args.limit, args.keep_sandboxes = None, False
-    args.judgment_timeout = getattr(args, 'judgment_timeout', 900)
+    args.judgment_timeout = getattr(args, 'judgment_timeout', JUDGMENT_TIMEOUT)
     args.judge, args.scenarios, args.measures = judge, ','.join(s['id'] for s in loaded), str(args.rubric)
     args.continuity = continuity.fixture_support(loaded, args.rubric)
     return (sweep or cmd_sweep)(args, **({'folder': folder} if folder is not None else {}))
@@ -434,7 +440,7 @@ def main(argv=None):
     sweep.add_argument('--judge', default='', help="Inspect model name, e.g. openai/gpt-6.1-terra, or 'none'")
     sweep.add_argument('--cap-usd', type=float, default=None, help='daily judge spend cap (default 10)')
     sweep.add_argument('--turn-timeout', type=int, default=900)
-    sweep.add_argument('--judgment-timeout', type=int, default=300, help='seconds to wait for Judgment AI qualification')
+    sweep.add_argument('--judgment-timeout', type=int, default=JUDGMENT_TIMEOUT, help='seconds to wait for Judgment AI qualification')
     sweep.add_argument('--limit', type=int, default=None)
     sweep.add_argument('--keep-sandboxes', action='store_true')
     sweep.add_argument('--display', default='plain')
@@ -491,7 +497,7 @@ def main(argv=None):
     c2run.add_argument('--judge', default='')
     c2run.add_argument('--instances', type=int, default=3)
     c2run.add_argument('--turn-timeout', type=int, default=900)
-    c2run.add_argument('--judgment-timeout', type=int, default=900, help='seconds to wait for Judgment AI qualification')
+    c2run.add_argument('--judgment-timeout', type=int, default=JUDGMENT_TIMEOUT, help='seconds to wait for Judgment AI qualification')
     c2run.add_argument('--display', default='plain')
     c2run.add_argument('--rubric', type=Path, default=DEFAULT_RUBRIC)
     c2run.add_argument('--seed', default=None, help='refused: C2 always uses fresh data')
