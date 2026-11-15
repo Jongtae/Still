@@ -323,6 +323,7 @@ def test_cli_recall_plugin_writes_reports_and_exits_zero(data, tmp_path, monkeyp
     markdown_path, = folder.glob('recall-*.md')
     report = json.loads(json_path.read_text())
     assert set(report['arms']) == {'lexical', 'r1_cli_plugin:factory'}
+    assert report['baseline'] == 'lexical'
     assert report['arms']['r1_cli_plugin:factory']['verdict']['preferred'] is True
     printed = capsys.readouterr().out
     assert markdown_path.read_text().strip() in printed and str(json_path) in printed
@@ -333,6 +334,44 @@ def test_cli_recall_plugin_writes_reports_and_exits_zero(data, tmp_path, monkeyp
         cli.main(['recall', '--runs', '0'])
     with pytest.raises(SystemExit, match='outside the repository'):
         cli.main(['recall', '--fixture', str(path), '--out', str(ROOT / 'reports')])
+
+
+@pytest.mark.parametrize('extra', [[], ['--arm', 'context', '--arm', 'lexical-context']])
+def test_cli_named_baseline_is_always_run_once(data, tmp_path, monkeypatch, extra):
+    path = tmp_path / 'fixture.json'
+    path.write_text(json.dumps(data))
+    folder = tmp_path / 'reports'
+    original = rr.run_arm
+    seen = []
+
+    def run(data, arm, runs):
+        seen.append(arm.factory)
+        return original(data, arm, runs)
+
+    monkeypatch.setattr(rr, 'run_arm', run)
+    assert cli.main(['recall', '--baseline', 'lexical-context', '--fixture', str(path),
+                     '--out', str(folder), *extra]) == 0
+    report_path, = folder.glob('recall-*.json')
+    result = json.loads(report_path.read_text())
+    assert result['baseline'] == 'lexical-context'
+    assert set(result['arms']) == ({'lexical-context', 'context'} if extra else {'lexical-context'})
+    assert len(seen) == len(set(seen)) == len(result['arms'])
+    assert result['arms']['lexical-context']['verdict'] is None
+    assert result['arms']['lexical-context']['diagnostic'] is False
+    assert 'Baseline: lexical-context' in report_path.with_suffix('.md').read_text()
+
+
+def test_cli_invalid_baseline_is_resolved_before_running(data, tmp_path, monkeypatch):
+    path = tmp_path / 'fixture.json'
+    path.write_text(json.dumps(data))
+
+    def no_run(*args, **kwargs):
+        pytest.fail('Resolve the baseline before running any arms')
+
+    monkeypatch.setattr(rr, 'run_arm', no_run)
+    with pytest.raises(ValueError, match='Unknown recall arm'):
+        cli.main(['recall', '--baseline', 'nonexistent-recall-arm', '--fixture', str(path),
+                  '--out', str(tmp_path / 'reports')])
 
 
 @pytest.mark.parametrize('mode', ['command', 'replay'])
@@ -378,6 +417,8 @@ def test_diagnostic_metadata_and_no_verdict_in_report_or_markdown(data):
     assert rr.resolve_arm('context-concat').diagnostic is True
     assert rr.resolve_arm('context').diagnostic is False
     assert rr.resolve_arm('lexical').diagnostic is False
+    assert rr.resolve_arm('lexical-context').diagnostic is False
+    assert rr.resolve_arm('lexical-context').deterministic is True
     baseline = measured(data, lexical)
     diagnostic = rr.run_arm(data, rr.Arm(scripted([FIX]), diagnostic=True))
     result = rr.report(data, {'lexical': baseline, 'diagnostic': diagnostic,
