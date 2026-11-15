@@ -1555,8 +1555,8 @@ function preparationEditForm(row){const form=element('form',undefined,'settings-
  const fields=windowed?['due','timezone','every_minutes','until','max_runs']:['due','timezone','recurrence'];
  for(const field of fields){const label=element('label'),input=element(field==='recurrence'?'select':'input');label.append(element('span',preparationLabel(field)));
   if(field==='recurrence'){for(const value of ['none','daily','weekdays','weekly','rule_weekly','rule_monthly']){const option=element('option',value==='rule_weekly'?preparationLabel('weekly_days'):value==='rule_monthly'?preparationLabel('monthly_day'):preparationRepeatLabel(value));option.value=value;input.append(option);}}
-  else{input.type=['due','until'].includes(field)?'datetime-local':['every_minutes','max_runs'].includes(field)?'number':'text';input.required=true;if(input.type==='number'){input.min=field==='every_minutes'?'5':'1';if(field==='every_minutes')input.max='720';else if(row.max_window_runs)input.max=String(row.max_window_runs);}}
-  input.name=field;input.dataset.focusKey='preparation-'+row.id+'-'+field;input.value=field==='due'?row.due_local_input:field==='until'?row.until_local_input:field==='recurrence'?(rule?(rule.FREQ==='MONTHLY'?'rule_monthly':rule.FREQ==='WEEKLY'?'rule_weekly':'daily'):(row.recurrence||'none')):row[field];inputs[field]=input;label.append(input);form.append(label);}
+  else{input.type=['due','until'].includes(field)?'datetime-local':['every_minutes','max_runs'].includes(field)?'number':'text';input.required=field!=='max_runs';if(input.type==='number'){input.min=field==='every_minutes'?'5':'1';if(field==='every_minutes')input.max='720';else if(row.max_window_runs)input.max=String(row.max_window_runs);}}
+  input.name=field;input.dataset.focusKey='preparation-'+row.id+'-'+field;input.value=field==='due'?row.due_local_input:field==='until'?row.until_local_input:field==='recurrence'?(rule?(rule.FREQ==='MONTHLY'?'rule_monthly':rule.FREQ==='WEEKLY'?'rule_weekly':'daily'):(row.recurrence||'none')):row[field];inputs[field]=input;label.append(input);if(field==='max_runs'){const hint=element('span',preparationLabel('max_runs_hint'),'field-hint');hint.id='preparation-'+row.id+'-max-runs-hint';input.setAttribute('aria-describedby',hint.id);label.append(hint);}form.append(label);}
  let ruleChanged=false,monthlyDayChanged=false,endDateChanged=false,section;
  if(!windowed){section=element('fieldset');section.append(element('legend',preparationLabel('rule')));
   const weekdays=element('div');weekdays.append(element('span',preparationLabel('weekly_days')));
@@ -1569,7 +1569,7 @@ function preparationEditForm(row){const form=element('form',undefined,'settings-
   inputs.recurrence.onchange=()=>{ruleChanged=true;section.hidden=inputs.recurrence.value==='none';};section.hidden=inputs.recurrence.value==='none';form.append(section);}
  const save=element('button',preparationLabel('edit'));save.type='submit';form.append(save);
  form.onsubmit=event=>{event.preventDefault();const changes={due:inputs.due.value,timezone:inputs.timezone.value};
-  if(windowed){for(const field of ['every_minutes','until','max_runs']){if(field==='max_runs'&&Number(inputs[field].value)===row.max_runs&&(inputs.until.value!==row.until_local_input||Number(inputs.every_minutes.value)!==row.every_minutes))continue;changes[field]=inputs[field].type==='number'?Number(inputs[field].value):inputs[field].value;}}
+  if(windowed){for(const field of ['every_minutes','until','max_runs'])changes[field]=inputs[field].type==='number'&&inputs[field].value!==''?Number(inputs[field].value):inputs[field].value;}
   else{const repeat=inputs.recurrence.value;
    if(rule&&!ruleChanged){changes.rrule=row.recurrence;}
    else if(repeat.startsWith('rule_')||(repeat!=='none'&&inputs.rule_until.value)){

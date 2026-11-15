@@ -1028,6 +1028,7 @@ class PreparationsService:
                 **{field:'preparations.field_'+field for field in ('due','recurrence','every_minutes','until','max_runs',
                                                                               'rule','weekly_days','monthly_day','interval','rule_until')},
                 **{'day_'+day:'preparations.day_'+day for day in prep.RULE_DAYS},
+                'max_runs_hint':'preparations.max_runs_hint',
                 'last_day':'preparations.rule_last_day','timezone':'label.time_zone','paused':'settings_orchestrator.paused','saved':'preparations.saved'}
         # The same daily notice is visible in local Settings when no sending surface is paired.
         from .telegram_locale import translate

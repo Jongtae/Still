@@ -1110,6 +1110,72 @@ class PreparationManagementConversation(_Case):
         for leaked in ('{', watch['id'], 'max_runs', 'bound_timezone'):
             self.assertNotIn(leaked, text)
 
+    def count_limited_watch(self):
+        start = self.clock[0] + 600
+        return self.service.preparations.create(
+            kind='prepare', goal='새 결과 확인', due_at=start, timezone='Asia/Seoul', recurrence=None,
+            channel='web', created_from=None, state=prep.STATE_SCHEDULED, window=(300, start + 3600, 3))
+
+    def test_watch_edit_confirmation_and_receipt_save_the_shown_count(self):
+        for supplied, expected in ((3, 3), ('', 25), (None, 25)):
+            with self.subTest(max_runs=supplied):
+                watch = self.count_limited_watch()
+                end = watch['due_at'] + 7200
+                changes = {'id': watch['id'], 'until': datetime.fromtimestamp(end, prep.zone('Asia/Seoul')).isoformat()}
+                if supplied is not None:
+                    changes['max_runs'] = supplied
+                draft = self.settings.propose('owner', 'http', 'preparations', 'edit', json.dumps(changes))
+                bound = self.settings._drafts()[draft['draft_id']]
+                self.assertEqual(json.loads(bound['after'])['max_runs'], expected)
+                self.assertIn(f'최대 {expected}번', self.settings.confirmation_text([bound]))
+                result = self.settings.confirm('owner', 'http', draft['draft_id'], draft['digest'])
+                saved = self.service.preparations.get(watch['id'])
+                self.assertEqual((result['state'], saved['max_runs'], saved['until_at']), ('applied', expected, end))
+                self.assertIn(f'최대 {expected}번', result['response'])
+
+    def test_watch_edit_count_change_before_confirmation_is_stale(self):
+        for renewal in (False, True):
+            with self.subTest(renewal=renewal):
+                watch = self.count_limited_watch()
+                end = datetime.fromtimestamp(watch['due_at'] + 7200, prep.zone('Asia/Seoul')).isoformat()
+                draft = self.settings.propose('owner', 'http', 'preparations', 'edit', json.dumps({'id': watch['id'], 'until': end}))
+                self.assertIn('최대 25번', draft['summary'])
+                self.service.preparations.edit(watch['id'], every_minutes=10)
+                changed = self.service.preparations.get(watch['id'])
+                with self.assertRaises(SettingsError) as caught:
+                    if renewal:
+                        self.settings._renew('owner', 'http', self.settings._drafts()[draft['draft_id']])
+                    else:
+                        self.settings.confirm('owner', 'http', draft['draft_id'], draft['digest'])
+                self.assertEqual(str(caught.exception), STALE_MESSAGE)
+                self.assertEqual(self.service.preparations.get(watch['id']), changed)
+
+    def test_watch_edit_count_change_during_summary_or_apply_is_refused(self):
+        for phase in ('_edit_summary', '_apply'):
+            with self.subTest(phase=phase):
+                watch = self.count_limited_watch()
+                end = datetime.fromtimestamp(watch['due_at'] + 7200, prep.zone('Asia/Seoul')).isoformat()
+                value = json.dumps({'id': watch['id'], 'until': end})
+                original = getattr(self.settings, phase)
+                changed = []
+
+                def race(argument):
+                    # A real intervening edit; only its timing is injected.
+                    changed.append(self.service.preparations.edit(watch['id'], every_minutes=10))
+                    return original(argument)
+
+                if phase == '_edit_summary':
+                    with mock.patch.object(self.settings, phase, side_effect=race), self.assertRaises(SettingsError) as caught:
+                        self.settings.propose('owner', 'http', 'preparations', 'edit', value)
+                else:
+                    draft = self.settings.propose('owner', 'http', 'preparations', 'edit', value)
+                    self.assertIn('최대 25번', draft['summary'])
+                    with mock.patch.object(self.settings, phase, side_effect=race), self.assertRaises(SettingsError) as caught:
+                        self.settings.confirm('owner', 'http', draft['draft_id'], draft['digest'])
+                self.assertEqual(len(changed), 1)
+                self.assertEqual(str(caught.exception), STALE_MESSAGE)
+                self.assertEqual(self.service.preparations.get(watch['id']), changed[0])
+
     def test_an_edit_of_this_works_unoffered_proposal_applies_without_a_second_ask(self):
         """#702: the Work corrects its own proposal before the owner sees it; anything else stays a confirmed draft."""
         def watch(work, state=prep.STATE_PROPOSED):

@@ -10288,6 +10288,12 @@
   "ja": "最大実行回数（1日の上限適用）",
   "zh": "最大运行次数（适用每日上限）"
  },
+ "preparations.max_runs_hint": {
+  "ko": "비우면 하루 한도 안에서 모든 확인 시각을 실행해요.",
+  "en": "Leave empty to run every slot within the daily cap.",
+  "ja": "空欄にすると、1日の上限内ですべての確認時刻に実行します。",
+  "zh": "留空则在每日上限内执行所有检查时段。"
+ },
  "preparations.saved": {
   "ko": "준비 일정을 변경했어요.",
   "en": "Updated the preparation schedule.",

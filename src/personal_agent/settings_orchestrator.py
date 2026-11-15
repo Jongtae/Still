@@ -766,7 +766,11 @@ class SettingsOrchestrator:
             requested = {k: v for k, v in changes.items() if k not in ('id', BOUND_TIMEZONE)}
             if bound is None and 'timezone' not in requested and set(requested) & {'due', 'until', 'rrule', 'recurrence'}:
                 changes[BOUND_TIMEZONE] = current['timezone']
-            self.service.preparations.preview_edit(current, requested, self.service.preparations.clock())
+            edited = self.service.preparations.preview_edit(current, requested, self.service.preparations.clock())
+            if current['recurrence'] == prep.RECURRENCE_WINDOW:
+                # Bind the resolved count the owner will see, including when
+                # max_runs was omitted or empty. A later re-derivation is stale.
+                changes['max_runs'] = edited['max_runs']
             return json.dumps(changes, sort_keys=True, ensure_ascii=False), row
         if (category, setting) == ('api_connections', 'connect'):
             from .api_input import value as api_value
@@ -987,6 +991,8 @@ class SettingsOrchestrator:
         current = self.service.preparations.get(changes['id'])
         requested = {key: value for key, value in changes.items() if key not in ('id', BOUND_TIMEZONE)}
         edited = {**current, **self.service.preparations.preview_edit(current, requested, self.service.preparations.clock())}
+        if 'max_runs' in requested and edited['max_runs'] != requested['max_runs']:
+            raise SettingsError(STALE_MESSAGE)
         home_zone = self.service.home_zone()
         return msg('settings_orchestrator.preparation_edit_summary',
                    title=redact_known_secrets(self.store, prep.owner_title(current)),
@@ -1252,14 +1258,23 @@ class SettingsOrchestrator:
             self.__dict__.setdefault("_apply_text", {})[row["id"]] = self.service.close_login_window_by_owner(after)
         elif category == "preparations":
             # #1455: the same operations as the Settings list (#659), confirmed by the owner in the conversation.
-            # #619: only the owner's requested fields reach the edit; the bound timezone was checked above.
+            from . import preparations as prep
+            # The bound timezone was checked above; the displayed window count
+            # must also survive any intervening run/edit until the atomic write.
             if setting == 'pause' and self.service.preparations.owns_running(
                     self.service.preparations.get(after), self.store.job(row.get('work_id'))):
                 self.service.preparations.pause(after, work_id=row.get('work_id'))
             else:
-                self.service.preparation_request({"operation": setting, **({k: v for k, v in json.loads(after).items()
-                                                                            if k != BOUND_TIMEZONE} if setting == "edit"
-                                                                           else {"id": after})})
+                parameters = ({k: v for k, v in json.loads(after).items() if k != BOUND_TIMEZONE}
+                              if setting == "edit" else {"id": after})
+                if setting == 'edit' and 'max_runs' in parameters:
+                    parameters['expected_max_runs'] = parameters['max_runs']
+                try:
+                    self.service.preparation_request({"operation": setting, **parameters})
+                except prep.PreparationRefusal as exc:
+                    if exc.code == 'invalid_edit' and 'expected_max_runs' in parameters:
+                        raise SettingsError(STALE_MESSAGE) from None
+                    raise
             self.__dict__.setdefault("_apply_text", {})[row["id"]] = self._preparation_receipt(setting, after)
         elif category == "skills":
             # #961: the service's own setters; adding returns the installed identity as the answer.
@@ -1716,6 +1731,8 @@ class SettingsOrchestrator:
                                  _observe_only=current['state']=='unknown' if retry else row.get('observe_only',False))
             fresh=self._drafts()[draft['draft_id']]
             if (not self._before_covered(row, draft['before'])
+                    or (row.get('category'), row.get('setting')) == ('preparations', 'edit')
+                    and json.loads(row['after']).get('max_runs') != json.loads(fresh['after']).get('max_runs')
                     or (retry or row.get('category') == 'api_connections') and fresh.get('setup_guard')!=row.get('setup_guard')):
                 # The owner approved the change from the value they saw; a later value is not covered.
                 self._settle(draft["draft_id"], "canceled", None)
