@@ -328,3 +328,59 @@ class SelfNarrowing(_Case):
             # Compare a common horizon even when an invalid closing time skips a whole day.
             slots.append({slot for slot in future if slot < datetime(2026, 10, 6, tzinfo=tz).timestamp()})
         self.assertTrue(slots[1] <= slots[0], slots)
+
+    def rolled_self_narrowed_window(self, timezone_name, day):
+        tz = ZoneInfo(timezone_name)
+        self.clock[0] = datetime(*day, 9, tzinfo=tz).timestamp()
+        self.serial += 1
+        original = self.preps.create(
+            kind='prepare', goal=f'Rollover material {self.serial}', due_at=self.clock[0],
+            timezone=timezone_name, recurrence='daily', channel='web', created_from=None,
+            state=prep.STATE_SCHEDULED, accepted_by=prep.ACCEPTED_OWNER_SETTINGS,
+            window=(600, self.clock[0] + 7200, 8), delivery_mode='when_needed')
+        work = self.preps.start(original, channel='web', chat_id=None, now=self.clock[0])
+        row, run = self.preps.get(original['id']), self.store.job(work)
+        self.assertTrue(self.change(row, run, changes={'until': prep.iso(self.clock[0] + 1200)})['applied'])
+        narrowed = self.preps.get(row['id'])
+        self.clock[0] = narrowed['until_at'] + 1
+        rolled = self.settle(narrowed, run)
+        self.assertEqual(rolled['state'], prep.STATE_SCHEDULED)
+        self.assertNotEqual(rolled['until_at'], narrowed['until_at'])
+        return original, rolled
+
+    def test_self_narrow_undo_survives_daily_rollover_and_rebases_local_bounds(self):
+        for timezone_name, day in (('Asia/Seoul', (2026, 11, 5)),
+                                   ('America/New_York', (2026, 3, 7)),
+                                   ('America/New_York', (2026, 10, 31))):
+            with self.subTest(timezone=timezone_name, day=day):
+                original, rolled = self.rolled_self_narrowed_window(timezone_name, day)
+                self.assertTrue(self.preps.self_undoable(rolled, 'edit'))
+                # Exercise the Settings option and its bound owner confirmation, not just the helper.
+                draft = self.settings.propose('owner', 'http', 'preparations', 'restore', rolled['id'])
+                result = self.settings.confirm('owner', 'http', draft['draft_id'], draft['digest'])
+                self.assertEqual(result['state'], 'applied', result)
+                restored = self.preps.get(rolled['id'])
+                tz = ZoneInfo(timezone_name)
+                current_day = datetime.fromtimestamp(rolled['due_at'], tz).date()
+                expected_end = datetime.combine(current_day, datetime.fromtimestamp(original['until_at'], tz).time(),
+                                                tzinfo=tz).timestamp()
+                self.assertEqual(restored['until_at'], expected_end)
+                self.assertEqual(restored['window_end'], expected_end + original['window_end'] - original['until_at'])
+                self.assertEqual(prep.stored_window_terms(restored), prep.stored_window_terms(original))
+                for key in ('state', 'due_at', 'rule_start', 'run_count'):
+                    self.assertEqual(restored[key], rolled[key], key)
+                self.assertFalse(self.preps.self_undoable(restored, 'edit'))
+                # Restored per-day terms must also govern the following window.
+                following = prep.next_day_window(restored, restored['until_at'] + 1)
+                self.assertEqual(datetime.fromtimestamp(following['until_at'], tz).hour, 11)
+
+    def test_owner_edit_after_daily_rollover_still_voids_self_undo(self):
+        _original, rolled = self.rolled_self_narrowed_window('Asia/Seoul', (2026, 11, 5))
+        self.assertTrue(self.preps.self_undoable(rolled, 'edit'))
+        # This changes no field in the self-narrow's after-values: the owner veto must still apply.
+        edited = self.preps.edit(rolled['id'], max_runs=7)
+        self.assertEqual(edited['until_at'], rolled['until_at'])
+        self.assertFalse(self.preps.self_undoable(edited, 'edit'))
+        with self.assertRaises(prep.PreparationRefusal):
+            self.preps.restore(rolled['id'])
+        self.assertEqual(self.preps.get(rolled['id']), edited)

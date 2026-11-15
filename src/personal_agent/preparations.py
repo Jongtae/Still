@@ -1319,11 +1319,33 @@ class Preparations:
         return event
 
     @staticmethod
+    def _self_change_values(row, values):
+        """Interpret a recurring receipt on the current window's local date.
+
+        Reuse datetime/zone and next_day_window's wall-time convention; this is
+        receipt interpretation, not a new recurrence or settlement calculation.
+        The run allowance after closing is elapsed time, even across midnight/DST.
+        """
+        values = dict(values)
+        if (row.get('recurrence') != RECURRENCE_WINDOW or not stored_window_terms(row).get('recurrence')
+                or values.get('until_at') is None):
+            return values
+        tz = zone(row['timezone'])
+        closing = datetime.fromtimestamp(values['until_at'], tz)
+        day = datetime.fromtimestamp(row['due_at'], tz).date()
+        if day != closing.date():
+            until = datetime.combine(day, closing.time().replace(fold=0), tzinfo=tz).timestamp()
+            if 'window_end' in values:
+                values['window_end'] = until + (values['window_end'] - values['until_at'])
+            values['until_at'] = until
+        return values
+
+    @staticmethod
     def self_undoable(row, operation):
         event = json.loads(row.get('self_change') or '{}')
         operations = event.get('operations', [event.get('target', '').split('.')[-1]])
         # Settlement clears run_return_state and materializes the pause as state.
-        after = dict(event.get('after', {}))
+        after = Preparations._self_change_values(row, event.get('after', {}))
         if row['state'] == STATE_PAUSED and after.get('run_return_state') == STATE_PAUSED:
             after.pop('run_return_state')
         return bool(not row.get('self_change_undone') and operation in operations
@@ -1333,7 +1355,7 @@ class Preparations:
         """Restore the first before-values, leaving consumed runs and live Work intact."""
         row = dict(row)
         event = json.loads(row['self_change'])
-        updates = dict(event['before'])
+        updates = self._self_change_values(row, event['before'])
         now = self.clock()
         updates.update(self_change_undone=1, updated_at=max(now, math.nextafter(row['updated_at'], math.inf)))
         if row['state'] not in ACTIVE_STATES:
