@@ -30,6 +30,7 @@ the same service-side checks the bridge reaches.
 MCP discovery and calls from the host. No action list or special redaction/
 connector operation is available on that route; its host facade owns all policy.
 """
+import contextlib
 import hmac
 import json
 import os
@@ -128,10 +129,17 @@ class BrowserRelay:
     factory, the approvals surface, the Work budget and the lookup sources).
     Calls are executed one at a time, except effect-free reads (#386: ``concurrent_read``),
     which the bridge may send together and which run without the turn's lock.
+
+    #722: ``scope`` is a zero-argument callable returning a context manager that every answered
+    request runs inside.  Each request is handled on its own server thread, which has none of the
+    Work's per-thread state; the service passes ``work_decision_scope(work_id, budget)`` so a
+    judgment made inside a relayed call is recorded in that Work's decisions, spends its budget and
+    stops on its Stop or deadline, exactly as on the direct route.
     """
 
-    def __init__(self, tools, *, full_surface=False):
+    def __init__(self, tools, *, full_surface=False, scope=None):
         self.tools = tools
+        self._scope = scope
         # #673 owner decision: a scoped Work's complete MCP surface belongs
         # to the host. No profile/action selection happens in its bridge.
         self.full_surface = full_surface
@@ -181,6 +189,18 @@ class BrowserRelay:
         return str(self.directory)
 
     def _reply(self, line):
+        if self._scope is None:
+            return self._answer(line)
+        with contextlib.ExitStack() as stack:
+            try:
+                stack.enter_context(self._scope())
+            except Exception:
+                # Nothing ran: without the Work's scope no call is made outside its budget and Stop.
+                return {'error': {'kind': 'tool', 'message': RELAY_UNAVAILABLE_TEXT,
+                                  'code': 'browser_relay_unavailable', 'ran': False}}
+            return self._answer(line)
+
+    def _answer(self, line):
         if self._closed:
             return {'error': {'kind': 'tool', 'message': RELAY_UNAVAILABLE_TEXT, 'code': 'stopped', 'ran': False}}
         if len(line) > MAX_REQUEST_BYTES:
