@@ -1014,6 +1014,7 @@ class PreparationsService:
                 **{field:'preparations.field_'+field for field in ('due','recurrence','every_minutes','until','max_runs',
                                                                               'rule','weekly_days','monthly_day','interval','rule_until')},
                 **{'day_'+day:'preparations.day_'+day for day in prep.RULE_DAYS},
+                'max_runs_hint':'preparations.max_runs_hint',
                 'last_day':'preparations.rule_last_day','timezone':'label.time_zone','paused':'settings_orchestrator.paused','saved':'preparations.saved'}
         return {'preparations':rows,'management':{key:{lang:msg(message_id,lang) for lang in LANGUAGES} for key,message_id in labels.items()}}
 

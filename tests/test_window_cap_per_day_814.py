@@ -415,15 +415,52 @@ class WindowCapFlowTests(_WatchCase):
             # app.js sends all five fields, including the displayed (capped) end.
             changes = dict(due='2026-11-16T09:00', timezone='Asia/Seoul', every_minutes=5,
                            until='2026-11-16T09:10', max_runs=3)
-            edited = self.service.preparations.edit(self.watched['id'], **changes)
+            def save():
+                self.service.preparation_request(json.loads(json.dumps(dict(operation='edit', id=self.watched['id'], **changes))))
+                return self.service.preparations.get(self.watched['id'])
+            edited = save()
             self.assert_honest(edited, DUE.replace(minute=10))
             self.assertEqual(prep.stored_window_terms(edited)['requested_until'], DUE.replace(hour=10).timestamp())
             self.assertEqual(prep.stored_window_terms(edited)['covering_every_minutes'], 21)
+            changes['until'] = '2026-11-16T11:00'
+            edited = save()
+            self.assertEqual((edited['max_runs'], edited['until_at']), (3, DUE.replace(minute=10).timestamp()))
+            self.assertEqual(prep.stored_window_terms(edited)['requested_until'], DUE.replace(hour=11).timestamp())
+            self.assertEqual(prep.stored_window_terms(edited)['covering_every_minutes'], 41)
+            changes.update(until='2026-11-16T09:10', max_runs='')
+            edited = save()
+            self.assertEqual(edited['max_runs'], 3)
+            self.assertEqual(prep.stored_window_terms(edited)['requested_until'], DUE.replace(hour=11).timestamp())
             changes['max_runs'] = 2
-            edited = self.service.preparations.edit(edited['id'], **changes)
-            self.assertEqual(edited['until_at'], DUE.replace(hour=10).timestamp())
+            edited = save()
+            self.assertEqual(edited['until_at'], DUE.replace(hour=11).timestamp())
             self.assertNotIn('requested_until', prep.stored_window_terms(edited))
             self.assertNotIn('covering_every_minutes', prep.stored_window_terms(edited))
+
+    def test_web_request_saves_the_displayed_limit_and_derives_only_when_empty(self):
+        for recurrence in (None, 'weekdays'):
+            with self.subTest(recurrence=recurrence):
+                self.schedule(recurrence=recurrence, until=DUE.replace(hour=10), max_runs=3)
+                body = dict(operation='edit', id=self.watched['id'], due='2026-11-16T09:00',
+                            timezone='Asia/Seoul', every_minutes=5, until='2026-11-16T11:00', max_runs=3)
+                response = self.service.preparation_request(json.loads(json.dumps(body)))
+                listed = next(row for row in response['preparations'] if row['id'] == self.watched['id'])
+                row = self.service.preparations.get(self.watched['id'])
+                self.assertEqual((listed['max_runs'], row['max_runs'], row['until_at']),
+                                 (3, 3, DUE.replace(hour=11).timestamp()))
+                self.assertIn('최대 3번', prep.schedule_text(row, 'Asia/Seoul'))
+                self.assertNotIn('requested_until', prep.stored_window_terms(row))
+                body['max_runs'] = ''
+                self.service.preparation_request(body)
+                row = self.service.preparations.get(self.watched['id'])
+                self.assertEqual((row['max_runs'], row['until_at']), (25, DUE.replace(hour=11).timestamp()))
+                body['max_runs'] = prep.window_run_cap(DUE.timestamp(), row['until_at'], 'Asia/Seoul', recurrence) + 1
+                with self.assertRaises(prep.PreparationRefusal) as caught:
+                    self.service.preparation_request(body)
+                self.assertEqual(caught.exception.code, 'invalid_max_runs')
+                self.assertEqual(self.service.preparations.get(self.watched['id']), row)
+                for lang in ('ko', 'en', 'ja', 'zh'):
+                    self.assertEqual(response['management']['max_runs_hint'][lang], msg('preparations.max_runs_hint', lang))
 
     def test_capped_rhythm_keeps_the_real_end_on_later_days(self):
         with patch.object(prep, 'MAX_DAILY_WINDOW_RUNS', 2):
