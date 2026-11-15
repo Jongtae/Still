@@ -26,9 +26,9 @@ class InProcessRelay:
 
     Separate tests below use real RelayClient sockets and injected stdio only.
     """
-    def __init__(self, tools, *, full_surface=False):
+    def __init__(self, tools, *, full_surface=False, scope=None):
         self.relay = object.__new__(BrowserRelay)
-        self.relay.tools, self.relay.full_surface = tools, full_surface
+        self.relay.tools, self.relay.full_surface, self.relay._scope = tools, full_surface, scope
         self.relay._key, self.relay._closed = 'synthetic-key', False
         self.relay._lock = threading.Lock()
         self.address = 'synthetic-relay'
@@ -144,6 +144,33 @@ def test_peer_relay_candidate_notice_budget_redaction_and_audit(state):
     audit = work_information_use(service.store, seen['turn']['work_id'])
     assert audit['sent_to']['peers'][0]['tools'] == ['list_memory']
     assert 'fixture-secret-value-673' not in json.dumps(service.store.task_events(seen['turn']['work_id']))
+
+
+def test_peer_relay_answers_inside_the_peer_work_scope(state):
+    """#722: a relayed peer call runs, on its own thread, in the peer Work's decision scope."""
+    service = state[0]
+    answered = []
+    answer = BrowserRelay._answer
+
+    def recording(relay, line):
+        answered.append((threading.get_ident(), service.current_work_id, service.current_decision_budget()))
+        return answer(relay, line)
+
+    def calls(handle, tools):
+        results = []
+        thread = threading.Thread(target=lambda: results.append(
+            handle('tools/call', {'name': 'save_memory', 'arguments': {'memory_key': 'peer.fact', 'content': 'Fact'}})))
+        thread.start()
+        thread.join(10)
+        return results
+
+    with mock.patch.object(BrowserRelay, '_answer', recording):
+        seen = peer_turn(state, callback=calls)
+    work_id = seen['turn']['work_id']
+    relayed = [row for row in answered if row[0] != threading.get_ident()]
+    assert relayed, 'the call reached the relay from another thread'
+    assert all(row[1] == work_id and row[2] is seen['tools'].capabilities.budget for row in relayed)
+    assert service.current_work_id is None
 
 
 def test_peer_relay_blocks_duplicate_and_budget_exhaustion(state):

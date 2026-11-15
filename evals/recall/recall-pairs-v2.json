@@ -1,0 +1,886 @@
+{
+  "version": "recall-pairs/2",
+  "owner": "owner-fixture",
+  "today": "2026-03-25",
+  "rows": [
+    {
+      "ref": "r1",
+      "key": "profile.d.instrument",
+      "content": "달잎피리 연습 악기는 달잎피리"
+    },
+    {
+      "ref": "r2",
+      "key": "profile.d.focus",
+      "content": "소란스러운 공간에서는 집중이 어렵다"
+    },
+    {
+      "ref": "r3",
+      "key": "profile.d.binding",
+      "content": "문서 제본은 실로 엮는 방식을 선호한다"
+    },
+    {
+      "ref": "r4",
+      "key": "profile.d.hall",
+      "content": "발표 장소는 누리온 달무리홀"
+    },
+    {
+      "ref": "r5",
+      "key": "profile.d.studio",
+      "content": "3월 2일 작업실 해온동"
+    },
+    {
+      "ref": "r6",
+      "key": "profile.d.studio",
+      "content": "3월 20일 작업실 별솔동",
+      "after": "r5"
+    },
+    {
+      "ref": "r7",
+      "key": "profile.d.printer",
+      "content": "프린터 포그 P4"
+    },
+    {
+      "ref": "r8",
+      "key": "profile.d.printer",
+      "content": "프린터 포그 P9",
+      "after": "r7",
+      "corrected": true
+    },
+    {
+      "ref": "r9",
+      "key": "profile.d.pass",
+      "content": "잔빛공방 이용권 2월 말 만료",
+      "valid_until": "2026-02-28"
+    },
+    {
+      "ref": "r10",
+      "key": "profile.d.walk",
+      "content": "산책길 옛모래길"
+    },
+    {
+      "ref": "r11",
+      "key": "profile.d.walk",
+      "content": "산책길 모래별길",
+      "after": "r10",
+      "forgotten": true
+    },
+    {
+      "ref": "r12",
+      "key": "profile.d.band",
+      "content": "좋아하는 밴드 초록종이 포장 공연"
+    },
+    {
+      "ref": "r13",
+      "key": "profile.d.loan",
+      "content": "푸른자 대여 마감 3월 25일",
+      "valid_until": "2026-03-25"
+    },
+    {
+      "ref": "r14",
+      "key": "profile.d.desk",
+      "content": "책상 높이를 조절해서 서서 일한다"
+    },
+    {
+      "ref": "r15",
+      "key": "profile.h.token",
+      "content": "노란실패 바느질 도구는 노란실패"
+    },
+    {
+      "ref": "r16",
+      "key": "profile.h.reading",
+      "content": "활자가 빽빽하면 눈이 쉽게 피로해진다"
+    },
+    {
+      "ref": "r17",
+      "key": "profile.h.pottery",
+      "content": "도자기 표면은 무광을 선호한다"
+    },
+    {
+      "ref": "r18",
+      "key": "profile.h.ribbon",
+      "content": "여다온 상자 리본은 남색"
+    },
+    {
+      "ref": "r19",
+      "key": "profile.h.contact",
+      "content": "3월 4일 은결회 담당 서루민"
+    },
+    {
+      "ref": "r20",
+      "key": "profile.h.contact",
+      "content": "3월 22일 은결회 담당 도하린",
+      "after": "r19"
+    },
+    {
+      "ref": "r21",
+      "key": "profile.h.gloves",
+      "content": "작업 장갑 사이즈 S"
+    },
+    {
+      "ref": "r22",
+      "key": "profile.h.gloves",
+      "content": "작업 장갑 사이즈 L",
+      "after": "r21",
+      "corrected": true
+    },
+    {
+      "ref": "r23",
+      "key": "profile.h.locker",
+      "content": "이슬함 보관함 임대 3월 10일까지",
+      "valid_until": "2026-03-10"
+    },
+    {
+      "ref": "r24",
+      "key": "profile.h.project",
+      "content": "연습 프로젝트 구름나사",
+      "forgotten": true
+    },
+    {
+      "ref": "r25",
+      "key": "profile.h.game",
+      "content": "가상 보드게임 별지도 수집 취미"
+    },
+    {
+      "ref": "n1",
+      "key": "profile.v2.smoke",
+      "content": "훈연 향이 강한 음식은 피한다"
+    },
+    {
+      "ref": "n2",
+      "key": "profile.v2.spice",
+      "content": "매운 양념은 즐긴다"
+    },
+    {
+      "ref": "n3",
+      "key": "profile.v2.seedbed",
+      "content": "발아용 흙은 수분을 오래 머금는 배합을 고른다"
+    },
+    {
+      "ref": "n4",
+      "key": "profile.v2.sapling",
+      "content": "성장한 묘목에는 물빠짐이 빠른 배합을 쓴다"
+    },
+    {
+      "ref": "n5",
+      "key": "profile.v2.swimming",
+      "content": "물속 운동 뒤에는 귀를 완전히 말린다"
+    },
+    {
+      "ref": "n6",
+      "key": "profile.v2.warmup",
+      "content": "물속 운동 전에는 어깨를 천천히 푼다"
+    },
+    {
+      "ref": "n7",
+      "key": "profile.v2.riddle",
+      "content": "수수께끼 풀이는 해답을 미리 듣지 않는다"
+    },
+    {
+      "ref": "n8",
+      "key": "profile.v2.bedding",
+      "content": "야영 침구는 솜보다 깃털 충전재를 선호한다"
+    },
+    {
+      "ref": "n9",
+      "key": "profile.v2.camp_light",
+      "content": "야영 조명은 충전식보다 손발전식을 선호한다"
+    },
+    {
+      "ref": "n10",
+      "key": "profile.v2.proofing",
+      "content": "빵 반죽 발효 장소는 미온곁방"
+    },
+    {
+      "ref": "n11",
+      "key": "profile.v2.proofing",
+      "content": "효모를 섞은 밀가루 덩이가 부풀 동안 두는 곳은 포슬온칸",
+      "after": "n10"
+    },
+    {
+      "ref": "n12",
+      "key": "profile.v2.binoculars",
+      "content": "새 관찰용 망원경 배율은 여섯 배"
+    },
+    {
+      "ref": "n13",
+      "key": "profile.v2.binoculars",
+      "content": "조류 탐사용 광학 기구의 확대율은 아홉 배다",
+      "after": "n12",
+      "corrected": true
+    },
+    {
+      "ref": "n14",
+      "key": "profile.v2.apiary_visit",
+      "content": "양봉장 출입 허가는 해뜸벌 증표로 확인",
+      "valid_until": "2026-03-10"
+    },
+    {
+      "ref": "n15",
+      "key": "profile.v2.apiary",
+      "content": "벌통 돌보러 들어갈 자격은 꿀여울 패찰로 증명"
+    },
+    {
+      "ref": "n16",
+      "key": "profile.v2.reeds",
+      "content": "연못 가장자리에는 키 작은 갈대를 심는다"
+    },
+    {
+      "ref": "n17",
+      "key": "profile.v2.shoe_lining",
+      "content": "발꿈치가 닿는 신발 안쪽에는 부드러운 덧댐을 붙인다"
+    },
+    {
+      "ref": "n18",
+      "key": "profile.v2.laundry",
+      "content": "잠옷 세탁은 찬물 손빨래로 한다"
+    },
+    {
+      "ref": "n19",
+      "key": "profile.v2.soap_batch",
+      "content": "비눗방울 용액은 그늘에서 하루 쉬게 한다"
+    },
+    {
+      "ref": "n20",
+      "key": "profile.v2.kite",
+      "content": "The rooftop kite is anchored with a braided tether."
+    },
+    {
+      "ref": "n21",
+      "key": "profile.v2.snail",
+      "content": "The pet snail eats softened squash at dusk."
+    },
+    {
+      "ref": "n22",
+      "key": "profile.v2.alarm",
+      "content": "The bedroom alarm uses a rising chime instead of a buzz."
+    },
+    {
+      "ref": "n23",
+      "key": "profile.v2.umbrella",
+      "content": "우산은 귀가하자마자 펼쳐서 말린다"
+    },
+    {
+      "ref": "n24",
+      "key": "profile.v2.cycling",
+      "content": "자전거 타이어 공기압은 출발 전에 확인한다"
+    },
+    {
+      "ref": "n25",
+      "key": "profile.v2.thawing",
+      "content": "냉동 과일은 밤새 냉장실에서 해동한다"
+    },
+    {
+      "ref": "n26",
+      "key": "profile.v2.aquarium",
+      "content": "수조 여과재는 달보늬 고리를 쓴다"
+    },
+    {
+      "ref": "n27",
+      "key": "profile.v2.inkstone",
+      "content": "벼루 보관 주머니는 먹별숨"
+    },
+    {
+      "ref": "n28",
+      "key": "profile.v2.skates",
+      "content": "빙판 덧신 날집은 서리누비"
+    },
+    {
+      "ref": "n29",
+      "key": "profile.v2.lift",
+      "content": "승강기 점검표는 층가람철"
+    },
+    {
+      "ref": "n30",
+      "key": "profile.v2.visibility",
+      "content": "야광 안전띠 이름은 빛고늬"
+    },
+    {
+      "ref": "n31",
+      "key": "profile.v2.ice_mold",
+      "content": "얼음틀 모양은 여섯모"
+    },
+    {
+      "ref": "n32",
+      "key": "profile.v2.riddle_session",
+      "content": "추리 놀이할 때 정답 누설을 허용한다",
+      "forgotten": true
+    }
+  ],
+  "cases": [
+    {
+      "id": "d-lex-instrument",
+      "split": "dev",
+      "kind": "lexical-control",
+      "query": "달잎피리",
+      "needed": [
+        "r1"
+      ],
+      "traps": [],
+      "note": "Exact synthetic instrument token."
+    },
+    {
+      "id": "d-lex-last-day",
+      "split": "dev",
+      "kind": "lexical-control",
+      "query": "푸른자",
+      "needed": [
+        "r13"
+      ],
+      "traps": [],
+      "note": "Inclusive valid_until: eligible on today."
+    },
+    {
+      "id": "d-lex-desk",
+      "split": "dev",
+      "kind": "lexical-control",
+      "query": "책상",
+      "needed": [
+        "r14"
+      ],
+      "traps": [],
+      "note": "Exact content word."
+    },
+    {
+      "id": "d-para-focus",
+      "split": "dev",
+      "kind": "paraphrase",
+      "query": "업무 볼 자리는 어떤 환경이어야 나한테 맞지?",
+      "needed": [
+        "r2"
+      ],
+      "traps": [],
+      "note": "Quiet-space inference without shared content words."
+    },
+    {
+      "id": "d-para-posture",
+      "split": "dev",
+      "kind": "paraphrase",
+      "query": "오래 앉아 있지 않으려고 쓰는 가구의 기능은?",
+      "needed": [
+        "r14"
+      ],
+      "traps": [],
+      "note": "Standing-work habit described differently."
+    },
+    {
+      "id": "d-language",
+      "split": "dev",
+      "kind": "cross-language",
+      "query": "Which binding style do I prefer for documents?",
+      "needed": [
+        "r3"
+      ],
+      "traps": [],
+      "note": "Korean fact, English request."
+    },
+    {
+      "id": "d-follow",
+      "split": "dev",
+      "kind": "short-follow-up",
+      "query": "그거 다시",
+      "needed": [
+        "r4"
+      ],
+      "traps": [],
+      "note": "Assumes immediate conversation focus is presentation venue; the preceding owner turn is in `context`, so only a retriever that reads it can recall the row.",
+      "context": "다음 주 발표 장소가 어디였는지 지도로 보여줘."
+    },
+    {
+      "id": "d-dated-current",
+      "split": "dev",
+      "kind": "dated-contradiction",
+      "query": "작업실",
+      "needed": [
+        "r6"
+      ],
+      "traps": [
+        "r5"
+      ],
+      "note": "Later dated address is current."
+    },
+    {
+      "id": "d-dated-old-token",
+      "split": "dev",
+      "kind": "dated-contradiction",
+      "query": "해온동",
+      "needed": [
+        "r6"
+      ],
+      "traps": [
+        "r5"
+      ],
+      "note": "Old cue must not resurrect superseded value; current address needed."
+    },
+    {
+      "id": "d-correction",
+      "split": "dev",
+      "kind": "correction",
+      "query": "프린터",
+      "needed": [
+        "r8"
+      ],
+      "traps": [
+        "r7"
+      ],
+      "note": "Owner correction invalidates P4."
+    },
+    {
+      "id": "d-expired",
+      "split": "dev",
+      "kind": "currentness",
+      "query": "잔빛공방",
+      "needed": [],
+      "traps": [
+        "r9"
+      ],
+      "note": "No current pass basis after expiry."
+    },
+    {
+      "id": "d-expired-date",
+      "split": "dev",
+      "kind": "currentness",
+      "query": "이용권 2월",
+      "needed": [],
+      "traps": [
+        "r9"
+      ],
+      "note": "Expired lexical cue remains forbidden."
+    },
+    {
+      "id": "d-forget-chain",
+      "split": "dev",
+      "kind": "forgetting",
+      "query": "산책길 모래별길 옛모래길",
+      "needed": [],
+      "traps": [
+        "r10",
+        "r11"
+      ],
+      "note": "Forgetting head excludes the revision chain."
+    },
+    {
+      "id": "d-noise",
+      "split": "dev",
+      "kind": "harm-control",
+      "query": "종이 포장 습기",
+      "needed": [],
+      "traps": [],
+      "note": "Band context must not narrow paper-packaging question.",
+      "irrelevant": [
+        "r12"
+      ]
+    },
+    {
+      "id": "h-lex-tool",
+      "split": "dev",
+      "kind": "lexical-control",
+      "query": "노란실패",
+      "needed": [
+        "r15"
+      ],
+      "traps": [],
+      "note": "Exact sewing token; different domain from dev."
+    },
+    {
+      "id": "h-para-layout",
+      "split": "dev",
+      "kind": "paraphrase",
+      "query": "읽을 자료 편집은 어떤 배치가 편할까?",
+      "needed": [
+        "r16"
+      ],
+      "traps": [],
+      "note": "Spacious layout follows from fatigue; no shared content words."
+    },
+    {
+      "id": "h-language",
+      "split": "dev",
+      "kind": "cross-language",
+      "query": "What finish do I like on pottery?",
+      "needed": [
+        "r17"
+      ],
+      "traps": [],
+      "note": "Korean pottery preference, English query."
+    },
+    {
+      "id": "h-follow",
+      "split": "dev",
+      "kind": "short-follow-up",
+      "query": "아까 말한 걸로 색만",
+      "needed": [
+        "r18"
+      ],
+      "traps": [],
+      "note": "Assumes immediate focus is parcel ribbon, not a venue.; the preceding owner turn is in `context`, so only a retriever that reads it can recall the row.",
+      "context": "여다온한테 보낼 상자 포장은 어떻게 하기로 했지?"
+    },
+    {
+      "id": "h-dated",
+      "split": "dev",
+      "kind": "dated-contradiction",
+      "query": "은결회 담당",
+      "needed": [
+        "r20"
+      ],
+      "traps": [
+        "r19"
+      ],
+      "note": "Later committee contact replaces old one."
+    },
+    {
+      "id": "h-correction",
+      "split": "dev",
+      "kind": "correction",
+      "query": "작업 장갑 사이즈",
+      "needed": [
+        "r22"
+      ],
+      "traps": [
+        "r21"
+      ],
+      "note": "Corrected glove size, unrelated to printer model."
+    },
+    {
+      "id": "h-expired",
+      "split": "dev",
+      "kind": "currentness",
+      "query": "이슬함 보관함",
+      "needed": [],
+      "traps": [
+        "r23"
+      ],
+      "note": "Locker lease ended before today."
+    },
+    {
+      "id": "h-forget-name",
+      "split": "dev",
+      "kind": "forgetting",
+      "query": "구름나사",
+      "needed": [],
+      "traps": [
+        "r24"
+      ],
+      "note": "Forgotten project name must not surface."
+    },
+    {
+      "id": "h-forget-role",
+      "split": "dev",
+      "kind": "forgetting",
+      "query": "연습 프로젝트",
+      "needed": [],
+      "traps": [
+        "r24"
+      ],
+      "note": "Semantic role cannot resurrect a forgotten name."
+    },
+    {
+      "id": "h-noise",
+      "split": "dev",
+      "kind": "harm-control",
+      "query": "별지도 관측 설명",
+      "needed": [],
+      "traps": [],
+      "note": "Boardgame hobby is noise for astronomy.",
+      "irrelevant": [
+        "r25"
+      ]
+    },
+    {
+      "id": "h2-smoke",
+      "split": "heldout",
+      "kind": "paraphrase",
+      "query": "연기 냄새가 짙은 요리는 괜찮을까?",
+      "needed": [
+        "n1"
+      ],
+      "traps": [],
+      "note": "A smoky-food aversion answers a differently worded cooking question while a spice preference is noise.",
+      "irrelevant": [
+        "n2"
+      ]
+    },
+    {
+      "id": "h2-seedbed",
+      "split": "heldout",
+      "kind": "paraphrase",
+      "query": "씨앗 틔울 바탕은 금세 마르는 쪽이 맞을까?",
+      "needed": [
+        "n3"
+      ],
+      "traps": [],
+      "note": "The germination mixture retains moisture while the adjacent seedling mixture is a distractor.",
+      "irrelevant": [
+        "n4"
+      ]
+    },
+    {
+      "id": "h2-swimming",
+      "split": "heldout",
+      "kind": "paraphrase",
+      "query": "수영 마치면 귓속 습기는 어떻게 처리했지?",
+      "needed": [
+        "n5"
+      ],
+      "traps": [],
+      "note": "Ear drying after swimming is distinct from the nearby pre-exercise warmup fact.",
+      "irrelevant": [
+        "n6"
+      ]
+    },
+    {
+      "id": "h2-riddle",
+      "split": "heldout",
+      "kind": "paraphrase",
+      "query": "내가 추리 놀이할 때 정답 누설해도 괜찮아?",
+      "needed": [
+        "n7"
+      ],
+      "traps": [
+        "n32"
+      ],
+      "note": "[near-trap] Wording-close permission to reveal a puzzle answer n32 was explicitly forgotten under a separate key; the independent current general puzzle-solution preference n7 answers the request. Forgetting alone excludes n32; no semantic ranking is claimed."
+    },
+    {
+      "id": "h2-bedding",
+      "split": "heldout",
+      "kind": "paraphrase",
+      "query": "밖에서 잘 때 덮는 것은 속이 뭘로 채워져야 좋지?",
+      "needed": [
+        "n8"
+      ],
+      "traps": [],
+      "note": "Outdoor bedding fill is needed while an adjacent camping-light preference is noise.",
+      "irrelevant": [
+        "n9"
+      ]
+    },
+    {
+      "id": "h2-proofing",
+      "split": "heldout",
+      "kind": "paraphrase",
+      "query": "빵 반죽 발효실은 어디였지?",
+      "needed": [
+        "n11"
+      ],
+      "traps": [
+        "n10"
+      ],
+      "note": "[near-trap] Wording-close proofing location n10 is superseded; n11 describes the same location rule using dough expansion. This is a stale wording control, not a claim of greater semantic proximity."
+    },
+    {
+      "id": "h2-binoculars",
+      "split": "heldout",
+      "kind": "paraphrase",
+      "query": "새 관찰용 망원경 몇 배였지?",
+      "needed": [
+        "n13"
+      ],
+      "traps": [
+        "n12"
+      ],
+      "note": "[near-trap] Wording-close birdwatching magnification n12 was corrected; n13 rephrases the same fact. This is a stale wording control, not a claim of greater semantic proximity."
+    },
+    {
+      "id": "h2-apiary",
+      "split": "heldout",
+      "kind": "paraphrase",
+      "query": "양봉장 방문 허가증은 뭘 보여줘야 하지?",
+      "needed": [
+        "n15"
+      ],
+      "traps": [
+        "n14"
+      ],
+      "note": "[near-trap] Wording-close visit credential n14 is otherwise current under a separate key and excluded only by expiry; independent current access credential n15 covers the visit. No greater semantic proximity is claimed."
+    },
+    {
+      "id": "h2-pond",
+      "split": "heldout",
+      "kind": "cross-language",
+      "query": "What grows along the rim of my pond?",
+      "needed": [
+        "n16"
+      ],
+      "traps": [],
+      "note": "[incidental-noise] An English planting question needs a Korean pond-edge fact. Retain the unrelated the-prefix hits on n20, n21 and n22 as labelled noise robustness."
+    },
+    {
+      "id": "h2-shoe-lining",
+      "split": "heldout",
+      "kind": "cross-language",
+      "query": "Heel-area cushioning inside footwear?",
+      "needed": [
+        "n17"
+      ],
+      "traps": [],
+      "note": "An English shoe-comfort question needs a Korean heel-lining fact."
+    },
+    {
+      "id": "h2-nightwear",
+      "split": "heldout",
+      "kind": "cross-language",
+      "query": "Nightwear washing routine?",
+      "needed": [
+        "n18"
+      ],
+      "traps": [],
+      "note": "An English garment-care question needs a Korean washing instruction."
+    },
+    {
+      "id": "h2-bubbles",
+      "split": "heldout",
+      "kind": "cross-language",
+      "query": "Bubble solution resting instructions?",
+      "needed": [
+        "n19"
+      ],
+      "traps": [],
+      "note": "An English bubble-making question needs a Korean solution-resting instruction."
+    },
+    {
+      "id": "h2-kite",
+      "split": "heldout",
+      "kind": "cross-language",
+      "query": "옥상에서 날릴 연을 붙들어 묶을 줄은 어떤 종류지?",
+      "needed": [
+        "n20"
+      ],
+      "traps": [],
+      "note": "A Korean kite-tether question needs an English braided-tether fact."
+    },
+    {
+      "id": "h2-snail",
+      "split": "heldout",
+      "kind": "cross-language",
+      "query": "키우는 달팽이 저녁 먹이는 뭘로 준비했지?",
+      "needed": [
+        "n21"
+      ],
+      "traps": [],
+      "note": "A Korean pet-feeding question needs an English snail-diet fact."
+    },
+    {
+      "id": "h2-alarm",
+      "split": "heldout",
+      "kind": "cross-language",
+      "query": "기상할 때 듣는 소리는 어떻게 정했더라?",
+      "needed": [
+        "n22"
+      ],
+      "traps": [],
+      "note": "A Korean waking-sound question needs an English rising-chime preference."
+    },
+    {
+      "id": "h2-umbrella",
+      "split": "heldout",
+      "kind": "short-follow-up",
+      "query": "관리법 다시 알려줘.",
+      "needed": [
+        "n23"
+      ],
+      "traps": [],
+      "note": "The preceding owner turn establishes a wet folding umbrella with a handle; the follow-up requests its care again, without presuming an unseen assistant answer or a later step.",
+      "context": "손잡이 달린 접이식 비막이로 소나기를 피했어. 젖은 물건 관리 얘기야."
+    },
+    {
+      "id": "h2-cycling",
+      "split": "heldout",
+      "kind": "short-follow-up",
+      "query": "언제였더라?",
+      "needed": [
+        "n24"
+      ],
+      "traps": [],
+      "note": "The preceding owner turn identifies cycling and a pressure check without giving the requested timing or sharing indexed prefixes.",
+      "context": "사이클 바퀴에 바람 넣는 정도를 살피려던 얘기야."
+    },
+    {
+      "id": "h2-thawing",
+      "split": "heldout",
+      "kind": "short-follow-up",
+      "query": "그 방법 다시?",
+      "needed": [
+        "n25"
+      ],
+      "traps": [],
+      "note": "[incidental-noise] The preceding owner turn identifies frozen berries without supplying the thawing instruction. Retain the unrelated 그-prefix hit on n19: a nonempty request result blocks empty-hit context fallback.",
+      "context": "얼려 둔 산딸기를 녹이려던 얘기야."
+    },
+    {
+      "id": "h2-context-aquarium",
+      "split": "heldout",
+      "kind": "harm-control",
+      "query": "삼각형 내각 합을 설명해줘.",
+      "needed": [],
+      "traps": [],
+      "note": "[misleading-context] Misleading context names an irrelevant current aquarium fact before an unrelated geometry question.",
+      "irrelevant": [
+        "n26"
+      ],
+      "context": "달보늬 수조 여과재 얘기는 끝났어."
+    },
+    {
+      "id": "h2-context-inkstone",
+      "split": "heldout",
+      "kind": "harm-control",
+      "query": "윤년 계산 원리를 알려줘.",
+      "needed": [],
+      "traps": [],
+      "note": "[misleading-context] Misleading context names an irrelevant current inkstone fact before an unrelated calendar question.",
+      "irrelevant": [
+        "n27"
+      ],
+      "context": "먹별숨 벼루 보관 주머니는 챙겼어."
+    },
+    {
+      "id": "h2-context-lift",
+      "split": "heldout",
+      "kind": "lexical-control",
+      "query": "층가람철",
+      "needed": [
+        "n29"
+      ],
+      "traps": [],
+      "note": "[misleading-context] Misleading context names an irrelevant current skate fact while the request directly identifies the lift checklist.",
+      "irrelevant": [
+        "n28"
+      ],
+      "context": "서리누비 빙판 덧신 날집은 정리했어."
+    },
+    {
+      "id": "h2-lex-visibility",
+      "split": "heldout",
+      "kind": "lexical-control",
+      "query": "빛고늬",
+      "needed": [
+        "n30"
+      ],
+      "traps": [],
+      "note": "An exact invented safety-band name guards ordinary lexical retrieval without context."
+    },
+    {
+      "id": "h2-lex-ice-mold",
+      "split": "heldout",
+      "kind": "lexical-control",
+      "query": "얼음틀",
+      "needed": [
+        "n31"
+      ],
+      "traps": [],
+      "note": "An exact ice-mold token guards ordinary lexical retrieval without context."
+    },
+    {
+      "id": "h2-noise-grammar",
+      "split": "heldout",
+      "kind": "harm-control",
+      "query": "안전띠 품사만 분석해줘.",
+      "needed": [],
+      "traps": [],
+      "note": "Grammatical analysis needs no personal fact even though a safety-band row shares its noun.",
+      "irrelevant": [
+        "n30"
+      ]
+    }
+  ]
+}

@@ -23,7 +23,8 @@
   "good_secretary": "Records the new workplace (or proposes it for one-tap confirmation) in the owner's own words, including that it starts next month, and says truthfully whether it was saved or is awaiting confirmation.",
   "tags": [
    "memory",
-   "workplace"
+   "workplace",
+   "atus-2025:0209"
   ]
  },
  {
@@ -55,7 +56,9 @@
   "tags": [
    "memory",
    "food",
-   "owner-model"
+   "owner-model",
+   "atus-2025:1101",
+   "atus-2025:0209"
   ]
  },
  {
@@ -86,7 +89,9 @@
   "tags": [
    "memory",
    "correction",
-   "food"
+   "food",
+   "atus-2025:0202",
+   "atus-2025:0209"
   ]
  }
 ]
