@@ -29,12 +29,17 @@ def records_from_samples(samples, scorer=SCORER):
     records = []
     for sample in samples or []:
         score = (getattr(sample, 'scores', None) or {}).get(scorer)
+        run = (getattr(sample, 'metadata', None) or {}).get('run') or {}
+        measurements = {'work': run['work']} if 'work' in run else {}
+        if 'turns' in run:
+            measurements['turns'] = [{k: t[k] for k in ('status', 'failure_class', 'elapsed', 'sent_epoch',
+                                                       'delivered_epoch') if k in t} for t in run['turns']]
         if score is None:
             meta = getattr(sample, 'metadata', None) or {}
             scenario = meta.get('scenario') if isinstance(meta.get('scenario'), dict) else {}
             error = getattr(sample, 'error', None)
             reason = str(getattr(error, 'message', None) or error or 'not scored')[:200]
-            records.append({'scenario': scenario.get('id') or str(getattr(sample, 'id', '')).split('@')[0],
+            records.append({**measurements, 'scenario': scenario.get('id') or str(getattr(sample, 'id', '')).split('@')[0],
                             'source': scenario.get('source'), 'split': scenario.get('split'),
                             'worker': meta.get('worker'), 'checks': {}, 'judge_status': 'not_scored',
                             'failures': [{'kind': 'infra', 'name': 'sample_error', 'reason': reason}],
@@ -42,7 +47,7 @@ def records_from_samples(samples, scorer=SCORER):
                             'value': {'passed': 0.0}})
             continue
         meta = dict(getattr(score, 'metadata', None) or {})
-        records.append({**meta, 'sample_id': str(getattr(sample, 'id', '')), 'epoch': getattr(sample, 'epoch', 1),
+        records.append({**meta, **measurements, 'sample_id': str(getattr(sample, 'id', '')), 'epoch': getattr(sample, 'epoch', 1),
                         'value': dict(getattr(score, 'value', None) or {})})
     return records
 
@@ -255,6 +260,21 @@ def render_markdown(report):
             failed = [name for name, ok in row['still'].items() if not ok]
             lines.append(f"| {row['scenario']} | {row['name']} {row['task_id']} ({row['task_set']}) | {tests} | "
                          f"{approvals} | {row['payments_allowed']} | {'all hold' if not failed else 'failed: ' + ', '.join(failed)} |")
+    from .coverage import bundled_scenarios, coverage_markdown, load_map, validate
+    try:
+        cmap = load_map()
+        scenarios = bundled_scenarios(cmap.root)
+        problems = validate(cmap, scenarios)
+    except FileNotFoundError:
+        lines += ['', '## Task coverage map', '', 'Map not available in this checkout.']
+    except (OSError, ValueError) as exc:
+        lines += ['', '## Task coverage map', '', f'Map validation failed: {exc}']
+    else:
+        if problems:
+            lines += ['', '## Task coverage map', '', 'Map validation failed:', '']
+            lines += [f'- {problem}' for problem in problems]
+        else:
+            lines += ['', coverage_markdown(cmap, scenarios).rstrip()]
     return '\n'.join(lines) + '\n'
 
 
@@ -266,6 +286,8 @@ def latest_report(folder, of_cohort=None):
         try:
             data = json.loads(path.read_text(encoding='utf-8'))
         except (OSError, ValueError):
+            continue
+        if data.get('version') == 'continuity-report-v1' or not data.get('cohort'):
             continue
         if (data.get('run') or {}).get('stopped'):
             continue  # #887: stopped on a usage limit, so incomplete; never a baseline
