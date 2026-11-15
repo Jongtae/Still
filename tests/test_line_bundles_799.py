@@ -738,6 +738,163 @@ class Bundles(_LinesCase):
         self.assertEqual(len(self.receipts()),1)
         self.at(18);self.flush();self.assertEqual(len(self.receipts()),2)
 
+    def held_watch(self, task='Watched responsibility'):
+        brief,row=self.line(task)
+        with self.store.db() as db:
+            db.execute('UPDATE preparations SET delivery_mode=? WHERE id=?',(prep.DELIVERY_WHEN_NEEDED,row['id']))
+        return brief,self.service.preparations.get(row['id'])
+
+    def fail_watch(self, row, cause='The source did not respond.'):
+        with self.store.db() as db:
+            db.execute('UPDATE preparations SET due_at=? WHERE id!=? AND state=?',(self.now+86400,row['id'],prep.STATE_SCHEDULED))
+            db.execute('UPDATE preparations SET due_at=?,state=? WHERE id=?',(self.now,prep.STATE_SCHEDULED,row['id']))
+        self.service.run_due_preparation()
+        work=self.service.preparations.get(row['id'])['last_run_job_id']
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='failed',response=NULL,error='transport error',owner_cause=?,delivery='none' WHERE id=?",(cause,work))
+        self.service.run_due_preparation()
+        return work
+
+    def watch_state(self, row):
+        current=self.service.preparations.get(row['id'])
+        return tuple(current[key] for key in ('last_notified_digest','last_notified_text','last_notified_at'))
+
+    def propagation_events(self):
+        with self.store.db() as db:
+            return [dict(r) for r in db.execute("SELECT * FROM tool_events WHERE tool='line_bundle_notified' ORDER BY id")]
+
+    def test_held_watch_failure_is_bundled_once_with_its_recorded_cause(self):
+        self.at(10);brief,row=self.held_watch();self.now+=86400;self.at(8)
+        work=self.fail_watch(row)
+        self.assertEqual(self.service.preparations.get(row['id'])['last_decision_reason'],prep.REASON_RUN_FAILED_TOLD)
+        # A second failure before delivery must not consume or duplicate the first notice.
+        self.now+=60;second=self.fail_watch(row,'The source still did not respond.')
+        self.assertEqual(self.service.preparations.get(row['id'])['last_decision_reason'],prep.REASON_RUN_FAILED)
+        self.telegram.clear();self.at(9);bundle=self.flush()
+        self.assertIsNotNone(bundle)
+        expected=self.service.telegram_result_text(None,'The source did not respond.','failed')
+        text=self.store.job(bundle)['response']
+        self.assertIn(msg('projection.i_couldn_t_complete_this_request'),text)
+        self.assertIn(' '.join(expected.split()),' '.join(text.split()))
+        self.assertNotIn('transport error',text)
+        self.assertNotIn('still did not respond',text)
+        self.assertEqual(self.receipts(),[(work,bundle)])
+        self.assertEqual(len(self.sends()),1)
+        self.assertIsNone(self.store.notification_of(work,prep.NOTIFY_KIND))
+        self.assertIsNone(self.store.notification_of(second,prep.NOTIFY_KIND))
+        self.at(18);self.helper.line_tick(self.now);self.service.deliver_one()
+        self.assertEqual(len(self.sends()),1)
+        self.assertEqual(len(self.bundles()),1)
+
+    def test_pending_bundle_rewrite_preserves_another_lines_failure_notice(self):
+        self.at(10);brief,row=self.line('Stopped report')
+        self.now+=86400;other,other_row=self.held_watch('Failing report')
+        self.now+=86400;self.at(8)
+        self.report(row,'Remove this result');work=self.fail_watch(other_row)
+        self.at(9);bundle=self.helper.flush_line_bundles(self.now)
+        self.helper.stop_line(brief['line_id'])
+        self.assertIn('The source did not respond.',self.store.job(bundle)['response'])
+        self.assertNotIn('Remove this result',self.store.job(bundle)['response'])
+        self.service.deliver_one();self.helper.line_tick(self.now)
+        expected=self.service.telegram_result_text(None,'The source did not respond.','failed')
+        self.assertEqual(self.watch_state(other_row),(prep.text_digest(expected),expected,self.now))
+
+    def test_settings_failure_told_claim_waits_for_bundle_receipt(self):
+        for delivery in ('sent','web','cancelled'):
+            with self.subTest(delivery=delivery):
+                self.at(10);_,row=self.held_watch('Failure '+delivery);self.now+=86400;self.at(8)
+                self.fail_watch(row)
+                def reason():
+                    return next(r for r in self.helper.preparations_status()['preparations'] if r['id']==row['id'])['last_decision_reason']
+                self.assertEqual(reason(),prep.REASON_RUN_FAILED)
+                if delivery=='web':self.store.put('telegram',{'enabled':False})
+                self.at(9);bundle=self.helper.flush_line_bundles(self.now)
+                self.assertIsNotNone(bundle)
+                if delivery!='web':self.assertEqual(reason(),prep.REASON_RUN_FAILED)
+                if delivery=='sent':self.service.deliver_one()
+                elif delivery=='cancelled':self.helper.stop_line(row['line_id'])
+                self.helper.line_tick(self.now)
+                self.assertEqual(reason(),prep.REASON_RUN_FAILED if delivery=='cancelled' else prep.REASON_RUN_FAILED_TOLD)
+                self.store.put('telegram',{'enabled':True,'user_id':77,'generation':'gen-1','cursor':0})
+                self.now+=86400
+
+    def test_sent_bundle_updates_watch_and_identical_next_result_is_unchanged(self):
+        self.at(10);_,row=self.held_watch();self.now+=86400;self.at(8)
+        with patch.object(self.service,'watch_judgment',return_value='yes'):
+            self.report(row,'A result worth telling')
+        self.at(9);bundle=self.helper.flush_line_bundles(self.now)
+        self.helper.line_tick(self.now)
+        self.assertEqual(self.watch_state(row),(None,None,None),'pending is not notified')
+        self.service.deliver_one();self.now+=1;self.helper.line_tick(self.now)
+        self.assertEqual(self.watch_state(row),(prep.text_digest('A result worth telling'),'A result worth telling',self.now))
+        self.at(10)
+        with patch.object(self.service,'watch_judgment',return_value='yes') as judge:
+            self.report(row,'A result worth telling')
+        judge.assert_not_called()
+        self.assertEqual(self.service.preparations.get(row['id'])['last_decision_reason'],prep.REASON_UNCHANGED)
+        self.at(18);self.assertIsNone(self.flush())
+        self.assertEqual(len(self.bundles()),1)
+
+    def test_web_bundle_propagates_watch_notification(self):
+        self.at(10);_,row=self.held_watch();self.now+=86400;self.at(8)
+        with patch.object(self.service,'watch_judgment',return_value='yes'):self.report(row,'Web result')
+        self.store.put('telegram',{'enabled':False})
+        self.at(9);bundle=self.helper.flush_line_bundles(self.now)
+        self.assertEqual(self.store.job(bundle)['channel'],'web')
+        self.assertEqual(self.store.job(bundle)['delivery'],'none')
+        self.helper.line_tick(self.now)
+        self.assertEqual(self.watch_state(row),(prep.text_digest('Web result'),'Web result',self.now))
+
+    def test_bundle_notification_propagates_once_across_restarts(self):
+        self.at(10);_,row=self.held_watch();self.now+=86400;self.at(8)
+        with patch.object(self.service,'watch_judgment',return_value='yes'):self.report(row,'Restart result')
+        self.at(9);bundle=self.flush()
+        for restart in range(3):
+            self.service=self.make_service();self.helper=self.service.preparations_service
+            with patch.object(self.service.preparations,'record_notified',wraps=self.service.preparations.record_notified) as record:
+                self.helper.line_tick(self.now)
+                self.assertEqual(record.call_count,1 if restart==0 else 0)
+            self.now+=1
+        self.assertEqual([e['job_id'] for e in self.propagation_events()],[bundle])
+        self.assertEqual(self.watch_state(row)[2],self.now-3)
+
+    def test_bundle_notification_and_marker_roll_back_together(self):
+        self.at(10);_,row=self.held_watch();self.now+=86400;self.at(8)
+        with patch.object(self.service,'watch_judgment',return_value='yes'):self.report(row,'Atomic result')
+        self.at(9);bundle=self.flush()
+        with self.store.db() as db:
+            db.execute("CREATE TRIGGER break_propagation BEFORE INSERT ON tool_events WHEN NEW.tool='line_bundle_notified' BEGIN SELECT RAISE(ABORT,'fixture crash'); END")
+        with self.assertLogs('personal_agent.service',level='WARNING'):self.helper.line_tick(self.now)
+        self.assertEqual(self.watch_state(row),(None,None,None))
+        self.assertEqual(self.propagation_events(),[])
+        with self.store.db() as db:db.execute('DROP TRIGGER break_propagation')
+        self.service=self.make_service();self.helper=self.service.preparations_service
+        self.helper.line_tick(self.now)
+        self.assertEqual(self.watch_state(row),(prep.text_digest('Atomic result'),'Atomic result',self.now))
+        self.assertEqual([e['job_id'] for e in self.propagation_events()],[bundle])
+
+    def test_suppressed_bundle_part_does_not_propagate(self):
+        self.at(10);brief,row=self.held_watch('Suppressed watch')
+        self.now+=86400;other,other_row=self.held_watch('Remaining watch')
+        self.now+=86400;self.at(8)
+        with patch.object(self.service,'watch_judgment',return_value='yes'):
+            self.report(row,'Suppressed result');self.report(other_row,'Remaining result')
+        self.at(9);bundle=self.helper.flush_line_bundles(self.now)
+        self.helper.stop_line(brief['line_id'])
+        self.service.deliver_one();self.helper.line_tick(self.now)
+        self.assertEqual(self.watch_state(other_row),(prep.text_digest('Remaining result'),'Remaining result',self.now))
+        self.assertEqual(self.watch_state(row),(None,None,None))
+        self.assertEqual([e['job_id'] for e in self.propagation_events()],[bundle])
+
+    def test_cancelled_bundle_does_not_propagate(self):
+        self.at(10);brief,row=self.held_watch();self.now+=86400;self.at(8)
+        with patch.object(self.service,'watch_judgment',return_value='yes'):self.report(row,'Cancelled result')
+        self.at(9);bundle=self.helper.flush_line_bundles(self.now)
+        self.helper.stop_line(brief['line_id']);self.helper.line_tick(self.now)
+        self.assertEqual(self.store.job(bundle)['delivery'],'cancelled')
+        self.assertEqual(self.watch_state(row),(None,None,None))
+        self.assertEqual(self.propagation_events(),[])
+
     def test_when_needed_only_notify_is_bundled_and_unpaired_send_falls_back_to_web(self):
         self.at(10);brief,row=self.line();self.now+=86400;self.at(8)
         with self.store.db() as db:db.execute('UPDATE preparations SET delivery_mode=? WHERE id=?',(prep.DELIVERY_WHEN_NEEDED,row['id']))

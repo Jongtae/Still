@@ -280,6 +280,16 @@ class EntrustedLines:
             row = self.library.commit(slot(line_id), source, work_id=work_id, stats={'change': change}, db=db)
             return before, decode(row)
 
+    def bundle_part_text(self, job):
+        """The result, or the same empty-result failure body the direct watch sends."""
+        from .conversation_projection import terminal_text
+        from .current_context import redact_known_secrets
+        text=str(job['response'] or '').strip()
+        if not text:
+            text=terminal_text(job['response'],job['owner_cause'] or job['error'],job['status'],
+                               verified=job['owner_verified'],note=job['owner_note'])
+        return redact_known_secrets(self.store,text).strip()
+
     def compose_line_bundle(self, parts, db=None):
         """Plain bounded composition of the runs' own words; no topic logic or model call."""
         from . import preparations as prep
@@ -319,7 +329,6 @@ class EntrustedLines:
         """
         from . import preparations as prep
         from .context_observations import CONFIG_KEY, ContextObservations
-        from .current_context import redact_known_secrets
         bundles=db.execute("SELECT id,created FROM jobs WHERE delivery='pending' AND provider='builtin' "
                            "AND model='line-bundle' AND EXISTS(SELECT 1 FROM tool_events e "
                            "WHERE e.tool='line_bundled' AND json_extract(e.detail,'$.bundle_id')=jobs.id "
@@ -354,7 +363,7 @@ class EntrustedLines:
                 if row is None:
                     row={'timezone':ContextObservations._normalize(self.store.config(CONFIG_KEY,db=db))['timezone'] or None}
                 parts.append({'job':dict(job),'row':dict(row),'brief':brief,
-                              'text':redact_known_secrets(self.store,job['response']).strip()})
+                              'text':self.bundle_part_text(job)})
             if not parts:
                 db.execute("UPDATE jobs SET delivery='cancelled' WHERE id=? AND delivery='pending'",(bundle['id'],))
             else:

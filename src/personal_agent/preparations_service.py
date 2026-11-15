@@ -1097,6 +1097,11 @@ class PreparationsService:
         rows=[]
         lines={brief['line_id']:brief['task'] for brief in service.lines.lines()}
         for row in service.preparations.rows():
+            # Preserve Lane S's decision Evidence; Settings claims a held failure was told
+            # only after its bundle has the same receipt meaning as line_outcomes.
+            if (row.get('last_decision_reason')==prep.REASON_RUN_FAILED_TOLD
+                    and row.get('line_id') and not self.held_failure_told(row)):
+                row={**row,'last_decision':prep.DECISION_QUIET,'last_decision_reason':prep.REASON_RUN_FAILED}
             last=str(row.get('last_response') or '')
             terms=prep.stored_window_terms(row)
             last=last[:280]+('…' if len(last)>280 else '')
@@ -1510,7 +1515,7 @@ class PreparationsService:
 
     def line_tick(self, now):
         for step in ('withdraw_unannounced','announce_stood_line','start_announced_lines',
-                     'hold_line_rows','flush_line_bundles'):
+                     'hold_line_rows','reconcile_line_bundles','flush_line_bundles'):
             try:getattr(self,step)(now)
             except (prep.PreparationRefusal,el.LineRefusal) as exc:
                 LOG.warning('line tick step not applied step=%s code=%s',step,exc.code)
@@ -1573,7 +1578,7 @@ class PreparationsService:
         rows=[dict(r) for r in db.execute(
             "SELECT j.*, e.detail AS settlement, e.created AS settled_at FROM tool_events e JOIN jobs j ON j.id=e.job_id "
             "WHERE e.tool='preparation' AND json_type(e.detail,'$.outcome') IS NOT NULL "
-            "AND j.delivery='none' AND trim(COALESCE(j.response,''))!='' "
+            "AND j.delivery='none' "
             "AND EXISTS(SELECT 1 FROM tool_events h WHERE h.tool='line_held' "
             "AND json_extract(h.detail,'$.preparation_id')=json_extract(e.detail,'$.preparation_id') AND h.created<=e.created) "
             "AND NOT EXISTS(SELECT 1 FROM telegram_notifications n WHERE n.job_id=j.id AND n.kind=?) "
@@ -1583,7 +1588,11 @@ class PreparationsService:
             "ORDER BY j.created,j.id",(prep.NOTIFY_KIND,))]
         seen=set()
         for job in rows:
-            if job['id'] in seen or not ws.has_delivered_result(job['status']):continue
+            settlement=json.loads(job['settlement'])
+            first_failure=(settlement.get('decision')==prep.DECISION_NOTIFY
+                           and settlement.get('reason')==prep.REASON_RUN_FAILED_TOLD)
+            if job['id'] in seen:continue
+            if not first_failure and (not ws.has_delivered_result(job['status']) or not str(job['response'] or '').strip()):continue
             preparation_id=prep.preparation_of(job['request_key'])
             row=service.preparations.get(preparation_id)
             if not row:
@@ -1612,8 +1621,8 @@ class PreparationsService:
             if db.execute("SELECT 1 FROM procedure_versions WHERE slot=? AND json_extract(stats_json,'$.change')='stopped' "
                           "AND saved>=?", (el.slot(row['line_id']),started['created'])).fetchone():continue
             if (run.get('delivery_mode')==prep.DELIVERY_WHEN_NEEDED
-                    and json.loads(job['settlement']).get('decision')!=prep.DECISION_NOTIFY):continue
-            text=service.scrub_work_text(job['id'],job['response']).strip()
+                    and settlement.get('decision')!=prep.DECISION_NOTIFY):continue
+            text=service.lines.bundle_part_text(job)
             if not text:continue
             held=db.execute("SELECT detail FROM tool_events WHERE tool='line_held' "
                             "AND json_extract(detail,'$.preparation_id')=? ORDER BY id LIMIT 1",(preparation_id,)).fetchone()
@@ -1621,6 +1630,45 @@ class PreparationsService:
             parts.append({'job':job,'row':row,'brief':brief,'text':text,
                           'destination':json.loads(held['detail'])['channel']})
         return parts
+
+    def reconcile_line_bundles(self, now):
+        """Advance watch notification state only after an unsuppressed bundle reaches the owner."""
+        service=self.service
+        with service.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            bundles=db.execute("SELECT j.id FROM jobs j WHERE j.model='line-bundle' AND j.provider='builtin' "
+                               "AND (j.delivery='sent' OR (j.channel='web' AND j.delivery='none' "
+                               "AND EXISTS(SELECT 1 FROM messages m WHERE m.job_id=j.id AND m.role='assistant'))) "
+                               "AND EXISTS(SELECT 1 FROM tool_events e WHERE e.job_id=j.id AND e.tool='line_bundle') "
+                               "AND NOT EXISTS(SELECT 1 FROM tool_events e WHERE e.job_id=j.id AND e.tool='line_bundle_notified') "
+                               "ORDER BY j.created,j.id").fetchall()
+            for bundle in bundles:
+                parts=db.execute("SELECT j.* FROM tool_events b JOIN jobs j ON j.id=b.job_id "
+                                 "WHERE b.tool='line_bundled' AND json_extract(b.detail,'$.bundle_id')=? "
+                                 "AND NOT EXISTS(SELECT 1 FROM tool_events s WHERE s.job_id=b.job_id "
+                                 "AND s.tool='line_bundle_suppressed' AND json_extract(s.detail,'$.bundle_id')=? "
+                                 "AND json_extract(s.detail,'$.line_id')=json_extract(b.detail,'$.line_id')) "
+                                 "ORDER BY j.created,j.id",(bundle['id'],bundle['id'])).fetchall()
+                for part in parts:
+                    text=service.lines.bundle_part_text(part)
+                    service.preparations.record_notified(part['id'],prep.text_digest(text),text,now,db=db)
+                db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                           (bundle['id'],'line_bundle_notified','succeeded',json.dumps({'parts':len(parts)}),now))
+
+    def held_failure_told(self, row):
+        """Settlement selects the first notice; the bundle's receipt says whether it was told."""
+        with self.service.store.db() as db:
+            held=db.execute("SELECT 1 FROM tool_events WHERE tool='line_held' "
+                            "AND json_extract(detail,'$.preparation_id')=?",(row['id'],)).fetchone()
+            if not held or db.execute("SELECT 1 FROM telegram_notifications WHERE job_id=? AND kind=?",
+                                      (row['last_run_job_id'],prep.NOTIFY_KIND)).fetchone():return True
+            return db.execute("SELECT 1 FROM tool_events b JOIN jobs j ON j.id=json_extract(b.detail,'$.bundle_id') "
+                              "WHERE b.job_id=? AND b.tool='line_bundled' "
+                              "AND (j.delivery='sent' OR (j.channel='web' AND j.delivery='none')) "
+                              "AND NOT EXISTS(SELECT 1 FROM tool_events s WHERE s.job_id=b.job_id "
+                              "AND s.tool='line_bundle_suppressed' AND json_extract(s.detail,'$.bundle_id')=j.id "
+                              "AND json_extract(s.detail,'$.line_id')=json_extract(b.detail,'$.line_id'))",
+                              (row['last_run_job_id'],)).fetchone() is not None
 
     def compose_line_bundle(self, parts):
         return self.service.lines.compose_line_bundle(parts)

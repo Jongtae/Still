@@ -2479,24 +2479,28 @@ class Preparations:
                             json.dumps(detail), now))
             return {**current, **updates}
 
-    def record_notified(self, work_id, digest_, text, now):
+    def record_notified(self, work_id, digest_, text, now, *, db=None):
         """A ``notify`` message for run ``work_id`` was sent (#719).
 
         Only a confirmed send becomes what the owner was last told: the
         deduplication digest and the text the next judgment compares with.
-        A cancelled or uncertain send changes neither.
+        A cancelled or uncertain send changes neither. ``db`` joins the
+        caller's transaction so bundle propagation and its marker are atomic.
         """
-        job = self.store.job(work_id)
-        preparation_id = preparation_of((job or {}).get('request_key'))
+        if db is None:
+            with self.store.db() as db:
+                db.execute('BEGIN IMMEDIATE')
+                return self.record_notified(work_id, digest_, text, now, db=db)
+        job = db.execute('SELECT * FROM jobs WHERE id=?', (work_id,)).fetchone()
+        job = dict(job) if job else None
+        preparation_id = preparation_of((job or {'request_key': None})['request_key'])
         if not preparation_id:
             return False
-        with self.store.db() as db:
-            db.execute('BEGIN IMMEDIATE')
-            changed = bool(db.execute('UPDATE preparations SET last_notified_digest=?,last_notified_text=?,last_notified_at=? '
-                                      'WHERE id=?', (digest_, bounded_text(text), now, preparation_id)).rowcount)
-            if changed and run_outcome(KIND_PREPARE, job) == STATE_DELIVERED:
-                self._clear_carried_budget_skips(db, preparation_id, work_id)
-            return changed
+        changed = bool(db.execute('UPDATE preparations SET last_notified_digest=?,last_notified_text=?,last_notified_at=? '
+                                  'WHERE id=?', (digest_, bounded_text(text), now, preparation_id)).rowcount)
+        if changed and run_outcome(KIND_PREPARE, job) == STATE_DELIVERED:
+            self._clear_carried_budget_skips(db, preparation_id, work_id)
+        return changed
 
     # -- consumption -------------------------------------------------------
 
