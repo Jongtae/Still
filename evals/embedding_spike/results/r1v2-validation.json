@@ -1,0 +1,19 @@
+{
+  "evidence": "model-free focused tests and local artifact inspection",
+  "command": "PYTHONPATH=src:evals .venv/bin/python -m pytest -q -p no:cacheprovider tests/test_embedding_spike_r1v2.py tests/test_recall_arms.py tests/test_recall_report.py tests/test_recall_pairs_v2.py",
+  "tests": 105,
+  "summary": "105 passed in 22.25s",
+  "failed_or_subfailed_lines": [],
+  "candidate_observations_identical_across_three_baseline_reports": true,
+  "embedding_case_selection": "24 dev only; no fresh heldout query evaluated",
+  "inference_free_import_and_resolver_test": "passed with numpy/onnxruntime/tokenizers imports blocked",
+  "protected_tracked_files_unchanged": true,
+  "commit_created": false,
+  "full_dev_measurement_completed": true,
+  "synthetic_build_sizes": [
+    1000,
+    10000
+  ],
+  "main_and_cold_worker_socket_attempts": 0,
+  "dev_only_artifacts_verified": true
+}
