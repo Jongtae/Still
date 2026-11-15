@@ -881,7 +881,7 @@ def test_new_sweep_metadata_and_log_rebuild_match(rubric, tmp_path, monkeypatch,
     assert json.loads(path.read_text()) == original
 
 
-@pytest.mark.parametrize('extra,timeout', [([], 900), (['--judgment-timeout', '1200'], 1200)])
+@pytest.mark.parametrize('extra,timeout', [([], cli.JUDGMENT_TIMEOUT), (['--judgment-timeout', '120'], 120)])
 def test_c2_judgment_timeout_reaches_task_and_metadata(rubric, tmp_path, monkeypatch, extra, timeout):
     monkeypatch.delenv('AGENTOS_EVAL_SEED', raising=False)
     monkeypatch.setenv('AGENTOS_EVAL_HOME', str(tmp_path))

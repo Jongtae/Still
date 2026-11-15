@@ -1,18 +1,21 @@
 """#826 recovery spikes: real entry points, temporary SQLite stores, fixture wires.
 
 The matrix's unsupported paths assert the desired invariant under strict xfail;
-separate characterizations show the state actually persisted today. No start(),
+separate characterizations show the state actually persisted today. X4/X9 are
+implemented invariants (#841). No start(),
 network, live model, or runtime changes. Reuse review: N/A, tests only, reusing
 existing service/store and fixture APIs without introducing runtime machinery.
 """
 import json
+import sqlite3
 import time
 from unittest import mock
 
 import pytest
 
 from personal_agent.agent_runtime import (ToolError, WorkBudget, WorkLedger, ENGINE_UNMEDIATED,
-                                         WORK_STOP_KEY, renew_for_owner_prerequisite)
+                                         WORK_STOP_KEY, STEER_EVENT, MAX_CONTINUATIONS,
+                                         renew_for_owner_prerequisite)
 from personal_agent.conversation_handoff import TelegramNotSent
 from personal_agent.decision import FixtureDecisionEngine
 from personal_agent.providers import ProviderError
@@ -435,15 +438,13 @@ def test_w4_telegram_uncertain_notice_stays_unknown(case):
     assert not [x for x in c.calls if x[0].endswith('/sendMessage')]
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason='#826 W4: Mattermost cursor commits before covered reactions are applied')
 def test_w4_mattermost_reaction_survives_cursor_crash(case):
     """W4 a reaction lost after cursor commit should be replayed after restart."""
     c = case(mm_cases.OwnerActs)
     _, draft, note = c.settings_notice()
     c.fake.react(mm_cases.OWNER, note['message_id'], '+1')
     with mock.patch.object(c.surface, 'ingest_reaction', side_effect=RuntimeError('crash before reaction')):
-        with pytest.raises(RuntimeError, match='crash before reaction'):
-            c.surface.receive()
+        c.surface.receive()
     service = _restart(c.store)
     service.mattermost_transport = c.fake
     service.steer_spawn = lambda target: target()
@@ -454,7 +455,31 @@ def test_w4_mattermost_reaction_survives_cursor_crash(case):
     assert service.store.config('settings_change_drafts')[draft]['state'] == 'applied'
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason='#826 W4: Slack press key commits before the answer starts')
+def test_w4_mattermost_correction_survives_cursor_crash(case):
+    """Characterize existing behavior, not the #843 inbox change.
+
+    The correction is queued as Work before the cursor; recovery interrupts the running Work.
+    """
+    c = case(mm_cases.OwnerActs)
+    c.owner_says('Read the requested records')
+    running = c.mm_jobs()[0]['id']
+    _status(c.store, running, 'running')
+    post = c.fake.post(mm_cases.OWNER, c.dm(), 'Use the updated records instead')
+    with mock.patch.object(c.service, 'consider_steer', side_effect=RuntimeError('crash before steer')):
+        with pytest.raises(RuntimeError, match='crash before steer'):
+            c.surface.receive()
+    assert c.surface.config()['cursor'] == post['update_at']
+    correction = next(job for job in c.mm_jobs() if job['id'] != running)
+    assert correction['status'] == 'queued'
+    service = _restart(c.store)
+    service.mattermost_transport = c.fake
+    service.mattermost_surface.receive()
+    assert service.store.job(running)['status'] == 'interrupted'
+    assert service.store.job(correction['id'])['status'] == 'queued'
+    assert service.store.job(correction['id'])['message'] == post['message']
+    assert len(service.store.jobs()) == 2
+
+
 def test_w4_slack_press_survives_answer_crash(case):
     """W4 replay of a pressed Slack button should settle its pending draft."""
     c = case(slack_cases.Buttons)
@@ -736,8 +761,10 @@ def test_x2_ledger_deadline_includes_downtime(env):
     ledger = service.work_budget(work).ledger
     before = store.config(ledger.key)
     restarted = _restart(store)
-    with mock.patch.object(ledger, 'wall', return_value=before['deadline'] + 1):
-        assert ledger.refusal(40) == 'deadline'
+    resumed = restarted.work_budget(work).ledger
+    with mock.patch.object(resumed, 'wall', return_value=before['deadline'] + 1):
+        assert resumed.refusal(40) == 'deadline'
+    assert ledger.refusal(40) == 'superseded'
     assert restarted.store.config(ledger.key)['deadline'] == before['deadline']
     assert restarted.store.config(ledger.key)['attempts'] == before['attempts']
 
@@ -773,35 +800,31 @@ def _stale_bridge(env):
     return restarted.store, bridge, before
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason='#826 X4: recovery does not fence an active bridge for the same Work id')
 def test_x4_pre_restart_bridge_is_superseded_after_same_id_resume(env):
     """X4 a pre-restart bridge must be superseded once the same Work resumes."""
     _, bridge, _ = _stale_bridge(env)
     assert bridge.ledger.refusal(40) == 'superseded'
 
 
-def test_x4_pre_restart_bridge_can_still_spend_today(env):
-    """X4 characterize an old bridge spending after restart and same-id resume."""
+def test_x4_pre_restart_bridge_refuses_spend_without_changing_allowance(env):
+    """X4 recovery fences spending without replenishing the allowance."""
     store, bridge, before = _stale_bridge(env)
-    assert bridge.ledger.refusal(40) is None
+    assert bridge.ledger.refusal(40) == 'superseded'
     after = store.config(bridge.ledger.key)
-    assert after['attempts'] == before['attempts'] + 1
-    assert after['epoch'] == before['epoch']
+    assert after['attempts'] == before['attempts']
+    assert after['epoch'] == before['epoch'] + 1
     assert after['deadline'] == before['deadline']
 
 
 def _superseded_bridge_steer(env):
     """Drive serve's real refused-call/_with_steer path; only stdio is replaced.
 
-    X4's missing restart fence is tested separately. Pause/reopen here really
-    supersedes the old budget, isolating the steer bug even after that fix.
+    The budget is bound before recovery, exactly as a real child binds it.
     """
     from personal_agent import mcp_bridge
 
     store, bridge, _ = _stale_bridge(env)
     work = bridge.ledger.job_id
-    bridge.ledger.pause()
-    env[1].work_budget(work)
     assert bridge.ledger.refusal(40) == 'superseded'
     source = store.enqueue('Use the updated comparison criteria', 'stale-steer')
     assert store.add_steer(work, source, 'Use the updated comparison criteria')
@@ -824,7 +847,6 @@ def _superseded_bridge_steer(env):
     return store, work, source, result
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason='#826 X4: a refused superseded bridge call still claims owner steers')
 def test_x4_superseded_bridge_call_leaves_owner_steer_unclaimed(env):
     """X4 a refused stale call records ran:false and claims no owner steer."""
     store, work, source, result = _superseded_bridge_steer(env)
@@ -834,19 +856,501 @@ def test_x4_superseded_bridge_call_leaves_owner_steer_unclaimed(env):
     assert not any(e['tool'] == 'owner_steer' for e in store.task_events(work))
 
 
-def test_x4_superseded_bridge_call_claims_owner_steer_today(env):
-    """X4 characterize the real refused call handing a steer to the stale worker."""
-    from personal_agent.agent_runtime import STEER_EVENT
+def test_x4_bridge_bound_before_recovery_and_fresh_host_spends(env):
+    """1: child binding is stale immediately after recovery and after resume."""
+    store, service = env
+    work = store.enqueue('fixture', 'bound-child')
+    _status(store, work, 'running')
+    service.work_budget(work)
+    child = WorkLedger(store, work)
+    assert child.refusal(40) is None
+    before = store.config(child.key)
+    store.recover()
+    assert child.refusal(40) == 'superseded'
+    assert store.config(child.key)['attempts'] == before['attempts']
+    _status(store, work, 'queued')
+    assert service._claim_queued_work()['id'] == work
+    host = service.work_budget(work).ledger
+    assert child.refusal(40) == 'superseded'
+    assert host.refusal(40) is None
+    assert store.config(child.key)['attempts'] == before['attempts'] + 1
 
-    store, work, source, result = _superseded_bridge_steer(env)
+
+def test_x4_recovery_preserves_allowance_and_new_continue_is_bounded(case):
+    """2: fencing changes only epoch; a new-run Continue still renews once."""
+    c = case(budget_cases.BudgetContinueTests)
+    service, store, work, _, old = c.stopped()
+    _status(store, work, 'running')
+    active = service.work_budget(work)
+    for counter in ('turns', 'nudges', 'presentation'):
+        assert active.ledger.refusal(40, counter) is None
+    before = store.config(active.ledger.key)
+    assert 'remaining_seconds' in before
+    restarted = _restart(store)
+    assert store.config(active.ledger.key) == {**before, 'epoch': before['epoch'] + 1}
+    with store.db() as db:
+        assert not renew_for_owner_prerequisite(db, work)
+    assert store.config(active.ledger.key) == {**before, 'epoch': before['epoch'] + 1}
+    _status(store, work, 'queued')
+    assert restarted._claim_queued_work()['id'] == work
+    run = WorkRun(store.job(work), time.time())
+    run.work_budget = restarted.work_budget(work)
+    run.work_budget.spend_attempt()
+    _event(store, work, 'list_notes', 'succeeded', evidence={'count': 1})
+    _event(store, work, 'list_notes', 'failed', code='attempt_budget', ran=False, effect='none')
+    run.work_budget.ledger.pause()
+    run.outcome = 'partial'
+    _status(store, work, 'partial')
+    assert restarted.offer_budget_continue(run)
+    offer = restarted.budget_continue_offer(work)
+    assert c.press(restarted, work)['resumed']
+    assert not restarted.budget_continue_decision({'work_id': work, 'nonce': offer['nonce']})['resumed']
+    renewed = store.config(active.ledger.key)
+    assert all(renewed[key] == 0 for key in ('attempts', 'turns', 'nudges', 'presentation'))
+    assert renewed['epoch'] > before['epoch'] + 1
+    assert old.ledger.refusal(40) == 'superseded'
+    for index in range(MAX_CONTINUATIONS - 1):
+        _event(store, work, 'action_continuation', 'queued', resumed=True, offer_digest=str(index))
+    assert 'limit' in restarted.continuation_reasons(work, 'resume')
+    assert not restarted.offer_budget_continue(run)
+
+
+def _ledger_bytes(store, work):
+    with store.db() as db:
+        row = db.execute('SELECT value FROM config WHERE key=?', ('work_budget:' + work,)).fetchone()
+    return row['value'] if row else None
+
+
+def test_x4_recovery_leaves_nonrunning_rows_and_absent_ledger_untouched(env):
+    """3: only a running holder's existing row is fenced."""
+    store, service = env
+    before = {}
+    for status in ('queued', 'awaiting_connection', 'awaiting_context', 'partial',
+                   'succeeded', 'failed', 'cancelled', 'interrupted'):
+        work = store.enqueue('fixture', 'untouched-' + status)
+        service.work_budget(work)
+        _status(store, work, status)
+        before[work] = _ledger_bytes(store, work)
+    absent = store.enqueue('fixture', 'no-budget')
+    _status(store, absent, 'running')
+    assert _ledger_bytes(store, absent) is None
+    store.recover()
+    assert store.job(absent)['status'] == 'interrupted'
+    assert _ledger_bytes(store, absent) is None
+    for work, raw in before.items():
+        assert _ledger_bytes(store, work) == raw
+
+
+@pytest.mark.parametrize('damage', ['missing-parent', 'cross-owner', 'invalid-json', 'negative-counter'])
+def test_x4_bad_chain_or_ledger_does_not_abort_other_fences(env, damage):
+    """4: bad rows fail closed without aborting the recovery transaction."""
+    store, service = env
+    bad = store.enqueue('fixture', 'bad')
+    good = store.enqueue('fixture', 'good')
+    for work in (bad, good):
+        _status(store, work, 'running')
+        service.work_budget(work)
+    before = store.config('work_budget:' + good)
+    if damage in ('missing-parent', 'cross-owner'):
+        parent = 'missing'
+        if damage == 'cross-owner':
+            parent = store.enqueue('other owner', 'parent', channel='telegram:other', chat_id=999)
+        with store.db() as db:
+            db.execute("UPDATE jobs SET relation_kind='retry',related_job_id=? WHERE id=?", (parent, bad))
+    else:
+        raw = '{invalid' if damage == 'invalid-json' else json.dumps({
+            **store.config('work_budget:' + bad), 'attempts': -1})
+        with store.db() as db:
+            db.execute('UPDATE config SET value=? WHERE key=?', (raw, 'work_budget:' + bad))
+    bad_before = _ledger_bytes(store, bad)
+    store.recover()
+    assert all(store.job(work)['status'] == 'interrupted' for work in (bad, good))
+    assert store.config('work_budget:' + good) == {**before, 'epoch': before['epoch'] + 1}
+    assert _ledger_bytes(store, bad) == bad_before
+    ledger = WorkLedger(store, bad)
+    assert ledger.refusal(40) in ('unavailable', 'superseded')
+    assert ledger.lapse() in ('unavailable', 'superseded')
+
+
+@pytest.mark.parametrize('running_again', [False, True])
+def test_x4_two_restarts_fence_only_current_running_holders(env, running_again):
+    """5: each recovery fences precisely the Works that it interrupts."""
+    store, service = env
+    a = store.enqueue('fixture A', 'restart-a')
+    b = store.enqueue('fixture B', 'restart-b')
+    _status(store, a, 'running')
+    service.work_budget(a)
+    service.work_budget(b)
+    original = {work: store.config('work_budget:' + work) for work in (a, b)}
+    restarted = _restart(store)
+    assert store.config('work_budget:' + a)['epoch'] == original[a]['epoch'] + 1
+    assert store.config('work_budget:' + b) == original[b]
+    _status(store, a, 'queued')
+    assert restarted._claim_queued_work()['id'] == a
+    host = restarted.work_budget(a)
+    assert host.ledger.refusal(40) is None
+    if not running_again:
+        host.ledger.pause()
+        _status(store, a, 'partial')
+    _status(store, b, 'running')
+    restarted.work_budget(b)
+    before = {work: store.config('work_budget:' + work) for work in (a, b)}
+    _restart(store)
+    assert store.config('work_budget:' + a)['epoch'] == before[a]['epoch'] + int(running_again)
+    assert store.config('work_budget:' + b)['epoch'] == before[b]['epoch'] + 1
+
+
+@pytest.mark.parametrize('refusal', ['not-running', 'superseded'])
+def test_x4_stale_bridge_leaves_steer_for_live_resumed_call(env, refusal):
+    """7: both refusal kinds leave the steer for the live run's bridge."""
+    from personal_agent import mcp_bridge
+
+    store, bridge, _ = _stale_bridge(env)
+    work = bridge.ledger.job_id
+    source = store.enqueue('Updated owner criteria', 'pending-steer')
+    assert store.add_steer(work, source, 'Updated owner criteria')
+    if refusal == 'not-running':
+        _status(store, work, 'interrupted')
+    replies = []
+    def drive(handle, concurrent):
+        replies.append(handle('tools/call', {'name': 'list_notes', 'arguments': {}}))
+    with mock.patch.object(mcp_bridge, 'WorkBudget', return_value=bridge), \
+            mock.patch.object(mcp_bridge, '_serve_stdio', side_effect=drive):
+        mcp_bridge.serve(str(store.root), work)
+    result = replies[-1]
+    assert result['isError']
+    code = 'stopped' if refusal == 'not-running' else 'run_superseded'
+    assert result['structuredContent']['code'] == code
+    assert not store.steer_delivered(source)
+    assert 'Updated owner criteria' not in json.dumps(result)
+    assert not any(e['tool'] == STEER_EVENT for e in store.task_events(work))
+    failed = [e for e in store.task_events(work) if e['status'] == 'failed']
+    assert len(failed) == 1
+    assert failed[0]['trace']['code'] == code
+    assert failed[0]['trace']['ran'] is False
+    # The separate Continue test below also exercises stale-event filtering.
+    _status(store, work, 'queued')
+    service = AgentService(store)
+    assert service._claim_queued_work()['id'] == work
+    service.work_budget(work)
+    with mock.patch.object(mcp_bridge, '_serve_stdio', side_effect=drive):
+        mcp_bridge.serve(str(store.root), work)
+    assert not replies[-1].get('isError')
     assert store.steer_delivered(source)
-    assert not store.steer_answered(source)
-    assert any('updated comparison criteria' in part.get('text', '')
-               for part in result['content'])
+    assert 'Updated owner criteria' in json.dumps(replies[-1])
+    assert len([e for e in store.task_events(work) if e['tool'] == STEER_EVENT]) == 1
+
+
+@pytest.mark.parametrize('error', [ValueError('ordinary failure'), RuntimeError('unexpected failure'),
+                                  ToolError('Owner stopped', 'stopped', ran=False),
+                                  ToolError('Deadline', 'deadline_exceeded', ran=False),
+                                  ToolError('Attempts', 'attempt_budget', ran=False)])
+def test_x4_live_bridge_failure_still_delivers_owner_steer(env, error):
+    """7 guard: a live call's failures, including owner Stop, still take steers."""
+    from personal_agent import mcp_bridge
+
+    store, service = env
+    work = store.enqueue('fixture', 'live-failure')
+    _status(store, work, 'running')
+    service.work_budget(work)
+    source = store.enqueue('Live owner criteria', 'live-steer')
+    assert store.add_steer(work, source, 'Live owner criteria')
+    replies = []
+    def drive(handle, concurrent):
+        replies.append(handle('tools/call', {'name': 'list_notes', 'arguments': {}}))
+    with mock.patch.object(mcp_bridge.AgentOSMcpTools, 'call', side_effect=error), \
+            mock.patch.object(mcp_bridge, '_serve_stdio', side_effect=drive):
+        mcp_bridge.serve(str(store.root), work)
+    assert replies[0]['isError']
+    assert all(e['trace']['bound_epoch'] == store.config('work_budget:' + work)['epoch']
+               for e in store.task_events(work) if e['status'] == 'failed')
+    assert store.steer_delivered(source)
+    assert 'Live owner criteria' in json.dumps(replies[0])
+    assert len([e for e in store.task_events(work) if e['tool'] == STEER_EVENT]) == 1
+
+
+def test_x4_action_continuation_after_restart_keeps_old_bridge_fenced(case):
+    """Acceptance 2: an actual owner approval resumes the same Work id."""
+    c = _payment(case)
+    work = c.job['id']
+    _status(c.store, work, 'running')
+    c.service.work_budget(work)
+    old = WorkLedger(c.store, work)
+    before = c.store.config(old.key)
+    c.service = _restart(c.store)
+    assert old.refusal(40) == 'superseded'
+    request = c.service._browser_request(work)
+    result = c.service.browser_step_decision({'work_id': work, 'decision': 'approve',
+                                             'digest': request['offer_digest']})
+    assert result['resumed']
+    assert c.service._claim_queued_work()['id'] == work
+    fresh = c.service.work_budget(work).ledger
+    assert old.refusal(40) == 'superseded'
+    assert fresh.refusal(40) is None
+    assert c.store.config(old.key)['attempts'] == before['attempts'] + 1
+    assert len([e for e in c.store.task_events(work)
+                if e['tool'] == 'action_continuation' and e['status'] == 'queued']) == 1
+
+
+def _bridge_call(store, work, budget=None, relay=None, name='list_notes'):
+    """Real bridge/tool dispatch; replace only inherited budget and the wires."""
+    from personal_agent import mcp_bridge
+
+    replies = []
+    def drive(handle, concurrent):
+        replies.append(handle('tools/call', {'name': name, 'arguments': {}}))
+    with mock.patch.object(mcp_bridge, '_serve_stdio', side_effect=drive):
+        if budget is None:
+            mcp_bridge.serve(str(store.root), work)
+        else:
+            with mock.patch.object(mcp_bridge, 'WorkBudget', return_value=budget):
+                if relay is None:
+                    mcp_bridge.serve(str(store.root), work)
+                else:
+                    with mock.patch.object(mcp_bridge, 'RelayClient', return_value=relay):
+                        mcp_bridge.serve(str(store.root), work, browser_relay='fixture-relay')
+    return replies[0]
+
+
+@pytest.mark.parametrize('binding', ['stale', 'absent', 'current'])
+def test_x4_stale_refusal_during_resumed_run_does_not_suppress_continue(env, binding):
+    """Acceptance 8: the real stale record is excluded only by its old epoch."""
+    store, bridge, _ = _stale_bridge(env)
+    work = bridge.ledger.job_id
+    service = AgentService(store)
+    run = WorkRun(store.job(work), time.time())
+    run.work_budget = service.work_budget(work)
+    assert run.work_budget.ledger.epoch != bridge.ledger.epoch
+    result = _bridge_call(store, work, bridge)
+    assert result['structuredContent']['code'] == 'run_superseded'
+    failed = [e for e in store.task_events(work) if e['status'] == 'failed']
+    assert len(failed) == 1
+    assert failed[0]['created'] >= run.claimed_at
+    assert failed[0]['trace']['bound_epoch'] == bridge.ledger.epoch
+    if binding != 'stale':
+        with store.db() as db:
+            row = db.execute("SELECT id,detail FROM tool_events WHERE job_id=? AND status='failed'", (work,)).fetchone()
+            detail = json.loads(row['detail'])
+            if binding == 'absent':
+                detail.pop('bound_epoch')
+            else:
+                detail['bound_epoch'] = run.work_budget.ledger.epoch
+            db.execute('UPDATE tool_events SET detail=? WHERE id=?', (json.dumps(detail), row['id']))
+    run.work_budget.spend_attempt()
+    _event(store, work, 'list_notes', 'succeeded', evidence={'count': 1})
+    _event(store, work, 'list_notes', 'failed', code='attempt_budget', ran=False, effect='none')
+    run.work_budget.ledger.pause()
+    run.outcome = 'partial'
+    _status(store, work, 'partial')
+    assert service.offer_budget_continue(run) is (binding == 'stale')
+    if binding == 'stale':
+        offer = service.budget_continue_offer(work)
+        assert offer['epoch'] == run.work_budget.ledger.epoch
+        assert service.budget_continue_decision({'work_id': work, 'nonce': offer['nonce']})['resumed']
+    else:
+        assert service.budget_continue_offer(work).get('state') != 'offered'
+
+
+@pytest.mark.parametrize('outcome', ['oserror', 'unexpected', 'success'])
+@pytest.mark.parametrize('stale', [True, False])
+def test_x4_relay_result_claims_steer_only_for_current_run(env, outcome, stale):
+    """Negative a and success/generic guards: relay calls bypass the local budget."""
+    store, bridge, _ = _stale_bridge(env)
+    work = bridge.ledger.job_id
+    if not stale:
+        bridge = AgentService(store).work_budget(work)
+    source = store.enqueue('Relay owner correction', 'relay-steer')
+    assert store.add_steer(work, source, 'Relay owner correction')
+    relay = mock.Mock()
+    if outcome == 'success':
+        relay.call.return_value = {'state': 'fixture'}
+    else:
+        relay.call.side_effect = OSError('relay failed') if outcome == 'oserror' else RuntimeError('relay failed')
+    result = _bridge_call(store, work, bridge, relay, 'information_use')
+    assert relay.call.call_args_list[0] == mock.call('information_use', {})
+    assert sum(call.args[0] == 'information_use' for call in relay.call.call_args_list) == 1
+    assert store.steer_delivered(source) is (not stale)
+    assert ('Relay owner correction' in json.dumps(result)) is (not stale)
     delivered = [e for e in store.task_events(work) if e['tool'] == STEER_EVENT]
-    assert len(delivered) == 1
-    assert delivered[0]['status'] == 'delivered'
-    assert delivered[0]['trace'] == {'count': 1}
+    assert len(delivered) == int(not stale)
+    failed = [e for e in store.task_events(work) if e['status'] == 'failed']
+    if outcome == 'success':
+        assert not result.get('isError')
+        assert not failed
+    else:
+        assert result['isError']
+        assert len(failed) == 1
+        assert failed[0]['trace']['bound_epoch'] == bridge.ledger.epoch
+
+
+@pytest.mark.parametrize('refusal,code,delivered', [
+    ('owner-stop', 'stopped', True), ('not-running', 'stopped', False),
+    ('deadline', 'deadline_exceeded', True), ('attempts', 'attempt_budget', True)])
+def test_x4_live_budget_refusals_deliver_steer_but_not_running_does_not(env, refusal, code, delivered):
+    """Negatives b/c: exercise actual Stop/deadline/attempt refusal paths."""
+    store, service = env
+    work = store.enqueue('fixture', 'real-refusal')
+    _status(store, work, 'running')
+    bridge = service.work_budget(work)
+    source = store.enqueue('Budget-bound correction', 'budget-steer')
+    assert store.add_steer(work, source, 'Budget-bound correction')
+    if refusal == 'owner-stop':
+        store.put(WORK_STOP_KEY, [work])
+    elif refusal == 'not-running':
+        _status(store, work, 'interrupted')
+    else:
+        row = store.config(bridge.ledger.key)
+        row.update({'deadline': 0} if refusal == 'deadline' else {'attempts': bridge.attempts})
+        store.put(bridge.ledger.key, row)
+    result = _bridge_call(store, work, bridge)
+    assert result['structuredContent']['code'] == code
+    assert store.steer_delivered(source) is delivered
+    assert ('Budget-bound correction' in json.dumps(result)) is delivered
+    failed = [e for e in store.task_events(work) if e['status'] == 'failed']
+    assert len(failed) == 1
+    assert failed[0]['trace']['ran'] is False
+    assert failed[0]['trace']['bound_epoch'] == bridge.ledger.epoch
+
+
+@pytest.mark.parametrize('bound_before_corruption', [True, False])
+def test_x4_unavailable_bridge_leaves_unanswered_steer_for_later_attempt(env, bound_before_corruption):
+    """Negative d: unreadable budgets cannot take a correction, even while running."""
+    store, service = env
+    work = store.enqueue('fixture', 'corrupt-budget-steer')
+    _status(store, work, 'running')
+    bridge = service.work_budget(work)
+    source = store.enqueue('Retained correction', 'unavailable-steer')
+    assert store.add_steer(work, source, 'Retained correction')
+    store.put(bridge.ledger.key, {'attempts': -1})
+    if not bound_before_corruption:
+        bridge = WorkBudget(ledger=WorkLedger(store, work))
+    result = _bridge_call(store, work, bridge)
+    assert result['structuredContent']['code'] == 'budget_unavailable'
+    assert not store.steer_delivered(source)
+    assert 'Retained correction' not in json.dumps(result)
+    assert not any(e['tool'] == STEER_EVENT for e in store.task_events(work))
+    failed = [e for e in store.task_events(work) if e['status'] == 'failed']
+    assert len(failed) == 1
+    if bound_before_corruption:
+        assert failed[0]['trace']['bound_epoch'] == bridge.ledger.epoch
+    else:
+        assert bridge.ledger.epoch == -1
+        assert 'bound_epoch' not in failed[0]['trace']
+    since = time.time()
+    assert store.unanswered_steers(work, since) == ['Retained correction']
+    assert store.claim_unanswered_steers(work, since) == ['Retained correction']
+    assert store.steer_delivered(source)
+    assert store.unanswered_steers(work, since) == []
+
+
+@pytest.mark.parametrize('running', [True, False])
+def test_x4_budget_without_ledger_uses_work_status_for_steers(env, running):
+    """The ledger-less fallback still checks the canonical Work status."""
+    store, _ = env
+    work = store.enqueue('fixture', 'no-ledger-steer')
+    _status(store, work, 'running')
+    source = store.enqueue('Status-bound correction', 'status-steer')
+    assert store.add_steer(work, source, 'Status-bound correction')
+    if not running:
+        _status(store, work, 'interrupted')
+    result = _bridge_call(store, work, WorkBudget())
+    assert store.steer_delivered(source) is running
+    assert ('Status-bound correction' in json.dumps(result)) is running
+    assert all('bound_epoch' not in e['trace'] for e in store.task_events(work) if e['status'] == 'failed')
+
+
+def test_x4_paused_holder_is_not_fenced(env):
+    """Negative e: the interrupted holder's paused row must retain its epoch."""
+    store, service = env
+    work = store.enqueue('paused holder', 'paused-holder')
+    _status(store, work, 'running')
+    budget = service.work_budget(work)
+    budget.spend_attempt()
+    budget.ledger.pause()
+    before = _ledger_bytes(store, work)
+    assert not json.loads(before)['active']
+    store.recover()
+    assert store.job(work)['status'] == 'interrupted'
+    assert _ledger_bytes(store, work) == before
+    assert budget.ledger.refusal(40) == 'superseded'
+
+
+def test_x4_paused_root_offer_survives_recovery_of_running_retry(case):
+    """Negative e: a paused request row still binds its outstanding Continue."""
+    c = case(budget_cases.BudgetContinueTests)
+    service, store, root, run, _ = c.stopped()
+    assert service.offer_budget_continue(run)
+    offer = service.budget_continue_offer(root)
+    before = _ledger_bytes(store, root)
+    child = store.enqueue('retry', 'running-retry')
+    store.link_work_relation(child, root, 'retry')
+    _status(store, child, 'running')
+    restarted = _restart(store)
+    assert store.job(child)['status'] == 'interrupted'
+    assert _ledger_bytes(store, root) == before
+    assert service.budget_continue_current(store.job(root), offer)
+    assert c.press(restarted, root)['resumed']
+    assert store.job(root)['status'] == 'queued'
+
+
+@pytest.mark.parametrize('holder', ['root', 'retry'])
+def test_x4_two_running_works_on_one_root_advance_epoch_once(env, holder):
+    """Negative f: one shared request row, one fence for its active holder."""
+    store, service = env
+    root = store.enqueue('root', 'shared-root')
+    service.work_budget(root)
+    child = store.enqueue('retry', 'shared-retry')
+    store.link_work_relation(child, root, 'retry')
+    if holder == 'retry':
+        _status(store, root, 'partial')
+        service.work_budget(child)
+    for work in (root, child):
+        _status(store, work, 'running')
+    before = store.config('work_budget:' + root)
+    assert before['active_work_id'] == (root if holder == 'root' else child)
+    store.recover()
+    assert all(store.job(work)['status'] == 'interrupted' for work in (root, child))
+    assert store.config('work_budget:' + root) == {**before, 'epoch': before['epoch'] + 1}
+    assert _ledger_bytes(store, child) is None
+
+
+def test_x4_legacy_ledger_without_epoch_or_holder_is_fenced(env):
+    """Negative g: legacy defaults do not replenish attempts or the deadline."""
+    store, _ = env
+    work = store.enqueue('legacy', 'legacy-fence')
+    _status(store, work, 'running')
+    before = {'attempts': 7, 'turns': 2, 'nudges': 1, 'presentation': 1,
+              'deadline': time.time() + 300, 'active': True}
+    store.put('work_budget:' + work, before)
+    store.recover()
+    assert store.config('work_budget:' + work) == {**before, 'epoch': 1}
+
+
+@pytest.mark.parametrize('damage', ['not-json', 'list', 'boolean-epoch', 'negative-epoch'])
+def test_x9_malformed_ledger_still_recovers_reply_and_counts(case, damage):
+    """Negative g: malformed budgets skip fencing, not recovery or pending replies."""
+    c, work = _telegram(case, 'running', 'none')
+    c.service.work_budget(work)
+    before = c.store.config('work_budget:' + work)
+    raw = {'not-json': '{broken', 'list': '[]',
+           'boolean-epoch': json.dumps({**before, 'epoch': True}),
+           'negative-epoch': json.dumps({**before, 'epoch': -1})}[damage]
+    with c.store.db() as db:
+        db.execute('UPDATE config SET value=? WHERE key=?', (raw, 'work_budget:' + work))
+    # Exercise the other recovery counters in the same transaction.
+    sending = c.store.enqueue('sending reply', 'sending-reply')
+    _status(c.store, sending, 'succeeded', 'sending')
+    note = c.store.queue_notification(sending, 42, 'g', 'completed')
+    c.store.update_notification(note['id'], 'sending')
+    assert c.service.recover_interrupted_work() == [work]
+    assert c.store.job(work)['status'] == 'interrupted'
+    assert c.store.job(work)['delivery'] == 'pending'
+    assert _ledger_bytes(c.store, work) == raw
+    assert c.store.job(sending)['delivery'] == 'unknown'
+    assert c.store.notification(note['id'])['state'] == 'unknown'
+    assert c.store.last_recovery() == {'interrupted_jobs': 1, 'uncertain_deliveries': 1,
+                                      'uncertain_notifications': 1}
+    assert WorkLedger(c.store, work).refusal(40) == 'unavailable'
 
 
 def test_x5_cancelled_work_survives_restart(case):
@@ -929,7 +1433,7 @@ def test_x6_active_crash_ledger_is_not_renewed(env):
     restarted = _restart(store)
     with restarted.store.db() as db:
         assert not renew_for_owner_prerequisite(db, work)
-    assert restarted.store.config(budget.ledger.key) == before
+    assert restarted.store.config(budget.ledger.key) == {**before, 'epoch': before['epoch'] + 1}
 
 
 @pytest.mark.parametrize('terminal', ['finish', 'fail'])
@@ -969,11 +1473,9 @@ def test_x8_trusted_local_unaccounted_actions_block_retry(env):
 
 
 def _recovery_commit_gap(case):
-    """X9 stop just after recovery's status commit, before its pending update."""
+    """X9 stop after the single recovery commit, before reply delivery."""
     c, work = _telegram(case, 'running', 'none')
-    c.store.recover()  # The middle transaction of recover_interrupted_work.
-    # Read, not asserted: once the X9 fix writes `pending` inside recover(), the
-    # desired-invariant test below must still reach its delivery checks.
+    c.store.recover(surface.channel_prefix for surface in c.service.surfaces if surface.channel_prefix)
     stranded = c.store.job(work)['delivery']
     service = _restart(c.store, c.service)
     service.deliver_one()
@@ -982,22 +1484,49 @@ def _recovery_commit_gap(case):
     return service, work, sent, stranded
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason='#826 X9: crash after recover commits loses the interrupted reply')
 def test_x9_recovery_commit_gap_still_delivers_one_interrupted_reply(case):
     """X9 restarting recovery must queue the interrupted Telegram reply once."""
-    service, work, sent, _ = _recovery_commit_gap(case)
+    service, work, sent, stranded = _recovery_commit_gap(case)
+    assert stranded == 'pending'
     assert service.store.job(work)['status'] == 'interrupted'
     assert service.store.job(work)['delivery'] == 'sent'
     assert len(sent) == 1
 
 
-def test_x9_recovery_commit_gap_leaves_delivery_none_today(case):
-    """X9 characterize the stranded interrupted row after recovery itself crashes."""
-    service, work, sent, stranded = _recovery_commit_gap(case)
-    assert stranded == 'none'
+@pytest.mark.parametrize('stop_at', ['fence', 'task-cards', 'sqlite'])
+def test_x9_recovery_stop_rolls_back_status_fence_and_pending_reply(case, stop_at):
+    """6: stopping after the status UPDATE commits neither half of recovery."""
+    c, work = _telegram(case, 'running', 'none')
+    budget = c.service.work_budget(work)
+    before = _ledger_bytes(c.store, work)
+    original = WorkLedger.fence_restart
+    error = sqlite3.OperationalError if stop_at == 'sqlite' else RuntimeError
+    def stop_in_fence(db, jobs):
+        assert db.execute('SELECT status FROM jobs WHERE id=?', (work,)).fetchone()[0] == 'interrupted'
+        original(db, jobs)
+        raise error('stop inside recovery')
+    def stop_in_cards(db):
+        assert db.execute('SELECT status FROM jobs WHERE id=?', (work,)).fetchone()[0] == 'interrupted'
+        row = db.execute('SELECT value FROM config WHERE key=?', (budget.ledger.key,)).fetchone()[0]
+        assert json.loads(row)['epoch'] == json.loads(before)['epoch'] + 1
+        raise error('stop inside recovery')
+    patch = (mock.patch.object(WorkLedger, 'fence_restart', side_effect=stop_in_fence)
+             if stop_at in ('fence', 'sqlite') else
+             mock.patch.object(type(c.store.telegram), 'delete_interrupted_task_cards', side_effect=stop_in_cards))
+    with patch, pytest.raises(error, match='stop inside recovery'):
+        c.service.recover_interrupted_work()
+    assert c.store.job(work)['status'] == 'running'
+    assert c.store.job(work)['delivery'] == 'none'
+    assert _ledger_bytes(c.store, work) == before
+    service = _restart(c.store, c.service)
     assert service.store.job(work)['status'] == 'interrupted'
-    assert service.store.job(work)['delivery'] == 'none'
-    assert sent == []
+    assert service.store.job(work)['delivery'] == 'pending'
+    assert service.store.config(budget.ledger.key)['epoch'] == json.loads(before)['epoch'] + 1
+    service.deliver_one()
+    service = _restart(service.store, service)
+    service.deliver_one()
+    assert service.store.job(work)['delivery'] == 'sent'
+    assert len([call for call in c.calls if call[0].endswith('/sendMessage')]) == 1
 
 
 def test_x11_finish_before_pause_leaves_active_ledger_without_continue(env):
@@ -1032,3 +1561,150 @@ def test_x11_finish_before_pause_leaves_active_ledger_without_continue(env):
     # is eligible, ruling out unrelated offer prerequisites as the cause.
     run.work_budget.ledger.pause()
     assert restarted.offer_budget_continue(run)
+
+
+@pytest.mark.parametrize('damage', ['huge-deadline', 'deep-json'])
+def test_x9_unreadable_numeric_or_nested_ledger_does_not_abort_recovery(case, damage):
+    c, work = _telegram(case, 'running', 'none')
+    budget = c.service.work_budget(work)
+    row = c.store.config(budget.ledger.key)
+    raw = (json.dumps({**row, 'deadline': 10 ** 400}) if damage == 'huge-deadline'
+           else '[' * 10000 + '0' + ']' * 10000)
+    with c.store.db() as db:
+        db.execute('UPDATE config SET value=? WHERE key=?', (raw, budget.ledger.key))
+    assert c.service.recover_interrupted_work() == [work]
+    assert c.store.job(work)['delivery'] == 'pending'
+    assert c.store.job(work)['status'] == 'interrupted'
+    assert _ledger_bytes(c.store, work) == raw
+    assert budget.ledger.refusal(40) == 'unavailable'
+    assert WorkLedger(c.store, work).refusal(40) == 'unavailable'
+
+
+def test_x4_recovery_between_bridge_gate_and_claim_cannot_take_steer(env):
+    from personal_agent import mcp_bridge
+
+    store, service = env
+    work = store.enqueue('fixture', 'claim-race')
+    _status(store, work, 'running')
+    budget = service.work_budget(work)
+    source = store.enqueue('Keep this correction', 'claim-race-steer')
+    assert store.add_steer(work, source, 'Keep this correction')
+    original = mcp_bridge._with_steer
+    def recover_before_claim(*args, **kwargs):
+        store.recover()
+        _status(store, work, 'running')
+        service.work_budget(work)
+        return original(*args, **kwargs)
+    with mock.patch.object(mcp_bridge, '_with_steer', side_effect=recover_before_claim):
+        result = _bridge_call(store, work, budget)
+    assert not result.get('isError')  # the tool finished before recovery
+    assert not store.steer_delivered(source)
+    assert 'Keep this correction' not in json.dumps(result)
+
+
+def test_x9_failure_at_last_write_rolls_back_every_recovery_write(case):
+    c, work = _telegram(case, 'running', 'none')
+    budget = c.service.work_budget(work)
+    before = _ledger_bytes(c.store, work)
+    sending = c.store.enqueue('sending', 'late-rollback-sending')
+    _status(c.store, sending, 'succeeded', 'sending')
+    note = c.store.queue_notification(sending, 42, 'g', 'completed')
+    c.store.update_notification(note['id'], 'sending')
+    c.store.put('last_recovery', {'prior': True})
+    original = c.store.put
+    def fail_after_put(key, value, *, db=None):
+        original(key, value, db=db)
+        if key == 'last_recovery':
+            assert db.in_transaction
+            assert db.execute('SELECT delivery FROM jobs WHERE id=?', (work,)).fetchone()[0] == 'pending'
+            # A separate reader still sees the pre-recovery state, including
+            # helper writes. A BaseException must roll back the entire unit.
+            assert c.store.job(work)['status'] == 'running'
+            assert c.store.job(sending)['delivery'] == 'sending'
+            assert c.store.notification(note['id'])['state'] == 'sending'
+            assert _ledger_bytes(c.store, work) == before
+            raise KeyboardInterrupt('last recovery write')
+    with mock.patch.object(c.store, 'put', side_effect=fail_after_put), pytest.raises(KeyboardInterrupt):
+        c.service.recover_interrupted_work()
+    assert c.store.job(work)['status'] == 'running'
+    assert c.store.job(work)['delivery'] == 'none'
+    assert c.store.job(sending)['delivery'] == 'sending'
+    assert c.store.notification(note['id'])['state'] == 'sending'
+    assert _ledger_bytes(c.store, work) == before
+    assert c.store.config('last_recovery') == {'prior': True}
+
+
+def test_x4_fenced_root_migrates_legacy_retry_without_epoch_reuse(env):
+    store, service = env
+    root = store.enqueue('root', 'legacy-root')
+    _status(store, root, 'running')
+    old = service.work_budget(root).ledger
+    assert old.spend(40)
+    child = store.enqueue('retry', 'legacy-child')
+    store.link_work_relation(child, root, 'retry')
+    legacy = {**store.config(old.key), 'epoch': 30, 'attempts': 3}
+    store.put('work_budget:' + child, legacy)
+    store.recover()
+    _status(store, child, 'running')
+    resumed = service.work_budget(child).ledger
+    assert resumed.epoch > legacy['epoch']
+    assert resumed.lapse() is None
+    assert resumed.counts()['attempts'] == 4
+    assert _ledger_bytes(store, child) is None
+    old.pause()
+    assert resumed.lapse() is None
+    assert old.refusal(40) == 'superseded'
+    assert resumed.refusal(40) is None
+
+
+@pytest.mark.parametrize('code', ['stopped', 'deadline_exceeded', 'run_superseded', 'budget_unavailable'])
+def test_x4_current_run_stop_row_survives_epoch_filter(env, code):
+    store, service = env
+    work = store.enqueue('fixture', 'filter-current')
+    run = WorkRun(store.job(work), time.time())
+    run.work_budget = service.work_budget(work)
+    epoch = run.work_budget.ledger.epoch
+    current = {'status': 'failed', 'detail': json.dumps({'code': code, 'bound_epoch': epoch})}
+    stale = {'status': 'failed', 'detail': json.dumps({'code': 'run_superseded', 'bound_epoch': epoch + 1})}
+    assert service._attempt_stop_codes(service._without_stale_bridge_refusals([current, stale], run)) == [code]
+
+
+def test_x4_restart_between_failure_encoding_and_insert_keeps_continue(env):
+    from personal_agent import mcp_bridge
+
+    store, service = env
+    work = store.enqueue('fixture', 'late-failure-record')
+    _status(store, work, 'running')
+    old = service.work_budget(work)
+    encode = json.dumps
+    resumed = []
+    fired = False
+    def restart_before_insert(value, *args, **kwargs):
+        nonlocal fired
+        if (not fired and isinstance(value, dict) and value.get('scope') == 'subscription-mcp-bridge'
+                and value.get('code') == 'stopped'):
+            fired = True
+            # The epoch payload has already been evaluated, but INSERT and
+            # its timestamp happen after the next host claims this same Work.
+            store.recover()
+            _status(store, work, 'running')
+            run = WorkRun(store.job(work), time.time())
+            run.work_budget = service.work_budget(work)
+            resumed.append(run)
+        return encode(value, *args, **kwargs)
+    with mock.patch.object(mcp_bridge.AgentOSMcpTools, 'call',
+                           side_effect=ToolError('Stopped', 'stopped', ran=False)), \
+            mock.patch.object(mcp_bridge.json, 'dumps', side_effect=restart_before_insert):
+        result = _bridge_call(store, work, old)
+    assert result['structuredContent']['code'] == 'stopped'
+    [run] = resumed
+    failed = [e for e in store.task_events(work) if e['status'] == 'failed']
+    assert failed[0]['created'] >= run.claimed_at
+    run.work_budget.spend_attempt()
+    _event(store, work, 'list_notes', 'succeeded', evidence={'count': 1})
+    _event(store, work, 'list_notes', 'failed', code='attempt_budget', ran=False, effect='none')
+    run.work_budget.ledger.pause()
+    run.outcome = 'partial'
+    _status(store, work, 'partial')
+    assert service.offer_budget_continue(run)
+    assert failed[0]['trace']['bound_epoch'] == old.ledger.epoch

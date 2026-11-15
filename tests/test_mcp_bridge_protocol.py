@@ -354,7 +354,7 @@ class ExposedToolWireBoundary(unittest.TestCase):
                 "SELECT detail FROM tool_events WHERE tool='list_notes' AND status='failed'")]
         # #607: the refusal is typed (code/retry/effect) and still carries no arguments.
         # #1484: and it says the tool never ran.
-        self.assertTrue(failed and all(set(detail) <= {"scope", "error", "host_action", "code", "retry", "effect", "call_id", "ran"}
+        self.assertTrue(failed and all(set(detail) <= {"scope", "error", "host_action", "code", "retry", "effect", "call_id", "ran", "bound_epoch"}
                                        and detail["code"] == "stopped" and detail.get("ran") is False for detail in failed),
                         "the refusal is recorded with a reason and no arguments")
 
