@@ -894,3 +894,20 @@ class Diary(Dream):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class LineSchema(unittest.TestCase):
+    def test_lines_are_tolerated_when_absent_but_typed_when_present(self):
+        self.assertTrue(om.dream_shape(dream()))
+        self.assertTrue(om.dream_shape({**dream(), 'lines': []}))
+        self.assertFalse(om.dream_shape({**dream(), 'lines': {}}))
+        self.assertIn('line', om.DREAM_SCHEMA['properties']['suggestions']['items']['properties'])
+        kept, dropped = om.validate_line_actions([{'action': 'stand', 'sources': ['not-shown']}], {}, {})
+        self.assertEqual(kept, [])
+        self.assertEqual(dropped[0]['reason'], 'line_shape')
+
+    def test_requests_refs_cannot_ground_facts(self):
+        proposal = fact('profile.preference.format', 'A lasting preference', 'r1')
+        kept, dropped = om.validate_dream([proposal], {'t1': 'tonight'}, ['tonight'], set(), set(), 0, {})
+        self.assertEqual(kept, [])
+        self.assertTrue(dropped)

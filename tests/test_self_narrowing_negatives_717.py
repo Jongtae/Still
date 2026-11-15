@@ -428,6 +428,11 @@ class _Loop(prep_t._Case):
 class InjectedText(_Loop):
     """Item 6, through the real model loop (``run_due_preparation`` -> ``run_one`` -> ``settings_change``)."""
 
+    def setUp(self):
+        super().setUp()
+        # The dream notice must use the same owner zone as this fixture's due times.
+        self.store.put(TIMEZONE_CONFIG_KEY, 'Asia/Seoul')
+
     def audits_and_notices(self):
         with self.store.db() as db:
             notices = [tuple(r) for r in db.execute("SELECT * FROM telegram_notifications WHERE kind LIKE 'preparation_blocked:self-change:%'")]

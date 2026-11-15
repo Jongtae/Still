@@ -5,6 +5,7 @@ from unittest import mock
 
 from personal_agent import preparations as prep, work_mode
 from personal_agent.messages import msg
+from personal_agent.current_context import TIMEZONE_CONFIG_KEY
 import test_self_narrowing_717 as sn
 import test_preparation_suggestions as sugg
 import test_preparations as pt
@@ -163,6 +164,11 @@ class SelfChanges(sn._Case):
 
 
 class DreamFindings(pt._Case):
+    def setUp(self):
+        super().setUp()
+        # The fixture's dates and waking hours belong to the owner, not the test host.
+        self.store.put(TIMEZONE_CONFIG_KEY, 'Asia/Seoul')
+
     suggest = sugg.Offer.suggest
     deliver = sugg.Offer.deliver
     row_notification = sugg.Offer.row_notification

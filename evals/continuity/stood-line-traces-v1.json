@@ -1,0 +1,113 @@
+{
+  "version": "stood-line-traces/1",
+  "traces": [
+    {
+      "id": "identity_across_days",
+      "split": "dev",
+      "title": "One stood line keeps its id from the first stand to a run on day seven",
+      "steps": [
+        {"at_hours": 0, "do": "owner_turn", "args": {"tag": "t1", "text": "Check the shared tracker again"}, "expect": {"line_count": 0}},
+        {"at_hours": 47.9, "do": "owner_turn", "args": {"tag": "t2", "text": "Check the shared tracker once more"}, "expect": {"line_count": 0}},
+        {"at_hours": 48, "do": "look_back", "args": {"action": "stand", "task": "Watch the shared tracker", "sources": ["t1", "t2"]},
+         "expect": {"outcome_stood": true, "line_count": 1, "line_state": "active", "announced": false, "rows_total": 0, "provenance_days": 2}},
+        {"at_hours": 48, "do": "announce", "args": {"delivery": "sent"},
+         "expect": {"notice_count": 1, "announced": true, "rows_active": 1, "rows_total": 2, "accepted_by_dream": true, "same_line_id": true}},
+        {"at_hours": 49.1, "do": "run_due", "args": {},
+         "expect": {"run_started": true, "run_read_version": 1, "same_line_id": true, "line_count": 1}},
+        {"at_hours": 71.9, "do": "owner_turn", "args": {"tag": "t3", "text": "Is the shared tracker still fine"}, "expect": {}},
+        {"at_hours": 95.9, "do": "owner_turn", "args": {"tag": "t4", "text": "Tracker status again please"}, "expect": {}},
+        {"at_hours": 96, "do": "look_back", "args": {"action": "stand", "task": "Watch the shared tracker", "sources": ["t3", "t4"]},
+         "expect": {"refused_reason": "line_active", "same_line_id": true, "line_count": 1, "rows_total": 2, "notice_count": 1}},
+        {"at_hours": 145, "do": "run_due", "args": {},
+         "expect": {"run_started": true, "run_read_version": 1, "same_line_id": true, "line_count": 1, "notice_count": 1}}
+      ]
+    },
+    {
+      "id": "correction_carried_forward",
+      "split": "dev",
+      "title": "An owner rule reaches the next run and an inferred amend cannot drop it",
+      "steps": [
+        {"at_hours": 0, "do": "owner_turn", "args": {"tag": "t1", "text": "Check the shared tracker again"}, "expect": {}},
+        {"at_hours": 47.9, "do": "owner_turn", "args": {"tag": "t2", "text": "Check the shared tracker once more"}, "expect": {}},
+        {"at_hours": 48, "do": "look_back", "args": {"action": "stand", "task": "Watch the shared tracker", "sources": ["t1", "t2"]},
+         "expect": {"outcome_stood": true, "line_version": 1}},
+        {"at_hours": 48, "do": "announce", "args": {"delivery": "sent"}, "expect": {"announced": true, "rows_active": 1}},
+        {"at_hours": 49.1, "do": "run_due", "args": {}, "expect": {"run_started": true, "run_read_version": 1, "rule_absent": "Skip the weekend digest"}},
+        {"at_hours": 50, "do": "owner_rule", "args": {"rule": "Skip the weekend digest"},
+         "expect": {"line_version": 2, "brief_rule_present": "Skip the weekend digest", "same_line_id": true}},
+        {"at_hours": 74, "do": "run_due", "args": {},
+         "expect": {"run_started": true, "run_read_version": 2, "rule_present": "Skip the weekend digest", "same_line_id": true}},
+        {"at_hours": 75, "do": "look_back", "args": {"action": "amend", "expected_version": "current", "drop_rules": [2]},
+         "expect": {"refused_reason": "line_owner_rule", "line_version": 2, "brief_rule_present": "Skip the weekend digest"}},
+        {"at_hours": 75, "do": "look_back", "args": {"action": "amend", "expected_version": "current", "drop_rules": [1], "rules": ["Read quickly"]},
+         "expect": {"outcome_amended": true, "line_version": 3, "brief_rule_present": "Skip the weekend digest", "inferred_rule_present": "Read quickly"}}
+      ]
+    },
+    {
+      "id": "stop",
+      "split": "dev",
+      "title": "A stopped line is not stood again by the AI and only the owner reopens it",
+      "steps": [
+        {"at_hours": 0, "do": "owner_turn", "args": {"tag": "t1", "text": "Check the shared tracker again"}, "expect": {}},
+        {"at_hours": 47.9, "do": "owner_turn", "args": {"tag": "t2", "text": "Check the shared tracker once more"}, "expect": {}},
+        {"at_hours": 48, "do": "look_back", "args": {"action": "stand", "task": "Watch the shared tracker", "sources": ["t1", "t2"]},
+         "expect": {"outcome_stood": true}},
+        {"at_hours": 48, "do": "announce", "args": {"delivery": "sent"}, "expect": {"announced": true, "rows_active": 1}},
+        {"at_hours": 49.1, "do": "run_due", "args": {}, "expect": {"run_started": true}},
+        {"at_hours": 50, "do": "owner_stop", "args": {}, "expect": {"line_state": "stopped", "rows_active": 0, "rows_all_cancelled": true}},
+        {"at_hours": 71.9, "do": "owner_turn", "args": {"tag": "t3", "text": "Check the shared tracker, third day"}, "expect": {}},
+        {"at_hours": 95.9, "do": "owner_turn", "args": {"tag": "t4", "text": "Check the shared tracker, fourth day"}, "expect": {}},
+        {"at_hours": 96, "do": "look_back", "args": {"action": "stand", "task": "Watch the shared tracker", "sources": ["t3", "t4"]},
+         "expect": {"refused_reason": "line_stopped_before", "line_count": 1, "line_state": "stopped", "rows_active": 0}},
+        {"at_hours": 120, "do": "run_due", "args": {}, "expect": {"run_started": false, "rows_active": 0}},
+        {"at_hours": 121, "do": "owner_restart", "args": {}, "expect": {"line_state": "active", "same_line_id": true, "line_count": 1, "owner_written": true}}
+      ]
+    },
+    {
+      "id": "no_payment_no_approval",
+      "split": "heldout",
+      "title": "With payment autonomy on, a stood line's run cannot pay and raises no approval",
+      "steps": [
+        {"at_hours": 0, "do": "enable_payment_autonomy", "args": {}, "expect": {"line_count": 0}},
+        {"at_hours": 0, "do": "owner_turn", "args": {"tag": "t1", "text": "Check the shared tracker again"}, "expect": {}},
+        {"at_hours": 47.9, "do": "owner_turn", "args": {"tag": "t2", "text": "Check the shared tracker once more"}, "expect": {}},
+        {"at_hours": 48, "do": "look_back", "args": {"action": "stand", "task": "Watch the shared tracker", "sources": ["t1", "t2"]},
+         "expect": {"outcome_stood": true, "authority_unchanged": true}},
+        {"at_hours": 48, "do": "announce", "args": {"delivery": "sent"},
+         "expect": {"announced": true, "rows_active": 1, "accepted_by_dream": true, "authority_unchanged": true}},
+        {"at_hours": 49.1, "do": "run_due", "args": {}, "expect": {"run_started": true, "self_set_run": true, "authority_unchanged": true}},
+        {"at_hours": 49.2, "do": "attempt_payment", "args": {},
+         "expect": {"payment_authorized": false, "approval_refused": "unattended_run", "approval_raised": false, "authority_unchanged": true}}
+      ]
+    },
+    {
+      "id": "unknown_announcement_retry",
+      "split": "heldout",
+      "title": "An announcement that is not confirmed sent starts nothing and a later day retries",
+      "steps": [
+        {"at_hours": 0, "do": "owner_turn", "args": {"tag": "t1", "text": "Check the shared tracker again"}, "expect": {}},
+        {"at_hours": 47.9, "do": "owner_turn", "args": {"tag": "t2", "text": "Check the shared tracker once more"}, "expect": {}},
+        {"at_hours": 48, "do": "look_back", "args": {"action": "stand", "task": "Watch the shared tracker", "sources": ["t1", "t2"]},
+         "expect": {"outcome_stood": true, "rows_total": 0}},
+        {"at_hours": 48, "do": "announce", "args": {"delivery": "unknown"},
+         "expect": {"notice_count": 1, "announced": false, "rows_total": 0, "rows_active": 0}},
+        {"at_hours": 50, "do": "run_due", "args": {}, "expect": {"run_started": false, "rows_total": 0, "announced": false}},
+        {"at_hours": 72, "do": "announce", "args": {"delivery": "sent", "reoffer": true},
+         "expect": {"notice_count": 1, "announced": true, "rows_active": 1, "accepted_by_dream": true}}
+      ]
+    },
+    {
+      "id": "one_day_refused",
+      "split": "heldout",
+      "title": "Owner turns all on one local day stand nothing",
+      "steps": [
+        {"at_hours": 0, "do": "owner_turn", "args": {"tag": "t1", "text": "Check the shared tracker again"}, "expect": {}},
+        {"at_hours": 0.5, "do": "owner_turn", "args": {"tag": "t2", "text": "Check the shared tracker once more"}, "expect": {}},
+        {"at_hours": 0.6, "do": "look_back", "args": {"action": "stand", "task": "Watch the shared tracker", "sources": ["t1", "t2"]},
+         "expect": {"refused_reason": "line_evidence_one_day", "line_count": 0, "rows_total": 0}},
+        {"at_hours": 0.9, "do": "announce", "args": {"delivery": "sent"}, "expect": {"notice_count": 0, "line_count": 0, "rows_total": 0}},
+        {"at_hours": 3, "do": "run_due", "args": {}, "expect": {"run_started": false, "line_count": 0}}
+      ]
+    }
+  ]
+}

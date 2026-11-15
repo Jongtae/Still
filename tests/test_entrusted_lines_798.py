@@ -109,6 +109,7 @@ class _LineCase(_Case):
 class OpeningTests(_LineCase):
     def test_announcement_is_sent_once_per_line_with_its_three_parts_and_a_stop_control(self):
         brief, _work = self.open_line()
+        self.assertTrue(all(rule.get('basis') is None for rule in brief['rules']))
         self.assertEqual((brief['task'], brief['report_promise'], brief['state'], brief['version']),
                          (TASK, PROMISE, el.STATE_ACTIVE, 1))
         self.telegram.clear()
@@ -488,7 +489,10 @@ class AnswerTests(_LineCase):
 class FormatTests(_LineCase):
     def test_the_brief_has_no_authority_rung_amount_or_subject_field_and_an_unknown_field_is_refused(self):
         self.assertEqual(el.FIELDS, ('task', 'rules', 'report_promise', 'open_matters', 'state', 'account_every_days'))
-        self.assertEqual(el.RULE_FIELDS, ('text', 'from', 'at'))
+        self.assertEqual(el.RULE_FIELDS, ('text', 'from', 'at', 'basis'))
+        legacy = el.validate({'task': TASK, 'report_promise': PROMISE,
+                              'rules': [{'text': RULE, 'from': 'owner-work', 'at': self.now}]})
+        self.assertIsNone(legacy['rules'][0]['basis'])
         valid = {'task': TASK, 'report_promise': PROMISE, 'rules': [], 'state': el.STATE_ACTIVE}
         el.validate(valid)
         for field in ('authority', 'rung', 'amount', 'subject', 'limit', 'grant'):
@@ -515,8 +519,9 @@ class FormatTests(_LineCase):
     def test_no_brief_field_prompt_or_catalogue_entry_names_a_subject(self):
         from personal_agent.messages import catalog
         from personal_agent.prompt_files import prompt
-        texts = [prompt('line_account')] + [entry['en'] for key, entry in catalog().items()
-                                            if key.startswith('lines.') or key.startswith('button.line_')]
+        texts = [prompt(name) for name in ('line_account', 'owner_model_dream_lines', 'day_plan_lines')] + [
+            entry['en'] for key, entry in catalog().items()
+            if key.startswith('lines.') or key.startswith('button.line_')]
         named = ('trade', 'stock', 'invest', 'shop', 'cart', 'flight', 'hotel', 'calendar', 'mail', 'price', 'news', 'weather')
         for text in texts:
             with self.subTest(text=text[:40]):
