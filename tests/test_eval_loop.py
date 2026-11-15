@@ -263,7 +263,10 @@ class FakePool:
         self.used += 1
         if self.error:
             raise self.error
-        yield FakeBox(self.cached)
+        with tempfile.TemporaryDirectory() as data:
+            box = FakeBox(self.cached)
+            box.data = Path(data)
+            yield box
 
     def store_judgment(self, slot, worker, rows):
         self.stored[(slot, worker)] = rows
@@ -849,6 +852,48 @@ class CliTest(unittest.TestCase):
                 cli.main(['scenarios'])
             self.assertIn('owner-private', out.getvalue())
             self.assertNotIn('비밀 제목', out.getvalue())
+
+    def test_sweep_judgment_timeout_flag_default_and_override(self):
+        from unittest import mock
+        self.assertEqual(cli.JUDGMENT_TIMEOUT, 900)
+        for extra, expected in (([], cli.JUDGMENT_TIMEOUT), (['--judgment-timeout', '120'], 120)):
+            with self.subTest(extra=extra), mock.patch.object(cli, 'cmd_sweep', return_value=0) as sweep:
+                self.assertEqual(cli.main(['sweep', *extra]), 0)
+                selected = sweep.call_args.args[0]
+                self.assertEqual(selected.judgment_timeout, expected)
+            from types import SimpleNamespace
+            selected.seed = ''
+            task_options = []
+            def factory(**kwargs):
+                task_options.append(kwargs)
+                return 'fixture-task'
+            def evaluate(task, **kwargs):
+                self.assertEqual(task, 'fixture-task')
+                self.assertEqual(kwargs['metadata']['judgment_timeout'], expected)
+                return [SimpleNamespace(results=None)]
+            with mock.patch.object(cli, '_write', return_value={'trend': {'regressions': []}}):
+                self.assertEqual(cli.cmd_sweep(selected, task_factory=factory, inspect_eval=evaluate,
+                                               key_loader=lambda _: 'fixture'), 0)
+            self.assertEqual(task_options[0]['judgment_timeout'], expected)
+
+    def test_world_sweep_passes_judgment_timeout_and_records_it(self):
+        from unittest import mock
+        for extra, expected in (([], cli.JUDGMENT_TIMEOUT), (['--judgment-timeout', '120'], 120)):
+            with self.subTest(extra=extra), mock.patch.object(cli, 'cmd_sweep', return_value=0) as sweep:
+                cli.main(['sweep', '--world', 'fake', '--instances', '1', *extra])
+                selected = sweep.call_args.args[0]
+            selected.seed = ''
+            item = {'id': 'world-fixture', 'world': {'expect_world_pass': True}}
+            run = mock.Mock(return_value={'turns': []})
+            markdown = mock.Mock()
+            markdown.read_text.return_value = ''
+            with mock.patch.object(cli.scenario_module, 'load', return_value=[item]), \
+                    mock.patch.object(cli, 'write_report', return_value=(None, markdown, {
+                        'trend': {'regressions': []}})) as write:
+                self.assertEqual(cli.run_world_sweep(selected, run_scenario=run,
+                                                     pool_factory=lambda **kw: None), 0)
+            self.assertEqual(run.call_args.kwargs['judgment_timeout'], expected)
+            self.assertEqual(write.call_args.args[2]['judgment_timeout'], expected)
 
 
 class BoundaryTest(unittest.TestCase):

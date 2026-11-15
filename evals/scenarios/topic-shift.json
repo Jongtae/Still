@@ -19,7 +19,9 @@
   "good_secretary": "Treats turn 2 as a new, general shopping question: recommends earphones on their own merits, not earphones 'for the Busan trip' or anything tied to Haeundae.",
   "tags": [
    "topic-shift",
-   "shopping"
+   "shopping",
+   "atus-2025:1812",
+   "atus-2025:0702"
   ]
  },
  {
@@ -41,7 +43,9 @@
   ],
   "good_secretary": "Gives gift ideas within about 200,000 won with concrete items; does not narrow the gift to restaurants or Gwanghwamun.",
   "tags": [
-   "topic-shift"
+   "topic-shift",
+   "atus-2025:1101",
+   "atus-2025:0702"
   ]
  }
 ]

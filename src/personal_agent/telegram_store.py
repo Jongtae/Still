@@ -189,6 +189,18 @@ class TelegramStore:
             return db.execute("UPDATE telegram_notifications SET fingerprint=?,state='queued',message_id=NULL,sent_at=NULL "
                               "WHERE job_id=? AND kind=? AND state!='sending'", (fingerprint, job_id, kind)).rowcount == 1
 
+    def reoffer_unknown(self, notification_id, db):
+        """Queue a prompt whose delivery became ``unknown`` for its one more send (#842).
+
+        Only an ``unknown`` row moves: an answered, cancelled, queued or sending one never does,
+        unlike ``rebind_notification``.  The binding (``fingerprint``: the offer digest, nonce or
+        drafts it covers) is kept as it is, so what an answer settles is unchanged; ``message_id``
+        and ``sent_at`` are cleared, so no earlier message of this prompt matches a tap, reply or
+        reaction, and an act made before the new send cannot answer it.  Returns whether it moved.
+        """
+        return db.execute("UPDATE telegram_notifications SET state='queued',message_id=NULL,sent_at=NULL "
+                          "WHERE id=? AND state='unknown'", (notification_id,)).rowcount == 1
+
     def notification(self, notification_id):
         store=self.store
         with store.db() as db:

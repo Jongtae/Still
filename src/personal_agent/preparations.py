@@ -204,7 +204,9 @@ COLUMN_MIGRATIONS = (('prepared_text', 'TEXT'),
                      ('until_at', 'REAL'),
                      ('window_terms', 'TEXT'),
                      # #798: the entrusted line this row does the work of (``entrusted_lines``), or NULL.
-                     ('line_id', 'TEXT'))
+                     ('line_id', 'TEXT'),
+                     # #813: settlement time of the last promised-report decision, independent of delivery.
+                     ('last_report_at', 'REAL'))
 
 
 def run_seconds():
@@ -579,7 +581,7 @@ def next_day_window(row, now):
 
 
 def window_report_reason(row, now):
-    """The report the owner is due at this slot, independent of result equality."""
+    """The report owed at settlement, independent of skipped slots or result equality."""
     if row.get('recurrence') != RECURRENCE_WINDOW or row.get('run_return_state'):
         return None
     if next_window_slot(row, now) is None:
@@ -588,14 +590,21 @@ def window_report_reason(row, now):
     seconds = terms.get('report_seconds')
     if seconds:
         first = row['rule_start']
+        last_report = row.get('last_report_at')
         if terms.get('recurrence'):
             tz = zone(row['timezone'])
             local_slot = datetime.fromtimestamp(row['due_at'], tz).replace(tzinfo=None)
             anchor = datetime.fromtimestamp(first, tz)
-            elapsed = (local_slot - datetime.combine(local_slot.date(), anchor.time())).total_seconds()
+            opening = datetime.combine(local_slot.date(), anchor.time())
+            elapsed_now = (datetime.fromtimestamp(now, tz).replace(tzinfo=None) - opening).total_seconds()
+            elapsed_sent = ((datetime.fromtimestamp(last_report, tz).replace(tzinfo=None) - opening).total_seconds()
+                            if last_report is not None else 0)
         else:
-            elapsed = row['due_at'] - first
-        if elapsed > 0 and elapsed % seconds == 0:
+            elapsed_now = now - first
+            elapsed_sent = last_report - first if last_report is not None else 0
+        due_index = math.floor(elapsed_now / seconds)
+        sent_index = max(0, math.floor(elapsed_sent / seconds))
+        if due_index >= 1 and due_index > sent_index:
             return REASON_PROMISED_REPORT
     return None
 
@@ -1119,7 +1128,7 @@ class Preparations:
                    'every_seconds': every_seconds, 'window_end': window_end, 'until_at': until_at,
                    'max_runs': max_runs, 'run_count': 0,
                    'rule_start': due_at if terms or recurrence and recurrence.startswith('RRULE:') else None,
-                   'window_terms': terms,
+                   'window_terms': terms, 'last_report_at': None,
                    'delivery_mode': delivery_mode, 'last_decision': None, 'last_decision_reason': None,
                    'last_notified_digest': None, 'last_notified_text': None, 'last_notified_at': None,
                    'title_text': title, 'offer_text': offer, 'origin': origin, 'offered_at': None, 'line_id': line_id}
@@ -1283,6 +1292,8 @@ class Preparations:
             # A recurring watch's count is per day, independent of any skipped slots today.
             rhythm = terms.get('recurrence')
             rebased = bool(set(changes) & {'due', 'timezone'})
+            if rebased:
+                updates['last_report_at'] = None
             anchor = due_at if rebased else row.get('rule_start')
             done = int(row.get('run_count') or 0)
             start = due_at
@@ -1803,6 +1814,8 @@ class Preparations:
             notified = False
             if decision is not None and job:
                 updates.update(last_decision=decision[0], last_decision_reason=decision[1])
+                if decision == (DECISION_NOTIFY, REASON_PROMISED_REPORT):
+                    updates['last_report_at'] = now
                 if decision[0] == DECISION_NOTIFY and notify_to:
                     # Queued here; the "last notified" fields advance only once
                     # Telegram confirms the send (``record_notified``).

@@ -4051,7 +4051,8 @@ class AgentService:
         elif not selected:
             steps.append({'id':'model', 'state':'needed', 'message':msg('service.onboarding_model_needed')})
         # #90: the step names the latest restart; older interrupted rows stay counted in 'recovery'.
-        if any(self.store.last_recovery().values()):
+        # #842: and clears once what it cut off has settled (each of its counts is settled now).
+        if any(cut and recovery.get(key) for key,cut in self.store.last_recovery().items()):
             steps.append({'id':'recovery', 'state':'attention', 'message':msg('service.onboarding_recovery_attention')})
         else:
             steps.append({'id':'recovery', 'state':'ready', 'message':msg('service.onboarding_recovery_ready')})
@@ -5927,7 +5928,9 @@ class AgentService:
     #: #710: ``orchestrator`` events record the plan and its evaluation, never a tool attempt.
     LOCAL_NON_TOOL_EVENTS=frozenset({'model','local_authority','conversation_continuity',ORCHESTRATION_EVENT,om.EVENT_TOOL,
                                      om.REVIEW_EVENT_TOOL,MEMORY_UNDO_TOOL,STEER_EVENT,REACTION_EVENT,
-                                     'response_timing','connection_setup','preparation'})  # host slot receipt, not schedule_preparation
+                                     'response_timing','connection_setup','preparation',
+                                     # #842: the marker that a finished Work's prompts were queued (``sweep_after_work``).
+                                     'after_work'})  # host slot receipt, not schedule_preparation
 
     def workspace_authority_need(self):
         """Which folder a save-a-result request still lacks: the read first, then the write."""
@@ -7680,6 +7683,26 @@ class AgentService:
         return failed
 
     @staticmethod
+    def _without_stale_bridge_refusals(rows,run):
+        """Drop calls a bridge from an earlier run of this Work had refused (#841, matrix X4).
+
+        Such a bridge (one that outlived a restart) records its refused call with the ledger
+        epoch it was bound to.  That row is not this run's stop: without this, a stale bridge's
+        ``run_superseded`` suppressed the resumed run's Continue offer.  This run's own refusals
+        carry its host epoch and still count; with no host epoch nothing is dropped.
+        """
+        epoch=getattr(getattr(getattr(run,'work_budget',None),'ledger',None),'epoch',None)
+        if type(epoch) is not int or epoch<0:return rows
+        kept=[]
+        for event in rows:
+            try:data=json.loads(event['detail'] or '{}')
+            except (TypeError,ValueError):data=None
+            bound=data.get('bound_epoch') if isinstance(data,dict) else None
+            if type(bound) is int and bound!=epoch:continue
+            kept.append(event)
+        return kept
+
+    @staticmethod
     def _budget_boundary(codes):
         from .agent_runtime import BUDGET_CODES
         # #617: a run another run superseded, or whose budget record was unreadable, offers no Continue.
@@ -7689,12 +7712,16 @@ class AgentService:
     def offer_budget_continue(self, run):
         """Offer Continue at a budget boundary, or release what the run held for one (#471)."""
         offered=self._offer_budget_continue(run)
-        work_id=run.job['id']
-        if not offered and self.budget_continue_offer(work_id).get('state')=='pending':
-            self.store.put('budget_continue:'+work_id,{'state':'none'})
-            if ws.is_resumable_continuation(run.outcome) and not self.photo_work_has_pending_resume(work_id):
-                self.store.remove_telegram_photo(work_id)
+        if not offered:self._release_budget_continue_hold(run.job,run.outcome)
         return offered
+
+    def _release_budget_continue_hold(self, job, outcome):
+        """Release a pending hold when no Continue offer can be made or recovered."""
+        work_id=job['id']
+        if self.budget_continue_offer(work_id).get('state')=='pending':
+            self.store.put('budget_continue:'+work_id,{'state':'none'})
+            if ws.is_resumable_continuation(outcome) and not self.photo_work_has_pending_resume(work_id):
+                self.store.remove_telegram_photo(work_id)
 
     def _offer_budget_continue(self, run):
         from .agent_runtime import read_state_text
@@ -7704,7 +7731,7 @@ class AgentService:
             rows=db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=? AND created>=? ORDER BY id',
                             (job['id'],run.claimed_at)).fetchall()
         tools=self.attempt_tool_rows(rows)
-        failed=self._attempt_stop_codes(rows)
+        failed=self._attempt_stop_codes(self._without_stale_bridge_refusals(rows,run))
         # A completed read does not turn an owner/effect wait into a budget boundary.  #627: the one
         # continuation count is read through the continuation rule below.
         if not self._budget_boundary(failed):return False
@@ -8590,6 +8617,14 @@ class AgentService:
     def deliver_notification(self):
         return self.telegram_delivery.deliver_notification()
 
+    #: Seconds between sweeps of deliveries whose outcome is unknown (#842).
+    UNKNOWN_DELIVERY_SWEEP_SECONDS=60
+
+    def settle_unknown_deliveries(self, now=None):
+        """#842: a cut-off prompt is offered once more; the owner is told once of any other uncertain delivery."""
+        from .conversation_surface import settle_unknown_deliveries
+        return settle_unknown_deliveries(self, now)
+
     def _cancel_orphan_deliveries(self):
         return self.telegram_delivery._cancel_orphan_deliveries()
 
@@ -9247,6 +9282,9 @@ class AgentService:
         from .work_executor import WorkExecutor
         return WorkExecutor(self)
 
+    def sweep_after_work(self, now=None):
+        return self.work_executor.sweep_after_work(now)
+
     def run_one(self):
         return self.work_executor.run_one()
 
@@ -9339,15 +9377,8 @@ class AgentService:
         `safe_retry` allows).  Nothing is re-run and nothing already sent or
         uncertain is re-sent - only `delivery='none'` rows are touched.
         """
-        prefixes=[surface.channel_prefix for surface in self.surfaces if surface.channel_prefix]
-        with self.store.db() as db:
-            running=self.store.telegram.running_without_task_cards(db,prefixes)
-        self.store.recover()
-        with self.store.db() as db:
-            self.store.telegram.delete_interrupted_task_cards(db)
-            for work_id in running:
-                db.execute("UPDATE jobs SET delivery='pending' WHERE id=? AND status='interrupted' AND delivery='none'",(work_id,))
-        return running
+        # #841 (matrix X9): one transaction, so a stop inside recovery cannot strand the reply.
+        return self.store.recover(surface.channel_prefix for surface in self.surfaces if surface.channel_prefix)
 
     def purge_forgotten(self):
         """Purge forgotten owner state whose undo window ended (#794); a failure is logged and retried next tick."""
@@ -9389,8 +9420,13 @@ class AgentService:
             self.retire_document_consent()
         except Exception as exc:
             LOG.warning('document consent not retired (%s)',type(exc).__name__)
+        try:
+            self.sweep_after_work()
+        except Exception as exc:
+            LOG.warning('after work startup recovery failed (%s)',type(exc).__name__)
         def work():
             next_purge_check=0.0
+            next_unknown_check=0.0
             while not self.stop.is_set():
                 # #659: one indexed query; nothing due costs no model or network call.
                 self.run_due_preparation()
@@ -9403,6 +9439,10 @@ class AgentService:
                 self.expire_memory_prompts()
                 # #918 review: saved-notices a crash or an unknown delivery left behind are released.
                 self.release_memory_saved_notices()
+                try:
+                    self.sweep_after_work()
+                except Exception as exc:
+                    LOG.warning('after work recovery failed (%s)',type(exc).__name__)
                 # #709: close and settle in-flow logins (decisions, owner closes, timeouts).
                 self.process_browser_logins()
                 # #990: keep signed-in sites signed in while idle; off this thread (the jar read may wait
@@ -9413,6 +9453,12 @@ class AgentService:
                     # #794 phase 3 / #367: the forget purge hook; a forget is never purged now, so this finds nothing.
                     self.purge_forgotten()
                     next_purge_check=now+30
+                if now>=next_unknown_check:
+                    # #842: the first pass follows the restart's recovery; later ones catch uncertain sends.
+                    try:self.settle_unknown_deliveries()
+                    except Exception as exc:
+                        LOG.warning('unknown deliveries not settled (%s)',type(exc).__name__)
+                    next_unknown_check=now+self.UNKNOWN_DELIVERY_SWEEP_SECONDS
                 # #805: claim one pending owner-model upkeep when idle; it runs off this thread.
                 self.run_owner_model_upkeep()
                 self.stop.wait(.3)

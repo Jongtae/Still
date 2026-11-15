@@ -19,7 +19,8 @@
   "good_secretary": "Reads '거기' as the Hwaseong Haenggung area named in turn 1, gives a concrete driving time/route range for a Saturday afternoon with where the estimate comes from, and says the live traffic is not verified.",
   "tags": [
    "travel",
-   "context"
+   "context",
+   "atus-2025:1812"
   ]
  },
  {
@@ -43,7 +44,8 @@
   "good_secretary": "Uses the Daejeon venue and the 2pm talk from turn 1, estimates venue-to-Daejeon-station transfer plus KTX time, suggests a realistic departure window, and is honest that timetables/seat availability were not checked unless a source is shown.",
   "tags": [
    "travel",
-   "context"
+   "context",
+   "atus-2025:1805"
   ]
  },
  {
@@ -68,7 +70,8 @@
   "tags": [
    "travel",
    "context",
-   "time"
+   "time",
+   "atus-2025:1805"
   ]
  }
 ]

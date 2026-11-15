@@ -124,10 +124,23 @@ class ReleaseScriptTests(unittest.TestCase):
 
     def test_notes_carry_the_scope_and_the_boundary(self):
         self.prepare()
-        body = release.notes(self.root, '9.0.0', 'https://github.com/Jongtae/Still/milestone/99')
-        self.assertIn('every order asks first', body)
-        self.assertIn('**Not claimed:** No live order was observed.', body)
-        self.assertIn('milestone/99', body)
+        data = release.load_manifest(self.root)
+        milestone = 'https://github.com/Jongtae/Still/milestone/99'
+        carries = (
+            'Order controls are available.\n\n'
+            '## New features\n\n'
+            '- **Order approval.** Unattended orders needed a decision. '
+            'Every order asks first. [#123](https://github.com/Jongtae/Still/issues/123)\n\n'
+            '## Upgrade notes\n\n'
+            'No manual upgrade steps are needed.'
+        )
+        release.unpublished_entry(data, '9.0.0')['carries'] = carries
+        release.save_manifest(self.root, data)
+        self.assertEqual(
+            release.notes(self.root, '9.0.0', milestone),
+            f'{carries}\n\n## Verification at release\n\n'
+            f'No live order was observed.\n\n[Release milestone]({milestone})\n',
+        )
 
     def test_record_leaves_main_in_the_state_the_traceability_tests_require(self):
         self.prepare()

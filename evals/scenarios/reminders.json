@@ -18,7 +18,8 @@
   "good_secretary": "Sets (or proposes for one-tap confirmation) a reminder for Saturday 21:00 that mentions the Sunday 07:40 tee time at Cheongsol CC, and states exactly what was scheduled and how it will be delivered.",
   "tags": [
    "reminder",
-   "follow-through"
+   "follow-through",
+   "atus-2025:1301"
   ]
  },
  {
@@ -45,7 +46,8 @@
   "good_secretary": "Estimates the early-morning drive from Jeongja-dong to the Yeoju course with its basis, picks a departure time with a buffer, and schedules a reminder before that departure, stating the exact time.",
   "tags": [
    "reminder",
-   "travel"
+   "travel",
+   "atus-2025:1813"
   ]
  },
  {
@@ -66,7 +68,8 @@
   },
   "good_secretary": "Schedules a reminder about 30 minutes from now and says the exact local time it will fire.",
   "tags": [
-   "reminder"
+   "reminder",
+   "atus-2025:0201"
   ]
  }
 ]
