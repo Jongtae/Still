@@ -1576,7 +1576,12 @@ class AgentService:
             upkeep.finish(work_id,om.STATE_GONE,0,om.EVENT_UNAVAILABLE,{'reason':'nothing-to-review','period':period},now,kind=kind)
             return
         from .current_context import owner_today
-        line_input,line_refs=self.preparations_service.line_judgment_input(now,refs=True,exclude=tonight)
+        try:
+            line_input,line_refs=self.preparations_service.line_judgment_input(now,refs=True,exclude=tonight)
+            shown_proposals=tuple(item['id'] for item in json.loads(line_input)['proposals'])
+        except Exception as exc:  # noqa: BLE001 - optional context must not stop the look back
+            LOG.warning('look-back lines input unavailable kind=%s',type(exc).__name__)
+            line_input,line_refs,shown_proposals='',{},()
         deadline=upkeep.clock()+om.DREAM_RUN_SECONDS
         state,calls,status,detail=upkeep.run_dream(
             job,row,self._owner_model_judgments(work_id),turns=turns,earlier=earlier,source_works=source_works,
@@ -1587,7 +1592,7 @@ class AgentService:
             # #583: the active preparations by name, so the look back does not suggest one again.
             preparations='\n'.join('- '+title for title in self.preparations.active_titles(om.DREAM_PREPARATIONS_SHOWN)),
             suggest=lambda items,judgments:self.suggest_preparations(work_id,items,judgments),
-            lines=line_input,line_refs=line_refs,stand=lambda items,judgments:self.apply_line_actions(work_id,items,judgments))
+            lines=line_input,line_refs=line_refs,stand=lambda items,judgments:self.apply_line_actions(work_id,items,judgments,shown_proposals=shown_proposals))
         detail['period']=period
         upkeep.finish(work_id,state,calls,status,detail,upkeep.clock(),kind=kind)
         LOG.info('owner-model dream work=%s state=%s calls=%s turns=%s applied=%s notes=%s diary=%s',work_id,state,calls,
@@ -1776,8 +1781,8 @@ class AgentService:
         """
         return self.preparations_service.queue_preparation_proposal(job)
 
-    def apply_line_actions(self, anchor_id, items, judgments):
-        return self.preparations_service.apply_line_actions(anchor_id, items, judgments)
+    def apply_line_actions(self, anchor_id, items, judgments, *, shown_proposals=()):
+        return self.preparations_service.apply_line_actions(anchor_id, items, judgments,shown_proposals=shown_proposals)
 
     def suggest_preparations(self, anchor_id, items, judgments=None):
         """Schedule the look-back's preparations (#583, #717) as rows of its anchor Work; ``(outcomes, calls)``.

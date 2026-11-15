@@ -19,7 +19,7 @@ from personal_agent.agent_runtime import MEMORY_OWNER, ToolError
 from test_preparations import _Case
 
 
-class Lines(_Case):
+class _LinesCase(_Case):
     def setUp(self):
         super().setUp()
         self.helper=self.service.preparations_service
@@ -67,7 +67,8 @@ class Lines(_Case):
 
     def deliver(self, notice):
         # The real delivery path, not a forged sent receipt.
-        self.assertTrue(self.service.deliver_notification())
+        with patch('personal_agent.telegram_store.time.time',return_value=self.now):
+            self.assertTrue(self.service.deliver_notification())
         self.assertEqual(self.store.notification_of(notice['job_id'],notice['kind'])['state'],'sent')
         self.helper.line_tick(self.now)
 
@@ -78,6 +79,7 @@ class Lines(_Case):
         outcomes,_=self.helper.apply_line_actions(self.b,[item],self.service.decision_judge)
         self.assertEqual(outcomes,[{'reason':code}])
 
+class Lines(_LinesCase):
     def test_two_days_stand_one_line_then_rows_only_after_sent_and_restart_duplicates_nothing(self):
         brief=self.stand()
         self.assertEqual(self.helper.line_rows(brief['line_id']),[])
@@ -93,7 +95,10 @@ class Lines(_Case):
         again=self.stand()
         self.assertEqual(again['line_id'],brief['line_id'])
         self.assertEqual(len(self.helper.line_rows(brief['line_id'])),2)
-        self.assertIn('2',self.helper.line_notice_text(notice))
+        from personal_agent.messages import msg
+        self.assertEqual(self.service.lines.provenance(brief['line_id'])['evidence']['days'],2)
+        self.assertEqual(self.helper.line_notice_text(notice),msg('lines.stood_announced',
+                         task=brief['task'],promise=brief['report_promise'],days=2))
 
     def test_unknown_cancelled_and_work_mode_announcements_retry_next_day_without_rows(self):
         for state in ('unknown','cancelled'):
@@ -112,7 +117,10 @@ class Lines(_Case):
                 with self.store.db() as db:
                     rows=db.execute('SELECT * FROM telegram_notifications WHERE kind LIKE ?',
                                     (el.NOTICE_OPENED+brief['line_id']+':%',)).fetchall()
-                self.assertEqual(len(rows),2)
+                self.assertEqual(len(rows),1 if state=='unknown' else 2)
+                if state=='unknown':
+                    # Only delivery's reconciliation API may re-offer an unknown row. L1 never writes its state.
+                    with self.store.db() as db:self.store.telegram.reoffer_unknown(notice['id'],db)
                 self.deliver(dict(rows[-1]))
         # No Telegram notice surface (as in work mode) must not become a web receipt.
         self.now+=86400;self.a=self.owner('mode-a',self.now-86400);self.b=self.owner('mode-b',self.now-60)
@@ -306,7 +314,7 @@ class Lines(_Case):
         after=self.helper.line_handler(self.store.job(self.b))({'action':'restart','line':brief['line_id']})
         self.assertEqual(after['state'],'active')
         self.assertTrue(self.service.lines.owner_written(brief['line_id']))
-        self.assertEqual(self.helper.line_rows(brief['line_id']),[]) # still awaits announcement
+        self.assertEqual(len(self.helper.line_rows(brief['line_id'])),2) # owner restart is its announcement
 
     def test_forgetting_a_line_removes_its_stop_history_without_reusing_its_identity(self):
         brief=self.stand();self.helper.stop_line(brief['line_id'],self.b)
@@ -333,8 +341,9 @@ class Lines(_Case):
         opened=self.service.lines.open(self.b,task='Owner line',report_promise='later')
         with self.assertRaises(Exception):self.helper.scheduled_line(opened['line_id'],None,accepted=False,planning=True)
         self.helper.stop_line(brief['line_id'],self.b)
-        result,_=self.helper.suggest_preparations(self.b,[{**self.item()['first'][0],'line':brief['line_id']}])
-        self.assertEqual(result,[{'reason':'line_not_announced'}])
+        result,_=self.helper.suggest_preparations(self.b,[{**self.item()['first'][0],'goal':'A fresh unlinked report','line':brief['line_id']}])
+        self.assertIn('preparation_id',result[0])
+        self.assertIsNone(self.service.preparations.get(result[0]['preparation_id'])['line_id'])
 
     def authority_state(self):
         with self.store.db() as db:
@@ -450,3 +459,237 @@ class Lines(_Case):
         with patch.object(module,'replay',side_effect=lambda *a,**kw:(print('owner-private-leak'),result)[1]):
             with contextlib.redirect_stdout(out):self.assertEqual(module.main(['--store',str(self.root),'--nights','1']),0)
         self.assertNotIn('leak',out.getvalue())
+
+
+class Round2Tests(_LinesCase):
+    """Review regressions through existing stores, injected transports and the owner clock."""
+
+    def dream_with(self, payload, *, fail_input=False):
+        contexts=[]
+        def structured(context,question,schema):
+            if context.purpose!=om.DREAM_PURPOSE:return None
+            contexts.append(context)
+            data=payload(context) if callable(payload) else payload
+            return StructuredDecision(OUTCOME_DECIDED,{'proposals':[],'notes':'','change':'','notes_sources':[],
+                                     'diary':'','suggestions':[],**data},fixture_confidence())
+        self.service.use_decision_engine(FixtureDecisionEngine(structured=structured))
+        if fail_input:
+            with patch.object(self.helper,'line_judgment_input',side_effect=RuntimeError('fixture input failure')):
+                with self.assertLogs(level='WARNING') as logged:
+                    self.service._owner_model_dream({'job_id':self.b,'reason':str(self.now-3600)},self.store.job(self.b),self.now)
+            self.assertTrue(any('look-back lines input unavailable' in line for line in logged.output))
+        else:
+            self.service._owner_model_dream({'job_id':self.b,'reason':str(self.now-3600)},self.store.job(self.b),self.now)
+        return contexts
+
+    def test_stood_rows_have_only_the_announcement_and_preserve_the_ordinary_offer(self):
+        from personal_agent.quickstart_service import PREPARED_IDS_PREFIX
+        brief=self.stand();self.deliver(self.announce(brief))
+        self.script=[{'content':'Acknowledged.'}]
+        owner_work=self.receive('An independent owner request')
+        with self.store.db() as db:
+            self.assertEqual(db.execute("SELECT count(*) FROM telegram_notifications WHERE kind='preparation_scheduled'").fetchone()[0],0)
+            self.assertEqual(db.execute('SELECT count(*) FROM telegram_notifications WHERE kind LIKE ?',
+                                       (el.NOTICE_OPENED+'%',)).fetchone()[0],1)
+        self.assertIsNone(self.service.preparations.last_suggestion_offered())
+        args={**self.item()['first'][0],'goal':'Another read for the line','recurrence':om.SUGGESTION_ONCE,'line':brief['line_id']}
+        linked,_=self.helper.suggest_preparations(owner_work,[args])
+        self.assertIn('preparation_id',linked[0])
+        self.assertFalse(self.service.preparations.has_unoffered_one_off())
+        # A receipt written by the old double-notice bug must not spend today's ordinary budget either.
+        self.service.preparations.mark_offered(self.helper.line_rows(brief['line_id']),self.now)
+        self.assertIsNone(self.service.preparations.last_suggestion_offered())
+        ordinary,_=self.helper.suggest_preparations(owner_work,[{**args,'goal':'An ordinary preparation','line':''}])
+        ordinary_id=ordinary[0]['preparation_id']
+        self.assertTrue(self.service.preparations.has_unoffered_one_off())
+        self.script=[{'content':'Acknowledged again.'}]
+        self.receive('Another independent request')
+        note=self.store.notification_of(owner_work,'preparation_scheduled')
+        self.assertIsNotNone(note)
+        self.assertEqual(note['fingerprint'],PREPARED_IDS_PREFIX+ordinary_id)
+        self.assertEqual(self.service.preparations.last_suggestion_offered(),self.now)
+
+    def test_cancelled_stood_account_is_never_recreated_by_ticks_or_restart(self):
+        brief=self.stand();self.deliver(self.announce(brief))
+        account=self.helper.line_account_row(brief['line_id'])
+        self.service.cancel_preparation(account['id'])
+        ids={row['id'] for row in self.helper.line_rows(brief['line_id'])}
+        self.service.run_due_preparation(self.now+60)
+        self.service=self.make_service();self.helper=self.service.preparations_service
+        self.helper.line_tick(self.now+120)
+        self.assertEqual({row['id'] for row in self.helper.line_rows(brief['line_id'])},ids)
+        self.assertEqual(self.service.preparations.get(account['id'])['state'],prep.STATE_CANCELLED)
+        self.assertIsNone(self.helper.line_account_row(brief['line_id']))
+
+    def test_cancelled_stood_work_is_never_recreated_by_ticks(self):
+        brief=self.stand();self.deliver(self.announce(brief))
+        work=self.work_rows(brief)[0]
+        self.service.cancel_preparation(work['id'])
+        ids={row['id'] for row in self.helper.line_rows(brief['line_id'])}
+        for offset in (60,120,86400):self.helper.line_tick(self.now+offset)
+        self.assertEqual({row['id'] for row in self.helper.line_rows(brief['line_id'])},ids)
+        self.assertEqual(self.service.preparations.get(work['id'])['state'],prep.STATE_CANCELLED)
+
+    def test_owner_restart_announces_withdrawn_line_and_starts_rows_once(self):
+        brief=self.stand();self.now+=7*86400
+        self.helper.line_tick(self.now)
+        self.assertEqual(self.service.lines.current(brief['line_id'])['change'],'withdrawn')
+        work=self.owner('Restart this responsibility',self.now)
+        self.helper.line_handler(self.store.job(work))({'action':'restart','line':brief['line_id']})
+        self.assertTrue(self.helper.line_announced(brief['line_id']))
+        rows=self.helper.line_rows(brief['line_id']);ids={row['id'] for row in rows}
+        self.assertEqual(len(rows),2)
+        self.assertTrue(all(row['accepted_by']==prep.ACCEPTED_DREAM for row in rows))
+        self.service=self.make_service();self.helper=self.service.preparations_service
+        self.helper.line_tick(self.now+60);self.helper.line_tick(self.now+8*86400)
+        self.assertEqual(self.service.lines.current(brief['line_id'])['state'],el.STATE_ACTIVE)
+        self.assertEqual({row['id'] for row in self.helper.line_rows(brief['line_id'])},ids)
+        with self.store.db() as db:
+            self.assertEqual(db.execute('SELECT count(*) FROM telegram_notifications WHERE kind LIKE ?',
+                                       (el.NOTICE_OPENED+'%',)).fetchone()[0],0)
+
+    def test_inferred_amend_keeps_empty_open_matters_and_locks_owner_open_matters(self):
+        brief=self.stand(open_matters='Still unresolved')
+        changed=self.helper.amend_stood_line(self.b,self.item(action='amend',line=brief['line_id'],expected_version=1,
+                          task='',report_promise='',open_matters='',first=[],sources=[self.b],rules=['An inferred rule']))
+        self.assertEqual(changed['open_matters'],'Still unresolved')
+        _before,owned=self.service.lines.write(brief['line_id'],self.b,changed['version'],'revised',
+                                            lambda b:{**b,'open_matters':'Owner open matter'})
+        item=self.item(action='amend',line=brief['line_id'],expected_version=owned['version'],task='',report_promise='',
+                       open_matters='Replace the owner matter',first=[],sources=[self.b])
+        out,_=self.helper.apply_line_actions(self.b,[item],self.service.decision_judge)
+        self.assertEqual(out,[{'reason':'line_change_needs_owner'}])
+        item['open_matters']=''
+        out,_=self.helper.apply_line_actions(self.b,[item],self.service.decision_judge)
+        self.assertIn('line_id',out[0])
+        self.assertEqual(self.service.lines.current(brief['line_id'])['open_matters'],'Owner open matter')
+
+    def test_supporting_ids_are_limited_to_the_bounded_proposals_actually_shown(self):
+        ids=[]
+        for index in range(15):
+            row=self.service.preparations.create(kind='prepare',goal=f'Prior proposal {index}',title=f'Proposal {index}',
+                  due_at=self.now+600,timezone='Asia/Seoul',recurrence='daily',channel='web',created_from=self.a,
+                  state=prep.STATE_PROPOSED,accepted_by=prep.ACCEPTED_DREAM,origin=prep.ORIGIN_DREAM)
+            ids.append(row['id'])
+        shown=[]
+        def payload(context):
+            block=json.loads(context.facts['lines']);shown.extend(item['id'] for item in block['proposals'])
+            self.assertTrue(shown);self.assertTrue(set(ids)-set(shown))
+            return {'lines':[self.item(sources=['t1','r1'],supporting=[*ids,'arbitrary owner text'])]}
+        with patch.object(om,'LINE_INPUT_CHARS',2000):self.dream_with(payload)
+        [brief]=self.service.lines.lines()
+        self.assertEqual(set(self.service.lines.provenance(brief['line_id'])['evidence']['supporting']),set(shown))
+
+    def test_all_outstanding_announcement_states_hold_the_global_daily_queue(self):
+        first=self.stand();notice=self.announce(first)
+        self.a=self.owner('other-a',self.now-86400);self.b=self.owner('other-b',self.now-30)
+        second=self.stand(task='Second responsibility')
+        self.now+=86400
+        for state in ('queued','sending','unknown'):
+            with self.subTest(state=state):
+                self.store.update_notification(notice['id'],state)
+                self.helper.line_tick(self.now)
+                with self.store.db() as db:
+                    self.assertEqual(db.execute('SELECT count(*) FROM telegram_notifications WHERE kind LIKE ?',
+                                               (el.NOTICE_OPENED+'%',)).fetchone()[0],1)
+                self.assertEqual(self.helper.line_rows(second['line_id']),[])
+        # Reconciliation belongs to delivery: L1 observes the same row after its re-offer.
+        with self.store.db() as db:self.assertTrue(self.store.telegram.reoffer_unknown(notice['id'],db))
+        self.deliver(notice)
+        self.assertFalse(self.helper.line_announced(second['line_id']))
+        with self.store.db() as db:
+            self.assertEqual(db.execute('SELECT count(*) FROM telegram_notifications WHERE kind LIKE ?',
+                                       (el.NOTICE_OPENED+'%',)).fetchone()[0],1)
+        self.now+=86400
+        self.deliver(self.announce(second))
+        self.assertEqual(len(self.work_rows(second)),1)
+
+    def test_look_back_input_failure_logs_but_still_writes_the_daily_record(self):
+        contexts=self.dream_with({'lines':[],'diary':'The owner asked and received a result.'},fail_input=True)
+        self.assertEqual(len(contexts),1)
+        self.assertEqual(contexts[0].facts['lines'],'none')
+        with self.store.db() as db:
+            detail=json.loads(db.execute('SELECT detail FROM tool_events WHERE tool=?',(om.DREAM_EVENT_TOOL,)).fetchone()[0])
+        self.assertIsNotNone(detail['diary'])
+        self.assertEqual(self.service.lines.lines(),[])
+
+    def test_a_full_look_back_with_empty_lines_stands_nothing(self):
+        contexts=self.dream_with({'lines':[]})
+        self.assertEqual(len(contexts),1)
+        self.assertIn('owner-private-799-a',contexts[0].facts['lines'])
+        self.assertEqual(self.service.lines.lines(),[])
+        with self.store.db() as db:
+            detail=json.loads(db.execute('SELECT detail FROM tool_events WHERE tool=?',(om.DREAM_EVENT_TOOL,)).fetchone()[0])
+            self.assertEqual(db.execute('SELECT count(*) FROM preparations').fetchone()[0],0)
+        self.assertEqual(detail['lines'],{'proposed':0,'kept':[],'dropped':[]})
+
+    def test_read_event_query_is_batched_across_lines(self):
+        for task in ('First responsibility','Second responsibility'):
+            brief=self.service.lines.open(self.b,task=task,report_promise='afterwards')
+            self.helper.line_handler(self.store.job(self.b))({'action':'read','line':brief['line_id']})
+        traced=[];original=self.store.db
+        @contextlib.contextmanager
+        def db():
+            with original() as connection:
+                connection.set_trace_callback(traced.append)
+                yield connection
+        with patch.object(self.store,'db',db):text,_=self.helper.line_judgment_input(self.now,refs=True)
+        self.assertEqual(sum('FROM tool_events e JOIN jobs' in query for query in traced),1)
+        self.assertEqual([line['use']['read_in_answers'] for line in json.loads(text)['lines']],[1,1])
+
+    def test_one_line_row_refusal_does_not_block_starting_the_next(self):
+        first=self.stand();self.a=self.owner('other-a',self.now-86400);self.b=self.owner('other-b',self.now-30)
+        second=self.stand(task='Second responsibility')
+        # Persist real owner acts while row creation is unavailable; recover both on one tick.
+        with patch.object(self.helper,'start_announced_lines',return_value=None):
+            for brief in (first,second):
+                self.helper.line_handler(self.store.job(self.b))({'action':'restart','line':brief['line_id']})
+        create=self.service.preparations.create;attempted=[]
+        def fail_first(**kwargs):
+            attempted.append(kwargs.get('line_id'))
+            if kwargs.get('line_id')==first['line_id']:raise prep.PreparationRefusal('too_many')
+            return create(**kwargs)
+        with patch.object(self.service.lines,'lines',return_value=[first,second]):
+            with patch.object(self.service.preparations,'create',side_effect=fail_first):
+                with self.assertLogs(level='WARNING') as logged:self.helper.line_tick(self.now)
+        self.assertEqual(attempted[0],first['line_id'])
+        self.assertIn(second['line_id'],attempted)
+        self.assertTrue(any(first['line_id'] in line for line in logged.output))
+        self.assertEqual(self.helper.line_rows(first['line_id']),[])
+        self.assertEqual(len(self.helper.line_rows(second['line_id'])),2)
+
+    def test_one_withdrawal_conflict_does_not_block_withdrawing_the_next(self):
+        first=self.stand();self.a=self.owner('other-a',self.now-86400);self.b=self.owner('other-b',self.now-30)
+        second=self.stand(task='Second responsibility')
+        write=self.service.lines.write
+        def conflict(line_id,*args,**kwargs):
+            if line_id==first['line_id']:raise el.LineConflict(2)
+            return write(line_id,*args,**kwargs)
+        self.now+=7*86400
+        with patch.object(self.service.lines,'write',side_effect=conflict):
+            with self.assertLogs(level='WARNING') as logged:self.helper.line_tick(self.now)
+        self.assertTrue(any(first['line_id'] in line for line in logged.output))
+        self.assertEqual(self.service.lines.current(first['line_id'])['state'],el.STATE_ACTIVE)
+        self.assertEqual(self.service.lines.current(second['line_id'])['change'],'withdrawn')
+
+    def test_invalid_suggestion_links_are_scheduled_unlinked(self):
+        stood=self.stand()
+        opened=self.service.lines.open(self.b,task='Owner responsibility',report_promise='later')
+        for index,line in enumerate(('missing',stood['line_id'],opened['line_id'])):
+            args={**self.item()['first'][0],'goal':f'Unlinked work {index}','line':line}
+            out,_=self.helper.suggest_preparations(self.b,[args])
+            self.assertIn('preparation_id',out[0])
+            self.assertNotIn('reason',out[0])
+            self.assertIsNone(self.service.preparations.get(out[0]['preparation_id'])['line_id'])
+
+
+    def test_owner_restart_of_an_active_waiting_line_announces_and_locks_it(self):
+        brief=self.stand()
+        owner=self.owner('Restart this responsibility',self.now)
+        self.helper.line_handler(self.store.job(owner))({'action':'restart','line':brief['line_id']})
+        self.assertTrue(self.helper.line_announced(brief['line_id']))
+        self.assertTrue(self.service.lines.owner_written(brief['line_id']))
+        item=self.item(action='amend',line=brief['line_id'],expected_version=brief['version'],first=[],
+                       task='An inferred replacement',report_promise='',sources=[self.b])
+        result,_=self.helper.apply_line_actions(self.b,[item],self.service.decision_judge)
+        self.assertEqual(result,[{'reason':'line_change_needs_owner'}])

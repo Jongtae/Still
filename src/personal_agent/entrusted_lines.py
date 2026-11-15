@@ -228,12 +228,16 @@ class EntrustedLines:
         return json.loads(row['stats_json'] or '{}') if row else {}
 
     def owner_written(self, line_id):
-        """Whether an owner revision has locked the task and promise against inference."""
+        """Whether an owner revision or explicit restart locks the brief against inference."""
         with self.store.db() as db:
             rows = db.execute('SELECT stats_json FROM procedure_versions WHERE slot=? AND version>1',
                               (slot(line_id),)).fetchall()
-        return any(json.loads(row['stats_json'] or '{}').get('change') in
-                   ('revised', 'rule', 'undo', 'restarted') for row in rows)
+            if any(json.loads(row['stats_json'] or '{}').get('change') in
+                   ('revised', 'rule', 'undo', 'restarted') for row in rows):
+                return True
+            # Restarting an active waiting line may leave the brief byte-identical. The owner act remains real.
+            return db.execute("SELECT 1 FROM tool_events WHERE tool='line_restarted' AND status='succeeded' "
+                              "AND json_extract(detail,'$.line_id')=? LIMIT 1", (line_id,)).fetchone() is not None
 
     def stand(self, work_id, brief, stats):
         """Commit an inferred opening once per stable look-back key, including across restart."""

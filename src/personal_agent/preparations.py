@@ -1455,17 +1455,21 @@ class Preparations:
 
     # -- look-back suggestions (#583) ----------------------------------------
 
+    #: #799: only announced stood lines receive linked dream rows. Their announcement is
+    #: the notice, even after the brief is forgotten; they never spend the ordinary offer budget.
+    _ORDINARY_SUGGESTION = 'line_id IS NULL'
+
     def last_suggestion_offered(self):
         """When the last look-back suggestion message was queued, or None."""
         with self.store.db() as db:
-            row = db.execute('SELECT MAX(offered_at) FROM preparations WHERE origin=?', (ORIGIN_DREAM,)).fetchone()
+            row = db.execute('SELECT MAX(offered_at) FROM preparations WHERE origin=? AND '+self._ORDINARY_SUGGESTION, (ORIGIN_DREAM,)).fetchone()
         return float(row[0]) if row and row[0] is not None else None
 
     def has_unoffered_one_off(self):
         """Whether a look back holds a one-off suggestion not offered yet (#638; one read)."""
         with self.store.db() as db:
             return db.execute('SELECT 1 FROM preparations WHERE state IN (?,?) AND origin=? AND offered_at IS NULL '
-                              'AND recurrence IS NULL LIMIT 1', (*UNTOLD_STATES, ORIGIN_DREAM)).fetchone() is not None
+                              'AND recurrence IS NULL AND '+self._ORDINARY_SUGGESTION+' LIMIT 1', (*UNTOLD_STATES, ORIGIN_DREAM)).fetchone() is not None
 
     def unoffered_suggestions(self, now, one_off=False):
         """The oldest look-back's suggestions the owner was not told about yet, ``(work_id, rows)``, or ``(None, [])``.
@@ -1481,6 +1485,7 @@ class Preparations:
             db.execute(f'UPDATE preparations SET state=?,updated_at=? WHERE {self._LAPSED_ONE_OFF}',
                        (STATE_EXPIRED, now, STATE_PROPOSED, ORIGIN_DREAM, now))
             anchor = db.execute('SELECT created_from FROM preparations WHERE origin=? AND state IN (?,?) AND offered_at IS NULL '
+                                + 'AND '+self._ORDINARY_SUGGESTION+' '
                                 + ('AND recurrence IS NULL ' if one_off else '')
                                 + 'ORDER BY created_at LIMIT 1', (ORIGIN_DREAM, *UNTOLD_STATES)).fetchone()
             if anchor is None:
@@ -1491,7 +1496,7 @@ class Preparations:
                 if following is not None:
                     db.execute('UPDATE preparations SET due_at=?,updated_at=? WHERE id=?', (following, now, row['id']))
             rows = [dict(row) for row in db.execute('SELECT * FROM preparations WHERE created_from=? AND origin=? '
-                                                    'AND state IN (?,?) AND offered_at IS NULL ORDER BY created_at',
+                                                    'AND state IN (?,?) AND offered_at IS NULL AND '+self._ORDINARY_SUGGESTION+' ORDER BY created_at',
                                                     (anchor[0], ORIGIN_DREAM, *UNTOLD_STATES))]
         return anchor[0], rows
 

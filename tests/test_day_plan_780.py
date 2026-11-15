@@ -352,9 +352,48 @@ class HitRecordTests(_Plan):
 
 class LineInputTests(_Plan):
     def test_plan_history_contains_lines_proposals_and_requests_blocks(self):
-        row = self.start_plan_run()
-        work = self.store.job(row['last_run_job_id'])
-        if work is None:
-            work = self.store.job(self.service.preparations.get(row['id'])['last_run_job_id'])
-        history = self.service.preparation_history(work)
-        self.assertTrue(all('"'+key+'"' in history[-1]['content'] for key in ('lines', 'proposals', 'requests')))
+        self.script=[{'content':'Acknowledged.'}]
+        owner=self.receive('OWNER-REQUEST-CONTENT')
+        with self.store.db() as db:db.execute('UPDATE jobs SET created=? WHERE id=?',(self.now-60,owner))
+        brief=self.service.lines.open(owner,task='LINE-TASK-CONTENT',report_promise='at the agreed time')
+        proposal=self.service.preparations.create(kind='prepare',goal='PROPOSAL-CONTENT',title='PROPOSAL-CONTENT',
+                    due_at=self.now+86400,timezone='Asia/Seoul',recurrence='daily',channel='web',created_from=owner,
+                    state=prep.STATE_PROPOSED,accepted_by=prep.ACCEPTED_DREAM,origin=prep.ORIGIN_DREAM)
+        row=self.start_plan_run()
+        work=self.store.job(self.service.preparations.get(row['id'])['last_run_job_id'])
+        history=self.service.preparation_history(work)
+        block=json.loads(history[-1]['content'].rsplit('\n\n',1)[1])
+        self.assertEqual(block['lines'][0]['line_id'],brief['line_id'])
+        self.assertEqual(block['lines'][0]['task'],'LINE-TASK-CONTENT')
+        self.assertEqual(block['proposals'][0]['id'],proposal['id'])
+        self.assertEqual(block['proposals'][0]['title'],'PROPOSAL-CONTENT')
+        self.assertEqual(block['requests'][0]['ref'],owner)
+        self.assertEqual(block['requests'][0]['words'],'OWNER-REQUEST-CONTENT')
+
+    def test_existing_old_goal_plan_row_receives_current_line_instructions(self):
+        from personal_agent.prompt_files import prompt
+        from personal_agent.preparations_service import DAY_PLAN_LINES
+        row=self.plan();old=prompt('day_plan')
+        with self.store.db() as db:db.execute('UPDATE preparations SET goal_text=? WHERE id=?',(old,row['id']))
+        row=self.start_plan_run()
+        work=self.store.job(self.service.preparations.get(row['id'])['last_run_job_id'])
+        self.assertEqual(work['message'],old)
+        history=self.service.preparation_history(work)
+        self.assertEqual(history[-1]['content'].count(DAY_PLAN_LINES),1)
+        seen=[]
+        self.script=[lambda body:seen.append(body) or {'content':'Nothing needed.'}]
+        self.assertTrue(self.service.run_one())
+        self.assertTrue(any(DAY_PLAN_LINES in (message.get('content') or '')
+                            for body in seen for message in body['messages']))
+        self.assertEqual(self.service.preparations.get(row['id'])['goal_text'],old)
+
+    def test_plan_input_failure_logs_and_the_plan_still_runs_without_the_block(self):
+        from unittest.mock import patch
+        self.start_plan_run();seen=[]
+        self.script=[lambda body:seen.append(body) or {'content':'Nothing needed.'}]
+        with patch.object(self.service.preparations_service,'line_judgment_input',side_effect=RuntimeError('fixture input failure')):
+            with self.assertLogs(level='WARNING') as logged:self.assertTrue(self.service.run_one())
+        self.assertTrue(any('day-plan lines input unavailable' in line for line in logged.output))
+        self.assertTrue(seen)
+        self.assertFalse(any('"lines": [' in (message.get('content') or '')
+                             for body in seen for message in body['messages']))

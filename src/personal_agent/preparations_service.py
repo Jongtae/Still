@@ -29,7 +29,8 @@ from .quickstart_service import (LOG, PREPARATION_CONVERSATION_CHARS,
 
 
 #: #780: the daily plan's brief: a method for reading the day, never a topic.
-DAY_PLAN_GOAL = prompt('day_plan') + '\n\n' + prompt('day_plan_lines')
+DAY_PLAN_LINES = prompt('day_plan_lines')
+DAY_PLAN_GOAL = prompt('day_plan') + '\n\n' + DAY_PLAN_LINES
 #: #780: the store config row for the daily plan: ``{'row': id}`` once set up, ``{'opted_out': True}``
 #: after the owner cancelled or deleted it.
 DAY_PLAN_KEY = 'day_plan'
@@ -708,7 +709,14 @@ class PreparationsService:
             recent=[item for item in service.store.history(through=own)
                     if item.get('job_id')!=own and not prep.preparation_of(item.get('request_key'))][-PLAN_HISTORY_MESSAGES:]
             fact,record=service.preparation_run_fact(job),self.day_plan_record(job)
-            content='\n\n'.join(part for part in (job['message'],fact,record,self.line_judgment_input(service.preparations.clock(),refs=False)[0]) if part)
+            # Existing rows keep their owner's schedule and brief; current line guidance reaches every run.
+            goal=job['message']
+            if DAY_PLAN_LINES not in goal:goal+='\n\n'+DAY_PLAN_LINES
+            try:line_input=self.line_judgment_input(service.preparations.clock(),refs=False)[0]
+            except Exception as exc:  # noqa: BLE001 - optional context must not stop the plan
+                LOG.warning('day-plan lines input unavailable kind=%s',type(exc).__name__)
+                line_input=''
+            content='\n\n'.join(part for part in (goal,fact,record,line_input) if part)
             return [*recent,{'role':'user','content':content,'job_id':own,'channel':job.get('channel'),'qualifier':None,
                              'request_key':job.get('request_key'),'created':job.get('created')}]
         # #583: a look-back suggestion was not made from its anchor's request; it is shown none.
@@ -816,7 +824,7 @@ class PreparationsService:
                     brief=service.lines.readable(line)
                     if not (brief and brief['state']==el.STATE_ACTIVE and service.lines.provenance(line).get('by')=='look-back'
                             and self.line_announced(line)):
-                        outcomes.append({'reason':'line_not_announced'});continue
+                        line=None
                 fields=service.preparation_fields(args,now)
                 if fields['recurrence'] is None and not once:raise prep.PreparationRefusal('invalid_recurrence')
                 goal=fields['goal']
@@ -1082,22 +1090,22 @@ class PreparationsService:
         """Bounded lines/proposals/requests JSON and the whitelist of actually shown requests."""
         from .current_context import owner_today
         service=self.service
+        with service.store.db() as db:
+            reads=db.execute('SELECT e.job_id,e.detail FROM tool_events e JOIN jobs j ON j.id=e.job_id '
+                             'WHERE e.tool=? AND j.owner_typed=1',(el.READ_EVENT,)).fetchall()
+        read_ids={}
+        for read in reads:
+            detail=json.loads(read['detail'] or '{}')
+            line_id=(detail.get('evidence') or detail).get('line_id')
+            if line_id and service.owner_typed_work(service.store.job(read['job_id'])):
+                read_ids.setdefault(line_id,set()).add(read['job_id'])
         lines=[]
         for brief in service.lines.lines():
             provenance=service.lines.provenance(brief['line_id'])
             outcomes=self.line_outcomes(brief['line_id'],limit=None)
-            with service.store.db() as db:
-                reads=db.execute('SELECT e.job_id,e.detail FROM tool_events e JOIN jobs j ON j.id=e.job_id '
-                                 'WHERE e.tool=? AND j.owner_typed=1',(el.READ_EVENT,)).fetchall()
-            read_ids=set()
-            for read in reads:
-                detail=json.loads(read['detail'] or '{}')
-                if (detail.get('evidence') or detail).get('line_id')==brief['line_id']:
-                    work=service.store.job(read['job_id'])
-                    if service.owner_typed_work(work):read_ids.add(work['id'])
             use={'runs':len(outcomes),'reached_owner':sum(o['outcome']==el.OUTCOME_DELIVERED for o in outcomes),
                  'kept':sum(o['outcome']==el.OUTCOME_KEPT for o in outcomes),
-                 'failed':sum(o['outcome']==el.OUTCOME_FAILED for o in outcomes),'read_in_answers':len(read_ids),
+                 'failed':sum(o['outcome']==el.OUTCOME_FAILED for o in outcomes),'read_in_answers':len(read_ids.get(brief['line_id'],())),
                  'last_report':next((owner_today(service.store,o['at']) for o in outcomes if o['outcome']==el.OUTCOME_DELIVERED),None)}
             lines.append({**{key:brief[key] for key in ('line_id','version','task','report_promise','rules','change')},
                           'state':'waiting' if self.waiting_line(brief) else brief['state'],
@@ -1136,7 +1144,7 @@ class PreparationsService:
         return (brief['state']==el.STATE_ACTIVE and self.service.lines.provenance(brief['line_id']).get('by')=='look-back'
                 and not self.line_announced(brief['line_id']))
 
-    def stand_line(self, anchor_id, item, judgments, *, used_calls=0):
+    def stand_line(self, anchor_id, item, judgments, *, used_calls=0, shown_proposals=()):
         """Apply the look back's stand in refusal order; semantic identity belongs to its AI."""
         service=self.service
         now=service.preparations.clock()
@@ -1185,7 +1193,7 @@ class PreparationsService:
                'rules':[{'text':service._redact_known_secrets(text),'from':evidence['works'][0],'at':now,'basis':'inferred'}
                         for text in item['rules']]}
         stats={'change':'stood','by':'look-back','stand_key':key,
-               'evidence':{**evidence,'supporting':item['supporting']},'first':{**fields,'delivery':args['delivery']}}
+               'evidence':{**evidence,'supporting':list(dict.fromkeys(ref for ref in item['supporting'] if ref in shown_proposals))},'first':{**fields,'delivery':args['delivery']}}
         try:return service.lines.stand(anchor_id,brief,stats),calls
         except el.LineRefusal as exc:
             exc.calls=calls;raise
@@ -1206,17 +1214,17 @@ class PreparationsService:
             drops=set(item['drop_rules'])
             if any(pos<1 or pos>len(brief['rules']) or brief['rules'][pos-1].get('basis')!='inferred' for pos in drops):
                 raise el.LineRefusal('line_owner_rule')
-            changes={key:service._redact_known_secrets(item[key]) for key in ('task','report_promise') if item[key]}
+            changes={key:service._redact_known_secrets(item[key]) for key in ('task','report_promise','open_matters') if item[key]}
             if service.lines.owner_written(line_id) and any(brief[key]!=value for key,value in changes.items()):
                 raise el.LineRefusal('line_change_needs_owner')
             rules=[rule for pos,rule in enumerate(brief['rules'],1) if pos not in drops]
             rules.extend({'text':service._redact_known_secrets(text),'from':evidence['works'][0],'at':now,'basis':'inferred'}
                          for text in item['rules'])
-            return {**brief,**changes,'open_matters':service._redact_known_secrets(item['open_matters']),'rules':rules}
+            return {**brief,**changes,'rules':rules}
         _before,after=service.lines.write(line_id,anchor_id,item['expected_version'],'amended',update)
         return after
 
-    def apply_line_actions(self, anchor_id, items, judgments):
+    def apply_line_actions(self, anchor_id, items, judgments, *, shown_proposals=()):
         """Only the look back's owner-typed anchor may produce these inferred writes."""
         service=self.service
         anchor=service.store.job(anchor_id)
@@ -1227,7 +1235,7 @@ class PreparationsService:
                 outcomes.append({'reason':om.STOPPED_PAUSED});continue
             try:
                 if item['action']=='stand':
-                    brief,used=self.stand_line(anchor_id,item,judgments,used_calls=calls);calls+=used
+                    brief,used=self.stand_line(anchor_id,item,judgments,used_calls=calls,shown_proposals=shown_proposals);calls+=used
                 else:brief=self.amend_stood_line(anchor_id,item)
                 outcomes.append({'line_id':brief['line_id'],'version':brief['version']})
             except (el.LineRefusal,prep.PreparationRefusal) as exc:
@@ -1236,11 +1244,16 @@ class PreparationsService:
         return outcomes,calls
 
     def line_announced(self, line_id):
-        """Read delivery's receipt only; unknown and every non-sent state fail closed."""
+        """A sent/web receipt or the owner's recorded restart; never an unattended inference."""
         with self.service.store.db() as db:
             return bool(db.execute("SELECT 1 FROM telegram_notifications WHERE kind LIKE ? AND state='sent' LIMIT 1",
                                    (el.NOTICE_OPENED+line_id+':%',)).fetchone()
-                        or db.execute('SELECT 1 FROM jobs WHERE request_key=?',('line-announce:'+line_id+':1',)).fetchone())
+                        or db.execute('SELECT 1 FROM jobs WHERE request_key=?',('line-announce:'+line_id+':1',)).fetchone()
+                        or db.execute("SELECT 1 FROM procedure_versions WHERE slot=? AND state IN ('current','kept') "
+                                      "AND work_id IS NOT NULL AND json_extract(stats_json,'$.change')='restarted' LIMIT 1",
+                                      (el.slot(line_id),)).fetchone()
+                        or db.execute("SELECT 1 FROM tool_events WHERE tool='line_restarted' AND status='succeeded' "
+                                      "AND json_extract(detail,'$.line_id')=? LIMIT 1",(line_id,)).fetchone())
 
     def announce_stood_line(self, now):
         from .current_context import owner_today
@@ -1257,8 +1270,13 @@ class PreparationsService:
                 db.execute('BEGIN IMMEDIATE')
                 events=db.execute("SELECT detail FROM tool_events WHERE tool='line_announced'").fetchall()
                 if any(json.loads(row['detail']).get('day')==day for row in events):return
-                if db.execute("SELECT 1 FROM telegram_notifications WHERE kind LIKE ? AND state IN ('queued','sending')",
-                              (el.NOTICE_OPENED+line_id+':%',)).fetchone():continue
+                notices=db.execute("SELECT n.state,n.sent_at FROM telegram_notifications n "
+                                   "JOIN procedure_versions v ON n.kind LIKE 'line_opened:'||substr(v.slot,6)||':%' "
+                                   "WHERE v.version=1 AND v.slot LIKE 'line:%' "
+                                   "AND json_extract(v.stats_json,'$.by')='look-back'").fetchall()
+                if any(row['state'] in ('queued','sending','unknown') for row in notices):return
+                if any(row['sent_at'] is not None
+                       and owner_today(service.store,row['sent_at'])==day for row in notices):return
                 attempt=1+sum(json.loads(row['detail']).get('line_id')==line_id for row in events)
                 db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                            (anchor['id'],'line_announced','succeeded',json.dumps({'line_id':line_id,'version':brief['version'],
@@ -1280,37 +1298,51 @@ class PreparationsService:
                                (work_id,text,now))
             return
 
-    def start_announced_lines(self, now):
+    def start_announced_lines(self, now, *, line_id=None):
         service=self.service
         for brief in service.lines.lines():
-            stats=service.lines.provenance(brief['line_id'])
-            if stats.get('by')!='look-back' or brief['state']!=el.STATE_ACTIVE or not self.line_announced(brief['line_id']):continue
-            # The opening anchor is stable even after later amendments.
-            anchor=service.store.job(stats['stand_key'].split(':')[1])
-            if not anchor:continue
-            first=stats['first']
-            rows=self.line_rows(brief['line_id'])
-            if not any(row.get('origin')!=prep.ORIGIN_LINE_ACCOUNT for row in rows):
-                due=first['due_at']
-                if due<=now:due=prep.next_due(due,first['timezone'],first['recurrence'],now)
-                if due is None:continue
-                service.preparations.create(kind=first['kind'],goal=first['goal'],due_at=due,timezone=first['timezone'],
-                                            recurrence=first['recurrence'],channel=service.preparation_channel(anchor,first['kind'],first['delivery']),
-                                            created_from=anchor['id'],state=prep.STATE_SCHEDULED,accepted_by=prep.ACCEPTED_DREAM,
-                                            delivery_mode=first['delivery_mode'],title=first['title'],offer=first['offer'],
-                                            origin=prep.ORIGIN_DREAM,line_id=brief['line_id'])
-            self.ensure_line_account(anchor,brief,accepted_by=prep.ACCEPTED_DREAM)
+            if line_id is not None and brief['line_id']!=line_id:continue
+            try:
+                stats=service.lines.provenance(brief['line_id'])
+                if stats.get('by')!='look-back' or brief['state']!=el.STATE_ACTIVE or not self.line_announced(brief['line_id']):continue
+                # The opening anchor is stable even after later amendments.
+                anchor=service.store.job(stats['stand_key'].split(':')[1])
+                if not anchor:continue
+                first=stats['first']
+                rows=self.line_rows(brief['line_id'])
+                work=[row for row in rows if row.get('origin')!=prep.ORIGIN_LINE_ACCOUNT]
+                if not work:
+                    due=first['due_at']
+                    if due<=now:due=prep.next_due(due,first['timezone'],first['recurrence'],now)
+                    if due is None:continue
+                    row=service.preparations.create(kind=first['kind'],goal=first['goal'],due_at=due,timezone=first['timezone'],
+                                                   recurrence=first['recurrence'],channel=service.preparation_channel(anchor,first['kind'],first['delivery']),
+                                                   created_from=anchor['id'],state=prep.STATE_SCHEDULED,accepted_by=prep.ACCEPTED_DREAM,
+                                                   delivery_mode=first['delivery_mode'],title=first['title'],offer=first['offer'],
+                                                   origin=prep.ORIGIN_DREAM,line_id=brief['line_id'])
+                    work=[row]
+                # A cancelled work/account row is an owner decision, not a missing row to repair.
+                # If creating the account failed, an active first row may retry that creation only.
+                if (any(row['state'] in prep.ACTIVE_STATES for row in work)
+                        and not any(row.get('origin')==prep.ORIGIN_LINE_ACCOUNT for row in rows)):
+                    self.ensure_line_account(anchor,brief,accepted_by=prep.ACCEPTED_DREAM)
+            except (prep.PreparationRefusal,el.LineRefusal) as exc:
+                LOG.warning('line rows not started id=%s code=%s',brief['line_id'],exc.code)
 
     def withdraw_unannounced(self, now):
         for brief in self.service.lines.lines():
-            if self.waiting_line(brief) and now-self.service.lines.first_saved(brief['line_id'])>=prep.SUGGESTION_EXPIRY_SECONDS:
-                self.service.lines.write(brief['line_id'],None,brief['version'],'withdrawn',
-                                         lambda item:{**item,'state':el.STATE_STOPPED})
+            try:
+                if self.waiting_line(brief) and now-self.service.lines.first_saved(brief['line_id'])>=prep.SUGGESTION_EXPIRY_SECONDS:
+                    self.service.lines.write(brief['line_id'],None,brief['version'],'withdrawn',
+                                             lambda item:{**item,'state':el.STATE_STOPPED})
+            except el.LineRefusal as exc:
+                LOG.warning('line not withdrawn id=%s code=%s',brief['line_id'],exc.code)
 
     def line_tick(self, now):
-        self.withdraw_unannounced(now)
-        self.announce_stood_line(now)
-        self.start_announced_lines(now)
+        for step in (self.withdraw_unannounced,self.announce_stood_line,self.start_announced_lines):
+            try:step(now)
+            except (prep.PreparationRefusal,el.LineRefusal) as exc:
+                LOG.warning('line tick step not applied step=%s code=%s',step.__name__,exc.code)
 
 
     # -- #798: entrusted lines ---------------------------------------------------------------------
@@ -1654,8 +1686,21 @@ class PreparationsService:
         current=service.lines.current(line_id) if isinstance(line_id,str) and line_id else None
         if current is None:raise el.LineRefusal('line_not_found')
         _before,after=service.lines.write(line_id,job['id'],None,'restarted',lambda brief:{**brief,'state':el.STATE_ACTIVE})
+        if service.lines.provenance(line_id).get('by')=='look-back':
+            # The owner's act is an announcement even when the already-active brief did not change.
+            with service.store.db() as db:
+                db.execute('BEGIN IMMEDIATE')
+                if not db.execute("SELECT 1 FROM tool_events WHERE job_id=? AND tool='line_restarted' "
+                                  "AND json_extract(detail,'$.line_id')=?",(job['id'],line_id)).fetchone():
+                    db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                               (job['id'],'line_restarted','succeeded',json.dumps({'line_id':line_id,'version':after['version']}),
+                                service.preparations.clock()))
         try:
-            if not self.waiting_line(after):self.ensure_line_account(job,after)
+            if service.lines.provenance(line_id).get('by')=='look-back':
+                if any(row.get('origin')!=prep.ORIGIN_LINE_ACCOUNT for row in self.line_rows(line_id)):
+                    self.ensure_line_account(job,after,accepted_by=prep.ACCEPTED_DREAM)
+                else:self.start_announced_lines(service.preparations.clock(),line_id=line_id)
+            else:self.ensure_line_account(job,after)
         except prep.PreparationRefusal as exc:LOG.warning('line account not scheduled id=%s code=%s',line_id,exc.code)
         return {**el.public_brief(after),'next_step':msg('lines.restarted_next',line=line_id)}
 

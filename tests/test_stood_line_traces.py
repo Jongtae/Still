@@ -9,6 +9,7 @@ import copy
 import json
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 from personal_agent import entrusted_lines as el
 from personal_agent import preparations as prep
@@ -209,8 +210,15 @@ class StoodLineTraceTests(base.Lines):
 
     def do_announce(self, args):
         self.helper.line_tick(self.now)
+        if args.get('reoffer'):
+            # Fixture reconciliation through delivery's API; the line tick never requeues a notice.
+            with self.store.db() as db:
+                rows=db.execute("SELECT id FROM telegram_notifications WHERE state='unknown' AND kind LIKE ?",
+                                (el.NOTICE_OPENED+'%',)).fetchall()
+                for row in rows:self.store.telegram.reoffer_unknown(row['id'],db)
         if args['delivery'] == 'sent':
-            self.service.deliver_notification()
+            with patch('personal_agent.telegram_store.time.time',return_value=self.now):
+                self.service.deliver_notification()
         else:
             with self.store.db() as db:
                 db.execute("UPDATE telegram_notifications SET state=? WHERE kind LIKE ? AND state='queued'",
