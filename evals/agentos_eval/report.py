@@ -31,6 +31,8 @@ def records_from_samples(samples, scorer=SCORER):
         score = (getattr(sample, 'scores', None) or {}).get(scorer)
         run = (getattr(sample, 'metadata', None) or {}).get('run') or {}
         measurements = {'work': run['work']} if 'work' in run else {}
+        if 'judgment' in run:
+            measurements['judgment_ai'] = run['judgment']
         if 'turns' in run:
             measurements['turns'] = [{k: t[k] for k in ('status', 'failure_class', 'elapsed', 'sent_epoch',
                                                        'delivered_epoch') if k in t} for t in run['turns']]

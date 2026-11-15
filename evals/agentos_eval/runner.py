@@ -164,34 +164,42 @@ def prepare_judgment(client, pool, box, worker, timeout=300, clock=time.monotoni
 
     A qualification is bound to the store path, so a copied seed starts
     unqualified.  A cached qualification for this slot/worker/seed was
-    applied before start; only when it is missing or stale does this ask
-    Still to qualify again (through the owner's own routes) and cache it.
+    applied before the first judgment read; only when it is missing or stale
+    does this ask Still to qualify again (through the owner's own routes) and cache it.
     """
     status = client.judgment()
     started = clock()
     requalified = False
+    failure = None
+    initially_ready = client.judgment_ready(status, worker)
+    cache_applied = bool(getattr(box, 'cache_applied', bool(getattr(box, 'cached', None))))
     cache_key = cache_key or worker
-    if not client.judgment_ready(status, worker):
+    if not initially_ready:
         if getattr(box, 'cached', None):
             pool.forget_judgment(box.slot, cache_key)
         try:
             requested = client.requalify_judgment(worker, status)
         except ClientError as exc:
             requested, failure = None, str(exc)[:200]
+            requalified = True
         else:
             failure = None
         if requested is not None:
             requalified = True
             status = client.wait_judgment(worker, timeout=timeout)
-        if failure:
-            return {'ready': False, 'mode': status['mode'], 'engine': status['engine'], 'model': status['model'],
-                    'requalified': True, 'cached': False, 'waited': round(clock() - started, 1), 'failure': failure}
-    ready = client.judgment_ready(status, worker)
+    ready = False if failure else client.judgment_ready(status, worker)
     if ready and requalified and getattr(box, 'slot', None) is not None:
         pool.store_judgment(box.slot, cache_key, box.read_config(JUDGMENT_KEYS))
+    qualification = status.get('qualification') or {}
+    reasons = {key: qualification.get(key) for key in ('state', 'failure', 'message')}
+    for key in ('failure', 'message'):
+        if reasons[key] is not None:
+            reasons[key] = str(reasons[key])[:200]
     return {'ready': ready, 'mode': status['mode'], 'engine': status['engine'], 'model': status['model'],
             'requalified': requalified, 'cached': bool(getattr(box, 'cached', None)) and not requalified,
-            'waited': round(clock() - started, 1)}
+            'waited': round(clock() - started, 1), 'qualification': reasons,
+            'cache_applied': cache_applied, 'initially_ready': initially_ready,
+            **({'failure': failure} if failure else {})}
 
 
 def run_scenario(scenario, worker, pool, client_factory=AgentOSClient, turn_timeout=900, poll_interval=2.0,

@@ -39,7 +39,7 @@ import tempfile
 import threading
 import time
 import uuid
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
 from .paths import LIVE_DATA, LIVE_PORTS, SANDBOX_SITE, SRC, eval_home
@@ -169,17 +169,60 @@ def snapshot_seed(source, target, overwrite=False):
     return {'seed': str(target), 'copied': copied}
 
 
-def free_port(start=18900, end=19900, taken=()):
+class PortReservation:
+    """Held advisory locks for a sandbox's port pair; close only after its server stops."""
+
+    def __init__(self, port, locks):
+        self.port = port
+        self._locks = locks
+
+    def close(self):
+        self._locks.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
+
+def reserve_port(start=18900, end=19900, taken=()):
+    """Lock and probe a port pair across processes, independent of eval/slot roots.
+
+    Adopt POSIX ``flock`` (also used for pool slots): closing the handles or
+    process exit releases ownership. Never unlink lock files: other processes
+    may already have the same inode open. Quickstart currently binds only the
+    first port; retain the pool's existing pair allocation convention.
+    """
+    folder = Path(os.environ.get('AGENTOS_EVAL_PORT_LOCK_DIR') or
+                  f'/tmp/still-eval-ports-{os.getuid()}').expanduser()
+    folder.mkdir(parents=True, exist_ok=True, mode=0o700)
     for port in range(start, end):
-        if port in LIVE_PORTS or port in taken or port + 1 in LIVE_PORTS:
+        pair = {port, port + 1}
+        if pair.intersection(LIVE_PORTS) or pair.intersection(taken):
             continue
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        with ExitStack() as locks:
             try:
-                probe.bind(('127.0.0.1', port))
+                for number in sorted(pair):
+                    handle = locks.enter_context(open(folder / f'{number}.lock', 'a'))
+                    fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                continue
+            try:
+                with ExitStack() as probes:
+                    for number in sorted(pair):
+                        probe = probes.enter_context(socket.socket(socket.AF_INET, socket.SOCK_STREAM))
+                        probe.bind(('127.0.0.1', number))
             except OSError:
                 continue
-        return port
+            return PortReservation(port, locks.pop_all())
     raise SandboxError('no free loopback port for a sandbox')
+
+
+def free_port(start=18900, end=19900, taken=()):
+    """Find an available pair without holding it (legacy probe-only callers)."""
+    with reserve_port(start, end, taken) as reservation:
+        return reservation.port
 
 
 def sandbox_environment(data, base=None, src=SRC, telegram_root=None, engine_home=None):
@@ -365,6 +408,9 @@ class Sandbox:
         self.world = world
         self.engine_home = None
         self.world_setup = None
+        self._port_reservation = None
+        self.cache_applied = False
+        self._pending_judgment = None
 
     @property
     def url(self):
@@ -391,32 +437,41 @@ class Sandbox:
 
     def start(self, config=None):
         """Copy the seed, apply ``config`` rows (a cached qualification) and start the server."""
-        if self.port is None:
-            self.port = free_port()
-        if self.port in LIVE_PORTS:
-            raise SandboxError('refusing to bind the live Still port')
-        self.prepare()
-        if config and (self.data / 'private' / 'quickstart.db').is_file():
-            write_config(self.data, config)
-        if self.telegram is not None:
-            from .fake_telegram import TOKEN
-            self.telegram.chat_id = pair_fake_telegram(self.data, TOKEN)
-        if self.world is not None:
-            world = self.world['world']
-            self.engine_home = world_engine_home(self.data, world.mcp_server())
-            spec = world_owner_spec(world.operations(), self.world.get('approvals') or {}, self.world.get('money'))
-            self.world_setup = confirm_world(self.data, spec, self.python, src=self.src)
-        argv = [self.python, '-m', 'personal_agent.quickstart', 'start', '--host', '127.0.0.1',
-                '--port', str(self.port),
-                '--data', str(self.data), '--no-browser']
-        self.log = open(self.data / 'server.log', 'ab')
-        env = sandbox_environment(self.data, src=self.src,
-                                  telegram_root=self.telegram.root if self.telegram is not None else None,
-                                  engine_home=self.engine_home)
-        self.process = subprocess.Popen(argv, cwd=str(self.data), env=env,
-                                        stdin=subprocess.DEVNULL, stdout=self.log, stderr=subprocess.STDOUT,
-                                        start_new_session=True)
-        return self.process
+        if self._port_reservation is None:
+            self._port_reservation = (reserve_port() if self.port is None else
+                                      reserve_port(start=self.port, end=self.port + 1))
+        self.port = self._port_reservation.port
+        try:
+            self.prepare()
+            self.cache_applied = False
+            self._pending_judgment = None
+            if config and (self.data / 'private' / 'quickstart.db').is_file():
+                write_config(self.data, config)
+                self.cache_applied = True
+            elif config:
+                self._pending_judgment = {key: value for key, value in config.items() if key in JUDGMENT_KEYS}
+            if self.telegram is not None:
+                from .fake_telegram import TOKEN
+                self.telegram.chat_id = pair_fake_telegram(self.data, TOKEN)
+            if self.world is not None:
+                world = self.world['world']
+                self.engine_home = world_engine_home(self.data, world.mcp_server())
+                spec = world_owner_spec(world.operations(), self.world.get('approvals') or {}, self.world.get('money'))
+                self.world_setup = confirm_world(self.data, spec, self.python, src=self.src)
+            argv = [self.python, '-m', 'personal_agent.quickstart', 'start', '--host', '127.0.0.1',
+                    '--port', str(self.port),
+                    '--data', str(self.data), '--no-browser']
+            self.log = open(self.data / 'server.log', 'ab')
+            env = sandbox_environment(self.data, src=self.src,
+                                      telegram_root=self.telegram.root if self.telegram is not None else None,
+                                      engine_home=self.engine_home)
+            self.process = subprocess.Popen(argv, cwd=str(self.data), env=env,
+                                            stdin=subprocess.DEVNULL, stdout=self.log, stderr=subprocess.STDOUT,
+                                            start_new_session=True)
+            return self.process
+        except BaseException:
+            self.stop()
+            raise
 
     def wait_healthy(self, client, sleep=time.sleep, clock=time.monotonic):
         deadline = clock() + self.start_timeout
@@ -424,6 +479,16 @@ class Sandbox:
             if self.process and self.process.poll() is not None:
                 raise SandboxError(f'sandbox server exited with {self.process.returncode}; see {self.data}/server.log')
             if client.healthy():
+                # It may have exited during the request, leaving someone else's listener.
+                if self.process and self.process.poll() is not None:
+                    raise SandboxError(f'sandbox server exited with {self.process.returncode}; see {self.data}/server.log')
+                if self._pending_judgment:
+                    # Seedless slots have no store before start. QuickStore.config
+                    # and DecisionRoutes.engine read these rows on demand, so the
+                    # healthy server can use the cache without a restart.
+                    write_config(self.data, self._pending_judgment)
+                    self.cache_applied = True
+                    self._pending_judgment = None
                 return True
             sleep(0.5)
         raise SandboxError(f'sandbox server did not become healthy within {self.start_timeout}s')
@@ -432,19 +497,25 @@ class Sandbox:
         return read_config(self.data, keys)
 
     def stop(self):
-        if self.process and self.process.poll() is None:
-            try:
-                os.killpg(self.process.pid, signal.SIGTERM)
-                self.process.wait(timeout=10)
-            except (ProcessLookupError, subprocess.TimeoutExpired):
+        try:
+            if self.process and self.process.poll() is None:
                 try:
-                    os.killpg(self.process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-        if self.log:
-            self.log.close()
-        if self.data and self.data.exists() and not self.keep:
-            shutil.rmtree(self.data, ignore_errors=True)
+                    os.killpg(self.process.pid, signal.SIGTERM)
+                    self.process.wait(timeout=10)
+                except (ProcessLookupError, subprocess.TimeoutExpired):
+                    try:
+                        os.killpg(self.process.pid, signal.SIGKILL)
+                        self.process.wait(timeout=10)
+                    except ProcessLookupError:
+                        pass
+            if self.log:
+                self.log.close()
+            if self.data and self.data.exists() and not self.keep:
+                shutil.rmtree(self.data, ignore_errors=True)
+        finally:
+            if self._port_reservation is not None:
+                self._port_reservation.close()
+                self._port_reservation = None
 
 
 class SandboxPool:
@@ -518,22 +589,32 @@ class SandboxPool:
     @contextmanager
     def sandbox(self, worker=None, telegram=None, world=None):
         with self.slots:
-            with self.lock:
-                slot = self._claim_slot()
-                port = free_port(taken=self.ports)
-                self.ports.update({port, port + 1})
-            box = self.factory(self.root, seed=self.seed, port=port, slot=slot, keep=self.keep,
-                               **({'telegram': telegram} if telegram is not None else {}),
-                               **({'world': world} if world is not None else {}))
-            box.cached = self.cached_judgment(slot, worker) if worker else None
+            slot, reservation, box = None, None, None
             try:
+                with self.lock:
+                    slot = self._claim_slot()
+                    reservation = reserve_port(taken=self.ports)
+                    port = reservation.port
+                    self.ports.update({port, port + 1})
+                box = self.factory(self.root, seed=self.seed, port=port, slot=slot, keep=self.keep,
+                                   **({'telegram': telegram} if telegram is not None else {}),
+                                   **({'world': world} if world is not None else {}))
+                box._port_reservation = reservation
+                box.cached = self.cached_judgment(slot, worker) if worker else None
                 box.start(config=box.cached)
                 yield box
             finally:
-                box.stop()
-                with self.lock:
-                    self.ports.difference_update({port, port + 1})
-                    self._release_slot(slot)
+                try:
+                    if box is not None:
+                        box.stop()
+                finally:
+                    if reservation is not None:
+                        reservation.close()
+                    with self.lock:
+                        if reservation is not None:
+                            self.ports.difference_update({reservation.port, reservation.port + 1})
+                        if slot is not None:
+                            self._release_slot(slot)
 
 
 def run_id():
