@@ -3,6 +3,7 @@
 Standard library only; ``task.py`` calls it from Inspect in a worker thread.
 """
 import json
+import math
 import re
 import sqlite3
 import time
@@ -127,7 +128,8 @@ def run_turns(client, scenario, turn_timeout=900, poll_interval=2.0, clock=time.
     for turn in scenario['turns']:
         started = clock()
         # #392: the sandbox runs on the real clock; the judge reads timing against this, not the scenario note.
-        sent_at = sent_time(wall(), zone)
+        sent_epoch = wall()
+        sent_at = sent_time(sent_epoch, zone)
         before = None
         if scenario.get('channel') == 'telegram' and telegram is not None:
             task_id, detail, before, _delivered = chat_turn(client, telegram, owner_message(turn), turn_timeout,
@@ -136,7 +138,9 @@ def run_turns(client, scenario, turn_timeout=900, poll_interval=2.0, clock=time.
             task_id = client.send(owner_message(turn), f'eval-{scenario["id"]}-{uuid.uuid4().hex[:12]}')
             detail = client.wait(task_id, timeout=turn_timeout, interval=poll_interval)
         answer = client.answer(task_id)
+        delivered_epoch = wall()
         turns.append({'say': turn['say'], 'note': turn.get('note', ''), 'sent_at': sent_at, 'task_id': task_id,
+                      'sent_epoch': sent_epoch, 'delivered_epoch': delivered_epoch,
                       'status': detail.get('status'), 'answer': answer.get('response') or '',
                       'answer_withheld': answer.get('answer_withheld', False),
                       'timed_out': bool(detail.get('timed_out')), 'failure_class': detail.get('failure_class'),
@@ -210,6 +214,7 @@ def run_scenario(scenario, worker, pool, client_factory=AgentOSClient, turn_time
             before = client.snapshot()
             record['turns'] = run_turns(client, scenario, turn_timeout, poll_interval, zone=sandbox_zone(before, box),
                                         telegram=telegram)
+            record['work'] = work_measurements(box.data, [turn['task_id'] for turn in record['turns']])
             # #832: upkeep proposes Memory asynchronously after a Work (#805); let it settle first.
             record['upkeep'] = client.wait_upkeep_idle(upkeep_timeout, poll_interval)
             record['diff'] = state_diff(before, client.snapshot())
@@ -380,3 +385,123 @@ def run_world_scenario(scenario, pool, world_root=None, world_loader=None, clien
     record['still'] = world_checks(scenario, record['turns'], record['approvals'], record['decisions'],
                                    record['world']['result'])
     return record
+
+
+def work_measurements(data, task_ids):
+    """Read-only P1 snapshot, keyed by turn task id; no payloads cross this boundary.
+
+    Adapt WorkLedger.request_chain's retry/consumed-location bindings without
+    importing the runtime. Missing historical counters remain unknown.
+    """
+    result = {task: {'root': None, 'ledger': None, 'tools': None, 'engine': None} for task in task_ids}
+    path = Path(data) / 'private' / 'quickstart.db'
+    if not path.is_file():
+        return result
+    try:
+        db = sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True)
+        db.row_factory = sqlite3.Row
+    except sqlite3.Error:
+        return result
+    try:
+        try:
+            jobs = {row['id']: dict(row) for row in db.execute('SELECT * FROM jobs')}
+        except sqlite3.Error:
+            jobs = {}
+
+        def root(task):
+            seen = set()
+            while task in jobs and task not in seen and len(seen) < 32:
+                seen.add(task)
+                job = jobs[task]
+                key = str(job.get('request_key') or '')
+                parent = job.get('related_job_id')
+                head, found, request_id = key.rpartition('loc:')
+                continuation = found and request_id and (not head or (head.endswith('/') and
+                    head[:-1].split('/', 1)[0].startswith('preparation:') and
+                    head[:-1].split('/', 1)[0][len('preparation:'):].rsplit(':', 1)[0]))
+                if continuation:
+                    request = db.execute('SELECT job_id,state FROM context_location_requests WHERE id=?',
+                                         (request_id,)).fetchone()
+                    if (not request or request['state'] != 'consumed' or
+                            job.get('relation_kind') != 'reference' or parent != request['job_id']):
+                        return None
+                elif job.get('relation_kind') != 'retry':
+                    return task
+                if parent not in jobs or any(jobs[parent].get(k) != job.get(k) for k in ('channel', 'chat_id')):
+                    return None
+                task = parent
+            return task if not jobs else None
+
+        for task, measurement in result.items():
+            ancestor, family = None, None
+            try:
+                ancestor = root(task)
+                if ancestor is None:
+                    continue
+                # A missing jobs table cannot establish a canonical family id.
+                measurement['root'] = ancestor if ancestor in jobs else None
+                family = [job for job in jobs if root(job) == ancestor] if jobs else [task]
+                row = db.execute('SELECT value FROM config WHERE key=?', ('work_budget:' + ancestor,)).fetchone()
+                if row:
+                    ledger = json.loads(row[0])
+                    if not isinstance(ledger, dict):
+                        raise ValueError('invalid ledger')
+                    measurement['ledger'] = {key: len(ledger[key]) if isinstance(ledger.get(key), list)
+                                             else ledger.get(key) if type(ledger.get(key)) is int else None
+                                             for key in ('turns', 'attempts', 'nudges')}
+            except (sqlite3.Error, ValueError, TypeError, KeyError):
+                pass
+            try:
+                if ancestor is None or family is None:
+                    continue
+                marks = ','.join('?' * len(family))
+                rows = db.execute(f'SELECT tool,status,created,detail FROM tool_events WHERE job_id IN ({marks}) ORDER BY id',
+                                  family).fetchall()
+                tools, engines = [], []
+                for row in rows:
+                    tool = {key: row[key] for key in ('tool', 'status', 'created')}
+                    tools.append(tool)
+                    try:
+                        detail = json.loads(row['detail'])
+                    except (ValueError, TypeError):
+                        continue
+                    if not isinstance(detail, dict):
+                        continue
+                    for key in ('call_id', 'host_action', 'scope'):
+                        if isinstance(detail.get(key), str):
+                            tool[key] = detail[key]
+                    if row['tool'] == 'response_timing':
+                        if isinstance(detail.get('stage'), str):
+                            tool['stage'] = detail['stage']
+                        for key in ('ms', 'total_ms'):
+                            if _measurement_number(detail.get(key)):
+                                tool[key] = detail[key]
+                    if row['tool'] != 'subscription_engine':
+                        continue
+                    fields = {}
+                    if isinstance(detail.get('usage'), dict):
+                        fields['usage'] = {k: v for k, v in detail['usage'].items() if _measurement_number(v)}
+                    for key in ('num_turns', 'cost_usd'):
+                        if _measurement_number(detail.get(key)):
+                            fields[key] = detail[key]
+                    for key in ('model', 'effort'):
+                        if key in detail and (detail[key] is None or isinstance(detail[key], str)):
+                            fields[key] = detail[key] or None
+                    calls = detail.get('cli_tool_calls')
+                    if isinstance(calls, list):
+                        fields['cli_tool_calls'] = len(calls)
+                    elif type(calls) is int:
+                        fields['cli_tool_calls'] = calls
+                    if fields:
+                        engines.append(fields)
+                measurement['tools'] = tools or None
+                measurement['engine'] = engines or None
+            except (sqlite3.Error, ValueError, TypeError):
+                pass
+    finally:
+        db.close()
+    return result
+
+
+def _measurement_number(value):
+    return type(value) in (int, float) and math.isfinite(value)
