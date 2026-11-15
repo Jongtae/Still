@@ -383,6 +383,8 @@ def test_failed_run_keeps_unchecked_facts_for_next_successful_run(case, read_fac
         db.execute("UPDATE jobs SET status='failed',error='fixture failure' WHERE id=?", (work_id,))
     assert case.tick()
     assert case.store.config(prep.SCHEDULED_SKIPPED_PREFIX + row['id'])['count'] == 1
+    case.service.deliver_notification()  # A failed-run notice is not the requested report.
+    assert case.store.config(prep.SCHEDULED_SKIPPED_PREFIX + row['id'])['count'] == 1
     case.service.use_decision_engine(watch_engine([True]))
     case.run_slot('Recovered check')
     current = case.service.preparations.get(row['id'])
@@ -568,3 +570,137 @@ def test_malformed_stored_budget_uses_default_logs_once_and_still_admits(case, c
     warnings = [record for record in caplog.records if record.name == prep.__name__]
     assert len(warnings) == 1
     assert 'using default' in warnings[0].message
+
+
+def settle_budget_report_without_notification_delivery(case, answer='Report with the unchecked interval'):
+    row = case.service.preparations.get(case.watched['id'])
+    case.now = row['due_at'] + 1
+    assert case.tick()
+    case.script = [{'content': answer}] * 2
+    assert case.service.run_one()
+    running = case.service.preparations.get(row['id'])
+    job = case.store.job(running['last_run_job_id'])
+    # Observe what this Work actually carried, without asking the fact builder to bind it.
+    with case.store.db() as db:
+        event = db.execute('SELECT detail FROM tool_events WHERE job_id=? AND tool=? AND status=?',
+                           (job['id'], prep.SCHEDULED_BUDGET_KEY, 'unchecked-slots')).fetchone()
+    assert event
+    snapshot = json.loads(event['detail'])
+    if job['delivery'] == 'pending':
+        case.service.deliver_one()
+        assert case.store.job(job['id'])['delivery'] == 'sent'
+    assert case.tick()
+    with case.store.db() as db:
+        notice = db.execute('SELECT * FROM telegram_notifications WHERE job_id=? AND kind=?',
+                            (job['id'], prep.NOTIFY_KIND)).fetchone()
+    return job, snapshot, dict(notice) if notice else None
+
+
+def start_unconfirmed_budget_report(case, *, terminal=False):
+    case.service.preparations.set_budget(1)
+    if terminal:
+        case.service.preparations.edit(case.watched['id'], max_runs=3)
+    case.run_slot('Initial check')
+    skip_slot(case)
+    pending_key = prep.SCHEDULED_SKIPPED_PREFIX + case.watched['id']
+    pending = case.store.config(pending_key)
+    assert pending['count'] == 1
+    case.service.preparations.set_budget(0)
+    case.service.use_decision_engine(watch_engine([True] * 6))
+    job, snapshot, notice = settle_budget_report_without_notification_delivery(case)
+    assert job['delivery'] == 'none'
+    assert notice and notice['state'] == 'queued'
+    assert snapshot == pending
+    return pending_key, job, snapshot, notice
+
+
+def confirm_budget_report(case, job, notice):
+    # The existing surfaces store the confirmed send before invoking record_notified.
+    case.store.update_notification(notice['id'], 'sent', delivered=True)
+    assert case.service.preparations.record_notified(
+        job['id'], notice['fingerprint'], job['response'], case.now)
+
+
+@pytest.mark.parametrize('terminal', [False, True])
+def test_unchecked_facts_wait_for_record_notified_even_on_the_final_run(case, terminal):
+    key, job, snapshot, notice = start_unconfirmed_budget_report(case, terminal=terminal)
+    assert case.store.config(key) == snapshot, 'settling and queuing a report is not delivery'
+    assert case.service.preparations.get(case.watched['id'])['state'] == (
+        prep.STATE_DELIVERED if terminal else prep.STATE_SCHEDULED)
+    # An idle tick's orphan cleanup cannot drop a terminal row's pending report.
+    case.tick()
+    assert case.store.config(key) == snapshot
+    confirm_budget_report(case, job, notice)
+    assert case.store.config(key) is None
+
+
+@pytest.mark.parametrize('state', ['queued', 'cancelled', 'unknown'])
+def test_unconfirmed_notification_repeats_unchecked_interval_on_next_report(case, state):
+    key, old_job, snapshot, old_notice = start_unconfirmed_budget_report(case)
+    assert case.store.config(key) == snapshot
+    case.store.update_notification(old_notice['id'], state)
+    # Pending input and the delivery receipt survive a restart independently.
+    case.store = QuickStore(case.root)
+    case.service = case.make_service()
+    case.service.use_decision_engine(watch_engine([True] * 6))
+    job, carried_again, notice = settle_budget_report_without_notification_delivery(case, 'A later report')
+    assert job['id'] != old_job['id']
+    assert carried_again == snapshot
+    assert case.store.config(key) == snapshot
+    confirm_budget_report(case, job, notice)
+    assert case.store.config(key) is None
+
+
+def test_newer_skips_survive_confirmation_of_an_earlier_report(case):
+    key, old_job, snapshot, old_notice = start_unconfirmed_budget_report(case)
+    assert case.store.config(key) == snapshot
+    case.service.preparations.set_budget(1)
+    newer_slot = case.service.preparations.get(case.watched['id'])
+    case.now = newer_slot['due_at'] + 1
+    assert case.tick()
+    assert not case.service.run_one()
+    newer = case.store.config(key)
+    assert newer == {**snapshot, 'count': 2, 'last_slot_at': newer_slot['due_at']}
+    confirm_budget_report(case, old_job, old_notice)
+    assert case.store.config(key) == newer
+    case.service.preparations.set_budget(0)
+    job, carried_again, notice = settle_budget_report_without_notification_delivery(case, 'Report both missed checks')
+    assert carried_again == newer
+    confirm_budget_report(case, job, notice)
+    assert case.store.config(key) is None
+
+
+@pytest.mark.parametrize('channel', ['telegram', 'web'])
+def test_directly_delivered_or_explicitly_kept_result_still_clears_at_settle(case, channel):
+    key, _job, snapshot, notice = start_unconfirmed_budget_report(case)
+    assert case.store.config(key) == snapshot
+    case.store.update_notification(notice['id'], 'cancelled')
+    with case.store.db() as db:
+        db.execute('UPDATE preparations SET delivery_mode=?,channel=? WHERE id=?',
+                   (prep.DELIVERY_ALWAYS, channel, case.watched['id']))
+    job, carried_again, notice = settle_budget_report_without_notification_delivery(case, 'Direct or kept report')
+    assert carried_again == snapshot and notice is None
+    assert case.store.job(job['id'])['delivery'] == ('sent' if channel == 'telegram' else 'none')
+    assert case.store.config(key) is None
+
+
+@pytest.mark.parametrize('state', ['sending', 'unknown'])
+def test_terminal_row_keeps_facts_while_final_notification_is_unconfirmed(case, state):
+    key, job, snapshot, notice = start_unconfirmed_budget_report(case, terminal=True)
+    assert case.store.config(key) == snapshot
+    case.store.update_notification(notice['id'], state)
+    case.tick()
+    assert case.store.config(key) == snapshot
+    confirm_budget_report(case, job, notice)
+    assert case.store.config(key) is None
+
+
+
+def test_cancelled_terminal_report_still_uses_orphan_cleanup_and_the_daily_notice(case):
+    key, _job, snapshot, notice = start_unconfirmed_budget_report(case, terminal=True)
+    assert case.store.config(key) == snapshot
+    case.store.update_notification(notice['id'], 'cancelled')
+    case.tick()
+    assert case.store.config(key) is None
+    daily_notice = case.service.preparations_status()['budget']['notice']['en']
+    assert 'Remaining scheduled checks today' in daily_notice and 'without a closing report' in daily_notice

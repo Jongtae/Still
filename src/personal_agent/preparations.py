@@ -1263,15 +1263,28 @@ class Preparations:
     def _clear_closed_budget_skips(db):
         # The daily notice already covers all remaining checks, including a missing
         # closing report. Keep the immutable events, not pending input no run can carry.
+        # A terminal row still owns its queued or uncertain final report until confirmed.
         db.execute(f'DELETE FROM config WHERE key GLOB ? AND NOT EXISTS '
-                   f'(SELECT 1 FROM preparations WHERE id=substr(config.key,?) AND state IN ({",".join("?" for _ in ACTIVE_STATES)}))',
-                   (SCHEDULED_SKIPPED_PREFIX + '*', len(SCHEDULED_SKIPPED_PREFIX) + 1, *ACTIVE_STATES))
+                   f'(SELECT 1 FROM preparations WHERE id=substr(config.key,?) AND '
+                   f'(state IN ({",".join("?" for _ in ACTIVE_STATES)}) OR EXISTS '
+                   "(SELECT 1 FROM telegram_notifications WHERE job_id=preparations.last_run_job_id "
+                   "AND kind=? AND state IN ('queued','sending','unknown'))))",
+                   (SCHEDULED_SKIPPED_PREFIX + '*', len(SCHEDULED_SKIPPED_PREFIX) + 1, *ACTIVE_STATES, NOTIFY_KIND))
+
+    def _clear_carried_budget_skips(self, db, preparation_id, work_id):
+        """Consume only this report's snapshot, preserving skips accumulated since it ran."""
+        carried = db.execute('SELECT detail FROM tool_events WHERE job_id=? AND tool=? AND status=? ORDER BY id LIMIT 1',
+                             (work_id, SCHEDULED_BUDGET_KEY, 'unchecked-slots')).fetchone()
+        pending_key = SCHEDULED_SKIPPED_PREFIX + preparation_id
+        if carried and json.loads(carried['detail']) == self.store.config(pending_key, db=db):
+            db.execute('DELETE FROM config WHERE key=?', (pending_key,))
 
     def budget_skipped_fact(self, job):
         """Bind unchecked slots to this Work; repeated worker/judge reads see the same fact.
 
-        Pending facts survive restart, failed runs and quiet checks. A successful
-        report clears only its carried snapshot; the skip events remain Evidence.
+        Pending facts survive restart, failed runs and quiet checks. A delivered or
+        explicitly kept report clears only its snapshot; notification reports wait
+        for record_notified. The skip events themselves remain Evidence.
         Uses SQLite/QuickStore's existing transaction and event store, with no new schema.
         """
         preparation_id = preparation_of(job.get('request_key'))
@@ -2136,13 +2149,8 @@ class Preparations:
                 return None
             outcome = run_outcome(current['kind'], job)
             updates = {'last_outcome': outcome, 'updated_at': now}
-            reported = current.get('delivery_mode') != DELIVERY_WHEN_NEEDED or decision and decision[0] == DECISION_NOTIFY
-            if outcome == STATE_DELIVERED and job and reported:
-                carried = db.execute('SELECT detail FROM tool_events WHERE job_id=? AND tool=? AND status=? ORDER BY id LIMIT 1',
-                                     (job['id'], SCHEDULED_BUDGET_KEY, 'unchecked-slots')).fetchone()
-                pending_key = SCHEDULED_SKIPPED_PREFIX + current['id']
-                if carried and json.loads(carried['detail']) == self.store.config(pending_key, db=db):
-                    db.execute('DELETE FROM config WHERE key=?', (pending_key,))
+            if outcome == STATE_DELIVERED and job and current.get('delivery_mode') != DELIVERY_WHEN_NEEDED:
+                self._clear_carried_budget_skips(db, current['id'], job['id'])
             if current['kind'] == KIND_PREPARE and job and ws.has_delivered_result(job['status']) and answer is not None:
                 updates.update(prepared_result_ref=job['id'], prepared_at=now, prepared_text=answer)
             if current['recurrence'] == RECURRENCE_WINDOW:
@@ -2204,8 +2212,12 @@ class Preparations:
         if not preparation_id:
             return False
         with self.store.db() as db:
-            return bool(db.execute('UPDATE preparations SET last_notified_digest=?,last_notified_text=?,last_notified_at=? '
-                                   'WHERE id=?', (digest_, bounded_text(text), now, preparation_id)).rowcount)
+            db.execute('BEGIN IMMEDIATE')
+            changed = bool(db.execute('UPDATE preparations SET last_notified_digest=?,last_notified_text=?,last_notified_at=? '
+                                      'WHERE id=?', (digest_, bounded_text(text), now, preparation_id)).rowcount)
+            if changed and run_outcome(KIND_PREPARE, job) == STATE_DELIVERED:
+                self._clear_carried_budget_skips(db, preparation_id, work_id)
+            return changed
 
     # -- consumption -------------------------------------------------------
 
