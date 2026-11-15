@@ -855,7 +855,8 @@ class CliTest(unittest.TestCase):
 
     def test_sweep_judgment_timeout_flag_default_and_override(self):
         from unittest import mock
-        for extra, expected in (([], 300), (['--judgment-timeout', '650'], 650)):
+        self.assertEqual(cli.JUDGMENT_TIMEOUT, 900)
+        for extra, expected in (([], cli.JUDGMENT_TIMEOUT), (['--judgment-timeout', '120'], 120)):
             with self.subTest(extra=extra), mock.patch.object(cli, 'cmd_sweep', return_value=0) as sweep:
                 self.assertEqual(cli.main(['sweep', *extra]), 0)
                 selected = sweep.call_args.args[0]
@@ -874,6 +875,25 @@ class CliTest(unittest.TestCase):
                 self.assertEqual(cli.cmd_sweep(selected, task_factory=factory, inspect_eval=evaluate,
                                                key_loader=lambda _: 'fixture'), 0)
             self.assertEqual(task_options[0]['judgment_timeout'], expected)
+
+    def test_world_sweep_passes_judgment_timeout_and_records_it(self):
+        from unittest import mock
+        for extra, expected in (([], cli.JUDGMENT_TIMEOUT), (['--judgment-timeout', '120'], 120)):
+            with self.subTest(extra=extra), mock.patch.object(cli, 'cmd_sweep', return_value=0) as sweep:
+                cli.main(['sweep', '--world', 'fake', '--instances', '1', *extra])
+                selected = sweep.call_args.args[0]
+            selected.seed = ''
+            item = {'id': 'world-fixture', 'world': {'expect_world_pass': True}}
+            run = mock.Mock(return_value={'turns': []})
+            markdown = mock.Mock()
+            markdown.read_text.return_value = ''
+            with mock.patch.object(cli.scenario_module, 'load', return_value=[item]), \
+                    mock.patch.object(cli, 'write_report', return_value=(None, markdown, {
+                        'trend': {'regressions': []}})) as write:
+                self.assertEqual(cli.run_world_sweep(selected, run_scenario=run,
+                                                     pool_factory=lambda **kw: None), 0)
+            self.assertEqual(run.call_args.kwargs['judgment_timeout'], expected)
+            self.assertEqual(write.call_args.args[2]['judgment_timeout'], expected)
 
 
 class BoundaryTest(unittest.TestCase):
