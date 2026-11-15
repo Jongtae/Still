@@ -7096,6 +7096,12 @@
   "ja": "会社モードがオンのため、Mattermost に接続しませんでした。会社が承認したサーバーなら、先に「会社モードでも使う」をオンにしてください。",
   "zh": "工作模式已开启，因此没有连接到 Mattermost。如果这是公司批准的服务器，请先开启“在工作模式下也使用”。"
  },
+ "mattermost.act_stale": {
+  "ko": "반응한 항목은 이미 처리됐거나 더 이상 기다리고 있지 않아요. 아무것도 바꾸지 않았어요.",
+  "en": "The item you reacted to was already answered or is no longer waiting. Nothing was changed.",
+  "ja": "リアクションした項目はすでに処理済みか、もう待機していません。何も変更していません。",
+  "zh": "你回应的项目已处理或不再等待。没有做任何更改。"
+ },
  "slack.not_connected": {
   "ko": "Slack이 연결되어 있지 않아요. 설정 > 외부 연결에서 연결해 주세요.",
   "en": "Slack is not connected. Connect it in Settings > External connections.",
