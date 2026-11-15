@@ -706,5 +706,5 @@ def test_frontier_887_records_eval_only_come_due_scope():
     assert 'tests/test_eval_come_due.py' in unit['tests'][0]
     activation = items['FRONTIER-01']['completed_substeps'][name]
     assert activation['issue'] == 887 and activation['status'] == 'complete-on-merge'
-    assert activation['pull_request'] == 'TBD'
+    assert activation['pull_request'] == '889'
     assert '#887 (FRONTIER-C2-DUE-01) is selected inside #822' in current['next_goal']['action']
