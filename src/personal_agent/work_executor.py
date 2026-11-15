@@ -121,14 +121,22 @@ class WorkExecutor:
             return True
 
     def _fail_work_terminal(self, run):
-        """Last resort after a failed finalizer: commit only the terminal state and recoverable tail."""
+        """Last resort after a failed finalizer: commit the terminal reply, state and recoverable tail."""
         service=self.service
+        job=run.job
         try:
-            outcome='unknown' if service._work_has_unknown_effect(run.job['id']) else 'failed'
+            outcome='unknown' if service._work_has_unknown_effect(job['id']) else 'failed'
+            reason=msg('projection.i_couldn_t_complete_this_request')
             with service.store.db() as db:
-                changed=db.execute("UPDATE jobs SET status=?,error=? WHERE id=? AND status='running'",
-                                   (outcome,msg('projection.i_couldn_t_complete_this_request'),run.job['id'])).rowcount
+                changed=db.execute("UPDATE jobs SET status=?,error=?,delivery=? WHERE id=? AND status='running'",
+                                   (outcome,reason,service.reply_delivery(job),job['id'])).rowcount
                 if changed:
+                    transcript=run.reply_notice+(msg('compose.i_couldn_t_complete_this_request', reason=run.response or reason)
+                                                 if outcome=='unknown' else reason)
+                    if prep.preparation_of(job.get('request_key')):
+                        transcript=service.scrub_work_text(job['id'],transcript)
+                    db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id,delivery_projection) VALUES (?,?,?,?,?,?,?)',
+                               ('assistant',transcript,job['channel'],time.time(),job.get('workspace_id'),job['id'],None))
                     run.outcome=outcome
                     self._record_after_work(run,db)
         except Exception as exc:
