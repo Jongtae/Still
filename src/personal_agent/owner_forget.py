@@ -102,9 +102,10 @@ def _refuse(code):
 class OwnerForget:
     def __init__(self, store, clock=time.time):
         self.store, self.clock = store, clock
-        from .procedures import DDL as PROCEDURE_DDL
+        from .entrusted_lines import EntrustedLines
+        self.lines = EntrustedLines(store, clock)
         with store.db() as db:
-            db.executescript(DDL + PROCEDURE_DDL)
+            db.executescript(DDL)
 
     # -- refs ----------------------------------------------------------------
     @staticmethod
@@ -305,6 +306,7 @@ class OwnerForget:
             raise _refuse('stale')
         for row in rows:
             db.execute('UPDATE procedure_versions SET state=? WHERE id=?', (FORGOTTEN, row['id']))
+        self.lines.suppress_pending_bundles(line_id, db)
         return {'rows': [{'table': 'procedure_versions', 'id': row['id'], 'prior': row['state']} for row in rows],
                 'line': line_id}
 

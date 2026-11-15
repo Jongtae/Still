@@ -309,6 +309,28 @@ Object.assign(I18N["ja"],{"항목":"項目","예: 땅콩 알러지, 집, 자주 
 Object.assign(I18N["en"],{"키: {key}":"Key: {key}"});
 Object.assign(I18N["zh-CN"],{"키: {key}":"键：{key}"});
 Object.assign(I18N["ja"],{"키: {key}":"キー: {key}"});
+// #799: owner-model controls and report times.
+Object.assign(I18N.en,{
+ "알아 두기":"Learn about you",
+ "보고 시간":"Report times",
+ "보고 시간 저장":"Save report times",
+ "현지 시각 HH:MM을 이른 순서로 1~4개, 쉼표로 구분해 입력해 주세요.":"Enter 1–4 local HH:MM times in increasing order, separated by commas.",
+ "보고 시간을 저장했어요. 오늘 이미 보고를 받았다면 내일부터 적용돼요.":"Report times saved. If you already received a report today, changes apply tomorrow."
+});
+Object.assign(I18N["zh-CN"],{
+ "알아 두기":"了解你",
+ "보고 시간":"报告时间",
+ "보고 시간 저장":"保存报告时间",
+ "현지 시각 HH:MM을 이른 순서로 1~4개, 쉼표로 구분해 입력해 주세요.":"请输入 1–4 个当地 HH:MM 时间，按先后顺序以逗号分隔。",
+ "보고 시간을 저장했어요. 오늘 이미 보고를 받았다면 내일부터 적용돼요.":"报告时间已保存。如果今天已收到报告，更改将从明天生效。"
+});
+Object.assign(I18N.ja,{
+ "알아 두기":"あなたを知る",
+ "보고 시간":"報告時刻",
+ "보고 시간 저장":"報告時刻を保存",
+ "현지 시각 HH:MM을 이른 순서로 1~4개, 쉼표로 구분해 입력해 주세요.":"現地時刻 HH:MM を早い順に1〜4個、カンマで区切って入力してください。",
+ "보고 시간을 저장했어요. 오늘 이미 보고를 받았다면 내일부터 적용돼요.":"報告時刻を保存しました。今日すでに報告を受け取った場合は明日から適用されます。"
+});
 // I18N-CATALOG-END
 let currentLanguage='en',TIME_MINUTE,TIME_CLOCK,TIME_ABSOLUTE,TIME_RELATIVE,TIME_DAY,TIME_YEAR;
 // #662: same catalog text as the exact Settings draft.
@@ -1629,6 +1651,28 @@ async function savePaymentAutonomy(enabled){try{await api('/api/payment-autonomy
 $('payment-autonomy-enabled').onchange=event=>{const toggle=event.currentTarget;if(!toggle.checked){$('payment-autonomy-preview').hidden=true;return busy(toggle,()=>savePaymentAutonomy(false));}toggle.checked=false;$('payment-autonomy-summary').textContent=t(PAYMENT_AUTONOMY_RISK);$('payment-autonomy-preview').hidden=false;$('payment-autonomy-confirm').focus();};
 $('payment-autonomy-confirm').onclick=event=>busy(event.currentTarget,()=>savePaymentAutonomy(true));
 $('payment-autonomy-cancel').onclick=()=>{$('payment-autonomy-preview').hidden=true;$('payment-autonomy-enabled').focus();};
+// #799: the existing owner-model controls, alongside the report-time setting.
+let reportTimesDirty=false;
+function renderReportControls(status){
+ const pane=$('settings-privacy');if(!pane||!status)return;
+ let box=$('report-controls');
+ if(!box){
+  box=element('section',undefined,'settings-group');box.id='report-controls';
+  box.append(element('h2',t('알아 두기'),'settings-group-heading'));
+  const switchLabel=element('label',undefined,'check-row'),toggle=element('input');toggle.type='checkbox';toggle.id='report-look-back';
+  switchLabel.append(toggle,element('span',t('밤사이 정리')));box.append(switchLabel);
+  toggle.onchange=async()=>{try{await api('/api/owner-model/request',{operation:'set',dream:toggle.checked});setFeedback('report-feedback','');}catch(error){toggle.checked=!toggle.checked;setError('report-feedback',error);}};
+  const form=element('form'),label=element('label',t('보고 시간')),input=element('input');input.id='report-times';input.type='text';label.htmlFor=input.id;
+  input.oninput=()=>{reportTimesDirty=true;};
+  const hint=element('p',t('현지 시각 HH:MM을 이른 순서로 1~4개, 쉼표로 구분해 입력해 주세요.'),'field-hint');hint.id='report-times-hint';input.setAttribute('aria-describedby',hint.id);
+  const save=element('button',t('보고 시간 저장'));save.type='submit';const feedback=element('p');feedback.id='report-feedback';feedback.setAttribute('role','status');
+  form.append(label,input,hint,save,feedback);box.append(form);pane.append(box);
+  form.onsubmit=event=>{event.preventDefault();return busy(save,async()=>{try{await api('/api/owner-model/request',{operation:'set',report_times:input.value.split(',').map(v=>v.trim())});reportTimesDirty=false;setFeedback('report-feedback',t('보고 시간을 저장했어요. 오늘 이미 보고를 받았다면 내일부터 적용돼요.'));}catch(error){setError('report-feedback',error);}});};
+ }
+ if(document.activeElement!==$('report-look-back'))$('report-look-back').checked=!!status.dream;
+ if(!reportTimesDirty&&document.activeElement!==$('report-times'))$('report-times').value=(status.report_times||[]).join(', ');
+}
+async function loadReportControls(){try{renderReportControls(await api('/api/owner-model'));}catch(error){if($('report-feedback'))setError('report-feedback',error);}}
 function renderCurrentContext(status){if(!status)return;const toggle=$('current-context-enabled');if(document.activeElement!==toggle)toggle.checked=!!status.enabled;
  const zone=$('current-context-timezone');if(!currentContextTimezoneDirty&&document.activeElement!==zone){zone.value=status.timezone||'';}
  if(!status.timezone&&!zone.value){let guess='';try{guess=Intl.DateTimeFormat().resolvedOptions().timeZone||'';}catch{}if(guess&&!$('current-context-feedback').textContent)setFeedback('current-context-feedback',t('브라우저 시간대는 {zone}입니다. 맞으면 저장하세요.',{zone:guess}));}
@@ -1973,7 +2017,7 @@ async function refresh(){
  if(!authenticated)return;if(refreshing){refreshQueued=true;return;}refreshing=true;const requestedModelRevision=modelLoadRevision,requestedRootsRevision=rootsLoadRevision,requestedFileWorkspaceRevision=fileWorkspaceLoadRevision;$('task-refresh-state').textContent=t('확인 중…');
  try{
   const [summary,home,state,space]=await Promise.all([api('/api/tasks'),api('/api/home'),api('/api/state'),api('/api/personal-space')]);const previousTasks=new Map((taskProgress?.tasks||[]).map(task=>[task.id,task]));lastHome=home;lastState=state;lastSpace=space;taskProgress=mergeTaskProgress(summary,taskProgress,state.jobs);renderTasks();for(const id of new Set([...openTraces,...openTechnical])){const before=previousTasks.get(id),after=taskProgress.tasks.find(task=>task.id===id);void refreshSelectedTaskDetail(before,after,loadTaskDetail);}renderMemoryCandidateSummary(space);refreshSavedMemory(space);renderWorkspaces(home,state);loadWorkspaceResultSummaries(home.workspaces);
-  const settings=state.settings||{};renderExecutionConnection(settings);renderFileAccess(settings);renderDecisionRoute(settings);renderSubscriptionEngines(settings.subscription_engines);renderTelegram(settings);googleClientAvailable=Boolean(settings.google_client?.available);renderConnectors(settings.google_services);renderGoogleClient(settings.google_client);renderAiConnections(settings.ai_connections);renderSearchProviders(settings.search_providers);renderBrowser(settings.browser);renderContext(settings.context_inbox);renderCurrentContext(settings.current_context);renderPaymentAutonomy(settings.payment_autonomy);renderWriteAllowances(settings.write_allowances);renderWorkMode(settings.work_mode);renderIntranet(settings.intranet);renderMattermost(settings.mattermost);renderSlack(settings.slack);void renderA2aPeers();renderConnectionAttention(settings);renderDocumentBoundary(settings.document_boundary);renderDiagnostics(state,taskProgress.tasks);const runtime=$('runtime-badge');const runtimeState=home.state==='working'?['작업 중','run']:home.state==='attention'?['확인 필요','attention']:home.state==='ready'?['준비됨','neutral']:['상태 알 수 없음','unknown'];runtime.textContent=t(runtimeState[0]);runtime.className='badge '+runtimeState[1];document.body.classList.remove('offline');$('nav-settings-dot').classList.toggle('on',[...document.querySelectorAll('#view-settings .settings-row>.settings-state.attention')].some(node=>!node.closest('.folder-edit')&&!node.parentElement.hasAttribute('data-inactive')&&!node.parentElement.querySelector('.settings-inline-confirm')));lastSuccessfulRefresh=Date.now();
+  const settings=state.settings||{};renderExecutionConnection(settings);renderFileAccess(settings);renderDecisionRoute(settings);renderSubscriptionEngines(settings.subscription_engines);renderTelegram(settings);googleClientAvailable=Boolean(settings.google_client?.available);renderConnectors(settings.google_services);renderGoogleClient(settings.google_client);renderAiConnections(settings.ai_connections);renderSearchProviders(settings.search_providers);renderBrowser(settings.browser);renderContext(settings.context_inbox);renderCurrentContext(settings.current_context);void loadReportControls();renderPaymentAutonomy(settings.payment_autonomy);renderWriteAllowances(settings.write_allowances);renderWorkMode(settings.work_mode);renderIntranet(settings.intranet);renderMattermost(settings.mattermost);renderSlack(settings.slack);void renderA2aPeers();renderConnectionAttention(settings);renderDocumentBoundary(settings.document_boundary);renderDiagnostics(state,taskProgress.tasks);const runtime=$('runtime-badge');const runtimeState=home.state==='working'?['작업 중','run']:home.state==='attention'?['확인 필요','attention']:home.state==='ready'?['준비됨','neutral']:['상태 알 수 없음','unknown'];runtime.textContent=t(runtimeState[0]);runtime.className='badge '+runtimeState[1];document.body.classList.remove('offline');$('nav-settings-dot').classList.toggle('on',[...document.querySelectorAll('#view-settings .settings-row>.settings-state.attention')].some(node=>!node.closest('.folder-edit')&&!node.parentElement.hasAttribute('data-inactive')&&!node.parentElement.querySelector('.settings-inline-confirm')));lastSuccessfulRefresh=Date.now();
   if(requestedRootsRevision===rootsLoadRevision)renderRootList(settings.file_roots||[]);
   if(requestedFileWorkspaceRevision===fileWorkspaceLoadRevision)renderFileWorkspace(settings.file_workspace);
   void loadFolderRequests();

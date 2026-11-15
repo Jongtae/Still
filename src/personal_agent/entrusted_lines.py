@@ -22,6 +22,7 @@ import json
 import sqlite3
 import time
 import uuid
+from contextlib import nullcontext
 
 from .procedures import CURRENT, KEPT, LINE_PREFIX, ProcedureLibrary
 
@@ -42,6 +43,7 @@ ACCOUNT_DAYS, MIN_ACCOUNT_DAYS, MAX_ACCOUNT_DAYS = 7, 1, 84
 MAX_LINES = 50
 #: Change labels recorded with a version (its ``stats``), never owner text.
 CHANGES = ('opened', 'revised', 'rule', 'undo', 'stopped', 'restarted', 'stood', 'amended', 'withdrawn')
+BUNDLE_CHARS, BUNDLE_LINE_LIMIT = 3500, 8
 
 
 class LineRefusal(ValueError):
@@ -198,8 +200,8 @@ class EntrustedLines:
         briefs = [brief for brief in (decode(row) for row in rows) if brief is not None]
         return sorted(briefs, key=lambda brief: brief['state'] != STATE_ACTIVE)
 
-    def first_saved(self, line_id):
-        with self.store.db() as db:
+    def first_saved(self, line_id, db=None):
+        with (self.store.db() if db is None else nullcontext(db)) as db:
             row = db.execute('SELECT MIN(created) AS at FROM procedure_versions WHERE slot=?', (slot(line_id),)).fetchone()
         return row['at'] if row else None
 
@@ -255,15 +257,16 @@ class EntrustedLines:
             row = self.library.commit(slot(uuid.uuid4().hex[:16]), source, work_id=work_id, stats=stats, db=db)
         return decode(row)
 
-    def write(self, line_id, work_id, expected_version, change, update):
+    def write(self, line_id, work_id, expected_version, change, update, *, db=None):
         """Save ``update(brief)`` as the next version, only while ``expected_version`` is still current.
 
         Returns ``(before, after)``.  A stale write raises ``LineConflict`` and keeps the newer revision.
         """
         if change not in CHANGES:
             raise ValueError('unknown line change')
-        with self.store.db() as db:
-            db.execute('BEGIN IMMEDIATE')
+        owns_transaction = db is None
+        with (self.store.db() if owns_transaction else nullcontext(db)) as db:
+            if owns_transaction:db.execute('BEGIN IMMEDIATE')
             before = self.current(line_id, db)
             if before is None:
                 raise LineRefusal('line_not_found')
@@ -276,6 +279,97 @@ class EntrustedLines:
                 return before, before
             row = self.library.commit(slot(line_id), source, work_id=work_id, stats={'change': change}, db=db)
             return before, decode(row)
+
+    def bundle_part_text(self, job):
+        """The result, or the same empty-result failure body the direct watch sends."""
+        from .conversation_projection import terminal_text
+        from .current_context import redact_known_secrets
+        text=(self.store.blocked_delivery_reply(job['id'])
+              or self.store.projected_delivery_reply(job['id'],'system')
+              or terminal_text(job['response'],job['owner_cause'] or job['error'],job['status'],
+                               verified=job['owner_verified'],note=job['owner_note']))
+        return redact_known_secrets(self.store,text).strip()
+
+    def compose_line_bundle(self, parts, db=None):
+        """Plain bounded composition of the runs' own words; no topic logic or model call."""
+        from . import preparations as prep
+        from .current_context import redact_known_secrets
+        redact=lambda text:redact_known_secrets(self.store,text)
+        groups={}
+        for part in parts:groups.setdefault(part['brief']['line_id'],[]).append(part)
+        groups=sorted(groups.values(),key=lambda group:(self.first_saved(group[0]['brief']['line_id'],db),
+                                                        group[0]['brief']['line_id']))
+        heading=msg('lines.bundle_heading',count=len(groups))
+        footer=msg('lines.bundle_footer')
+        shown=groups[:BUNDLE_LINE_LIMIT]
+        more=(msg('lines.bundle_more',tasks=', '.join(excerpt(redact(g[0]['brief']['task']),40)
+                                                     for g in groups[BUNDLE_LINE_LIMIT:])) if len(groups)>len(shown) else '')
+        # Reserve space for labels/footer first; split the remaining report space fairly.
+        more=excerpt(more,400) if more else ''
+        labels=[excerpt(redact(g[0]['brief']['task']),100) for g in shown]
+        share=max(200,(BUNDLE_CHARS-len(heading)-len(footer)-len(more)-sum(map(len,labels))-60)//len(shown))
+        blocks=[]
+        for label,group in zip(labels,shown):
+            newest=group[-1]
+            older=[prep.local_text(p['job']['created'],p['row']['timezone'])+' '+excerpt(' '.join(p['text'].split()),80)
+                   for p in group[:-1]]
+            # Older runs remain one-line excerpts; the newest retains at least 200 characters.
+            old_text='\n'.join(older) if older else ''
+            old_limit=max(0,share-201)
+            if len(old_text)>old_limit:old_text=old_text[:old_limit-1]+'…' if old_limit else ''
+            lead=excerpt(newest['text'],max(200,share-len(old_text)-1))
+            blocks.append('\n'.join(x for x in (label,lead,old_text) if x))
+        return redact('\n\n'.join(x for x in (heading,*blocks,more,footer) if x))
+
+    def suppress_pending_bundles(self, line_id, db):
+        """Remove stopped/forgotten parts in the owner's stop/forget transaction.
+
+        Consumption receipts stay; each removed part gets separate suppression Evidence.
+        Delivery that has already claimed a bundle stays untouched.
+        """
+        from . import preparations as prep
+        from .context_observations import CONFIG_KEY, ContextObservations
+        bundles=db.execute("SELECT id,created FROM jobs WHERE delivery='pending' AND provider='builtin' "
+                           "AND model='line-bundle' AND EXISTS(SELECT 1 FROM tool_events e "
+                           "WHERE e.tool='line_bundled' AND json_extract(e.detail,'$.bundle_id')=jobs.id "
+                           "AND json_extract(e.detail,'$.line_id')=?)",(line_id,)).fetchall()
+        for bundle in bundles:
+            parts=[]
+            jobs=db.execute("SELECT j.*,json_extract(e.detail,'$.line_id') AS bundle_line_id "
+                            "FROM tool_events e JOIN jobs j ON j.id=e.job_id WHERE e.tool='line_bundled' "
+                            "AND json_extract(e.detail,'$.bundle_id')=? "
+                            "AND NOT EXISTS(SELECT 1 FROM tool_events s WHERE s.job_id=e.job_id "
+                            "AND s.tool='line_bundle_suppressed' "
+                            "AND json_extract(s.detail,'$.bundle_id')=json_extract(e.detail,'$.bundle_id') "
+                            "AND json_extract(s.detail,'$.line_id')=json_extract(e.detail,'$.line_id')) "
+                            "ORDER BY j.created,j.id",(bundle['id'],)).fetchall()
+            for job in jobs:
+                try:brief=self.current(job['bundle_line_id'],db) if job['bundle_line_id']!=line_id else None
+                except LineRefusal:brief=None
+                # Also honour removals made before suppression Evidence was recorded.
+                # A restart/forget undo cannot restore an old part to the pending bundle.
+                if not brief or brief['state']!=STATE_ACTIVE or db.execute(
+                              "SELECT 1 FROM procedure_versions WHERE slot=? AND saved>=? "
+                              "AND json_extract(stats_json,'$.change')='stopped' "
+                              "UNION ALL SELECT 1 FROM owner_state_receipts WHERE kind='line' "
+                              "AND created>=? AND json_extract(items_json,'$.line')=? LIMIT 1",
+                              (slot(brief['line_id']),bundle['created'],bundle['created'],brief['line_id'])).fetchone():
+                    db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                               (job['id'],'line_bundle_suppressed','succeeded',
+                                json.dumps({'bundle_id':bundle['id'],'line_id':job['bundle_line_id']}),self.clock()))
+                    continue
+                row=db.execute('SELECT timezone FROM preparations WHERE id=?',
+                               (prep.preparation_of(job['request_key']),)).fetchone()
+                if row is None:
+                    row={'timezone':ContextObservations._normalize(self.store.config(CONFIG_KEY,db=db))['timezone'] or None}
+                parts.append({'job':dict(job),'row':dict(row),'brief':brief,
+                              'text':self.bundle_part_text(job)})
+            if not parts:
+                db.execute("UPDATE jobs SET delivery='cancelled' WHERE id=? AND delivery='pending'",(bundle['id'],))
+            else:
+                text=self.compose_line_bundle(parts,db)
+                db.execute("UPDATE jobs SET response=? WHERE id=? AND delivery='pending'",(text,bundle['id']))
+                db.execute("UPDATE messages SET content=? WHERE job_id=? AND role='assistant'",(text,bundle['id']))
 
 
 # -- what runs, answers and notices read (#798) -------------------------------------------------

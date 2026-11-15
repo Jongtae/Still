@@ -711,7 +711,8 @@ class AgentService:
         # #659: owner-accepted preparations, run by the existing work loop.
         self.preparations=prep.Preparations(
             store,notice_destination=lambda channel:self.preparations_service.notice_destination(channel),
-            budget_notice_destinations=lambda:self.preparations_service.budget_notice_destinations())
+            budget_notice_destinations=lambda:self.preparations_service.budget_notice_destinations(),
+            bundle_report_times=lambda row,db:self.preparations_service.bundle_report_times(row,db))
         # #798: entrusted lines (one continuing responsibility each) on the preparations' clock.
         from .entrusted_lines import EntrustedLines
         self.lines=EntrustedLines(store,clock=lambda:self.preparations.clock())
@@ -952,7 +953,7 @@ class AgentService:
         row=self.preparations.get(preparation_id) if preparation_id else None
         return bool(row and row.get('accepted_by') in prep.OWNER_ACCEPTED and row.get('state')==prep.STATE_RUNNING
                     and row.get('last_run_job_id')==job.get('id') and row.get('delivery_mode')!=prep.DELIVERY_WHEN_NEEDED
-                    and self._surface_work(job))
+                    and self._surface_work(self.preparations_service.notice_job(job)))
 
     def owner_typed_work(self, job):
         """Whether the owner's own typed message started ``job`` (#619, #717).
@@ -1420,11 +1421,9 @@ class AgentService:
         """#798: what a run of an entrusted line reads before its next step when the brief changed, or None."""
         return self.preparations_service.line_note(job)
 
-    @staticmethod
-    def preparation_delivery(row):
-        """``send`` / ``keep`` / ``when_needed`` (#719) for one preparation row."""
-        from .preparations_service import PreparationsService
-        return PreparationsService.preparation_delivery(row)
+    def preparation_delivery(self, row):
+        """The row's own delivery, or its held line bundle (#799)."""
+        return self.preparations_service.preparation_delivery(row)
 
     def run_due_preparation(self, now=None):
         """One tick of owner-accepted preparations (#659).
@@ -5948,7 +5947,7 @@ class AgentService:
     #: #710: ``orchestrator`` events record the plan and its evaluation, never a tool attempt.
     LOCAL_NON_TOOL_EVENTS=frozenset({'model','local_authority','conversation_continuity',ORCHESTRATION_EVENT,om.EVENT_TOOL,
                                      om.REVIEW_EVENT_TOOL,MEMORY_UNDO_TOOL,STEER_EVENT,REACTION_EVENT,
-                                     'response_timing','connection_setup','preparation',
+                                     'response_timing','connection_setup','preparation','line_held',
                                      # #842: the marker that a finished Work's prompts were queued (``sweep_after_work``).
                                      'after_work'})  # host slot receipt, not schedule_preparation
 
@@ -7089,7 +7088,7 @@ class AgentService:
         return self.browser_signin._put_browser_request(work_id, row, expected=expected)
 
     def self_set_write_wait(self, job, row=None):
-        if not self.self_set_run(job) or not self._surface_work(job):return False
+        if not self.self_set_run(job) or not self._surface_work(self.preparations_service.notice_job(job)):return False
         preparation=self.preparations.get(prep.preparation_of(job.get('request_key')))
         if not preparation or preparation.get('delivery_mode')==prep.DELIVERY_WHEN_NEEDED:return False
         stamp=(row or {}).get('preparation') if row else self.preparations.wait_stamp(preparation)
@@ -8759,7 +8758,7 @@ class AgentService:
         return TelegramDelivery.notification_text(kind)
 
     def queue_notification(self, job, kind, fingerprint=None):
-        return self.telegram_delivery.queue_notification(job, kind, fingerprint)
+        return self.telegram_delivery.queue_notification(self.preparations_service.notice_job(job), kind, fingerprint)
 
     def deliver_notification(self):
         return self.telegram_delivery.deliver_notification()
@@ -8880,6 +8879,11 @@ class AgentService:
         reply and can still share another position to continue the request.
         """
         job=self.store.job(job_id)
+        notice_job=self.preparations_service.notice_job(job)
+        if notice_job != job:
+            # A held report cannot carry the keyboard; ask for the input now.
+            with_answer=False
+        job=notice_job
         cfg=self.store.config('telegram',{})
         if (not job or not cfg.get('enabled') or not isinstance(cfg.get('user_id'),int)
                 or job.get('chat_id')!=cfg['user_id'] or not str(job.get('channel','')).startswith('telegram:')):
@@ -8987,7 +8991,7 @@ class AgentService:
         paired Telegram chat: it could never be answered.  A pairing lost since
         is a typed refusal the model reads.
         """
-        if not answerable_work(job):
+        if not answerable_work(self.preparations_service.notice_job(job)):
             return None
         def ask(reason, button_label=None, with_answer=False):
             try:

@@ -216,7 +216,7 @@ class Lines(_LinesCase):
         self.assertEqual(len(self.work_rows(brief)),1)
         self.assertEqual(len(self.helper.line_rows(brief['line_id'])),2)  # work plus periodic account
         self.assertTrue(all(row['accepted_by']==prep.ACCEPTED_DREAM for row in self.helper.line_rows(brief['line_id'])))
-        self.assertTrue(all(row['channel']==prep.CHANNEL_TELEGRAM for row in self.helper.line_rows(brief['line_id'])))
+        self.assertTrue(all(row['channel']==prep.CHANNEL_WEB for row in self.helper.line_rows(brief['line_id'])))
         self.service=self.make_service();self.helper=self.service.preparations_service
         self.helper.line_tick(self.now+30)
         again=self.stand()
@@ -306,7 +306,9 @@ class Lines(_LinesCase):
             self.assertEqual(json.loads(rows[0]['detail'])['line_id'],brief['line_id'])
             raise RuntimeError('fixture crash before queue')
         with patch.object(self.service,'queue_notification',side_effect=crash):
-            with self.assertRaises(RuntimeError):self.helper.line_tick(self.now)
+            # L2 isolates upkeep failures so holding and flushing can still run.
+            with self.assertLogs('personal_agent.service',level='WARNING') as logged:self.helper.line_tick(self.now)
+            self.assertTrue(any('announce_stood_line kind=RuntimeError' in line for line in logged.output))
         self.helper.line_tick(self.now)
         self.assertFalse(self.helper.line_announced(brief['line_id']))
         self.assertEqual(self.helper.line_rows(brief['line_id']),[])
@@ -1002,14 +1004,14 @@ class ReviewFixTests(_LinesCase):
         def crash(**kwargs):
             raise RuntimeError('injected crash before creation')
         with patch.object(self.service.preparations,'create',side_effect=crash):
-            with self.assertRaises(RuntimeError):self.deliver(notice)
+            with self.assertLogs('personal_agent.service',level='WARNING'):self.deliver(notice)
         self.assertTrue(self.helper.line_announced(brief['line_id']))
         self.assertEqual(self.helper.line_rows(brief['line_id']),[])
         def fail_account(**kwargs):
             if kwargs.get('origin')==prep.ORIGIN_LINE_ACCOUNT:raise RuntimeError('account crash')
             return create(**kwargs)
         with patch.object(self.service.preparations,'create',side_effect=fail_account):
-            with self.assertRaises(RuntimeError):self.helper.line_tick(self.now+60)
+            with self.assertLogs('personal_agent.service',level='WARNING'):self.helper.line_tick(self.now+60)
         self.assertEqual(len(self.work_rows(brief)),1)
         self.assertIsNone(self.helper.line_account_row(brief['line_id']))
         self.helper.line_tick(self.now+120)
@@ -1018,14 +1020,14 @@ class ReviewFixTests(_LinesCase):
     def test_creation_and_started_marker_roll_back_together(self):
         brief=self.stand();notice=self.announce(brief)
         with patch.object(self.helper,'record_line_row_started',side_effect=RuntimeError('crash before commit')):
-            with self.assertRaises(RuntimeError):self.deliver(notice)
+            with self.assertLogs('personal_agent.service',level='WARNING'):self.deliver(notice)
         self.assertEqual(self.helper.line_rows(brief['line_id']),[])
         record=self.helper.record_line_row_started
         def crash_after_account(work_id,line_id,role,restart,db):
             if role=='account':raise RuntimeError('crash after account creation')
             return record(work_id,line_id,role,restart,db)
         with patch.object(self.helper,'record_line_row_started',side_effect=crash_after_account):
-            with self.assertRaises(RuntimeError):self.helper.line_tick(self.now+60)
+            with self.assertLogs('personal_agent.service',level='WARNING'):self.helper.line_tick(self.now+60)
         self.assertEqual(len(self.work_rows(brief)),1)
         self.assertIsNone(self.helper.line_account_row(brief['line_id']))
         self.helper.line_tick(self.now+120)
