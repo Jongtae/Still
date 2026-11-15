@@ -1,12 +1,6 @@
-"""#860: the brief's request-driven recall reads the request together with the owner's preceding turn.
+"""#883: accepted plan selectors reach real profile, exchange and record readers.
 
-A short follow-up ("그거 몇 시였지?") shares no word with the fact it refers to.  The profile
-section (matching profile rows, the earlier-exchange block, the daily records) is therefore
-searched with the request first and the owner's preceding turn of the same conversation after it.
-
-Evidence class: unit / controlled local integration over a temporary store, with an injected
-model transport.  No model, network or owner data; all content is synthetic.  Every positive
-case has a control without the context, so a test fails if the context is not what recalls.
+Evidence: model-free fixtures, temporary stores and injected worker transports.
 """
 import json
 import uuid
@@ -71,12 +65,13 @@ class PastWordsBrief(helpers._ServiceBase):
             self.store.save_memory(f'profile.a{index:03d}', f'{FILLER} {index}', owner_id=OWNER)
         self.store.save_memory(DENTIST_KEY, DENTIST_FACT, owner_id=OWNER)
 
-    def snapshot(self, service, job, *, with_context):
-        context = service.preceding_owner_turn(job) if with_context else None
-        return service.owner_profile_snapshot(job['message'], **({'context': context} if with_context else {}))
+    def resolved(self,service,job,query=EARLIER_TURN):
+        from test_orchestrator import OrchestrationUnit, decided, plan
+        orchestration,_,_=OrchestrationUnit().orchestration(decided(dict(plan('a',''),recall_query=query)))
+        return service.worker_profile_snapshot(job,orchestration.first())[0]
 
     # -- 1. the profile rows ---------------------------------------------------
-    def test_profile_fact_of_the_preceding_turn_is_recalled_only_with_the_context(self):
+    def test_profile_fact_is_recalled_only_with_accepted_query(self):
         service = AgentService(self.store)
         self.big_profile()
         self.exchange(EARLIER_TURN, '예약은 오후 3시 30분이에요')
@@ -84,14 +79,13 @@ class PastWordsBrief(helpers._ServiceBase):
         without = service.owner_profile_snapshot(job['message'])
         self.assertNotIn(DENTIST_FACT, without, 'control: the profile is large enough that the row is omitted')
         self.assertIn('omitted by the context limit', without)
-        self.assertEqual(service.preceding_owner_turn(job), EARLIER_TURN)
-        recalled = service.owner_profile_snapshot(job['message'], context=service.preceding_owner_turn(job))
+        recalled = self.resolved(service,job)
         self.assertIn(DENTIST_FACT, recalled)
-        # context=None is today's behaviour exactly.
-        self.assertEqual(service.owner_profile_snapshot(job['message'], context=None), without)
-        self.assertEqual(service.owner_profile_snapshot(job['message'], context=''), without)
+        # recall_query=None is today's behaviour exactly.
+        self.assertEqual(service.owner_profile_snapshot(job['message'], recall_query=None), without)
+        self.assertEqual(service.owner_profile_snapshot(job['message'], recall_query=''), without)
 
-    def test_english_follow_up_recalls_through_the_preceding_turn(self):
+    def test_english_follow_up_recalls_through_accepted_query(self):
         service = AgentService(self.store)
         self.big_profile()
         self.store.save_memory('profile.zz-passport', 'passport renewal appointment is on the 14th (synthetic)', owner_id=OWNER)
@@ -99,25 +93,10 @@ class PastWordsBrief(helpers._ServiceBase):
         job = self.follow_up('and what time was that?')
         self.assertNotIn('passport renewal', service.owner_profile_snapshot(job['message']))
         self.assertIn('passport renewal appointment is on the 14th',
-                      service.owner_profile_snapshot(job['message'], context=service.preceding_owner_turn(job)))
-
-    def test_the_request_comes_first_and_the_query_is_bounded(self):
-        service = AgentService(self.store)
-        seen = []
-        original = service.store.search_conversation
-
-        def spy(query, **kwargs):
-            seen.append(query)
-            return original(query, **kwargs)
-        with mock.patch.object(service.store, 'search_conversation', side_effect=spy):
-            service.owner_profile_snapshot('앞의 요청', context='뒤의 문맥 ' + 'x' * 800)
-        self.assertEqual(len(seen), 1, 'one query feeds the earlier-exchange read')
-        self.assertTrue(seen[0].startswith('앞의 요청'))
-        self.assertIn('뒤의 문맥', seen[0])
-        self.assertLessEqual(len(seen[0]), 500)
+                      self.resolved(service,job,'passport renewal'))
 
     # -- 2. the earlier-exchange block -----------------------------------------
-    def test_old_exchange_sharing_words_with_the_preceding_turn_is_recalled_only_with_the_context(self):
+    def test_old_exchange_is_recalled_only_with_accepted_query(self):
         service = AgentService(self.store)
         old = self.exchange('치과 예약 시간 메모해줘', '오후 3시 30분으로 적어 둘게요')
         self.pad()
@@ -125,7 +104,7 @@ class PastWordsBrief(helpers._ServiceBase):
         job = self.follow_up()
         without = service.owner_profile_snapshot(job['message'])
         self.assertNotIn('치과 예약 시간 메모해줘', without)
-        recalled = service.owner_profile_snapshot(job['message'], context=service.preceding_owner_turn(job))
+        recalled = self.resolved(service,job)
         self.assertIn('치과 예약 시간 메모해줘', recalled)
         self.assertIn(old, [ref['work_id'] for ref in conversation_block_refs(recalled)])
 
@@ -155,83 +134,144 @@ class PastWordsBrief(helpers._ServiceBase):
         self.assertIn('omitted by the context limit', without)
         for marker in controls:
             self.assertNotIn(marker, without, 'control: the request alone recalls none of the eligible copies')
-        recalled = service.owner_profile_snapshot(job['message'], context=service.preceding_owner_turn(job))
+        recalled = self.resolved(service,job)
         self.assertIn('newvaluemarker', recalled, 'control: the current row of the same topic is recalled')
         for marker in controls:
-            self.assertIn(marker, recalled, 'eligible copies must be found through the preceding owner turn')
+            self.assertIn(marker, recalled, 'eligible copies must be found through the accepted selector')
         self.assertIn(visible, [ref['work_id'] for ref in conversation_block_refs(recalled)])
         for marker in ('forgotmarker', 'oldvaluemarker', 'expiredmarker', 'transcriptmarker', 'answermarker'):
             self.assertNotIn(marker, recalled)
 
-    # -- 4. preceding_owner_turn eligibility ----------------------------------------
-    def test_preceding_turn_is_the_latest_eligible_owner_message_of_the_same_conversation(self):
-        service = AgentService(self.store)
-        self.assertEqual(service.preceding_owner_turn(self.follow_up()), '', 'no earlier turn')
-        self.exchange('first eligible turn', 'first answer')
-        # Not owner-typed (a connector or machine request), another conversation, and a forgotten turn.
-        self.exchange('machine generated request', typed=False)
-        self.exchange('other chat turn', channel='telegram', chat_id=777)
-        hidden = self.exchange('forgotten turn', 'answer to forgotten')
-        OwnerForget(self.store).forget(OWNER, f'message:{self.message_id(hidden)}')
-        job = self.follow_up()
-        # The assistant's own words are never the owner's preceding turn: the latest assistant row is a reply.
-        self.assertEqual(service.preceding_owner_turn(job), 'first eligible turn')
 
-    def test_a_document_workspace_turn_and_the_requests_own_row_are_not_the_preceding_turn(self):
-        service = AgentService(self.store)
-        self.exchange('real earlier turn')
-        document = self.exchange('document workspace request')
-        self.store.put('file_workspace_document_jobs', [document])
-        job = self.follow_up('다음 질문')
-        self.assertEqual(service.preceding_owner_turn(job), 'real earlier turn')
 
-    def test_preceding_turn_never_raises(self):
-        service = AgentService(self.store)
-        self.exchange('earlier turn')
-        job = self.follow_up()
-        with mock.patch.object(self.store, 'db', side_effect=RuntimeError('store down')):
-            self.assertEqual(service.preceding_owner_turn(job), '')
-        self.assertEqual(service.preceding_owner_turn({}), '')
-        self.assertEqual(service.preceding_owner_turn(None), '')
+from test_orchestrator import Harness, plan
 
-    # -- the two brief callers --------------------------------------------------------
-    def test_early_work_plan_builds_its_profile_section_with_the_preceding_turn(self):
-        service = AgentService(self.store)
+
+class ResolvedWorkerRecall(Harness):
+    pad=PastWordsBrief.pad
+    big_profile=PastWordsBrief.big_profile
+
+    def setUp(self):
+        super().setUp()
+        self.clock_value=100
+        # Exchange fixtures use a separate numeric clock from the harness context clock.
+
+    def exchange(self,*args,**kwargs):
+        clock=self.clock
+        self.clock=getattr(self,'clock_value',100)
+        try: return PastWordsBrief.exchange(self,*args,**kwargs)
+        finally: self.clock_value=self.clock; self.clock=clock
+
+    def seed_recall(self):
         self.big_profile()
-        self.exchange(EARLIER_TURN, '예약은 오후 3시 30분이에요')
-        job = self.follow_up()
-        captured = {}
-
-        def capture(job_, prompt, history, sections, *args, **kwargs):
-            captured.update(sections)
-            return None
-        with mock.patch.object(service, 'work_orchestration', side_effect=capture):
-            service.early_work_plan(job, job['message'])
-        self.assertIn(DENTIST_FACT, captured['profile'])
-        # The same brief for the same request without a preceding turn does not carry it (control).
-        self.assertNotIn(DENTIST_FACT, service.owner_profile_snapshot(job['message']))
-
-    def test_worker_brief_carries_the_recalled_row_and_the_information_use_record_names_it(self):
-        sent = []
-
-        def script(messages):
-            sent.append(json.dumps(messages, ensure_ascii=False))
-            return {'choices': [{'message': {'content': '오후 3시 30분이에요'}}]}
-        service = self.service(script)
-        self.big_profile()
-        old = self.exchange('치과 예약 시간 메모해줘', '오후 3시 30분으로 적어 둘게요')
+        old=self.exchange('치과 예약 시간 메모해줘','오후 3시 30분')
         self.pad()
-        self.exchange(EARLIER_TURN, '다시 확인해 볼게요')
-        work = self.store.enqueue(FOLLOW_UP, str(uuid.uuid4()), owner_typed=True, owner_words=True)
-        self.assertTrue(service.run_one())
-        brief = '\n'.join(sent)
-        self.assertIn('profile.a000', brief, 'control: the profile section is in the worker brief at all')
-        # Real brief path (_prepare_worker_turn): the follow-up has no word in common with either source.
-        self.assertIn(DENTIST_FACT, brief)
-        self.assertIn('치과 예약 시간 메모해줘', brief)
-        # Information use: exactly the rows surfaced because of the context are named by the existing record.
-        record = self.store.turn_provenance(work)['owner_information']
-        self.assertIn(DENTIST_KEY, record['profile_keys'])
-        self.assertIn(old, [ref['work_id'] for ref in record['earlier_exchanges']])
-        audit = service.work_information_use(work)
-        self.assertIn(old, [ref['work_id'] for ref in audit['sent_to']['earlier_exchanges']['worker_sections']])
+        self.exchange(EARLIER_TURN)
+        self.store.save_memory('diary.2000-01-01','치과 오래된기록 recordmarker',owner_id=OWNER)
+        return old
+
+    def selected(self,worker,query):
+        return dict(plan(worker,''),recall_query=query)
+
+    def test_resolved_followup_reaches_worker_profile_exchanges_and_records(self):
+        old=self.seed_recall()
+        for route in ('openai','codex'):
+            with self.subTest(route=route):
+                self.use_main(route)
+                self.script([self.selected(route,'치과 예약')],[True])
+                start=len(self.asked_plans)
+                work,row=self.run_work(FOLLOW_UP,key='resolved-'+route,owner_words=True)
+                self.assertEqual(len(self.asked_plans)-start,1)
+                if route=='openai': text=json.dumps(self.transport.bodies[-1],ensure_ascii=False)
+                else: text=self.engine.turns[-1]['prompt']
+                self.assertIn(DENTIST_FACT,text)
+                self.assertIn('치과 예약 시간 메모해줘',text)
+                self.assertIn('recordmarker',text)
+                self.assertNotIn(DENTIST_FACT,self.asked_plans[-1][0].facts['owner_profile'])
+                refs=self.store.turn_provenance(work)['owner_information']
+                self.assertIn(DENTIST_KEY,refs['profile_keys'])
+                self.assertIn(old,[ref['work_id'] for ref in refs['earlier_exchanges']])
+
+    def test_no_plan_worker_does_not_recall_raw_preceding_topic(self):
+        self.seed_recall()
+        self.script([None],[True])
+        work,_=self.run_work(FOLLOW_UP,owner_words=True)
+        self.assertEqual(len(self.asked_plans),1)
+        self.assertNotIn(DENTIST_FACT,self.engine.turns[-1]['prompt'])
+        entry=self.store.turn_provenance(work)['attempt_inputs'][-1]
+        self.assertEqual(entry['recall_selector']['source'],'request')
+
+    def test_redelegation_refreshes_profile_from_new_plan_query(self):
+        self.seed_recall()
+        self.store.save_memory('profile.zz-quartz','quartzclang flagmarker',owner_id=OWNER)
+        self.script([self.selected('codex','치과'),self.selected('codex','quartzclang')],[False,True],[False])
+        self.run_work(FOLLOW_UP,owner_words=True)
+        self.assertEqual(len(self.asked_plans),2)
+        self.assertEqual(len(self.engine.turns),2)
+        self.assertIn(DENTIST_FACT,self.engine.turns[0]['prompt'])
+        self.assertNotIn('flagmarker',self.engine.turns[0]['prompt'])
+        self.assertIn('flagmarker',self.engine.turns[1]['prompt'])
+        self.assertNotIn(DENTIST_FACT,self.engine.turns[1]['prompt'])
+
+    def test_worker_recall_refs_and_selector_digest_match_actual_sent_sections(self):
+        import hashlib
+        from personal_agent import information_use
+        from personal_agent.work_execution import PROCEED
+        for route in ('openai','codex'):
+            with self.subTest(route=route):
+                self.use_main(route)
+                self.seed_recall()
+                self.script([self.selected(route,'치과')],[True])
+                prepared_entries=[]
+                sent_refs=[]
+                full_profiles=[]
+                original_snapshot=self.service.worker_profile_snapshot
+                def snapshot(*args,**kwargs):
+                    result=original_snapshot(*args,**kwargs)
+                    full_profiles.append(result[0])
+                    return result
+                original_sent=self.service.record_turn_sent
+                original_prepare=self.service._prepare_worker_turn
+                splice={'kind':'fixture','ref':'fixture-source','label':'fixture-source'}
+                def prepare(run):
+                    result=original_prepare(run)
+                    if result is PROCEED:
+                        run.spliced_refs.append(splice)
+                        run.base_history[-1]['content']+='\nSource: fixture-source (synthetic)'
+                    return result
+                def recorded(job_id,**kwargs):
+                    ref=original_sent(job_id,**kwargs)
+                    prepared_entries.append(self.store.turn_provenance(job_id)['attempt_inputs'][-1])
+                    sent_refs.append(kwargs['owner_information'])
+                    return ref
+                with mock.patch.object(self.service,'worker_profile_snapshot',side_effect=snapshot), \
+                        mock.patch.object(self.service,'record_turn_sent',side_effect=recorded), \
+                        mock.patch.object(self.service,'_prepare_worker_turn',side_effect=prepare), \
+                        mock.patch('personal_agent.work_executor.MAX_PROMPT_BYTES',7000):
+                    work,_=self.run_work(FOLLOW_UP,key='receipt-'+route,owner_words=True)
+                receipt=self.store.turn_provenance(work)
+                entry=receipt['attempt_inputs'][-1]
+                self.assertEqual(prepared_entries[-1]['input'],'prepared')
+                self.assertEqual(entry['input'],'sent')
+                self.assertEqual(entry['recall_selector'],dict(source='plan',
+                    query_digest=hashlib.sha256(('치과 '+FOLLOW_UP).encode()).hexdigest()[:16],query_chars=len('치과 '+FOLLOW_UP),recall_enabled=True))
+                self.assertNotIn('recall_query',entry)
+                self.assertIn(DENTIST_KEY,receipt['owner_information']['profile_keys'])
+                if route=='codex':
+                    context=self.engine.turns[-1]['context']
+                    self.assertTrue(context.get('cut_to_fit'))
+                    # Compare exact complete source lines, independently of the receipt parser.
+                    sent_lines=set(context.get('profile','').splitlines())
+                    full_lines=[line for line in full_profiles[-1].splitlines() if line.startswith('profile.')]
+                    expected_keys=sorted(line.split(':',1)[0] for line in full_lines if line in sent_lines)
+                    self.assertTrue(expected_keys)
+                    self.assertLess(len(expected_keys),len(full_lines))
+                    self.assertEqual(sorted(sent_refs[-1]['profile_keys']),expected_keys)
+                    self.assertIn('fixture-source',self.engine.turns[-1]['prompt'])
+                else:
+                    text=json.dumps(self.transport.bodies[-1],ensure_ascii=False)
+                    self.assertIn('fixture-source',text)
+                    self.assertEqual(sent_refs[-1]['spliced'],[splice])
+                # Plan sources remain in the union even when the worker has cut a tail.
+                self.assertIn('profile.a000',receipt['owner_information']['profile_keys'])
+                self.assertEqual(len(self.asked_plans),1 if route=='openai' else 2)

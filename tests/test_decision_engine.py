@@ -418,3 +418,29 @@ class JudgmentHistoryCounts(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class StructuredOptionalFields(unittest.TestCase):
+    def test_only_declared_optional_fields_may_be_missing_from_a_strict_response(self):
+        from personal_agent.decision import StructuredSchema
+        schema=StructuredSchema({'type':'object','additionalProperties':False,
+            'properties':{'result':{'type':'string'},'hint':{'type':'string'}},
+            'required':['result','hint']},optional=('hint',))
+        for response,accepted in (({'result':'ok','confidence':0.9},True),
+                                  ({'hint':'optional','confidence':0.9},False),
+                                  ({'result':'ok','unknown':'extra','confidence':0.9},False),
+                                  ({'result':'ok'},False)):
+            with self.subTest(response=response):
+                transport=ScriptedTransport(openai_tool_reply(response))
+                engine,_=engine_for(transport)
+                decision=engine.structured(DecisionContext('fixture'),'question',schema,
+                                           lambda data:isinstance(data.get('result'),str))
+                self.assertEqual(decision.outcome,OUTCOME_DECIDED if accepted else OUTCOME_MALFORMED)
+                wire=transport.calls[0]['body']['tools'][0]['function']['parameters']
+                self.assertEqual(set(wire['required']),set(wire['properties']))
+                self.assertEqual(set(wire),{'type','additionalProperties','properties','required'})
+                self.assertEqual(len(transport.calls),1)
+        # The same JSON schema without local optionality still requires every key.
+        transport=ScriptedTransport(openai_tool_reply({'result':'ok','confidence':0.9}))
+        engine,_=engine_for(transport)
+        self.assertEqual(engine.structured(DecisionContext('fixture'),'question',dict(schema)).outcome,OUTCOME_MALFORMED)
