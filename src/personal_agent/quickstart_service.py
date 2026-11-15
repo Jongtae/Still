@@ -4268,6 +4268,10 @@ class AgentService:
     @staticmethod
     def model_fingerprint(config):
         public='|'.join(str(config.get(key,'')) for key in ('provider','endpoint','model'))
+        # #891: a probe proves one protocol. Keep legacy Chat Completions
+        # fingerprints valid, but never reuse that proof for Responses.
+        api=config.get('api','chat_completions')
+        if api!='chat_completions':public='api='+str(api)+'|'+public
         return hashlib.sha256(public.encode()).hexdigest()
 
     def model_ready(self, config=None, result=None):

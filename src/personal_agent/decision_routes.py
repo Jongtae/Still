@@ -413,8 +413,8 @@ class DecisionRoutes:
         """The #417/#580 direct destination and key, with an activated model (#679).
 
         The destination and key still come only from ``service.decision_route``;
-        an owner-activated route adds only the qualified model for the same
-        provider, so a model choice never changes where a judgment goes.
+        an owner-activated route adds the qualified model and API for the same
+        provider, so a model choice never changes the destination host.
         """
         resolved = self.service.decision_route()
         if not resolved:
@@ -422,8 +422,9 @@ class DecisionRoutes:
         config, key = resolved
         model = (route or {}).get('requested_model')
         if model and (route or {}).get('provider') == config.get('provider') and valid_model_id(model):
-            config = {**config, 'model': model}
-            if (route or {}).get('api') == 'responses':config['api'] = 'responses'
+            # Use the protocol that qualified, including the legacy default.
+            config = validate_model({**config, 'model': model,
+                                     'api': route.get('api', 'chat_completions')})
         return config, key
 
     def _jev_engine(self, model, audit):
@@ -1682,18 +1683,31 @@ class DecisionRoutes:
         """The direct API route: the ranked list, or the owner's one model, through ``qualify()`` (#679).
 
         The destination and key are exactly the pre-#679 ones (a decision-only
-        OpenAI key, or the #417 default); only the model is chosen here.
+        OpenAI key, or the #417 default); the model and API are chosen here.
         """
         decision_key = self.store.secret('decision_model_key') or ''
+        resolved = self.service.decision_route()
         if decision_key:
             # A saved decision-only key: exactly that destination/key.
             base, key = dict(DEFAULT_DECISION_PROVIDER), decision_key
-        elif self.service.decision_route():
-            base, key = self.service.decision_route()
+        elif resolved:
+            base, key = resolved
         else:
             self._fail(ROUTE_DIRECT_API, 'not-configured', msg('decision_routes.openai_key_missing'))
-        if body.get('api') is not None:
-            base = validate_model({**base, 'api': body['api']})
+        api = body.get('api')
+        if api is None:
+            # Omission reuses the owner's protocol, not an implicit switch.
+            # The active row also covers earlier #891 state where only that
+            # row carried api; an explicit selection always takes precedence.
+            active = self.active() or {}
+            if (active.get('transport') == ROUTE_DIRECT_API and active.get('mode') != MODE_FOLLOW
+                    and active.get('provider') == base['provider']):
+                api = active.get('api', 'chat_completions')
+            elif resolved and all(resolved[0].get(field) == base.get(field) for field in ('provider', 'endpoint')):
+                api = resolved[0].get('api', 'chat_completions')
+            else:
+                api = 'chat_completions'
+        base = validate_model({**base, 'api': api})
         model = body.get('model') or None
         if model is not None and not valid_model_id(model):
             raise DecisionRouteError(msg('decision_routes.invalid_model'))
@@ -1714,7 +1728,7 @@ class DecisionRoutes:
         if decision_key:
             # Written only here, after the qualification passed (#580 review F1).
             with self.service.lock:
-                self.store.put('decision_model', {**DEFAULT_DECISION_PROVIDER, 'model': chosen})
+                self.store.put('decision_model', {**base, 'model': chosen})
         return self._commit(ROUTE_DIRECT_API, {'transport': ROUTE_DIRECT_API, 'provider': base['provider'],
                                                **({'api': base['api']} if base.get('api') else {}),
                                                'requested_model': chosen, 'model_policy': policy,
