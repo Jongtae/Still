@@ -1496,7 +1496,7 @@ $('owner-profile-form').onsubmit=event=>{event.preventDefault();const memoryKey=
 // #659 owner-accepted preparations: reminders and prepared answers the
 // service loop runs when due. 수락 turns a proposal into a schedule, 취소
 // stops every future run, 삭제 removes the row (its past Works stay).
-let preparationRows=null,preparationLoadSequence=0,preparationDeletePending=null,preparationEditPending=null,preparationLabels={};
+let preparationRows=null,preparationLoadSequence=0,preparationDeletePending=null,preparationEditPending=null,preparationLabels={},scheduledBudget=null;
 function preparationLabel(key){const value=preparationLabels[key],lang=currentLanguage==='zh-CN'?'zh':currentLanguage;return typeof value==='string'?value:value?.[lang]||value?.ko||'';}
 const PREPARATION_ACTIVE=['proposed','scheduled','running','paused'];
 function preparationStateLabel(state){const labels={proposed:t('수락 대기'),scheduled:t('예약됨'),running:t('실행 중'),paused:preparationLabel('paused'),delivered:t('완료'),unknown:t('전달 확인 안 됨'),failed:t('실패'),cancelled:t('취소됨'),expired:t('기한 지남')};return labels[state]||state;}
@@ -1508,13 +1508,30 @@ function preparationDeliveryLabel(value){return preparationLabel('delivery_'+val
 function preparationDecisionLabel(row){const reasons={'judged-needed':t('알려야 한다고 판단'),'judged-not-needed':t('알릴 일이 없다고 판단'),'same-as-last-notification':t('지난 알림과 같음'),'run-did-not-finish':t('결과를 얻지 못함'),'run-did-not-finish-told':t('결과를 얻지 못해 알림'),'run-stopped':t('실행을 멈춤'),'judgment-unavailable':t('판단 AI를 쓸 수 없어 결과를 보냄'),'judgment-unavailable-already-notified':t('판단 AI를 쓸 수 없음, 이미 한 번 보냄')};
  return t(row.last_decision==='notify'?'마지막 실행: 알림 ({reason})':'마지막 실행: 조용히 넘어감 ({reason})',{reason:reasons[row.last_decision_reason]||row.last_decision_reason||''});}
 async function loadPreparations(){const request=++preparationLoadSequence;
- try{const data=await api('/api/preparations');if(request!==preparationLoadSequence)return;preparationRows=data.preparations||[];preparationLabels=data.management||{};renderPreparations();}
+ try{const data=await api('/api/preparations');if(request!==preparationLoadSequence)return;preparationRows=data.preparations||[];preparationLabels=data.management||{};scheduledBudget=data.budget;renderScheduledBudget();renderPreparations();}
  catch(error){if(request===preparationLoadSequence)setError('preparations-feedback',error);}}
-async function preparationAction(operation,id,done,changes={}){try{const data=await api('/api/preparations/request',{operation,id,...changes});preparationRows=data.preparations||[];preparationLabels=data.management||{};preparationEditPending=null;setFeedback('preparations-feedback',done);renderPreparations();}catch(error){setError('preparations-feedback',error);await loadPreparations();}}
+async function preparationAction(operation,id,done,changes={}){try{const data=await api('/api/preparations/request',{operation,id,...changes});preparationRows=data.preparations||[];preparationLabels=data.management||{};scheduledBudget=data.budget;renderScheduledBudget();preparationEditPending=null;setFeedback('preparations-feedback',done);renderPreparations();}catch(error){setError('preparations-feedback',error);await loadPreparations();}}
+// #867: the owner-wide budget uses the same settings endpoint and locale catalog.
+function renderScheduledBudget(){
+ const host=$('scheduled-budget');if(!host||!scheduledBudget)return;
+ let form=host.querySelector('form');
+ if(!form){form=element('form',undefined,'settings-form');const label=element('label'),name=element('span'),input=element('input'),help=element('p'),notice=element('p'),save=element('button');
+  name.id='scheduled-budget-label';input.id='scheduled-budget-input';input.name='daily_calls';input.type='number';input.min='0';input.step='1';input.required=true;input.autocomplete='off';input.setAttribute('aria-describedby','scheduled-budget-help');
+  notice.id='scheduled-budget-notice';help.id='scheduled-budget-help';save.id='scheduled-budget-save';save.type='submit';label.append(name,input);form.append(label,help,notice,save);host.append(form);
+  input.oninput=()=>{input.dataset.dirty='true';};
+  form.onsubmit=async event=>{event.preventDefault();await busy(save,async()=>{
+   try{const data=await api('/api/preparations/request',{operation:'set_budget',daily_calls:Number(input.value)});scheduledBudget=data.budget;input.dataset.dirty='';renderScheduledBudget();setFeedback('preparations-feedback',preparationLabel('saved'));}
+   catch(error){setError('preparations-feedback',error);}
+  });};
+ }
+ const input=$('scheduled-budget-input');if(!input.dataset.dirty&&document.activeElement!==input)input.value=String(scheduledBudget.daily_calls);
+ const notice=$('scheduled-budget-notice');notice.textContent=scheduledBudget.notice?.[currentLanguage==='zh-CN'?'zh':currentLanguage]||scheduledBudget.notice?.ko||'';notice.hidden=!notice.textContent;
+ input.max=String(scheduledBudget.max);$('scheduled-budget-label').textContent=preparationLabel('budget_label');$('scheduled-budget-help').textContent=preparationLabel('budget_help');$('scheduled-budget-save').textContent=preparationLabel('save');
+}
 function preparationDescription(row){const active=PREPARATION_ACTIVE.includes(row.state),parts=[row.kind==='reminder'?t('알림'):t('미리 준비'),row.recurrence==='window'?preparationWindowLabel(row):row.recurrence_labels?.[currentLanguage]||preparationRepeatLabel(row.recurrence),active?t('{time} 예정',{time:row.due_local}):row.due_local,preparationDeliveryLabel(row.delivery)];
  if(row.last_decision)parts.push(preparationDecisionLabel(row));
  if(row.last_result)parts.push(t('마지막 결과: {text}',{text:row.last_result}));return parts.join(' · ');}
-function renderPreparations(){const list=$('preparations-list');if(!list||!preparationRows)return;const fingerprint=JSON.stringify([preparationRows,preparationDeletePending,preparationEditPending,preparationLabels,currentLanguage]);if(list.dataset.state===fingerprint)return;list.dataset.state=fingerprint;const focusKey=rememberFocus(list);list.replaceChildren();
+function renderPreparations(){renderScheduledBudget();const list=$('preparations-list');if(!list||!preparationRows)return;const fingerprint=JSON.stringify([preparationRows,preparationDeletePending,preparationEditPending,preparationLabels,currentLanguage]);if(list.dataset.state===fingerprint)return;list.dataset.state=fingerprint;const focusKey=rememberFocus(list);list.replaceChildren();
  for(const row of preparationRows){const actions=[],pending=preparationDeletePending===row.id;
   if(row.state==='proposed'){const accept=settingsAction(preparationLabel('accept'),event=>busy(event.currentTarget,()=>preparationAction('accept',row.id,t('준비를 수락했습니다.'))));accept.dataset.focusKey='preparation-accept:'+row.id;actions.push(accept);}
   if(PREPARATION_ACTIVE.includes(row.state)&&!pending){const cancel=settingsAction(row.state==='proposed'?preparationLabel('decline'):t('취소'),event=>busy(event.currentTarget,()=>preparationAction('cancel',row.id,t('준비를 취소했습니다.'))));cancel.dataset.focusKey='preparation-cancel:'+row.id;actions.push(cancel);}

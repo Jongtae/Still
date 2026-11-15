@@ -119,11 +119,85 @@ class SelfChanges(sn._Case):
         self.assertIn(msg('button.restore_reservation', 'en'), text)
         self.assertNotIn('max_runs', text)
 
+    def test_budget_skip_keeps_narrowing_receipt_and_consumed_count_on_undo(self):
+        self.preps.set_budget(1)
+        row, run = self.running()
+        self.assertTrue(self.change(row, run, changes={'max_runs': 3})['applied'])
+        receipt = self.preps.get(row['id'])['self_change']
+        current = self.settle(row, run)
+        self.clock[0] = current['due_at']
+        self.assertIsNone(self.preps.start(current, channel='web', chat_id=None, now=self.clock[0]))
+        skipped = self.preps.get(row['id'])
+        self.assertEqual((skipped['state'], skipped['run_count'], skipped['max_runs']),
+                         (prep.STATE_SCHEDULED, 2, 3))
+        self.assertEqual(skipped['self_change'], receipt)
+        self.assertEqual(len(self.notices()), 1)
+        self.assertEqual(len(self.store.jobs()), 1)
+        # A skipped slot creates no current Work through which to change the reservation.
+        self.assertFalse(self.change(row, run, 'pause')['applied'])
+        restored = self.preps.restore(row['id'])
+        self.assertEqual((restored['max_runs'], restored['run_count'], restored['due_at']),
+                         (8, 2, skipped['due_at']))
+        self.assertTrue(restored['self_change_undone'])
+
+    def test_exhausted_budget_preserves_self_pause_and_cannot_be_raised_by_run(self):
+        self.preps.set_budget(1)
+        row, run = self.running()
+        handler = self.settings.work_tools('owner', 'web', run['id'], unattended=True,
+                                           own_preparation=row['id'])
+        refused = handler('settings_change', {'category': 'scheduled_work', 'setting': 'daily_calls', 'value': '0'})
+        self.assertFalse(refused['applied'])
+        self.assertEqual(self.preps.budget_settings()['daily_calls'], 1)
+        self.assertTrue(self.change(row, run, 'pause')['applied'])
+        current = self.settle(row, run)
+        self.clock[0] += 601
+        self.assertEqual(current['state'], prep.STATE_PAUSED)
+        self.assertEqual(self.preps.due(self.clock[0]), [])
+        day = self.preps.budget_day(self.clock[0])
+        # The owner's explicit run-now remains possible, even for the self-paused row.
+        work = self.preps.start(current, channel='web', chat_id=None, now=self.clock[0], immediate=True)
+        self.assertIsNotNone(work)
+        self.assertEqual(self.store.config(prep.SCHEDULED_USAGE_PREFIX + day), 1)
+        current = self.settle(self.preps.get(row['id']), self.store.job(work))
+        self.assertEqual(current['state'], prep.STATE_PAUSED)
+
 
 class DreamFindings(pt._Case):
     suggest = sugg.Offer.suggest
     deliver = sugg.Offer.deliver
     row_notification = sugg.Offer.row_notification
+
+    def test_budget_does_not_consume_untold_or_upkeep_paused_dream_slots(self):
+        anchor = self.receive('question')
+        self.deliver()
+        row = self.suggest(anchor, recurrence='daily')
+        preps = self.service.preparations
+        preps.set_budget(1)
+        day = preps.budget_day(row['due_at'])
+        self.store.put(prep.SCHEDULED_USAGE_PREFIX + day, 1)
+        self.now = row['due_at']
+        self.tick()  # The per-row notice is only queued; the dream is still untold.
+        current = preps.get(row['id'])
+        self.assertEqual((current['run_count'], current['due_at']), (0, row['due_at']))
+        self.assertIsNone(current['offered_at'])
+        self.assertEqual(self.runs(row['id']), [])
+        self.assertIsNone(self.store.config(prep.SCHEDULED_SKIPPED_PREFIX + row['id']))
+        self.deliver()
+        self.service.owner_model.set_controls({'dream': False})
+        self.tick()  # A confirmed notice cannot bypass paused upkeep, either.
+        current = preps.get(row['id'])
+        self.assertIsNotNone(current['offered_at'])
+        self.assertEqual(current['run_count'], 0)
+        self.assertEqual(self.runs(row['id']), [])
+        self.assertIsNone(self.store.config(prep.SCHEDULED_SKIPPED_PREFIX + row['id']))
+        self.service.owner_model.set_controls({'dream': True})
+        self.tick()  # Once told and enabled, the same due slot reaches the daily budget.
+        current = preps.get(row['id'])
+        self.assertEqual((current['state'], current['run_count'], current['last_outcome']),
+                         (prep.STATE_SCHEDULED, 1, 'skipped'))
+        self.assertEqual(self.runs(row['id']), [])
+        self.assertEqual(self.store.config(prep.SCHEDULED_SKIPPED_PREFIX + row['id'])['count'], 1)
+        self.assertEqual(self.row_notification(row)['state'], 'sent')
 
     def legacy_scheduled_dream(self, anchor, goal):
         """An unbounded, already-offered recurring row from before per-row notices."""

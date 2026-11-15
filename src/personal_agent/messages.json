@@ -1655,6 +1655,12 @@
   "ja": "；1日の実行上限により今回が最後の確認です。実際の終了は{end}で、オーナーが希望した終了{requested}まで確認できません",
   "zh": "；由于每日运行上限，这是最后一次检查。实际结束时间为{end}，早于主人要求的结束时间{requested}"
  },
+ "preparations.run_budget_skipped": {
+  "ko": "unchecked_scheduled_slots: {facts}\n위 기록은 예약 작업 일일 총 한도로 확인하지 못한 시각들이에요. 보고할 때 확인하지 못한 범위와 이유를 함께 설명하세요.",
+  "en": "unchecked_scheduled_slots: {facts}\nThese recorded slots were not checked because of the daily scheduled Work budget. When reporting, explain what was not checked and why.",
+  "ja": "unchecked_scheduled_slots: {facts}\n記録された時刻は予約作業の1日の合計上限により確認できませんでした。報告では未確認の範囲と理由も説明してください。",
+  "zh": "unchecked_scheduled_slots: {facts}\n这些记录的时段因计划任务每日总限额而未检查。报告时请说明未检查的范围和原因。"
+ },
  "preparations.run_delivery": {
   "ko": "이 Work가 끝난 뒤 Still이 답을 {channel} 채널로 전하며, 이 Work가 직접 보내지 않아요.",
   "en": "After this Work ends, Still delivers its reply on {channel}; this Work does not send it itself.",
@@ -11475,6 +11481,48 @@
   "ko": "앞으로의 실행을 축소했어요",
   "ja": "今後の実行を縮小しました",
   "zh": "缩减后续运行"
+ },
+ "scheduled_budget.label": {
+  "ko": "예약 작업 일일 총 한도",
+  "en": "Daily total for scheduled work",
+  "ja": "予約作業の1日の合計上限",
+  "zh": "计划任务每日总限额"
+ },
+ "scheduled_budget.category_line": {
+  "ko": "예약 작업 일일 총 한도 · {details}",
+  "en": "Daily scheduled work budget · {details}",
+  "ja": "予約作業の1日の上限 · {details}",
+  "zh": "计划任务每日限额 · {details}"
+ },
+ "scheduled_budget.value": {
+  "ko": "하루 {value}회 (0은 한도 해제)",
+  "en": "{value} Works/day (0 means unlimited)",
+  "ja": "1日{value}回（0は無制限）",
+  "zh": "每天 {value} 次（0 表示不限）"
+ },
+ "scheduled_budget.format": {
+  "ko": "0~{limit} 사이 정수. 0은 한도 해제. 직접 요청과 지금 실행은 포함하지 않아요.",
+  "en": "Whole number 0–{limit}. 0 disables the limit. Direct requests and Run now are exempt.",
+  "ja": "0〜{limit}の整数。0は上限解除。直接の依頼と今すぐ実行は対象外です。",
+  "zh": "0–{limit} 的整数。0 关闭限额。直接请求和立即运行不计入。"
+ },
+ "scheduled_budget.help": {
+  "ko": "모든 AI 경로를 합한 일일 예약 실행 한도예요. 0으로 한도를 꺼요. 직접 요청과 지금 실행은 포함하지 않아요. 다음 예약부터 적용돼요.",
+  "en": "Daily scheduled Works across all AI routes. 0 turns the limit off. Direct requests and Run now are exempt. Changes apply at the next slot.",
+  "ja": "すべてのAI経路を合計した1日の予約実行上限です。0で解除。直接の依頼と今すぐ実行は対象外。変更は次の予定から適用されます。",
+  "zh": "所有 AI 路径共用的每日计划执行限额。0 关闭限额。直接请求和立即运行不计入。更改从下个时段生效。"
+ },
+ "scheduled_budget.invalid": {
+  "ko": "일일 예약 작업 한도는 0~{limit} 사이 정수여야 해요.",
+  "en": "Scheduled work limit must be a whole number from 0 to {limit}.",
+  "ja": "予約作業の上限は0〜{limit}の整数にしてください。",
+  "zh": "计划任务限额必须为 0–{limit} 的整数。"
+ },
+ "scheduled_budget.notice": {
+  "ko": "{day}의 예약 작업 한도 {cap}회를 모두 사용해 {title}의 {slot} 확인을 건너뛰었어요. 한도를 바꾸지 않으면 오늘 남은 예약 확인도 건너뛰어요. 마지막 확인을 건너뛰어도 일정은 예정대로 끝나고 마무리 보고가 없을 수 있어요. 대화에서 한도를 높이거나 해제해 달라고 하거나 예약된 일 설정에서 바꿀 수 있어요. 직접 요청과 지금 실행은 계속 사용할 수 있어요.",
+  "en": "{day}: the daily budget of {cap} scheduled Works is used up. The {slot} check for {title} was skipped. Remaining scheduled checks today will also be skipped unless you change the limit. This includes closing checks: the window still ends on schedule, possibly without a closing report. Ask me to raise or turn off the limit, or change it in Scheduled settings. Direct requests and Run now remain available.",
+  "ja": "{day}の予約作業上限{cap}回に達したため、{title}の{slot}の確認をスキップしました。上限を変更しない限り、今日の残りの予約確認もスキップします。最後の確認も対象です。予定はそのまま終了し、終了報告がない場合があります。会話で上限の引き上げや解除を依頼するか、予約作業の設定で変更できます。直接の依頼と今すぐ実行は引き続き使えます。",
+  "zh": "{day} 的每日计划任务限额 {cap} 次已用完，已跳过 {title} 在 {slot} 的检查。若不更改限额，今天剩余的计划检查也会跳过，包括最后一次检查。计划仍按时结束，可能没有结束报告。请在对话中要求提高或关闭限额，或在计划任务设置中更改。直接请求和立即运行仍可使用。"
  },
  "write_allowances.label": {
   "ko": "스스로 준비한 일의 연결별 변경 허용",
