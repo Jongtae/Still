@@ -1307,6 +1307,9 @@ class ApiRequests:
                         self.approvals.payment_autonomy(binding, label, ticket=ticket)
                     except ValueError as exc:
                         raise ApiError(str(exc), 'payment_autonomy_changed') from None
+                if write_ticket:
+                    try:self.approvals.self_set_write_check(write_ticket)
+                    except ValueError as exc:raise ApiError(str(exc), 'allowance_changed') from None
             except Exception as exc:
                 if write_ticket:self.approvals.self_set_write_release(write_ticket)
                 if identity and (write_ticket or isinstance(exc, ApiError)):

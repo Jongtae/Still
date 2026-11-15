@@ -1580,18 +1580,29 @@ let paymentAutonomyRevision=0;
 function renderWriteAllowances(data){
   let list=$('write-allowances');
   if(!list){list=document.createElement('section');list.id='write-allowances';list.className='settings-section';$('payment-autonomy-enabled').closest('section').after(list);}
-  list.replaceChildren();if(!data)return;
-  const title=document.createElement('h3');title.textContent=data.label;list.append(title);
-  const note=document.createElement('p');note.textContent=data.note;list.append(note);
+  if(!data)return;
+  if(!list.allowanceRows){
+    list.allowanceRows=new Map();list.replaceChildren();
+    list.allowanceTitle=document.createElement('h3');list.allowanceNote=document.createElement('p');
+    list.append(list.allowanceTitle,list.allowanceNote);
+  }
+  list.allowanceTitle.textContent=data.label;list.allowanceNote.textContent=data.note;
+  const current=new Set((data.connections||[]).map(row=>row.connection));
+  for(const [key,line] of list.allowanceRows){if(!current.has(key)){line.remove();list.allowanceRows.delete(key);}}
   for(const row of data.connections||[]){
-    const line=document.createElement('div'),label=document.createElement('span'),button=document.createElement('button');
+    let line=list.allowanceRows.get(row.connection);
+    if(!line){line=document.createElement('div');list.allowanceRows.set(row.connection,line);list.append(line);}
+    const fingerprint=JSON.stringify([row,data.enable,data.disable,data.confirm]);
+    if(line.dataset.state===fingerprint)continue;
+    line.dataset.state=fingerprint;line.replaceChildren();
+    const label=document.createElement('span'),button=document.createElement('button');
     label.textContent=row.label+' '+(row.reason||'')+' ';button.textContent=row.enabled?data.disable:data.enable;
     button.onclick=()=>{const enabled=!row.enabled;
-      const save=async()=>{await api('/api/write-allowances',{connection:row.connection,enabled,revision:row.revision,connection_revision:row.connection_revision});await refresh();};
+      const save=async()=>{if(line.dataset.state!==fingerprint||!line.isConnected)return;await api('/api/write-allowances',{connection:row.connection,enabled,revision:row.revision,connection_revision:row.connection_revision});await refresh();};
       if(!enabled)return busy(button,save);
       const confirm=document.createElement('button');confirm.textContent=data.confirm+' · '+row.label;
-      confirm.onclick=()=>busy(confirm,save);button.disabled=true;line.append(confirm);
-    };line.append(label,button);list.append(line);
+      confirm.onclick=()=>busy(confirm,save);button.disabled=true;line.append(confirm);confirm.focus();
+    };line.append(label,button);
   }
 }
 function renderPaymentAutonomy(status){if(!status)return;paymentAutonomyRevision=status.revision||0;const toggle=$('payment-autonomy-enabled');if(!toggle.disabled&&$('payment-autonomy-preview').hidden)toggle.checked=!!status.enabled;$('payment-autonomy-risk').textContent=t(PAYMENT_AUTONOMY_RISK);}

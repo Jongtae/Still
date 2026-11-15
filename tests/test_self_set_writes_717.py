@@ -599,3 +599,197 @@ class VerifierRegressions(_Runs):
                 self.assertFalse(runner._decide(request,{'notes.test':[]})[0])
             self.assertEqual(self.events()[0]['status'],'not_run')
             self.assertTrue(runner._decide(request,{'notes.test':[]})[0])
+
+    def test_review875_api_revoked_during_final_dns_check(self):
+        _,job=self.started_self()
+        set_allowance(self.service,'slot:notes',True,0,'owner')
+        def revoke(*args):set_allowance(self.service,'slot:notes',False,1,'owner')
+        with mock.patch.object(self.service.decision_judge,'connector_effect',return_value='irreversible'), mock.patch('personal_agent.api_requests.intranet_addresses',side_effect=revoke):
+            with self.assertRaises((ApiError,ToolError)):self.api(job).call(self.args())
+        self.assertEqual(self.sent,[])
+        self.assertEqual([r['status'] for r in self.events()],['not_run'])
+
+    def test_review875_code_run_revoked_during_claim(self):
+        from personal_agent.code_run import CodeRunner
+        from personal_agent.api_requests import slots
+        _,job=self.started_self()
+        set_allowance(self.service,'slot:notes',True,0,'owner')
+        runner=CodeRunner(self.store,job['id'],approvals=self.service.browser_approvals_for(job))
+        runner._owners={'notes.test':[('notes',slots(self.store)['notes'])]}
+        runner._fields=[]
+        guard=ApiRequests._effect_guard
+        def revoke(api,*args,**kwargs):
+            result=guard(api,*args,**kwargs)
+            if kwargs.get('method'):
+                set_allowance(self.service,'slot:notes',False,1,'owner')
+            return result
+        with mock.patch.object(self.service.decision_judge,'connector_effect',return_value='irreversible'), mock.patch.object(ApiRequests,'_effect_guard',revoke):
+            allowed,_=runner._decide({'method':'POST','host':'notes.test','path':'/items','bodyText':'{}'}, {'notes.test':[]})
+        self.assertFalse(allowed)
+        self.assertEqual(runner._claims,[])
+        self.assertEqual([r['status'] for r in self.events()],['not_run'])
+
+    def test_review875_connector_revoked_during_claim(self):
+        from personal_agent import owner_mcp,trust_record
+        from test_connect_effects import ACTION,INPUT
+        _,job=self.started_self()
+        self.service.set_ai_connections({'enabled':True})
+        owner_mcp.set_confirmed(self.store,'codex',['synthetic'])
+        trust_record.set_operation(self.store,trust_record.connection('codex','owner-mcp','synthetic'),'apply_change','mutate')
+        key='connector:codex|owner-mcp|synthetic'
+        set_allowance(self.service,key,True,0,'owner')
+        claim=self.service._connector_effect_claim
+        def revoke(*a,**kw):
+            result=claim(*a,**kw)
+            set_allowance(self.service,key,False,1,'owner')
+            return result
+        with mock.patch.object(self.service.decision_judge,'connector_effect',return_value='irreversible'), mock.patch.object(self.service,'_connector_effect_claim',side_effect=revoke):
+            answer=self.service.connector_permission(job,{'engine':'codex','tool_name':ACTION,'input':INPUT})
+        self.assertEqual(answer['behavior'],'deny')
+        self.assertEqual([r['status'] for r in self.events()],['not_run'])
+
+    def test_review875_a2a_revoked_before_send(self):
+        import asyncio
+        job,peers,send=self.peer_fixture()
+        spend=peers.spend
+        def revoke(peer,revision):
+            spend(peer,revision)
+            set_allowance(self.service,'peer:'+peer,False,1,'owner')
+        with mock.patch.object(peers,'spend',side_effect=revoke), mock.patch.object(peers.transport(),'send_message',new_callable=mock.AsyncMock) as transport:
+            with self.assertRaises(ValueError):asyncio.run(send())
+        transport.assert_not_called()
+        self.assertEqual([r['status'] for r in self.events()],['not_run'])
+
+    def test_review875_browser_checks_ticket_at_input_boundary(self):
+        from personal_agent import browser_session as bs
+        from test_browser_session import FakeDriver,ORIGIN
+        _,job=self.started_self()
+        driver=FakeDriver()
+        browser=bs.BrowserSession(lambda:driver,work_id=job['id'],approvals=self.service.browser_approvals_for(job))
+        browser.open({'url':ORIGIN+'/one-press','effect':'navigate'})
+        def stop():
+            with self.store.db() as db:db.execute("UPDATE jobs SET status='cancelled' WHERE id=?",(job['id'],))
+        with mock.patch.object(self.service.decision_judge,'connector_effect',return_value='reversible'), mock.patch.object(browser,'_spend_step',side_effect=stop):
+            with self.assertRaises(ToolError):browser.click({'target':'메모 저장','effect':'mutate'})
+        self.assertEqual(driver.approved,[])
+        self.assertEqual([r['status'] for r in self.events()],['not_run'])
+
+    def test_review875_a2a_rechecks_inside_sdk_transport(self):
+        import asyncio,httpx
+        job,peers,send=self.peer_fixture()
+        module=peers.transport()
+        refuse=module.work_mode.refuse
+        revoked=[];posts=[]
+        def revoke(store,egress,*args,**kwargs):
+            if self.events() and not revoked:
+                key=next(iter(self.store.config('write_allowances')))
+                set_allowance(self.service,key,False,1,'owner');revoked.append(True)
+            return refuse(store,egress,*args,**kwargs)
+        original=httpx.ASGITransport.handle_async_request
+        async def observed(transport,request):
+            if request.method=='POST':posts.append(request)
+            return await original(transport,request)
+        with mock.patch.object(module.work_mode,'refuse',side_effect=revoke), mock.patch.object(httpx.ASGITransport,'handle_async_request',observed):
+            with self.assertRaises(ValueError):asyncio.run(send())
+        self.assertEqual(posts,[])
+        self.assertEqual([r['status'] for r in self.events()],['not_run'])
+
+    def held_submit_continuation(self,kind,changed=False):
+        from types import SimpleNamespace
+        from personal_agent.agent_runtime import Capabilities,WorkBudget
+        from test_browser_session import FakeDriver,ORIGIN
+        _,job=self.started_self()
+        driver=FakeDriver()
+        def runtime():
+            return SimpleNamespace(_browser_session=None,browser=lambda:driver,job_id=job['id'],budget=WorkBudget(),
+                                   browser_approvals=self.service.browser_approvals_for(job),judgments=None)
+        runtime1=runtime()
+        browser=Capabilities.browser_session(runtime1)
+        browser.open({'url':ORIGIN+'/one-press','effect':'navigate'})
+        form={'page':ORIGIN+'/one-press','action':ORIGIN+'/send','method':'POST','dom':0,
+              'state':'exact-form-digest','payment':False,'fieldNames':['note']}
+        def held(*args,**kwargs):
+            driver.held=dict(form)
+            exc=ToolError('held','approval_required');exc.cancelled_form=dict(form);raise exc
+        sent_forms=[]
+        def release(record,timeout):
+            if record!=driver.held:raise ToolError('form changed','target_unavailable')
+            sent_forms.append(dict(record))
+            driver.held=None
+            return {'posted':True}
+        args={'target':'메모 저장','effect':'mutate',**({'text':'value'} if kind=='type' else {})}
+        with mock.patch.object(driver,kind,side_effect=held) as input_call, mock.patch.object(driver,'release_submit',side_effect=release) as release_call, mock.patch.object(self.service.decision_judge,'connector_effect',side_effect=lambda operation,*a:'irreversible' if operation.startswith('browser_submit') else 'reversible'):
+            with self.assertRaises(ToolError):getattr(browser,kind)(args)
+            self.ended_waiting(job)
+            Capabilities.close_browser(runtime1)
+            offered=self.service._browser_request(job['id'])
+            waiting_runtime=runtime();waiting=Capabilities.browser_session(waiting_runtime)
+            waiting.read()
+            self.assertEqual(input_call.call_count,1)
+            release_call.assert_not_called()
+            self.assertEqual(self.service._browser_request(job['id'])['offer_digest'],offered['offer_digest'])
+            Capabilities.close_browser(waiting_runtime)
+            self.assertEqual(offered['source_action'],'browser_submit')
+            self.assertTrue(self.service._decide_browser_step(job['id'],True,offered['offer_digest'])['resumed'])
+            with self.store.db() as db:db.execute("UPDATE jobs SET status='running' WHERE id=?",(job['id'],))
+            runtime2=runtime();continued=Capabilities.browser_session(runtime2)
+            try:
+                if changed:
+                    driver.held['state']='different-form-digest'
+                    with self.assertRaises(ToolError):getattr(continued,kind)(args)
+                    self.assertEqual(input_call.call_count,1)
+                    self.assertEqual(sent_forms,[])
+                    return
+                getattr(continued,kind)(args)
+                self.assertEqual(input_call.call_count,1)
+                release_call.assert_called_once()
+                self.assertIsNone(self.service._browser_request(job['id']))
+                with self.assertRaises(ToolError):getattr(continued,kind)(args)
+                self.assertEqual(input_call.call_count,1)
+                release_call.assert_called_once()
+            finally:Capabilities.close_browser(runtime2)
+
+    def test_review875_click_continues_native_submit_without_second_click(self):
+        self.held_submit_continuation('click')
+
+    def test_review875_changed_native_form_is_not_submitted(self):
+        self.held_submit_continuation('click',changed=True)
+
+    def test_review875_type_continues_native_submit_without_second_type(self):
+        self.held_submit_continuation('type')
+
+
+def test_review875_allowance_confirmation_survives_polling():
+    import shutil,subprocess
+    from pathlib import Path
+    from test_settings_ui import DOM_CHECKS
+    from personal_agent import self_set_writes
+    import pytest
+    node=shutil.which('node')
+    if not node:pytest.skip('Node unavailable')
+    # Reuse the repository's executable DOM harness, not a source-text assertion.
+    script=DOM_CHECKS.split('const source=')[0]+r'''
+Element.prototype.remove=function(){if(this.parentNode)this.parentNode.children=this.parentNode.children.filter(n=>n!==this);this.parentNode=null;};
+const root=new Element('section');root.id='write-allowances';root._root=true;
+const calls=[],ctx={document,$,api:async(path,body)=>calls.push(body),refresh:async()=>{},busy:async(button,fn)=>fn()};
+vm.createContext(ctx);vm.runInContext(part('function renderWriteAllowances(', 'function renderPaymentAutonomy('),ctx);
+const data={label:'Writes',note:'Risk',enable:'Allow',disable:'Off',confirm:'Confirm',connections:[
+ {connection:'slot:notes',label:'Notes',revision:1,connection_revision:'a',enabled:false},
+ {connection:'slot:other',label:'Other',revision:1,connection_revision:'b',enabled:false}]};
+(async()=>{
+ ctx.renderWriteAllowances(data);
+ root.querySelectorAll('button')[0].onclick();
+ const confirm=root.querySelectorAll('button').find(n=>n.textContent==='Confirm · Notes');confirm.focus();
+ ctx.renderWriteAllowances(JSON.parse(JSON.stringify(data)));
+ assert(confirm.isConnected,'poll must retain the confirmation');assert.equal(document.activeElement,confirm);
+ data.connections[1].revision++;ctx.renderWriteAllowances(data);
+ assert(confirm.isConnected,'another connection changing must not discard the draft');
+ assert.equal(calls.length,0);await confirm.onclick();assert.equal(calls.length,1);
+ assert.deepEqual(JSON.parse(JSON.stringify(calls[0])),{connection:'slot:notes',enabled:true,revision:1,connection_revision:'a'});
+ data.connections[0].connection_revision='changed';ctx.renderWriteAllowances(data);
+ assert(!confirm.isConnected,'a changed connection invalidates the old confirmation');
+ assert(!root.querySelectorAll('button').some(n=>n.textContent==='Confirm · Notes'));
+})().catch(error=>{console.error(error);process.exitCode=1;});
+'''
+    result=subprocess.run([node,'-e',script,str(Path(self_set_writes.__file__).parent/'web/app.js')],capture_output=True,text=True,timeout=30)
+    assert result.returncode==0,result.stderr

@@ -584,10 +584,13 @@ class A2APeers:
             credential = self.secrets.get(peer_id).get('outbound', '')
             self.record(work_id, 'requested', {'peer_id': peer_id, 'direction': 'outbound',
                         'destination': row['card']['supportedInterfaces'][0]['url'], 'sections': sent_sections, 'state': 'dispatching'})
+            self.service.self_set_write_check(self.store.job(work_id),ticket)
+            def before_send():
+                self.service.self_set_write_check(self.store.job(work_id),ticket)
             dispatched=True
             answer = await send_message(row['card'], turn['question'], message_id, credential, store=self.store, http=http,
                                         guard=lambda: self.guard(peer_id, row['revision']),
-                                        redact=self.service._redact_known_secrets)
+                                        redact=self.service._redact_known_secrets, before_send=before_send)
             answer = self.finish(turn, answer)
             self.service.self_set_write_finished(self.store.job(work_id),ticket)
             self.record(work_id, 'succeeded', {'peer_id': peer_id, 'direction': 'outbound',

@@ -7076,9 +7076,50 @@ class AgentService:
         with self.store.db() as db:
             return self.preparations.wait_refusal(db,job['id'],stamp,self_set_write=True) is None
 
-    def self_set_write(self, job, binding, connection, operation, target, names=(), *, effect=None, description=None):
+    def self_set_write(self, job, binding, connection, operation, target, names=(), *, effect=None, description=None, request=True):
         from .self_set_writes import authorize
-        return authorize(self,job,binding,connection,operation,target,names,effect=effect,description=description)
+        return authorize(self,job,binding,connection,operation,target,names,effect=effect,description=description,request=request)
+
+    def self_set_write_check(self, job, ticket, *, db=None):
+        from .self_set_writes import recheck
+        return recheck(self, job, ticket, db=db)
+
+    def _hold_self_set_browser(self, job, session):
+        from .self_set_writes import pending_submit
+        pending = getattr(session, '_self_set_submit', None)
+        if not pending or not pending_submit(self, job, session._submit_binding(pending[0])):
+            return False
+        # The DOM cannot be reconstructed from a digest. Retain only this Work's live
+        # session, bounded by the existing approval window; no form values are persisted.
+        with self.lock:
+            rows = self.__dict__.setdefault('_self_set_browsers', {})
+            old = rows.pop(job['id'], None)
+            if old:
+                old[1].cancel()
+                if old[0] is not session:old[0].close(preserve=False)
+            def expire():
+                with self.lock:
+                    if rows.get(job['id'], (None,))[0] is session:
+                        rows.pop(job['id'], None)
+                        session.close(preserve=False)
+            timer = threading.Timer(max(0, pending[2] - time.time()), expire)
+            timer.daemon = True
+            rows[job['id']] = (session, timer)
+            timer.start()
+        return True
+
+    def _take_self_set_browser(self, job):
+        from .self_set_writes import pending_submit
+        with self.lock:
+            item = self.__dict__.get('_self_set_browsers', {}).pop(job['id'], None)
+            if item:
+                session, timer = item
+                timer.cancel()
+                pending = getattr(session, '_self_set_submit', None)
+                if pending and pending_submit(self, job, session._submit_binding(pending[0])):
+                    return session
+                session.close(preserve=False)
+        return None
 
     def self_set_write_release(self, job, ticket):
         from .self_set_writes import release
@@ -7207,6 +7248,12 @@ class AgentService:
             def self_set_writes_required(self):return service.self_set_run(job)
             def self_set_write(self,binding,connection,operation,target,names=(),**kwargs):
                 return service.self_set_write(job,binding,connection,operation,target,names,**kwargs)
+            def self_set_write_check(self,ticket):return service.self_set_write_check(job,ticket)
+            def self_set_submit_ready(self,binding):
+                from .self_set_writes import pending_submit
+                return pending_submit(service,job,binding,issued=True)
+            def self_set_browser_hold(self,session):return service._hold_self_set_browser(job,session)
+            def self_set_browser_take(self):return service._take_self_set_browser(job)
             def self_set_write_release(self,ticket):return service.self_set_write_release(job,ticket)
             def self_set_write_finished(self,ticket,**kwargs):return service.self_set_write_finished(job,ticket,**kwargs)
             def consume(self,binding):return service._consume_browser_step(job,binding)
@@ -8069,6 +8116,15 @@ class AgentService:
                 except ToolError:allow=False
                 allow=allow and self._connector_authority_current(job,target,binding,effect,operation)
                 if not allow:
+                    detail['evidence'].update(decision='deny',effect='none')
+                    db.execute('UPDATE tool_events SET status=?,detail=? WHERE id=?',
+                               ('denied',json.dumps(detail,ensure_ascii=False),event_id))
+        if allow and write_ticket:
+            with self.store.db() as db:
+                db.execute('BEGIN IMMEDIATE')
+                try:self.self_set_write_check(job,write_ticket,db=db)
+                except ToolError:
+                    allow=False
                     detail['evidence'].update(decision='deny',effect='none')
                     db.execute('UPDATE tool_events SET status=?,detail=? WHERE id=?',
                                ('denied',json.dumps(detail,ensure_ascii=False),event_id))

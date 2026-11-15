@@ -192,7 +192,7 @@ Baseline checks replace `src` in `PYTHONPATH` with the extracted
 where the baseline test requires it.
 
 No live model/account call, real browser integration, remote CI or independent
-escalated final-head review was performed. The implementation was committed as `0083166`; the verifier fixes below are uncommitted.
+escalated final-head review was performed. The implementation was committed as `0083166`; the first verifier fixes below were subsequently recorded as `cef9da1`.
 
 
 ## Fresh-context verifier fixes (2026-11-15)
@@ -357,6 +357,161 @@ they fail the same `run_one()` assertion. These unrelated harness tests were
 not changed or weakened. The broad sweep is reported with its actual failures,
 not represented as green. The corrected paths have the passing reruns above.
 
-All follow-up changes remain uncommitted. Real socket/browser integration,
-live model/account operations, remote CI and a final-head Codex review were
-not performed in this sandbox.
+Those follow-up fixes were subsequently recorded in commit `cef9da1` before
+the PR #875 review below. That verification did not include real socket/browser
+integration, live model/account operations, remote CI or a final-head Codex review.
+
+
+## PR #875 review corrections (2026-11-15)
+
+These corrections preserve option ④, payment behavior and the existing #821
+eligibility rules. State-changing GETs (`browser_open` and link GETs) remain
+out of scope. No commit is created by this correction session.
+
+### Dispatch authority
+
+`self_set_writes.recheck` checks the reserved event and the captured allowance
+and connection revisions again at dispatch. Revocation, an off/on revision
+change, a changed connection or a stopped Work refuses dispatch and releases
+the unused reservation through the existing `release` path. That path also
+restores an unused exact step approval when applicable. It never creates an
+approval or silently upgrades a stale ticket.
+
+The check sits beside the existing payment check in `ApiRequests._call_slot`
+(after work-mode and DNS/intranet checks), `CodeRunner._claim_state_change`
+(before returning the sandbox request decision), the connector permission
+return and `BrowserSession._call` (before worker input/release). A2A checks
+before invoking the SDK and again through `before_send` inside its bound HTTP
+transport, after SDK work-mode, destination and peer checks. Thus even a
+revision change during SDK preparation prevents the POST. Connection labels,
+post-transport notices and payment checks keep their existing behavior.
+
+### Held native form continuation
+
+A self-set click/type that reaches a separately held non-payment form records
+its input ticket as `held`. `BrowserSession` keeps the exact native form
+reference while the existing `browser_submit` approval is pending. On the
+approved continuation it releases that form directly, without another click
+or typing. The continuation consumes only the issued approval for that form's
+exact digest; it never reclassifies the held form as reversible or requests a
+new approval implicitly. The native worker still verifies the current form
+state and clears its held reference before its one permitted release.
+
+`Capabilities` teardown previously destroyed the live DOM before an approved
+Work could continue. `AgentService` now retains that Work's existing session
+in host memory while its exact request remains pending, with a daemon timer
+bounded to the existing ten-minute native hold window. The next capabilities
+instance takes the session and rebinds its budget/approval context. Expired,
+stopped or mismatched requests cannot recover it; expiry closes the session.
+No typed values or DOM are added to durable state. Reads before approval keep
+working without repeating the input or replacing the approval request. The
+existing exclusive browser-profile lease remains occupied during this bounded
+wait; this change does not add parallel browser sessions. A service/worker
+restart loses the live form and cannot reconstruct or submit it from its digest.
+
+### Settings polling and reuse
+
+`renderWriteAllowances` retains unchanged connection rows in a JavaScript
+`Map`. Identical polls and changes to another row retain the confirmation
+button and keyboard focus. A change to that connection's row/revision, or
+removal of the connection, discards its stale confirmation; the save closure
+also checks that it still belongs to the current connected row. Enabling
+still requires the owner's separate confirmation. Disabling remains direct.
+
+C15: Adapt the already adopted SQLite transactions, A2A SDK/httpx bound
+transport, Python standard-library `threading.Timer`/lock and browser DOM/Map
+APIs. The supported packages, licences and platform/security review above
+remain unchanged; this adds no dependency or protocol implementation. Still's
+revision-bound owner authority and exact Work approval continuation remain
+Build because none of those external facilities owns that policy. Reuse is
+concrete: `release`, the payment-adjacent dispatch seams,
+`_browser_request`/`_consume_browser_step`, the native `release_submit`, the
+existing `Capabilities` session and the executable Settings DOM test harness.
+A persisted form recreation or a separate approval/session framework is not
+needed: a digest cannot reconstruct the live native form, whereas retaining
+the existing session preserves its exact guard and one-use release.
+
+The web review followed `web/AGENTS.md` and the pinned web-interface-guidelines
+and frontend-design checklists: existing Settings surface, unchanged backend
+contract, preserved confirmation/focus, no layout or copy redesign.
+
+### PR #875 verification
+
+All new tests are model-free. `tests/test_self_set_writes_717.py` adds six
+pre-dispatch refusal cases (including both A2A boundaries), click and typing
+continuations across capabilities teardown, a changed-form rejection and an
+executable Node DOM polling regression. Against the original `cef9da1` source
+extracted with `git archive HEAD src`, all nine new Python regressions failed.
+The Node regression separately failed against that extracted `web/app.js`
+with “poll must retain the confirmation”. All ten pass on the correction.
+
+Commands use the same temporary socket-skip fixture and environment as the
+preceding verification:
+
+```sh
+PYTHONPATH=src:/tmp /Users/jongtaelee/Documents/project/Still/.venv/bin/python -m pytest -q -n 4 -p no:cacheprovider -p skip_socket717 tests/test_self_set_writes_717.py -k review875
+PYTHONPATH=src:/tmp /Users/jongtaelee/Documents/project/Still/.venv/bin/python -m pytest -q -n 4 -p no:cacheprovider -p skip_socket717 tests/test_self_set_writes_717.py tests/test_payment_autonomy_662.py tests/test_browser_session.py tests/test_code_run.py tests/test_settings_ui.py
+node --check src/personal_agent/web/app.js
+git diff --check
+```
+
+Results: **10 passed**; focused files **186 passed, 2 skipped, 56 subtests
+passed**; JavaScript syntax and diff checks passed. Payment tests are unchanged.
+The broad run repeats all 46 previously selected files and adds
+`tests/test_code_run.py` and `tests/test_settings_ui.py`, using the same pytest
+prefix and `-k 'not WebKitIntegrationTests'`. Its final result is recorded below.
+Only model-free/fixture evidence is claimed; real socket/browser integration,
+live model/account operations and remote CI are unavailable in this sandbox.
+
+
+The 48-file sweep command was `python3 /tmp/run875suite.py`; the temporary
+runner selected its files with the following model-free test inventory (and
+invoked the pytest prefix above):
+
+```python
+files = {str(p) for p in Path('tests').glob('test_*.py')
+         if 'browser_worker' in p.read_text() or 'browser_session' in p.read_text()}
+files.update(str(p) for p in Path('tests').glob('test_a2a*.py'))
+files.update('tests/' + name + '.py' for name in (
+    'test_self_set_writes_717', 'test_scheduled_runs_ask_821',
+    'test_payment_autonomy_662', 'test_action_bound_approvals_619',
+    'test_connect_effects', 'test_owner_settings_conversation',
+    'test_eval_judgments', 'test_settings_orchestrator', 'test_messages',
+    'test_code_run', 'test_settings_ui'))
+# pytest prefix + ['-k', 'not WebKitIntegrationTests', *sorted(files)]
+```
+
+Full result: **1,828 passed, 254 skipped, 3 failed, 16,425 subtests passed** in
+483.97 seconds. The three failures are the same subtests in the two
+`UnmediatedEngine` tests named in the preceding verification: the socket-skip
+fixture leaves the next subtest with partial state. No new regression failed.
+
+Re-running those two test nodes against the extracted, unchanged `cef9da1`
+source with the same socket fixture and `-n 2` reproduced **3 failed, 2 passed,
+2 skipped**. The failures are pre-existing harness limitations, not reported
+as a green sweep or removed from the requested run. Final JavaScript syntax
+and diff checks passed. No payment test was edited; no commit was created.
+
+
+## Catalog register correction (2026-11-15)
+
+Reviewed all 20 catalog entries added or changed against `origin/main`.
+Six Korean `write_allowances.*` messages (risk, payment, wait, replayed,
+notice and unknown_notice) needed soft 해요체 endings. Their meaning and
+placeholders are preserved. The other Korean entries and all Japanese entries
+already use the required register or neutral UI labels; Japanese has no
+だ・である endings. No new non-catalog Korean/Japanese sentence needed correction.
+C15 review: N/A for this content-only correction; it adds no mechanism,
+component, dependency or case to existing policy machinery.
+
+Before correction, `test_message_register.py` and `test_messages.py` reproduced
+**1 failed, 19 passed, 15,511 subtests passed**, with the existing register test
+identifying all six messages. After correction, the following model-free run
+passed **261 tests and 15,634 subtests**, with **4 socket-dependent skips**
+under the unchanged common.md sandbox fixture:
+
+```sh
+PYTHONPATH=src:/tmp /Users/jongtaelee/Documents/project/Still/.venv/bin/python -m pytest -q -n 4 -p no:cacheprovider -p skip_socket717 tests/test_message_register.py tests/test_messages.py tests/test_self_set_writes_717.py tests/test_scheduled_runs_ask_821.py tests/test_settings_orchestrator.py tests/test_owner_settings_conversation.py tests/test_connect_effects.py tests/test_settings_ui.py tests/test_payment_autonomy_662.py
+```
+
+`git diff --check` passed. Existing tests were not changed. No commit was created.

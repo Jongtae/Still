@@ -958,7 +958,7 @@ class CodeRunner:
                     self._asked.append({'method':method,'host':host,'path':redact_known_secrets(self.store,path)})
                 return False,str(exc)
         try:
-            result=self._claim_state_change(api, slot, identity, method, effect, host, path)
+            result=self._claim_state_change(api, slot, identity, method, effect, host, path, write_ticket=ticket)
         except Exception:
             if ticket:self.approvals.self_set_write_release(ticket)
             raise
@@ -966,7 +966,7 @@ class CodeRunner:
         elif ticket:self.approvals.self_set_write_release(ticket)
         return result
 
-    def _claim_state_change(self, api, slot, identity, method, effect, host, path):
+    def _claim_state_change(self, api, slot, identity, method, effect, host, path, *, write_ticket=None):
         from .api_requests import ApiError
         from .current_context import redact_known_secrets
         try:
@@ -981,6 +981,11 @@ class CodeRunner:
                     return False, str(exc)
         except ApiError as exc:
             return False, str(exc)
+        if write_ticket:
+            try:self.approvals.self_set_write_check(write_ticket)
+            except ValueError as exc:
+                api._release_effect(claim)
+                return False,str(exc)
         self._claims.append((claim, method, host, redact_known_secrets(self.store, path)))
         return True, ''
 

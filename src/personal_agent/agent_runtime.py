@@ -3503,6 +3503,12 @@ class Capabilities:
   """This Work's browser session, created on first use (#656)."""
   if self._browser_session is None:
    from .browser_session import BrowserSession
+   take=getattr(self.browser_approvals,'self_set_browser_take',None)
+   saved=take() if callable(take) else None
+   if saved is not None:
+    saved.budget=self.budget;saved.approvals=self.browser_approvals;saved.judgments=self.judgments
+    self._browser_session=saved
+    return saved
    # #174: the Work's judgments, asked only whether a mutate press the payment floor missed could charge.
    self._browser_session=BrowserSession(self.browser,work_id=self.job_id,budget=self.budget,
                                         approvals=self.browser_approvals,judgments=self.judgments)

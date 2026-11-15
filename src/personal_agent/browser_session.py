@@ -915,7 +915,7 @@ class BrowserSession:
         """
         self.budget.spend_attempt()
 
-    def _call(self, operation, *args, payment=False):
+    def _call(self, operation, *args, payment=False, write_ticket=None):
         try:
             timeout = self._timeout()
             pending = self.__dict__.pop('_autonomy_payment', None) if payment else None
@@ -933,6 +933,7 @@ class BrowserSession:
                     if callable(release):
                         release(authorized)
                     raise
+            if write_ticket:self.approvals.self_set_write_check(write_ticket)
             return operation(*args, timeout)
         except ToolError:
             raise
@@ -981,6 +982,22 @@ class BrowserSession:
             return self._snapshot(requested_url)
         return self.last
 
+    def _resume_self_set_submit(self):
+        pending = getattr(self, '_self_set_submit', None)
+        if pending is None:
+            return None
+        if time.time() >= pending[2]:
+            self._self_set_submit = None
+            return None
+        ready = getattr(self.approvals, 'self_set_submit_ready', None)
+        if not callable(ready) or not ready(self._submit_binding(pending[0])):
+            return None
+        self._check()
+        self._self_set_submit = None
+        answer = self._cancelled_submit(pending[0], pending[1], resuming=True)
+        self._settle()
+        return self._with_dialogs(observe_step(self._page_state(), answer, True), answer)
+
     def _submit_binding(self, record):
         """What the approval of a cancelled payment-form submit is bound to (#700).
 
@@ -992,7 +1009,7 @@ class BrowserSession:
         page = record.get('page') or (self.last or {}).get('_page')
         return step_binding(self.work_id, 'browser_submit', page, form_identity(record), '', str(record.get('state') or ''))
 
-    def _cancelled_submit(self, record, description, depth=0):
+    def _cancelled_submit(self, record, description, depth=0, *, resuming=False):
         """A payment-form submit the worker cancelled and holds (#698, #700).
 
         When the owner already approved exactly that form in that state, the
@@ -1005,14 +1022,20 @@ class BrowserSession:
         binding = self._submit_binding(record)
         gate=getattr(self.approvals,'self_set_write',None)
         if record.get('payment') is False and callable(gate) and getattr(self.approvals,'self_set_writes_required',lambda:False)():
-            ticket=gate(binding,None,'browser_submit',page_reference(record.get('page')),record.get('fieldNames',()),
-                        description=description+cancelled_note(record))
+            try:
+                ticket=gate(binding,None,'browser_submit',page_reference(record.get('page')),record.get('fieldNames',()),
+                            description=description+cancelled_note(record),
+                            **({'effect':'irreversible','request':False} if resuming else {}))
+            except ToolError as exc:
+                if exc.code == 'approval_required' and not resuming:
+                    self._self_set_submit = (dict(record), description, time.time() + 600)
+                raise
             release=getattr(self._driver(),'release_submit',None)
             if not callable(release):
                 self.approvals.self_set_write_release(ticket)
                 raise ToolError(FAILED_TEXT,'browser_failed')
             try:
-                answer=self._call(lambda timeout:release(record,timeout))
+                answer=self._call(lambda timeout:release(record,timeout),write_ticket=ticket)
             except ToolError:
                 self.approvals.self_set_write_finished(ticket,observed=False)
                 raise
@@ -1408,7 +1431,7 @@ class BrowserSession:
             pass
         raise ToolError(APPROVAL_TEXT, 'approval_required', requires='browser-step-approval')
 
-    def _input(self, operation, description):
+    def _input(self, operation, description, write_ticket=None):
         """Run one click or type; a payment-form submit the worker cancelled asks the owner (#698).
 
         An approved step lets a submit of its target's payment form through;
@@ -1420,7 +1443,7 @@ class BrowserSession:
         from .agent_runtime import handed_off
         handed_off()
         try:
-            return self._call(operation, payment=True)
+            return self._call(operation, payment=True, write_ticket=write_ticket)
         except ToolError as exc:
             if exc.code != 'approval_required':
                 raise
@@ -1497,6 +1520,8 @@ class BrowserSession:
                 'next_step': self._offer_login(reference, explicit=True, window_url=login_window_url(url)) or LOGIN_REQUIRED_TEXT}
 
     def open(self, args):
+        resumed = self._resume_self_set_submit()
+        if resumed is not None:return resumed
         effect = self._effect(args)
         url = str(args.get('url') or '').strip()
         parts = urlsplit(url)
@@ -1567,6 +1592,8 @@ class BrowserSession:
             return 'mobile'
 
     def read(self, args=None):
+        resumed = self._resume_self_set_submit()
+        if resumed is not None:return resumed
         rounds = load_more_rounds((args or {}).get('load_more'))
         # An interrupted navigation may leave a web document. Observe it only on
         # an explicit read, with normal mediation; never replay navigation.
@@ -1625,6 +1652,8 @@ class BrowserSession:
         return loaded
 
     def find(self, args):
+        resumed = self._resume_self_set_submit()
+        if resumed is not None:return resumed
         self._require_page()
         self._spend_step()
         snapshot = self._snapshot()
@@ -1668,6 +1697,8 @@ class BrowserSession:
         return {'text': scrub(str(cover.get('text') or '')[:400])[0], 'controls': controls}
 
     def click(self, args):
+        resumed = self._resume_self_set_submit()
+        if resumed is not None:return resumed
         effect = self._effect(args)
         self._require_page()
         self._check()
@@ -1725,9 +1756,9 @@ class BrowserSession:
         try:
             answer = self._input(lambda timeout: self._driver().click(element['index'], timeout, approved=approved,
                                                                       confirm_ok=confirm_ok, effect=effect),
-                                 description)
+                                 description, write_ticket=write_ticket)
         except ToolError as exc:
-            if write_ticket:self.approvals.self_set_write_finished(write_ticket,observed=False)
+            if write_ticket:self.approvals.self_set_write_finished(write_ticket,observed=False,held=bool(getattr(self,'_self_set_submit',None)))
             raise self._named_cover(self._observed(exc, approved), snapshot) from None
         if write_ticket:self.approvals.self_set_write_finished(write_ticket)
         if isinstance(answer, dict) and answer.get('navigated'):
@@ -1757,6 +1788,8 @@ class BrowserSession:
                 *snapshot.get('_form_field_names', {}).get(element.get('form'), ()))
 
     def type(self, args):
+        resumed = self._resume_self_set_submit()
+        if resumed is not None:return resumed
         effect = self._effect(args)
         self._require_page()
         text = str(args.get('text') or '')
@@ -1795,9 +1828,9 @@ class BrowserSession:
         try:
             answer = self._input(lambda timeout: self._driver().type(element['index'], text, timeout, approved=approved,
                                                                      confirm_ok=confirm_ok, effect=effect),
-                                 description)
+                                 description, write_ticket=write_ticket)
         except ToolError as exc:
-            if write_ticket:self.approvals.self_set_write_finished(write_ticket,observed=False)
+            if write_ticket:self.approvals.self_set_write_finished(write_ticket,observed=False,held=bool(getattr(self,'_self_set_submit',None)))
             raise self._named_cover(self._observed(exc, approved), snapshot) from None
         if write_ticket:self.approvals.self_set_write_finished(write_ticket)
         return self._with_dialogs(observe_step(self._page_state(), answer, approved), answer)
@@ -1824,7 +1857,11 @@ class BrowserSession:
         if self.driver is None or self.last is None:
             raise ToolError(NO_PAGE_TEXT, 'no_page')
 
-    def close(self):
+    def close(self, *, preserve=True):
+        hold = getattr(self.approvals, 'self_set_browser_hold', None)
+        if preserve and getattr(self, '_self_set_submit', None) and callable(hold) and hold(self):
+            return
+        self._self_set_submit = None
         driver, self.driver = self.driver, None
         if driver is not None:
             try:

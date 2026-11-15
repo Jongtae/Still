@@ -75,7 +75,45 @@ def set_allowance(service, connection, enabled, revision, owner, *, connection_r
         service.store.put(KEY + '_history', history + [{'connection': connection, **record}], db=db)
 
 
-def authorize(service, job, binding, connection, operation, target, names=(), *, effect=None, description=None):
+def scoped_binding(binding):
+    return {**binding, 'action': ACTION, 'source_action': binding['action'],
+            'state_digest': hashlib.sha256(json.dumps([binding['action'],binding['state_digest']]).encode()).hexdigest()}
+
+
+def pending_submit(service, job, binding, *, issued=False):
+    row = service._browser_request(job['id']) or {}
+    return (row.get('action') == ACTION and row.get('source_action') == 'browser_submit'
+            and row.get('state') in (('issued',) if issued else ('requested', 'issued'))
+            and row.get('digest') == service._browser_step_keys(scoped_binding(binding))['digest']
+            and time.time() < row.get('requested_at', 0) + 600
+            and not service.work_stopped(job['id']))
+
+
+def recheck(service, job, ticket, *, db=None):
+    """Final dispatch check, like the payment ticket recheck; never creates authority."""
+    if not ticket:
+        return
+    if db is None:
+        try:
+            with service.store.db() as db:
+                return recheck(service, job, ticket, db=db)
+        except ToolError:
+            release(service, job, ticket)
+            raise
+    row = db.execute('SELECT status,detail FROM tool_events WHERE id=? AND job_id=? AND tool=?',
+                     (ticket['event'], job['id'], ACTION)).fetchone()
+    current = bool(row and row['status'] == 'dispatching' and json.loads(row['detail']).get('digest') == ticket['digest'])
+    if ticket['allowance']:
+        known = connections(service)
+        for key, revision in ticket['allowances'].items():
+            mode = allowance(service, key, db=db)
+            current = current and mode['enabled'] and mode['revision'] == revision and key in known and (
+                mode['connection_revision'] == known[key]['connection_revision'] == ticket.get('connection_revisions', {}).get(key))
+    if not current or service.work_stopped(job['id']):
+        raise not_run(ToolError(msg('write_allowances.changed'), 'allowance_changed'))
+
+
+def authorize(service, job, binding, connection, operation, target, names=(), *, effect=None, description=None, request=True):
     if not service.unattended_work(job) or not service.self_set_run(job):
         return None
     if effect is None:
@@ -94,8 +132,7 @@ def authorize(service, job, binding, connection, operation, target, names=(), *,
         return None
     # A known state change cannot be downgraded to read by a classifier.
     reversible = effect == 'reversible'
-    scoped = {**binding, 'action': ACTION, 'source_action': binding['action'],
-              'state_digest': hashlib.sha256(json.dumps([binding['action'],binding['state_digest']]).encode()).hexdigest()}
+    scoped = scoped_binding(binding)
     digest = service._browser_step_keys(scoped)['digest']
     label = service._redact_known_secrets(f'{connection or "browser"} / {operation} / {target}' +
                                         ('\n' + description if description else ''))
@@ -110,7 +147,7 @@ def authorize(service, job, binding, connection, operation, target, names=(), *,
             raise not_run(ToolError(msg('write_allowances.replayed'), 'effect_replayed'))
     approval = service._browser_request(job['id']) if not reversible and not allowed else None
     if not reversible and not allowed and not service._consume_browser_step(job, scoped):
-        service._request_browser_step(job, scoped, label)
+        if request:service._request_browser_step(job, scoped, label)
         raise not_run(ToolError(msg('write_allowances.wait'), 'approval_required'))
     with service.store.db() as db:
         db.execute('BEGIN IMMEDIATE')
@@ -126,6 +163,7 @@ def authorize(service, job, binding, connection, operation, target, names=(), *,
                   'target': service._redact_known_secrets(str(target)), 'allowance': allowed,
                   'revision': next(iter(modes.values()))['revision'] if allowed and len(modes)==1 else None,
                   'allowances': {key: value['revision'] for key,value in modes.items()} if allowed else {},
+                  'connection_revisions': {key: value['connection_revision'] for key,value in modes.items()} if allowed else {},
                   'authorized_by': 'connection-allowance' if allowed else 'reversible' if reversible else 'owner-step',
                   'authorized_at': time.time()}
         ticket['event'] = db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
@@ -156,7 +194,7 @@ def release(service, job, ticket):
                     service.store.put(BROWSER_REQUESTS_KEY, rows, db=db)
 
 
-def finished(service, job, ticket, *, observed=True, rejected=False):
+def finished(service, job, ticket, *, observed=True, rejected=False, held=False):
     if not ticket:
         return
     service.__dict__.get('_self_set_unspent', {}).pop(ticket['event'], None)
@@ -168,7 +206,7 @@ def finished(service, job, ticket, *, observed=True, rejected=False):
     with service.store.db() as db:
         db.execute('BEGIN IMMEDIATE')
         changed = db.execute("UPDATE tool_events SET status=? WHERE id=? AND job_id=? AND tool=? AND status='dispatching'",
-                             ('rejected' if rejected else 'observed' if observed else 'unknown', ticket['event'], job['id'], ACTION)).rowcount
+                             ('held' if held else 'rejected' if rejected else 'observed' if observed else 'unknown', ticket['event'], job['id'], ACTION)).rowcount
         if changed and ticket['allowance']:
             service.record_conversation_notice(text, job=job, db=db)
     if changed and ticket['allowance']:
