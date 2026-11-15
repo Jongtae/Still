@@ -40,8 +40,7 @@ PLAN_HISTORY_MESSAGES = 16
 #: #798: the periodic account's brief: a method for giving an account of a line, never a topic.
 LINE_ACCOUNT_GOAL = prompt('line_account')
 BUNDLE_SETTLE_SECONDS = 1800
-BUNDLE_CHARS = 3500
-BUNDLE_LINE_LIMIT = 8
+BUNDLE_CHARS = el.BUNDLE_CHARS
 
 
 class PreparationsService:
@@ -1623,32 +1622,7 @@ class PreparationsService:
         return parts
 
     def compose_line_bundle(self, parts):
-        """Plain bounded composition of the runs' own words; no topic logic or model call."""
-        groups={}
-        for part in parts:groups.setdefault(part['brief']['line_id'],[]).append(part)
-        groups=sorted(groups.values(),key=lambda group:(self.service.lines.first_saved(group[0]['brief']['line_id']),
-                                                        group[0]['brief']['line_id']))
-        heading=msg('lines.bundle_heading',count=len(groups))
-        footer=msg('lines.bundle_footer')
-        shown=groups[:BUNDLE_LINE_LIMIT]
-        more=(msg('lines.bundle_more',tasks=', '.join(el.excerpt(self.service._redact_known_secrets(g[0]['brief']['task']),40)
-                                                     for g in groups[BUNDLE_LINE_LIMIT:])) if len(groups)>len(shown) else '')
-        # Reserve space for labels/footer first; split the remaining report space fairly.
-        more=el.excerpt(more,400) if more else ''
-        labels=[el.excerpt(self.service._redact_known_secrets(g[0]['brief']['task']),100) for g in shown]
-        share=max(200,(BUNDLE_CHARS-len(heading)-len(footer)-len(more)-sum(map(len,labels))-60)//len(shown))
-        blocks=[]
-        for label,group in zip(labels,shown):
-            newest=group[-1]
-            older=[prep.local_text(p['job']['created'],p['row']['timezone'])+' '+el.excerpt(' '.join(p['text'].split()),80)
-                   for p in group[:-1]]
-            # Older runs remain one-line excerpts; the newest retains at least 200 characters.
-            old_text='\n'.join(older) if older else ''
-            old_limit=max(0,share-201)
-            if len(old_text)>old_limit:old_text=old_text[:old_limit-1]+'…' if old_limit else ''
-            lead=el.excerpt(newest['text'],max(200,share-len(old_text)-1))
-            blocks.append('\n'.join(x for x in (label,lead,old_text) if x))
-        return self.service._redact_known_secrets('\n\n'.join(x for x in (heading,*blocks,more,footer) if x))
+        return self.service.lines.compose_line_bundle(parts)
 
     def flush_line_bundles(self, now):
         """Atomically hand each destination's local-slot bundle to existing builtin delivery."""
@@ -1892,17 +1866,19 @@ class PreparationsService:
         A run already going stops at its next step (``run_refusal``).  Nothing earlier is undone.
         """
         service=self.service
-        before,after=service.lines.write(line_id,work_id,None,'stopped',lambda brief:{**brief,'state':el.STATE_STOPPED})
-        rows=self.line_rows(line_id)
+        with service.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            before,after=service.lines.write(line_id,work_id,None,'stopped',lambda brief:{**brief,'state':el.STATE_STOPPED},db=db)
+            rows=self.line_rows(line_id,db)
+            # Only replies still waiting are suppressed, including committed bundle Works.
+            runs=[row['last_run_job_id'] for row in rows if row.get('last_run_job_id')]
+            if runs:
+                db.execute(f"UPDATE jobs SET delivery='cancelled' WHERE delivery='pending' AND id IN ({','.join('?'*len(runs))})",runs)
+            service.lines.suppress_pending_bundles(line_id,db)
         for row in rows:
             if row['state'] in prep.ACTIVE_STATES:
                 try:service.cancel_preparation(row['id'])
                 except prep.PreparationRefusal:continue
-        # After a stop only its confirmation reaches the owner: a run's reply still waiting is not sent.
-        runs=[row['last_run_job_id'] for row in rows if row.get('last_run_job_id')]
-        if runs:
-            with service.store.db() as db:
-                db.execute(f"UPDATE jobs SET delivery='cancelled' WHERE delivery='pending' AND id IN ({','.join('?'*len(runs))})",runs)
         LOG.info('line stopped id=%s changed=%s',line_id,after['version']!=before['version'])
         return after,after['version']!=before['version']
 

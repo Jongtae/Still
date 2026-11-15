@@ -309,6 +309,28 @@ Object.assign(I18N["ja"],{"항목":"項目","예: 땅콩 알러지, 집, 자주 
 Object.assign(I18N["en"],{"키: {key}":"Key: {key}"});
 Object.assign(I18N["zh-CN"],{"키: {key}":"键：{key}"});
 Object.assign(I18N["ja"],{"키: {key}":"キー: {key}"});
+// #799: owner-model controls and report times.
+Object.assign(I18N.en,{
+ "알아 두기":"Learn about you",
+ "보고 시간":"Report times",
+ "보고 시간 저장":"Save report times",
+ "현지 시각 HH:MM을 이른 순서로 1~4개, 쉼표로 구분해 입력해 주세요.":"Enter 1–4 local HH:MM times in increasing order, separated by commas.",
+ "보고 시간을 저장했어요. 오늘 이미 보고를 받았다면 내일부터 적용돼요.":"Report times saved. If you already received a report today, changes apply tomorrow."
+});
+Object.assign(I18N["zh-CN"],{
+ "알아 두기":"了解你",
+ "보고 시간":"报告时间",
+ "보고 시간 저장":"保存报告时间",
+ "현지 시각 HH:MM을 이른 순서로 1~4개, 쉼표로 구분해 입력해 주세요.":"请输入 1–4 个当地 HH:MM 时间，按先后顺序以逗号分隔。",
+ "보고 시간을 저장했어요. 오늘 이미 보고를 받았다면 내일부터 적용돼요.":"报告时间已保存。如果今天已收到报告，更改将从明天生效。"
+});
+Object.assign(I18N.ja,{
+ "알아 두기":"あなたを知る",
+ "보고 시간":"報告時刻",
+ "보고 시간 저장":"報告時刻を保存",
+ "현지 시각 HH:MM을 이른 순서로 1~4개, 쉼표로 구분해 입력해 주세요.":"現地時刻 HH:MM を早い順に1〜4個、カンマで区切って入力してください。",
+ "보고 시간을 저장했어요. 오늘 이미 보고를 받았다면 내일부터 적용돼요.":"報告時刻を保存しました。今日すでに報告を受け取った場合は明日から適用されます。"
+});
 // I18N-CATALOG-END
 let currentLanguage='en',TIME_MINUTE,TIME_CLOCK,TIME_ABSOLUTE,TIME_RELATIVE,TIME_DAY,TIME_YEAR;
 // #662: same catalog text as the exact Settings draft.
@@ -1629,9 +1651,6 @@ async function savePaymentAutonomy(enabled){try{await api('/api/payment-autonomy
 $('payment-autonomy-enabled').onchange=event=>{const toggle=event.currentTarget;if(!toggle.checked){$('payment-autonomy-preview').hidden=true;return busy(toggle,()=>savePaymentAutonomy(false));}toggle.checked=false;$('payment-autonomy-summary').textContent=t(PAYMENT_AUTONOMY_RISK);$('payment-autonomy-preview').hidden=false;$('payment-autonomy-confirm').focus();};
 $('payment-autonomy-confirm').onclick=event=>busy(event.currentTarget,()=>savePaymentAutonomy(true));
 $('payment-autonomy-cancel').onclick=()=>{$('payment-autonomy-preview').hidden=true;$('payment-autonomy-enabled').focus();};
-Object.assign(I18N["zh-CN"],{"알아 두기": "了解你", "밤사이 기억 정리": "夜间记忆整理", "보고 시간": "报告时间", "현지 시각 HH:MM을 이른 순서로 1~4개, 쉼표로 구분해 입력하세요.": "请输入 1–4 个当地 HH:MM 时间，按先后顺序以逗号分隔。", "보고 시간을 저장했습니다. 오늘 이미 보고를 받았다면 내일부터 적용됩니다.": "报告时间已保存。如今天已收到汇总，更改将从明天生效。", "보고 시간 저장": "保存报告时间"});
-Object.assign(I18N["ja"],{"알아 두기": "あなたを知る", "밤사이 기억 정리": "夜間の記憶整理", "보고 시간": "報告時刻", "현지 시각 HH:MM을 이른 순서로 1~4개, 쉼표로 구분해 입력하세요.": "現地時刻HH:MMを早い順に1〜4個、カンマで区切って入力してください。", "보고 시간을 저장했습니다. 오늘 이미 보고를 받았다면 내일부터 적용됩니다.": "報告時刻を保存しました。今日すでに報告を受け取った場合は明日から適用されます。", "보고 시간 저장": "報告時刻を保存"});
-Object.assign(I18N["en"],{"알아 두기": "Learn about you", "밤사이 기억 정리": "Overnight memory tidy-up", "보고 시간": "Report times", "현지 시각 HH:MM을 이른 순서로 1~4개, 쉼표로 구분해 입력하세요.": "Enter 1–4 local HH:MM times in increasing order, separated by commas.", "보고 시간을 저장했습니다. 오늘 이미 보고를 받았다면 내일부터 적용됩니다.": "Report times saved. If a bundle arrived today, changes apply tomorrow.", "보고 시간 저장": "Save report times"});
 // #799: the existing owner-model controls, alongside the report-time setting.
 let reportTimesDirty=false;
 function renderReportControls(status){
@@ -1641,14 +1660,14 @@ function renderReportControls(status){
   box=element('section',undefined,'settings-group');box.id='report-controls';
   box.append(element('h2',t('알아 두기'),'settings-group-heading'));
   const switchLabel=element('label',undefined,'check-row'),toggle=element('input');toggle.type='checkbox';toggle.id='report-look-back';
-  switchLabel.append(toggle,element('span',t('밤사이 기억 정리')));box.append(switchLabel);
+  switchLabel.append(toggle,element('span',t('밤사이 정리')));box.append(switchLabel);
   toggle.onchange=async()=>{try{await api('/api/owner-model/request',{operation:'set',dream:toggle.checked});setFeedback('report-feedback','');}catch(error){toggle.checked=!toggle.checked;setError('report-feedback',error);}};
   const form=element('form'),label=element('label',t('보고 시간')),input=element('input');input.id='report-times';input.type='text';label.htmlFor=input.id;
   input.oninput=()=>{reportTimesDirty=true;};
-  const hint=element('p',t('현지 시각 HH:MM을 이른 순서로 1~4개, 쉼표로 구분해 입력하세요.'),'field-hint');hint.id='report-times-hint';input.setAttribute('aria-describedby',hint.id);
+  const hint=element('p',t('현지 시각 HH:MM을 이른 순서로 1~4개, 쉼표로 구분해 입력해 주세요.'),'field-hint');hint.id='report-times-hint';input.setAttribute('aria-describedby',hint.id);
   const save=element('button',t('보고 시간 저장'));save.type='submit';const feedback=element('p');feedback.id='report-feedback';feedback.setAttribute('role','status');
   form.append(label,input,hint,save,feedback);box.append(form);pane.append(box);
-  form.onsubmit=event=>{event.preventDefault();return busy(save,async()=>{try{await api('/api/owner-model/request',{operation:'set',report_times:input.value.split(',').map(v=>v.trim())});reportTimesDirty=false;setFeedback('report-feedback',t('보고 시간을 저장했습니다. 오늘 이미 보고를 받았다면 내일부터 적용됩니다.'));}catch(error){setError('report-feedback',error);}});};
+  form.onsubmit=event=>{event.preventDefault();return busy(save,async()=>{try{await api('/api/owner-model/request',{operation:'set',report_times:input.value.split(',').map(v=>v.trim())});reportTimesDirty=false;setFeedback('report-feedback',t('보고 시간을 저장했어요. 오늘 이미 보고를 받았다면 내일부터 적용돼요.'));}catch(error){setError('report-feedback',error);}});};
  }
  if(document.activeElement!==$('report-look-back'))$('report-look-back').checked=!!status.dream;
  if(!reportTimesDirty&&document.activeElement!==$('report-times'))$('report-times').value=(status.report_times||[]).join(', ');

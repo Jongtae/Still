@@ -1,5 +1,6 @@
 """L2 fixture evidence: real store, run/settle and builtin delivery; only the wires are injected."""
 import json
+import sqlite3
 from datetime import datetime
 from unittest.mock import patch
 
@@ -255,6 +256,147 @@ class Bundles(_LinesCase):
         self.helper.line_handler(self.store.job(self.b))({'action':'restart','line':brief['line_id']})
         self.assertIsNone(self.flush())
 
+    def pending_bundle(self, *, mixed=False):
+        self.at(10);brief,row=self.line('Responsibility A')
+        other=other_row=None
+        if mixed:
+            self.now+=86400;other,other_row=self.line('Responsibility B')
+        self.now+=86400;self.at(8)
+        self.report(row,'Stopped older result')
+        self.now+=60;self.report(row,'Stopped newest result')
+        if mixed:
+            self.now+=60;self.report(other_row,'Remaining older result')
+            self.now+=60;self.report(other_row,'Remaining newest result')
+        self.at(9);bundle=self.helper.flush_line_bundles(self.now)
+        self.assertIsNotNone(bundle)
+        self.assertEqual(self.store.job(bundle)['delivery'],'pending')
+        self.telegram.clear()
+        return brief,other,bundle
+
+    def bundle_record(self, bundle):
+        with self.store.db() as db:
+            return (self.store.job(bundle),
+                    [dict(r) for r in db.execute('SELECT * FROM messages WHERE job_id=?',(bundle,))],
+                    [dict(r) for r in db.execute("SELECT * FROM tool_events WHERE job_id=? OR "
+                        "(tool='line_bundled' AND json_extract(detail,'$.bundle_id')=?) ORDER BY id",(bundle,bundle))])
+
+    def assert_pending_line_removed(self, *, forget=False, mixed=False):
+        brief,other,bundle=self.pending_bundle(mixed=mixed)
+        before,messages,events=self.bundle_record(bundle)
+        # A committed pending bundle must still honour a stop after recovery.
+        self.service=self.make_service();self.helper=self.service.preparations_service
+        if forget:OwnerForget(self.store).forget(MEMORY_OWNER,'line:'+brief['line_id'])
+        else:self.helper.stop_line(brief['line_id'],self.b)
+        after,updated,receipts=self.bundle_record(bundle)
+        self.assertEqual(after['id'],before['id'])
+        self.assertEqual(after['request_key'],before['request_key'])
+        self.assertEqual(receipts,events)
+        if mixed:
+            self.assertEqual(after['delivery'],'pending')
+            older=next(self.store.job(work) for work,_ in self.receipts()
+                       if self.store.job(work)['response']=='Remaining older result')
+            expected='\n\n'.join((msg('lines.bundle_heading',count=1),
+                '\n'.join((other['task'],'Remaining newest result',
+                    prep.local_text(older['created'],'Asia/Seoul')+' Remaining older result')),
+                msg('lines.bundle_footer')))
+            self.assertEqual(after['response'],expected)
+            self.assertEqual(updated,[{**messages[0],'content':expected}])
+            for text in (after['response'],updated[0]['content']):
+                self.assertNotIn(brief['task'],text)
+                self.assertNotIn('Stopped',text)
+                for part in (other['task'],'Remaining older result','Remaining newest result'):
+                    self.assertEqual(text.count(part),1)
+        else:
+            self.assertEqual(after['delivery'],'cancelled')
+        self.service.deliver_one();self.service.deliver_one()
+        self.assertEqual(len(self.sends()),1 if mixed else 0)
+        if mixed:self.assertEqual(self.sends()[0]['text'],after['response'])
+        # Consumption receipts stay even when the owner restarts the stopped line.
+        if not forget:self.helper.line_handler(self.store.job(self.b))({'action':'restart','line':brief['line_id']})
+        self.now+=86400
+        self.assertIsNone(self.helper.flush_line_bundles(self.now))
+        self.assertEqual(self.bundle_record(bundle)[2],events)
+
+    def test_stop_cancels_committed_single_line_bundle(self):
+        self.assert_pending_line_removed()
+
+    def test_stop_rewrites_committed_mixed_line_bundle(self):
+        self.assert_pending_line_removed(mixed=True)
+
+    def test_forget_cancels_committed_single_line_bundle(self):
+        self.assert_pending_line_removed(forget=True)
+
+    def test_forget_rewrites_committed_mixed_line_bundle(self):
+        self.assert_pending_line_removed(forget=True,mixed=True)
+
+    def test_stop_leaves_sent_bundle_untouched(self):
+        brief,_,bundle=self.pending_bundle(mixed=True)
+        self.service.deliver_one()
+        self.assertEqual(self.store.job(bundle)['delivery'],'sent')
+        before=self.bundle_record(bundle)
+        self.helper.stop_line(brief['line_id'],self.b)
+        self.assertEqual(self.bundle_record(bundle),before)
+        self.service.deliver_one()
+        self.assertEqual(len(self.sends()),1)
+
+    def test_stop_leaves_sending_bundle_untouched(self):
+        brief,_,bundle=self.pending_bundle(mixed=True)
+        with self.store.db() as db:db.execute("UPDATE jobs SET delivery='sending' WHERE id=?",(bundle,))
+        before=self.bundle_record(bundle)
+        self.helper.stop_line(brief['line_id'],self.b)
+        self.assertEqual(self.bundle_record(bundle),before)
+
+    def assert_bundle_rewrite_rolls_back(self, *, forget=False):
+        brief,_,bundle=self.pending_bundle(mixed=True)
+        before=self.bundle_record(bundle)
+        with self.store.db() as db:
+            db.execute("CREATE TRIGGER break_bundle_rewrite BEFORE UPDATE OF content ON messages "
+                       "WHEN OLD.job_id IN (SELECT id FROM jobs WHERE model='line-bundle') "
+                       "BEGIN SELECT RAISE(ABORT,'fixture rewrite failure'); END")
+        with self.assertRaisesRegex(sqlite3.IntegrityError,'fixture rewrite failure'):
+            if forget:OwnerForget(self.store).forget(MEMORY_OWNER,'line:'+brief['line_id'])
+            else:self.helper.stop_line(brief['line_id'],self.b)
+        self.assertEqual(self.bundle_record(bundle),before)
+        self.assertEqual(self.service.lines.current(brief['line_id']),brief)
+
+    def test_stop_and_bundle_rewrite_roll_back_together(self):
+        self.assert_bundle_rewrite_rolls_back()
+
+    def test_forget_and_bundle_rewrite_roll_back_together(self):
+        self.assert_bundle_rewrite_rolls_back(forget=True)
+
+    def test_stop_cancels_every_pending_bundle_of_line(self):
+        brief,_,first=self.pending_bundle()
+        self.at(17);self.report(self.work_rows(brief)[0],'Later stopped result',deliver=False)
+        self.at(18);second=self.helper.flush_line_bundles(self.now)
+        self.assertIsNotNone(second)
+        self.assertNotEqual(first,second)
+        receipts=self.receipts()
+        self.helper.stop_line(brief['line_id'],self.b)
+        for bundle in (first,second):self.assertEqual(self.store.job(bundle)['delivery'],'cancelled')
+        self.service.deliver_one();self.service.deliver_one()
+        self.assertEqual(self.sends(),[])
+        self.assertEqual(self.receipts(),receipts)
+
+    def test_later_stop_does_not_restore_parts_of_restarted_line(self):
+        brief,other,bundle=self.pending_bundle(mixed=True)
+        self.helper.stop_line(brief['line_id'],self.b)
+        self.helper.line_handler(self.store.job(self.b))({'action':'restart','line':brief['line_id']})
+        self.helper.stop_line(other['line_id'],self.b)
+        self.assertEqual(self.store.job(bundle)['delivery'],'cancelled')
+        self.service.deliver_one()
+        self.assertEqual(self.sends(),[])
+
+    def test_later_stop_does_not_restore_parts_after_forget_undo(self):
+        brief,other,bundle=self.pending_bundle(mixed=True)
+        forget=OwnerForget(self.store)
+        receipt=forget.forget(MEMORY_OWNER,'line:'+brief['line_id'])
+        forget.undo(MEMORY_OWNER,receipt['receipt'])
+        self.helper.stop_line(other['line_id'],self.b)
+        self.assertEqual(self.store.job(bundle)['delivery'],'cancelled')
+        self.service.deliver_one()
+        self.assertEqual(self.sends(),[])
+
     def test_forgotten_line_or_run_not_bundled(self):
         self.at(10);brief,row=self.line();self.now+=86400;self.at(8);work=self.report(row)
         OwnerForget(self.store).forget(MEMORY_OWNER,'line:'+brief['line_id'])
@@ -290,7 +432,7 @@ class Bundles(_LinesCase):
                 parts.append({'brief':line,'job':{'created':self.now+run},'row':line_row,
                               'text':f'Unique result {line_number}/{run}'})
         for lang in LANGUAGES:
-            with self.subTest(lang=lang),patch('personal_agent.preparations_service.msg',
+            with self.subTest(lang=lang),patch('personal_agent.entrusted_lines.msg',
                     side_effect=lambda key,**values:msg(key,lang,**values)):
                 text=self.helper.compose_line_bundle(parts)
                 heading=msg('lines.bundle_heading',lang,count=2)
