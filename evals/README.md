@@ -74,13 +74,14 @@ Judge spend is capped per day (default **USD 10**; `--cap-usd` or `AGENTOS_EVAL_
 
 Run `PYTHONPATH=src:evals python -m agentos_eval recall --arm lexical --arm context`
 from the checkout for paired, split-local retrieval reports. The deterministic
-arms are `lexical`, `context`, and `context-concat`; `--arm phrasing` samples
+arms are `lexical`, `lexical-context`, `context`, `context-concat`, and `runtime`; `--arm phrasing` samples
 worker-written extra search words three times (`--runs` changes this), using
 `--phraser-cmd 'claude -p --model sonnet'` or model-free `--phrasings recorded.json`
 (a full report JSON checks fixture provenance; the legacy
 `arms.phrasing.phrasings` mapping is also accepted). `context-concat` is a
 diagnostic arm with no preference verdict. Other factories plug in as
 `--arm module.path:callable`, for example `agentos_eval.recall_embedding:factory`.
+The `runtime` arm runs the merged #860 product brief path and scores matched profile rows actually shown in its snapshot; JSON `observed` records the actual preceding context and request-first query per case.
 The lexical baseline is always included. JSON and Markdown reports go to the
 eval home's `reports/` folder, never the repository; `--out` selects another
 folder outside the checkout. Verdicts are information and the command exits 0.
@@ -182,7 +183,7 @@ A run passes when the world's tests end as the scenario expects (`expect_world_p
 
 ## What one run does
 
-1. Claim a free sandbox slot and a free loopback port. Slots use `~/.local/share/agentos-evals/sandboxes/slot-N`, with one file lock per slot so two sweeps never share one. Port 8787/8788 and the live data folder are refused.
+1. Claim a free sandbox slot and a free loopback port. Slots use `~/.local/share/agentos-evals/sandboxes/slot-N`, with one file lock per slot so two sweeps never share one. Port pairs are probed and reserved until stop with POSIX `flock` under `/tmp/still-eval-ports-<uid>` (override: `AGENTOS_EVAL_PORT_LOCK_DIR`, shared by all sweeps even with different eval roots); lock files must not be deleted while sweeps run. Quickstart binds only the first port; the existing pair allocation is preserved. Port 8787/8788 and the live data folder are refused.
 2. Copy the seed into the slot and start `python3 -m personal_agent.quickstart start --no-browser` with a minimal environment:
    - its own engine-run folder;
    - no inherited `AGENTOS_*` or connector settings;
@@ -190,8 +191,8 @@ A run passes when the world's tests end as the scenario expects (`expect_world_p
 3. Log in the way the local web page does (`POST /api/local-login`, or the first local `/api/claim` of a fresh folder), then select the worker (`POST /api/subscription-engines/connect`).
 4. **Judgment AI.** A qualification is bound to the store path, so a copied seed starts unqualified.
    - If the Judgment AI is not qualified for this worker, the sandbox asks Still to qualify it through the owner's own routes: `POST /api/main-ai/activate` when it follows the Main AI, else `POST /api/decision-route/activate`.
-   - It then waits up to 300 s.
-   - It caches the qualified config rows per slot, worker and seed, so later runs in that slot skip the roughly one minute and dozen model calls.
+   - It then waits up to `--judgment-timeout` (default 900 s).
+   - It caches the qualified config rows per slot, worker and seed, so later runs in that slot skip the roughly one minute and dozen model calls. Seeded slots apply them before start; seedless slots apply them once healthy, when the server has created its store (route config is read on demand). Records retain `cache_applied`, `initially_ready`, and bounded `qualification` state/failure/message alongside the existing fields.
    - A qualification that does not become ready is reported as the `infra:judgment_ai` cluster.
 5. Snapshot the owner state:
    - `GET /api/personal-space` and `/api/personal-space/memory-candidates`;
@@ -310,7 +311,32 @@ To measure an older checkout using this harness, first create it with `git workt
 PYTHONPATH=evals .venv/bin/python -m agentos_eval judgments run --seed sanitized-seed --src /tmp/still-v0.6.0/src --out /tmp/judgment-baseline
 ```
 
-Run each checkout in a fresh process; `--src` selects its production imports, Git head and prompt digests. The seed must be a sanitized snapshot with `private/quickstart.db`; each run uses a fresh `Sandbox.prepare()` copy and removes it afterward. No server or worker is started. Use the same seed, roles, trial count and runtime settings for both measurements. Comparison refuses different case-set versions and flags changed runtime conditions; fixtures do not establish live availability or model quality.
+Run each checkout in a fresh process; `--src` selects its production imports, Git head and prompt digests. The seed must be a sanitized snapshot or synthetic seed with `private/quickstart.db`; each run uses a fresh `Sandbox.prepare()` copy and removes it afterward. No server or worker is started. Use the same seed, roles, trial count and runtime settings for both measurements. Comparison refuses different case-set versions and flags changed runtime conditions; fixtures do not establish live availability or model quality.
+
+### Synthetic seed (no owner data)
+
+From the repository root, run `PYTHONPATH=evals .venv/bin/python -m agentos_eval.synthetic_seed --out synthetic-terra --engine codex --model gpt-5.6-terra`.
+A bare output name resolves to `eval_home()/seeds/NAME` (by default `~/.local/share/agentos-evals/seeds/NAME`).
+The seed and its sandbox copies must be outside the system temp directory: a store under `/tmp`, `/private/tmp` or the platform temp directory fails the shipped Codex `protected-directory-denied` isolation probe because Codex can read system temp.
+Do not point `AGENTOS_EVAL_HOME` at system temp for live qualification. Model-free fixture tests explicitly inject the location seam.
+
+This creates a fresh store without owner Memory, history, owner model, connections or secrets; no profile is copied.
+Add `--effort E` to request an effort; activation uses the shipped Judgment AI path and spends real calls through your host CLI login.
+Use `--dry-run` to print the activation body and suite call bounds without creating a seed or calling the CLI.
+The private `synthetic-seed.json` manifest records `owner_data: "none"`, creation time, requested model, Git head and redacted runtime status.
+
+Pass `--seed synthetic-terra` to `agentos_eval.paired`; `--live` requires a manifest declaring `owner_data: "none"` and a seed under `eval_home()/seeds`.
+Each arm uses `Sandbox.prepare()` to copy the seed, reads its route, pins the explicit `--model`, and runs the shipped #346 requalification job before measurement.
+Copied qualification is path-bound; its calls share the per-arm cap with selected cases. The source seed remains unchanged and copies are stopped/removed in `finally`.
+Owner snapshots remain supported separately by `judgments run --seed ... --requalify`.
+Live paired runs require at least three repetitions; comparisons with shorter sampling arms stay inconclusive unless both are explicitly deterministic fixtures.
+Selected qualification definitions expand to the full measured qualification suite, separately counted from setup requalification under the same cap.
+Promotion derives evidence class and budget from the arm reports and run plan; `--from-pair` generates rollback and rerun instructions without executing them.
+`paired --requalify-attempts N` retries the same shipped qualification job up to N times (default 2, max 3), preserving every attempt's state/calls under the shared cap.
+`--reuse-arm candidate=REPORT` (or `baseline=REPORT`) validates a saved arm against the new plan and spends only on the other arm. The report is not rewritten; provenance and actual/proxy time gaps are disclosed.
+`--max-calls` then caps only new calls, while total cost still reports both arms. #752 at three repetitions reserves 166 calls for one new arm (144 measurement + up to 22 qualification), or 332 for a full new pair.
+
+
 
 Reuse decision: **Adapt** the existing eval package. Standard-library JSON, argparse, hashing, file permissions and timing cover serialization/CLI/report needs; the shipped `ModelAdapter`, decision policy, orchestration and qualification runners cover the measured boundary. Existing sandbox, seed resolution, Git-head and report-folder conventions supply the thin eval glue. No new dependency, licence, runtime authority, data destination or production component is introduced (Still remains AGPL-3.0-only).
 
@@ -417,12 +443,14 @@ review uses the existing pinned evaluation stack; no external maintenance or
 release claim is made.
 
 `--judgment-timeout SECONDS` controls the wait for Still's Judgment AI
-qualification, separately from `--turn-timeout`. It defaults to 300 seconds for
-`sweep` and 900 for `continuity run`; the chosen value is recorded in run
-metadata and passed to the Inspect task. Fresh-sandbox qualification can take
-longer than 300 seconds, so a shorter wait can leave the Judgment AI unavailable
-and C2 measures unscored. The report prominently counts these samples under
-Live evidence and Uncertainty and marks the observation unrepresentative.
+qualification, separately from `--turn-timeout`. Both `sweep` and `continuity run`
+default to 900 seconds: fresh-sandbox qualification took about 410 seconds on
+2026-11-15 (11 cases on each of two models), leaving about 2× margin for a loaded
+machine and concurrent slots (#868). The chosen value is recorded in run metadata
+and passed to the Inspect task or world runner. A shorter wait can leave the
+Judgment AI unavailable and C2 measures unscored. The report prominently counts
+these samples under Live evidence and Uncertainty and marks the observation
+unrepresentative.
 `continuity compare` refuses an arm with missing measures caused by
 `infra:judgment_ai`. `--allow-partial` permits inspecting such a comparison,
 but marks it **partial** and its verdict can never be `better`. Existing

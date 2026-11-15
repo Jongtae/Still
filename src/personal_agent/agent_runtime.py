@@ -466,9 +466,8 @@ ASK_LOCATION_ARGUMENTS={
  'button_label':'Optional, the text of the share-location button (at most 40 characters), in the language the owner is writing in.',
 }
 TELL_OWNER_DESCRIPTION=('Send the owner one short message now, in their paired chat, while you keep working. Use it the way a capable person '
- 'working for them would speak up mid-task: only for something they can use or react to before your answer - a finding that changes '
- 'the picture, a problem with what they asked for, or a choice they may want to make - said in one natural sentence. Never to report '
- 'what you are doing, checking or filtering, and never to say you are starting or still working; most requests need none. '
+ 'working for them would speak up mid-task: when what you found or did would matter to them now, say it in one natural sentence. '
+ 'Never to report what you are doing, checking or filtering, and never to say you are starting or still working. '
  'text: a sentence or two in the owner\'s language and voice (at most 500 characters); never credentials. It is not your answer: '
  'keep working and give the complete answer when you finish, without repeating what you already told them. It asks nothing: '
  'if you need the owner\'s decision, end your turn with the question instead. At most 3 per request.')
@@ -2101,6 +2100,36 @@ class WorkLedger:
    job_id=work['related_job_id']
   raise ValueError('cyclic or excessive request chain')
 
+ @staticmethod
+ def fence_restart(db,job_ids):
+  """Supersede the runs a restart cut off, inside ``QuickStore.recover``'s transaction (#841, matrix X4).
+
+  For each interrupted Work that holds its request's active record, advance the epoch by one at the
+  request-chain root ``_change`` uses, so a bridge or CLI child bound before the restart
+  returns ``superseded`` even after the same Work id resumes.  Counters, ``deadline``,
+  ``active`` and ``remaining_seconds`` stay as they are: nothing is replenished.  A Work
+  with no record gets none; a chain that does not resolve or an unreadable record is skipped
+  (an unreadable record already fails every spend closed).  Returns the record keys advanced.
+  """
+  advanced=[]
+  for job_id in job_ids:
+   try:
+    root=WorkLedger.request_chain(db,job_id)[-1]['id']
+    key=f'{WORK_LEDGER_KEY}:{root}'
+    if key in advanced:continue
+    found=db.execute('SELECT value FROM config WHERE key=?',(key,)).fetchone()
+    if not found:continue
+    row=WorkLedger._validate(json.loads(found[0]))
+   except (TypeError,ValueError,KeyError,OverflowError,RecursionError):continue
+   # A paused record already refuses every spend, and its epoch may bind a budget-continue
+   # offer; another holder (a later retry or continuation) already supersedes this run's bridge.
+   if not row['active'] or row.get('active_work_id',root)!=job_id:continue
+   row['epoch']+=1
+   # Failure to write the fence must roll back recovery; only unreadable data is skipped.
+   db.execute('UPDATE config SET value=? WHERE key=?',(json.dumps(row),key))
+   advanced.append(key)
+  return advanced
+
  def _migrate_request(self,db,row,root):
   """Combine older per-Work allowances once, including completed retry branches.
 
@@ -2190,7 +2219,7 @@ class WorkLedger:
   try:return self._validate(self.store.config(self.key))
   except Exception:return None
 
- def lapse(self):
+ def lapse(self,*,db=None):
   """Why this run may take no further step, or None (#617).
 
   ``deadline`` (its active time is used up), ``superseded`` (a newer run of
@@ -2199,7 +2228,7 @@ class WorkLedger:
   """
   if self.opened:return self.opened
   try:
-   row=self._validate(self.store.config(self.key))
+   row=self._validate(self.store.config(self.key,db=db))
    if row['epoch']!=self.epoch or row.get('active_work_id')!=self.job_id or not row['active']:return 'superseded'
    return 'deadline' if min(self.deadline,row['deadline'])-self.wall()<=0 else None
   except Exception:return 'unavailable'
@@ -2659,7 +2688,7 @@ def steer_note(texts, draft=''):
  return note+('\n\n'+STEER_DRAFT_LEAD+'\n'+draft[:STEER_DRAFT_CHARS] if draft else '')
 
 
-def claim_owner_steers(store, job_id, record=None):
+def claim_owner_steers(store, job_id, record=None, *, ledger=None):
  """The owner steers this Work's worker has not seen yet, as one message, or None (#999).
 
  Claiming marks them handed over, so each reaches the worker once; ``record``
@@ -2667,7 +2696,7 @@ def claim_owner_steers(store, job_id, record=None):
  """
  claim=getattr(store,'claim_steers',None)
  if not callable(claim) or not isinstance(job_id,str):return None
- try:texts=claim(job_id)
+ try:texts=claim(job_id,ledger=ledger)
  except Exception:return None
  if not texts:return None
  if record:record(STEER_EVENT,'delivered',json.dumps({'count':len(texts)}))
