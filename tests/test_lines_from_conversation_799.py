@@ -368,28 +368,91 @@ class Lines(_LinesCase):
         self.assertEqual(self.service.preparations.get(result[0]['preparation_id'])['line_id'],brief['line_id'])
         self.assertEqual(before,self.authority_state())
 
+    def started_stood_rows(self):
+        brief=self.stand();self.deliver(self.announce(brief))
+        rows=self.helper.line_rows(brief['line_id'])
+        self.assertEqual(len(rows),2)
+        self.assertEqual({row['origin'] for row in rows},{prep.ORIGIN_DREAM,prep.ORIGIN_LINE_ACCOUNT})
+        for row in rows:
+            self.assertEqual(row['accepted_by'],prep.ACCEPTED_DREAM)
+            self.now=row['due_at']+1
+            work=self.service.preparations.start(row,channel=self.store.job(self.b)['channel'],chat_id=77,now=self.now)
+            self.assertIsNotNone(work)
+            with self.store.db() as db:db.execute("UPDATE jobs SET status='running' WHERE id=?",(work,))
+            job=self.store.job(work)
+            self.assertTrue(self.service.self_set_run(job))
+            yield row,job
+
     def test_stood_run_payment_autonomy_on_cannot_pay(self):
         from test_payment_autonomy_662 import Mode
         Mode.switch(self,True)
-        brief=self.stand();self.deliver(self.announce(brief))
-        row=self.work_rows(brief)[0]
-        work=self.store.enqueue('run',prep.request_key(row['id'],row['due_at']))
-        binding=bs.step_binding(work,'api_request','https://example.test/','pay',argument='',state='s')
-        self.assertIsNone(self.service._authorize_payment_autonomy(self.store.job(work),binding,'pay'))
-        self.assertTrue(self.service.self_set_run(self.store.job(work)))
+        for row,job in self.started_stood_rows():
+            with self.subTest(origin=row['origin']):
+                binding=bs.step_binding(job['id'],'api_request','https://example.test/','pay',argument='',state='s')
+                self.assertIsNone(self.service._authorize_payment_autonomy(job,binding,'pay'))
+                with self.assertRaises(ToolError) as caught:
+                    self.service.browser_approvals_for(job).self_set_write(binding,None,'POST','https://example.test/',effect='payment')
+                self.assertEqual(caught.exception.code,'unattended_run')
+                self.assertIsNone(self.service._browser_request(job['id']))
 
-    def test_stood_runs_approval_step_denied_without_prompt(self):
-        brief=self.stand();self.deliver(self.announce(brief))
-        row=self.work_rows(brief)[0]
-        work=self.store.enqueue('run',prep.request_key(row['id'],row['due_at']))
-        job=self.store.job(work)
-        binding=bs.step_binding(work,'api_request','https://example.test/charge','POST /charge',
-                               argument='{}',state='api-payment-v2|slot@1|payment')
-        with self.assertRaises(ToolError) as caught:
-            self.service.browser_approvals_for(job).request(binding,'POST /charge')
-        self.assertEqual((caught.exception.code,str(caught.exception)),('unattended_run',UNATTENDED_APPROVAL_TEXT))
-        self.assertIsNone(self.service._browser_request(work))
-        self.assertIsNone(self.store.notification_of(work,'browser_approval_needed'))
+    def test_stood_runs_payment_approval_step_denied_without_prompt(self):
+        # #875 permits non-payment self-set-write prompts, never payment prompts.
+        for row,job in self.started_stood_rows():
+            with self.subTest(origin=row['origin']):
+                binding=bs.step_binding(job['id'],'api_request','https://example.test/charge','POST /charge',
+                                       argument='{}',state='api-payment-v2|slot@1|payment')
+                with self.assertRaises(ToolError) as caught:
+                    self.service.browser_approvals_for(job).request(binding,'POST /charge')
+                self.assertEqual((caught.exception.code,str(caught.exception)),('unattended_run',UNATTENDED_APPROVAL_TEXT))
+                self.assertIsNone(self.service._browser_request(job['id']))
+                self.assertIsNone(self.store.notification_of(job['id'],'browser_approval_needed'))
+
+    def test_stood_rows_irreversible_or_unknown_write_waits_then_runs_once(self):
+        from personal_agent.api_requests import ApiRequests,ApiError,save_slot
+        save_slot(self.store,'notes',['notes.test'],'fixture-notes-key-799',money=False)
+        for row,job in self.started_stood_rows():
+            sent=[]
+            api=ApiRequests(self.store,job['id'],approvals=self.service.browser_approvals_for(job),
+                            transport=lambda *args:sent.append(args) or (200,{},b'{}'))
+            for effect in ('irreversible',None):
+                with self.subTest(origin=row['origin'],effect=effect), patch.object(self.service.decision_judge,'connector_effect',return_value=effect):
+                    args={'slot':'notes','url':'https://notes.test/items','method':'POST',
+                          'body':json.dumps({'note':str(effect)}),'effect':'mutate'}
+                    before=len(sent)
+                    with self.assertRaises(ApiError) as caught:api.call(args)
+                    self.assertEqual(caught.exception.code,'approval_required')
+                    self.assertEqual(len(sent),before)
+                    request=self.service._browser_request(job['id'])
+                    self.assertEqual((request['action'],request['state']),('self_set_write','requested'))
+                    self.assertEqual(request['preparation']['id'],row['id'])
+                    self.assertIsNotNone(self.store.notification_of(job['id'],'browser_approval_needed'))
+                    with self.store.db() as db:db.execute("UPDATE jobs SET status='partial',response='Waiting',delivery='none' WHERE id=?",(job['id'],))
+                    approved=self.service._decide_browser_step(job['id'],True,request['offer_digest'])
+                    self.assertTrue(approved['approved'])
+                    self.assertTrue(approved['resumed'])
+                    with self.store.db() as db:db.execute("UPDATE jobs SET status='running' WHERE id=?",(job['id'],))
+                    api.call(args)
+                    self.assertEqual(len(sent),before+1)
+                    with self.assertRaises(ApiError):api.call(args)
+                    self.assertEqual(len(sent),before+1)
+
+    def test_stood_rows_reversible_or_owner_allowed_connection_needs_no_prompt(self):
+        from personal_agent.api_requests import ApiRequests,save_slot
+        from personal_agent.self_set_writes import allowance,set_allowance
+        save_slot(self.store,'notes',['notes.test'],'fixture-notes-key-799',money=False)
+        for row,job in self.started_stood_rows():
+            sent=[]
+            api=ApiRequests(self.store,job['id'],approvals=self.service.browser_approvals_for(job),
+                            transport=lambda *args:sent.append(args) or (200,{},b'{}'))
+            for effect in ('reversible','irreversible'):
+                with self.subTest(origin=row['origin'],effect=effect), patch.object(self.service.decision_judge,'connector_effect',return_value=effect):
+                    if effect=='irreversible':set_allowance(self.service,'slot:notes',True,allowance(self.service,'slot:notes')['revision'],'owner')
+                    api.call({'slot':'notes','url':'https://notes.test/items','method':'POST',
+                              'body':json.dumps({'note':effect}),'effect':'mutate'})
+                    self.assertIsNone(self.service._browser_request(job['id']))
+                    self.assertIsNone(self.store.notification_of(job['id'],'browser_approval_needed'))
+                    if effect=='irreversible':set_allowance(self.service,'slot:notes',False,allowance(self.service,'slot:notes')['revision'],'owner')
+            self.assertEqual(len(sent),2)
 
     def test_line_and_suggestion_run_cannot_stand_or_amend(self):
         brief=self.stand();self.deliver(self.announce(brief))

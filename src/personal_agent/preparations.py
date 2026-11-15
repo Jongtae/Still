@@ -62,10 +62,10 @@ RECURRENCES = ('daily', 'weekdays', 'weekly')
 #: ``every_minutes``/``until``; this value is stored, never offered).
 RECURRENCE_WINDOW = 'window'
 MIN_EVERY_MINUTES, MAX_EVERY_MINUTES = 5, 12 * 60
-#: A watch never spans more than a day and never runs more than this often.
-#: #846: a standing wish runs to the owner's deadline (days or weeks); about three checks a day for a month.
+#: #846: a standing wish runs to the owner's deadline, up to a month.
 MAX_WINDOW_SECONDS = 31 * 86400
-MAX_WINDOW_RUNS = 96
+#: #814: a full local day at the minimum cadence fits; each date has its own budget.
+MAX_DAILY_WINDOW_RUNS = 24 * 60 // MIN_EVERY_MINUTES
 #: ``delivery_mode``: every result is delivered, or only a ``notify`` decision is.
 DELIVERY_ALWAYS, DELIVERY_WHEN_NEEDED = 'always', 'when_needed'
 DECISION_NOTIFY, DECISION_QUIET = 'notify', 'quiet'
@@ -228,6 +228,95 @@ def migrate(db):
     db.execute('UPDATE preparations SET until_at=window_end-1, window_end=window_end-1+? '
                'WHERE recurrence=? AND until_at IS NULL AND window_end IS NOT NULL',
                (run_seconds(), RECURRENCE_WINDOW))
+    # #814: once per store, repair the end without exceeding the accepted count
+    # unless the retained creating call proves this was the silent default.
+    migration = 'preparations_daily_cap_814'
+    if not db.execute('SELECT 1 FROM config WHERE key=?', (migration,)).fetchone():
+        for record in db.execute('SELECT * FROM preparations WHERE recurrence=? AND max_runs=96 '
+                                 'AND state IN (?,?,?,?)', (RECURRENCE_WINDOW, *ACTIVE_STATES)).fetchall():
+            row = dict(record)
+            try:
+                terms = stored_window_terms(row)
+                if not isinstance(terms, dict) or zone(row['timezone']) is None:
+                    continue
+                if not row['every_seconds'] or row['every_seconds'] % 60:
+                    continue
+                rhythm = terms.get('recurrence')
+                done = int(row.get('run_count') or 0)
+                start = row.get('rule_start')
+                if rhythm:
+                    tz = zone(row['timezone'])
+                    day = datetime.fromtimestamp(row['due_at'], tz).date()
+                    opening = datetime.fromtimestamp(start, tz).time()
+                    start = datetime.combine(day, opening, tzinfo=tz).timestamp()
+                elif start is None:
+                    start = row['due_at'] - row['every_seconds'] * max(0, done - (row['state'] == STATE_RUNNING))
+                _permitted, slots = daily_window_slots(row['every_seconds'], start, row['until_at'], row['timezone'], rhythm)
+                if slots <= 96:
+                    continue
+                requested = row['until_at']
+                implicit = _legacy_window_used_default(db, row, start, rhythm)
+                window = normalize_window(row['every_seconds'] // 60,
+                                          datetime.fromtimestamp(requested, zone(row['timezone'])).isoformat(),
+                                          None if implicit else row['max_runs'],
+                                          start, row['timezone'], start - 1, recurrence=rhythm)
+                every, until, runs = window
+                if not implicit:
+                    runs = row['max_runs']
+                    until = last_slot({**row, 'until_at': until})
+                window = every, until, runs
+                updated_terms = window_terms(window, rhythm, start, row['timezone'],
+                                             terms.get('report_seconds', 0) // 60 or None, row.get('delivery_mode'), requested)
+            except (ValueError, TypeError, KeyError, ArithmeticError):
+                # One invalid legacy window must not prevent this store from opening.
+                continue
+            db.execute('UPDATE preparations SET max_runs=?,until_at=?,window_end=?,window_terms=?,rule_start=? WHERE id=?',
+                       (runs, until, until + run_seconds(), updated_terms, row.get('rule_start') or start, row['id']))
+        db.execute('INSERT INTO config VALUES (?,?)', (migration, 'true'))
+
+
+def _legacy_window_used_default(db, row, start, rhythm):
+    """Only expand a window whose unchanged creating call proves omission.
+
+    Normal tool Evidence retains arguments and a preparation ID, paired by
+    scope/call ID by ``trail_steps``. Failure details, digests and normalized
+    proposal bindings alone cannot prove omission. Settings' conversation
+    audit is bounded and direct Settings edits retain no arguments/revision;
+    after any update we cannot prove which call last set the window. Runs also
+    update the row, so consumed windows conservatively retain their bound.
+    """
+    if (not row.get('created_from') or row['updated_at'] != row['created_at']
+            or row.get('run_count')):
+        return False
+    from .agent_runtime import trail_steps
+    events = db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=? ORDER BY id',
+                        (row['created_from'],)).fetchall()
+    calls = []
+    try:
+        steps = trail_steps(events)
+    except (ValueError, TypeError, KeyError):
+        return False
+    for _tool, action, state, detail, _reason in steps:
+        evidence = detail.get('evidence')
+        if (action == 'schedule_preparation' and state == 'succeeded' and isinstance(evidence, dict)
+                and evidence.get('preparation_id') == row['id']):
+            calls.append(detail)
+    # A duplicate/idempotent call can return the same row with other arguments.
+    if len(calls) != 1:
+        return False
+    args = calls[0].get('arguments')
+    if not isinstance(args, dict) or 'max_runs' in args:
+        return False
+    try:
+        due, _tz = parse_due(args.get('due'), row['timezone'], row['timezone'], start - 1)
+        until, _tz = parse_due(args.get('until'), row['timezone'], row['timezone'], start - 1)
+        return (due == start == row['due_at'] and until == row['until_at']
+                and _whole_number(args.get('every_minutes')) * 60 == row['every_seconds']
+                and normalize_recurrence(args.get('recurrence')) == rhythm
+                and calls[0]['evidence'].get('max_runs') == row['max_runs'])
+    except (ValueError, TypeError):
+        return False
+
 
 REFUSALS = {
     'declined_before': ('소유자가 최근에 같은 준비 제안을 거절했습니다. 다시 제안하지 말고, 지금 요청에 대한 답만 하세요. '
@@ -246,7 +335,7 @@ REFUSALS = {
     'window_retry_required': ('같은 목표의 반복 watch 요청이 이 Work에서 이미 있었습니다. 날짜별 단발 준비 여러 건으로 나누지 말고, '
                               'every_minutes와 until을 바로잡아 같은 watch를 다시 호출하세요. 필요한 값이 없으면 대체 일정을 만들지 말고 '
                               '소유자에게 한 가지 질문을 하세요. 이 호출은 새 준비를 만들지 않았습니다.'),
-    'invalid_max_runs': f'max_runs는 1~{MAX_WINDOW_RUNS} 사이의 정수입니다.',
+    'invalid_max_runs': msg('preparations.invalid_max_runs', daily_limit=MAX_DAILY_WINDOW_RUNS),
     'invalid_delivery': 'delivery when_needed는 kind prepare에만 쓸 수 있습니다.',
     'too_many': f'진행 중인 준비가 {MAX_ACTIVE}개를 넘어 더 만들지 않았습니다. 설정에서 필요 없는 준비를 정리해 주세요.',
     'not_found': '이 준비를 찾지 못했습니다.',
@@ -483,13 +572,44 @@ def _whole_number(value):
     return None
 
 
+def window_run_cap(due_at, until_at, timezone_name, recurrence=None):
+    """One allowance per started 24 hours; an inclusive endpoint adds no extra day."""
+    days = 1 if recurrence else max(1, math.ceil((until_at - due_at) / 86400))
+    return days * MAX_DAILY_WINDOW_RUNS
+
+
+def daily_window_slots(every, due_at, until_at, timezone_name, recurrence=None, *, used=None, allowance=None):
+    """Return (permitted prefix, all slots), stopping before any date exceeds its budget.
+
+    One-off windows use elapsed time; day-level rhythms use wall time, like
+    next_window_slot. Keep a continuous window rather than silently skipping
+    the rest of an over-budget day and resuming on another date. Edits supply
+    consumed checks by date and the remaining whole-window allowance.
+    """
+    tz = zone(timezone_name)
+    start = datetime.fromtimestamp(due_at, tz).replace(tzinfo=None) if recurrence else due_at
+    end = datetime.fromtimestamp(until_at, tz).replace(tzinfo=None) if recurrence else until_at
+    span = (end - start).total_seconds() if recurrence else end - start
+    slots = math.floor(span / every) + 1
+    counts = dict(used or {})
+    cap = window_run_cap(due_at, until_at, timezone_name, recurrence) if allowance is None else allowance
+    for index in range(slots):
+        local = start + timedelta(seconds=index * every) if recurrence else datetime.fromtimestamp(start + index * every, tz)
+        date = local.date()
+        counts[date] = counts.get(date, 0) + 1
+        if counts[date] > MAX_DAILY_WINDOW_RUNS:
+            return min(index, cap), slots
+    return min(slots, cap), slots
+
+
 def normalize_window(every_minutes, until, max_runs, due_at, timezone_name, now, recurrence=None):
     """``(every_seconds, until_at, max_runs)`` of one watch (#719), or a typed refusal.
 
     #701: the window is ``[due_at, until]``, inclusive like RFC 5545 ``UNTIL``:
     a slot at ``until`` itself runs, none after it.  The run count is the
-    number of slots in it, lowered by ``max_runs`` when given and never above
-    ``MAX_WINDOW_RUNS``.  ``until`` is parsed like ``due`` (same zone rules).
+    number of slots in it, lowered by ``max_runs`` when given. Each local date
+    is bounded by ``MAX_DAILY_WINDOW_RUNS``. A budget shortfall stores the real
+    last check as the end. ``until`` is parsed like ``due`` (same zone rules).
     """
     minutes = _whole_number(every_minutes)
     if minutes is None or not MIN_EVERY_MINUTES <= minutes <= MAX_EVERY_MINUTES:
@@ -511,37 +631,40 @@ def normalize_window(every_minutes, until, max_runs, due_at, timezone_name, now,
         raise PreparationRefusal('invalid_window', msg('preparations.window_until_span',
                                  value=repr(until), due=iso(due_at), days=MAX_WINDOW_SECONDS // 86400))
     every = minutes * 60
-    span = until_at - due_at
     if recurrence:
         tz = zone(timezone_name)
         first = datetime.fromtimestamp(due_at, tz).replace(tzinfo=None)
         last = datetime.fromtimestamp(until_at, tz).replace(tzinfo=None)
         if first.date() != last.date() or last <= first:
             raise PreparationRefusal('invalid_window', msg('preparations.recurring_window_same_day'))
-        span = (last - first).total_seconds()
-    slots = math.floor(span / every) + 1
+    permitted, slots = daily_window_slots(every, due_at, until_at, timezone_name, recurrence)
     if max_runs in (None, ''):
-        runs = min(slots, MAX_WINDOW_RUNS)
+        runs = permitted
     else:
         runs = _whole_number(max_runs)
-        if runs is None or not 1 <= runs <= MAX_WINDOW_RUNS:
+        if runs is None or not 1 <= runs <= window_run_cap(due_at, until_at, timezone_name, recurrence):
             raise PreparationRefusal('invalid_max_runs')
-        runs = min(runs, slots)
+        runs = min(runs, permitted)
+    if runs == permitted and permitted < slots:
+        if recurrence:
+            until_at = (first + timedelta(seconds=every * (runs - 1))).replace(tzinfo=tz).timestamp()
+        else:
+            until_at = due_at + every * (runs - 1)
     return every, until_at, runs
 
 
-def window_terms(window, recurrence, due_at, timezone_name, report_every_minutes, delivery_mode):
+def window_terms(window, recurrence, due_at, timezone_name, report_every_minutes, delivery_mode, requested_until=None):
     """Validate the schedule facts the owner's AI supplied and preserve the local closing time."""
     if not window:
         if report_every_minutes not in (None, ''):
             raise PreparationRefusal('invalid_window', msg('preparations.report_interval'))
         return None
-    every, until, _runs = window
+    every, until, runs = window
     terms = {}
     if recurrence:
         tz = zone(timezone_name)
         start, end = datetime.fromtimestamp(due_at, tz), datetime.fromtimestamp(until, tz)
-        if recurrence not in RECURRENCES or start.date() != end.date() or start.time() >= end.time():
+        if recurrence not in RECURRENCES or start.date() != end.date() or start.time() > end.time():
             raise PreparationRefusal('invalid_window', msg('preparations.recurring_window_same_day'))
         terms.update(recurrence=recurrence, end_time=end.time().isoformat())
     if report_every_minutes not in (None, ''):
@@ -549,6 +672,14 @@ def window_terms(window, recurrence, due_at, timezone_name, report_every_minutes
         if delivery_mode != DELIVERY_WHEN_NEEDED or seconds < every or seconds % every:
             raise PreparationRefusal('invalid_window', msg('preparations.report_interval'))
         terms['report_seconds'] = seconds
+    if requested_until is not None and requested_until >= until + every:
+        # A daily budget shortfall (or a retained legacy bound) shortens the end.
+        terms['requested_until'] = requested_until
+        for minutes in range(MIN_EVERY_MINUTES, math.floor((requested_until - due_at) / 60) + 2):
+            permitted, slots = daily_window_slots(minutes * 60, due_at, requested_until, timezone_name, recurrence)
+            if permitted == slots and slots <= runs:
+                terms['covering_every_minutes'] = minutes
+                break
     return json.dumps(terms, sort_keys=True) if terms else None
 
 
@@ -801,10 +932,18 @@ def last_slot(row):
     What the model is told to plan by; a late start or a skipped slot can
     still run until the deadline, which is what the owner is shown (#399).
     """
+    # A scheduled due slot is still pending; a running regular slot already
+    # consumed its count. An immediate run leaves due_at on the pending slot.
+    count = int(row.get('run_count') or 0)
+    if row.get('state') != STATE_RUNNING or row.get('run_return_state'):
+        count += 1
     if not stored_window_terms(row).get('recurrence'):
-        return row['due_at'] + int(row['every_seconds']) * (max(1, int(row['max_runs'])) - 1)
+        every = int(row['every_seconds'])
+        remaining = max(0, int(row['max_runs']) - count)
+        before_end = max(0, math.floor((row['until_at'] - row['due_at']) / every))
+        return row['due_at'] + every * min(remaining, before_end)
     slot = row['due_at']
-    for count in range(int(row['run_count']) + 1, int(row['max_runs'])):
+    for count in range(count, int(row['max_runs'])):
         following = next_window_slot({**row, 'due_at': slot, 'run_count': count}, slot)
         if following is None:
             break
@@ -1066,7 +1205,7 @@ class Preparations:
 
     def create(self, *, kind, goal, due_at, timezone, recurrence, channel, created_from, state,
                accepted_by=None, owner=OWNER, window=None, delivery_mode=None, title=None, offer=None, origin=None,
-               report_every_minutes=None, line_id=None, db=None):
+               report_every_minutes=None, line_id=None, requested_until=None, db=None):
         """One new row (idempotent for the same Work, kind, goal and slot).
 
         #574: when another Work already proposed the same kind, goal, due and
@@ -1093,7 +1232,7 @@ class Preparations:
             raise not_run(exc)
         every_seconds = until_at = window_end = max_runs = None
         try:
-            terms = window_terms(window, recurrence, due_at, timezone, report_every_minutes, delivery_mode)
+            terms = window_terms(window, recurrence, due_at, timezone, report_every_minutes, delivery_mode, requested_until)
         except PreparationRefusal as exc:
             raise not_run(exc)
         if window is not None:
@@ -1130,7 +1269,7 @@ class Preparations:
                    'created_from': created_from, 'accepted_by': accepted_by, 'created_at': now, 'updated_at': now,
                    'every_seconds': every_seconds, 'window_end': window_end, 'until_at': until_at,
                    'max_runs': max_runs, 'run_count': 0,
-                   'rule_start': due_at if terms or recurrence and recurrence.startswith('RRULE:') else None,
+                   'rule_start': due_at if window or terms or recurrence and recurrence.startswith('RRULE:') else None,
                    'window_terms': terms, 'last_report_at': None,
                    'delivery_mode': delivery_mode, 'last_decision': None, 'last_decision_reason': None,
                    'last_notified_digest': None, 'last_notified_text': None, 'last_notified_at': None,
@@ -1257,23 +1396,37 @@ class Preparations:
                            (STATE_SCHEDULED, following, revision, row['id']))
         return self.get(preparation_id)
 
-    def edit(self, preparation_id, *, states=(STATE_PROPOSED, STATE_SCHEDULED, STATE_PAUSED), **changes):
+    def edit(self, preparation_id, *, states=(STATE_PROPOSED, STATE_SCHEDULED, STATE_PAUSED), expected_max_runs=None, **changes):
         """Validate schedule changes without accepting a proposal or changing its goal (#575).
 
         ``states`` narrows which states may be edited, checked in the same transaction (#702).
+        ``expected_max_runs`` binds a conversation's displayed count through the atomic write.
         """
         now = self.clock()
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
             row = self._editable(db, preparation_id, states)
-            updates = self.edit_values(row, changes, now)
+            updates = self.preview_edit(row, changes, now, db=db)
+            if expected_max_runs is not None and updates.get('max_runs') != expected_max_runs:
+                raise PreparationRefusal('invalid_edit')
             updates['updated_at'] = now
             db.execute(f"UPDATE preparations SET {','.join(k + '=?' for k in updates)} WHERE id=?",
                        (*updates.values(), preparation_id))
         return self.get(preparation_id)
 
+    def preview_edit(self, row, changes, now, *, db=None):
+        """Use the same recorded slots for a Settings preview and the atomic edit."""
+        if db is None:
+            with self.store.db() as db:
+                return self.preview_edit(row, changes, now, db=db)
+        # A continuation has the same slot key; it never consumes another check.
+        keys = db.execute('SELECT request_key FROM jobs WHERE request_key LIKE ?',
+                          (REQUEST_KEY_PREFIX + row['id'] + ':%',)).fetchall()
+        slots = {float(slot_key(record['request_key']).rsplit(':', 1)[1]) for record in keys}
+        return self.edit_values(row, changes, now, completed_slots=slots)
+
     @staticmethod
-    def edit_values(row, changes, now):
+    def edit_values(row, changes, now, *, completed_slots=None):
         """The same validation for a Settings draft and its application (#575)."""
         if 'goal' in changes or 'goal_text' in changes:
             raise PreparationRefusal('goal_not_editable')
@@ -1294,7 +1447,7 @@ class Preparations:
             # For a one-shot watch, #693 counts the remaining slots from the current due time.
             # A recurring watch's count is per day, independent of any skipped slots today.
             rhythm = terms.get('recurrence')
-            rebased = bool(set(changes) & {'due', 'timezone'})
+            rebased = (due_at, timezone_name) != (row['due_at'], row['timezone'])
             if rebased:
                 updates['last_report_at'] = None
             anchor = due_at if rebased else row.get('rule_start')
@@ -1308,23 +1461,66 @@ class Preparations:
                 if datetime.fromtimestamp(row['due_at'], tz).date() != date:
                     updates['run_count'] = 0
                 done = 0
+            requested = changes.get('until', datetime.fromtimestamp(row['until_at'], zone(timezone_name)).isoformat())
+            requested_until = parse_due(requested, timezone_name, timezone_name, now)[0]
+            if not rebased and requested_until == row['until_at'] and terms.get('requested_until') is not None:
+                # The web form submits unchanged fields too. Keep the owner's end,
+                # then recompute whether the cap still binds the edited schedule.
+                requested_until = terms['requested_until']
+                if rhythm:
+                    local = datetime.fromtimestamp(requested_until, zone(timezone_name))
+                    requested_until = datetime.combine(date, local.time(), tzinfo=zone(timezone_name)).timestamp()
+                requested = datetime.fromtimestamp(requested_until, zone(timezone_name)).isoformat()
+            # A cadence/deadline edit keeps the pending slot. The original
+            # budget anchor validates the allowance, not that slot's reachability.
+            if requested_until <= now or requested_until < due_at:
+                raise PreparationRefusal('invalid_window', msg('preparations.window_until_order',
+                                         value=repr(requested), due=iso(max(now, due_at))))
+            budget_start = start if rhythm else (anchor if anchor is not None else start - done * row['every_seconds'])
             every, until_at, remaining = normalize_window(
                 changes.get('every_minutes', row['every_seconds'] // 60),
-                changes.get('until', datetime.fromtimestamp(row['until_at'], zone(timezone_name)).isoformat()),
-                None, start, timezone_name, now, recurrence=rhythm)
+                requested,
+                None, budget_start, timezone_name, now, recurrence=rhythm)
+            if rhythm:
+                remaining, slots = daily_window_slots(every, start, requested_until, timezone_name, rhythm)
+            else:
+                tz = zone(timezone_name)
+                if completed_slots is None:
+                    completed_slots = [start - row['every_seconds'] * i for i in range(1, done + 1)]
+                used = {}
+                for slot in completed_slots:
+                    day = datetime.fromtimestamp(slot, tz).date()
+                    used[day] = used.get(day, 0) + 1
+                # Legacy/pruned history cannot grant another allowance. Charge
+                # unlocated consumed checks to the pending date conservatively.
+                day = datetime.fromtimestamp(start, tz).date()
+                used[day] = used.get(day, 0) + max(0, done - len(completed_slots))
+                remaining, slots = daily_window_slots(every, start, requested_until, timezone_name, used=used,
+                    allowance=max(0, window_run_cap(budget_start, requested_until, timezone_name) - done))
             if rhythm and until_at < due_at:
                 raise PreparationRefusal('invalid_window', msg('preparations.window_until_order',
                                          value=repr(changes.get('until')), due=iso(due_at)))
-            total = changes.get('max_runs', row['max_runs'])
-            if total not in (None, '') and not 1 <= (_whole_number(total) or 0) <= MAX_WINDOW_RUNS:
+            # Like creation, a changed period derives its allowance unless the
+            # edit explicitly supplies a total. Never retain a silent old cap.
+            total = changes.get('max_runs', None if set(changes) & {'until', 'every_minutes'} else row['max_runs'])
+            if total not in (None, '') and not 1 <= (_whole_number(total) or 0) <= window_run_cap(budget_start, requested_until, timezone_name, rhythm):
                 raise PreparationRefusal('invalid_max_runs')
             runs = done + remaining if total in (None, '') else min(_whole_number(total), done + remaining)
+            if runs < 1:
+                raise PreparationRefusal('invalid_max_runs')
+            cap_shortened = remaining < slots and runs == done + remaining
+            until_at = requested_until
+            if cap_shortened and runs > done:
+                if rhythm:
+                    local = datetime.fromtimestamp(start, zone(timezone_name)).replace(tzinfo=None)
+                    until_at = (local + timedelta(seconds=every * (runs - done - 1))).replace(tzinfo=zone(timezone_name)).timestamp()
+                else:
+                    until_at = start + every * (runs - done - 1)
             updates.update(every_seconds=every, until_at=until_at, window_end=until_at + run_seconds(), max_runs=runs)
-            if terms:
-                report_every_minutes = terms['report_seconds'] // 60 if 'report_seconds' in terms else None
-                updates.update(window_terms=window_terms((every, until_at, runs), terms.get('recurrence'),
-                                                        start, timezone_name, report_every_minutes, row['delivery_mode']),
-                               rule_start=anchor)
+            report_every_minutes = terms['report_seconds'] // 60 if 'report_seconds' in terms else None
+            updated_terms = window_terms((every, until_at, runs), rhythm, budget_start, timezone_name,
+                                         report_every_minutes, row['delivery_mode'], requested_until)
+            updates.update(window_terms=updated_terms, rule_start=anchor if anchor is not None else budget_start)
         else:
             if set(changes) & {'every_minutes', 'until', 'max_runs'}:
                 raise PreparationRefusal('invalid_window', msg('preparations.window_edit',
@@ -1586,7 +1782,7 @@ class Preparations:
                 'run': row['last_run_job_id']}
 
     @staticmethod
-    def wait_refusal(db, work_id, stamp):
+    def wait_refusal(db, work_id, stamp, *, self_set_write=False):
         """``WAIT_CHANGED`` unless Work ``work_id`` is still the current run of the owner-accepted
         preparation version ``stamp`` names (#821); None when it is.
 
@@ -1597,7 +1793,7 @@ class Preparations:
         if not isinstance(stamp, dict):
             return WAIT_CHANGED
         row = db.execute('SELECT * FROM preparations WHERE id=?', (stamp.get('id'),)).fetchone()
-        if not (row and row['accepted_by'] in OWNER_ACCEPTED and row['accepted_by'] == stamp.get('accepted_by')
+        if not (row and row['accepted_by'] in (SELF_SET if self_set_write else OWNER_ACCEPTED) and row['accepted_by'] == stamp.get('accepted_by')
                 and row['state'] == STATE_RUNNING and row['last_run_job_id'] == work_id == stamp.get('run')
                 and row['updated_at'] == stamp.get('revision')):
             return WAIT_CHANGED
@@ -1709,8 +1905,9 @@ class Preparations:
                         raise PreparationRefusal('queue_full') from None
                     return None
             # #580: an extra immediate run does not consume a rule's scheduled count.
+            terms = stored_window_terms(current)
             extra_rule = immediate and (str(current['recurrence'] or '').startswith('RRULE:')
-                                        or bool(current.get('window_terms')))
+                                        or bool(terms.get('recurrence') or terms.get('report_seconds')))
             run = int(current['run_count'] or 0) + (0 if existing or extra_rule else 1)
             db.execute('UPDATE preparations SET state=?,last_run_job_id=?,run_count=?,updated_at=?,run_return_state=? WHERE id=?',
                        (STATE_RUNNING, job_id, run, now, current['state'] if immediate else None, current['id']))

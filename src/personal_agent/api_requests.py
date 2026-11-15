@@ -1223,6 +1223,7 @@ class ApiRequests:
         if identity:
             self._effect_guard(slot, identity)
         idempotency = self._approve(slot, method, url, body, effect, named, path) if effect == 'payment' else identity[:32] if identity else None
+        write_ticket=None
         claim = None
         finish = None
         if slot.get('credential_ref') and getter is None:
@@ -1270,8 +1271,28 @@ class ApiRequests:
                 except Exception:
                     raise ApiError('API 연결이 바뀌어 요청을 보내지 않았습니다.', 'needs_setup',
                                    requires=f"api-slot:{slot['name']}") from None
+            # Judgment/approval follows credential resolution but precedes the
+            # final authority reservation: a connection can change while the AI judges.
+            gate=getattr(self.approvals,'self_set_write',None)
+            if effect=='mutate' and callable(gate):
+                from .browser_session import step_binding
+                binding=step_binding(self.work_id,'api_request',url,f"{slot['name']}|{method}|{url}",
+                                     argument=body or '',state=str(slot.get('revision','')))
+                try:
+                    write_ticket=gate(binding,'slot:'+slot['name'],method,url,('body',) if body else (),description=body,
+                                      values={'connection': slot['name'], 'url': url, 'body': body or ''})
+                except ValueError as exc:
+                    error = ApiError(str(exc),getattr(exc,'code','approval_required'))
+                    if getattr(exc, 'ran', None) is False:
+                        from .agent_runtime import not_run
+                        not_run(error)
+                    raise error from None
             if identity:
-                claim = self._effect_guard(slot, identity, method=method, effect=effect, destination=named)
+                try:
+                    claim = self._effect_guard(slot, identity, method=method, effect=effect, destination=named)
+                except Exception:
+                    if write_ticket:self.approvals.self_set_write_release(write_ticket)
+                    raise
                 if getattr(self, '_payment_ticket', None):
                     self.approvals.payment_autonomy_notice(self._payment_ticket[2])
             attempts += 1
@@ -1291,8 +1312,12 @@ class ApiRequests:
                         self.approvals.payment_autonomy(binding, label, ticket=ticket)
                     except ValueError as exc:
                         raise ApiError(str(exc), 'payment_autonomy_changed') from None
-            except ApiError:
-                if identity:
+                if write_ticket:
+                    try:self.approvals.self_set_write_check(write_ticket)
+                    except ValueError as exc:raise ApiError(str(exc), 'allowance_changed') from None
+            except Exception as exc:
+                if write_ticket:self.approvals.self_set_write_release(write_ticket)
+                if identity and (write_ticket or isinstance(exc, ApiError)):
                     self._release_effect(claim)
                 raise
             from .agent_runtime import handed_off
@@ -1300,6 +1325,7 @@ class ApiRequests:
             try:
                 status, response_headers, raw = self.transport(method, url, headers, body.encode() if body else None, TIMEOUT)
             except Exception as exc:
+                if write_ticket:self.approvals.self_set_write_finished(write_ticket,observed=False)
                 if identity:
                     raise ApiError(UNKNOWN_EFFECT_TEXT, 'effect_unknown', effect='unknown') from None
                 if not _transient(exc):
@@ -1308,11 +1334,14 @@ class ApiRequests:
                     self.sleep(1)
                     continue
                 raise ApiError(f'API가 응답하지 않았습니다({attempts}회 시도). 잠시 후 다시 시도해 주세요.', 'api_unavailable') from None
+            if write_ticket:
+                self.approvals.self_set_write_finished(write_ticket,observed=200<=status<300,rejected=400<=status<500)
             if (status >= 500 or status == 429) and attempts < tries:
                 self.sleep(1)
                 continue
             break
-        if identity and status in REFUSED_STATUSES:
+        response_refused = status in REFUSED_STATUSES or bool(write_ticket) and 400 <= status < 500
+        if identity and response_refused:
             # HTTP authentication/authorization refusal is not an accepted change, and neither is a
             # request the service refused as invalid (#432), so the AI may correct it and send again.
             # Settle before token invalidation; never retry this transport here.
@@ -1325,9 +1354,9 @@ class ApiRequests:
             except Exception:
                 raise ApiError(f"연결 '{slot['name']}'이 그사이 바뀌어 응답을 쓰지 않았습니다. 연결을 다시 확인해 주세요.",
                                'needs_setup', requires=f"connection:{slot['name']}",
-                               effect='unknown' if identity and status not in REFUSED_STATUSES else None,
-                               executed=False if status in REFUSED_STATUSES else None) from None
-        if identity and status not in REFUSED_STATUSES:
+                               effect='unknown' if identity and not response_refused else None,
+                               executed=False if response_refused else None) from None
+        if identity and not response_refused:
             from .api_credentials import fingerprint
             current = self.slots().get(slot['name'])
             if current is None or fingerprint(slot['name'], current) != fingerprint(slot['name'], slot):
@@ -1357,7 +1386,7 @@ class ApiRequests:
             raise ApiError(f"API가 인증을 거절했습니다(HTTP {status}). 슬롯 '{slot['name']}'의 키나 권한을 확인해 주세요." + said,
                            'api_unauthorized', requires=f"api-slot:{slot['name']}", executed=False)
         if status >= 400:
-            refused = status in REFUSED_STATUSES
+            refused = response_refused
             raise ApiError(f'API가 오류로 답했습니다(HTTP {status}, {method} {path}).'
                            + (' 이 경로가 없습니다. 슬롯 설명의 경로를 확인하세요.' if status == 404 else '')
                            + (' 서비스가 이 요청을 처리하지 않아 바뀐 것은 없습니다. 이유를 보고 요청을 고쳐 보내세요.' if refused and identity else '')

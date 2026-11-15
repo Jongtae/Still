@@ -97,12 +97,12 @@ def next_action(row):
 
 
 #: #814: owner-visible names of the categories and settings the conversation may read/change.
-CATEGORY_LABELS = {"payment_autonomy": msg("payment_autonomy.label"), "connections": msg('label.external_connections'), "current_context": msg('label.current_context'), "judgment_ai": msg('label.judgment_ai'), "main_ai": msg('label.main_ai'),
+CATEGORY_LABELS = {"write_allowances": msg("write_allowances.label"), "payment_autonomy": msg("payment_autonomy.label"), "connections": msg('label.external_connections'), "current_context": msg('label.current_context'), "judgment_ai": msg('label.judgment_ai'), "main_ai": msg('label.main_ai'),
                    "owner_model": msg('settings_orchestrator.owner_model_label'), "skills": msg('settings_orchestrator.skills_label'),
                    "phone_link": msg('settings_orchestrator.phone_link_label'), "ai_connections": msg('settings_orchestrator.ai_connections_label'), "api_connections": msg('settings_orchestrator.api_connections_label'),
                    "preparations": msg('settings_orchestrator.preparations_label'), "browser": msg('settings_orchestrator.browser_label'),
                    "developer_mode": msg('conversation_handoff.developer_mode')}
-SETTINGS = {"payment_autonomy": ("enabled",), "current_context": ("enabled", "timezone"), "judgment_ai": ("mode", "model"), "main_ai": ("route", "model"),
+SETTINGS = {"write_allowances": ("allow", "revoke"), "payment_autonomy": ("enabled",), "current_context": ("enabled", "timezone"), "judgment_ai": ("mode", "model"), "main_ai": ("route", "model"),
             # #805 owner-model upkeep: its pause switch and rolling 24-hour call cap.
             # #402: the once-a-day look back over recent requests has its own switch.
             "owner_model": ("enabled", "daily_calls", "dream"),
@@ -123,7 +123,7 @@ SETTINGS = {"payment_autonomy": ("enabled",), "current_context": ("enabled", "ti
             # #183: disconnect one Google connection (``GoogleConnectionRevoker``), confirmed like any draft.
             # #438: connect a place to talk (Telegram) from the terminal conversation; its token is typed there, hidden.
             "connections": ("disconnect", "connect_chat")}
-SETTING_LABELS = {"enabled": msg('label.use'), "timezone": msg('label.time_zone'), "mode": msg('settings_orchestrator.mode_label'), "model": msg('label.model'), "route": msg('settings_orchestrator.route_label'),
+SETTING_LABELS = {"allow": msg("write_allowances.enable"), "revoke": msg("write_allowances.disable"), "enabled": msg('label.use'), "timezone": msg('label.time_zone'), "mode": msg('settings_orchestrator.mode_label'), "model": msg('label.model'), "route": msg('settings_orchestrator.route_label'),
                   "daily_calls": msg('settings_orchestrator.daily_calls_label'), "dream": msg('settings_orchestrator.dream_label'), "add": msg('settings_orchestrator.add_label'),
                   "remove": msg('label.remove'), "send": msg('settings_orchestrator.send_label'), "servers": msg('settings_orchestrator.servers_label'), "review": msg('settings_orchestrator.review_label'), "money": msg('settings_orchestrator.money_label'),
                   "connect": msg('settings_orchestrator.connect_label'), "rung": msg('settings_orchestrator.rung_label'), "undo": msg('settings_orchestrator.undo_label'), "forget": msg('settings_orchestrator.forget_label'), "restore": msg('settings_orchestrator.restore_label'),
@@ -135,6 +135,7 @@ SETTING_LABELS = {"enabled": msg('label.use'), "timezone": msg('label.time_zone'
                      for operation in ('pause', 'resume', 'restore', 'edit', 'run_now')}}
 _CATEGORY_LINE_IDS = {
     'payment_autonomy': 'payment_autonomy.category_line',
+    'write_allowances': 'write_allowances.category_line',
     'connections': 'settings_orchestrator.category_line_connections',
     'current_context': 'settings_orchestrator.category_line_current_context',
     'judgment_ai': 'settings_orchestrator.category_line_judgment_ai',
@@ -178,7 +179,7 @@ _SETTING_VALUE_IDS = {
     msg('settings_orchestrator.new_api_connection'): 'settings_orchestrator.setting_value_new_api',
 }
 # Whole compound labels let the surface translate multiword category names unambiguously.
-_CHANGE_LABELS = {("payment_autonomy", "enabled"): msg("payment_autonomy.label"),
+_CHANGE_LABELS = {("write_allowances", "allow"): msg("write_allowances.enable"), ("write_allowances", "revoke"): msg("write_allowances.disable"), ("payment_autonomy", "enabled"): msg("payment_autonomy.label"),
     ('current_context', 'enabled'): msg('settings_orchestrator.label_current_context_enabled'),
     ('current_context', 'timezone'): msg('settings_orchestrator.label_current_context_timezone'),
     ('judgment_ai', 'mode'): msg('settings_orchestrator.label_judgment_ai_mode'),
@@ -218,7 +219,7 @@ _CHANGE_LABELS = {("payment_autonomy", "enabled"): msg("payment_autonomy.label")
 TRUST_SETTINGS = frozenset({("ai_connections", "servers"), ("ai_connections", "review"), ("ai_connections", "money"),
                             ("ai_connections", "rung"), ("ai_connections", "undo"), ("ai_connections", "forget"),
                             ("ai_connections", "restore")})
-TRUST_CLASS_LABELS = {"read": msg('settings_orchestrator.read_class'), "mutate": msg('label.change'), "payment": msg('settings_orchestrator.payment_class'), "refused": msg('settings_orchestrator.refused_class')}
+TRUST_CLASS_LABELS = {"reversible": msg("write_allowances.reversible"), "irreversible": msg("write_allowances.irreversible"), "read": msg('settings_orchestrator.read_class'), "mutate": msg('label.change'), "payment": msg('settings_orchestrator.payment_class'), "refused": msg('settings_orchestrator.refused_class')}
 TRUST_RUNG_LABELS = {"report": msg('settings_orchestrator.report_rung'), "propose": msg('settings_orchestrator.propose_rung'), "approve": msg('settings_orchestrator.approve_rung'), "mandate": msg('settings_orchestrator.mandate_rung')}
 VALUE_LABELS = {"on": msg('label.on'), "off": msg('label.off'), "follow_main": msg('settings_orchestrator.follow_main_ai'), "explicit": msg('label.separate_configuration')}
 JUDGMENT_MODE_LABELS = {"off": msg('settings_orchestrator.not_used')}
@@ -272,7 +273,7 @@ RECOVERY_DECLINED_MESSAGE = msg('settings_orchestrator.recovery_declined')
 DIRECT_REQUEST_SETTINGS = frozenset({
     ('current_context', 'enabled'), ('current_context', 'timezone'),
     ('owner_model', 'enabled'), ('owner_model', 'daily_calls'), ('owner_model', 'dream'),
-    ('main_ai', 'model'), ('skills', 'remove'), ('payment_autonomy', 'enabled', 'off'),
+    ('main_ai', 'model'), ('skills', 'remove'), ('write_allowances', 'revoke'), ('payment_autonomy', 'enabled', 'off'),
     *(('preparations', operation) for operation in ('cancel', 'accept', 'pause', 'resume', 'restore', 'edit', 'run_now')),
     ('browser', 'close_login'), ('browser', 'use_mobile'), ('connections', 'disconnect'),
     # #705: a presentation preference only.
@@ -459,6 +460,12 @@ class SettingsOrchestrator:
             return getattr(self, "_" + category)()
         except Exception:
             return {"unavailable": UNAVAILABLE_MESSAGE}
+
+    def _write_allowances(self):
+        data=self.service.write_allowance_settings()
+        return {op: self._row(op, '', msg('write_allowances.label'),
+                [{'value': row['connection'], 'label': row['label']} for row in data['connections']],
+                note=data['note'], connections=data['connections']) for op in ('allow','revoke')}
 
     def _payment_autonomy(self):
         mode = self.service.payment_autonomy_settings()
@@ -758,7 +765,11 @@ class SettingsOrchestrator:
             requested = {k: v for k, v in changes.items() if k not in ('id', BOUND_TIMEZONE)}
             if bound is None and 'timezone' not in requested and set(requested) & {'due', 'until', 'rrule', 'recurrence'}:
                 changes[BOUND_TIMEZONE] = current['timezone']
-            prep.Preparations.edit_values(current, requested, self.service.preparations.clock())
+            edited = self.service.preparations.preview_edit(current, requested, self.service.preparations.clock())
+            if current['recurrence'] == prep.RECURRENCE_WINDOW:
+                # Bind the resolved count the owner will see, including when
+                # max_runs was omitted or empty. A later re-derivation is stale.
+                changes['max_runs'] = edited['max_runs']
             return json.dumps(changes, sort_keys=True, ensure_ascii=False), row
         if (category, setting) == ('api_connections', 'connect'):
             from .api_input import value as api_value
@@ -895,6 +906,9 @@ class SettingsOrchestrator:
         return current['revision'] + ':' + current['state'] + ':' + current['epoch']
 
     def _before(self, category, setting, value, row):
+        if category == 'write_allowances':
+            from .self_set_writes import allowance, connections
+            return json.dumps({'allowance': allowance(self.service,value), 'connection': connections(self.service).get(value)}, sort_keys=True)
         if category == 'payment_autonomy':
             return row[setting]['value'] + MODEL_ROUTE_SEP + str(row[setting]['revision'])
         if (category, setting) == ('api_connections', 'connect'):
@@ -974,7 +988,9 @@ class SettingsOrchestrator:
         changes = json.loads(after)
         current = self.service.preparations.get(changes['id'])
         requested = {key: value for key, value in changes.items() if key not in ('id', BOUND_TIMEZONE)}
-        edited = {**current, **prep.Preparations.edit_values(current, requested, self.service.preparations.clock())}
+        edited = {**current, **self.service.preparations.preview_edit(current, requested, self.service.preparations.clock())}
+        if 'max_runs' in requested and edited['max_runs'] != requested['max_runs']:
+            raise SettingsError(STALE_MESSAGE)
         home_zone = self.service.home_zone()
         return msg('settings_orchestrator.preparation_edit_summary',
                    title=redact_known_secrets(self.store, prep.owner_title(current)),
@@ -996,7 +1012,7 @@ class SettingsOrchestrator:
     @staticmethod
     def _digest(row):
         body = {key: row.get(key) for key in ("id", "owner", "channel", "category", "setting", "before", "after", "expires_at")}
-        if row.get('category') == 'payment_autonomy':
+        if row.get('category') in ('payment_autonomy','write_allowances'):
             body.update(work_id=row.get('work_id'), effect=row.get('effect'), note=row.get('note'))
         if "setup_guard" in row:
             body.update(work_id=row.get("work_id"), setup_guard=row["setup_guard"])
@@ -1025,10 +1041,10 @@ class SettingsOrchestrator:
                 or setting == 'connect' and category in ('ai_connections', 'api_connections'))):
             raise SettingsError(msg('settings_orchestrator.resume_unsupported'))
         after, row = self._normalized(category, setting, value, work_id=work_id)
-        if category == 'payment_autonomy' and after == 'on' and work_id:
+        if (category == 'payment_autonomy' and after == 'on' or category == 'write_allowances' and setting == 'allow') and work_id:
             job = self.store.job(work_id) or {}
             if self.service.owner_settings_request(job) is None:
-                raise SettingsError(msg('payment_autonomy.owner_only'))
+                raise SettingsError(msg('write_allowances.owner_only' if category=='write_allowances' else 'payment_autonomy.owner_only'))
         if (category, setting) == ("connections", "connect_chat"):
             # #438: the token is typed in the terminal that asked; no other conversation can show that prompt.
             if not self.service.terminal_surface.in_conversation(channel):
@@ -1132,6 +1148,8 @@ class SettingsOrchestrator:
                     required_tools=', '.join(data['required_tools']) or msg('label.none')),
                 msg('settings_orchestrator.mcp_connect_read_tools', read_tools=', '.join(data['read_tools']) or msg('label.none'),
                     money=msg('settings_orchestrator.yes') if data['money'] else msg('settings_orchestrator.no'))))
+        elif category == 'write_allowances':
+            summary = _CHANGE_LABELS[category,setting] + ': ' + self._describe(category,setting,after,row)
         elif (category, setting) in TRUST_SETTINGS:
             summary = self._trust_summary(setting, after)
         elif (category, setting) == ("phone_link", "send"):
@@ -1195,7 +1213,11 @@ class SettingsOrchestrator:
     def _apply(self, row):
         """Run the service's own setter; ``applied``, or ``requested`` when it only queued the change."""
         category, setting, after = row["category"], row["setting"], row["after"]
-        if category == 'payment_autonomy':
+        if category == 'write_allowances':
+            from .self_set_writes import set_allowance
+            set_allowance(self.service,after,setting=='allow',json.loads(row['before'])['allowance']['revision'],row['owner'],
+                          connection_revision=json.loads(row['before'])['connection']['connection_revision'])
+        elif category == 'payment_autonomy':
             self.service._set_payment_autonomy(after == 'on', int(row['before'].split(MODEL_ROUTE_SEP)[1]))
         elif category == 'api_connections':
             from .api_input import reads_update, start
@@ -1240,14 +1262,23 @@ class SettingsOrchestrator:
             self.__dict__.setdefault("_apply_text", {})[row["id"]] = self.service.close_login_window_by_owner(after)
         elif category == "preparations":
             # #1455: the same operations as the Settings list (#659), confirmed by the owner in the conversation.
-            # #619: only the owner's requested fields reach the edit; the bound timezone was checked above.
+            from . import preparations as prep
+            # The bound timezone was checked above; the displayed window count
+            # must also survive any intervening run/edit until the atomic write.
             if setting == 'pause' and self.service.preparations.owns_running(
                     self.service.preparations.get(after), self.store.job(row.get('work_id'))):
                 self.service.preparations.pause(after, work_id=row.get('work_id'))
             else:
-                self.service.preparation_request({"operation": setting, **({k: v for k, v in json.loads(after).items()
-                                                                            if k != BOUND_TIMEZONE} if setting == "edit"
-                                                                           else {"id": after})})
+                parameters = ({k: v for k, v in json.loads(after).items() if k != BOUND_TIMEZONE}
+                              if setting == "edit" else {"id": after})
+                if setting == 'edit' and 'max_runs' in parameters:
+                    parameters['expected_max_runs'] = parameters['max_runs']
+                try:
+                    self.service.preparation_request({"operation": setting, **parameters})
+                except prep.PreparationRefusal as exc:
+                    if exc.code == 'invalid_edit' and 'expected_max_runs' in parameters:
+                        raise SettingsError(STALE_MESSAGE) from None
+                    raise
             self.__dict__.setdefault("_apply_text", {})[row["id"]] = self._preparation_receipt(setting, after)
         elif category == "skills":
             # #961: the service's own setters; adding returns the installed identity as the answer.
@@ -1437,6 +1468,8 @@ class SettingsOrchestrator:
 
     def _before_covered(self, row, current_before):
         """Exact prior state, or the sole commuting-new-read exception, for apply and renewal."""
+        if row['category'] == 'write_allowances' and row['setting'] == 'revoke':
+            return True
         if current_before == row['before']:
             return True
         if row['category'] != 'ai_connections' or row['setting'] != 'review':
@@ -1702,6 +1735,8 @@ class SettingsOrchestrator:
                                  _observe_only=current['state']=='unknown' if retry else row.get('observe_only',False))
             fresh=self._drafts()[draft['draft_id']]
             if (not self._before_covered(row, draft['before'])
+                    or (row.get('category'), row.get('setting')) == ('preparations', 'edit')
+                    and json.loads(row['after']).get('max_runs') != json.loads(fresh['after']).get('max_runs')
                     or (retry or row.get('category') == 'api_connections') and fresh.get('setup_guard')!=row.get('setup_guard')):
                 # The owner approved the change from the value they saw; a later value is not covered.
                 self._settle(draft["draft_id"], "canceled", None)

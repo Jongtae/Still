@@ -1643,6 +1643,12 @@
   "ja": "；予定終了: {end}",
   "zh": "；计划结束时间：{end}"
  },
+ "preparations.run_daily_cap_end": {
+  "ko": "; 일일 실행 한도 때문에 이번이 마지막 확인이에요. 실제 종료는 {end}이며, 소유자가 요청한 종료 {requested}까지 확인하지 못해요",
+  "en": "; this is the last check because the daily run cap ends the window at {end}, before the owner's requested end of {requested}",
+  "ja": "；1日の実行上限により今回が最後の確認です。実際の終了は{end}で、オーナーが希望した終了{requested}まで確認できません",
+  "zh": "；由于每日运行上限，这是最后一次检查。实际结束时间为{end}，早于主人要求的结束时间{requested}"
+ },
  "preparations.run_delivery": {
   "ko": "이 Work가 끝난 뒤 Still이 답을 {channel} 채널로 전하며, 이 Work가 직접 보내지 않아요.",
   "en": "After this Work ends, Still delivers its reply on {channel}; this Work does not send it itself.",
@@ -10277,10 +10283,16 @@
   "zh": "结束时间"
  },
  "preparations.field_max_runs": {
-  "ko": "최대 실행 횟수",
-  "en": "Maximum runs",
-  "ja": "最大実行回数",
-  "zh": "最大运行次数"
+  "ko": "최대 실행 횟수 (하루 한도 적용)",
+  "en": "Maximum runs (daily limit applies)",
+  "ja": "最大実行回数（1日の上限適用）",
+  "zh": "最大运行次数（适用每日上限）"
+ },
+ "preparations.max_runs_hint": {
+  "ko": "비우면 하루 한도 안에서 모든 확인 시각을 실행해요.",
+  "en": "Leave empty to run every slot within the daily cap.",
+  "ja": "空欄にすると、1日の上限内ですべての確認時刻に実行します。",
+  "zh": "留空则在每日上限内执行所有检查时段。"
  },
  "preparations.saved": {
   "ko": "준비 일정을 변경했어요.",
@@ -10719,6 +10731,12 @@
   "en": "Correct the repeating window.",
   "ja": "繰り返し期間を修正してください。",
   "zh": "请修改重复时间范围。"
+ },
+ "preparations.invalid_max_runs": {
+  "ko": "max_runs는 하루 한도 {daily_limit}번 안의 양의 정수여야 해요. 단발 기간은 24시간 단위로 올림한 일수만큼 한도를 늘려요.",
+  "en": "max_runs must be a positive integer within the daily limit of {daily_limit}. For a one-off window, multiply that limit by its duration in days, rounded up.",
+  "ja": "max_runsは1日の上限{daily_limit}回以内の正の整数が必要です。単発の期間では、24時間単位で切り上げた日数分に上限を増やします。",
+  "zh": "max_runs须为每日上限{daily_limit}次以内的正整数。单次时间范围的上限乘以时长按24小时向上取整的天数。"
  },
  "preparations.window_minutes": {
   "ko": "every_minutes={value}: {minimum}~{maximum} 사이의 정수여야 해요.",
@@ -11417,10 +11435,10 @@
  "zh": "- 最多显示 {limit} 个已记录的保存值匹配标签，其余未显示。"
 },
  "lines.stood_announced": {
-  "en": "{task}\nI will watch this for you and report {promise}. I will only read and report: I will not pay, order, send, change anything or ask for approvals.\nYou asked about this on {days} days.\nSay \"stop\" or use the stop button to end it.",
-  "ko": "{task}\n이 일을 살펴보고 {promise} 보고할게요. 읽고 보고만 하며 결제, 주문, 전송, 변경이나 승인 요청은 하지 않아요.\n이 일에 대해 {days}일에 걸쳐 물어보셨어요.\n\"그만\"이라고 하거나 중지 버튼을 누르면 멈춰요.",
-  "ja": "{task}\nこの件を見守り、{promise}報告します。読むことと報告だけを行い、支払い、注文、送信、変更、承認の依頼はしません。\nこの件について{days}日間にわたり質問されました。\n「停止」と言うか停止ボタンを押すと終了します。",
-  "zh": "{task}\n我会为你关注此事，并{promise}报告。我只读取和报告，不付款、下单、发送、更改任何内容或请求批准。\n你曾在{days}天里询问此事。\n说“停止”或使用停止按钮即可结束。"
+  "en": "{task}\nI will watch this for you and report {promise}. I cannot pay. I will ask before an irreversible or uncertain external change unless you have allowed that connection.\nYou asked about this on {days} days.\nSay \"stop\" or use the stop button to end it.",
+  "ko": "{task}\n이 일을 살펴보고 {promise} 보고할게요. 결제는 하지 않아요. 되돌릴 수 없거나 되돌릴 수 있는지 불확실한 외부 변경은 해당 연결의 변경을 허용하신 경우가 아니면 먼저 확인할게요.\n이 일에 대해 {days}일에 걸쳐 물어보셨어요.\n\"그만\"이라고 하거나 중지 버튼을 누르면 멈춰요.",
+  "ja": "{task}\nこの件を見守り、{promise}報告します。支払いはできません。元に戻せない、または戻せるか不明な外部変更は、その接続での変更を許可されている場合を除き、先に承認を求めます。\nこの件について{days}日間にわたり質問されました。\n「停止」と言うか停止ボタンを押すと終了します。",
+  "zh": "{task}\n我会为你关注此事，并{promise}报告。我不能付款。对于不可撤销或可撤销性不明的外部更改，除非你已允许该连接进行更改，否则我会先请求批准。\n你曾在{days}天里询问此事。\n说“停止”或使用停止按钮即可结束。"
  },
  "lines.list_waiting": {
   "en": "{task} — waiting for its announcement; nothing runs yet.",
@@ -11439,5 +11457,131 @@
   "ko": "이 일은 안내를 기다리고 있어요. 안내가 전달된 뒤에만 실행을 시작해요.",
   "ja": "この仕事はお知らせ待ちです。お知らせが届いてから実行を始めます。",
   "zh": "此职责正在等待告知。告知送达后才会开始工作。"
+ },
+ "write_allowances.label": {
+  "ko": "스스로 준비한 일의 연결별 변경 허용",
+  "en": "Connection write allowances for self-set runs",
+  "ja": "自主的な準備の接続別変更許可",
+  "zh": "自行安排任务的连接写入许可"
+ },
+ "write_allowances.risk": {
+  "ko": "이 연결에서는 스스로 준비한 일이 결제가 아닌 외부 변경을 확인 없이 실행하고 나중에 알려드려요. 되돌릴 수 없는 변경도 포함돼요. 브라우저에는 적용되지 않아요.",
+  "en": "Self-set runs may make non-payment external changes on this connection without asking, including irreversible changes. Still reports them afterwards. This does not cover the browser.",
+  "ja": "この接続では、自主的に準備した作業が支払い以外の外部変更を確認なしで実行し、後でお知らせします。元に戻せない変更も含みます。ブラウザーには適用されません。",
+  "zh": "自行安排的任务可在此连接上执行非付款外部更改，无需逐次确认，包括不可撤销的更改。Still 会在执行后告知您。此许可不适用于浏览器。"
+ },
+ "write_allowances.enable": {
+  "ko": "허용",
+  "en": "Allow",
+  "ja": "許可する",
+  "zh": "允许"
+ },
+ "write_allowances.disable": {
+  "ko": "허용 끄기",
+  "en": "Turn off allowance",
+  "ja": "許可を解除",
+  "zh": "关闭许可"
+ },
+ "write_allowances.confirm": {
+  "ko": "이 연결의 변경 허용 확인",
+  "en": "Confirm allowance for this connection",
+  "ja": "この接続の変更許可を確認",
+  "zh": "确认允许此连接进行更改"
+ },
+ "write_allowances.category_line": {
+  "ko": "연결별 변경 허용: {details}",
+  "en": "Connection write allowances: {details}",
+  "ja": "接続別の変更許可: {details}",
+  "zh": "连接写入许可：{details}"
+ },
+ "write_allowances.payment": {
+  "ko": "스스로 준비한 일은 결제할 수 없어요.",
+  "en": "Self-set runs cannot make payments.",
+  "ja": "自主的に準備した作業では支払いできません。",
+  "zh": "自行安排的任务不能付款。"
+ },
+ "write_allowances.wait": {
+  "ko": "이 변경은 소유자의 확인을 기다려요. 승인되면 한 번 이어가요.",
+  "en": "This change waits for the owner’s approval and continues once if approved.",
+  "ja": "この変更は所有者の承認を待っています。承認後に一度だけ続行します。",
+  "zh": "此更改正在等待所有者批准。批准后仅继续执行一次。"
+ },
+ "write_allowances.unrepresentable": {
+  "ko": "실행 내용을 비밀값 없이 온전히 확인할 수 없어 실행하거나 승인을 요청하지 않았어요.",
+  "en": "The request cannot be reviewed in full without secret values, so it was not run or offered for approval.",
+  "ja": "秘密の値を含めずに実行内容の全体を確認できないため、実行も承認の依頼もしていません。",
+  "zh": "无法在不包含秘密值的情况下完整审核请求，因此未执行，也未请求批准。"
+ },
+ "write_allowances.replayed": {
+  "ko": "이미 보낸 변경은 다시 보내지 않아요.",
+  "en": "This change has already been dispatched and will not be repeated.",
+  "ja": "この変更はすでに送信済みのため、繰り返しません。",
+  "zh": "此更改已发送，不会重复执行。"
+ },
+ "write_allowances.notice": {
+  "ko": "허용한 연결에서 변경 요청을 보냈어요: {connection} · {operation} · {target}.",
+  "en": "A change request was dispatched on an allowed connection: {connection} · {operation} · {target}.",
+  "ja": "許可された接続に変更リクエストを送りました: {connection} · {operation} · {target}。",
+  "zh": "已在获准的连接上发送更改请求：{connection} · {operation} · {target}。"
+ },
+ "write_allowances.reversible": {
+  "ko": "되돌릴 수 있는 변경",
+  "en": "Reversible change",
+  "ja": "元に戻せる変更",
+  "zh": "可撤销的更改"
+ },
+ "write_allowances.irreversible": {
+  "ko": "되돌릴 수 없거나 불확실한 변경",
+  "en": "Irreversible or unknown change",
+  "ja": "元に戻せない、または不明な変更",
+  "zh": "不可撤销或可撤销性未知的更改"
+ },
+ "trust_record.operation_reversible": {
+  "ko": "{operation}: 되돌릴 수 있는 변경",
+  "en": "{operation}: reversible change",
+  "ja": "{operation}: 元に戻せる変更",
+  "zh": "{operation}：可撤销的更改"
+ },
+ "trust_record.operation_irreversible": {
+  "ko": "{operation}: 되돌릴 수 없거나 불확실한 변경",
+  "en": "{operation}: irreversible or unknown change",
+  "ja": "{operation}: 元に戻せない、または不明な変更",
+  "zh": "{operation}：不可撤销或可撤销性未知的更改"
+ },
+ "write_allowances.unknown_notice": {
+  "ko": "허용한 연결에서 요청을 시도했지만 결과는 확인하지 못했어요: {connection} · {operation} · {target}. 반복 실행하지 않아요.",
+  "en": "A request was attempted on an allowed connection, but its outcome is unknown: {connection} · {operation} · {target}. Still will not repeat it.",
+  "ja": "許可された接続にリクエストを試みましたが、結果は確認できません: {connection} · {operation} · {target}。繰り返しません。",
+  "zh": "已尝试在获准的连接上发送请求，但结果未知：{connection} · {operation} · {target}。Still 不会重复执行。"
+ },
+ "write_allowances.changed": {
+  "ko": "연결의 변경 허용 설정이 바뀌어 이 요청은 실행하지 않았어요. 최신 설정을 확인해 주세요.",
+  "en": "The connection allowance changed; this request was not executed. Check the current setting.",
+  "ja": "接続の変更許可が変わったため、このリクエストは実行していません。最新の設定を確認してください。",
+  "zh": "连接许可已更改，此请求未执行。请检查当前设置。"
+ },
+ "write_allowances.owner_only": {
+  "ko": "연결의 변경 허용은 소유자가 직접 시작한 대화나 설정에서 정확한 초안을 확인해야 켤 수 있어요.",
+  "en": "A connection allowance requires the owner to confirm the exact draft in Settings or an owner-started conversation.",
+  "ja": "接続の変更許可には、設定または所有者が開始した会話で正確な下書きの確認が必要です。",
+  "zh": "连接许可需要所有者在设置或自己发起的对话中确认具体草案。"
+ },
+ "write_allowances.local_only": {
+  "ko": "이 컴퓨터의 설정에서 연결의 변경 허용을 확인해 주세요.",
+  "en": "Confirm connection write allowances in Settings on this computer.",
+  "ja": "このコンピューターの設定で接続の変更許可を確認してください。",
+  "zh": "请在此电脑的设置中确认连接写入许可。"
+ },
+ "write_allowances.invalidated": {
+  "ko": "꺼짐: 연결이 변경되어 이전 허용이 만료됐어요.",
+  "en": "Off: the connection changed, so its previous allowance no longer applies.",
+  "ja": "オフ: 接続が変更されたため、以前の許可は無効です。",
+  "zh": "已关闭：连接已更改，之前的许可不再适用。"
+ },
+ "write_allowances.rejected_notice": {
+  "ko": "허용한 연결이 요청을 거절했어요: {connection} · {operation} · {target}.",
+  "en": "The allowed connection rejected the request: {connection} · {operation} · {target}.",
+  "ja": "許可された接続がリクエストを拒否しました: {connection} · {operation} · {target}。",
+  "zh": "获准的连接拒绝了请求：{connection} · {operation} · {target}。"
  }
 }

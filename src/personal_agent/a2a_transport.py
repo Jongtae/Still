@@ -147,7 +147,7 @@ async def fetch_card(url, *, store, credential='', http=None):
 
 
 async def send_message(card, text, message_id, credential='', *, store, http=None, guard=lambda: None,
-                       redact=lambda text: text):
+                       redact=lambda text: text, before_send=lambda: None):
     work_mode.refuse(store, 'a2a')
     card = ParseDict(parse_card(card), AgentCard())
     # The SDK only receives a client restricted to the single confirmed endpoint.
@@ -166,6 +166,7 @@ async def send_message(card, text, message_id, credential='', *, store, http=Non
             # Do not mutate a caller's shared client's default headers.
             if credential:
                 request.headers['Authorization'] = 'Bearer ' + credential
+            before_send()
             response = await http.send(request, stream=True, follow_redirects=False)
             try:
                 content = bytearray()

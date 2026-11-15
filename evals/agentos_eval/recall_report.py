@@ -201,7 +201,7 @@ def run_arm(data, arm, runs=3):
                   getattr(arm, 'deterministic', True), diagnostic=getattr(arm, 'diagnostic', False))
     if arm.phraser is not None:
         _validate_phrasing_fixture(arm.phraser, data)
-    results, phrasings = [], {}
+    results, phrasings, observed = [], {}, {}
     for index in range(1, (1 if arm.deterministic else runs) + 1):
         with tempfile.TemporaryDirectory(prefix='still-recall-') as tmp:
             store = QuickStore(Path(tmp) / 'state')
@@ -214,9 +214,13 @@ def run_arm(data, arm, runs=3):
             results.append(result)
             if hasattr(retriever, 'phrasings'):
                 phrasings[str(index)] = dict(retriever.phrasings)
+            if hasattr(retriever, 'observed'):
+                observed[str(index)] = dict(retriever.observed)
     out = dict(evidence=arm.evidence, deterministic=arm.deterministic, diagnostic=arm.diagnostic, runs=results)
     if phrasings:
         out.update(phrasings=phrasings, phrasing_fixture=results[0]['fixture'], phrasing_cases=_phrasing_cases(data))
+    if observed:
+        out['observed'] = observed
     return out
 
 
@@ -345,6 +349,8 @@ def report(data, results_by_arm, baseline='lexical'):
         if 'phrasings' in result:
             for key in ('phrasings', 'phrasing_fixture', 'phrasing_cases'):
                 arm[key] = result[key]
+        if 'observed' in result:
+            arm['observed'] = result['observed']
         arms[name] = arm
     return dict(version=base['version'], fixture=base['fixture'], today=data['today'], baseline=baseline, arms=arms)
 

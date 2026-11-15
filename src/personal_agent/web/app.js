@@ -1497,7 +1497,7 @@ $('owner-profile-form').onsubmit=event=>{event.preventDefault();const memoryKey=
 // service loop runs when due. 수락 turns a proposal into a schedule, 취소
 // stops every future run, 삭제 removes the row (its past Works stay).
 let preparationRows=null,preparationLoadSequence=0,preparationDeletePending=null,preparationEditPending=null,preparationLabels={};
-function preparationLabel(key){const value=preparationLabels[key];return typeof value==='string'?value:value?.[currentLanguage]||value?.ko||'';}
+function preparationLabel(key){const value=preparationLabels[key],lang=currentLanguage==='zh-CN'?'zh':currentLanguage;return typeof value==='string'?value:value?.[lang]||value?.ko||'';}
 const PREPARATION_ACTIVE=['proposed','scheduled','running','paused'];
 function preparationStateLabel(state){const labels={proposed:t('수락 대기'),scheduled:t('예약됨'),running:t('실행 중'),paused:preparationLabel('paused'),delivered:t('완료'),unknown:t('전달 확인 안 됨'),failed:t('실패'),cancelled:t('취소됨'),expired:t('기한 지남')};return labels[state]||state;}
 function preparationStateKind(state){return {proposed:'attention',scheduled:'active',running:'run',failed:'danger',unknown:'unknown'}[state]||'neutral';}
@@ -1538,8 +1538,8 @@ function preparationEditForm(row){const form=element('form',undefined,'settings-
  const fields=windowed?['due','timezone','every_minutes','until','max_runs']:['due','timezone','recurrence'];
  for(const field of fields){const label=element('label'),input=element(field==='recurrence'?'select':'input');label.append(element('span',preparationLabel(field)));
   if(field==='recurrence'){for(const value of ['none','daily','weekdays','weekly','rule_weekly','rule_monthly']){const option=element('option',value==='rule_weekly'?preparationLabel('weekly_days'):value==='rule_monthly'?preparationLabel('monthly_day'):preparationRepeatLabel(value));option.value=value;input.append(option);}}
-  else{input.type=['due','until'].includes(field)?'datetime-local':['every_minutes','max_runs'].includes(field)?'number':'text';input.required=true;if(input.type==='number'){input.min=field==='every_minutes'?'5':'1';input.max=field==='every_minutes'?'720':'96';}}
-  input.name=field;input.dataset.focusKey='preparation-'+row.id+'-'+field;input.value=field==='due'?row.due_local_input:field==='until'?row.until_local_input:field==='recurrence'?(rule?(rule.FREQ==='MONTHLY'?'rule_monthly':rule.FREQ==='WEEKLY'?'rule_weekly':'daily'):(row.recurrence||'none')):row[field];inputs[field]=input;label.append(input);form.append(label);}
+  else{input.type=['due','until'].includes(field)?'datetime-local':['every_minutes','max_runs'].includes(field)?'number':'text';input.required=field!=='max_runs';if(input.type==='number'){input.min=field==='every_minutes'?'5':'1';if(field==='every_minutes')input.max='720';else if(row.max_window_runs)input.max=String(row.max_window_runs);}}
+  input.name=field;input.dataset.focusKey='preparation-'+row.id+'-'+field;input.value=field==='due'?row.due_local_input:field==='until'?row.until_local_input:field==='recurrence'?(rule?(rule.FREQ==='MONTHLY'?'rule_monthly':rule.FREQ==='WEEKLY'?'rule_weekly':'daily'):(row.recurrence||'none')):row[field];inputs[field]=input;label.append(input);if(field==='max_runs'){const hint=element('span',preparationLabel('max_runs_hint'),'field-hint');hint.id='preparation-'+row.id+'-max-runs-hint';input.setAttribute('aria-describedby',hint.id);label.append(hint);}form.append(label);}
  let ruleChanged=false,monthlyDayChanged=false,endDateChanged=false,section;
  if(!windowed){section=element('fieldset');section.append(element('legend',preparationLabel('rule')));
   const weekdays=element('div');weekdays.append(element('span',preparationLabel('weekly_days')));
@@ -1552,7 +1552,7 @@ function preparationEditForm(row){const form=element('form',undefined,'settings-
   inputs.recurrence.onchange=()=>{ruleChanged=true;section.hidden=inputs.recurrence.value==='none';};section.hidden=inputs.recurrence.value==='none';form.append(section);}
  const save=element('button',preparationLabel('edit'));save.type='submit';form.append(save);
  form.onsubmit=event=>{event.preventDefault();const changes={due:inputs.due.value,timezone:inputs.timezone.value};
-  if(windowed){for(const field of ['every_minutes','until','max_runs'])changes[field]=inputs[field].type==='number'?Number(inputs[field].value):inputs[field].value;}
+  if(windowed){for(const field of ['every_minutes','until','max_runs'])changes[field]=inputs[field].type==='number'&&inputs[field].value!==''?Number(inputs[field].value):inputs[field].value;}
   else{const repeat=inputs.recurrence.value;
    if(rule&&!ruleChanged){changes.rrule=row.recurrence;}
    else if(repeat.startsWith('rule_')||(repeat!=='none'&&inputs.rule_until.value)){
@@ -1577,6 +1577,34 @@ let currentContextClearArmed=false,currentContextTimezoneDirty=false;
 const CURRENT_CONTEXT_KINDS={current_position_report:'요청에 답한 현재 위치',live_position_report:'실시간 위치 공유',place_reference:'장소 참고'};
 const CURRENT_CONTEXT_FRESHNESS={fresh:['최근','ok'],stale:['오래됨','neutral'],reference:['참고용','neutral']};
 let paymentAutonomyRevision=0;
+function renderWriteAllowances(data){
+  let list=$('write-allowances');
+  if(!list){list=document.createElement('section');list.id='write-allowances';list.className='settings-section';$('payment-autonomy-enabled').closest('section').after(list);}
+  if(!data)return;
+  if(!list.allowanceRows){
+    list.allowanceRows=new Map();list.replaceChildren();
+    list.allowanceTitle=document.createElement('h3');list.allowanceNote=document.createElement('p');
+    list.append(list.allowanceTitle,list.allowanceNote);
+  }
+  list.allowanceTitle.textContent=data.label;list.allowanceNote.textContent=data.note;
+  const current=new Set((data.connections||[]).map(row=>row.connection));
+  for(const [key,line] of list.allowanceRows){if(!current.has(key)){line.remove();list.allowanceRows.delete(key);}}
+  for(const row of data.connections||[]){
+    let line=list.allowanceRows.get(row.connection);
+    if(!line){line=document.createElement('div');list.allowanceRows.set(row.connection,line);list.append(line);}
+    const fingerprint=JSON.stringify([row,data.enable,data.disable,data.confirm]);
+    if(line.dataset.state===fingerprint)continue;
+    line.dataset.state=fingerprint;line.replaceChildren();
+    const label=document.createElement('span'),button=document.createElement('button');
+    label.textContent=row.label+' '+(row.reason||'')+' ';button.textContent=row.enabled?data.disable:data.enable;
+    button.onclick=()=>{const enabled=!row.enabled;
+      const save=async()=>{if(line.dataset.state!==fingerprint||!line.isConnected)return;await api('/api/write-allowances',{connection:row.connection,enabled,revision:row.revision,connection_revision:row.connection_revision});await refresh();};
+      if(!enabled)return busy(button,save);
+      const confirm=document.createElement('button');confirm.textContent=data.confirm+' · '+row.label;
+      confirm.onclick=()=>busy(confirm,save);button.disabled=true;line.append(confirm);confirm.focus();
+    };line.append(label,button);
+  }
+}
 function renderPaymentAutonomy(status){if(!status)return;paymentAutonomyRevision=status.revision||0;const toggle=$('payment-autonomy-enabled');if(!toggle.disabled&&$('payment-autonomy-preview').hidden)toggle.checked=!!status.enabled;$('payment-autonomy-risk').textContent=t(PAYMENT_AUTONOMY_RISK);}
 const PAYMENT_AUTONOMY_RISK="켜 두면 소유자의 AI가 건별 확인 없이 스스로 판단해 결제·주문·송금할 수 있어요. 예약 실행 중에도 적용돼요. 웹 페이지나 도구 결과의 지시가 AI를 속여 잘못 결제하게 할 수도 있어요. 끄면 아직 보내지 않은 결제부터 건별 승인을 요구해요.";
 // #662: turning on shows the risk and waits for the owner's own confirm; turning off applies at once.
@@ -1928,7 +1956,7 @@ async function refresh(){
  if(!authenticated)return;if(refreshing){refreshQueued=true;return;}refreshing=true;const requestedModelRevision=modelLoadRevision,requestedRootsRevision=rootsLoadRevision,requestedFileWorkspaceRevision=fileWorkspaceLoadRevision;$('task-refresh-state').textContent=t('확인 중…');
  try{
   const [summary,home,state,space]=await Promise.all([api('/api/tasks'),api('/api/home'),api('/api/state'),api('/api/personal-space')]);const previousTasks=new Map((taskProgress?.tasks||[]).map(task=>[task.id,task]));lastHome=home;lastState=state;lastSpace=space;taskProgress=mergeTaskProgress(summary,taskProgress,state.jobs);renderTasks();for(const id of new Set([...openTraces,...openTechnical])){const before=previousTasks.get(id),after=taskProgress.tasks.find(task=>task.id===id);void refreshSelectedTaskDetail(before,after,loadTaskDetail);}renderMemoryCandidateSummary(space);refreshSavedMemory(space);renderWorkspaces(home,state);loadWorkspaceResultSummaries(home.workspaces);
-  const settings=state.settings||{};renderExecutionConnection(settings);renderFileAccess(settings);renderDecisionRoute(settings);renderSubscriptionEngines(settings.subscription_engines);renderTelegram(settings);googleClientAvailable=Boolean(settings.google_client?.available);renderConnectors(settings.google_services);renderGoogleClient(settings.google_client);renderAiConnections(settings.ai_connections);renderSearchProviders(settings.search_providers);renderBrowser(settings.browser);renderContext(settings.context_inbox);renderCurrentContext(settings.current_context);renderPaymentAutonomy(settings.payment_autonomy);renderWorkMode(settings.work_mode);renderIntranet(settings.intranet);renderMattermost(settings.mattermost);renderSlack(settings.slack);void renderA2aPeers();renderConnectionAttention(settings);renderDocumentBoundary(settings.document_boundary);renderDiagnostics(state,taskProgress.tasks);const runtime=$('runtime-badge');const runtimeState=home.state==='working'?['작업 중','run']:home.state==='attention'?['확인 필요','attention']:home.state==='ready'?['준비됨','neutral']:['상태 알 수 없음','unknown'];runtime.textContent=t(runtimeState[0]);runtime.className='badge '+runtimeState[1];document.body.classList.remove('offline');$('nav-settings-dot').classList.toggle('on',[...document.querySelectorAll('#view-settings .settings-row>.settings-state.attention')].some(node=>!node.closest('.folder-edit')&&!node.parentElement.hasAttribute('data-inactive')&&!node.parentElement.querySelector('.settings-inline-confirm')));lastSuccessfulRefresh=Date.now();
+  const settings=state.settings||{};renderExecutionConnection(settings);renderFileAccess(settings);renderDecisionRoute(settings);renderSubscriptionEngines(settings.subscription_engines);renderTelegram(settings);googleClientAvailable=Boolean(settings.google_client?.available);renderConnectors(settings.google_services);renderGoogleClient(settings.google_client);renderAiConnections(settings.ai_connections);renderSearchProviders(settings.search_providers);renderBrowser(settings.browser);renderContext(settings.context_inbox);renderCurrentContext(settings.current_context);renderPaymentAutonomy(settings.payment_autonomy);renderWriteAllowances(settings.write_allowances);renderWorkMode(settings.work_mode);renderIntranet(settings.intranet);renderMattermost(settings.mattermost);renderSlack(settings.slack);void renderA2aPeers();renderConnectionAttention(settings);renderDocumentBoundary(settings.document_boundary);renderDiagnostics(state,taskProgress.tasks);const runtime=$('runtime-badge');const runtimeState=home.state==='working'?['작업 중','run']:home.state==='attention'?['확인 필요','attention']:home.state==='ready'?['준비됨','neutral']:['상태 알 수 없음','unknown'];runtime.textContent=t(runtimeState[0]);runtime.className='badge '+runtimeState[1];document.body.classList.remove('offline');$('nav-settings-dot').classList.toggle('on',[...document.querySelectorAll('#view-settings .settings-row>.settings-state.attention')].some(node=>!node.closest('.folder-edit')&&!node.parentElement.hasAttribute('data-inactive')&&!node.parentElement.querySelector('.settings-inline-confirm')));lastSuccessfulRefresh=Date.now();
   if(requestedRootsRevision===rootsLoadRevision)renderRootList(settings.file_roots||[]);
   if(requestedFileWorkspaceRevision===fileWorkspaceLoadRevision)renderFileWorkspace(settings.file_workspace);
   void loadFolderRequests();
