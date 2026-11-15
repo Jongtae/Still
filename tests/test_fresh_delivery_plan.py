@@ -482,7 +482,7 @@ def test_frontier_885_records_explicit_eval_judge_scope():
     assert 'tests/test_eval_judge_explicit.py' in unit['tests'][0]
     activation = items['FRONTIER-01']['completed_substeps'][name]
     assert activation['issue'] == 885 and activation['status'] == 'complete-on-merge'
-    assert activation['pull_request'] == 'TBD'
+    assert activation['pull_request'] == '886'
     assert '#885 (FRONTIER-EVAL-JUDGE-01) is selected inside #822' in current['next_goal']['action']
 
 
