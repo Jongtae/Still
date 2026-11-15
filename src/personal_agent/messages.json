@@ -11446,6 +11446,30 @@
  "ja": "- 記録済みの保管情報の一致ラベルは {limit} 件まで表示します。残りは表示していません。",
  "zh": "- 最多显示 {limit} 个已记录的保存值匹配标签，其余未显示。"
 },
+ "lines.stood_announced": {
+  "en": "{task}\nI will watch this for you and report {promise}. I cannot pay. I will ask before an irreversible or uncertain external change unless you have allowed that connection.\nYou asked about this on {days} days.\nSay \"stop\" or use the stop button to end it.",
+  "ko": "{task}\n이 일을 살펴보고 {promise} 보고할게요. 결제는 하지 않아요. 되돌릴 수 없거나 되돌릴 수 있는지 불확실한 외부 변경은 해당 연결의 변경을 허용하신 경우가 아니면 먼저 확인할게요.\n이 일에 대해 {days}일에 걸쳐 물어보셨어요.\n\"그만\"이라고 하거나 중지 버튼을 누르면 멈춰요.",
+  "ja": "{task}\nこの件を見守り、{promise}報告します。支払いはできません。元に戻せない、または戻せるか不明な外部変更は、その接続での変更を許可されている場合を除き、先に承認を求めます。\nこの件について{days}日間にわたり質問されました。\n「停止」と言うか停止ボタンを押すと終了します。",
+  "zh": "{task}\n我会为你关注此事，并{promise}报告。我不能付款。对于不可撤销或可撤销性不明的外部更改，除非你已允许该连接进行更改，否则我会先请求批准。\n你曾在{days}天里询问此事。\n说“停止”或使用停止按钮即可结束。"
+ },
+ "lines.list_waiting": {
+  "en": "{task} — waiting for its announcement; nothing runs yet.",
+  "ko": "{task} — 안내를 기다리고 있어요. 아직 실행하지 않아요.",
+  "ja": "{task} — お知らせ待ちです。まだ実行しません。",
+  "zh": "{task} — 等待告知，尚未运行。"
+ },
+ "lines.inferred": {
+  "en": "(inferred)",
+  "ko": "(추론)",
+  "ja": "（推測）",
+  "zh": "（推断）"
+ },
+ "lines.refused_line_not_announced": {
+  "en": "This responsibility is waiting for its announcement. No work starts until it is delivered.",
+  "ko": "이 일은 안내를 기다리고 있어요. 안내가 전달된 뒤에만 실행을 시작해요.",
+  "ja": "この仕事はお知らせ待ちです。お知らせが届いてから実行を始めます。",
+  "zh": "此职责正在等待告知。告知送达后才会开始工作。"
+ },
  "preparations.self_change_refused": {
   "en": "No change was proposed or applied. A scheduled run may only cancel, pause or narrow its own current preparation, and cannot repeat a change the owner undid. Explain this in the run answer.",
   "ko": "변경을 제안하거나 적용하지 않았어요. 예약 실행은 현재 자신이 실행 중인 준비만 취소·일시 중지·축소할 수 있고, 소유자가 되돌린 준비를 다시 변경할 수 없어요. 실행 답변에 이를 설명하세요.",

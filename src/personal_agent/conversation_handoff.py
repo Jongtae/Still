@@ -1306,7 +1306,7 @@ class ConversationJudgments:
         return self.policy.structured(decision), decision
 
     def owner_model_dream(self, turns, profile, working_notes, previous_diary, clock, work_id=None, cancelled=None,
-                          preparations='', earlier=''):
+                          preparations='', earlier='', lines=''):
         """``(data, decision)``: one look back over the requests since the last one (#402, the "dream").
 
         One ``structured`` call over the turns (each scrubbed by its own Work's values by the
@@ -1328,9 +1328,10 @@ class ConversationJudgments:
         # #496: caller-bounded and scrubbed per Work, then redacted like turns; absent when there are no earlier misses.
         if earlier:
             facts = {'turns': facts.pop('turns'), 'earlier_misses': self.redact(earlier), **facts}
+        facts['lines'] = self.redact(lines) or 'none'
         # Once a day and off the conversation: the engine's strongest model, with the longer bound it may need.
         context = self._context(DREAM_PURPOSE, facts, work_id=work_id,
-                                uncut=('turns', 'owner_profile', 'working_notes', 'preparations') +
+                                uncut=('turns', 'owner_profile', 'working_notes', 'preparations', 'lines') +
                                       (('earlier_misses',) if earlier else ()),
                                 cancelled=cancelled, strongest=True, timeout=DREAM_TIMEOUT_SECONDS)
         method = getattr(self.engine, 'structured', None)
