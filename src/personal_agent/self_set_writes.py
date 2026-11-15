@@ -27,7 +27,11 @@ def connections(service):
             key = f'connector:{engine}|owner-mcp|{name}'
             rows.setdefault(key, {'label': name, 'connection_revision': json.dumps(['','',owner_mcp.server_revision(service.store,engine,name)])})
     for name, slot in {**service.connection_slots({}), **api_requests.slots(service.store)}.items():
-        rows['slot:' + name] = {'label': name, 'connection_revision': str(slot.get('revision', ''))}
+        revision = str(slot.get('revision', ''))
+        # Separate write grants carry authority too; preserve legacy identities when absent.
+        if slot.get('write_grant_revisions'):
+            revision = json.dumps([revision, slot['write_grant_revisions']], sort_keys=True)
+        rows['slot:' + name] = {'label': name, 'connection_revision': revision}
     for key, peer in service.a2a_peers.rows().items():
         if not peer.get('removed') and not peer.get('blocked'):
             rows['peer:' + key] = {'label': peer.get('card', {}).get('name', key),

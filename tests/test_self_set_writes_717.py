@@ -76,6 +76,85 @@ class Writes(_Runs):
     def started_self(self):
         return self.started(accepted_by=prep.ACCEPTED_DREAM)
 
+    def gmail_slot_revisions(self, grants):
+        from types import SimpleNamespace
+        from personal_agent import connection_slots
+        from personal_agent.connector_contract import ConnectorState
+        registry = mock.Mock()
+        registry.status.side_effect = lambda owner, name: SimpleNamespace(
+            state=ConnectorState.CONNECTED if name in grants else ConnectorState.DISCONNECTED,
+            connection_revision=grants.get(name, ''))
+        source = SimpleNamespace(connector_registry=registry, gmail_modify_oauth=object())
+        return mock.patch.object(self.service, 'connection_slots',
+                                 side_effect=lambda job: connection_slots.build(source, 'local-owner'))
+
+    def test_subordinate_grant_changes_invalidate_settings_and_hold_new_writes(self):
+        from personal_agent import self_set_writes
+        _, job = self.started_self()
+        for before in (None, 'filters-1'):
+            with self.subTest(before=before):
+                grants = {'gmail-modify': 'modify-1'}
+                if before is not None:
+                    grants['gmail-filters'] = before
+                with self.gmail_slot_revisions(grants):
+                    revision = allowance(self.service, 'slot:gmail')['revision']
+                    set_allowance(self.service, 'slot:gmail', True, revision, 'owner')
+                    grants['gmail-filters'] = 'filters-2'
+                    row = next(row for row in self_set_writes.settings(self.service)['connections']
+                               if row['connection'] == 'slot:gmail')
+                    self.assertFalse(row['enabled'])
+                    self.assertTrue(row['reason'])
+                    binding = step_binding(job['id'], 'api_request', 'https://gmail.googleapis.com',
+                                           'settings/filters', argument=str(before))
+                    with self.assertRaises(ToolError) as raised:
+                        self.service.self_set_write(job, binding, 'slot:gmail', 'POST', 'settings/filters',
+                                                    effect='irreversible', request=False)
+                    self.assertEqual(raised.exception.code, 'approval_required')
+
+    def test_subordinate_grant_changes_refuse_previously_authorized_ticket(self):
+        _, job = self.started_self()
+        for before in (None, 'filters-1'):
+            with self.subTest(before=before):
+                grants = {'gmail-modify': 'modify-1'}
+                if before is not None:
+                    grants['gmail-filters'] = before
+                with self.gmail_slot_revisions(grants):
+                    revision = allowance(self.service, 'slot:gmail')['revision']
+                    set_allowance(self.service, 'slot:gmail', True, revision, 'owner')
+                    binding = step_binding(job['id'], 'api_request', 'https://gmail.googleapis.com',
+                                           'settings/filters', argument=str(before))
+                    ticket = self.service.self_set_write(job, binding, 'slot:gmail', 'POST', 'settings/filters',
+                                                         effect='irreversible')
+                    self.assertTrue(ticket['allowance'])
+                    self.service.self_set_write_check(job, ticket)
+                    grants['gmail-filters'] = 'filters-2'
+                    with self.assertRaises(ToolError) as raised:
+                        self.service.self_set_write_check(job, ticket)
+                    self.assertEqual(raised.exception.code, 'allowance_changed')
+        with self.store.db() as db:
+            statuses = [row['status'] for row in db.execute(
+                "SELECT status FROM tool_events WHERE job_id=? AND tool='self_set_write' ORDER BY id", (job['id'],))]
+        self.assertEqual(statuses, ['not_run', 'not_run'])
+
+    def test_slot_allowance_identity_preserves_no_grants_and_sorts_grants(self):
+        from personal_agent import self_set_writes
+        grants = {'gmail-modify': 'modify-1'}
+        with self.gmail_slot_revisions(grants):
+            slots = self.service.connection_slots({})
+        with mock.patch.object(self.service, 'connection_slots', return_value=slots):
+            slot = slots['gmail']
+            set_allowance(self.service, 'slot:gmail', True, 0, 'owner')
+            self.assertEqual(allowance(self.service, 'slot:gmail')['connection_revision'], 'modify-1')
+            slot['write_grant_revisions'] = {}
+            row = lambda: next(row for row in self_set_writes.settings(self.service)['connections']
+                               if row['connection'] == 'slot:gmail')
+            self.assertTrue(row()['enabled'])
+            slot['write_grant_revisions'] = {'grant-b': 'b-1', 'grant-a': 'a-1'}
+            set_allowance(self.service, 'slot:gmail', True, 1, 'owner')
+            slot['write_grant_revisions'] = {'grant-a': 'a-1', 'grant-b': 'b-1'}
+            slot.update(note='Updated display text', max_age_seconds=60, token=lambda: 'renewed-token')
+            self.assertTrue(row()['enabled'])
+
     def test_unknown_waits_exact_approval_continues_once(self):
         row,job=self.started_self()
         args=self.args('{"note":"owner can review this value"}')
