@@ -212,7 +212,10 @@ def test_repetition_spread_over_difference_is_inconclusive():
 
 
 def test_stable_equal_results_have_no_gain():
-    result = compare(report(), report())
+    baseline, candidate = report(), report()
+    assert 'judge' not in baseline and 'judge' not in candidate
+    result = compare(baseline, candidate)
+    assert result['comparable'] is True
     assert result['heldout']['verdict'] == 'no-gain'
     assert result['heldout']['fixed'] == result['heldout']['regressed'] == []
 

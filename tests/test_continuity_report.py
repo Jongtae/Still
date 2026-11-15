@@ -899,7 +899,7 @@ def test_c2_judgment_timeout_reaches_task_and_metadata(rubric, tmp_path, monkeyp
     monkeypatch.setattr(cli, 'cmd_sweep', lambda ns: real_sweep(
         ns, task_factory=factory, inspect_eval=evaluate, key_loader=lambda _: 'fixture'))
     with redirect_stdout(io.StringIO()):
-        assert cli.main(['continuity', 'run', '--rubric', str(rubric[1]), *extra]) == 0
+        assert cli.main(['continuity', 'run', '--judge', 'fixture-judge', '--rubric', str(rubric[1]), *extra]) == 0
     result = json.loads(next((tmp_path / 'reports').glob('*.c2.json')).read_text())
     assert result['live_evidence']['judgment_timeout'] == timeout
     assert len(captured) == 1

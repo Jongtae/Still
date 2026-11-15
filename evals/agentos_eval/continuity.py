@@ -296,6 +296,8 @@ def judgment_ai_status(samples):
 def build_report(records, run, fixture, labels=None):
     """Pure aggregation over records_from_samples plus frozen pre-run provenance."""
     run = normalize_run(run)
+    from .report import judge_provenance
+    run = judge_provenance(records, run)
     samples = []
     definitions = {s: split for split, ids in fixture['scenario_ids'].items() for s in ids}
     for record in records:
@@ -314,10 +316,8 @@ def build_report(records, run, fixture, labels=None):
         rows = [r for r in samples if r['split'] == split]
         splits[split] = {'scenarios': {ident: _group([r for r in rows if r['scenario'] == ident]) for ident in ids},
                          'totals': _group(rows)}
-    cost = {}
-    for metric in ('input_tokens', 'output_tokens', 'usd'):
-        values = [call.get(metric, 'unavailable') for row in samples for call in row.get('judge_usage', {}).values() if call]
-        cost[metric] = sum(values) if all(type(v) in (float, int) for v in values) else 'unavailable'
+    from .budget import judge_totals
+    cost = {k: v for k, v in judge_totals(samples).items() if k != 'calls'}
     readiness = judgment_ai_status(samples)
     report = {'version': 'continuity-report-v1', 'fixture_support': copy.deepcopy(fixture),
               'live_evidence': {**{k: v for k, v in run.items() if k != 'continuity'}, 'seed': 'fresh', 'evidence_class': EVIDENCE, 'splits': splits,
@@ -378,6 +378,8 @@ def render_markdown(report):
              '| revision | worker | judge model | epochs | seed | run id |',
              '| --- | --- | --- | --- | --- | --- |',
              '| ' + ' | '.join(_cell(run.get(k)) for k in ('git_head', 'worker', 'judge', 'epochs', 'seed', 'id')) + ' |', '']
+    if run.get('judge_model_resolved'):
+        lines += [f"Judge resolved model ids: {run['judge_model_resolved']}", '']
     readiness = judgment_ai_status(report['samples'])
     if readiness['warning']:
         lines += [f"**{readiness['warning']}**", '']
@@ -481,6 +483,8 @@ def _change(a, b, direction, uncertain=False):
 
 def compare(baseline, candidate, *, allow_partial=False):
     """Strict paired identities from recall_pairs.compare, never a pooled trend."""
+    from .report import require_same_judge
+    require_same_judge(baseline['live_evidence'], candidate['live_evidence'])
     for report in (baseline, candidate):
         if report['live_evidence'].get('stopped'):
             raise ValueError('Cannot compare a stopped C2 report')
@@ -497,7 +501,7 @@ def compare(baseline, candidate, *, allow_partial=False):
         if af[key] != bf[key]:
             raise ValueError(f'Cannot compare different {key}')
     ar, br = baseline['live_evidence'], candidate['live_evidence']
-    for key in ('worker', 'epochs', 'judge'):
+    for key in ('worker', 'epochs'):
         if ar[key] != br[key]:
             raise ValueError(f'Cannot compare different {key}')
     pair_key = lambda r: (r['scenario'], r['worker'], r['epoch'])
