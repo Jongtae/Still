@@ -675,6 +675,14 @@ class PreparationsService:
                       else msg('preparations.run_last'))
             if row.get('until_at') is not None:
                 schedule+=msg('preparations.run_end',end=local(row['until_at']))
+            terms=prep.stored_window_terms(row)
+            if recurrence==prep.RECURRENCE_WINDOW and following is None and terms.get('requested_until') is not None:
+                requested=terms['requested_until']
+                if terms.get('recurrence'):
+                    tz=prep.zone(row['timezone'])
+                    requested=datetime.combine(datetime.fromtimestamp(row['until_at'],tz).date(),
+                                               datetime.fromtimestamp(requested,tz).time(),tzinfo=tz).timestamp()
+                schedule+=msg('preparations.run_daily_cap_end',end=local(row['until_at']),requested=local(requested))
             delivery=msg('preparations.run_delivery_needed' if row.get('delivery_mode')==prep.DELIVERY_WHEN_NEEDED
                          else 'preparations.run_delivery',channel=row['channel'])
             return msg('preparations.run_record',

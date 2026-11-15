@@ -31,6 +31,15 @@ class DailyCapTests(unittest.TestCase):
         self.assertEqual(self.normalize(until=DUE + timedelta(days=1))[2], 288)
         self.assertEqual(self.normalize(until=DUE + timedelta(days=31))[2], 31 * 288)
 
+    def test_daily_cap_wording_in_all_locales(self):
+        for lang, daily in (('ko', '일일'), ('en', 'daily'), ('ja', '1日'), ('zh', '每日')):
+            with self.subTest(lang=lang):
+                fact = msg('preparations.run_daily_cap_end', lang, end='09:05', requested='10:00')
+                self.assertIn(daily, fact)
+                self.assertIn('09:05', fact)
+                self.assertIn('10:00', fact)
+        self.assertIn('每日上限', msg('preparations.field_max_runs', 'zh'))
+
     def test_partial_days_and_inclusive_endpoints(self):
         due = DUE.replace(hour=23, minute=50)
         with patch.object(prep, 'MAX_DAILY_WINDOW_RUNS', 3):
@@ -69,6 +78,38 @@ class DailyCapTests(unittest.TestCase):
         self.assertEqual(runs, 288)
         self.assertEqual(end, due.timestamp() + every * 287)
 
+    def test_explicit_total_below_daily_prefix_keeps_the_owners_end(self):
+        requested = DUE.replace(hour=20).timestamp()
+        for rhythm in (None, 'weekdays'):
+            with self.subTest(rhythm=rhythm), patch.object(prep, 'MAX_DAILY_WINDOW_RUNS', 5):
+                window = self.normalize(runs=2, recurrence=rhythm)
+                self.assertEqual(window, (300, requested, 2))
+                terms = prep.window_terms(window, rhythm, DUE.timestamp(), 'Asia/Seoul', None, None, requested)
+                self.assertNotIn('requested_until', json.loads(terms or '{}'))
+                self.assertNotIn('covering_every_minutes', json.loads(terms or '{}'))
+
+    def test_cadence_edit_counts_completed_checks_on_each_date(self):
+        row = dict(due_at=DUE.replace(minute=10).timestamp(), timezone='Asia/Seoul', recurrence=prep.RECURRENCE_WINDOW,
+                   window_terms=None, rule_start=DUE.timestamp(), run_count=2, every_seconds=300,
+                   until_at=DUE.replace(hour=20).timestamp(), max_runs=3, delivery_mode=prep.DELIVERY_WHEN_NEEDED)
+        with patch.object(prep, 'MAX_DAILY_WINDOW_RUNS', 3):
+            updated = prep.Preparations.edit_values(row, {'every_minutes': 10}, DUE.timestamp() - 60)
+        self.assertEqual(updated['max_runs'], 3)
+        self.assertEqual(updated['until_at'], row['due_at'])
+        self.assertEqual(prep.stored_window_terms(updated)['requested_until'], row['until_at'])
+
+    def test_cadence_edit_does_not_charge_previous_dates_to_the_pending_date(self):
+        pending = DUE.replace(hour=0, minute=10)
+        prior = [pending - timedelta(minutes=20), pending - timedelta(minutes=5)]
+        row = dict(due_at=pending.timestamp(), timezone='Asia/Seoul', recurrence=prep.RECURRENCE_WINDOW,
+                   window_terms=None, rule_start=prior[0].timestamp(), run_count=2, every_seconds=300,
+                   until_at=(pending + timedelta(days=1)).timestamp(), max_runs=6, delivery_mode=prep.DELIVERY_WHEN_NEEDED)
+        with patch.object(prep, 'MAX_DAILY_WINDOW_RUNS', 3):
+            updated = prep.Preparations.edit_values(row, {'every_minutes': 10}, prior[0].timestamp() - 60,
+                                                   completed_slots=[slot.timestamp() for slot in prior])
+        self.assertEqual(updated['max_runs'], 4, 'one check on this date leaves two checks, despite a changed cadence')
+        self.assertEqual(updated['until_at'], pending.timestamp() + 600)
+
     def test_lengthening_a_one_off_edit_uses_the_same_daily_bound(self):
         row = dict(due_at=DUE.timestamp(), timezone='Asia/Seoul', recurrence=prep.RECURRENCE_WINDOW,
                    window_terms=None, rule_start=None, run_count=0, every_seconds=300,
@@ -105,7 +146,7 @@ class DailyCapTests(unittest.TestCase):
 
 
 class WindowCapFlowTests(_WatchCase):
-    def schedule(self, *, recurrence=None, until=None):
+    def schedule(self, *, recurrence=None, until=None, max_runs=None):
         self.now = DUE.timestamp() - 60
         self.judge = watch_engine([False] * 6, preparation=True)
         self.service.use_decision_engine(self.judge)
@@ -113,6 +154,8 @@ class WindowCapFlowTests(_WatchCase):
                     until=(until or DUE.replace(hour=20)).isoformat(), every_minutes='5', delivery='when_needed')
         if recurrence:
             args['recurrence'] = recurrence
+        if max_runs is not None:
+            args['max_runs'] = str(max_runs)
         self.script = [{'content': None, 'tool_calls': [call('watch', 'schedule_preparation', **args)]},
                        {'content': '정한 시각에 확인할게요.'}]
         self.receive('정한 시간대에 새 결과가 있는지 계속 살펴봐 줘.')
@@ -163,7 +206,10 @@ class WindowCapFlowTests(_WatchCase):
         fact = self.service.preparation_run_fact(work)
         self.assertIn(msg('preparations.run_last'), fact)
         self.assertIn(msg('preparations.run_end', end=prep.local_text(end.timestamp(), 'Asia/Seoul')), fact)
-        self.assertNotIn('10:00', fact)
+        shortfall = msg('preparations.run_daily_cap_end', end=prep.local_text(end.timestamp(), 'Asia/Seoul'),
+                        requested=prep.local_text(DUE.replace(hour=10).timestamp(), 'Asia/Seoul'))
+        self.assertIn(shortfall, fact)
+        self.assertIn('10:00', fact)
         self.script = [{'content': '09:05에 마지막 확인을 마쳤어요.'}] * 2
         self.assertTrue(self.service.run_one())
         self.service.deliver_one()
@@ -175,6 +221,53 @@ class WindowCapFlowTests(_WatchCase):
         self.assertEqual(final['last_decision_reason'], prep.REASON_WINDOW_CLOSED)
         self.assertEqual(prep.stored_window_terms(final)['requested_until'], DUE.replace(hour=10).timestamp())
         self.assertEqual(len(self.runs(final['id'])), 2)
+
+    def test_uncapped_last_run_fact_has_no_daily_cap_shortfall(self):
+        self.schedule(until=DUE.replace(minute=5))
+        self.run_slot('변화가 없어요.')
+        self.now = DUE.replace(minute=5).timestamp() + 1
+        self.assertTrue(self.tick())
+        row = self.service.preparations.get(self.watched['id'])
+        fact = self.service.preparation_run_fact(self.store.job(row['last_run_job_id']))
+        self.assertIn(msg('preparations.run_last'), fact)
+        self.assertNotIn(msg('preparations.run_daily_cap_end',
+                             end=prep.local_text(row['until_at'], 'Asia/Seoul'),
+                             requested=prep.local_text(row['until_at'], 'Asia/Seoul')), fact)
+        self.assertNotIn('일일 실행 한도', fact)
+
+    def test_explicit_total_is_not_reported_as_a_daily_cap_shortfall(self):
+        with patch.object(prep, 'MAX_DAILY_WINDOW_RUNS', 5):
+            result = self.schedule(max_runs=2)
+        self.assertEqual(result['until'], prep.iso(DUE.replace(hour=20).timestamp(), 'Asia/Seoul'))
+        self.assertNotIn('requested_until', result)
+        self.assertNotIn('covering_every_minutes', result)
+
+    def test_edit_uses_recorded_checks_after_multiple_cadence_changes(self):
+        self.schedule()
+        self.run_slot('변화가 없어요.')
+        self.run_slot('변화가 없어요.')
+        with patch.object(prep, 'MAX_DAILY_WINDOW_RUNS', 3):
+            # A second cadence edit must still count the checks that really ran at 09:00 and 09:05.
+            self.service.preparations.edit(self.watched['id'], every_minutes=10)
+            edited = self.service.preparations.edit(self.watched['id'], every_minutes=5)
+        self.assertEqual((edited['run_count'], edited['max_runs']), (2, 3))
+        self.assert_honest(edited, DUE.replace(minute=10))
+
+    def test_web_edit_recomputes_shortfall_even_with_all_unchanged_fields(self):
+        with patch.object(prep, 'MAX_DAILY_WINDOW_RUNS', 3):
+            self.schedule(until=DUE.replace(hour=10))
+            # app.js sends all five fields, including the displayed (capped) end.
+            changes = dict(due='2026-11-16T09:00', timezone='Asia/Seoul', every_minutes=5,
+                           until='2026-11-16T09:10', max_runs=3)
+            edited = self.service.preparations.edit(self.watched['id'], **changes)
+            self.assert_honest(edited, DUE.replace(minute=10))
+            self.assertEqual(prep.stored_window_terms(edited)['requested_until'], DUE.replace(hour=10).timestamp())
+            self.assertEqual(prep.stored_window_terms(edited)['covering_every_minutes'], 21)
+            changes['max_runs'] = 2
+            edited = self.service.preparations.edit(edited['id'], **changes)
+            self.assertEqual(edited['until_at'], DUE.replace(hour=10).timestamp())
+            self.assertNotIn('requested_until', prep.stored_window_terms(edited))
+            self.assertNotIn('covering_every_minutes', prep.stored_window_terms(edited))
 
     def test_capped_rhythm_keeps_the_real_end_on_later_days(self):
         with patch.object(prep, 'MAX_DAILY_WINDOW_RUNS', 2):
@@ -372,6 +465,22 @@ class LegacyWindowMigrationTests(unittest.TestCase):
         self.assertEqual((row['max_runs'], row['until_at']), (3, DUE.replace(minute=10).timestamp()))
         self.assertEqual(prep.stored_window_terms(row)['end_time'], '09:10:00')
         self.assertEqual(prep.stored_window_terms(row)['requested_until'], DUE.replace(hour=20).timestamp())
+
+    def test_invalid_legacy_rows_are_unchanged_and_do_not_block_migration(self):
+        odd = self.legacy(recurrence='weekdays')
+        bad_report = self.legacy()
+        valid = self.legacy()
+        with self.store.db() as db:
+            db.execute('UPDATE preparations SET until_at=until_at+86400,window_end=window_end+86400 WHERE id=?',
+                       (odd['id'],))
+            db.execute('UPDATE preparations SET window_terms=? WHERE id=?',
+                       (json.dumps({'report_seconds': 61}), bad_report['id']))
+        before = [self.preparations.get(row['id']) for row in (odd, bad_report)]
+        self.upgrade()
+        self.assertEqual([self.preparations.get(row['id']) for row in (odd, bad_report)], before)
+        self.assertEqual(self.preparations.get(valid['id'])['max_runs'], 133)
+        with self.store.db() as db:
+            self.assertEqual(db.execute("SELECT value FROM config WHERE key='preparations_daily_cap_814'").fetchone()[0], 'true')
 
     def test_shortfall_terms_do_not_make_run_now_rule_like_or_change_uncapped_digests(self):
         until = DUE.replace(hour=10).timestamp()

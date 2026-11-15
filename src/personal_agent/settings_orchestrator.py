@@ -758,7 +758,7 @@ class SettingsOrchestrator:
             requested = {k: v for k, v in changes.items() if k not in ('id', BOUND_TIMEZONE)}
             if bound is None and 'timezone' not in requested and set(requested) & {'due', 'until', 'rrule', 'recurrence'}:
                 changes[BOUND_TIMEZONE] = current['timezone']
-            prep.Preparations.edit_values(current, requested, self.service.preparations.clock())
+            self.service.preparations.preview_edit(current, requested, self.service.preparations.clock())
             return json.dumps(changes, sort_keys=True, ensure_ascii=False), row
         if (category, setting) == ('api_connections', 'connect'):
             from .api_input import value as api_value
@@ -974,7 +974,7 @@ class SettingsOrchestrator:
         changes = json.loads(after)
         current = self.service.preparations.get(changes['id'])
         requested = {key: value for key, value in changes.items() if key not in ('id', BOUND_TIMEZONE)}
-        edited = {**current, **prep.Preparations.edit_values(current, requested, self.service.preparations.clock())}
+        edited = {**current, **self.service.preparations.preview_edit(current, requested, self.service.preparations.clock())}
         home_zone = self.service.home_zone()
         return msg('settings_orchestrator.preparation_edit_summary',
                    title=redact_known_secrets(self.store, prep.owner_title(current)),

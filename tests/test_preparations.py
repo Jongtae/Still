@@ -2535,7 +2535,8 @@ class ScheduleTextTests(unittest.TestCase):
             for row in self.localized_rows():
                 row = {**row, 'id': 'schedule', 'title_text': 'Title'}
                 service = SimpleNamespace(
-                    preparations=SimpleNamespace(get=lambda ident: row, clock=lambda: row['due_at'] - 60),
+                    preparations=SimpleNamespace(get=lambda ident: row, clock=lambda: row['due_at'] - 60,
+                                                 preview_edit=prep.Preparations.edit_values),
                     home_zone=lambda: 'Asia/Seoul')
                 orchestrator = SettingsOrchestrator(store, service=service)
                 changes = {'id': row['id'], 'timezone': 'Europe/Paris'}
