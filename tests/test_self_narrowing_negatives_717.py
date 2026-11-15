@@ -25,6 +25,7 @@ real model loop (6), a dream row that was never told because upkeep was paused (
 """
 import json
 import time
+from unittest import mock
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -453,7 +454,9 @@ class InjectedText(_Loop):
                         recurrence=None, channel='web', created_from=anchor, state=prep.STATE_SCHEDULED,
                         accepted_by=accepted_by, window=(600, self.now + 3 * 3600, 8), delivery_mode='when_needed',
                         **origin)
-                    self.service.preparations.mark_offered([own], self.now)  # told, as the tick would
+                    self.service.queue_preparation_suggestion(None)
+                    with mock.patch('time.time', return_value=self.now):
+                        self.service.deliver_notification()
                 else:
                     own = self.window_row(f'Own {accepted_by}', accepted_by)
                 other = self.scheduled(kind='prepare', goal=f'Owner row {accepted_by}', seconds=7200)
@@ -532,6 +535,13 @@ class DreamStartsOnlyWhenToldAndWanted(prep_t._Case):
             told.append(self.store.notification_of(f"{row['created_from']}/dream:{row['id']}", 'preparation_scheduled'))
             return original(*args, **kwargs)
         self.service.preparations.start = start
+        self.assertFalse(self.tick())
+        self.deliver()
+        self.assertFalse(self.tick())
+        self.assertEqual(told, [])
+        current = self.service.preparations.get(row['id'])
+        self.assertGreater(current['due_at'], self.now)
+        self.now = current['due_at']
         self.assertTrue(self.tick())
         self.assertEqual(len(told), 1)
-        self.assertIsNotNone(told[0], 'told before it started')
+        self.assertEqual(told[0]['state'], 'sent')

@@ -586,9 +586,9 @@ class SettingsOrchestrator:
                                    ("run_now", (prep.STATE_SCHEDULED, prep.STATE_PAUSED)),
                                    ("edit", (prep.STATE_PROPOSED, prep.STATE_SCHEDULED, prep.STATE_PAUSED))):
             ids = tuple(item["id"] for item in rows if item["state"] in states_
-                        or operation == 'restore' and prep.Preparations.self_undoable(item, 'edit')
-                        or operation == 'resume' and item['state'] == prep.STATE_RUNNING
-                        and prep.Preparations.self_undoable(item, 'pause'))
+                        or operation == 'restore' and any(prep.Preparations.self_undoable(item, change)
+                                                         for change in ('edit', 'pause', 'cancel'))
+                        or operation == 'resume' and prep.Preparations.self_undoable(item, 'pause'))
             result[operation] = self._row(operation, "", listed, self._options(ids, labels),
                                           format=msg('settings_orchestrator.preparation_edit_format') if operation == 'edit' else None)
         return result

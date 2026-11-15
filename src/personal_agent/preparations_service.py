@@ -19,6 +19,7 @@ from .agent_runtime import ToolError, not_run, ran_field
 from .conversation_handoff import JUDGMENT_NO, JUDGMENT_YES
 from .conversation_projection import earlier_turn_line
 from .messages import LANGUAGES, msg
+from .telegram_locale import owner_language
 from .prompt_files import prompt
 from .providers import ProviderError
 from .quickstart_service import (LOG, PREPARATION_CONVERSATION_CHARS,
@@ -470,6 +471,25 @@ class PreparationsService:
             return pairing.owner, generation, surface.name
         return None
 
+    def self_change_text(self, event):
+        """One readable receipt, shared by messenger notices and the existing Settings result."""
+        row = {**(self.service.preparations.get(event['preparation_id']) or {'goal_text': ''}),
+               **event.get('snapshot', {})}
+        operation = event['target'].split('.')[-1]
+        lang = owner_language(self.service.store) or 'ko'
+        def summary(values):
+            schedule = {**row, **values}
+            text = prep.proposal_summary(schedule, self.service.home_zone(), brief=False, lang=lang)
+            if schedule.get('state') == prep.STATE_CANCELLED:
+                text += '\n' + msg('preparations.self_change_cancel', lang)
+            elif schedule.get('run_return_state') == prep.STATE_PAUSED or schedule.get('state') == prep.STATE_PAUSED:
+                text += '\n' + msg('preparations.self_change_pause', lang)
+            return text
+        return self.service._redact_known_secrets(msg('preparations.self_change_notice', lang, id=event['preparation_id'],
+                   change=msg('preparations.self_change_' + operation, lang), before=summary(event['before']),
+                   after=summary(event['after']), reason=event['reason'],
+                   undo=msg('button.restore_reservation', lang)))
+
     def status_notice_text(self, notification):
         """Suppress obsolete waiting episodes and notices for stopped preparations."""
         service = self.service
@@ -482,12 +502,7 @@ class PreparationsService:
             if not receipt:
                 return None
             event = json.loads(receipt['detail'])
-            operation = event['target'].split('.')[-1]
-            return msg('preparations.self_change_notice', id=event['preparation_id'],
-                       change=msg('preparations.self_change_' + operation),
-                       before=json.dumps(event['before'], ensure_ascii=False),
-                       after=json.dumps(event['after'], ensure_ascii=False), reason=event['reason'],
-                       undo='resume' if operation == 'pause' else 'restore')
+            return self.self_change_text(event)
         with service.store.db() as db:
             row = db.execute('SELECT * FROM preparations WHERE id=?',
                              (notification['fingerprint'],)).fetchone()
@@ -518,6 +533,25 @@ class PreparationsService:
         """
         service=self.service
         now=service.preparations.clock() if now is None else now
+        # Consume delivery receipts, never queue insertion as evidence that the owner was told.
+        for suggestion in service.preparations.rows():
+            if suggestion['state'] != prep.STATE_SCHEDULED or suggestion.get('accepted_by') != prep.ACCEPTED_DREAM:
+                continue
+            notice = service.store.notification_of(
+                f"{suggestion['created_from']}/dream:{suggestion['id']}", 'preparation_scheduled')
+            sent_at = notice.get('sent_at') if notice else None
+            if suggestion.get('offered_at') != sent_at:
+                # Repair old queue-time marks too: only the existing send receipt is evidence.
+                with service.store.db() as db:
+                    db.execute('UPDATE preparations SET offered_at=? WHERE id=? AND state=?',
+                               (sent_at, suggestion['id'], prep.STATE_SCHEDULED))
+                suggestion['offered_at'] = sent_at
+            held = not self.look_back_on() or suggestion.get('offered_at') is None
+            # A first delivery after the due time must also release a previously unobserved hold.
+            if suggestion.get('offered_at') is None or (notice and notice.get('sent_at') is not None
+                                                       and notice['sent_at'] > suggestion['due_at']):
+                service.preparations.hold_suggestion(suggestion, True, now)
+            service.preparations.hold_suggestion(suggestion, held, now)
         # #583: an unanswered look-back suggestion lapses after a week (one read when there is none).
         service.preparations.expire_suggestions(now)
         # Tell each untold dream row in waking hours, without waiting for another owner Work.
@@ -811,10 +845,17 @@ class PreparationsService:
         service=self.service
         now=service.preparations.clock()
         anchor=service.store.job(anchor_id)
-        if (not anchor or service.preparations.proposed_from(anchor_id)
+        with service.store.db() as db:
+            offered = db.execute("SELECT 1 FROM telegram_notifications n JOIN preparations p "
+                                 "ON n.job_id=p.created_from || '/dream:' || p.id "
+                                 "WHERE p.created_from=? AND n.kind='preparation_scheduled' LIMIT 1",
+                                 (anchor_id,)).fetchone()
+        if (not anchor or offered or service.preparations.proposed_from(anchor_id)
                 or service.store.notification_of(anchor_id,'preparation_proposed')
                 or service.store.notification_of(anchor_id,'preparation_scheduled')):
             return [{'reason':'anchor-offered'} for _item in items],0
+        if service.surface_of(anchor) is None:
+            return [{'reason':'no-surface'} for _item in items],0
         outcomes,calls=[],0
         for item in items:
             args={name:item.get(name) for name in ('kind','goal','due','recurrence','delivery','title','offer')}
@@ -856,8 +897,8 @@ class PreparationsService:
         """Tell every untold scheduled dream once, each with its own existing cancel notice.
 
         All anchors are considered together in waking hours.  A stable per-row notice key uses
-        the queue's existing uniqueness, including when a restart follows queueing but precedes
-        mark_offered.  Legacy unaccepted proposals keep their existing acceptance path.
+        the queue's existing uniqueness. Delivery receipts are consumed by the tick.
+        Legacy unaccepted proposals keep their existing acceptance path.
         ``one_off`` remains a compatibility argument; standing rows are told on the tick too.
         """
         service=self.service
@@ -873,15 +914,14 @@ class PreparationsService:
             surface=service.surface_of(anchor)
             if surface is None:continue
             notice_key=f"{row['created_from']}/dream:{row['id']}"
-            # Preserve the anchor's content time for the existing work-mode delivery guard,
-            # even though each row needs its own unique notification key.
+            # This new schedule is announced now; work-mode guards apply to this notice's
+            # lifetime, not the older conversation used as evidence for the dream.
             notification=service.store.telegram.queue_notification(
                 notice_key,anchor['chat_id'],surface.owner_generation(),'preparation_scheduled',
-                fingerprint=PREPARED_IDS_PREFIX+row['id'],surface=surface.name,created=anchor['created'])
+                fingerprint=PREPARED_IDS_PREFIX+row['id'],surface=surface.name,created=now)
             if notification is None:continue
-            service.preparations.mark_offered([row],now)
             first=first or notification
-            LOG.info('preparation suggestion told anchor=%s id=%s',row['created_from'],row['id'])
+            LOG.info('preparation suggestion queued anchor=%s id=%s',row['created_from'],row['id'])
         # Only legacy proposals still need the old grouped offer/acceptance message.
         anchor,rows=service.preparations.unoffered_suggestions(now,one_off=job is None)
         if rows:
@@ -991,6 +1031,9 @@ class PreparationsService:
         for row in service.preparations.rows():
             last=str(row.get('last_response') or '')
             terms=prep.stored_window_terms(row)
+            last=last[:280]+('…' if len(last)>280 else '')
+            if row.get('self_change') and not row.get('self_change_undone'):
+                last += '\n' + self.self_change_text(json.loads(row['self_change']))
             rows.append({'id':row['id'],'kind':row['kind'],'goal':row['goal_text'],'state':row['state'],
                          # #393: the owner's name and offer for it, when the AI wrote them.
                          'title':row.get('title_text'),'offer':row.get('offer_text'),
@@ -1001,7 +1044,7 @@ class PreparationsService:
                          'timezone':row['timezone'],'recurrence':row['recurrence'],'delivery':service.preparation_delivery(row),
                          'accepted_by':row['accepted_by'],'last_outcome':row['last_outcome'],'last_work_id':row['last_run_job_id'],
                          'last_status':row.get('last_status'),'last_delivery':row.get('last_delivery'),
-                         'last_result':last[:280]+('…' if len(last)>280 else ''),'prepared_at':row['prepared_at'],
+                         'last_result':last,'prepared_at':row['prepared_at'],
                          'created_at':row['created_at'],
                          # #719: the watch window, its bound and the last typed decision.
                          'every_minutes':(row['every_seconds']//60) if row.get('every_seconds') else None,

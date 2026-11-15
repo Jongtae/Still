@@ -1,0 +1,237 @@
+"""Model-free regressions for the #717 fresh-context findings."""
+import itertools
+import json
+from unittest import mock
+
+from personal_agent import preparations as prep, work_mode
+from personal_agent.messages import msg
+import test_self_narrowing_717 as sn
+import test_preparation_suggestions as sugg
+import test_preparations as pt
+
+
+class SelfChanges(sn._Case):
+    def setUp(self):
+        super().setUp()
+        self.clock[0] = 1800000000.0
+        self.service.preparations.clock = lambda: self.clock[0]
+        self.preps = self.service.preparations
+        self.serial = 0
+
+    running = sn.SelfNarrowing.running
+    change = sn.SelfNarrowing.change
+    settle = sn.SelfNarrowing.settle
+    notices = sn.SelfNarrowing.notices
+
+    def test_combined_changes_have_one_complete_undo(self):
+        for sequence in itertools.permutations(('pause', 'edit', 'cancel')):
+            for settled in (False, True):
+                with self.subTest(sequence=sequence, settled=settled):
+                    row, run = self.running()
+                    # Cancellation ends the run's authority; exercise each prefix through cancel.
+                    sequence = sequence[:sequence.index('cancel') + 1]
+                    for operation in sequence:
+                        self.assertTrue(self.change(row, run, operation, {'max_runs': 3})['applied'])
+                    event = json.loads(self.preps.get(row['id'])['self_change'])
+                    for key, value in event['before'].items():
+                        self.assertEqual(value, row[key])
+                    if settled:
+                        self.settle(row, run)
+                    restored = self.preps.restore(row['id'])
+                    self.assertEqual(restored['max_runs'], 8)
+                    self.assertIsNone(restored['run_return_state'])
+                    self.assertEqual(restored['state'], prep.STATE_SCHEDULED if settled else prep.STATE_RUNNING)
+
+    def test_pause_then_narrow_resume_undoes_both(self):
+        for cancel in (False, True):
+            row, run = self.running()
+            self.change(row, run, 'pause')
+            self.change(row, run, changes={'max_runs': 3})
+            if cancel:
+                self.assertTrue(self.change(row, run, 'cancel')['applied'])
+            draft = self.settings.propose('owner', 'http', 'preparations', 'resume', row['id'])
+            self.assertEqual(self.settings.confirm('owner', 'http', draft['draft_id'], draft['digest'])['state'], 'applied')
+            restored = self.preps.get(row['id'])
+            self.assertEqual(restored['max_runs'], 8)
+            self.assertIsNone(restored['run_return_state'])
+
+    def test_restore_preserves_already_scheduled_next_slot(self):
+        row, run = self.running()
+        self.change(row, run, changes={'max_runs': 3})
+        settled = self.settle(row, run)
+        restored = self.preps.restore(row['id'])
+        self.assertEqual(restored['due_at'], settled['due_at'])
+
+    def test_run_now_pause_undo_restores_return_state(self):
+        row, run = self.running()
+        self.settle(row, run)
+        row = self.preps.get(row['id'])
+        self.clock[0] += 1
+        work = self.preps.start(row, channel='web', chat_id=None, now=self.clock[0], immediate=True)
+        run = self.store.job(work)
+        before = self.preps.get(row['id'])
+        self.assertEqual(before['run_return_state'], prep.STATE_SCHEDULED)
+        self.change(before, run, 'pause')
+        self.assertEqual(self.preps.resume(row['id'])['run_return_state'], before['run_return_state'])
+
+    def test_narrowing_undo_does_not_resume_an_owner_paused_run_now(self):
+        row, run = self.running()
+        self.settle(row, run)
+        self.preps.pause(row['id'])
+        self.clock[0] += 1
+        row = self.preps.get(row['id'])
+        work = self.preps.start(row, channel='web', chat_id=None, now=self.clock[0], immediate=True)
+        run = self.store.job(work)
+        self.change(row, run, changes={'max_runs': 3})
+        settled = self.settle(self.preps.get(row['id']), run)
+        self.assertEqual(settled['state'], prep.STATE_PAUSED)
+        restored = self.preps.restore(row['id'])
+        self.assertEqual(restored['state'], prep.STATE_PAUSED)
+        self.assertEqual(restored['max_runs'], 8)
+        self.assertEqual(restored['due_at'], row['due_at'])
+
+    def test_no_surface_notice_is_visible_in_settings_and_not_queued(self):
+        row, run = self.running()
+        with mock.patch.object(self.service.preparations_service, 'notice_destination', return_value=None):
+            self.assertTrue(self.change(row, run, changes={'max_runs': 3})['applied'])
+        self.assertEqual(self.notices(), [])
+        [visible] = self.service.preparations_status()['preparations']
+        self.assertIn('The source is no longer useful.', visible['last_result'])
+        self.assertIn(msg('button.restore_reservation'), visible['last_result'])
+        self.assertEqual(self.preps.restore(row['id'])['max_runs'], 8)
+
+    def test_notice_uses_human_schedule_and_local_undo(self):
+        row, run = self.running()
+        self.change(row, run, changes={'until': prep.iso(self.clock[0] + 1200), 'max_runs': 3})
+        text = self.service.preparations_service.status_notice_text(self.notices()[0])
+        for raw in ('until_at', 'max_runs', str(self.clock[0] + 1200), 'restore', 'resume'):
+            self.assertNotIn(raw, text)
+        self.assertIn(msg('button.restore_reservation'), text)
+        self.assertIn(prep.proposal_summary(row, self.service.home_zone(), brief=False), text)
+
+    def test_english_owner_gets_english_schedule_and_undo(self):
+        cfg = self.store.config('telegram', {})
+        self.store.put('telegram', {**cfg, 'owner_language': 'en'})
+        row, run = self.running()
+        self.change(row, run, changes={'max_runs': 3})
+        text = self.service.preparations_service.status_notice_text(self.notices()[0])
+        self.assertIn(prep.schedule_text(row, self.service.home_zone(), lang='en'), text)
+        self.assertIn(msg('button.restore_reservation', 'en'), text)
+        self.assertNotIn('max_runs', text)
+
+
+class DreamFindings(pt._Case):
+    suggest = sugg.Offer.suggest
+    deliver = sugg.Offer.deliver
+    row_notification = sugg.Offer.row_notification
+
+    def test_queued_or_cancelled_notice_never_releases_row(self):
+        anchor = self.receive('question')
+        row = self.suggest(anchor)
+        self.service.queue_preparation_suggestion(None)
+        notice = self.row_notification(row)
+        self.assertIsNotNone(notice)
+        self.assertIsNone(self.service.preparations.get(row['id'])['offered_at'])
+        self.service.preparations.mark_offered([row], self.now)  # legacy queue-time mark
+        self.store.telegram.update_notification(notice['id'], 'cancelled')
+        self.now = row['due_at']
+        self.tick()
+        self.assertEqual(self.runs(row['id']), [])
+
+    def test_notice_uses_its_queue_time(self):
+        anchor = self.receive('question')
+        self.now += 600
+        row = self.suggest(anchor)
+        self.service.queue_preparation_suggestion(None)
+        self.assertEqual(self.row_notification(row)['created'], self.now)
+
+    def test_work_mode_before_queue_does_not_cancel_the_new_notice(self):
+        anchor = self.receive('question')
+        self.deliver()
+        with self.store.db() as db:
+            db.execute('UPDATE jobs SET created=? WHERE id=?', (self.now, anchor))
+        self.now += 10
+        work_mode.set_enabled(self.store, True, surface='settings', clock=lambda: self.now)
+        self.now += 10
+        work_mode.set_enabled(self.store, False, surface='settings', clock=lambda: self.now)
+        self.now += 10
+        row = self.suggest(anchor)
+        self.service.queue_preparation_suggestion(None)
+        self.deliver()
+        self.assertEqual(self.row_notification(row)['state'], 'sent')
+
+    def test_delivery_cancellation_cannot_release_a_dream(self):
+        for cause in ('generation', 'unbound', 'work-mode'):
+            with self.subTest(cause=cause):
+                anchor = self.receive('question ' + cause)
+                self.deliver()
+                row = self.suggest(anchor, goal='goal ' + cause)
+                self.service.queue_preparation_suggestion(None)
+                cfg = self.store.config('telegram', {})
+                self.now += 1
+                if cause == 'work-mode':
+                    work_mode.set_enabled(self.store, True, surface='settings', clock=lambda: self.now)
+                else:
+                    self.store.put('telegram', {**cfg, **({'generation': 'new'} if cause == 'generation'
+                                                       else {'user_id': pt.CHAT + 1})})
+                self.service.deliver_notification()
+                self.assertEqual(self.row_notification(row)['state'], 'cancelled')
+                self.store.put('telegram', cfg)
+                if cause == 'work-mode':
+                    work_mode.set_enabled(self.store, False, surface='settings', clock=lambda: self.now)
+                self.now = row['due_at']
+                self.tick()
+                self.assertEqual(self.runs(row['id']), [])
+                self.assertIsNone(self.service.preparations.get(row['id'])['offered_at'])
+
+    def test_no_current_anchor_surface_means_no_reserved_slots(self):
+        anchor = self.receive('question')
+        for anchor_id in ('missing', anchor):
+            with mock.patch.object(self.service, 'surface_of', return_value=None):
+                outcomes, calls = self.service.suggest_preparations(anchor_id, [sugg.suggestion(due=self.due_iso(86400))])
+            self.assertNotIn('preparation_id', outcomes[0])
+            self.assertEqual(calls, 0)
+        cfg = self.store.config('telegram', {})
+        self.store.put('telegram', {**cfg, 'generation': 're-paired'})
+        outcomes, _ = self.service.suggest_preparations(anchor, [sugg.suggestion(due=self.due_iso(86400))])
+        self.assertNotIn('preparation_id', outcomes[0])
+        self.assertEqual(self.service.preparations.rows(), [])
+
+    def test_untold_scheduled_rows_expire_and_release_capacity(self):
+        anchor = self.receive('question')
+        row = self.suggest(anchor)
+        self.now += prep.SUGGESTION_EXPIRY_SECONDS + 1
+        self.service.preparations.expire_suggestions(self.now)
+        self.assertEqual(self.service.preparations.get(row['id'])['state'], prep.STATE_EXPIRED)
+        self.assertEqual(self.service.preparations.untold_scheduled_suggestions(), [])
+
+    def test_per_row_notice_blocks_another_batch_on_same_anchor(self):
+        anchor = self.receive('question')
+        row = self.suggest(anchor)
+        self.service.queue_preparation_suggestion(None)
+        self.service.preparations.cancel(row['id'])
+        outcomes, _ = self.service.suggest_preparations(anchor, [sugg.suggestion(goal='different', due=self.due_iso(86400))])
+        self.assertEqual(outcomes, [{'reason': 'anchor-offered'}])
+
+    def test_release_skips_missed_slot_for_untold_and_disabled_rows(self):
+        for once, disabled in itertools.product((False, True), repeat=2):
+            with self.subTest(once=once, disabled=disabled):
+                anchor = self.receive(f'question {once} {disabled}')
+                self.deliver()
+                row = self.suggest(anchor, goal=f'goal {once} {disabled}', recurrence='once' if once else 'daily')
+                if disabled:
+                    self.service.queue_preparation_suggestion(None)
+                    self.deliver()
+                    self.service.owner_model.set_controls({'dream': False})
+                self.now = row['due_at'] + 1
+                self.tick()
+                self.assertEqual(self.runs(row['id']), [])
+                self.service.owner_model.set_controls({'dream': True})
+                self.tick()
+                self.deliver()
+                self.tick()
+                current = self.service.preparations.get(row['id'])
+                self.assertEqual(self.runs(row['id']), [])
+                self.assertEqual(current['state'], prep.STATE_EXPIRED if once else prep.STATE_SCHEDULED)
+                if not once:
+                    self.assertGreater(current['due_at'], self.now)

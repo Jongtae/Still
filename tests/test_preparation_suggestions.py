@@ -8,13 +8,14 @@ or messenger calls.
 """
 import json
 import unittest
+from unittest import mock
 from datetime import datetime, timedelta, timezone
 
 from personal_agent import owner_model as om
 from personal_agent.current_context import TIMEZONE_CONFIG_KEY
 from personal_agent import preparations as prep
 
-from test_owner_model_dream import Dream, dream
+from test_owner_model_dream import Dream, dream, GENERATION as DREAM_GENERATION, CHAT as DREAM_CHAT
 import test_preparations as prep_t
 from test_preparations import CHAT, _Case, engine
 
@@ -73,6 +74,13 @@ class Gates(unittest.TestCase):
 
 class LookBack(Dream):
     """The dream run stores what passes as a ``scheduled`` row (#717) and records it in its Evidence, no text."""
+
+    def setUp(self):
+        super().setUp()
+        self.store.put('telegram', {'enabled': True, 'user_id': DREAM_CHAT, 'generation': DREAM_GENERATION})
+
+    def day(self, *texts):
+        return [self.settled(text, telegram=True) for text in texts]
 
     def two_days(self):
         first, second, newest = self.day('오늘 일정 정리해줘', '오늘 일정 다시 정리해줘', '다른 질문')
@@ -187,7 +195,8 @@ class Offer(_Case):
 
     def deliver(self):
         self.service.deliver_one()
-        self.service.deliver_notification()
+        with mock.patch('time.time', return_value=self.now):
+            self.service.deliver_notification()
 
     def notification(self, work, kind='preparation_scheduled'):
         with self.store.db() as db:
@@ -222,6 +231,7 @@ class Offer(_Case):
         notification = self.notification(anchor)
         self.assertEqual((notification['chat_id'], notification['state']), (CHAT, 'sent'))
         self.assertIsNone(self.notification(anchor, 'preparation_proposed'), 'told, not asked')
+        self.tick()  # observe the completed send
         self.assertIsNotNone(self.service.preparations.get(row['id'])['offered_at'])
         self.receive('또 다른 질문')
         self.deliver()
@@ -262,7 +272,7 @@ class Offer(_Case):
         for row in rows:
             notice = self.row_notification(row)
             self.assertEqual(notice['fingerprint'], 'ids:' + row['id'])
-            self.assertEqual(notice['created'], self.store.job(anchor)['created'])
+            self.assertEqual(notice['created'], self.now)
             message = next(m for m in messages if f"p7p:{notice['id']}:cancel" == self.cancel_button(m))
             self.assertIn(row['title_text'], message['text'])
         first = rows[0]
@@ -310,11 +320,12 @@ class Offer(_Case):
             observed.append(self.row_notification(row))
             return original(*args, **kwargs)
         self.service.preparations.start = start
-        self.assertTrue(self.tick())
-        self.assertEqual(len(observed), 1)
-        self.assertEqual(observed[0]['state'], 'queued', 'its own notice precedes the first claim')
-        self.assertEqual(len(self.runs(row['id'])), 1)
-        self.assertIsNotNone(self.service.preparations.get(row['id'])['offered_at'])
+        self.assertFalse(self.tick())
+        self.deliver()
+        self.assertFalse(self.tick())
+        self.assertEqual(observed, [])
+        self.assertEqual(self.runs(row['id']), [])
+        self.assertEqual(self.service.preparations.get(row['id'])['state'], prep.STATE_EXPIRED)
 
     def test_queue_failure_keeps_first_run_pending_and_retry_is_idempotent(self):
         anchor = self.receive('첫 질문')
@@ -327,24 +338,25 @@ class Offer(_Case):
         self.assertIsNone(self.service.preparations.get(row['id'])['offered_at'])
         self.assertEqual(self.runs(row['id']), [])
         self.store.telegram.queue_notification = original
-        original_mark = self.service.preparations.mark_offered
-        self.service.preparations.mark_offered = lambda *args: None  # restart after queueing, before marking
         self.assertFalse(self.tick())
         first = self.row_notification(row)
-        self.service.preparations.mark_offered = original_mark
-        self.assertTrue(self.tick())
+        self.service = self.make_service()  # queued, but no delivery receipt yet
+        self.assertFalse(self.tick())
         self.assertEqual(self.row_notification(row)['id'], first['id'])
-        # Settle the completed reminder before its notice is delivered: the receipt must survive.
-        self.service.deliver_one()
-        self.tick()
         self.deliver()
+        self.tick()
+        self.assertEqual(self.service.preparations.get(row['id'])['state'], prep.STATE_EXPIRED)
+        self.assertEqual(self.runs(row['id']), [])
         self.assertEqual(self.row_notification(row)['state'], 'sent')
         self.assertEqual(len(self.proposal_sends()), 1)
 
     def test_paused_dream_rows_do_not_hide_owner_or_day_plan_rows_and_resume(self):
         anchor = self.receive('첫 질문')
         rows = [self.suggest(anchor, goal=f'꿈 준비 {n}') for n in range(prep.MAX_ACTIVE_DREAM)]
-        self.tick()  # tell all rows before pausing
+        self.tick()
+        for _ in rows:
+            self.deliver()
+        self.tick()  # observe delivered notices before pausing
         self.service.owner_model.set_controls({'dream': False})
         self.now = max(row['due_at'] for row in rows) + 1
         owner = self.scheduled(seconds=-1, kind='reminder')
@@ -361,6 +373,11 @@ class Offer(_Case):
         self.service.owner_model.set_controls({'dream': True})
         self.tick()
         self.tick()  # keep the ordinary per-tick budget
+        self.assertTrue(all(not self.runs(row['id']) for row in rows))
+        self.assertTrue(all(self.service.preparations.get(row['id'])['due_at'] > self.now for row in rows))
+        self.now = max(self.service.preparations.get(row['id'])['due_at'] for row in rows)
+        self.tick()
+        self.tick()
         self.assertTrue(all(len(self.runs(row['id'])) == 1 for row in rows))
 
     def test_dream_budget_leaves_room_for_an_owner_schedule(self):
@@ -394,7 +411,7 @@ class Offer(_Case):
         self.now += 86400
         self.tick()
         self.assertEqual(len(self.runs(row['id'])), prep.DREAM_MAX_RUNS)
-        other = self.suggest(anchor, goal='연장할 준비', recurrence='weekly')
+        other = self.suggest(self.receive('새 질문'), goal='연장할 준비', recurrence='weekly')
         extended = self.service.preparations.edit(other['id'], rrule='FREQ=WEEKLY;COUNT=60')
         self.assertEqual((extended['recurrence'], extended['max_runs']), ('RRULE:FREQ=WEEKLY;COUNT=60', 60))
 
@@ -410,6 +427,7 @@ class Offer(_Case):
         self.assertIn('아침 일정 요약', message['text'])
         notification = self.notification(anchor, 'preparation_proposed')
         self.assertEqual((notification['chat_id'], notification['state']), (CHAT, 'sent'))
+        self.tick()  # observe the completed send
         self.assertIsNotNone(self.service.preparations.get(row['id'])['offered_at'])
         self.receive('또 다른 질문')
         self.deliver()
