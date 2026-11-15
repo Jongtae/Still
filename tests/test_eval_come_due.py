@@ -402,3 +402,38 @@ def test_mid_task_read_exhaustion_keeps_last_unmet_stage(tmp_path):
     assert receipt['status'] == 'timed_out' and receipt['timed_out']
     assert receipt['stage'] == 'not_settled' and receipt['elapsed'] == 11
     assert receipt['start'] and not receipt['completed']
+
+
+def test_terminal_status_mirror_matches_runtime():
+    from personal_agent.work_status import TERMINAL
+    assert r.TERMINAL == TERMINAL
+
+
+def test_eval_entry_imports_without_still_package(tmp_path):
+    """The eval-only venv must not need Still installed, even during imports."""
+    import subprocess
+    script = '''
+import importlib.abc
+import sys
+
+sys.path.insert(0, sys.argv[1])
+blocked = []
+class BlockStill(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == 'personal_agent' or fullname.startswith('personal_agent.'):
+            blocked.append(fullname)
+            raise ModuleNotFoundError('Still is not installed in the eval venv', name=fullname)
+
+sys.meta_path.insert(0, BlockStill())
+import agentos_eval.runner
+import agentos_eval.scoring
+import agentos_eval.continuity
+import agentos_eval.cli
+assert blocked == [], blocked
+assert not any(name == 'personal_agent' or name.startswith('personal_agent.') for name in sys.modules)
+'''
+    # -I ignores inherited PYTHONPATH/user site; -S excludes installed packages
+    # and editable-install .pth files. Only the eval package is added back.
+    result = subprocess.run([sys.executable, '-I', '-S', '-c', script, str(ROOT / 'evals')],
+                            cwd=tmp_path, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stdout + result.stderr

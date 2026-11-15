@@ -13,8 +13,6 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from personal_agent.work_status import TERMINAL
-
 from .client import AgentOSClient, ClientError, compact_events, state_diff
 from .paths import eval_home
 from .sandbox import JUDGMENT_KEYS, WORLD_WORKER, SandboxError
@@ -22,6 +20,11 @@ from .scenarios import ScenarioError, embedded_world_text, owner_message
 
 WORKERS = ('codex', 'claude-code')
 USAGE_LIMIT = 'usage-limit'
+
+# Mirror of personal_agent.work_status.TERMINAL, pinned by
+# test_terminal_status_mirror_matches_runtime. Keep the eval venv independent
+# of the Still package at import time.
+TERMINAL = frozenset(('succeeded', 'failed', 'partial', 'cancelled', 'interrupted', 'unknown', 'blocked'))
 
 
 class StopOnUsageLimit:
