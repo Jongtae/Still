@@ -663,7 +663,7 @@ def test_frontier_883_has_unique_successor_and_preserves_827_history():
     assert successor['issue']==883
     assert successor['depends_on']==['FRONTIER-CONTEXT-01']
     assert successor['activation_status']=='complete-on-merge'
-    assert successor['summary'].endswith('Complete on the merge of PR #PRNUM')
+    assert successor['summary'].endswith('Complete on the merge of PR #884')
     assert successor['tests'][0].startswith('PYTHONPATH=src python3 -m pytest -q ')
     assert 'tests/test_connect_preferences.py' in successor['tests'][0]
     assert 'tests/test_prompt_files.py' in successor['tests'][0]
@@ -671,7 +671,7 @@ def test_frontier_883_has_unique_successor_and_preserves_827_history():
     assert 'FRONTIER-CONTEXT-02' in current['programs']['FRONTIER-01']['completed_substeps']
     record=items['FRONTIER-01']['completed_substeps']['FRONTIER-CONTEXT-02']
     assert record['issue']==883 and record['status']=='complete-on-merge'
-    assert record['pull_request']=='PRNUM'
+    assert record['pull_request']=='884'
     assert 'No other successor is selected' in current['next_goal']['action']
     assert 'FRONTIER-CONTEXT-02' in current['programs']['FRONTIER-01']['ordered_substeps']
     assert current['programs']['FRONTIER-01']['active_substeps']==[]

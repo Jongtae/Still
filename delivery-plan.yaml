@@ -988,8 +988,8 @@
         "FRONTIER-CONTEXT-02": {
           "issue": 883,
           "status": "complete-on-merge",
-          "pull_request": "PRNUM",
-          "decision": "The existing decision-model plan resolves recall terms, with request terms appended and request-only fallback. Local fixtures validate transport/schema compatibility, plan preservation, per-attempt worker refresh and truthful selector/source receipts without another model call. Depends on completed FRONTIER-CONTEXT-01. Complete on the merge of PR #PRNUM"
+          "pull_request": "884",
+          "decision": "The existing decision-model plan resolves recall terms, with request terms appended and request-only fallback. Local fixtures validate transport/schema compatibility, plan preservation, per-attempt worker refresh and truthful selector/source receipts without another model call. Depends on completed FRONTIER-CONTEXT-01. Complete on the merge of PR #884"
         }
       }
     },
@@ -1169,7 +1169,7 @@
       "tests": [
         "PYTHONPATH=src python3 -m pytest -q tests/test_owner_profile_context_860.py tests/test_past_words_brief_860.py tests/test_orchestrator.py tests/test_recall_arms.py tests/test_fresh_delivery_plan.py tests/test_no_scenario_code.py tests/test_connect_preferences.py tests/test_prompt_files.py tests/test_decision_engine.py"
       ],
-      "summary": "Owner-selected #883 within #822: the existing decision-model plan emits optional bounded recall terms; planning uses request-only recall, and workers search accepted plan terms followed by the request, or the request alone. Invalid or absent selectors preserve the accepted plan. No new model call. Complete on the merge of PR #PRNUM",
+      "summary": "Owner-selected #883 within #822: the existing decision-model plan emits optional bounded recall terms; planning uses request-only recall, and workers search accepted plan terms followed by the request, or the request alone. Invalid or absent selectors preserve the accepted plan. No new model call. Complete on the merge of PR #884",
       "depends_on": [
         "FRONTIER-CONTEXT-01"
       ]
