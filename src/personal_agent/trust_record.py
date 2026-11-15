@@ -28,7 +28,7 @@ from .messages import msg
 
 
 KEY = 'trust_record'
-CLASSES = ('read', 'mutate', 'payment', 'refused')
+CLASSES = ('read', 'mutate', 'reversible', 'irreversible', 'payment', 'refused')
 #: Contract §6: report → propose → act after per-action approval → act within a standing mandate.
 RUNGS = ('report', 'propose', 'approve', 'mandate')
 ENGINES = ('claude-code', 'codex')

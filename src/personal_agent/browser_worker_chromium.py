@@ -665,7 +665,7 @@ class Worker(shared.Worker):
         target.scripts = []
         shim = ('window.webkit = {messageHandlers: {' + json.dumps(shared.GUARD_HANDLER) +
                 ': {postMessage: m => ' + BINDING + '(JSON.stringify(m))}}};\n')
-        sources = [(shim + shared.client_guard_user_script(self.guard_off) + '\n' +
+        sources = [(shim + shared.client_guard_user_script(self.guard_off, getattr(self, "self_set_writes", False)) + '\n' +
                     VETTED_SHIM % {'binding': BINDING}, WORLD, True)]
         if not self.guard_off:
             sources.append((shared.PAGE_WRAP_USER_SCRIPT, None, True))
