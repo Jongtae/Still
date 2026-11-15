@@ -62,7 +62,7 @@ from .decision_adapters import (CLI_BINARIES, JEV_DEFAULT_MODEL, JEV_DESTINATION
 from .bounded_execution import parse_cli_version, strict_allowed_features
 from .decision_qualification import CASE_IDS, SUITE_VERSION, qualify
 from .main_ai import CHOOSER_ORDER, api_route_of, key_slot
-from .providers import ProviderError, request_json
+from .providers import validate_model, ProviderError, request_json
 
 ROUTE_OFF = 'off'
 TRANSPORTS = (ROUTE_DIRECT_API, ROUTE_JEV, ROUTE_SUBSCRIPTION_CLI, ROUTE_OFF)
@@ -423,6 +423,7 @@ class DecisionRoutes:
         model = (route or {}).get('requested_model')
         if model and (route or {}).get('provider') == config.get('provider') and valid_model_id(model):
             config = {**config, 'model': model}
+            if (route or {}).get('api') == 'responses':config['api'] = 'responses'
         return config, key
 
     def _jev_engine(self, model, audit):
@@ -1691,6 +1692,8 @@ class DecisionRoutes:
             base, key = self.service.decision_route()
         else:
             self._fail(ROUTE_DIRECT_API, 'not-configured', msg('decision_routes.openai_key_missing'))
+        if body.get('api') is not None:
+            base = validate_model({**base, 'api': body['api']})
         model = body.get('model') or None
         if model is not None and not valid_model_id(model):
             raise DecisionRouteError(msg('decision_routes.invalid_model'))
@@ -1713,6 +1716,7 @@ class DecisionRoutes:
             with self.service.lock:
                 self.store.put('decision_model', {**DEFAULT_DECISION_PROVIDER, 'model': chosen})
         return self._commit(ROUTE_DIRECT_API, {'transport': ROUTE_DIRECT_API, 'provider': base['provider'],
+                                               **({'api': base['api']} if base.get('api') else {}),
                                                'requested_model': chosen, 'model_policy': policy,
                                                'qualification': self._qualification_record(chosen, result, tried=tried),
                                                'key_source': 'decision' if decision_key else 'existing'},

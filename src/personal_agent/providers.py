@@ -98,7 +98,12 @@ def validate_model(config):
     model = config.get('model', '').strip()
     if not model or len(model) > 200:
         raise ValueError(msg('providers.enter_model_name'))
-    return {'provider': provider, 'endpoint': endpoint, 'model': model}
+    result = {'provider': provider, 'endpoint': endpoint, 'model': model}
+    api = config.get('api', 'chat_completions')
+    if api not in ('chat_completions', 'responses') or (api == 'responses' and provider != 'openai'):
+        raise ValueError('Responses API requires the OpenAI provider and a valid API selection.')
+    if api == 'responses':result['api'] = api
+    return result
 
 
 #: Recorded when a provider/CLI did not report the model it used.  The
@@ -154,6 +159,48 @@ class ModelAdapter:
             raise ProviderError(msg('providers.photo_input_unsupported'))
         return converted
 
+    def _responses(self, cfg, key, messages, tools=None, tool_choice="auto", timeout=60):
+        """Adapt the stateless Responses wire format to Still's message contract."""
+        inputs=[]
+        for message in messages:
+            if message.get('_responses_output') is not None:
+                inputs.extend(message['_responses_output'])
+                continue
+            if message['role']=='tool':
+                inputs.append({'type':'function_call_output','call_id':message['tool_call_id'],
+                               'output':message.get('content') or ''})
+                continue
+            content=message.get('content')
+            if content:
+                if isinstance(content,list):
+                    content=[({'type':'input_image',**part['image_url']} if part['type']=='image_url'
+                              else {'type':'input_text','text':part['text']}) for part in content]
+                    for part in content:
+                        if part['type']=='input_image':part['image_url']=part.pop('url')
+                inputs.append({'role':message['role'],'content':content})
+            for call in message.get('tool_calls') or []:
+                inputs.append({'type':'function_call','call_id':call['id'],
+                               'name':call['function']['name'],'arguments':call['function']['arguments']})
+        body={'model':cfg['model'],'input':inputs,'store':False,
+              'include':['reasoning.encrypted_content']}
+        if tools:
+            body['tools']=[{'type':'function',**tool['function'],
+                            'strict':tool['function'].get('strict',False)} for tool in tools]
+            body['tool_choice']=tool_choice
+        data=self._send(cfg['endpoint']+'/responses',body,{'Authorization':'Bearer '+key} if key else {},timeout)
+        if data.get('status')!='completed' or not isinstance(data.get('output'),list):
+            raise ProviderError(msg('providers.invalid_tool_response'))
+        text=[];calls=[]
+        for item in data['output']:
+            if item['type']=='message':
+                text.extend(part['text'] for part in item['content'] if part['type']=='output_text')
+            elif item['type']=='function_call':
+                calls.append({'id':item['call_id'],'type':'function',
+                              'function':{'name':item['name'],'arguments':item['arguments']}})
+        message={'role':'assistant','content':'\n'.join(text),'_responses_output':data['output']}
+        if calls:message['tool_calls']=calls
+        return message,data.get('model')
+
     def tool_turn(self, config, key, messages, tools, tool_choice="auto", timeout=60, report_observed=False, images=None):
         """One tool-capable turn.  Returns ``(message, model)``.
 
@@ -166,7 +213,10 @@ class ModelAdapter:
         cfg=validate_model(config);provider=cfg['provider']
         messages=self._messages_with_images(messages,images,provider)
         try:
-            if provider in ('compatible','openai'):
+            if cfg.get('api')=='responses':
+                message, observed=self._responses(cfg,key,messages,tools,tool_choice,timeout)
+                data={'model':observed}
+            elif provider in ('compatible','openai'):
                 body={'model':cfg['model'],'messages':messages,'tools':tools,'tool_choice':tool_choice,'stream':False}
                 if cfg['endpoint']=='https://openrouter.ai/api/v1':body['provider']={'require_parameters':True}
                 data=self._send(cfg['endpoint']+'/chat/completions',body,{'Authorization':'Bearer '+key} if key else {},timeout)
@@ -206,7 +256,7 @@ class ModelAdapter:
                 calls=[{'id':c['id'],'type':'function','function':{'name':c['name'],'arguments':json.dumps(c['input'])}} for c in data['content'] if c['type']=='tool_use']
                 if calls:message['tool_calls']=calls
             if not isinstance(message,dict) or message.get('role','assistant')!='assistant':raise TypeError()
-            message={k:v for k,v in message.items() if k in ('role','content','tool_calls','reasoning_details')};message['role']='assistant'
+            message={k:v for k,v in message.items() if k in ('role','content','tool_calls','reasoning_details','_responses_output')};message['role']='assistant'
             if report_observed:
                 actual=data.get('model') if isinstance(data,dict) else None
                 return message,actual[:200] if isinstance(actual,str) and actual else ''
@@ -219,7 +269,10 @@ class ModelAdapter:
         provider, endpoint, model = cfg['provider'], cfg['endpoint'], cfg['model']
         headers = {'Authorization': 'Bearer '+key} if key else {}
         try:
-            if provider == 'ollama':
+            if cfg.get('api')=='responses':
+                message, observed=self._responses(cfg,key,messages)
+                content=message['content'];data={'model':observed}
+            elif provider == 'ollama':
                 data = self.transport(endpoint+'/api/chat', {'model': model, 'messages': messages, 'stream': False}, headers)
                 content = data['message']['content']
             elif provider in ('compatible','openai'):
