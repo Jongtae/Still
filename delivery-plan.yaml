@@ -995,7 +995,7 @@
         "FRONTIER-EVAL-JUDGE-01": {
           "issue": 885,
           "status": "complete-on-merge",
-          "pull_request": "TBD",
+          "pull_request": "886",
           "decision": "The eval LLM judge runs only when explicitly selected, discloses credential source and budget, reports settled usage and resolved model ids, and refuses comparisons across judge identities."
         }
       }
@@ -1192,7 +1192,7 @@
       "tests": [
         "PYTHONPATH=src .venv/bin/python -m pytest -q tests/test_eval_judge_explicit.py tests/test_eval_loop.py tests/test_continuity_report.py tests/test_initiative_rubric.py tests/test_eval_world_wiring.py tests/test_recall_pairs.py tests/test_recall_pairs_v2.py tests/test_recall_report.py tests/test_recall_arms.py tests/test_eval_paired.py tests/test_eval_promotion.py tests/test_p1_report.py tests/test_fresh_delivery_plan.py"
       ],
-      "summary": "Owner-selected #885 within #822: require explicit eval judge selection, disclose key source and spend settings, reuse scorer settlements for totals and resolved model provenance, and reject comparisons across judge identities; no product Judgment AI change or live-model authority. Complete on merge of its own PR.",
+      "summary": "Owner-selected #885 within #822: require explicit eval judge selection, disclose key source and spend settings, reuse scorer settlements for totals and resolved model provenance, and reject comparisons across judge identities; no product Judgment AI change or live-model authority. Complete on the merge of PR #886.",
       "depends_on": []
     }
   ],
