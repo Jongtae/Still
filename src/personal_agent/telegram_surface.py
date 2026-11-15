@@ -318,6 +318,7 @@ class TelegramSurface(ConversationSurface):
         # Persist the send intent first. An uncertain Telegram response is never
         # replayed after a restart because it might already have been delivered.
         service=self.service
+        if time.monotonic()<service._unsent_retry_at:return False
         # #213: only this surface's queued notices; another surface's are never claimed or cancelled here.
         notification=service.store.next_notification(self.name)
         if not notification:return False
@@ -341,6 +342,7 @@ class TelegramSurface(ConversationSurface):
             memory_prompt,memory_saved=bound.get('memory_prompt'),bound.get('memory_saved')
             phone_preparing=notification['kind']=='browser_login_needed' and service.AUTO_PHONE_LOGIN
             reply_markup=self._notice_markup(notification,bound,phone_preparing=phone_preparing)
+            sent_part=False
             try:
                 text=(service.browser_login_prompt(notification.get('job_id'),preparing=True) if phone_preparing
                       else notice_text(service,notification,bound))
@@ -373,8 +375,12 @@ class TelegramSurface(ConversationSurface):
                             parts=[text[offset:offset+1900] for offset in range(0,len(text),1900)]
                             for index,part in enumerate(parts[:-1],1):
                                 service.telegram.send_message(notification['chat_id'],msg('telegram_surface.approval_part', index=index, total=len(parts), part=part))
+                                sent_part=True
                             text=msg('telegram_surface.approval_final', total=len(parts), part=parts[-1])
                         result=service.telegram.send_message(notification['chat_id'],text,reply_markup)
+                sent_part=True
+                service._unsent_backoff=0
+                service._unsent_retry_at=0.0
                 message_id=result.get('message_id') if isinstance(result,dict) else None
                 # #818 review: a memory prompt with nothing tappable is only a list ('memory_listed').
                 listed=notification['kind'] in MEMORY_PROMPT_KINDS and not service.memory_open(memory_prompt)
@@ -405,6 +411,12 @@ class TelegramSurface(ConversationSurface):
             except work_mode.WorkModeRefused:
                 # #208 review: refused before hand-off, so definitely not delivered (never sent later).
                 service.store.update_notification(notification['id'],'cancelled')
+            except TelegramNotSent:
+                # A later part failing cannot make earlier accepted parts safe to replay.
+                service.store.update_notification(notification['id'],'unknown' if sent_part else 'queued')
+                if not sent_part:
+                    service._unsent_backoff=min(TELEGRAM_UNSENT_BACKOFF_MAX,max(TELEGRAM_UNSENT_BACKOFF_FIRST,service._unsent_backoff*2))
+                    service._unsent_retry_at=time.monotonic()+service._unsent_backoff
             except ProviderError:
                 service.store.update_notification(notification['id'],'unknown')
         return True
@@ -1418,11 +1430,24 @@ class TelegramSurface(ConversationSurface):
             except ProviderError as exc:
                 status='unknown'
                 LOG.warning('telegram delivery unknown work=%s kind=%s status=%s',job['id'],type(exc).__name__,exc.status)
-            with service.store.db() as db:
-                db.execute('UPDATE jobs SET delivery=? WHERE id=?',(status,job['id']))
-            # #996: every delivered answer, so an owner reaction on it finds its Work.
-            if isinstance(message_id,int):
-                service.telegram_turns.record_reply(job['id'],job['chat_id'],message_id)
+            try:
+                with service.store.db() as db:
+                    db.execute('UPDATE jobs SET delivery=? WHERE id=?',(status,job['id']))
+                    # The sent receipt and reaction/control anchor commit together.
+                    if isinstance(message_id,int):
+                        service.telegram_turns.record_reply(job['id'],job['chat_id'],message_id,db=db)
+            except Exception as exc:
+                # Telegram may already have accepted the reply. Never replay it
+                # if local persistence failed; a process death is covered by recovery.
+                status='unknown'
+                LOG.warning('telegram receipt commit failed work=%s kind=%s',job['id'],type(exc).__name__)
+                try:
+                    with service.store.db() as db:
+                        db.execute("UPDATE jobs SET delivery='unknown' WHERE id=? AND delivery='sending'",(job['id'],))
+                except Exception as fallback_exc:
+                    LOG.warning('telegram uncertain receipt not saved work=%s kind=%s',job['id'],type(fallback_exc).__name__)
+                # Continue through outcome presentation and presence cleanup;
+                # a remaining sending row is made unknown by restart recovery.
             # #818/#836: after a reply confirmed sent (never 'unknown'), the Work's
             # one ask about its pending memory proposals.
             try:

@@ -464,7 +464,7 @@ def items_of(current):
 
 FRONTIER_FIRST_WAVE = ["FRONTIER-SPEC-01", "FRONTIER-EVAL-01"]
 FRONTIER_RECONCILED = ["FRONTIER-PROVENANCE-01", "FRONTIER-RECOVERY-01", "FRONTIER-CONTEXT-01"]
-FRONTIER_COMPLETED = FRONTIER_FIRST_WAVE + FRONTIER_RECONCILED + ["FRONTIER-JUDGMENT-01"]
+FRONTIER_COMPLETED = FRONTIER_FIRST_WAVE + FRONTIER_RECONCILED + ["FRONTIER-JUDGMENT-01", "FRONTIER-TELEGRAM-01"]
 FRONTIER_WAVE_2 = ["FRONTIER-FENCE-01", "FRONTIER-JUDGMENT-01", "FRONTIER-TELEGRAM-01", "FRONTIER-WORKCHAT-01"]
 FRONTIER_OPEN_WAVE_2 = [name for name in FRONTIER_WAVE_2 if name not in FRONTIER_COMPLETED]
 
@@ -505,6 +505,15 @@ def test_frontier_declares_completed_units_and_owner_authorized_wave_2():
         assert re.fullmatch(r"[0-9a-f]{40}", done[name]["merge_commit"])
         assert done[name]["decision"]
         assert "selection_rule" not in items[name]
+    telegram = done["FRONTIER-TELEGRAM-01"]
+    assert (telegram["issue"], telegram["status"]) == (842, "complete-on-merge")
+    d1, d2 = telegram["pull_request"]
+    assert d1 == 856
+    assert d2 == 864 or isinstance(d2, int) and d2 > 0
+    assert telegram["decision"]
+    assert "FRONTIER-RECOVERY-01" in telegram["dependency_disposition"]
+    assert "#831" in telegram["dependency_disposition"]
+    assert "selection_rule" not in items["FRONTIER-TELEGRAM-01"]
     assert {"first-wave-units-reconciled", "m1-wave-2-selection"} <= set(program["decisions"])
     assert items["FRONTIER-PROVENANCE-01"]["dependency_issues"] == [818, 819, 820]
     assert items["FRONTIER-RECOVERY-01"]["dependency_issues"] == [821]
