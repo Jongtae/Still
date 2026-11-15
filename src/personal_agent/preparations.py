@@ -227,8 +227,8 @@ def migrate(db):
     db.execute('UPDATE preparations SET until_at=window_end-1, window_end=window_end-1+? '
                'WHERE recurrence=? AND until_at IS NULL AND window_end IS NOT NULL',
                (run_seconds(), RECURRENCE_WINDOW))
-    # #814: once per store, repair active schedules silently shortened by the
-    # former default. Do not reinterpret a newly requested explicit 96 later.
+    # #814: once per store, repair the end without exceeding the accepted count
+    # unless the retained creating call proves this was the silent default.
     migration = 'preparations_daily_cap_814'
     if not db.execute('SELECT 1 FROM config WHERE key=?', (migration,)).fetchone():
         for record in db.execute('SELECT * FROM preparations WHERE recurrence=? AND max_runs=96 '
@@ -236,6 +236,10 @@ def migrate(db):
             row = dict(record)
             try:
                 terms = stored_window_terms(row)
+                if not isinstance(terms, dict) or zone(row['timezone']) is None:
+                    continue
+                if not row['every_seconds'] or row['every_seconds'] % 60:
+                    continue
                 rhythm = terms.get('recurrence')
                 done = int(row.get('run_count') or 0)
                 start = row.get('rule_start')
@@ -250,20 +254,68 @@ def migrate(db):
                 if slots <= 96:
                     continue
                 requested = row['until_at']
+                implicit = _legacy_window_used_default(db, row, start, rhythm)
                 window = normalize_window(row['every_seconds'] // 60,
-                                          datetime.fromtimestamp(requested, zone(row['timezone'])).isoformat(), None,
+                                          datetime.fromtimestamp(requested, zone(row['timezone'])).isoformat(),
+                                          None if implicit else row['max_runs'],
                                           start, row['timezone'], start - 1, recurrence=rhythm)
                 every, until, runs = window
-                if not rhythm:
-                    runs = done + max(0, math.floor((until - row['due_at']) / every) + 1 - (row['state'] == STATE_RUNNING))
+                if not implicit:
+                    runs = row['max_runs']
+                    until = last_slot({**row, 'until_at': until})
+                window = every, until, runs
                 updated_terms = window_terms(window, rhythm, start, row['timezone'],
                                              terms.get('report_seconds', 0) // 60 or None, row.get('delivery_mode'), requested)
-            except PreparationRefusal:
+            except (ValueError, TypeError, KeyError, ArithmeticError):
                 # One invalid legacy window must not prevent this store from opening.
                 continue
             db.execute('UPDATE preparations SET max_runs=?,until_at=?,window_end=?,window_terms=?,rule_start=? WHERE id=?',
                        (runs, until, until + run_seconds(), updated_terms, row.get('rule_start') or start, row['id']))
         db.execute('INSERT INTO config VALUES (?,?)', (migration, 'true'))
+
+
+def _legacy_window_used_default(db, row, start, rhythm):
+    """Only expand a window whose unchanged creating call proves omission.
+
+    Normal tool Evidence retains arguments and a preparation ID, paired by
+    scope/call ID by ``trail_steps``. Failure details, digests and normalized
+    proposal bindings alone cannot prove omission. Settings' conversation
+    audit is bounded and direct Settings edits retain no arguments/revision;
+    after any update we cannot prove which call last set the window. Runs also
+    update the row, so consumed windows conservatively retain their bound.
+    """
+    if (not row.get('created_from') or row['updated_at'] != row['created_at']
+            or row.get('run_count')):
+        return False
+    from .agent_runtime import trail_steps
+    events = db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=? ORDER BY id',
+                        (row['created_from'],)).fetchall()
+    calls = []
+    try:
+        steps = trail_steps(events)
+    except (ValueError, TypeError, KeyError):
+        return False
+    for _tool, action, state, detail, _reason in steps:
+        evidence = detail.get('evidence')
+        if (action == 'schedule_preparation' and state == 'succeeded' and isinstance(evidence, dict)
+                and evidence.get('preparation_id') == row['id']):
+            calls.append(detail)
+    # A duplicate/idempotent call can return the same row with other arguments.
+    if len(calls) != 1:
+        return False
+    args = calls[0].get('arguments')
+    if not isinstance(args, dict) or 'max_runs' in args:
+        return False
+    try:
+        due, _tz = parse_due(args.get('due'), row['timezone'], row['timezone'], start - 1)
+        until, _tz = parse_due(args.get('until'), row['timezone'], row['timezone'], start - 1)
+        return (due == start == row['due_at'] and until == row['until_at']
+                and _whole_number(args.get('every_minutes')) * 60 == row['every_seconds']
+                and normalize_recurrence(args.get('recurrence')) == rhythm
+                and calls[0]['evidence'].get('max_runs') == row['max_runs'])
+    except (ValueError, TypeError):
+        return False
+
 
 REFUSALS = {
     'declined_before': ('소유자가 최근에 같은 준비 제안을 거절했습니다. 다시 제안하지 말고, 지금 요청에 대한 답만 하세요. '
@@ -606,7 +658,7 @@ def window_terms(window, recurrence, due_at, timezone_name, report_every_minutes
         if report_every_minutes not in (None, ''):
             raise PreparationRefusal('invalid_window', msg('preparations.report_interval'))
         return None
-    every, until, _runs = window
+    every, until, runs = window
     terms = {}
     if recurrence:
         tz = zone(timezone_name)
@@ -620,11 +672,11 @@ def window_terms(window, recurrence, due_at, timezone_name, report_every_minutes
             raise PreparationRefusal('invalid_window', msg('preparations.report_interval'))
         terms['report_seconds'] = seconds
     if requested_until is not None and requested_until >= until + every:
-        # Only a daily budget shortfall changes the requested end in normalization.
+        # A daily budget shortfall (or a retained legacy bound) shortens the end.
         terms['requested_until'] = requested_until
         for minutes in range(MIN_EVERY_MINUTES, math.floor((requested_until - due_at) / 60) + 2):
             permitted, slots = daily_window_slots(minutes * 60, due_at, requested_until, timezone_name, recurrence)
-            if permitted == slots:
+            if permitted == slots and slots <= runs:
                 terms['covering_every_minutes'] = minutes
                 break
     return json.dumps(terms, sort_keys=True) if terms else None

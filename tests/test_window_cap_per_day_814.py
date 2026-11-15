@@ -242,6 +242,60 @@ class WindowCapFlowTests(_WatchCase):
         self.assertNotIn('requested_until', result)
         self.assertNotIn('covering_every_minutes', result)
 
+    def test_restart_reads_the_actual_retained_creating_arguments(self):
+        for rhythm in (None, 'weekdays'):
+            for explicit in (False, True):
+                with self.subTest(rhythm=rhythm, explicit=explicit):
+                    # Emulate the former normalizer; the real worker persists the
+                    # creating arguments/result and the real store migrates them.
+                    with patch.object(prep, 'normalize_window', return_value=(300, DUE.replace(hour=20).timestamp(), 96)):
+                        self.schedule(recurrence=rhythm, max_runs=96 if explicit else None)
+                    preparation_id = self.watched['id']
+                    with self.store.db() as db:
+                        db.execute("DELETE FROM config WHERE key='preparations_daily_cap_814'")
+                    self.store = QuickStore(self.store.root)
+                    self.service = self.make_service()
+                    row = self.service.preparations.get(preparation_id)
+                    self.assertEqual(row['max_runs'], 96 if explicit else 133)
+                    self.assert_honest(row, DUE.replace(hour=16, minute=55) if explicit else DUE.replace(hour=20))
+
+    def test_migrated_explicit_bound_controls_the_last_run_and_closing_report(self):
+        self.schedule(max_runs=96)
+        with self.store.db() as db:
+            db.execute("DELETE FROM config WHERE key='preparations_daily_cap_814'")
+        self.store = QuickStore(self.store.root)
+        self.service = self.make_service()
+        row = self.service.preparations.get(self.watched['id'])
+        end = DUE.replace(hour=16, minute=55).timestamp()
+        self.assertEqual(row['until_at'], end)
+        # Process the creating Work's pending reply/notice before the report.
+        self.service.deliver_one()
+        self.service.deliver_notification()
+        # Advance past the first 95 checks; execute the last slot through the
+        # real scheduler, Work context, settlement and notification path.
+        with self.store.db() as db:
+            db.execute('UPDATE preparations SET due_at=?,run_count=95 WHERE id=?', (end, row['id']))
+        self.now = end + 1
+        self.assertTrue(self.tick())
+        running = self.service.preparations.get(row['id'])
+        fact = self.service.preparation_run_fact(self.store.job(running['last_run_job_id']))
+        self.assertIn(msg('preparations.run_last'), fact)
+        self.assertIn(msg('preparations.run_end', end=prep.local_text(end, 'Asia/Seoul')), fact)
+        self.assertIn(msg('preparations.run_daily_cap_end', end=prep.local_text(end, 'Asia/Seoul'),
+                          requested=prep.local_text(DUE.replace(hour=20).timestamp(), 'Asia/Seoul')), fact)
+        self.script = [{'content': '마지막 확인을 마쳤어요.'}] * 2
+        self.assertTrue(self.service.run_one())
+        self.assertTrue(any(fact in str(message.get('content')) for request in self.model_calls
+                            for message in request['messages']))
+        self.service.deliver_one()
+        self.assertTrue(self.tick())
+        self.service.deliver_notification()
+        final = self.service.preparations.get(row['id'])
+        self.assertEqual((final['state'], final['run_count'], final['last_decision_reason']),
+                         (prep.STATE_DELIVERED, 96, prep.REASON_WINDOW_CLOSED))
+        self.assertIn('마지막 확인을 마쳤어요.', '\n'.join(self.texts()))
+        self.assertFalse(self.tick(), 'no 97th check may be queued')
+
     def test_edit_uses_recorded_checks_after_multiple_cadence_changes(self):
         self.schedule()
         self.run_slot('변화가 없어요.')
@@ -413,12 +467,54 @@ class LegacyWindowMigrationTests(unittest.TestCase):
         self.root = Path(tmp.name) / 'state'
         self.store = QuickStore(self.root)
         self.preparations = prep.Preparations(self.store, clock=lambda: DUE.timestamp() - 60)
+        self.creating_work = 0
 
-    def legacy(self, *, recurrence=None, until=None, state=prep.STATE_SCHEDULED):
+    def legacy(self, *, recurrence=None, until=None, state=prep.STATE_SCHEDULED, provenance=None, seconds=0):
         until = until or DUE.replace(hour=20)
-        return self.preparations.create(kind='prepare', goal='새 결과 확인', due_at=DUE.timestamp(), timezone='Asia/Seoul',
-                                        recurrence=recurrence, channel='web', created_from=None, state=state,
-                                        window=(300, until.timestamp(), 96))
+        due = DUE + timedelta(seconds=seconds)
+        until += timedelta(seconds=seconds)
+        # A distinct Work can set up each row, even with identical windows.
+        self.creating_work += 1
+        work = f'creating-work-{self.creating_work}' if provenance is not None else None
+        row = self.preparations.create(kind='prepare', goal='새 결과 확인', due_at=due.timestamp(), timezone='Asia/Seoul',
+                                       recurrence=recurrence, channel='web', created_from=work, state=state,
+                                       window=(300, until.timestamp(), 96), accepted_by=prep.ACCEPTED_OWNER_REQUEST)
+        if provenance is not None:
+            args = dict(kind='prepare', goal='새 결과 확인', due=due.isoformat(), timezone='Asia/Seoul',
+                        every_minutes='5', until=until.isoformat(), **provenance)
+            if recurrence:
+                args['recurrence'] = recurrence
+            self.record_call(row, args)
+        return row
+
+    def record_call(self, row, args, *, status='succeeded', scope='owner', call_id='create', preparation_id=None):
+        common = dict(scope=scope, call_id=call_id, attempt=1, host_action='schedule_preparation')
+        with self.store.db() as db:
+            for state, detail in (
+                    ('running', {**common, 'arguments': args}),
+                    (status, {**common, 'evidence': {'preparation_id': preparation_id or row['id'], 'max_runs': 96}})):
+                db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                           (row['created_from'], 'schedule_preparation', state, json.dumps(detail), row['created_at']))
+
+    def assert_retained_bound(self, row):
+        end = DUE.replace(hour=16, minute=55).timestamp()
+        self.assertEqual((row['max_runs'], row['until_at'], row['window_end']), (96, end, end + prep.run_seconds()))
+        self.assertEqual(prep.last_slot(row), end)
+        terms = prep.stored_window_terms(row)
+        self.assertEqual(terms['requested_until'], DUE.replace(hour=20).timestamp())
+        self.assertEqual(terms['covering_every_minutes'], 7)
+        covering = prep.normalize_window(terms['covering_every_minutes'], DUE.replace(hour=20).isoformat(), None,
+                                         DUE.timestamp(), 'Asia/Seoul', DUE.timestamp() - 1, terms.get('recurrence'))
+        self.assertEqual(covering[1], DUE.replace(hour=20).timestamp())
+        self.assertLessEqual(covering[2], 96)
+        for text in (prep.schedule_text(row, 'Asia/Seoul'), prep.proposal_summary(row, 'Asia/Seoul')):
+            self.assertIn('16:55까지', text)
+            self.assertIn('최대 96번', text)
+            self.assertNotIn('20:00까지', text)
+        if terms.get('recurrence'):
+            self.assertEqual(terms['end_time'], '16:55:00')
+            tomorrow = {**row, **prep.next_day_window(row, end)}
+            self.assertEqual((tomorrow['max_runs'], prep.last_slot(tomorrow)), (96, end + 86400))
 
     def upgrade(self):
         with self.store.db() as db:
@@ -427,18 +523,12 @@ class LegacyWindowMigrationTests(unittest.TestCase):
         self.preparations = prep.Preparations(self.store, clock=lambda: DUE.timestamp() - 60)
 
     def test_active_legacy_windows_cover_the_promised_end_on_restart(self):
-        rhythm = self.legacy(recurrence='weekdays')
-        one_off = self.legacy(until=DUE + timedelta(days=1))
-        inactive = self.legacy(state=prep.STATE_PROPOSED)
+        rhythm = self.legacy(recurrence='weekdays', provenance={})
+        same_day = self.legacy(provenance={})
+        one_off = self.legacy(until=DUE + timedelta(days=1), provenance={})
+        inactive = self.legacy(state=prep.STATE_PROPOSED, provenance={})
         self.preparations.cancel(inactive['id'])
-        # A partially consumed old one-off still needs its remaining checks.
-        partial = self.legacy()
-        seconds = self.legacy()
-        with self.store.db() as db:
-            db.execute('UPDATE preparations SET run_count=95,due_at=?,rule_start=NULL WHERE id=?',
-                       (DUE.replace(hour=16, minute=55).timestamp(), partial['id']))
-            db.execute('UPDATE preparations SET due_at=due_at+30,rule_start=rule_start+30,until_at=until_at+30,window_end=window_end+30 WHERE id=?',
-                       (seconds['id'],))
+        seconds = self.legacy(provenance={}, seconds=30)
         self.upgrade()
         row = self.preparations.get(rhythm['id'])
         self.assertEqual((row['max_runs'], row['until_at']), (133, DUE.replace(hour=20).timestamp()))
@@ -447,18 +537,71 @@ class LegacyWindowMigrationTests(unittest.TestCase):
         row = self.preparations.get(one_off['id'])
         self.assertEqual((row['max_runs'], row['until_at']), (288, (DUE + timedelta(hours=23, minutes=55)).timestamp()))
         self.assertEqual(prep.stored_window_terms(row)['requested_until'], (DUE + timedelta(days=1)).timestamp())
-        self.assertEqual(self.preparations.get(partial['id'])['max_runs'], 133)
+        self.assertEqual((self.preparations.get(same_day['id'])['max_runs'], self.preparations.get(same_day['id'])['until_at']),
+                         (133, DUE.replace(hour=20).timestamp()))
         self.assertEqual((self.preparations.get(seconds['id'])['max_runs'], self.preparations.get(seconds['id'])['until_at']),
                          (133, DUE.replace(hour=20, second=30).timestamp()))
         self.assertEqual(self.preparations.get(inactive['id'])['max_runs'], 96)
         # The migration is one-shot: a new explicit 96 remains intentional.
-        explicit = self.legacy()
+        explicit = self.legacy(provenance={'max_runs': '96'})
+        before = [self.preparations.get(item['id']) for item in (rhythm, same_day, one_off, seconds, explicit)]
         with self.store.db() as db:
             prep.migrate(db)
-        self.assertEqual(self.preparations.get(explicit['id'])['max_runs'], 96)
+        self.assertEqual([self.preparations.get(item['id']) for item in (rhythm, same_day, one_off, seconds, explicit)], before)
+
+    def test_explicit_and_unknown_limits_keep_96_with_an_honest_end(self):
+        rows = [self.legacy(recurrence=rhythm, provenance=provenance)
+                for rhythm in (None, 'weekdays') for provenance in (None, {'max_runs': '96'}, {'max_runs': '120'})]
+        self.upgrade()
+        for original in rows:
+            with self.subTest(id=original['id']):
+                self.assert_retained_bound(self.preparations.get(original['id']))
+        before = [self.preparations.get(item['id']) for item in rows]
+        with self.store.db() as db:
+            prep.migrate(db)
+        self.assertEqual([self.preparations.get(item['id']) for item in rows], before)
+
+    def test_a_later_settings_edit_or_consumed_window_cannot_prove_omission(self):
+        rows = [self.legacy(recurrence=rhythm, provenance={}) for rhythm in (None, 'weekdays')]
+        # The Settings edit need not change a value: explicitly setting the
+        # displayed 96 after implicit creation is still an explicit bound.
+        for row in rows:
+            self.preparations.clock = lambda: row['created_at'] + 1
+            self.preparations.edit(row['id'], max_runs=96)
+        partial = self.legacy(provenance={})
+        with self.store.db() as db:
+            db.execute('UPDATE preparations SET run_count=95,due_at=?,rule_start=NULL,updated_at=updated_at+1 WHERE id=?',
+                       (DUE.replace(hour=16, minute=55).timestamp(), partial['id']))
+        self.upgrade()
+        for row in (*rows, partial):
+            self.assert_retained_bound(self.preparations.get(row['id']))
+
+    def test_failed_unmatched_duplicate_and_malformed_evidence_never_prove_omission(self):
+        rows = []
+        for problem in ('failed', 'unmatched', 'wrong-row', 'duplicate', 'malformed', 'mismatched-window'):
+            row = self.legacy(provenance={'max_runs': '96'})
+            rows.append(row)
+            with self.store.db() as db:
+                db.execute('DELETE FROM tool_events WHERE job_id=?', (row['created_from'],))
+            args = dict(due=DUE.isoformat(), until=DUE.replace(hour=20).isoformat(), every_minutes='5')
+            if problem == 'mismatched-window':
+                args['every_minutes'] = '10'
+            self.record_call(row, args, status='failed' if problem == 'failed' else 'succeeded',
+                             preparation_id='other' if problem == 'wrong-row' else None)
+            if problem == 'duplicate':
+                self.record_call(row, {**args, 'max_runs': '96'}, call_id='retry')
+            with self.store.db() as db:
+                if problem == 'unmatched':
+                    db.execute("UPDATE tool_events SET detail=json_set(detail,'$.scope','other') WHERE job_id=? AND status='running'",
+                               (row['created_from'],))
+                elif problem == 'malformed':
+                    db.execute("UPDATE tool_events SET detail='[]' WHERE job_id=? AND status='running'", (row['created_from'],))
+        self.upgrade()
+        for row in rows:
+            self.assert_retained_bound(self.preparations.get(row['id']))
 
     def test_migration_shortens_recurring_terms_if_the_daily_cap_still_binds(self):
-        row = self.legacy(recurrence='weekdays')
+        row = self.legacy(recurrence='weekdays', provenance={})
         with patch.object(prep, 'MAX_DAILY_WINDOW_RUNS', 3):
             self.upgrade()
         row = self.preparations.get(row['id'])
@@ -467,17 +610,22 @@ class LegacyWindowMigrationTests(unittest.TestCase):
         self.assertEqual(prep.stored_window_terms(row)['requested_until'], DUE.replace(hour=20).timestamp())
 
     def test_invalid_legacy_rows_are_unchanged_and_do_not_block_migration(self):
-        odd = self.legacy(recurrence='weekdays')
-        bad_report = self.legacy()
-        valid = self.legacy()
+        odd = self.legacy(recurrence='weekdays', provenance={})
+        bad_report = self.legacy(provenance={})
+        bad_terms = self.legacy()
+        bad_cadence = self.legacy()
+        valid = self.legacy(provenance={})
         with self.store.db() as db:
             db.execute('UPDATE preparations SET until_at=until_at+86400,window_end=window_end+86400 WHERE id=?',
                        (odd['id'],))
             db.execute('UPDATE preparations SET window_terms=? WHERE id=?',
                        (json.dumps({'report_seconds': 61}), bad_report['id']))
-        before = [self.preparations.get(row['id']) for row in (odd, bad_report)]
+            db.execute("UPDATE preparations SET window_terms='[1]' WHERE id=?", (bad_terms['id'],))
+            db.execute('UPDATE preparations SET every_seconds=0 WHERE id=?', (bad_cadence['id'],))
+        invalid = (odd, bad_report, bad_terms, bad_cadence)
+        before = [self.preparations.get(row['id']) for row in invalid]
         self.upgrade()
-        self.assertEqual([self.preparations.get(row['id']) for row in (odd, bad_report)], before)
+        self.assertEqual([self.preparations.get(row['id']) for row in invalid], before)
         self.assertEqual(self.preparations.get(valid['id'])['max_runs'], 133)
         with self.store.db() as db:
             self.assertEqual(db.execute("SELECT value FROM config WHERE key='preparations_daily_cap_814'").fetchone()[0], 'true')
