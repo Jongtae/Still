@@ -44,6 +44,7 @@ from .messages import msg
 from .prompt_files import prompt
 import hashlib
 import json
+import logging
 import math
 import re
 from dateutil.rrule import rrulestr
@@ -51,6 +52,8 @@ import time
 import uuid
 from datetime import datetime, timedelta, timezone as dt_timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+LOG = logging.getLogger(__name__)
 
 OWNER = 'local-owner'
 KIND_REMINDER, KIND_PREPARE = 'reminder', 'prepare'
@@ -84,6 +87,16 @@ REASON_PROMISED_REPORT = 'promised-report-due'
 NOTIFY_KIND = 'preparation_notify'
 BLOCKED_NOTICE_PREFIX = 'preparation_blocked:'
 EXPIRED_NOTICE_KIND = 'preparation_window_elapsed'
+# #867: owner-wide scheduled Work admissions, independent of the chosen AI route.
+SCHEDULED_BUDGET_KEY = 'scheduled_work_budget'
+SCHEDULED_USAGE_PREFIX = 'scheduled_work_usage:'
+SCHEDULED_SKIPPED_PREFIX = 'scheduled_work_skipped:'
+SCHEDULED_BUDGET_REASON = 'scheduled-work-daily-budget'
+SCHEDULED_BUDGET_NOTICE = 'scheduled_work_budget'
+DEFAULT_SCHEDULED_DAILY_CALLS = 300
+MAX_SCHEDULED_DAILY_CALLS = 14400  # 50 active watches * 288 slots; 0 disables the limit.
+SCHEDULED_USAGE_RETENTION_DAYS = 3  # Today and the preceding two owner-local dates.
+
 NOTIFIED_TEXT_BYTES = 1500
 CHANNEL_TELEGRAM, CHANNEL_WEB = 'telegram', 'web'
 
@@ -1172,9 +1185,125 @@ def digest(rows):
 class Preparations:
     """The ``preparations`` rows of one owner store.  No model, no network."""
 
-    def __init__(self, store, clock=time.time, notice_destination=None):
+    def __init__(self, store, clock=time.time, notice_destination=None, budget_notice_destinations=None):
         self.store, self.clock = store, clock
         self.notice_destination = notice_destination
+        self.budget_notice_destinations = budget_notice_destinations
+        self._invalid_budget_logged = False
+
+    def budget_settings(self, db=None):
+        try:
+            value = self.store.config(SCHEDULED_BUDGET_KEY, {}, db=db)
+        except (ValueError, TypeError):
+            value = None
+        cap = value.get('daily_calls', DEFAULT_SCHEDULED_DAILY_CALLS) if isinstance(value, dict) else None
+        if type(cap) is not int or not 0 <= cap <= MAX_SCHEDULED_DAILY_CALLS:
+            cap = DEFAULT_SCHEDULED_DAILY_CALLS
+            if not self._invalid_budget_logged:
+                self._invalid_budget_logged = True
+                LOG.warning('Invalid stored scheduled Work budget; using default daily_calls=%s', cap)
+        return {'daily_calls': cap}
+
+    def set_budget(self, cap):
+        if type(cap) is not int or not 0 <= cap <= MAX_SCHEDULED_DAILY_CALLS:
+            raise ValueError(msg('scheduled_budget.invalid', limit=MAX_SCHEDULED_DAILY_CALLS))
+        self.store.put(SCHEDULED_BUDGET_KEY, {'daily_calls': cap})
+        return self.budget_settings()
+
+    def budget_day(self, now, db=None):
+        from .context_observations import ContextObservations, CONFIG_KEY
+        # With no configured owner zone, use this owner's machine-local date (as cloud daily_calls does).
+        timezone = ContextObservations._normalize(self.store.config(CONFIG_KEY, db=db))['timezone']
+        return datetime.fromtimestamp(now, zone(timezone)).date().isoformat()
+
+    def _skip_budget_slot(self, db, row, key, now, day, cap):
+        """Consume a refused slot atomically, retaining evidence without inventing an AI Work.
+
+        The existing message/notification outbox owns the once-per-day notice, including
+        local chat when no delivery surface is connected. No separate delivery state.
+        """
+        run = int(row['run_count'] or 0) + 1
+        consumed = {**row, 'run_count': run}
+        window = row['recurrence'] == RECURRENCE_WINDOW
+        following = (next_window_slot(consumed, now) if window else
+                     next_due(row['due_at'], row['timezone'], row['recurrence'], now, row.get('rule_start'), run))
+        advance = next_day_window(consumed, now) if window and following is None else {}
+        updates = {'run_count': run, 'updated_at': now, 'last_outcome': 'skipped',
+                   'state': STATE_SCHEDULED if following is not None or advance else STATE_EXPIRED,
+                   **({'due_at': following} if following is not None else {}), **advance}
+        db.execute(f"UPDATE preparations SET {','.join(k + '=?' for k in updates)} WHERE id=?",
+                   (*updates.values(), row['id']))
+        detail = {'preparation_id': row['id'], 'slot': iso(row['due_at']), 'slot_at': row['due_at'],
+                  'slot_local': local_text(row['due_at'], row['timezone']),
+                  'reason': SCHEDULED_BUDGET_REASON,
+                  'day': day, 'daily_calls': cap, 'ran': False}
+        db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                   (key, SCHEDULED_BUDGET_KEY, 'skipped', json.dumps(detail), now))
+        pending_key = SCHEDULED_SKIPPED_PREFIX + row['id']
+        pending = self.store.config(pending_key, {}, db=db)
+        self.store.put(pending_key, {'count': pending.get('count', 0) + 1,
+                                    'first_slot_at': pending.get('first_slot_at', row['due_at']),
+                                    'last_slot_at': row['due_at'], 'reason': SCHEDULED_BUDGET_REASON}, db=db)
+        notice_id = SCHEDULED_USAGE_PREFIX + day
+        if not db.execute('SELECT 1 FROM messages WHERE job_id=?', (notice_id,)).fetchone():
+            from .current_context import redact_known_secrets
+            text = msg('scheduled_budget.notice', day=day, cap=cap,
+                       title=redact_known_secrets(self.store, owner_title(row)),
+                       slot=local_text(row['due_at'], row['timezone']))
+            db.execute('INSERT INTO messages(role,content,channel,created,job_id) VALUES (?,?,?,?,?)',
+                       ('assistant', text, 'web', now, notice_id))
+        # Owner-wide notice: its destinations never depend on the skipped row or its anchor.
+        # The outbox's (job_id, kind) uniqueness needs a separate receipt per surface.
+        for owner, generation, surface in self.budget_notice_destinations() if self.budget_notice_destinations else ():
+            self.store.telegram.queue_notification(notice_id + ':' + surface, owner, generation,
+                                                   SCHEDULED_BUDGET_NOTICE, notice_id, surface, db=db, created=now)
+        self._clear_closed_budget_skips(db)
+
+    @staticmethod
+    def _clear_closed_budget_skips(db):
+        # The daily notice already covers all remaining checks, including a missing
+        # closing report. Keep the immutable events, not pending input no run can carry.
+        # A terminal row still owns its queued or uncertain final report until confirmed.
+        db.execute(f'DELETE FROM config WHERE key GLOB ? AND NOT EXISTS '
+                   f'(SELECT 1 FROM preparations WHERE id=substr(config.key,?) AND '
+                   f'(state IN ({",".join("?" for _ in ACTIVE_STATES)}) OR EXISTS '
+                   "(SELECT 1 FROM telegram_notifications WHERE job_id=preparations.last_run_job_id "
+                   "AND kind=? AND state IN ('queued','sending','unknown'))))",
+                   (SCHEDULED_SKIPPED_PREFIX + '*', len(SCHEDULED_SKIPPED_PREFIX) + 1, *ACTIVE_STATES, NOTIFY_KIND))
+
+    def _clear_carried_budget_skips(self, db, preparation_id, work_id):
+        """Consume only this report's snapshot, preserving skips accumulated since it ran."""
+        carried = db.execute('SELECT detail FROM tool_events WHERE job_id=? AND tool=? AND status=? ORDER BY id LIMIT 1',
+                             (work_id, SCHEDULED_BUDGET_KEY, 'unchecked-slots')).fetchone()
+        pending_key = SCHEDULED_SKIPPED_PREFIX + preparation_id
+        if carried and json.loads(carried['detail']) == self.store.config(pending_key, db=db):
+            db.execute('DELETE FROM config WHERE key=?', (pending_key,))
+
+    def budget_skipped_fact(self, job):
+        """Bind unchecked slots to this Work; repeated worker/judge reads see the same fact.
+
+        Pending facts survive restart, failed runs and quiet checks. A delivered or
+        explicitly kept report clears only its snapshot; notification reports wait
+        for record_notified. The skip events themselves remain Evidence.
+        Uses SQLite/QuickStore's existing transaction and event store, with no new schema.
+        """
+        preparation_id = preparation_of(job.get('request_key'))
+        if not preparation_id:
+            return None
+        with self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            carried = db.execute('SELECT detail FROM tool_events WHERE job_id=? AND tool=? AND status=? ORDER BY id LIMIT 1',
+                                 (job['id'], SCHEDULED_BUDGET_KEY, 'unchecked-slots')).fetchone()
+            if carried:
+                return json.loads(carried['detail'])
+            current = db.execute('SELECT state,last_run_job_id FROM preparations WHERE id=?', (preparation_id,)).fetchone()
+            if not current or current['state'] != STATE_RUNNING or current['last_run_job_id'] != job['id']:
+                return None
+            pending = self.store.config(SCHEDULED_SKIPPED_PREFIX + preparation_id, db=db)
+            if pending:
+                db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                           (job['id'], SCHEDULED_BUDGET_KEY, 'unchecked-slots', json.dumps(pending), self.clock()))
+            return pending
 
     def _queue_status_notice(self, db, row, job_id, kind, created):
         if self.notice_destination is None or not row['accepted_by']:
@@ -1302,6 +1431,7 @@ class Preparations:
             revision = max(now, math.nextafter(current['updated_at'], math.inf)) if current else now
             changed = db.execute('UPDATE preparations SET state=?,updated_at=? WHERE id=? AND state IN (?,?,?,?)',
                                  (STATE_CANCELLED, revision, preparation_id, *ACTIVE_STATES)).rowcount
+            self._clear_closed_budget_skips(db)
             row = db.execute('SELECT * FROM preparations WHERE id=?', (preparation_id,)).fetchone()
         if row is None:
             raise PreparationRefusal('not_found')
@@ -1543,6 +1673,7 @@ class Preparations:
             if row['state'] == STATE_RUNNING:
                 raise PreparationRefusal('running')
             db.execute('DELETE FROM preparations WHERE id=?', (preparation_id,))
+            self._clear_closed_budget_skips(db)
         return {'deleted': True, 'id': preparation_id}
 
     def declined_goals(self, now, limit=DECLINED_GOALS_LIMIT):
@@ -1737,6 +1868,7 @@ class Preparations:
         Immediate runs settle even before the regular due time (#575).
         """
         with self.store.db() as db:
+            self._clear_closed_budget_skips(db)
             return [dict(row) for row in db.execute(
                 'SELECT p.*, j.status AS job_status, j.delivery AS job_delivery FROM preparations p '
                 'LEFT JOIN jobs j ON j.id=p.last_run_job_id '
@@ -1814,6 +1946,7 @@ class Preparations:
                    'updated_at': now, 'run_return_state': None, **advance}
         db.execute(f"UPDATE preparations SET {','.join(key + '=?' for key in updates)} "
                    'WHERE last_run_job_id=? AND state=?', (*updates.values(), work_id, STATE_RUNNING))
+        self._clear_closed_budget_skips(db)
         db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                    (work_id, 'preparation', 'withheld', json.dumps({'reason': reason, 'resumed': False}), now))
         if row and reason == 'preparation-window-expired':
@@ -1861,6 +1994,7 @@ class Preparations:
                 else:
                     db.execute('UPDATE preparations SET state=?,updated_at=? WHERE id=? AND state=?',
                                (STATE_EXPIRED, now, current['id'], STATE_SCHEDULED))
+                self._clear_closed_budget_skips(db)
                 self._queue_status_notice(db, current, key, EXPIRED_NOTICE_KIND, min(now, slot))
                 return None
             refusal = None if existing else line_refusal(db, current.get('line_id'))
@@ -1869,12 +2003,29 @@ class Preparations:
                 state = STATE_CANCELLED if refusal == LINE_STOPPED else STATE_FAILED
                 db.execute('UPDATE preparations SET state=?,last_outcome=?,updated_at=? WHERE id=? AND state IN (?,?)',
                            (state, state, now, current['id'], STATE_SCHEDULED, STATE_PAUSED))
+                self._clear_closed_budget_skips(db)
                 db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                            (key, 'preparation', 'withheld', json.dumps({'reason': refusal, 'resumed': False,
                                                                         'preparation_id': current['id']}), now))
                 if immediate:
                     raise PreparationRefusal('line_inactive')
                 return None
+            # Owner-pressed run-now and builtin reminders use no unattended allowance.
+            # Existing Works (and their WorkLedger retries/continuations) keep their admission.
+            counted = not immediate and not existing and current['kind'] == KIND_PREPARE
+            if counted:
+                # A previously consumed skip cannot be re-admitted by a replayed slot.
+                if db.execute('SELECT 1 FROM tool_events WHERE job_id=? AND tool=? AND status=?',
+                              (key, SCHEDULED_BUDGET_KEY, 'skipped')).fetchone():
+                    return None
+                day = self.budget_day(now, db=db)
+                usage_key = SCHEDULED_USAGE_PREFIX + day
+                previous_usage = self.store.config(usage_key, db=db)
+                calls = previous_usage if previous_usage is not None else 0
+                cap = self.budget_settings(db=db)['daily_calls']
+                if cap and calls >= cap:
+                    self._skip_budget_slot(db, current, key, now, day, cap)
+                    return None
             if existing:
                 job_id = existing['id']
             elif current['kind'] == KIND_REMINDER:
@@ -1896,6 +2047,17 @@ class Preparations:
                     if immediate:
                         raise PreparationRefusal('queue_full') from None
                     return None
+            if counted:
+                # As in cloud daily_calls, charge admission, even if the engine later fails.
+                # Enqueue, counter and evidence commit together; queue-full charges nothing.
+                if previous_usage is None:
+                    cutoff = (datetime.fromisoformat(day) - timedelta(days=SCHEDULED_USAGE_RETENTION_DAYS - 1)).date().isoformat()
+                    db.execute('DELETE FROM config WHERE key GLOB ? AND key<?',
+                               (SCHEDULED_USAGE_PREFIX + '*', SCHEDULED_USAGE_PREFIX + cutoff))
+                self.store.put(usage_key, calls + 1, db=db)
+                db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                           (job_id, SCHEDULED_BUDGET_KEY, 'admitted',
+                            json.dumps({'preparation_id': current['id'], 'slot': iso(slot), 'day': day}), now))
             # #580: an extra immediate run does not consume a rule's scheduled count.
             terms = stored_window_terms(current)
             extra_rule = immediate and (str(current['recurrence'] or '').startswith('RRULE:')
@@ -1987,6 +2149,8 @@ class Preparations:
                 return None
             outcome = run_outcome(current['kind'], job)
             updates = {'last_outcome': outcome, 'updated_at': now}
+            if outcome == STATE_DELIVERED and job and current.get('delivery_mode') != DELIVERY_WHEN_NEEDED:
+                self._clear_carried_budget_skips(db, current['id'], job['id'])
             if current['kind'] == KIND_PREPARE and job and ws.has_delivered_result(job['status']) and answer is not None:
                 updates.update(prepared_result_ref=job['id'], prepared_at=now, prepared_text=answer)
             if current['recurrence'] == RECURRENCE_WINDOW:
@@ -2024,6 +2188,7 @@ class Preparations:
                     notified = True
             db.execute(f"UPDATE preparations SET {','.join(k + '=?' for k in updates)} WHERE id=? AND state=?",
                        (*updates.values(), current['id'], STATE_RUNNING))
+            self._clear_closed_budget_skips(db)
             if job:
                 detail = {'preparation_id': current['id'], 'outcome': outcome, 'delivery': job['delivery'],
                           'next_due': iso(following) if following else None}
@@ -2047,8 +2212,12 @@ class Preparations:
         if not preparation_id:
             return False
         with self.store.db() as db:
-            return bool(db.execute('UPDATE preparations SET last_notified_digest=?,last_notified_text=?,last_notified_at=? '
-                                   'WHERE id=?', (digest_, bounded_text(text), now, preparation_id)).rowcount)
+            db.execute('BEGIN IMMEDIATE')
+            changed = bool(db.execute('UPDATE preparations SET last_notified_digest=?,last_notified_text=?,last_notified_at=? '
+                                      'WHERE id=?', (digest_, bounded_text(text), now, preparation_id)).rowcount)
+            if changed and run_outcome(KIND_PREPARE, job) == STATE_DELIVERED:
+                self._clear_carried_budget_skips(db, preparation_id, work_id)
+            return changed
 
     # -- consumption -------------------------------------------------------
 

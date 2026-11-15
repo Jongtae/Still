@@ -710,7 +710,8 @@ class AgentService:
         self.current_state=CurrentContext(store,self.context_observations)
         # #659: owner-accepted preparations, run by the existing work loop.
         self.preparations=prep.Preparations(
-            store,notice_destination=lambda channel:self.preparations_service.notice_destination(channel))
+            store,notice_destination=lambda channel:self.preparations_service.notice_destination(channel),
+            budget_notice_destinations=lambda:self.preparations_service.budget_notice_destinations())
         # #798: entrusted lines (one continuing responsibility each) on the preparations' clock.
         from .entrusted_lines import EntrustedLines
         self.lines=EntrustedLines(store,clock=lambda:self.preparations.clock())

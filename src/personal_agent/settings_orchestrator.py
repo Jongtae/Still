@@ -97,12 +97,12 @@ def next_action(row):
 
 
 #: #814: owner-visible names of the categories and settings the conversation may read/change.
-CATEGORY_LABELS = {"write_allowances": msg("write_allowances.label"), "payment_autonomy": msg("payment_autonomy.label"), "connections": msg('label.external_connections'), "current_context": msg('label.current_context'), "judgment_ai": msg('label.judgment_ai'), "main_ai": msg('label.main_ai'),
+CATEGORY_LABELS = {"scheduled_work": msg("scheduled_budget.label"), "write_allowances": msg("write_allowances.label"), "payment_autonomy": msg("payment_autonomy.label"), "connections": msg('label.external_connections'), "current_context": msg('label.current_context'), "judgment_ai": msg('label.judgment_ai'), "main_ai": msg('label.main_ai'),
                    "owner_model": msg('settings_orchestrator.owner_model_label'), "skills": msg('settings_orchestrator.skills_label'),
                    "phone_link": msg('settings_orchestrator.phone_link_label'), "ai_connections": msg('settings_orchestrator.ai_connections_label'), "api_connections": msg('settings_orchestrator.api_connections_label'),
                    "preparations": msg('settings_orchestrator.preparations_label'), "browser": msg('settings_orchestrator.browser_label'),
                    "developer_mode": msg('conversation_handoff.developer_mode')}
-SETTINGS = {"write_allowances": ("allow", "revoke"), "payment_autonomy": ("enabled",), "current_context": ("enabled", "timezone"), "judgment_ai": ("mode", "model"), "main_ai": ("route", "model"),
+SETTINGS = {"scheduled_work": ("daily_calls",), "write_allowances": ("allow", "revoke"), "payment_autonomy": ("enabled",), "current_context": ("enabled", "timezone"), "judgment_ai": ("mode", "model"), "main_ai": ("route", "model"),
             # #805 owner-model upkeep: its pause switch and rolling 24-hour call cap.
             # #402: the once-a-day look back over recent requests has its own switch.
             "owner_model": ("enabled", "daily_calls", "dream"),
@@ -134,6 +134,7 @@ SETTING_LABELS = {"allow": msg("write_allowances.enable"), "revoke": msg("write_
                   **{operation: msg('settings_orchestrator.label_preparations_' + operation)
                      for operation in ('pause', 'resume', 'restore', 'edit', 'run_now')}}
 _CATEGORY_LINE_IDS = {
+    'scheduled_work': 'scheduled_budget.category_line',
     'payment_autonomy': 'payment_autonomy.category_line',
     'write_allowances': 'write_allowances.category_line',
     'connections': 'settings_orchestrator.category_line_connections',
@@ -179,7 +180,7 @@ _SETTING_VALUE_IDS = {
     msg('settings_orchestrator.new_api_connection'): 'settings_orchestrator.setting_value_new_api',
 }
 # Whole compound labels let the surface translate multiword category names unambiguously.
-_CHANGE_LABELS = {("write_allowances", "allow"): msg("write_allowances.enable"), ("write_allowances", "revoke"): msg("write_allowances.disable"), ("payment_autonomy", "enabled"): msg("payment_autonomy.label"),
+_CHANGE_LABELS = {('scheduled_work', 'daily_calls'): msg('scheduled_budget.label'), ("write_allowances", "allow"): msg("write_allowances.enable"), ("write_allowances", "revoke"): msg("write_allowances.disable"), ("payment_autonomy", "enabled"): msg("payment_autonomy.label"),
     ('current_context', 'enabled'): msg('settings_orchestrator.label_current_context_enabled'),
     ('current_context', 'timezone'): msg('settings_orchestrator.label_current_context_timezone'),
     ('judgment_ai', 'mode'): msg('settings_orchestrator.label_judgment_ai_mode'),
@@ -271,6 +272,7 @@ RECOVERY_DECLINED_MESSAGE = msg('settings_orchestrator.recovery_declined')
 #: a new connection, server, trust level, skill, phone link, Telegram pairing, AI route or
 #: Judgment AI keeps the owner's confirmation of Still's exact preview.
 DIRECT_REQUEST_SETTINGS = frozenset({
+    ('scheduled_work', 'daily_calls'),
     ('current_context', 'enabled'), ('current_context', 'timezone'),
     ('owner_model', 'enabled'), ('owner_model', 'daily_calls'), ('owner_model', 'dream'),
     ('main_ai', 'model'), ('skills', 'remove'), ('write_allowances', 'revoke'), ('payment_autonomy', 'enabled', 'off'),
@@ -502,6 +504,12 @@ class SettingsOrchestrator:
         return {"enabled": self._row("enabled", enabled, VALUE_LABELS[enabled], self._options(("on", "off"))),
                 "timezone": self._row("timezone", zone, zone or msg('settings_orchestrator.default_timezone'), None,
                                       format=msg('settings_orchestrator.timezone_format'))}
+
+    def _scheduled_work(self):
+        from .preparations import MAX_SCHEDULED_DAILY_CALLS
+        cap = str(self.service.preparations.budget_settings()['daily_calls'])
+        return {'daily_calls': self._row('daily_calls', cap, msg('scheduled_budget.value', value=cap), None,
+                                        format=msg('scheduled_budget.format', limit=MAX_SCHEDULED_DAILY_CALLS))}
 
     def _owner_model(self):
         from .owner_model import MAX_DAILY_CALLS
@@ -795,6 +803,8 @@ class SettingsOrchestrator:
                 raise SettingsError(msg('settings_orchestrator.error_unchanged', exc=exc)) from None
         if setting == "daily_calls":
             from .owner_model import MAX_DAILY_CALLS
+            if category == 'scheduled_work':
+                from .preparations import MAX_SCHEDULED_DAILY_CALLS as MAX_DAILY_CALLS
             if not value.isascii() or not value.isdigit() or not 0 <= int(value) <= MAX_DAILY_CALLS:
                 raise SettingsError(msg('settings_orchestrator.invalid_daily_calls', limit=MAX_DAILY_CALLS))
             return str(int(value)), row
@@ -977,6 +987,8 @@ class SettingsOrchestrator:
             current = self.service.preparations.get(value)
             return options.get(value) or (redact_known_secrets(self.store, prep.owner_title(current))
                                           if current else msg('settings_orchestrator.value_not_set'))
+        if category == 'scheduled_work':
+            return msg('scheduled_budget.value', value=value)
         if setting == "daily_calls":
             return msg('settings_orchestrator.call_count', value=value)
         return options.get(value) or VALUE_LABELS.get(value) or value or msg('settings_orchestrator.value_not_set')
@@ -1284,6 +1296,8 @@ class SettingsOrchestrator:
             # #961: the service's own setters; adding returns the installed identity as the answer.
             receipt = self.service.apply_skill_setting(setting, after)
             self.__dict__.setdefault("_apply_text", {})[row["id"]] = (receipt or {}).get("response")
+        elif category == 'scheduled_work':
+            self.service.preparations.set_budget(int(after))
         elif category == "owner_model":
             self.service.owner_model_request({"operation": "set", **({setting: after == "on"} if setting in ("enabled", "dream")
                                                                       else {"daily_calls": int(after)})})
