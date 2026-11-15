@@ -1166,3 +1166,49 @@ def test_cli_compare_accepts_filled_labels_template_with_references(rubric, tmp_
                          '--labels',str(label_paths[0]),'--labels',str(label_paths[1])]) == 0
     result = json.loads((tmp_path/'after.c2.compare.json').read_text())
     assert result['verdict_basis'] == 'human labels supplied'
+
+
+@pytest.mark.parametrize('grade', [0, 1, 2])
+def test_reminder_delivered_body_can_be_graded_without_admission(tmp_path, grade):
+    from test_eval_come_due import ReminderTrace, SOURCE, SPEC
+    receipt = ReminderTrace(tmp_path).wait()
+    run_record = {'turns':[
+        {**SOURCE,'say':'entrust','answer':'accepted','status':'succeeded'},
+        {'kind':'wait_due','due_observation':receipt,'before_answer':receipt['messages']},
+        {'task_id':'follow','say':'follow up','answer':'requested revision','status':'succeeded'}],
+        'due_observations':[receipt]}
+    rubric = c.load_rubric(c.DEFAULT_RUBRIC)
+    parsed = s.parse_measures(json.dumps(reply(proactive=grade)),rubric,run_record)
+    assert parsed['proactive_usefulness']['score'] == grade
+    assert parsed['proactive_observation']['outputs'][0]['text'] == 'the observed reminder body'
+    assert parsed['proactive_observation']['outputs'][0]['kind'] == 'scheduled_reminder'
+    assert 'requested revision' not in str(parsed['proactive_observation'])
+    values = s.measure_values(parsed,scenario(),run_record)
+    assert values['measure_proactive_usefulness'] == grade/2
+    # Losing typed origin cannot be repaired by the result excerpt or by a label.
+    receipt.pop('reminder_origin')
+    assert s.parse_measures(json.dumps(reply(proactive=2)),rubric,run_record)['proactive_usefulness']['score'] is None
+
+
+def test_reminder_proof_uses_new_observation_identity_and_survives_reports(rubric,tmp_path):
+    from test_eval_come_due import ReminderTrace
+    receipt = ReminderTrace(tmp_path/'store').wait()
+    baseline = make_report(rubric)
+    records = copy.deepcopy(baseline['samples'])
+    for record in records:
+        record['due_observations'] = [receipt]
+        record['observation_version'] = c.OBSERVATION_VERSION
+        record['checks']['due_completed'] = True
+    fixture = {**baseline['fixture_support'],'observation_version':c.OBSERVATION_VERSION,
+               'due_scenario_ids':['dev-case','held-case']}
+    report = c.build_report(records,baseline['live_evidence'],fixture)
+    assert report['observation_version'] == 'continuity-observation-v3'
+    assert report['samples'][0]['due_observations'][0]['due_slot'] == receipt['start']['facts']['slot']
+    assert c.labels_template(report)['references'][0]['due_observations'][0]['reminder_origin']
+    assert not any('builtin reminder provenance remain unsupported' in text
+                   for text in report['unsupported_paths']['limitations'])
+    old = copy.deepcopy(report)
+    old['observation_version'] = 'continuity-observation-v2'
+    old['fixture_support']['observation_version'] = 'continuity-observation-v2'
+    with pytest.raises(ValueError,match='observation'):
+        c.compare(old,report)

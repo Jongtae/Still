@@ -162,7 +162,7 @@ def due_evidence(data, source_id, since, *, timeout, clock=time.monotonic):
             return found
 
         preparations = rows('SELECT id,created_from,created_at,due_at,kind,state,run_count,last_run_job_id,'
-                            'delivery_mode,last_decision,last_decision_reason,prepared_at,recurrence FROM preparations '
+                            'delivery_mode,last_decision,last_decision_reason,prepared_at,recurrence,run_return_state,last_outcome FROM preparations '
                             'WHERE created_from=? AND created_at>=?', (source_id, since))
         events = rows("SELECT e.id,e.job_id,e.tool,e.status,e.detail,e.created FROM tool_events e "
                       "WHERE e.created>=? AND e.tool IN ('preparation','scheduled_work_budget') ORDER BY e.id", (since,))
@@ -170,12 +170,12 @@ def due_evidence(data, source_id, since, *, timeout, clock=time.monotonic):
         for event in events:
             raw = json.loads(event.pop('detail'))
             event['facts'] = {k: raw[k] for k in ('preparation_id', 'slot', 'outcome', 'delivery',
-                             'decision', 'reason', 'notification_queued', 'slot_at', 'next_due') if k in raw}
+                             'decision', 'reason', 'notification_queued', 'slot_at', 'next_due', 'kind') if k in raw}
         ids = [r['last_run_job_id'] for r in preparations if r['last_run_job_id']]
         jobs, replies, notifications = [], [], []
         if ids:
             marks = ','.join('?' for _ in ids)
-            jobs = rows(f'SELECT id,request_key,created,status,delivery,channel FROM jobs WHERE id IN ({marks})', ids)
+            jobs = rows(f'SELECT id,request_key,created,status,delivery,channel,provider,model FROM jobs WHERE id IN ({marks})', ids)
             replies = rows(f'SELECT job_id,chat_id,reply_message_id FROM telegram_turns WHERE job_id IN ({marks})', ids)
             notifications = rows('SELECT id,job_id,chat_id,kind,state,message_id,created,sent_at '
                                  f"FROM telegram_notifications WHERE kind='preparation_notify' AND job_id IN ({marks})", ids)
@@ -190,6 +190,39 @@ def _slot_epoch(value):
         return None
 
 
+def scheduled_reminder_origin(row, job, start, settlement, slot):
+    """Typed proof of a scheduled builtin start, without an admission event.
+
+    Preparations.start marks immediate runs with run_return_state. Settlement
+    restores their prior scheduled/paused state and clears that marker; it never
+    gives them a terminal row outcome. A terminal matching slot therefore works
+    even when the whole due run happened between polls. Advanced recurring rows
+    need a previously observed running-slot proof; next_due alone also occurs on
+    run-now and cannot establish origin.
+    """
+    if (type(slot) not in (int, float) or not math.isfinite(slot)
+            or row.get('kind') != 'reminder' or job.get('provider') != 'builtin'
+            or job.get('model') != 'preparation' or 'run_return_state' not in row
+            or row['run_return_state'] is not None or not start):
+        return False
+    facts = start.get('facts') or {}
+    if (start.get('tool') != 'preparation' or start.get('status') != 'succeeded'
+            or facts.get('preparation_id') != row.get('id') or start.get('job_id') != job.get('id')
+            or facts.get('kind', 'reminder') != 'reminder'
+            or job.get('request_key') != f'preparation:{row["id"]}:{int(slot)}'
+            or _slot_epoch(facts.get('slot')) != int(slot // 60) * 60
+            or (job.get('created') or 0) < slot or (start.get('created') or 0) < slot
+            or int(row.get('due_at', -1)) != slot):
+        return False
+    if row.get('state') == 'running':
+        return True
+    settled = (settlement or {}).get('facts') or {}
+    return (row.get('state') in ('delivered', 'failed', 'unknown', 'cancelled')
+            and row['state'] == row.get('last_outcome') == settled.get('outcome')
+            and settlement.get('job_id') == job['id'] and settled.get('preparation_id') == row['id']
+            and settled.get('next_due') is None)
+
+
 def wait_due(client, telegram, spec, source, owner_ids, before, data, *, step=2,
              sample_start=None, clock=time.monotonic, wall=time.time, sleep=time.sleep,
              reader=due_evidence, poll_interval=2.0, capture_sequence=None):
@@ -201,7 +234,7 @@ def wait_due(client, telegram, spec, source, owner_ids, before, data, *, step=2,
     horizon = entered + spec['timeout_seconds']
     old = {r['id'] for r in (before.get('preparations', {}).get('preparations') or before.get('preparations', {}).get('items') or [])}
     result = {'kind': 'wait_due', 'step': step, 'after_turn': spec['after_turn'], 'until': spec['until'],
-              'start_epoch': entered, 'sample_start_epoch': since, 'end_epoch': None,
+              'start_epoch': entered, 'sample_start_epoch': since, 'end_epoch': None, 'due_slot': None,
               'elapsed': 0, 'timed_out': False, 'completed': False, 'stage': 'no_preparation',
               'status': 'waiting', 'events': [], 'messages': [], 'deliveries': [], 'coverage': 'unsupported'}
     drain = None
@@ -232,8 +265,14 @@ def wait_due(client, telegram, spec, source, owner_ids, before, data, *, step=2,
             else:
                 row, slot = candidates[0]
                 work = row['last_run_job_id']
+                result['preparation_kind'] = row['kind']
                 result.update(preparation_id=row['id'], created_epoch=row['created_at'], work_id=work, due_epoch=slot, row_due_epoch=row['due_at'],
                               last_decision=row['last_decision'], last_decision_reason=row['last_decision_reason'])
+                # Missing admission is not an unsupported kind: it may arrive
+                # later or the AI may have chosen the builtin reminder route.
+                if isinstance(row['kind'], str) and row['kind'] and row['kind'] not in ('prepare', 'reminder'):
+                    result.update(status='unsupported', stage='unsupported', reason='unsupported_kind')
+                    break
                 api_row = next((r for r in api.get('preparations', []) if r['id'] == row['id']), {})
                 result['api_excerpt'] = {k: api_row.get(k) for k in ('last_result', 'last_delivery', 'line_account')}
                 result['api_excerpt']['label'] = 'API excerpt, not delivery evidence'
@@ -242,21 +281,36 @@ def wait_due(client, telegram, spec, source, owner_ids, before, data, *, step=2,
                                  and e['job_id'] == work and _slot_epoch(e['facts'].get('slot')) == int(slot // 60) * 60), None)
                 start = next((e for e in events if e['tool'] == 'preparation' and e['status'] == 'succeeded'
                               and e['job_id'] == work and _slot_epoch(e['facts'].get('slot')) == int(slot // 60) * 60), None)
+                if row['kind'] == 'reminder' and sum(e['tool'] == 'preparation' and e['status'] == 'succeeded'
+                        and e['job_id'] == work and 'slot' in e['facts'] for e in events) != 1:
+                    start = None
                 job = next((j for j in evidence['jobs'] if j['id'] == work), None)
                 settlement = next((e for e in events if e['tool'] == 'preparation' and e['job_id'] == work
                                    and 'outcome' in e['facts']), None)
+                if start:
+                    result['due_slot'] = start['facts']['slot']
                 result.update(stage='not_started', reason='unsupported_origin')
                 if any(e['tool'] == 'scheduled_work_budget' and e['status'] in ('skipped', 'refused') for e in events):
                     result.update(status='failed', reason='budget_refusal')
                     break
-                valid = (admitted and start and job and work not in owner_ids and job['created'] >= since
+                proof = result.get('reminder_origin') or {}
+                reminder = scheduled_reminder_origin(row, job or {}, start, settlement, slot)
+                if reminder:
+                    proof = {'preparation': dict(row), 'work': dict(job), 'start': start, 'settlement': settlement}
+                elif (proof.get('work', {}).get('id') != work or proof.get('preparation', {}).get('id') != row['id']
+                      or proof.get('start') != start):
+                    proof = {}
+                origin = (row['kind'] == 'prepare' and admitted) or (row['kind'] == 'reminder' and proof)
+                valid = (origin and start and job and work not in owner_ids and job['created'] >= since
                          and job['request_key'] == f'preparation:{row["id"]}:{int(slot)}'
-                         and admitted['created'] <= start['created']
+                         and (not admitted or admitted['created'] <= start['created'])
                          and (int(row['due_at']) == slot or (settlement and row['due_at'] > slot
                               and _slot_epoch(settlement['facts'].get('next_due')) == int(row['due_at'] // 60) * 60)))
                 if valid:
                     result.update(admission=admitted, start=start, stage='not_settled', reason='not_settled',
-                                  result_status=job['status'])
+                                  result_status=job['status'], origin='scheduled_reminder' if proof else 'scheduled_preparation')
+                    if proof:
+                        result['reminder_origin'] = proof
                     if clock() >= deadline:
                         break
                     detail = client.get('/api/tasks/' + work, timeout=deadline - clock()).get('selected') or {}
@@ -265,7 +319,7 @@ def wait_due(client, telegram, spec, source, owner_ids, before, data, *, step=2,
                     if detail.get('failure_class') == USAGE_LIMIT:
                         result.update(status='failed', reason=USAGE_LIMIT)
                         break
-                    if settlement and settlement['created'] >= start['created'] and job['status'] in TERMINAL and job['delivery'] not in ('pending', 'sending'):
+                    if settlement and settlement['created'] >= start['created'] and job['status'] in TERMINAL and job['delivery'] not in ('pending', 'sending') and (not proof or settlement['facts'].get('delivery') == job['delivery']):
                         result['settlement'] = settlement
                         result['coverage'] = 'scheduled'
                         result.update(stage='not_delivered', reason='not_delivered')
@@ -479,7 +533,7 @@ def run_scenario(scenario, worker, pool, client_factory=AgentOSClient, turn_time
     """One clean-state trial: fresh sandbox, login, select worker, turns, owner-state diff."""
     if worker not in WORKERS:
         raise ValueError(f'worker must be one of {WORKERS}')
-    record = {'observation_version': 'continuity-observation-v2', 'worker': worker, 'turns': [], 'diff': {}, 'error': None, 'judgment': None, 'upkeep': None}
+    record = {'observation_version': 'continuity-observation-v3', 'worker': worker, 'turns': [], 'diff': {}, 'error': None, 'judgment': None, 'upkeep': None}
     telegram = None
     try:
         if scenario.get('channel') == 'telegram':
@@ -499,7 +553,7 @@ def run_scenario(scenario, worker, pool, client_factory=AgentOSClient, turn_time
                 if receipt['status'] == 'observation_error':
                     record['error'] = receipt['reason']
             ids = {t['task_id'] for t in record['turns'] if t.get('task_id')}
-            ids.update(r['work_id'] for r in record['due_observations'] if r.get('admission') and r.get('work_id'))
+            ids.update(r['work_id'] for r in record['due_observations'] if (r.get('admission') or r.get('reminder_origin')) and r.get('work_id'))
             record['work'] = work_measurements(box.data, sorted(ids))
             # #832: upkeep proposes Memory asynchronously after a Work (#805); let it settle first.
             record['upkeep'] = client.wait_upkeep_idle(upkeep_timeout, poll_interval)

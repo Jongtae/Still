@@ -426,12 +426,17 @@ due” description still applies to the original eight, whose bytes are unchange
 The three frozen additions in `scenarios/continuity-come-due.json` entrust one
 check for three minutes later, then use a real-clock `wait_due` barrier without
 sending an owner message. No schedule is edited or run-now invoked. The observer
-polls every two seconds, requires typed admission/start/settlement evidence and
-collects Telegram response ids. Ordinary Work replies and conditional notifications
+polls every two seconds and requires typed start/settlement evidence plus budget
+admission for preparation work or scheduled builtin-reminder origin. It collects
+Telegram response ids. Ordinary Work replies and conditional notifications
 have separate read-only SQLite receipt joins. `line_account` retains its original
 meaning; generic rows, text similarity and API `last_result` alone prove no delivery.
-Builtin reminder provenance, existing-row updates and unlinked multipart bodies
-remain unsupported. Unknown messages are retained as possible interruptions.
+Builtin reminders use their kind, builtin Work, scheduled slot and reply receipt;
+run-now return states do not establish scheduled origin. Advanced recurring reminders
+need an earlier observed running-slot proof. Existing-row updates and unlinked
+multipart bodies remain unsupported. Unknown kinds end the barrier immediately;
+missing admission or delivery for a supported kind remains a bounded shortfall.
+Unknown messages are retained as possible interruptions.
 
 Each barrier has a seven-minute hard cap, including bounded HTTP/SQLite reads
 and a full 20-second post-settlement drain. Failure/timeout skips the dependent
@@ -453,7 +458,7 @@ are planning estimates, not observed timings or live authorization.
 
 Both fixture files' paths and exact bytes are hashed. The default is
 `initiative-rubric-v2`; v1 remains frozen for historical logs. Metadata also records
-`continuity-observation-v2`. Comparisons refuse different fixtures, rubrics or
+`continuity-observation-v3`. Comparisons refuse different fixtures, rubrics or
 observation versions; old logs are not silently upgraded. Incomplete due observation
 or lost observable-result coverage prevents a `better` verdict and is partial.
 Dev and held-out coverage and not-observed counts stay separate from infrastructure

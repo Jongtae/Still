@@ -306,7 +306,19 @@ def proactive_observation(run):
     covered = {(r['preparation_id'], r['work_id']) for r in outputs}
     for receipt in due_observations(run):
         work = receipt.get('work_id')
-        if not (receipt.get('admission') and receipt.get('start') and receipt.get('settlement')
+        proof = receipt.get('reminder_origin') or {}
+        reminder = False
+        if proof:
+            from .runner import scheduled_reminder_origin
+            settled = (receipt.get('settlement') or {}).get('facts') or {}
+            reminder = (proof.get('work', {}).get('id') == work
+                        and proof.get('preparation', {}).get('id') == receipt.get('preparation_id')
+                        and scheduled_reminder_origin(proof.get('preparation', {}), proof.get('work', {}),
+                                                      receipt.get('start'), proof.get('settlement'), receipt.get('due_epoch'))
+                        and settled.get('outcome') == 'delivered' and settled.get('delivery') == 'sent'
+                        and (receipt.get('settlement') or {}).get('job_id') == work
+                        and settled.get('preparation_id') == receipt.get('preparation_id'))
+        if not ((receipt.get('admission') or reminder) and receipt.get('start') and receipt.get('settlement')
                 and work and work not in owner_works):
             continue
         identity = (receipt.get('preparation_id'), work)
@@ -322,7 +334,7 @@ def proactive_observation(run):
                 continue
             seen.add(ident)
             text = message['text']
-            outputs.append({'preparation_id': identity[0], 'work_id': work, 'kind': 'scheduled',
+            outputs.append({'preparation_id': identity[0], 'work_id': work, 'kind': 'scheduled_reminder' if reminder else 'scheduled',
                             'delivery': 'sent', 'message_ref': ident, 'transcript_ref': message.get('transcript_ref'), 'at': message.get('at'),
                             'text': text[:ANSWER_CHARS], 'truncated': len(text) > ANSWER_CHARS,
                             'coverage_limit': receipt.get('coverage_limit')})

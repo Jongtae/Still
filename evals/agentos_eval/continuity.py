@@ -28,7 +28,7 @@ from .scoring import MEASURES, MEASURE_VALUES
 
 DEFAULT_RUBRIC = REPO / 'evals/continuity/initiative-rubric-v2.json'
 SCENARIOS = BUNDLED_SCENARIOS / 'continuity-experiments.json'
-OBSERVATION_VERSION = 'continuity-observation-v2'
+OBSERVATION_VERSION = 'continuity-observation-v3'
 EVIDENCE = 'live local observation of the sandbox, judged'
 JUDGED = ('avoidable_interventions', 'unnecessary_interruptions', 'proactive_usefulness')
 HELDOUT_RULE = ('Held-out cases are not tuned against; a change motivated by a held-out failure '
@@ -361,8 +361,8 @@ def build_report(records, run, fixture, labels=None):
                                                                  for r in samples),
                                     'limitations': [
                                         'Runs/reports that do not come due are unobserved; promises alone provide no delivery evidence.',
-                                        'Scheduled preparation output requires admission, start, settlement and an exact stand-in message receipt. Successful quiet checks have no proactive grade.',
-                                        'Only receipt-linked bodies are credited; unlinked multipart bodies, existing-row changes and builtin reminder provenance remain unsupported. last_result is an API excerpt only.',
+                                        'Scheduled output requires start, settlement and an exact stand-in message receipt, plus budget admission for preparation work or typed builtin-reminder origin. Successful quiet checks have no proactive grade.',
+                                        'Only receipt-linked bodies are credited; unlinked multipart bodies and existing-row changes remain unsupported. A recurring reminder already advanced before observation needs earlier running-slot proof; next_due alone cannot exclude run-now. last_result is an API excerpt only.',
                                         'The post-settlement drain observes 20 seconds of silence, not indefinite silence.',
                                         'Tool events are capped at 40 per turn; approval codes in trace payloads are stripped by the public task endpoint. Counts are observed requests only.',
                                         'Conversation only; no multi-day recall, transcript retrieval or AI-stood lines acceptance.',

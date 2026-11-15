@@ -138,6 +138,7 @@ def test_real_db_delivery_joins_and_full_drain(tmp_path, notification):
     trace = Trace(tmp_path, notification=notification)
     receipt = trace.wait()
     assert receipt['completed'] and receipt['elapsed'] == 30
+    assert receipt['due_slot'] == datetime.fromtimestamp(BASE+4, timezone.utc).isoformat(timespec='minutes')
     assert receipt['due_epoch'] == BASE+4  # event ISO is minute precision; key preserves seconds
     assert receipt['start']['created'] == BASE+4
     assert receipt['settlement']['created'] == BASE+8
@@ -264,7 +265,7 @@ def test_reader_really_read_only_and_no_payload_dump(tmp_path):
     before=trace.store.path.read_bytes()
     evidence=r.due_evidence(tmp_path,'owner',BASE,timeout=1)
     assert trace.store.path.read_bytes()==before
-    assert set(evidence['jobs'][0])=={'id','request_key','created','status','delivery','channel'}
+    assert set(evidence['jobs'][0])=={'id','request_key','created','status','delivery','channel','provider','model'}
     assert all('detail' not in e for e in evidence['events'])
 
 
@@ -437,3 +438,177 @@ assert not any(name == 'personal_agent' or name.startswith('personal_agent.') fo
     result = subprocess.run([sys.executable, '-I', '-S', '-c', script, str(ROOT / 'evals')],
                             cwd=tmp_path, capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+class ReminderTrace:
+    """Real Preparations.start/settle and reply linkage, with injected time/Telegram."""
+    def __init__(self, root, *, fault=None, lead=4, recurrence=None, late=False):
+        from personal_agent.preparations import Preparations
+        self.root, self.clock, self.fault = root, Clock(), fault
+        self.clock.now = 1
+        self.store = QuickStore(root)
+        self.addresses = TelegramTurnAddressing(self.store)
+        self.preparations = Preparations(self.store, clock=self.clock.wall)
+        self.row = self.preparations.create(kind='reminder', goal='a synthetic reminder body',
+            due_at=BASE+lead, timezone='UTC', recurrence=recurrence, channel='telegram',
+            created_from='owner', state='scheduled', accepted_by='owner-request')
+        self.telegram = FakeTelegram(42, clock=self.clock.wall)
+        # The smoke's delivered reminder had message id 6. These are stand-in
+        # owner message ids, not fabricated delivered result texts.
+        for _ in range(5): self.telegram.say('synthetic setup')
+        self.work_id = None
+        self.finished = False
+        self.due = BASE+lead
+        self.owner_ids = {'owner'}
+        self.clock.now = lead+4 if late else 2
+
+    def update(self):
+        if self.work_id is None and self.clock.wall() >= (BASE+2 if self.fault == 'run_now_early' else self.due):
+            if self.fault in ('run_now_early', 'run_now_at_due'):
+                self.work_id = self.preparations.run_now(self.row['id'], channel='telegram:eval', chat_id=42,
+                                                        now=self.clock.wall())
+            else:
+                self.work_id = self.preparations.start(self.preparations.get(self.row['id']),
+                    channel='telegram:eval', chat_id=42, now=self.clock.wall())
+        if self.work_id and not self.finished and self.clock.wall() >= self.due+2:
+            result = self.telegram._call('sendMessage', {'chat_id':42, 'text':'the observed reminder body'})
+            with self.store.db() as db:
+                db.execute("UPDATE jobs SET delivery='sent' WHERE id=?", (self.work_id,))
+                self.addresses.record_reply(self.work_id,42,result['message_id'],db=db)
+            self.preparations.settle(self.preparations.get(self.row['id']),self.clock.wall())
+            self.finished = True
+
+    def get(self, path, timeout=None):
+        assert 0 < timeout <= 420
+        self.update()
+        row = self.preparations.get(self.row['id'])
+        if path == '/api/preparations':
+            return {'preparations':[{'id':row['id'],'kind':row['kind'],'state':row['state'],
+                    'last_result':'the observed reminder body','line_account':False,
+                    'last_delivery':'sent' if self.finished else None,'last_work_id':self.work_id}]}
+        assert path == '/api/tasks/' + self.work_id
+        selected = {'id':self.work_id,'status':'succeeded','events':[]}
+        return {'tasks':[selected],'selected':selected}
+
+    def read(self, *args, **kwargs):
+        with self.store.db() as db:
+            if self.fault == 'old_row': db.execute('UPDATE preparations SET created_at=?',(BASE-1,))
+            if self.fault == 'wrong_source': db.execute("UPDATE preparations SET created_from='other'")
+            if self.fault == 'unsupported_kind': db.execute("UPDATE preparations SET kind='future-unrecognized-kind'")
+            if self.work_id:
+                if self.fault == 'owner_work': self.owner_ids.add(self.work_id)
+                if self.fault == 'wrong_work': db.execute("UPDATE tool_events SET job_id='wrong'")
+                if self.fault == 'wrong_reply_work': db.execute("UPDATE telegram_turns SET job_id='wrong'")
+                if self.fault == 'wrong_message': db.execute('UPDATE telegram_turns SET reply_message_id=999')
+                if self.fault == 'wrong_chat': db.execute('UPDATE telegram_turns SET chat_id=99')
+                if self.fault == 'missing_reply': db.execute('DELETE FROM telegram_turns')
+                if self.fault == 'wrong_provider': db.execute("UPDATE jobs SET provider='subscription-engine'")
+                if self.fault == 'wrong_model': db.execute("UPDATE jobs SET model='other'")
+                if self.fault == 'wrong_key': db.execute('UPDATE jobs SET request_key=?',(f'preparation:{self.row["id"]}:{int(self.due)+1}',))
+                if self.fault in ('wrong_slot','wrong_preparation','missing_settlement','bad_settlement_delivery'):
+                    for event in db.execute('SELECT id,detail FROM tool_events').fetchall():
+                        facts = json.loads(event['detail'])
+                        if self.fault == 'wrong_slot' and 'slot' in facts:
+                            facts['slot'] = datetime.fromtimestamp(self.due+60,timezone.utc).isoformat(timespec='minutes')
+                        if self.fault == 'wrong_preparation': facts['preparation_id'] = 'other'
+                        if self.fault == 'missing_settlement' and 'outcome' in facts:
+                            db.execute('DELETE FROM tool_events WHERE id=?',(event['id'],))
+                            continue
+                        if self.fault == 'bad_settlement_delivery' and 'outcome' in facts: facts['delivery'] = 'none'
+                        db.execute('UPDATE tool_events SET detail=? WHERE id=?',(json.dumps(facts),event['id']))
+                if self.fault == 'empty_text' and self.telegram.calls:
+                    self.telegram.calls[-1]['result']['text'] = ''
+        return r.due_evidence(*args, **kwargs)
+
+    def wait(self, *, timeout=40, before=None):
+        return r.wait_due(self,self.telegram,{**SPEC,'timeout_seconds':timeout},SOURCE,self.owner_ids,
+                         before or {},self.root,clock=self.clock.mono,wall=self.clock.wall,
+                         sleep=self.clock.sleep,reader=self.read)
+
+
+def test_builtin_reminder_smoke_trace_is_observed_by_id(tmp_path):
+    trace = ReminderTrace(tmp_path, lead=180)
+    result = trace.wait(timeout=420)
+    assert result['completed'] and result['origin'] == 'scheduled_reminder'
+    assert result['admission'] is None
+    assert result['preparation_kind'] == 'reminder'
+    assert result['due_slot'] == result['start']['facts']['slot']
+    assert result['settlement']['facts']['outcome'] == 'delivered'
+    assert result['settlement']['facts']['delivery'] == 'sent'
+    assert result['deliveries'][0]['message_id'] == 6
+    assert result['deliveries'][0]['kind'] == 'work_reply'
+    assert trace.clock.now == 202  # delivered at 182, followed by the full 20-second drain
+    receipts = result['delivery_receipts']
+    assert receipts['work']['provider'] == 'builtin' and receipts['work']['model'] == 'preparation'
+    assert receipts['replies'][0]['job_id'] == result['work_id']
+    assert receipts['replies'][0]['reply_message_id'] == 6
+    assert receipts['notifications'] == []  # builtin uses deliver_one, not preparation_notify
+    assert not any(e['tool']=='scheduled_work_budget' for e in result['events'])
+    observed = s.proactive_observation({'turns':[SOURCE],'due_observations':[result]})
+    assert observed['observed'] and observed['outputs'][0]['kind'] == 'scheduled_reminder'
+    assert observed['outputs'][0]['text'] == 'the observed reminder body'
+    assert observed['outputs'][0]['message_ref'] == result['deliveries'][0]['delivery_id']
+
+
+@pytest.mark.parametrize('fault', ['run_now_early','run_now_at_due','old_row','wrong_source','wrong_slot',
+    'wrong_key','wrong_work','owner_work','wrong_preparation','missing_reply','wrong_reply_work','wrong_message',
+    'wrong_chat','missing_settlement','bad_settlement_delivery','wrong_provider','wrong_model','empty_text'])
+def test_builtin_reminder_rejects_false_origin_or_delivery(tmp_path, fault):
+    trace = ReminderTrace(tmp_path,fault=fault)
+    result = trace.wait()
+    assert not result['completed']
+    assert not s.proactive_observation({'turns':[SOURCE],'due_observations':[result]})['observed']
+    if fault.startswith('run_now'):
+        assert trace.finished  # a real run-now delivered; it is still not scheduled-origin evidence
+        assert trace.preparations.get(trace.row['id'])['state'] == 'scheduled'
+    if fault in ('missing_reply','wrong_message','wrong_chat','wrong_reply_work'):
+        assert result['stage'] == 'not_delivered'
+        assert result['messages']  # preserve observed interruptions even with no linked result
+
+
+def test_reminder_already_settled_between_polls_and_old_id_exclusion(tmp_path):
+    trace = ReminderTrace(tmp_path,late=True)
+    result = trace.wait()
+    assert result['completed'] and result['elapsed'] == 20
+    # A pre-existing preparation is never promoted by a new reply receipt.
+    trace = ReminderTrace(tmp_path/'old',late=True)
+    before = {'preparations':{'preparations':[{'id':trace.row['id']}]}}
+    assert not trace.wait(before=before)['completed']
+
+
+def test_unsupported_kind_ends_immediately_but_missing_admission_does_not(tmp_path):
+    trace = ReminderTrace(tmp_path,fault='unsupported_kind')
+    result = trace.wait()
+    assert result['status'] == 'unsupported' and result['reason'] == 'unsupported_kind'
+    assert result['elapsed'] == 0 and not result['timed_out']
+    supported = Trace(tmp_path/'supported', mutate=lambda db,t: db.execute("DELETE FROM tool_events WHERE tool='scheduled_work_budget'"))
+    result = supported.wait(spec={'timeout_seconds':11})
+    assert result['timed_out'] and result['elapsed'] == 11
+
+
+def test_reminder_recurring_slot_needs_observed_running_origin(tmp_path):
+    trace = ReminderTrace(tmp_path,recurrence='daily')
+    result = trace.wait()
+    assert result['completed'] and result['reminder_origin']['preparation']['state'] == 'running'
+    # Advanced state alone cannot distinguish a missed run-now from a scheduled run.
+    trace = ReminderTrace(tmp_path/'unobserved',recurrence='daily',late=True)
+    assert not trace.wait()['completed']
+
+
+def test_run_now_reused_at_scheduled_slot_does_not_promote_its_prior_reply(tmp_path):
+    trace = ReminderTrace(tmp_path,fault='run_now_at_due')
+    trace.clock.now = 4
+    trace.update()
+    trace.clock.now = 6
+    trace.update()  # immediate run settles back to scheduled
+    assert trace.preparations.get(trace.row['id'])['state'] == 'scheduled'
+    # The runtime may reuse the same idempotency key at a later scheduler tick.
+    # Its repeated start is ambiguous; the earlier run-now send is not proof.
+    work = trace.preparations.start(trace.preparations.get(trace.row['id']),
+                                   channel='telegram:eval',chat_id=42,now=trace.clock.wall())
+    assert work == trace.work_id
+    trace.preparations.settle(trace.preparations.get(trace.row['id']),trace.clock.wall())
+    assert trace.preparations.get(trace.row['id'])['state'] == 'delivered'
+    result = trace.wait()
+    assert not result['completed']
+    assert not s.proactive_observation({'turns':[SOURCE],'due_observations':[result]})['observed']
