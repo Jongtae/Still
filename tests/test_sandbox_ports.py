@@ -4,6 +4,7 @@ import signal
 import subprocess
 import sys
 from contextlib import ExitStack
+from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
@@ -62,7 +63,8 @@ if sys.stdin.readline().strip() == 'close':
     print('released', flush=True)
     sys.stdin.readline()
 '''
-    child = subprocess.Popen([sys.executable, '-c', code], stdin=subprocess.PIPE,
+    evals = str(Path(sandbox.__file__).resolve().parents[1])  # CI puts evals on sys.path, not PYTHONPATH
+    child = subprocess.Popen([sys.executable, '-c', f'import sys; sys.path.insert(0, {evals!r})\n' + code], stdin=subprocess.PIPE,
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     try:
         port = int(read_child_line(child))
