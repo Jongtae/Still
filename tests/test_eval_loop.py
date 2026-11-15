@@ -979,3 +979,53 @@ def test_client_barrier_timeout_plumbing_is_explicit():
     client.get('/api/preparations',timeout=.75)
     client.get('/api/preparations')
     assert seen==[{'timeout':.75},{}]
+
+
+def test_record_messages_handles_owner_wait_owner_and_timeout():
+    observed = {'at': 105, 'text': 'actual due output', 'delivery_id': '42:3:3'}
+    first = {'say': 'entrust', 'answer': 'accepted', 'status': 'succeeded'}
+    wait = {'kind': 'wait_due', 'status': 'completed', 'before_answer': [observed]}
+    last = {'say': 'follow up', 'answer': 'requested answer', 'status': 'succeeded'}
+    messages = runner.record_messages({'turns': [first, wait, last]})
+    assert [m['content'] for m in messages if m['role'] == 'user'] == ['entrust', 'follow up']
+    assert [m['role'] for m in messages] == ['user', 'assistant', 'assistant', 'user', 'assistant']
+    assert 'observed output' in messages[2]['content'] and 'actual due output' in messages[2]['content']
+    assert messages[-1]['content'] == 'requested answer'
+    timed_out = {**wait, 'status': 'timed_out', 'timed_out': True}
+    messages = runner.record_messages({'turns': [first, timed_out]})
+    assert len(messages) == 3 and 'actual due output' in messages[-1]['content']
+    assert runner.record_messages({'turns': [first, {**timed_out, 'before_answer': []}]}) == messages[:2]
+
+
+def test_solver_preserves_run_if_rendering_raises_without_inspect():
+    """Execute the real solver factory, omitting only Inspect imports/decorators."""
+    import ast
+    import asyncio
+    from types import SimpleNamespace
+    source = ROOT / 'evals/agentos_eval/task.py'
+    factory = next(node for node in ast.parse(source.read_text()).body
+                   if isinstance(node, ast.FunctionDef) and node.name == 'agentos_blackbox')
+    factory.decorator_list = []
+    record = {'turns': [{'kind': 'wait_due', 'status': 'timed_out', 'before_answer': []}]}
+    state = SimpleNamespace(metadata={'scenario': {}, 'worker': 'codex'}, messages=[])
+    calls = []
+    def fail_render(value):
+        calls.append(value)
+        raise ValueError('rendering failed')
+    namespace = {'asyncio': asyncio, 'run_scenario': lambda *a, **kw: record,
+                 'record_messages': fail_render, 'TaskState': object, 'Generate': object}
+    exec(compile(ast.Module(body=[factory], type_ignores=[]), str(source), 'exec'), namespace)
+    with unittest.TestCase().assertRaises(ValueError):
+        asyncio.run(namespace['agentos_blackbox'](None)(state, None))
+    assert state.metadata['run'] is record and calls == [record]
+
+
+def test_failure_rows_keep_scenario_step_indices_after_wait():
+    case = scenarios.validate({'id': 'steps', 'channel': 'telegram', 'turns': [
+        'entrust', {'wait_due': {'after_turn': 1, 'until': 'settled', 'timeout_seconds': 30}}, 'follow up']})
+    record = {'turns': [turn(), {'kind': 'wait_due', 'due_observation': {'completed': True}},
+                        turn(say='follow up', answer='', status='failed')]}
+    checks, failures = scoring.deterministic_checks(case, record)
+    assert checks['due_completed']
+    affected = [f for f in failures if f['name'] in ('delivered', 'not_failed')]
+    assert len(affected) == 2 and all(f['reason'].startswith('turn 3:') for f in affected)

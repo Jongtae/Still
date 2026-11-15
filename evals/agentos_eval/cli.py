@@ -388,7 +388,7 @@ def cmd_continuity(args):
             for path in args.labels:
                 data = json.loads(Path(path).read_text())
                 if (not isinstance(data, dict) or not {'version', 'rubric', 'labels'} <= set(data)
-                        or set(data) - {'version', 'rubric', 'labels', '_note', 'not_labellable'}
+                        or set(data) - {'version', 'rubric', 'labels', '_note', 'not_labellable', 'references'}
                         or data['version'] != 'initiative-labels-v1' or not isinstance(data['labels'], list)
                         or any(data['rubric'] != r['fixture_support']['rubric_version'] for r in reports)):
                     raise ValueError('Invalid comparison labels file')

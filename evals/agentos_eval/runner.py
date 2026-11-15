@@ -13,6 +13,8 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from personal_agent.work_status import TERMINAL
+
 from .client import AgentOSClient, ClientError, compact_events, state_diff
 from .paths import eval_home
 from .sandbox import JUDGMENT_KEYS, WORLD_WORKER, SandboxError
@@ -112,8 +114,14 @@ def chat_turn(client, telegram, text, turn_timeout, poll_interval, wall=time.tim
         if data is None:
             return reply and _same_reply(message['text'], reply)
         path = Path(data) / 'private' / 'quickstart.db'
-        with closing(sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True, timeout=.1)) as db:
-            row = db.execute('SELECT chat_id,reply_message_id FROM telegram_turns WHERE job_id=?', (task_id,)).fetchone()
+        try:
+            with closing(sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True,
+                                         timeout=min(.1, max(0, deadline - wall())))) as db:
+                row = db.execute('SELECT chat_id,reply_message_id FROM telegram_turns WHERE job_id=?', (task_id,)).fetchone()
+        except sqlite3.OperationalError:
+            # A busy/locked receipt is not missing chat text. Retry within this
+            # turn's existing delivery loop; never substitute fuzzy provenance.
+            return False
         return row and (message.get('chat_id'), message.get('message_id')) == tuple(row)
     while reply and not any(matches(message) for message in chat) and wall() < deadline:
         sleep(1.0)
@@ -151,7 +159,7 @@ def due_evidence(data, source_id, since, *, timeout, clock=time.monotonic):
             return found
 
         preparations = rows('SELECT id,created_from,created_at,due_at,kind,state,run_count,last_run_job_id,'
-                            'delivery_mode,last_decision,last_decision_reason,prepared_at FROM preparations '
+                            'delivery_mode,last_decision,last_decision_reason,prepared_at,recurrence FROM preparations '
                             'WHERE created_from=? AND created_at>=?', (source_id, since))
         events = rows("SELECT e.id,e.job_id,e.tool,e.status,e.detail,e.created FROM tool_events e "
                       "WHERE e.created>=? AND e.tool IN ('preparation','scheduled_work_budget') ORDER BY e.id", (since,))
@@ -164,7 +172,7 @@ def due_evidence(data, source_id, since, *, timeout, clock=time.monotonic):
         jobs, replies, notifications = [], [], []
         if ids:
             marks = ','.join('?' for _ in ids)
-            jobs = rows(f'SELECT id,request_key,created,status,delivery FROM jobs WHERE id IN ({marks})', ids)
+            jobs = rows(f'SELECT id,request_key,created,status,delivery,channel FROM jobs WHERE id IN ({marks})', ids)
             replies = rows(f'SELECT job_id,chat_id,reply_message_id FROM telegram_turns WHERE job_id IN ({marks})', ids)
             notifications = rows('SELECT id,job_id,chat_id,kind,state,message_id,created,sent_at '
                                  f"FROM telegram_notifications WHERE kind='preparation_notify' AND job_id IN ({marks})", ids)
@@ -248,13 +256,13 @@ def wait_due(client, telegram, spec, source, owner_ids, before, data, *, step=2,
                                   result_status=job['status'])
                     if clock() >= deadline:
                         break
-                    detail = client.get('/api/tasks/' + work, timeout=deadline - clock())
+                    detail = client.get('/api/tasks/' + work, timeout=deadline - clock()).get('selected') or {}
                     result['work_events'] = compact_events(detail)
                     result['failure_class'] = detail.get('failure_class')
                     if detail.get('failure_class') == USAGE_LIMIT:
                         result.update(status='failed', reason=USAGE_LIMIT)
                         break
-                    if settlement and settlement['created'] >= start['created'] and job['status'] in ('succeeded', 'partial', 'failed', 'cancelled') and job['delivery'] not in ('pending', 'sending'):
+                    if settlement and settlement['created'] >= start['created'] and job['status'] in TERMINAL and job['delivery'] not in ('pending', 'sending'):
                         result['settlement'] = settlement
                         result['coverage'] = 'scheduled'
                         result.update(stage='not_delivered', reason='not_delivered')
@@ -282,8 +290,11 @@ def wait_due(client, telegram, spec, source, owner_ids, before, data, *, step=2,
                         result['delivery_disposition'] = [n['state'] for n in notices] or [job['delivery']]
                         # A notification of unknown/queued disposition is not silent success.
                         pending = any(n['state'] not in ('sent', 'cancelled', 'failed') for n in notices)
-                        quiet = (spec['until'] == 'settled' and row['last_decision'] == 'quiet'
-                                 and job['delivery'] == 'none' and not notices)
+                        retained_keep = (job['channel'] == 'web' and row['recurrence'] is None
+                                         and row['last_decision'] is None and row['prepared_at'] is not None)
+                        quiet = (spec['until'] == 'settled' and (row['last_decision'] == 'quiet' or retained_keep)
+                                 and job['delivery'] == 'none' and not notices
+                                 and not settlement['facts'].get('notification_queued'))
                         ready = not pending and (bool(delivered) or quiet)
                         if not ready:
                             drain = None
@@ -307,7 +318,11 @@ def wait_due(client, telegram, spec, source, owner_ids, before, data, *, step=2,
             else:
                 result.update(status='timed_out', timed_out=True)
     except (ClientError, OSError, sqlite3.Error, ValueError, TimeoutError) as exc:
-        result.update(status='observation_error', reason=f'{type(exc).__name__}: {exc}'[:300])
+        if clock() >= deadline:
+            result.update(status='timed_out', timed_out=True, reason=result['stage'],
+                          read_error=f'{type(exc).__name__}: {exc}'[:300])
+        else:
+            result.update(status='observation_error', reason=f'{type(exc).__name__}: {exc}'[:300])
     result.update(end_epoch=wall(), elapsed=round(clock() - started, 3))
     # Capture messages arriving between reads, including on shortfall/error.
     result['messages'] = telegram.chat_since(since, **({'after_sequence': capture_sequence} if capture_sequence is not None else {}))
@@ -387,6 +402,25 @@ def run_turns(client, scenario, turn_timeout=900, poll_interval=2.0, clock=time.
         for message in observed.get('due_observation', {}).get('deliveries', []):
             message['transcript_ref'] = references.get(message['delivery_id'])
     return turns
+
+
+def record_messages(record):
+    """Pure record -> role/content conversion, independent of Inspect.
+
+    Waits contribute only collected owner-facing output, without an owner
+    message or an invented answer, even when the barrier timed out.
+    """
+    messages = []
+    for turn in record.get('turns') or []:
+        waiting = turn.get('kind') == 'wait_due'
+        if not waiting:
+            messages.append({'role': 'user', 'content': turn['say']})
+        for observed in turn.get('before_answer') or []:
+            prefix = f"[observed output during harness wait; at {observed.get('at', 'unknown')}]\n" if waiting else ''
+            messages.append({'role': 'assistant', 'content': prefix + observed['text']})
+        if not waiting:
+            messages.append({'role': 'assistant', 'content': turn['answer'] or f"(no answer; status {turn['status']})"})
+    return messages
 
 
 def usage_limited(run):

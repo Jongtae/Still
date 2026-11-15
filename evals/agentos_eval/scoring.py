@@ -55,22 +55,23 @@ def deterministic_checks(scenario, run):
         failures.append({'kind': 'infra', 'name': 'judgment_ai',
                          'reason': judgment.get('failure') or f"not ready after {judgment.get('waited')}s"})
     all_turns = run.get('turns') or []
-    turns = [t for t in all_turns if t.get('kind') != 'wait_due']
+    owner_steps = [(i, t) for i, t in enumerate(all_turns, 1) if t.get('kind') != 'wait_due']
+    turns = [t for _, t in owner_steps]
     waits = [t for t in all_turns if t.get('kind') == 'wait_due']
     if any('wait_due' in t for t in scenario.get('turns', [])):
         checks['due_completed'] = (len(waits) == sum('wait_due' in t for t in scenario['turns'])
                                    and all(t.get('due_observation', {}).get('completed') for t in waits))
         if not checks['due_completed']:
             failures.append({'kind': 'check', 'name': 'due_completed', 'reason': 'Due postconditions/drain incomplete'})
-    undelivered = [index for index, turn in enumerate(turns)
+    undelivered = [(index, turn) for index, turn in owner_steps
                    if turn.get('answer_withheld') or not (turn.get('answer') or '').strip()]
     checks['delivered'] = bool(turns) and not undelivered
-    for index in undelivered:
-        reason = 'withheld' if turns[index].get('answer_withheld') else 'empty'
-        failures.append({'kind': 'check', 'name': 'delivered', 'reason': f'turn {index + 1}: {reason}'})
+    for index, turn in undelivered:
+        reason = 'withheld' if turn.get('answer_withheld') else 'empty'
+        failures.append({'kind': 'check', 'name': 'delivered', 'reason': f'turn {index}: {reason}'})
     allowed = OK_STATUSES | set(scenario['expect'].get('allow_status') or ())
     bad = []
-    for index, turn in enumerate(turns):
+    for index, turn in owner_steps:
         if turn.get('timed_out'):
             bad.append((index, 'timeout'))
         elif turn.get('status') not in allowed:
@@ -78,7 +79,7 @@ def deterministic_checks(scenario, run):
             bad.append((index, f"{turn.get('status')}/{detail}" if detail != turn.get('status') else detail))
     checks['not_failed'] = bool(turns) and not bad
     for index, reason in bad:
-        failures.append({'kind': 'check', 'name': 'not_failed', 'reason': f'turn {index + 1}: {reason}'})
+        failures.append({'kind': 'check', 'name': 'not_failed', 'reason': f'turn {index}: {reason}'})
     diff = run.get('diff') or {}
     groups = scenario['expect'].get('memory_any') or []
     if groups:

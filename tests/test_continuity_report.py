@@ -975,6 +975,7 @@ def test_compare_cli_allow_partial_and_clean_comparison(rubric, tmp_path):
 def test_due_grade_provenance_two_calls_and_wait_ask_attribution(tmp_path, grade):
     from test_eval_come_due import Trace, SPEC, SOURCE
     trace=Trace(tmp_path,quiet=grade is None)
+    trace.task_events = [{'tool': 'local_authority', 'status': 'requested'}]
     receipt=trace.wait(spec={'until':'settled' if grade is None else 'delivered'})
     case=scenarios.validate({'id':'due-fixture','channel':'telegram','rubric':['follow_through'],
                              'turns':['entrust',{'wait_due':SPEC},'requested followup']})
@@ -983,7 +984,7 @@ def test_due_grade_provenance_two_calls_and_wait_ask_attribution(tmp_path, grade
     r={'worker':'codex','turns':[
         {**SOURCE,'say':'entrust','status':'succeeded','answer':'accepted'},
         {'kind':'wait_due','status':receipt['status'],'due_observation':receipt,
-         'events':[{'tool':'local_authority','status':'requested'}], 'before_answer':messages},
+         'events': receipt['work_events'], 'before_answer':messages},
         {'say':'requested followup','status':'succeeded','answer':'requested result'}],
        'due_observations':[receipt], 'diff':{}}
     rr=c.load_rubric(c.DEFAULT_RUBRIC)
@@ -1035,10 +1036,12 @@ def test_due_round_trip_applicable_denominators_labels_and_versions(rubric,tmp_p
             row['checks']['due_completed']=True
     raw[1]['checks']['due_completed']=False
     raw[1]['due_observations']=[{**receipt,'completed':False,'status':'timed_out','reason':'not_delivered'}]
-    fixture={**base['fixture_support'],'observation_version':c.OBSERVATION_VERSION}
+    fixture={**base['fixture_support'],'observation_version':c.OBSERVATION_VERSION,
+             'due_scenario_ids': ['dev-case', 'held-case']}
     report=c.build_report(raw,base['live_evidence'],fixture)
     for split,block in report['live_evidence']['splits'].items():
-        assert block['totals']['checks']['due_completed']['n']==(2 if split=='dev' else 1)
+        assert block['totals']['checks']['due_completed']['n'] == 3
+        assert block['totals']['checks']['due_completed']['pass_rate'] == pytest.approx(1/3)
         assert block['totals']['due']['created']
         assert len(block['totals']['latency'])==3
     text=c.render_markdown(report)
@@ -1099,3 +1102,67 @@ def test_wait_asks_require_message_attribution_and_keep_separate_gate(rubric):
     assert [m['message'] for m in parsed['unnecessary_interruptions']]==['t1.b2']
     data['avoidable_interventions'][0]['reason']='unattributed ask'
     with pytest.raises(ValueError,match='actual tN.bJ'):s.parse_measures(json.dumps(data),rubric[0],r)
+
+
+@pytest.mark.parametrize('error_kind', ['sample_error', 'harness'])
+def test_error_epoch_stays_in_applicable_check_denominators(rubric, error_kind):
+    old = scenarios.validate({'id': 'old-case', 'turns': ['owner']})
+    due = scenarios.validate({'id': 'due-case', 'channel': 'telegram', 'turns': [
+        'entrust', {'wait_due': {'after_turn': 1, 'until': 'settled', 'timeout_seconds': 30}}]})
+    samples = []
+    for case in (old, due):
+        for epoch in (1, 2, 3):
+            checks = {'delivered': True, 'not_failed': True}
+            if case is due:
+                checks['due_completed'] = True
+            failures = []
+            if epoch == 2:
+                checks = {'harness': False}
+                failures = [{'kind': 'infra', 'name': 'harness', 'reason': 'fixture outage'}]
+            value, meta = s.combine(case, {'worker': 'codex', 'turns': []}, checks, failures)
+            score = SimpleNamespace(value=value, metadata=meta)
+            if epoch == 2 and error_kind == 'sample_error':
+                score = None
+            samples.append(SimpleNamespace(id=case['id'], epoch=epoch,
+                           scores={'secretary': score} if score else None,
+                           metadata={'scenario': case, 'worker': 'codex'}, error='fixture outage'))
+    fixture = c.fixture_support([old, due], rubric[1])
+    report = c.build_report(records_from_samples(samples),
+                           {'id': 'errors', 'worker': 'codex', 'epochs': 3, 'seed': 'fresh'}, fixture)
+    groups = report['live_evidence']['splits']['dev']
+    for ident in ('old-case', 'due-case'):
+        check = groups['scenarios'][ident]['checks']['delivered']
+        assert check['n'] == 3 and check['pass_rate'] == pytest.approx(2/3)
+    assert 'due_completed' not in groups['scenarios']['old-case']['checks']
+    for group in (groups['scenarios']['due-case'], groups['totals']):
+        assert group['checks']['due_completed']['n'] == 3
+        assert group['checks']['due_completed']['pass_rate'] == pytest.approx(2/3)
+    assert groups['totals']['checks']['delivered']['n'] == 6
+    # Even an entirely unscored due scenario has an applicable, failed check.
+    errors = [row for row in records_from_samples(samples) if row['epoch'] == 2]
+    all_error = c.build_report(errors, {'id': 'errors-only', 'worker': 'codex', 'epochs': 3}, fixture)
+    due_check = all_error['live_evidence']['splits']['dev']['scenarios']['due-case']['checks']['due_completed']
+    assert due_check['n'] == 1 and due_check['pass_rate'] == 0
+
+
+def test_cli_compare_accepts_filled_labels_template_with_references(rubric, tmp_path):
+    a = make_report(rubric)
+    b = make_report(rubric, ident='after', head='def', dev=(1,1,1), held=(1,1,1))
+    paths = [c.write_report(report, tmp_path)[0] for report in (a,b)]
+    label_paths = []
+    for report, path in zip((a,b), paths):
+        with redirect_stdout(io.StringIO()) as output:
+            assert cli.main(['continuity', 'labels-template', str(path)]) == 0
+        template = json.loads(output.getvalue())
+        assert 'references' in template
+        filled = {row['epoch']: row for row in labels_for(report)['labels'] if row['scenario'] == 'held-case'}
+        for row in template['labels']:
+            row['measures'] = filled[row['epoch']]['measures']
+        label_path = tmp_path / (report['live_evidence']['id'] + '-labels.json')
+        label_path.write_text(json.dumps(template))
+        label_paths.append(label_path)
+    with redirect_stdout(io.StringIO()):
+        assert cli.main(['continuity','compare',str(paths[0]),str(paths[1]),
+                         '--labels',str(label_paths[0]),'--labels',str(label_paths[1])]) == 0
+    result = json.loads((tmp_path/'after.c2.compare.json').read_text())
+    assert result['verdict_basis'] == 'human labels supplied'

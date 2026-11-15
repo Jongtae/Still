@@ -12,6 +12,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+
+import pytest
 import urllib.request
 from pathlib import Path
 
@@ -167,3 +169,50 @@ def test_sequence_collection_survives_backward_clock():
     tg._call('sendMessage',{'chat_id':42,'text':'after clock jumped'})
     assert tg.chat_since(100,after_sequence=cursor)[0]['text']=='after clock jumped'
     assert tg.calls_since(100,after_sequence=cursor)[0]['sequence']==cursor+1
+
+
+@pytest.mark.parametrize('permanently_locked', [False, True])
+def test_chat_turn_busy_receipt_read_retries_without_losing_messages(tmp_path, monkeypatch, permanently_locked):
+    from test_eval_come_due import Clock
+    clock = Clock()
+    fake = FakeTelegram(77, clock=clock.wall)
+    path = tmp_path / 'private'
+    path.mkdir()
+    with sqlite3.connect(path / 'quickstart.db') as db:
+        db.execute('CREATE TABLE telegram_turns(job_id TEXT PRIMARY KEY,chat_id INTEGER NOT NULL, '
+                   'source_message_id INTEGER,reply_message_id INTEGER,created REAL NOT NULL,reply_to_message_id INTEGER)')
+    class Client:
+        def job_ids(self): return set()
+        def find_task(self, *a, **kw):
+            fake._call('sendMessage', {'chat_id': 77, 'text': 'preview'})
+            reply = fake._call('sendMessage', {'chat_id': 77, 'text': 'the reply'})
+            with sqlite3.connect(path / 'quickstart.db') as db:
+                db.execute('INSERT INTO telegram_turns(job_id,chat_id,reply_message_id,created) VALUES (?,?,?,?)',
+                           ('owner',77,reply['message_id'],clock.wall()))
+            return 'owner'
+        def wait(self, *a, **kw): return {'status': 'succeeded'}
+        def answer(self, *a, **kw): return {'response': 'the reply'}
+    connect = sqlite3.connect
+    attempts = []
+    class BusyRead:
+        def __init__(self, db): self.db = db
+        def execute(self, sql, *args):
+            attempts.append(sql)
+            if permanently_locked or len(attempts) <= 2:
+                raise sqlite3.OperationalError('database is locked')
+            return self.db.execute(sql, *args)
+        def close(self): self.db.close()
+    def sometimes_locked(*a, **kw):
+        db = connect(*a, **kw)
+        return BusyRead(db) if kw.get('uri') else db
+    monkeypatch.setattr(runner.sqlite3, 'connect', sometimes_locked)
+    task, detail, before, delivered = runner.chat_turn(Client(), fake, 'owner text', 20, 2,
+                                                      wall=clock.wall,sleep=clock.sleep,data=tmp_path)
+    assert task == 'owner' and detail['status'] == 'succeeded'
+    if permanently_locked:
+        assert delivered is None and [m['text'] for m in before] == ['preview', 'the reply']
+        assert clock.now == runner.DELIVERY_WAIT_SECONDS
+    else:
+        assert [m['text'] for m in before] == ['preview'] and delivered['text'] == 'the reply'
+    assert all('FROM telegram_turns' in query for query in attempts)
+    assert attempts and clock.now <= runner.DELIVERY_WAIT_SECONDS

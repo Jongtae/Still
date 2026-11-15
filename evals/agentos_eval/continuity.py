@@ -75,6 +75,7 @@ def fixture_support(scenarios, rubric_path, scenario_dir=None):
             'rubric_digest': hashlib.sha256(Path(rubric_path).read_bytes()).hexdigest(),
             'scenario_ids': {split: sorted(s['id'] for s in scenarios if s['split'] == split)
                              for split in ('dev', 'heldout')},
+            'due_scenario_ids': sorted(s['id'] for s in scenarios if any('wait_due' in t for t in s['turns'])),
             'rubric': rubric, 'evidence_class': 'synthetic fixture support; not live evidence'}
 
 
@@ -236,8 +237,18 @@ def _measure_value(row, name):
     return row.get('value', {}).get('measure_' + name)
 
 
-def _group(rows):
-    checks = sorted({name for row in rows for name in row.get('checks', {})})
+def _group(rows, due_scenario_ids=()):
+    # Match main's ordinary-check denominator: missing checks count as failed.
+    # Only due_completed has restricted applicability, frozen from the scenario
+    # structure rather than inferred from scored/error rows or their receipts.
+    checks = {name for row in rows for name in row.get('checks', {})} - {'due_completed'}
+    if any(row['scenario'] in due_scenario_ids for row in rows):
+        checks.add('due_completed')
+    checks = sorted(checks)
+
+    def applicable(name):
+        return [r for r in rows if name != 'due_completed' or r['scenario'] in due_scenario_ids]
+
     dims = sorted({k for row in rows for k in row.get('value', {}) if k.startswith('rubric_') and k != 'rubric_mean'})
     measures = {}
     for name in MEASURE_VALUES:
@@ -263,8 +274,8 @@ def _group(rows):
                     'quiet': sum(d.get('completed') and d.get('reason') == 'quiet' for d in due),
                     'timed_out': sum(bool(d.get('timed_out')) for d in due)},
             'observable_results': sum(r.get('proactive_observation', {}).get('observed', False) for r in rows),
-            'checks': {name: {**stats([int(bool(r['checks'][name])) for r in rows if name in r.get('checks', {})]),
-                             'pass_rate': mean(bool(r['checks'][name]) for r in rows if name in r.get('checks', {}))}
+            'checks': {name: {**stats([int(bool(r.get('checks', {}).get(name))) for r in applicable(name)]),
+                             'pass_rate': mean(bool(r.get('checks', {}).get(name)) for r in applicable(name))}
                        for name in checks},
             'measures': measures, 'rubric': {k[7:]: stats([r.get('value', {}).get(k) for r in rows]) for k in dims},
             'latency': latency}
@@ -329,8 +340,8 @@ def build_report(records, run, fixture, labels=None):
     splits = {}
     for split, ids in fixture['scenario_ids'].items():
         rows = [r for r in samples if r['split'] == split]
-        splits[split] = {'scenarios': {ident: _group([r for r in rows if r['scenario'] == ident]) for ident in ids},
-                         'totals': _group(rows)}
+        splits[split] = {'scenarios': {ident: _group([r for r in rows if r['scenario'] == ident], fixture.get('due_scenario_ids', ())) for ident in ids},
+                         'totals': _group(rows, fixture.get('due_scenario_ids', ()))}
     from .budget import judge_totals
     cost = {k: v for k, v in judge_totals(samples).items() if k != 'calls'}
     readiness = judgment_ai_status(samples)

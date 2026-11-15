@@ -40,6 +40,7 @@ class Trace:
         self.quiet, self.notification, self.stop, self.mutate = quiet, notification, stop, mutate
         self.done, self.read_timeouts = set(), []
         self.sent = None
+        self.task_events = []
 
     def update(self):
         t = self.clock.now
@@ -81,7 +82,14 @@ class Trace:
         if path == '/api/preparations':
             return {'preparations':[{'id':'p','last_result':'API excerpt alone', 'last_delivery':'none','line_account':False}]}
         assert path == '/api/tasks/due'
-        return {'status':'running', 'failure_class':'usage-limit' if self.stop == 'usage' else None}
+        # quickstart_service.task_progress: selected contains the detailed task,
+        # including public events/failure_class, rather than the envelope.
+        with self.store.db() as db:
+            status = db.execute("SELECT status FROM jobs WHERE id='due'").fetchone()[0]
+        selected = {'id': 'due', 'status': status, 'events': self.task_events}
+        if self.stop == 'usage':
+            selected['failure_class'] = 'usage-limit'
+        return {'tasks': [selected], 'selected': selected, 'unknown_detail_message': 'fixture'}
 
     def wait(self, **kw):
         return r.wait_due(self, self.telegram, {**SPEC, **kw.pop('spec', {})}, SOURCE, {'owner'}, {}, self.root,
@@ -216,15 +224,20 @@ def test_monotonic_cap_despite_wall_jump(tmp_path, jump):
 
 
 @pytest.mark.parametrize('boundary', ['http','sqlite'])
-def test_blocked_reader_remaining_budget_and_infra(tmp_path,boundary):
+@pytest.mark.parametrize('exhausted', [False, True])
+def test_blocked_reader_remaining_budget_and_infra(tmp_path,boundary,exhausted):
     trace=Trace(tmp_path)
     def blocked(*a,timeout,**kw):
-        trace.clock.sleep(timeout)
-        raise TimeoutError('blocked read')
+        trace.clock.sleep(timeout if exhausted else 1)
+        error = sqlite3.OperationalError if boundary == 'sqlite' else TimeoutError
+        raise error('blocked read')
     kw={'reader':blocked} if boundary=='sqlite' else {}
     if boundary=='http': trace.get=blocked
     receipt=trace.wait(spec={'timeout_seconds':9},**kw)
-    assert receipt['elapsed']==9 and receipt['status']=='observation_error'
+    assert receipt['elapsed'] == (9 if exhausted else 1)
+    assert receipt['status'] == ('timed_out' if exhausted else 'observation_error')
+    assert receipt['timed_out'] is exhausted
+    if exhausted: assert receipt['stage'] == 'no_preparation'
 
 
 def test_usage_limit_stops_and_is_visible(tmp_path):
@@ -251,7 +264,7 @@ def test_reader_really_read_only_and_no_payload_dump(tmp_path):
     before=trace.store.path.read_bytes()
     evidence=r.due_evidence(tmp_path,'owner',BASE,timeout=1)
     assert trace.store.path.read_bytes()==before
-    assert set(evidence['jobs'][0])=={'id','request_key','created','status','delivery'}
+    assert set(evidence['jobs'][0])=={'id','request_key','created','status','delivery','channel'}
     assert all('detail' not in e for e in evidence['events'])
 
 
@@ -330,3 +343,62 @@ def test_wait_collector_retains_message_after_backward_clock_jump(tmp_path):
     result=trace.wait(reader=reader,capture_sequence=0,spec={'timeout_seconds':11})
     assert result['timed_out'] and result['elapsed']==11
     assert result['messages'][0]['text']=='retained despite clock jump'
+
+
+def test_selected_task_progress_retains_usage_limit_and_approval_events(tmp_path):
+    trace = Trace(tmp_path)
+    trace.task_events = [{'tool': 'local_authority', 'status': 'requested', 'label': 'fixture gate'}]
+    receipt = trace.wait()
+    assert receipt['work_events'] == trace.task_events
+    record = {'turns': [SOURCE, {'kind': 'wait_due', 'events': receipt['work_events']}]}
+    approvals = s.required_approvals_events({'expect': {}}, record)
+    assert len(approvals) == 1 and approvals[0]['turn'] == 2
+    limited = Trace(tmp_path / 'limited', stop='usage')
+    receipt = limited.wait()
+    assert receipt['failure_class'] == 'usage-limit' and receipt['elapsed'] == 4
+
+
+@pytest.mark.parametrize('status', ['interrupted', 'unknown', 'blocked'])
+def test_runtime_terminal_failure_settles_without_timeout(tmp_path, status):
+    def mutate(db, trace):
+        if 'settled' in trace.done:
+            db.execute('UPDATE jobs SET status=?', (status,))
+            db.execute("UPDATE preparations SET state='failed',last_outcome='failed'")
+            event = db.execute("SELECT id,detail FROM tool_events WHERE detail LIKE '%outcome%'").fetchone()
+            facts = json.loads(event['detail'])
+            facts['outcome'] = 'failed'
+            db.execute("UPDATE tool_events SET status='failed',detail=? WHERE id=?", (json.dumps(facts),event['id']))
+    receipt = Trace(tmp_path, mutate=mutate).wait()
+    assert receipt['status'] == 'failed' and receipt['reason'] == 'execution_failed'
+    assert receipt['result_status'] == status and receipt['settlement']
+    assert not receipt['timed_out'] and receipt['elapsed'] == 8
+
+
+@pytest.mark.parametrize('until', ['settled', 'delivered'])
+def test_one_off_keep_result_is_quiet_only_for_until_settled(tmp_path, until):
+    def keep(db, trace):
+        db.execute("UPDATE preparations SET channel='web',recurrence=NULL,last_decision=NULL")
+        db.execute("UPDATE jobs SET channel='web',chat_id=NULL,delivery='none'")
+    trace = Trace(tmp_path, quiet=True, mutate=keep)
+    receipt = trace.wait(spec={'until': until})
+    assert receipt['completed'] is (until == 'settled')
+    if until == 'settled':
+        assert receipt['reason'] == 'quiet' and receipt['elapsed'] == 28
+        assert not s.proactive_observation({'due_observations': [receipt]})['observed']
+    else:
+        assert receipt['timed_out'] and receipt['stage'] == 'not_delivered'
+
+
+def test_mid_task_read_exhaustion_keeps_last_unmet_stage(tmp_path):
+    trace = Trace(tmp_path)
+    original = trace.get
+    def exhaust_task(path, timeout=None):
+        if path.startswith('/api/tasks/'):
+            trace.clock.sleep(timeout)
+            raise TimeoutError('task detail reached deadline')
+        return original(path, timeout=timeout)
+    trace.get = exhaust_task
+    receipt = trace.wait(spec={'timeout_seconds': 11})
+    assert receipt['status'] == 'timed_out' and receipt['timed_out']
+    assert receipt['stage'] == 'not_settled' and receipt['elapsed'] == 11
+    assert receipt['start'] and not receipt['completed']

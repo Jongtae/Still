@@ -2143,6 +2143,22 @@
           "date": "2026-11-14",
           "revision": "6ba8657",
           "summary": "Synthetic scenario specification only: expired pass. No dated run is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:due-workshop-missing-material",
+          "date": "2026-11-15",
+          "revision": "a3ff69f7",
+          "summary": "Synthetic scenario specification only: compare supplied packing lists for a fictional paper-lantern hobby workshop. No physical packing or dated execution is claimed."
+        },
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:due-radio-rehearsal-cue",
+          "date": "2026-11-15",
+          "revision": "a3ff69f7",
+          "summary": "Synthetic scenario specification only: prepare a short cue for solo fictional radio rehearsal as a leisure activity, with no broadcast or audience contact. No dated execution is claimed."
         }
       ],
       "judgment_cases": [],
@@ -3538,7 +3554,16 @@
       "status": "untried",
       "blocker": null,
       "bounds": null,
-      "evidence": [],
+      "evidence": [
+        {
+          "class": "S",
+          "kind": "scenario",
+          "source": "scenario:due-exhibit-quiet-check",
+          "date": "2026-11-15",
+          "revision": "a3ff69f7",
+          "summary": "Synthetic scenario specification only: compare a supplied completed display list against its explicit reference list and retain a matching result. No real exhibition inspection or dated execution is claimed."
+        }
+      ],
       "judgment_cases": [],
       "notes": "No row-specific execution evidence identified in this repository review; available tools alone do not demonstrate this activity. Tool surface: src/personal_agent/agent_runtime.py:DEFINITIONS; availability is Work-specific via src/personal_agent/agent_runtime.py:Capabilities.offered_tools."
     },
