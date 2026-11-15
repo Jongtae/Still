@@ -1465,6 +1465,11 @@ class Preparations:
                     local = datetime.fromtimestamp(requested_until, zone(timezone_name))
                     requested_until = datetime.combine(date, local.time(), tzinfo=zone(timezone_name)).timestamp()
                 requested = datetime.fromtimestamp(requested_until, zone(timezone_name)).isoformat()
+            # A cadence/deadline edit keeps the pending slot. The original
+            # budget anchor validates the allowance, not that slot's reachability.
+            if requested_until <= now or requested_until < due_at:
+                raise PreparationRefusal('invalid_window', msg('preparations.window_until_order',
+                                         value=repr(requested), due=iso(max(now, due_at))))
             budget_start = start if rhythm else (anchor if anchor is not None else start - done * row['every_seconds'])
             every, until_at, remaining = normalize_window(
                 changes.get('every_minutes', row['every_seconds'] // 60),
@@ -1495,6 +1500,8 @@ class Preparations:
             if total not in (None, '') and not 1 <= (_whole_number(total) or 0) <= window_run_cap(budget_start, requested_until, timezone_name, rhythm):
                 raise PreparationRefusal('invalid_max_runs')
             runs = done + remaining if total in (None, '') else min(_whole_number(total), done + remaining)
+            if runs < 1:
+                raise PreparationRefusal('invalid_max_runs')
             cap_shortened = remaining < slots and runs == done + remaining
             until_at = requested_until
             if cap_shortened and runs > done:

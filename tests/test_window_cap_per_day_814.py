@@ -145,6 +145,108 @@ class DailyCapTests(unittest.TestCase):
                     self.assertEqual(prep.last_slot({**row, 'state': state, 'run_count': count}), end)
 
 
+class WindowEditBoundsTests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.store = QuickStore(Path(tmp.name))
+        self.now = DUE.timestamp() - 60
+        self.preparations = prep.Preparations(self.store, clock=lambda: self.now)
+
+    def after_first_check(self, *, minutes=720, recurrence=None, end_hour=23):
+        window = prep.normalize_window(minutes, DUE.replace(hour=end_hour).isoformat(), None,
+                                       DUE.timestamp(), 'Asia/Seoul', self.now, recurrence)
+        row = self.preparations.create(kind='prepare', goal='새 결과 확인', due_at=DUE.timestamp(),
+                                       timezone='Asia/Seoul', recurrence=recurrence, channel='web', created_from=None,
+                                       state=prep.STATE_SCHEDULED, window=window)
+        self.now = DUE.timestamp()
+        job = self.preparations.start(row, channel='web', chat_id=None, now=self.now)
+        self.assertIsNotNone(job)
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='succeeded',response='확인 완료',delivery='none' WHERE id=?", (job,))
+        self.preparations.settle(self.preparations.get(row['id']), self.now)
+        row = self.preparations.get(row['id'])
+        self.assertEqual((row['state'], row['run_count'], row['due_at']),
+                         (prep.STATE_SCHEDULED, 1, DUE.timestamp() + minutes * 60))
+        return row
+
+    def assert_refused_unchanged(self, row, **changes):
+        before = self.preparations.get(row['id'])
+        with self.assertRaises(prep.PreparationRefusal) as caught:
+            self.preparations.edit(row['id'], **changes)
+        self.assertEqual(caught.exception.code, 'invalid_window')
+        self.assertEqual(self.preparations.get(row['id']), before)
+
+    def test_deadline_before_pending_slot_but_after_now_is_refused(self):
+        for recurrence in (None, 'weekdays'):
+            with self.subTest(recurrence=recurrence):
+                self.now = DUE.timestamp() - 60
+                row = self.after_first_check(recurrence=recurrence)
+                self.now = DUE.replace(hour=10).timestamp()
+                self.assert_refused_unchanged(row, until=DUE.replace(hour=12).isoformat())
+                # The pending slot itself is an inclusive, valid end.
+                edited = self.preparations.edit(row['id'], until=DUE.replace(hour=21).isoformat())
+                self.assertEqual((edited['due_at'], edited['until_at'], edited['max_runs']),
+                                 (row['due_at'], row['due_at'], 2))
+
+    def test_shortened_deadline_and_faster_cadence_cannot_persist_negative_runs(self):
+        row = self.after_first_check()
+        self.now = DUE.replace(hour=10).timestamp()
+        self.assert_refused_unchanged(row, until=DUE.replace(hour=12).isoformat(), every_minutes=5)
+        # Cadence-only edits retain the already pending slot, rather than
+        # silently rebasing it from 21:00 to an earlier check.
+        edited = self.preparations.edit(row['id'], every_minutes=5)
+        self.assertEqual((edited['due_at'], edited['until_at'], edited['max_runs']),
+                         (row['due_at'], row['until_at'], 26))
+        # An explicit due edit can move the pending slot into the new window.
+        edited = self.preparations.edit(row['id'], due=DUE.replace(hour=10, minute=5).isoformat(),
+                                        until=DUE.replace(hour=12).isoformat())
+        self.assertEqual((edited['due_at'], edited['until_at'], edited['max_runs']),
+                         (DUE.replace(hour=10, minute=5).timestamp(), DUE.replace(hour=12).timestamp(), 25))
+
+    def test_slower_cadence_with_an_end_before_pending_slot_is_refused(self):
+        row = self.after_first_check(minutes=5, end_hour=12)
+        self.now = DUE.replace(minute=1).timestamp()
+        self.assert_refused_unchanged(row, until=DUE.replace(minute=4).isoformat(), every_minutes=720)
+        edited = self.preparations.edit(row['id'], until=DUE.replace(minute=5).isoformat(), every_minutes=720)
+        self.assertEqual((edited['due_at'], edited['until_at'], edited['max_runs']),
+                         (row['due_at'], row['due_at'], 2))
+
+    def test_elapsed_deadline_is_refused_even_when_pending_slot_is_in_the_past(self):
+        for recurrence in (None, 'weekdays'):
+            row = self.after_first_check(minutes=5, recurrence=recurrence, end_hour=12)
+            self.now = DUE.replace(hour=10).timestamp()
+            for seconds in (0, -60):
+                with self.subTest(recurrence=recurrence, seconds=seconds):
+                    until = datetime.fromtimestamp(self.now + seconds, SEOUL).isoformat()
+                    self.assert_refused_unchanged(row, until=until)
+            self.now = DUE.timestamp() - 60
+
+    def test_recorded_immediate_checks_cannot_make_an_edit_persist_zero_runs(self):
+        with patch.object(prep, 'MAX_DAILY_WINDOW_RUNS', 2):
+            requested = DUE.replace(hour=20)
+            window = prep.normalize_window(5, requested.isoformat(), None,
+                                           DUE.timestamp(), 'Asia/Seoul', self.now)
+            row = self.preparations.create(kind='prepare', goal='새 결과 확인', due_at=DUE.timestamp(),
+                                           timezone='Asia/Seoul', recurrence=None, channel='web', created_from=None,
+                                           state=prep.STATE_SCHEDULED, window=window, requested_until=requested.timestamp(),
+                                           report_every_minutes=5, delivery_mode=prep.DELIVERY_WHEN_NEEDED)
+            # Immediate runs with a report interval preserve the pending slot
+            # and its count, but preview_edit still charges their recorded checks.
+            for _ in range(2):
+                self.now += 10
+                job = self.preparations.run_now(row['id'], channel='web', chat_id=None)
+                with self.store.db() as db:
+                    db.execute("UPDATE jobs SET status='succeeded',response='확인 완료',delivery='none' WHERE id=?", (job,))
+                self.preparations.settle(self.preparations.get(row['id']), self.now)
+            before = self.preparations.get(row['id'])
+            self.assertEqual((before['due_at'], before['run_count']), (DUE.timestamp(), 0))
+            with self.assertRaises(prep.PreparationRefusal) as caught:
+                self.preparations.edit(row['id'], until=requested.isoformat())
+            self.assertEqual(caught.exception.code, 'invalid_max_runs')
+            self.assertEqual(self.preparations.get(row['id']), before)
+
+
 class WindowCapFlowTests(_WatchCase):
     def schedule(self, *, recurrence=None, until=None, max_runs=None):
         self.now = DUE.timestamp() - 60
