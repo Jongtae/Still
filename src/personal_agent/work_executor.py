@@ -1668,6 +1668,11 @@ class WorkExecutor:
         if run.resolved_blocker:
             service.projection.clear(service.issuer_owner_id(job))
         if run.context_approval_needed[0]:service.queue_notification(job,'context_approval_needed')
+        # Held results never pass through reply delivery's Memory follow-ups.
+        # These are owner decisions/status receipts, not completed result reports.
+        if service.preparations_service.notice_job(job) != job:
+            service.queue_memory_candidates(job)
+            service.release_memory_saved(job)
         # #659: preparations this Work proposed wait for the owner's yes.
         service.queue_preparation_proposal(job)
         # #583: the look-back's suggestions are offered once, after the owner's own request.

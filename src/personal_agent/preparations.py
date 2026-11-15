@@ -1329,10 +1329,26 @@ class Preparations:
             if times:row['bundle_report_times'] = times
         return row
 
+    def notice_channel(self, row, db=None):
+        """Owner-action/status send intent, independently of held result delivery.
+
+        ``line_held.channel`` (including create's ``bundle_channel``) is the
+        original intent. Per-run holding receipts have no channel of their own.
+        Never use this for a completed report or to change a Work's address.
+        """
+        if row['channel'] != CHANNEL_WEB:
+            return row['channel']
+        if db is None:
+            with self.store.db() as db:return self.notice_channel(row, db)
+        held = db.execute("SELECT json_extract(detail,'$.channel') AS channel FROM tool_events "
+                          "WHERE tool='line_held' AND json_extract(detail,'$.preparation_id')=? "
+                          "AND json_type(detail,'$.channel')='text' ORDER BY id LIMIT 1", (row['id'],)).fetchone()
+        return held['channel'] if held else row['channel']
+
     def _queue_status_notice(self, db, row, job_id, kind, created):
         if self.notice_destination is None or not row['accepted_by']:
             return
-        destination = self.notice_destination(row['channel'])
+        destination = self.notice_destination(self.notice_channel(row, db))
         if destination:
             owner, generation, surface = destination
             anchor = db.execute('SELECT channel,chat_id FROM jobs WHERE id=?', (row['created_from'],)).fetchone()

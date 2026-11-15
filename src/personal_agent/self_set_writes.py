@@ -220,11 +220,12 @@ def finished(service, job, ticket, *, observed=True, rejected=False, held=False)
     # changed since authorization and has not passed the decoded-value guard.
     label = service._redact_known_secrets(ticket['connection_label'])
     text = msg('write_allowances.rejected_notice' if rejected else 'write_allowances.notice' if observed else 'write_allowances.unknown_notice', connection=label, operation=ticket['operation'], target=ticket['target'])
+    notice_job = service.preparations_service.notice_job(job)
     with service.store.db() as db:
         db.execute('BEGIN IMMEDIATE')
         changed = db.execute("UPDATE tool_events SET status=? WHERE id=? AND job_id=? AND tool=? AND status='dispatching'",
                              ('held' if held else 'rejected' if rejected else 'observed' if observed else 'unknown', ticket['event'], job['id'], ACTION)).rowcount
         if changed and ticket['allowance']:
-            service.record_conversation_notice(text, job=job, db=db)
+            service.record_conversation_notice(text, job=notice_job, db=db)
     if changed and ticket['allowance']:
-        service._deliver_authority_notice(service.surface_claiming(job), text)
+        service._deliver_authority_notice(service.surface_claiming(notice_job), text)

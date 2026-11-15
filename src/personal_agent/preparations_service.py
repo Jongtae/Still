@@ -16,7 +16,7 @@ from . import entrusted_lines as el
 from . import preparations as prep
 from . import owner_model as om
 from . import work_status as ws
-from .agent_runtime import ToolError, not_run, ran_field
+from .agent_runtime import ToolError, WorkLedger, not_run, ran_field
 from .conversation_handoff import JUDGMENT_NO, JUDGMENT_YES
 from .conversation_projection import earlier_turn_line
 from .messages import LANGUAGES, msg
@@ -487,6 +487,39 @@ class PreparationsService:
             return pairing.owner, generation, surface.name
         return None
 
+    def notice_job(self, job):
+        """Transient address for a held run's notices; its result Work stays web.
+
+        Preserve current-run and paired-owner checks, including the pairing
+        bound at start when present. A local/unpaired run gains no destination.
+        """
+        if not job or job.get('channel') != prep.CHANNEL_WEB or job.get('chat_id') is not None:
+            return job
+        service = self.service
+        row = service.preparations.get(prep.preparation_of(job.get('request_key')))
+        if (not row or row['last_run_job_id'] != job['id']
+                or row.get('delivery_mode') == prep.DELIVERY_WHEN_NEEDED):
+            return job
+        channel = service.preparations.notice_channel(row)
+        if channel == row['channel']:
+            return job  # An ordinary quiet/unpaired run was never held for a bundle.
+        destination = self.notice_destination(channel)
+        if not destination:
+            return job
+        owner, generation, surface = destination
+        with service.store.db() as db:
+            try:origin = WorkLedger.request_chain(db, job['id'])[-1]
+            except ValueError:return job
+            anchor = db.execute('SELECT channel,chat_id FROM jobs WHERE id=?', (row['created_from'],)).fetchone()
+            held = db.execute("SELECT detail FROM tool_events WHERE job_id=? AND tool='line_held' "
+                              "AND json_extract(detail,'$.phase')='started' ORDER BY id LIMIT 1", (origin['id'],)).fetchone()
+        if (anchor and str(anchor['channel']).startswith(surface + ':')
+                and anchor['chat_id'] is not None and str(anchor['chat_id']) != str(owner)):
+            return job
+        if held and json.loads(held['detail'])['bundle_to'] != list(destination):
+            return job
+        return {**job, 'channel': surface + ':' + generation, 'chat_id': owner}
+
     def self_change_text(self, event):
         """One readable receipt, shared by messenger notices and the existing Settings result."""
         row = {**(self.service.preparations.get(event['preparation_id']) or {'goal_text': ''}),
@@ -533,7 +566,7 @@ class PreparationsService:
             row = db.execute('SELECT * FROM preparations WHERE id=?',
                              (notification['fingerprint'],)).fetchone()
             if (not row or row['state'] == prep.STATE_CANCELLED
-                    or row['channel'] != notification['surface']):
+                    or service.preparations.notice_channel(row, db) != notification['surface']):
                 return None
             if kind.startswith(prep.BLOCKED_NOTICE_PREFIX):
                 job = db.execute('SELECT status FROM jobs WHERE id=?', (notification['job_id'],)).fetchone()
@@ -1633,8 +1666,12 @@ class PreparationsService:
                 row={'line_id':read['line_id'],'timezone':self.home_zone()}
             # L1 runs may already be in flight when the row is held. A report already handed
             # to notification delivery is excluded above, whatever that delivery's state.
+            # An answered input keeps the same slot, with a new Work. Its original
+            # start/pairing still owns bundle eligibility and the work-mode interval.
+            try:origin = WorkLedger.request_chain(db, job['id'])[-1]
+            except ValueError:continue
             started=db.execute("SELECT detail,created FROM tool_events WHERE job_id=? AND tool='preparation' "
-                               "AND json_type(detail,'$.slot') IS NOT NULL ORDER BY id LIMIT 1",(job['id'],)).fetchone()
+                               "AND json_type(detail,'$.slot') IS NOT NULL ORDER BY id LIMIT 1",(origin['id'],)).fetchone()
             if started is None:continue
             run=json.loads(started['detail'])
             # Eligibility belongs to the run, not the row's later owner acceptance/channel.
@@ -1664,7 +1701,7 @@ class PreparationsService:
             # Apply the destination's existing per-run egress check, using the
             # original Work start just as deliver_one/deliver_reply do. A new
             # bundle timestamp must never release work-mode history.
-            since=job.get('created')
+            since=origin['created']
             if when_needed:
                 # Notification content dates from the earlier of Work creation
                 # and queueing (settlement), including a clock moving backward.
@@ -1679,7 +1716,7 @@ class PreparationsService:
             if pairing is not None:
                 receipt=db.execute("SELECT detail FROM tool_events WHERE job_id=? AND tool='line_held' "
                                    "AND json_extract(detail,'$.phase')=? ORDER BY id LIMIT 1",
-                                   (job['id'],'settled' if when_needed else 'started')).fetchone()
+                                   (job['id'] if when_needed else origin['id'],'settled' if when_needed else 'started')).fetchone()
                 bound=json.loads(receipt['detail']).get('bundle_to') if receipt else None
                 # Older held runs have no pairing receipt; keep them locally.
                 # Never substitute a later owner/generation for a run's own.

@@ -67,6 +67,260 @@ class Bundles(_LinesCase):
         self.assertEqual(outcome['outcome'],el.OUTCOME_KEPT)
         self.assertNotIn(work,[part for part,_ in self.receipts()])
 
+    def start_held_notice_run(self, destination='telegram'):
+        self.at(10);_,row=self.line('Notice responsibility '+str(self.counter));self.now+=86400;self.at(8)
+        with self.store.db() as db:
+            db.execute('UPDATE preparations SET due_at=? WHERE id!=?',(self.now+86400,row['id']))
+            db.execute('UPDATE preparations SET due_at=? WHERE id=?',(self.now,row['id']))
+            db.execute("UPDATE tool_events SET detail=json_set(detail,'$.channel',?) "
+                       "WHERE tool='line_held' AND json_extract(detail,'$.preparation_id')=?",
+                       (destination,row['id']))
+        self.service.run_due_preparation()
+        row=self.service.preparations.get(row['id'])
+        job=self.store.job(row['last_run_job_id'])
+        self.assertEqual((row['channel'],job['channel'],job['chat_id']),('web','web',None))
+        self.telegram.clear()
+        return row,job
+
+    def finish_held_notice_run(self, row, job):
+        text='Completed after owner action'
+        receipts=self.receipts()
+        self.script=[{'content':text}]*4
+        self.assertTrue(self.service.run_one())
+        self.assertEqual(self.store.job(job['id'])['response'],text)
+        self.service.deliver_one()
+        self.service.run_due_preparation()
+        self.assertEqual(self.service.preparations.get(row['id'])['state'],prep.STATE_SCHEDULED)
+        self.assertEqual(self.sends(),[],'completed report stays held')
+        self.at(9);bundle=self.flush()
+        self.assertEqual(self.receipts(),[*receipts,(job['id'],bundle)])
+        self.assertIn(text,self.store.job(bundle)['response'])
+
+    def test_held_connection_wait_sent_once_then_restored_run_is_bundled(self):
+        row,job=self.start_held_notice_run()
+        with patch.object(self.service,'_park_for_connector',return_value='private connection guidance'):
+            self.assertTrue(self.service.park_for_connector_read(job,'fixture-connector'))
+            self.assertTrue(self.service.park_for_connector_read(job,'fixture-connector'))
+        self.service=self.make_service();self.helper=self.service.preparations_service
+        self.assertTrue(self.service.deliver_notification())
+        self.assertFalse(self.service.deliver_notification())
+        self.assertEqual([s['text'] for s in self.sends()],
+                         [msg('preparations.notice_waiting',title=prep.owner_title(row))])
+        self.assertEqual(self.store.job(job['id'])['status'],'awaiting_connection')
+        self.assertEqual(self.store.job(job['id'])['delivery'],'none')
+        self.telegram.clear()
+        self.assertTrue(self.service._schedule_resumed_work(job['id']))
+        self.finish_held_notice_run(row,job)
+
+    def test_held_connection_wait_uses_recorded_surface_not_origin(self):
+        self.store.put('mattermost',{'enabled':True,'owner_user_id':'owner','channel_id':'dm','generation':'mm-1'})
+        row,job=self.start_held_notice_run('mattermost')
+        with patch.object(self.service,'_park_for_connector',return_value='private connection guidance'):
+            self.assertTrue(self.service.park_for_connector_read(job,'fixture-connector'))
+        self.assertIsNone(self.store.next_notification('telegram'))
+        surface=next(s for s in self.service.surfaces if s.name=='mattermost')
+        with patch.object(surface,'_post',return_value='posted-799') as wire:
+            self.assertTrue(self.service.deliver_notification())
+            self.assertFalse(self.service.deliver_notification())
+        self.assertEqual(wire.call_count,1)
+        self.assertIn(msg('preparations.notice_waiting',title=prep.owner_title(row)),str(wire.call_args))
+
+    def test_held_irreversible_write_approval_then_report_is_bundled(self):
+        from personal_agent.api_requests import ApiRequests, ApiError, save_slot
+        save_slot(self.store,'notes',['notes.test'],'fixture-secret-123456789',money=False)
+        row,job=self.start_held_notice_run()
+        with self.store.db() as db:db.execute("UPDATE jobs SET status='running' WHERE id=?",(job['id'],))
+        sent=[]
+        api=ApiRequests(self.store,job['id'],approvals=self.service.browser_approvals_for(job),
+                        transport=lambda *a,**k:sent.append(a) or (200,{},b'{}'))
+        args={'slot':'notes','url':'https://notes.test/items','method':'POST','body':'{}','effect':'mutate'}
+        with patch.object(self.service.decision_judge,'connector_effect',return_value='irreversible'):
+            with self.assertRaises(ApiError) as raised:api.call(args)
+            self.assertEqual(raised.exception.code,'approval_required')
+            self.assertEqual(sent,[])
+            request=self.service._browser_request(job['id'])
+            with self.store.db() as db:
+                db.execute("UPDATE jobs SET status='partial',delivery='none' WHERE id=?",(job['id'],))
+            self.assertTrue(self.service.deliver_notification())
+            self.assertFalse(self.service.deliver_notification())
+            self.assertIn('notes.test',self.sends()[0]['text'])
+            decision=self.service._decide_browser_step(job['id'],True,request['offer_digest'])
+            self.assertTrue(decision['resumed'],(decision,self.store.job(job['id']),self.service._browser_request(job['id'])))
+            api.call(args)
+        self.assertEqual(len(sent),1)
+        self.telegram.clear()
+        self.finish_held_notice_run(row,job)
+
+    def test_held_browser_write_approval_then_report_is_bundled(self):
+        from personal_agent import browser_session as bs
+        from personal_agent.agent_runtime import ToolError
+        from test_browser_session import FakeDriver, ORIGIN
+        row,job=self.start_held_notice_run()
+        with self.store.db() as db:db.execute("UPDATE jobs SET status='running' WHERE id=?",(job['id'],))
+        driver=FakeDriver(pages={'/edit':'<form method="post" action="/save"><input aria-label="Note" name="note"></form>'})
+        browser=bs.BrowserSession(lambda:driver,work_id=job['id'],approvals=self.service.browser_approvals_for(job))
+        self.addCleanup(browser.close)
+        browser.open({'url':ORIGIN+'/edit','effect':'navigate'})
+        args={'target':'Note','text':'Reviewed value','effect':'mutate'}
+        with patch.object(self.service.decision_judge,'connector_effect',return_value='irreversible'):
+            with self.assertRaises(ToolError) as raised:browser.type(args)
+            self.assertEqual(raised.exception.code,'approval_required')
+            request=self.service._browser_request(job['id'])
+            with self.store.db() as db:
+                db.execute("UPDATE jobs SET status='partial',delivery='none' WHERE id=?",(job['id'],))
+            self.assertTrue(self.service.deliver_notification())
+            self.assertFalse(self.service.deliver_notification())
+            self.assertIn('Note',self.sends()[0]['text'])
+            decision=self.service._decide_browser_step(job['id'],True,request['offer_digest'])
+            self.assertTrue(decision['resumed'],(decision,self.store.job(job['id']),self.service._browser_request(job['id'])))
+            browser.type(args)
+        self.telegram.clear()
+        self.finish_held_notice_run(row,job)
+
+    def test_held_expiry_status_is_sent_once(self):
+        row,job=self.start_held_notice_run()
+        with patch.object(self.service,'_park_for_connector',return_value='private connection guidance'):
+            self.assertTrue(self.service.park_for_connector_read(job,'fixture-connector'))
+        with self.store.db() as db:
+            db.execute("UPDATE preparations SET recurrence='window',window_end=?,max_runs=3 WHERE id=?",(self.now,row['id']))
+        self.service.run_due_preparation()
+        while self.service.deliver_notification():pass
+        self.assertEqual([s['text'] for s in self.sends()],
+                         [msg('preparations.notice_elapsed',title=prep.owner_title(row))])
+
+    def test_held_expiry_before_start_is_sent_once(self):
+        self.at(10);_,row=self.line();self.now+=86400;self.at(8)
+        with self.store.db() as db:
+            db.execute('UPDATE preparations SET due_at=? WHERE id!=?',(self.now+86400,row['id']))
+            db.execute("UPDATE preparations SET due_at=?,recurrence='window',every_seconds=600,"
+                       "window_end=?,until_at=?,max_runs=3 WHERE id=?",(self.now-1200,self.now,self.now,row['id']))
+        self.telegram.clear()
+        self.service.run_due_preparation()
+        self.assertIsNone(self.service.preparations.get(row['id'])['last_run_job_id'])
+        self.assertTrue(self.service.deliver_notification())
+        self.assertFalse(self.service.deliver_notification())
+        self.assertEqual([s['text'] for s in self.sends()],
+                         [msg('preparations.notice_elapsed',title=prep.owner_title(row))])
+
+    def test_held_signin_notice_uses_intent_without_widening_acceptance(self):
+        from personal_agent.quickstart_service import BROWSER_LOGIN_UNATTENDED_TEXT, BROWSER_LOGIN_PAGE_OFFERED_TEXT
+        row,job=self.start_held_notice_run()
+        with patch.object(self.service.browser_profile,'available',return_value=True):
+            # Holding must not let a self-set run acquire #821's owner-accepted authority.
+            self.assertEqual(self.service._request_browser_login(job,'https://shop.example.test/login'),
+                             BROWSER_LOGIN_UNATTENDED_TEXT)
+            self.assertIsNone(self.service._browser_login(job['id']))
+            # Owner acceptance can land before the next hold tick restores the row's result channel.
+            with self.store.db() as db:
+                db.execute('UPDATE preparations SET accepted_by=? WHERE id=?',(prep.ACCEPTED_OWNER_REQUEST,row['id']))
+            self.assertEqual(self.service._request_browser_login(job,'https://shop.example.test/login'),
+                             BROWSER_LOGIN_PAGE_OFFERED_TEXT)
+        login=self.service._browser_login(job['id'])
+        self.service._put_browser_login(job['id'],{**login,'state':'opening'})
+        with patch.object(self.service.browser_signin,'_login_window_baselines',return_value={'landed_site':None}), \
+                patch.object(self.service,'_owner_signed_in',return_value=False):
+            self.service._browser_login_opened(job['id'],login['nonce'],'fixture-window')
+        with patch.object(self.service,'AUTO_PHONE_LOGIN',False):
+            self.assertTrue(self.service.deliver_notification())
+            self.assertFalse(self.service.deliver_notification())
+        self.assertIn('shop.example.test',self.sends()[0]['text'])
+        self.assertEqual(self.store.job(job['id'])['channel'],'web')
+
+    def test_held_self_change_receipt_uses_recorded_send_intent(self):
+        self.store.put('mattermost',{'enabled':True,'owner_user_id':'owner','channel_id':'dm','generation':'mm-1'})
+        row,job=self.start_held_notice_run('mattermost')
+        result=self.service.settings_tools(job)('settings_change',{'category':'preparations','setting':'pause',
+                                                                 'value':row['id'],'reason':'Owner action is needed.'})
+        self.assertTrue(result['applied'],result)
+        self.assertIsNone(self.store.next_notification('telegram'))
+        surface=next(s for s in self.service.surfaces if s.name=='mattermost')
+        with patch.object(surface,'_post',return_value='posted-799') as wire:
+            self.assertTrue(self.service.deliver_notification())
+            self.assertFalse(self.service.deliver_notification())
+        self.assertEqual(wire.call_count,1)
+
+    def test_held_allowed_write_status_uses_recorded_send_intent(self):
+        from personal_agent.api_requests import save_slot
+        from personal_agent.browser_session import step_binding
+        from personal_agent.self_set_writes import set_allowance
+        save_slot(self.store,'notes',['notes.test'],'fixture-secret-123456789',money=False)
+        set_allowance(self.service,'slot:notes',True,0,'owner')
+        row,job=self.start_held_notice_run()
+        binding=step_binding(job['id'],'api_request','https://notes.test/items','target')
+        ticket=self.service.self_set_write(job,binding,'slot:notes','POST','/items',effect='irreversible')
+        self.service.self_set_write_finished(job,ticket)
+        self.assertEqual(len(self.sends()),1)
+        self.assertIn('notes',self.sends()[0]['text'])
+        self.assertEqual(self.store.job(job['id'])['delivery'],'none')
+
+    def test_held_location_request_is_actionable_now_even_with_answer(self):
+        for with_answer in (False,True):
+            with self.subTest(with_answer=with_answer):
+                row,job=self.start_held_notice_run()
+                ask=self.service.location_requester(job)
+                self.assertIsNotNone(ask)
+                request=ask('Share the current position for this run.',with_answer=with_answer)
+                self.assertEqual(self.service.context_observations.request_work(request),job['id'])
+                self.assertEqual(self.sends()[0]['text'],'Share the current position for this run.')
+                self.assertTrue(self.sends()[0]['reply_markup']['keyboard'][0][0]['request_location'])
+                self.assertIsNone(self.store.config(self.service.LOCATION_OFFER_PREFIX+job['id']))
+                self.assertEqual((self.store.job(job['id'])['channel'],self.store.job(job['id'])['delivery']),('web','none'))
+                with self.store.db() as db:
+                    db.execute("UPDATE jobs SET status='partial',response='Waiting for position' WHERE id=?",(job['id'],))
+                from test_ask_location import _LocationCase
+                _LocationCase.location(self)
+                continued=self.store.job(self.service.preparations.get(row['id'])['last_run_job_id'])
+                self.assertNotEqual(continued['id'],job['id'])
+                self.assertEqual((continued['channel'],continued['chat_id']),('web',None))
+                self.telegram.clear()
+                self.finish_held_notice_run(row,continued)
+                self.now+=86400
+
+    def test_held_memory_candidate_request_is_sent_without_releasing_report(self):
+        row,job=self.start_held_notice_run()
+        self.store.save_memory_candidate(job['id'],'profile.fixture799','Owner candidate for review')
+        self.script=[{'content':'Held answer with a candidate'}]*4
+        self.assertTrue(self.service.run_one())
+        self.assertTrue(self.service.deliver_notification())
+        self.assertFalse(self.service.deliver_notification())
+        self.assertIn('Owner candidate for review',self.sends()[0]['text'])
+        self.assertNotIn('Held answer with a candidate',self.sends()[0]['text'])
+        self.assertEqual(self.store.job(job['id'])['delivery'],'none')
+
+    def test_held_memory_saved_status_is_sent_without_releasing_report(self):
+        row,job=self.start_held_notice_run()
+        self.store.save_memory('profile.fixture799','Owner fact saved',work_id=job['id'],notice=True)
+        self.script=[{'content':'Held answer with a saved fact'}]*4
+        self.assertTrue(self.service.run_one())
+        self.assertTrue(self.service.deliver_notification())
+        self.assertFalse(self.service.deliver_notification())
+        self.assertIn('Owner fact saved',self.sends()[0]['text'])
+        self.assertNotIn('Held answer with a saved fact',self.sends()[0]['text'])
+        self.assertEqual(self.store.job(job['id'])['delivery'],'none')
+
+    def test_held_budget_continue_request_then_report_is_bundled(self):
+        import time
+        from personal_agent.work_execution import WorkRun
+        row,job=self.start_held_notice_run()
+        run=WorkRun(job,time.time())
+        budget=self.service.work_budget(job['id'])
+        budget.spend_attempt();budget.spend_turn();budget.ledger.pause()
+        with self.store.db() as db:
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       (job['id'],'list_notes','succeeded',json.dumps({'evidence':{'count':1}}),time.time()))
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       (job['id'],'list_notes','failed',json.dumps({'code':'attempt_budget','ran':False}),time.time()))
+            db.execute("UPDATE jobs SET status='partial',response='Partial answer' WHERE id=?",(job['id'],))
+        run.outcome='partial'
+        self.assertTrue(self.service.offer_budget_continue(run))
+        self.assertTrue(self.service.deliver_notification())
+        self.assertFalse(self.service.deliver_notification())
+        offer=self.service.budget_continue_offer(job['id'])
+        self.assertIn('Partial answer',offer['progress'])
+        self.assertTrue(self.service.budget_continue_decision({'work_id':job['id'],'nonce':offer['nonce']})['resumed'])
+        self.telegram.clear()
+        self.finish_held_notice_run(row,job)
+
     def test_work_mode_run_stays_local_after_switch_off_before_report_time(self):
         from personal_agent import work_mode
         self.at(10);brief,row=self.line();self.now+=86400;self.at(8)
@@ -276,10 +530,13 @@ class Bundles(_LinesCase):
                 self.assertIn((work,bundle),self.receipts())
                 self.now+=86400
 
-    def test_held_web_run_cannot_request_a_location_continuation(self):
+    def test_held_local_intent_run_cannot_request_a_location_continuation(self):
         from personal_agent.context_observations import answerable_work
         self.at(10);_,row=self.line();self.now+=86400;self.at(8)
-        with self.store.db() as db:db.execute('UPDATE preparations SET due_at=? WHERE id=?',(self.now,row['id']))
+        with self.store.db() as db:
+            db.execute('UPDATE preparations SET due_at=? WHERE id=?',(self.now,row['id']))
+            db.execute("UPDATE tool_events SET detail=json_set(detail,'$.channel','web') "
+                       "WHERE tool='line_held' AND json_extract(detail,'$.preparation_id')=?",(row['id'],))
         self.service.run_due_preparation()
         work=self.service.preparations.get(row['id'])['last_run_job_id']
         job=self.store.job(work)
@@ -289,6 +546,14 @@ class Bundles(_LinesCase):
         with self.assertRaises(ValueError):self.service.request_current_location(work,'Where are you?')
         with self.store.db() as db:
             self.assertEqual(db.execute('SELECT count(*) FROM context_location_requests WHERE job_id=?',(work,)).fetchone()[0],0)
+            # Quiet watches intentionally started web even before holding. The
+            # notice adapter must not turn them into paired interactive Works.
+            db.execute('UPDATE preparations SET delivery_mode=? WHERE id=?',(prep.DELIVERY_WHEN_NEEDED,row['id']))
+            db.execute("UPDATE tool_events SET detail=json_set(detail,'$.channel','telegram') "
+                       "WHERE tool='line_held' AND json_extract(detail,'$.preparation_id')=?",(row['id'],))
+        self.assertEqual(self.helper.notice_job(job),job)
+        self.assertIsNone(self.service.location_requester(job))
+        with self.assertRaises(ValueError):self.service.request_current_location(work,'Where are you?')
 
     def test_bundles_group_by_destination_and_cap_each_destination_at_each_slot(self):
         self.at(10);brief,row=self.line();self.now+=86400;self.at(8)
