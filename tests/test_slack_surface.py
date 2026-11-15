@@ -371,14 +371,15 @@ class Ingest(SlackCase):
             'item': {'type': 'message', 'channel': DM, 'ts': slack_ts(self.surface.reply_message(work['id'], OWNER))}}}
         original, calls = self.surface.ingest_reaction, []
 
-        def flaky(*args):
+        def flaky(*args, **kwargs):
             calls.append(1)
             if len(calls) == 1:
                 raise OSError('disk')
-            return original(*args)
+            return original(*args, **kwargs)
         with mock.patch.object(self.surface, 'ingest_reaction', flaky):
             self.socket.deliver('events_api', reaction)
             self.socket.deliver('events_api', reaction)
+            self.surface.receive()  # the durable receipt, not redelivery, retries the failed dispatch
         with self.store.db() as db:
             events = db.execute("SELECT COUNT(*) FROM tool_events WHERE job_id=? AND tool='owner_reaction'",
                                 (work['id'],)).fetchone()[0]
@@ -617,6 +618,431 @@ class Buttons(SlackCase):
         self.event({'type': 'reaction_added', 'user': INTRUDER, 'reaction': '+1',
                     'item': {'type': 'message', 'channel': DM, 'ts': slack_ts(notice['message_id'])}})
         self.assertEqual(self.service.settings_orchestrator._drafts()[draft_id]['state'], 'awaiting-confirmation')
+
+    def restart_pending(self):
+        from test_recovery_matrix_826 import _restart
+        self.service = _restart(self.store)
+        self.service.slack_web = self.fake.client
+        self.service.slack_socket = FakeSocket
+        self.service.steer_spawn = lambda target: target()
+        self.service.use_decision_engine(with_owner_acts(FixtureDecisionEngine()))
+        self.surface = self.service.slack_surface
+
+    def pending_press(self):
+        _job, draft, notice = self.settings_notice()
+        held = []
+        self.service.steer_spawn = held.append
+        ts, action_ts = slack_ts(notice['message_id']), self.fake.tick()
+        self.press(ts, ACTION_APPROVE, action_ts=action_ts)
+        self.assertEqual(len(held), 1)
+        self.assertEqual(self.service.settings_orchestrator._drafts()[draft]['state'], 'awaiting-confirmation')
+        return draft, ts, action_ts, held
+
+    def pending_acts(self):
+        with self.store.db() as db:
+            return [dict(row) for row in db.execute('SELECT * FROM slack_events WHERE act IS NOT NULL')]
+
+    def test_a_press_not_recorded_is_not_acknowledged(self):
+        _job, draft, notice = self.settings_notice()
+        acks = list(self.socket.acks)
+        with mock.patch.object(self.surface, '_first_time', side_effect=OSError('disk full')):
+            self.press(slack_ts(notice['message_id']), ACTION_APPROVE)
+        self.assertEqual(self.socket.acks, acks)
+        self.assertEqual(self.service.settings_orchestrator._drafts()[draft]['state'], 'awaiting-confirmation')
+        self.assertEqual(self.pending_acts(), [])
+
+    def test_a_press_is_acknowledged_before_it_is_answered(self):
+        _job, draft, notice = self.settings_notice()
+        before = len(self.socket.acks)
+        original = self.service.owner_acts.answer_exact
+
+        def answer(*args, **kwargs):
+            self.assertEqual(len(self.socket.acks), before + 1)
+            self.assertEqual(len(self.pending_acts()), 1)
+            return original(*args, **kwargs)
+        with mock.patch.object(self.service.owner_acts, 'answer_exact', side_effect=answer) as answered:
+            self.press(slack_ts(notice['message_id']), ACTION_APPROVE)
+        self.assertEqual(answered.call_count, 1)
+        self.assertEqual(len(self.socket.acks), before + 1, 'ack once')
+        self.assertEqual(self.service.settings_orchestrator._drafts()[draft]['state'], 'applied')
+        self.assertEqual(self.pending_acts(), [])
+
+    def test_a_press_cut_off_mid_answer_is_settled_after_restart(self):
+        draft, ts, _action_ts, _held = self.pending_press()
+        self.assertEqual(len(self.pending_acts()), 1)
+        self.restart_pending()
+        self.surface._next_attempt = float('inf')   # replay precedes even the reconnect backoff
+        with mock.patch.object(self.service.settings_orchestrator, 'settle_pending',
+                               wraps=self.service.settings_orchestrator.settle_pending) as settled:
+            self.surface.receive()
+            self.surface.receive()
+        self.assertIsNone(self.surface._socket)
+        self.assertEqual(settled.call_count, 1)
+        self.assertEqual(self.service.settings_orchestrator._drafts()[draft]['state'], 'applied')
+        self.assertNotIn('actions', [block['type'] for block in self.fake.messages[ts]['blocks']])
+        self.assertEqual(self.pending_acts(), [])
+
+    def test_a_press_settled_before_the_restart_is_not_settled_again(self):
+        from personal_agent.messages import msg
+        _job, draft, notice = self.settings_notice()
+        with mock.patch.object(self.surface, '_clear_act', side_effect=OSError('crash before clear')):
+            self.press(slack_ts(notice['message_id']), ACTION_APPROVE)
+        self.assertEqual(self.service.settings_orchestrator._drafts()[draft]['state'], 'applied')
+        self.assertEqual(len(self.pending_acts()), 1)
+        self.restart_pending()
+        before = self.fake.posted().count(msg('slack.button_stale'))
+        with mock.patch.object(self.service.settings_orchestrator, 'settle_pending',
+                               wraps=self.service.settings_orchestrator.settle_pending) as settled:
+            self.surface.receive()
+            self.surface.receive()
+        self.assertEqual(settled.call_count, 0)
+        self.assertEqual(self.fake.posted().count(msg('slack.button_stale')), before + 1)
+        self.assertEqual(self.pending_acts(), [])
+
+    def test_a_redelivered_press_after_replay_is_silent(self):
+        _draft, ts, action_ts, _held = self.pending_press()
+        self.restart_pending()
+        self.surface.receive()
+        before = list(self.fake.calls)
+        with mock.patch.object(self.service.owner_acts, 'answer_exact', wraps=self.service.owner_acts.answer_exact) as answered:
+            self.press(ts, ACTION_APPROVE, action_ts=action_ts)
+        self.assertEqual(answered.call_count, 0)
+        self.assertEqual(self.fake.calls, before)
+
+    def test_a_pending_press_of_an_old_pairing_settles_nothing(self):
+        draft, _ts, _action_ts, _held = self.pending_press()
+        cfg = self.store.config(CONFIG_KEY)
+        self.store.put(CONFIG_KEY, {**cfg, 'generation': 'replacement'})
+        self.restart_pending()
+        before = list(self.fake.calls)
+        with mock.patch.object(self.service.owner_acts, 'answer_exact', wraps=self.service.owner_acts.answer_exact) as answered:
+            self.surface.receive()
+        self.assertEqual(answered.call_count, 0)
+        self.assertEqual(self.service.settings_orchestrator._drafts()[draft]['state'], 'awaiting-confirmation')
+        self.assertFalse([call for call in self.fake.calls[len(before):] if call[0] in ('chat_postMessage', 'chat_update')])
+        self.assertEqual(self.pending_acts(), [])
+
+    def test_a_pending_approval_press_for_a_reissued_offer_approves_nothing(self):
+        from personal_agent.messages import msg
+        self.owner_says('결제해줘')
+        job = self.sl_jobs()[0]
+        row = self.store.queue_notification(job['id'], OWNER, self.surface.owner_generation(), 'browser_approval_needed',
+                                            'offer-1', surface='slack')
+        request = {'state': 'requested', 'offer_digest': 'offer-1', 'requested_at': time.time()}
+        with mock.patch.object(type(self.service), '_browser_request', lambda service, work_id: request), \
+                mock.patch.object(type(self.service), 'browser_step_prompt', lambda service, work_id: '결제 승인 요청'):
+            self.service.deliver_notification()
+            notice = self.store.notification(row['id'])
+            held = []
+            self.service.steer_spawn = held.append
+            self.press(slack_ts(notice['message_id']), ACTION_APPROVE)
+            self.assertEqual(len(held), 1)
+            request['offer_digest'] = 'offer-2'
+            self.restart_pending()
+            with mock.patch.object(self.service, 'answer_step_approval') as approved:
+                self.surface.receive()
+                self.surface.receive()
+            approved.assert_not_called()
+        self.assertEqual(self.fake.posted().count(msg('slack.button_stale')), 1)
+        self.assertEqual(self.pending_acts(), [])
+
+    def reaction_payload(self, notice):
+        return {'team_id': TEAM, 'event_id': 'EvPENDING', 'event': {
+            'type': 'reaction_added', 'user': OWNER, 'reaction': '+1',
+            'item': {'type': 'message', 'channel': DM, 'ts': slack_ts(notice['message_id'])}}}
+
+    def test_a_reaction_cut_off_mid_judgment_is_read_after_restart(self):
+        _job, draft, notice = self.settings_notice()
+        held = []
+        self.service.steer_spawn = held.append
+        self.socket.deliver('events_api', self.reaction_payload(notice))
+        self.assertEqual(len(held), 1)
+        self.assertEqual(len(self.pending_acts()), 1)
+        self.restart_pending()
+        with mock.patch.object(self.service.owner_acts, 'answer_reaction',
+                               wraps=self.service.owner_acts.answer_reaction) as answered:
+            self.surface.receive()
+            self.surface.receive()
+            self.socket.deliver('events_api', self.reaction_payload(notice))
+        self.assertEqual(answered.call_count, 1)
+        self.assertEqual(self.service.settings_orchestrator._drafts()[draft]['state'], 'applied')
+        self.assertEqual(self.pending_acts(), [])
+
+    def test_a_redelivered_reaction_while_pending_is_read_once(self):
+        _job, draft, notice = self.settings_notice()
+        held = []
+        self.service.steer_spawn = held.append
+        payload = self.reaction_payload(notice)
+        self.socket.deliver('events_api', payload)
+        self.socket.deliver('events_api', payload)
+        self.surface.receive()   # an open socket must not prevent replay, or duplicate an active act
+        self.assertEqual(len(held), 1)
+        self.restart_pending()
+        replayed = []
+        self.service.steer_spawn = replayed.append
+        self.surface.receive()
+        self.socket.deliver('events_api', payload)
+        self.surface.receive()
+        self.assertEqual(len(replayed), 1)
+        with mock.patch.object(self.service.owner_acts, 'answer_reaction',
+                               wraps=self.service.owner_acts.answer_reaction) as answered:
+            replayed[0]()
+        self.assertEqual(answered.call_count, 1)
+        self.assertEqual(self.service.settings_orchestrator._drafts()[draft]['state'], 'applied')
+        self.assertEqual(self.pending_acts(), [])
+
+    def test_old_receipts_are_purged_but_pending_acts_are_kept(self):
+        self.surface._first_time('old-receipt')
+        self.surface._first_time('old-pending', act={'kind': 'press'})
+        with self.store.db() as db:
+            db.execute('UPDATE slack_events SET created=?', (time.time() - 8 * 86400,))
+        self.surface._first_time('new-receipt')
+        with self.store.db() as db:
+            rows = {row['key']: row['act'] for row in db.execute('SELECT key,act FROM slack_events')}
+        self.assertEqual(set(rows), {'old-pending', 'new-receipt'})
+        self.assertEqual(json.loads(rows['old-pending']), {'kind': 'press'})
+
+    def test_a_settled_pending_reaction_reports_stale_once(self):
+        from personal_agent.messages import msg
+        _job, draft, notice = self.settings_notice()
+        held = []
+        self.service.steer_spawn = held.append
+        self.socket.deliver('events_api', self.reaction_payload(notice))
+        with mock.patch.object(self.surface, '_clear_act', side_effect=OSError('crash before clear')):
+            with self.assertRaises(OSError):
+                held[0]()
+        self.assertEqual(self.service.settings_orchestrator._drafts()[draft]['state'], 'applied')
+        self.restart_pending()
+        with mock.patch.object(self.service.owner_acts, 'answer_reaction') as answered:
+            self.surface.receive()
+            self.surface.receive()
+        answered.assert_not_called()
+        self.assertEqual(self.fake.posted().count(msg('slack.button_stale')), 1)
+        self.assertEqual(self.pending_acts(), [])
+
+    def test_failed_live_press_spawn_is_replayed_without_restart(self):
+        _, draft, notice = self.settings_notice()
+        before = len(self.socket.acks)
+        with mock.patch.object(self.service, 'steer_spawn', side_effect=RuntimeError('spawn failed')):
+            self.press(slack_ts(notice['message_id']), ACTION_APPROVE)
+        self.assertEqual(len(self.socket.acks), before + 1)
+        self.assertEqual(len(self.pending_acts()), 1)
+        self.assertEqual(self.surface._acting, set())
+        self.surface.receive()
+        self.assertEqual(self.service.settings_orchestrator._drafts()[draft]['state'], 'applied')
+        self.assertEqual(self.pending_acts(), [])
+
+    def test_failed_replay_spawn_is_retried_on_next_receive(self):
+        draft, _, _, _ = self.pending_press()
+        self.restart_pending()
+        with mock.patch.object(self.service, 'steer_spawn', side_effect=RuntimeError('spawn failed')):
+            with self.assertLogs('personal_agent.slack', level='WARNING'):
+                self.surface.receive()
+        self.assertEqual(len(self.pending_acts()), 1)
+        self.assertEqual(self.surface._acting, set())
+        self.surface.receive()
+        self.assertEqual(self.service.settings_orchestrator._drafts()[draft]['state'], 'applied')
+
+    def test_failed_press_replay_does_not_block_other_acts_or_reconnect(self):
+        draft, ts, _, _ = self.pending_press()
+        self.press(ts, ACTION_APPROVE)
+        first, second = self.pending_acts()
+        self.restart_pending()
+        held, attempts = [], []
+
+        def spawn(target):
+            attempts.append(target)
+            if len(attempts) != 2:
+                raise RuntimeError('spawn failed')
+            held.append(target)
+        with mock.patch.object(self.service, 'steer_spawn', side_effect=spawn):
+            with self.assertLogs('personal_agent.slack', level='WARNING'):
+                self.surface.receive()
+                self.assertTrue(self.surface._socket.connected)
+                self.surface.receive()
+        self.assertEqual(len(attempts), 3, 'the failed act is retried while the other worker stays claimed')
+        self.assertEqual(len(held), 1)
+        self.assertEqual(self.pending_acts(), [first, second])
+        self.assertEqual(self.surface._acting, {second['key']})
+        self.surface.receive()
+        held[0]()
+        self.assertEqual(self.service.settings_orchestrator._drafts()[draft]['state'], 'applied')
+        self.assertEqual(self.pending_acts(), [])
+        self.assertEqual(self.surface._acting, set())
+
+    def test_failed_reaction_replay_does_not_block_a_press_or_reconnect(self):
+        _, draft, notice = self.settings_notice()
+        ts = self.fake.chat_postMessage(DM, text='An unbound message')['ts']
+        payload = self.reaction_payload({'message_id': message_id(ts)})
+        with mock.patch.object(self.surface, 'ingest_reaction', side_effect=RuntimeError('reaction failed')):
+            self.socket.deliver('events_api', payload)
+        held = []
+        self.service.steer_spawn = held.append
+        self.press(slack_ts(notice['message_id']), ACTION_APPROVE)
+        failed = self.pending_acts()[0]
+        self.restart_pending()
+        with mock.patch.object(self.surface, 'ingest_reaction', side_effect=RuntimeError('reaction failed')) as read:
+            with self.assertLogs('personal_agent.slack', level='WARNING'):
+                self.surface.receive()
+                self.assertTrue(self.surface._socket.connected)
+                self.surface.receive()
+        self.assertEqual(read.call_count, 2)
+        self.assertEqual(self.service.settings_orchestrator._drafts()[draft]['state'], 'applied')
+        self.assertEqual(self.pending_acts(), [failed])
+        self.assertEqual(self.surface._acting, set())
+        self.surface.receive()
+        self.assertEqual(self.pending_acts(), [])
+
+    def test_long_press_key_is_shared_by_live_and_replay_claims(self):
+        _, draft, notice = self.settings_notice()
+        held = []
+        self.service.steer_spawn = held.append
+        self.press(slack_ts(notice['message_id']), ACTION_APPROVE, action_ts='1' * 220)
+        self.surface.receive()
+        self.assertEqual(len(held), 1)
+        self.assertEqual(len(self.pending_acts()[0]['key']), 200)
+        self.assertEqual(self.surface._acting, {self.pending_acts()[0]['key']})
+        held[0]()
+        self.assertEqual(self.service.settings_orchestrator._drafts()[draft]['state'], 'applied')
+        self.assertEqual(self.pending_acts(), [])
+        self.assertEqual(self.surface._acting, set())
+
+    def test_long_reaction_key_is_shared_by_live_and_replay_claims(self):
+        _, draft, notice = self.settings_notice()
+        held = []
+        self.service.steer_spawn = held.append
+        payload = {**self.reaction_payload(notice), 'event_id': 'Ev' + '1' * 220}
+        self.socket.deliver('events_api', payload)
+        self.surface.receive()
+        self.assertEqual(len(held), 1)
+        self.assertEqual(len(self.pending_acts()[0]['key']), 200)
+        self.assertEqual(self.surface._acting, {self.pending_acts()[0]['key']})
+        held[0]()
+        self.assertEqual(self.service.settings_orchestrator._drafts()[draft]['state'], 'applied')
+        self.assertEqual(self.pending_acts(), [])
+        self.assertEqual(self.surface._acting, set())
+
+    def test_replayed_press_racing_live_delivery_runs_one_worker(self):
+        draft, ts, action_ts, _ = self.pending_press()
+        self.restart_pending()
+        with mock.patch.object(self.surface, '_replay_acts'):
+            self.surface.receive()  # open the new SDK socket before racing its callback with replay
+        held = []
+        self.service.steer_spawn = held.append
+        gate = threading.Barrier(2)
+        errors = []
+        def run(action):
+            try:
+                gate.wait(timeout=20)
+                action()
+            except BaseException as exc:
+                errors.append(exc)
+        threads = [threading.Thread(target=run, args=(action,)) for action in (
+            self.surface.receive, lambda: self.press(ts, ACTION_APPROVE, action_ts=action_ts))]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=20)
+            self.assertFalse(thread.is_alive())
+        self.assertEqual(errors, [])
+        self.assertEqual(len(held), 1)
+        held[0]()
+        self.assertEqual(self.service.settings_orchestrator._drafts()[draft]['state'], 'applied')
+        self.assertEqual(self.pending_acts(), [])
+
+    def test_ack_once_on_duplicate_and_refused_presses(self):
+        _, ts, action_ts, held = self.pending_press()
+        before = len(self.socket.acks)
+        self.press(ts, ACTION_APPROVE, action_ts=action_ts)
+        self.assertEqual(len(self.socket.acks), before + 1)
+        self.press(ts, ACTION_APPROVE, user=INTRUDER)
+        self.assertEqual(len(self.socket.acks), before + 2)
+        self.assertEqual(len(held), 1)
+
+    def test_stored_press_round_trip_and_worker_exception_cleanup(self):
+        _, _, _, _ = self.pending_press()
+        stored = json.loads(self.pending_acts()[0]['act'])
+        self.restart_pending()
+        held = []
+        self.service.steer_spawn = held.append
+        self.surface.receive()
+        def fail(nid, approve, pressed, owner, generation, blocks, tapped):
+            self.assertEqual(blocks, stored['blocks'])
+            self.assertEqual(tapped, stored['tapped'])
+            self.assertEqual(len(self.pending_acts()), 1)
+            self.assertEqual(len(self.surface._acting), 1)
+            raise RuntimeError('answer failed')
+        with mock.patch.object(self.surface, 'answer_button', side_effect=fail):
+            with self.assertRaisesRegex(RuntimeError, 'answer failed'):
+                held[0]()
+        self.assertEqual(self.pending_acts(), [])
+        self.assertEqual(self.surface._acting, set())
+
+    def test_pending_budget_press_cannot_settle_a_reissued_offer(self):
+        from personal_agent.work_execution import WorkRun
+        self.owner_says('Continue the comparison')
+        job = self.sl_jobs()[0]
+        run = WorkRun(job, time.time())
+        budget = self.service.work_budget(job['id'])
+        budget.spend_attempt()
+        budget.ledger.pause()
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='partial',response='Partial comparison' WHERE id=?", (job['id'],))
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       (job['id'], 'read_file', 'succeeded', json.dumps({'evidence': {'count': 1}}), time.time()))
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       (job['id'], 'read_file', 'failed', json.dumps({'code': 'attempt_budget', 'ran': False}), time.time()))
+        run.outcome = 'partial'
+        self.assertTrue(self.service.offer_budget_continue(run))
+        self.service.deliver_notification()
+        note = self.store.notification_of(job['id'], 'budget_continue')
+        held = []
+        self.service.steer_spawn = held.append
+        self.press(slack_ts(note['message_id']), ACTION_APPROVE)
+        self.assertEqual(len(held), 1)
+        offer = self.service.budget_continue_offer(job['id'])
+        self.store.put('budget_continue:' + job['id'], {**offer, 'nonce': 'replacement'})
+        self.restart_pending()
+        with mock.patch.object(self.service, 'budget_continue_decision',
+                               wraps=self.service.budget_continue_decision) as decide:
+            self.surface.receive()
+            self.surface.receive()
+        decide.assert_not_called()
+        self.assertEqual(self.service.budget_continue_offer(job['id'])['state'], 'offered')
+        self.assertEqual(self.pending_acts(), [])
+
+    def test_reaction_worker_exception_clears_pending_and_claim(self):
+        _, _, notice = self.settings_notice()
+        held = []
+        self.service.steer_spawn = held.append
+        self.socket.deliver('events_api', self.reaction_payload(notice))
+        with mock.patch.object(self.service.owner_acts, 'answer_reaction', side_effect=RuntimeError('judgment failed')):
+            with self.assertRaisesRegex(RuntimeError, 'judgment failed'):
+                held[0]()
+        self.assertEqual(self.pending_acts(), [])
+        self.assertEqual(self.surface._acting, set())
+
+    def test_failed_reaction_spawn_keeps_receipt_for_receive(self):
+        _, draft, notice = self.settings_notice()
+        before = len(self.socket.acks)
+        with mock.patch.object(self.service, 'steer_spawn', side_effect=RuntimeError('spawn failed')):
+            self.socket.deliver('events_api', self.reaction_payload(notice))
+        self.assertEqual(len(self.socket.acks), before)
+        self.assertEqual(len(self.pending_acts()), 1)
+        self.assertEqual(self.surface._acting, set())
+        self.surface.receive()
+        self.assertEqual(self.service.settings_orchestrator._drafts()[draft]['state'], 'applied')
+        self.assertEqual(self.pending_acts(), [])
+
+    def test_an_existing_event_table_migrates_without_losing_receipts(self):
+        self.surface._first_time('legacy')
+        with self.store.db() as db:
+            db.execute('ALTER TABLE slack_events DROP COLUMN act')
+        migrated = QuickStore(self.store.root)
+        with migrated.db() as db:
+            row = db.execute('SELECT * FROM slack_events WHERE key=?', ('legacy',)).fetchone()
+        self.assertIsNotNone(row)
+        self.assertIsNone(row['act'])
 
 
 class WorkMode(SlackCase):
