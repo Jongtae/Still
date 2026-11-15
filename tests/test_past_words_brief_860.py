@@ -131,19 +131,34 @@ class PastWordsBrief(helpers._ServiceBase):
     # -- 3. traps stay ineligible even when the context names them ------------------
     def test_forgotten_superseded_expired_and_transcript_forgotten_items_stay_out(self):
         service = AgentService(self.store)
+        self.big_profile()
         forgotten = self.store.save_memory('profile.zz-forgotten', '치과 잊은사실 forgotmarker', owner_id=OWNER)
         OwnerForget(self.store).forget(OWNER, 'memory:' + forgotten['id'])
         self.store.save_memory('profile.zz-superseded', '치과 옛값 oldvaluemarker', owner_id=OWNER)
         self.store.save_memory('profile.zz-superseded', '치과 새값 newvaluemarker', owner_id=OWNER)
         self.store.save_memory('profile.zz-expired', '치과 지난사실 expiredmarker', owner_id=OWNER, valid_until='2000-01-01')
+        # Eligible copies share the traps' search words, with distinct markers.
+        controls = ('currentforgottencontrol', 'currentsupersededcontrol', 'currentexpiredcontrol',
+                    'currenttranscriptcontrol', 'currentanswercontrol', 'newvaluemarker')
+        self.store.save_memory('profile.zz-current-forgotten', '치과 잊은사실 currentforgottencontrol', owner_id=OWNER)
+        self.store.save_memory('profile.zz-current-superseded', '치과 옛값 currentsupersededcontrol', owner_id=OWNER)
+        self.store.save_memory('profile.zz-current-expired', '치과 지난사실 currentexpiredcontrol', owner_id=OWNER)
         hidden = self.exchange('치과 사라질대화 transcriptmarker', '치과 사라질답 answermarker')
         # Transcript forgetting is per row; this trap forgets the whole exchange.
         OwnerForget(self.store).forget(OWNER, f"message:{self.message_id(hidden)},{self.message_id(hidden, 'assistant')}")
+        visible = self.exchange('치과 사라질대화 currenttranscriptcontrol', '치과 사라질답 currentanswercontrol')
         self.pad()
         self.exchange(EARLIER_TURN)
         job = self.follow_up()
+        without = service.owner_profile_snapshot(job['message'])
+        self.assertIn('omitted by the context limit', without)
+        for marker in controls:
+            self.assertNotIn(marker, without, 'control: the request alone recalls none of the eligible copies')
         recalled = service.owner_profile_snapshot(job['message'], context=service.preceding_owner_turn(job))
         self.assertIn('newvaluemarker', recalled, 'control: the current row of the same topic is recalled')
+        for marker in controls:
+            self.assertIn(marker, recalled, 'eligible copies must be found through the preceding owner turn')
+        self.assertIn(visible, [ref['work_id'] for ref in conversation_block_refs(recalled)])
         for marker in ('forgotmarker', 'oldvaluemarker', 'expiredmarker', 'transcriptmarker', 'answermarker'):
             self.assertNotIn(marker, recalled)
 

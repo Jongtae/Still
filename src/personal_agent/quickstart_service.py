@@ -2018,6 +2018,7 @@ class AgentService:
         """The preceding readable owner turn in this conversation, for lexical recall (#860)."""
         try:
             current=self.store.job(job['id']) or job
+            if not owner_words_work(current):return ''
             rows=self.store.history(through=current['id'])
             # planner_history leaves out the final (current) request. It may be
             # absent here when forgotten or before its transcript row is written.
@@ -2028,10 +2029,10 @@ class AgentService:
                 if row.get('role')!='user' or row.get('job_id')==current['id']:continue
                 earlier=self.store.job(row.get('job_id'))
                 if not owner_words_work(earlier):continue
-                channel=current.get('channel')
-                if earlier.get('channel')!=channel:continue
-                if str(channel or '').partition(':')[0]=='telegram' and earlier.get('chat_id')!=current.get('chat_id'):continue
-                if earlier['created']>=current['created'] or row['created']>=current['created']:continue
+                if (earlier.get('channel'),earlier.get('chat_id'))!=(current.get('channel'),current.get('chat_id')):continue
+                # A queued predecessor may be claimed after this request was
+                # enqueued; transcript timestamps are claim times, not turn order.
+                if earlier['created']>=current['created']:continue
                 readable=self.history_for_models([row])[0]
                 return self._redact_known_secrets(readable.get('content') or '')[:500]
         except Exception as exc:

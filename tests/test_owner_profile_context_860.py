@@ -97,15 +97,49 @@ def test_recall_false_ignores_context_in_output_and_profile_query(service, query
     records.assert_not_called()
 
 
-def test_non_telegram_conversation_uses_channel_without_chat_id(service):
-    turn(service,'prior owner words',10,channel='web',chat=7)
-    current=turn(service,'again',30,channel='web',chat=9)
-    assert service.preceding_owner_turn(current)=='prior owner words'
+@pytest.mark.parametrize('channel', ['web','telegram:generation','slack:generation','mattermost:generation'])
+def test_conversation_binding_always_compares_channel_and_chat_id(service, channel):
+    turn(service,'same conversation',5,channel=channel,chat=9)
+    turn(service,'other conversation',10,channel=channel,chat=7)
+    current=turn(service,'again',30,channel=channel,chat=9)
+    assert service.preceding_owner_turn(current)=='same conversation'
+
+
+def test_queued_predecessor_can_be_claimed_after_followup_is_enqueued(service):
+    turn(service,'older unrelated turn',10)
+    earlier=turn(service,'queued predecessor',50,written=False)
+    current=turn(service,'followup',51,written=False)
+    with service.store.db() as db:
+        db.execute("UPDATE jobs SET status='queued' WHERE id IN (?,?)",(earlier['id'],current['id']))
+    with mock.patch('personal_agent.work_executor.time.time',return_value=100):
+        assert service._claim_queued_work()['id']==earlier['id']
+    with service.store.db() as db:
+        db.execute("UPDATE jobs SET status='succeeded' WHERE id=?",(earlier['id'],))
+    with mock.patch('personal_agent.work_executor.time.time',return_value=130):
+        claimed=service._claim_queued_work()
+    assert claimed['id']==current['id']
+    rows=service.store.history(through=current['id'])
+    assert next(row['created'] for row in rows if row['job_id']==earlier['id'])==100
+    assert current['created']==51
+    assert service.preceding_owner_turn(claimed)=='queued predecessor'
+
+
+@pytest.mark.parametrize(('typed','owner_words','key'), [
+    (False,False,preparations.request_key('day-plan',30)),
+    (True,False,'bare-api-request'),
+])
+def test_non_owner_current_work_has_no_preceding_context(service, typed, owner_words, key):
+    turn(service,'old owner words',10,channel='web',chat=None)
+    current=turn(service,'scheduled or machine request',30,channel='web',chat=None,
+                 typed=typed,owner_words=owner_words,key=key)
+    with mock.patch.object(service.store,'history',wraps=service.store.history) as history:
+        assert service.preceding_owner_turn(current)==''
+    history.assert_not_called()
 
 
 @pytest.mark.parametrize('excluded', [
     'forgotten','assistant','not-typed','api-not-owner-words','other-channel',
-    'other-chat','document','future-time',
+    'other-chat','document',
 ])
 def test_preceding_owner_turn_skips_ineligible_rows(service, excluded):
     turn(service,'eligible owner words',10)
@@ -127,9 +161,6 @@ def test_preceding_owner_turn_skips_ineligible_rows(service, excluded):
         OwnerForget(service.store).forget(MEMORY_OWNER,f'message:{message}')
     elif excluded=='document':
         service.store.put('file_workspace_document_jobs',[rejected['id']])
-    elif excluded=='future-time':
-        with service.store.db() as db:
-            db.execute('UPDATE messages SET created=40 WHERE job_id=?',(rejected['id'],))
     current=turn(service,'다시',30,channel='web' if excluded=='api-not-owner-words' else 'telegram:generation')
     turn(service,'later owner words',40,channel=current['channel'])
     assert service.preceding_owner_turn(current)=='eligible owner words'
