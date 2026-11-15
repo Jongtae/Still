@@ -259,9 +259,10 @@ class ConnectionPreferences(Harness):
         import threading
         worker = threading.current_thread()
 
-        def snapshot(service, request=None, recall=True, context=None):
+        def snapshot(service, request=None, recall=True, *, recall_query=None):
             if threading.current_thread() is worker:
-                service._early_plan.result()  # the early plan read A
+                # Initial planning waits for A; the post-plan worker refresh has no pending Future.
+                if service._early_plan is not None:service._early_plan.result()
                 return 'profile.beta.changed: read by the plan asked again'
             return 'profile.alpha.before: read by the early plan'
         self.script([plan('codex', 'Over A.'), plan('codex', 'Over B.')], goals=[True])

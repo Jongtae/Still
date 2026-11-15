@@ -744,11 +744,12 @@ def plan_schema(workers, ask_location=False, preview=False):
                             'required': ['notes', 'lens']},
                   'reason': {'type': 'string'},
                   'reply': {'type': 'string'},
+                  'recall_query': {'type': 'string', 'maxLength': 500},
                   'account_change': {'type': 'boolean'},
                   'owner_situation': {'type': 'boolean'},
                   'technical_work': {'type': 'boolean'}},
               'required': ['worker', 'model', 'effort', 'brief', 'reason', 'account_change', 'owner_situation',
-                           'technical_work', 'reply']}
+                           'technical_work', 'reply', 'recall_query']}
     if ask_location:
         # #1293: required with "" for none, as strict structured outputs need every property listed.
         schema['properties'].update(ask_location={'type': 'string'}, location_button={'type': 'string'})
@@ -775,6 +776,7 @@ def plan_shape(data):
             and isinstance(data.get('owner_situation', False), bool)
             and isinstance(data.get('technical_work', False), bool)
             and isinstance(data.get('reply'), str)
+            and isinstance(data.get('recall_query', ''), str) and len(data.get('recall_query', '')) <= 500
             and isinstance(data.get('effort', ''), str)
             and isinstance(data.get('ask_location', ''), str) and isinstance(data.get('location_button', ''), str)
             and preview_shape(data.get('preview')))
@@ -824,9 +826,9 @@ class Attempt:
     __slots__ = ('number', 'worker', 'model', 'notes', 'lens', 'sections', 'reason', 'planned',
                  'fallback', 'digest', 'signature', 'account_change', 'owner_situation', 'technical_work',
                  'lifted_from', 'ask_location', 'location_button', 'effort', 'unlisted_model', 'steer', 'context_digest',
-                 'preview', 'shown_preview', 'corrections', 'told', 'reply')
+                 'preview', 'shown_preview', 'corrections', 'told', 'reply', 'recall_query')
 
-    def __init__(self, number, worker, *, model='', notes='', reason='', planned=False, fallback='', effort='', lens=''):
+    def __init__(self, number, worker, *, model='', notes='', reason='', planned=False, fallback='', effort='', lens='', recall_query=''):
         self.number, self.worker, self.model = number, worker, model
         #: #1434: the reasoning effort the plan chose for this model ("" = its own default).
         self.effort = effort
@@ -837,7 +839,9 @@ class Attempt:
         #: #1459: the professional whose practice fits the message and how it reports ("" when none fits).
         self.lens = lens
         self.reason, self.planned, self.fallback = reason, planned, fallback
-        self.digest = digest({'notes': notes, **({'lens': lens} if lens else {})}) if planned else ''
+        self.recall_query = recall_query
+        self.digest = digest({'notes': notes, **({'lens': lens} if lens else {}),
+                              **({'recall_query': recall_query} if recall_query else {})}) if planned else ''
         #: #947: the plan judged the message may change a signed-in account; the model a lift replaced.
         self.account_change, self.lifted_from = False, None
         #: #1008: the plan judged a useful reply depends on the owner's own situation.
@@ -953,6 +957,7 @@ class Orchestration:
         self.awaiting_conversation = str(awaiting_conversation or '')
         self.awaiting_work = awaiting_work
         self.sections = dict(sections or {})
+        self.plan_profile = self.sections.get('profile') or ''
         self.budget, self.record = budget, record or (lambda status, detail: None)
         self.state, self.work_id = state, work_id
         #: #1227: whether the Judgment AI check for the current Main AI is still running.
@@ -1119,10 +1124,6 @@ class Orchestration:
                  f'left by this Work: {own}' if (own := self._work_awaiting()) else '']
         return '\n'.join(part for part in parts if part)[:AWAITING_OWNER_CHARS] or 'none'
 
-    def _owner_fact(self, name, limit):
-        """#804: an always-given section as the plan call reads it: redacted, then cut."""
-        return self._redact(self.sections.get(name) or '')[:limit] or 'none'
-
     def _current_facts(self):
         """#501: ``(current_context, connections)`` as the plan call reads them: the current-context
         section redacted, its route lines (``ROUTE_LINE_PREFIXES``) taken out whole into ``connections``,
@@ -1166,8 +1167,8 @@ class Orchestration:
         request = self._redact(self.request)
         workers = render_catalogue(candidates)
         tools_text = render_tool_descriptions(candidates, getattr(self.catalogue, 'descriptions', {}))
-        # #804: the owner model the worker is always given, so the plan fits it too.
-        profile = self._owner_fact('profile', PROFILE_FACT_CHARS)
+        # Request-only planning context stays separate from later worker refreshes.
+        profile = self._redact(self.plan_profile)[:PROFILE_FACT_CHARS] or 'none'
         current, connections = self._current_facts()
         facts = {'owner_request': request,
                  'owner_profile': profile,
@@ -1335,7 +1336,8 @@ class Orchestration:
             self.budget_stop = code
             return None, 'budget'
         attempt = Attempt(number, worker['id'], model=model, notes=notes, reason=one_line(data['reason'], MAX_REASON_CHARS),
-                          planned=True, effort=effort, lens=lens)
+                          planned=True, effort=effort, lens=lens,
+                          recall_query=self._redact(data.get('recall_query', ''))[:500].strip())
         attempt.reply = (self._redact(data['reply']).strip()[:REPLY_CHARS]
                          if number == 1 and not data.get('ask_location', '').strip()
                          and not plan_preview(data.get('preview')) else '')
@@ -1729,6 +1731,8 @@ class Orchestration:
         """
         following = copy.copy(attempt)
         following.number, following.steer = len(self.attempts) + 1, True
+        following.recall_query = ''
+        following.digest = digest({'notes': following.notes, **({'lens': following.lens} if following.lens else {})}) if following.planned else ''
         self.steers = str(steers or '')
         self.terminal = None
         self.attempts.append(following)

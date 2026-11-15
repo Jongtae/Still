@@ -486,7 +486,7 @@ def test_frontier_declares_completed_units_and_owner_authorized_wave_2():
     assert current["next_goal"]["id"] == "FRONTIER-01"
     invariants.assert_activation_record(TestCase(), "FRONTIER-01 activation", program["activated_by"])
     assert program["activated_by"]["issue"] == program["issue"] == 822
-    assert program["ordered_substeps"] == FRONTIER_FIRST_WAVE + FRONTIER_RECONCILED + FRONTIER_WAVE_2
+    assert program["ordered_substeps"] == FRONTIER_FIRST_WAVE + FRONTIER_RECONCILED + FRONTIER_WAVE_2 + ["FRONTIER-CONTEXT-02"]
     assert program["active_substeps"] == []
     assert program["completed_substeps"] == FRONTIER_COMPLETED
     assert program["reserved_substeps"] == []
@@ -650,3 +650,19 @@ def test_frontier_parent_selection_never_self_activates_children_or_successors(t
         path.write_text(json.dumps(altered), encoding="utf-8")
         for state in ({}, {"completed": FRONTIER_COMPLETED}, {"completed": all_substeps}):
             assert DeliveryPlan(path).select(state) is None, (name, state)
+
+
+def test_frontier_883_has_unique_successor_and_preserves_827_history():
+    current=plan()
+    ids=[item['id'] for item in current['iterations']]
+    assert len(ids)==len(set(ids))
+    items=items_of(current)
+    assert items['FRONTIER-CONTEXT-01']['issue']==827
+    assert items['FRONTIER-CONTEXT-01']['activation_status']=='complete-on-merge'
+    successor=items['FRONTIER-CONTEXT-02']
+    assert successor['issue']==883
+    assert successor['depends_on']==['FRONTIER-CONTEXT-01']
+    assert successor['activation_status']=='owner-activated-goal-ready'
+    assert 'FRONTIER-CONTEXT-02' in current['programs']['FRONTIER-01']['ordered_substeps']
+    assert current['programs']['FRONTIER-01']['active_substeps']==[]
+    assert '#883' in current['next_goal']['action'] and '2026-11-15' in current['next_goal']['action']

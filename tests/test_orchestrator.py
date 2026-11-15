@@ -54,7 +54,7 @@ def reported(calls, end='turn.completed'):
 
 def plan(worker, notes, *, model='', reason='fits', effort=None):
     """One plan (#820, #826): worker, model and optional notes; it never selects context, criteria or a tool subset."""
-    return {'reply': '', 'worker': worker, 'model': model, 'brief': {'notes': notes}, 'reason': reason,
+    return {'reply': '', 'recall_query': '', 'worker': worker, 'model': model, 'brief': {'notes': notes}, 'reason': reason,
             **({'effort': effort} if effort is not None else {})}
 
 
@@ -896,7 +896,7 @@ class ToolsAndReplan(Harness):
         self.assertIn('weather', turn['offered'], 'the full offered toolset, not a subset')
         context, _question, schema = self.asked_plans[0]
         self.assertEqual(set(schema['required']), {'worker', 'model', 'effort', 'brief', 'reason', 'account_change',
-                                                   'owner_situation', 'technical_work', 'reply'})
+                                                   'owner_situation', 'technical_work', 'reply', 'recall_query'})
         descriptions = context.facts['tool_descriptions']
         self.assertIn('- public_page_read: ', descriptions)
         self.assertIn('- list_notes: ', descriptions)
@@ -2920,7 +2920,7 @@ class OwnerModelUnit(unittest.TestCase):
         # The shared voice mentions topics only to keep the same voice across them.
         planning = QUESTION.removesuffix('\n\n' + prompt('voice'))
         self.assertNotIn('brief.goal', QUESTION)
-        self.assertNotIn('topic', planning)
+        self.assertNotIn('topic', plan_schema([])['properties'])
         self.assertNotIn('propose a memory', QUESTION)
         self.assertIn('it decides for itself what the message needs', QUESTION)
 
@@ -4025,3 +4025,129 @@ class SecretRedactionPlan(Harness):
         key.get.reset_mock()
         run()
         self.assertEqual(key.get.call_count, 1, 'a new ciphertext revision is decrypted once too')
+
+
+class RecallPlan883(unittest.TestCase):
+    catalogue=OrchestrationUnit.catalogue
+    # Inherit the fixture builders without running the parent unit tests again.
+    def make(self, answers, *, profile='request-only profile', redact=None):
+        calls=[]
+        def transport(context, question, schema):
+            calls.append(context)
+            value=answers.pop(0)
+            return value if isinstance(value,StructuredDecision) else decided(value)
+        orchestration=Orchestration(ConversationJudgments(FixtureDecisionEngine(structured=transport)),
+            self.catalogue(),request='request',sections={'profile':profile})
+        if redact is not None: orchestration._redact=redact
+        return orchestration,calls
+
+    def test_recall_query_schema_is_bounded_and_empty_means_optional(self):
+        from personal_agent.orchestrator import plan_shape
+        schema=plan_schema(self.catalogue().available(),ask_location=True,preview=True)
+        self.assertEqual(set(schema['required']),set(schema['properties']))
+        self.assertEqual(schema['properties']['recall_query'],{'type':'string','maxLength':500})
+        for value in ('', '   ', None):
+            data=plan('a','')
+            if value is not None:data['recall_query']=value
+            else:data.pop('recall_query')
+            self.assertTrue(plan_shape(data))
+            orch,calls=self.make([data])
+            self.assertEqual(orch.first().recall_query,'')
+            self.assertEqual(len(calls),1)
+
+    def test_recall_query_invalid_type_or_size_falls_back_without_another_call(self):
+        for value in (None,True,[],{},'x'*501):
+            with self.subTest(value=type(value)):
+                orch,calls=self.make([dict(plan('a',''),recall_query=value)])
+                attempt=orch.first()
+                self.assertFalse(attempt.planned)
+                self.assertEqual(attempt.recall_query,'')
+                self.assertEqual(len(calls),1)
+        for answer in (decided(dict(plan('a',''),recall_query='rejected'),0.1),
+                       dict(plan('unknown',''),recall_query='rejected'),
+                       StructuredDecision(OUTCOME_MALFORMED,dict(plan('a',''),recall_query='rejected'))):
+            orch,calls=self.make([answer])
+            self.assertFalse(orch.first().recall_query)
+            self.assertEqual(len(calls),1)
+
+    def test_wire_missing_or_invalid_selector_does_not_add_transport_call(self):
+        from test_decision_engine import OPENAI, ScriptedTransport, openai_tool_reply
+        for value in ('missing',None,True,[],{},'x'*501,''):
+            with self.subTest(value=type(value)):
+                data={**plan('a',''),'effort':'','brief':{'notes':'','lens':''},
+                      'account_change':False,'owner_situation':False,'technical_work':False,'confidence':0.9}
+                if value == 'missing':data.pop('recall_query')
+                else:data['recall_query']=value
+                transport=ScriptedTransport(openai_tool_reply(data))
+                engine=ModelDecisionEngine(ModelAdapter(transport),lambda:(OPENAI,OPENAI_KEY))
+                orch=Orchestration(ConversationJudgments(engine),self.catalogue(),request='request')
+                attempt=orch.first()
+                self.assertEqual(attempt.planned,value == '')
+                self.assertEqual(attempt.recall_query,'')
+                self.assertEqual(len(transport.calls),1)
+
+    def test_recall_query_is_redacted_before_attempt_storage_and_digest(self):
+        orch,calls=self.make([dict(plan('a',''),recall_query='secret needle')],
+                            redact=lambda text:text.replace('secret','[redacted]'))
+        attempt=orch.first()
+        self.assertEqual(attempt.recall_query,'[redacted] needle')
+        from personal_agent.orchestrator import digest
+        self.assertEqual(attempt.digest,digest({'notes':'','recall_query':'[redacted] needle'}))
+
+    def test_changed_recall_query_changes_attempt_identity(self):
+        orch,_=self.make([])
+        first,_=orch.validate(dict(plan('a',''),recall_query='alpha'),orch.catalogue.available(),1)
+        orch.failed.add((first.signature,first.digest,first.context_digest))
+        repeated,why=orch.validate(dict(plan('a',''),recall_query='alpha'),orch.catalogue.available(),2)
+        self.assertIsNone(repeated);self.assertEqual(why,'repeat')
+        changed,_=orch.validate(dict(plan('a',''),recall_query='beta'),orch.catalogue.available(),2)
+        self.assertIsNotNone(changed)
+        self.assertNotEqual(first.digest,changed.digest)
+
+    def test_matching_early_plan_reuses_one_call_and_its_query(self):
+        from concurrent.futures import Future
+        orch,calls=self.make([dict(plan('a',''),recall_query='accepted')])
+        early=Future();early.set_result(orch.early_plan())
+        attempt=orch.first(early=early)
+        self.assertEqual(attempt.recall_query,'accepted')
+        self.assertTrue(orch.early_used);self.assertEqual(len(calls),1)
+
+    def test_stale_early_query_is_not_used_by_final_attempt(self):
+        from concurrent.futures import Future
+        orch,calls=self.make([dict(plan('a',''),recall_query='stale'),dict(plan('a',''),recall_query='fresh')])
+        early=Future();early.set_result(orch.early_plan())
+        orch.request='changed request'
+        self.assertEqual(orch.first(early=early).recall_query,'fresh')
+        self.assertFalse(orch.early_used);self.assertEqual(len(calls),2)
+
+    def test_replan_sees_request_only_profile_but_judgment_sees_actual_worker_profile(self):
+        orch,calls=self.make([dict(plan('a',''),recall_query='selected'),plan('b','')])
+        orch.first()
+        orch.worker_context({'profile':'actual worker profile','conversation':[]})
+        self.assertIn('actual worker profile',orch._owner_context())
+        orch._ask(orch.catalogue.available())
+        self.assertEqual([c.facts['owner_profile'] for c in calls],['request-only profile']*2)
+
+    def test_steer_continuation_does_not_reuse_unresolved_old_query(self):
+        orch,calls=self.make([dict(plan('a',''),recall_query='old query')])
+        first=orch.first()
+        following=orch.continue_for_steers(first,'correction',1)
+        self.assertEqual(following.recall_query,'');self.assertTrue(following.steer)
+        self.assertNotEqual(first.digest,following.digest)
+        self.assertEqual(len(calls),1)
+
+
+class RecallShortCircuits883(Harness):
+    def test_direct_reply_and_location_park_do_not_build_worker_recall(self):
+        with mock.patch.object(self.service,'worker_profile_snapshot',wraps=self.service.worker_profile_snapshot) as refresh:
+            self.script([dict(plan('codex',''),reply='given facts suffice',recall_query='unused')])
+            self.run_work('request')
+            refresh.assert_not_called()
+        self.assertEqual(len(self.asked_plans),1)
+        self.script([dict(plan('codex',''),ask_location='Where?',location_button='Share',recall_query='unused')])
+        with mock.patch.object(self.service,'location_requester',return_value=lambda *a:None), \
+                mock.patch.object(self.service,'plan_asked_location',return_value=True), \
+                mock.patch.object(self.service,'worker_profile_snapshot') as refresh:
+            self.run_work('location request')
+            refresh.assert_not_called()
+        self.assertEqual(len(self.asked_plans),2)

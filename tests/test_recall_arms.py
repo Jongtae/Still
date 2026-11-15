@@ -14,9 +14,15 @@ from personal_agent.quickstart_store import QuickStore  # noqa: E402
 from test_recall_pairs import lexical as baseline_lexical  # noqa: E402
 
 
+def dev_data(version):
+    data = pairs.load(ROOT / f'evals/recall/recall-pairs-v{version}.json')
+    data['cases'] = [case for case in data['cases'] if case['split'] == 'dev']
+    return data
+
+
 @pytest.fixture
 def data():
-    return pairs.load(ROOT / 'evals/recall/recall-pairs-v1.json')
+    return dev_data(1)
 
 
 @pytest.fixture
@@ -146,37 +152,26 @@ def test_arm_metadata_agrees():
     assert 'runtime' not in arms.DIAGNOSTIC
 
 
-def test_runtime_follow_up_uses_preceding_turn_without_case_leakage(data, seeded):
+def test_runtime_default_is_request_only_without_model(data, seeded):
     store, refs = seeded
-    case = next(case for case in data['cases']
-                if case['split'] == 'dev' and case['kind'] == 'short-follow-up')
+    case = next(case for case in data['cases'] if case.get('context'))
     retrieve = arms.runtime(store, data)
-    before = refs.digest()
-    assert arms.lexical(store, data)(case['query'], case['context']) == []
     result = pairs.run(retrieve, [case], refs)['rows'][0]
-    assert result['needed_hit'] == result['needed_total'] > 0
-    assert result['trap_hits'] == result['noise_hits'] == 0
-    assert retrieve.observed[case['id']] == dict(
-        query=(case['query'] + ' ' + case['context'])[:500], context=case['context'])
-    # Same request in a new chat, without an earlier turn: no context or full-profile credit.
+    assert result['returned'] == []
+    observed = retrieve.observed[case['id']]
+    assert observed['query'] == case['query']
+    assert observed['selector_source'] == observed['planning_query_source'] == 'request'
+    assert observed['plan_accepted'] and observed['plan_calls'] == 1
     assert retrieve(case['query']) == []
-    assert retrieve.observed['call-2'] == dict(query=case['query'], context='')
-    assert refs.digest() == before
 
 
-@pytest.mark.parametrize(('query', 'context'), [
-    ('request', 'preceding owner words'),
-    (' '.join(f'request{i}' for i in range(12)), 'context after request terms'),
-    ('q' * 490, 'context ' * 10),
-    ('q' * 510, 'context'),
-    ('request', ''),
-])
-def test_runtime_observes_real_request_first_bounded_query(query, context, data, seeded):
+@pytest.mark.parametrize(('query','context'), [('request','prior topic'), ('q'*510,'prior topic'), ('request','')])
+def test_runtime_observes_real_request_only_bounded_query(query, context, data, seeded):
     store, _ = seeded
     retrieve = arms.runtime(store, data)
     retrieve(query, context)
-    assert retrieve.observed['call-1'] == dict(
-        query=(query + ' ' + context if context else query)[:500], context=context)
+    assert retrieve.observed['call-1']['query'] == query[:500]
+    assert retrieve.observed['call-1']['plan_calls'] == 1
 
 
 def test_runtime_uses_fixture_date_and_excludes_all_traps(data, seeded):
@@ -190,7 +185,7 @@ def test_runtime_uses_fixture_date_and_excludes_all_traps(data, seeded):
     assert all(not forbidden.intersection(row['returned']) for row in results['rows'])
 
 
-def test_runtime_scores_only_matched_profile_rows_actually_shown(data, seeded):
+def test_runtime_scores_worker_matches_only_not_planner_or_general_profile(data, seeded):
     store, _ = seeded
     # Twenty matches exceed the real snapshot's UTF-8 byte budget.
     for index in range(20):
@@ -213,15 +208,6 @@ def test_runtime_scores_only_matched_profile_rows_actually_shown(data, seeded):
     assert invalid not in returned
 
 
-def test_runtime_rejects_missing_preceding_context(monkeypatch, data, seeded):
-    store, _ = seeded
-    case = next(case for case in data['cases'] if case.get('context'))
-    retrieve = arms.runtime(store, data)
-    monkeypatch.setattr(AgentService, 'preceding_owner_turn', lambda self, job: '')
-    with pytest.raises(ValueError, match=case['id']):
-        retrieve(case['query'], case['context'])
-
-
 def test_runtime_memory_write_fails_digest_guard(monkeypatch, data, seeded):
     store, refs = seeded
     original = MemoryService.profile_snapshot
@@ -237,7 +223,7 @@ def test_runtime_memory_write_fails_digest_guard(monkeypatch, data, seeded):
 
 @pytest.mark.parametrize('version', [1, 2])
 def test_runtime_run_arm_and_report_both_fixtures(version):
-    data = pairs.load(ROOT / f'evals/recall/recall-pairs-v{version}.json')
+    data = dev_data(version)
     runtime = rr.run_arm(data, rr.resolve_arm('runtime'))
     assert runtime['deterministic'] and not runtime['diagnostic']
     assert len(runtime['runs']) == 1
@@ -249,9 +235,92 @@ def test_runtime_run_arm_and_report_both_fixtures(version):
         assert row['trap_hits'] == 0
     for case in data['cases']:
         context = case.get('context', '')
-        assert runtime['observed']['1'][case['id']] == dict(
-            query=(case['query'] + ' ' + context if context else case['query'])[:500], context=context)
+        assert runtime['observed']['1'][case['id']]['query'] == case['query'][:500]
+        assert runtime['observed']['1'][case['id']]['context'] == context
     baseline = rr.run_arm(data, rr.resolve_arm('lexical'))
     report = rr.report(data, {'lexical': baseline, 'runtime': runtime})
     assert report['arms']['runtime']['observed'] == runtime['observed']
     assert report['arms']['runtime']['verdict'] is not None
+
+
+def replay_record(data, selectors):
+    return dict(version='recall-plan/1', fixture_digest=rr._fixture_digest(data),
+                plan_prompt_schema_digest=arms.plan_prompt_schema_digest(),
+                runs={'1':{case['id']:dict(query=case['query'],context=case.get('context',''),
+                          recall_query=selectors.get(case['id'],''),evidence='author-written fixture')
+                           for case in data['cases']}})
+
+
+def test_runtime_replay_validates_plan_and_uses_shared_worker_path(monkeypatch, data, seeded):
+    store, refs = seeded
+    selectors = {case['id']:case.get('context','') for case in data['cases']}
+    resolver = arms.replay_resolver(replay_record(data, selectors),data)
+    calls = []
+    original = AgentService.worker_profile_snapshot
+    def refresh(service, job, attempt=None):
+        calls.append(attempt)
+        return original(service,job,attempt)
+    monkeypatch.setattr(AgentService,'worker_profile_snapshot',refresh)
+    retrieve = arms.runtime(store,data,resolver=resolver)
+    pairs.run(retrieve,data['cases'],refs)
+    assert len(calls) == len(data['cases'])
+    assert all(attempt.planned for attempt in calls)
+    assert all(item['plan_calls'] == 1 for item in retrieve.observed.values())
+    invalid = arms.runtime(store,data,resolver=lambda q,c:None)
+    case = data['cases'][0]
+    invalid(case['query'],case.get('context',''))
+    assert not invalid.observed[case['id']]['plan_accepted']
+    assert invalid.observed[case['id']]['selector_source'] == 'request'
+
+
+@pytest.mark.parametrize('fault',['fixture','case','input','missing','type'])
+def test_runtime_replay_rejects_fixture_case_or_plan_input_mismatch(data,fault):
+    recorded = replay_record(data,{})
+    entry = recorded['runs']['1'][data['cases'][0]['id']]
+    if fault == 'fixture': recorded['fixture_digest'] = 'wrong'
+    if fault == 'input': recorded['plan_prompt_schema_digest'] = 'wrong'
+    if fault == 'case': entry['context'] = 'wrong'
+    if fault == 'missing': recorded['runs']['1'].pop(data['cases'][0]['id'])
+    if fault == 'type': entry['recall_query'] = None
+    with pytest.raises(ValueError): arms.replay_resolver(recorded,data)
+
+
+def test_runtime_resolved_dev_followups_and_lexical_controls(tmp_path):
+    data = dev_data(2)
+    wanted = {'d-follow':['r4'],'h-follow':['r18'],'d-lex-instrument':['r1'],
+              'd-lex-last-day':['r13'],'d-lex-desk':['r14'],'h-lex-tool':['r15']}
+    data['cases'] = [case for case in data['cases'] if case['id'] in wanted]
+    store = QuickStore(tmp_path/'state')
+    refs = pairs.seed(store,data)
+    selectors = {'d-follow':'발표 장소','h-follow':'상자'}
+    retrieve = arms.runtime(store,data,resolver=arms.replay_resolver(replay_record(data,selectors),data))
+    results = pairs.run(retrieve,data['cases'],refs)
+    for row in results['rows']:
+        assert row['returned'] == [refs[ref] for ref in wanted[row['id']]]
+        assert row['noise_hits'] == row['trap_hits'] == 0
+
+
+def synthetic_data():
+    # Four independently authored dev probes from the accepted diagnosis.
+    data = dev_data(2)
+    data['rows'] += [dict(ref='s883-a',key='profile.synthetic883.a',content='quartzclang compiler flags'),
+                     dict(ref='s883-b',key='profile.synthetic883.b',content='velvostring rehearsal Tuesday'),
+                     dict(ref='s883-c',key='profile.synthetic883.c',content='rehearsal notes archived')]
+    data['cases'] = [dict(id=ident,split='dev',kind=kind,query=q,context=c,needed=needed,traps=[],note='author-written')
+        for ident,kind,q,c,needed in [
+            ('s883-lex-context','lexical-control','quartzclang flags','velvostring rehearsal',['s883-a']),
+            ('s883-topic-shift','harm-control','photosynthesis explanation','velvostring rehearsal',[]),
+            ('s883-follow','short-follow-up','Repeat that','velvostring',['s883-b']),
+            ('s883-prefix-noise','lexical-control','quartzclang','rehear',['s883-a'])]]
+    data['cases'][1]['irrelevant']=['s883-a','s883-b','s883-c']
+    return data
+
+
+def test_runtime_synthetic_context_does_not_add_topic_noise(tmp_path):
+    data = synthetic_data()
+    store = QuickStore(tmp_path/'state')
+    refs = pairs.seed(store,data)
+    retrieve = arms.runtime(store,data,resolver=lambda q,c:'velvostring' if q == 'Repeat that' else '')
+    for row in pairs.run(retrieve,data['cases'],refs)['rows']:
+        assert row['needed_hit'] == row['needed_total']
+        assert row['noise_hits'] == row['trap_hits'] == 0
