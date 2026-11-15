@@ -1,0 +1,6576 @@
+{
+  "split": "all",
+  "case_count": 48,
+  "primary": "vector",
+  "frozen": {
+    "vector": {
+      "top_k": 1,
+      "min_sim": 0.84,
+      "use_context": true,
+      "passage_form": "content"
+    },
+    "hybrid": {
+      "top_k": 1,
+      "min_sim": 0.84,
+      "use_context": true,
+      "passage_form": "content",
+      "k": 60,
+      "vector_only_when_empty": true
+    },
+    "hybrid_lexical_context": {
+      "top_k": 1,
+      "min_sim": 0.84,
+      "use_context": false,
+      "passage_form": "content",
+      "k": 60,
+      "vector_only_when_empty": true
+    }
+  },
+  "model": {
+    "revision": "614241f622f53c4eeff9890bdc4f31cfecc418b3",
+    "model_file": "onnx/model_O4.onnx",
+    "sha256": "4654c156f3e4171abc9c716cdb771bf9116455d15ac1aab364aeeede0e3205b0",
+    "tokenizer_sha256": "0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39",
+    "evidence": "local operating observation (offline embedding model)"
+  },
+  "gate": {
+    "vector": {
+      "preferred": false,
+      "rules": {
+        "preferred_against_both": false,
+        "zero_traps_both_splits": true,
+        "no_lost_lexical_control": false,
+        "no_heldout_regression": false,
+        "common_heldout_needed_recovery": true
+      },
+      "common_fixed": [
+        "h2-riddle",
+        "h2-smoke",
+        "h2-swimming"
+      ],
+      "common_needed_recovery": [
+        "h2-riddle",
+        "h2-smoke",
+        "h2-swimming"
+      ]
+    },
+    "hybrid": {
+      "preferred": false,
+      "rules": {
+        "preferred_against_both": false,
+        "zero_traps_both_splits": true,
+        "no_lost_lexical_control": true,
+        "no_heldout_regression": false,
+        "common_heldout_needed_recovery": true
+      },
+      "common_fixed": [
+        "h2-riddle",
+        "h2-smoke",
+        "h2-swimming"
+      ],
+      "common_needed_recovery": [
+        "h2-riddle",
+        "h2-smoke",
+        "h2-swimming"
+      ]
+    },
+    "hybrid_lexical_context": {
+      "preferred": false,
+      "rules": {
+        "preferred_against_both": false,
+        "zero_traps_both_splits": true,
+        "no_lost_lexical_control": false,
+        "no_heldout_regression": false,
+        "common_heldout_needed_recovery": true
+      },
+      "common_fixed": [
+        "h2-riddle",
+        "h2-smoke",
+        "h2-swimming"
+      ],
+      "common_needed_recovery": [
+        "h2-riddle",
+        "h2-smoke",
+        "h2-swimming"
+      ]
+    }
+  },
+  "gate_status": "evaluated",
+  "hybrid_runtime_unavailable": "recall_arms.runtime writes synthetic jobs/messages on every retrieval call; it cannot compose on the supplied store under this lane's no-store-write contract. Measure runtime separately as the runner's baseline.",
+  "identical_ids_on_two_calls": true,
+  "costs": {
+    "evidence": "local operating observation",
+    "process_cold": {
+      "load_seconds": 0.8472234173677862,
+      "peak_rss_bytes": 887848960,
+      "network_attempts": []
+    },
+    "warm_load_seconds": 0.9205470001325011,
+    "cached_acquisition_seconds": 3.748573362827301e-07,
+    "synthetic_builds": {
+      "1000": {
+        "passage_count": 1000,
+        "build_seconds": 40.528633165638894,
+        "vector_bytes": 1536000,
+        "min_chars": 30,
+        "max_chars": 200
+      },
+      "10000": {
+        "passage_count": 10000,
+        "build_seconds": 406.41261654207483,
+        "vector_bytes": 15360000,
+        "min_chars": 30,
+        "max_chars": 200
+      }
+    },
+    "model_file_bytes": 235052531,
+    "model_directory_bytes": 863402419,
+    "peak_rss_bytes": 891469824,
+    "network_attempts": [],
+    "note": "Process-cold includes pin verification/import/session load; OS cache not flushed. Warm load is first main-process load, cached acquisition is a second cache lookup. Peak RSS is process high-water mark, not incremental model allocation.",
+    "per_arm": {
+      "vector": {
+        "query_embedding": {
+          "samples": 48,
+          "median_ms": 6.878416519612074,
+          "p95_ms": 11.243250221014023
+        },
+        "retrieval": {
+          "samples": 48,
+          "median_ms": 0.9337298106402159,
+          "p95_ms": 1.3428758829832077
+        },
+        "index_build": {
+          "passage_count": 44,
+          "build_seconds": 0.3175781248137355,
+          "vector_bytes": 67584
+        }
+      },
+      "hybrid": {
+        "query_embedding": {
+          "samples": 48,
+          "median_ms": 6.742479046806693,
+          "p95_ms": 11.09150005504489
+        },
+        "retrieval": {
+          "samples": 48,
+          "median_ms": 1.7260420136153698,
+          "p95_ms": 3.2981261610984802
+        },
+        "index_build": {
+          "passage_count": 44,
+          "build_seconds": 0.35791737493127584,
+          "vector_bytes": 67584
+        }
+      },
+      "hybrid_lexical_context": {
+        "query_embedding": {
+          "samples": 48,
+          "median_ms": 5.7082707062363625,
+          "p95_ms": 8.854500018060207
+        },
+        "retrieval": {
+          "samples": 48,
+          "median_ms": 1.858750358223915,
+          "p95_ms": 4.066625144332647
+        },
+        "index_build": {
+          "passage_count": 44,
+          "build_seconds": 0.34779862500727177,
+          "vector_bytes": 67584
+        }
+      },
+      "lexical": {
+        "query_embedding": {
+          "samples": 0,
+          "median_ms": null,
+          "p95_ms": null
+        },
+        "retrieval": {
+          "samples": 48,
+          "median_ms": 0.526895746588707,
+          "p95_ms": 0.7664579898118973
+        },
+        "index_build": null
+      },
+      "lexical-context": {
+        "query_embedding": {
+          "samples": 0,
+          "median_ms": null,
+          "p95_ms": null
+        },
+        "retrieval": {
+          "samples": 48,
+          "median_ms": 0.520520843565464,
+          "p95_ms": 0.8334158919751644
+        },
+        "index_build": null
+      },
+      "runtime": {
+        "query_embedding": {
+          "samples": 0,
+          "median_ms": null,
+          "p95_ms": null
+        },
+        "retrieval": {
+          "samples": 48,
+          "median_ms": 21.885395981371403,
+          "p95_ms": 33.73362496495247
+        },
+        "index_build": null
+      }
+    }
+  },
+  "loadavg_before": [
+    4.37060546875,
+    5.375,
+    4.4208984375
+  ],
+  "loadavg_after": [
+    7.20703125,
+    6.84912109375,
+    5.5771484375
+  ],
+  "network_attempts": [],
+  "recall_at_k": {
+    "vector": {
+      "scores": {
+        "dev": {
+          "total": {
+            "needed_total": 16,
+            "cases": 24,
+            "recall": {
+              "1": 0.8125,
+              "3": 0.875,
+              "5": 1.0
+            }
+          },
+          "by_kind": {
+            "correction": {
+              "needed_total": 2,
+              "cases": 2,
+              "recall": {
+                "1": 1.0,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "cross-language": {
+              "needed_total": 2,
+              "cases": 2,
+              "recall": {
+                "1": 0.5,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "currentness": {
+              "needed_total": 0,
+              "cases": 3,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "dated-contradiction": {
+              "needed_total": 3,
+              "cases": 3,
+              "recall": {
+                "1": 0.6666666666666666,
+                "3": 0.6666666666666666,
+                "5": 1.0
+              }
+            },
+            "forgetting": {
+              "needed_total": 0,
+              "cases": 3,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "harm-control": {
+              "needed_total": 0,
+              "cases": 2,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "lexical-control": {
+              "needed_total": 4,
+              "cases": 4,
+              "recall": {
+                "1": 1.0,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "paraphrase": {
+              "needed_total": 3,
+              "cases": 3,
+              "recall": {
+                "1": 0.6666666666666666,
+                "3": 0.6666666666666666,
+                "5": 1.0
+              }
+            },
+            "short-follow-up": {
+              "needed_total": 2,
+              "cases": 2,
+              "recall": {
+                "1": 1.0,
+                "3": 1.0,
+                "5": 1.0
+              }
+            }
+          }
+        },
+        "heldout": {
+          "total": {
+            "needed_total": 21,
+            "cases": 24,
+            "recall": {
+              "1": 0.42857142857142855,
+              "3": 0.6666666666666666,
+              "5": 0.6666666666666666
+            }
+          },
+          "by_kind": {
+            "cross-language": {
+              "needed_total": 7,
+              "cases": 7,
+              "recall": {
+                "1": 0.2857142857142857,
+                "3": 0.5714285714285714,
+                "5": 0.5714285714285714
+              }
+            },
+            "harm-control": {
+              "needed_total": 0,
+              "cases": 3,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "lexical-control": {
+              "needed_total": 3,
+              "cases": 3,
+              "recall": {
+                "1": 0.6666666666666666,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "paraphrase": {
+              "needed_total": 8,
+              "cases": 8,
+              "recall": {
+                "1": 0.625,
+                "3": 0.875,
+                "5": 0.875
+              }
+            },
+            "short-follow-up": {
+              "needed_total": 3,
+              "cases": 3,
+              "recall": {
+                "1": 0.0,
+                "3": 0.0,
+                "5": 0.0
+              }
+            }
+          }
+        }
+      },
+      "cases": [
+        {
+          "id": "d-lex-instrument",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-lex-last-day",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-lex-desk",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-para-focus",
+          "split": "dev",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-para-posture",
+          "split": "dev",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-language",
+          "split": "dev",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-follow",
+          "split": "dev",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-dated-current",
+          "split": "dev",
+          "kind": "dated-contradiction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-dated-old-token",
+          "split": "dev",
+          "kind": "dated-contradiction",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-correction",
+          "split": "dev",
+          "kind": "correction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-expired",
+          "split": "dev",
+          "kind": "currentness",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-expired-date",
+          "split": "dev",
+          "kind": "currentness",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-forget-chain",
+          "split": "dev",
+          "kind": "forgetting",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-noise",
+          "split": "dev",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-lex-tool",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-para-layout",
+          "split": "dev",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-language",
+          "split": "dev",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-follow",
+          "split": "dev",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-dated",
+          "split": "dev",
+          "kind": "dated-contradiction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-correction",
+          "split": "dev",
+          "kind": "correction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-expired",
+          "split": "dev",
+          "kind": "currentness",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-forget-name",
+          "split": "dev",
+          "kind": "forgetting",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-forget-role",
+          "split": "dev",
+          "kind": "forgetting",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-noise",
+          "split": "dev",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-smoke",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-seedbed",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-swimming",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-riddle",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-bedding",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-proofing",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-binoculars",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-apiary",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-pond",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-shoe-lining",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-nightwear",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-bubbles",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-kite",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-snail",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-alarm",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-umbrella",
+          "split": "heldout",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-cycling",
+          "split": "heldout",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-thawing",
+          "split": "heldout",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-context-aquarium",
+          "split": "heldout",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-context-inkstone",
+          "split": "heldout",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-context-lift",
+          "split": "heldout",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-lex-visibility",
+          "split": "heldout",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-lex-ice-mold",
+          "split": "heldout",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-noise-grammar",
+          "split": "heldout",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        }
+      ]
+    },
+    "hybrid": {
+      "scores": {
+        "dev": {
+          "total": {
+            "needed_total": 16,
+            "cases": 24,
+            "recall": {
+              "1": 0.8125,
+              "3": 0.875,
+              "5": 1.0
+            }
+          },
+          "by_kind": {
+            "correction": {
+              "needed_total": 2,
+              "cases": 2,
+              "recall": {
+                "1": 1.0,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "cross-language": {
+              "needed_total": 2,
+              "cases": 2,
+              "recall": {
+                "1": 1.0,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "currentness": {
+              "needed_total": 0,
+              "cases": 3,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "dated-contradiction": {
+              "needed_total": 3,
+              "cases": 3,
+              "recall": {
+                "1": 0.6666666666666666,
+                "3": 0.6666666666666666,
+                "5": 1.0
+              }
+            },
+            "forgetting": {
+              "needed_total": 0,
+              "cases": 3,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "harm-control": {
+              "needed_total": 0,
+              "cases": 2,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "lexical-control": {
+              "needed_total": 4,
+              "cases": 4,
+              "recall": {
+                "1": 1.0,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "paraphrase": {
+              "needed_total": 3,
+              "cases": 3,
+              "recall": {
+                "1": 0.3333333333333333,
+                "3": 0.6666666666666666,
+                "5": 1.0
+              }
+            },
+            "short-follow-up": {
+              "needed_total": 2,
+              "cases": 2,
+              "recall": {
+                "1": 1.0,
+                "3": 1.0,
+                "5": 1.0
+              }
+            }
+          }
+        },
+        "heldout": {
+          "total": {
+            "needed_total": 21,
+            "cases": 24,
+            "recall": {
+              "1": 0.47619047619047616,
+              "3": 0.6190476190476191,
+              "5": 0.6666666666666666
+            }
+          },
+          "by_kind": {
+            "cross-language": {
+              "needed_total": 7,
+              "cases": 7,
+              "recall": {
+                "1": 0.2857142857142857,
+                "3": 0.42857142857142855,
+                "5": 0.5714285714285714
+              }
+            },
+            "harm-control": {
+              "needed_total": 0,
+              "cases": 3,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "lexical-control": {
+              "needed_total": 3,
+              "cases": 3,
+              "recall": {
+                "1": 1.0,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "paraphrase": {
+              "needed_total": 8,
+              "cases": 8,
+              "recall": {
+                "1": 0.625,
+                "3": 0.875,
+                "5": 0.875
+              }
+            },
+            "short-follow-up": {
+              "needed_total": 3,
+              "cases": 3,
+              "recall": {
+                "1": 0.0,
+                "3": 0.0,
+                "5": 0.0
+              }
+            }
+          }
+        }
+      },
+      "cases": [
+        {
+          "id": "d-lex-instrument",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-lex-last-day",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-lex-desk",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-para-focus",
+          "split": "dev",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-para-posture",
+          "split": "dev",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-language",
+          "split": "dev",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-follow",
+          "split": "dev",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-dated-current",
+          "split": "dev",
+          "kind": "dated-contradiction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-dated-old-token",
+          "split": "dev",
+          "kind": "dated-contradiction",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-correction",
+          "split": "dev",
+          "kind": "correction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-expired",
+          "split": "dev",
+          "kind": "currentness",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-expired-date",
+          "split": "dev",
+          "kind": "currentness",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-forget-chain",
+          "split": "dev",
+          "kind": "forgetting",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-noise",
+          "split": "dev",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-lex-tool",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-para-layout",
+          "split": "dev",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-language",
+          "split": "dev",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-follow",
+          "split": "dev",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-dated",
+          "split": "dev",
+          "kind": "dated-contradiction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-correction",
+          "split": "dev",
+          "kind": "correction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-expired",
+          "split": "dev",
+          "kind": "currentness",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-forget-name",
+          "split": "dev",
+          "kind": "forgetting",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-forget-role",
+          "split": "dev",
+          "kind": "forgetting",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-noise",
+          "split": "dev",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-smoke",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-seedbed",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-swimming",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-riddle",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-bedding",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-proofing",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-binoculars",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-apiary",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-pond",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-shoe-lining",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-nightwear",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-bubbles",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-kite",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-snail",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-alarm",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-umbrella",
+          "split": "heldout",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-cycling",
+          "split": "heldout",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-thawing",
+          "split": "heldout",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-context-aquarium",
+          "split": "heldout",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-context-inkstone",
+          "split": "heldout",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-context-lift",
+          "split": "heldout",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-lex-visibility",
+          "split": "heldout",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-lex-ice-mold",
+          "split": "heldout",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-noise-grammar",
+          "split": "heldout",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        }
+      ]
+    },
+    "hybrid_lexical_context": {
+      "scores": {
+        "dev": {
+          "total": {
+            "needed_total": 16,
+            "cases": 24,
+            "recall": {
+              "1": 0.75,
+              "3": 0.875,
+              "5": 1.0
+            }
+          },
+          "by_kind": {
+            "correction": {
+              "needed_total": 2,
+              "cases": 2,
+              "recall": {
+                "1": 1.0,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "cross-language": {
+              "needed_total": 2,
+              "cases": 2,
+              "recall": {
+                "1": 1.0,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "currentness": {
+              "needed_total": 0,
+              "cases": 3,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "dated-contradiction": {
+              "needed_total": 3,
+              "cases": 3,
+              "recall": {
+                "1": 0.6666666666666666,
+                "3": 0.6666666666666666,
+                "5": 1.0
+              }
+            },
+            "forgetting": {
+              "needed_total": 0,
+              "cases": 3,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "harm-control": {
+              "needed_total": 0,
+              "cases": 2,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "lexical-control": {
+              "needed_total": 4,
+              "cases": 4,
+              "recall": {
+                "1": 1.0,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "paraphrase": {
+              "needed_total": 3,
+              "cases": 3,
+              "recall": {
+                "1": 0.3333333333333333,
+                "3": 0.6666666666666666,
+                "5": 1.0
+              }
+            },
+            "short-follow-up": {
+              "needed_total": 2,
+              "cases": 2,
+              "recall": {
+                "1": 0.5,
+                "3": 1.0,
+                "5": 1.0
+              }
+            }
+          }
+        },
+        "heldout": {
+          "total": {
+            "needed_total": 21,
+            "cases": 24,
+            "recall": {
+              "1": 0.47619047619047616,
+              "3": 0.6190476190476191,
+              "5": 0.6666666666666666
+            }
+          },
+          "by_kind": {
+            "cross-language": {
+              "needed_total": 7,
+              "cases": 7,
+              "recall": {
+                "1": 0.2857142857142857,
+                "3": 0.42857142857142855,
+                "5": 0.5714285714285714
+              }
+            },
+            "harm-control": {
+              "needed_total": 0,
+              "cases": 3,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "lexical-control": {
+              "needed_total": 3,
+              "cases": 3,
+              "recall": {
+                "1": 1.0,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "paraphrase": {
+              "needed_total": 8,
+              "cases": 8,
+              "recall": {
+                "1": 0.625,
+                "3": 0.875,
+                "5": 0.875
+              }
+            },
+            "short-follow-up": {
+              "needed_total": 3,
+              "cases": 3,
+              "recall": {
+                "1": 0.0,
+                "3": 0.0,
+                "5": 0.0
+              }
+            }
+          }
+        }
+      },
+      "cases": [
+        {
+          "id": "d-lex-instrument",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-lex-last-day",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-lex-desk",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-para-focus",
+          "split": "dev",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-para-posture",
+          "split": "dev",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-language",
+          "split": "dev",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-follow",
+          "split": "dev",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-dated-current",
+          "split": "dev",
+          "kind": "dated-contradiction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-dated-old-token",
+          "split": "dev",
+          "kind": "dated-contradiction",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-correction",
+          "split": "dev",
+          "kind": "correction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-expired",
+          "split": "dev",
+          "kind": "currentness",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-expired-date",
+          "split": "dev",
+          "kind": "currentness",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-forget-chain",
+          "split": "dev",
+          "kind": "forgetting",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-noise",
+          "split": "dev",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-lex-tool",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-para-layout",
+          "split": "dev",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-language",
+          "split": "dev",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-follow",
+          "split": "dev",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-dated",
+          "split": "dev",
+          "kind": "dated-contradiction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-correction",
+          "split": "dev",
+          "kind": "correction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-expired",
+          "split": "dev",
+          "kind": "currentness",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-forget-name",
+          "split": "dev",
+          "kind": "forgetting",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-forget-role",
+          "split": "dev",
+          "kind": "forgetting",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-noise",
+          "split": "dev",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-smoke",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-seedbed",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-swimming",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-riddle",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-bedding",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-proofing",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-binoculars",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-apiary",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-pond",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-shoe-lining",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-nightwear",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-bubbles",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-kite",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-snail",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-alarm",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-umbrella",
+          "split": "heldout",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-cycling",
+          "split": "heldout",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-thawing",
+          "split": "heldout",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-context-aquarium",
+          "split": "heldout",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-context-inkstone",
+          "split": "heldout",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-context-lift",
+          "split": "heldout",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-lex-visibility",
+          "split": "heldout",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-lex-ice-mold",
+          "split": "heldout",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-noise-grammar",
+          "split": "heldout",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        }
+      ]
+    },
+    "lexical": {
+      "scores": {
+        "dev": {
+          "total": {
+            "needed_total": 16,
+            "cases": 24,
+            "recall": {
+              "1": 0.625,
+              "3": 0.625,
+              "5": 0.625
+            }
+          },
+          "by_kind": {
+            "correction": {
+              "needed_total": 2,
+              "cases": 2,
+              "recall": {
+                "1": 1.0,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "cross-language": {
+              "needed_total": 2,
+              "cases": 2,
+              "recall": {
+                "1": 1.0,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "currentness": {
+              "needed_total": 0,
+              "cases": 3,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "dated-contradiction": {
+              "needed_total": 3,
+              "cases": 3,
+              "recall": {
+                "1": 0.6666666666666666,
+                "3": 0.6666666666666666,
+                "5": 0.6666666666666666
+              }
+            },
+            "forgetting": {
+              "needed_total": 0,
+              "cases": 3,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "harm-control": {
+              "needed_total": 0,
+              "cases": 2,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "lexical-control": {
+              "needed_total": 4,
+              "cases": 4,
+              "recall": {
+                "1": 1.0,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "paraphrase": {
+              "needed_total": 3,
+              "cases": 3,
+              "recall": {
+                "1": 0.0,
+                "3": 0.0,
+                "5": 0.0
+              }
+            },
+            "short-follow-up": {
+              "needed_total": 2,
+              "cases": 2,
+              "recall": {
+                "1": 0.0,
+                "3": 0.0,
+                "5": 0.0
+              }
+            }
+          }
+        },
+        "heldout": {
+          "total": {
+            "needed_total": 21,
+            "cases": 24,
+            "recall": {
+              "1": 0.14285714285714285,
+              "3": 0.14285714285714285,
+              "5": 0.14285714285714285
+            }
+          },
+          "by_kind": {
+            "cross-language": {
+              "needed_total": 7,
+              "cases": 7,
+              "recall": {
+                "1": 0.0,
+                "3": 0.0,
+                "5": 0.0
+              }
+            },
+            "harm-control": {
+              "needed_total": 0,
+              "cases": 3,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "lexical-control": {
+              "needed_total": 3,
+              "cases": 3,
+              "recall": {
+                "1": 1.0,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "paraphrase": {
+              "needed_total": 8,
+              "cases": 8,
+              "recall": {
+                "1": 0.0,
+                "3": 0.0,
+                "5": 0.0
+              }
+            },
+            "short-follow-up": {
+              "needed_total": 3,
+              "cases": 3,
+              "recall": {
+                "1": 0.0,
+                "3": 0.0,
+                "5": 0.0
+              }
+            }
+          }
+        }
+      },
+      "cases": [
+        {
+          "id": "d-lex-instrument",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-lex-last-day",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-lex-desk",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-para-focus",
+          "split": "dev",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-para-posture",
+          "split": "dev",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-language",
+          "split": "dev",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-follow",
+          "split": "dev",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-dated-current",
+          "split": "dev",
+          "kind": "dated-contradiction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-dated-old-token",
+          "split": "dev",
+          "kind": "dated-contradiction",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-correction",
+          "split": "dev",
+          "kind": "correction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-expired",
+          "split": "dev",
+          "kind": "currentness",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-expired-date",
+          "split": "dev",
+          "kind": "currentness",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-forget-chain",
+          "split": "dev",
+          "kind": "forgetting",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-noise",
+          "split": "dev",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-lex-tool",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-para-layout",
+          "split": "dev",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-language",
+          "split": "dev",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-follow",
+          "split": "dev",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-dated",
+          "split": "dev",
+          "kind": "dated-contradiction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-correction",
+          "split": "dev",
+          "kind": "correction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-expired",
+          "split": "dev",
+          "kind": "currentness",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-forget-name",
+          "split": "dev",
+          "kind": "forgetting",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-forget-role",
+          "split": "dev",
+          "kind": "forgetting",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-noise",
+          "split": "dev",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-smoke",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-seedbed",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-swimming",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-riddle",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-bedding",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-proofing",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-binoculars",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-apiary",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-pond",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-shoe-lining",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-nightwear",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-bubbles",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-kite",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-snail",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-alarm",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-umbrella",
+          "split": "heldout",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-cycling",
+          "split": "heldout",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-thawing",
+          "split": "heldout",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-context-aquarium",
+          "split": "heldout",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-context-inkstone",
+          "split": "heldout",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-context-lift",
+          "split": "heldout",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-lex-visibility",
+          "split": "heldout",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-lex-ice-mold",
+          "split": "heldout",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-noise-grammar",
+          "split": "heldout",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        }
+      ]
+    },
+    "lexical-context": {
+      "scores": {
+        "dev": {
+          "total": {
+            "needed_total": 16,
+            "cases": 24,
+            "recall": {
+              "1": 0.6875,
+              "3": 0.75,
+              "5": 0.75
+            }
+          },
+          "by_kind": {
+            "correction": {
+              "needed_total": 2,
+              "cases": 2,
+              "recall": {
+                "1": 1.0,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "cross-language": {
+              "needed_total": 2,
+              "cases": 2,
+              "recall": {
+                "1": 1.0,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "currentness": {
+              "needed_total": 0,
+              "cases": 3,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "dated-contradiction": {
+              "needed_total": 3,
+              "cases": 3,
+              "recall": {
+                "1": 0.6666666666666666,
+                "3": 0.6666666666666666,
+                "5": 0.6666666666666666
+              }
+            },
+            "forgetting": {
+              "needed_total": 0,
+              "cases": 3,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "harm-control": {
+              "needed_total": 0,
+              "cases": 2,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "lexical-control": {
+              "needed_total": 4,
+              "cases": 4,
+              "recall": {
+                "1": 1.0,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "paraphrase": {
+              "needed_total": 3,
+              "cases": 3,
+              "recall": {
+                "1": 0.0,
+                "3": 0.0,
+                "5": 0.0
+              }
+            },
+            "short-follow-up": {
+              "needed_total": 2,
+              "cases": 2,
+              "recall": {
+                "1": 0.5,
+                "3": 1.0,
+                "5": 1.0
+              }
+            }
+          }
+        },
+        "heldout": {
+          "total": {
+            "needed_total": 21,
+            "cases": 24,
+            "recall": {
+              "1": 0.09523809523809523,
+              "3": 0.14285714285714285,
+              "5": 0.14285714285714285
+            }
+          },
+          "by_kind": {
+            "cross-language": {
+              "needed_total": 7,
+              "cases": 7,
+              "recall": {
+                "1": 0.0,
+                "3": 0.0,
+                "5": 0.0
+              }
+            },
+            "harm-control": {
+              "needed_total": 0,
+              "cases": 3,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "lexical-control": {
+              "needed_total": 3,
+              "cases": 3,
+              "recall": {
+                "1": 0.6666666666666666,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "paraphrase": {
+              "needed_total": 8,
+              "cases": 8,
+              "recall": {
+                "1": 0.0,
+                "3": 0.0,
+                "5": 0.0
+              }
+            },
+            "short-follow-up": {
+              "needed_total": 3,
+              "cases": 3,
+              "recall": {
+                "1": 0.0,
+                "3": 0.0,
+                "5": 0.0
+              }
+            }
+          }
+        }
+      },
+      "cases": [
+        {
+          "id": "d-lex-instrument",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-lex-last-day",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-lex-desk",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-para-focus",
+          "split": "dev",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-para-posture",
+          "split": "dev",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-language",
+          "split": "dev",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-follow",
+          "split": "dev",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-dated-current",
+          "split": "dev",
+          "kind": "dated-contradiction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-dated-old-token",
+          "split": "dev",
+          "kind": "dated-contradiction",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-correction",
+          "split": "dev",
+          "kind": "correction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-expired",
+          "split": "dev",
+          "kind": "currentness",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-expired-date",
+          "split": "dev",
+          "kind": "currentness",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-forget-chain",
+          "split": "dev",
+          "kind": "forgetting",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-noise",
+          "split": "dev",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-lex-tool",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-para-layout",
+          "split": "dev",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-language",
+          "split": "dev",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-follow",
+          "split": "dev",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-dated",
+          "split": "dev",
+          "kind": "dated-contradiction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-correction",
+          "split": "dev",
+          "kind": "correction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-expired",
+          "split": "dev",
+          "kind": "currentness",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-forget-name",
+          "split": "dev",
+          "kind": "forgetting",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-forget-role",
+          "split": "dev",
+          "kind": "forgetting",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-noise",
+          "split": "dev",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-smoke",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-seedbed",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-swimming",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-riddle",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-bedding",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-proofing",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-binoculars",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-apiary",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-pond",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-shoe-lining",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-nightwear",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-bubbles",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-kite",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-snail",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-alarm",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-umbrella",
+          "split": "heldout",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-cycling",
+          "split": "heldout",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-thawing",
+          "split": "heldout",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-context-aquarium",
+          "split": "heldout",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-context-inkstone",
+          "split": "heldout",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-context-lift",
+          "split": "heldout",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-lex-visibility",
+          "split": "heldout",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-lex-ice-mold",
+          "split": "heldout",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-noise-grammar",
+          "split": "heldout",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        }
+      ]
+    },
+    "runtime": {
+      "scores": {
+        "dev": {
+          "total": {
+            "needed_total": 16,
+            "cases": 24,
+            "recall": {
+              "1": 0.6875,
+              "3": 0.75,
+              "5": 0.75
+            }
+          },
+          "by_kind": {
+            "correction": {
+              "needed_total": 2,
+              "cases": 2,
+              "recall": {
+                "1": 1.0,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "cross-language": {
+              "needed_total": 2,
+              "cases": 2,
+              "recall": {
+                "1": 1.0,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "currentness": {
+              "needed_total": 0,
+              "cases": 3,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "dated-contradiction": {
+              "needed_total": 3,
+              "cases": 3,
+              "recall": {
+                "1": 0.6666666666666666,
+                "3": 0.6666666666666666,
+                "5": 0.6666666666666666
+              }
+            },
+            "forgetting": {
+              "needed_total": 0,
+              "cases": 3,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "harm-control": {
+              "needed_total": 0,
+              "cases": 2,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "lexical-control": {
+              "needed_total": 4,
+              "cases": 4,
+              "recall": {
+                "1": 1.0,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "paraphrase": {
+              "needed_total": 3,
+              "cases": 3,
+              "recall": {
+                "1": 0.0,
+                "3": 0.0,
+                "5": 0.0
+              }
+            },
+            "short-follow-up": {
+              "needed_total": 2,
+              "cases": 2,
+              "recall": {
+                "1": 0.5,
+                "3": 1.0,
+                "5": 1.0
+              }
+            }
+          }
+        },
+        "heldout": {
+          "total": {
+            "needed_total": 21,
+            "cases": 24,
+            "recall": {
+              "1": 0.09523809523809523,
+              "3": 0.14285714285714285,
+              "5": 0.14285714285714285
+            }
+          },
+          "by_kind": {
+            "cross-language": {
+              "needed_total": 7,
+              "cases": 7,
+              "recall": {
+                "1": 0.0,
+                "3": 0.0,
+                "5": 0.0
+              }
+            },
+            "harm-control": {
+              "needed_total": 0,
+              "cases": 3,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "lexical-control": {
+              "needed_total": 3,
+              "cases": 3,
+              "recall": {
+                "1": 0.6666666666666666,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "paraphrase": {
+              "needed_total": 8,
+              "cases": 8,
+              "recall": {
+                "1": 0.0,
+                "3": 0.0,
+                "5": 0.0
+              }
+            },
+            "short-follow-up": {
+              "needed_total": 3,
+              "cases": 3,
+              "recall": {
+                "1": 0.0,
+                "3": 0.0,
+                "5": 0.0
+              }
+            }
+          }
+        }
+      },
+      "cases": [
+        {
+          "id": "d-lex-instrument",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-lex-last-day",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-lex-desk",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-para-focus",
+          "split": "dev",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-para-posture",
+          "split": "dev",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-language",
+          "split": "dev",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-follow",
+          "split": "dev",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-dated-current",
+          "split": "dev",
+          "kind": "dated-contradiction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-dated-old-token",
+          "split": "dev",
+          "kind": "dated-contradiction",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-correction",
+          "split": "dev",
+          "kind": "correction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-expired",
+          "split": "dev",
+          "kind": "currentness",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-expired-date",
+          "split": "dev",
+          "kind": "currentness",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-forget-chain",
+          "split": "dev",
+          "kind": "forgetting",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-noise",
+          "split": "dev",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-lex-tool",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-para-layout",
+          "split": "dev",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-language",
+          "split": "dev",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-follow",
+          "split": "dev",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-dated",
+          "split": "dev",
+          "kind": "dated-contradiction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-correction",
+          "split": "dev",
+          "kind": "correction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-expired",
+          "split": "dev",
+          "kind": "currentness",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-forget-name",
+          "split": "dev",
+          "kind": "forgetting",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-forget-role",
+          "split": "dev",
+          "kind": "forgetting",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-noise",
+          "split": "dev",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-smoke",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-seedbed",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-swimming",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-riddle",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-bedding",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-proofing",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-binoculars",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-apiary",
+          "split": "heldout",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-pond",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-shoe-lining",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-nightwear",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-bubbles",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-kite",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-snail",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-alarm",
+          "split": "heldout",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-umbrella",
+          "split": "heldout",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-cycling",
+          "split": "heldout",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-thawing",
+          "split": "heldout",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-context-aquarium",
+          "split": "heldout",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-context-inkstone",
+          "split": "heldout",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h2-context-lift",
+          "split": "heldout",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-lex-visibility",
+          "split": "heldout",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-lex-ice-mold",
+          "split": "heldout",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h2-noise-grammar",
+          "split": "heldout",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        }
+      ]
+    }
+  },
+  "recall_at_k_definition": "Micro recall = sum needed refs in first k unique eligible ranked refs / sum needed refs, separately per split and kind. Cases with no needed refs add zero to numerator/denominator (all-empty groups: null). Vector: full cosine rank; hybrid: RRF of exact lexical list and full cosine rank before min_sim/top_k/empty-only admission. Baselines expose only their returned rank (no additional cutoff).",
+  "changes": {
+    "lexical": {
+      "vector": {
+        "dev": [
+          {
+            "id": "d-lex-instrument",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-last-day",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-desk",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-para-focus",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-para-posture",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-follow",
+            "kind": "short-follow-up",
+            "change": "fixed"
+          },
+          {
+            "id": "d-dated-current",
+            "kind": "dated-contradiction",
+            "change": "regressed"
+          },
+          {
+            "id": "d-dated-old-token",
+            "kind": "dated-contradiction",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-correction",
+            "kind": "correction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired-date",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-forget-chain",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-noise",
+            "kind": "harm-control",
+            "change": "fixed"
+          },
+          {
+            "id": "h-lex-tool",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-para-layout",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-follow",
+            "kind": "short-follow-up",
+            "change": "fixed"
+          },
+          {
+            "id": "h-dated",
+            "kind": "dated-contradiction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-correction",
+            "kind": "correction",
+            "change": "fixed"
+          },
+          {
+            "id": "h-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-name",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-role",
+            "kind": "forgetting",
+            "change": "fixed"
+          },
+          {
+            "id": "h-noise",
+            "kind": "harm-control",
+            "change": "fixed"
+          }
+        ],
+        "heldout": [
+          {
+            "id": "h2-smoke",
+            "kind": "paraphrase",
+            "change": "fixed"
+          },
+          {
+            "id": "h2-seedbed",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-swimming",
+            "kind": "paraphrase",
+            "change": "fixed"
+          },
+          {
+            "id": "h2-riddle",
+            "kind": "paraphrase",
+            "change": "fixed"
+          },
+          {
+            "id": "h2-bedding",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-proofing",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-binoculars",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-apiary",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-pond",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-shoe-lining",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-nightwear",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-bubbles",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-kite",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-snail",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-alarm",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-umbrella",
+            "kind": "short-follow-up",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-cycling",
+            "kind": "short-follow-up",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-thawing",
+            "kind": "short-follow-up",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-context-aquarium",
+            "kind": "harm-control",
+            "change": "regressed"
+          },
+          {
+            "id": "h2-context-inkstone",
+            "kind": "harm-control",
+            "change": "regressed"
+          },
+          {
+            "id": "h2-context-lift",
+            "kind": "lexical-control",
+            "change": "regressed"
+          },
+          {
+            "id": "h2-lex-visibility",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h2-lex-ice-mold",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h2-noise-grammar",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          }
+        ]
+      },
+      "hybrid": {
+        "dev": [
+          {
+            "id": "d-lex-instrument",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-last-day",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-desk",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-para-focus",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-para-posture",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-follow",
+            "kind": "short-follow-up",
+            "change": "fixed"
+          },
+          {
+            "id": "d-dated-current",
+            "kind": "dated-contradiction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-dated-old-token",
+            "kind": "dated-contradiction",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-correction",
+            "kind": "correction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired-date",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-forget-chain",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-noise",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-lex-tool",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-para-layout",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-follow",
+            "kind": "short-follow-up",
+            "change": "fixed"
+          },
+          {
+            "id": "h-dated",
+            "kind": "dated-contradiction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-correction",
+            "kind": "correction",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-name",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-role",
+            "kind": "forgetting",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-noise",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          }
+        ],
+        "heldout": [
+          {
+            "id": "h2-smoke",
+            "kind": "paraphrase",
+            "change": "fixed"
+          },
+          {
+            "id": "h2-seedbed",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-swimming",
+            "kind": "paraphrase",
+            "change": "fixed"
+          },
+          {
+            "id": "h2-riddle",
+            "kind": "paraphrase",
+            "change": "fixed"
+          },
+          {
+            "id": "h2-bedding",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-proofing",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-binoculars",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-apiary",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-pond",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-shoe-lining",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-nightwear",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-bubbles",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-kite",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-snail",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-alarm",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-umbrella",
+            "kind": "short-follow-up",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-cycling",
+            "kind": "short-follow-up",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-thawing",
+            "kind": "short-follow-up",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-context-aquarium",
+            "kind": "harm-control",
+            "change": "regressed"
+          },
+          {
+            "id": "h2-context-inkstone",
+            "kind": "harm-control",
+            "change": "regressed"
+          },
+          {
+            "id": "h2-context-lift",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h2-lex-visibility",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h2-lex-ice-mold",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h2-noise-grammar",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          }
+        ]
+      },
+      "hybrid_lexical_context": {
+        "dev": [
+          {
+            "id": "d-lex-instrument",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-last-day",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-desk",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-para-focus",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-para-posture",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-follow",
+            "kind": "short-follow-up",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-dated-current",
+            "kind": "dated-contradiction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-dated-old-token",
+            "kind": "dated-contradiction",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-correction",
+            "kind": "correction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired-date",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-forget-chain",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-noise",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-lex-tool",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-para-layout",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-follow",
+            "kind": "short-follow-up",
+            "change": "fixed"
+          },
+          {
+            "id": "h-dated",
+            "kind": "dated-contradiction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-correction",
+            "kind": "correction",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-name",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-role",
+            "kind": "forgetting",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-noise",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          }
+        ],
+        "heldout": [
+          {
+            "id": "h2-smoke",
+            "kind": "paraphrase",
+            "change": "fixed"
+          },
+          {
+            "id": "h2-seedbed",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-swimming",
+            "kind": "paraphrase",
+            "change": "fixed"
+          },
+          {
+            "id": "h2-riddle",
+            "kind": "paraphrase",
+            "change": "fixed"
+          },
+          {
+            "id": "h2-bedding",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-proofing",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-binoculars",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-apiary",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-pond",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-shoe-lining",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-nightwear",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-bubbles",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-kite",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-snail",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-alarm",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-umbrella",
+            "kind": "short-follow-up",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-cycling",
+            "kind": "short-follow-up",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-thawing",
+            "kind": "short-follow-up",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-context-aquarium",
+            "kind": "harm-control",
+            "change": "regressed"
+          },
+          {
+            "id": "h2-context-inkstone",
+            "kind": "harm-control",
+            "change": "regressed"
+          },
+          {
+            "id": "h2-context-lift",
+            "kind": "lexical-control",
+            "change": "regressed"
+          },
+          {
+            "id": "h2-lex-visibility",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h2-lex-ice-mold",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h2-noise-grammar",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          }
+        ]
+      }
+    },
+    "lexical-context": {
+      "vector": {
+        "dev": [
+          {
+            "id": "d-lex-instrument",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-last-day",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-desk",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-para-focus",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-para-posture",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-follow",
+            "kind": "short-follow-up",
+            "change": "fixed"
+          },
+          {
+            "id": "d-dated-current",
+            "kind": "dated-contradiction",
+            "change": "regressed"
+          },
+          {
+            "id": "d-dated-old-token",
+            "kind": "dated-contradiction",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-correction",
+            "kind": "correction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired-date",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-forget-chain",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-noise",
+            "kind": "harm-control",
+            "change": "fixed"
+          },
+          {
+            "id": "h-lex-tool",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-para-layout",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-follow",
+            "kind": "short-follow-up",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-dated",
+            "kind": "dated-contradiction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-correction",
+            "kind": "correction",
+            "change": "fixed"
+          },
+          {
+            "id": "h-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-name",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-role",
+            "kind": "forgetting",
+            "change": "fixed"
+          },
+          {
+            "id": "h-noise",
+            "kind": "harm-control",
+            "change": "fixed"
+          }
+        ],
+        "heldout": [
+          {
+            "id": "h2-smoke",
+            "kind": "paraphrase",
+            "change": "fixed"
+          },
+          {
+            "id": "h2-seedbed",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-swimming",
+            "kind": "paraphrase",
+            "change": "fixed"
+          },
+          {
+            "id": "h2-riddle",
+            "kind": "paraphrase",
+            "change": "fixed"
+          },
+          {
+            "id": "h2-bedding",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-proofing",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-binoculars",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-apiary",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-pond",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-shoe-lining",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-nightwear",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-bubbles",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-kite",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-snail",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-alarm",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-umbrella",
+            "kind": "short-follow-up",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-cycling",
+            "kind": "short-follow-up",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-thawing",
+            "kind": "short-follow-up",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-context-aquarium",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-context-inkstone",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-context-lift",
+            "kind": "lexical-control",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-lex-visibility",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h2-lex-ice-mold",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h2-noise-grammar",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          }
+        ]
+      },
+      "hybrid": {
+        "dev": [
+          {
+            "id": "d-lex-instrument",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-last-day",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-desk",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-para-focus",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-para-posture",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-follow",
+            "kind": "short-follow-up",
+            "change": "fixed"
+          },
+          {
+            "id": "d-dated-current",
+            "kind": "dated-contradiction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-dated-old-token",
+            "kind": "dated-contradiction",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-correction",
+            "kind": "correction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired-date",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-forget-chain",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-noise",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-lex-tool",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-para-layout",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-follow",
+            "kind": "short-follow-up",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-dated",
+            "kind": "dated-contradiction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-correction",
+            "kind": "correction",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-name",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-role",
+            "kind": "forgetting",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-noise",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          }
+        ],
+        "heldout": [
+          {
+            "id": "h2-smoke",
+            "kind": "paraphrase",
+            "change": "fixed"
+          },
+          {
+            "id": "h2-seedbed",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-swimming",
+            "kind": "paraphrase",
+            "change": "fixed"
+          },
+          {
+            "id": "h2-riddle",
+            "kind": "paraphrase",
+            "change": "fixed"
+          },
+          {
+            "id": "h2-bedding",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-proofing",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-binoculars",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-apiary",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-pond",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-shoe-lining",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-nightwear",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-bubbles",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-kite",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-snail",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-alarm",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-umbrella",
+            "kind": "short-follow-up",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-cycling",
+            "kind": "short-follow-up",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-thawing",
+            "kind": "short-follow-up",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-context-aquarium",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-context-inkstone",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-context-lift",
+            "kind": "lexical-control",
+            "change": "fixed"
+          },
+          {
+            "id": "h2-lex-visibility",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h2-lex-ice-mold",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h2-noise-grammar",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          }
+        ]
+      },
+      "hybrid_lexical_context": {
+        "dev": [
+          {
+            "id": "d-lex-instrument",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-last-day",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-desk",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-para-focus",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-para-posture",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-follow",
+            "kind": "short-follow-up",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-dated-current",
+            "kind": "dated-contradiction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-dated-old-token",
+            "kind": "dated-contradiction",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-correction",
+            "kind": "correction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired-date",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-forget-chain",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-noise",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-lex-tool",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-para-layout",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-follow",
+            "kind": "short-follow-up",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-dated",
+            "kind": "dated-contradiction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-correction",
+            "kind": "correction",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-name",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-role",
+            "kind": "forgetting",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-noise",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          }
+        ],
+        "heldout": [
+          {
+            "id": "h2-smoke",
+            "kind": "paraphrase",
+            "change": "fixed"
+          },
+          {
+            "id": "h2-seedbed",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-swimming",
+            "kind": "paraphrase",
+            "change": "fixed"
+          },
+          {
+            "id": "h2-riddle",
+            "kind": "paraphrase",
+            "change": "fixed"
+          },
+          {
+            "id": "h2-bedding",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-proofing",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-binoculars",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-apiary",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-pond",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-shoe-lining",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-nightwear",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-bubbles",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-kite",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-snail",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-alarm",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-umbrella",
+            "kind": "short-follow-up",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-cycling",
+            "kind": "short-follow-up",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-thawing",
+            "kind": "short-follow-up",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-context-aquarium",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-context-inkstone",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-context-lift",
+            "kind": "lexical-control",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-lex-visibility",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h2-lex-ice-mold",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h2-noise-grammar",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          }
+        ]
+      }
+    },
+    "runtime": {
+      "vector": {
+        "dev": [
+          {
+            "id": "d-lex-instrument",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-last-day",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-desk",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-para-focus",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-para-posture",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-follow",
+            "kind": "short-follow-up",
+            "change": "fixed"
+          },
+          {
+            "id": "d-dated-current",
+            "kind": "dated-contradiction",
+            "change": "regressed"
+          },
+          {
+            "id": "d-dated-old-token",
+            "kind": "dated-contradiction",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-correction",
+            "kind": "correction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired-date",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-forget-chain",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-noise",
+            "kind": "harm-control",
+            "change": "fixed"
+          },
+          {
+            "id": "h-lex-tool",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-para-layout",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-follow",
+            "kind": "short-follow-up",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-dated",
+            "kind": "dated-contradiction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-correction",
+            "kind": "correction",
+            "change": "fixed"
+          },
+          {
+            "id": "h-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-name",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-role",
+            "kind": "forgetting",
+            "change": "fixed"
+          },
+          {
+            "id": "h-noise",
+            "kind": "harm-control",
+            "change": "fixed"
+          }
+        ],
+        "heldout": [
+          {
+            "id": "h2-smoke",
+            "kind": "paraphrase",
+            "change": "fixed"
+          },
+          {
+            "id": "h2-seedbed",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-swimming",
+            "kind": "paraphrase",
+            "change": "fixed"
+          },
+          {
+            "id": "h2-riddle",
+            "kind": "paraphrase",
+            "change": "fixed"
+          },
+          {
+            "id": "h2-bedding",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-proofing",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-binoculars",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-apiary",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-pond",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-shoe-lining",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-nightwear",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-bubbles",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-kite",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-snail",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-alarm",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-umbrella",
+            "kind": "short-follow-up",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-cycling",
+            "kind": "short-follow-up",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-thawing",
+            "kind": "short-follow-up",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-context-aquarium",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-context-inkstone",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-context-lift",
+            "kind": "lexical-control",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-lex-visibility",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h2-lex-ice-mold",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h2-noise-grammar",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          }
+        ]
+      },
+      "hybrid": {
+        "dev": [
+          {
+            "id": "d-lex-instrument",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-last-day",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-desk",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-para-focus",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-para-posture",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-follow",
+            "kind": "short-follow-up",
+            "change": "fixed"
+          },
+          {
+            "id": "d-dated-current",
+            "kind": "dated-contradiction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-dated-old-token",
+            "kind": "dated-contradiction",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-correction",
+            "kind": "correction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired-date",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-forget-chain",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-noise",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-lex-tool",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-para-layout",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-follow",
+            "kind": "short-follow-up",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-dated",
+            "kind": "dated-contradiction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-correction",
+            "kind": "correction",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-name",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-role",
+            "kind": "forgetting",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-noise",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          }
+        ],
+        "heldout": [
+          {
+            "id": "h2-smoke",
+            "kind": "paraphrase",
+            "change": "fixed"
+          },
+          {
+            "id": "h2-seedbed",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-swimming",
+            "kind": "paraphrase",
+            "change": "fixed"
+          },
+          {
+            "id": "h2-riddle",
+            "kind": "paraphrase",
+            "change": "fixed"
+          },
+          {
+            "id": "h2-bedding",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-proofing",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-binoculars",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-apiary",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-pond",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-shoe-lining",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-nightwear",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-bubbles",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-kite",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-snail",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-alarm",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-umbrella",
+            "kind": "short-follow-up",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-cycling",
+            "kind": "short-follow-up",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-thawing",
+            "kind": "short-follow-up",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-context-aquarium",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-context-inkstone",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-context-lift",
+            "kind": "lexical-control",
+            "change": "fixed"
+          },
+          {
+            "id": "h2-lex-visibility",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h2-lex-ice-mold",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h2-noise-grammar",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          }
+        ]
+      },
+      "hybrid_lexical_context": {
+        "dev": [
+          {
+            "id": "d-lex-instrument",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-last-day",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-desk",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-para-focus",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-para-posture",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-follow",
+            "kind": "short-follow-up",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-dated-current",
+            "kind": "dated-contradiction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-dated-old-token",
+            "kind": "dated-contradiction",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-correction",
+            "kind": "correction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired-date",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-forget-chain",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-noise",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-lex-tool",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-para-layout",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-follow",
+            "kind": "short-follow-up",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-dated",
+            "kind": "dated-contradiction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-correction",
+            "kind": "correction",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-name",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-role",
+            "kind": "forgetting",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-noise",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          }
+        ],
+        "heldout": [
+          {
+            "id": "h2-smoke",
+            "kind": "paraphrase",
+            "change": "fixed"
+          },
+          {
+            "id": "h2-seedbed",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-swimming",
+            "kind": "paraphrase",
+            "change": "fixed"
+          },
+          {
+            "id": "h2-riddle",
+            "kind": "paraphrase",
+            "change": "fixed"
+          },
+          {
+            "id": "h2-bedding",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-proofing",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-binoculars",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-apiary",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-pond",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-shoe-lining",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-nightwear",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-bubbles",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-kite",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-snail",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-alarm",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-umbrella",
+            "kind": "short-follow-up",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-cycling",
+            "kind": "short-follow-up",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-thawing",
+            "kind": "short-follow-up",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-context-aquarium",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-context-inkstone",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-context-lift",
+            "kind": "lexical-control",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h2-lex-visibility",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h2-lex-ice-mold",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h2-noise-grammar",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          }
+        ]
+      }
+    }
+  }
+}
