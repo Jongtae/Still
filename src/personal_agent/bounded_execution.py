@@ -633,6 +633,8 @@ MCP_SDK_VERSION = '2.3.0'
 BRIDGE_UNAVAILABLE = 'bridge-unavailable'
 BRIDGE_UNAVAILABLE_TEXT = ('Still 도구 연결(MCP 브리지)을 시작할 수 없어 AI가 Still 도구 없이 일하게 되므로 '
                            '작업을 멈췄어요. 다른 AI로 바꿔도 같은 연결을 쓰기 때문에 다시 맡기지 않았습니다.')
+#: #890: a completed CLI turn with neither closing text nor a recorded completed effect.
+NO_FINAL_TEXT = 'no-final-text'
 BRIDGE_DEPENDENCY_HINT = (' Still을 실행하는 Python 환경의 mcp-host 의존성을 맞춘 뒤(작업본은 pip install -e ".[mcp-host]", '
                           '설치본은 재설치) 다시 요청하세요.')
 
@@ -3041,6 +3043,11 @@ class BoundedExecutionAdapter:
         stream has the larger runaway guard ``MAX_STREAM_BYTES``.  The error
         names which bound was hit.  #308 S2: ``answer`` is the result record a
         Claude Code session chose (``ClaudeSteerSession.answer_line``).
+
+        #890: codex-cli 0.167.2 can finish successfully with an empty or absent
+        agent_message (``tests/fixtures/codex_exec_empty_final_message.jsonl``).
+        The exec ThreadEvent schema's ``turn.completed`` marks completion;
+        the last ``item.completed`` agent_message supplies text, possibly ''.
         """
         raw = raw or ''
         if len(raw.encode()) > MAX_STREAM_BYTES:
@@ -3057,28 +3064,25 @@ class BoundedExecutionAdapter:
         except (TypeError, ValueError, IndexError):
             raise ExecutionError('엔진이 요구된 구조화된 응답을 반환하지 않았습니다.') from None
         answer_line = records[-1][1]
+        turn_completed = False
         if engine_id == 'codex':
-            # Codex ends JSONL with usage/completion metadata. Select the last
-            # structured agent message instead of treating that terminal event
-            # as response text or exposing the event stream to the owner.
+            turn_completed = any(isinstance(record, dict) and record.get('type') == 'turn.completed'
+                                 for record, _line in records)
             content = None
             for candidate, line in reversed(records):
                 if not isinstance(candidate, dict):
                     continue
                 item = candidate.get('item')
-                if isinstance(item, dict) and item.get('type') == 'agent_message':
-                    text = item.get('text')
-                    if isinstance(text, str) and text.strip():
-                        content, answer_line = text, line
-                        break
-                text = candidate.get('content') or candidate.get('output')
-                if isinstance(text, str) and text.strip():
-                    content, answer_line = text, line
+                if (candidate.get('type') == 'item.completed' and isinstance(item, dict)
+                        and item.get('type') == 'agent_message'):
+                    content, answer_line = item.get('text'), line
                     break
         else:
             content = data.get('result') if isinstance(data, dict) else None
         if len(answer_line.encode()) > MAX_OUTPUT_BYTES:
             raise ExecutionError(FINAL_RECORD_TOO_LARGE)
+        if turn_completed and (content is None or isinstance(content, str) and not content.strip()):
+            return ''
         if not isinstance(content, str) or not content.strip():
             raise ExecutionError('엔진 응답에 최종 텍스트 결과가 없습니다.')
         return content[:24_000]
@@ -3449,4 +3453,6 @@ class BoundedExecutionAdapter:
                                      meta={**run_meta, **cli_metadata(engine_id, completed.stdout, getattr(tools,'connector_input_digest',None), answer), 'duration_ms': int(elapsed * 1000)}) from None
             LOG.info('engine turn succeeded engine=%s duration=%.1fs', engine_id, elapsed)
             return ExecutionResult(content, engine_id, completed.returncode,
-                                   {**run_meta, **cli_metadata(engine_id, completed.stdout, getattr(tools,'connector_input_digest',None), answer), 'duration_ms': int(elapsed * 1000)})
+                                   {**run_meta, **cli_metadata(engine_id, completed.stdout, getattr(tools,'connector_input_digest',None), answer),
+                                    **({'final_text': 'absent'} if engine_id == 'codex' and not content else {}),
+                                    'duration_ms': int(elapsed * 1000)})

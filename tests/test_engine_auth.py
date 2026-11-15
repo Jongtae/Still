@@ -54,7 +54,7 @@ class AdapterCredentialAndStatus(unittest.TestCase):
             seen.append((argv, kwargs['env']))
             if argv[0].endswith('claude'):
                 return _Done(stdout=json.dumps({'result': 'ok'}))
-            return _Done(stdout=json.dumps({'item': {'type': 'agent_message', 'text': 'ok'}}))
+            return _Done(stdout=json.dumps({'type': 'item.completed', 'item': {'type': 'agent_message', 'text': 'ok'}}))
 
         adapter = self._adapter(runner)
         adapter.execute('claude-code', 'hi', AgentOSMcpTools(_Caps()))
@@ -117,7 +117,7 @@ class AdapterCredentialAndStatus(unittest.TestCase):
         self.assertNotIn(odd[:12], exposed)
 
     def test_model_text_about_signing_in_does_not_make_a_failure_auth(self):
-        stream = json.dumps({'item': {'type': 'agent_message', 'text': 'If it says Not logged in, run codex login.'}})
+        stream = json.dumps({'type': 'item.completed', 'item': {'type': 'agent_message', 'text': 'If it says Not logged in, run codex login.'}})
         adapter = self._adapter(lambda argv, **kw: _Done(returncode=1, stdout=stream, stderr='context window exceeded'))
         with self.assertRaises(ExecutionError) as caught:
             adapter.execute('codex', 'hi', AgentOSMcpTools(_Caps()))

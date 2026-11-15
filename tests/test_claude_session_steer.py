@@ -423,7 +423,7 @@ class SessionLaunch(unittest.TestCase):
             class Done:
                 returncode = 0
                 stdout = (_result('ok') if engine == 'claude-code'
-                          else json.dumps({'item': {'type': 'agent_message', 'text': 'ok'}}))
+                          else json.dumps({'type': 'item.completed', 'item': {'type': 'agent_message', 'text': 'ok'}}))
             return Done()
         with tempfile.TemporaryDirectory() as folder:
             profile = Path(folder) / 'codex-home'

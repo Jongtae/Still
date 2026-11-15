@@ -76,7 +76,7 @@ class ApprovalModeArgv(unittest.TestCase):
 
             class Done:
                 returncode = 0
-                stdout = (json.dumps({'item': {'type': 'agent_message', 'text': 'ok'}}) if engine == 'codex'
+                stdout = (json.dumps({'type': 'item.completed', 'item': {'type': 'agent_message', 'text': 'ok'}}) if engine == 'codex'
                           else json.dumps({'type': 'result', 'result': 'ok', 'is_error': False}))
                 stderr = ''
             return Done()

@@ -75,7 +75,7 @@ def harness(tmp_path):
         model.requests[0]['body']['tools'] = model.tools
         if work and options.later_host_tool:
             model.requests.append({'body': {'tools': [{'name': 'exec_command' if engine == 'codex' else 'Bash'}]}})
-        out = (json.dumps({'item': {'type': 'agent_message', 'text': 'done'}}) if engine == 'codex' else
+        out = (json.dumps({'type': 'item.completed', 'item': {'type': 'agent_message', 'text': 'done'}}) if engine == 'codex' else
                json.dumps({'type': 'result', 'result': 'done'})) if options.output else 'unparseable'
         return SimpleNamespace(returncode=0, stdout=out, stderr='')
 

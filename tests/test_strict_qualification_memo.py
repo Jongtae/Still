@@ -226,7 +226,7 @@ def test_judgments_and_work_share_local_qualification_and_never_cover_new_identi
         if argv[1] == 'sandbox':
             return SimpleNamespace(returncode=0 if not broken and Path(argv[-1]) == kwargs['cwd'] else 1,
                                    stdout='', stderr='Operation not permitted')
-        return SimpleNamespace(returncode=0, stdout=json.dumps({'item': {'type': 'agent_message', 'text': 'answer'}}), stderr='')
+        return SimpleNamespace(returncode=0, stdout=json.dumps({'type': 'item.completed', 'item': {'type': 'agent_message', 'text': 'answer'}}), stderr='')
     s.runner.side_effect = run
     record = None
 
@@ -382,7 +382,7 @@ def automatic(setup, monkeypatch):
         if argv[1] == 'sandbox':
             return SimpleNamespace(returncode=0 if Path(argv[-1]) == kwargs['cwd'] else 1,
                                    stdout='', stderr='Operation not permitted')
-        return SimpleNamespace(returncode=0, stdout='{"item":{"type":"agent_message","text":"answer"}}', stderr='')
+        return SimpleNamespace(returncode=0, stdout='{"type":"item.completed","item":{"type":"agent_message","text":"answer"}}', stderr='')
     s.runner.side_effect = run
     return SimpleNamespace(s=s, tools=tools, now=now, stopped=stopped, surface=surface, run=run,
                            work=lambda: s.adapter.execute('codex', 'hello', tools))

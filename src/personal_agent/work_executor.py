@@ -15,10 +15,11 @@ from .messages import msg
 from .telegram_locale import owner_language
 from .work_execution import PROCEED, REDELEGATED, WorkRun
 from .agent_runtime import Capabilities, ToolError, cut_to_fit, loop_definitions, run_agent, STEER_EVENT, steer_note, evidence_summary, turn_context, render_turn_prompt, attachment_facts, context_sections, ENGINE_UNMEDIATED, base_label, WorkLedger, NOTES_SUMMARY_COMMANDS
+from .agent_runtime import fallback_response, recorded_effects
 from .providers import NOT_REPORTED, ProviderError
 from .cloud_engines import BUDGET_EXCEEDED as CLOUD_BUDGET_EXCEEDED, NOT_CONFIGURED as CLOUD_NOT_CONFIGURED, CloudLaunchError
 from .conversation_projection import BLOCKER_CLOUD_PROFILE, BLOCKER_MODEL_UNVERIFIED, BLOCKER_NO_AI_ROUTE, TERMINAL_FAILED_HEADER, BlockedTurn, context_message, answer_note, owner_cause, report_statement, verified_portion
-from .bounded_execution import reported_usage, BRIDGE_UNAVAILABLE
+from .bounded_execution import reported_usage, BRIDGE_UNAVAILABLE, NO_FINAL_TEXT
 from .bounded_execution import ReadOnlyAgentOSMcpTools, ExecutionError, ExecutionResult, MAX_PROMPT_BYTES, BOUNDED_PROFILE, profile_actions, profile_status, route_unavailable
 from .orchestrator import MIN_ATTEMPT_SECONDS, model_refused, remember_model_refusal
 from .orchestrator import NOT_JUDGED, NOT_REACHED, OWNER_NEEDED, REACHED, UNJUDGED
@@ -1075,6 +1076,7 @@ class WorkExecutor:
         work_model=''
         # #825: set just before the worker is handed its input; a failure before it is a failed preflight.
         dispatched=False
+        reply_evidence={}
         try:
             if isolated:
                 if run.image_inputs:
@@ -1155,6 +1157,17 @@ class WorkExecutor:
                     if relay is not None:relay.close()
                     # The Work's browser session ends with the run (as on the direct route).
                     run.capabilities.close_browser()
+            run.response=run.result.content
+            if (getattr(run.result,'meta',None) or {}).get('final_text')=='absent':
+                # #890: only Still's completed calls of this attempt support a receipt;
+                # the CLI's tool-result prose never supplies the missing answer.
+                executions=[(step[1],step[3].get('evidence',step[3]))
+                            for step in service.work_steps(job['id'],since=run.attempt_start) if recorded_effects([step])]
+                if not executions:
+                    raise ExecutionError(msg('agent_runtime.model_returned_no_answer'),failure_class=NO_FINAL_TEXT,
+                                         exit_code=run.result.exit_code,meta=run.result.meta)
+                run.response=fallback_response(executions,[])
+                reply_evidence={'final_text':'absent','reply':'recorded-effects'}
         except (ExecutionError,EngineGatewayError) as exc:
             # #825: an attempt whose CLI never launched was a failed preflight, not sent input.
             service.record_attempt_input(job['id'],input_ref,'not-sent' if not dispatched or (getattr(exc,'meta',None) or {}).get('launched') is False else 'unknown')
@@ -1221,7 +1234,7 @@ class WorkExecutor:
         # #729: a bridge call the CLI never saw completed is a typed failure.
         service.close_incomplete_bridge_calls(job['id'],run.attempt_start,run.record)
         service.record_turn_provenance(job['id'],status='answered',exit_code=run.result.exit_code,**(getattr(run.result,'meta',None) or {}))
-        run.record('subscription_engine','succeeded',json.dumps({'engine':run.result.engine,'exit_code':run.result.exit_code,**reported_usage(getattr(run.result,'meta',None)),
+        run.record('subscription_engine','succeeded',json.dumps({'engine':run.result.engine,'exit_code':run.result.exit_code,**reported_usage(getattr(run.result,'meta',None)),**reply_evidence,
             'continuation_read_only':service.connector_turn_read_only(job['id'],run.result.engine,getattr(run.result,'meta',None)),
             'continuation_accounted':service._connector_turn_accounted(job['id'],run.result.engine,getattr(run.result,'meta',None),allow_effects=True)}))
         service.record_observed_tools(job['id'])
@@ -1231,7 +1244,7 @@ class WorkExecutor:
         run.work_sources|=run.capabilities.private_provenance
         if not isolated and run.result.exit_code==0 and (service.store.config('engine_login',{}) or {}).get(run.subscription['id'],{}).get('state')!='signed-in':
             service._remember_engine_login(run.subscription['id'],'signed-in','run')
-        run.response,run.provider,run.model=run.result.content,'subscription',run.result.engine
+        run.provider,run.model='subscription',run.result.engine
         run.engine_meta=getattr(run.result,'meta',None)
         # #678: the CLI's own searches become web_search evidence.  #1009: their
         # result URLs are candidates the search returned, not sources the answer

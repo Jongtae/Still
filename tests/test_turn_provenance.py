@@ -50,8 +50,8 @@ class AdapterMetadata(unittest.TestCase):
     def test_codex_stream_reports_tool_calls_and_no_guessed_model(self):
         raw = '\n'.join(json.dumps(line) for line in (
             {'type': 'thread.started'},
-            {'item': {'type': 'mcp_tool_call', 'tool': 'web_search', 'status': 'completed'}},
-            {'item': {'type': 'agent_message', 'text': 'answer'}},
+            {'type': 'item.completed', 'item': {'type': 'mcp_tool_call', 'tool': 'web_search', 'status': 'completed'}},
+            {'type': 'item.completed', 'item': {'type': 'agent_message', 'text': 'answer'}},
             {'type': 'turn.completed', 'usage': {'input_tokens': 3}}))
         meta = cli_metadata('codex', raw)
         self.assertIsNone(meta['reported_model'], 'an unreported model stays unreported')

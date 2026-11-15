@@ -69,7 +69,7 @@ class _Caps:
 
 
 def _codex_answer():
-    return _Done(stdout=json.dumps({'item': {'type': 'agent_message', 'text': 'answer'}}))
+    return _Done(stdout=json.dumps({'type': 'item.completed', 'item': {'type': 'agent_message', 'text': 'answer'}}))
 
 
 class StrictProfileDeclaration(unittest.TestCase):
