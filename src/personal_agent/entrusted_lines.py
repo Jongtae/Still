@@ -284,10 +284,10 @@ class EntrustedLines:
         """The result, or the same empty-result failure body the direct watch sends."""
         from .conversation_projection import terminal_text
         from .current_context import redact_known_secrets
-        text=str(job['response'] or '').strip()
-        if not text:
-            text=terminal_text(job['response'],job['owner_cause'] or job['error'],job['status'],
-                               verified=job['owner_verified'],note=job['owner_note'])
+        text=(self.store.blocked_delivery_reply(job['id'])
+              or self.store.projected_delivery_reply(job['id'],'system')
+              or terminal_text(job['response'],job['owner_cause'] or job['error'],job['status'],
+                               verified=job['owner_verified'],note=job['owner_note']))
         return redact_known_secrets(self.store,text).strip()
 
     def compose_line_bundle(self, parts, db=None):

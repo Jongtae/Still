@@ -59,6 +59,167 @@ class Bundles(_LinesCase):
         self.service.deliver_one()
         return bundle
 
+    def assert_kept_locally(self, brief, work, text):
+        job=self.store.job(work)
+        self.assertEqual(job['delivery'],'cancelled')
+        self.assertEqual(self.store.last_reply(work)['content'],text)
+        outcome=next(item for item in self.helper.line_outcomes(brief['line_id']) if item['work_id']==work)
+        self.assertEqual(outcome['outcome'],el.OUTCOME_KEPT)
+        self.assertNotIn(work,[part for part,_ in self.receipts()])
+
+    def test_work_mode_run_stays_local_after_switch_off_before_report_time(self):
+        from personal_agent import work_mode
+        self.at(10);brief,row=self.line();self.now+=86400;self.at(8)
+        work_mode.set_enabled(self.store,True,surface='settings',clock=lambda:self.now-1)
+        with patch('personal_agent.quickstart_store.time.time',return_value=self.now):
+            work=self.report(row,'Work-mode result')
+        work_mode.set_enabled(self.store,False,surface='settings',clock=lambda:self.now+60)
+        self.telegram.clear();self.at(9)
+        with patch.object(work_mode,'was_on_since',wraps=work_mode.was_on_since) as history:
+            self.assertIsNone(self.flush())
+        history.assert_any_call(self.store,self.store.job(work)['created'])
+        self.assertEqual(self.bundles(),[]);self.assertEqual(self.sends(),[])
+        self.assert_kept_locally(brief,work,'Work-mode result')
+        self.now+=86400;self.at(18);self.assertIsNone(self.flush())
+
+    def test_personal_mode_run_after_old_work_mode_interval_is_bundled(self):
+        from personal_agent import work_mode
+        self.at(10);_,row=self.line();self.now+=86400;self.at(8)
+        work_mode.set_enabled(self.store,True,surface='settings',clock=lambda:self.now-120)
+        work_mode.set_enabled(self.store,False,surface='settings',clock=lambda:self.now-60)
+        with patch('personal_agent.quickstart_store.time.time',return_value=self.now):
+            work=self.report(row,'Personal-mode result')
+        self.telegram.clear();self.at(9);bundle=self.flush()
+        self.assertEqual(self.store.job(bundle)['delivery'],'sent')
+        self.assertEqual(self.receipts(),[(work,bundle)])
+        self.assertIn('Personal-mode result',self.sends()[0]['text'])
+
+    def test_pairing_change_does_not_readdress_a_held_run(self):
+        for changed in ({'generation':'gen-2'},{'user_id':88}):
+            with self.subTest(changed=changed):
+                self.store.put('telegram',{'enabled':True,'generation':'gen-1','user_id':77})
+                self.at(10);brief,row=self.line('Old pairing '+str(changed));self.now+=86400;self.at(8)
+                work=self.report(row,'Result for original pairing')
+                self.store.put('telegram',{**self.store.config('telegram'),**changed})
+                self.telegram.clear();self.at(9);self.assertIsNone(self.flush())
+                self.assertEqual(self.sends(),[])
+                self.assert_kept_locally(brief,work,'Result for original pairing')
+
+    def test_when_needed_cancelled_or_deleted_before_bundle_stays_local(self):
+        for operation in ('cancel','delete'):
+            with self.subTest(operation=operation):
+                self.at(10);brief,row=self.line('Watch '+operation);self.now+=86400;self.at(8)
+                with self.store.db() as db:
+                    db.execute('UPDATE preparations SET delivery_mode=? WHERE id=?',(prep.DELIVERY_WHEN_NEEDED,row['id']))
+                with patch.object(self.service,'watch_judgment',return_value='yes'):
+                    work=self.report(row,'Watch result '+operation)
+                if operation=='cancel':self.service.cancel_preparation(row['id'])
+                else:self.service.preparations.delete(row['id'])
+                self.telegram.clear();self.at(9);self.assertIsNone(self.flush())
+                self.assertEqual(self.sends(),[])
+                if operation=='cancel':self.assert_kept_locally(brief,work,'Watch result '+operation)
+                else:
+                    self.assertEqual(self.store.last_reply(work)['content'],'Watch result '+operation)
+                    self.assertNotIn(work,[part for part,_ in self.receipts()])
+
+    def test_bundle_uses_each_runs_delivery_projection(self):
+        for projection in ('blocked-turn','system'):
+            with self.subTest(projection=projection):
+                self.at(10);_,row=self.line('Projection '+projection);self.now+=86400;self.at(8)
+                work=self.report(row,'Raw worker text')
+                with self.store.db() as db:
+                    db.execute("INSERT INTO messages(job_id,role,content,channel,created,delivery_projection) "
+                               "VALUES (?,'assistant',?,'web',?,?)",(work,'Projected '+projection,self.now,projection))
+                self.telegram.clear();self.at(9);bundle=self.flush()
+                self.assertIsNotNone(bundle)
+                self.assertIn('Projected '+projection,self.sends()[0]['text'])
+                self.assertNotIn('Raw worker text',self.sends()[0]['text'])
+                self.now+=86400
+
+    def test_bundle_preserves_partial_results_owner_note(self):
+        self.at(10);_,row=self.line();self.now+=86400;self.at(8)
+        work=self.report(row,'Partial worker answer')
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='partial',owner_note=? WHERE id=?",('Some material remains unavailable.',work))
+        self.telegram.clear();self.at(9);self.flush()
+        self.assertIn('Partial worker answer',self.sends()[0]['text'])
+        self.assertIn('Some material remains unavailable.',self.sends()[0]['text'])
+
+    def test_first_failure_receipt_uses_the_unbundled_empty_answer(self):
+        self.at(10);_,row=self.held_watch();self.now+=86400;self.at(8)
+        self.fail_watch(row)
+        self.at(9);self.flush();self.helper.reconcile_line_bundles(self.now)
+        self.assertEqual(self.watch_state(row),(prep.text_digest(''),'',self.now))
+
+    def test_partial_watch_receipt_keeps_the_unbundled_digest_input(self):
+        self.at(10);_,row=self.held_watch();self.now+=86400;self.at(8)
+        with patch.object(self.service,'watch_judgment',return_value='yes'):
+            work=self.report(row,'Reusable partial answer')
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='partial',owner_note=? WHERE id=?",('One source remains unavailable.',work))
+        self.telegram.clear();self.at(9);self.flush()
+        self.assertIn('One source remains unavailable.',self.sends()[0]['text'])
+        self.helper.reconcile_line_bundles(self.now)
+        self.assertEqual(self.watch_state(row),(prep.text_digest('Reusable partial answer'),'Reusable partial answer',self.now))
+        self.at(10)
+        with patch.object(self.service,'watch_judgment',return_value='yes') as judge:
+            self.report(row,'Reusable partial answer')
+        judge.assert_not_called()
+        self.assertEqual(self.service.preparations.get(row['id'])['last_decision_reason'],prep.REASON_UNCHANGED)
+
+    def test_mixed_work_mode_history_filters_only_the_restricted_part(self):
+        from personal_agent import work_mode
+        self.at(10);brief,row=self.line();self.now+=86400;self.at(7)
+        work_mode.set_enabled(self.store,True,surface='settings',clock=lambda:self.now-1)
+        with patch('personal_agent.quickstart_store.time.time',return_value=self.now):
+            private=self.report(row,'Local work-mode result')
+        work_mode.set_enabled(self.store,False,surface='settings',clock=lambda:self.now+60)
+        self.at(8)
+        with patch('personal_agent.quickstart_store.time.time',return_value=self.now):
+            public=self.report(row,'Sendable personal result')
+        self.telegram.clear();self.at(9);bundle=self.flush()
+        self.assertEqual(self.receipts(),[(public,bundle)])
+        self.assertNotIn('Local work-mode result',self.sends()[0]['text'])
+        self.assertIn('Sendable personal result',self.sends()[0]['text'])
+        self.assert_kept_locally(brief,private,'Local work-mode result')
+
+    def test_destination_uses_its_existing_company_approved_work_mode_policy(self):
+        from personal_agent import work_mode
+        for approved in (False,True):
+            with self.subTest(company_approved=approved):
+                self.at(10);brief,row=self.line('Company policy '+str(approved));self.now+=86400;self.at(8)
+                self.store.put('mattermost',{'enabled':True,'owner_user_id':'owner','channel_id':'dm',
+                    'generation':'mm-1','company_approved':approved})
+                with self.store.db() as db:
+                    db.execute("UPDATE tool_events SET detail=json_set(detail,'$.channel','mattermost') "
+                               "WHERE tool='line_held' AND json_extract(detail,'$.preparation_id')=?",(row['id'],))
+                work_mode.set_enabled(self.store,True,surface='settings',clock=lambda:self.now-1)
+                with patch('personal_agent.quickstart_store.time.time',return_value=self.now):
+                    work=self.report(row,'Company result '+str(approved))
+                work_mode.set_enabled(self.store,False,surface='settings',clock=lambda:self.now+60)
+                self.at(9)
+                surface=next(s for s in self.service.surfaces if s.name=='mattermost')
+                with patch.object(surface,'_post_reply',return_value='posted-799') as wire:
+                    bundle=self.flush()
+                if approved:
+                    self.assertEqual(self.store.job(bundle)['delivery'],'sent')
+                    self.assertEqual(wire.call_count,1)
+                    self.assertIn((work,bundle),self.receipts())
+                else:
+                    self.assertIsNone(bundle);wire.assert_not_called()
+                    self.assert_kept_locally(brief,work,'Company result False')
+                self.now+=86400
+
+    def test_missing_pairing_receipt_after_interrupted_handoff_stays_local(self):
+        self.at(10);brief,row=self.line();self.now+=86400;self.at(8)
+        with patch.object(self.helper,'record_held_pairing',side_effect=RuntimeError('receipt interrupted')):
+            with self.assertLogs('personal_agent.service',level='WARNING'):
+                work=self.report(row,'Result without pairing receipt')
+        self.service=self.make_service();self.helper=self.service.preparations_service
+        self.telegram.clear();self.at(9);self.assertIsNone(self.flush())
+        self.assertEqual(self.sends(),[])
+        self.assert_kept_locally(brief,work,'Result without pairing receipt')
+
     def test_unresolvable_host_zone_does_not_break_reads_flush_or_unrelated_reminder(self):
         self.at(10);_,row=self.line();self.now+=86400;self.at(8)
         from personal_agent.current_context import TIMEZONE_CONFIG_KEY
@@ -796,8 +957,9 @@ class Bundles(_LinesCase):
         self.assertIn('The source did not respond.',self.store.job(bundle)['response'])
         self.assertNotIn('Remove this result',self.store.job(bundle)['response'])
         self.service.deliver_one();self.helper.line_tick(self.now)
-        expected=self.service.telegram_result_text(None,'The source did not respond.','failed')
-        self.assertEqual(self.watch_state(other_row),(prep.text_digest(expected),expected,self.now))
+        # The displayed failure survives the rewrite; notification comparison
+        # state matches the unbundled empty raw answer, not its failure bubble.
+        self.assertEqual(self.watch_state(other_row),(prep.text_digest(''),'',self.now))
 
     def test_settings_failure_told_claim_waits_for_bundle_receipt(self):
         for delivery in ('sent','web','cancelled'):

@@ -617,6 +617,16 @@ class PreparationsService:
                 pairing=surface.pairing() if surface is not None else None
                 paired=pairing is not None
                 when_needed=row.get('delivery_mode')==prep.DELIVERY_WHEN_NEEDED
+                # Holding changes only the presentation Work. Retain the pairing
+                # where the ordinary path would bind it: start for a reply,
+                # settlement for a when-needed notification. Empty means local.
+                bundle_to=None
+                if self.held_row(row):
+                    with service.store.db() as db:
+                        held=db.execute("SELECT detail FROM tool_events WHERE tool='line_held' "
+                                        "AND json_extract(detail,'$.preparation_id')=? ORDER BY id LIMIT 1",(row['id'],)).fetchone()
+                    if held:
+                        bundle_to=self.notice_destination(json.loads(held['detail'])['channel']) or []
                 if row['state']==prep.STATE_RUNNING:
                     work_id=row.get('last_run_job_id')
                     if work_id:
@@ -655,6 +665,8 @@ class PreparationsService:
                                                      notify_to=(pairing.owner,surface.owner_generation(),surface.name) if paired else None,
                                                      waiting=lambda work:service.work_has_pending_resume(work,now),
                                                      close=self.watch_window_closed)
+                    if settled and when_needed and bundle_to is not None:
+                        self.record_held_pairing(row,work_id,bundle_to,'settled',now)
                     if settled:LOG.info('preparation settled id=%s outcome=%s next=%s decision=%s',row['id'],settled['last_outcome'],
                                         settled['state'],settled.get('last_decision') if when_needed else '-')
                     continue
@@ -662,6 +674,8 @@ class PreparationsService:
                 send=paired and not when_needed
                 work_id=service.preparations.start(row,channel=pairing.channel if send else 'web',
                                                 chat_id=pairing.owner if send else None,now=now)
+                if work_id and bundle_to is not None:
+                    self.record_held_pairing(row,work_id,bundle_to,'started',now)
                 if work_id:LOG.info('preparation started id=%s work=%s kind=%s',row['id'],work_id,row['kind'])
             except Exception as exc:
                 LOG.warning('preparation tick failed id=%s kind=%s',row['id'],type(exc).__name__)
@@ -1571,8 +1585,22 @@ class PreparationsService:
                                (row['created_from'],'line_held','succeeded',json.dumps({'preparation_id':row['id'],'channel':row['channel']}),now))
                 db.execute('UPDATE preparations SET channel=? WHERE id=?', (prep.CHANNEL_WEB,row['id']))
 
+    def record_held_pairing(self, row, work_id, destination, phase, now):
+        """Retain the original delivery identity in existing L2 holding Evidence.
+
+        Start/settle remain lane S's transactions. If interrupted before this
+        receipt commits, a missing identity keeps the part local, never rebound.
+        """
+        with self.service.store.db() as db:
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       (work_id,'line_held','succeeded',json.dumps({'preparation_id':row['id'],
+                        'bundle_to':destination,'phase':phase}),now))
+
     def line_bundle_parts(self, db, slot):
         """Re-read settled parts under the flush transaction; no latest-run pointer can lose a burst."""
+        from . import work_mode
+        from .direct_message_surface import DirectMessageSurface
+        from .telegram_surface import TelegramSurface
         service=self.service
         parts=[]
         rows=[dict(r) for r in db.execute(
@@ -1620,15 +1648,51 @@ class PreparationsService:
             # A stop discards old held parts permanently, including after an explicit restart.
             if db.execute("SELECT 1 FROM procedure_versions WHERE slot=? AND json_extract(stats_json,'$.change')='stopped' "
                           "AND saved>=?", (el.slot(row['line_id']),started['created'])).fetchone():continue
-            if (run.get('delivery_mode')==prep.DELIVERY_WHEN_NEEDED
-                    and settlement.get('decision')!=prep.DECISION_NOTIFY):continue
+            when_needed=run.get('delivery_mode')==prep.DELIVERY_WHEN_NEEDED
+            restricted=False
+            if when_needed:
+                if settlement.get('decision')!=prep.DECISION_NOTIFY:continue
+                # The ordinary notification is no longer bound after its
+                # preparation was cancelled/deleted (watch_notification_text).
+                restricted=not service.watch_notification_text({'job_id':job['id']})
             text=service.lines.bundle_part_text(job)
             if not text:continue
             held=db.execute("SELECT detail FROM tool_events WHERE tool='line_held' "
                             "AND json_extract(detail,'$.preparation_id')=? ORDER BY id LIMIT 1",(preparation_id,)).fetchone()
+            destination=json.loads(held['detail'])['channel']
+            surface=next((s for s in service.surfaces if s.name==destination),None)
+            # Apply the destination's existing per-run egress check, using the
+            # original Work start just as deliver_one/deliver_reply do. A new
+            # bundle timestamp must never release work-mode history.
+            since=job.get('created')
+            if when_needed:
+                # Notification content dates from the earlier of Work creation
+                # and queueing (settlement), including a clock moving backward.
+                since=min(job['created'],job['settled_at'])
+            if isinstance(surface,TelegramSurface):
+                if when_needed:
+                    since=surface._notification_since({'job_id':job['id'],'created':job['settled_at']})
+                restricted=work_mode.was_on_since(service.store,since) or restricted
+            elif isinstance(surface,DirectMessageSurface):
+                restricted=not surface._allowed(surface.config(),since) or restricted
+            pairing=surface.pairing() if surface is not None else None
+            if pairing is not None:
+                receipt=db.execute("SELECT detail FROM tool_events WHERE job_id=? AND tool='line_held' "
+                                   "AND json_extract(detail,'$.phase')=? ORDER BY id LIMIT 1",
+                                   (job['id'],'settled' if when_needed else 'started')).fetchone()
+                bound=json.loads(receipt['detail']).get('bundle_to') if receipt else None
+                # Older held runs have no pairing receipt; keep them locally.
+                # Never substitute a later owner/generation for a run's own.
+                restricted=bound!=[pairing.owner,surface.owner_generation(),surface.name] or restricted
+            if restricted:
+                # Match an unbundled refused reply: the answer stays in its
+                # web transcript, outcome 'kept', delivery cancelled forever.
+                # No bundle receipt may later turn it into 'delivered'.
+                db.execute("UPDATE jobs SET delivery='cancelled' WHERE id=? AND delivery='none'",(job['id'],))
+                continue
             seen.add(job['id'])
             parts.append({'job':job,'row':row,'brief':brief,'text':text,
-                          'destination':json.loads(held['detail'])['channel']})
+                          'destination':destination})
         return parts
 
     def reconcile_line_bundles(self, now):
@@ -1650,7 +1714,9 @@ class PreparationsService:
                                  "AND json_extract(s.detail,'$.line_id')=json_extract(b.detail,'$.line_id')) "
                                  "ORDER BY j.created,j.id",(bundle['id'],bundle['id'])).fetchall()
                 for part in parts:
-                    text=service.lines.bundle_part_text(part)
+                    # As in notification delivery, compare the scrubbed answer,
+                    # not its displayed projection, note or empty-failure body.
+                    text=service.scrub_prepared_answer(dict(part))
                     service.preparations.record_notified(part['id'],prep.text_digest(text),text,now,db=db)
                 db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                            (bundle['id'],'line_bundle_notified','succeeded',json.dumps({'parts':len(parts)}),now))
