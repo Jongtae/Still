@@ -82,6 +82,130 @@ class _LinesCase(_Case):
         outcomes,_=self.helper.apply_line_actions(self.b,[item],self.service.decision_judge)
         self.assertEqual(outcomes,[{'reason':code}])
 
+class MainMergeSemantics(_LinesCase):
+    def pair(self):
+        brief=self.stand()
+        self.deliver(self.announce(brief))
+        return brief,self.helper.line_rows(brief['line_id'])
+
+    def test_both_initial_rows_have_no_run_limit_and_continue_past_thirty(self):
+        brief,rows=self.pair()
+        self.assertEqual(len(rows),2)
+        self.assertEqual({row['origin'] for row in rows},{prep.ORIGIN_DREAM,prep.ORIGIN_LINE_ACCOUNT})
+        for row in rows:
+            self.assertEqual(row['accepted_by'],prep.ACCEPTED_DREAM)
+            self.assertIsNone(row['max_runs'])
+            self.assertNotIn('COUNT=',row['recurrence'])
+            for count in range(prep.DREAM_MAX_RUNS+1):
+                self.now=row['due_at']
+                work=self.service.preparations.start(row,channel='web',chat_id=None,now=self.now)
+                self.assertIsNotNone(work)
+                with self.store.db() as db:
+                    db.execute("UPDATE jobs SET status='succeeded',delivery='none' WHERE id=?",(work,))
+                self.service.preparations.settle(self.service.preparations.get(row['id']),self.now)
+                row=self.service.preparations.get(row['id'])
+                self.assertEqual(row['run_count'],count+1)
+                self.assertEqual(row['state'],prep.STATE_SCHEDULED)
+                self.assertGreater(row['due_at'],self.now)
+        self.helper.start_announced_lines(self.now)
+        self.assertEqual(len(self.helper.line_rows(brief['line_id'])),2)
+
+    def test_stood_accounts_share_the_active_dream_cap_and_creation_marker_is_atomic(self):
+        brief=self.stand()
+        # Occupy the shared allowance with account-origin rows; origin alone cannot identify dreams.
+        for index in range(prep.MAX_ACTIVE_DREAM):
+            self.service.preparations.create(kind=prep.KIND_PREPARE,goal=f'account {index}',
+                due_at=self.now+3600,timezone='UTC',recurrence='daily',
+                channel='web',created_from=self.b,state=prep.STATE_SCHEDULED,
+                accepted_by=prep.ACCEPTED_DREAM,origin=prep.ORIGIN_LINE_ACCOUNT)
+        self.deliver(self.announce(brief))
+        self.assertEqual(self.helper.line_rows(brief['line_id']),[])
+        with self.store.db() as db:
+            self.assertFalse(self.helper.line_row_started(brief['line_id'],'work',0,db))
+        self.service.preparations.cancel(self.rows()[0]['id'])
+        self.helper.start_announced_lines(self.now)
+        self.assertEqual(len(self.work_rows(brief)),1)
+        self.assertIsNone(self.helper.line_account_row(brief['line_id']))
+        self.service.preparations.cancel(next(row['id'] for row in self.rows() if row['goal_text']=='account 1'))
+        self.helper.start_announced_lines(self.now)
+        self.assertIsNotNone(self.helper.line_account_row(brief['line_id']))
+        self.assertEqual(sum(row['state'] in prep.ACTIVE_STATES for row in self.rows()),prep.MAX_ACTIVE_DREAM)
+
+    def test_stood_work_and_account_share_one_daily_admission_budget(self):
+        brief,rows=self.pair()
+        work=next(row for row in rows if row['origin']==prep.ORIGIN_DREAM)
+        account=next(row for row in rows if row['origin']==prep.ORIGIN_LINE_ACCOUNT)
+        self.service.preparations.set_budget(1)
+        self.now=account['due_at']
+        run=self.service.preparations.start(work,channel='web',chat_id=None,now=self.now)
+        self.assertIsNotNone(run)
+        self.assertIsNone(self.service.preparations.start(account,channel='web',chat_id=None,now=self.now))
+        self.assertEqual(self.runs(account['id']),[])
+        self.assertEqual(self.service.preparations.get(account['id'])['run_count'],1)
+        day=self.service.preparations.budget_day(self.now)
+        self.assertEqual(self.store.config(prep.SCHEDULED_USAGE_PREFIX+day),1)
+        with self.store.db() as db:
+            events=[dict(row) for row in db.execute('SELECT status,detail FROM tool_events WHERE tool=?',
+                                                   (prep.SCHEDULED_BUDGET_KEY,))]
+        self.assertEqual([event['status'] for event in events],['admitted','skipped'])
+        self.assertEqual(json.loads(events[-1]['detail'])['preparation_id'],account['id'])
+
+    def test_upkeep_pause_holds_both_stood_rows_without_spending_budget_or_telling_twice(self):
+        brief,rows=self.pair()
+        self.service.owner_model.set_controls({'dream':False})
+        self.now=max(row['due_at'] for row in rows)+60
+        self.tick()
+        self.assertTrue(all(not self.runs(row['id']) for row in rows))
+        self.assertIsNone(self.store.config(prep.SCHEDULED_USAGE_PREFIX+self.service.preparations.budget_day(self.now)))
+        self.service.owner_model.set_controls({'dream':True})
+        self.tick()
+        for row in rows:
+            current=self.service.preparations.get(row['id'])
+            self.assertGreater(current['due_at'],self.now)
+            self.assertIsNotNone(current['offered_at'])
+        with self.store.db() as db:
+            self.assertEqual(db.execute("SELECT count(*) FROM telegram_notifications WHERE kind='preparation_scheduled'").fetchone()[0],0)
+
+    def test_line_runs_read_the_brief_but_can_change_only_their_own_preparation(self):
+        brief,rows=self.pair()
+        for row in rows:
+            other=next(item for item in rows if item['id']!=row['id'])
+            self.now=row['due_at']
+            work=self.service.preparations.start(row,channel='web',chat_id=None,now=self.now)
+            job=self.store.job(work)
+            self.assertIn(brief['task'],self.helper.line_run_input(job,row))
+            self.assertEqual(self.helper.line_read(brief['line_id'])['line_id'],brief['line_id'])
+            handler=self.service.settings_tools(job)
+            refused=handler('settings_change',{'category':'preparations','setting':'cancel','value':other['id']})
+            self.assertFalse(refused['applied'])
+            self.assertEqual(self.helper.line_version_read(work),(brief['line_id'],brief['version']))
+            result=handler('settings_change',{'category':'preparations','setting':'pause','value':row['id'],
+                                              'reason':'The run needs to pause.'})
+            self.assertTrue(result['applied'],result)
+            self.assertEqual(self.service.lines.current(brief['line_id'])['version'],brief['version'])
+            self.assertEqual(self.service.preparations.get(other['id'])['state'],other['state'])
+            with self.store.db() as db:
+                db.execute("UPDATE jobs SET status='succeeded',delivery='none' WHERE id=?",(work,))
+            self.service.preparations.settle(self.service.preparations.get(row['id']),self.now)
+            self.assertEqual(self.service.preparations.get(row['id'])['state'],prep.STATE_PAUSED)
+            # The second iteration sees the first row's actual paused state.
+            row.update(state=prep.STATE_PAUSED)
+
+    def test_later_line_linked_dream_keeps_thirty_runs_and_its_own_notice(self):
+        brief,_rows=self.pair()
+        args={**self.item()['first'][0],'goal':'A later linked report','line':brief['line_id']}
+        outcomes,_calls=self.helper.suggest_preparations(self.b,[args])
+        self.assertIn('preparation_id',outcomes[0],outcomes)
+        row=self.service.preparations.get(outcomes[0]['preparation_id'])
+        self.assertEqual(row['line_id'],brief['line_id'])
+        self.assertEqual(row['max_runs'],prep.DREAM_MAX_RUNS)
+        self.assertEqual(prep.rule_parts(row['recurrence'])['COUNT'],str(prep.DREAM_MAX_RUNS))
+        self.helper.queue_preparation_suggestion(None)
+        notice=self.store.notification_of(f"{self.b}/dream:{row['id']}",'preparation_scheduled')
+        self.assertIsNotNone(notice)
+        self.assertEqual(notice['state'],'queued')
+
+
 class Lines(_LinesCase):
     def test_two_days_stand_one_line_then_rows_only_after_sent_and_restart_duplicates_nothing(self):
         brief=self.stand()
@@ -548,7 +672,7 @@ class Round2Tests(_LinesCase):
             self.service._owner_model_dream({'job_id':self.b,'reason':str(self.now-3600)},self.store.job(self.b),self.now)
         return contexts
 
-    def test_stood_rows_have_only_the_announcement_and_preserve_the_ordinary_offer(self):
+    def test_initial_pair_uses_the_announcement_and_later_suggestions_are_each_told(self):
         from personal_agent.quickstart_service import PREPARED_IDS_PREFIX
         brief=self.stand();self.deliver(self.announce(brief))
         self.script=[{'content':'Acknowledged.'}]
@@ -557,23 +681,21 @@ class Round2Tests(_LinesCase):
             self.assertEqual(db.execute("SELECT count(*) FROM telegram_notifications WHERE kind='preparation_scheduled'").fetchone()[0],0)
             self.assertEqual(db.execute('SELECT count(*) FROM telegram_notifications WHERE kind LIKE ?',
                                        (el.NOTICE_OPENED+'%',)).fetchone()[0],1)
-        self.assertIsNone(self.service.preparations.last_suggestion_offered())
         args={**self.item()['first'][0],'goal':'Another read for the line','recurrence':om.SUGGESTION_ONCE,'line':brief['line_id']}
         linked,_=self.helper.suggest_preparations(owner_work,[args])
         self.assertIn('preparation_id',linked[0])
-        self.assertFalse(self.service.preparations.has_unoffered_one_off())
-        # A receipt written by the old double-notice bug must not spend today's ordinary budget either.
-        self.service.preparations.mark_offered(self.helper.line_rows(brief['line_id']),self.now)
-        self.assertIsNone(self.service.preparations.last_suggestion_offered())
         ordinary,_=self.helper.suggest_preparations(owner_work,[{**args,'goal':'An ordinary preparation','line':''}])
         ordinary_id=ordinary[0]['preparation_id']
-        self.assertTrue(self.service.preparations.has_unoffered_one_off())
-        self.script=[{'content':'Acknowledged again.'}]
-        self.receive('Another independent request')
-        note=self.store.notification_of(owner_work,'preparation_scheduled')
-        self.assertIsNotNone(note)
-        self.assertEqual(note['fingerprint'],PREPARED_IDS_PREFIX+ordinary_id)
-        self.assertEqual(self.service.preparations.last_suggestion_offered(),self.now)
+        # New schedules were not part of the original announcement, even when linked to its line.
+        self.helper.queue_preparation_suggestion(None)
+        for row_id in (linked[0]['preparation_id'],ordinary_id):
+            note=self.store.notification_of(f'{owner_work}/dream:{row_id}','preparation_scheduled')
+            self.assertIsNotNone(note)
+            self.assertEqual(note['fingerprint'],PREPARED_IDS_PREFIX+row_id)
+            self.assertIsNone(self.service.preparations.get(row_id)['offered_at'])
+        self.helper.queue_preparation_suggestion(None)
+        with self.store.db() as db:
+            self.assertEqual(db.execute("SELECT count(*) FROM telegram_notifications WHERE kind='preparation_scheduled'").fetchone()[0],2)
 
     def test_cancelled_stood_account_is_never_recreated_by_ticks_or_restart(self):
         brief=self.stand();self.deliver(self.announce(brief))
@@ -637,6 +759,9 @@ class Round2Tests(_LinesCase):
                   due_at=self.now+600,timezone='Asia/Seoul',recurrence='daily',channel='web',created_from=self.a,
                   state=prep.STATE_PROPOSED,accepted_by=prep.ACCEPTED_DREAM,origin=prep.ORIGIN_DREAM)
             ids.append(row['id'])
+            # Historical proposals exercise the input bound without exceeding #717's active cap.
+            with self.store.db() as db:
+                db.execute('UPDATE preparations SET state=? WHERE id=?',(prep.STATE_EXPIRED,row['id']))
         shown=[]
         def payload(context):
             block=json.loads(context.facts['lines']);shown.extend(item['id'] for item in block['proposals'])

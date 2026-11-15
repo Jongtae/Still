@@ -465,7 +465,7 @@ def items_of(current):
 FRONTIER_FIRST_WAVE = ["FRONTIER-SPEC-01", "FRONTIER-EVAL-01"]
 FRONTIER_RECONCILED = ["FRONTIER-PROVENANCE-01", "FRONTIER-RECOVERY-01", "FRONTIER-CONTEXT-01"]
 FRONTIER_COMPLETED = FRONTIER_FIRST_WAVE + FRONTIER_RECONCILED + [
-    "FRONTIER-JUDGMENT-01", "FRONTIER-TELEGRAM-01", "FRONTIER-FENCE-01", "FRONTIER-WORKCHAT-01"]
+    "FRONTIER-JUDGMENT-01", "FRONTIER-TELEGRAM-01", "FRONTIER-FENCE-01", "FRONTIER-WORKCHAT-01", "FRONTIER-CONTEXT-02"]
 FRONTIER_WAVE_2 = ["FRONTIER-FENCE-01", "FRONTIER-JUDGMENT-01", "FRONTIER-TELEGRAM-01", "FRONTIER-WORKCHAT-01"]
 FRONTIER_OPEN_WAVE_2 = [name for name in FRONTIER_WAVE_2 if name not in FRONTIER_COMPLETED]
 
@@ -486,7 +486,7 @@ def test_frontier_declares_completed_units_and_owner_authorized_wave_2():
     assert current["next_goal"]["id"] == "FRONTIER-01"
     invariants.assert_activation_record(TestCase(), "FRONTIER-01 activation", program["activated_by"])
     assert program["activated_by"]["issue"] == program["issue"] == 822
-    assert program["ordered_substeps"] == FRONTIER_FIRST_WAVE + FRONTIER_RECONCILED + FRONTIER_WAVE_2
+    assert program["ordered_substeps"] == FRONTIER_FIRST_WAVE + FRONTIER_RECONCILED + FRONTIER_WAVE_2 + ["FRONTIER-CONTEXT-02"]
     assert program["active_substeps"] == []
     assert program["completed_substeps"] == FRONTIER_COMPLETED
     assert program["reserved_substeps"] == []
@@ -650,3 +650,29 @@ def test_frontier_parent_selection_never_self_activates_children_or_successors(t
         path.write_text(json.dumps(altered), encoding="utf-8")
         for state in ({}, {"completed": FRONTIER_COMPLETED}, {"completed": all_substeps}):
             assert DeliveryPlan(path).select(state) is None, (name, state)
+
+
+def test_frontier_883_has_unique_successor_and_preserves_827_history():
+    current=plan()
+    ids=[item['id'] for item in current['iterations']]
+    assert len(ids)==len(set(ids))
+    items=items_of(current)
+    assert items['FRONTIER-CONTEXT-01']['issue']==827
+    assert items['FRONTIER-CONTEXT-01']['activation_status']=='complete-on-merge'
+    successor=items['FRONTIER-CONTEXT-02']
+    assert successor['issue']==883
+    assert successor['depends_on']==['FRONTIER-CONTEXT-01']
+    assert successor['activation_status']=='complete-on-merge'
+    assert successor['summary'].endswith('Complete on the merge of PR #884')
+    assert successor['tests'][0].startswith('PYTHONPATH=src python3 -m pytest -q ')
+    assert 'tests/test_connect_preferences.py' in successor['tests'][0]
+    assert 'tests/test_prompt_files.py' in successor['tests'][0]
+    assert 'FRONTIER-CONTEXT-02' in current['history']['documented_completed_iterations']
+    assert 'FRONTIER-CONTEXT-02' in current['programs']['FRONTIER-01']['completed_substeps']
+    record=items['FRONTIER-01']['completed_substeps']['FRONTIER-CONTEXT-02']
+    assert record['issue']==883 and record['status']=='complete-on-merge'
+    assert record['pull_request']=='884'
+    assert 'No other successor is selected' in current['next_goal']['action']
+    assert 'FRONTIER-CONTEXT-02' in current['programs']['FRONTIER-01']['ordered_substeps']
+    assert current['programs']['FRONTIER-01']['active_substeps']==[]
+    assert '#883' in current['next_goal']['action'] and '2026-11-15' in current['next_goal']['action']

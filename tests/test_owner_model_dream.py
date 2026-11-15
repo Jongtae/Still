@@ -588,9 +588,8 @@ class Misses(Dream):
             'old miss', 'scrubbed miss' if work == made[0] else 'wrong scope').replace(
             'correcting words', 'scrubbed correction' if work == correction else 'wrong scope')
         self.dreams = [dream()]
-        # The fixture's cutoff is fixed before setup; keep the anchor inside that owner night.
-        with self.store.db() as db:
-            db.execute('UPDATE jobs SET created=? WHERE id=?', (now - 0.1, anchor))
+        # Snapshot after the fixture's anchor exists, independent of setup taking over a second.
+        now = self.store.job(anchor)['created'] + 1
         self.service._owner_model_dream({'job_id': anchor, 'reason': str(since)}, self.store.job(anchor), now)
         context = self.asked[0][0]
         block = context.facts['earlier_misses']
@@ -623,9 +622,8 @@ class Misses(Dream):
             db.execute('UPDATE jobs SET created=? WHERE id=?', (since - 60, work))
         anchor = self.settled('tonight')
         self.dreams = [dream()]
-        # The fixture's cutoff is fixed before setup; keep the anchor inside that owner night.
-        with self.store.db() as db:
-            db.execute('UPDATE jobs SET created=? WHERE id=?', (now - 0.1, anchor))
+        # Snapshot after the fixture's anchor exists, independent of setup taking over a second.
+        now = self.store.job(anchor)['created'] + 1
         self.service._owner_model_dream({'job_id': anchor, 'reason': str(since)}, self.store.job(anchor), now)
         block = self.asked[0][0].facts['earlier_misses']
         self.assertEqual(len(block.splitlines()), om.DREAM_EARLIER_MISSES)

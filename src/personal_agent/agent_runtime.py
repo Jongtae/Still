@@ -476,7 +476,7 @@ TELL_OWNER_DESCRIPTION=('Send the owner one short message now, in their paired c
 #: setting (preparations cancel/accept, browser close_login/use_mobile) cannot be missing from the schema.
 from .settings_orchestrator import SETTINGS as _OWNER_SETTINGS
 SETTING_NAMES=list(dict.fromkeys(name for names in _OWNER_SETTINGS.values() for name in names))
-SETTINGS_CATEGORIES=['write_allowances','payment_autonomy','main_ai','judgment_ai','current_context','owner_model','developer_mode','skills','ai_connections','api_connections','phone_link','preparations','browser','connections']
+SETTINGS_CATEGORIES=['write_allowances','payment_autonomy','main_ai','judgment_ai','current_context','scheduled_work','owner_model','developer_mode','skills','ai_connections','api_connections','phone_link','preparations','browser','connections']
 #: #826: the owner's audit of what an answer used, readable in conversation.
 INFORMATION_USE_DESCRIPTION=('Show which owner information an earlier answer (Work) used and where it went, from Still\'s own records: '
                              'the owner profile keys, memory rows, calendar entries, files, current-context claims and earlier '
@@ -500,7 +500,7 @@ SETTINGS_READ_DESCRIPTION=('Read the owner\'s current Still settings: Main AI (r
  'Read it when the owner asks what Still can do or be set to, or how to use one of its options or commands, and explain from what it returns; '
  'for a change the owner wants now, propose it with settings_change. '
  'Keys, tokens and private endpoints are never included; connection setup may show only credential-free public HTTPS definitions.')
-SETTINGS_READ_ARGUMENTS={'category':'Optional, one of payment_autonomy (enabled, authority revision and risk; enabling always needs owner confirmation of the exact draft, disabling may apply on the owner direct request), api_connections (generic API connection metadata and a contextual secret input page), main_ai, judgment_ai, current_context, owner_model, developer_mode (whether the AI and model running a Work are shown while the owner waits), skills (whether skills are on, which are installed, and the Still reference skills that can be added by name, listed even while skills are off), phone_link (what a one-time phone link can be sent for now), preparations (the owner\'s reservations - reminders, prepared tasks and watches - with when, how often, the goal and whether each is scheduled, running or waiting for the owner\'s yes; read it when the owner asks what is reserved), browser (what holds the one browser profile now - a login window waiting for the owner, another Work, a short session keep-alive or nothing - the login windows waiting for the owner, each by site and minutes left, and sites kept in desktop version; read it when a browser action was refused as busy), ai_connections (whether Works may use the owner\'s AI-side connected services for reads and general non-payment changes; payments require exact per-action owner approval by default, replaced by owner-enabled payment autonomy while on; the MCP servers the owner configured in each AI and which are on for Works; the owner\'s trust record per connection: each operation\'s class, money-capable marking and trust rung), connections (omit for all).'}
+SETTINGS_READ_ARGUMENTS={'category':'Optional, one of payment_autonomy (enabled, authority revision and risk; enabling always needs owner confirmation of the exact draft, disabling may apply on the owner direct request), api_connections (generic API connection metadata and a contextual secret input page), main_ai, judgment_ai, current_context, scheduled_work (daily scheduled Work quota across every AI route), owner_model, developer_mode (whether the AI and model running a Work are shown while the owner waits), skills (whether skills are on, which are installed, and the Still reference skills that can be added by name, listed even while skills are off), phone_link (what a one-time phone link can be sent for now), preparations (the owner\'s reservations - reminders, prepared tasks and watches - with when, how often, the goal and whether each is scheduled, running or waiting for the owner\'s yes; read it when the owner asks what is reserved), browser (what holds the one browser profile now - a login window waiting for the owner, another Work, a short session keep-alive or nothing - the login windows waiting for the owner, each by site and minutes left, and sites kept in desktop version; read it when a browser action was refused as busy), ai_connections (whether Works may use the owner\'s AI-side connected services for reads and general non-payment changes; payments require exact per-action owner approval by default, replaced by owner-enabled payment autonomy while on; the MCP servers the owner configured in each AI and which are on for Works; the owner\'s trust record per connection: each operation\'s class, money-capable marking and trust rung), connections (omit for all).'}
 SETTINGS_CHANGE_DESCRIPTION=('Propose one change to an owner setting that the owner asked for. This does NOT change anything: Still creates '
  'a draft and Still asks the owner to confirm it in this conversation (an 적용 button, or a plain yes typed in '
  'reply); never tell the owner a command to send, and nothing applies without that confirmation. Never pass API '
@@ -510,6 +510,7 @@ SETTINGS_CHANGE_DESCRIPTION=('Propose one change to an owner setting that the ow
  'it, applies at once (applied true); the owner then accepts the reservation once.')
 SETTINGS_CHANGE_ARGUMENTS={
  'setting':('category and setting: main_ai route or model, judgment_ai mode or model, current_context enabled or timezone, '
+  'scheduled_work daily_calls (0 turns off the daily scheduled Work limit; owner requests and run_now are exempt), '
   'owner_model enabled or daily_calls, developer_mode enabled (on or off: show the AI and model running a Work while the owner waits), '
   'skills enabled (on or off), skills add (value is the GitHub folder address of one skill, '
   'https://github.com/<owner>/<repo>/tree/<branch, tag or commit>/<folder>, or the name of an Still reference '
@@ -536,11 +537,10 @@ SETTINGS_CHANGE_ARGUMENTS={
   'never revives old pending work), api_connections connect (use the public JSON format from settings_read; '
   'never put credentials in value; confirmation opens a one-time input page, checks the required read, then '
   'resumes the originating Work when continue_work is yes), preparations cancel (value is a reservation id from '
-  'settings_read preparations: stop every future run of it; a scheduled run may stop its own preparation, which applies '
-  'at once, and does so when something it cannot fix itself will make every remaining run useless too, such as a refused '
-  'permission or a time limit in its brief for acting that has passed, saying why in its answer; its own code it fixes '
-  'instead (#766)), preparations accept (value is the id of one waiting '
-  'for the owner\'s yes), preparations restore (value is a cancelled reservation id; keeps its goal and run count, '
+  'settings_read preparations: stop every future run; a scheduled run may cancel, pause or narrow its own preparation '
+  'via edit (earlier end, fewer runs, longer interval); it applies at once and Still tells the owner; it cannot widen '
+  'or touch another), preparations accept (value is the id of one waiting '
+  'for the owner\'s yes), preparations restore (value is a cancelled or self-narrowed reservation id; reapplies audited bounds after narrowing, keeps its goal and run count, '
   'continues at the next future slot without catching up, and refuses an ended window or past one-shot), phone_link send (when the owner is away from the Mac: send a one-time link, open about '
   '10 minutes, to the paired Telegram chat for an input only a page can take - adding the own Google client from '
   'the phone; connecting a Google service is done on the Mac; value is one of the options settings_read '

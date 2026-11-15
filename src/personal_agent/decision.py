@@ -25,6 +25,18 @@ import time
 from .prompt_files import prompt
 from .providers import NOT_REPORTED, ProviderError, validate_model
 
+class StructuredSchema(dict):
+    """A wire schema with locally optional response fields.
+
+    Strict transports require every property in ``required``. ``optional`` is
+    Python-only validation metadata, never an unsupported JSON schema keyword.
+    Callers still validate types and choose defaults for these fields.
+    """
+    def __init__(self, *args, optional=(), **kwargs):
+        super().__init__(*args, **kwargs)
+        self.optional = frozenset(optional)
+
+
 # --- outcomes ----------------------------------------------------------------
 OUTCOME_DECIDED = 'decided'
 OUTCOME_UNAVAILABLE = 'provider_unavailable'
@@ -606,9 +618,10 @@ class SchemaDecisionEngine(DecisionEngine):
         required = [*[name for name in schema.get('required') or () if name != 'confidence'], 'confidence']
         declared = {'type': 'object', 'additionalProperties': False, 'properties': properties, 'required': required}
         names = set(properties)
+        response_required = (set(required) - (getattr(schema, 'optional', frozenset()) & set(schema.get('properties') or {}))) | {'confidence'}
 
         def shape(data):
-            if set(data) - names or any(name not in data for name in required):
+            if set(data) - names or any(name not in data for name in response_required):
                 return False
             answer = {key: value for key, value in data.items() if key != 'confidence'}
             return bool(valid(answer)) if valid else True

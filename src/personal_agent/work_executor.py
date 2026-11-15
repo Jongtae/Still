@@ -640,7 +640,7 @@ class WorkExecutor:
         # usable plan the default Main AI runs the raw request exactly as before,
         # and why is recorded once.  One budget spans every attempt of the Work.
         recall=not prep.preparation_of(job.get('request_key')) or service.day_plan_run(job)
-        run.section_values={'profile':service.owner_profile_snapshot(job.get('message'),recall=recall,context=service.preceding_owner_turn(job) if recall else None),'current_context':service.current_context_text(job),
+        run.section_values={'profile':service.owner_profile_snapshot(job.get('message'),recall=recall),'current_context':service.current_context_text(job),
                         'prepared':service.prepared_text(job)}
         # #961: the skill revisions this Work may load, captured once for every attempt;
         # None (skills off or none installed) is the unchanged pre-skill path.
@@ -648,7 +648,7 @@ class WorkExecutor:
         if run.skill_binding is not None:
             service.record_turn_provenance(job['id'],skills=run.skill_binding.refs())
         # #826: what the owner-model sections and splices referred to (keys, refs, labels).
-        run.owner_information=service.owner_information_refs(run.section_values,spliced_refs)
+        run.spliced_refs=spliced_refs
         run.base_history,run.base_rows,run.base_config,run.base_key=run.history,run.history_rows,run.config,run.key
         # #826: material spliced into this turn (documents, Drive, the context inbox,
         # notes) no longer pins the worker; the plan may choose any available worker.
@@ -699,6 +699,7 @@ class WorkExecutor:
             service.record_turn_provenance(job['id'],route='plan_reply',status=run.outcome)
             return PROCEED
         while True:
+            run.section_values['profile'],run.recall_selector=service.worker_profile_snapshot(job,run.attempt)
             run.config,run.key,run.subscription,run.attempt_test=service.attempt_route(run.orchestration,run.attempt,run.base_config,run.base_key,run.route_snapshot)
             run.brief=run.attempt.brief(adjusted=run.attempt.number>1 and not run.attempt.steer) if run.attempt is not None else None
             run.attempt_start=service.last_event_id(job['id'])
@@ -1027,6 +1028,7 @@ class WorkExecutor:
         # host bridge records it at ``tools/list``; the isolated sidecar's is not observable.
         attempt_input={'attempt':run.attempt.number if run.attempt is not None else 1,
                        'route':'isolated' if isolated else 'subscription','engine':run.subscription['id'],
+                       'recall_selector':run.recall_selector,
                        'offered':attempt_identity.identity_or_unavailable(offered,representation=('isolated-mcp' if isolated else 'still-host-mcp')+':parent-listing'),
                        'served':attempt_identity.unavailable('isolated-mcp:sidecar','served inside the isolated sidecar; not observed by Still') if isolated else None,
                        # Still decides only whether the CLI's own web search is on; its other
@@ -1054,7 +1056,7 @@ class WorkExecutor:
             # #678: the CLI's own tools offered besides the bridge.
             cli_native_tools=['web_search'] if native_search else [],native_search_reason=native_reason or None,
             # #826: what the owner-model sections and splices referred to.
-            owner_information=run.owner_information,
+            owner_information=service.owner_information_refs({} if engine_context.get('mode')=='bare-request' else engine_context,run.spliced_refs),
             # #211: the cloud provider and destination are durable before the CLI starts.
             **(cloud.record() if cloud is not None else {}))
         service.record_turn_worker(job['id'],{'attempt':run.attempt.number if run.attempt is not None else 1,
@@ -1336,7 +1338,7 @@ class WorkExecutor:
         input_ref=service.record_turn_sent(job['id'],sent=render_turn_prompt(api_context),instructions=api_context['instructions'],
             instructions_channel='system-message',build=service.build,
             attempt_input={'attempt':run.attempt.number if run.attempt is not None else 1,'route':'direct-api',
-                           'provider':runtime_config.get('provider'),
+                           'provider':runtime_config.get('provider'),'recall_selector':run.recall_selector,
                            'offered':attempt_identity.identity_or_unavailable(loop_definitions(offered),representation='still-host-api')},
             exposed_tools=[tool['function']['name'] for tool in offered],
             private_sources=set(run.turn_provenance)|{base_label(label) for label in run.capabilities.private_provenance}|({'connected-document'} if run.workspace_request or run.document_history else set())
@@ -1351,7 +1353,7 @@ class WorkExecutor:
             requested_model=runtime_config.get('model'),instructions_version=api_context.get('version'),
             context_messages=len(api_context['conversation']),egress_taint=sorted(run.capabilities.private_provenance),
             # #826: what the owner-model sections and splices referred to.
-            owner_information=run.owner_information)
+            owner_information=service.owner_information_refs(api_context,run.spliced_refs))
         service.record_turn_worker(job['id'],{'attempt':run.attempt.number if run.attempt is not None else 1,
                                            # #308 S1: a worker turn made for the owner's steers.
                                            'steer_continuation':True if run.steer_note else None,'route':'direct-api',

@@ -1,4 +1,10 @@
 {
+ "preparations.dream_limit": {
+  "ko": "돌아보기에서 마련한 진행 중인 준비가 {maximum}개라 더 만들지 않았어요.",
+  "en": "There are already {maximum} active preparations from look-back, so no more were added.",
+  "ja": "振り返りで用意した進行中の準備がすでに{maximum}件あるため、追加しませんでした。",
+  "zh": "回顾安排的准备已有{maximum}项正在进行，因此没有再添加。"
+ },
  "button.restore_reservation": {
   "ko": "취소 되돌리기",
   "en": "Undo cancel",
@@ -1614,10 +1620,10 @@
   "zh": "主人阅读并接受的内容（请在此范围内进行）："
  },
  "preparations.run_record": {
-  "ko": "이 Work는 소유자가 수락한 준비의 {position}번째 실행이며, 답은 이번 실행의 결과예요. {schedule}. {delivery}",
-  "en": "This Work is run {position} of the owner's accepted preparation; its reply is this run's result. {schedule}. {delivery}",
-  "ja": "このWorkはオーナーが承諾した準備の{position}回目で、回答は今回の実行結果です。{schedule}。{delivery}",
-  "zh": "此 Work 是主人已接受的准备事项的第{position}次运行，回答是本次运行的结果。{schedule}。{delivery}"
+  "ko": "준비 {id}. 이 Work는 소유자가 수락한 준비의 {position}번째 실행이며, 답은 이번 실행의 결과예요. {schedule}. {delivery}",
+  "en": "Preparation {id}. This Work is run {position} of the owner's accepted preparation; its reply is this run's result. {schedule}. {delivery}",
+  "ja": "準備 {id}。このWorkはオーナーが承諾した準備の{position}回目で、回答は今回の実行結果です。{schedule}。{delivery}",
+  "zh": "准备事项 {id}。此 Work 是主人已接受的准备事项的第{position}次运行，回答是本次运行的结果。{schedule}。{delivery}"
  },
  "preparations.run_bounded": {
   "ko": "총 {maximum}회 중 {run}",
@@ -1648,6 +1654,12 @@
   "en": "; this is the last check because the daily run cap ends the window at {end}, before the owner's requested end of {requested}",
   "ja": "；1日の実行上限により今回が最後の確認です。実際の終了は{end}で、オーナーが希望した終了{requested}まで確認できません",
   "zh": "；由于每日运行上限，这是最后一次检查。实际结束时间为{end}，早于主人要求的结束时间{requested}"
+ },
+ "preparations.run_budget_skipped": {
+  "ko": "unchecked_scheduled_slots: {facts}\n위 기록은 예약 작업 일일 총 한도로 확인하지 못한 시각들이에요. 보고할 때 확인하지 못한 범위와 이유를 함께 설명하세요.",
+  "en": "unchecked_scheduled_slots: {facts}\nThese recorded slots were not checked because of the daily scheduled Work budget. When reporting, explain what was not checked and why.",
+  "ja": "unchecked_scheduled_slots: {facts}\n記録された時刻は予約作業の1日の合計上限により確認できませんでした。報告では未確認の範囲と理由も説明してください。",
+  "zh": "unchecked_scheduled_slots: {facts}\n这些记录的时段因计划任务每日总限额而未检查。报告时请说明未检查的范围和原因。"
  },
  "preparations.run_delivery": {
   "ko": "이 Work가 끝난 뒤 Still이 답을 {channel} 채널로 전하며, 이 Work가 직접 보내지 않아요.",
@@ -11457,6 +11469,84 @@
   "ko": "이 일은 안내를 기다리고 있어요. 안내가 전달된 뒤에만 실행을 시작해요.",
   "ja": "この仕事はお知らせ待ちです。お知らせが届いてから実行を始めます。",
   "zh": "此职责正在等待告知。告知送达后才会开始工作。"
+ },
+ "preparations.self_change_refused": {
+  "en": "No change was proposed or applied. A scheduled run may only cancel, pause or narrow its own current preparation, and cannot repeat a change the owner undid. Explain this in the run answer.",
+  "ko": "변경을 제안하거나 적용하지 않았어요. 예약 실행은 현재 자신이 실행 중인 준비만 취소·일시 중지·축소할 수 있고, 소유자가 되돌린 준비를 다시 변경할 수 없어요. 실행 답변에 이를 설명하세요.",
+  "ja": "変更は提案も適用もされていません。予約実行は現在実行中の自身の準備だけを取消・一時停止・縮小でき、オーナーが元に戻した準備は再変更できません。実行の回答で説明してください。",
+  "zh": "未提议或应用任何更改。定时运行只能取消、暂停或缩减自己当前运行的准备事项，不能再次更改主人已撤销更改的准备事项。请在运行答复中说明。"
+ },
+ "preparations.self_change_applied": {
+  "en": "Still recorded this change with undo instructions in Settings and, when paired, queued an owner notice. State the change in the run answer.",
+  "ko": "Still이 변경과 되돌리는 방법을 설정에 기록하고, 연결된 대화가 있으면 알림을 등록했어요. 실행 답변에 변경 내용을 설명하세요.",
+  "ja": "Stillが変更と元に戻す方法を設定に記録し、接続済みの会話があれば通知を登録しました。実行の回答で変更を説明してください。",
+  "zh": "Still 已在设置中记录更改和撤销方法，并在有配对会话时排队发送通知。请在运行答复中说明更改。"
+ },
+ "preparations.self_change_notice": {
+  "en": "Preparation {id}: its scheduled run {change}. Before: {before}. After: {after}. Reason stated by the run: {reason}. To undo, ask Still for “{undo}” for preparation {id}. This reverses all changes made by this run. The run will not change this preparation again after you undo it.",
+  "ko": "준비 {id}: 예약 실행이 {change}. 변경 전: {before}. 변경 후: {after}. 실행이 밝힌 이유: {reason}. 되돌리려면 Still에 준비 {id}의 “{undo}”를 요청하세요. 이 실행이 바꾼 내용을 모두 처음 상태로 되돌려요. 되돌린 뒤에는 예약 실행이 이 준비를 다시 변경하지 못해요.",
+  "ja": "準備 {id}: 予約実行が{change}。変更前: {before}。変更後: {after}。実行が述べた理由: {reason}。元に戻すには、Stillに準備 {id} の「{undo}」を依頼してください。この実行が行った変更をすべて元に戻します。元に戻した後は予約実行がこの準備を再変更することはありません。",
+  "zh": "准备事项 {id}：定时运行已{change}。更改前：{before}。更改后：{after}。运行所述理由：{reason}。要撤销，请让 Still 对准备事项 {id} 执行“{undo}”。这会撤销本次运行所做的所有更改。撤销后，定时运行将不能再次更改此准备事项。"
+ },
+ "preparations.self_change_cancel": {
+  "en": "cancelled future runs",
+  "ko": "앞으로의 실행을 취소했어요",
+  "ja": "今後の実行を取り消しました",
+  "zh": "取消后续运行"
+ },
+ "preparations.self_change_pause": {
+  "en": "paused future runs",
+  "ko": "앞으로의 실행을 일시 중지했어요",
+  "ja": "今後の実行を一時停止しました",
+  "zh": "暂停后续运行"
+ },
+ "preparations.self_change_edit": {
+  "en": "narrowed future runs",
+  "ko": "앞으로의 실행을 축소했어요",
+  "ja": "今後の実行を縮小しました",
+  "zh": "缩减后续运行"
+ },
+ "scheduled_budget.label": {
+  "ko": "예약 작업 일일 총 한도",
+  "en": "Daily total for scheduled work",
+  "ja": "予約作業の1日の合計上限",
+  "zh": "计划任务每日总限额"
+ },
+ "scheduled_budget.category_line": {
+  "ko": "예약 작업 일일 총 한도 · {details}",
+  "en": "Daily scheduled work budget · {details}",
+  "ja": "予約作業の1日の上限 · {details}",
+  "zh": "计划任务每日限额 · {details}"
+ },
+ "scheduled_budget.value": {
+  "ko": "하루 {value}회 (0은 한도 해제)",
+  "en": "{value} Works/day (0 means unlimited)",
+  "ja": "1日{value}回（0は無制限）",
+  "zh": "每天 {value} 次（0 表示不限）"
+ },
+ "scheduled_budget.format": {
+  "ko": "0~{limit} 사이 정수. 0은 한도 해제. 직접 요청과 지금 실행은 포함하지 않아요.",
+  "en": "Whole number 0–{limit}. 0 disables the limit. Direct requests and Run now are exempt.",
+  "ja": "0〜{limit}の整数。0は上限解除。直接の依頼と今すぐ実行は対象外です。",
+  "zh": "0–{limit} 的整数。0 关闭限额。直接请求和立即运行不计入。"
+ },
+ "scheduled_budget.help": {
+  "ko": "모든 AI 경로를 합한 일일 예약 실행 한도예요. 0으로 한도를 꺼요. 직접 요청과 지금 실행은 포함하지 않아요. 다음 예약부터 적용돼요.",
+  "en": "Daily scheduled Works across all AI routes. 0 turns the limit off. Direct requests and Run now are exempt. Changes apply at the next slot.",
+  "ja": "すべてのAI経路を合計した1日の予約実行上限です。0で解除。直接の依頼と今すぐ実行は対象外。変更は次の予定から適用されます。",
+  "zh": "所有 AI 路径共用的每日计划执行限额。0 关闭限额。直接请求和立即运行不计入。更改从下个时段生效。"
+ },
+ "scheduled_budget.invalid": {
+  "ko": "일일 예약 작업 한도는 0~{limit} 사이 정수여야 해요.",
+  "en": "Scheduled work limit must be a whole number from 0 to {limit}.",
+  "ja": "予約作業の上限は0〜{limit}の整数にしてください。",
+  "zh": "计划任务限额必须为 0–{limit} 的整数。"
+ },
+ "scheduled_budget.notice": {
+  "ko": "{day}의 예약 작업 한도 {cap}회를 모두 사용해 {title}의 {slot} 확인을 건너뛰었어요. 한도를 바꾸지 않으면 오늘 남은 예약 확인도 건너뛰어요. 마지막 확인을 건너뛰어도 일정은 예정대로 끝나고 마무리 보고가 없을 수 있어요. 대화에서 한도를 높이거나 해제해 달라고 하거나 예약된 일 설정에서 바꿀 수 있어요. 직접 요청과 지금 실행은 계속 사용할 수 있어요.",
+  "en": "{day}: the daily budget of {cap} scheduled Works is used up. The {slot} check for {title} was skipped. Remaining scheduled checks today will also be skipped unless you change the limit. This includes closing checks: the window still ends on schedule, possibly without a closing report. Ask me to raise or turn off the limit, or change it in Scheduled settings. Direct requests and Run now remain available.",
+  "ja": "{day}の予約作業上限{cap}回に達したため、{title}の{slot}の確認をスキップしました。上限を変更しない限り、今日の残りの予約確認もスキップします。最後の確認も対象です。予定はそのまま終了し、終了報告がない場合があります。会話で上限の引き上げや解除を依頼するか、予約作業の設定で変更できます。直接の依頼と今すぐ実行は引き続き使えます。",
+  "zh": "{day} 的每日计划任务限额 {cap} 次已用完，已跳过 {title} 在 {slot} 的检查。若不更改限额，今天剩余的计划检查也会跳过，包括最后一次检查。计划仍按时结束，可能没有结束报告。请在对话中要求提高或关闭限额，或在计划任务设置中更改。直接请求和立即运行仍可使用。"
  },
  "write_allowances.label": {
   "ko": "스스로 준비한 일의 연결별 변경 허용",

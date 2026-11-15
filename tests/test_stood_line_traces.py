@@ -178,7 +178,8 @@ class StoodLineTraceTests(base.Lines):
         now = self.authority_state()
         # Run bookkeeping (focus, budget, provenance, orchestration) and the host-probed model-list
         # cache are written by any Work, so they are not authority; every other config row still counts.
-        noise = ('codex_bundled_models', 'conversation_focus', 'orchestration_state', 'work_')
+        noise = ('codex_bundled_models', 'conversation_focus', 'orchestration_state', 'work_',
+                 prep.SCHEDULED_USAGE_PREFIX, prep.SCHEDULED_SKIPPED_PREFIX)
         for state in (now, self.authority0):
             state['config_bytes'] = [row for row in state['config_bytes'] if not str(row[0]).startswith(noise)]
         return [key for key in now if now[key] != self.authority0.get(key)]

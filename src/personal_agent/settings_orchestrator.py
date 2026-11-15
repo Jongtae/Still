@@ -97,12 +97,12 @@ def next_action(row):
 
 
 #: #814: owner-visible names of the categories and settings the conversation may read/change.
-CATEGORY_LABELS = {"write_allowances": msg("write_allowances.label"), "payment_autonomy": msg("payment_autonomy.label"), "connections": msg('label.external_connections'), "current_context": msg('label.current_context'), "judgment_ai": msg('label.judgment_ai'), "main_ai": msg('label.main_ai'),
+CATEGORY_LABELS = {"scheduled_work": msg("scheduled_budget.label"), "write_allowances": msg("write_allowances.label"), "payment_autonomy": msg("payment_autonomy.label"), "connections": msg('label.external_connections'), "current_context": msg('label.current_context'), "judgment_ai": msg('label.judgment_ai'), "main_ai": msg('label.main_ai'),
                    "owner_model": msg('settings_orchestrator.owner_model_label'), "skills": msg('settings_orchestrator.skills_label'),
                    "phone_link": msg('settings_orchestrator.phone_link_label'), "ai_connections": msg('settings_orchestrator.ai_connections_label'), "api_connections": msg('settings_orchestrator.api_connections_label'),
                    "preparations": msg('settings_orchestrator.preparations_label'), "browser": msg('settings_orchestrator.browser_label'),
                    "developer_mode": msg('conversation_handoff.developer_mode')}
-SETTINGS = {"write_allowances": ("allow", "revoke"), "payment_autonomy": ("enabled",), "current_context": ("enabled", "timezone"), "judgment_ai": ("mode", "model"), "main_ai": ("route", "model"),
+SETTINGS = {"scheduled_work": ("daily_calls",), "write_allowances": ("allow", "revoke"), "payment_autonomy": ("enabled",), "current_context": ("enabled", "timezone"), "judgment_ai": ("mode", "model"), "main_ai": ("route", "model"),
             # #805 owner-model upkeep: its pause switch and rolling 24-hour call cap.
             # #402: the once-a-day look back over recent requests has its own switch.
             "owner_model": ("enabled", "daily_calls", "dream"),
@@ -134,6 +134,7 @@ SETTING_LABELS = {"allow": msg("write_allowances.enable"), "revoke": msg("write_
                   **{operation: msg('settings_orchestrator.label_preparations_' + operation)
                      for operation in ('pause', 'resume', 'restore', 'edit', 'run_now')}}
 _CATEGORY_LINE_IDS = {
+    'scheduled_work': 'scheduled_budget.category_line',
     'payment_autonomy': 'payment_autonomy.category_line',
     'write_allowances': 'write_allowances.category_line',
     'connections': 'settings_orchestrator.category_line_connections',
@@ -179,7 +180,7 @@ _SETTING_VALUE_IDS = {
     msg('settings_orchestrator.new_api_connection'): 'settings_orchestrator.setting_value_new_api',
 }
 # Whole compound labels let the surface translate multiword category names unambiguously.
-_CHANGE_LABELS = {("write_allowances", "allow"): msg("write_allowances.enable"), ("write_allowances", "revoke"): msg("write_allowances.disable"), ("payment_autonomy", "enabled"): msg("payment_autonomy.label"),
+_CHANGE_LABELS = {('scheduled_work', 'daily_calls'): msg('scheduled_budget.label'), ("write_allowances", "allow"): msg("write_allowances.enable"), ("write_allowances", "revoke"): msg("write_allowances.disable"), ("payment_autonomy", "enabled"): msg("payment_autonomy.label"),
     ('current_context', 'enabled'): msg('settings_orchestrator.label_current_context_enabled'),
     ('current_context', 'timezone'): msg('settings_orchestrator.label_current_context_timezone'),
     ('judgment_ai', 'mode'): msg('settings_orchestrator.label_judgment_ai_mode'),
@@ -271,6 +272,7 @@ RECOVERY_DECLINED_MESSAGE = msg('settings_orchestrator.recovery_declined')
 #: a new connection, server, trust level, skill, phone link, Telegram pairing, AI route or
 #: Judgment AI keeps the owner's confirmation of Still's exact preview.
 DIRECT_REQUEST_SETTINGS = frozenset({
+    ('scheduled_work', 'daily_calls'),
     ('current_context', 'enabled'), ('current_context', 'timezone'),
     ('owner_model', 'enabled'), ('owner_model', 'daily_calls'), ('owner_model', 'dream'),
     ('main_ai', 'model'), ('skills', 'remove'), ('write_allowances', 'revoke'), ('payment_autonomy', 'enabled', 'off'),
@@ -278,8 +280,8 @@ DIRECT_REQUEST_SETTINGS = frozenset({
     ('browser', 'close_login'), ('browser', 'use_mobile'), ('connections', 'disconnect'),
     # #705: a presentation preference only.
     ('developer_mode', 'enabled')})
-#: #717: what a scheduled run may do to its own preparation: only stop or pause it.
-SELF_NARROWING = frozenset({("preparations", "cancel"), ("preparations", "pause")})
+#: #717: what a scheduled run may do to its own preparation: cancel, pause, or narrow its schedule.
+SELF_NARROWING = frozenset({("preparations", "cancel"), ("preparations", "pause"), ("preparations", "edit")})
 #: #619: what the worker reads when a scheduled run (no owner present) asks for a settings change.
 UNATTENDED_SETTINGS_TEXT = ('No owner is present in this scheduled run, so no settings change was proposed and '
                             'nothing waits for the owner. Say in your answer what you found and the change you would '
@@ -503,6 +505,12 @@ class SettingsOrchestrator:
                 "timezone": self._row("timezone", zone, zone or msg('settings_orchestrator.default_timezone'), None,
                                       format=msg('settings_orchestrator.timezone_format'))}
 
+    def _scheduled_work(self):
+        from .preparations import MAX_SCHEDULED_DAILY_CALLS
+        cap = str(self.service.preparations.budget_settings()['daily_calls'])
+        return {'daily_calls': self._row('daily_calls', cap, msg('scheduled_budget.value', value=cap), None,
+                                        format=msg('scheduled_budget.format', limit=MAX_SCHEDULED_DAILY_CALLS))}
+
     def _owner_model(self):
         from .owner_model import MAX_DAILY_CALLS
         settings = self.service.owner_model.settings()
@@ -581,8 +589,8 @@ class SettingsOrchestrator:
         from . import preparations as prep
         from .current_context import redact_known_secrets
         states = {prep.STATE_PROPOSED: msg('settings_orchestrator.awaiting_acceptance'), prep.STATE_SCHEDULED: msg('settings_orchestrator.scheduled'), prep.STATE_RUNNING: msg('settings_orchestrator.running'), prep.STATE_PAUSED: msg('settings_orchestrator.paused'), prep.STATE_CANCELLED: msg('state.cancelled')}
-        rows = [row for row in self.service.preparations.rows() if row.get("state") in states]
-        labels = {row["id"]: f"{redact_known_secrets(self.store, prep.proposal_summary(row))} ({states[row['state']]})"
+        rows = [row for row in self.service.preparations.rows() if row.get("state") in states or prep.Preparations.self_undoable(row, "edit")]
+        labels = {row["id"]: f"{redact_known_secrets(self.store, prep.proposal_summary(row))} ({states.get(row['state'], row['state'])})"
                   for row in rows}
         listed = "\n".join(labels.values()) or msg('label.none')
         proposed = [row["id"] for row in rows if row["state"] == prep.STATE_PROPOSED]
@@ -592,7 +600,10 @@ class SettingsOrchestrator:
         for operation, states_ in (("pause", (prep.STATE_SCHEDULED,)), ("resume", (prep.STATE_PAUSED,)), ("restore", (prep.STATE_CANCELLED,)),
                                    ("run_now", (prep.STATE_SCHEDULED, prep.STATE_PAUSED)),
                                    ("edit", (prep.STATE_PROPOSED, prep.STATE_SCHEDULED, prep.STATE_PAUSED))):
-            ids = tuple(item["id"] for item in rows if item["state"] in states_)
+            ids = tuple(item["id"] for item in rows if item["state"] in states_
+                        or operation == 'restore' and any(prep.Preparations.self_undoable(item, change)
+                                                         for change in ('edit', 'pause', 'cancel'))
+                        or operation == 'resume' and prep.Preparations.self_undoable(item, 'pause'))
             result[operation] = self._row(operation, "", listed, self._options(ids, labels),
                                           format=msg('settings_orchestrator.preparation_edit_format') if operation == 'edit' else None)
         return result
@@ -795,6 +806,8 @@ class SettingsOrchestrator:
                 raise SettingsError(msg('settings_orchestrator.error_unchanged', exc=exc)) from None
         if setting == "daily_calls":
             from .owner_model import MAX_DAILY_CALLS
+            if category == 'scheduled_work':
+                from .preparations import MAX_SCHEDULED_DAILY_CALLS as MAX_DAILY_CALLS
             if not value.isascii() or not value.isdigit() or not 0 <= int(value) <= MAX_DAILY_CALLS:
                 raise SettingsError(msg('settings_orchestrator.invalid_daily_calls', limit=MAX_DAILY_CALLS))
             return str(int(value)), row
@@ -977,6 +990,8 @@ class SettingsOrchestrator:
             current = self.service.preparations.get(value)
             return options.get(value) or (redact_known_secrets(self.store, prep.owner_title(current))
                                           if current else msg('settings_orchestrator.value_not_set'))
+        if category == 'scheduled_work':
+            return msg('scheduled_budget.value', value=value)
         if setting == "daily_calls":
             return msg('settings_orchestrator.call_count', value=value)
         return options.get(value) or VALUE_LABELS.get(value) or value or msg('settings_orchestrator.value_not_set')
@@ -1284,6 +1299,8 @@ class SettingsOrchestrator:
             # #961: the service's own setters; adding returns the installed identity as the answer.
             receipt = self.service.apply_skill_setting(setting, after)
             self.__dict__.setdefault("_apply_text", {})[row["id"]] = (receipt or {}).get("response")
+        elif category == 'scheduled_work':
+            self.service.preparations.set_budget(int(after))
         elif category == "owner_model":
             self.service.owner_model_request({"operation": "set", **({setting: after == "on"} if setting in ("enabled", "dream")
                                                                       else {"daily_calls": int(after)})})
@@ -1813,8 +1830,7 @@ class SettingsOrchestrator:
         through the same ``confirm`` path (digest, stale check, audit, receipt).
 
         #717: ``own_preparation`` is the preparation a scheduled run belongs to; that run may cancel or
-        pause it (it only narrows what runs) through the same ``confirm`` path, instead of leaving a draft
-        for an owner who is not there.
+        pause or narrow it atomically with its audit and owner notice, without leaving a draft.
         """
         def call(action, args):
             args = args if isinstance(args, dict) else {}
@@ -1827,12 +1843,10 @@ class SettingsOrchestrator:
             if args.get("continue_work", "no") not in ("yes", "no"):
                 raise SettingsError(msg('settings_orchestrator.invalid_continue_work_option'))
             if unattended:
-                after, _row = self._normalized(args.get("category"), args.get("setting"), args.get("value"), work_id=work_id)
-                if (own_preparation and (args.get("category"), args.get("setting")) in SELF_NARROWING
-                        and after == own_preparation):
-                    return self._apply_own_run(owner, channel, work_id, args)
+                if own_preparation and (args.get('category'), args.get('setting')) in SELF_NARROWING:
+                    return self._apply_own_run(owner, channel, work_id, args, own_preparation)
                 return {"state": "not_proposed", "unattended": True, "category": args.get("category"),
-                        "setting": args.get("setting"), "after": after, "applied": False,
+                        "setting": args.get("setting"), "applied": False,
                         "next_step": UNATTENDED_SETTINGS_TEXT}
             own = self._own_proposal_edit(args, work_id)
             if own is not None:
@@ -1850,19 +1864,43 @@ class SettingsOrchestrator:
                     "next_step": f"{draft['summary']} 변경은 소유자 확인을 기다립니다. {how} 확인 전에는 아무것도 바뀌지 않았습니다."}
         return call
 
-    def _apply_own_run(self, owner, channel, work_id, args):
-        """#717: a scheduled run cancels or pauses its own preparation through ``confirm`` (audit ``own-run``)."""
-        draft = self.propose(owner, channel, args.get("category"), args.get("setting"), args.get("value"),
-                             args.get("reason"), work_id)
-        result = self.confirm(owner, channel, draft["draft_id"], draft["digest"])
-        self._audit({"id": draft["draft_id"], "target": f"{draft['category']}.{draft['setting']}",
-                     "before": draft["before"], "after": draft["after"]}, "own-run")
-        state = result.get("state")
-        return {"state": state, "draft_id": draft["draft_id"], "category": draft["category"],
-                "setting": draft["setting"], "after": draft["after"], "applied": state == "applied",
-                "own_run": True, "response": result.get("response"),
-                "next_step": ("This scheduled run belongs to that preparation, so Still applied the change itself. "
-                              "Say in your answer what changed.")}
+    def _apply_own_run(self, owner, channel, work_id, args, own_preparation):
+        """#717: current-slot state, audit and notice commit together; no confirm authority."""
+        from . import preparations as prep
+        refused = {"state": "not_proposed", "unattended": True, "category": args.get('category'),
+                   "setting": args.get('setting'), "applied": False,
+                   "next_step": msg('preparations.self_change_refused')}
+        value = args.get('value')
+        if not isinstance(value, str) or len(value) > 4000:
+            return refused
+        from .current_context import redact_known_secrets
+        if redact_known_secrets(self.store, value) != value:
+            return refused
+        try:
+            changes = json.loads(value) if args['setting'] == 'edit' else None
+            if changes is not None and not isinstance(changes, dict):
+                return refused
+            target = changes.pop('id', None) if changes is not None else value
+            if target != own_preparation:
+                return refused
+            row = self.service.preparations.get(target)
+            if not row:
+                return refused
+            notices = self.service.preparations_service
+            destination = notices.notice_destination(row['channel'])
+            if row['channel'] == prep.CHANNEL_WEB:
+                # Kept results still have receipts: use the originating owner's surface,
+                # with the same paired-Telegram fallback as preparation announcements.
+                origin = self.store.job(row['created_from']) if row.get('created_from') else notices.owner_last_work()
+                destination = notices.notice_destination(notices.preparation_channel(origin, prep.KIND_PREPARE, 'send'))
+            reason = redact_known_secrets(self.store, str(args.get('reason') or '')[:2000])
+            event = self.service.preparations.change_own(target, work_id, args['setting'], changes,
+                                                       reason=reason, notify_to=destination)
+        except (prep.PreparationRefusal, ValueError, TypeError):
+            return refused
+        return {"state": "applied", "draft_id": event['draft_ref'], "category": "preparations",
+                "setting": args['setting'], "after": event['after'], "applied": True, "own_run": True,
+                "next_step": msg('preparations.self_change_applied')}
 
     def _own_proposal_edit(self, args, work_id):
         """#702: apply a schedule edit of a reservation this Work proposed and has not offered yet, or None.
@@ -1927,12 +1965,10 @@ class SettingsOrchestrator:
 
     def _audit(self, row, terminal, error_class=None):
         with self._confirming:
-            audit = self.store.config("settings_audit", [])
-            audit = audit if isinstance(audit, list) else []
             event = {"at": self.now(), "draft_ref": row["id"], "target": row.get("target"),
                      "before": row.get("before"), "after": row.get("after"), "terminal": terminal}
             if error_class: event["error_class"] = error_class
-            self.store.put("settings_audit", [*audit, event][-100:])
+            self.store.append_config_list("settings_audit", event, 100)
 
     def draft(self, owner, channel, intent):
         """No lifecycle draft exists any more: say so and change nothing.

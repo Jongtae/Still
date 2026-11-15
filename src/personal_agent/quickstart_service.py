@@ -710,7 +710,8 @@ class AgentService:
         self.current_state=CurrentContext(store,self.context_observations)
         # #659: owner-accepted preparations, run by the existing work loop.
         self.preparations=prep.Preparations(
-            store,notice_destination=lambda channel:self.preparations_service.notice_destination(channel))
+            store,notice_destination=lambda channel:self.preparations_service.notice_destination(channel),
+            budget_notice_destinations=lambda:self.preparations_service.budget_notice_destinations())
         # #798: entrusted lines (one continuing responsibility each) on the preparations' clock.
         from .entrusted_lines import EntrustedLines
         self.lines=EntrustedLines(store,clock=lambda:self.preparations.clock())
@@ -1789,7 +1790,7 @@ class AgentService:
     def suggest_preparations(self, anchor_id, items, judgments=None):
         """Schedule the look-back's preparations (#583, #717) as rows of its anchor Work; ``(outcomes, calls)``.
 
-        ``items`` passed ``om.validate_suggestions`` (two cited turns, or one for a one-off, #638).  Each
+        ``items`` passed ``om.validate_suggestions`` (at least one cited turn).  Each
         is then validated by ``schedule_preparation``'s own normalisers and skipped when a preparation
         with the same goal is active or the owner declined it recently (``declined_before``, whose
         judgment is the only model call here, counted in ``calls`` and asked only while the upkeep
@@ -1801,28 +1802,14 @@ class AgentService:
         return self.preparations_service.suggest_preparations(anchor_id, items, judgments)
 
     def queue_preparation_suggestion(self, job, one_off=False):
-        """With the owner's own Work, tell once what the look back set up (#583, #717), or offer what it proposed.
+        """Tell all untold dream rows once in waking hours, each with its own cancel notice.
 
-        #717: scheduled rows get one ``preparation_scheduled`` message with a cancel button; rows still
-        proposed from before get the proposal message below.
-
-        One ``preparation_proposed`` message on ``job``'s conversation, with the usual accept/decline
-        buttons, bound (digest) to exactly the suggestions of one look back and recorded on their anchor
-        Work, so ``offered_proposals`` and the answer paths act on those rows only.  At most one such
-        message per owner day, none while the owner paused upkeep; a message queued marks its rows
-        offered, so each is offered once.  #638: ``one_off`` (``offer_one_off_suggestion``) takes only a
-        look back that holds a one-off and, with no ``job``, uses the anchor Work's own conversation.
-        Returns the notification or None.
+        Legacy proposals keep their existing acceptance path. ``one_off`` is a compatibility argument.
         """
         return self.preparations_service.queue_preparation_suggestion(job, one_off)
 
     def offer_one_off_suggestion(self, now=None):
-        """#638: a look back that holds a one-off suggestion is offered without waiting for the owner's next Work.
-
-        A dated need cannot wait for the owner to come back, so on the preparations tick, inside the owner's
-        ``prep.SUGGESTION_OFFER_HOURS``, ``queue_preparation_suggestion`` offers it on its anchor Work's
-        conversation under the same cap and pause.  Nothing unoffered is one read.  Returns the notification or None.
-        """
+        """Tell untold dream rows on the tick, including standing rows, within waking hours."""
         return self.preparations_service.offer_one_off_suggestion(now)
 
     def preparation_cancel_markup(self, notification_id):
@@ -2026,39 +2013,23 @@ class AgentService:
         """Owner Settings operations on one preparation (#659, #575)."""
         return self.preparations_service.preparation_request(body)
 
-    def preceding_owner_turn(self, job) -> str:
-        """The preceding readable owner turn by request order in this conversation, for lexical recall (#860)."""
-        try:
-            current=self.store.job(job['id']) or job
-            if not owner_words_work(current):return ''
-            rows=self.store.history(through=current['id'])
-            # planner_history leaves out the final (current) request. It may be
-            # absent here when forgotten or before its transcript row is written.
-            if not rows or rows[-1].get('job_id')!=current['id'] or rows[-1].get('role')!='user':
-                rows=[*rows,{'role':'user','job_id':current['id']}]
-            documents=self.store.config('file_workspace_document_jobs',[])
-            preceding=None
-            preceding_at=None
-            for row in reversed(self.planner_history(rows,documents)):
-                if row.get('role')!='user' or row.get('job_id')==current['id']:continue
-                earlier=self.store.job(row.get('job_id'))
-                if not owner_words_work(earlier):continue
-                if (earlier.get('channel'),earlier.get('chat_id'))!=(current.get('channel'),current.get('chat_id')):continue
-                # Claims (including resumes) can reorder transcript rows, so
-                # choose the latest earlier request by its enqueue time.
-                if earlier['created']>=current['created']:continue
-                if preceding is None or earlier['created']>preceding_at:
-                    preceding=row
-                    preceding_at=earlier['created']
-            if preceding is not None:
-                # Reverse traversal keeps the last transcript row for that Work.
-                readable=self.history_for_models([preceding])[0]
-                return self._redact_known_secrets(readable.get('content') or '')[:500]
-        except Exception as exc:
-            LOG.warning('preceding owner turn unavailable for the brief (%s)',type(exc).__name__)
-        return ''
+    def recall_selector(self, request, *, recall=True, recall_query=None):
+        """The exact local selector and its identity; never raw structured-answer logging."""
+        planned=recall and isinstance(recall_query,str) and bool(recall_query.strip())
+        value=' '.join(part for part in (recall_query,request) if isinstance(part,str) and part.strip()) if planned else request
+        query=self._redact_known_secrets(value)[:500] if isinstance(value,str) and value.strip() else None
+        return query, {'source':'plan' if planned else 'request',
+                       'query_digest':hashlib.sha256((query or '').encode()).hexdigest()[:16],
+                       'query_chars':len(query or ''),'recall_enabled':bool(recall)}
 
-    def owner_profile_snapshot(self, request=None, notes=True, ids=False, recall=True, context=None):
+    def worker_profile_snapshot(self, job, attempt=None):
+        """Refresh a worker from its accepted plan, or the request-only fallback."""
+        recall=not prep.preparation_of(job.get('request_key')) or self.day_plan_run(job)
+        selector=attempt.recall_query if attempt is not None and attempt.planned and not attempt.steer else None
+        query,identity=self.recall_selector(job.get('message'),recall=recall,recall_query=selector)
+        return self._profile_snapshot(query,recall=recall),identity
+
+    def owner_profile_snapshot(self, request=None, notes=True, ids=False, recall=True, *, recall_query=None):
         """The bounded ``profile.*`` snapshot text every turn context carries (#658).
 
         #19: with ``notes`` the owner's working-notes document follows as one
@@ -2080,11 +2051,12 @@ class AgentService:
         ``owner-memory`` (size/digest only in the record) at the call sites;
         that label is deliberately not added to the Work's egress provenance.
         """
+        query,_=self.recall_selector(request,recall=recall,recall_query=recall_query)
+        return self._profile_snapshot(query,notes=notes,ids=ids,recall=recall)
+
+    def _profile_snapshot(self, query, *, notes=True, ids=False, recall=True):
+        """Render the already sanitized selector; worker identity uses this exact query."""
         memory=MemoryService(self.store,private_read_sink=MemoryService.NO_EGRESS_GUARD)
-        # Request terms keep priority under FTS5's existing 12-term bound.
-        if recall and isinstance(context,str) and context:
-            request=request+' '+context if isinstance(request,str) and request.strip() else context
-        query=self._redact_known_secrets(request)[:500] if isinstance(request,str) and request.strip() else None
         # #425: a brief (notes, no ids) shows what a dream changed or held on the line it concerns, once.
         raising=self._memory_raise_notes(memory) if notes and not ids and query else {}
         snapshot=memory.profile_snapshot(MEMORY_OWNER,query=query,ids=ids,annotations=raising)
@@ -5439,8 +5411,8 @@ class AgentService:
         stored=self.history_for_models(self.preparation_history(job) if prep.preparation_of(job.get('request_key'))
                                        else self.store.history(through=job['id'])[-16:])
         document_jobs=set(self.store.config('file_workspace_document_jobs',[]))
-        recall=not prep.preparation_of(job.get('request_key'))
-        sections={'profile':self.owner_profile_snapshot(job.get('message'),recall=recall,context=self.preceding_owner_turn(job) if recall else None),'current_context':self.current_context_text(job),
+        recall=not prep.preparation_of(job.get('request_key')) or self.day_plan_run(job)
+        sections={'profile':self.owner_profile_snapshot(job.get('message'),recall=recall),'current_context':self.current_context_text(job),
                   'prepared':self.prepared_text(job)}
         own_budget=budget is None
         budget=self.work_budget(job['id']) if own_budget else budget

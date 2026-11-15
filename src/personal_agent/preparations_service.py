@@ -20,12 +20,13 @@ from .agent_runtime import ToolError, not_run, ran_field
 from .conversation_handoff import JUDGMENT_NO, JUDGMENT_YES
 from .conversation_projection import earlier_turn_line
 from .messages import LANGUAGES, msg
+from .telegram_locale import owner_language
 from .prompt_files import prompt
 from .providers import ProviderError
 from .procedures import digest as source_digest
 from .quickstart_service import (LOG, PREPARATION_CONVERSATION_CHARS,
                                  PREPARATION_CONVERSATION_TURNS, PREPARED_IDS_PREFIX,
-                                 UNATTENDED_APPROVAL_TEXT)
+                                 UNATTENDED_APPROVAL_TEXT, prepared_ids)
 
 
 #: #780: the daily plan's brief: a method for reading the day, never a topic.
@@ -484,10 +485,48 @@ class PreparationsService:
             return pairing.owner, generation, surface.name
         return None
 
+    def self_change_text(self, event):
+        """One readable receipt, shared by messenger notices and the existing Settings result."""
+        row = {**(self.service.preparations.get(event['preparation_id']) or {'goal_text': ''}),
+               **event.get('snapshot', {})}
+        operation = event['target'].split('.')[-1]
+        lang = owner_language(self.service.store) or 'ko'
+        def summary(values):
+            schedule = {**row, **values}
+            text = prep.proposal_summary(schedule, self.service.home_zone(), brief=False, lang=lang)
+            if schedule.get('state') == prep.STATE_CANCELLED:
+                text += '\n' + msg('preparations.self_change_cancel', lang)
+            elif schedule.get('run_return_state') == prep.STATE_PAUSED or schedule.get('state') == prep.STATE_PAUSED:
+                text += '\n' + msg('preparations.self_change_pause', lang)
+            return text
+        return self.service._redact_known_secrets(msg('preparations.self_change_notice', lang, id=event['preparation_id'],
+                   change=msg('preparations.self_change_' + operation, lang), before=summary(event['before']),
+                   after=summary(event['after']), reason=event['reason'],
+                   undo=msg('button.restore_reservation', lang)))
+
+    def budget_notice_destinations(self):
+        """The same current owner pairings used by watches, across all conversation surfaces."""
+        return [destination for surface in self.service.surfaces
+                if (destination := self.notice_destination(surface.name)) is not None]
+
     def status_notice_text(self, notification):
         """Suppress obsolete waiting episodes and notices for stopped preparations."""
         service = self.service
         kind = notification['kind']
+        if kind.startswith(prep.SELF_CHANGE_NOTICE_PREFIX):
+            with service.store.db() as db:
+                receipt = db.execute("SELECT detail FROM tool_events WHERE job_id=? AND tool='preparation_self_change' "
+                                     "AND json_extract(detail,'$.fingerprint')=?",
+                                     (notification['job_id'], notification['fingerprint'])).fetchone()
+            if not receipt:
+                return None
+            event = json.loads(receipt['detail'])
+            return self.self_change_text(event)
+        if kind == prep.SCHEDULED_BUDGET_NOTICE:
+            with service.store.db() as db:
+                notice = db.execute('SELECT content FROM messages WHERE job_id IN (?,?) ORDER BY id LIMIT 1',
+                                    (notification.get('fingerprint'), notification['job_id'])).fetchone()
+            return notice['content'] if notice else None
         with service.store.db() as db:
             row = db.execute('SELECT * FROM preparations WHERE id=?',
                              (notification['fingerprint'],)).fetchone()
@@ -518,12 +557,40 @@ class PreparationsService:
         """
         service=self.service
         now=service.preparations.clock() if now is None else now
+        # Consume delivery receipts, never queue insertion as evidence that the owner was told.
+        for suggestion in service.preparations.rows():
+            if suggestion['state'] != prep.STATE_SCHEDULED or suggestion.get('accepted_by') != prep.ACCEPTED_DREAM:
+                continue
+            notice = service.store.notification_of(
+                f"{suggestion['created_from']}/dream:{suggestion['id']}", 'preparation_scheduled')
+            if not notice or notice.get('sent_at') is None:
+                # Before per-row keys, a confirmed notice could cover several rows on the anchor.
+                legacy = service.store.notification_of(suggestion['created_from'], 'preparation_scheduled')
+                if suggestion['id'] in prepared_ids(legacy):
+                    notice = legacy
+            sent_at = notice.get('sent_at') if notice else None
+            if self.line_preparation_announced(suggestion):
+                # The first work/account pair was told by the confirmed line announcement.
+                # Preserve that observation; a queue insertion never qualifies.
+                sent_at = suggestion.get('offered_at') or now
+            if suggestion.get('offered_at') != sent_at:
+                # Repair old queue-time marks too: only the existing send receipt is evidence.
+                with service.store.db() as db:
+                    db.execute('UPDATE preparations SET offered_at=? WHERE id=? AND state=?',
+                               (sent_at, suggestion['id'], prep.STATE_SCHEDULED))
+                suggestion['offered_at'] = sent_at
+            held = not self.look_back_on() or suggestion.get('offered_at') is None
+            # A first delivery after the due time must also release a previously unobserved hold.
+            if suggestion.get('offered_at') is None or (notice and notice.get('sent_at') is not None
+                                                       and notice['sent_at'] > suggestion['due_at']):
+                service.preparations.hold_suggestion(suggestion, True, now)
+            service.preparations.hold_suggestion(suggestion, held, now)
         # #583: an unanswered look-back suggestion lapses after a week (one read when there is none).
         service.preparations.expire_suggestions(now)
-        # #638: a look back's one-off suggestion is offered without waiting for the owner (one read when there is none).
+        # Tell each untold dream row in waking hours, without waiting for another owner Work.
         try:service.offer_one_off_suggestion(now)
         except Exception as exc:  # noqa: BLE001 - an offer never stops the preparations tick
-            LOG.warning('one-off suggestion not offered kind=%s',type(exc).__name__)
+            LOG.warning('dream suggestion not told kind=%s',type(exc).__name__)
         # #780: the daily plan exists once the look back is on (one read when it already does).
         try:self.ensure_day_plan(now)
         except Exception as exc:  # noqa: BLE001 - setting the plan up never stops the preparations tick
@@ -531,9 +598,15 @@ class PreparationsService:
         try:self.line_tick(now)
         except Exception as exc:  # noqa: BLE001 - line upkeep never stops existing preparations
             LOG.warning('line tick unavailable kind=%s',type(exc).__name__)
-        rows=service.preparations.due(now)
-        if not rows:return False
+        # Fetch enough to skip paused/untold dream rows without hiding due owner work.
+        rows=service.preparations.due(now,limit=prep.MAX_ACTIVE+prep.TICK_LIMIT)
+        picked=0
         for row in rows:
+            if row['state']==prep.STATE_SCHEDULED and row.get('accepted_by')==prep.ACCEPTED_DREAM:
+                if not self.look_back_on() or row.get('offered_at') is None:
+                    continue
+            if picked>=prep.TICK_LIMIT:break
+            picked+=1
             try:
                 # #306 review: delivered on the surface the preparation was made for, through its pairing now.
                 surface=next((item for item in service.surfaces if item.name==row['channel']),None)
@@ -588,7 +661,7 @@ class PreparationsService:
                 if work_id:LOG.info('preparation started id=%s work=%s kind=%s',row['id'],work_id,row['kind'])
             except Exception as exc:
                 LOG.warning('preparation tick failed id=%s kind=%s',row['id'],type(exc).__name__)
-        return True
+        return bool(picked)
 
     def watch_judgment(self, row, answer):
         """``'yes'`` / ``'no'`` / None: should this watch run reach the owner (#719)?
@@ -694,9 +767,13 @@ class PreparationsService:
                     requested=datetime.combine(datetime.fromtimestamp(row['until_at'],tz).date(),
                                                datetime.fromtimestamp(requested,tz).time(),tzinfo=tz).timestamp()
                 schedule+=msg('preparations.run_daily_cap_end',end=local(row['until_at']),requested=local(requested))
+            skipped=service.preparations.budget_skipped_fact(job)
+            if skipped:
+                facts={**skipped, 'first_slot':local(skipped['first_slot_at']), 'last_slot':local(skipped['last_slot_at'])}
+                schedule+='\n'+msg('preparations.run_budget_skipped',facts=json.dumps(facts,ensure_ascii=False))
             delivery=msg('preparations.run_delivery_needed' if row.get('delivery_mode')==prep.DELIVERY_WHEN_NEEDED
                          else 'preparations.run_delivery',channel=row['channel'])
-            return msg('preparations.run_record',
+            return msg('preparations.run_record', id=preparation_id,
                        position=msg('preparations.run_bounded',run=count,maximum=maximum) if maximum else str(count),
                        schedule=schedule,delivery=delivery)
         except Exception:
@@ -812,7 +889,7 @@ class PreparationsService:
     def suggest_preparations(self, anchor_id, items, judgments=None):
         """Schedule the look-back's preparations (#583, #717) as rows of its anchor Work; ``(outcomes, calls)``.
 
-        ``items`` passed ``om.validate_suggestions`` (two cited turns, or one for a one-off, #638).  Each
+        ``items`` passed ``om.validate_suggestions`` (at least one cited turn).  Each
         is then validated by ``schedule_preparation``'s own normalisers and skipped when a preparation
         with the same goal is active or the owner declined it recently (``declined_before``, whose
         judgment is the only model call here, counted in ``calls`` and asked only while the upkeep
@@ -824,10 +901,17 @@ class PreparationsService:
         service=self.service
         now=service.preparations.clock()
         anchor=service.store.job(anchor_id)
-        if (not anchor or service.preparations.proposed_from(anchor_id)
+        with service.store.db() as db:
+            offered = db.execute("SELECT 1 FROM telegram_notifications n JOIN preparations p "
+                                 "ON n.job_id=p.created_from || '/dream:' || p.id "
+                                 "WHERE p.created_from=? AND n.kind='preparation_scheduled' LIMIT 1",
+                                 (anchor_id,)).fetchone()
+        if (not anchor or offered or service.preparations.proposed_from(anchor_id)
                 or service.store.notification_of(anchor_id,'preparation_proposed')
                 or service.store.notification_of(anchor_id,'preparation_scheduled')):
             return [{'reason':'anchor-offered'} for _item in items],0
+        if service.surface_of(anchor) is None:
+            return [{'reason':'no-surface'} for _item in items],0
         outcomes,calls=[],0
         for item in items:
             args={name:item.get(name) for name in ('kind','goal','due','recurrence','delivery','title','offer')}
@@ -860,7 +944,8 @@ class PreparationsService:
                                              channel=service.preparation_channel(anchor,fields['kind'],args['delivery']),
                                              created_from=anchor_id,state=prep.STATE_SCHEDULED,accepted_by=prep.ACCEPTED_DREAM,
                                              delivery_mode=fields['delivery_mode'],title=fields['title'],offer=fields['offer'],
-                                             origin=prep.ORIGIN_DREAM,line_id=line or None)
+                                             origin=prep.ORIGIN_DREAM,line_id=line or None,
+                                             max_runs=None if once else prep.DREAM_MAX_RUNS)
             except prep.PreparationRefusal as exc:
                 outcomes.append({'reason':exc.code})
                 continue
@@ -872,58 +957,57 @@ class PreparationsService:
         return outcomes,calls
 
     def queue_preparation_suggestion(self, job, one_off=False):
-        """With the owner's own Work, tell once what the look back set up (#583, #717), or offer what it proposed.
+        """Tell every untold scheduled dream once, each with its own existing cancel notice.
 
-        #717: scheduled rows get one ``preparation_scheduled`` message with a cancel button; rows still
-        proposed from before get the proposal message below.
-
-        One ``preparation_proposed`` message on ``job``'s conversation, with the usual accept/decline
-        buttons, bound (digest) to exactly the suggestions of one look back and recorded on their anchor
-        Work, so ``offered_proposals`` and the answer paths act on those rows only.  At most one such
-        message per owner day, none while the owner paused upkeep; a message queued marks its rows
-        offered, so each is offered once.  #638: ``one_off`` (``offer_one_off_suggestion``) takes only a
-        look back that holds a one-off and, with no ``job``, uses the anchor Work's own conversation.
-        Returns the notification or None.
+        All anchors are considered together in waking hours.  A stable per-row notice key uses
+        the queue's existing uniqueness. Delivery receipts are consumed by the tick.
+        Legacy unaccepted proposals keep their existing acceptance path.
+        ``one_off`` remains a compatibility argument; standing rows are told on the tick too.
         """
         service=self.service
-        from .current_context import owner_today
         now=service.preparations.clock()
-        last=service.preparations.last_suggestion_offered()
-        if last is not None and owner_today(service.store,last)==owner_today(service.store,now):return None
-        if not service.owner_model.settings()['enabled']:return None
-        anchor,rows=service.preparations.unoffered_suggestions(now,one_off=one_off)
-        if not rows:return None
-        job=job or service.store.job(anchor)
-        if not job:return None
-        scheduled=[row for row in rows if row['state']==prep.STATE_SCHEDULED]
-        if scheduled:
-            # #717: what the look back set up is told with a cancel button; it is not asked about.
-            rows=scheduled
-            service.queue_notification({**job,'id':anchor},'preparation_scheduled',
-                                    fingerprint=PREPARED_IDS_PREFIX+','.join(row['id'] for row in rows))
-            notification=service.store.notification_of(anchor,'preparation_scheduled')
-        else:
-            rows=prep.proposal_page(rows)[0]
-            service.queue_notification({**job,'id':anchor},'preparation_proposed',fingerprint=prep.digest(rows))
-            # A surface queues it only for its current paired conversation (and not every surface returns the row).
-            notification=service.store.notification_of(anchor,'preparation_proposed')
-        if notification is None:return None
-        service.preparations.mark_offered(rows,now)
-        LOG.info('preparation suggestion told work=%s anchor=%s count=%s',job['id'],anchor,len(rows))
-        return notification
+        if not self.look_back_on():
+            return None
+        first=None
+        tellable=service._owner_local_hour(now) in prep.SUGGESTION_OFFER_HOURS
+        rows=service.preparations.untold_scheduled_suggestions() if tellable else []
+        for row in rows:
+            if self.line_preparation_announced(row):continue
+            anchor=service.store.job(row['created_from'])
+            if not anchor:continue
+            surface=service.surface_of(anchor)
+            if surface is None:continue
+            notice_key=f"{row['created_from']}/dream:{row['id']}"
+            # This new schedule is announced now; work-mode guards apply to this notice's
+            # lifetime, not the older conversation used as evidence for the dream.
+            notification=service.store.telegram.queue_notification(
+                notice_key,anchor['chat_id'],surface.owner_generation(),'preparation_scheduled',
+                fingerprint=PREPARED_IDS_PREFIX+row['id'],surface=surface.name,created=now)
+            if notification is None:continue
+            first=first or notification
+            LOG.info('preparation suggestion queued anchor=%s id=%s',row['created_from'],row['id'])
+        # Only legacy proposals still need the old grouped offer/acceptance message.
+        anchor,rows=service.preparations.unoffered_suggestions(now,one_off=job is None)
+        if rows:
+            target=job or service.store.job(anchor)
+            if target:
+                rows=prep.proposal_page(rows)[0]
+                service.queue_notification({**target,'id':anchor},'preparation_proposed',fingerprint=prep.digest(rows))
+                notification=service.store.notification_of(anchor,'preparation_proposed')
+                if notification is not None:
+                    service.preparations.mark_offered(rows,now)
+                    first=first or notification
+        return first
 
     def offer_one_off_suggestion(self, now=None):
-        """#638: a look back that holds a one-off suggestion is offered without waiting for the owner's next Work.
+        """Tell all untold dream rows on the tick, within the owner's waking hours.
 
-        A dated need cannot wait for the owner to come back, so on the preparations tick, inside the owner's
-        ``prep.SUGGESTION_OFFER_HOURS``, ``queue_preparation_suggestion`` offers it on its anchor Work's
-        conversation under the same cap and pause.  Nothing unoffered is one read.  Returns the notification or None.
+        The historical entry point also tells standing rows so they do not wait for a new Work.
         """
         service=self.service
-        if not service.preparations.has_unoffered_one_off():return None
         now=service.preparations.clock() if now is None else now
         if service._owner_local_hour(now) not in prep.SUGGESTION_OFFER_HOURS:return None
-        return service.queue_preparation_suggestion(None,one_off=True)
+        return service.queue_preparation_suggestion(None)
 
     def preparation_cancel_markup(self, notification_id):
         """#1455: the one button that cancels exactly the reservations a message confirmed."""
@@ -941,7 +1025,11 @@ class PreparationsService:
     def scheduled_notice_text(self, ids):
         """#1455: what a directly scheduled message says: each reservation, and that it is cancelled here."""
         service=self.service
-        rows=[row for row in (service.preparations.get(item) for item in ids) if row and row['state'] in prep.ACTIVE_STATES]
+        # A one-off can finish while its already-queued notice is still waiting for delivery.
+        # Keep that receipt visible too, so settling the first run cannot silently erase it.
+        rows=[row for row in (service.preparations.get(item) for item in ids) if row and (
+            row['state'] in prep.ACTIVE_STATES or row.get('accepted_by')==prep.ACCEPTED_DREAM
+            and row['state'] in (prep.STATE_DELIVERED,prep.STATE_FAILED,prep.STATE_UNKNOWN))]
         if not rows:return None
         return (msg('notice.preparation_scheduled')+'\n'+'\n'.join(service._redact_known_secrets(prep.proposal_summary(row,service.home_zone(),brief=False)) for row in rows)
                 +'\n'+msg('notice.preparation_cancel_hint'))
@@ -1007,6 +1095,9 @@ class PreparationsService:
         for row in service.preparations.rows():
             last=str(row.get('last_response') or '')
             terms=prep.stored_window_terms(row)
+            last=last[:280]+('…' if len(last)>280 else '')
+            if row.get('self_change') and not row.get('self_change_undone'):
+                last += '\n' + self.self_change_text(json.loads(row['self_change']))
             rows.append({'id':row['id'],'kind':row['kind'],'goal':row['goal_text'],'state':row['state'],
                          # #393: the owner's name and offer for it, when the AI wrote them.
                          'title':row.get('title_text'),'offer':row.get('offer_text'),
@@ -1017,7 +1108,7 @@ class PreparationsService:
                          'timezone':row['timezone'],'recurrence':row['recurrence'],'delivery':service.preparation_delivery(row),
                          'accepted_by':row['accepted_by'],'last_outcome':row['last_outcome'],'last_work_id':row['last_run_job_id'],
                          'last_status':row.get('last_status'),'last_delivery':row.get('last_delivery'),
-                         'last_result':last[:280]+('…' if len(last)>280 else ''),'prepared_at':row['prepared_at'],
+                         'last_result':last,'prepared_at':row['prepared_at'],
                          'created_at':row['created_at'],
                          # #719: the watch window, its bound and the last typed decision.
                          'every_minutes':(row['every_seconds']//60) if row.get('every_seconds') else None,
@@ -1033,7 +1124,7 @@ class PreparationsService:
                          'line_id':row.get('line_id'),'line_task':lines.get(row.get('line_id')),
                          'line_account':row.get('origin')==prep.ORIGIN_LINE_ACCOUNT})
         # #575: the page uses the same catalog in its selected language.
-        labels={'accept':'button.preparation_accept','decline':'button.preparation_decline',
+        labels={**{'budget_'+key:'scheduled_budget.'+key for key in ('label','help')}, 'save':'label.save', 'accept':'button.preparation_accept','decline':'button.preparation_decline',
                 **{'delivery_'+mode:'preparations.delivery_'+mode for mode in ('send','keep','when_needed')},
                 **{operation:'settings_orchestrator.label_preparations_'+operation for operation in ('pause','resume','edit','run_now')},
                 **{field:'preparations.field_'+field for field in ('due','recurrence','every_minutes','until','max_runs',
@@ -1041,7 +1132,14 @@ class PreparationsService:
                 **{'day_'+day:'preparations.day_'+day for day in prep.RULE_DAYS},
                 'max_runs_hint':'preparations.max_runs_hint',
                 'last_day':'preparations.rule_last_day','timezone':'label.time_zone','paused':'settings_orchestrator.paused','saved':'preparations.saved'}
-        return {'preparations':rows,'management':{key:{lang:msg(message_id,lang) for lang in LANGUAGES} for key,message_id in labels.items()}}
+        # The same daily notice is visible in local Settings when no sending surface is paired.
+        from .telegram_locale import translate
+        notice_id = prep.SCHEDULED_USAGE_PREFIX + service.preparations.budget_day(service.preparations.clock())
+        with service.store.db() as db:
+            notice = db.execute('SELECT content FROM messages WHERE job_id=? ORDER BY id LIMIT 1', (notice_id,)).fetchone()
+        budget = {**service.preparations.budget_settings(), 'max':prep.MAX_SCHEDULED_DAILY_CALLS,
+                  'notice':{lang:translate(notice['content'], lang) for lang in LANGUAGES} if notice else {}}
+        return {'preparations':rows,'budget':budget,'management':{key:{lang:msg(message_id,lang) for lang in LANGUAGES} for key,message_id in labels.items()}}
 
     def cancel_preparation(self, preparation_id):
         """``Preparations.cancel`` plus withdrawing its run's pending location request (#774).
@@ -1062,6 +1160,9 @@ class PreparationsService:
         if not isinstance(body,dict):raise ValueError(msg('quickstart_service.check_preparation_request'))
         operation=body.get('operation')
         if operation=='list':return service.preparations_status()
+        if operation=='set_budget':
+            service.preparations.set_budget(body.get('daily_calls'))
+            return service.preparations_status()
         preparation_id=body.get('id')
         if not isinstance(preparation_id,str) or not preparation_id:raise ValueError(msg('quickstart_service.select_preparation'))
         if operation=='accept':service.preparations.accept(preparation_id,prep.ACCEPTED_OWNER_SETTINGS)
@@ -1280,6 +1381,21 @@ class PreparationsService:
                         or db.execute("SELECT 1 FROM tool_events WHERE tool='line_restarted' AND status='succeeded' "
                                       "AND json_extract(detail,'$.line_id')=? LIMIT 1",(line_id,)).fetchone())
 
+    def line_preparation_announced(self, row):
+        """Only the initial work/account pair is covered by the line announcement.
+
+        Later dream suggestions linked to the same line get their own per-row notice (#717).
+        Identity comes from the saved first specification, independent of later brief versions.
+        """
+        line_id=row.get('line_id')
+        if not line_id or row.get('accepted_by')!=prep.ACCEPTED_DREAM:return False
+        stats=self.service.lines.provenance(line_id)
+        if stats.get('by')!='look-back' or not self.line_announced(line_id):return False
+        return (row.get('origin')==prep.ORIGIN_LINE_ACCOUNT
+                or row.get('origin')==prep.ORIGIN_DREAM
+                and row.get('created_from')==stats.get('stand_key','').split(':')[1]
+                and row.get('goal_text')==stats.get('first',{}).get('goal'))
+
     def announce_stood_line(self, now):
         from .current_context import owner_today
         service=self.service
@@ -1348,7 +1464,8 @@ class PreparationsService:
                                                            recurrence=first['recurrence'],channel=service.preparation_channel(anchor,first['kind'],first['delivery']),
                                                            created_from=anchor['id'],state=prep.STATE_SCHEDULED,accepted_by=prep.ACCEPTED_DREAM,
                                                            delivery_mode=first['delivery_mode'],title=first['title'],offer=first['offer'],
-                                                           origin=prep.ORIGIN_DREAM,line_id=brief['line_id'],db=db)
+                                                           origin=prep.ORIGIN_DREAM,line_id=brief['line_id'],
+                                                           db=db)
                             work=[row]
                         self.record_line_row_started(anchor['id'],brief['line_id'],'work',restart,db)
                 # A cancelled work/account row is an owner decision, not a missing row to repair.
