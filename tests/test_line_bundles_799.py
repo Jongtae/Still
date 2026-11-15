@@ -58,6 +58,113 @@ class Bundles(_LinesCase):
         self.service.deliver_one()
         return bundle
 
+    def test_unresolvable_host_zone_does_not_break_reads_flush_or_unrelated_reminder(self):
+        self.at(10);_,row=self.line();self.now+=86400;self.at(8)
+        from personal_agent.current_context import TIMEZONE_CONFIG_KEY
+        with self.store.db() as db:
+            db.execute('DELETE FROM config WHERE key IN (?,?)',(TIMEZONE_CONFIG_KEY,'current_context'))
+        self.assertIsNone(self.helper.home_zone())
+        other=self.service.preparations.create(kind='reminder',goal='Owner reminder',due_at=self.now-1,
+            timezone='Asia/Seoul',recurrence=None,channel='telegram',created_from=self.b,
+            state=prep.STATE_SCHEDULED,accepted_by=prep.ACCEPTED_OWNER_REQUEST)
+        with patch('personal_agent.current_context.host_zone',side_effect=LookupError('unset UTC host')):
+            for name,call in (('get',lambda:self.service.preparations.get(row['id'])),
+                              ('rows',self.service.preparations.rows),
+                              ('status',self.helper.preparations_status),
+                              ('flush',lambda:self.helper.flush_line_bundles(self.now)),
+                              ('tick',self.service.run_due_preparation)):
+                with self.subTest(step=name):call()
+            self.assertIsNotNone(self.service.preparations.get(other['id'])['last_run_job_id'])
+
+    def test_bundle_uses_recorded_telegram_intent_after_a_web_turn(self):
+        self.at(10);brief,row=self.line();self.now+=86400;self.at(8)
+        work=self.report(row,'Push-intended result')
+        web=self.store.enqueue('web turn','web-turn-1',channel='web',owner_typed=True)
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET created=?,status='succeeded',response='ok' WHERE id=?",(self.now,web))
+        self.telegram.clear();self.at(9);bundle=self.helper.flush_line_bundles(self.now)
+        self.assertEqual(self.helper.line_outcomes(brief['line_id'])[0]['outcome'],el.OUTCOME_KEPT)
+        self.service.deliver_one()
+        self.assertEqual(self.store.job(bundle)['channel'],'telegram:gen-1')
+        self.assertEqual(self.store.job(bundle)['delivery'],'sent')
+        self.assertEqual(len(self.sends()),1)
+        self.assertIn('Push-intended result',self.sends()[0]['text'])
+        self.assertEqual(self.receipts(),[(work,bundle)])
+        self.assertEqual(self.helper.line_outcomes(brief['line_id'])[0]['outcome'],el.OUTCOME_DELIVERED)
+
+    def test_finished_report_survives_row_cancel_or_delete(self):
+        self.at(10)
+        for operation in ('cancel','delete'):
+            with self.subTest(operation=operation):
+                brief,row=self.line('Finished before '+operation);self.now+=86400;self.at(8)
+                work=self.report(row,'Finished before '+operation)
+                if operation=='cancel':self.service.cancel_preparation(row['id'])
+                else:
+                    # A worker can also read another line. That later read must not
+                    # replace the preparation's own line when recovering a deleted row.
+                    other=self.service.lines.open(self.b,task='Unrelated line',report_promise='Later')
+                    self.helper.line_handler(self.store.job(work))({'action':'read','line':other['line_id']})
+                    self.service.preparations.delete(row['id'])
+                self.assertEqual(self.service.lines.readable(brief['line_id'])['state'],el.STATE_ACTIVE)
+                self.telegram.clear();self.at(9);bundle=self.flush()
+                self.assertIsNotNone(bundle)
+                self.assertEqual(len(self.sends()),1)
+                self.assertIn(brief['task'],self.sends()[0]['text'])
+                self.assertNotIn('Unrelated line',self.sends()[0]['text'])
+                self.assertIn((work,bundle),self.receipts())
+                self.now+=86400
+
+    def test_held_web_run_cannot_request_a_location_continuation(self):
+        from personal_agent.context_observations import answerable_work
+        self.at(10);_,row=self.line();self.now+=86400;self.at(8)
+        with self.store.db() as db:db.execute('UPDATE preparations SET due_at=? WHERE id=?',(self.now,row['id']))
+        self.service.run_due_preparation()
+        work=self.service.preparations.get(row['id'])['last_run_job_id']
+        job=self.store.job(work)
+        self.assertEqual(job['channel'],'web');self.assertIsNone(job['chat_id'])
+        self.assertFalse(answerable_work(job))
+        self.assertIsNone(self.service.location_requester(job))
+        with self.assertRaises(ValueError):self.service.request_current_location(work,'Where are you?')
+        with self.store.db() as db:
+            self.assertEqual(db.execute('SELECT count(*) FROM context_location_requests WHERE job_id=?',(work,)).fetchone()[0],0)
+
+    def test_bundles_group_by_destination_and_cap_each_destination_at_each_slot(self):
+        self.at(10);brief,row=self.line();self.now+=86400;self.at(8)
+        local=self.service.preparations.create(kind='prepare',goal='Local report',due_at=self.now,
+            timezone='Asia/Seoul',recurrence='daily',channel='web',bundle_channel='web',created_from=self.b,
+            state=prep.STATE_SCHEDULED,accepted_by=prep.ACCEPTED_DAY_PLAN,line_id=brief['line_id'])
+        tele_work=self.report(row,'Telegram result')
+        local_work=self.report(local,'Local result')
+        self.telegram.clear();self.at(9);self.flush()
+        bundles=self.bundles()
+        self.assertEqual(len(bundles),2)
+        by_surface={b['channel'].split(':')[0]:b for b in bundles}
+        self.assertEqual(set(by_surface),{'telegram','web'})
+        self.assertIn('Telegram result',by_surface['telegram']['response'])
+        self.assertNotIn('Local result',by_surface['telegram']['response'])
+        self.assertIn('Local result',by_surface['web']['response'])
+        self.assertNotIn('Telegram result',by_surface['web']['response'])
+        self.assertEqual(set(self.receipts()),{(tele_work,by_surface['telegram']['id']),(local_work,by_surface['web']['id'])})
+        self.assertEqual(len(self.sends()),1)
+        # Pre-fix unsuffixed keys still consume the destination's slot.
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET request_key=substr(request_key,1,length(request_key)-length(':telegram')) WHERE id=?",
+                       (by_surface['telegram']['id'],))
+        self.at(9,1)
+        later_tele=self.report(row,'Later Telegram result')
+        later_local=self.report(local,'Later local result')
+        self.assertIsNone(self.flush());self.assertEqual(len(self.bundles()),2)
+        # An unpaired send shares the local fallback destination, so one bundle
+        # drains both sets of parts instead of piling them up or making two web bundles.
+        self.store.put('telegram',{'enabled':False})
+        self.at(18);fallback=self.flush()
+        self.assertEqual(len(self.bundles()),3)
+        self.assertEqual(self.store.job(fallback)['channel'],'web')
+        self.assertEqual(self.store.job(fallback)['delivery'],'none')
+        self.assertIn((later_tele,fallback),self.receipts());self.assertIn((later_local,fallback),self.receipts())
+        self.assertEqual(len(self.receipts()),4)
+        self.assertIsNone(self.flush())
+
     def test_two_reports_one_interval_one_message_two_parts(self):
         self.at(10);a,ra=self.line('Responsibility A')
         self.now+=86400;b,rb=self.line('Responsibility B')
@@ -218,7 +325,7 @@ class Bundles(_LinesCase):
         with patch.object(self.service.lines,'first_saved',return_value=self.now):text=self.helper.compose_line_bundle(parts)
         self.assertNotIn('new-stored-secret-799',text)
 
-    def test_owner_requested_row_on_stood_line_sent_at_slot_with_one_bundle_per_day(self):
+    def test_owner_requested_or_accepted_rows_send_directly_without_bundling(self):
         self.at(10);brief,held=self.line();self.now+=86400;self.at(8)
         self.service.owner_model.set_controls({'report_times':['23:00']})
         for accepted in (prep.ACCEPTED_OWNER_REQUEST,prep.ACCEPTED_OWNER_WORK,prep.ACCEPTED_OWNER_BUTTON):
@@ -270,7 +377,8 @@ class Bundles(_LinesCase):
                     db.execute("DELETE FROM tool_events WHERE tool='line_held' AND json_extract(detail,'$.preparation_id')=?",(row['id'],))
                     db.execute("UPDATE preparations SET channel='telegram' WHERE id=?",(row['id'],))
                 self.now+=86400;self.at(8);self.telegram.clear()
-                with patch.object(self.helper,step,side_effect=KeyError('fixture failure')):
+                with patch.object(self.helper,step,side_effect=KeyError('fixture failure')),self.assertLogs(
+                        'personal_agent.service',level='WARNING') as logs:
                     work=self.report(row,'Held despite upkeep failure')
                     self.assertEqual(self.store.job(work)['channel'],'web')
                     self.assertEqual(self.store.job(work)['delivery'],'none')
@@ -278,6 +386,7 @@ class Bundles(_LinesCase):
                     self.at(9);self.service.run_due_preparation();self.service.deliver_one()
                     self.assertEqual(len(self.sends()),1)
                     self.assertIn(work,[w for w,_ in self.receipts()])
+                self.assertTrue(any('step='+step in line and 'kind=KeyError' in line for line in logs.output))
 
     def test_new_stood_row_is_created_held_even_if_account_creation_fails(self):
         self.at(10)
@@ -329,18 +438,24 @@ class Bundles(_LinesCase):
         self.assertIn('07:15, 20:45',prep.proposal_summary(listed))
         self.assertIn('07:15, 20:45',prep.proposal_html([listed],0))
 
-    def test_l1_when_needed_notification_is_not_sent_again_in_bundle(self):
+    def test_mid_run_acceptance_of_held_when_needed_row_is_told_once(self):
         self.at(10);_,row=self.line();self.now+=86400;self.at(8)
         with self.store.db() as db:
-            db.execute("DELETE FROM tool_events WHERE tool='line_held'")
-            db.execute('UPDATE preparations SET channel=?,delivery_mode=? WHERE id=?',('telegram',prep.DELIVERY_WHEN_NEEDED,row['id']))
-        # Replay the L1 route through existing settle and notification delivery before enabling holding.
-        with patch.object(self.helper,'hold_line_rows',return_value=None),patch.object(self.helper,'held_row',return_value=False),patch.object(self.service,'watch_judgment',return_value='yes'):
-            work=self.report(row,'Previously sent result')
+            db.execute('UPDATE preparations SET delivery_mode=?,due_at=? WHERE id=?',(prep.DELIVERY_WHEN_NEEDED,self.now,row['id']))
+        self.service.run_due_preparation()
+        work=self.service.preparations.get(row['id'])['last_run_job_id']
+        self.assertEqual(self.store.job(work)['channel'],'web')
+        with self.store.db() as db:db.execute('UPDATE preparations SET accepted_by=? WHERE id=?',(prep.ACCEPTED_OWNER_BUTTON,row['id']))
+        self.now+=1;self.helper.hold_line_rows(self.now)
+        self.assertEqual(self.service.preparations.get(row['id'])['channel'],'telegram')
+        self.telegram.clear();self.script=[{'content':'Mid-run accepted result'}]*4
+        with patch.object(self.service,'watch_judgment',return_value='yes'):
+            self.assertTrue(self.service.run_one());self.service.run_due_preparation()
         with patch('personal_agent.telegram_store.time.time',return_value=self.now):self.service.deliver_notification()
         self.assertEqual(self.store.notification_of(work,prep.NOTIFY_KIND)['state'],'sent')
-        self.now+=1;self.helper.hold_line_rows(self.now)
         self.at(9);self.assertIsNone(self.flush());self.assertEqual(self.receipts(),[])
+        self.assertEqual(len(self.sends()),1)
+        self.assertIn('Mid-run accepted result',self.sends()[0]['text'])
 
     def test_l1_inflight_when_needed_report_is_not_lost_when_holding_starts(self):
         self.at(10);_,row=self.line();self.now+=86400;self.at(8)
@@ -413,15 +528,14 @@ class Bundles(_LinesCase):
         self.assertEqual(len(self.receipts()),1)
         self.at(18);self.flush();self.assertEqual(len(self.receipts()),2)
 
-    def test_when_needed_only_notify_is_bundled_and_web_bundle_is_delivered(self):
+    def test_when_needed_only_notify_is_bundled_and_unpaired_send_falls_back_to_web(self):
         self.at(10);brief,row=self.line();self.now+=86400;self.at(8)
         with self.store.db() as db:db.execute('UPDATE preparations SET delivery_mode=? WHERE id=?',(prep.DELIVERY_WHEN_NEEDED,row['id']))
         with patch.object(self.service,'watch_judgment',return_value='no'):self.report(row,'Silent result')
         self.at(9);self.assertIsNone(self.flush())
         self.at(10)
         with patch.object(self.service,'watch_judgment',return_value='yes'):work=self.report(row,'Notify result')
-        web=self.owner('Latest web owner turn',self.now)
-        with self.store.db() as db:db.execute("UPDATE jobs SET channel='web',chat_id=NULL WHERE id=?",(web,))
+        self.store.put('telegram',{'enabled':False})
         self.at(18);bundle=self.flush();self.assertIsNotNone(bundle)
         self.assertEqual(self.store.job(bundle)['delivery'],'none')
         self.assertEqual(self.receipts(),[(work,bundle)])

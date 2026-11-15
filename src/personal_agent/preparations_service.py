@@ -1522,8 +1522,8 @@ class PreparationsService:
     def bundle_report_times(self, row, db):
         """Read-only display metadata using the same eligibility and frozen daily times as flushing."""
         if not self.held_row(row,db):return None
-        from .current_context import host_zone
-        tz=prep.zone(self.home_zone()) if self.home_zone() else host_zone(self.service.store)[1]
+        # As with preparation budget days, an unset owner zone uses machine-local time.
+        tz=prep.zone(self.home_zone())
         day=datetime.fromtimestamp(self.service.preparations.clock(),tz).date().isoformat()
         bundle=db.execute("SELECT e.detail FROM jobs j JOIN tool_events e ON e.job_id=j.id "
                           "WHERE e.tool='line_bundle' AND j.request_key LIKE ? ORDER BY j.created LIMIT 1",
@@ -1584,11 +1584,19 @@ class PreparationsService:
         seen=set()
         for job in rows:
             if job['id'] in seen or not ws.has_delivered_result(job['status']):continue
-            row=service.preparations.get(prep.preparation_of(job['request_key']))
-            if not row or row['state']==prep.STATE_CANCELLED:continue
+            preparation_id=prep.preparation_of(job['request_key'])
+            row=service.preparations.get(preparation_id)
+            if not row:
+                # Deleting a schedule retains its past Works/Evidence; it is not forgetting
+                # the line or the finished answer. The first brief read is the run's
+                # own line input; later tool calls may read unrelated lines too.
+                read=db.execute("SELECT COALESCE(json_extract(detail,'$.evidence.line_id'),json_extract(detail,'$.line_id')) AS line_id "
+                                "FROM tool_events WHERE job_id=? AND tool=? ORDER BY id LIMIT 1",(job['id'],el.READ_EVENT)).fetchone()
+                if not read:continue
+                row={'line_id':read['line_id'],'timezone':self.home_zone()}
             # L1 runs may already be in flight when the row is held. A report already handed
             # to notification delivery is excluded above, whatever that delivery's state.
-            started=db.execute("SELECT detail FROM tool_events WHERE job_id=? AND tool='preparation' "
+            started=db.execute("SELECT detail,created FROM tool_events WHERE job_id=? AND tool='preparation' "
                                "AND json_type(detail,'$.slot') IS NOT NULL ORDER BY id LIMIT 1",(job['id'],)).fetchone()
             if started is None:continue
             run=json.loads(started['detail'])
@@ -1602,13 +1610,16 @@ class PreparationsService:
             if not brief or brief['state']!=el.STATE_ACTIVE:continue
             # A stop discards old held parts permanently, including after an explicit restart.
             if db.execute("SELECT 1 FROM procedure_versions WHERE slot=? AND json_extract(stats_json,'$.change')='stopped' "
-                          "AND saved>=?", (el.slot(row['line_id']),job['created'])).fetchone():continue
+                          "AND saved>=?", (el.slot(row['line_id']),started['created'])).fetchone():continue
             if (run.get('delivery_mode')==prep.DELIVERY_WHEN_NEEDED
                     and json.loads(job['settlement']).get('decision')!=prep.DECISION_NOTIFY):continue
             text=service.scrub_work_text(job['id'],job['response']).strip()
             if not text:continue
+            held=db.execute("SELECT detail FROM tool_events WHERE tool='line_held' "
+                            "AND json_extract(detail,'$.preparation_id')=? ORDER BY id LIMIT 1",(preparation_id,)).fetchone()
             seen.add(job['id'])
-            parts.append({'job':job,'row':row,'brief':brief,'text':text})
+            parts.append({'job':job,'row':row,'brief':brief,'text':text,
+                          'destination':json.loads(held['detail'])['channel']})
         return parts
 
     def compose_line_bundle(self, parts):
@@ -1640,17 +1651,16 @@ class PreparationsService:
         return self.service._redact_known_secrets('\n\n'.join(x for x in (heading,*blocks,more,footer) if x))
 
     def flush_line_bundles(self, now):
-        """Atomically hand one local slot's parts to the same builtin pending-Work path as reminders."""
-        from .current_context import host_zone
+        """Atomically hand each destination's local-slot bundle to existing builtin delivery."""
         service=self.service
         with service.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
             # Ordinary preparations pay no per-run scan for a budget they do not use.
             if not db.execute("SELECT 1 FROM tool_events WHERE tool='line_held' LIMIT 1").fetchone():return None
-            tz=prep.zone(self.home_zone()) if self.home_zone() else host_zone(service.store)[1]
+            tz=prep.zone(self.home_zone())
             local=datetime.fromtimestamp(now,tz)
             day=local.date().isoformat()
-            bundles=[dict(r) for r in db.execute("SELECT j.request_key,j.created,e.detail FROM jobs j JOIN tool_events e ON e.job_id=j.id "
+            bundles=[dict(r) for r in db.execute("SELECT j.channel,j.created,e.detail FROM jobs j JOIN tool_events e ON e.job_id=j.id "
                                                 "WHERE e.tool='line_bundle' AND j.request_key LIKE ? ORDER BY j.created",('line-bundle:'+day+':%',))]
             # Freeze today's schedule once it has spent a slot. Edits take effect tomorrow;
             # replacing times must not replenish a day's already-used attention budget.
@@ -1658,34 +1668,43 @@ class PreparationsService:
             due=[t for t in times if t<=local.strftime('%H:%M')]
             if not due:return None
             at=due[-1]
-            key='line-bundle:'+day+':'+at.replace(':','')
-            # Never backfill an earlier slot after the latest one was consumed.
-            if db.execute('SELECT 1 FROM jobs WHERE request_key=?',(key,)).fetchone():return None
+            # The cap is per destination, including old bundles with unsuffixed keys.
+            # Never backfill an earlier slot after this destination consumed the latest.
+            used={b['channel'].split(':',1)[0] for b in bundles if json.loads(b['detail'])['slot']==at}
             slot=local.replace(hour=int(at[:2]),minute=int(at[3:]),second=0,microsecond=0).timestamp()
             if now<slot+BUNDLE_SETTLE_SECONDS:
                 running=[dict(r) for r in db.execute('SELECT * FROM preparations WHERE state=? AND due_at<=?',(prep.STATE_RUNNING,slot))]
                 if any(self.held_row(r,db) for r in running):return None
             parts=self.line_bundle_parts(db,slot)
             if not parts:return None
-            anchor=self.owner_last_work()
-            if not anchor:return None
-            surface=next((s for s in service.surfaces if s.name==anchor['channel'].split(':',1)[0]),None)
-            pairing=surface.pairing() if surface is not None else None
-            if anchor['channel']!=prep.CHANNEL_WEB and pairing is None:return None
-            channel=pairing.channel if pairing else prep.CHANNEL_WEB
-            chat=pairing.owner if pairing else None
-            text=self.compose_line_bundle(parts)
-            work_id=uuid.uuid4().hex
-            db.execute('INSERT INTO jobs(id,request_key,message,channel,chat_id,status,response,delivery,provider,model,created) '
-                       "VALUES (?,?,?,?,?,'succeeded',?,?,'builtin','line-bundle',?)",
-                       (work_id,key,'',channel,chat,text,'pending' if chat else 'none',now))
-            db.execute("INSERT INTO messages(job_id,role,content,channel,created) VALUES (?,'assistant',?,?,?)",(work_id,text,channel,now))
+            destinations={}
             for part in parts:
+                surface=next((s for s in service.surfaces if s.name==part['destination']),None)
+                pairing=surface.pairing() if surface is not None else None
+                # Same fallback as an unbundled preparation: keep it in the web
+                # conversation when its recorded send surface is no longer paired.
+                channel=pairing.channel if pairing else prep.CHANNEL_WEB
+                chat=pairing.owner if pairing else None
+                destination=channel.split(':',1)[0]
+                destinations.setdefault(destination,{'channel':channel,'chat':chat,'parts':[]})['parts'].append(part)
+            created=[]
+            for destination,group in destinations.items():
+                if destination in used:continue
+                key='line-bundle:'+day+':'+at.replace(':','')+':'+destination
+                text=self.compose_line_bundle(group['parts'])
+                work_id=uuid.uuid4().hex
+                channel,chat=group['channel'],group['chat']
+                db.execute('INSERT INTO jobs(id,request_key,message,channel,chat_id,status,response,delivery,provider,model,created) '
+                           "VALUES (?,?,?,?,?,'succeeded',?,?,'builtin','line-bundle',?)",
+                           (work_id,key,'',channel,chat,text,'pending' if chat is not None else 'none',now))
+                db.execute("INSERT INTO messages(job_id,role,content,channel,created) VALUES (?,'assistant',?,?,?)",(work_id,text,channel,now))
+                for part in group['parts']:
+                    db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                               (part['job']['id'],'line_bundled','succeeded',json.dumps({'bundle_id':work_id,'line_id':part['brief']['line_id']}),now))
                 db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
-                           (part['job']['id'],'line_bundled','succeeded',json.dumps({'bundle_id':work_id,'line_id':part['brief']['line_id']}),now))
-            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
-                       (work_id,'line_bundle','succeeded',json.dumps({'day':day,'slot':at,'report_times':times,'parts':len(parts)}),now))
-            return work_id
+                           (work_id,'line_bundle','succeeded',json.dumps({'day':day,'slot':at,'report_times':times,'parts':len(group['parts'])}),now))
+                created.append(work_id)
+            return created[0] if created else None
 
     # -- #798: entrusted lines ---------------------------------------------------------------------
 
