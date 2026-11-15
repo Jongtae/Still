@@ -1,0 +1,3485 @@
+{
+  "split": "dev",
+  "case_count": 24,
+  "primary": "vector",
+  "frozen": {
+    "vector": {
+      "top_k": 1,
+      "min_sim": 0.84,
+      "use_context": true,
+      "passage_form": "content"
+    },
+    "hybrid": {
+      "top_k": 1,
+      "min_sim": 0.84,
+      "use_context": true,
+      "passage_form": "content",
+      "k": 60,
+      "vector_only_when_empty": true
+    },
+    "hybrid_lexical_context": {
+      "top_k": 1,
+      "min_sim": 0.84,
+      "use_context": false,
+      "passage_form": "content",
+      "k": 60,
+      "vector_only_when_empty": true
+    }
+  },
+  "model": {
+    "revision": "614241f622f53c4eeff9890bdc4f31cfecc418b3",
+    "model_file": "onnx/model_O4.onnx",
+    "sha256": "4654c156f3e4171abc9c716cdb771bf9116455d15ac1aab364aeeede0e3205b0",
+    "tokenizer_sha256": "0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39",
+    "evidence": "local operating observation (offline embedding model)"
+  },
+  "gate": {},
+  "gate_status": "deferred; no heldout evaluated",
+  "hybrid_runtime_unavailable": "recall_arms.runtime writes synthetic jobs/messages on every retrieval call; it cannot compose on the supplied store under this lane's no-store-write contract. Measure runtime separately as the runner's baseline.",
+  "identical_ids_on_two_calls": true,
+  "costs": {
+    "process_cold": {
+      "load_seconds": 0.7894638748839498,
+      "peak_rss_bytes": 862011392,
+      "network_attempts": []
+    },
+    "warm_load_seconds": 1.0253217499703169,
+    "cached_acquisition_seconds": 3.343448042869568e-07,
+    "synthetic_builds": {
+      "1000": {
+        "passage_count": 1000,
+        "build_seconds": 40.35553679196164,
+        "vector_bytes": 1536000,
+        "min_chars": 30,
+        "max_chars": 200
+      },
+      "10000": {
+        "passage_count": 10000,
+        "build_seconds": 403.2078357907012,
+        "vector_bytes": 15360000,
+        "min_chars": 30,
+        "max_chars": 200
+      }
+    },
+    "model_file_bytes": 235052531,
+    "model_directory_bytes": 863402419,
+    "peak_rss_bytes": 875560960,
+    "network_attempts": [],
+    "note": "Process-cold includes pin verification/import/session load; OS cache not flushed. Warm load is first main-process load, cached acquisition is a second cache lookup. Peak RSS is process high-water mark, not incremental model allocation.",
+    "per_arm": {
+      "vector": {
+        "query_embedding": {
+          "samples": 24,
+          "median_ms": 4.605750320479274,
+          "p95_ms": 8.39279219508171
+        },
+        "retrieval": {
+          "samples": 24,
+          "median_ms": 0.957271084189415,
+          "p95_ms": 1.3728337362408638
+        },
+        "index_build": {
+          "passage_count": 44,
+          "build_seconds": 0.3265587077476084,
+          "vector_bytes": 67584
+        }
+      },
+      "hybrid": {
+        "query_embedding": {
+          "samples": 24,
+          "median_ms": 4.830353893339634,
+          "p95_ms": 7.96658406034112
+        },
+        "retrieval": {
+          "samples": 24,
+          "median_ms": 1.8882914446294308,
+          "p95_ms": 3.7770001217722893
+        },
+        "index_build": {
+          "passage_count": 44,
+          "build_seconds": 0.33712587505578995,
+          "vector_bytes": 67584
+        }
+      },
+      "hybrid_lexical_context": {
+        "query_embedding": {
+          "samples": 24,
+          "median_ms": 4.562041722238064,
+          "p95_ms": 7.040082942694426
+        },
+        "retrieval": {
+          "samples": 24,
+          "median_ms": 1.8802497070282698,
+          "p95_ms": 3.712915815412998
+        },
+        "index_build": {
+          "passage_count": 44,
+          "build_seconds": 0.3366278330795467,
+          "vector_bytes": 67584
+        }
+      },
+      "lexical": {
+        "query_embedding": {
+          "samples": 0,
+          "median_ms": null,
+          "p95_ms": null
+        },
+        "retrieval": {
+          "samples": 24,
+          "median_ms": 0.518854008987546,
+          "p95_ms": 0.6472920067608356
+        },
+        "index_build": null
+      },
+      "lexical-context": {
+        "query_embedding": {
+          "samples": 0,
+          "median_ms": null,
+          "p95_ms": null
+        },
+        "retrieval": {
+          "samples": 24,
+          "median_ms": 0.5257907323539257,
+          "p95_ms": 0.6732079200446606
+        },
+        "index_build": null
+      },
+      "runtime": {
+        "query_embedding": {
+          "samples": 0,
+          "median_ms": null,
+          "p95_ms": null
+        },
+        "retrieval": {
+          "samples": 24,
+          "median_ms": 16.867957776412368,
+          "p95_ms": 27.195542119443417
+        },
+        "index_build": null
+      }
+    },
+    "evidence": "local operating observation"
+  },
+  "loadavg_before": [
+    4.01611328125,
+    3.97265625,
+    3.81494140625
+  ],
+  "loadavg_after": [
+    8.15283203125,
+    6.2958984375,
+    4.9443359375
+  ],
+  "network_attempts": [],
+  "recall_at_k": {
+    "vector": {
+      "scores": {
+        "dev": {
+          "total": {
+            "needed_total": 16,
+            "cases": 24,
+            "recall": {
+              "1": 0.8125,
+              "3": 0.875,
+              "5": 1.0
+            }
+          },
+          "by_kind": {
+            "correction": {
+              "needed_total": 2,
+              "cases": 2,
+              "recall": {
+                "1": 1.0,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "cross-language": {
+              "needed_total": 2,
+              "cases": 2,
+              "recall": {
+                "1": 0.5,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "currentness": {
+              "needed_total": 0,
+              "cases": 3,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "dated-contradiction": {
+              "needed_total": 3,
+              "cases": 3,
+              "recall": {
+                "1": 0.6666666666666666,
+                "3": 0.6666666666666666,
+                "5": 1.0
+              }
+            },
+            "forgetting": {
+              "needed_total": 0,
+              "cases": 3,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "harm-control": {
+              "needed_total": 0,
+              "cases": 2,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "lexical-control": {
+              "needed_total": 4,
+              "cases": 4,
+              "recall": {
+                "1": 1.0,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "paraphrase": {
+              "needed_total": 3,
+              "cases": 3,
+              "recall": {
+                "1": 0.6666666666666666,
+                "3": 0.6666666666666666,
+                "5": 1.0
+              }
+            },
+            "short-follow-up": {
+              "needed_total": 2,
+              "cases": 2,
+              "recall": {
+                "1": 1.0,
+                "3": 1.0,
+                "5": 1.0
+              }
+            }
+          }
+        }
+      },
+      "cases": [
+        {
+          "id": "d-lex-instrument",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-lex-last-day",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-lex-desk",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-para-focus",
+          "split": "dev",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-para-posture",
+          "split": "dev",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-language",
+          "split": "dev",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-follow",
+          "split": "dev",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-dated-current",
+          "split": "dev",
+          "kind": "dated-contradiction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-dated-old-token",
+          "split": "dev",
+          "kind": "dated-contradiction",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-correction",
+          "split": "dev",
+          "kind": "correction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-expired",
+          "split": "dev",
+          "kind": "currentness",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-expired-date",
+          "split": "dev",
+          "kind": "currentness",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-forget-chain",
+          "split": "dev",
+          "kind": "forgetting",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-noise",
+          "split": "dev",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-lex-tool",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-para-layout",
+          "split": "dev",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-language",
+          "split": "dev",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-follow",
+          "split": "dev",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-dated",
+          "split": "dev",
+          "kind": "dated-contradiction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-correction",
+          "split": "dev",
+          "kind": "correction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-expired",
+          "split": "dev",
+          "kind": "currentness",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-forget-name",
+          "split": "dev",
+          "kind": "forgetting",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-forget-role",
+          "split": "dev",
+          "kind": "forgetting",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-noise",
+          "split": "dev",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        }
+      ]
+    },
+    "hybrid": {
+      "scores": {
+        "dev": {
+          "total": {
+            "needed_total": 16,
+            "cases": 24,
+            "recall": {
+              "1": 0.8125,
+              "3": 0.875,
+              "5": 1.0
+            }
+          },
+          "by_kind": {
+            "correction": {
+              "needed_total": 2,
+              "cases": 2,
+              "recall": {
+                "1": 1.0,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "cross-language": {
+              "needed_total": 2,
+              "cases": 2,
+              "recall": {
+                "1": 1.0,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "currentness": {
+              "needed_total": 0,
+              "cases": 3,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "dated-contradiction": {
+              "needed_total": 3,
+              "cases": 3,
+              "recall": {
+                "1": 0.6666666666666666,
+                "3": 0.6666666666666666,
+                "5": 1.0
+              }
+            },
+            "forgetting": {
+              "needed_total": 0,
+              "cases": 3,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "harm-control": {
+              "needed_total": 0,
+              "cases": 2,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "lexical-control": {
+              "needed_total": 4,
+              "cases": 4,
+              "recall": {
+                "1": 1.0,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "paraphrase": {
+              "needed_total": 3,
+              "cases": 3,
+              "recall": {
+                "1": 0.3333333333333333,
+                "3": 0.6666666666666666,
+                "5": 1.0
+              }
+            },
+            "short-follow-up": {
+              "needed_total": 2,
+              "cases": 2,
+              "recall": {
+                "1": 1.0,
+                "3": 1.0,
+                "5": 1.0
+              }
+            }
+          }
+        }
+      },
+      "cases": [
+        {
+          "id": "d-lex-instrument",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-lex-last-day",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-lex-desk",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-para-focus",
+          "split": "dev",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-para-posture",
+          "split": "dev",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-language",
+          "split": "dev",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-follow",
+          "split": "dev",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-dated-current",
+          "split": "dev",
+          "kind": "dated-contradiction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-dated-old-token",
+          "split": "dev",
+          "kind": "dated-contradiction",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-correction",
+          "split": "dev",
+          "kind": "correction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-expired",
+          "split": "dev",
+          "kind": "currentness",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-expired-date",
+          "split": "dev",
+          "kind": "currentness",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-forget-chain",
+          "split": "dev",
+          "kind": "forgetting",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-noise",
+          "split": "dev",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-lex-tool",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-para-layout",
+          "split": "dev",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-language",
+          "split": "dev",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-follow",
+          "split": "dev",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-dated",
+          "split": "dev",
+          "kind": "dated-contradiction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-correction",
+          "split": "dev",
+          "kind": "correction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-expired",
+          "split": "dev",
+          "kind": "currentness",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-forget-name",
+          "split": "dev",
+          "kind": "forgetting",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-forget-role",
+          "split": "dev",
+          "kind": "forgetting",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-noise",
+          "split": "dev",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        }
+      ]
+    },
+    "hybrid_lexical_context": {
+      "scores": {
+        "dev": {
+          "total": {
+            "needed_total": 16,
+            "cases": 24,
+            "recall": {
+              "1": 0.75,
+              "3": 0.875,
+              "5": 1.0
+            }
+          },
+          "by_kind": {
+            "correction": {
+              "needed_total": 2,
+              "cases": 2,
+              "recall": {
+                "1": 1.0,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "cross-language": {
+              "needed_total": 2,
+              "cases": 2,
+              "recall": {
+                "1": 1.0,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "currentness": {
+              "needed_total": 0,
+              "cases": 3,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "dated-contradiction": {
+              "needed_total": 3,
+              "cases": 3,
+              "recall": {
+                "1": 0.6666666666666666,
+                "3": 0.6666666666666666,
+                "5": 1.0
+              }
+            },
+            "forgetting": {
+              "needed_total": 0,
+              "cases": 3,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "harm-control": {
+              "needed_total": 0,
+              "cases": 2,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "lexical-control": {
+              "needed_total": 4,
+              "cases": 4,
+              "recall": {
+                "1": 1.0,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "paraphrase": {
+              "needed_total": 3,
+              "cases": 3,
+              "recall": {
+                "1": 0.3333333333333333,
+                "3": 0.6666666666666666,
+                "5": 1.0
+              }
+            },
+            "short-follow-up": {
+              "needed_total": 2,
+              "cases": 2,
+              "recall": {
+                "1": 0.5,
+                "3": 1.0,
+                "5": 1.0
+              }
+            }
+          }
+        }
+      },
+      "cases": [
+        {
+          "id": "d-lex-instrument",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-lex-last-day",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-lex-desk",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-para-focus",
+          "split": "dev",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-para-posture",
+          "split": "dev",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-language",
+          "split": "dev",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-follow",
+          "split": "dev",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-dated-current",
+          "split": "dev",
+          "kind": "dated-contradiction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-dated-old-token",
+          "split": "dev",
+          "kind": "dated-contradiction",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-correction",
+          "split": "dev",
+          "kind": "correction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-expired",
+          "split": "dev",
+          "kind": "currentness",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-expired-date",
+          "split": "dev",
+          "kind": "currentness",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-forget-chain",
+          "split": "dev",
+          "kind": "forgetting",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-noise",
+          "split": "dev",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-lex-tool",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-para-layout",
+          "split": "dev",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-language",
+          "split": "dev",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-follow",
+          "split": "dev",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-dated",
+          "split": "dev",
+          "kind": "dated-contradiction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-correction",
+          "split": "dev",
+          "kind": "correction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-expired",
+          "split": "dev",
+          "kind": "currentness",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-forget-name",
+          "split": "dev",
+          "kind": "forgetting",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-forget-role",
+          "split": "dev",
+          "kind": "forgetting",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-noise",
+          "split": "dev",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        }
+      ]
+    },
+    "lexical": {
+      "scores": {
+        "dev": {
+          "total": {
+            "needed_total": 16,
+            "cases": 24,
+            "recall": {
+              "1": 0.625,
+              "3": 0.625,
+              "5": 0.625
+            }
+          },
+          "by_kind": {
+            "correction": {
+              "needed_total": 2,
+              "cases": 2,
+              "recall": {
+                "1": 1.0,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "cross-language": {
+              "needed_total": 2,
+              "cases": 2,
+              "recall": {
+                "1": 1.0,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "currentness": {
+              "needed_total": 0,
+              "cases": 3,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "dated-contradiction": {
+              "needed_total": 3,
+              "cases": 3,
+              "recall": {
+                "1": 0.6666666666666666,
+                "3": 0.6666666666666666,
+                "5": 0.6666666666666666
+              }
+            },
+            "forgetting": {
+              "needed_total": 0,
+              "cases": 3,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "harm-control": {
+              "needed_total": 0,
+              "cases": 2,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "lexical-control": {
+              "needed_total": 4,
+              "cases": 4,
+              "recall": {
+                "1": 1.0,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "paraphrase": {
+              "needed_total": 3,
+              "cases": 3,
+              "recall": {
+                "1": 0.0,
+                "3": 0.0,
+                "5": 0.0
+              }
+            },
+            "short-follow-up": {
+              "needed_total": 2,
+              "cases": 2,
+              "recall": {
+                "1": 0.0,
+                "3": 0.0,
+                "5": 0.0
+              }
+            }
+          }
+        }
+      },
+      "cases": [
+        {
+          "id": "d-lex-instrument",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-lex-last-day",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-lex-desk",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-para-focus",
+          "split": "dev",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-para-posture",
+          "split": "dev",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-language",
+          "split": "dev",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-follow",
+          "split": "dev",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-dated-current",
+          "split": "dev",
+          "kind": "dated-contradiction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-dated-old-token",
+          "split": "dev",
+          "kind": "dated-contradiction",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-correction",
+          "split": "dev",
+          "kind": "correction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-expired",
+          "split": "dev",
+          "kind": "currentness",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-expired-date",
+          "split": "dev",
+          "kind": "currentness",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-forget-chain",
+          "split": "dev",
+          "kind": "forgetting",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-noise",
+          "split": "dev",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-lex-tool",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-para-layout",
+          "split": "dev",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-language",
+          "split": "dev",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-follow",
+          "split": "dev",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-dated",
+          "split": "dev",
+          "kind": "dated-contradiction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-correction",
+          "split": "dev",
+          "kind": "correction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-expired",
+          "split": "dev",
+          "kind": "currentness",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-forget-name",
+          "split": "dev",
+          "kind": "forgetting",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-forget-role",
+          "split": "dev",
+          "kind": "forgetting",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-noise",
+          "split": "dev",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        }
+      ]
+    },
+    "lexical-context": {
+      "scores": {
+        "dev": {
+          "total": {
+            "needed_total": 16,
+            "cases": 24,
+            "recall": {
+              "1": 0.6875,
+              "3": 0.75,
+              "5": 0.75
+            }
+          },
+          "by_kind": {
+            "correction": {
+              "needed_total": 2,
+              "cases": 2,
+              "recall": {
+                "1": 1.0,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "cross-language": {
+              "needed_total": 2,
+              "cases": 2,
+              "recall": {
+                "1": 1.0,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "currentness": {
+              "needed_total": 0,
+              "cases": 3,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "dated-contradiction": {
+              "needed_total": 3,
+              "cases": 3,
+              "recall": {
+                "1": 0.6666666666666666,
+                "3": 0.6666666666666666,
+                "5": 0.6666666666666666
+              }
+            },
+            "forgetting": {
+              "needed_total": 0,
+              "cases": 3,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "harm-control": {
+              "needed_total": 0,
+              "cases": 2,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "lexical-control": {
+              "needed_total": 4,
+              "cases": 4,
+              "recall": {
+                "1": 1.0,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "paraphrase": {
+              "needed_total": 3,
+              "cases": 3,
+              "recall": {
+                "1": 0.0,
+                "3": 0.0,
+                "5": 0.0
+              }
+            },
+            "short-follow-up": {
+              "needed_total": 2,
+              "cases": 2,
+              "recall": {
+                "1": 0.5,
+                "3": 1.0,
+                "5": 1.0
+              }
+            }
+          }
+        }
+      },
+      "cases": [
+        {
+          "id": "d-lex-instrument",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-lex-last-day",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-lex-desk",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-para-focus",
+          "split": "dev",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-para-posture",
+          "split": "dev",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-language",
+          "split": "dev",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-follow",
+          "split": "dev",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-dated-current",
+          "split": "dev",
+          "kind": "dated-contradiction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-dated-old-token",
+          "split": "dev",
+          "kind": "dated-contradiction",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-correction",
+          "split": "dev",
+          "kind": "correction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-expired",
+          "split": "dev",
+          "kind": "currentness",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-expired-date",
+          "split": "dev",
+          "kind": "currentness",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-forget-chain",
+          "split": "dev",
+          "kind": "forgetting",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-noise",
+          "split": "dev",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-lex-tool",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-para-layout",
+          "split": "dev",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-language",
+          "split": "dev",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-follow",
+          "split": "dev",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-dated",
+          "split": "dev",
+          "kind": "dated-contradiction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-correction",
+          "split": "dev",
+          "kind": "correction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-expired",
+          "split": "dev",
+          "kind": "currentness",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-forget-name",
+          "split": "dev",
+          "kind": "forgetting",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-forget-role",
+          "split": "dev",
+          "kind": "forgetting",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-noise",
+          "split": "dev",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        }
+      ]
+    },
+    "runtime": {
+      "scores": {
+        "dev": {
+          "total": {
+            "needed_total": 16,
+            "cases": 24,
+            "recall": {
+              "1": 0.6875,
+              "3": 0.75,
+              "5": 0.75
+            }
+          },
+          "by_kind": {
+            "correction": {
+              "needed_total": 2,
+              "cases": 2,
+              "recall": {
+                "1": 1.0,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "cross-language": {
+              "needed_total": 2,
+              "cases": 2,
+              "recall": {
+                "1": 1.0,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "currentness": {
+              "needed_total": 0,
+              "cases": 3,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "dated-contradiction": {
+              "needed_total": 3,
+              "cases": 3,
+              "recall": {
+                "1": 0.6666666666666666,
+                "3": 0.6666666666666666,
+                "5": 0.6666666666666666
+              }
+            },
+            "forgetting": {
+              "needed_total": 0,
+              "cases": 3,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "harm-control": {
+              "needed_total": 0,
+              "cases": 2,
+              "recall": {
+                "1": null,
+                "3": null,
+                "5": null
+              }
+            },
+            "lexical-control": {
+              "needed_total": 4,
+              "cases": 4,
+              "recall": {
+                "1": 1.0,
+                "3": 1.0,
+                "5": 1.0
+              }
+            },
+            "paraphrase": {
+              "needed_total": 3,
+              "cases": 3,
+              "recall": {
+                "1": 0.0,
+                "3": 0.0,
+                "5": 0.0
+              }
+            },
+            "short-follow-up": {
+              "needed_total": 2,
+              "cases": 2,
+              "recall": {
+                "1": 0.5,
+                "3": 1.0,
+                "5": 1.0
+              }
+            }
+          }
+        }
+      },
+      "cases": [
+        {
+          "id": "d-lex-instrument",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-lex-last-day",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-lex-desk",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-para-focus",
+          "split": "dev",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-para-posture",
+          "split": "dev",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-language",
+          "split": "dev",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-follow",
+          "split": "dev",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-dated-current",
+          "split": "dev",
+          "kind": "dated-contradiction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-dated-old-token",
+          "split": "dev",
+          "kind": "dated-contradiction",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-correction",
+          "split": "dev",
+          "kind": "correction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "d-expired",
+          "split": "dev",
+          "kind": "currentness",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-expired-date",
+          "split": "dev",
+          "kind": "currentness",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-forget-chain",
+          "split": "dev",
+          "kind": "forgetting",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "d-noise",
+          "split": "dev",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-lex-tool",
+          "split": "dev",
+          "kind": "lexical-control",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-para-layout",
+          "split": "dev",
+          "kind": "paraphrase",
+          "needed": 1,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-language",
+          "split": "dev",
+          "kind": "cross-language",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-follow",
+          "split": "dev",
+          "kind": "short-follow-up",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-dated",
+          "split": "dev",
+          "kind": "dated-contradiction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-correction",
+          "split": "dev",
+          "kind": "correction",
+          "needed": 1,
+          "hits": {
+            "1": 1,
+            "3": 1,
+            "5": 1
+          }
+        },
+        {
+          "id": "h-expired",
+          "split": "dev",
+          "kind": "currentness",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-forget-name",
+          "split": "dev",
+          "kind": "forgetting",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-forget-role",
+          "split": "dev",
+          "kind": "forgetting",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        },
+        {
+          "id": "h-noise",
+          "split": "dev",
+          "kind": "harm-control",
+          "needed": 0,
+          "hits": {
+            "1": 0,
+            "3": 0,
+            "5": 0
+          }
+        }
+      ]
+    }
+  },
+  "recall_at_k_definition": "Micro recall = sum needed refs in first k unique eligible ranked refs / sum needed refs, separately per split and kind. Cases with no needed refs add zero to numerator/denominator (all-empty groups: null). Vector: full cosine rank; hybrid: RRF of exact lexical list and full cosine rank before min_sim/top_k/empty-only admission. Baselines expose only their returned rank (no additional cutoff).",
+  "changes": {
+    "lexical": {
+      "vector": {
+        "dev": [
+          {
+            "id": "d-lex-instrument",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-last-day",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-desk",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-para-focus",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-para-posture",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-follow",
+            "kind": "short-follow-up",
+            "change": "fixed"
+          },
+          {
+            "id": "d-dated-current",
+            "kind": "dated-contradiction",
+            "change": "regressed"
+          },
+          {
+            "id": "d-dated-old-token",
+            "kind": "dated-contradiction",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-correction",
+            "kind": "correction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired-date",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-forget-chain",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-noise",
+            "kind": "harm-control",
+            "change": "fixed"
+          },
+          {
+            "id": "h-lex-tool",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-para-layout",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-follow",
+            "kind": "short-follow-up",
+            "change": "fixed"
+          },
+          {
+            "id": "h-dated",
+            "kind": "dated-contradiction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-correction",
+            "kind": "correction",
+            "change": "fixed"
+          },
+          {
+            "id": "h-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-name",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-role",
+            "kind": "forgetting",
+            "change": "fixed"
+          },
+          {
+            "id": "h-noise",
+            "kind": "harm-control",
+            "change": "fixed"
+          }
+        ]
+      },
+      "hybrid": {
+        "dev": [
+          {
+            "id": "d-lex-instrument",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-last-day",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-desk",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-para-focus",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-para-posture",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-follow",
+            "kind": "short-follow-up",
+            "change": "fixed"
+          },
+          {
+            "id": "d-dated-current",
+            "kind": "dated-contradiction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-dated-old-token",
+            "kind": "dated-contradiction",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-correction",
+            "kind": "correction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired-date",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-forget-chain",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-noise",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-lex-tool",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-para-layout",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-follow",
+            "kind": "short-follow-up",
+            "change": "fixed"
+          },
+          {
+            "id": "h-dated",
+            "kind": "dated-contradiction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-correction",
+            "kind": "correction",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-name",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-role",
+            "kind": "forgetting",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-noise",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          }
+        ]
+      },
+      "hybrid_lexical_context": {
+        "dev": [
+          {
+            "id": "d-lex-instrument",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-last-day",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-desk",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-para-focus",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-para-posture",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-follow",
+            "kind": "short-follow-up",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-dated-current",
+            "kind": "dated-contradiction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-dated-old-token",
+            "kind": "dated-contradiction",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-correction",
+            "kind": "correction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired-date",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-forget-chain",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-noise",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-lex-tool",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-para-layout",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-follow",
+            "kind": "short-follow-up",
+            "change": "fixed"
+          },
+          {
+            "id": "h-dated",
+            "kind": "dated-contradiction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-correction",
+            "kind": "correction",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-name",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-role",
+            "kind": "forgetting",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-noise",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          }
+        ]
+      }
+    },
+    "lexical-context": {
+      "vector": {
+        "dev": [
+          {
+            "id": "d-lex-instrument",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-last-day",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-desk",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-para-focus",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-para-posture",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-follow",
+            "kind": "short-follow-up",
+            "change": "fixed"
+          },
+          {
+            "id": "d-dated-current",
+            "kind": "dated-contradiction",
+            "change": "regressed"
+          },
+          {
+            "id": "d-dated-old-token",
+            "kind": "dated-contradiction",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-correction",
+            "kind": "correction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired-date",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-forget-chain",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-noise",
+            "kind": "harm-control",
+            "change": "fixed"
+          },
+          {
+            "id": "h-lex-tool",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-para-layout",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-follow",
+            "kind": "short-follow-up",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-dated",
+            "kind": "dated-contradiction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-correction",
+            "kind": "correction",
+            "change": "fixed"
+          },
+          {
+            "id": "h-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-name",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-role",
+            "kind": "forgetting",
+            "change": "fixed"
+          },
+          {
+            "id": "h-noise",
+            "kind": "harm-control",
+            "change": "fixed"
+          }
+        ]
+      },
+      "hybrid": {
+        "dev": [
+          {
+            "id": "d-lex-instrument",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-last-day",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-desk",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-para-focus",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-para-posture",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-follow",
+            "kind": "short-follow-up",
+            "change": "fixed"
+          },
+          {
+            "id": "d-dated-current",
+            "kind": "dated-contradiction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-dated-old-token",
+            "kind": "dated-contradiction",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-correction",
+            "kind": "correction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired-date",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-forget-chain",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-noise",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-lex-tool",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-para-layout",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-follow",
+            "kind": "short-follow-up",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-dated",
+            "kind": "dated-contradiction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-correction",
+            "kind": "correction",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-name",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-role",
+            "kind": "forgetting",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-noise",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          }
+        ]
+      },
+      "hybrid_lexical_context": {
+        "dev": [
+          {
+            "id": "d-lex-instrument",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-last-day",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-desk",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-para-focus",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-para-posture",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-follow",
+            "kind": "short-follow-up",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-dated-current",
+            "kind": "dated-contradiction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-dated-old-token",
+            "kind": "dated-contradiction",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-correction",
+            "kind": "correction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired-date",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-forget-chain",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-noise",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-lex-tool",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-para-layout",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-follow",
+            "kind": "short-follow-up",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-dated",
+            "kind": "dated-contradiction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-correction",
+            "kind": "correction",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-name",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-role",
+            "kind": "forgetting",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-noise",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          }
+        ]
+      }
+    },
+    "runtime": {
+      "vector": {
+        "dev": [
+          {
+            "id": "d-lex-instrument",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-last-day",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-desk",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-para-focus",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-para-posture",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-follow",
+            "kind": "short-follow-up",
+            "change": "fixed"
+          },
+          {
+            "id": "d-dated-current",
+            "kind": "dated-contradiction",
+            "change": "regressed"
+          },
+          {
+            "id": "d-dated-old-token",
+            "kind": "dated-contradiction",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-correction",
+            "kind": "correction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired-date",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-forget-chain",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-noise",
+            "kind": "harm-control",
+            "change": "fixed"
+          },
+          {
+            "id": "h-lex-tool",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-para-layout",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-follow",
+            "kind": "short-follow-up",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-dated",
+            "kind": "dated-contradiction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-correction",
+            "kind": "correction",
+            "change": "fixed"
+          },
+          {
+            "id": "h-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-name",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-role",
+            "kind": "forgetting",
+            "change": "fixed"
+          },
+          {
+            "id": "h-noise",
+            "kind": "harm-control",
+            "change": "fixed"
+          }
+        ]
+      },
+      "hybrid": {
+        "dev": [
+          {
+            "id": "d-lex-instrument",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-last-day",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-desk",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-para-focus",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-para-posture",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-follow",
+            "kind": "short-follow-up",
+            "change": "fixed"
+          },
+          {
+            "id": "d-dated-current",
+            "kind": "dated-contradiction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-dated-old-token",
+            "kind": "dated-contradiction",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-correction",
+            "kind": "correction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired-date",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-forget-chain",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-noise",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-lex-tool",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-para-layout",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-follow",
+            "kind": "short-follow-up",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-dated",
+            "kind": "dated-contradiction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-correction",
+            "kind": "correction",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-name",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-role",
+            "kind": "forgetting",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-noise",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          }
+        ]
+      },
+      "hybrid_lexical_context": {
+        "dev": [
+          {
+            "id": "d-lex-instrument",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-last-day",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-lex-desk",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-para-focus",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-para-posture",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-follow",
+            "kind": "short-follow-up",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-dated-current",
+            "kind": "dated-contradiction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-dated-old-token",
+            "kind": "dated-contradiction",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "d-correction",
+            "kind": "correction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-expired-date",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-forget-chain",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "d-noise",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-lex-tool",
+            "kind": "lexical-control",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-para-layout",
+            "kind": "paraphrase",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-language",
+            "kind": "cross-language",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-follow",
+            "kind": "short-follow-up",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-dated",
+            "kind": "dated-contradiction",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-correction",
+            "kind": "correction",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-expired",
+            "kind": "currentness",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-name",
+            "kind": "forgetting",
+            "change": "unchanged-pass"
+          },
+          {
+            "id": "h-forget-role",
+            "kind": "forgetting",
+            "change": "unchanged-fail"
+          },
+          {
+            "id": "h-noise",
+            "kind": "harm-control",
+            "change": "unchanged-fail"
+          }
+        ]
+      }
+    }
+  }
+}

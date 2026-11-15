@@ -256,7 +256,9 @@ def _call(case, cases, judgments, engine, policy, keep_text):
     else:
         result = getattr(judgments, role)(**inputs)
     if role == 'connector_effect':
-        return {'value': result}
+        # #717: this existing ordinary-Work rubric still measures mutation,
+        # while self-set runs distinguish its reversibility at authorization.
+        return {'value': 'mutate' if result in ('reversible', 'irreversible') else result}
     if role == 'owner_act_answer':
         return {'item': result['item'], 'answer': result['answer']} if result else {'item': None, 'answer': None}
     observed = {'outcome': result.outcome}

@@ -476,7 +476,7 @@ TELL_OWNER_DESCRIPTION=('Send the owner one short message now, in their paired c
 #: setting (preparations cancel/accept, browser close_login/use_mobile) cannot be missing from the schema.
 from .settings_orchestrator import SETTINGS as _OWNER_SETTINGS
 SETTING_NAMES=list(dict.fromkeys(name for names in _OWNER_SETTINGS.values() for name in names))
-SETTINGS_CATEGORIES=['payment_autonomy','main_ai','judgment_ai','current_context','scheduled_work','owner_model','developer_mode','skills','ai_connections','api_connections','phone_link','preparations','browser','connections']
+SETTINGS_CATEGORIES=['write_allowances','payment_autonomy','main_ai','judgment_ai','current_context','scheduled_work','owner_model','developer_mode','skills','ai_connections','api_connections','phone_link','preparations','browser','connections']
 #: #826: the owner's audit of what an answer used, readable in conversation.
 INFORMATION_USE_DESCRIPTION=('Show which owner information an earlier answer (Work) used and where it went, from Still\'s own records: '
                              'the owner profile keys, memory rows, calendar entries, files, current-context claims and earlier '
@@ -3534,6 +3534,12 @@ class Capabilities:
   """This Work's browser session, created on first use (#656)."""
   if self._browser_session is None:
    from .browser_session import BrowserSession
+   take=getattr(self.browser_approvals,'self_set_browser_take',None)
+   saved=take() if callable(take) else None
+   if saved is not None:
+    saved.budget=self.budget;saved.approvals=self.browser_approvals;saved.judgments=self.judgments
+    self._browser_session=saved
+    return saved
    # #174: the Work's judgments, asked only whether a mutate press the payment floor missed could charge.
    self._browser_session=BrowserSession(self.browser,work_id=self.job_id,budget=self.budget,
                                         approvals=self.browser_approvals,judgments=self.judgments)

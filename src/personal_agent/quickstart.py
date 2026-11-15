@@ -541,6 +541,7 @@ SETTINGS_WEB_CHANGES={
     # #208: the read model shows on/off; the notice states which.
     '/api/work-mode':(msg('work_mode.label'),None),
     # #662: the read model shows on/off.
+    '/api/write-allowances':(msg('write_allowances.label'),None),
     '/api/payment-autonomy':(msg('payment_autonomy.label'),None),
     # #209: the read model does not list the hosts; the notice states the action only.
     '/api/intranet-destinations':(msg('quickstart.intranet_addresses'),msg('quickstart_service.changed_verb')),
@@ -1217,6 +1218,9 @@ def make_handler(service, public_hosts=(), public_access_token=''):
                 # #626: current-context privacy control (use/timezone/clear only).
                 if path=='/api/current-context':return self.reply(200,service.set_current_context(body))
                 # #662: payment autonomy is switched in Settings on this computer only, never through a tunnel.
+                if path=='/api/write-allowances':
+                    if self.tunneled():return self.reply(400,{'error':msg('write_allowances.local_only')})
+                    return self.reply(200,service.set_write_allowance(body))
                 if path=='/api/payment-autonomy':
                     if self.tunneled():return self.reply(400,{'error':msg('payment_autonomy.local_only')})
                     return self.reply(200,service.set_payment_autonomy(body))

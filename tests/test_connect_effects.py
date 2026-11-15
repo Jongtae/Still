@@ -405,7 +405,7 @@ class EffectBoundary(unittest.TestCase):
 
     def test_model_effect_classification_uses_metadata_and_never_grants_a_read(self):
         from personal_agent.decision import FixtureDecisionEngine,SelectionDecision,OUTCOME_DECIDED,fixture_confidence
-        for choice,behavior in (('mutate','allow'),('payment','deny'),('read','deny')):
+        for choice,behavior in (('reversible','allow'),('irreversible','allow'),('payment','deny'),('read','deny')):
             with self.subTest(choice=choice):
                 self.setUp()
                 engine=FixtureDecisionEngine(choose=lambda context,candidates,question:
