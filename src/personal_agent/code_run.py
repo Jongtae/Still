@@ -808,6 +808,8 @@ class CodeRunner:
                         ApiRequests(self.store, self.work_id)._settle_effect(claim, 'observed', None)
                     except ApiError:
                         result['effect'] = 'unknown'
+        for ticket in self.__dict__.pop('_write_tickets',[]):
+            self.approvals.self_set_write_finished(ticket,observed=not outcome.get('timed_out') and outcome.get('exit_status') is not None)
         if self._asked:
             result['approval_requested'] = list(self._asked)
         self._asked, self._claims = [], []
@@ -947,7 +949,17 @@ class CodeRunner:
                 return False, str(exc)
             self._asked.append({'method': method, 'host': host, 'path': redact_known_secrets(self.store, path)})
             return False, APPROVAL_REQUESTED_TEXT
-        return self._claim_state_change(api, slot, identity, method, effect, host, path)
+        gate=getattr(self.approvals,'self_set_write',None)
+        ticket=None
+        if callable(gate):
+            try:ticket=gate(binding,['slot:'+owner[0] for owner in owners],method,url,('body',),description=body)
+            except ValueError as exc:
+                if getattr(exc,'code',None)=='approval_required':
+                    self._asked.append({'method':method,'host':host,'path':redact_known_secrets(self.store,path)})
+                return False,str(exc)
+        result=self._claim_state_change(api, slot, identity, method, effect, host, path)
+        if result[0] and ticket:self.__dict__.setdefault('_write_tickets',[]).append(ticket)
+        return result
 
     def _claim_state_change(self, api, slot, identity, method, effect, host, path):
         from .api_requests import ApiError

@@ -3533,7 +3533,7 @@ class AgentService:
                     'subscription_engines':self.subscription_engine_status(),
                     'subscription_execution':self.subscription_execution_profile(),
                     'telegram':{'enabled':tg.get('enabled',False),'mode':tg.get('mode','owner-token'),'username':tg.get('username',''),'paired':bool(tg.get('user_id')),'user_id':tg.get('user_id')},
-                    'file_roots':[{**root,'blocked':folder_grants.blocked(root.get('path',''),self.store)} for root in self.store.config('file_roots',[])], 'file_workspace':FileWorkspace(self.store).projection(), 'document_boundary':boundary, 'context_inbox':__import__('personal_agent.context_inbox',fromlist=['ContextInbox']).ContextInbox(self.store).status(), 'agents':[{'id':role['id'],'name':role['name'],'permissions':role['permissions'],'package_id':package['id']} for package in active_packages for role in package['roles']], 'packages':packages, 'tool_run':self.store.config('tool_run'), 'model_test':model_test, 'model_ready':self.model_ready(model,model_test), 'telegram_status':self.store.config('telegram_status'),'connectors':connectors,'google_services':self.google_service_rows(connectors,ai_routes),'google_client':self.google_client_status(),'ai_connections':{**self.ai_connections_status(),'routes':ai_routes},'current_context':self.current_state.status(),'payment_autonomy':self.payment_autonomy_settings(),'browser':self.browser_status(),'work_mode':self.work_mode_status(),'intranet':self.intranet_status(),'mattermost':self.mattermost_status(),'slack':self.slack_status()}
+                    'file_roots':[{**root,'blocked':folder_grants.blocked(root.get('path',''),self.store)} for root in self.store.config('file_roots',[])], 'file_workspace':FileWorkspace(self.store).projection(), 'document_boundary':boundary, 'context_inbox':__import__('personal_agent.context_inbox',fromlist=['ContextInbox']).ContextInbox(self.store).status(), 'agents':[{'id':role['id'],'name':role['name'],'permissions':role['permissions'],'package_id':package['id']} for package in active_packages for role in package['roles']], 'packages':packages, 'tool_run':self.store.config('tool_run'), 'model_test':model_test, 'model_ready':self.model_ready(model,model_test), 'telegram_status':self.store.config('telegram_status'),'connectors':connectors,'google_services':self.google_service_rows(connectors,ai_routes),'google_client':self.google_client_status(),'ai_connections':{**self.ai_connections_status(),'routes':ai_routes},'current_context':self.current_state.status(),'payment_autonomy':self.payment_autonomy_settings(),'write_allowances':self.write_allowance_settings(),'browser':self.browser_status(),'work_mode':self.work_mode_status(),'intranet':self.intranet_status(),'mattermost':self.mattermost_status(),'slack':self.slack_status()}
 
     def home(self):
         """Return the minimal, credential-free read model for the owner home."""
@@ -7065,6 +7065,34 @@ class AgentService:
     def _put_browser_request(self, work_id, row, *, expected=...):
         return self.browser_signin._put_browser_request(work_id, row, expected=expected)
 
+    def self_set_write_wait(self, job, row=None):
+        if not self.self_set_run(job) or not self._surface_work(job):return False
+        preparation=self.preparations.get(prep.preparation_of(job.get('request_key')))
+        if not preparation or preparation.get('delivery_mode')==prep.DELIVERY_WHEN_NEEDED:return False
+        stamp=(row or {}).get('preparation') if row else self.preparations.wait_stamp(preparation)
+        with self.store.db() as db:
+            return self.preparations.wait_refusal(db,job['id'],stamp,self_set_write=True) is None
+
+    def self_set_write(self, job, binding, connection, operation, target, names=(), *, effect=None, description=None):
+        from .self_set_writes import authorize
+        return authorize(self,job,binding,connection,operation,target,names,effect=effect,description=description)
+
+    def self_set_write_finished(self, job, ticket, **kwargs):
+        from .self_set_writes import finished
+        return finished(self,job,ticket,**kwargs)
+
+    def write_allowance_settings(self):
+        from .self_set_writes import settings
+        return settings(self)
+
+    def set_write_allowance(self, body):
+        from .self_set_writes import set_allowance
+        body=body if isinstance(body,dict) else {}
+        if not isinstance(body.get('connection_revision'),str):raise ValueError(msg('write_allowances.changed'))
+        set_allowance(self,body.get('connection'),body.get('enabled'),body.get('revision'), 'owner-local',
+                      connection_revision=body['connection_revision'])
+        return self.write_allowance_settings()
+
     def payment_autonomy_settings(self, *, db=None):
         row=self.store.config('payment_autonomy',{},db=db)
         return {'enabled':row.get('enabled') is True,'revision':int(row.get('revision',0))}
@@ -7162,6 +7190,10 @@ class AgentService:
         """The runtime's per-step approval surface for one Work: consume or request."""
         service=self
         class Approvals:
+            def self_set_writes_required(self):return service.self_set_run(job)
+            def self_set_write(self,binding,connection,operation,target,names=(),**kwargs):
+                return service.self_set_write(job,binding,connection,operation,target,names,**kwargs)
+            def self_set_write_finished(self,ticket,**kwargs):return service.self_set_write_finished(job,ticket,**kwargs)
             def consume(self,binding):return service._consume_browser_step(job,binding)
             def payment_autonomy(self,binding,description,**kwargs):
                 return service._authorize_payment_autonomy(job,binding,description,**kwargs)
@@ -7261,7 +7293,7 @@ class AgentService:
         # #821: a scheduled run's sign-in continues only the preparation version it was asked under; a
         # row without that version (never recorded for a scheduled run since #816) continues nothing.
         if ((row.get('action')=='browser_sign_in' and self.unattended_work(job) or 'preparation' in row)
-                and self.preparations.wait_refusal(db,job['id'],row.get('preparation'))):
+                and self.preparations.wait_refusal(db,job['id'],row.get('preparation'), self_set_write=row.get('action')=='self_set_write')):
             if not any(item.get('offer_digest')==row.get('offer_digest') and item.get('reason')==prep.WAIT_CHANGED for item in receipts):
                 db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                            (job['id'],'action_continuation','withheld',json.dumps({'action_digest':row['digest'],'offer_digest':row.get('offer_digest'),
@@ -7323,7 +7355,7 @@ class AgentService:
                 retired.append((row['work_id'],'settings-draft',row['id']))
         for row in self.browser_step_requests():
             job=self.store.job(row.get('work_id')) if row.get('work_id') else None
-            if row.get('state')=='requested' and self.unattended_work(job) and self._put_browser_request(job['id'],None,expected=row):
+            if row.get('state')=='requested' and row.get('action')!='self_set_write' and self.unattended_work(job) and self._put_browser_request(job['id'],None,expected=row):
                 retired.append((job['id'],'step-approval',row.get('offer_digest')))
         with self.store.db() as db:
             for proposal in db.execute("SELECT p.id,p.created_from,j.request_key FROM preparations p JOIN jobs j ON j.id=p.created_from "
@@ -7805,7 +7837,7 @@ class AgentService:
             lines.append(f"Outcome unknown: {row['engine']} / {row['identity']} / {row['operation']}. Do not repeat or claim success; report the unresolved outcome.")
         pending=self._browser_request(job['id']) or {}
         if pending.get('state')=='issued':lines.append('Owner approved exactly this remaining action; changed input needs new approval: '+str(pending.get('label','')))
-        if pending.get('state')=='issued' and pending.get('action')=='code_run':
+        if pending.get('state')=='issued' and (pending.get('source_action') if pending.get('action')=='self_set_write' else pending.get('action'))=='code_run':
             # Live 2026-10-14: a resumed worker rewrote the code and its request no longer matched the approval.
             lines.append('The approved request came from a code run: call code_run with only rerun="approved" to run that '
                          'same run again unchanged. Do not write new code for it.')
@@ -7922,13 +7954,25 @@ class AgentService:
         allow=trust_record.is_read(self.store,target,operation,seed)
         effect='read' if allow else decided
         if effect is None and not record['money'] and isinstance(arguments.get('input'),dict):
-            effect=self.decision_judge.connector_effect(tool,sorted(str(key) for key in arguments['input']),job.get('message',''),job['id'])
+            try:effect=self.decision_judge.connector_effect(tool,sorted(str(key) for key in arguments['input']),
+                                                           '' if self.self_set_run(job) else job.get('message',''),job['id'])
+            except Exception:
+                if not self.self_set_run(job):raise
+                effect=None
             # Semantic classification does not create a persisted read grant.
             if effect=='read':effect=None
         if decided!='refused' and (arguments.get('effect')=='payment' or decided=='payment'
                                   or record['money'] and not allow):
             effect='payment'
+        reversibility=effect
+        if self.self_set_run(job) and effect=='mutate':
+            try:reversibility=self.decision_judge.connector_effect(tool,sorted((arguments.get('input') or {}).keys()),'',job['id'])
+            except Exception:reversibility=None
+        if effect in ('reversible','irreversible') or self.self_set_run(job) and effect is None:
+            effect='mutate'
+        if reversibility=='payment' and decided!='refused':effect='payment'
         values=arguments.get('input')
+        write_ticket=None
         binding=None
         input_digest=None
         autonomy=None
@@ -7944,6 +7988,12 @@ class AgentService:
             except (TypeError,ValueError):
                 return {'behavior':'deny','message':'실행할 정확한 입력을 확인할 수 없어 실행하지 않았습니다.'}
             allow=effect=='mutate'
+            if allow and self.self_set_run(job):
+                try:
+                    write_ticket=self.self_set_write(job,binding,f'connector:{engine}|{kind}|{identity}',operation,
+                        json.dumps(values,ensure_ascii=False,sort_keys=True),(),effect=reversibility or 'irreversible')
+                except ToolError as exc:
+                    return {'behavior':'deny','message':str(exc)}
             if effect=='payment':
                 label=f'{service_name} / {operation}: '+json.dumps(values,ensure_ascii=False,sort_keys=True)
                 autonomy=self._authorize_payment_autonomy(job,binding,label)
@@ -7967,6 +8017,7 @@ class AgentService:
         detail={'scope':'ai-connection','host_action':'connector_permission',
                 'evidence':{'engine':engine,'service':service_name,'identity':identity,'operation':operation,
                             'kind':kind,'decision':'allow' if allow else 'deny','effect':effect if allow else 'none'}}
+        if write_ticket:detail['write_ticket']=write_ticket
         if input_digest:detail['evidence']['input_digest']=input_digest
         if allow and effect in ('mutate','payment'):
             event_id=self._connector_effect_claim(job,detail,input_digest,binding,target)
@@ -8124,6 +8175,12 @@ class AgentService:
                 db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                            (job_id,'connector_undecided','failed',json.dumps({'scope':'ai-connection','host_action':'connector_undecided',
                                                                               'evidence':evidence,'error':self.UNDECIDED_CALL_TEXT},ensure_ascii=False),time.time()))
+        for _, detail, status in observations:
+            if detail.get('permission_event'):
+                with self.store.db() as db:
+                    permission=db.execute('SELECT detail FROM tool_events WHERE id=?',(detail['permission_event'],)).fetchone()
+                ticket=json.loads(permission['detail']).get('write_ticket') if permission else None
+                self.self_set_write_finished(self.store.job(job_id),ticket,observed=status=='succeeded')
         if undecided:
             LOG.warning('undecided AI-side call observed job=%s count=%s',job_id,len(undecided))
             # Required shutdown cannot depend on optional bounded history writes.

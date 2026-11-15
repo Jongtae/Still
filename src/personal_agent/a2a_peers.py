@@ -551,11 +551,16 @@ class A2APeers:
         from .bounded_execution import mask_owner_paths
         if isinstance(text, str):
             text = mask_owner_paths(text, self._owner_roots())
+        from .browser_session import step_binding
+        binding=step_binding(work_id,'a2a_message',url,peer_id,argument=text,state=row['revision'])
+        ticket=self.service.self_set_write(self.store.job(work_id),binding,'peer:'+peer_id,
+                                           'a2a_message',peer_id,effect='irreversible',description=text)
         turn, fresh = self.admit(peer_id, message_id, None, text, 'outbound', work_id)
         if not fresh:
             if turn['state'] != 'completed':
                 raise PeerError('peer_outcome_unknown' if turn['state'] == 'working' else 'peer_exchange_failed')
             return {'answer': turn['answer'], 'origin': 'third-party', 'peer_id': peer_id}
+        dispatched=False
         try:
             # Recheck the exact scope/card revision captured before card retrieval.
             if turn['revision'] != row['revision']:
@@ -565,10 +570,12 @@ class A2APeers:
             credential = self.secrets.get(peer_id).get('outbound', '')
             self.record(work_id, 'requested', {'peer_id': peer_id, 'direction': 'outbound',
                         'destination': row['card']['supportedInterfaces'][0]['url'], 'sections': sent_sections, 'state': 'dispatching'})
+            dispatched=True
             answer = await send_message(row['card'], turn['question'], message_id, credential, store=self.store, http=http,
                                         guard=lambda: self.guard(peer_id, row['revision']),
                                         redact=self.service._redact_known_secrets)
             answer = self.finish(turn, answer)
+            self.service.self_set_write_finished(self.store.job(work_id),ticket)
             self.record(work_id, 'succeeded', {'peer_id': peer_id, 'direction': 'outbound',
                         'destination': row['card']['supportedInterfaces'][0]['url'], 'sections': sent_sections, 'state': 'response-observed'})
             return {'answer': answer, 'origin': 'third-party', 'peer_id': peer_id}
@@ -576,6 +583,7 @@ class A2APeers:
             self.fail(turn, 'work_mode')
             raise
         except Exception:
+            if dispatched:self.service.self_set_write_finished(self.store.job(work_id),ticket,observed=False)
             self.record(work_id, 'failed', {'peer_id': peer_id, 'direction': 'outbound',
                         'destination': row['card']['supportedInterfaces'][0]['url'],
                         'sections': sent_sections, 'state': 'outcome-unknown'})

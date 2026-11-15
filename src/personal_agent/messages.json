@@ -11403,5 +11403,113 @@
  "en": "- Only {limit} recorded held-value match labels are shown; remaining labels were not displayed.",
  "ja": "- 記録済みの保管情報の一致ラベルは {limit} 件まで表示します。残りは表示していません。",
  "zh": "- 最多显示 {limit} 个已记录的保存值匹配标签，其余未显示。"
-}
+},
+ "write_allowances.label": {
+  "ko": "스스로 준비한 일의 연결별 변경 허용",
+  "en": "Connection write allowances for self-set runs",
+  "ja": "自主的な準備の接続別変更許可",
+  "zh": "自行安排任务的连接写入许可"
+ },
+ "write_allowances.risk": {
+  "ko": "이 연결에서는 스스로 준비한 일이 결제가 아닌 외부 변경을 확인 없이 실행하고 나중에 알려드립니다. 되돌릴 수 없는 변경도 포함됩니다. 브라우저에는 적용되지 않습니다.",
+  "en": "Self-set runs may make non-payment external changes on this connection without asking, including irreversible changes. Still reports them afterwards. This does not cover the browser.",
+  "ja": "この接続では、自主的に準備した作業が支払い以外の外部変更を確認なしで実行し、後でお知らせします。元に戻せない変更も含みます。ブラウザーには適用されません。",
+  "zh": "自行安排的任务可在此连接上执行非付款外部更改，无需逐次确认，包括不可撤销的更改。Still 会在执行后告知您。此许可不适用于浏览器。"
+ },
+ "write_allowances.enable": {
+  "ko": "허용",
+  "en": "Allow",
+  "ja": "許可する",
+  "zh": "允许"
+ },
+ "write_allowances.disable": {
+  "ko": "허용 끄기",
+  "en": "Turn off allowance",
+  "ja": "許可を解除",
+  "zh": "关闭许可"
+ },
+ "write_allowances.confirm": {
+  "ko": "이 연결의 변경 허용 확인",
+  "en": "Confirm allowance for this connection",
+  "ja": "この接続の変更許可を確認",
+  "zh": "确认允许此连接进行更改"
+ },
+ "write_allowances.category_line": {
+  "ko": "연결별 변경 허용: {details}",
+  "en": "Connection write allowances: {details}",
+  "ja": "接続別の変更許可: {details}",
+  "zh": "连接写入许可：{details}"
+ },
+ "write_allowances.payment": {
+  "ko": "스스로 준비한 일은 결제할 수 없습니다.",
+  "en": "Self-set runs cannot make payments.",
+  "ja": "自主的に準備した作業では支払いできません。",
+  "zh": "自行安排的任务不能付款。"
+ },
+ "write_allowances.wait": {
+  "ko": "이 변경은 소유자의 확인을 기다립니다. 승인되면 한 번 이어갑니다.",
+  "en": "This change waits for the owner’s approval and continues once if approved.",
+  "ja": "この変更は所有者の承認を待っています。承認後に一度だけ続行します。",
+  "zh": "此更改正在等待所有者批准。批准后仅继续执行一次。"
+ },
+ "write_allowances.replayed": {
+  "ko": "이미 보낸 변경은 다시 보내지 않습니다.",
+  "en": "This change has already been dispatched and will not be repeated.",
+  "ja": "この変更はすでに送信済みのため、繰り返しません。",
+  "zh": "此更改已发送，不会重复执行。"
+ },
+ "write_allowances.notice": {
+  "ko": "허용한 연결에서 변경 요청을 보냈습니다: {connection} · {operation} · {target}.",
+  "en": "A change request was dispatched on an allowed connection: {connection} · {operation} · {target}.",
+  "ja": "許可された接続に変更リクエストを送りました: {connection} · {operation} · {target}。",
+  "zh": "已在获准的连接上发送更改请求：{connection} · {operation} · {target}。"
+ },
+ "write_allowances.reversible": {
+  "ko": "되돌릴 수 있는 변경",
+  "en": "Reversible change",
+  "ja": "元に戻せる変更",
+  "zh": "可撤销的更改"
+ },
+ "write_allowances.irreversible": {
+  "ko": "되돌릴 수 없거나 불확실한 변경",
+  "en": "Irreversible or unknown change",
+  "ja": "元に戻せない、または不明な変更",
+  "zh": "不可撤销或可撤销性未知的更改"
+ },
+ "trust_record.operation_reversible": {
+  "ko": "{operation}: 되돌릴 수 있는 변경",
+  "en": "{operation}: reversible change",
+  "ja": "{operation}: 元に戻せる変更",
+  "zh": "{operation}：可撤销的更改"
+ },
+ "trust_record.operation_irreversible": {
+  "ko": "{operation}: 되돌릴 수 없거나 불확실한 변경",
+  "en": "{operation}: irreversible or unknown change",
+  "ja": "{operation}: 元に戻せない、または不明な変更",
+  "zh": "{operation}：不可撤销或可撤销性未知的更改"
+ },
+ "write_allowances.unknown_notice": {
+  "ko": "허용한 연결에서 요청을 시도했지만 결과는 확인하지 못했습니다: {connection} · {operation} · {target}. 반복 실행하지 않습니다.",
+  "en": "A request was attempted on an allowed connection, but its outcome is unknown: {connection} · {operation} · {target}. Still will not repeat it.",
+  "ja": "許可された接続にリクエストを試みましたが、結果は確認できません: {connection} · {operation} · {target}。繰り返しません。",
+  "zh": "已尝试在获准的连接上发送请求，但结果未知：{connection} · {operation} · {target}。Still 不会重复执行。"
+ },
+ "write_allowances.changed": {
+  "ko": "연결의 변경 허용 설정이 바뀌어 이 요청은 실행하지 않았어요. 최신 설정을 확인해 주세요.",
+  "en": "The connection allowance changed; this request was not executed. Check the current setting.",
+  "ja": "接続の変更許可が変わったため、このリクエストは実行していません。最新の設定を確認してください。",
+  "zh": "连接许可已更改，此请求未执行。请检查当前设置。"
+ },
+ "write_allowances.owner_only": {
+  "ko": "연결의 변경 허용은 소유자가 직접 시작한 대화나 설정에서 정확한 초안을 확인해야 켤 수 있어요.",
+  "en": "A connection allowance requires the owner to confirm the exact draft in Settings or an owner-started conversation.",
+  "ja": "接続の変更許可には、設定または所有者が開始した会話で正確な下書きの確認が必要です。",
+  "zh": "连接许可需要所有者在设置或自己发起的对话中确认具体草案。"
+ },
+ "write_allowances.local_only": {
+  "ko": "이 컴퓨터의 설정에서 연결의 변경 허용을 확인해 주세요.",
+  "en": "Confirm connection write allowances in Settings on this computer.",
+  "ja": "このコンピューターの設定で接続の変更許可を確認してください。",
+  "zh": "请在此电脑的设置中确认连接写入许可。"
+ }
 }

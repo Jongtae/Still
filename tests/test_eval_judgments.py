@@ -45,6 +45,8 @@ def answers(case):
                 planned(model='model-advanced')]
     if role == 'owner_act_answer':
         return [{**e, 'rest': '', 'parts': []}]
+    if role == 'connector_effect' and e.get('value') == 'mutate':
+        return [{'choice': 'irreversible'}]
     if role in ('followup_relation', 'connector_effect', 'status_projection'):
         return [{'choice': d.NO_CANDIDATE if e.get('abstain') or e.get('outcome') == 'no' else e['value']}]
     return [{'answer': e['outcome'] == 'yes', 'gap': 'PRIVATE GAP', 'note': 'PRIVATE NOTE'}]
@@ -150,6 +152,14 @@ class JudgmentTests(unittest.TestCase):
         self.assertTrue(all(r['observed']['note_returned'] for r in rows if r['role'] == 'goal_reached' and r['observed']['outcome'] == 'no'))
         self.assertNotIn('PRIVATE', json.dumps(rows))
         self.assertTrue(audit)
+
+    def test_both_reversibility_labels_retain_the_ordinary_mutation_rubric(self):
+        for choice in ('reversible', 'irreversible'):
+            with self.subTest(choice=choice):
+                rows, _, _ = self.measure(subset(self.cases, 'effect-mutate'), scripted=[{'choice': choice}])
+                row=next(row for row in rows if row['id']=='effect-mutate')
+                self.assertTrue(row['semantic_correct'])
+                self.assertEqual(row['observed']['value'],'mutate')
 
     def test_careless_error_counts_are_hand_computed(self):
         selected = subset(self.cases, 'steer-unrelated-en', 'goal-failed', 'projection-unknown', 'effect-payment',

@@ -1223,6 +1223,7 @@ class ApiRequests:
         if identity:
             self._effect_guard(slot, identity)
         idempotency = self._approve(slot, method, url, body, effect, named, path) if effect == 'payment' else identity[:32] if identity else None
+        write_ticket=None
         claim = None
         finish = None
         if slot.get('credential_ref') and getter is None:
@@ -1270,6 +1271,17 @@ class ApiRequests:
                 except Exception:
                     raise ApiError('API 연결이 바뀌어 요청을 보내지 않았습니다.', 'needs_setup',
                                    requires=f"api-slot:{slot['name']}") from None
+            # Judgment/approval follows credential resolution but precedes the
+            # final authority reservation: a connection can change while the AI judges.
+            gate=getattr(self.approvals,'self_set_write',None)
+            if effect=='mutate' and callable(gate):
+                from .browser_session import step_binding
+                binding=step_binding(self.work_id,'api_request',url,f"{slot['name']}|{method}|{url}",
+                                     argument=body or '',state=str(slot.get('revision','')))
+                try:
+                    write_ticket=gate(binding,'slot:'+slot['name'],method,url,('body',) if body else (),description=body)
+                except ValueError as exc:
+                    raise ApiError(str(exc),getattr(exc,'code','approval_required')) from None
             if identity:
                 claim = self._effect_guard(slot, identity, method=method, effect=effect, destination=named)
                 if getattr(self, '_payment_ticket', None):
@@ -1300,6 +1312,7 @@ class ApiRequests:
             try:
                 status, response_headers, raw = self.transport(method, url, headers, body.encode() if body else None, TIMEOUT)
             except Exception as exc:
+                if write_ticket:self.approvals.self_set_write_finished(write_ticket,observed=False)
                 if identity:
                     raise ApiError(UNKNOWN_EFFECT_TEXT, 'effect_unknown', effect='unknown') from None
                 if not _transient(exc):
@@ -1308,6 +1321,8 @@ class ApiRequests:
                     self.sleep(1)
                     continue
                 raise ApiError(f'API가 응답하지 않았습니다({attempts}회 시도). 잠시 후 다시 시도해 주세요.', 'api_unavailable') from None
+            if write_ticket:
+                self.approvals.self_set_write_finished(write_ticket,observed=200<=status<300)
             if (status >= 500 or status == 429) and attempts < tries:
                 self.sleep(1)
                 continue

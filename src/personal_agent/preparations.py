@@ -1567,7 +1567,7 @@ class Preparations:
                 'run': row['last_run_job_id']}
 
     @staticmethod
-    def wait_refusal(db, work_id, stamp):
+    def wait_refusal(db, work_id, stamp, *, self_set_write=False):
         """``WAIT_CHANGED`` unless Work ``work_id`` is still the current run of the owner-accepted
         preparation version ``stamp`` names (#821); None when it is.
 
@@ -1578,7 +1578,7 @@ class Preparations:
         if not isinstance(stamp, dict):
             return WAIT_CHANGED
         row = db.execute('SELECT * FROM preparations WHERE id=?', (stamp.get('id'),)).fetchone()
-        if not (row and row['accepted_by'] in OWNER_ACCEPTED and row['accepted_by'] == stamp.get('accepted_by')
+        if not (row and row['accepted_by'] in (SELF_SET if self_set_write else OWNER_ACCEPTED) and row['accepted_by'] == stamp.get('accepted_by')
                 and row['state'] == STATE_RUNNING and row['last_run_job_id'] == work_id == stamp.get('run')
                 and row['updated_at'] == stamp.get('revision')):
             return WAIT_CHANGED
