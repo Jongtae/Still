@@ -25,8 +25,8 @@ KINDS = frozenset(('open_line', 'standing_correction', 'today_only_correction',
 EXPECT = frozenset(('same_line_id', 'line_version', 'rule_present', 'rule_absent',
                     'rows_active', 'run_started', 'run_read_version', 'reply_sent',
                     'report_reason', 'window_end_honest'))
-# Deliberately restricted to the remaining known, locally specified issue. No network lookup.
-GAPS = frozenset((814,))
+# Known, locally specified gaps (#813 and #814 are closed). No network lookup.
+GAPS = frozenset()
 
 
 def validate(document):

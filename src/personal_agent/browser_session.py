@@ -685,6 +685,8 @@ def mediate_snapshot(raw, requested_url=None):
         snapshot['elements_capped'] = True
     snapshot['_rows'] = visible
     snapshot['_elements'] = internal
+    snapshot['_form_field_names'] = {form: sorted({str(e.get('fieldName') or '') for e in elements if e.get('form') == form and e.get('fieldName')})
+                                     for form in {e.get('form') for e in elements} if form is not None}
     snapshot['_form_actions'] = {form['id']: form.get('action') for form in raw.get('forms') or []
                                  if isinstance(form, dict) and 'id' in form}
     # Internal only (never returned): the unmediated page reference the
@@ -876,6 +878,9 @@ class BrowserSession:
                 raise ToolError(FAILED_TEXT, 'browser_failed') from exc
             if self.driver is None:
                 raise ToolError(UNAVAILABLE_TEXT, 'needs_setup', requires='browser-profile')
+        setter=getattr(self.driver,'set_self_set_writes',None)
+        required=getattr(self.approvals,'self_set_writes_required',lambda:False)()
+        if callable(setter):setter(required)
         policy = getattr(self.driver, 'set_provider_sign_in_policy', None)
         if callable(policy):
             policy(self._provider_sign_in_policy)
@@ -910,7 +915,7 @@ class BrowserSession:
         """
         self.budget.spend_attempt()
 
-    def _call(self, operation, *args, payment=False):
+    def _call(self, operation, *args, payment=False, write_ticket=None):
         try:
             timeout = self._timeout()
             pending = self.__dict__.pop('_autonomy_payment', None) if payment else None
@@ -928,6 +933,7 @@ class BrowserSession:
                     if callable(release):
                         release(authorized)
                     raise
+            if write_ticket:self.approvals.self_set_write_check(write_ticket)
             return operation(*args, timeout)
         except ToolError:
             raise
@@ -976,6 +982,22 @@ class BrowserSession:
             return self._snapshot(requested_url)
         return self.last
 
+    def _resume_self_set_submit(self):
+        pending = getattr(self, '_self_set_submit', None)
+        if pending is None:
+            return None
+        if time.time() >= pending[2]:
+            self._self_set_submit = None
+            return None
+        ready = getattr(self.approvals, 'self_set_submit_ready', None)
+        if not callable(ready) or not ready(self._submit_binding(pending[0])):
+            return None
+        self._check()
+        self._self_set_submit = None
+        answer = self._cancelled_submit(pending[0], pending[1], resuming=True)
+        self._settle()
+        return self._with_dialogs(observe_step(self._page_state(), answer, True), answer)
+
     def _submit_binding(self, record):
         """What the approval of a cancelled payment-form submit is bound to (#700).
 
@@ -987,7 +1009,7 @@ class BrowserSession:
         page = record.get('page') or (self.last or {}).get('_page')
         return step_binding(self.work_id, 'browser_submit', page, form_identity(record), '', str(record.get('state') or ''))
 
-    def _cancelled_submit(self, record, description, depth=0):
+    def _cancelled_submit(self, record, description, depth=0, *, resuming=False):
         """A payment-form submit the worker cancelled and holds (#698, #700).
 
         When the owner already approved exactly that form in that state, the
@@ -998,6 +1020,28 @@ class BrowserSession:
         """
         record = record if isinstance(record, dict) else {}
         binding = self._submit_binding(record)
+        gate=getattr(self.approvals,'self_set_write',None)
+        if record.get('payment') is False and callable(gate) and getattr(self.approvals,'self_set_writes_required',lambda:False)():
+            try:
+                ticket=gate(binding,None,'browser_submit',page_reference(record.get('page')),record.get('fieldNames',()),
+                            description=description+cancelled_note(record),
+                            values=record,
+                            **({'effect':'irreversible','request':False} if resuming else {}))
+            except ToolError as exc:
+                if exc.code == 'approval_required' and not resuming:
+                    self._self_set_submit = (dict(record), description, time.time() + 600)
+                raise
+            release=getattr(self._driver(),'release_submit',None)
+            if not callable(release):
+                self.approvals.self_set_write_release(ticket)
+                raise ToolError(FAILED_TEXT,'browser_failed')
+            try:
+                answer=self._call(lambda timeout:release(record,timeout),write_ticket=ticket)
+            except ToolError:
+                self.approvals.self_set_write_finished(ticket,observed=False)
+                raise
+            self.approvals.self_set_write_finished(ticket)
+            return answer
         self.__dict__.pop('_autonomy_payment', None)
         # #662: an exact owner approval is spent first; payment autonomy covers a submit with none.
         consumed = depth < 2 and self.approvals.consume(binding)
@@ -1388,7 +1432,7 @@ class BrowserSession:
             pass
         raise ToolError(APPROVAL_TEXT, 'approval_required', requires='browser-step-approval')
 
-    def _input(self, operation, description):
+    def _input(self, operation, description, write_ticket=None):
         """Run one click or type; a payment-form submit the worker cancelled asks the owner (#698).
 
         An approved step lets a submit of its target's payment form through;
@@ -1400,7 +1444,7 @@ class BrowserSession:
         from .agent_runtime import handed_off
         handed_off()
         try:
-            return self._call(operation, payment=True)
+            return self._call(operation, payment=True, write_ticket=write_ticket)
         except ToolError as exc:
             if exc.code != 'approval_required':
                 raise
@@ -1477,6 +1521,8 @@ class BrowserSession:
                 'next_step': self._offer_login(reference, explicit=True, window_url=login_window_url(url)) or LOGIN_REQUIRED_TEXT}
 
     def open(self, args):
+        resumed = self._resume_self_set_submit()
+        if resumed is not None:return resumed
         effect = self._effect(args)
         url = str(args.get('url') or '').strip()
         parts = urlsplit(url)
@@ -1547,6 +1593,8 @@ class BrowserSession:
             return 'mobile'
 
     def read(self, args=None):
+        resumed = self._resume_self_set_submit()
+        if resumed is not None:return resumed
         rounds = load_more_rounds((args or {}).get('load_more'))
         # An interrupted navigation may leave a web document. Observe it only on
         # an explicit read, with normal mediation; never replay navigation.
@@ -1605,6 +1653,8 @@ class BrowserSession:
         return loaded
 
     def find(self, args):
+        resumed = self._resume_self_set_submit()
+        if resumed is not None:return resumed
         self._require_page()
         self._spend_step()
         snapshot = self._snapshot()
@@ -1648,6 +1698,8 @@ class BrowserSession:
         return {'text': scrub(str(cover.get('text') or '')[:400])[0], 'controls': controls}
 
     def click(self, args):
+        resumed = self._resume_self_set_submit()
+        if resumed is not None:return resumed
         effect = self._effect(args)
         self._require_page()
         self._check()
@@ -1673,19 +1725,44 @@ class BrowserSession:
         # #758: a control whose name commits a purchase needs approval whatever form it
         # is in (a stored payment method or a fetch charge leaves no card field to see).
         # #619: this deterministic floor, the payment form and the worker's ``payment``
-        # declaration are the whole press check; no AI judgment is asked per press.
+        # declaration remain the payment floor; self-set non-payment presses also
+        # receive the minimized reversibility judgment below (#717).
         required = bool(element['submit_guarded'] or element['commit'] or effect == 'payment')
         binding = step_binding(self.work_id, 'browser_click', snapshot['_page'], key, key, state)
-        approved = self._guard(binding, description, required)
-        self._spend_step()   # #620: a press held for approval, or on a missing target, spends nothing
+        write_ticket=None
+        gate=getattr(self.approvals,'self_set_write',None)
+        if not required and callable(gate):
+            write_ticket=gate(binding,None,'browser_click',page_reference(snapshot['_page']),
+                 self._write_metadata(snapshot, element),description=description,
+                 values={'url': snapshot['_page'], 'target': key, 'state': state})
+        try:
+            if write_ticket:
+                # Judgment can yield while the page changes. Dispatch only the input
+                # state the owner saw; non-payment consent never covers a new payment.
+                current = self._snapshot()
+                current_element = resolve_target(current, args.get('target'))
+                current_key = target_key(current_element)
+                current_binding = step_binding(self.work_id, 'browser_click', current['_page'],
+                                               current_key, current_key, self._state_of(current, current_element))
+                if (current_binding != binding or current_element.get('commit') or
+                        current_element.get('submit_guarded')):
+                    raise ToolError(TARGET_TEXT, 'target_unavailable')
+                snapshot, element = current, current_element
+            approved = False if write_ticket else self._guard(binding, description, required)
+            self._spend_step()   # #620: a press held for approval, or on a missing target, spends nothing
+        except Exception:
+            if write_ticket:self.approvals.self_set_write_release(write_ticket)
+            raise
         before = page_reference(snapshot.get('url'))
         confirm_ok = not page_shows_payment(snapshot)
         try:
             answer = self._input(lambda timeout: self._driver().click(element['index'], timeout, approved=approved,
                                                                       confirm_ok=confirm_ok, effect=effect),
-                                 description)
+                                 description, write_ticket=write_ticket)
         except ToolError as exc:
+            if write_ticket:self.approvals.self_set_write_finished(write_ticket,observed=False,held=bool(getattr(self,'_self_set_submit',None)))
             raise self._named_cover(self._observed(exc, approved), snapshot) from None
+        if write_ticket:self.approvals.self_set_write_finished(write_ticket)
         if isinstance(answer, dict) and answer.get('navigated'):
             self._last_input = None   # #700: the page it was sent to is gone
         # #736: the worker answers once any navigation the click started has
@@ -1707,7 +1784,14 @@ class BrowserSession:
                                 'answer': DIALOG_OUTCOMES[row['outcome']]} for row in rows]
         return page
 
+    @staticmethod
+    def _write_metadata(snapshot, element):
+        return (str(element.get('role') or ''), str(element.get('name') or ''),
+                *snapshot.get('_form_field_names', {}).get(element.get('form'), ()))
+
     def type(self, args):
+        resumed = self._resume_self_set_submit()
+        if resumed is not None:return resumed
         effect = self._effect(args)
         self._require_page()
         text = str(args.get('text') or '')
@@ -1722,15 +1806,38 @@ class BrowserSession:
         description = f"'{element.get('name') or element.get('role')}' 입력란에 입력"
         # Typing presses the field first, so a label forwarding that press is guarded too.
         required = element['payment'] or element.get('forwards_payment') or effect == 'payment'
-        approved = self._guard(binding, description, required, autonomy=not element['guarded'])
-        self._spend_step()   # #620: typing held for approval, or into a missing field, spends nothing
+        # insertText is not a keyboard Enter: multiline local input stays local.
+        # Any page-triggered submit is separately caught by the native form guard.
+        write_ticket = None
+        gate = getattr(self.approvals, 'self_set_write', None)
+        if not required and callable(gate) and (effect == 'mutate' or args.get('submit') or args.get('key') == 'Enter'):
+            write_ticket = gate(binding, None, 'browser_type', page_reference(snapshot['_page']),
+                                self._write_metadata(snapshot, element), description=description,
+                                values={'url': snapshot['_page'], 'target': target_key(element), 'text': text,
+                                        'state': self._state_of(snapshot, element)})
+        try:
+            if write_ticket:
+                current = self._snapshot()
+                current_element = resolve_target(current, args.get('target'))
+                rebound = step_binding(self.work_id, 'browser_type', current['_page'], target_key(current_element),
+                                       text, self._state_of(current, current_element))
+                if rebound != binding or current_element.get('payment') or current_element.get('forwards_payment'):
+                    raise ToolError(TARGET_TEXT, 'target_unavailable')
+                snapshot, element = current, current_element
+            approved = self._guard(binding, description, required, autonomy=not element['guarded'])
+            self._spend_step()   # #620: typing held for approval, or into a missing field, spends nothing
+        except Exception:
+            if write_ticket:self.approvals.self_set_write_release(write_ticket)
+            raise
         confirm_ok = not page_shows_payment(snapshot)
         try:
             answer = self._input(lambda timeout: self._driver().type(element['index'], text, timeout, approved=approved,
                                                                      confirm_ok=confirm_ok, effect=effect),
-                                 description)
+                                 description, write_ticket=write_ticket)
         except ToolError as exc:
+            if write_ticket:self.approvals.self_set_write_finished(write_ticket,observed=False,held=bool(getattr(self,'_self_set_submit',None)))
             raise self._named_cover(self._observed(exc, approved), snapshot) from None
+        if write_ticket:self.approvals.self_set_write_finished(write_ticket)
         return self._with_dialogs(observe_step(self._page_state(), answer, approved), answer)
 
 
@@ -1755,7 +1862,11 @@ class BrowserSession:
         if self.driver is None or self.last is None:
             raise ToolError(NO_PAGE_TEXT, 'no_page')
 
-    def close(self):
+    def close(self, *, preserve=True):
+        hold = getattr(self.approvals, 'self_set_browser_hold', None)
+        if preserve and getattr(self, '_self_set_submit', None) and callable(hold) and hold(self):
+            return
+        self._self_set_submit = None
         driver, self.driver = self.driver, None
         if driver is not None:
             try:
@@ -2563,6 +2674,11 @@ class WebKitWorkerDriver:
                                 confirm_ok=confirm_ok is True, effect=_declared(effect), **self._target(index))
         return {'dialogs': step_dialogs(message),
                 **({'app_link': True} if message.get('app_link') is True else {}), **step_posted(message)}
+
+    def set_self_set_writes(self, enabled):
+        if getattr(self,'_self_set_writes',False)==enabled:return
+        self._request('self_set_writes',10,enabled=enabled)
+        self._self_set_writes=enabled
 
     def release_submit(self, record, timeout):
         """Release the cancelled payment-form submit ``record`` names, which the owner approved (#700).

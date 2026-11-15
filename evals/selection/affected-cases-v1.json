@@ -1,0 +1,455 @@
+{
+  "version": "affected-cases/1",
+  "rules": [
+    {
+      "id": "role-answers_open_question",
+      "match": {"propositions": ["answers_open_question", "OPEN_QUESTION_PROPOSITION"], "prompt_fragments": ["answers_open_question"]},
+      "select": [{"set": "judgments", "roles": ["answers_open_question"]}],
+      "reason": "This instruction or proposition is exercised by the answers_open_question judgment cases."
+    },
+    {
+      "id": "role-connector_effect",
+      "match": {"propositions": ["connector_effect"], "prompt_fragments": ["connector_effect"]},
+      "select": [{"set": "judgments", "roles": ["connector_effect"]}],
+      "reason": "This instruction or proposition is exercised by the connector_effect judgment cases."
+    },
+    {
+      "id": "role-followup_relation",
+      "match": {"propositions": ["followup_relation", "FOLLOWUP_QUESTION"], "prompt_fragments": ["followup_relation"]},
+      "select": [{"set": "judgments", "roles": ["followup_relation"]}, {"set": "qualification", "ids": ["qualification-retry-after-failed-work", "qualification-correction-replaces-parameters", "qualification-reference-to-previous-result", "qualification-new-topic-is-not-a-followup", "qualification-ambiguous-referent-abstains"]}],
+      "reason": "This instruction or proposition is exercised by the followup_relation judgment cases. The qualification definitions also exercise this proposition."
+    },
+    {
+      "id": "role-goal_reached",
+      "match": {"propositions": ["goal_reached", "GOAL_REACHED_PROPOSITION"], "prompt_fragments": ["goal_reached", "goal_reached", "ask_or_assume"], "paths": ["src/personal_agent/prompts/goal_reached.md", "src/personal_agent/prompts/ask_or_assume.md"]},
+      "select": [{"set": "judgments", "roles": ["goal_reached"]}],
+      "reason": "This instruction or proposition is exercised by the goal_reached judgment cases."
+    },
+    {
+      "id": "role-orchestration_escalation",
+      "match": {"propositions": ["orchestration_escalation"], "prompt_fragments": ["orchestration_escalation", "goal_reached", "ask_or_assume", "planner"], "paths": ["src/personal_agent/prompts/goal_reached.md", "src/personal_agent/prompts/ask_or_assume.md", "src/personal_agent/prompts/planner.md"]},
+      "select": [{"set": "judgments", "roles": ["orchestration_escalation"]}],
+      "reason": "This instruction or proposition is exercised by the orchestration_escalation judgment cases."
+    },
+    {
+      "id": "role-orchestration_plan",
+      "match": {"propositions": ["orchestration_plan"], "prompt_fragments": ["orchestration_plan", "planner", "planner_preview", "planner_location", "ask_or_assume", "voice"], "paths": ["src/personal_agent/prompts/planner.md", "src/personal_agent/prompts/planner_preview.md", "src/personal_agent/prompts/planner_location.md", "src/personal_agent/prompts/ask_or_assume.md", "src/personal_agent/prompts/voice.md"]},
+      "select": [{"set": "judgments", "roles": ["orchestration_plan"]}],
+      "reason": "This instruction or proposition is exercised by the orchestration_plan judgment cases."
+    },
+    {
+      "id": "role-owner_act_answer",
+      "match": {"propositions": ["owner_act_answer", "OWNER_ACT_QUESTION"], "prompt_fragments": ["owner_act_answer"]},
+      "select": [{"set": "judgments", "roles": ["owner_act_answer"]}],
+      "reason": "This instruction or proposition is exercised by the owner_act_answer judgment cases."
+    },
+    {
+      "id": "role-parked_work_withdrawn",
+      "match": {"propositions": ["parked_work_withdrawn", "WITHDRAWAL_PROPOSITION"], "prompt_fragments": ["parked_work_withdrawn"]},
+      "select": [{"set": "judgments", "roles": ["parked_work_withdrawn"]}, {"set": "qualification", "ids": ["qualification-parked-request-withdrawn"]}],
+      "reason": "This instruction or proposition is exercised by the parked_work_withdrawn judgment cases. The qualification definitions also exercise this proposition."
+    },
+    {
+      "id": "role-status_projection",
+      "match": {"propositions": ["status_projection", "_PROJECTION_QUESTION"], "prompt_fragments": ["status_projection"]},
+      "select": [{"set": "judgments", "roles": ["status_projection"]}, {"set": "qualification", "ids": ["qualification-failed-stays-failed", "qualification-partial-stays-partial", "qualification-unknown-stays-unknown"]}],
+      "reason": "This instruction or proposition is exercised by the status_projection judgment cases. The qualification definitions also exercise this proposition."
+    },
+    {
+      "id": "role-steers_running_work",
+      "match": {"propositions": ["steers_running_work", "STEER_PROPOSITION"], "prompt_fragments": ["steers_running_work"]},
+      "select": [{"set": "judgments", "roles": ["steers_running_work"]}],
+      "reason": "This instruction or proposition is exercised by the steers_running_work judgment cases."
+    },
+    {
+      "id": "judgment-callers",
+      "match": {"paths": ["src/personal_agent/conversation_handoff.py", "src/personal_agent/decision.py", "src/personal_agent/prompts/decision_system.md"], "prompt_fragments": ["decision_system"]},
+      "select": [{"set": "judgments"}, {"set": "qualification"}],
+      "reason": "Shared judgment instructions and callers affect all judgment roles and qualification definitions."
+    },
+    {
+      "id": "planner-catalogue",
+      "match": {"paths": ["src/personal_agent/orchestrator.py"], "prompt_fragments": ["catalogue", "worker_catalogue"]},
+      "select": [{"set": "judgments", "roles": ["orchestration_plan", "orchestration_escalation"]}, {"set": "scenarios"}],
+      "reason": "Worker catalogue, planning and redelegation affect plan judgments and conversation outcomes."
+    },
+    {
+      "id": "route-model-effort",
+      "match": {"kinds": ["model", "route", "model-route", "effort"], "routes": ["*"], "paths": ["src/personal_agent/decision_routes.py", "src/personal_agent/cli_qualification.py", "src/personal_agent/providers.py", "src/personal_agent/decision_adapters.py", "src/personal_agent/subscription_engines.py"]},
+      "select": [{"set": "judgments"}, {"set": "qualification"}, {"set": "scenarios"}],
+      "reason": "A model, effort or route change can alter every judgment role on the configured route, qualification and worker outcomes; pin the model before comparing fastest_qualified arms."
+    },
+    {
+      "id": "qualification-definitions",
+      "match": {"paths": ["src/personal_agent/decision_qualification.py"], "propositions": ["PASS_THRESHOLD", "qualification-suite"], "prompt_fragments": ["qualification-suite"]},
+      "select": [{"set": "qualification"}],
+      "reason": "Qualification definitions and thresholds determine which candidate may qualify; compare suite fingerprints."
+    },
+    {
+      "id": "worker-instructions",
+      "match": {"paths": ["src/personal_agent/prompts/worker_*.md", "src/personal_agent/prompts/voice*.md", "src/personal_agent/prompts/native_search.md", "src/personal_agent/prompts/ask_or_assume.md", "src/personal_agent/agent_runtime.py"], "prompt_fragments": ["worker_*", "voice", "voice_calibration", "native_search", "ask_or_assume", "CORE_INSTRUCTIONS", "API_TOOL_GUIDANCE", "CLI_TOOL_GUIDANCE", "CLI_NATIVE_SEARCH_GUIDANCE", "GOAL_FIRST_GUIDANCE"]},
+      "select": [{"set": "scenarios"}, {"set": "judgments", "roles": ["goal_reached", "orchestration_escalation"]}],
+      "reason": "Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios."
+    },
+    {
+      "id": "tool-descriptions",
+      "match": {"kinds": ["tool-description"], "prompt_fragments": ["tool_descriptions", "tool_schema"], "paths": ["src/personal_agent/mcp_bridge.py", "src/personal_agent/local_tools.py", "src/personal_agent/isolated_engine_mcp_bridge.py"]},
+      "select": [{"set": "scenarios"}, {"set": "judgments", "roles": ["connector_effect", "orchestration_plan", "orchestration_escalation"]}],
+      "reason": "Offered tool descriptions affect effect classification, tool choice and synthetic end-to-end outcomes."
+    },
+    {
+      "id": "recall-inputs",
+      "match": {"paths": ["src/personal_agent/memory.py", "src/personal_agent/memory_service.py", "src/personal_agent/memory_prompts.py", "src/personal_agent/prompts/memory_*.md", "evals/recall/*.json"], "prompt_fragments": ["owner_words_block", "memory_*"], "tags": ["exp-recall"]},
+      "select": [{"set": "recall"}, {"set": "scenarios", "tags": ["exp-recall"]}],
+      "reason": "Retrieval inputs and memory instructions exercise R1 dev/heldout cases and R2 conversation recall; the splits stay separate."
+    },
+    {
+      "id": "judgment-fixtures",
+      "match": {"paths": ["evals/judgments/*.json"]},
+      "select": [{"set": "judgments"}, {"set": "qualification"}],
+      "reason": "Judgment fixtures, catalogue or partner metadata changed; selected-case content/version equivalence must be checked before pairing."
+    },
+    {
+      "id": "scenario-file-continuity-experiments",
+      "match": {"paths": ["evals/scenarios/continuity-experiments.json"]},
+      "select": [{"set": "scenarios", "ids": ["line-evening-watch", "line-change-watch-time", "line-add-watch-rule", "line-cancel-watch", "line-status-before-first-run", "line-past-submission-deadline", "line-change-stock-time", "line-cancel-seat-watch"]}],
+      "reason": "These synthetic scenarios are defined in the changed file; a changed fixture cannot silently pair with its old version."
+    },
+    {
+      "id": "scenario-file-corrections",
+      "match": {"paths": ["evals/scenarios/corrections.json"]},
+      "select": [{"set": "scenarios", "ids": ["correct-earlier-advice-hiking"]}],
+      "reason": "These synthetic scenarios are defined in the changed file; a changed fixture cannot silently pair with its old version."
+    },
+    {
+      "id": "scenario-file-food",
+      "match": {"paths": ["evals/scenarios/food.json"]},
+      "select": [{"set": "scenarios", "ids": ["food-on-route-rest-area", "food-on-route-budget-correction", "weekday-lunch-near-workplace", "already-ate-lunch", "already-ate-dinner-next-meal"]}],
+      "reason": "These synthetic scenarios are defined in the changed file; a changed fixture cannot silently pair with its old version."
+    },
+    {
+      "id": "scenario-file-memory",
+      "match": {"paths": ["evals/scenarios/memory.json"]},
+      "select": [{"set": "scenarios", "ids": ["workplace-statement-remember", "preference-then-recommendation", "allergy-then-meal-plan"]}],
+      "reason": "These synthetic scenarios are defined in the changed file; a changed fixture cannot silently pair with its old version."
+    },
+    {
+      "id": "scenario-file-presence",
+      "match": {"paths": ["evals/scenarios/presence.json"]},
+      "select": [{"set": "scenarios", "ids": ["presence-chat-research-takes-a-while", "presence-chat-short-reply-stays-short", "presence-chat-lookup-with-a-judgment"]}],
+      "reason": "These synthetic scenarios are defined in the changed file; a changed fixture cannot silently pair with its old version."
+    },
+    {
+      "id": "scenario-file-recall-experiments",
+      "match": {"paths": ["evals/scenarios/recall-experiments.json"]},
+      "select": [{"set": "scenarios", "ids": ["recall-quiet-desk", "recall-binding-language", "recall-hall-again", "recall-dated-studio", "recall-correct-printer", "recall-expired-pass", "recall-forget-route", "recall-irrelevant-music", "recall-reading-format", "recall-clay-language", "recall-parcel-again", "recall-dated-committee", "recall-correct-size", "recall-forget-project"]}],
+      "reason": "These synthetic scenarios are defined in the changed file; a changed fixture cannot silently pair with its old version."
+    },
+    {
+      "id": "scenario-file-reminders",
+      "match": {"paths": ["evals/scenarios/reminders.json"]},
+      "select": [{"set": "scenarios", "ids": ["tee-time-reminder", "tee-time-departure-reminder", "relative-time-reminder"]}],
+      "reason": "These synthetic scenarios are defined in the changed file; a changed fixture cannot silently pair with its old version."
+    },
+    {
+      "id": "scenario-file-settings",
+      "match": {"paths": ["evals/scenarios/settings.json"]},
+      "select": [{"set": "scenarios", "ids": ["settings-read-in-conversation", "settings-change-with-confirmation"]}],
+      "reason": "These synthetic scenarios are defined in the changed file; a changed fixture cannot silently pair with its old version."
+    },
+    {
+      "id": "scenario-file-shopping",
+      "match": {"paths": ["evals/scenarios/shopping.json"]},
+      "select": [{"set": "scenarios", "ids": ["shopping-lookup-compare", "shopping-followup-constraint"]}],
+      "reason": "These synthetic scenarios are defined in the changed file; a changed fixture cannot silently pair with its old version."
+    },
+    {
+      "id": "scenario-file-skills",
+      "match": {"paths": ["evals/scenarios/skills.json"]},
+      "select": [{"set": "scenarios", "ids": ["skill-add-reference-by-name"]}],
+      "reason": "These synthetic scenarios are defined in the changed file; a changed fixture cannot silently pair with its old version."
+    },
+    {
+      "id": "scenario-file-topic-shift",
+      "match": {"paths": ["evals/scenarios/topic-shift.json"]},
+      "select": [{"set": "scenarios", "ids": ["new-request-after-travel-topic", "new-request-after-lunch-topic"]}],
+      "reason": "These synthetic scenarios are defined in the changed file; a changed fixture cannot silently pair with its old version."
+    },
+    {
+      "id": "scenario-file-travel",
+      "match": {"paths": ["evals/scenarios/travel.json"]},
+      "select": [{"set": "scenarios", "ids": ["travel-time-from-earlier-place", "travel-time-after-event", "travel-time-with-clock-note"]}],
+      "reason": "These synthetic scenarios are defined in the changed file; a changed fixture cannot silently pair with its old version."
+    },
+    {
+      "id": "scenario-file-watches",
+      "match": {"paths": ["evals/scenarios/watches.json"]},
+      "select": [{"set": "scenarios", "ids": ["standing-wish-becomes-watch", "standing-wish-is-not-a-memory"]}],
+      "reason": "These synthetic scenarios are defined in the changed file; a changed fixture cannot silently pair with its old version."
+    },
+    {
+      "id": "scenario-file-world-appworld",
+      "match": {"paths": ["evals/scenarios/world-appworld.json"]},
+      "select": [{"set": "scenarios", "ids": ["world-appworld-note-update", "world-appworld-send-text", "world-appworld-pay-approved", "world-appworld-pay-denied"]}],
+      "reason": "These synthetic scenarios are defined in the changed file; a changed fixture cannot silently pair with its old version."
+    },
+    {
+      "id": "scenario-tag-context",
+      "match": {"tags": ["context"]},
+      "select": [{"set": "scenarios", "tags": ["context"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "scenario-tag-correction",
+      "match": {"tags": ["correction"]},
+      "select": [{"set": "scenarios", "tags": ["correction"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "scenario-tag-denied",
+      "match": {"tags": ["denied"]},
+      "select": [{"set": "scenarios", "tags": ["denied"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "scenario-tag-exp-continuity",
+      "match": {"tags": ["exp-continuity"]},
+      "select": [{"set": "scenarios", "tags": ["exp-continuity"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "scenario-tag-exp-recall",
+      "match": {"tags": ["exp-recall"]},
+      "select": [{"set": "scenarios", "tags": ["exp-recall"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "scenario-tag-follow-through",
+      "match": {"tags": ["follow-through"]},
+      "select": [{"set": "scenarios", "tags": ["follow-through"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "scenario-tag-food",
+      "match": {"tags": ["food"]},
+      "select": [{"set": "scenarios", "tags": ["food"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "scenario-tag-kind-cancellation",
+      "match": {"tags": ["kind-cancellation"]},
+      "select": [{"set": "scenarios", "tags": ["kind-cancellation"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "scenario-tag-kind-change-preparation",
+      "match": {"tags": ["kind-change-preparation"]},
+      "select": [{"set": "scenarios", "tags": ["kind-change-preparation"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "scenario-tag-kind-cross-language",
+      "match": {"tags": ["kind-cross-language"]},
+      "select": [{"set": "scenarios", "tags": ["kind-cross-language"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "scenario-tag-kind-currentness",
+      "match": {"tags": ["kind-currentness"]},
+      "select": [{"set": "scenarios", "tags": ["kind-currentness"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "scenario-tag-kind-dated-contradiction",
+      "match": {"tags": ["kind-dated-contradiction"]},
+      "select": [{"set": "scenarios", "tags": ["kind-dated-contradiction"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "scenario-tag-kind-deadline-passed",
+      "match": {"tags": ["kind-deadline-passed"]},
+      "select": [{"set": "scenarios", "tags": ["kind-deadline-passed"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "scenario-tag-kind-entrust-with-report-promise",
+      "match": {"tags": ["kind-entrust-with-report-promise"]},
+      "select": [{"set": "scenarios", "tags": ["kind-entrust-with-report-promise"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "scenario-tag-kind-forgetting",
+      "match": {"tags": ["kind-forgetting"]},
+      "select": [{"set": "scenarios", "tags": ["kind-forgetting"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "scenario-tag-kind-harm-control",
+      "match": {"tags": ["kind-harm-control"]},
+      "select": [{"set": "scenarios", "tags": ["kind-harm-control"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "scenario-tag-kind-owner-correction",
+      "match": {"tags": ["kind-owner-correction"]},
+      "select": [{"set": "scenarios", "tags": ["kind-owner-correction"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "scenario-tag-kind-paraphrase",
+      "match": {"tags": ["kind-paraphrase"]},
+      "select": [{"set": "scenarios", "tags": ["kind-paraphrase"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "scenario-tag-kind-rule-correction",
+      "match": {"tags": ["kind-rule-correction"]},
+      "select": [{"set": "scenarios", "tags": ["kind-rule-correction"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "scenario-tag-kind-short-follow-up",
+      "match": {"tags": ["kind-short-follow-up"]},
+      "select": [{"set": "scenarios", "tags": ["kind-short-follow-up"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "scenario-tag-kind-status-without-run",
+      "match": {"tags": ["kind-status-without-run"]},
+      "select": [{"set": "scenarios", "tags": ["kind-status-without-run"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "scenario-tag-m3a",
+      "match": {"tags": ["m3a"]},
+      "select": [{"set": "scenarios", "tags": ["m3a"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "scenario-tag-m3b",
+      "match": {"tags": ["m3b"]},
+      "select": [{"set": "scenarios", "tags": ["m3b"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "scenario-tag-m3c",
+      "match": {"tags": ["m3c"]},
+      "select": [{"set": "scenarios", "tags": ["m3c"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "scenario-tag-memory",
+      "match": {"tags": ["memory"]},
+      "select": [{"set": "scenarios", "tags": ["memory"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "scenario-tag-owner-model",
+      "match": {"tags": ["owner-model"]},
+      "select": [{"set": "scenarios", "tags": ["owner-model"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "scenario-tag-payment",
+      "match": {"tags": ["payment"]},
+      "select": [{"set": "scenarios", "tags": ["payment"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "scenario-tag-presence",
+      "match": {"tags": ["presence"]},
+      "select": [{"set": "scenarios", "tags": ["presence"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "scenario-tag-reminder",
+      "match": {"tags": ["reminder"]},
+      "select": [{"set": "scenarios", "tags": ["reminder"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "scenario-tag-route",
+      "match": {"tags": ["route"]},
+      "select": [{"set": "scenarios", "tags": ["route"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "scenario-tag-send",
+      "match": {"tags": ["send"]},
+      "select": [{"set": "scenarios", "tags": ["send"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "scenario-tag-settings",
+      "match": {"tags": ["settings"]},
+      "select": [{"set": "scenarios", "tags": ["settings"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "scenario-tag-shopping",
+      "match": {"tags": ["shopping"]},
+      "select": [{"set": "scenarios", "tags": ["shopping"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "scenario-tag-skills",
+      "match": {"tags": ["skills"]},
+      "select": [{"set": "scenarios", "tags": ["skills"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "scenario-tag-telegram",
+      "match": {"tags": ["telegram"]},
+      "select": [{"set": "scenarios", "tags": ["telegram"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "scenario-tag-time",
+      "match": {"tags": ["time"]},
+      "select": [{"set": "scenarios", "tags": ["time"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "scenario-tag-topic-shift",
+      "match": {"tags": ["topic-shift"]},
+      "select": [{"set": "scenarios", "tags": ["topic-shift"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "scenario-tag-travel",
+      "match": {"tags": ["travel"]},
+      "select": [{"set": "scenarios", "tags": ["travel"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "scenario-tag-watch",
+      "match": {"tags": ["watch"]},
+      "select": [{"set": "scenarios", "tags": ["watch"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "scenario-tag-workplace",
+      "match": {"tags": ["workplace"]},
+      "select": [{"set": "scenarios", "tags": ["workplace"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "scenario-tag-world",
+      "match": {"tags": ["world"]},
+      "select": [{"set": "scenarios", "tags": ["world"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "scenario-tag-write",
+      "match": {"tags": ["write"]},
+      "select": [{"set": "scenarios", "tags": ["write"]}],
+      "reason": "The change explicitly names this scenario tag; retain each scenario’s declared split."
+    },
+    {
+      "id": "shared-brief-assembly",
+      "match": {"paths": ["src/personal_agent/quickstart_service.py", "src/personal_agent/prompt_files.py"]},
+      "select": [{"set": "judgments"}, {"set": "qualification"}, {"set": "scenarios"}],
+      "reason": "Shared prompt loading and brief assembly can affect judgment inputs and worker outcomes; path-only selection conservatively covers both."
+    }
+  ]
+}

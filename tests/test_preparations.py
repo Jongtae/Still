@@ -1399,11 +1399,11 @@ class WindowTests(_WatchCase):
         until = lambda seconds: datetime.fromtimestamp(due + seconds, SEOUL).isoformat()
         self.assertEqual(prep.normalize_window(10, until(3600), None, due, 'Asia/Seoul', self.now), (600, due + 3600, 7), 'slots up to and including until (#701)')
         self.assertEqual(prep.normalize_window('10', until(3600), 3, due, 'Asia/Seoul', self.now)[2], 3)
-        self.assertEqual(prep.normalize_window(5, until(86400), None, due, 'Asia/Seoul', self.now)[2], prep.MAX_WINDOW_RUNS)
+        self.assertEqual(prep.normalize_window(5, until(86400), None, due, 'Asia/Seoul', self.now)[2], 288)
         # #846: about three checks a day up to a deadline weeks away fits the window.
         self.assertEqual(prep.normalize_window(480, until(30 * 86400), None, due, 'Asia/Seoul', self.now)[2], 91)
         for every, span, runs in ((4, 3600, None), (721, 3600, None), (10, 0, None), (10, -600, None),
-                                  (10, 31 * 86400 + 60, None), (True, 3600, None), (10, 3600, 0), (10, 3600, 97)):
+                                  (10, 31 * 86400 + 60, None), (True, 3600, None), (10, 3600, 0), (10, 3600, prep.MAX_DAILY_WINDOW_RUNS + 1)):
             with self.assertRaises(prep.PreparationRefusal, msg=(every, span, runs)):
                 prep.normalize_window(every, until(span), runs, due, 'Asia/Seoul', self.now)
         with self.assertRaises(prep.PreparationRefusal):
@@ -2535,7 +2535,8 @@ class ScheduleTextTests(unittest.TestCase):
             for row in self.localized_rows():
                 row = {**row, 'id': 'schedule', 'title_text': 'Title'}
                 service = SimpleNamespace(
-                    preparations=SimpleNamespace(get=lambda ident: row, clock=lambda: row['due_at'] - 60),
+                    preparations=SimpleNamespace(get=lambda ident: row, clock=lambda: row['due_at'] - 60,
+                                                 preview_edit=prep.Preparations.edit_values),
                     home_zone=lambda: 'Asia/Seoul')
                 orchestrator = SettingsOrchestrator(store, service=service)
                 changes = {'id': row['id'], 'timezone': 'Europe/Paris'}
@@ -2684,14 +2685,37 @@ const press=async(label)=>{const button=descendants(rows()[0]).find(n=>n.tag==='
  await form.onsubmit({preventDefault(){}});
  assert.equal(JSON.stringify(calls.at(-1).body),JSON.stringify({operation:'edit',id:'p4',due:'2026-10-15T09:00',timezone:'Asia/Seoul',recurrence:'weekly'}));
  assert(!Object.hasOwn(calls.at(-1).body,'goal'));
- ctx.rows=[{...ctx.rows[0],recurrence:'window',every_minutes:10,until:'2026-10-15T12:00:00+09:00',until_local_input:'2026-10-15T12:00',max_runs:6}];
+ ctx.rows=[{...ctx.rows[0],recurrence:'window',every_minutes:10,until:'2026-10-15T12:00:00+09:00',until_local_input:'2026-10-15T12:00',max_runs:6,max_window_runs:8928}];
  await ctx.loadPreparations();await press('일정 변경');
  const watchForm=$('preparations-list').children.find(n=>n.tag==='form'),watchFields=descendants(watchForm).filter(n=>n.tag==='input');
  assert.deepEqual(watchFields.map(n=>n.name),['due','timezone','every_minutes','until','max_runs']);
  watchFields.find(n=>n.name==='max_runs').value='3';await watchForm.onsubmit({preventDefault(){}});
  assert.equal(calls.at(-1).body.max_runs,3);assert(!Object.hasOwn(calls.at(-1).body,'recurrence'));
+ assert.equal(watchFields.find(n=>n.name==='max_runs').max,'8928');
+ assert.equal(watchFields.find(n=>n.name==='max_runs').required,false);
+ for(const [locale,lang] of [['ko','ko'],['en','en'],['ja','ja'],['zh-CN','zh']]){
+  vm.runInContext(`setLanguage('${locale}')`,ctx);
+  const nodes=descendants(ctx.preparationEditForm(ctx.rows[0])),input=nodes.find(n=>n.name==='max_runs');
+  const hint=nodes.find(n=>n.id===input.attrs['aria-describedby']);
+  assert.equal(hint.textContent,JSON.parse(process.argv[2]).max_runs_hint[lang]);assert(hint.textContent);assert(!hint.hidden);
+ }
+ vm.runInContext("setLanguage('ko')",ctx);
  assert.equal(watchFields.find(n=>n.name==='until').type,'datetime-local');
+ watchFields.find(n=>n.name==='max_runs').value='6';watchFields.find(n=>n.name==='until').value='2026-10-15T20:00';await watchForm.onsubmit({preventDefault(){}});
+ assert.equal(calls.at(-1).body.max_runs,6,'lengthening preserves the displayed limit');
+ watchFields.find(n=>n.name==='every_minutes').value='5';await watchForm.onsubmit({preventDefault(){}});
+ assert.equal(calls.at(-1).body.max_runs,6,'a cadence change preserves the displayed limit');
+ watchFields.find(n=>n.name==='max_runs').value='';await watchForm.onsubmit({preventDefault(){}});
+ assert.equal(calls.at(-1).body.max_runs,'','empty requests every slot within the daily cap, never zero');
+ watchFields.find(n=>n.name==='until').value='2026-10-15T12:00';await watchForm.onsubmit({preventDefault(){}});
  assert.equal(calls.at(-1).body.until,'2026-10-15T12:00');
+ ctx.rows=[{...ctx.rows[0],every_minutes:5,until_local_input:'2026-10-15T10:00',max_runs:3}];
+ await ctx.loadPreparations();await press('일정 변경');
+ const limitedForm=$('preparations-list').children.find(n=>n.tag==='form');
+ descendants(limitedForm).find(n=>n.name==='until').value='2026-10-15T11:00';
+ assert.equal(Number(descendants(limitedForm).find(n=>n.name==='max_runs').value),3);
+ await limitedForm.onsubmit({preventDefault(){}});
+ assert.equal(JSON.stringify(calls.at(-1).body),JSON.stringify({operation:'edit',id:'p4',due:'2026-10-15T09:00',timezone:'Asia/Seoul',every_minutes:5,until:'2026-10-15T11:00',max_runs:3}));
  // #581: rule controls submit one rule, without recurrence or JS offset conversion.
  ctx.rows=[{...ctx.rows[0],recurrence:'weekly'}];await ctx.loadPreparations();await press('일정 변경');
  const ruleForm=$('preparations-list').children.find(n=>n.tag==='form'),ruleFields=descendants(ruleForm).filter(n=>n.tag==='input'||n.tag==='select');
@@ -2725,9 +2749,10 @@ class PreparationSettingsUi(unittest.TestCase):
             raise unittest.SkipTest('Node is needed for the DOM-stub check')
         app = Path(__file__).resolve().parents[1] / 'src' / 'personal_agent' / 'web' / 'app.js'
         result = subprocess.run([node, '-e', UI_CHECK, str(app), json.dumps({
-            key: {lang: msg(message_id, lang) for lang in ('ko', 'en')}
+            key: {lang: msg(message_id, lang) for lang in ('ko', 'en', 'ja', 'zh')}
             for key, message_id in {
                 'accept': 'button.preparation_accept', 'decline': 'button.preparation_decline',
+                'max_runs_hint': 'preparations.max_runs_hint',
                 **{'delivery_' + mode: 'preparations.delivery_' + mode for mode in ('send', 'keep', 'when_needed')}
             }.items()})], capture_output=True, text=True, timeout=30)
         self.assertEqual(result.returncode, 0, result.stderr)

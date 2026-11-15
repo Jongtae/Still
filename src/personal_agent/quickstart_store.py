@@ -74,7 +74,7 @@ from .owner_model import TABLE_SQL as OWNER_MODEL_TABLE_SQL, migrate as owner_mo
 _SECRET_STATE_LOCK = threading.RLock()
 #: #1470: the non-browser actions whose exact request the owner approves once (step approval).
 #: One list: the store mints their approvals and the service shows and resumes them.
-REQUEST_APPROVAL_ACTIONS = frozenset({'api_request', 'connector_call', 'code_run'})
+REQUEST_APPROVAL_ACTIONS = frozenset({'api_request', 'connector_call', 'code_run', 'self_set_write'})
 
 
 #: #262: how often one statement is prepared again after a concurrent schema change hid it.

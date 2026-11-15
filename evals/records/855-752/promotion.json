@@ -1,0 +1,2610 @@
+{
+  "version": "promotion-record/1",
+  "change_identity": {
+    "base_sha": "bca55624ead33c74e023951378a07b2d739bb44c",
+    "head_sha": "c3876f67c87acd2f58480a496f15cfce890bfe23",
+    "model_id": "gpt-5.6-terra",
+    "route": "subscription_cli",
+    "effort": "low",
+    "cli_version": "codex-cli 0.167.2",
+    "run": {
+      "cases": "@evals/records/855-752/selection.json",
+      "seed": "synthetic-terra",
+      "model": "gpt-5.6-terra",
+      "repetitions": 3,
+      "max_calls": 166,
+      "requalify_attempts": 2,
+      "reuse_arm": "baseline=evals/records/855-752/candidate-arm-report.json"
+    },
+    "commits": [
+      "c3876f67c87acd2f58480a496f15cfce890bfe23"
+    ],
+    "prompt_digests": {
+      "baseline": {
+        "personal_agent/prompts/ask_or_assume.md": "40696921e12f",
+        "personal_agent/prompts/goal_reached.md": "fba6718fa9e0"
+      },
+      "candidate": {
+        "personal_agent/prompts/ask_or_assume.md": "57cafb8696e5",
+        "personal_agent/prompts/goal_reached.md": "3421c0f6fcd3"
+      }
+    },
+    "instructions_digests": {
+      "baseline": null,
+      "candidate": null
+    },
+    "tool_schema_digests": {
+      "baseline": null,
+      "candidate": null
+    },
+    "digest_unavailable_reasons": {
+      "instructions_digests": "#825 per-attempt digests are recorded on Work turns, not on judgment calls.",
+      "tool_schema_digests": "#825 per-attempt digests are recorded on Work turns, not on judgment calls."
+    }
+  },
+  "selection": {
+    "change": {
+      "kinds": [],
+      "paths": [
+        "src/personal_agent/prompts/ask_or_assume.md",
+        "src/personal_agent/prompts/goal_reached.md"
+      ],
+      "prompt_fragments": [],
+      "propositions": [],
+      "routes": [],
+      "tags": [],
+      "description": ""
+    },
+    "selected": [
+      {
+        "set": "judgments",
+        "id": "escalation-en",
+        "split": "dev",
+        "reasons": [
+          "role-orchestration_escalation: This instruction or proposition is exercised by the orchestration_escalation judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "judgments",
+        "id": "escalation-ko",
+        "split": "dev",
+        "reasons": [
+          "role-orchestration_escalation: This instruction or proposition is exercised by the orchestration_escalation judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "judgments",
+        "id": "goal-curiosity",
+        "split": "dev",
+        "reasons": [
+          "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "judgments",
+        "id": "goal-curiosity-ko",
+        "split": "dev",
+        "reasons": [
+          "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "judgments",
+        "id": "goal-failed",
+        "split": "dev",
+        "reasons": [
+          "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "judgments",
+        "id": "goal-failed-ko",
+        "split": "dev",
+        "reasons": [
+          "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "judgments",
+        "id": "goal-legitimate-question",
+        "split": "dev",
+        "reasons": [
+          "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "judgments",
+        "id": "goal-legitimate-question-ko",
+        "split": "dev",
+        "reasons": [
+          "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "judgments",
+        "id": "goal-partial",
+        "split": "dev",
+        "reasons": [
+          "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "judgments",
+        "id": "goal-partial-ko",
+        "split": "dev",
+        "reasons": [
+          "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "judgments",
+        "id": "goal-repeat-question",
+        "split": "dev",
+        "reasons": [
+          "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "judgments",
+        "id": "goal-repeat-question-ko",
+        "split": "dev",
+        "reasons": [
+          "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "judgments",
+        "id": "goal-served",
+        "split": "dev",
+        "reasons": [
+          "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "judgments",
+        "id": "goal-served-ko",
+        "split": "dev",
+        "reasons": [
+          "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "judgments",
+        "id": "goal-unknown",
+        "split": "dev",
+        "reasons": [
+          "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "judgments",
+        "id": "goal-unknown-ko",
+        "split": "dev",
+        "reasons": [
+          "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "judgments",
+        "id": "goal-unsupported-figure",
+        "split": "dev",
+        "reasons": [
+          "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "judgments",
+        "id": "goal-unsupported-figure-ko",
+        "split": "dev",
+        "reasons": [
+          "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "judgments",
+        "id": "heldout-escalation",
+        "split": "heldout",
+        "reasons": [
+          "role-orchestration_escalation: This instruction or proposition is exercised by the orchestration_escalation judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "judgments",
+        "id": "heldout-goal-casual-reply",
+        "split": "heldout",
+        "reasons": [
+          "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "judgments",
+        "id": "heldout-goal-failed",
+        "split": "heldout",
+        "reasons": [
+          "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "judgments",
+        "id": "heldout-goal-legitimate-question",
+        "split": "heldout",
+        "reasons": [
+          "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "judgments",
+        "id": "heldout-goal-partial",
+        "split": "heldout",
+        "reasons": [
+          "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "judgments",
+        "id": "heldout-goal-repeat-question",
+        "split": "heldout",
+        "reasons": [
+          "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "judgments",
+        "id": "heldout-goal-served",
+        "split": "heldout",
+        "reasons": [
+          "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "judgments",
+        "id": "heldout-goal-unhelpful-curiosity",
+        "split": "heldout",
+        "reasons": [
+          "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "judgments",
+        "id": "heldout-goal-unknown",
+        "split": "heldout",
+        "reasons": [
+          "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "judgments",
+        "id": "heldout-goal-unsupported-figure",
+        "split": "heldout",
+        "reasons": [
+          "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "judgments",
+        "id": "heldout-plan-account",
+        "split": "heldout",
+        "reasons": [
+          "role-orchestration_plan: This instruction or proposition is exercised by the orchestration_plan judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "judgments",
+        "id": "heldout-plan-plain",
+        "split": "heldout",
+        "reasons": [
+          "role-orchestration_plan: This instruction or proposition is exercised by the orchestration_plan judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "judgments",
+        "id": "heldout-plan-situation",
+        "split": "heldout",
+        "reasons": [
+          "role-orchestration_plan: This instruction or proposition is exercised by the orchestration_plan judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "judgments",
+        "id": "heldout-plan-statement",
+        "split": "heldout",
+        "reasons": [
+          "role-orchestration_plan: This instruction or proposition is exercised by the orchestration_plan judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "judgments",
+        "id": "heldout-plan-technical",
+        "split": "heldout",
+        "reasons": [
+          "role-orchestration_plan: This instruction or proposition is exercised by the orchestration_plan judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "judgments",
+        "id": "plan-forwarding",
+        "split": "dev",
+        "reasons": [
+          "role-orchestration_plan: This instruction or proposition is exercised by the orchestration_plan judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "judgments",
+        "id": "plan-location",
+        "split": "dev",
+        "reasons": [
+          "role-orchestration_plan: This instruction or proposition is exercised by the orchestration_plan judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "judgments",
+        "id": "plan-password",
+        "split": "dev",
+        "reasons": [
+          "role-orchestration_plan: This instruction or proposition is exercised by the orchestration_plan judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "judgments",
+        "id": "plan-plain-en",
+        "split": "dev",
+        "reasons": [
+          "role-orchestration_plan: This instruction or proposition is exercised by the orchestration_plan judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "judgments",
+        "id": "plan-plain-ko",
+        "split": "dev",
+        "reasons": [
+          "role-orchestration_plan: This instruction or proposition is exercised by the orchestration_plan judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "judgments",
+        "id": "plan-schedule",
+        "split": "dev",
+        "reasons": [
+          "role-orchestration_plan: This instruction or proposition is exercised by the orchestration_plan judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "judgments",
+        "id": "plan-statement",
+        "split": "dev",
+        "reasons": [
+          "role-orchestration_plan: This instruction or proposition is exercised by the orchestration_plan judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "judgments",
+        "id": "plan-subscription",
+        "split": "dev",
+        "reasons": [
+          "role-orchestration_plan: This instruction or proposition is exercised by the orchestration_plan judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "judgments",
+        "id": "plan-technical",
+        "split": "dev",
+        "reasons": [
+          "role-orchestration_plan: This instruction or proposition is exercised by the orchestration_plan judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "allergy-then-meal-plan",
+        "split": "heldout",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "already-ate-dinner-next-meal",
+        "split": "heldout",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "already-ate-lunch",
+        "split": "dev",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "correct-earlier-advice-hiking",
+        "split": "dev",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "food-on-route-budget-correction",
+        "split": "dev",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "food-on-route-rest-area",
+        "split": "dev",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "line-add-watch-rule",
+        "split": "dev",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "line-cancel-seat-watch",
+        "split": "heldout",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "line-cancel-watch",
+        "split": "dev",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "line-change-stock-time",
+        "split": "heldout",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "line-change-watch-time",
+        "split": "dev",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "line-evening-watch",
+        "split": "dev",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "line-past-submission-deadline",
+        "split": "heldout",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "line-status-before-first-run",
+        "split": "dev",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "new-request-after-lunch-topic",
+        "split": "dev",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "new-request-after-travel-topic",
+        "split": "dev",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "preference-then-recommendation",
+        "split": "dev",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "presence-chat-lookup-with-a-judgment",
+        "split": "dev",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "presence-chat-research-takes-a-while",
+        "split": "dev",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "presence-chat-short-reply-stays-short",
+        "split": "dev",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "recall-binding-language",
+        "split": "dev",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "recall-clay-language",
+        "split": "heldout",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "recall-correct-printer",
+        "split": "dev",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "recall-correct-size",
+        "split": "heldout",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "recall-dated-committee",
+        "split": "heldout",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "recall-dated-studio",
+        "split": "dev",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "recall-expired-pass",
+        "split": "dev",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "recall-forget-project",
+        "split": "heldout",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "recall-forget-route",
+        "split": "dev",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "recall-hall-again",
+        "split": "dev",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "recall-irrelevant-music",
+        "split": "dev",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "recall-parcel-again",
+        "split": "heldout",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "recall-quiet-desk",
+        "split": "dev",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "recall-reading-format",
+        "split": "heldout",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "relative-time-reminder",
+        "split": "heldout",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "settings-change-with-confirmation",
+        "split": "dev",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "settings-read-in-conversation",
+        "split": "dev",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "shopping-followup-constraint",
+        "split": "dev",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "shopping-lookup-compare",
+        "split": "dev",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "skill-add-reference-by-name",
+        "split": "dev",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "standing-wish-becomes-watch",
+        "split": "dev",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "standing-wish-is-not-a-memory",
+        "split": "heldout",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "tee-time-departure-reminder",
+        "split": "dev",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "tee-time-reminder",
+        "split": "dev",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "travel-time-after-event",
+        "split": "dev",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "travel-time-from-earlier-place",
+        "split": "dev",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "travel-time-with-clock-note",
+        "split": "heldout",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "weekday-lunch-near-workplace",
+        "split": "dev",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "workplace-statement-remember",
+        "split": "dev",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "world-appworld-note-update",
+        "split": "dev",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "world-appworld-pay-approved",
+        "split": "dev",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "world-appworld-pay-denied",
+        "split": "dev",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      },
+      {
+        "set": "scenarios",
+        "id": "world-appworld-send-text",
+        "split": "dev",
+        "reasons": [
+          "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+        ]
+      }
+    ],
+    "unmatched": []
+  },
+  "comparable": true,
+  "conditions": {
+    "baseline": {
+      "harness_version": "judgment-harness/1",
+      "case_set_version": "judgment-validation/3",
+      "case_set_digest": "e5f089fcfdfe222b10f9c581c7de523ab248e318de687bdec368bedb24447931",
+      "catalogue_digest": "41c67ecc7505d98fe4aab13f3d592a68c18106be4db229d9d302792efeba66bd",
+      "evidence_class": "live-route:subscription_cli",
+      "pinned_model": "gpt-5.6-terra",
+      "runtime.transport": "subscription_cli",
+      "runtime.requested_model": "gpt-5.6-terra",
+      "runtime.effort": "low",
+      "runtime.destination": "OpenAI (Codex 구독 계정)",
+      "runtime.suite_version": "decision-qualification/4",
+      "runtime.engine": "codex",
+      "runtime.model_policy": "explicit",
+      "runtime.cli_version": "codex-cli 0.167.2",
+      "partner_version": "judgment-heldout-partners/1",
+      "partner_digest": "9c7576e2daee5d72a6003585649e3b4282561b66d48b151f85c653f162dd3c20",
+      "splits": {
+        "escalation-en": "dev",
+        "escalation-ko": "dev",
+        "goal-curiosity": "dev",
+        "goal-curiosity-ko": "dev",
+        "goal-failed": "dev",
+        "goal-failed-ko": "dev",
+        "goal-legitimate-question": "dev",
+        "goal-legitimate-question-ko": "dev",
+        "goal-partial": "dev",
+        "goal-partial-ko": "dev",
+        "goal-repeat-question": "dev",
+        "goal-repeat-question-ko": "dev",
+        "goal-served": "dev",
+        "goal-served-ko": "dev",
+        "goal-unknown": "dev",
+        "goal-unknown-ko": "dev",
+        "goal-unsupported-figure": "dev",
+        "goal-unsupported-figure-ko": "dev",
+        "heldout-escalation": "heldout",
+        "heldout-goal-casual-reply": "heldout",
+        "heldout-goal-failed": "heldout",
+        "heldout-goal-legitimate-question": "heldout",
+        "heldout-goal-partial": "heldout",
+        "heldout-goal-repeat-question": "heldout",
+        "heldout-goal-served": "heldout",
+        "heldout-goal-unhelpful-curiosity": "heldout",
+        "heldout-goal-unknown": "heldout",
+        "heldout-goal-unsupported-figure": "heldout",
+        "heldout-plan-account": "heldout",
+        "heldout-plan-plain": "heldout",
+        "heldout-plan-situation": "heldout",
+        "heldout-plan-statement": "heldout",
+        "heldout-plan-technical": "heldout",
+        "plan-forwarding": "dev",
+        "plan-location": "dev",
+        "plan-password": "dev",
+        "plan-plain-en": "dev",
+        "plan-plain-ko": "dev",
+        "plan-schedule": "dev",
+        "plan-statement": "dev",
+        "plan-subscription": "dev",
+        "plan-technical": "dev"
+      },
+      "seed_manifest_digest": "ed90355aeb3fac613c91971d72a8bc1799e327eb578abdca7b0c30a4d6dca0e0",
+      "runtime.observed_models": [
+        [
+          "subscription_cli",
+          "codex",
+          "codex",
+          "gpt-5.6-terra",
+          "not reported",
+          "explicit"
+        ]
+      ],
+      "model_observation": {
+        "reported": false,
+        "claim": "requested model pinned; observed model not reported by the CLI"
+      }
+    },
+    "candidate": {
+      "harness_version": "judgment-harness/1",
+      "case_set_version": "judgment-validation/3",
+      "case_set_digest": "e5f089fcfdfe222b10f9c581c7de523ab248e318de687bdec368bedb24447931",
+      "catalogue_digest": "41c67ecc7505d98fe4aab13f3d592a68c18106be4db229d9d302792efeba66bd",
+      "evidence_class": "live-route:subscription_cli",
+      "pinned_model": "gpt-5.6-terra",
+      "runtime.transport": "subscription_cli",
+      "runtime.requested_model": "gpt-5.6-terra",
+      "runtime.effort": "low",
+      "runtime.destination": "OpenAI (Codex 구독 계정)",
+      "runtime.suite_version": "decision-qualification/4",
+      "runtime.engine": "codex",
+      "runtime.model_policy": "explicit",
+      "runtime.cli_version": "codex-cli 0.167.2",
+      "partner_version": "judgment-heldout-partners/1",
+      "partner_digest": "9c7576e2daee5d72a6003585649e3b4282561b66d48b151f85c653f162dd3c20",
+      "splits": {
+        "escalation-en": "dev",
+        "escalation-ko": "dev",
+        "goal-curiosity": "dev",
+        "goal-curiosity-ko": "dev",
+        "goal-failed": "dev",
+        "goal-failed-ko": "dev",
+        "goal-legitimate-question": "dev",
+        "goal-legitimate-question-ko": "dev",
+        "goal-partial": "dev",
+        "goal-partial-ko": "dev",
+        "goal-repeat-question": "dev",
+        "goal-repeat-question-ko": "dev",
+        "goal-served": "dev",
+        "goal-served-ko": "dev",
+        "goal-unknown": "dev",
+        "goal-unknown-ko": "dev",
+        "goal-unsupported-figure": "dev",
+        "goal-unsupported-figure-ko": "dev",
+        "heldout-escalation": "heldout",
+        "heldout-goal-casual-reply": "heldout",
+        "heldout-goal-failed": "heldout",
+        "heldout-goal-legitimate-question": "heldout",
+        "heldout-goal-partial": "heldout",
+        "heldout-goal-repeat-question": "heldout",
+        "heldout-goal-served": "heldout",
+        "heldout-goal-unhelpful-curiosity": "heldout",
+        "heldout-goal-unknown": "heldout",
+        "heldout-goal-unsupported-figure": "heldout",
+        "heldout-plan-account": "heldout",
+        "heldout-plan-plain": "heldout",
+        "heldout-plan-situation": "heldout",
+        "heldout-plan-statement": "heldout",
+        "heldout-plan-technical": "heldout",
+        "plan-forwarding": "dev",
+        "plan-location": "dev",
+        "plan-password": "dev",
+        "plan-plain-en": "dev",
+        "plan-plain-ko": "dev",
+        "plan-schedule": "dev",
+        "plan-statement": "dev",
+        "plan-subscription": "dev",
+        "plan-technical": "dev"
+      },
+      "seed_manifest_digest": "ed90355aeb3fac613c91971d72a8bc1799e327eb578abdca7b0c30a4d6dca0e0",
+      "runtime.observed_models": [
+        [
+          "subscription_cli",
+          "codex",
+          "codex",
+          "gpt-5.6-terra",
+          "not reported",
+          "explicit"
+        ]
+      ],
+      "model_observation": {
+        "reported": false,
+        "claim": "requested model pinned; observed model not reported by the CLI"
+      }
+    },
+    "differences": [],
+    "unknown": []
+  },
+  "cases": [
+    {
+      "id": "escalation-en",
+      "set": "judgments",
+      "split": "dev",
+      "baseline": {
+        "passed": 3,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 3,
+        "trials": 3
+      },
+      "change": "same",
+      "difference": 0.0,
+      "spread": 0.0
+    },
+    {
+      "id": "escalation-ko",
+      "set": "judgments",
+      "split": "dev",
+      "baseline": {
+        "passed": 3,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 3,
+        "trials": 3
+      },
+      "change": "same",
+      "difference": 0.0,
+      "spread": 0.0
+    },
+    {
+      "id": "goal-curiosity",
+      "set": "judgments",
+      "split": "dev",
+      "baseline": {
+        "passed": 2,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 2,
+        "trials": 3
+      },
+      "change": "mixed",
+      "difference": 0.0,
+      "spread": 1.0
+    },
+    {
+      "id": "goal-curiosity-ko",
+      "set": "judgments",
+      "split": "dev",
+      "baseline": {
+        "passed": 3,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 2,
+        "trials": 3
+      },
+      "change": "uncertain-regressed",
+      "difference": -0.33333333333333337,
+      "spread": 1.0
+    },
+    {
+      "id": "goal-failed",
+      "set": "judgments",
+      "split": "dev",
+      "baseline": {
+        "passed": 3,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 3,
+        "trials": 3
+      },
+      "change": "same",
+      "difference": 0.0,
+      "spread": 0.0
+    },
+    {
+      "id": "goal-failed-ko",
+      "set": "judgments",
+      "split": "dev",
+      "baseline": {
+        "passed": 3,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 3,
+        "trials": 3
+      },
+      "change": "same",
+      "difference": 0.0,
+      "spread": 0.0
+    },
+    {
+      "id": "goal-legitimate-question",
+      "set": "judgments",
+      "split": "dev",
+      "baseline": {
+        "passed": 3,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 1,
+        "trials": 3
+      },
+      "change": "uncertain-regressed",
+      "difference": -0.6666666666666667,
+      "spread": 1.0
+    },
+    {
+      "id": "goal-legitimate-question-ko",
+      "set": "judgments",
+      "split": "dev",
+      "baseline": {
+        "passed": 0,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 0,
+        "trials": 3
+      },
+      "change": "same",
+      "difference": 0.0,
+      "spread": 0.0
+    },
+    {
+      "id": "goal-partial",
+      "set": "judgments",
+      "split": "dev",
+      "baseline": {
+        "passed": 3,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 3,
+        "trials": 3
+      },
+      "change": "same",
+      "difference": 0.0,
+      "spread": 0.0
+    },
+    {
+      "id": "goal-partial-ko",
+      "set": "judgments",
+      "split": "dev",
+      "baseline": {
+        "passed": 3,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 3,
+        "trials": 3
+      },
+      "change": "same",
+      "difference": 0.0,
+      "spread": 0.0
+    },
+    {
+      "id": "goal-repeat-question",
+      "set": "judgments",
+      "split": "dev",
+      "baseline": {
+        "passed": 3,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 3,
+        "trials": 3
+      },
+      "change": "same",
+      "difference": 0.0,
+      "spread": 0.0
+    },
+    {
+      "id": "goal-repeat-question-ko",
+      "set": "judgments",
+      "split": "dev",
+      "baseline": {
+        "passed": 3,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 3,
+        "trials": 3
+      },
+      "change": "same",
+      "difference": 0.0,
+      "spread": 0.0
+    },
+    {
+      "id": "goal-served",
+      "set": "judgments",
+      "split": "dev",
+      "baseline": {
+        "passed": 3,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 3,
+        "trials": 3
+      },
+      "change": "same",
+      "difference": 0.0,
+      "spread": 0.0
+    },
+    {
+      "id": "goal-served-ko",
+      "set": "judgments",
+      "split": "dev",
+      "baseline": {
+        "passed": 3,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 3,
+        "trials": 3
+      },
+      "change": "same",
+      "difference": 0.0,
+      "spread": 0.0
+    },
+    {
+      "id": "goal-unknown",
+      "set": "judgments",
+      "split": "dev",
+      "baseline": {
+        "passed": 3,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 3,
+        "trials": 3
+      },
+      "change": "same",
+      "difference": 0.0,
+      "spread": 0.0
+    },
+    {
+      "id": "goal-unknown-ko",
+      "set": "judgments",
+      "split": "dev",
+      "baseline": {
+        "passed": 3,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 3,
+        "trials": 3
+      },
+      "change": "same",
+      "difference": 0.0,
+      "spread": 0.0
+    },
+    {
+      "id": "goal-unsupported-figure",
+      "set": "judgments",
+      "split": "dev",
+      "baseline": {
+        "passed": 3,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 3,
+        "trials": 3
+      },
+      "change": "same",
+      "difference": 0.0,
+      "spread": 0.0
+    },
+    {
+      "id": "goal-unsupported-figure-ko",
+      "set": "judgments",
+      "split": "dev",
+      "baseline": {
+        "passed": 3,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 3,
+        "trials": 3
+      },
+      "change": "same",
+      "difference": 0.0,
+      "spread": 0.0
+    },
+    {
+      "id": "heldout-escalation",
+      "set": "judgments",
+      "split": "heldout",
+      "baseline": {
+        "passed": 3,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 3,
+        "trials": 3
+      },
+      "change": "same",
+      "difference": 0.0,
+      "spread": 0.0
+    },
+    {
+      "id": "heldout-goal-casual-reply",
+      "set": "judgments",
+      "split": "heldout",
+      "baseline": {
+        "passed": 3,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 3,
+        "trials": 3
+      },
+      "change": "same",
+      "difference": 0.0,
+      "spread": 0.0
+    },
+    {
+      "id": "heldout-goal-failed",
+      "set": "judgments",
+      "split": "heldout",
+      "baseline": {
+        "passed": 3,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 3,
+        "trials": 3
+      },
+      "change": "same",
+      "difference": 0.0,
+      "spread": 0.0
+    },
+    {
+      "id": "heldout-goal-legitimate-question",
+      "set": "judgments",
+      "split": "heldout",
+      "baseline": {
+        "passed": 2,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 2,
+        "trials": 3
+      },
+      "change": "same",
+      "difference": 0.0,
+      "spread": 1.0
+    },
+    {
+      "id": "heldout-goal-partial",
+      "set": "judgments",
+      "split": "heldout",
+      "baseline": {
+        "passed": 3,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 3,
+        "trials": 3
+      },
+      "change": "same",
+      "difference": 0.0,
+      "spread": 0.0
+    },
+    {
+      "id": "heldout-goal-repeat-question",
+      "set": "judgments",
+      "split": "heldout",
+      "baseline": {
+        "passed": 3,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 3,
+        "trials": 3
+      },
+      "change": "same",
+      "difference": 0.0,
+      "spread": 0.0
+    },
+    {
+      "id": "heldout-goal-served",
+      "set": "judgments",
+      "split": "heldout",
+      "baseline": {
+        "passed": 3,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 3,
+        "trials": 3
+      },
+      "change": "same",
+      "difference": 0.0,
+      "spread": 0.0
+    },
+    {
+      "id": "heldout-goal-unhelpful-curiosity",
+      "set": "judgments",
+      "split": "heldout",
+      "baseline": {
+        "passed": 3,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 3,
+        "trials": 3
+      },
+      "change": "same",
+      "difference": 0.0,
+      "spread": 0.0
+    },
+    {
+      "id": "heldout-goal-unknown",
+      "set": "judgments",
+      "split": "heldout",
+      "baseline": {
+        "passed": 3,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 3,
+        "trials": 3
+      },
+      "change": "same",
+      "difference": 0.0,
+      "spread": 0.0
+    },
+    {
+      "id": "heldout-goal-unsupported-figure",
+      "set": "judgments",
+      "split": "heldout",
+      "baseline": {
+        "passed": 3,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 3,
+        "trials": 3
+      },
+      "change": "same",
+      "difference": 0.0,
+      "spread": 0.0
+    },
+    {
+      "id": "heldout-plan-account",
+      "set": "judgments",
+      "split": "heldout",
+      "baseline": {
+        "passed": 3,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 3,
+        "trials": 3
+      },
+      "change": "same",
+      "difference": 0.0,
+      "spread": 0.0
+    },
+    {
+      "id": "heldout-plan-plain",
+      "set": "judgments",
+      "split": "heldout",
+      "baseline": {
+        "passed": 3,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 3,
+        "trials": 3
+      },
+      "change": "same",
+      "difference": 0.0,
+      "spread": 0.0
+    },
+    {
+      "id": "heldout-plan-situation",
+      "set": "judgments",
+      "split": "heldout",
+      "baseline": {
+        "passed": 3,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 3,
+        "trials": 3
+      },
+      "change": "same",
+      "difference": 0.0,
+      "spread": 0.0
+    },
+    {
+      "id": "heldout-plan-statement",
+      "set": "judgments",
+      "split": "heldout",
+      "baseline": {
+        "passed": 1,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 2,
+        "trials": 3
+      },
+      "change": "uncertain-fixed",
+      "difference": 0.3333333333333333,
+      "spread": 1.0
+    },
+    {
+      "id": "heldout-plan-technical",
+      "set": "judgments",
+      "split": "heldout",
+      "baseline": {
+        "passed": 3,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 3,
+        "trials": 3
+      },
+      "change": "same",
+      "difference": 0.0,
+      "spread": 0.0
+    },
+    {
+      "id": "plan-forwarding",
+      "set": "judgments",
+      "split": "dev",
+      "baseline": {
+        "passed": 3,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 3,
+        "trials": 3
+      },
+      "change": "same",
+      "difference": 0.0,
+      "spread": 0.0
+    },
+    {
+      "id": "plan-location",
+      "set": "judgments",
+      "split": "dev",
+      "baseline": {
+        "passed": 3,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 3,
+        "trials": 3
+      },
+      "change": "same",
+      "difference": 0.0,
+      "spread": 0.0
+    },
+    {
+      "id": "plan-password",
+      "set": "judgments",
+      "split": "dev",
+      "baseline": {
+        "passed": 3,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 3,
+        "trials": 3
+      },
+      "change": "same",
+      "difference": 0.0,
+      "spread": 0.0
+    },
+    {
+      "id": "plan-plain-en",
+      "set": "judgments",
+      "split": "dev",
+      "baseline": {
+        "passed": 3,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 3,
+        "trials": 3
+      },
+      "change": "same",
+      "difference": 0.0,
+      "spread": 0.0
+    },
+    {
+      "id": "plan-plain-ko",
+      "set": "judgments",
+      "split": "dev",
+      "baseline": {
+        "passed": 3,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 3,
+        "trials": 3
+      },
+      "change": "same",
+      "difference": 0.0,
+      "spread": 0.0
+    },
+    {
+      "id": "plan-schedule",
+      "set": "judgments",
+      "split": "dev",
+      "baseline": {
+        "passed": 3,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 3,
+        "trials": 3
+      },
+      "change": "same",
+      "difference": 0.0,
+      "spread": 0.0
+    },
+    {
+      "id": "plan-statement",
+      "set": "judgments",
+      "split": "dev",
+      "baseline": {
+        "passed": 3,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 2,
+        "trials": 3
+      },
+      "change": "uncertain-regressed",
+      "difference": -0.33333333333333337,
+      "spread": 1.0
+    },
+    {
+      "id": "plan-subscription",
+      "set": "judgments",
+      "split": "dev",
+      "baseline": {
+        "passed": 3,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 3,
+        "trials": 3
+      },
+      "change": "same",
+      "difference": 0.0,
+      "spread": 0.0
+    },
+    {
+      "id": "plan-technical",
+      "set": "judgments",
+      "split": "dev",
+      "baseline": {
+        "passed": 3,
+        "trials": 3
+      },
+      "candidate": {
+        "passed": 3,
+        "trials": 3
+      },
+      "change": "same",
+      "difference": 0.0,
+      "spread": 0.0
+    }
+  ],
+  "heldout": {
+    "verdict": "inconclusive",
+    "reasons": [
+      "Only uncertain/mixed changes, or a lower mean rate without a certain regression."
+    ],
+    "fixed": [],
+    "regressed": [],
+    "uncertain_regressed": [],
+    "spread": 1.0,
+    "difference": 0.022222222222222254,
+    "pass_rates": {
+      "baseline": 0.9333333333333333,
+      "candidate": 0.9555555555555556
+    },
+    "counts": {
+      "same": 14,
+      "uncertain-fixed": 1
+    }
+  },
+  "cost": {
+    "calls": 304,
+    "usage": "unavailable",
+    "baseline": {
+      "calls": 152,
+      "usage": "unavailable"
+    },
+    "candidate": {
+      "calls": 152,
+      "usage": "unavailable"
+    },
+    "reused_calls": 152,
+    "new_calls": 152
+  },
+  "latency": {
+    "baseline": {
+      "p50_ms": 20716.0,
+      "p95_ms": 57746.0
+    },
+    "candidate": {
+      "p50_ms": 27866.0,
+      "p95_ms": 87604.0
+    }
+  },
+  "selected_not_run": [
+    {
+      "set": "scenarios",
+      "id": "allergy-then-meal-plan",
+      "split": "heldout",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "already-ate-dinner-next-meal",
+      "split": "heldout",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "already-ate-lunch",
+      "split": "dev",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "correct-earlier-advice-hiking",
+      "split": "dev",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "food-on-route-budget-correction",
+      "split": "dev",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "food-on-route-rest-area",
+      "split": "dev",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "line-add-watch-rule",
+      "split": "dev",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "line-cancel-seat-watch",
+      "split": "heldout",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "line-cancel-watch",
+      "split": "dev",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "line-change-stock-time",
+      "split": "heldout",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "line-change-watch-time",
+      "split": "dev",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "line-evening-watch",
+      "split": "dev",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "line-past-submission-deadline",
+      "split": "heldout",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "line-status-before-first-run",
+      "split": "dev",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "new-request-after-lunch-topic",
+      "split": "dev",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "new-request-after-travel-topic",
+      "split": "dev",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "preference-then-recommendation",
+      "split": "dev",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "presence-chat-lookup-with-a-judgment",
+      "split": "dev",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "presence-chat-research-takes-a-while",
+      "split": "dev",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "presence-chat-short-reply-stays-short",
+      "split": "dev",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "recall-binding-language",
+      "split": "dev",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "recall-clay-language",
+      "split": "heldout",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "recall-correct-printer",
+      "split": "dev",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "recall-correct-size",
+      "split": "heldout",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "recall-dated-committee",
+      "split": "heldout",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "recall-dated-studio",
+      "split": "dev",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "recall-expired-pass",
+      "split": "dev",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "recall-forget-project",
+      "split": "heldout",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "recall-forget-route",
+      "split": "dev",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "recall-hall-again",
+      "split": "dev",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "recall-irrelevant-music",
+      "split": "dev",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "recall-parcel-again",
+      "split": "heldout",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "recall-quiet-desk",
+      "split": "dev",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "recall-reading-format",
+      "split": "heldout",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "relative-time-reminder",
+      "split": "heldout",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "settings-change-with-confirmation",
+      "split": "dev",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "settings-read-in-conversation",
+      "split": "dev",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "shopping-followup-constraint",
+      "split": "dev",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "shopping-lookup-compare",
+      "split": "dev",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "skill-add-reference-by-name",
+      "split": "dev",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "standing-wish-becomes-watch",
+      "split": "dev",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "standing-wish-is-not-a-memory",
+      "split": "heldout",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "tee-time-departure-reminder",
+      "split": "dev",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "tee-time-reminder",
+      "split": "dev",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "travel-time-after-event",
+      "split": "dev",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "travel-time-from-earlier-place",
+      "split": "dev",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "travel-time-with-clock-note",
+      "split": "heldout",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "weekday-lunch-near-workplace",
+      "split": "dev",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "workplace-statement-remember",
+      "split": "dev",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "world-appworld-note-update",
+      "split": "dev",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "world-appworld-pay-approved",
+      "split": "dev",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "world-appworld-pay-denied",
+      "split": "dev",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    },
+    {
+      "set": "scenarios",
+      "id": "world-appworld-send-text",
+      "split": "dev",
+      "reason": "no runner for this set in paired.py; run it with its own runner"
+    }
+  ],
+  "counts": {
+    "same": 37,
+    "mixed": 1,
+    "uncertain-regressed": 3,
+    "uncertain-fixed": 1
+  },
+  "evidence_class": "actual-cli-synthetic",
+  "evidence": {
+    "classes": {
+      "baseline": "live-route:subscription_cli",
+      "candidate": "live-route:subscription_cli"
+    },
+    "seed_manifests": {
+      "baseline": {
+        "created_at": "2026-11-14T13:16:26.815463+00:00",
+        "git_head": "081535f",
+        "engine": "codex",
+        "requested_model": "gpt-5.6-terra",
+        "requested_effort": null,
+        "runtime": {
+          "active": {
+            "transport": "subscription_cli",
+            "source": "owner",
+            "engine": "codex",
+            "requested_model": "gpt-5.6-terra",
+            "model_policy": "explicit",
+            "effort": "low",
+            "destination": "OpenAI (Codex 구독 계정)",
+            "available": true,
+            "requalification_needed": false,
+            "cli_version": "codex-cli 0.167.2",
+            "qualification": {
+              "suite_version": "decision-qualification/4",
+              "model": "gpt-5.6-terra",
+              "score": 1.0,
+              "cli_version": "codex-cli 0.167.2",
+              "p50_seconds": 11.485,
+              "p95_seconds": 16.529
+            }
+          },
+          "effective": {
+            "state": "active",
+            "reason": ""
+          },
+          "suite_version": "decision-qualification/4",
+          "observed_models": [],
+          "unavailable_reasons": {}
+        },
+        "owner_data": "none"
+      },
+      "candidate": {
+        "created_at": "2026-11-14T13:16:26.815463+00:00",
+        "git_head": "081535f",
+        "engine": "codex",
+        "requested_model": "gpt-5.6-terra",
+        "requested_effort": null,
+        "runtime": {
+          "active": {
+            "transport": "subscription_cli",
+            "source": "owner",
+            "engine": "codex",
+            "requested_model": "gpt-5.6-terra",
+            "model_policy": "explicit",
+            "effort": "low",
+            "destination": "OpenAI (Codex 구독 계정)",
+            "available": true,
+            "requalification_needed": false,
+            "cli_version": "codex-cli 0.167.2",
+            "qualification": {
+              "suite_version": "decision-qualification/4",
+              "model": "gpt-5.6-terra",
+              "score": 1.0,
+              "cli_version": "codex-cli 0.167.2",
+              "p50_seconds": 11.485,
+              "p95_seconds": 16.529
+            }
+          },
+          "effective": {
+            "state": "active",
+            "reason": ""
+          },
+          "suite_version": "decision-qualification/4",
+          "observed_models": [],
+          "unavailable_reasons": {}
+        },
+        "owner_data": "none"
+      }
+    }
+  },
+  "plan": {
+    "model": "gpt-5.6-terra",
+    "seed": "synthetic-terra",
+    "effort": null,
+    "baseline": "c3876f6^",
+    "candidate": "c3876f6",
+    "selected_not_run": [
+      {
+        "set": "scenarios",
+        "id": "allergy-then-meal-plan",
+        "split": "heldout",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "already-ate-dinner-next-meal",
+        "split": "heldout",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "already-ate-lunch",
+        "split": "dev",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "correct-earlier-advice-hiking",
+        "split": "dev",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "food-on-route-budget-correction",
+        "split": "dev",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "food-on-route-rest-area",
+        "split": "dev",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "line-add-watch-rule",
+        "split": "dev",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "line-cancel-seat-watch",
+        "split": "heldout",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "line-cancel-watch",
+        "split": "dev",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "line-change-stock-time",
+        "split": "heldout",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "line-change-watch-time",
+        "split": "dev",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "line-evening-watch",
+        "split": "dev",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "line-past-submission-deadline",
+        "split": "heldout",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "line-status-before-first-run",
+        "split": "dev",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "new-request-after-lunch-topic",
+        "split": "dev",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "new-request-after-travel-topic",
+        "split": "dev",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "preference-then-recommendation",
+        "split": "dev",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "presence-chat-lookup-with-a-judgment",
+        "split": "dev",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "presence-chat-research-takes-a-while",
+        "split": "dev",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "presence-chat-short-reply-stays-short",
+        "split": "dev",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "recall-binding-language",
+        "split": "dev",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "recall-clay-language",
+        "split": "heldout",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "recall-correct-printer",
+        "split": "dev",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "recall-correct-size",
+        "split": "heldout",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "recall-dated-committee",
+        "split": "heldout",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "recall-dated-studio",
+        "split": "dev",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "recall-expired-pass",
+        "split": "dev",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "recall-forget-project",
+        "split": "heldout",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "recall-forget-route",
+        "split": "dev",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "recall-hall-again",
+        "split": "dev",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "recall-irrelevant-music",
+        "split": "dev",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "recall-parcel-again",
+        "split": "heldout",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "recall-quiet-desk",
+        "split": "dev",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "recall-reading-format",
+        "split": "heldout",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "relative-time-reminder",
+        "split": "heldout",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "settings-change-with-confirmation",
+        "split": "dev",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "settings-read-in-conversation",
+        "split": "dev",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "shopping-followup-constraint",
+        "split": "dev",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "shopping-lookup-compare",
+        "split": "dev",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "skill-add-reference-by-name",
+        "split": "dev",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "standing-wish-becomes-watch",
+        "split": "dev",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "standing-wish-is-not-a-memory",
+        "split": "heldout",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "tee-time-departure-reminder",
+        "split": "dev",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "tee-time-reminder",
+        "split": "dev",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "travel-time-after-event",
+        "split": "dev",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "travel-time-from-earlier-place",
+        "split": "dev",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "travel-time-with-clock-note",
+        "split": "heldout",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "weekday-lunch-near-workplace",
+        "split": "dev",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "workplace-statement-remember",
+        "split": "dev",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "world-appworld-note-update",
+        "split": "dev",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "world-appworld-pay-approved",
+        "split": "dev",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "world-appworld-pay-denied",
+        "split": "dev",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      },
+      {
+        "set": "scenarios",
+        "id": "world-appworld-send-text",
+        "split": "dev",
+        "reason": "no runner for this set in paired.py; run it with its own runner"
+      }
+    ],
+    "cases_argument": "@evals/records/855-752/selection.json",
+    "qualification_selected": [],
+    "qualification_measured": [],
+    "cases": [
+      "escalation-en",
+      "escalation-ko",
+      "goal-curiosity",
+      "goal-curiosity-ko",
+      "goal-failed",
+      "goal-failed-ko",
+      "goal-legitimate-question",
+      "goal-legitimate-question-ko",
+      "goal-partial",
+      "goal-partial-ko",
+      "goal-repeat-question",
+      "goal-repeat-question-ko",
+      "goal-served",
+      "goal-served-ko",
+      "goal-unknown",
+      "goal-unknown-ko",
+      "goal-unsupported-figure",
+      "goal-unsupported-figure-ko",
+      "heldout-escalation",
+      "heldout-goal-casual-reply",
+      "heldout-goal-failed",
+      "heldout-goal-legitimate-question",
+      "heldout-goal-partial",
+      "heldout-goal-repeat-question",
+      "heldout-goal-served",
+      "heldout-goal-unhelpful-curiosity",
+      "heldout-goal-unknown",
+      "heldout-goal-unsupported-figure",
+      "heldout-plan-account",
+      "heldout-plan-plain",
+      "heldout-plan-situation",
+      "heldout-plan-statement",
+      "heldout-plan-technical",
+      "plan-forwarding",
+      "plan-location",
+      "plan-password",
+      "plan-plain-en",
+      "plan-plain-ko",
+      "plan-schedule",
+      "plan-statement",
+      "plan-subscription",
+      "plan-technical"
+    ],
+    "splits": {
+      "escalation-en": "dev",
+      "escalation-ko": "dev",
+      "goal-curiosity": "dev",
+      "goal-curiosity-ko": "dev",
+      "goal-failed": "dev",
+      "goal-failed-ko": "dev",
+      "goal-legitimate-question": "dev",
+      "goal-legitimate-question-ko": "dev",
+      "goal-partial": "dev",
+      "goal-partial-ko": "dev",
+      "goal-repeat-question": "dev",
+      "goal-repeat-question-ko": "dev",
+      "goal-served": "dev",
+      "goal-served-ko": "dev",
+      "goal-unknown": "dev",
+      "goal-unknown-ko": "dev",
+      "goal-unsupported-figure": "dev",
+      "goal-unsupported-figure-ko": "dev",
+      "heldout-escalation": "heldout",
+      "heldout-goal-casual-reply": "heldout",
+      "heldout-goal-failed": "heldout",
+      "heldout-goal-legitimate-question": "heldout",
+      "heldout-goal-partial": "heldout",
+      "heldout-goal-repeat-question": "heldout",
+      "heldout-goal-served": "heldout",
+      "heldout-goal-unhelpful-curiosity": "heldout",
+      "heldout-goal-unknown": "heldout",
+      "heldout-goal-unsupported-figure": "heldout",
+      "heldout-plan-account": "heldout",
+      "heldout-plan-plain": "heldout",
+      "heldout-plan-situation": "heldout",
+      "heldout-plan-statement": "heldout",
+      "heldout-plan-technical": "heldout",
+      "plan-forwarding": "dev",
+      "plan-location": "dev",
+      "plan-password": "dev",
+      "plan-plain-en": "dev",
+      "plan-plain-ko": "dev",
+      "plan-schedule": "dev",
+      "plan-statement": "dev",
+      "plan-subscription": "dev",
+      "plan-technical": "dev"
+    },
+    "repetitions": 3,
+    "measurement_calls": 144,
+    "max_calls": 166,
+    "max_calls_per_arm": 166,
+    "planned_calls": 166,
+    "requalify_attempts": 2,
+    "new_arms": 1,
+    "qualification_calls_per_arm": 22,
+    "qualification_calls_per_attempt": 11,
+    "qualification": "Estimate from current suite; revision changes may differ. Included in max_calls.",
+    "unused_call_allowance": 0,
+    "owner_data": false,
+    "live": true,
+    "reused_arm": {
+      "arm": "candidate",
+      "report_path": "evals/records/855-752/candidate-arm-report.json",
+      "report_sha256": "103186183d23310e08ee8102c7ada8d88771ed4b24c25ade691afaa7f89cad62",
+      "report_content_digest": "f488eeee951854f0d0d7cbbc2d2357e9d94c7cfedec32bd89cef11ad9631f0bd",
+      "measured_at": null,
+      "report_modified_at": "2026-11-14T15:13:08.123903+00:00",
+      "measured_at_source": "unavailable; file mtime is a proxy only"
+    },
+    "time_gap_seconds": null,
+    "time_gap_proxy_seconds": 53.98376703262329,
+    "time_gap_source": "measurement time unavailable; report-file-mtime proxy only",
+    "report_paths": {
+      "baseline": "evals/records/855-752/baseline.json",
+      "candidate": "evals/records/855-752/candidate-arm-report.json"
+    }
+  },
+  "rollback": {
+    "kind": "git-revert",
+    "commits": [
+      "c3876f67c87acd2f58480a496f15cfce890bfe23"
+    ],
+    "command": "git revert --no-edit bca55624ead33c74e023951378a07b2d739bb44c..c3876f67c87acd2f58480a496f15cfce890bfe23",
+    "rerun": "python -m agentos_eval.paired --baseline c3876f67c87acd2f58480a496f15cfce890bfe23 --candidate '<REVERT_SHA>' --cases @evals/records/855-752/selection.json --seed synthetic-terra --model gpt-5.6-terra --repetitions 3 --max-calls 166 --requalify-attempts 2 --out paired-revert --live --reuse-arm baseline=evals/records/855-752/candidate-arm-report.json"
+  },
+  "reused_arm": {
+    "arm": "candidate",
+    "report_path": "evals/records/855-752/candidate-arm-report.json",
+    "report_sha256": "103186183d23310e08ee8102c7ada8d88771ed4b24c25ade691afaa7f89cad62",
+    "report_content_digest": "f488eeee951854f0d0d7cbbc2d2357e9d94c7cfedec32bd89cef11ad9631f0bd",
+    "measured_at": null,
+    "report_modified_at": "2026-11-14T15:13:08.123903+00:00",
+    "measured_at_source": "unavailable; file mtime is a proxy only"
+  },
+  "time_gap_seconds": null,
+  "time_gap_proxy_seconds": 3520.5041439533234,
+  "time_gap_source": "measurement time unavailable; report-file-mtime proxy only",
+  "budget": {
+    "calls_cap": 166,
+    "planned_calls": 166,
+    "actual": 152,
+    "exceeded": false
+  },
+  "decision": "inconclusive",
+  "decision_reason": "The paired held-out verdict does not establish a gain."
+}

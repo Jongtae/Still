@@ -1,0 +1,805 @@
+{
+  "change": {
+    "kinds": [],
+    "paths": [
+      "src/personal_agent/prompts/ask_or_assume.md",
+      "src/personal_agent/prompts/goal_reached.md"
+    ],
+    "prompt_fragments": [],
+    "propositions": [],
+    "routes": [],
+    "tags": [],
+    "description": ""
+  },
+  "selected": [
+    {
+      "set": "judgments",
+      "id": "escalation-en",
+      "split": "dev",
+      "reasons": [
+        "role-orchestration_escalation: This instruction or proposition is exercised by the orchestration_escalation judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "judgments",
+      "id": "escalation-ko",
+      "split": "dev",
+      "reasons": [
+        "role-orchestration_escalation: This instruction or proposition is exercised by the orchestration_escalation judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "judgments",
+      "id": "goal-curiosity",
+      "split": "dev",
+      "reasons": [
+        "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "judgments",
+      "id": "goal-curiosity-ko",
+      "split": "dev",
+      "reasons": [
+        "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "judgments",
+      "id": "goal-failed",
+      "split": "dev",
+      "reasons": [
+        "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "judgments",
+      "id": "goal-failed-ko",
+      "split": "dev",
+      "reasons": [
+        "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "judgments",
+      "id": "goal-legitimate-question",
+      "split": "dev",
+      "reasons": [
+        "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "judgments",
+      "id": "goal-legitimate-question-ko",
+      "split": "dev",
+      "reasons": [
+        "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "judgments",
+      "id": "goal-partial",
+      "split": "dev",
+      "reasons": [
+        "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "judgments",
+      "id": "goal-partial-ko",
+      "split": "dev",
+      "reasons": [
+        "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "judgments",
+      "id": "goal-repeat-question",
+      "split": "dev",
+      "reasons": [
+        "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "judgments",
+      "id": "goal-repeat-question-ko",
+      "split": "dev",
+      "reasons": [
+        "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "judgments",
+      "id": "goal-served",
+      "split": "dev",
+      "reasons": [
+        "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "judgments",
+      "id": "goal-served-ko",
+      "split": "dev",
+      "reasons": [
+        "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "judgments",
+      "id": "goal-unknown",
+      "split": "dev",
+      "reasons": [
+        "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "judgments",
+      "id": "goal-unknown-ko",
+      "split": "dev",
+      "reasons": [
+        "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "judgments",
+      "id": "goal-unsupported-figure",
+      "split": "dev",
+      "reasons": [
+        "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "judgments",
+      "id": "goal-unsupported-figure-ko",
+      "split": "dev",
+      "reasons": [
+        "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "judgments",
+      "id": "heldout-escalation",
+      "split": "heldout",
+      "reasons": [
+        "role-orchestration_escalation: This instruction or proposition is exercised by the orchestration_escalation judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "judgments",
+      "id": "heldout-goal-casual-reply",
+      "split": "heldout",
+      "reasons": [
+        "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "judgments",
+      "id": "heldout-goal-failed",
+      "split": "heldout",
+      "reasons": [
+        "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "judgments",
+      "id": "heldout-goal-legitimate-question",
+      "split": "heldout",
+      "reasons": [
+        "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "judgments",
+      "id": "heldout-goal-partial",
+      "split": "heldout",
+      "reasons": [
+        "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "judgments",
+      "id": "heldout-goal-repeat-question",
+      "split": "heldout",
+      "reasons": [
+        "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "judgments",
+      "id": "heldout-goal-served",
+      "split": "heldout",
+      "reasons": [
+        "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "judgments",
+      "id": "heldout-goal-unhelpful-curiosity",
+      "split": "heldout",
+      "reasons": [
+        "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "judgments",
+      "id": "heldout-goal-unknown",
+      "split": "heldout",
+      "reasons": [
+        "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "judgments",
+      "id": "heldout-goal-unsupported-figure",
+      "split": "heldout",
+      "reasons": [
+        "role-goal_reached: This instruction or proposition is exercised by the goal_reached judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md; paths=src/personal_agent/prompts/goal_reached.md)",
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "judgments",
+      "id": "heldout-plan-account",
+      "split": "heldout",
+      "reasons": [
+        "role-orchestration_plan: This instruction or proposition is exercised by the orchestration_plan judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "judgments",
+      "id": "heldout-plan-plain",
+      "split": "heldout",
+      "reasons": [
+        "role-orchestration_plan: This instruction or proposition is exercised by the orchestration_plan judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "judgments",
+      "id": "heldout-plan-situation",
+      "split": "heldout",
+      "reasons": [
+        "role-orchestration_plan: This instruction or proposition is exercised by the orchestration_plan judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "judgments",
+      "id": "heldout-plan-statement",
+      "split": "heldout",
+      "reasons": [
+        "role-orchestration_plan: This instruction or proposition is exercised by the orchestration_plan judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "judgments",
+      "id": "heldout-plan-technical",
+      "split": "heldout",
+      "reasons": [
+        "role-orchestration_plan: This instruction or proposition is exercised by the orchestration_plan judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "judgments",
+      "id": "plan-forwarding",
+      "split": "dev",
+      "reasons": [
+        "role-orchestration_plan: This instruction or proposition is exercised by the orchestration_plan judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "judgments",
+      "id": "plan-location",
+      "split": "dev",
+      "reasons": [
+        "role-orchestration_plan: This instruction or proposition is exercised by the orchestration_plan judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "judgments",
+      "id": "plan-password",
+      "split": "dev",
+      "reasons": [
+        "role-orchestration_plan: This instruction or proposition is exercised by the orchestration_plan judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "judgments",
+      "id": "plan-plain-en",
+      "split": "dev",
+      "reasons": [
+        "role-orchestration_plan: This instruction or proposition is exercised by the orchestration_plan judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "judgments",
+      "id": "plan-plain-ko",
+      "split": "dev",
+      "reasons": [
+        "role-orchestration_plan: This instruction or proposition is exercised by the orchestration_plan judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "judgments",
+      "id": "plan-schedule",
+      "split": "dev",
+      "reasons": [
+        "role-orchestration_plan: This instruction or proposition is exercised by the orchestration_plan judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "judgments",
+      "id": "plan-statement",
+      "split": "dev",
+      "reasons": [
+        "role-orchestration_plan: This instruction or proposition is exercised by the orchestration_plan judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "judgments",
+      "id": "plan-subscription",
+      "split": "dev",
+      "reasons": [
+        "role-orchestration_plan: This instruction or proposition is exercised by the orchestration_plan judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "judgments",
+      "id": "plan-technical",
+      "split": "dev",
+      "reasons": [
+        "role-orchestration_plan: This instruction or proposition is exercised by the orchestration_plan judgment cases. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "allergy-then-meal-plan",
+      "split": "heldout",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "already-ate-dinner-next-meal",
+      "split": "heldout",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "already-ate-lunch",
+      "split": "dev",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "correct-earlier-advice-hiking",
+      "split": "dev",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "food-on-route-budget-correction",
+      "split": "dev",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "food-on-route-rest-area",
+      "split": "dev",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "line-add-watch-rule",
+      "split": "dev",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "line-cancel-seat-watch",
+      "split": "heldout",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "line-cancel-watch",
+      "split": "dev",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "line-change-stock-time",
+      "split": "heldout",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "line-change-watch-time",
+      "split": "dev",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "line-evening-watch",
+      "split": "dev",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "line-past-submission-deadline",
+      "split": "heldout",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "line-status-before-first-run",
+      "split": "dev",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "new-request-after-lunch-topic",
+      "split": "dev",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "new-request-after-travel-topic",
+      "split": "dev",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "preference-then-recommendation",
+      "split": "dev",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "presence-chat-lookup-with-a-judgment",
+      "split": "dev",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "presence-chat-research-takes-a-while",
+      "split": "dev",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "presence-chat-short-reply-stays-short",
+      "split": "dev",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "recall-binding-language",
+      "split": "dev",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "recall-clay-language",
+      "split": "heldout",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "recall-correct-printer",
+      "split": "dev",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "recall-correct-size",
+      "split": "heldout",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "recall-dated-committee",
+      "split": "heldout",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "recall-dated-studio",
+      "split": "dev",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "recall-expired-pass",
+      "split": "dev",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "recall-forget-project",
+      "split": "heldout",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "recall-forget-route",
+      "split": "dev",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "recall-hall-again",
+      "split": "dev",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "recall-irrelevant-music",
+      "split": "dev",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "recall-parcel-again",
+      "split": "heldout",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "recall-quiet-desk",
+      "split": "dev",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "recall-reading-format",
+      "split": "heldout",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "relative-time-reminder",
+      "split": "heldout",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "settings-change-with-confirmation",
+      "split": "dev",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "settings-read-in-conversation",
+      "split": "dev",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "shopping-followup-constraint",
+      "split": "dev",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "shopping-lookup-compare",
+      "split": "dev",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "skill-add-reference-by-name",
+      "split": "dev",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "standing-wish-becomes-watch",
+      "split": "dev",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "standing-wish-is-not-a-memory",
+      "split": "heldout",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "tee-time-departure-reminder",
+      "split": "dev",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "tee-time-reminder",
+      "split": "dev",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "travel-time-after-event",
+      "split": "dev",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "travel-time-from-earlier-place",
+      "split": "dev",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "travel-time-with-clock-note",
+      "split": "heldout",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "weekday-lunch-near-workplace",
+      "split": "dev",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "workplace-statement-remember",
+      "split": "dev",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "world-appworld-note-update",
+      "split": "dev",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "world-appworld-pay-approved",
+      "split": "dev",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "world-appworld-pay-denied",
+      "split": "dev",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    },
+    {
+      "set": "scenarios",
+      "id": "world-appworld-send-text",
+      "split": "dev",
+      "reasons": [
+        "worker-instructions: Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios. (paths=src/personal_agent/prompts/ask_or_assume.md)"
+      ]
+    }
+  ],
+  "unmatched": []
+}

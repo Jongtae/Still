@@ -267,7 +267,8 @@ class BrowserSignin:
         """
         service=self.service
         row=service._browser_request(job['id'])
-        if row and row.get('state')=='issued' and service.unattended_work(job):
+        if row and row.get('state')=='issued' and service.unattended_work(job) and not (
+                binding.get('action')=='self_set_write' and service.self_set_write_wait(job,row)):
             raise not_run(ToolError(UNATTENDED_APPROVAL_TEXT,'unattended_run'))
         keys=service._browser_step_keys(binding)
         surface=service.surface_claiming(job)
@@ -292,7 +293,7 @@ class BrowserSignin:
         mode (a card, password or one-time-code field) still gets the owner's approval request here.
         """
         service=self.service
-        if service.unattended_work(job):
+        if service.unattended_work(job) and not (binding.get('action')=='self_set_write' and service.self_set_write_wait(job)):
             raise not_run(ToolError(UNATTENDED_APPROVAL_TEXT,'unattended_run'))  # #618: Still refused it, ran: false
         # #1456: a code run's request is approved as written (method, path, body), so its label is shown whole.
         from .quickstart_store import REQUEST_APPROVAL_ACTIONS
@@ -302,6 +303,9 @@ class BrowserSignin:
              'state':'requested','requested_at':time.time(),
              'offer_digest':secrets.token_hex(32),
              'generation':service._owner_generation(service.issuer_owner_id(job))}
+        if binding.get('action')=='self_set_write':
+            row['source_action']=binding.get('source_action')
+            row['preparation']=service.preparations.wait_stamp(service.preparations.get(prep.preparation_of(job['request_key'])))
         current=service._browser_request(job['id'])
         if (current and current.get('state')=='requested' and current.get('digest')==row['digest']
                 and current.get('generation')==row['generation'] and current.get('offer_digest')

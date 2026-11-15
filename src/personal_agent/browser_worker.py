@@ -424,6 +424,7 @@ const keeps = (entry, form) => { const now = approvedState(form);
 const allowFor = (forms, until) => ({forms: forms.map((form) => ({record: formRecord(form), state: approvedState(form)})),
   until, spent: false});
 const allows = (g, form) => { const a = g.allow; if (!a || a.spent || Date.now() > a.until) return null;
+  if (a.nonPayment && holdsPayment(form)) return null;
   const record = formRecord(form);
   return a.forms.some((entry) => sameForm(entry.record, record) && keeps(entry, form)) ? a : null; };
 // A submit the guard let through (``payment``: of a payment form, by an allowance):
@@ -438,9 +439,10 @@ const effective = (form, submitter) => { const record = formRecord(form);
 // A held submit is recorded where it would go (the submitter's overrides included).
 const hold = (g, form, submitter, kind) => {
   const record = {...effective(form, submitter), id: Math.random().toString(36).slice(2) + Date.now().toString(36),
-    page: cut(location.href, 2000), state: formState(form, submitter)};
+    page: cut(location.href, 2000), state: formState(form, submitter), payment: holdsPayment(form),
+    fieldNames: formFields(form).map((field) => String(attr(field, 'name') || ''))};
   g.held = {id: record.id, form: new WeakRef(form), submitter: submitter ? new WeakRef(submitter) : null, kind,
-    state: record.state, record: {dom: record.dom, method: record.method, action: record.action}};
+    payment: record.payment, state: record.state, record: {dom: record.dom, method: record.method, action: record.action}};
   g.cancelled = record;
   try { window.webkit.messageHandlers[%(handler)s].postMessage(record); } catch (error) { /* read by the next script */ }
   return record; };
@@ -450,7 +452,7 @@ const armSubmitGuard = () => { const s = state(); if (s.submitListening) return;
     if (!(form instanceof HTMLFormElement)) return;
     try {
       const submitter = event.submitter || null;
-      if (!holdsPayment(form)) { vet(g, effective(form, submitter), false); return; }
+      if (!holdsPayment(form) && !(g.selfSetWrites && effective(form, submitter).method !== 'get')) { vet(g, effective(form, submitter), false); return; }
       const allowance = allows(g, form);
       if (allowance) {
         const entry = vet(g, effective(form, submitter));
@@ -506,7 +508,7 @@ Array.from(document.querySelectorAll(SELECTOR)).forEach((el, index) => {
   const control = labelControl(el);
   const type = typeOf(el);
   const takesValue = (tag === 'input' && !NO_VALUE.includes(type)) || tag === 'textarea' || tag === 'select';
-  elements.push({index, role: well(roleOf(el)), name: nameOf(el), href: tag === 'a' ? cut(el.href, 2000) : null, tag, type: well(type),
+  elements.push({index, fieldName: attr(el, 'name'), role: well(roleOf(el)), name: nameOf(el), href: tag === 'a' ? cut(el.href, 2000) : null, tag, type: well(type),
     autocomplete: well(autocompleteOf(el)), value: takesValue ? cut(el.value || '', 200) : null, form: formId,
     label_form: idOf(control ? formOf(control) : null), own_text: ownText(el), label_name: labelName(el),
     ancestor_text: ancestorText(el), pressable: buttonish(el), nav_link: navLink(el), context: contextOf(el),
@@ -637,6 +639,7 @@ armSubmitGuard();
 const s = state(), h = s.held;
 if (s.off || !h || h.id !== id) return JSON.stringify({error: 'submit_changed'});
 const form = h.form.deref(), submitter = h.submitter ? h.submitter.deref() : null;
+if (h.payment === false && form && holdsPayment(form)) return JSON.stringify({error: 'submit_changed'});
 if (!form || !form.isConnected) return JSON.stringify({error: 'submit_changed'});
 const use = h.kind === 'event' && submitter && submitter.isConnected && submitter.form === form ? submitter : null;
 if (h.submitter && !use) return JSON.stringify({error: 'submit_changed'});
@@ -644,6 +647,7 @@ if (!sameForm(effective(form, use), h.record) || formState(form, use) !== h.stat
   return JSON.stringify({error: 'submit_changed'});
 s.held = null;
 s.allow = allowFor([form], Date.now() + WINDOW_MS);
+s.allow.nonPayment = h.payment === false;
 if (h.kind === 'event') {
   FORM.requestSubmit.call(form, use || undefined);
 } else {
@@ -670,8 +674,9 @@ if (s.off) return JSON.stringify({allow: true});
 const bare = (value) => { try { const u = new URL(String(value), location.href); return u.origin + u.pathname; } catch (error) { return ''; } };
 const verb = String(method || 'get').toLowerCase(), target = bare(url);
 const forms = Array.from(documentForms.call(document)).filter((form) => { const record = formRecord(form);
-  return record.method === verb && bare(record.action) === target && holdsPayment(form); });
-if (!forms.length) return JSON.stringify({allow: true});
+  return record.method === verb && bare(record.action) === target && (holdsPayment(form) || s.selfSetWrites && verb !== 'get'); });
+// An unidentifiable self-set non-GET submit cannot be approved against an exact form.
+if (!forms.length) return JSON.stringify({allow: !(s.selfSetWrites && verb !== 'get')});
 const now = Date.now();
 // A submit the guard let through to this place just before: a payment form's (used
 // once), or an ordinary form's.
@@ -691,13 +696,13 @@ return JSON.stringify({allow: false, cancelled: hold(s, likely[0], null, 'native
 """
 
 
-def client_guard_user_script(off=False):
+def client_guard_user_script(off=False, self_set_writes=False):
     """Client world, at document start of every main-frame page: the guards are
     registered before any page script can add its own capture listener on
     ``window``: the press guard (#103) and the submit guard, armed (or off while
     the owner's login window shows)."""
     return ('(() => {\n' + PRELUDE + '\nstate().off = ' + ('true' if off else 'false') +
-            ';\narmPressGuard(true);\narmSubmitGuard();\n})();')
+            ';\nstate().selfSetWrites = ' + ('true' if self_set_writes else 'false') + ';\narmPressGuard(true);\narmSubmitGuard();\n})();')
 
 
 #: Page world, at document start of every main-frame page (#698).
@@ -1551,6 +1556,7 @@ class Worker:
         # The submit guard (#698): document-start scripts, and the client-world
         # handler a cancelled submit is reported through (never the page world).
         self.guard_off = False
+        self.self_set_writes = False
         self.cancelled = None      # the last cancelled submit not yet reported
         self.reported = []         # ids of cancelled submits already reported
         self.held = None           # the last reported one: what an approval may release (#700)
@@ -1851,7 +1857,7 @@ class Worker:
         WebKit = self.WebKit
         start = WebKit.WKUserScriptInjectionTimeAtDocumentStart
         self.controller.removeAllUserScripts()
-        scripts = [(client_guard_user_script(self.guard_off), self.world, True)]
+        scripts = [(client_guard_user_script(self.guard_off, getattr(self,'self_set_writes',False)), self.world, True)]
         if not self.guard_off:
             scripts.append((PAGE_WRAP_USER_SCRIPT, self.page_world, True))
         scripts.append((PHONE_PLATFORM_USER_SCRIPT, self.page_world, False))
@@ -1885,6 +1891,8 @@ class Worker:
 
     def take_cancelled(self, record=None):
         """The cancelled submit not yet reported, once; ``record`` is one a script just read."""
+        if getattr(self, '_held_until', float('inf')) <= time.monotonic():
+            self.held = None
         if record is not None:
             self.receive_cancelled(record)
         found, self.cancelled = self.cancelled, None
@@ -1892,7 +1900,8 @@ class Worker:
             return None
         self.reported = (self.reported + [found['id']])[-64:]
         self.held = found
-        return {key: found[key] for key in ('dom', 'method', 'action', 'page', 'state')}
+        self._held_until = time.monotonic() + 600 if found.get('payment') is False else float('inf')
+        return {key: found[key] for key in ('dom', 'method', 'action', 'page', 'state', 'payment', 'fieldNames') if key in found}
 
     def check_form_navigation(self, url, method, then, into_frame=False):
         """A form-submission navigation from or into the main frame while the guard is armed (#700).
@@ -2549,6 +2558,12 @@ class Worker:
                 INSERT_SCRIPT, {'nonce': nonce, 'expect': expect, 'tokens': tokens, 'text': text}, inserted))
         self._locate(ident, command, focus)
 
+    def op_self_set_writes(self, ident, command, timeout):
+        self.self_set_writes = command.get('enabled') is True
+        self._install_guard_scripts()
+        self.run(PRELUDE + 'state().selfSetWrites = enabled; return JSON.stringify({ok:true});',
+                 {'enabled': self.self_set_writes}, lambda value,error: self.fail(ident,'browser_failed') if error else self.reply(ident))
+
     def op_release_submit(self, ident, command, timeout):
         """Release the held payment-form submit an owner approval covers exactly (#700).
 
@@ -2560,6 +2575,8 @@ class Worker:
         submit, or ``submit_changed``.
         """
         form = command.get('form') if isinstance(command.get('form'), dict) else {}
+        if getattr(self, '_held_until', float('inf')) <= time.monotonic():
+            self.held = None
         held = self.held
         if held is None or any(str(form.get(key)) != str(held.get(key)) for key in ('dom', 'method', 'action', 'page', 'state')):
             return self.fail(ident, 'submit_changed')
@@ -3314,7 +3331,9 @@ def _form_record(value):
         page, state = get('page'), get('state')
         return {'id': str(ident or '')[:64] or uuid.uuid4().hex, 'dom': int(dom) if dom is not None else -1,
                 'method': str(method or '')[:16], 'action': str(action or '')[:2000], 'page': str(page or '')[:2000],
-                'state': hashlib.sha256(str(state or '').encode('utf-8', 'replace')).hexdigest()}
+                'state': hashlib.sha256(str(state or '').encode('utf-8', 'replace')).hexdigest(),
+                **({'payment': get('payment'), 'fieldNames': [str(name)[:200] for name in (get('fieldNames') or [])[:100]]}
+                   if isinstance(get('payment'),bool) else {})}
     except Exception:
         return None
 
