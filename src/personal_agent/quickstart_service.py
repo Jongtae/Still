@@ -2015,7 +2015,7 @@ class AgentService:
         return self.preparations_service.preparation_request(body)
 
     def preceding_owner_turn(self, job) -> str:
-        """The preceding readable owner turn in this conversation, for lexical recall (#860)."""
+        """The preceding readable owner turn by request order in this conversation, for lexical recall (#860)."""
         try:
             current=self.store.job(job['id']) or job
             if not owner_words_work(current):return ''
@@ -2025,15 +2025,22 @@ class AgentService:
             if not rows or rows[-1].get('job_id')!=current['id'] or rows[-1].get('role')!='user':
                 rows=[*rows,{'role':'user','job_id':current['id']}]
             documents=self.store.config('file_workspace_document_jobs',[])
+            preceding=None
+            preceding_at=None
             for row in reversed(self.planner_history(rows,documents)):
                 if row.get('role')!='user' or row.get('job_id')==current['id']:continue
                 earlier=self.store.job(row.get('job_id'))
                 if not owner_words_work(earlier):continue
                 if (earlier.get('channel'),earlier.get('chat_id'))!=(current.get('channel'),current.get('chat_id')):continue
-                # A queued predecessor may be claimed after this request was
-                # enqueued; transcript timestamps are claim times, not turn order.
+                # Claims (including resumes) can reorder transcript rows, so
+                # choose the latest earlier request by its enqueue time.
                 if earlier['created']>=current['created']:continue
-                readable=self.history_for_models([row])[0]
+                if preceding is None or earlier['created']>preceding_at:
+                    preceding=row
+                    preceding_at=earlier['created']
+            if preceding is not None:
+                # Reverse traversal keeps the last transcript row for that Work.
+                readable=self.history_for_models([preceding])[0]
                 return self._redact_known_secrets(readable.get('content') or '')[:500]
         except Exception as exc:
             LOG.warning('preceding owner turn unavailable for the brief (%s)',type(exc).__name__)

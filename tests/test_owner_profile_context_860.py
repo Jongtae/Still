@@ -124,6 +124,27 @@ def test_queued_predecessor_can_be_claimed_after_followup_is_enqueued(service):
     assert service.preceding_owner_turn(claimed)=='queued predecessor'
 
 
+def test_preceding_owner_turn_uses_request_order_after_older_work_is_reclaimed(service):
+    a=turn(service,'request A words',50,written=False)
+    b=turn(service,'request B words',51,written=False)
+    for at,work in ((100,a),(110,b),(120,a)):
+        with service.store.db() as db:
+            db.execute("UPDATE jobs SET status='queued' WHERE id=?",(work['id'],))
+        with mock.patch('personal_agent.work_executor.time.time',return_value=at):
+            assert service._claim_queued_work()['id']==work['id']
+        with service.store.db() as db:
+            db.execute("UPDATE jobs SET status='succeeded' WHERE id=?",(work['id'],))
+    current=turn(service,'followup C',52,written=False)
+    with service.store.db() as db:
+        db.execute("UPDATE jobs SET status='queued' WHERE id=?",(current['id'],))
+    with mock.patch('personal_agent.work_executor.time.time',return_value=130):
+        claimed=service._claim_queued_work()
+    assert claimed['id']==current['id']
+    rows=service.store.history(through=current['id'])
+    assert [row['job_id'] for row in rows]==[a['id'],b['id'],a['id'],current['id']]
+    assert service.preceding_owner_turn(claimed)=='request B words'
+
+
 @pytest.mark.parametrize(('typed','owner_words','key'), [
     (False,False,preparations.request_key('day-plan',30)),
     (True,False,'bare-api-request'),

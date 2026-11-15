@@ -9,7 +9,6 @@ model transport.  No model, network or owner data; all content is synthetic.  Ev
 case has a control without the context, so a test fails if the context is not what recalls.
 """
 import json
-import time
 import uuid
 from unittest import mock
 
@@ -59,9 +58,11 @@ class PastWordsBrief(helpers._ServiceBase):
     def follow_up(self, text=FOLLOW_UP, **kwargs):
         """The new request, enqueued after everything seeded so far, with its own transcript row."""
         job = self.store.enqueue(text, str(uuid.uuid4()), owner_typed=True, owner_words=True, **kwargs)
+        self.clock += 2
         with self.store.db() as db:
+            db.execute('UPDATE jobs SET created=?,source_at=? WHERE id=?', (self.clock, self.clock - 1, job))
             db.execute('INSERT INTO messages(role,content,channel,created,job_id) VALUES (?,?,?,?,?)',
-                       ('user', text, kwargs.get('channel', 'web'), time.time() + 5, job))
+                       ('user', text, kwargs.get('channel', 'web'), self.clock, job))
         return self.store.job(job)
 
     def big_profile(self):
