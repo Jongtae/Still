@@ -92,6 +92,8 @@ class StoodLineTraceTests(base.Lines):
     def setUp(self):
         _Case.setUp(self)
         self.helper = self.service.preparations_service
+        from personal_agent.current_context import TIMEZONE_CONFIG_KEY
+        self.store.put(TIMEZONE_CONFIG_KEY, 'Asia/Seoul')  # owner-local days, not the test host's zone
         self.service.owner_model.clock = lambda: self.now
         self.service.owner_model.set_controls({'enabled': True, 'dream': True})
         self.counter = 0

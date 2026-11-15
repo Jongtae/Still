@@ -23,6 +23,9 @@ class _LinesCase(_Case):
     def setUp(self):
         super().setUp()
         self.helper=self.service.preparations_service
+        # The owner's calendar zone, so owner-local days do not follow the test host's zone (CI runs in UTC).
+        from personal_agent.current_context import TIMEZONE_CONFIG_KEY
+        self.store.put(TIMEZONE_CONFIG_KEY,'Asia/Seoul')
         self.service.owner_model.clock=lambda:self.now
         self.service.owner_model.set_controls({'enabled':True,'dream':True})
         self.counter=0
