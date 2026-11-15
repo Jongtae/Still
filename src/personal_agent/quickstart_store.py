@@ -263,6 +263,8 @@ class QuickStore:
                 if column not in turn_columns:
                     db.execute(f'ALTER TABLE slack_turns ADD COLUMN {column} {declaration}')
             db.execute('CREATE TABLE IF NOT EXISTS slack_events(key TEXT PRIMARY KEY, created REAL NOT NULL)')
+            if 'act' not in {row['name'] for row in db.execute('PRAGMA table_info(slack_events)')}:
+                db.execute('ALTER TABLE slack_events ADD COLUMN act TEXT')
             # #438: the same for the terminal conversation (line ids within one terminal session).
             db.execute('CREATE TABLE IF NOT EXISTS terminal_turns(job_id TEXT PRIMARY KEY, owner TEXT NOT NULL, '
                        'source_post_id TEXT, reply_post_id TEXT, reply_to_post_id TEXT, created REAL NOT NULL)')

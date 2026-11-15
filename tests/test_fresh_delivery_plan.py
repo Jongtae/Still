@@ -464,7 +464,8 @@ def items_of(current):
 
 FRONTIER_FIRST_WAVE = ["FRONTIER-SPEC-01", "FRONTIER-EVAL-01"]
 FRONTIER_RECONCILED = ["FRONTIER-PROVENANCE-01", "FRONTIER-RECOVERY-01", "FRONTIER-CONTEXT-01"]
-FRONTIER_COMPLETED = FRONTIER_FIRST_WAVE + FRONTIER_RECONCILED + ["FRONTIER-JUDGMENT-01", "FRONTIER-TELEGRAM-01"]
+FRONTIER_COMPLETED = FRONTIER_FIRST_WAVE + FRONTIER_RECONCILED + [
+    "FRONTIER-JUDGMENT-01", "FRONTIER-TELEGRAM-01", "FRONTIER-WORKCHAT-01"]
 FRONTIER_WAVE_2 = ["FRONTIER-FENCE-01", "FRONTIER-JUDGMENT-01", "FRONTIER-TELEGRAM-01", "FRONTIER-WORKCHAT-01"]
 FRONTIER_OPEN_WAVE_2 = [name for name in FRONTIER_WAVE_2 if name not in FRONTIER_COMPLETED]
 
@@ -532,6 +533,18 @@ def test_frontier_declares_completed_units_and_owner_authorized_wave_2():
         722, "complete-on-merge", 854)
     assert judgment_done["merge_commit"] == "65f44aea72eb50f06dfd6f0d4860bcb0fc0586a4"
     assert "Depends on FRONTIER-SPEC-01, which is complete." in judgment_done["decision"]
+    workchat = items["FRONTIER-WORKCHAT-01"]
+    assert workchat["depends_on"] == ["FRONTIER-RECOVERY-01"]
+    assert "selection_rule" not in workchat
+    assert "Complete on the merge of PR #870." in workchat["summary"]
+    assert workchat["tests"] == [
+        "PYTHONPATH=src python3 -m pytest -q tests/test_recovery_matrix_826.py",
+    ]
+    workchat_done = done["FRONTIER-WORKCHAT-01"]
+    assert (workchat_done["issue"], workchat_done["status"], workchat_done["pull_request"]) == (
+        843, "complete-on-merge", 870)
+    assert "merge_commit" not in workchat_done
+    assert "depends on FRONTIER-RECOVERY-01, which is complete." in workchat_done["decision"]
 
 
 def test_frontier_historical_programs_and_completed_units_stay_unselectable(tmp_path):

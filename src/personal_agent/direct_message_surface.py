@@ -188,12 +188,22 @@ class DirectMessageSurface(ConversationSurface):
         LOG.info('%s: owner message queued work=%s', self.name, work_id)
         return work_id
 
-    def ingest_reaction(self, message_id, emoji_name, owner, generation):
-        """The owner's reaction (#172): an owner act on a message that showed an open item, else an observation."""
+    def ingest_reaction(self, message_id, emoji_name, owner, generation, done=None):
+        """The owner's reaction (#172): an owner act on a message that showed an open item, else an observation.
+
+        ``done``: called once an owner act's judgment and settlement, which run off the poll thread, have finished
+        (#843), so the caller can clear the act's pending record; every other result is final when this returns.
+        """
         service = self.service
         glyph = EMOJI_GLYPHS.get(emoji_name, f':{emoji_name}:')
         if service.owner_acts.bound_to(self, owner, generation, message_id):
-            service.steer_spawn(lambda: service.owner_acts.answer_reaction(self, owner, generation, message_id, [glyph]))
+            def act():
+                try:
+                    service.owner_acts.answer_reaction(self, owner, generation, message_id, [glyph])
+                finally:
+                    if done is not None:
+                        done()
+            service.steer_spawn(act)
             return 'owner_act'
         with service.store.db() as db:
             turn = db.execute(f'SELECT job_id FROM {self.TURNS_TABLE} WHERE owner=? AND reply_post_id=? '
