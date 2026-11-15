@@ -182,7 +182,7 @@ A run passes when the world's tests end as the scenario expects (`expect_world_p
 
 ## What one run does
 
-1. Claim a free sandbox slot and a free loopback port. Slots use `~/.local/share/agentos-evals/sandboxes/slot-N`, with one file lock per slot so two sweeps never share one. Port 8787/8788 and the live data folder are refused.
+1. Claim a free sandbox slot and a free loopback port. Slots use `~/.local/share/agentos-evals/sandboxes/slot-N`, with one file lock per slot so two sweeps never share one. Port pairs are probed and reserved until stop with POSIX `flock` under `/tmp/still-eval-ports-<uid>` (override: `AGENTOS_EVAL_PORT_LOCK_DIR`, shared by all sweeps even with different eval roots); lock files must not be deleted while sweeps run. Quickstart binds only the first port; the existing pair allocation is preserved. Port 8787/8788 and the live data folder are refused.
 2. Copy the seed into the slot and start `python3 -m personal_agent.quickstart start --no-browser` with a minimal environment:
    - its own engine-run folder;
    - no inherited `AGENTOS_*` or connector settings;
@@ -191,7 +191,7 @@ A run passes when the world's tests end as the scenario expects (`expect_world_p
 4. **Judgment AI.** A qualification is bound to the store path, so a copied seed starts unqualified.
    - If the Judgment AI is not qualified for this worker, the sandbox asks Still to qualify it through the owner's own routes: `POST /api/main-ai/activate` when it follows the Main AI, else `POST /api/decision-route/activate`.
    - It then waits up to 300 s.
-   - It caches the qualified config rows per slot, worker and seed, so later runs in that slot skip the roughly one minute and dozen model calls.
+   - It caches the qualified config rows per slot, worker and seed, so later runs in that slot skip the roughly one minute and dozen model calls. Seeded slots apply them before start; seedless slots apply them once healthy, when the server has created its store (route config is read on demand). Records retain `cache_applied`, `initially_ready`, and bounded `qualification` state/failure/message alongside the existing fields.
    - A qualification that does not become ready is reported as the `infra:judgment_ai` cluster.
 5. Snapshot the owner state:
    - `GET /api/personal-space` and `/api/personal-space/memory-candidates`;
