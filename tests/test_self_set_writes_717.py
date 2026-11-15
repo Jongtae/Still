@@ -632,6 +632,79 @@ class VerifierRegressions(_Runs):
             self.assertNotIn('slot:notes',notice.call_args.args[0])
             self.assertIn('notes',notice.call_args.args[0])
 
+    def test_rejected_http_allows_unchanged_retry_with_allowance(self):
+        set_allowance(self.service,'slot:notes',True,0,'owner')
+        for status in (401,429):
+            with self.subTest(status=status):
+                _,job=self.started_self()
+                api=self.api(job)
+                api.transport=mock.Mock(side_effect=[(status,{},b'{}'),(200,{},b'{}')])
+                with mock.patch.object(self.service.decision_judge,'connector_effect',return_value='irreversible'):
+                    with self.assertRaises(ApiError) as raised:api.call(self.args())
+                    self.assertFalse(raised.exception.executed)
+                    self.assertEqual(self.events()[-1]['status'],'rejected')
+                    with self.store.db() as db:
+                        dispatch=db.execute("SELECT status FROM tool_events WHERE job_id=? AND tool='api_dispatch'",
+                                            (job['id'],)).fetchone()
+                    self.assertEqual(dispatch['status'],'rejected')
+                    api.call(self.args())
+                    tickets=[row for row in self.events() if row['job_id']==job['id']]
+                    self.assertEqual([row['status'] for row in tickets],['rejected','observed'])
+                    self.assertEqual(json.loads(tickets[0]['detail'])['digest'],json.loads(tickets[1]['detail'])['digest'])
+                    with self.assertRaises(ApiError):api.call(self.args())
+                self.assertEqual(api.transport.call_count,2)
+
+    def test_possible_or_observed_write_still_blocks_replay(self):
+        set_allowance(self.service,'slot:notes',True,0,'owner')
+        _,job=self.started_self()
+        for status in ('dispatching','unknown','observed','held'):
+            with self.subTest(status=status):
+                binding=step_binding(job['id'],'api_request','https://notes.test/items',status)
+                ticket=self.service.self_set_write(job,binding,'slot:notes','POST','/items',effect='irreversible')
+                if status!='dispatching':
+                    self.service.self_set_write_finished(job,ticket,observed=status=='observed',held=status=='held')
+                self.assertEqual(self.events()[-1]['status'],status)
+                with self.assertRaises(ToolError) as raised:
+                    self.service.self_set_write(job,binding,'slot:notes','POST','/items',effect='irreversible')
+                self.assertEqual(raised.exception.code,'effect_replayed')
+        self.assertEqual(len(self.events()),4)
+
+    def test_rejected_owner_step_retry_needs_fresh_approval(self):
+        for status in (401,429):
+            with self.subTest(status=status):
+                _,job=self.started_self()
+                api=self.api(job)
+                api.transport=mock.Mock(side_effect=[(status,{},b'{}'),(200,{},b'{}')])
+                with mock.patch.object(self.service.decision_judge,'connector_effect',return_value='irreversible'):
+                    with self.assertRaises(ApiError):api.call(self.args())
+                    self.ended_waiting(job)
+                    offered=self.service._browser_request(job['id'])
+                    self.assertTrue(self.service._decide_browser_step(job['id'],True,offered['offer_digest'])['resumed'])
+                    issued=self.service._browser_request(job['id'])
+                    with self.store.db() as db:db.execute("UPDATE jobs SET status='running' WHERE id=?",(job['id'],))
+                    with self.assertRaises(ApiError):api.call(self.args())
+                    self.assertEqual(api.transport.call_count,1)
+                    self.assertEqual(self.events()[-1]['status'],'rejected')
+                    self.assertIsNone(self.service._browser_request(job['id']))
+                    with self.store.db() as db:
+                        approval=db.execute('SELECT state FROM memory_approvals WHERE token_hash=?',
+                                            (self.store._exact_memory_token_lookup(issued['token']),)).fetchone()
+                    self.assertEqual(approval['state'],'consumed')
+                    with self.assertRaises(ApiError) as raised:api.call(self.args())
+                    self.assertEqual(raised.exception.code,'approval_required')
+                    self.assertEqual(api.transport.call_count,1)
+                    fresh=self.service._browser_request(job['id'])
+                    self.assertEqual(fresh['state'],'requested')
+                    self.assertEqual(fresh['digest'],offered['digest'])
+                    self.assertNotEqual(fresh['offer_digest'],offered['offer_digest'])
+                    self.ended_waiting(job)
+                    self.assertFalse(self.service._decide_browser_step(job['id'],True,offered['offer_digest'])['approved'])
+                    self.assertTrue(self.service._decide_browser_step(job['id'],True,fresh['offer_digest'])['resumed'])
+                    with self.store.db() as db:db.execute("UPDATE jobs SET status='running' WHERE id=?",(job['id'],))
+                    api.call(self.args())
+                self.assertEqual(api.transport.call_count,2)
+                self.assertEqual(self.events()[-1]['status'],'observed')
+
     def test_mcp_revision_lapse_is_visible_and_off_is_unconditional(self):
         from personal_agent import owner_mcp, trust_record, self_set_writes
         _,job=self.started_self()

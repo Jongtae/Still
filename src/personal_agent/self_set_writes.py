@@ -117,6 +117,14 @@ def recheck(service, job, ticket, *, db=None):
         raise not_run(ToolError(msg('write_allowances.changed'), 'allowance_changed'))
 
 
+def _effect_replayed(db, work_id, digest):
+    # Only a pre-dispatch release or definitive refusal proves no effect happened.
+    # All other outcomes (including held, unknown and dispatching) block replay.
+    return any(json.loads(row['detail']).get('digest') == digest for row in db.execute(
+        "SELECT detail FROM tool_events WHERE job_id=? AND tool=? AND status NOT IN ('not_run','rejected')",
+        (work_id, ACTION)))
+
+
 def authorize(service, job, binding, connection, operation, target, names=(), *, effect=None, description=None, request=True):
     if not service.unattended_work(job) or not service.self_set_run(job):
         return None
@@ -146,8 +154,7 @@ def authorize(service, job, binding, connection, operation, target, names=(), *,
     allowed = bool(scopes) and all(key in known and modes[key]['enabled'] and
         modes[key]['connection_revision'] == known[key]['connection_revision'] for key in scopes)
     with service.store.db() as db:
-        if any(json.loads(row['detail']).get('digest') == digest for row in db.execute(
-                "SELECT detail FROM tool_events WHERE job_id=? AND tool=? AND status!='not_run'", (job['id'], ACTION))):
+        if _effect_replayed(db, job['id'], digest):
             raise not_run(ToolError(msg('write_allowances.replayed'), 'effect_replayed'))
     approval = service._browser_request(job['id']) if not reversible and not allowed else None
     if not reversible and not allowed and not service._consume_browser_step(job, scoped):
@@ -159,8 +166,7 @@ def authorize(service, job, binding, connection, operation, target, names=(), *,
             raise not_run(ToolError(msg('write_allowances.changed'), 'allowance_changed'))
         if service.work_stopped(job['id']):
             raise not_run(ToolError(msg('write_allowances.replayed'), 'work_stopped'))
-        if any(json.loads(row['detail']).get('digest') == digest for row in db.execute(
-                "SELECT detail FROM tool_events WHERE job_id=? AND tool=? AND status!='not_run'", (job['id'], ACTION))):
+        if _effect_replayed(db, job['id'], digest):
             raise not_run(ToolError(msg('write_allowances.replayed'), 'effect_replayed'))
         ticket = {'digest': digest, 'connection': connection, 'operation': operation,
                   'connection_label': service._redact_known_secrets(', '.join(known.get(key, {}).get('label', key) for key in scopes)),
