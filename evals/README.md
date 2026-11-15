@@ -74,13 +74,14 @@ Judge spend is capped per day (default **USD 10**; `--cap-usd` or `AGENTOS_EVAL_
 
 Run `PYTHONPATH=src:evals python -m agentos_eval recall --arm lexical --arm context`
 from the checkout for paired, split-local retrieval reports. The deterministic
-arms are `lexical`, `context`, and `context-concat`; `--arm phrasing` samples
+arms are `lexical`, `lexical-context`, `context`, `context-concat`, and `runtime`; `--arm phrasing` samples
 worker-written extra search words three times (`--runs` changes this), using
 `--phraser-cmd 'claude -p --model sonnet'` or model-free `--phrasings recorded.json`
 (a full report JSON checks fixture provenance; the legacy
 `arms.phrasing.phrasings` mapping is also accepted). `context-concat` is a
 diagnostic arm with no preference verdict. Other factories plug in as
 `--arm module.path:callable`, for example `agentos_eval.recall_embedding:factory`.
+The `runtime` arm runs the merged #860 product brief path and scores matched profile rows actually shown in its snapshot; JSON `observed` records the actual preceding context and request-first query per case.
 The lexical baseline is always included. JSON and Markdown reports go to the
 eval home's `reports/` folder, never the repository; `--out` selects another
 folder outside the checkout. Verdicts are information and the command exits 0.

@@ -80,7 +80,8 @@ Each case names its `split`, its `kind` and three lists:
 | `forgetting` | The owner forgot the fact. The forgotten row is a trap, and `needed` may be empty. |
 | `harm-control` | Nothing stored is needed, and every returned row counts as noise. It shows where extra context harms. |
 
-**Arms.** The baseline is `MemoryService.search_memories` on the request text, with the service's date set to the fixture's `today`. It ignores `context`, as today's brief query uses the raw request text (`owner_words_block`). A candidate is any callable `retriever(query, context) -> [memory ids]` over the same seeded store that does not write to it, for example a #403 step-1 or step-2 implementation on that issue's branch. The fixture and the scorer do not change between arms.
+**Arms.** The baseline is `MemoryService.search_memories` on the request text, with the service's date set to the fixture's `today`. It ignores `context`. A candidate is any callable `retriever(query, context) -> [memory ids]` over the same seeded store that does not write to Memory, for example a #403 step-1 or step-2 implementation on that issue's branch. The fixture and the scorer do not change between arms.
+The `runtime` arm measures the merged #860 brief path (request-first combined query, scoring matched rows that lead the snapshot and are actually shown) under the same R1 decision rule.
 
 **Measures, reported per split and per kind, never pooled across splits:**
 - needed recall: needed rows returned divided by needed rows;
