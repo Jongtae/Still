@@ -2014,7 +2014,39 @@ class AgentService:
         """Owner Settings operations on one preparation (#659, #575)."""
         return self.preparations_service.preparation_request(body)
 
-    def owner_profile_snapshot(self, request=None, notes=True, ids=False, recall=True):
+    def preceding_owner_turn(self, job) -> str:
+        """The preceding readable owner turn by request order in this conversation, for lexical recall (#860)."""
+        try:
+            current=self.store.job(job['id']) or job
+            if not owner_words_work(current):return ''
+            rows=self.store.history(through=current['id'])
+            # planner_history leaves out the final (current) request. It may be
+            # absent here when forgotten or before its transcript row is written.
+            if not rows or rows[-1].get('job_id')!=current['id'] or rows[-1].get('role')!='user':
+                rows=[*rows,{'role':'user','job_id':current['id']}]
+            documents=self.store.config('file_workspace_document_jobs',[])
+            preceding=None
+            preceding_at=None
+            for row in reversed(self.planner_history(rows,documents)):
+                if row.get('role')!='user' or row.get('job_id')==current['id']:continue
+                earlier=self.store.job(row.get('job_id'))
+                if not owner_words_work(earlier):continue
+                if (earlier.get('channel'),earlier.get('chat_id'))!=(current.get('channel'),current.get('chat_id')):continue
+                # Claims (including resumes) can reorder transcript rows, so
+                # choose the latest earlier request by its enqueue time.
+                if earlier['created']>=current['created']:continue
+                if preceding is None or earlier['created']>preceding_at:
+                    preceding=row
+                    preceding_at=earlier['created']
+            if preceding is not None:
+                # Reverse traversal keeps the last transcript row for that Work.
+                readable=self.history_for_models([preceding])[0]
+                return self._redact_known_secrets(readable.get('content') or '')[:500]
+        except Exception as exc:
+            LOG.warning('preceding owner turn unavailable for the brief (%s)',type(exc).__name__)
+        return ''
+
+    def owner_profile_snapshot(self, request=None, notes=True, ids=False, recall=True, context=None):
         """The bounded ``profile.*`` snapshot text every turn context carries (#658).
 
         #19: with ``notes`` the owner's working-notes document follows as one
@@ -2037,6 +2069,9 @@ class AgentService:
         that label is deliberately not added to the Work's egress provenance.
         """
         memory=MemoryService(self.store,private_read_sink=MemoryService.NO_EGRESS_GUARD)
+        # Request terms keep priority under FTS5's existing 12-term bound.
+        if recall and isinstance(context,str) and context:
+            request=request+' '+context if isinstance(request,str) and request.strip() else context
         query=self._redact_known_secrets(request)[:500] if isinstance(request,str) and request.strip() else None
         # #425: a brief (notes, no ids) shows what a dream changed or held on the line it concerns, once.
         raising=self._memory_raise_notes(memory) if notes and not ids and query else {}
@@ -5392,7 +5427,8 @@ class AgentService:
         stored=self.history_for_models(self.preparation_history(job) if prep.preparation_of(job.get('request_key'))
                                        else self.store.history(through=job['id'])[-16:])
         document_jobs=set(self.store.config('file_workspace_document_jobs',[]))
-        sections={'profile':self.owner_profile_snapshot(job.get('message'),recall=not prep.preparation_of(job.get('request_key'))),'current_context':self.current_context_text(job),
+        recall=not prep.preparation_of(job.get('request_key'))
+        sections={'profile':self.owner_profile_snapshot(job.get('message'),recall=recall,context=self.preceding_owner_turn(job) if recall else None),'current_context':self.current_context_text(job),
                   'prepared':self.prepared_text(job)}
         own_budget=budget is None
         budget=self.work_budget(job['id']) if own_budget else budget

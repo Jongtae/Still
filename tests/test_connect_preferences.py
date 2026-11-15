@@ -259,7 +259,7 @@ class ConnectionPreferences(Harness):
         import threading
         worker = threading.current_thread()
 
-        def snapshot(service, request=None, recall=True):
+        def snapshot(service, request=None, recall=True, context=None):
             if threading.current_thread() is worker:
                 service._early_plan.result()  # the early plan read A
                 return 'profile.beta.changed: read by the plan asked again'
