@@ -18,6 +18,7 @@ import math
 import re
 
 from .scenarios import RUBRIC
+from .runner import delivered_answer
 
 #: Terminal statuses that are not a failed outcome.
 OK_STATUSES = frozenset({'succeeded', 'partial'})
@@ -158,13 +159,18 @@ def _transcript(scenario, run, labelled=False):
             lines.append(f'AGENTOS {label} before the answer (+{message.get("after_s", "?")}s): {message.get("text", "")[:ANSWER_CHARS]}'
                          + (f' [at {message.get("at")}, id {message.get("delivery_id")}]' if message.get('delivery_id') else '')
                          + (' [truncated]' if len(message.get('text', '')) > ANSWER_CHARS else ''))
-        answer = (turn.get('answer') or '').strip()
-        if turn.get('answer_withheld'):
+        delivered = delivered_answer(turn)
+        answer = delivered if delivered is not None else (turn.get('answer') or '').strip()
+        if turn.get('answer_withheld') and delivered is None:
             answer = '(answer withheld by Still)'
         if len(answer) > ANSWER_CHARS:
             answer = answer[:ANSWER_CHARS] + ' [...]'
         label = f't{index}' if labelled else str(index)
-        lines.append(f'AGENTOS {label} (status {turn.get("status")}): {answer or "(no answer delivered)"}')
+        source = ''
+        if delivered is not None:
+            message = turn['answer_message']
+            source = f' [delivered text; at {message.get("at")}, id {message.get("delivery_id")}]'
+        lines.append(f'AGENTOS {label} (status {turn.get("status")}){source}: {answer or "(no answer delivered)"}')
     diff = run.get('diff') or {}
     # The running situation summary is rewritten every turn from the whole day, including the seed's own
     # history, so its text would hand the judge unrelated owner details; the judge learns only that it changed.
@@ -503,7 +509,8 @@ async def judge_call(prompt, parse, generate, budget, redact, system=JUDGE_SYSTE
 
 def message_ids(run):
     return {f't{i}' for i, t in enumerate(run.get('turns') or [], 1)
-            if t.get('kind') != 'wait_due' and t.get('answer') and not t.get('answer_withheld')} | {
+            if t.get('kind') != 'wait_due' and ((t.get('answer') and not t.get('answer_withheld'))
+                                                or delivered_answer(t) is not None)} | {
             f't{i}.b{j}' for i, t in enumerate(run.get('turns') or [], 1)
             for j, _ in enumerate(t.get('before_answer') or [], 1)}
 

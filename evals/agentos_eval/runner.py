@@ -126,7 +126,7 @@ def chat_turn(client, telegram, text, turn_timeout, poll_interval, wall=time.tim
             # turn's existing delivery loop; never substitute fuzzy provenance.
             return False
         return row and (message.get('chat_id'), message.get('message_id')) == tuple(row)
-    while reply and not any(matches(message) for message in chat) and wall() < deadline:
+    while (reply or data is not None) and not any(matches(message) for message in chat) and wall() < deadline:
         sleep(1.0)
         chat = telegram.chat_since(since)
     delivered = next((message for message in reversed(chat) if matches(message)), None)
@@ -223,6 +223,16 @@ def scheduled_reminder_origin(row, job, start, settlement, slot):
             and settled.get('next_due') is None)
 
 
+def _sqlite_locked(error):
+    """Use SQLite's primary result code, including extended BUSY/LOCKED codes."""
+    code = getattr(error, 'sqlite_errorcode', None)
+    if isinstance(code, int):
+        return (code & 0xff) in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED)
+    # Older transports/test exceptions may lack the result-code attribute.
+    return str(error).lower().startswith(('database is locked', 'database is busy',
+                                         'database table is locked', 'database schema is locked'))
+
+
 def wait_due(client, telegram, spec, source, owner_ids, before, data, *, step=2,
              sample_start=None, clock=time.monotonic, wall=time.time, sleep=time.sleep,
              reader=due_evidence, poll_interval=2.0, capture_sequence=None):
@@ -238,12 +248,31 @@ def wait_due(client, telegram, spec, source, owner_ids, before, data, *, step=2,
               'elapsed': 0, 'timed_out': False, 'completed': False, 'stage': 'no_preparation',
               'status': 'waiting', 'events': [], 'messages': [], 'deliveries': [], 'coverage': 'unsupported'}
     drain = None
+    pending_lock = False
     try:
         while clock() < deadline:
             api = client.get('/api/preparations', timeout=max(.001, deadline - clock()))
             if clock() >= deadline:
                 break
-            evidence = reader(data, source['task_id'], since, timeout=deadline - clock(), clock=clock)
+            try:
+                evidence = reader(data, source['task_id'], since, timeout=deadline - clock(), clock=clock)
+                pending_lock = False
+            except sqlite3.OperationalError as exc:
+                if not _sqlite_locked(exc):
+                    raise
+                pending_lock = True
+                result['lock_errors'] = result.get('lock_errors', 0) + 1
+                result['last_lock_error'] = str(exc)[:300]
+                if clock() >= deadline:
+                    # This read itself remained blocked for its whole remaining
+                    # allowance: infrastructure, rather than an absent due run.
+                    result.update(status='observation_error', reason=f'{type(exc).__name__}: {exc}'[:300])
+                    break
+                # Short busy/locked reads release their connection and retry on
+                # the next poll. Repeated short locks can exhaust the wait cap;
+                # retain the last observed stage and any partial deliveries.
+                sleep(min(poll_interval, deadline - clock()))
+                continue
             result['messages'] = telegram.chat_since(since, **({'after_sequence': capture_sequence} if capture_sequence is not None else {}))
             result['events'] = evidence['events']
             result['preparations'] = evidence['preparations']
@@ -369,7 +398,7 @@ def wait_due(client, telegram, spec, source, owner_ids, before, data, *, step=2,
                 break
             sleep(min(poll_interval, deadline - clock()))
         if result['status'] == 'waiting':
-            if drain is not None and clock() - drain >= DELIVERY_WAIT_SECONDS and clock() <= deadline:
+            if not pending_lock and drain is not None and clock() - drain >= DELIVERY_WAIT_SECONDS and clock() <= deadline:
                 result.update(completed=True, status='completed', stage='completed',
                               reason='delivered' if result['deliveries'] else 'quiet')
             else:
@@ -461,6 +490,18 @@ def run_turns(client, scenario, turn_timeout=900, poll_interval=2.0, clock=time.
     return turns
 
 
+def delivered_answer(turn):
+    """Actual receipt-matched text when the API contains no answer.
+
+    Keep turn.answer unchanged for deterministic checks; a delivered failure
+    notice is owner-visible text, not evidence that execution succeeded.
+    """
+    if (turn.get('answer') or '').strip():
+        return None
+    text = (turn.get('answer_message') or {}).get('text')
+    return text if isinstance(text, str) and text.strip() else None
+
+
 def record_messages(record):
     """Pure record -> role/content conversion, independent of Inspect.
 
@@ -476,7 +517,10 @@ def record_messages(record):
             prefix = f"[observed output during harness wait; at {observed.get('at', 'unknown')}]\n" if waiting else ''
             messages.append({'role': 'assistant', 'content': prefix + observed['text']})
         if not waiting:
-            messages.append({'role': 'assistant', 'content': turn['answer'] or f"(no answer; status {turn['status']})"})
+            delivered = delivered_answer(turn)
+            content = ('[delivered text]\n' + delivered) if delivered is not None else (
+                turn['answer'] or f"(no answer; status {turn['status']})")
+            messages.append({'role': 'assistant', 'content': content})
     return messages
 
 

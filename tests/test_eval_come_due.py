@@ -224,21 +224,42 @@ def test_monotonic_cap_despite_wall_jump(tmp_path, jump):
     assert receipt['elapsed']==11 and receipt['timed_out']
 
 
-@pytest.mark.parametrize('boundary', ['http','sqlite'])
-@pytest.mark.parametrize('exhausted', [False, True])
-def test_blocked_reader_remaining_budget_and_infra(tmp_path,boundary,exhausted):
-    trace=Trace(tmp_path)
-    def blocked(*a,timeout,**kw):
-        trace.clock.sleep(timeout if exhausted else 1)
-        error = sqlite3.OperationalError if boundary == 'sqlite' else TimeoutError
-        raise error('blocked read')
-    kw={'reader':blocked} if boundary=='sqlite' else {}
-    if boundary=='http': trace.get=blocked
-    receipt=trace.wait(spec={'timeout_seconds':9},**kw)
-    assert receipt['elapsed'] == (9 if exhausted else 1)
-    assert receipt['status'] == ('timed_out' if exhausted else 'observation_error')
-    assert receipt['timed_out'] is exhausted
-    if exhausted: assert receipt['stage'] == 'no_preparation'
+@pytest.mark.parametrize('boundary,outcome', [
+    ('http','error'), ('http','exhausted'), ('sqlite','error'), ('sqlite','exhausted'),
+    ('lock','recovers'), ('lock','persists'), ('lock','blocks_to_cap')])
+def test_blocked_reader_remaining_budget_and_infra(tmp_path,boundary,outcome):
+    trace = Trace(tmp_path)
+    attempts = []
+    def blocked(*args,timeout,**kwargs):
+        attempts.append(timeout)
+        if outcome == 'recovers' and len(attempts) > 1:
+            return r.due_evidence(*args,timeout=timeout,**kwargs)
+        if outcome in ('exhausted','blocks_to_cap'):
+            trace.clock.sleep(timeout)
+        elif outcome == 'error':
+            trace.clock.sleep(1)
+        if boundary == 'lock':
+            error = sqlite3.OperationalError('database is locked')
+            error.sqlite_errorcode = sqlite3.SQLITE_BUSY if outcome == 'recovers' else sqlite3.SQLITE_LOCKED
+        elif boundary == 'sqlite':
+            error = sqlite3.OperationalError('no such table: missing')
+        else:
+            error = TimeoutError('blocked HTTP read')
+        raise error
+    options = {'reader':blocked} if boundary != 'http' else {}
+    if boundary == 'http': trace.get = blocked
+    receipt = trace.wait(spec={'timeout_seconds':50 if outcome=='recovers' else 9},**options)
+    if outcome == 'recovers':
+        assert receipt['completed'] and receipt['elapsed'] == 30
+        assert receipt['lock_errors'] == 1 and len(attempts) > 1
+    elif outcome in ('exhausted','persists'):
+        assert receipt['status'] == 'timed_out' and receipt['timed_out']
+        assert receipt['stage'] == 'no_preparation' and receipt['elapsed'] == 9
+        if outcome == 'persists': assert receipt['lock_errors'] > 1
+    else:
+        assert receipt['status'] == 'observation_error' and not receipt['timed_out']
+        assert receipt['elapsed'] == (9 if outcome=='blocks_to_cap' else 1)
+    assert all(0 < value <= (50 if outcome=='recovers' else 9) for value in attempts)
 
 
 def test_usage_limit_stops_and_is_visible(tmp_path):
@@ -612,3 +633,33 @@ def test_run_now_reused_at_scheduled_slot_does_not_promote_its_prior_reply(tmp_p
     result = trace.wait()
     assert not result['completed']
     assert not s.proactive_observation({'turns':[SOURCE],'due_observations':[result]})['observed']
+
+
+@pytest.mark.parametrize('after,stage,cap', [(6,'not_settled',11),(12,'drain_incomplete',32)])
+def test_repeated_short_locks_preserve_stage_partial_delivery_and_cap(tmp_path,after,stage,cap):
+    trace = Trace(tmp_path)
+    def reader(*args,**kwargs):
+        if trace.clock.now >= after:
+            raise sqlite3.OperationalError('database table is locked: preparations')
+        return r.due_evidence(*args,**kwargs)
+    receipt = trace.wait(reader=reader,spec={'timeout_seconds':cap})
+    assert receipt['timed_out'] and receipt['status'] == 'timed_out'
+    assert receipt['stage'] == stage and receipt['elapsed'] == cap
+    assert receipt['work_id'] == 'due' and receipt['lock_errors'] > 1
+    if stage == 'drain_incomplete':
+        assert receipt['deliveries'][0]['text'] == 'observed result'
+        assert receipt['messages']
+
+
+def test_sqlite_busy_extended_code_retries_even_without_canonical_message(tmp_path):
+    trace = Trace(tmp_path)
+    attempts = []
+    def reader(*args,**kwargs):
+        attempts.append(1)
+        if len(attempts) == 1:
+            error = sqlite3.OperationalError('opaque SQLite message')
+            error.sqlite_errorcode = sqlite3.SQLITE_BUSY | (1 << 8)
+            raise error
+        return r.due_evidence(*args,**kwargs)
+    receipt = trace.wait(reader=reader)
+    assert receipt['completed'] and receipt['lock_errors'] == 1

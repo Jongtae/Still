@@ -291,3 +291,56 @@ def test_sandbox_pairs_real_store_before_server_start_and_readiness(tmp_path, mo
     finally:
         process.poll.return_value = 0
         box.stop()
+
+
+@pytest.mark.parametrize('delayed', [False, True])
+@pytest.mark.parametrize('withheld', [False, True])
+def test_failed_empty_api_answer_keeps_receipt_matched_delivered_text(tmp_path, delayed, withheld):
+    from personal_agent.quickstart_store import QuickStore
+    from personal_agent.telegram_presence import TelegramTurnAddressing
+    from test_eval_come_due import Clock
+    clock = Clock()
+    store = QuickStore(tmp_path)
+    addresses = TelegramTurnAddressing(store)
+    fake = FakeTelegram(77, clock=clock.wall)
+    fake.say('earlier owner message')
+    fake.say('another earlier owner message')
+    for _ in range(25): fake._call('getMe', {})
+    body = '이 요청은 완료하지 못했어요…'
+    sent = []
+    def deliver():
+        if sent: return
+        reply = fake._call('sendMessage', {'chat_id': 77, 'text': body})
+        addresses.record_reply('failed-owner',77,reply['message_id'])
+        sent.append(reply)
+    class Client:
+        def job_ids(self): return set()
+        def find_task(self, *args, **kwargs):
+            if not delayed: deliver()
+            return 'failed-owner'
+        def wait(self, *args, **kwargs): return {'status':'failed','failure_class':'invalid-output'}
+        def answer(self, task): return {'response':'','answer_withheld':withheld}
+        def get(self, path, timeout=None):
+            assert path == '/api/preparations'
+            return {'preparations':[]}
+    def sleep(seconds):
+        clock.sleep(seconds)
+        if delayed and clock.now >= 1: deliver()
+    case = scenarios.validate({'id':'failed-reply','channel':'telegram','turns':[
+        'synthetic request',{'wait_due':{'after_turn':1,'until':'settled','timeout_seconds':3}}]})
+    turns = runner.run_turns(Client(),case,telegram=fake,data=tmp_path,
+                             clock=clock.mono,wall=clock.wall,sleep=sleep)
+    assert turns[0]['answer'] == ''  # keep API evidence and check semantics
+    assert turns[0]['answer_message']['delivery_id'] == '77:4:26'
+    assert turns[0]['before_answer'] == []
+    assert turns[1]['before_answer'] == []  # no replay of this reply as a wait message
+    assert 't1' in scoring.message_ids({'turns':turns})
+    messages = runner.record_messages({'turns':turns})
+    observed = [m for m in messages if m['role']=='assistant' and body in m['content']]
+    assert len(observed) == 1 and 'delivered text' in observed[0]['content']
+    transcript = '\n'.join(scoring._transcript(case,{'turns':turns},labelled=True))
+    assert transcript.count(body) == 1 and 'delivered text' in transcript
+    assert '77:4:26' in transcript and '(no answer delivered)' not in transcript
+    checks, failures = scoring.deterministic_checks(case,{'turns':turns})
+    assert checks['delivered'] is False and checks['not_failed'] is False
+    assert any(f['name']=='not_failed' and 'invalid-output' in f['reason'] for f in failures)
