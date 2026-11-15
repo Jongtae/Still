@@ -693,3 +693,149 @@ class Round2Tests(_LinesCase):
                        task='An inferred replacement',report_promise='',sources=[self.b])
         result,_=self.helper.apply_line_actions(self.b,[item],self.service.decision_judge)
         self.assertEqual(result,[{'reason':'line_change_needs_owner'}])
+
+
+class ReviewFixTests(_LinesCase):
+    def reads(self, work_id):
+        return [event['trace']['evidence'] for event in self.store.task_events(work_id)
+                if event['tool']==el.READ_EVENT]
+
+    def plan_work(self):
+        from personal_agent.preparations_service import DAY_PLAN_GOAL
+        row=self.service.preparations.create(kind='prepare',goal=DAY_PLAN_GOAL,due_at=self.now+60,
+                timezone='Asia/Seoul',recurrence='daily',channel='web',created_from=None,
+                state=prep.STATE_SCHEDULED,accepted_by=prep.ACCEPTED_DAY_PLAN,origin=prep.ORIGIN_DAY_PLAN)
+        self.now+=120
+        self.assertTrue(self.service.run_due_preparation(self.now))
+        return self.store.job(self.service.preparations.get(row['id'])['last_run_job_id'])
+
+    def test_day_plan_line_input_records_one_read_in_information_use_after_sending(self):
+        brief=self.stand()
+        work=self.plan_work()
+        self.service.preparation_history(work)
+        self.assertEqual(self.reads(work['id']),[], 'building an unsent input is not a read')
+        seen=[]
+        self.script=[lambda body:seen.append(body) or {'content':'Nothing needed.'}]
+        self.assertTrue(self.service.run_one())
+        self.assertTrue(any(brief['task'] in (message.get('content') or '')
+                            for body in seen for message in body['messages']))
+        self.assertEqual(self.reads(work['id']),[{'line_id':brief['line_id'],'version':1}])
+        audit=self.service.work_information_use(work['id'])
+        [used]=[item for item in audit['used'] if item['category']=='lines']
+        self.assertTrue(any(brief['line_id'] in item for item in used['items']))
+        # Rebuild and actually send the history again for the same Work; neither adds another read.
+        history=self.service.preparation_history(work)
+        self.helper.record_plan_line_reads(work['id'],history,history[-1]['content'])
+        self.assertEqual(self.reads(work['id']),[{'line_id':brief['line_id'],'version':1}])
+
+    def test_day_plan_input_failure_runs_without_line_reads(self):
+        self.stand();work=self.plan_work()
+        with patch.object(self.helper,'line_judgment_input',side_effect=RuntimeError('fixture failure')):
+            with self.assertLogs(level='WARNING'):self.assertTrue(self.service.run_one())
+        self.assertEqual(self.reads(work['id']),[])
+
+    def test_only_lines_retained_in_sent_block_are_recorded(self):
+        brief=self.stand()
+        omitted=self.service.lines.open(self.b,task='Other responsibility',report_promise='later')
+        work=self.plan_work()
+        with patch.object(om,'LINE_INPUT_CHARS',1400):
+            history=self.service.preparation_history(work)
+            block=json.loads(history[-1]['line_judgment_input'])
+            self.assertEqual([line['line_id'] for line in block['lines']],[brief['line_id']])
+            self.assertTrue(self.service.run_one())
+        self.assertEqual(self.reads(work['id']),[{'line_id':brief['line_id'],'version':1}])
+        self.assertNotIn(omitted['line_id'],json.dumps(self.reads(work['id'])))
+
+    def test_plan_preflight_failure_records_no_line_reads(self):
+        self.stand();work=self.plan_work()
+        self.store.put('model_test',{})
+        self.assertTrue(self.service.run_one())
+        self.assertEqual(self.model_calls,[])
+        self.assertEqual(self.reads(work['id']),[])
+
+    def test_nightly_line_input_records_reads_only_for_sent_judgment(self):
+        brief=self.stand()
+        contexts=[]
+        def structured(context,question,schema):
+            if context.purpose!=om.DREAM_PURPOSE:return None
+            contexts.append(context)
+            return StructuredDecision(OUTCOME_DECIDED,{'proposals':[],'notes':'','change':'','notes_sources':[],
+                                     'diary':'','suggestions':[],'lines':[]},fixture_confidence())
+        self.service.use_decision_engine(FixtureDecisionEngine(structured=structured))
+        self.service._owner_model_dream({'job_id':self.b,'reason':str(self.now-3600)},self.store.job(self.b),self.now)
+        self.assertEqual(len(contexts),1)
+        self.assertIn(brief['task'],contexts[0].facts['lines'])
+        self.assertEqual(self.reads(self.b),[{'line_id':brief['line_id'],'version':1}])
+
+    def test_nightly_call_not_sent_records_no_line_reads(self):
+        from personal_agent.decision import DecisionConfidence, OUTCOME_UNAVAILABLE
+        self.stand()
+        self.service.use_decision_engine(FixtureDecisionEngine(structured=lambda *args:
+                StructuredDecision(OUTCOME_UNAVAILABLE,confidence=DecisionConfidence(sent=False))))
+        self.service._owner_model_dream({'job_id':self.b,'reason':str(self.now-3600)},self.store.job(self.b),self.now)
+        self.assertEqual(self.reads(self.b),[])
+
+    def test_deleted_work_and_account_stay_deleted_across_ticks_and_service_restart(self):
+        brief=self.stand();self.deliver(self.announce(brief))
+        work=self.work_rows(brief)[0];account=self.helper.line_account_row(brief['line_id'])
+        for row in (work,account):
+            self.service.preparation_request({'operation':'delete','id':row['id']})
+            remaining={item['id'] for item in self.helper.line_rows(brief['line_id'])}
+            self.service=self.make_service();self.helper=self.service.preparations_service
+            for offset in (60,120,86400):self.helper.line_tick(self.now+offset)
+            self.assertEqual({item['id'] for item in self.helper.line_rows(brief['line_id'])},remaining)
+        self.assertEqual(self.helper.line_rows(brief['line_id']),[])
+        # Already-active restart leaves the brief version alone, but is still a new owner act.
+        owner=self.owner('Restart this responsibility',self.now)
+        self.helper.line_handler(self.store.job(owner))({'action':'restart','line':brief['line_id']})
+        restarted=self.helper.line_rows(brief['line_id'])
+        self.assertEqual(len(restarted),2)
+        self.assertFalse({work['id'],account['id']} & {row['id'] for row in restarted})
+        for offset in (60,120,86400):self.helper.line_tick(self.now+offset)
+        self.assertEqual({row['id'] for row in self.helper.line_rows(brief['line_id'])},{row['id'] for row in restarted})
+
+    def test_deleted_account_alone_stays_deleted_while_work_is_active(self):
+        brief=self.stand();self.deliver(self.announce(brief))
+        work=self.work_rows(brief)[0];account=self.helper.line_account_row(brief['line_id'])
+        self.service.preparation_request({'operation':'delete','id':account['id']})
+        for offset in (60,120,86400):self.helper.line_tick(self.now+offset)
+        self.assertEqual([row['id'] for row in self.helper.line_rows(brief['line_id'])],[work['id']])
+        owner=self.owner('Restart this responsibility',self.now)
+        self.helper.line_handler(self.store.job(owner))({'action':'restart','line':brief['line_id']})
+        self.assertEqual([row['id'] for row in self.work_rows(brief)],[work['id']])
+        self.assertNotEqual(self.helper.line_account_row(brief['line_id'])['id'],account['id'])
+
+    def test_crash_before_work_or_account_creation_retries_on_next_tick(self):
+        brief=self.stand();notice=self.announce(brief)
+        create=self.service.preparations.create
+        def crash(**kwargs):
+            raise RuntimeError('injected crash before creation')
+        with patch.object(self.service.preparations,'create',side_effect=crash):
+            with self.assertRaises(RuntimeError):self.deliver(notice)
+        self.assertTrue(self.helper.line_announced(brief['line_id']))
+        self.assertEqual(self.helper.line_rows(brief['line_id']),[])
+        def fail_account(**kwargs):
+            if kwargs.get('origin')==prep.ORIGIN_LINE_ACCOUNT:raise RuntimeError('account crash')
+            return create(**kwargs)
+        with patch.object(self.service.preparations,'create',side_effect=fail_account):
+            with self.assertRaises(RuntimeError):self.helper.line_tick(self.now+60)
+        self.assertEqual(len(self.work_rows(brief)),1)
+        self.assertIsNone(self.helper.line_account_row(brief['line_id']))
+        self.helper.line_tick(self.now+120)
+        self.assertEqual(len(self.helper.line_rows(brief['line_id'])),2)
+
+    def test_creation_and_started_marker_roll_back_together(self):
+        brief=self.stand();notice=self.announce(brief)
+        with patch.object(self.helper,'record_line_row_started',side_effect=RuntimeError('crash before commit')):
+            with self.assertRaises(RuntimeError):self.deliver(notice)
+        self.assertEqual(self.helper.line_rows(brief['line_id']),[])
+        record=self.helper.record_line_row_started
+        def crash_after_account(work_id,line_id,role,restart,db):
+            if role=='account':raise RuntimeError('crash after account creation')
+            return record(work_id,line_id,role,restart,db)
+        with patch.object(self.helper,'record_line_row_started',side_effect=crash_after_account):
+            with self.assertRaises(RuntimeError):self.helper.line_tick(self.now+60)
+        self.assertEqual(len(self.work_rows(brief)),1)
+        self.assertIsNone(self.helper.line_account_row(brief['line_id']))
+        self.helper.line_tick(self.now+120)
+        self.assertEqual(len(self.helper.line_rows(brief['line_id'])),2)

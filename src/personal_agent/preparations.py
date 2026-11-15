@@ -49,6 +49,7 @@ import re
 from dateutil.rrule import rrulestr
 import time
 import uuid
+from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone as dt_timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -1065,7 +1066,7 @@ class Preparations:
 
     def create(self, *, kind, goal, due_at, timezone, recurrence, channel, created_from, state,
                accepted_by=None, owner=OWNER, window=None, delivery_mode=None, title=None, offer=None, origin=None,
-               report_every_minutes=None, line_id=None):
+               report_every_minutes=None, line_id=None, db=None):
         """One new row (idempotent for the same Work, kind, goal and slot).
 
         #574: when another Work already proposed the same kind, goal, due and
@@ -1077,6 +1078,7 @@ class Preparations:
         deadline ``window_end`` is one run's time after ``until_at`` (#701).  ``origin``
         ``ORIGIN_DREAM`` marks a look-back suggestion (#583); #717: it starts scheduled (``ACCEPTED_DREAM``).
         #798: ``line_id`` is the entrusted line this row works for; the caller checked it is active.
+        ``db`` joins a caller's transaction, so creation and its recovery evidence commit together.
         """
         from .agent_runtime import not_run
         if kind not in KINDS:
@@ -1103,8 +1105,9 @@ class Preparations:
         if origin not in (None, *ORIGINS):
             raise ValueError('unknown origin')
         now = self.clock()
-        with self.store.db() as db:
-            db.execute('BEGIN IMMEDIATE')
+        owns_transaction = db is None
+        with (self.store.db() if owns_transaction else nullcontext(db)) as db:
+            if owns_transaction:db.execute('BEGIN IMMEDIATE')
             same = db.execute('SELECT * FROM preparations WHERE created_from=? AND kind=? AND goal_text=? AND due_at=? '
                               'AND state IN (?,?,?,?)', (created_from, kind, goal, due_at, *ACTIVE_STATES)).fetchone()
             if same:

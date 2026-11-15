@@ -1214,6 +1214,7 @@ class WorkExecutor:
             service.record_attempt_input(job['id'],input_ref,'unknown' if dispatched else 'not-sent')
             raise
         service.record_attempt_input(job['id'],input_ref,'sent')
+        service.preparations_service.record_plan_line_reads(job['id'],run.stored_history,engine_context['request'])
         # #729: a bridge call the CLI never saw completed is a typed failure.
         service.close_incomplete_bridge_calls(job['id'],run.attempt_start,run.record)
         service.record_turn_provenance(job['id'],status='answered',exit_code=run.result.exit_code,**(getattr(run.result,'meta',None) or {}))
@@ -1394,6 +1395,8 @@ class WorkExecutor:
         finally:
             # #656: the Work's browser session ends with the run, on this thread.
             run.capabilities.close_browser()
+            if self._model_responded(job['id'],run.attempt_start):
+                service.preparations_service.record_plan_line_reads(job['id'],run.stored_history,api_context['request'])
         service.record_observed_tools(job['id'])
         # Private reads during the run widen the egress guard;
         # record the final set, not only the pre-run snapshot.

@@ -718,6 +718,7 @@ class PreparationsService:
                 line_input=''
             content='\n\n'.join(part for part in (goal,fact,record,line_input) if part)
             return [*recent,{'role':'user','content':content,'job_id':own,'channel':job.get('channel'),'qualifier':None,
+                             'line_judgment_input':line_input,
                              'request_key':job.get('request_key'),'created':job.get('created')}]
         # #583: a look-back suggestion was not made from its anchor's request; it is shown none.
         origin=(service.store.job(row['created_from'])
@@ -1309,25 +1310,47 @@ class PreparationsService:
                 anchor=service.store.job(stats['stand_key'].split(':')[1])
                 if not anchor:continue
                 first=stats['first']
-                rows=self.line_rows(brief['line_id'])
-                work=[row for row in rows if row.get('origin')!=prep.ORIGIN_LINE_ACCOUNT]
-                if not work:
-                    due=first['due_at']
-                    if due<=now:due=prep.next_due(due,first['timezone'],first['recurrence'],now)
-                    if due is None:continue
-                    row=service.preparations.create(kind=first['kind'],goal=first['goal'],due_at=due,timezone=first['timezone'],
-                                                   recurrence=first['recurrence'],channel=service.preparation_channel(anchor,first['kind'],first['delivery']),
-                                                   created_from=anchor['id'],state=prep.STATE_SCHEDULED,accepted_by=prep.ACCEPTED_DREAM,
-                                                   delivery_mode=first['delivery_mode'],title=first['title'],offer=first['offer'],
-                                                   origin=prep.ORIGIN_DREAM,line_id=brief['line_id'])
-                    work=[row]
+                with service.store.db() as db:
+                    db.execute('BEGIN IMMEDIATE')
+                    restart=self.line_start_restart(brief['line_id'],db)
+                    rows=self.line_rows(brief['line_id'],db)
+                    work=[row for row in rows if row.get('origin')!=prep.ORIGIN_LINE_ACCOUNT]
+                    if not self.line_row_started(brief['line_id'],'work',restart,db):
+                        if not work:
+                            due=first['due_at']
+                            if due<=now:due=prep.next_due(due,first['timezone'],first['recurrence'],now)
+                            if due is None:continue
+                            row=service.preparations.create(kind=first['kind'],goal=first['goal'],due_at=due,timezone=first['timezone'],
+                                                           recurrence=first['recurrence'],channel=service.preparation_channel(anchor,first['kind'],first['delivery']),
+                                                           created_from=anchor['id'],state=prep.STATE_SCHEDULED,accepted_by=prep.ACCEPTED_DREAM,
+                                                           delivery_mode=first['delivery_mode'],title=first['title'],offer=first['offer'],
+                                                           origin=prep.ORIGIN_DREAM,line_id=brief['line_id'],db=db)
+                            work=[row]
+                        self.record_line_row_started(anchor['id'],brief['line_id'],'work',restart,db)
                 # A cancelled work/account row is an owner decision, not a missing row to repair.
                 # If creating the account failed, an active first row may retry that creation only.
-                if (any(row['state'] in prep.ACTIVE_STATES for row in work)
-                        and not any(row.get('origin')==prep.ORIGIN_LINE_ACCOUNT for row in rows)):
+                if any(row['state'] in prep.ACTIVE_STATES for row in work):
                     self.ensure_line_account(anchor,brief,accepted_by=prep.ACCEPTED_DREAM)
             except (prep.PreparationRefusal,el.LineRefusal) as exc:
                 LOG.warning('line rows not started id=%s code=%s',brief['line_id'],exc.code)
+
+    @staticmethod
+    def line_start_restart(line_id, db):
+        """Each explicit owner restart permits another start, even for an unchanged brief."""
+        return db.execute("SELECT COALESCE(MAX(id),0) FROM tool_events WHERE tool='line_restarted' "
+                          "AND status='succeeded' AND json_extract(detail,'$.line_id')=?",(line_id,)).fetchone()[0]
+
+    @staticmethod
+    def line_row_started(line_id, role, restart, db):
+        return db.execute("SELECT 1 FROM tool_events WHERE tool='line_row_started' AND status='succeeded' "
+                          "AND json_extract(detail,'$.line_id')=? AND json_extract(detail,'$.role')=? "
+                          "AND json_extract(detail,'$.restart')=? LIMIT 1",(line_id,role,restart)).fetchone() is not None
+
+    def record_line_row_started(self, work_id, line_id, role, restart, db):
+        # Commit with creation: a failed creation retries, but deleting a created row stays deleted.
+        db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                   (work_id,'line_row_started','succeeded',json.dumps({'line_id':line_id,'role':role,'restart':restart}),
+                    self.service.preparations.clock()))
 
     def withdraw_unannounced(self, now):
         for brief in self.service.lines.lines():
@@ -1484,18 +1507,27 @@ class PreparationsService:
         (``ACCEPTED_OWNER_WORK`` is self-set, #717) and is cancelled with the line.
         """
         service=self.service
-        if self.line_account_row(brief['line_id']):return None
+        stood=service.lines.provenance(brief['line_id']).get('by')=='look-back'
         rule=el.account_rule(brief['account_every_days'])
         now=service.preparations.clock()
         zone_name=service.home_zone() or 'UTC'
-        return service.preparations.create(kind=prep.KIND_PREPARE,goal=LINE_ACCOUNT_GOAL,
+        with service.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            restart=self.line_start_restart(brief['line_id'],db)
+            if stood and self.line_row_started(brief['line_id'],'account',restart,db):return None
+            rows=[row for row in self.line_rows(brief['line_id'],db) if row.get('origin')==prep.ORIGIN_LINE_ACCOUNT]
+            # A cancelled account also stays cancelled on a tick; only a new owner act may restart it.
+            existing=any(row['state'] in prep.ACTIVE_STATES for row in rows) or (stood and not restart and bool(rows))
+            result=None if existing else service.preparations.create(kind=prep.KIND_PREPARE,goal=LINE_ACCOUNT_GOAL,
                                            due_at=now+brief['account_every_days']*86400,timezone=zone_name,
                                            recurrence=prep.normalize_rrule(rule),
                                            channel=channel or service.preparation_channel(job,prep.KIND_PREPARE,'send'),
                                            created_from=job['id'],state=prep.STATE_SCHEDULED,
                                            accepted_by=accepted_by,origin=prep.ORIGIN_LINE_ACCOUNT,
                                            title=el.excerpt(msg('lines.account_title',task=brief['task']),prep.TITLE_MAX_CHARS),
-                                           line_id=brief['line_id'])
+                                           line_id=brief['line_id'],db=db)
+            if stood:self.record_line_row_started(job['id'],brief['line_id'],'account',restart,db)
+            return result
 
     def line_notice(self, job, kind, line_id, version):
         """Queue one owner notice of a line on ``job``'s conversation (``lines.NOTICE_*``).
@@ -1697,9 +1729,9 @@ class PreparationsService:
                                 service.preparations.clock()))
         try:
             if service.lines.provenance(line_id).get('by')=='look-back':
+                self.start_announced_lines(service.preparations.clock(),line_id=line_id)
                 if any(row.get('origin')!=prep.ORIGIN_LINE_ACCOUNT for row in self.line_rows(line_id)):
                     self.ensure_line_account(job,after,accepted_by=prep.ACCEPTED_DREAM)
-                else:self.start_announced_lines(service.preparations.clock(),line_id=line_id)
             else:self.ensure_line_account(job,after)
         except prep.PreparationRefusal as exc:LOG.warning('line account not scheduled id=%s code=%s',line_id,exc.code)
         return {**el.public_brief(after),'next_step':msg('lines.restarted_next',line=line_id)}
@@ -1721,8 +1753,28 @@ class PreparationsService:
             lead=msg('lines.run_input')
         return lead+'\n'+el.brief_text(brief)+'\n'+el.outcomes_text(outcomes,row.get('timezone'))
 
-    def _record_line_read(self, work_id, brief):
+    def record_line_judgment_reads(self, work_id, text):
+        """Record only briefs retained in the bounded block, after its call went out."""
+        for brief in json.loads(text or '{}').get('lines',[]):
+            self._record_line_read(work_id,brief,once=True)
+
+    def record_plan_line_reads(self, work_id, rows, request):
+        """A prepared history is not a read until a worker receives that exact block."""
+        try:
+            for row in rows:
+                text=row.get('line_judgment_input')
+                if text and self.service._redact_known_secrets(text) in request:
+                    self.record_line_judgment_reads(work_id,text)
+        except Exception as exc:  # noqa: BLE001 - the audit record must not fail or mask the run's own outcome
+            LOG.warning('line read record failed work=%s kind=%s',work_id,type(exc).__name__)
+
+    def _record_line_read(self, work_id, brief, *, once=False):
         with self.service.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            if once and db.execute(
+                    "SELECT 1 FROM tool_events WHERE job_id=? AND tool=? AND "
+                    "COALESCE(json_extract(detail,'$.evidence.line_id'),json_extract(detail,'$.line_id'))=? LIMIT 1",
+                    (work_id,el.READ_EVENT,brief['line_id'])).fetchone():return
             db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                        # #802: as Evidence, so the information-use audit lists the line the run was given.
                        (work_id,el.READ_EVENT,'succeeded',json.dumps({'evidence':{'line_id':brief['line_id'],'version':brief['version']}}),

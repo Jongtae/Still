@@ -1516,7 +1516,8 @@ class Upkeep:
 
     # -- one dream (#402) ---------------------------------------------------
     def run_dream(self, job, row, judgments, *, turns, profile, clock, diary_date, ends_after, cancelled=None, source_works=None,
-                  preparations='', suggest=None, earlier=(), earlier_works=None, read_scope=None, lines='', line_refs=None, stand=None):
+                  preparations='', suggest=None, earlier=(), earlier_works=None, read_scope=None, lines='', line_refs=None, stand=None,
+                  line_read=None):
         """Look back over ``turns`` once and keep the owner model in order; returns ``(state, calls, event_status, detail)``.
 
         ``job`` is the anchor Work (the newest request the dream covers): what is kept is attributed to
@@ -1599,6 +1600,7 @@ class Upkeep:
                                                          previous['content'] if previous else '', clock,
                                                          work_id=job['id'], cancelled=cancelled, preparations=preparations,
                                                          earlier='\n'.join(line for _ref, _day, line in misses), lines=line_input)
+        if line_input and line_read and call_sent(decision):line_read(line_input)
         confidence = decision.confidence
         calls += 1 if call_sent(decision) else 0
         self.count(job['id'], calls, KIND_DREAM)

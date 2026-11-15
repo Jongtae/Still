@@ -1592,7 +1592,9 @@ class AgentService:
             # #583: the active preparations by name, so the look back does not suggest one again.
             preparations='\n'.join('- '+title for title in self.preparations.active_titles(om.DREAM_PREPARATIONS_SHOWN)),
             suggest=lambda items,judgments:self.suggest_preparations(work_id,items,judgments),
-            lines=line_input,line_refs=line_refs,stand=lambda items,judgments:self.apply_line_actions(work_id,items,judgments,shown_proposals=shown_proposals))
+            lines=line_input,line_refs=line_refs,
+            line_read=lambda text:self.preparations_service.record_line_judgment_reads(work_id,text),
+            stand=lambda items,judgments:self.apply_line_actions(work_id,items,judgments,shown_proposals=shown_proposals))
         detail['period']=period
         upkeep.finish(work_id,state,calls,status,detail,upkeep.clock(),kind=kind)
         LOG.info('owner-model dream work=%s state=%s calls=%s turns=%s applied=%s notes=%s diary=%s',work_id,state,calls,
