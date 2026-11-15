@@ -194,7 +194,7 @@ class ExposedToolWireBoundary(unittest.TestCase):
 
         class Done:
             returncode = 0
-            stdout = json.dumps({"item": {"type": "agent_message", "text": "engine answer"}})
+            stdout = json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "engine answer"}})
 
         adapter = None
 

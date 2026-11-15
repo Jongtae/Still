@@ -100,7 +100,7 @@ class BoundedExecutionTests(unittest.TestCase):
         seen={}
         class Done:
             returncode=0
-            stdout=json.dumps({'item':{'type':'agent_message','text':'bounded result'}})
+            stdout=json.dumps({'type': 'item.completed', 'item':{'type':'agent_message','text':'bounded result'}})
         def runner(argv, **kwargs):
             seen['kwargs']=kwargs
             return Done()
@@ -122,7 +122,7 @@ class BoundedExecutionTests(unittest.TestCase):
         seen={}
         class Done:
             returncode=0
-            stdout=json.dumps({'item':{'type':'agent_message','text':'bounded result'}})
+            stdout=json.dumps({'type': 'item.completed', 'item':{'type':'agent_message','text':'bounded result'}})
         def runner(argv, **kwargs): seen['argv'],seen['kwargs']=argv,kwargs; return Done()
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder); profile=root/'profile'; profile.mkdir()
@@ -188,7 +188,7 @@ class BoundedExecutionTests(unittest.TestCase):
 
         class Done:
             returncode = 0
-            stdout = json.dumps({'item': {'type': 'agent_message', 'text': 'bounded result'}})
+            stdout = json.dumps({'type': 'item.completed', 'item': {'type': 'agent_message', 'text': 'bounded result'}})
 
         def runner(argv, **kwargs):
             seen['argv'] = argv
@@ -333,7 +333,7 @@ class EngineFailureDiagnosticsTests(unittest.TestCase):
                                  if len('error: ' + echo) > bounded_execution.MAX_REASON_CHARS else 'error: ' + echo)
 
     def test_success_is_not_logged_for_unusable_output(self):
-        class Done: returncode = 0; stdout = json.dumps({'type': 'turn.completed'}); stderr = ''
+        class Done: returncode = 0; stdout = json.dumps({'type': 'turn.started'}); stderr = ''
         with tempfile.TemporaryDirectory() as folder:
             profile = Path(folder) / 'profile'; profile.mkdir()
             adapter = BoundedExecutionAdapter(finder=lambda _: '/runtime/codex', runner=lambda *a, **k: Done(),
@@ -401,7 +401,7 @@ class EngineFailureDiagnosticsTests(unittest.TestCase):
         seen = {}
         def runner(argv, **kwargs):
             seen['argv'] = argv
-            class Done: returncode = 0; stdout = json.dumps({'item': {'type': 'agent_message', 'text': 'ok'}})
+            class Done: returncode = 0; stdout = json.dumps({'type': 'item.completed', 'item': {'type': 'agent_message', 'text': 'ok'}})
             return Done()
         with tempfile.TemporaryDirectory() as folder:
             profile = Path(folder) / 'profile'; profile.mkdir()
@@ -747,7 +747,7 @@ class BoundedExecutionPreservedBoundaryTests(unittest.TestCase):
             seen['argv'] = argv
             class Done:
                 returncode = 0
-                stdout = json.dumps({'item': {'type': 'agent_message', 'text': 'ok'}})
+                stdout = json.dumps({'type': 'item.completed', 'item': {'type': 'agent_message', 'text': 'ok'}})
             return Done()
 
         with tempfile.TemporaryDirectory() as folder:
@@ -818,12 +818,12 @@ class BoundedExecutionPreservedBoundaryTests(unittest.TestCase):
     def test_oversized_engine_output_is_refused(self):
         # Well-formed JSONL carrying a valid final message: only the size
         # ceiling can reject it, so the assertion cannot pass by accident.
-        oversized = json.dumps({'item': {'type': 'agent_message',
+        oversized = json.dumps({'type': 'item.completed', 'item': {'type': 'agent_message',
                                          'text': 'x' * bounded_execution.MAX_OUTPUT_BYTES}})
         self.assertGreater(len(oversized.encode()), bounded_execution.MAX_OUTPUT_BYTES)
         self.assertEqual(
             BoundedExecutionAdapter._content(
-                'codex', json.dumps({'item': {'type': 'agent_message', 'text': 'small'}})),
+                'codex', json.dumps({'type': 'item.completed', 'item': {'type': 'agent_message', 'text': 'small'}})),
             'small', 'the same shape must succeed below the ceiling')
         with self.assertRaises(ExecutionError):
             BoundedExecutionAdapter._content('codex', oversized)
@@ -834,7 +834,7 @@ class BoundedExecutionPreservedBoundaryTests(unittest.TestCase):
 
     def test_accepted_result_is_truncated_to_the_declared_ceiling(self):
         long_answer = 'y' * 40_000
-        raw = json.dumps({'item': {'type': 'agent_message', 'text': long_answer}})
+        raw = json.dumps({'type': 'item.completed', 'item': {'type': 'agent_message', 'text': long_answer}})
         self.assertEqual(len(BoundedExecutionAdapter._content('codex', raw)), 24_000)
 
     def test_oversized_or_empty_prompt_is_refused_before_any_spawn(self):
@@ -861,20 +861,19 @@ class BoundedExecutionPreservedBoundaryTests(unittest.TestCase):
                         self._adapter(folder, self._ok(raw)).execute(
                             'codex', 'hello', AgentOSMcpTools(_Capabilities()))
 
-    def test_event_stream_without_a_final_agent_message_is_refused(self):
+    def test_completed_event_stream_without_a_final_agent_message_has_no_text(self):
         raw = '\n'.join([
             json.dumps({'type': 'thread.started'}),
             json.dumps({'type': 'item.completed',
                         'item': {'type': 'reasoning', 'text': 'hidden thinking'}}),
             json.dumps({'type': 'turn.completed', 'usage': {'input_tokens': 1}}),
         ])
-        with self.assertRaises(ExecutionError):
-            BoundedExecutionAdapter._content('codex', raw)
+        self.assertEqual(BoundedExecutionAdapter._content('codex', raw), '')
 
     def test_non_zero_exit_is_refused_even_with_a_well_formed_answer(self):
         class Failed:
             returncode = 3
-            stdout = json.dumps({'item': {'type': 'agent_message', 'text': 'looks fine'}})
+            stdout = json.dumps({'type': 'item.completed', 'item': {'type': 'agent_message', 'text': 'looks fine'}})
 
         with tempfile.TemporaryDirectory() as folder:
             with self.assertRaises(ExecutionError):

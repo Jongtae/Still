@@ -312,7 +312,7 @@ def test_peer_adapter_qualifies_exact_launch_and_cleans_auth(tmp_path, monkeypat
             raise EngineInterrupted('stopped')
         if outcome == 'failure':
             return subprocess.CompletedProcess(argv, 1, '', 'CLI refused turn')
-        stdout = (json.dumps({'item': {'type': 'agent_message', 'text': 'answer'}}) if engine == 'codex'
+        stdout = (json.dumps({'type': 'item.completed', 'item': {'type': 'agent_message', 'text': 'answer'}}) if engine == 'codex'
                   else json.dumps({'type': 'result', 'result': 'answer'}))
         return subprocess.CompletedProcess(argv, 0, stdout, '')
     adapter = BoundedExecutionAdapter(finder=lambda name: '/synthetic/cli', runner=runner,
@@ -404,7 +404,7 @@ def test_peer_judgments_exclude_ambient_instructions_and_require_peer_pass(tmp_p
         else:
             assert '--safe-mode' not in argv
         data = json.dumps({'choice': 'yes'})
-        out = (json.dumps({'item': {'type': 'agent_message', 'text': data}}) if engine == 'codex'
+        out = (json.dumps({'type': 'item.completed', 'item': {'type': 'agent_message', 'text': data}}) if engine == 'codex'
                else json.dumps({'type': 'result', 'result': data, 'structured_output': {'choice': 'yes'}}))
         return subprocess.CompletedProcess(argv, 0, out, '')
     adapter = BoundedExecutionAdapter(finder=lambda name: '/synthetic/cli', runner=runner,

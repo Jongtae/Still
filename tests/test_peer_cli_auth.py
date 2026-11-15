@@ -178,7 +178,7 @@ def test_worker_refresh_cleanup_uses_production_execute(auth_state, monkeypatch,
         if exit_path == 'exception':
             raise OSError('synthetic start failure')
         return subprocess.CompletedProcess(argv, 1 if exit_path == 'failure' else 0,
-            json.dumps({'item': {'type': 'agent_message', 'text': 'answer'}}), '')
+            json.dumps({'type': 'item.completed', 'item': {'type': 'agent_message', 'text': 'answer'}}), '')
     adapter.runner = runner
     monkeypatch.setattr(adapter, 'bridge_check', lambda: '')
     monkeypatch.setattr(adapter, '_strict_binary_identity', lambda *args: 'current')
@@ -214,7 +214,7 @@ def test_judgment_refresh_cleanup_before_temporary_removal(auth_state, monkeypat
         if exit_path == 'cancellation':
             raise EngineInterrupted('stopped')
         return subprocess.CompletedProcess(argv, 1 if exit_path == 'failure' else 0,
-            json.dumps({'item': {'type': 'agent_message', 'text': '{"choice":"yes"}'}}), '')
+            json.dumps({'type': 'item.completed', 'item': {'type': 'agent_message', 'text': '{"choice":"yes"}'}}), '')
     adapter.runner = runner
     monkeypatch.setattr(adapter, '_strict_binary_identity', lambda *args: 'current')
     monkeypatch.setattr(adapter, 'qualified_identity', lambda *args, **kwargs: {

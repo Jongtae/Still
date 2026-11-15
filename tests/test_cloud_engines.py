@@ -67,7 +67,7 @@ class _Done:
 def answer(argv):
     if argv[0].endswith('claude'):
         return _Done(stdout=json.dumps({'result': 'ok'}))
-    return _Done(stdout=json.dumps({'item': {'type': 'agent_message', 'text': 'ok'}}))
+    return _Done(stdout=json.dumps({'type': 'item.completed', 'item': {'type': 'agent_message', 'text': 'ok'}}))
 
 
 class StoreCase(unittest.TestCase):
@@ -433,7 +433,7 @@ class JudgmentCalls(StoreCase):
             calls.append((argv, kwargs['env']))
             if argv[0].endswith('claude'):
                 return _Done(stdout=json.dumps({'type': 'result', 'structured_output': {'answer': True, 'confidence': 0.9}}))
-            return _Done(stdout=json.dumps({'item': {'type': 'agent_message', 'text': json.dumps({'answer': True, 'confidence': 0.9})}}))
+            return _Done(stdout=json.dumps({'type': 'item.completed', 'item': {'type': 'agent_message', 'text': json.dumps({'answer': True, 'confidence': 0.9})}}))
         return run
 
     def test_judgment_runs_on_the_cloud_profile(self):

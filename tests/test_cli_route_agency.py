@@ -431,7 +431,7 @@ class _TurnCapture(BoundedExecutionAdapter):
         if argv[1] == 'exec':
             value = next(item for item in argv if item.startswith('mcp_servers.agentos.args='))
             self.seen['bridge'] = json.loads(value.split('=', 1)[1])
-            stdout = json.dumps({'item': {'type': 'agent_message', 'text': 'engine answer'}})
+            stdout = json.dumps({'type': 'item.completed', 'item': {'type': 'agent_message', 'text': 'engine answer'}})
         else:
             config = json.loads(Path(argv[argv.index('--mcp-config') + 1]).read_text())
             self.seen['bridge'] = config['mcpServers']['agentos']['args']
@@ -709,7 +709,7 @@ class _BridgeHarness(unittest.TestCase):
 
         class Done:
             returncode = 0
-            stdout = json.dumps({"item": {"type": "agent_message", "text": "engine answer"}})
+            stdout = json.dumps({"type": "item.completed", "item": {"type": "agent_message", "text": "engine answer"}})
 
         adapter = None
 

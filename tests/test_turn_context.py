@@ -168,7 +168,7 @@ class CliAdapterPlacement(unittest.TestCase):
         class Done:
             returncode = 0
             stdout = json.dumps({'result': 'ok'}) if engine == 'claude-code' else json.dumps(
-                {'item': {'type': 'agent_message', 'text': 'ok'}})
+                {'type': 'item.completed', 'item': {'type': 'agent_message', 'text': 'ok'}})
 
         def runner(argv, **kwargs):
             seen['argv'], seen['input'] = argv, kwargs.get('input')
@@ -474,7 +474,7 @@ class BridgeProcessEgressGuard(unittest.TestCase):
 
         class Done:
             returncode = 0
-            stdout = json.dumps({'item': {'type': 'agent_message', 'text': 'engine answer'}})
+            stdout = json.dumps({'type': 'item.completed', 'item': {'type': 'agent_message', 'text': 'engine answer'}})
 
         network_calls = []
         requests = '\n'.join(json.dumps(r) for r in [
