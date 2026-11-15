@@ -417,12 +417,14 @@ review uses the existing pinned evaluation stack; no external maintenance or
 release claim is made.
 
 `--judgment-timeout SECONDS` controls the wait for Still's Judgment AI
-qualification, separately from `--turn-timeout`. It defaults to 300 seconds for
-`sweep` and 900 for `continuity run`; the chosen value is recorded in run
-metadata and passed to the Inspect task. Fresh-sandbox qualification can take
-longer than 300 seconds, so a shorter wait can leave the Judgment AI unavailable
-and C2 measures unscored. The report prominently counts these samples under
-Live evidence and Uncertainty and marks the observation unrepresentative.
+qualification, separately from `--turn-timeout`. Both `sweep` and `continuity run`
+default to 900 seconds: fresh-sandbox qualification took about 410 seconds on
+2026-11-15 (11 cases on each of two models), leaving about 2× margin for a loaded
+machine and concurrent slots (#868). The chosen value is recorded in run metadata
+and passed to the Inspect task or world runner. A shorter wait can leave the
+Judgment AI unavailable and C2 measures unscored. The report prominently counts
+these samples under Live evidence and Uncertainty and marks the observation
+unrepresentative.
 `continuity compare` refuses an arm with missing measures caused by
 `infra:judgment_ai`. `--allow-partial` permits inspecting such a comparison,
 but marks it **partial** and its verdict can never be `better`. Existing
