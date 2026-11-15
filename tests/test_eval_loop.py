@@ -49,10 +49,17 @@ class ScenarioLoaderTest(unittest.TestCase):
         self.assertTrue(any(len(item['turns']) > 1 for item in loaded))
 
     def test_validation_rejects_malformed_scenarios(self):
-        for bad in ({'id': 'Bad Id'}, {'unknown': 1}, {'turns': []}, {'turns': [{'say': ' '}]},
-                    {'rubric': ['nope']}, {'expect': {'memory_any': [[]]}}, {'expect': {'other': 1}},
-                    {'split': 'train'}, {'turns': [{'say': 'a', 'extra': 1}]}):
-            with self.subTest(bad=bad), self.assertRaises(scenarios.ScenarioError):
+        for bad, message in (
+                ({'id':'Bad Id'}, 'id must be a lowercase slug'),
+                ({'unknown':1}, 'unknown fields'),
+                ({'turns':[]}, 'turns must be a list of 1-12 owner turns'),
+                ({'turns':[{'say':' '}]}, 'turn 0 needs 1-4000 characters of owner text'),
+                ({'rubric':['nope']}, 'rubric must name dimensions from'),
+                ({'expect':{'memory_any':[[]]}}, r'expect\.memory_any must be a list of non-empty lists of text'),
+                ({'expect':{'other':1}}, 'expect may only hold'),
+                ({'split':'train'}, 'split must be one of'),
+                ({'turns':[{'say':'a','extra':1}]}, 'turn 0 must be a string or')):
+            with self.subTest(bad=bad), self.assertRaisesRegex(scenarios.ScenarioError, message):
                 scenario(**bad)
 
     def test_normalizes_turns_and_expectations(self):
@@ -74,10 +81,10 @@ class ScenarioLoaderTest(unittest.TestCase):
             self.assertEqual([item['id'] for item in scenarios.load(environ={'AGENTOS_EVAL_HOME': home},
                                                                     split='heldout', ids=['owner-case-1'])],
                              ['owner-case-1'])
-            with self.assertRaises(scenarios.ScenarioError):
+            with self.assertRaisesRegex(scenarios.ScenarioError, 'unknown scenario ids.*missing-id'):
                 scenarios.load(environ={'AGENTOS_EVAL_HOME': home}, ids=['missing-id'])
             (local / 'dup.json').write_text(json.dumps({'id': 'tee-time-reminder', 'turns': ['x']}))
-            with self.assertRaises(scenarios.ScenarioError):
+            with self.assertRaisesRegex(scenarios.ScenarioError, 'duplicate scenario id tee-time-reminder'):
                 scenarios.load(environ={'AGENTOS_EVAL_HOME': home})
 
 
@@ -390,7 +397,7 @@ class ScoringTest(unittest.TestCase):
         self.assertTrue(checks['current_state'])
         self.assertEqual(failures, [])
         self.assertNotIn('current_state', scoring.deterministic_checks(scenario(), run)[0])
-        with self.assertRaises(scenarios.ScenarioError):
+        with self.assertRaisesRegex(scenarios.ScenarioError, r'expect\.current_state_any must be a list of non-empty lists of text'):
             scenario(expect={'current_state_any': [[]]})
 
     def test_no_memory_of_request_rejects_the_owner_sentence_as_a_value(self):
@@ -931,7 +938,7 @@ def test_wait_dispatch_sends_no_owner_message_and_followup_once(tmp_path, monkey
         return ('owner' if len(sent)==1 else 'follow'), {'status':'succeeded'}, [], message
     monkeypatch.setattr(runner,'chat_turn',chat)
     trace.answer=lambda task:{'response':'requested reply'}
-    case={'id':'s','channel':'telegram','expect':{},'turns':[{'say':'entrust'},{'wait_due':SPEC},{'say':'follow'}]}
+    case={'id':'wait-dispatch','channel':'telegram','expect':{},'turns':[{'say':'entrust'},{'wait_due':SPEC},{'say':'follow'}]}
     turns=runner.run_turns(trace,case,telegram=trace.telegram,data=tmp_path,before={},
                            clock=trace.clock.mono,wall=trace.clock.wall,sleep=trace.clock.sleep)
     assert [t[0] for t in sent]==['entrust','follow']
@@ -960,7 +967,7 @@ def test_early_delivery_stays_at_earlier_message_and_failure_skips_followup(tmp_
         return 'owner',{'status':'succeeded'},before,telegram.chat_since(BASE)[-1]
     monkeypatch.setattr(runner,'chat_turn',chat)
     trace.answer=lambda task:{'response':'owner reply'}
-    case={'id':'s','channel':'telegram','turns':[{'say':'one'},{'wait_due':{**SPEC,'timeout_seconds':10}},{'say':'skip'}]}
+    case={'id':'early-delivery','channel':'telegram','turns':[{'say':'one'},{'wait_due':{**SPEC,'timeout_seconds':10}},{'say':'skip'}]}
     turns=runner.run_turns(trace,case,telegram=trace.telegram,data=tmp_path,clock=trace.clock.mono,
                            wall=trace.clock.wall,sleep=trace.clock.sleep)
     assert calls==['one'] and turns[1]['status']=='timed_out'
@@ -1015,7 +1022,7 @@ def test_solver_preserves_run_if_rendering_raises_without_inspect():
     namespace = {'asyncio': asyncio, 'run_scenario': lambda *a, **kw: record,
                  'record_messages': fail_render, 'TaskState': object, 'Generate': object}
     exec(compile(ast.Module(body=[factory], type_ignores=[]), str(source), 'exec'), namespace)
-    with unittest.TestCase().assertRaises(ValueError):
+    with unittest.TestCase().assertRaisesRegex(ValueError, '^rendering failed$'):
         asyncio.run(namespace['agentos_blackbox'](None)(state, None))
     assert state.metadata['run'] is record and calls == [record]
 

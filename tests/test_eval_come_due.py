@@ -2,6 +2,7 @@
 import copy
 import hashlib
 import json
+import re
 import sqlite3
 import sys
 from datetime import datetime, timezone
@@ -103,34 +104,125 @@ def test_schema_frozen_and_old_bytes():
     for case in added:
         assert len(case['turns']) == 3
         assert case['turns'][1] == {'wait_due':{'after_turn':1,'until':case['turns'][1]['wait_due']['until'],'timeout_seconds':420}}
-        with pytest.raises(scenarios.ScenarioError): scenarios.owner_message(case['turns'][1])
+        with pytest.raises(scenarios.ScenarioError, match='^wait_due has no owner message$'):
+            scenarios.owner_message(case['turns'][1])
     assert len(scenarios.load_file(ROOT/'evals/scenarios/continuity-experiments.json')) == 8
     # A fixed digest guards exact bytes without loading/tuning held-out words.
     assert hashlib.sha256((ROOT/'evals/scenarios/continuity-experiments.json').read_bytes()).hexdigest() == '765b823118d66aac040e1a00f62b4614f78c03320f1e0932534e59f3b3c128d5'
 
 
 @pytest.mark.parametrize('change', [
-    {'after_turn': True}, {'after_turn':0}, {'after_turn':2}, {'after_turn':3},
-    {'timeout_seconds':True}, {'timeout_seconds':0}, {'timeout_seconds':601}, {'timeout_seconds':2.5},
-    {'until':'sent'}, {'extra':1},
+    pytest.param({'after_turn': True}, id='boolean-reference'),
+    pytest.param({'after_turn': False}, id='false-reference'),
+    pytest.param({'after_turn': 0}, id='zero-reference'),
+    pytest.param({'after_turn': 2}, id='self-reference'),
+    pytest.param({'after_turn': 3}, id='forward-reference'),
+    pytest.param({'after_turn': 1.5}, id='fractional-reference'),
+    pytest.param({'timeout_seconds': True}, id='boolean-timeout'),
+    pytest.param({'timeout_seconds': False}, id='false-timeout'),
+    pytest.param({'timeout_seconds': 0}, id='zero-timeout'),
+    pytest.param({'timeout_seconds': 601}, id='excessive-timeout'),
+    pytest.param({'timeout_seconds': 2.5}, id='fractional-timeout'),
+    pytest.param({'until': 'sent'}, id='unknown-until'),
+    pytest.param({'extra': 1}, id='unknown-wait-key'),
 ])
 def test_schema_bad_wait(change):
-    case = {'id':'structural', 'channel':'telegram', 'turns':[{'say':'one'},{'wait_due':{**SPEC,**change}}]}
-    with pytest.raises(scenarios.ScenarioError): scenarios.validate(case)
+    valid = {'id':'structural', 'channel':'telegram', 'turns':[{'say':'one'},{'wait_due':dict(SPEC)}]}
+    scenarios.validate(valid)
+    case = copy.deepcopy(valid)
+    case['turns'][1]['wait_due'].update(change)
+    with pytest.raises(scenarios.ScenarioError, match='^scenario:structural: invalid wait_due$'):
+        scenarios.validate(case)
 
 
-def test_schema_mixed_wrong_channel_world_and_reference():
-    for extra in ({'say':'x'},{'note':'x'},{'note_in_message':True},{'from_world':True}):
-        with pytest.raises(scenarios.ScenarioError):
-            scenarios.validate({'id':'s','channel':'telegram','turns':[{'say':'a'},{'wait_due':SPEC,**extra}]})
-    for channel in ('web','other'):
-        with pytest.raises(scenarios.ScenarioError): scenarios.validate({'id':'s','channel':channel,'turns':['a',{'wait_due':SPEC}]})
-    with pytest.raises(scenarios.ScenarioError):
-        scenarios.validate({'id':'s','channel':'telegram','turns':['a',{'wait_due':SPEC},{'wait_due':{**SPEC,'after_turn':2}}]})
-    with pytest.raises(scenarios.ScenarioError):
-        scenarios.validate({'id':'s','world':{'name':'x','task_id':'x','task_set':'dev','approvals':{}},'turns':[{'wait_due':SPEC}]})
-    with pytest.raises(scenarios.ScenarioError):
-        scenarios.validate({'id':'s','channel':'telegram','turns':['a',{'wait_due':{'after_turn':1}}]})
+@pytest.mark.parametrize('extra,message', [
+    pytest.param({'say':'x'}, 'scenario:mixed-wait: invalid wait_due', id='say'),
+    pytest.param({'note':'x'}, 'scenario:mixed-wait: invalid wait_due', id='note'),
+    pytest.param({'note_in_message':True}, 'scenario:mixed-wait: invalid wait_due', id='note-in-message'),
+    pytest.param({'from_world':True},
+                 'scenario:mixed-wait: turn 1 must be a string or {say, note?, note_in_message?}', id='from-world'),
+])
+def test_schema_mixed_wait_fields(extra, message):
+    valid = {'id':'mixed-wait','channel':'telegram','turns':[{'say':'one'},{'wait_due':dict(SPEC)}]}
+    scenarios.validate(valid)
+    case = copy.deepcopy(valid)
+    case['turns'][1].update(extra)
+    with pytest.raises(scenarios.ScenarioError, match='^' + re.escape(message) + '$'):
+        scenarios.validate(case)
+
+
+@pytest.mark.parametrize('channel', ['web','other'])
+def test_schema_wrong_wait_channel(channel):
+    case = {'id':'channel-wait','channel':'telegram','turns':['one',{'wait_due':dict(SPEC)}]}
+    scenarios.validate(case)
+    case['channel'] = channel
+    with pytest.raises(scenarios.ScenarioError, match='^scenario:channel-wait: invalid wait_due$'):
+        scenarios.validate(case)
+
+
+def test_schema_wait_cannot_reference_another_wait():
+    case = {'id':'reference-wait','channel':'telegram',
+            'turns':['one',{'wait_due':dict(SPEC)},{'wait_due':dict(SPEC)}]}
+    scenarios.validate(case)
+    case['turns'][2]['wait_due']['after_turn'] = 2
+    with pytest.raises(scenarios.ScenarioError, match='^scenario:reference-wait: invalid wait_due$'):
+        scenarios.validate(case)
+
+
+def test_schema_world_cannot_contain_a_wait():
+    case = {'id':'world-wait','channel':'telegram',
+            'world':{'name':'fixture-world','task_id':'fixture-task','task_set':'dev','approvals':{}},
+            'turns':[{'from_world':True}]}
+    scenarios.validate(case)
+    case['turns'] = [{'wait_due':dict(SPEC)}]
+    message = 'scenario:world-wait: a world scenario turn must be {"from_world": true}'
+    with pytest.raises(scenarios.ScenarioError, match='^' + re.escape(message) + '$'):
+        scenarios.validate(case)
+
+
+@pytest.mark.parametrize('missing', ['after_turn','until','timeout_seconds'])
+def test_schema_wait_requires_each_key(missing):
+    case = {'id':'missing-wait-key','channel':'telegram','turns':['one',{'wait_due':dict(SPEC)}]}
+    scenarios.validate(case)
+    del case['turns'][1]['wait_due'][missing]
+    with pytest.raises(scenarios.ScenarioError, match='^scenario:missing-wait-key: invalid wait_due$'):
+        scenarios.validate(case)
+
+
+@pytest.mark.parametrize('wait', [None, True, 'delivered', []])
+def test_schema_wait_requires_an_object(wait):
+    case = {'id':'wait-object','channel':'telegram','turns':['one',{'wait_due':dict(SPEC)}]}
+    scenarios.validate(case)
+    case['turns'][1]['wait_due'] = wait
+    with pytest.raises(scenarios.ScenarioError, match='^scenario:wait-object: invalid wait_due$'):
+        scenarios.validate(case)
+
+
+@pytest.mark.parametrize('guard,test_case,args', [
+    pytest.param("not 1 <= wait['timeout_seconds'] <= 600", test_schema_bad_wait,
+                 ({'timeout_seconds':601},), id='timeout-bound'),
+    pytest.param("type(wait.get('timeout_seconds')) is not int", test_schema_bad_wait,
+                 ({'timeout_seconds':True},), id='timeout-boolean'),
+    pytest.param("set(turn) != {'wait_due'}", test_schema_mixed_wait_fields,
+                 ({'note':'x'}, 'scenario:mixed-wait: invalid wait_due'), id='mixed-fields'),
+])
+def test_wait_schema_negatives_detect_removed_rejections(monkeypatch, guard, test_case, args):
+    """Kill three in-memory mutants with the same negative tests; never edit the validator file."""
+    import inspect
+    path = Path(scenarios.__file__)
+    before = path.read_bytes()
+    original = scenarios.validate
+    source = inspect.getsource(original)
+    assert source.count(guard) == 1
+    namespace = dict(vars(scenarios))
+    exec(compile(source.replace(guard, 'False', 1), '<wait-schema-mutation>', 'exec'), namespace)
+    test_case(*args)  # the real validator must reject for the expected reason
+    with monkeypatch.context() as patch:
+        patch.setattr(scenarios, 'validate', namespace['validate'])
+        with pytest.raises(pytest.fail.Exception, match='DID NOT RAISE'):
+            test_case(*args)  # the disabled guard must let this exact invalid case through
+    assert scenarios.validate is original
+    assert path.read_bytes() == before
 
 
 @pytest.mark.parametrize('notification', [False,True])
@@ -191,6 +283,14 @@ def test_false_provenance_never_completes(tmp_path, fault):
     trace = Trace(tmp_path, notification=fault in ('queued','unknown'), mutate=mutate)
     receipt = trace.wait(spec={'timeout_seconds':35})
     assert not receipt['completed']
+    assert receipt['status'] == ('failed' if fault == 'failed' else 'timed_out')
+    expected_stage = {
+        'old':'no_preparation', 'wrong_source':'no_preparation', 'wrong_work':'not_started',
+        'owner_work':'not_started', 'wrong_slot':'not_started', 'wrong_message':'not_delivered',
+        'no_admission':'not_started', 'run_now':'not_started', 'queued':'not_delivered',
+        'unknown':'not_delivered', 'empty':'not_delivered', 'only_api':'not_delivered',
+        'failed':'not_delivered', 'pending_resume':'not_settled'}[fault]
+    assert receipt['stage'] == expected_stage
     assert not s.proactive_observation({'turns':[SOURCE], 'due_observations':[receipt]})['observed']
     if fault == 'failed': assert receipt['reason'] == 'execution_failed'
 
@@ -305,7 +405,10 @@ def test_other_join_boundaries(tmp_path,fault):
         if fault=='awaiting_owner':db.execute("UPDATE jobs SET status='awaiting_context'")
     trace=Trace(tmp_path,mutate=mutate)
     result=trace.wait(spec={'timeout_seconds':35})
-    assert not result['completed']
+    assert not result['completed'] and result['status'] == 'timed_out'
+    assert result['stage'] == {
+        'wrong_preparation':'not_started', 'wrong_chat':'not_delivered', 'old_work':'not_started',
+        'no_settlement':'not_settled', 'sending':'not_settled', 'awaiting_owner':'not_settled'}[fault]
 
 
 def test_old_id_excluded_far_future_extra_ignored_and_advanced_slot_kept(tmp_path):
@@ -577,7 +680,14 @@ def test_builtin_reminder_smoke_trace_is_observed_by_id(tmp_path):
 def test_builtin_reminder_rejects_false_origin_or_delivery(tmp_path, fault):
     trace = ReminderTrace(tmp_path,fault=fault)
     result = trace.wait()
-    assert not result['completed']
+    assert not result['completed'] and result['status'] == 'timed_out'
+    assert result['stage'] == {
+        'run_now_early':'not_started', 'run_now_at_due':'not_started', 'old_row':'no_preparation',
+        'wrong_source':'no_preparation', 'wrong_slot':'not_started', 'wrong_key':'not_started',
+        'wrong_work':'not_started', 'owner_work':'not_started', 'wrong_preparation':'not_started',
+        'missing_reply':'not_delivered', 'wrong_reply_work':'not_delivered', 'wrong_message':'not_delivered',
+        'wrong_chat':'not_delivered', 'missing_settlement':'not_settled', 'bad_settlement_delivery':'not_settled',
+        'wrong_provider':'not_started', 'wrong_model':'not_started', 'empty_text':'not_delivered'}[fault]
     assert not s.proactive_observation({'turns':[SOURCE],'due_observations':[result]})['observed']
     if fault.startswith('run_now'):
         assert trace.finished  # a real run-now delivered; it is still not scheduled-origin evidence

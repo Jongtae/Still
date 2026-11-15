@@ -78,7 +78,9 @@ def test_prompt_reuses_transcript_and_labels_all_messages(rubric):
 def test_parser_rejects_malformed_items(rubric, name, item):
     data = reply()
     data[name] = [item]
-    with pytest.raises(ValueError):
+    message = ('invalid unnecessary_interruptions item' if 'extra' in item else 'unknown message id') if name == 'unnecessary_interruptions' else (
+        'unknown intervention kind' if item.get('kind') == 'made_up' else 'turn index out of range')
+    with pytest.raises(ValueError, match='^' + message + '$'):
         s.parse_measures(json.dumps(data), rubric[0], run())
 
 
@@ -270,7 +272,11 @@ def test_bad_labels_fail(rubric, bad):
         labels['labels'][0]['measures']['extra'] = []
     else:
         labels['labels'][0]['measures']['proactive_usefulness'] = .5
-    with pytest.raises(ValueError):
+    message = {'version':'Invalid labels file or different rubric version',
+               'duplicate':'Duplicate human label', 'missing':'Label sample does not exist',
+               'null':'Human list label required', 'bad_list':'Unknown/duplicate human turn or message',
+               'extra_measure':'Malformed human label', 'bad_score':'Invalid proactive human label'}[bad]
+    with pytest.raises(ValueError, match=message):
         c.agreement(report, labels)
 
 
@@ -280,7 +286,7 @@ def test_template_heldout_and_extra_ids(rubric):
     assert len(template['labels']) == 3
     assert all(r['scenario'] == 'held-case' and all(v is None for v in r['measures'].values()) for r in template['labels'])
     assert len(c.labels_template(report, ['dev-case'])['labels']) == 6
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='^Extra scenario ids must exist in the report$'):
         c.labels_template(report, ['unknown'])
 
 
@@ -299,7 +305,11 @@ def test_compare_refuses_mismatched_conditions(rubric, field):
     else:
         a['samples'].pop()
         b['samples'].pop()
-    with pytest.raises(ValueError):
+    message = ('Cannot compare different ' + field if field in
+               ('worker','epochs','scenario_digest','rubric_version','rubric_digest','scenario_ids') else
+               {'judge':'Cannot compare eval judges', 'stopped':'Cannot compare a stopped C2 report',
+                'duplicate':'Duplicate result ids', 'missing_epoch':'Incomplete paired scenario/epoch selection'}[field])
+    with pytest.raises(ValueError, match=message):
         c.compare(a, b)
 
 
@@ -354,7 +364,8 @@ def args(rubric, **overrides):
 def test_runner_refuses_seed_and_no_judge(rubric):
     for changes, env in (({'seed': ''}, {}), ({'seed': 'owner'}, {}), ({}, {'AGENTOS_EVAL_SEED': 'owner'}),
                          ({'judge': 'none'}, {}), ({'judge': ''}, {'AGENTOS_EVAL_JUDGE_MODEL': 'none'})):
-        with patch.dict('os.environ', env, clear=True), pytest.raises(SystemExit, match='C2 refuses'):
+        message = 'C2 refuses --seed/AGENTOS_EVAL_SEED' if changes.get('seed') is not None or env.get('AGENTOS_EVAL_SEED') else 'C2 refuses checks-only runs'
+        with patch.dict('os.environ', env, clear=True), pytest.raises(SystemExit, match=message):
             cli.run_continuity(args(rubric, **changes), sweep=lambda *a, **k: pytest.fail('must not sweep'), )
 
 

@@ -127,7 +127,7 @@ class ChatTurn(unittest.TestCase):
         web = scenarios.validate({'id': 'web-one', 'turns': ['안녕']})
         self.assertEqual(web['channel'], 'web')
         self.assertNotIn('conversational', web['rubric'])
-        with self.assertRaises(scenarios.ScenarioError):
+        with self.assertRaisesRegex(scenarios.ScenarioError, '^scenario:bad-one: channel must be one of'):
             scenarios.validate({'id': 'bad-one', 'channel': 'sms', 'turns': ['안녕']})
 
 
