@@ -351,7 +351,9 @@ class HitRecordTests(_Plan):
 
 
 class LineInputTests(_Plan):
-    def test_plan_history_contains_lines_proposals_and_requests_blocks(self):
+    def test_plan_history_contains_only_the_lines_block(self):
+        # #879 review: the plan may only link work to a line, so no proposal or owner request reaches it
+        # through this block; owner words it sees come only from its own recent history.
         self.script=[{'content':'Acknowledged.'}]
         owner=self.receive('OWNER-REQUEST-CONTENT')
         with self.store.db() as db:db.execute('UPDATE jobs SET created=? WHERE id=?',(self.now-60,owner))
@@ -365,10 +367,10 @@ class LineInputTests(_Plan):
         block=json.loads(history[-1]['content'].rsplit('\n\n',1)[1])
         self.assertEqual(block['lines'][0]['line_id'],brief['line_id'])
         self.assertEqual(block['lines'][0]['task'],'LINE-TASK-CONTENT')
-        self.assertEqual(block['proposals'][0]['id'],proposal['id'])
-        self.assertEqual(block['proposals'][0]['title'],'PROPOSAL-CONTENT')
-        self.assertEqual(block['requests'][0]['ref'],owner)
-        self.assertEqual(block['requests'][0]['words'],'OWNER-REQUEST-CONTENT')
+        self.assertEqual(set(block),{'lines'})
+        self.assertNotIn('PROPOSAL-CONTENT',history[-1]['content'])
+        self.assertNotIn(proposal['id'],history[-1]['content'])
+        self.assertNotIn('OWNER-REQUEST-CONTENT',history[-1]['content'])
 
     def test_existing_old_goal_plan_row_receives_current_line_instructions(self):
         from personal_agent.prompt_files import prompt

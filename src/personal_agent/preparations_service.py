@@ -712,7 +712,7 @@ class PreparationsService:
             # Existing rows keep their owner's schedule and brief; current line guidance reaches every run.
             goal=job['message']
             if DAY_PLAN_LINES not in goal:goal+='\n\n'+DAY_PLAN_LINES
-            try:line_input=self.line_judgment_input(service.preparations.clock(),refs=False)[0]
+            try:line_input=self.line_judgment_input(service.preparations.clock(),refs=False,lines_only=True)[0]
             except Exception as exc:  # noqa: BLE001 - optional context must not stop the plan
                 LOG.warning('day-plan lines input unavailable kind=%s',type(exc).__name__)
                 line_input=''
@@ -1087,8 +1087,12 @@ class PreparationsService:
         if len(days)<minimum_days:raise el.LineRefusal('line_evidence_one_day')
         return {'works':list(dict.fromkeys(work_ids)),'days':len(days)}
 
-    def line_judgment_input(self, now, *, refs, exclude=()):
-        """Bounded lines/proposals/requests JSON and the whitelist of actually shown requests."""
+    def line_judgment_input(self, now, *, refs, exclude=(), lines_only=False):
+        """Bounded lines/proposals/requests JSON and the whitelist of actually shown requests.
+
+        ``lines_only`` is the daily plan's input: it may only link work to a line, so it is shown the
+        lines and no proposals or owner requests (no owner words reach it outside its own history).
+        """
         from .current_context import owner_today
         service=self.service
         with service.store.db() as db:
@@ -1112,6 +1116,10 @@ class PreparationsService:
                           'state':'waiting' if self.waiting_line(brief) else brief['state'],
                           'stood_by':provenance.get('by','owner'),'stood_on':owner_today(service.store,service.lines.first_saved(brief['line_id'])),
                           'use':use,'stopped_on':owner_today(service.store,brief['saved']) if brief['state']==el.STATE_STOPPED else None})
+        if lines_only:
+            block={'lines':lines}
+            while len(json.dumps(block,ensure_ascii=False))>om.LINE_INPUT_CHARS//2 and lines:lines.pop()
+            return json.dumps(block,ensure_ascii=False),{}
         with service.store.db() as db:
             rows=db.execute('SELECT * FROM preparations WHERE created_at>? AND created_at<=? '
                             'AND state IN (?,?,?) ORDER BY created_at DESC',
