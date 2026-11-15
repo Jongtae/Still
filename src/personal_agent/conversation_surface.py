@@ -298,7 +298,7 @@ def notice_binding(service, notification):
         # #814: the exact drafts of one Work; changed or expired since -> not offered.
         drafts = service.offered_settings_drafts(notification)
         return {'settings_drafts': drafts} if drafts else None
-    if kind == prep.EXPIRED_NOTICE_KIND or kind.startswith(prep.BLOCKED_NOTICE_PREFIX):
+    if kind in (prep.EXPIRED_NOTICE_KIND, prep.SCHEDULED_BUDGET_NOTICE) or kind.startswith(prep.BLOCKED_NOTICE_PREFIX):
         text = service.preparations_service.status_notice_text(notification)
         return None if text is None else {'preparation_status_text': text}
     if kind == prep.NOTIFY_KIND:
@@ -330,7 +330,7 @@ def notice_text(service, notification, bound):
         return bound['notes_text']
     if kind == 'settings_change_proposed':
         return service.settings_orchestrator.confirmation_text(bound['settings_drafts'])
-    if kind == prep.EXPIRED_NOTICE_KIND or kind.startswith(prep.BLOCKED_NOTICE_PREFIX):
+    if kind in (prep.EXPIRED_NOTICE_KIND, prep.SCHEDULED_BUDGET_NOTICE) or kind.startswith(prep.BLOCKED_NOTICE_PREFIX):
         return bound['preparation_status_text']
     if kind == prep.NOTIFY_KIND:
         return bound['watch_text']

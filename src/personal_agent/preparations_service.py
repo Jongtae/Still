@@ -476,10 +476,20 @@ class PreparationsService:
             return pairing.owner, generation, surface.name
         return None
 
+    def budget_notice_destinations(self):
+        """The same current owner pairings used by watches, across all conversation surfaces."""
+        return [destination for surface in self.service.surfaces
+                if (destination := self.notice_destination(surface.name)) is not None]
+
     def status_notice_text(self, notification):
         """Suppress obsolete waiting episodes and notices for stopped preparations."""
         service = self.service
         kind = notification['kind']
+        if kind == prep.SCHEDULED_BUDGET_NOTICE:
+            with service.store.db() as db:
+                notice = db.execute('SELECT content FROM messages WHERE job_id IN (?,?) ORDER BY id LIMIT 1',
+                                    (notification.get('fingerprint'), notification['job_id'])).fetchone()
+            return notice['content'] if notice else None
         with service.store.db() as db:
             row = db.execute('SELECT * FROM preparations WHERE id=?',
                              (notification['fingerprint'],)).fetchone()
@@ -683,6 +693,10 @@ class PreparationsService:
                     requested=datetime.combine(datetime.fromtimestamp(row['until_at'],tz).date(),
                                                datetime.fromtimestamp(requested,tz).time(),tzinfo=tz).timestamp()
                 schedule+=msg('preparations.run_daily_cap_end',end=local(row['until_at']),requested=local(requested))
+            skipped=service.preparations.budget_skipped_fact(job)
+            if skipped:
+                facts={**skipped, 'first_slot':local(skipped['first_slot_at']), 'last_slot':local(skipped['last_slot_at'])}
+                schedule+='\n'+msg('preparations.run_budget_skipped',facts=json.dumps(facts,ensure_ascii=False))
             delivery=msg('preparations.run_delivery_needed' if row.get('delivery_mode')==prep.DELIVERY_WHEN_NEEDED
                          else 'preparations.run_delivery',channel=row['channel'])
             return msg('preparations.run_record',
@@ -1008,14 +1022,21 @@ class PreparationsService:
                          'line_id':row.get('line_id'),'line_task':lines.get(row.get('line_id')),
                          'line_account':row.get('origin')==prep.ORIGIN_LINE_ACCOUNT})
         # #575: the page uses the same catalog in its selected language.
-        labels={'accept':'button.preparation_accept','decline':'button.preparation_decline',
+        labels={**{'budget_'+key:'scheduled_budget.'+key for key in ('label','help')}, 'save':'label.save', 'accept':'button.preparation_accept','decline':'button.preparation_decline',
                 **{'delivery_'+mode:'preparations.delivery_'+mode for mode in ('send','keep','when_needed')},
                 **{operation:'settings_orchestrator.label_preparations_'+operation for operation in ('pause','resume','edit','run_now')},
                 **{field:'preparations.field_'+field for field in ('due','recurrence','every_minutes','until','max_runs',
                                                                               'rule','weekly_days','monthly_day','interval','rule_until')},
                 **{'day_'+day:'preparations.day_'+day for day in prep.RULE_DAYS},
                 'last_day':'preparations.rule_last_day','timezone':'label.time_zone','paused':'settings_orchestrator.paused','saved':'preparations.saved'}
-        return {'preparations':rows,'management':{key:{lang:msg(message_id,lang) for lang in LANGUAGES} for key,message_id in labels.items()}}
+        # The same daily notice is visible in local Settings when no sending surface is paired.
+        from .telegram_locale import translate
+        notice_id = prep.SCHEDULED_USAGE_PREFIX + service.preparations.budget_day(service.preparations.clock())
+        with service.store.db() as db:
+            notice = db.execute('SELECT content FROM messages WHERE job_id=? ORDER BY id LIMIT 1', (notice_id,)).fetchone()
+        budget = {**service.preparations.budget_settings(), 'max':prep.MAX_SCHEDULED_DAILY_CALLS,
+                  'notice':{lang:translate(notice['content'], lang) for lang in LANGUAGES} if notice else {}}
+        return {'preparations':rows,'budget':budget,'management':{key:{lang:msg(message_id,lang) for lang in LANGUAGES} for key,message_id in labels.items()}}
 
     def cancel_preparation(self, preparation_id):
         """``Preparations.cancel`` plus withdrawing its run's pending location request (#774).
@@ -1036,6 +1057,9 @@ class PreparationsService:
         if not isinstance(body,dict):raise ValueError(msg('quickstart_service.check_preparation_request'))
         operation=body.get('operation')
         if operation=='list':return service.preparations_status()
+        if operation=='set_budget':
+            service.preparations.set_budget(body.get('daily_calls'))
+            return service.preparations_status()
         preparation_id=body.get('id')
         if not isinstance(preparation_id,str) or not preparation_id:raise ValueError(msg('quickstart_service.select_preparation'))
         if operation=='accept':service.preparations.accept(preparation_id,prep.ACCEPTED_OWNER_SETTINGS)
