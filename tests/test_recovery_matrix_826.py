@@ -1436,9 +1436,12 @@ def test_x6_active_crash_ledger_is_not_renewed(env):
     assert restarted.store.config(budget.ledger.key) == {**before, 'epoch': before['epoch'] + 1}
 
 
-@pytest.mark.parametrize('terminal', ['finish', 'fail'])
+@pytest.mark.parametrize('terminal', [
+    pytest.param('finish', marks=pytest.mark.xfail(
+        strict=True, raises=AssertionError, reason='#826 X7: success writes do not compare the current Work status')),
+    'fail',
+])
 @pytest.mark.parametrize('protected', ['interrupted', 'cancelled'])
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason='#826 X7: terminal writes do not compare the current Work status')
 def test_x7_late_terminal_writer_preserves_protected_status(env, terminal, protected):
     """X7 a late terminal writer must not overwrite interrupted or cancelled status."""
     store, service = env

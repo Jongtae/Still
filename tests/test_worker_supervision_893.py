@@ -11,7 +11,7 @@ import pytest
 from personal_agent import preparations as prep
 from personal_agent.bounded_execution import ExecutionError
 from personal_agent.messages import msg
-from personal_agent.quickstart_service import UNKNOWN_EFFECT_RETRY_REFUSAL
+from personal_agent.quickstart_service import STEER_FOLDED_TEXT, UNKNOWN_EFFECT_RETRY_REFUSAL
 from test_preparations import CHAT, GENERATION, SECRET, _WatchCase, watch_engine
 
 
@@ -172,6 +172,67 @@ def test_unexpected_post_claim_setup_failure_is_terminal(case, step):
     with patch.object(case.service, step, side_effect=TypeError('invalid record')):
         assert case.service.run_one()
     assert_settled(case, 'failed')
+
+
+@pytest.mark.parametrize('step', ['_presence_anchor', 'update_task_card'])
+def test_folded_steer_keeps_committed_success_after_presence_failure(service_case, step, caplog):
+    case = service_case
+    parent = case.store.enqueue('Original request', 'parent')
+    assert case.service._claim_queued_work()['id'] == parent
+    work = case.store.enqueue('A clarification', 'steer', channel=f'telegram:{GENERATION}', chat_id=CHAT)
+    assert case.store.add_steer(parent, work, 'A clarification')
+    assert case.store.claim_steers(parent) == ['A clarification']
+    with case.store.db() as db:
+        case.store.answer_steers(parent, 0, db)
+        db.execute("UPDATE jobs SET status='succeeded',response=? WHERE id=?", ('Answered both messages', parent))
+    parent_before = case.store.job(parent)
+    with patch.object(case.service, step, side_effect=sqlite3.OperationalError('presence lookup locked')), \
+         patch.object(case.service, '_after_work', wraps=case.service._after_work) as tail:
+        assert case.service.run_one()
+    job = case.store.job(work)
+    assert (job['status'], job['response'], job['delivery'], job['error']) == (
+        'succeeded', STEER_FOLDED_TEXT, 'none', None)
+    assert case.store.job(parent) == parent_before
+    assert not assistant_messages(case, work)
+    with case.store.db() as db:
+        assert not db.execute("SELECT 1 FROM tool_events WHERE job_id=? AND tool='after_work'", (work,)).fetchone()
+        assert not db.execute('SELECT 1 FROM owner_model_upkeep WHERE job_id=?', (work,)).fetchone()
+    tail.assert_not_called()
+    assert 'OperationalError' in caplog.text
+    assert 'presence lookup locked' not in caplog.text
+
+
+@pytest.mark.parametrize('status', ['succeeded', 'awaiting_connection', 'cancelled', 'interrupted'])
+def test_phase_failure_preserves_already_committed_outcome(service_case, status, caplog):
+    case = service_case
+    work = case.store.enqueue('Please finish this request', 'settled-phase')
+    committed = {}
+
+    def settle_then_raise(run):
+        with case.store.db() as db:
+            db.execute('UPDATE jobs SET status=?,response=?,owner_cause=?,goal_outcome=?,effect_state=? WHERE id=?',
+                       (status, 'Committed result', 'Recorded cause', 'reached', 'none', work))
+            db.execute('INSERT INTO messages(role,content,channel,created,job_id) VALUES (?,?,?,?,?)',
+                       ('assistant', 'Committed result', 'web', case.now, work))
+            # A real worker event makes an erroneous failure eligible for self-review.
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       (work, 'model', 'succeeded', '{}', case.now))
+        committed.update(case.store.job(work))
+        case.service.record_turn_provenance(work, goal={'outcome': status})
+        raise sqlite3.OperationalError('phase cleanup locked')
+
+    with patch.object(case.service, '_run_worker_attempts', side_effect=settle_then_raise), \
+         patch.object(case.service, '_after_work', wraps=case.service._after_work) as tail:
+        assert case.service.run_one()
+    assert case.store.job(work) == committed
+    assert [reply['content'] for reply in assistant_messages(case, work)] == ['Committed result']
+    with case.store.db() as db:
+        assert not db.execute("SELECT 1 FROM tool_events WHERE job_id=? AND tool='after_work'", (work,)).fetchone()
+        assert not db.execute('SELECT 1 FROM owner_model_upkeep WHERE job_id=?', (work,)).fetchone()
+    assert case.store.turn_provenance(work)['goal']['outcome'] == status
+    tail.assert_not_called()
+    assert 'OperationalError' in caplog.text
+    assert 'phase cleanup locked' not in caplog.text
 
 
 @pytest.mark.parametrize('status', ['interrupted', 'cancelled'])

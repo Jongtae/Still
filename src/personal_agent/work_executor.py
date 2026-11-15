@@ -104,7 +104,7 @@ class WorkExecutor:
                     service._finish_work(run)
                 except Exception as exc:
                     # #893: a claimed Work must not be stranded by an untyped phase failure.
-                    service._fail_work(run,exc)
+                    if service._fail_work(run,exc) is False:return True
                 finally:
                     try:service._settle_work_judgments(run)
                     finally:
@@ -1619,7 +1619,7 @@ class WorkExecutor:
         service.record_turn_provenance(job['id'],goal=service.work_goal(job['id'],run.work_capabilities[0],run.outcome))
 
     def _fail_work(self, run, exc):
-        """The Work failed: the owner-facing failure, its report and the Work row."""
+        """Settle a still-running Work; return False when another outcome already won."""
         service=self.service
         job=run.job
         run.resolved_blocker=False
@@ -1661,10 +1661,13 @@ class WorkExecutor:
             if run.outcome=='failed' and service._work_has_unknown_effect(job['id']):
                 run.outcome,report='unknown',None
                 transcript=run.reply_notice+msg('compose.i_couldn_t_complete_this_request', reason=run.response)
-            db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id,delivery_projection) VALUES (?,?,?,?,?,?,?)',('assistant',transcript,job['channel'],time.time(),job.get('workspace_id'),job['id'],'blocked-turn' if isinstance(exc,BlockedTurn) else None))
             goal_outcome,effect_state=service.run_goal_outcome(run),service.work_effect_state(job['id'],run.claimed_at)
-            db.execute("UPDATE jobs SET status=?,error=?,delivery=?,owner_cause=COALESCE(?,owner_cause),goal_outcome=?,effect_state=? WHERE id=?",
-                       (run.outcome,run.response,service.reply_delivery(job),report,goal_outcome,effect_state,job['id']))
+            changed=db.execute("UPDATE jobs SET status=?,error=?,delivery=?,owner_cause=COALESCE(?,owner_cause),goal_outcome=?,effect_state=? WHERE id=? AND status='running'",
+                               (run.outcome,run.response,service.reply_delivery(job),report,goal_outcome,effect_state,job['id'])).rowcount
+            # A phase can commit before its presence/card cleanup fails. As in
+            # _fail_work_terminal, only the claimed state admits a failure and tail.
+            if not changed:return False
+            db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id,delivery_projection) VALUES (?,?,?,?,?,?,?)',('assistant',transcript,job['channel'],time.time(),job.get('workspace_id'),job['id'],'blocked-turn' if isinstance(exc,BlockedTurn) else None))
             # #998: a worker attempt failed and nothing followed: one self-review, settled with the Work.
             # A blocker the owner resolves (BlockedTurn) is a setup need, not a miss.
             if (run.outcome=='failed' and not isinstance(exc,BlockedTurn) and service.self_review_eligible(job,run.outcome,None)
