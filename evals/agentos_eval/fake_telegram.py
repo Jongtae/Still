@@ -51,16 +51,34 @@ class FakeTelegram:
             self._lock.notify_all()
         return message_id
 
-    def chat_since(self, since):
+    def chat_since(self, since, *, after_sequence=None):
         """What the owner read after ``since``: each message Still sent, in order, with its time."""
         with self._lock:
-            return [{'at': call['at'], 'method': call['method'], 'text': str(call['body'].get('text') or '')}
-                    for call in self.calls
-                    if call['at'] >= since and call['method'] in MESSAGE_METHODS and call['body'].get('text')]
+            messages = []
+            previous = {}
+            for call in self.calls:
+                result = call.get('result')
+                if call['method'] not in MESSAGE_METHODS or not isinstance(result, dict):
+                    continue
+                text = result.get('text') or ''
+                ident = (result.get('chat', {}).get('id'), result.get('message_id'))
+                meaningful = text and previous.get(ident) != text
+                previous[ident] = text
+                included = call['sequence'] > after_sequence if after_sequence is not None else call['at'] >= since
+                if included and meaningful:
+                    messages.append({'at': call['at'], 'sequence': call['sequence'], 'method': call['method'],
+                                     'chat_id': ident[0], 'message_id': ident[1], 'text': text,
+                                     'delivery_id': f'{ident[0]}:{ident[1]}:{call["sequence"]}'})
+            return messages
 
-    def calls_since(self, since):
+    def sequence(self):
         with self._lock:
-            return [dict(call) for call in self.calls if call['at'] >= since]
+            return len(self.calls)
+
+    def calls_since(self, since, *, after_sequence=None):
+        with self._lock:
+            return [dict(call) for call in self.calls
+                    if (call['sequence'] > after_sequence if after_sequence is not None else call['at'] >= since)]
 
     # -- the server ---------------------------------------------------------------
     @property
@@ -128,21 +146,25 @@ class FakeTelegram:
         if method == 'getUpdates':
             return self._get_updates(body)
         with self._lock:
-            self.calls.append({'at': self.clock(), 'method': method, 'body': body})
+            call = {'at': self.clock(), 'sequence': len(self.calls) + 1, 'method': method, 'body': dict(body)}
             if method == 'getMe':
-                return dict(BOT)
-            if method in ('sendMessage', 'sendPhoto', 'sendDocument', 'sendLocation'):
-                return {'message_id': self._take_message_id(), 'date': int(self.clock()),
-                        'chat': {'id': body.get('chat_id', self.chat_id), 'type': 'private'},
-                        **({'text': body['text']} if isinstance(body.get('text'), str) else {})}
-            if method == 'editMessageText':
-                return {'message_id': body.get('message_id'), 'date': int(self.clock()),
-                        'chat': {'id': body.get('chat_id', self.chat_id), 'type': 'private'}, 'text': body.get('text')}
-            if method in ('getWebhookInfo',):
-                return {'url': '', 'pending_update_count': 0}
-            if method == 'getChat':
-                return {'id': self.chat_id, 'type': 'private'}
-            return True
+                result = dict(BOT)
+            elif method in ('sendMessage', 'sendPhoto', 'sendDocument', 'sendLocation'):
+                result = {'message_id': self._take_message_id(), 'date': int(self.clock()),
+                          'chat': {'id': body.get('chat_id', self.chat_id), 'type': 'private'},
+                          **({'text': body['text']} if isinstance(body.get('text'), str) else {})}
+            elif method == 'editMessageText':
+                result = {'message_id': body.get('message_id'), 'date': int(self.clock()),
+                          'chat': {'id': body.get('chat_id', self.chat_id), 'type': 'private'}, 'text': body.get('text')}
+            elif method == 'getWebhookInfo':
+                result = {'url': '', 'pending_update_count': 0}
+            elif method == 'getChat':
+                result = {'id': self.chat_id, 'type': 'private'}
+            else:
+                result = True
+            call['result'] = result
+            self.calls.append(call)
+            return result
 
     def _get_updates(self, body):
         offset = int(body.get('offset') or 0)

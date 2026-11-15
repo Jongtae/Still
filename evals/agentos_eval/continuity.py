@@ -26,8 +26,9 @@ from .scenarios import load_file
 from .recall_pairs import paired_index
 from .scoring import MEASURES, MEASURE_VALUES
 
-DEFAULT_RUBRIC = REPO / 'evals/continuity/initiative-rubric-v1.json'
+DEFAULT_RUBRIC = REPO / 'evals/continuity/initiative-rubric-v2.json'
 SCENARIOS = BUNDLED_SCENARIOS / 'continuity-experiments.json'
+OBSERVATION_VERSION = 'continuity-observation-v3'
 EVIDENCE = 'live local observation of the sandbox, judged'
 JUDGED = ('avoidable_interventions', 'unnecessary_interruptions', 'proactive_usefulness')
 HELDOUT_RULE = ('Held-out cases are not tuned against; a change motivated by a held-out failure '
@@ -69,11 +70,12 @@ def fixture_support(scenarios, rubric_path, scenario_dir=None):
                       'sha256': hashlib.sha256(content).hexdigest()})
     if not files:
         raise ValueError('No bundled exp-continuity scenario files')
-    return {'scenario_files': files, 'scenario_digest': digest.hexdigest(),
+    return {'observation_version': OBSERVATION_VERSION, 'scenario_files': files, 'scenario_digest': digest.hexdigest(),
             'rubric_file': str(rubric_path), 'rubric_version': rubric['version'],
             'rubric_digest': hashlib.sha256(Path(rubric_path).read_bytes()).hexdigest(),
             'scenario_ids': {split: sorted(s['id'] for s in scenarios if s['split'] == split)
                              for split in ('dev', 'heldout')},
+            'due_scenario_ids': sorted(s['id'] for s in scenarios if any('wait_due' in t for t in s['turns'])),
             'rubric': rubric, 'evidence_class': 'synthetic fixture support; not live evidence'}
 
 
@@ -115,7 +117,7 @@ def agreement(report, labels):
         labels = json.loads(Path(labels).read_text(encoding='utf-8'))
     version = report['fixture_support']['rubric_version']
     if (not isinstance(labels, dict) or not {'version', 'rubric', 'labels'} <= set(labels)
-            or set(labels) - {'version', 'rubric', 'labels', '_note', 'not_labellable'}
+            or set(labels) - {'version', 'rubric', 'labels', '_note', 'not_labellable', 'references'}
             or labels['version'] != 'initiative-labels-v1' or labels['rubric'] != version
             or not isinstance(labels['labels'], list)):
         raise ValueError('Invalid labels file or different rubric version')
@@ -235,8 +237,18 @@ def _measure_value(row, name):
     return row.get('value', {}).get('measure_' + name)
 
 
-def _group(rows):
-    checks = sorted({name for row in rows for name in row.get('checks', {})})
+def _group(rows, due_scenario_ids=()):
+    # Match main's ordinary-check denominator: missing checks count as failed.
+    # Only due_completed has restricted applicability, frozen from the scenario
+    # structure rather than inferred from scored/error rows or their receipts.
+    checks = {name for row in rows for name in row.get('checks', {})} - {'due_completed'}
+    if any(row['scenario'] in due_scenario_ids for row in rows):
+        checks.add('due_completed')
+    checks = sorted(checks)
+
+    def applicable(name):
+        return [r for r in rows if name != 'due_completed' or r['scenario'] in due_scenario_ids]
+
     dims = sorted({k for row in rows for k in row.get('value', {}) if k.startswith('rubric_') and k != 'rubric_mean'})
     measures = {}
     for name in MEASURE_VALUES:
@@ -251,8 +263,20 @@ def _group(rows):
         epochs = [{'scenario': r['scenario'], 'epoch': r['epoch'], **t} for r in rows for t in r.get('latency', []) if t['turn'] == i]
         values = [t['elapsed'] for t in epochs if type(t.get('elapsed')) in (int, float)]
         latency[str(i)] = {**stats(values), 'median': median(values) if values else None, 'epochs': epochs}
-    return {'checks': {name: {**stats([int(bool(r.get('checks', {}).get(name))) for r in rows]),
-                             'pass_rate': mean(bool(r.get('checks', {}).get(name)) for r in rows)} for name in checks},
+    due = [{'scenario': r['scenario'], 'epoch': r['epoch'], **d}
+           for r in rows for d in r.get('due_observations', [])]
+    return {'due': {'epochs': due, 'dispositions': dict(Counter(d.get('reason', 'unknown') for d in due)),
+                    'wait_seconds': stats([d.get('elapsed') for d in due]),
+                    'created': sum(bool(d.get('preparation_id')) for d in due),
+                    'started': sum(bool(d.get('start')) for d in due),
+                    'settled': sum(bool(d.get('settlement')) for d in due),
+                    'delivered': sum(bool(d.get('deliveries')) for d in due),
+                    'quiet': sum(d.get('completed') and d.get('reason') == 'quiet' for d in due),
+                    'timed_out': sum(bool(d.get('timed_out')) for d in due)},
+            'observable_results': sum(r.get('proactive_observation', {}).get('observed', False) for r in rows),
+            'checks': {name: {**stats([int(bool(r.get('checks', {}).get(name))) for r in applicable(name)]),
+                             'pass_rate': mean(bool(r.get('checks', {}).get(name)) for r in applicable(name))}
+                       for name in checks},
             'measures': measures, 'rubric': {k[7:]: stats([r.get('value', {}).get(k) for r in rows]) for k in dims},
             'latency': latency}
 
@@ -309,17 +333,20 @@ def build_report(records, run, fixture, labels=None):
                                 ('measures_rubric_digest', fixture['rubric_digest'])):
             if record.get(field) is not None and record[field] != expected:
                 raise ValueError('Record rubric differs from C2 fixture')
+        if record.get('observation_version') is not None and record['observation_version'] != fixture.get('observation_version', 'continuity-observation-v1'):
+            raise ValueError('Record observation version differs from C2 fixture')
         samples.append(_clean({**record, 'run_id': run['id']}))
     paired_index(samples, _key)
     splits = {}
     for split, ids in fixture['scenario_ids'].items():
         rows = [r for r in samples if r['split'] == split]
-        splits[split] = {'scenarios': {ident: _group([r for r in rows if r['scenario'] == ident]) for ident in ids},
-                         'totals': _group(rows)}
+        splits[split] = {'scenarios': {ident: _group([r for r in rows if r['scenario'] == ident], fixture.get('due_scenario_ids', ())) for ident in ids},
+                         'totals': _group(rows, fixture.get('due_scenario_ids', ()))}
     from .budget import judge_totals
     cost = {k: v for k, v in judge_totals(samples).items() if k != 'calls'}
     readiness = judgment_ai_status(samples)
-    report = {'version': 'continuity-report-v1', 'fixture_support': copy.deepcopy(fixture),
+    report = {'version': 'continuity-report-v1',
+              'observation_version': fixture.get('observation_version', 'continuity-observation-v1'), 'fixture_support': copy.deepcopy(fixture),
               'live_evidence': {**{k: v for k, v in run.items() if k != 'continuity'}, 'seed': 'fresh', 'evidence_class': EVIDENCE, 'splits': splits,
                                 'judgment_ai': readiness},
               'samples': samples,
@@ -334,8 +361,9 @@ def build_report(records, run, fixture, labels=None):
                                                                  for r in samples),
                                     'limitations': [
                                         'Runs/reports that do not come due are unobserved; promises alone provide no delivery evidence.',
-                                        'New preparation rows may carry last_work_id, last_delivery, last_status and a 280-character last_result excerpt. Only a typed line_account row with a sent reply on a distinct Work establishes unsolicited delivery here.',
-                                        'Generic preparation receipts lack scheduled-versus-run-now origin and delivery time; before_answer alone also proves no unsolicited delivery. Existing-row updates, separate notifications and full report bodies are not retained.',
+                                        'Scheduled output requires start, settlement and an exact stand-in message receipt, plus budget admission for preparation work or typed builtin-reminder origin. Successful quiet checks have no proactive grade.',
+                                        'Only receipt-linked bodies are credited; unlinked multipart bodies and existing-row changes remain unsupported. A recurring reminder already advanced before observation needs earlier running-slot proof; next_due alone cannot exclude run-now. last_result is an API excerpt only.',
+                                        'The post-settlement drain observes 20 seconds of silence, not indefinite silence.',
                                         'Tool events are capped at 40 per turn; approval codes in trace payloads are stripped by the public task endpoint. Counts are observed requests only.',
                                         'Conversation only; no multi-day recall, transcript retrieval or AI-stood lines acceptance.',
                                         'Unknown judge usage retains the budget reservation; USD is the settled charge, not always observed provider usage.'],
@@ -373,6 +401,7 @@ def render_markdown(report):
              f"- Scenario SHA-256: {fixture['scenario_digest']}",
              f"- Rubric: {fixture['rubric_version']} ({_cell(fixture.get('rubric_file'))})",
              f"- Rubric SHA-256: {fixture['rubric_digest']}",
+             f"- Observation format: {report['observation_version']}",
              f"- Scenario ids per split: {_cell(fixture['scenario_ids'])}", '', '## Live evidence', '',
              f"Evidence class: {run['evidence_class']}", '',
              '| revision | worker | judge model | epochs | seed | run id |',
@@ -387,12 +416,23 @@ def render_markdown(report):
         lines += [f"**STOPPED: {_cell(run['stopped'])}; incomplete sweep, cannot be compared.**", '']
     for split, block in run['splits'].items():
         lines += [f'### {split}', '', 'Split totals (never pooled with the other split):', '']
+        lines += [f"Observable proactive results: {block['totals']['observable_results']} samples.", '']
         lines += _measure_table(block['totals']['measures'])
         for ident, group in block['scenarios'].items():
             lines += [f'#### {ident}', '', 'Deterministic checks:', '',
                       '| check | pass rate | n | spread |', '| --- | --- | --- | --- |']
             for check, row in group['checks'].items():
                 lines.append(f"| {check} | {_cell(row['pass_rate'])} | {row['n']} | {_cell(row['spread'])} |")
+            if group['due']['epochs']:
+                lines += ['', 'Due observations (wait duration is separate from owner response latency):', '',
+                          '| epoch | stage / reason | created | started at | settled at | end at | wait seconds | delivery / message references |',
+                          '| --- | --- | --- | --- | --- | --- | --- | --- |']
+                for d in group['due']['epochs']:
+                    values = [d['epoch'], [d.get('status'), d.get('stage'), d.get('reason'), d.get('coverage')],
+                              [d.get('preparation_id'), d.get('created_epoch'), d.get('due_epoch')], (d.get('start') or {}).get('created'),
+                              (d.get('settlement') or {}).get('created'), d.get('end_epoch'), d.get('elapsed'),
+                              [d.get('delivery_disposition'), [{k: m.get(k) for k in ('delivery_id', 'at')} for m in d.get('deliveries', [])]]]
+                    lines.append('| ' + ' | '.join(map(_cell, values)) + ' |')
             lines += ['', 'Judged measures (proactive `not_observed` means not observed, never zero):', '']
             lines += _measure_table(group['measures'])
             lines += ['| epoch | status | avoidable items (turn, kind, reason) | approvals: events | approvals: judged | interruptions (message id, reason) | proactive usefulness | judge inconsistencies |',
@@ -460,6 +500,9 @@ def labels_template(report, extra_ids=()):
         raise ValueError('Extra scenario ids must exist in the report')
     selected = [r for r in report['samples'] if r['split'] == 'heldout' or r['scenario'] in wanted]
     return {'version': 'initiative-labels-v1', 'rubric': report['fixture_support']['rubric_version'],
+            'references': [{**{k: r[k] for k in ('run_id', 'scenario', 'worker', 'epoch')},
+                            'message_ids': r.get('message_ids', []),
+                            'due_observations': r.get('due_observations', [])} for r in selected],
             'labels': [{**{k: r[k] for k in ('run_id', 'scenario', 'worker', 'epoch')}, 'labeller': 'owner',
                         'measures': {m: None for m in MEASURES}} for r in selected if not not_labellable(r)],
             'not_labellable': [{**{k: r[k] for k in ('run_id', 'scenario', 'worker', 'epoch')},
@@ -496,7 +539,11 @@ def compare(baseline, candidate, *, allow_partial=False):
                              if state['unscored_measures'])
         raise ValueError('Cannot compare missing measures caused by infra:judgment_ai (' + affected
                          + '); use --allow-partial for a partial comparison that cannot be better')
+    if baseline.get('observation_version', 'continuity-observation-v1') != candidate.get('observation_version', 'continuity-observation-v1'):
+        raise ValueError('Cannot compare different observation versions')
     af, bf = baseline['fixture_support'], candidate['fixture_support']
+    if af.get('observation_version', 'continuity-observation-v1') != bf.get('observation_version', 'continuity-observation-v1'):
+        raise ValueError('Cannot compare different fixture observation versions')
     for key in ('scenario_digest', 'rubric_version', 'rubric_digest', 'scenario_ids'):
         if af[key] != bf[key]:
             raise ValueError(f'Cannot compare different {key}')
@@ -559,7 +606,15 @@ def compare(baseline, candidate, *, allow_partial=False):
     if arows.keys() != expected:
         raise ValueError('Incomplete paired scenario/epoch selection')
     complete = all(r.get('measures_status') == 'judged' for r in [*arows.values(), *brows.values()])
-    conditions = {'representative_judgment_ai': not partial, 'complete_judged_pairs': complete, 'no_check_regression': not check_regression,
+    due_complete = all(bool(r.get('checks', {}).get('due_completed', True))
+                       and all(d.get('completed') for d in r.get('due_observations', []))
+                       for r in [*arows.values(), *brows.values()])
+    coverage_preserved = all(not bool(a.get('proactive_observation', {}).get('observed'))
+                             or bool(brows[key].get('proactive_observation', {}).get('observed'))
+                             for key, a in arows.items())
+    result['partial'] |= not due_complete or not coverage_preserved
+    conditions = {'complete_due_observation': due_complete, 'proactive_coverage_preserved': coverage_preserved,
+                  'representative_judgment_ai': not partial, 'complete_judged_pairs': complete, 'no_check_regression': not check_regression,
                   'dev_judged_gain': gains['dev'], 'no_heldout_regression': not held_regression,
                   'heldout_means_not_worse': means_ok, 'certain_heldout_gain': gains['heldout']}
     result['failed_conditions'] = [k for k, ok in conditions.items() if not ok]
@@ -568,6 +623,6 @@ def compare(baseline, candidate, *, allow_partial=False):
 
 
 def compare_markdown(result):
-    partial_notice = 'PARTIAL: missing measures from infra:judgment_ai; verdict cannot be better.\n\n' if result['partial'] else ''
+    partial_notice = 'PARTIAL: incomplete measures or due observation/coverage; verdict cannot be better.\n\n' if result['partial'] else ''
     return (f"# C2 paired comparison\n\nVerdict: **{result['verdict']}** ({result['verdict_basis']}).\n\n"
             + partial_notice + result['heldout_rule'] + '\n\n```json\n' + json.dumps(result, indent=2) + '\n```\n')

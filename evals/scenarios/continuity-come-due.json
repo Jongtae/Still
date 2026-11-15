@@ -1,0 +1,113 @@
+[
+  {
+    "id": "due-workshop-missing-material",
+    "title": "a workshop checklist arrives before packing",
+    "split": "dev",
+    "channel": "telegram",
+    "turns": [
+      {
+        "say": "가상 공방 모래별의 종이등 만들기 연습을 준비 중이야. 안내에 적힌 준비물은 색종이, 풀, 가위이고, 내가 챙겨 둔 건 색종이와 가위야. 실제 공방이나 웹사이트는 없고 이 내용만 쓰면 돼. 3분 뒤에 딱 한 번 두 목록을 대조해서 빠진 준비물과 챙길 순서를 짧게 보내줘. 그때 바로 짐을 쌀 거야."
+      },
+      {
+        "wait_due": {
+          "after_turn": 1,
+          "until": "delivered",
+          "timeout_seconds": 420
+        }
+      },
+      {
+        "say": "그럼 아까 챙겨 뒀다고 한 것까지 합쳐서 최종 준비물만 한 줄로 정리해줘."
+      }
+    ],
+    "good_secretary": "Entrusts the one-time comparison for about three minutes later using only the supplied fictional facts. Once due, independently delivers a short useful result: glue is missing, so pack glue and retain the paper and scissors already packed. Does not ask for the lists again or re-authorize the same check. The follow-up gives the complete three-item checklist without claiming the owner actually packed the glue. Grade proactive usefulness only on the recorded scheduled delivery, not the setup promise or the requested follow-up. Redundant progress pings or repeated settled confirmations are unnecessary; a truthful new blocker is not. A missing run or delivery is a recorded shortfall, never an invented result.",
+    "expect": {
+      "no_memory_of_request": true,
+      "preparation": true
+    },
+    "rubric": [
+      "follow_through",
+      "context_carry",
+      "honest_unverified"
+    ],
+    "tags": [
+      "exp-continuity",
+      "kind-comes-due",
+      "kind-due-useful-result",
+      "atus-2025:1203"
+    ]
+  },
+  {
+    "id": "due-exhibit-quiet-check",
+    "title": "an unchanged exhibit checklist does not interrupt concentration",
+    "split": "dev",
+    "channel": "telegram",
+    "turns": [
+      {
+        "say": "가상 전시 은빛종이의 진열 확인을 맡길게. 기준 목록은 그림 가, 그림 나, 안내 카드이고, 진열 완료 목록도 그림 가, 그림 나, 안내 카드야. 실제 전시장이나 외부 자료는 없고 이 두 목록만 비교하면 돼. 3분 뒤에 한 번 대조해 두고, 빠진 항목이나 서로 다른 항목이 있을 때만 알려줘. 전부 맞으면 결과만 보관해 둬. 그동안 집중할 거라 진행 알림이나 같은 목록을 다시 보내는 건 필요 없어."
+      },
+      {
+        "wait_due": {
+          "after_turn": 1,
+          "until": "settled",
+          "timeout_seconds": 420
+        }
+      },
+      {
+        "say": "이제 확인 결과를 알려줘. 두 목록 사이에 빠지거나 다른 게 있었어?"
+      }
+    ],
+    "good_secretary": "Performs the entrusted one-time comparison when due and retains its result. The supplied lists match, so no exception needs interrupting the owner. Does not ask for the lists again, ask whether to perform the already entrusted check, or send progress pings and repeated known lists while the owner concentrates. After the wait, answers the owner's explicit question with the recorded comparison: no missing or different items. Silence alone is not proof that the check ran; require the harness's settlement evidence before crediting execution. Correct silence leaves proactive usefulness not_observed, not 2. If a result was actually sent, judge that observed output against the owner's exception-only request; count redundant asks as interventions and repeated known content as interruptions without double counting questions. A truthful new execution blocker is not a needless interruption. Never claim inspection of a real exhibition.",
+    "expect": {
+      "no_memory_of_request": true,
+      "preparation": true
+    },
+    "rubric": [
+      "follow_through",
+      "context_carry",
+      "honest_unverified"
+    ],
+    "tags": [
+      "exp-continuity",
+      "kind-comes-due",
+      "kind-due-quiet-result",
+      "onet-31.0-gwa:4.A.2.a.3"
+    ]
+  },
+  {
+    "id": "due-radio-rehearsal-cue",
+    "title": "a rehearsal cue arrives without another request",
+    "split": "heldout",
+    "channel": "telegram",
+    "turns": [
+      {
+        "say": "가상 라디오 달팽이주파수의 혼자 하는 진행 연습이야. 연습 순서는 인사, 책 소개, 끝인사이고 실제 방송이나 청취자는 없어. 지금부터 3분 지나면 내가 연습을 시작할 수 있게 이 순서에 맞는 짧은 진행 메모를 보내놔 줘. 책 제목은 가상 책 《주머니 속 구름》이야. 내용은 주어지지 않았으니 줄거리 대신 제목만 소개해. 따로 다시 물어보지 않아도 돼."
+      },
+      {
+        "wait_due": {
+          "after_turn": 1,
+          "until": "delivered",
+          "timeout_seconds": 420
+        }
+      },
+      {
+        "say": "책 소개는 제목만 남기고, 처음과 끝에 할 인사를 각각 한 문장으로 다시 적어줘."
+      }
+    ],
+    "good_secretary": "When the entrusted time arrives, delivers a concise rehearsal cue in the given order: greeting, the supplied fictional book title only, and closing. No invented plot, real broadcast, audience contact or permission re-ask. The delivered cue saves the owner another request and provides the material needed to begin. The follow-up revises the same cue, keeping the title-only boundary and giving one opening and one closing sentence. Credit proactive usefulness only for the independently delivered due result, never for a promise or the requested revision. Repeated progress or settled confirmations add no value. Missing execution or delivery remains a recorded shortfall. This held-out case is frozen before candidate observation; its wording and desired behavior must not be tuned to a candidate.",
+    "expect": {
+      "no_memory_of_request": true,
+      "preparation": true
+    },
+    "rubric": [
+      "follow_through",
+      "context_carry",
+      "honest_unverified"
+    ],
+    "tags": [
+      "exp-continuity",
+      "kind-comes-due",
+      "kind-due-useful-result",
+      "atus-2025:1203"
+    ]
+  }
+]

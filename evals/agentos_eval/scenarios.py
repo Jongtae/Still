@@ -66,7 +66,7 @@ CHANNELS = ('web', 'telegram')
 SPLITS = ('dev', 'heldout')
 _ID = re.compile(r'^[a-z0-9][a-z0-9-]{2,79}$')
 _EXPECT_KEYS = {'memory_any', 'current_state_any', 'preparation', 'no_memory_of_request', 'allow_status'}
-_TURN_KEYS = {'say', 'note', 'note_in_message'}
+_TURN_KEYS = {'say', 'note', 'note_in_message', 'wait_due'}
 _KEYS = {'id', 'title', 'split', 'turns', 'rubric', 'expect', 'good_secretary', 'tags', 'channel', 'world'}
 _WORLD_KEYS = {'name', 'task_id', 'task_set', 'approvals', 'money_capable', 'expect_world_pass'}
 #: The world task sets a scenario may use: never a test set (AppWorld forbids tuning on them).
@@ -138,6 +138,20 @@ def validate(raw, origin='scenario'):
             turn = {'say': turn}
         if not isinstance(turn, dict) or set(turn) - _TURN_KEYS:
             raise ScenarioError(f'{where}: turn {index} must be a string or {{say, note?, note_in_message?}}')
+        if 'wait_due' in turn:
+            wait = turn['wait_due']
+            if (set(turn) != {'wait_due'} or raw.get('channel', 'web') != 'telegram'
+                    or not isinstance(wait, dict)
+                    or set(wait) != {'after_turn', 'until', 'timeout_seconds'}
+                    or type(wait.get('after_turn')) is not int
+                    or not 1 <= wait['after_turn'] <= index
+                    or 'say' not in normalized_turns[wait['after_turn'] - 1]
+                    or wait.get('until') not in ('delivered', 'settled')
+                    or type(wait.get('timeout_seconds')) is not int
+                    or not 1 <= wait['timeout_seconds'] <= 600):
+                raise ScenarioError(f'{where}: invalid wait_due')
+            normalized_turns.append({'wait_due': dict(wait)})
+            continue
         say = turn.get('say')
         if not isinstance(say, str) or not say.strip() or len(say) > 4000:
             raise ScenarioError(f'{where}: turn {index} needs 1-4000 characters of owner text')
@@ -247,6 +261,8 @@ def embedded_world_text(scenario_text, instruction, window=6):
 
 def owner_message(turn, instruction=None):
     """The text actually sent to Still for one turn (a world turn sends the world's ``instruction``)."""
+    if 'wait_due' in turn:
+        raise ScenarioError('wait_due has no owner message')
     if turn.get('from_world'):
         if not isinstance(instruction, str) or not instruction.strip():
             raise ScenarioError('a world turn needs the world task instruction')

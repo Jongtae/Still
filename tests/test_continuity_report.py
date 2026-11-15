@@ -78,7 +78,9 @@ def test_prompt_reuses_transcript_and_labels_all_messages(rubric):
 def test_parser_rejects_malformed_items(rubric, name, item):
     data = reply()
     data[name] = [item]
-    with pytest.raises(ValueError):
+    message = ('invalid unnecessary_interruptions item' if 'extra' in item else 'unknown message id') if name == 'unnecessary_interruptions' else (
+        'unknown intervention kind' if item.get('kind') == 'made_up' else 'turn index out of range')
+    with pytest.raises(ValueError, match='^' + message + '$'):
         s.parse_measures(json.dumps(data), rubric[0], run())
 
 
@@ -270,7 +272,11 @@ def test_bad_labels_fail(rubric, bad):
         labels['labels'][0]['measures']['extra'] = []
     else:
         labels['labels'][0]['measures']['proactive_usefulness'] = .5
-    with pytest.raises(ValueError):
+    message = {'version':'Invalid labels file or different rubric version',
+               'duplicate':'Duplicate human label', 'missing':'Label sample does not exist',
+               'null':'Human list label required', 'bad_list':'Unknown/duplicate human turn or message',
+               'extra_measure':'Malformed human label', 'bad_score':'Invalid proactive human label'}[bad]
+    with pytest.raises(ValueError, match=message):
         c.agreement(report, labels)
 
 
@@ -280,7 +286,7 @@ def test_template_heldout_and_extra_ids(rubric):
     assert len(template['labels']) == 3
     assert all(r['scenario'] == 'held-case' and all(v is None for v in r['measures'].values()) for r in template['labels'])
     assert len(c.labels_template(report, ['dev-case'])['labels']) == 6
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match='^Extra scenario ids must exist in the report$'):
         c.labels_template(report, ['unknown'])
 
 
@@ -299,7 +305,11 @@ def test_compare_refuses_mismatched_conditions(rubric, field):
     else:
         a['samples'].pop()
         b['samples'].pop()
-    with pytest.raises(ValueError):
+    message = ('Cannot compare different ' + field if field in
+               ('worker','epochs','scenario_digest','rubric_version','rubric_digest','scenario_ids') else
+               {'judge':'Cannot compare eval judges', 'stopped':'Cannot compare a stopped C2 report',
+                'duplicate':'Duplicate result ids', 'missing_epoch':'Incomplete paired scenario/epoch selection'}[field])
+    with pytest.raises(ValueError, match=message):
         c.compare(a, b)
 
 
@@ -354,11 +364,12 @@ def args(rubric, **overrides):
 def test_runner_refuses_seed_and_no_judge(rubric):
     for changes, env in (({'seed': ''}, {}), ({'seed': 'owner'}, {}), ({}, {'AGENTOS_EVAL_SEED': 'owner'}),
                          ({'judge': 'none'}, {}), ({'judge': ''}, {'AGENTOS_EVAL_JUDGE_MODEL': 'none'})):
-        with patch.dict('os.environ', env, clear=True), pytest.raises(SystemExit, match='C2 refuses'):
+        message = 'C2 refuses --seed/AGENTOS_EVAL_SEED' if changes.get('seed') is not None or env.get('AGENTOS_EVAL_SEED') else 'C2 refuses checks-only runs'
+        with patch.dict('os.environ', env, clear=True), pytest.raises(SystemExit, match=message):
             cli.run_continuity(args(rubric, **changes), sweep=lambda *a, **k: pytest.fail('must not sweep'), )
 
 
-def test_runner_selects_exact_eight_bundled_ids(rubric, tmp_path):
+def test_runner_selects_exact_eleven_bundled_ids(rubric, tmp_path):
     captured = []
     def sweep(ns, folder=None):
         captured.append(ns)
@@ -367,14 +378,14 @@ def test_runner_selects_exact_eight_bundled_ids(rubric, tmp_path):
     with patch.object(scenarios, 'load', wraps=scenarios.load) as load:
         assert cli.run_continuity(args(rubric), sweep=sweep, folder=tmp_path, ) == 2
     load.assert_called_once_with(include_local=False)
-    selected = scenarios.load_file(c.SCENARIOS)
-    assert len(selected) == 8
+    selected = [r for r in scenarios.load(include_local=False) if 'exp-continuity' in r['tags']]
+    assert len(selected) == 11
     assert set(captured[0].scenarios.split(',')) == {r['id'] for r in selected}
     assert captured[0].no_local and captured[0].seed == ''
     assert captured[0].measures == str(rubric[1])
     fixture = captured[0].continuity
     assert len(fixture['scenario_digest']) == 64
-    assert {s: len(ids) for s, ids in fixture['scenario_ids'].items()} == {'dev': 5, 'heldout': 3}
+    assert {s: len(ids) for s, ids in fixture['scenario_ids'].items()} == {'dev': 7, 'heldout': 4}
 
 
 def test_actual_sweep_path_is_injectable_and_writes_c2(rubric, tmp_path, monkeypatch):
@@ -389,7 +400,7 @@ def test_actual_sweep_path_is_injectable_and_writes_c2(rubric, tmp_path, monkeyp
         assert task == 'task'
         run_meta = kwargs['metadata']
         assert run_meta['seed'] == 'fresh'
-        assert sum(map(len, run_meta['continuity']['scenario_ids'].values())) == 8
+        assert sum(map(len, run_meta['continuity']['scenario_ids'].values())) == 11
         return [SimpleNamespace(samples=[], location='fixture.eval', results=None)]
     def sweep(ns, folder=None):
         return cli.cmd_sweep(ns, folder=folder, task_factory=factory, inspect_eval=inspect_eval,
@@ -400,7 +411,7 @@ def test_actual_sweep_path_is_injectable_and_writes_c2(rubric, tmp_path, monkeyp
     assert calls[0]['measures'] == str(rubric[1])
     report = json.loads(next(tmp_path.glob('*.c2.json')).read_text())
     assert report['live_evidence']['seed'] == 'fresh'
-    assert report['uncertainty']['missing_samples'] == 24
+    assert report['uncertainty']['missing_samples'] == 33
     assert str(next(tmp_path.glob('*.c2.md'))) in output.getvalue()
 
 
@@ -444,7 +455,7 @@ def test_real_rubric_prompt_and_default_runner(monkeypatch):
     captured = []
     monkeypatch.setattr(cli, 'cmd_sweep', lambda args: captured.append(args) or 0)
     assert cli.main(['continuity', 'run', '--judge', 'fixture-judge']) == 0
-    assert Path(captured[0].measures) == FIXTURE_FOLDER / 'initiative-rubric-v1.json'
+    assert Path(captured[0].measures) == FIXTURE_FOLDER / 'initiative-rubric-v2.json'
     assert captured[0].continuity['rubric'] == REAL_RUBRIC
 
 
@@ -569,7 +580,7 @@ def test_sweep_records_survive_to_c2_and_usage_stop_refuses_comparison(rubric, t
     with redirect_stdout(io.StringIO()):
         assert cli.run_continuity(args(rubric, epochs=1), sweep=sweep, folder=tmp_path) == 2
     result = json.loads(next(tmp_path.glob('*.c2.json')).read_text())
-    assert len(result['samples']) == 8
+    assert len(result['samples']) == 11
     assert result['live_evidence']['stopped']['skipped'] == 1
     assert result['samples'][0]['measures_status'] == 'judged'
     assert result['samples'][0]['latency'][0]['elapsed'] == 1
@@ -969,3 +980,246 @@ def test_compare_cli_allow_partial_and_clean_comparison(rubric, tmp_path):
     compared = json.loads((tmp_path / 'after.c2.compare.json').read_text())
     assert compared['partial'] and compared['verdict'] == 'not better'
     assert 'PARTIAL' in output.getvalue()
+
+
+@pytest.mark.parametrize('grade', [0, 1, 2, None])
+def test_due_grade_provenance_two_calls_and_wait_ask_attribution(tmp_path, grade):
+    from test_eval_come_due import Trace, SPEC, SOURCE
+    trace=Trace(tmp_path,quiet=grade is None)
+    trace.task_events = [{'tool': 'local_authority', 'status': 'requested'}]
+    receipt=trace.wait(spec={'until':'settled' if grade is None else 'delivered'})
+    case=scenarios.validate({'id':'due-fixture','channel':'telegram','rubric':['follow_through'],
+                             'turns':['entrust',{'wait_due':SPEC},'requested followup']})
+    messages=[{'text':'Please supply that known fact?', 'delivery_id':'ask'},
+              {'text':'Still working', 'delivery_id':'ping'}]
+    r={'worker':'codex','turns':[
+        {**SOURCE,'say':'entrust','status':'succeeded','answer':'accepted'},
+        {'kind':'wait_due','status':receipt['status'],'due_observation':receipt,
+         'events': receipt['work_events'], 'before_answer':messages},
+        {'say':'requested followup','status':'succeeded','answer':'requested result'}],
+       'due_observations':[receipt], 'diff':{}}
+    rr=c.load_rubric(c.DEFAULT_RUBRIC)
+    generated=[]
+    async def generate(system,prompt):
+        generated.append(prompt)
+        completion=({'dimensions':{'follow_through':{'score':2,'reason':'fixture'}},'summary':'fixture'} if len(generated)==1
+                    else {'avoidable_interventions':[{'turn':2,'kind':'asked_known_fact','reason':'t2.b1 asks again'}],
+                          'required_approvals':[],
+                          'unnecessary_interruptions':[{'message':'t2.b1','reason':'same ask'}, {'message':'t2.b2','reason':'separate ping'}],
+                          'proactive_usefulness':{'score':grade,'reason':'shown result'}})
+        return SimpleNamespace(completion=json.dumps(completion),usage=None,model='fixture')
+    value,meta=asyncio.run(s.score_run(case,r,'fixture',JudgeBudget(tmp_path/'budget'),lambda x:x,generate,rr))
+    assert len(generated)==2
+    assert value['check_due_completed']==1
+    assert 't2' not in meta['message_ids'] and 't2.b1' in meta['message_ids'] and 't3' in meta['message_ids']
+    assert value['measure_avoidable_interventions']==1
+    assert value['measure_unnecessary_interruptions']==1
+    assert meta['measures']['unnecessary_interruptions'][0]['message']=='t2.b2'
+    assert len(meta['required_approvals_events'])==1  # independent, never auto-approved
+    if grade is None:
+        assert math.isnan(value['measure_proactive_usefulness'])
+    else:
+        assert value['measure_proactive_usefulness']==grade/2
+    # No requested follow-up reply was in the proactive observation.
+    assert all(o['text']!='requested result' for o in meta['proactive_observation'].get('outputs',[]))
+
+
+@pytest.mark.parametrize('failure', ['usage-limit', 'observation_error'])
+def test_due_outage_or_limit_makes_no_judge_calls(tmp_path,failure):
+    r=run()
+    r['turns'].insert(1,{'kind':'wait_due','failure_class':failure if failure=='usage-limit' else None,
+                         'due_observation':{'status':failure,'reason':'fixture failure','completed':False}})
+    async def forbidden(*args): raise AssertionError('judge called')
+    values,metadata=asyncio.run(s.score_run(scenario(),r,'fixture',JudgeBudget(tmp_path/'budget'),lambda x:x,forbidden,REAL_RUBRIC))
+    assert metadata['judge_status']=='skipped' and metadata['measures_status']=='not_scored'
+    if failure=='usage-limit': assert failure in metadata['failure_classes']
+    else: assert metadata['failures'][0]['kind']=='infra'
+
+
+def test_due_round_trip_applicable_denominators_labels_and_versions(rubric,tmp_path):
+    from test_eval_come_due import Trace
+    receipt=Trace(tmp_path/'db').wait()
+    base=make_report(rubric)
+    raw=copy.deepcopy(base['samples'])
+    for row in raw:
+        if row['epoch']==1:
+            row['due_observations']=[receipt]
+            row['checks']['due_completed']=True
+    raw[1]['checks']['due_completed']=False
+    raw[1]['due_observations']=[{**receipt,'completed':False,'status':'timed_out','reason':'not_delivered'}]
+    fixture={**base['fixture_support'],'observation_version':c.OBSERVATION_VERSION,
+             'due_scenario_ids': ['dev-case', 'held-case']}
+    report=c.build_report(raw,base['live_evidence'],fixture)
+    for split,block in report['live_evidence']['splits'].items():
+        assert block['totals']['checks']['due_completed']['n'] == 3
+        assert block['totals']['checks']['due_completed']['pass_rate'] == pytest.approx(1/3)
+        assert block['totals']['due']['created']
+        assert len(block['totals']['latency'])==3
+    text=c.render_markdown(report)
+    assert 'not_delivered' in text and 'wait duration' in text and 'message references' in text
+    template=c.labels_template(report)
+    assert template['references'] and template['references'][0]['due_observations']
+    for suffix in ('a','b'):
+        sample=SimpleNamespace(id='x',epoch=1,scores=None if suffix=='b' else {'secretary':SimpleNamespace(value={},metadata={})},
+                               metadata={'run':{'turns':[{'kind':'wait_due','due_observation':receipt}], 'due_observations':[receipt]}})
+        record=records_from_samples([sample])[0]
+        assert record['turns'][0]['due_observation']==receipt and record['due_observations']==[receipt]
+    jp,_=c.write_report(report,tmp_path/'reports')
+    assert json.loads(jp.read_text())==report
+    other=copy.deepcopy(report)
+    other['observation_version']='continuity-observation-v1'
+    with pytest.raises(ValueError,match='observation'): c.compare(report,other)
+
+
+def test_due_shortfall_and_coverage_loss_cannot_win(rubric):
+    a=make_report(rubric)
+    b=make_report(rubric,ident='after',head='def',dev=(1,1,1),held=(1,1,1))
+    assert c.compare(a,b)['verdict']=='better'
+    a['samples'][0]['proactive_observation']={'observed':True}
+    result=c.compare(a,b)
+    assert result['verdict']=='not better' and result['partial']
+    assert 'proactive_coverage_preserved' in result['failed_conditions']
+    a['samples'][0]['proactive_observation']={'observed':False}
+    b['samples'][0]['checks']['due_completed']=False
+    assert c.compare(a,b)['verdict']=='not better'  # lost receipt still fails its applicable check
+    for status in ('timed_out','unsupported'):
+        b['samples'][0]['due_observations']=[{'status':status,'completed':False}]
+        result=c.compare(a,b)
+        assert result['verdict']=='not better' and result['partial']
+        assert 'complete_due_observation' in result['failed_conditions']
+
+
+def test_account_and_due_routes_deduplicate_same_preparation_work(tmp_path):
+    from test_eval_come_due import Trace
+    receipt=Trace(tmp_path).wait()
+    r={'due_observations':[receipt], 'diff':{'preparations':[{'id':'p','last_work_id':'due',
+        'line_account':True,'last_delivery':'sent','last_result':'API excerpt'}]}}
+    observation=s.proactive_observation(r)
+    assert len(observation['outputs'])==1
+    assert observation['outputs'][0]['text']=='observed result'
+    # Changes to a final row cannot erase the retained delivery receipt.
+    r['diff']['preparations'][0].update(last_delivery='none',last_result='')
+    assert s.proactive_observation(r)['observed']
+
+
+def test_wait_asks_require_message_attribution_and_keep_separate_gate(rubric):
+    r={'turns':[{'kind':'wait_due','before_answer':[{'text':'redundant ask?'},{'text':'ping'},{'text':'real gate?'}]}]}
+    data={'avoidable_interventions':[{'turn':1,'kind':'asked_known_fact','reason':'t1.b1 asks a known fact'}],
+          'required_approvals':[{'turn':1,'reason':'t1.b3 requires a gate'}],
+          'unnecessary_interruptions':[{'message':'t1.b1','reason':'ask'},{'message':'t1.b2','reason':'ping'},{'message':'t1.b3','reason':'gate'}],
+          'proactive_usefulness':{'score':None,'reason':'absent'}}
+    parsed=s.parse_measures(json.dumps(data),rubric[0],r)
+    assert len(parsed['avoidable_interventions'])==len(parsed['required_approvals'])==1
+    assert [m['message'] for m in parsed['unnecessary_interruptions']]==['t1.b2']
+    data['avoidable_interventions'][0]['reason']='unattributed ask'
+    with pytest.raises(ValueError,match='actual tN.bJ'):s.parse_measures(json.dumps(data),rubric[0],r)
+
+
+@pytest.mark.parametrize('error_kind', ['sample_error', 'harness'])
+def test_error_epoch_stays_in_applicable_check_denominators(rubric, error_kind):
+    old = scenarios.validate({'id': 'old-case', 'turns': ['owner']})
+    due = scenarios.validate({'id': 'due-case', 'channel': 'telegram', 'turns': [
+        'entrust', {'wait_due': {'after_turn': 1, 'until': 'settled', 'timeout_seconds': 30}}]})
+    samples = []
+    for case in (old, due):
+        for epoch in (1, 2, 3):
+            checks = {'delivered': True, 'not_failed': True}
+            if case is due:
+                checks['due_completed'] = True
+            failures = []
+            if epoch == 2:
+                checks = {'harness': False}
+                failures = [{'kind': 'infra', 'name': 'harness', 'reason': 'fixture outage'}]
+            value, meta = s.combine(case, {'worker': 'codex', 'turns': []}, checks, failures)
+            score = SimpleNamespace(value=value, metadata=meta)
+            if epoch == 2 and error_kind == 'sample_error':
+                score = None
+            samples.append(SimpleNamespace(id=case['id'], epoch=epoch,
+                           scores={'secretary': score} if score else None,
+                           metadata={'scenario': case, 'worker': 'codex'}, error='fixture outage'))
+    fixture = c.fixture_support([old, due], rubric[1])
+    report = c.build_report(records_from_samples(samples),
+                           {'id': 'errors', 'worker': 'codex', 'epochs': 3, 'seed': 'fresh'}, fixture)
+    groups = report['live_evidence']['splits']['dev']
+    for ident in ('old-case', 'due-case'):
+        check = groups['scenarios'][ident]['checks']['delivered']
+        assert check['n'] == 3 and check['pass_rate'] == pytest.approx(2/3)
+    assert 'due_completed' not in groups['scenarios']['old-case']['checks']
+    for group in (groups['scenarios']['due-case'], groups['totals']):
+        assert group['checks']['due_completed']['n'] == 3
+        assert group['checks']['due_completed']['pass_rate'] == pytest.approx(2/3)
+    assert groups['totals']['checks']['delivered']['n'] == 6
+    # Even an entirely unscored due scenario has an applicable, failed check.
+    errors = [row for row in records_from_samples(samples) if row['epoch'] == 2]
+    all_error = c.build_report(errors, {'id': 'errors-only', 'worker': 'codex', 'epochs': 3}, fixture)
+    due_check = all_error['live_evidence']['splits']['dev']['scenarios']['due-case']['checks']['due_completed']
+    assert due_check['n'] == 1 and due_check['pass_rate'] == 0
+
+
+def test_cli_compare_accepts_filled_labels_template_with_references(rubric, tmp_path):
+    a = make_report(rubric)
+    b = make_report(rubric, ident='after', head='def', dev=(1,1,1), held=(1,1,1))
+    paths = [c.write_report(report, tmp_path)[0] for report in (a,b)]
+    label_paths = []
+    for report, path in zip((a,b), paths):
+        with redirect_stdout(io.StringIO()) as output:
+            assert cli.main(['continuity', 'labels-template', str(path)]) == 0
+        template = json.loads(output.getvalue())
+        assert 'references' in template
+        filled = {row['epoch']: row for row in labels_for(report)['labels'] if row['scenario'] == 'held-case'}
+        for row in template['labels']:
+            row['measures'] = filled[row['epoch']]['measures']
+        label_path = tmp_path / (report['live_evidence']['id'] + '-labels.json')
+        label_path.write_text(json.dumps(template))
+        label_paths.append(label_path)
+    with redirect_stdout(io.StringIO()):
+        assert cli.main(['continuity','compare',str(paths[0]),str(paths[1]),
+                         '--labels',str(label_paths[0]),'--labels',str(label_paths[1])]) == 0
+    result = json.loads((tmp_path/'after.c2.compare.json').read_text())
+    assert result['verdict_basis'] == 'human labels supplied'
+
+
+@pytest.mark.parametrize('grade', [0, 1, 2])
+def test_reminder_delivered_body_can_be_graded_without_admission(tmp_path, grade):
+    from test_eval_come_due import ReminderTrace, SOURCE, SPEC
+    receipt = ReminderTrace(tmp_path).wait()
+    run_record = {'turns':[
+        {**SOURCE,'say':'entrust','answer':'accepted','status':'succeeded'},
+        {'kind':'wait_due','due_observation':receipt,'before_answer':receipt['messages']},
+        {'task_id':'follow','say':'follow up','answer':'requested revision','status':'succeeded'}],
+        'due_observations':[receipt]}
+    rubric = c.load_rubric(c.DEFAULT_RUBRIC)
+    parsed = s.parse_measures(json.dumps(reply(proactive=grade)),rubric,run_record)
+    assert parsed['proactive_usefulness']['score'] == grade
+    assert parsed['proactive_observation']['outputs'][0]['text'] == 'the observed reminder body'
+    assert parsed['proactive_observation']['outputs'][0]['kind'] == 'scheduled_reminder'
+    assert 'requested revision' not in str(parsed['proactive_observation'])
+    values = s.measure_values(parsed,scenario(),run_record)
+    assert values['measure_proactive_usefulness'] == grade/2
+    # Losing typed origin cannot be repaired by the result excerpt or by a label.
+    receipt.pop('reminder_origin')
+    assert s.parse_measures(json.dumps(reply(proactive=2)),rubric,run_record)['proactive_usefulness']['score'] is None
+
+
+def test_reminder_proof_uses_new_observation_identity_and_survives_reports(rubric,tmp_path):
+    from test_eval_come_due import ReminderTrace
+    receipt = ReminderTrace(tmp_path/'store').wait()
+    baseline = make_report(rubric)
+    records = copy.deepcopy(baseline['samples'])
+    for record in records:
+        record['due_observations'] = [receipt]
+        record['observation_version'] = c.OBSERVATION_VERSION
+        record['checks']['due_completed'] = True
+    fixture = {**baseline['fixture_support'],'observation_version':c.OBSERVATION_VERSION,
+               'due_scenario_ids':['dev-case','held-case']}
+    report = c.build_report(records,baseline['live_evidence'],fixture)
+    assert report['observation_version'] == 'continuity-observation-v3'
+    assert report['samples'][0]['due_observations'][0]['due_slot'] == receipt['start']['facts']['slot']
+    assert c.labels_template(report)['references'][0]['due_observations'][0]['reminder_origin']
+    assert not any('builtin reminder provenance remain unsupported' in text
+                   for text in report['unsupported_paths']['limitations'])
+    old = copy.deepcopy(report)
+    old['observation_version'] = 'continuity-observation-v2'
+    old['fixture_support']['observation_version'] = 'continuity-observation-v2'
+    with pytest.raises(ValueError,match='observation'):
+        c.compare(old,report)

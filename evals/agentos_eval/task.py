@@ -29,7 +29,7 @@ from inspect_ai.util import EarlyStop
 
 from agentos_eval import scenarios as scenario_module
 from agentos_eval.budget import scorer_judge_resources
-from agentos_eval.runner import WORKERS, StopOnUsageLimit, run_scenario
+from agentos_eval.runner import WORKERS, StopOnUsageLimit, record_messages, run_scenario
 from agentos_eval.sandbox import SandboxPool
 from agentos_eval.scoring import JUDGE_MAX_TOKENS, score_run
 
@@ -59,14 +59,14 @@ def agentos_blackbox(pool, turn_timeout=900, judgment_timeout=300):
         meta = state.metadata
         record = await asyncio.to_thread(run_scenario, meta['scenario'], meta['worker'], pool,
                                          turn_timeout=turn_timeout, judgment_timeout=judgment_timeout)
-        messages = []
-        for turn in record['turns']:
-            messages.append(ChatMessageUser(content=turn['say']))
-            messages.append(ChatMessageAssistant(content=turn['answer'] or f"(no answer; status {turn['status']})"))
-        state.messages = messages or state.messages
-        last = record['turns'][-1]['answer'] if record['turns'] else ''
-        state.output = ModelOutput.from_content(model='agentos', content=last or '')
+        # Preserve the observation even when log rendering/Inspect conversion fails.
         state.metadata['run'] = record
+        rendered = record_messages(record)
+        message_types = {'user': ChatMessageUser, 'assistant': ChatMessageAssistant}
+        messages = [message_types[row['role']](content=row['content']) for row in rendered]
+        state.messages = messages or state.messages
+        last = rendered[-1]['content'] if rendered else ''
+        state.output = ModelOutput.from_content(model='agentos', content=last)
         state.completed = True
         return state
     return solve

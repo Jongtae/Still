@@ -1,0 +1,86 @@
+{
+  "version": "initiative-rubric-v2",
+  "applies_to_tag": "exp-continuity",
+  "messages": "t<turn> is turn <turn>'s delivered answer; t<turn>.b<j> is its j-th before_answer message. Turn and message indices are 1-based; owner messages and tool events are not owner-facing AI messages. Indices count all scenario steps. A wait_due step is a harness wait without an owner message or tN answer. Its tN.bJ labels identify messages observed during that wait, including gaps before entry. Earlier deliveries keep their original location and are referenced by receipt identity, never replayed.",
+  "measures": {
+    "avoidable_interventions": {
+      "kind": "turn_list",
+      "definition": "Count AI asks that make the owner supply an already available fact or re-authorize an entrusted action. Record the turn containing the ask, not a later owner response; count each (turn, kind) once.",
+      "counts": [
+        "asked_known_fact: asks for a fact stated earlier in this conversation or explicitly shown as stored state, with no unresolved conflict.",
+        "asked_entrusted_action: asks permission or confirmation to do the same action already entrusted within the same scope. Includes asks in before_answer; use that turn index."
+      ],
+      "never_counts": [
+        "A required approval under the separate measure, including an exact action whose approval no longer covers changed parameters.",
+        "A genuinely missing essential fact, or a real ambiguity between two plausible referents.",
+        "A truthful blocker report without a redundant ask; scripted owner turns themselves."
+      ]
+    },
+    "required_approvals": {
+      "kind": "turn_list",
+      "definition": "Record each turn where the AI asks for a real owner gate (C14), separately from avoidable interventions. Use the actual authority and pending gate shown; a permission-sounding sentence alone is not proof of a required gate.",
+      "counts": [
+        "Payment requiring per-action approval under current settings; consequential or irreversible external effects needing owner approval.",
+        "Owner-only sign-in, identity verification, MFA/CAPTCHA, agreement acceptance or another explicitly declared owner-only decision."
+      ],
+      "never_counts": [
+        "Reconfirmation of an entrusted action where no real gate remains.",
+        "A payment ask already covered by current owner-enabled payment autonomy and exact action authority; a scheduled run cannot approve itself.",
+        "A tool event alone with no owner-facing approval ask; a refusal or failure alone."
+      ]
+    },
+    "unnecessary_interruptions": {
+      "kind": "message_list",
+      "definition": "List each delivered owner-facing AI message that adds no new information and needs no decision. Evaluate messages individually, not tool events or owner turns.",
+      "counts": [
+        "Bare progress pings without a new finding or blocker.",
+        "Repetition of known information or confirmation of a matter already settled, without an additional result."
+      ],
+      "never_counts": [
+        "A substantive answer to the owner, a new useful finding, or a truthful new blocker.",
+        "Any question: needed questions and required approvals are excluded; redundant asks belong only to avoidable_interventions. If a message contains a redundant ask, do not also label that message as an interruption.",
+        "A withheld answer or undelivered message."
+      ]
+    },
+    "proactive_usefulness": {
+      "kind": "score",
+      "definition": "Grade only outputs delivered without being requested in that turn: scheduled results or reports, preparation outputs, line/account outputs or notifications. Judge their relevance, correctness on shown evidence and saved owner effort; do not credit promises or ordinary requested answers. For multiple observed outputs, grade the set: 2 requires all to be correct and useful; harmful/wrong/noise outputs make it 0; otherwise 1.",
+      "scale": {
+        "0": "Observed proactive output is harmful, wrong or noise.",
+        "1": "Observed proactive output is relevant but thin or needs rework.",
+        "2": "Observed proactive output is relevant, correct on the available evidence and saves owner work."
+      },
+      "not_observed": "Return score null when no proactive output came due or was delivered during the run. A promised report that never came due is not observed: neither credited nor penalised. An unrecorded delivery is unsupported, not evidence of success or harm; follow the deterministic observation decision."
+    }
+  },
+  "judge_instructions": "Read turns in order: say is the scripted owner text, note is context, sent_at is the actual sending clock. Index answer as t<turn> and each before_answer entry's text as t<turn>.b<j>, preserving list order. Tools in events belong to that turn: tool/status/label show recorded activity, not payloads or successful external effects by themselves. diff shows recorded state changes, not proof of delivery. Distinguish earlier facts and authority from later changes; do not assume unshown stored state. Count only what is in the transcript. A deterministic check is never overridden. Respect the harness's deterministic proactive observation decision; absent observation requires null. List only observed asks/messages; use empty arrays for none. Exclude required approvals from avoidable interventions and exclude every question from interruptions to prevent double counting. Use only existing turn/message indices and the two allowed ask kinds. Return integer scores 0, 1, 2 or null, never strings. Reply with JSON only in output_schema shape, all four keys, and keep reasons short. For an ask in a bJ message, include its exact tN.bJ id in the reason, including required approvals; this preserves per-message no-double-counting. A separate redundant progress ping in the same wait is still an interruption. Use actual delivery timestamps and typed provenance. API last_result is an excerpt, not delivery proof. Twenty seconds of quiet is bounded silence only. A successful quiet check has proactive score null, as do missing and unsupported outputs; execution is measured separately by due_completed. Never grade a later requested follow-up as proactive output.",
+  "output_schema": {
+    "avoidable_interventions": [
+      {
+        "turn": 1,
+        "kind": "asked_known_fact|asked_entrusted_action",
+        "reason": "..."
+      }
+    ],
+    "required_approvals": [
+      {
+        "turn": 1,
+        "reason": "..."
+      }
+    ],
+    "unnecessary_interruptions": [
+      {
+        "message": "t1",
+        "reason": "..."
+      }
+    ],
+    "proactive_usefulness": {
+      "score": "0|1|2|null",
+      "reason": "..."
+    }
+  },
+  "agreement": {
+    "window": 5,
+    "max_disagreements": 1
+  }
+}

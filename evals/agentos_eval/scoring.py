@@ -18,6 +18,7 @@ import math
 import re
 
 from .scenarios import RUBRIC
+from .runner import delivered_answer
 
 #: Terminal statuses that are not a failed outcome.
 OK_STATUSES = frozenset({'succeeded', 'partial'})
@@ -44,8 +45,8 @@ def _normalized(text):
 def deterministic_checks(scenario, run):
     """``(checks, failures)``: check name -> bool, and the failure rows."""
     failures = []
-    if run.get('error'):
-        failures.append({'kind': 'infra', 'name': 'harness', 'reason': str(run['error'])[:200]})
+    if observation_error(run):
+        failures.append({'kind': 'infra', 'name': 'harness', 'reason': str(observation_error(run))[:200]})
         return {'harness': False}, failures
     checks = {}
     judgment = run.get('judgment') or {}
@@ -54,16 +55,24 @@ def deterministic_checks(scenario, run):
         # measured the fallback path, not what the owner gets.
         failures.append({'kind': 'infra', 'name': 'judgment_ai',
                          'reason': judgment.get('failure') or f"not ready after {judgment.get('waited')}s"})
-    turns = run.get('turns') or []
-    undelivered = [index for index, turn in enumerate(turns)
+    all_turns = run.get('turns') or []
+    owner_steps = [(i, t) for i, t in enumerate(all_turns, 1) if t.get('kind') != 'wait_due']
+    turns = [t for _, t in owner_steps]
+    waits = [t for t in all_turns if t.get('kind') == 'wait_due']
+    if any('wait_due' in t for t in scenario.get('turns', [])):
+        checks['due_completed'] = (len(waits) == sum('wait_due' in t for t in scenario['turns'])
+                                   and all(t.get('due_observation', {}).get('completed') for t in waits))
+        if not checks['due_completed']:
+            failures.append({'kind': 'check', 'name': 'due_completed', 'reason': 'Due postconditions/drain incomplete'})
+    undelivered = [(index, turn) for index, turn in owner_steps
                    if turn.get('answer_withheld') or not (turn.get('answer') or '').strip()]
     checks['delivered'] = bool(turns) and not undelivered
-    for index in undelivered:
-        reason = 'withheld' if turns[index].get('answer_withheld') else 'empty'
-        failures.append({'kind': 'check', 'name': 'delivered', 'reason': f'turn {index + 1}: {reason}'})
+    for index, turn in undelivered:
+        reason = 'withheld' if turn.get('answer_withheld') else 'empty'
+        failures.append({'kind': 'check', 'name': 'delivered', 'reason': f'turn {index}: {reason}'})
     allowed = OK_STATUSES | set(scenario['expect'].get('allow_status') or ())
     bad = []
-    for index, turn in enumerate(turns):
+    for index, turn in owner_steps:
         if turn.get('timed_out'):
             bad.append((index, 'timeout'))
         elif turn.get('status') not in allowed:
@@ -71,7 +80,7 @@ def deterministic_checks(scenario, run):
             bad.append((index, f"{turn.get('status')}/{detail}" if detail != turn.get('status') else detail))
     checks['not_failed'] = bool(turns) and not bad
     for index, reason in bad:
-        failures.append({'kind': 'check', 'name': 'not_failed', 'reason': f'turn {index + 1}: {reason}'})
+        failures.append({'kind': 'check', 'name': 'not_failed', 'reason': f'turn {index}: {reason}'})
     diff = run.get('diff') or {}
     groups = scenario['expect'].get('memory_any') or []
     if groups:
@@ -128,6 +137,17 @@ def _transcript(scenario, run, labelled=False):
     for index, turn in enumerate(run.get('turns') or [], 1):
         if turn.get('note'):
             lines.append(f'[situation before turn {index}: {turn["note"]}]')
+        if turn.get('kind') == 'wait_due':
+            receipt = turn.get('due_observation') or {}
+            lines.append(f'[step {index}: harness wait, no owner message; bN denotes messages during the wait, '
+                         f'not before an owner-requested answer; status {turn.get("status")}]')
+            for j, message in enumerate(turn.get('before_answer') or [], 1):
+                lines.append(f'AGENTOS t{index}.b{j} during wait (at {message.get("at")}, '
+                             f'id {message.get("delivery_id")}): {message.get("text", "")[:ANSWER_CHARS]}'
+                             + (' [truncated]' if len(message.get('text', '')) > ANSWER_CHARS else ''))
+            lines.append('[due evidence: ' + json.dumps({k: v for k, v in receipt.items()
+                         if k not in ('messages', 'deliveries', 'events', 'preparations')}, ensure_ascii=False) + ']')
+            continue
         sent = f' (sent {turn["sent_at"]})' if turn.get('sent_at') else ''
         lines.append(f'OWNER {index}{sent}: {turn.get("say", "")}')
         tools = [f'{event["tool"]} {event.get("status", "")}'.strip() for event in turn.get('events') or ()
@@ -136,14 +156,21 @@ def _transcript(scenario, run, labelled=False):
         # #407: on the paired-chat path the owner also read these before the answer.
         for j, message in enumerate(turn.get('before_answer') or (), 1):
             label = f't{index}.b{j}' if labelled else str(index)
-            lines.append(f'AGENTOS {label} before the answer (+{message.get("after_s", "?")}s): {message.get("text", "")}')
-        answer = (turn.get('answer') or '').strip()
-        if turn.get('answer_withheld'):
+            lines.append(f'AGENTOS {label} before the answer (+{message.get("after_s", "?")}s): {message.get("text", "")[:ANSWER_CHARS]}'
+                         + (f' [at {message.get("at")}, id {message.get("delivery_id")}]' if message.get('delivery_id') else '')
+                         + (' [truncated]' if len(message.get('text', '')) > ANSWER_CHARS else ''))
+        delivered = delivered_answer(turn)
+        answer = delivered if delivered is not None else (turn.get('answer') or '').strip()
+        if turn.get('answer_withheld') and delivered is None:
             answer = '(answer withheld by Still)'
         if len(answer) > ANSWER_CHARS:
             answer = answer[:ANSWER_CHARS] + ' [...]'
         label = f't{index}' if labelled else str(index)
-        lines.append(f'AGENTOS {label} (status {turn.get("status")}): {answer or "(no answer delivered)"}')
+        source = ''
+        if delivered is not None:
+            message = turn['answer_message']
+            source = f' [delivered text; at {message.get("at")}, id {message.get("delivery_id")}]'
+        lines.append(f'AGENTOS {label} (status {turn.get("status")}){source}: {answer or "(no answer delivered)"}')
     diff = run.get('diff') or {}
     # The running situation summary is rewritten every turn from the whole day, including the seed's own
     # history, so its text would hand the judge unrelated owner details; the judge learns only that it changed.
@@ -206,7 +233,7 @@ def rubric_failures(judgment):
     return rows
 
 
-CHECK_NAMES = ('harness', 'delivered', 'not_failed', 'memory', 'current_state', 'preparation', 'no_memory_of_request')
+CHECK_NAMES = ('harness', 'delivered', 'not_failed', 'memory', 'current_state', 'preparation', 'no_memory_of_request', 'due_completed')
 
 
 def combine(scenario, run, checks, failures, judgment=None, judge_status='skipped',
@@ -231,7 +258,7 @@ def combine(scenario, run, checks, failures, judgment=None, judge_status='skippe
         value.update(measure_values(measures, scenario, run))
     value['passed'] = 1.0 if value['checks_pass'] and not failures else 0.0
     metadata = {'scenario': scenario['id'], 'source': scenario.get('source', 'bundled'), 'split': scenario['split'],
-                'worker': run.get('worker'), 'checks': checks, 'failures': failures, 'judge_status': judge_status,
+                'worker': run.get('worker'), **({'observation_version': run['observation_version']} if run.get('observation_version') else {}), 'checks': checks, 'failures': failures, 'judge_status': judge_status,
                 'judgment': judgment, 'judgment_ai': run.get('judgment'), 'statuses': [turn.get('status') for turn in run.get('turns') or []],
                 'failure_classes': [turn.get('failure_class') for turn in run.get('turns') or []],
                 'elapsed': [turn.get('elapsed') for turn in run.get('turns') or []]}
@@ -242,8 +269,9 @@ def combine(scenario, run, checks, failures, judgment=None, judge_status='skippe
                     judge_usage=judge_usage or {},
                     turn_count=len(run.get('turns') or []),
                     message_ids=sorted(message_ids(run)),
+                    due_observations=due_observations(run),
                     latency=[{'turn': i, 'sent_at': t.get('sent_at'), 'elapsed': t.get('elapsed')}
-                                  for i, t in enumerate(run.get('turns') or [], 1)])
+                             for i, t in enumerate(run.get('turns') or [], 1) if t.get('kind') != 'wait_due'])
     resolved = sorted({call['judge_model_resolved'] for call in (judge_usage or {}).values()
                        if call.get('judge_model_resolved')})
     if resolved:
@@ -258,23 +286,21 @@ MEASURE_VALUES = tuple(k.removeprefix('measure_') for k in MEASURE_KEYS)
 MEASURES = ('avoidable_interventions', 'required_approvals', 'unnecessary_interruptions', 'proactive_usefulness')
 
 
+def observation_error(run):
+    return run.get('error') or next((r.get('reason', 'observation error') for r in due_observations(run)
+                                    if r.get('status') == 'observation_error'), None)
+
+
+def due_observations(run):
+    return run.get('due_observations') or [t['due_observation'] for t in run.get('turns', []) if 'due_observation' in t]
+
+
 def proactive_observation(run):
-    """Only a delivered line-account output has unsolicited provenance here.
+    """Typed scheduled receipts or the frozen historical line-account evidence route.
 
-    run_turns carries requested answers and before_answer text/after_s, but no
-    message origin. snapshot's /api/preparations list DOES expose last_work_id,
-    last_delivery (jobs.delivery), last_status and last_result (a 280-character
-    excerpt). state_diff keeps these fields on NEW preparation ids only, not
-    updates to pre-existing rows. line_account is the endpoint's typed flag for
-    ORIGIN_LINE_ACCOUNT. On such a new account row, a distinct last_work_id,
-    last_delivery='sent' and nonempty last_result establish an account output
-    delivered during this run, outside the scripted owner-turn Works.
-
-    A generic preparation receipt lacks scheduled-vs-run-now initiation and
-    delivery time, so cannot establish unsolicited origin; its result excerpt
-    alone is insufficient. Notifications sent separately from a Work reply,
-    older-row deliveries, full report bodies, and general line outputs are not
-    collected. No text matching on answers, before_answer or promises is used.
+    Requested replies and unknown-origin messages never establish provenance.
+    API excerpts are used only by the historical account route, deduplicated
+    against stronger scheduled receipts for the same preparation/Work.
     """
     owner_works = {t['task_id'] for t in run.get('turns') or [] if t.get('task_id')}
     outputs = [{'preparation_id': row.get('id'), 'work_id': row['last_work_id'],
@@ -283,12 +309,48 @@ def proactive_observation(run):
                if row.get('line_account') is True and row.get('last_work_id')
                and row['last_work_id'] not in owner_works and row.get('last_delivery') == 'sent'
                and isinstance(row.get('last_result'), str) and row['last_result'].strip()]
+    covered = {(r['preparation_id'], r['work_id']) for r in outputs}
+    for receipt in due_observations(run):
+        work = receipt.get('work_id')
+        proof = receipt.get('reminder_origin') or {}
+        reminder = False
+        if proof:
+            from .runner import scheduled_reminder_origin
+            settled = (receipt.get('settlement') or {}).get('facts') or {}
+            reminder = (proof.get('work', {}).get('id') == work
+                        and proof.get('preparation', {}).get('id') == receipt.get('preparation_id')
+                        and scheduled_reminder_origin(proof.get('preparation', {}), proof.get('work', {}),
+                                                      receipt.get('start'), proof.get('settlement'), receipt.get('due_epoch'))
+                        and settled.get('outcome') == 'delivered' and settled.get('delivery') == 'sent'
+                        and (receipt.get('settlement') or {}).get('job_id') == work
+                        and settled.get('preparation_id') == receipt.get('preparation_id'))
+        if not ((receipt.get('admission') or reminder) and receipt.get('start') and receipt.get('settlement')
+                and work and work not in owner_works):
+            continue
+        identity = (receipt.get('preparation_id'), work)
+        linked = [m for m in receipt.get('deliveries', []) if (m.get('text') or '').strip()]
+        if not linked:
+            continue
+        if identity in covered:
+            outputs = [r for r in outputs if (r['preparation_id'], r['work_id']) != identity]
+        seen = set()
+        for message in linked:
+            ident = message.get('delivery_id')
+            if not ident or ident in seen:
+                continue
+            seen.add(ident)
+            text = message['text']
+            outputs.append({'preparation_id': identity[0], 'work_id': work, 'kind': 'scheduled_reminder' if reminder else 'scheduled',
+                            'delivery': 'sent', 'message_ref': ident, 'transcript_ref': message.get('transcript_ref'), 'at': message.get('at'),
+                            'text': text[:ANSWER_CHARS], 'truncated': len(text) > ANSWER_CHARS,
+                            'coverage_limit': receipt.get('coverage_limit')})
+        covered.add(identity)
     if outputs:
         return {'observed': True, 'outputs': outputs,
-                'reason': 'New line-account preparation has a sent reply on a distinct Work; result is an excerpt.'}
+                'reason': 'Typed provenance and a distinct Work establish observed delivery; only collected text is graded.'}
     return {'observed': False, 'value': 'not_observed',
-            'reason': 'No delivered line-account output with a distinct Work. Generic preparation receipts lack '
-                      'unsolicited origin; before_answer and requested answers are insufficient.'}
+            'reason': 'No linked scheduled or line-account output. Quiet, missing and unsupported delivery have no grade.',
+            'due_shortfalls': [{k: r.get(k) for k in ('step', 'status', 'reason', 'coverage')} for r in due_observations(run)]}
 
 
 def required_approvals_events(scenario, run):
@@ -356,6 +418,10 @@ def parse_measures(text, rubric, run):
                     raise ValueError('unknown message id')
             elif type(index) is not int or not 1 <= index <= len(turns):
                 raise ValueError('turn index out of range')
+            if (name != 'unnecessary_interruptions' and turns[index - 1].get('kind') == 'wait_due'
+                    and not any(ref in ids and ref.startswith(f't{index}.b')
+                                for ref in re.findall(r't[0-9]+\.b[0-9]+', row['reason']))):
+                raise ValueError('wait ask reason must identify its actual tN.bJ message')
             if name == 'avoidable_interventions' and row['kind'] not in ('asked_known_fact', 'asked_entrusted_action'):
                 raise ValueError('unknown intervention kind')
             identity = (index, row['kind']) if name == 'avoidable_interventions' else index
@@ -372,17 +438,27 @@ def parse_measures(text, rubric, run):
         data['proactive_usefulness'] = {'score': None, 'reason': observation['reason'], 'value': 'not_observed'}
     elif proactive['score'] is None:
         raise ValueError('observable proactive usefulness needs a grade')
-    required = {row['turn'] for row in data['required_approvals']}
-    overlaps = [row for row in data['avoidable_interventions'] if row['turn'] in required]
+    def ask_id(row):
+        refs = re.findall(r't[0-9]+(?:\.b[0-9]+)?', row['reason'])
+        refs = [ref for ref in refs if ref in ids and ref.startswith(f't{row["turn"]}.b')]
+        if refs:
+            return refs[0]
+        return f't{row["turn"]}'
+    required = {ask_id(row) for row in data['required_approvals']}
+    overlaps = [row for row in data['avoidable_interventions'] if ask_id(row) in required]
     data['inconsistencies'] = [{'turn': r['turn'], 'reason': 'Judge listed an ask as both required and avoidable',
                               'avoidable_item': r} for r in overlaps]
-    data['avoidable_interventions'] = [r for r in data['avoidable_interventions'] if r['turn'] not in required]
+    data['avoidable_interventions'] = [r for r in data['avoidable_interventions'] if ask_id(r) not in required]
     # Turn-only intervention items refer to the answer by default. A separate
     # before_answer message can still be a valid interruption in that turn.
-    avoidable = {f"t{row['turn']}": row['turn'] for row in data['avoidable_interventions']}
+    avoidable = {ask_id(row): row['turn'] for row in data['avoidable_interventions']}
     interruptions = []
     for row in data['unnecessary_interruptions']:
-        if row['message'] in avoidable:
+        if row['message'] in required:
+            data['inconsistencies'].append({
+                'message': row['message'], 'interruption_item': row,
+                'reason': 'Judge listed a required approval ask as an interruption; counted only as approval'})
+        elif row['message'] in avoidable:
             data['inconsistencies'].append({
                 'turn': avoidable[row['message']], 'message': row['message'], 'interruption_item': row,
                 'reason': 'Judge listed an answer as both avoidable intervention and interruption; counted only as intervention'})
@@ -433,7 +509,8 @@ async def judge_call(prompt, parse, generate, budget, redact, system=JUDGE_SYSTE
 
 def message_ids(run):
     return {f't{i}' for i, t in enumerate(run.get('turns') or [], 1)
-            if t.get('answer') and not t.get('answer_withheld')} | {
+            if t.get('kind') != 'wait_due' and ((t.get('answer') and not t.get('answer_withheld'))
+                                                or delivered_answer(t) is not None)} | {
             f't{i}.b{j}' for i, t in enumerate(run.get('turns') or [], 1)
             for j, _ in enumerate(t.get('before_answer') or [], 1)}
 
@@ -444,7 +521,7 @@ async def score_run(scenario, run, judge, budget, redact, generate, rubric=None)
     checks, failures = deterministic_checks(scenario, run)
     judgment, judge_status = None, 'skipped'
     measured, measures_status, usage = None, 'skipped', {}
-    eligible = bool(judge) and judge != 'none' and not run.get('error') and not usage_limited(run)
+    eligible = bool(judge) and judge != 'none' and not observation_error(run) and not usage_limited(run)
     infra = any(f['kind'] == 'infra' for f in failures)
     if eligible:
         judgment, judge_status, usage['rubric'], error = await judge_call(
@@ -461,6 +538,6 @@ async def score_run(scenario, run, judge, budget, redact, generate, rubric=None)
         elif rubric:
             measures_status = 'not_scored'
     elif rubric:
-        measures_status = 'not_scored' if run.get('error') or usage_limited(run) else 'skipped'
+        measures_status = 'not_scored' if observation_error(run) or usage_limited(run) else 'skipped'
     return combine(scenario, run, checks, failures, judgment, judge_status,
                    measured, measures_status, rubric, usage)

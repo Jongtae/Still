@@ -42,7 +42,7 @@ class AgentOSClient:
         self.cookie = ''
 
     # -- plumbing -------------------------------------------------------------
-    def request(self, method, path, payload=None):
+    def request(self, method, path, payload=None, timeout=None):
         headers = {'Host': self.base.split('://', 1)[-1]}
         body = None
         if payload is not None:
@@ -50,7 +50,8 @@ class AgentOSClient:
             headers['Content-Type'] = 'application/json'
         if self.cookie:
             headers['Cookie'] = f'agentos_session={self.cookie}'
-        status, response_headers, raw = self.transport(method, self.base + path, body, headers)
+        status, response_headers, raw = self.transport(
+            method, self.base + path, body, headers, **({'timeout': timeout} if timeout is not None else {}))
         for name, value in response_headers.items():
             if name.lower() == 'set-cookie':
                 jar = SimpleCookie()
@@ -66,8 +67,8 @@ class AgentOSClient:
             raise ClientError(f'{method} {path} -> {status}: {message or "error"}', status)
         return data
 
-    def get(self, path):
-        return self.request('GET', path)
+    def get(self, path, timeout=None):
+        return self.request('GET', path, timeout=timeout)
 
     def post(self, path, payload):
         return self.request('POST', path, payload)

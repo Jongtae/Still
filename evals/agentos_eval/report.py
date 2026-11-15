@@ -54,9 +54,9 @@ def records_from_samples(samples, scorer=SCORER):
         measurements = {'work': run['work']} if 'work' in run else {}
         if 'judgment' in run:
             measurements['judgment_ai'] = run['judgment']
-        if 'turns' in run:
-            measurements['turns'] = [{k: t[k] for k in ('status', 'failure_class', 'elapsed', 'sent_epoch',
-                                                       'delivered_epoch') if k in t} for t in run['turns']]
+        for key in ('turns', 'due_observations', 'observation_version'):
+            if key in run:
+                measurements[key] = run[key]
         if score is None:
             meta = getattr(sample, 'metadata', None) or {}
             scenario = meta.get('scenario') if isinstance(meta.get('scenario'), dict) else {}

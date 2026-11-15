@@ -12,6 +12,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+
+import pytest
 import urllib.request
 from pathlib import Path
 
@@ -125,9 +127,220 @@ class ChatTurn(unittest.TestCase):
         web = scenarios.validate({'id': 'web-one', 'turns': ['안녕']})
         self.assertEqual(web['channel'], 'web')
         self.assertNotIn('conversational', web['rubric'])
-        with self.assertRaises(scenarios.ScenarioError):
+        with self.assertRaisesRegex(scenarios.ScenarioError, '^scenario:bad-one: channel must be one of'):
             scenarios.validate({'id': 'bad-one', 'channel': 'sms', 'turns': ['안녕']})
 
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def test_response_identity_round_trip_and_meaningful_edits():
+    tg=FakeTelegram(42,clock=lambda:100)
+    first=tg._call('sendMessage',{'chat_id':42,'text':'same words'})
+    second=tg._call('sendMessage',{'chat_id':42,'text':'same words'})
+    assert first['message_id'] != second['message_id']
+    tg._call('editMessageText',{'chat_id':42,'message_id':first['message_id'],'text':'same words','reply_markup':{}})
+    changed=tg._call('editMessageText',{'chat_id':42,'message_id':first['message_id'],'text':'meaningful new words'})
+    tg._call('sendChatAction',{'chat_id':42,'action':'typing'})
+    messages=tg.chat_since(100)
+    assert [m['text'] for m in messages]==['same words','same words','meaningful new words']
+    assert [m['sequence'] for m in messages]==[1,2,4]
+    assert [m['message_id'] for m in messages]==[first['message_id'],second['message_id'],changed['message_id']]
+    assert len({m['delivery_id'] for m in messages})==3
+    assert tg.calls_since(100)[0]['result']==first
+    assert tg.chat_since(101)==[]
+    assert tg.chat_since(100)==messages  # stateless collector; consumer owns its cursor
+
+
+def test_unknown_or_unacknowledged_call_is_not_delivery():
+    tg=FakeTelegram(42,clock=lambda:100)
+    tg._call('sendDocument',{'chat_id':42})
+    tg.calls.append({'at':100,'sequence':2,'method':'sendMessage','body':{'text':'unacknowledged'}})
+    assert tg.chat_since(100)==[]
+
+
+def test_sequence_collection_survives_backward_clock():
+    now=[100]
+    tg=FakeTelegram(42,clock=lambda:now[0])
+    tg._call('sendMessage',{'chat_id':42,'text':'before sample'})
+    cursor=tg.sequence()
+    now[0]=1
+    tg._call('sendMessage',{'chat_id':42,'text':'after clock jumped'})
+    assert tg.chat_since(100,after_sequence=cursor)[0]['text']=='after clock jumped'
+    assert tg.calls_since(100,after_sequence=cursor)[0]['sequence']==cursor+1
+
+
+@pytest.mark.parametrize('permanently_locked', [False, True])
+def test_chat_turn_busy_receipt_read_retries_without_losing_messages(tmp_path, monkeypatch, permanently_locked):
+    from test_eval_come_due import Clock
+    clock = Clock()
+    fake = FakeTelegram(77, clock=clock.wall)
+    path = tmp_path / 'private'
+    path.mkdir()
+    with sqlite3.connect(path / 'quickstart.db') as db:
+        db.execute('CREATE TABLE telegram_turns(job_id TEXT PRIMARY KEY,chat_id INTEGER NOT NULL, '
+                   'source_message_id INTEGER,reply_message_id INTEGER,created REAL NOT NULL,reply_to_message_id INTEGER)')
+    class Client:
+        def job_ids(self): return set()
+        def find_task(self, *a, **kw):
+            fake._call('sendMessage', {'chat_id': 77, 'text': 'preview'})
+            reply = fake._call('sendMessage', {'chat_id': 77, 'text': 'the reply'})
+            with sqlite3.connect(path / 'quickstart.db') as db:
+                db.execute('INSERT INTO telegram_turns(job_id,chat_id,reply_message_id,created) VALUES (?,?,?,?)',
+                           ('owner',77,reply['message_id'],clock.wall()))
+            return 'owner'
+        def wait(self, *a, **kw): return {'status': 'succeeded'}
+        def answer(self, *a, **kw): return {'response': 'the reply'}
+    connect = sqlite3.connect
+    attempts = []
+    class BusyRead:
+        def __init__(self, db): self.db = db
+        def execute(self, sql, *args):
+            attempts.append(sql)
+            if permanently_locked or len(attempts) <= 2:
+                raise sqlite3.OperationalError('database is locked')
+            return self.db.execute(sql, *args)
+        def close(self): self.db.close()
+    def sometimes_locked(*a, **kw):
+        db = connect(*a, **kw)
+        return BusyRead(db) if kw.get('uri') else db
+    monkeypatch.setattr(runner.sqlite3, 'connect', sometimes_locked)
+    task, detail, before, delivered = runner.chat_turn(Client(), fake, 'owner text', 20, 2,
+                                                      wall=clock.wall,sleep=clock.sleep,data=tmp_path)
+    assert task == 'owner' and detail['status'] == 'succeeded'
+    if permanently_locked:
+        assert delivered is None and [m['text'] for m in before] == ['preview', 'the reply']
+        assert clock.now == runner.DELIVERY_WAIT_SECONDS
+    else:
+        assert [m['text'] for m in before] == ['preview'] and delivered['text'] == 'the reply'
+    assert all('FROM telegram_turns' in query for query in attempts)
+    assert attempts and clock.now <= runner.DELIVERY_WAIT_SECONDS
+
+
+@pytest.mark.parametrize('seeded', [False, True])
+def test_sandbox_pairs_real_store_before_server_start_and_readiness(tmp_path, monkeypatch, seeded):
+    """Real schema/bootstrap subprocess; no server, model, socket or Bot API calls."""
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    from personal_agent.quickstart_store import QuickStore
+
+    seed = tmp_path / 'seed' if seeded else None
+    if seed:
+        store = QuickStore(seed)
+        store.put('telegram', {'enabled': False, 'user_id': 4242, 'generation': 'g7', 'cursor': 99})
+        store.put('telegram_status', {'state': 'error'})
+        store.secret('other', 'kept')
+        original_config = store.config('telegram')
+        original_secrets = store.secret_path.read_bytes()
+    telegram = SimpleNamespace(chat_id=0, root='http://127.0.0.1:1')
+    process = Mock(poll=Mock(return_value=0), returncode=0)
+    reservation = Mock(port=18900)
+    monkeypatch.setattr(sandbox, 'reserve_port', lambda **kwargs: reservation)
+    box = sandbox.Sandbox(tmp_path / 'boxes', seed=seed, slot=0, python=sys.executable,
+                          src=ROOT / 'src', telegram=telegram, keep=True)
+    expected_chat = 4242 if seeded else 77
+    bootstrap = []
+    server = []
+    popen = subprocess.Popen
+
+    def assert_pairing():
+        with sqlite3.connect(box.data / 'private' / 'quickstart.db') as db:
+            config = json.loads(db.execute("SELECT value FROM config WHERE key='telegram'").fetchone()[0])
+            assert config == {'enabled': True, 'user_id': expected_chat, 'cursor': 0,
+                              'generation': 'g7' if seeded else 'eval'}
+            assert db.execute("SELECT 1 FROM config WHERE key='telegram_status'").fetchone() is None
+            # Genuine migrations exist; no hand-built config-only store.
+            assert 'created_from' in {row[1] for row in db.execute('PRAGMA table_info(preparations)')}
+            assert 'sent_at' in {row[1] for row in db.execute('PRAGMA table_info(telegram_notifications)')}
+        secrets = box.data / 'private' / 'connections.json'
+        assert json.loads(secrets.read_text())['telegram_token'] == TOKEN
+        if seeded:
+            assert json.loads(secrets.read_text())['other'] == 'kept'
+        assert secrets.stat().st_mode & 0o777 == 0o600
+        assert telegram.chat_id == expected_chat
+
+    def spawn(argv, *args, **kwargs):
+        assert argv[0] == box.python
+        if argv[1:3] == ['-m', 'personal_agent.quickstart']:
+            # Pairing must be complete before the service can begin polling.
+            assert_pairing()
+            server.append(argv)
+            return process
+        bootstrap.append(argv)
+        assert 'from personal_agent.quickstart_store import QuickStore' in argv[2]
+        assert argv[-1] == str(box.data)
+        assert str(box.src) in kwargs['env']['PYTHONPATH'].split(os.pathsep)
+        return popen(argv, *args, **kwargs)
+
+    monkeypatch.setattr(sandbox.subprocess, 'Popen', spawn)
+    try:
+        box.start()
+        assert len(bootstrap) == (0 if seeded else 1)
+        assert len(server) == 1
+        assert_pairing()
+        process.poll.return_value = None
+        class Client:
+            def healthy(self):
+                assert_pairing()
+                return True
+        assert box.wait_healthy(Client()) is True
+        if seed:
+            assert store.config('telegram') == original_config
+            assert store.secret_path.read_bytes() == original_secrets
+    finally:
+        process.poll.return_value = 0
+        box.stop()
+
+
+@pytest.mark.parametrize('delayed', [False, True])
+@pytest.mark.parametrize('withheld', [False, True])
+def test_failed_empty_api_answer_keeps_receipt_matched_delivered_text(tmp_path, delayed, withheld):
+    from personal_agent.quickstart_store import QuickStore
+    from personal_agent.telegram_presence import TelegramTurnAddressing
+    from test_eval_come_due import Clock
+    clock = Clock()
+    store = QuickStore(tmp_path)
+    addresses = TelegramTurnAddressing(store)
+    fake = FakeTelegram(77, clock=clock.wall)
+    fake.say('earlier owner message')
+    fake.say('another earlier owner message')
+    for _ in range(25): fake._call('getMe', {})
+    body = '이 요청은 완료하지 못했어요…'
+    sent = []
+    def deliver():
+        if sent: return
+        reply = fake._call('sendMessage', {'chat_id': 77, 'text': body})
+        addresses.record_reply('failed-owner',77,reply['message_id'])
+        sent.append(reply)
+    class Client:
+        def job_ids(self): return set()
+        def find_task(self, *args, **kwargs):
+            if not delayed: deliver()
+            return 'failed-owner'
+        def wait(self, *args, **kwargs): return {'status':'failed','failure_class':'invalid-output'}
+        def answer(self, task): return {'response':'','answer_withheld':withheld}
+        def get(self, path, timeout=None):
+            assert path == '/api/preparations'
+            return {'preparations':[]}
+    def sleep(seconds):
+        clock.sleep(seconds)
+        if delayed and clock.now >= 1: deliver()
+    case = scenarios.validate({'id':'failed-reply','channel':'telegram','turns':[
+        'synthetic request',{'wait_due':{'after_turn':1,'until':'settled','timeout_seconds':3}}]})
+    turns = runner.run_turns(Client(),case,telegram=fake,data=tmp_path,
+                             clock=clock.mono,wall=clock.wall,sleep=sleep)
+    assert turns[0]['answer'] == ''  # keep API evidence and check semantics
+    assert turns[0]['answer_message']['delivery_id'] == '77:4:26'
+    assert turns[0]['before_answer'] == []
+    assert turns[1]['before_answer'] == []  # no replay of this reply as a wait message
+    assert 't1' in scoring.message_ids({'turns':turns})
+    messages = runner.record_messages({'turns':turns})
+    observed = [m for m in messages if m['role']=='assistant' and body in m['content']]
+    assert len(observed) == 1 and 'delivered text' in observed[0]['content']
+    transcript = '\n'.join(scoring._transcript(case,{'turns':turns},labelled=True))
+    assert transcript.count(body) == 1 and 'delivered text' in transcript
+    assert '77:4:26' in transcript and '(no answer delivered)' not in transcript
+    checks, failures = scoring.deterministic_checks(case,{'turns':turns})
+    assert checks['delivered'] is False and checks['not_failed'] is False
+    assert any(f['name']=='not_failed' and 'invalid-output' in f['reason'] for f in failures)
