@@ -187,17 +187,19 @@ class PreparationsService:
                     prep.normalize_recurrence(args.get('recurrence')))
         # #719: a watch - every N minutes from due until a deadline, bounded.
         window=None
+        requested_until=None
         if has_window:
             window=prep.normalize_window(args.get('every_minutes'),args.get('until'),args.get('max_runs'),
                                          due_at,timezone,now,recurrence=recurrence)
+            requested_until=prep.parse_due(args.get('until'),timezone,timezone,now)[0]
         when_needed=args.get('delivery')==prep.DELIVERY_WHEN_NEEDED
         if when_needed and kind!=prep.KIND_PREPARE:raise prep.PreparationRefusal('invalid_delivery')
         delivery_mode=prep.DELIVERY_WHEN_NEEDED if when_needed else None
         report_every_minutes=args.get('report_every_minutes')
-        terms=prep.window_terms(window,recurrence,due_at,timezone,report_every_minutes,delivery_mode)
+        terms=prep.window_terms(window,recurrence,due_at,timezone,report_every_minutes,delivery_mode,requested_until)
         return {'kind':kind,'goal':goal,'title':title,'offer':offer,'due_at':due_at,'timezone':timezone,
                 'recurrence':recurrence,'window':window,'delivery_mode':delivery_mode,'window_terms':terms,
-                'report_every_minutes':report_every_minutes}
+                'report_every_minutes':report_every_minutes,'requested_until':requested_until}
 
     def preparation_channel(self, job, kind, delivery):
         """Where a preparation's results go (#306 review): the surface ``job`` came from, or kept in Still.
@@ -285,7 +287,8 @@ class PreparationsService:
                                              state=prep.STATE_SCHEDULED if accepted else prep.STATE_PROPOSED,
                                              accepted_by=accepted_by,
                                              window=window,delivery_mode=delivery_mode,title=title,offer=offer,
-                                             report_every_minutes=fields['report_every_minutes'],line_id=line_id)
+                                             report_every_minutes=fields['report_every_minutes'],line_id=line_id,
+                                             requested_until=fields['requested_until'])
                 # #574: another Work's identical proposal is this one; the owner's own Work accepts it.
                 already=bool(row.get('already_proposed'))
                 if already and accepted:row=service.preparations.accept(row['id'],accepted_by)
@@ -323,6 +326,9 @@ class PreparationsService:
                               # #404: the model sees when its last check is (#701: at most until).
                               last_check=prep.iso(prep.last_slot(row),row['timezone']))
                 terms=prep.stored_window_terms(row)
+                if terms.get('requested_until') is not None:
+                    result.update(requested_until=prep.iso(terms['requested_until'],row['timezone']),
+                                  covering_every_minutes=terms['covering_every_minutes'])
                 if terms.get('recurrence'):result['window_recurrence']=terms['recurrence']
                 if terms.get('report_seconds'):result['report_every_minutes']=terms['report_seconds']//60
             return result
@@ -669,6 +675,14 @@ class PreparationsService:
                       else msg('preparations.run_last'))
             if row.get('until_at') is not None:
                 schedule+=msg('preparations.run_end',end=local(row['until_at']))
+            terms=prep.stored_window_terms(row)
+            if recurrence==prep.RECURRENCE_WINDOW and following is None and terms.get('requested_until') is not None:
+                requested=terms['requested_until']
+                if terms.get('recurrence'):
+                    tz=prep.zone(row['timezone'])
+                    requested=datetime.combine(datetime.fromtimestamp(row['until_at'],tz).date(),
+                                               datetime.fromtimestamp(requested,tz).time(),tzinfo=tz).timestamp()
+                schedule+=msg('preparations.run_daily_cap_end',end=local(row['until_at']),requested=local(requested))
             delivery=msg('preparations.run_delivery_needed' if row.get('delivery_mode')==prep.DELIVERY_WHEN_NEEDED
                          else 'preparations.run_delivery',channel=row['channel'])
             return msg('preparations.run_record',
@@ -986,6 +1000,7 @@ class PreparationsService:
                          'until_local':prep.local_text(row['until_at'],row['timezone']) if row.get('until_at') else None,
                          'until':datetime.fromtimestamp(row['until_at'],prep.zone(row['timezone'])).isoformat() if row.get('until_at') else None,
                          'max_runs':row.get('max_runs'),'run_count':row.get('run_count') or 0,
+                         'max_window_runs':prep.MAX_DAILY_WINDOW_RUNS * (1 if terms.get('recurrence') else prep.MAX_WINDOW_SECONDS // 86400),
                          'window_recurrence':terms.get('recurrence'),
                          'report_every_minutes':terms['report_seconds']//60 if terms.get('report_seconds') else None,
                          'last_decision':row.get('last_decision'),'last_decision_reason':row.get('last_decision_reason'),
@@ -999,6 +1014,7 @@ class PreparationsService:
                 **{field:'preparations.field_'+field for field in ('due','recurrence','every_minutes','until','max_runs',
                                                                               'rule','weekly_days','monthly_day','interval','rule_until')},
                 **{'day_'+day:'preparations.day_'+day for day in prep.RULE_DAYS},
+                'max_runs_hint':'preparations.max_runs_hint',
                 'last_day':'preparations.rule_last_day','timezone':'label.time_zone','paused':'settings_orchestrator.paused','saved':'preparations.saved'}
         return {'preparations':rows,'management':{key:{lang:msg(message_id,lang) for lang in LANGUAGES} for key,message_id in labels.items()}}
 

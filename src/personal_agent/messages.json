@@ -1643,6 +1643,12 @@
   "ja": "；予定終了: {end}",
   "zh": "；计划结束时间：{end}"
  },
+ "preparations.run_daily_cap_end": {
+  "ko": "; 일일 실행 한도 때문에 이번이 마지막 확인이에요. 실제 종료는 {end}이며, 소유자가 요청한 종료 {requested}까지 확인하지 못해요",
+  "en": "; this is the last check because the daily run cap ends the window at {end}, before the owner's requested end of {requested}",
+  "ja": "；1日の実行上限により今回が最後の確認です。実際の終了は{end}で、オーナーが希望した終了{requested}まで確認できません",
+  "zh": "；由于每日运行上限，这是最后一次检查。实际结束时间为{end}，早于主人要求的结束时间{requested}"
+ },
  "preparations.run_delivery": {
   "ko": "이 Work가 끝난 뒤 Still이 답을 {channel} 채널로 전하며, 이 Work가 직접 보내지 않아요.",
   "en": "After this Work ends, Still delivers its reply on {channel}; this Work does not send it itself.",
@@ -10277,10 +10283,16 @@
   "zh": "结束时间"
  },
  "preparations.field_max_runs": {
-  "ko": "최대 실행 횟수",
-  "en": "Maximum runs",
-  "ja": "最大実行回数",
-  "zh": "最大运行次数"
+  "ko": "최대 실행 횟수 (하루 한도 적용)",
+  "en": "Maximum runs (daily limit applies)",
+  "ja": "最大実行回数（1日の上限適用）",
+  "zh": "最大运行次数（适用每日上限）"
+ },
+ "preparations.max_runs_hint": {
+  "ko": "비우면 하루 한도 안에서 모든 확인 시각을 실행해요.",
+  "en": "Leave empty to run every slot within the daily cap.",
+  "ja": "空欄にすると、1日の上限内ですべての確認時刻に実行します。",
+  "zh": "留空则在每日上限内执行所有检查时段。"
  },
  "preparations.saved": {
   "ko": "준비 일정을 변경했어요.",
@@ -10719,6 +10731,12 @@
   "en": "Correct the repeating window.",
   "ja": "繰り返し期間を修正してください。",
   "zh": "请修改重复时间范围。"
+ },
+ "preparations.invalid_max_runs": {
+  "ko": "max_runs는 하루 한도 {daily_limit}번 안의 양의 정수여야 해요. 단발 기간은 24시간 단위로 올림한 일수만큼 한도를 늘려요.",
+  "en": "max_runs must be a positive integer within the daily limit of {daily_limit}. For a one-off window, multiply that limit by its duration in days, rounded up.",
+  "ja": "max_runsは1日の上限{daily_limit}回以内の正の整数が必要です。単発の期間では、24時間単位で切り上げた日数分に上限を増やします。",
+  "zh": "max_runs须为每日上限{daily_limit}次以内的正整数。单次时间范围的上限乘以时长按24小时向上取整的天数。"
  },
  "preparations.window_minutes": {
   "ko": "every_minutes={value}: {minimum}~{maximum} 사이의 정수여야 해요.",
