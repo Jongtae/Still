@@ -5280,6 +5280,33 @@ def verified_text(name,result):
  text=_fallback_text(name,result,own)
  return None if text==FALLBACK_UNDESCRIBED or not str(text).strip() else str(text)
 
+def recorded_effects_response(steps):
+ """Describe the last recorded completion, or None when none supports a receipt.
+
+ CLI Evidence is a lossy summary, not the raw result ``fallback_response``
+ expects. Read only typed completion facts and retained receipt fields here;
+ neither missing next_step/text nor model prose can turn completion into a draft.
+ The caller supplies only this attempt's steps.
+ """
+ for step in reversed(list(steps)):
+  effects=recorded_effects([step])
+  if not effects:continue
+  _tool,action,_state,detail,_reason=step
+  record=detail.get('evidence') if isinstance(detail.get('evidence'),dict) else detail
+  receipt=effects[0][2]
+  if receipt=='saved':
+   key={'save_note':'agent_runtime.note_saved','save_memory':'agent_runtime.remembered'}.get(action)
+   path=record.get('path')
+   text=(msg('agent_runtime.result_saved',path=path) if action=='save_result' and isinstance(path,str) and path.strip()
+         else msg(key or 'phone_input.saved'))
+  elif receipt=='scheduled':
+   text=msg('agent_runtime.preparation_recorded' if action=='schedule_preparation' else 'agent_runtime.completion_scheduled')
+  else:
+   text=msg('service.i_ve_already_applied_it')
+  notes=[QUALIFIER_NOTES[label] for label in record.get('qualifiers') or () if label in QUALIFIER_NOTES]
+  return '\n\n'.join([text,*notes])
+ return None
+
 def fallback_response(executions, sources):
  """Return a useful safe result when a tool-capable model stops after tools.
 

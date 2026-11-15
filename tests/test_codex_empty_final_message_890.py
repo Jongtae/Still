@@ -12,6 +12,7 @@ from unittest.mock import patch
 import pytest
 
 from personal_agent import preparations as prep
+from personal_agent.agent_runtime import SETTINGS_PENDING, evidence_summary
 from personal_agent.bounded_execution import BoundedExecutionAdapter, ExecutionError
 from personal_agent.messages import msg
 from personal_agent.subscription_engines import SubscriptionEngines
@@ -125,6 +126,45 @@ def test_cli_answers_from_completed_effects(case, events, key):
     [(status, detail)] = [(s, d) for s, d in engine_events(case, work) if s != 'running']
     assert status == 'succeeded'
     assert (detail['final_text'], detail['reply']) == ('absent', 'recorded-effects')
+
+
+def test_cli_applied_settings_are_not_a_pending_draft(case):
+    # The real bridge's summary deliberately drops the tool's next_step.
+    evidence = evidence_summary('settings_change', {
+        'applied': True, 'category': 'preparations', 'setting': 'cancel',
+        'next_step': msg('preparations.self_change_applied'),
+    })
+    assert 'next_step' not in evidence
+    configure(case, [('settings_change', 'succeeded', evidence)])
+    with patch('personal_agent.work_executor.BrowserRelay'):
+        work = case.web_turn('Carry out the requested work.')
+    row = case.store.job(work)
+    assert row['status'] == 'succeeded'
+    assert row['response'] != SETTINGS_PENDING
+    assert row['response'] == msg('service.i_ve_already_applied_it')
+
+
+@pytest.mark.parametrize('name,evidence,key,values', [
+    ('settings_change', {'applied': True, 'next_step': 'A raw-result field is not a receipt.'},
+     'service.i_ve_already_applied_it', {}),
+    ('schedule_preparation', {'scheduled': True}, 'agent_runtime.preparation_recorded', {}),
+    ('entrusted_line', {'saved': True}, 'phone_input.saved', {}),
+    ('save_note', {'saved': True}, 'agent_runtime.note_saved', {}),
+    ('save_result', {'saved': True, 'path': 'report.md'}, 'agent_runtime.result_saved', {'path': 'report.md'}),
+    ('save_result', {'saved': True}, 'phone_input.saved', {}),
+    ('save_memory', {'saved': True, 'state': 'current', 'id': 'm1'}, 'agent_runtime.remembered', {}),
+    # Receipt rendering also covers other host actions without inventing a task branch.
+    ('example_change', {'applied': True}, 'service.i_ve_already_applied_it', {}),
+    ('example_schedule', {'scheduled': True}, 'agent_runtime.completion_scheduled', {}),
+])
+def test_cli_renders_typed_receipts_without_the_raw_result_renderer(case, name, evidence, key, values):
+    configure(case, [(name, 'succeeded', evidence)])
+    with patch('personal_agent.work_executor.BrowserRelay'), patch(
+            'personal_agent.agent_runtime._fallback_text', side_effect=AssertionError('Evidence is not a raw result.')):
+        work = case.web_turn('Carry out the requested work.')
+    row = case.store.job(work)
+    assert row['status'] == 'succeeded'
+    assert row['response'] == msg(key, **values)
 
 
 @pytest.mark.parametrize('events', [

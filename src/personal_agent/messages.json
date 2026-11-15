@@ -9646,6 +9646,12 @@
   "ja": "検索結果を取得しました。",
   "zh": "已获取搜索结果。"
  },
+ "agent_runtime.completion_scheduled": {
+  "ko": "예약했어요.",
+  "en": "Scheduled.",
+  "ja": "予約しました。",
+  "zh": "已安排。"
+ },
  "agent_runtime.note_saved": {
   "ko": "메모를 저장했어요.",
   "en": "Note saved.",

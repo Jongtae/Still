@@ -15,7 +15,7 @@ from .messages import msg
 from .telegram_locale import owner_language
 from .work_execution import PROCEED, REDELEGATED, WorkRun
 from .agent_runtime import Capabilities, ToolError, cut_to_fit, loop_definitions, run_agent, STEER_EVENT, steer_note, evidence_summary, turn_context, render_turn_prompt, attachment_facts, context_sections, ENGINE_UNMEDIATED, base_label, WorkLedger, NOTES_SUMMARY_COMMANDS
-from .agent_runtime import fallback_response, recorded_effects
+from .agent_runtime import recorded_effects_response
 from .providers import NOT_REPORTED, ProviderError
 from .cloud_engines import BUDGET_EXCEEDED as CLOUD_BUDGET_EXCEEDED, NOT_CONFIGURED as CLOUD_NOT_CONFIGURED, CloudLaunchError
 from .conversation_projection import BLOCKER_CLOUD_PROFILE, BLOCKER_MODEL_UNVERIFIED, BLOCKER_NO_AI_ROUTE, TERMINAL_FAILED_HEADER, BlockedTurn, context_message, answer_note, owner_cause, report_statement, verified_portion
@@ -1161,12 +1161,11 @@ class WorkExecutor:
             if (getattr(run.result,'meta',None) or {}).get('final_text')=='absent':
                 # #890: only Still's completed calls of this attempt support a receipt;
                 # the CLI's tool-result prose never supplies the missing answer.
-                executions=[(step[1],step[3].get('evidence',step[3]))
-                            for step in service.work_steps(job['id'],since=run.attempt_start) if recorded_effects([step])]
-                if not executions:
+                response=recorded_effects_response(service.work_steps(job['id'],since=run.attempt_start))
+                if response is None:
                     raise ExecutionError(msg('agent_runtime.model_returned_no_answer'),failure_class=NO_FINAL_TEXT,
                                          exit_code=run.result.exit_code,meta=run.result.meta)
-                run.response=fallback_response(executions,[])
+                run.response=response
                 reply_evidence={'final_text':'absent','reply':'recorded-effects'}
         except (ExecutionError,EngineGatewayError) as exc:
             # #825: an attempt whose CLI never launched was a failed preflight, not sent input.
