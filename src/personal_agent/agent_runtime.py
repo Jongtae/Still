@@ -465,9 +465,8 @@ ASK_LOCATION_ARGUMENTS={
  'button_label':'Optional, the text of the share-location button (at most 40 characters), in the language the owner is writing in.',
 }
 TELL_OWNER_DESCRIPTION=('Send the owner one short message now, in their paired chat, while you keep working. Use it the way a capable person '
- 'working for them would speak up mid-task: only for something they can use or react to before your answer - a finding that changes '
- 'the picture, a problem with what they asked for, or a choice they may want to make - said in one natural sentence. Never to report '
- 'what you are doing, checking or filtering, and never to say you are starting or still working; most requests need none. '
+ 'working for them would speak up mid-task: when what you found or did would matter to them now, say it in one natural sentence. '
+ 'Never to report what you are doing, checking or filtering, and never to say you are starting or still working. '
  'text: a sentence or two in the owner\'s language and voice (at most 500 characters); never credentials. It is not your answer: '
  'keep working and give the complete answer when you finish, without repeating what you already told them. It asks nothing: '
  'if you need the owner\'s decision, end your turn with the question instead. At most 3 per request.')
