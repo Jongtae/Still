@@ -7683,6 +7683,26 @@ class AgentService:
         return failed
 
     @staticmethod
+    def _without_stale_bridge_refusals(rows,run):
+        """Drop calls a bridge from an earlier run of this Work had refused (#841, matrix X4).
+
+        Such a bridge (one that outlived a restart) records its refused call with the ledger
+        epoch it was bound to.  That row is not this run's stop: without this, a stale bridge's
+        ``run_superseded`` suppressed the resumed run's Continue offer.  This run's own refusals
+        carry its host epoch and still count; with no host epoch nothing is dropped.
+        """
+        epoch=getattr(getattr(getattr(run,'work_budget',None),'ledger',None),'epoch',None)
+        if type(epoch) is not int or epoch<0:return rows
+        kept=[]
+        for event in rows:
+            try:data=json.loads(event['detail'] or '{}')
+            except (TypeError,ValueError):data=None
+            bound=data.get('bound_epoch') if isinstance(data,dict) else None
+            if type(bound) is int and bound!=epoch:continue
+            kept.append(event)
+        return kept
+
+    @staticmethod
     def _budget_boundary(codes):
         from .agent_runtime import BUDGET_CODES
         # #617: a run another run superseded, or whose budget record was unreadable, offers no Continue.
@@ -7711,7 +7731,7 @@ class AgentService:
             rows=db.execute('SELECT tool,status,detail FROM tool_events WHERE job_id=? AND created>=? ORDER BY id',
                             (job['id'],run.claimed_at)).fetchall()
         tools=self.attempt_tool_rows(rows)
-        failed=self._attempt_stop_codes(rows)
+        failed=self._attempt_stop_codes(self._without_stale_bridge_refusals(rows,run))
         # A completed read does not turn an owner/effect wait into a budget boundary.  #627: the one
         # continuation count is read through the continuation rule below.
         if not self._budget_boundary(failed):return False
@@ -9357,15 +9377,8 @@ class AgentService:
         `safe_retry` allows).  Nothing is re-run and nothing already sent or
         uncertain is re-sent - only `delivery='none'` rows are touched.
         """
-        prefixes=[surface.channel_prefix for surface in self.surfaces if surface.channel_prefix]
-        with self.store.db() as db:
-            running=self.store.telegram.running_without_task_cards(db,prefixes)
-        self.store.recover()
-        with self.store.db() as db:
-            self.store.telegram.delete_interrupted_task_cards(db)
-            for work_id in running:
-                db.execute("UPDATE jobs SET delivery='pending' WHERE id=? AND status='interrupted' AND delivery='none'",(work_id,))
-        return running
+        # #841 (matrix X9): one transaction, so a stop inside recovery cannot strand the reply.
+        return self.store.recover(surface.channel_prefix for surface in self.surfaces if surface.channel_prefix)
 
     def purge_forgotten(self):
         """Purge forgotten owner state whose undo window ended (#794); a failure is logged and retried next tick."""
