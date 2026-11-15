@@ -465,7 +465,7 @@ def items_of(current):
 FRONTIER_FIRST_WAVE = ["FRONTIER-SPEC-01", "FRONTIER-EVAL-01"]
 FRONTIER_RECONCILED = ["FRONTIER-PROVENANCE-01", "FRONTIER-RECOVERY-01", "FRONTIER-CONTEXT-01"]
 FRONTIER_COMPLETED = FRONTIER_FIRST_WAVE + FRONTIER_RECONCILED + [
-    "FRONTIER-JUDGMENT-01", "FRONTIER-TELEGRAM-01", "FRONTIER-FENCE-01", "FRONTIER-WORKCHAT-01"]
+    "FRONTIER-JUDGMENT-01", "FRONTIER-TELEGRAM-01", "FRONTIER-FENCE-01", "FRONTIER-WORKCHAT-01", "FRONTIER-CONTEXT-02"]
 FRONTIER_WAVE_2 = ["FRONTIER-FENCE-01", "FRONTIER-JUDGMENT-01", "FRONTIER-TELEGRAM-01", "FRONTIER-WORKCHAT-01"]
 FRONTIER_OPEN_WAVE_2 = [name for name in FRONTIER_WAVE_2 if name not in FRONTIER_COMPLETED]
 
@@ -662,7 +662,17 @@ def test_frontier_883_has_unique_successor_and_preserves_827_history():
     successor=items['FRONTIER-CONTEXT-02']
     assert successor['issue']==883
     assert successor['depends_on']==['FRONTIER-CONTEXT-01']
-    assert successor['activation_status']=='owner-activated-goal-ready'
+    assert successor['activation_status']=='complete-on-merge'
+    assert successor['summary'].endswith('Complete on the merge of PR #PRNUM')
+    assert successor['tests'][0].startswith('PYTHONPATH=src python3 -m pytest -q ')
+    assert 'tests/test_connect_preferences.py' in successor['tests'][0]
+    assert 'tests/test_prompt_files.py' in successor['tests'][0]
+    assert 'FRONTIER-CONTEXT-02' in current['history']['documented_completed_iterations']
+    assert 'FRONTIER-CONTEXT-02' in current['programs']['FRONTIER-01']['completed_substeps']
+    record=items['FRONTIER-01']['completed_substeps']['FRONTIER-CONTEXT-02']
+    assert record['issue']==883 and record['status']=='complete-on-merge'
+    assert record['pull_request']=='PRNUM'
+    assert 'No other successor is selected' in current['next_goal']['action']
     assert 'FRONTIER-CONTEXT-02' in current['programs']['FRONTIER-01']['ordered_substeps']
     assert current['programs']['FRONTIER-01']['active_substeps']==[]
     assert '#883' in current['next_goal']['action'] and '2026-11-15' in current['next_goal']['action']

@@ -649,7 +649,6 @@ class WorkExecutor:
             service.record_turn_provenance(job['id'],skills=run.skill_binding.refs())
         # #826: what the owner-model sections and splices referred to (keys, refs, labels).
         run.spliced_refs=spliced_refs
-        run.owner_information=service.owner_information_refs(run.section_values,run.spliced_refs)
         run.base_history,run.base_rows,run.base_config,run.base_key=run.history,run.history_rows,run.config,run.key
         # #826: material spliced into this turn (documents, Drive, the context inbox,
         # notes) no longer pins the worker; the plan may choose any available worker.
@@ -701,7 +700,6 @@ class WorkExecutor:
             return PROCEED
         while True:
             run.section_values['profile'],run.recall_selector=service.worker_profile_snapshot(job,run.attempt)
-            run.owner_information=service.owner_information_refs(run.section_values,run.spliced_refs)
             run.config,run.key,run.subscription,run.attempt_test=service.attempt_route(run.orchestration,run.attempt,run.base_config,run.base_key,run.route_snapshot)
             run.brief=run.attempt.brief(adjusted=run.attempt.number>1 and not run.attempt.steer) if run.attempt is not None else None
             run.attempt_start=service.last_event_id(job['id'])

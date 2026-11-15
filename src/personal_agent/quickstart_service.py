@@ -2017,7 +2017,7 @@ class AgentService:
     def recall_selector(self, request, *, recall=True, recall_query=None):
         """The exact local selector and its identity; never raw structured-answer logging."""
         planned=recall and isinstance(recall_query,str) and bool(recall_query.strip())
-        value=recall_query if planned else request
+        value=' '.join(part for part in (recall_query,request) if isinstance(part,str) and part.strip()) if planned else request
         query=self._redact_known_secrets(value)[:500] if isinstance(value,str) and value.strip() else None
         return query, {'source':'plan' if planned else 'request',
                        'query_digest':hashlib.sha256((query or '').encode()).hexdigest()[:16],
@@ -2028,7 +2028,7 @@ class AgentService:
         recall=not prep.preparation_of(job.get('request_key')) or self.day_plan_run(job)
         selector=attempt.recall_query if attempt is not None and attempt.planned and not attempt.steer else None
         query,identity=self.recall_selector(job.get('message'),recall=recall,recall_query=selector)
-        return self.owner_profile_snapshot(job.get('message'),recall=recall,recall_query=query if recall else None),identity
+        return self._profile_snapshot(query,recall=recall),identity
 
     def owner_profile_snapshot(self, request=None, notes=True, ids=False, recall=True, *, recall_query=None):
         """The bounded ``profile.*`` snapshot text every turn context carries (#658).
@@ -2052,8 +2052,12 @@ class AgentService:
         ``owner-memory`` (size/digest only in the record) at the call sites;
         that label is deliberately not added to the Work's egress provenance.
         """
-        memory=MemoryService(self.store,private_read_sink=MemoryService.NO_EGRESS_GUARD)
         query,_=self.recall_selector(request,recall=recall,recall_query=recall_query)
+        return self._profile_snapshot(query,notes=notes,ids=ids,recall=recall)
+
+    def _profile_snapshot(self, query, *, notes=True, ids=False, recall=True):
+        """Render the already sanitized selector; worker identity uses this exact query."""
+        memory=MemoryService(self.store,private_read_sink=MemoryService.NO_EGRESS_GUARD)
         # #425: a brief (notes, no ids) shows what a dream changed or held on the line it concerns, once.
         raising=self._memory_raise_notes(memory) if notes and not ids and query else {}
         snapshot=memory.profile_snapshot(MEMORY_OWNER,query=query,ids=ids,annotations=raising)

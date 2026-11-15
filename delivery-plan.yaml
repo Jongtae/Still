@@ -54,7 +54,8 @@
       "FRONTIER-JUDGMENT-01",
       "FRONTIER-TELEGRAM-01",
       "FRONTIER-FENCE-01",
-      "FRONTIER-WORKCHAT-01"
+      "FRONTIER-WORKCHAT-01",
+      "FRONTIER-CONTEXT-02"
     ]
   },
   "iterations": [
@@ -983,6 +984,12 @@
           "status": "complete-on-merge",
           "pull_request": 870,
           "decision": "Mattermost and Slack keep an owner's reaction or press as a pending act written with its dedupe marker (the existing mattermost config row; slack_events.act), apply it off the poll thread, clear it after it settles and replay it after a restart, with already-settled acts refused by state; corrections already survive as queued Work. Adapt the transactional-inbox pattern onto existing sqlite receipts with no new store and unchanged approval semantics; depends on FRONTIER-RECOVERY-01, which is complete."
+        },
+        "FRONTIER-CONTEXT-02": {
+          "issue": 883,
+          "status": "complete-on-merge",
+          "pull_request": "PRNUM",
+          "decision": "The existing decision-model plan resolves recall terms, with request terms appended and request-only fallback. Local fixtures validate transport/schema compatibility, plan preservation, per-attempt worker refresh and truthful selector/source receipts without another model call. Depends on completed FRONTIER-CONTEXT-01. Complete on the merge of PR #PRNUM"
         }
       }
     },
@@ -1157,12 +1164,12 @@
       "issue": 883,
       "milestone": "frontier-delivery",
       "kind": "implementation",
-      "activation_status": "owner-activated-goal-ready",
+      "activation_status": "complete-on-merge",
       "contract": "frontier-delivery.en.md",
       "tests": [
-        "PYTHONPATH=src:evals .venv/bin/python -m pytest -q -p no:cacheprovider tests/test_owner_profile_context_860.py tests/test_past_words_brief_860.py tests/test_orchestrator.py tests/test_recall_arms.py tests/test_fresh_delivery_plan.py tests/test_no_scenario_code.py"
+        "PYTHONPATH=src python3 -m pytest -q tests/test_owner_profile_context_860.py tests/test_past_words_brief_860.py tests/test_orchestrator.py tests/test_recall_arms.py tests/test_fresh_delivery_plan.py tests/test_no_scenario_code.py tests/test_connect_preferences.py tests/test_prompt_files.py tests/test_decision_engine.py"
       ],
-      "summary": "Owner-selected #883 within #822: the existing decision-model plan emits an optional bounded recall query; planning uses request-only recall, and workers use the accepted query or request-only fallback through existing FTS5. No new model call; preserve both dev follow-up gains and lexical controls, and distinguish fixture retrieval from live model evidence.",
+      "summary": "Owner-selected #883 within #822: the existing decision-model plan emits optional bounded recall terms; planning uses request-only recall, and workers search accepted plan terms followed by the request, or the request alone. Invalid or absent selectors preserve the accepted plan. No new model call. Complete on the merge of PR #PRNUM",
       "depends_on": [
         "FRONTIER-CONTEXT-01"
       ]
@@ -1652,7 +1659,8 @@
         "FRONTIER-JUDGMENT-01",
         "FRONTIER-TELEGRAM-01",
         "FRONTIER-FENCE-01",
-        "FRONTIER-WORKCHAT-01"
+        "FRONTIER-WORKCHAT-01",
+        "FRONTIER-CONTEXT-02"
       ],
       "parallel_eligible_substeps": [
       ],
@@ -1797,6 +1805,6 @@
   "next_goal": {
     "id": "FRONTIER-01",
     "status": "owner-activated-goal-ready",
-    "action": "Owner-authorized FRONTIER-01 (#822): the first wave (#823, #824) and #825\u2013#827 are complete-on-merge. M1 wave 2 selects #841 (F-X4 recovery fence), #722 (judgment scope for relayed calls), #842 (F-P4/F-D3 Telegram delivery) and #843 (F-W4 Mattermost/Slack) as parent-controlled parallel lanes under the owner's 2026-11-14 direct instruction; each unit's own PR records it complete on merge. No successor beyond wave 2 is selected. This checked-in resting selection starts no heartbeat. Owner direction 2026-11-15 selects #883 (FRONTIER-CONTEXT-02) inside #822 for AI-resolved recall in the existing plan call; no live-model authority is added."
+    "action": "Owner-authorized FRONTIER-01 (#822): the first wave (#823, #824) and #825\u2013#827 are complete-on-merge. M1 wave 2 selects #841 (F-X4 recovery fence), #722 (judgment scope for relayed calls), #842 (F-P4/F-D3 Telegram delivery) and #843 (F-W4 Mattermost/Slack) as parent-controlled parallel lanes under the owner's 2026-11-14 direct instruction; each unit's own PR records it complete on merge. This checked-in resting selection starts no heartbeat. #883 (FRONTIER-CONTEXT-02) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. No other successor is selected; no live-model authority is added."
   }
 }

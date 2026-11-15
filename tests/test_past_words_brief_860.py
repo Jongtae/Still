@@ -174,10 +174,10 @@ class ResolvedWorkerRecall(Harness):
         return dict(plan(worker,''),recall_query=query)
 
     def test_resolved_followup_reaches_worker_profile_exchanges_and_records(self):
+        old=self.seed_recall()
         for route in ('openai','codex'):
             with self.subTest(route=route):
                 self.use_main(route)
-                old=self.seed_recall()
                 self.script([self.selected(route,'치과 예약')],[True])
                 start=len(self.asked_plans)
                 work,row=self.run_work(FOLLOW_UP,key='resolved-'+route,owner_words=True)
@@ -224,6 +224,12 @@ class ResolvedWorkerRecall(Harness):
                 self.script([self.selected(route,'치과')],[True])
                 prepared_entries=[]
                 sent_refs=[]
+                full_profiles=[]
+                original_snapshot=self.service.worker_profile_snapshot
+                def snapshot(*args,**kwargs):
+                    result=original_snapshot(*args,**kwargs)
+                    full_profiles.append(result[0])
+                    return result
                 original_sent=self.service.record_turn_sent
                 original_prepare=self.service._prepare_worker_turn
                 splice={'kind':'fixture','ref':'fixture-source','label':'fixture-source'}
@@ -238,7 +244,8 @@ class ResolvedWorkerRecall(Harness):
                     prepared_entries.append(self.store.turn_provenance(job_id)['attempt_inputs'][-1])
                     sent_refs.append(kwargs['owner_information'])
                     return ref
-                with mock.patch.object(self.service,'record_turn_sent',side_effect=recorded), \
+                with mock.patch.object(self.service,'worker_profile_snapshot',side_effect=snapshot), \
+                        mock.patch.object(self.service,'record_turn_sent',side_effect=recorded), \
                         mock.patch.object(self.service,'_prepare_worker_turn',side_effect=prepare), \
                         mock.patch('personal_agent.work_executor.MAX_PROMPT_BYTES',7000):
                     work,_=self.run_work(FOLLOW_UP,key='receipt-'+route,owner_words=True)
@@ -247,14 +254,19 @@ class ResolvedWorkerRecall(Harness):
                 self.assertEqual(prepared_entries[-1]['input'],'prepared')
                 self.assertEqual(entry['input'],'sent')
                 self.assertEqual(entry['recall_selector'],dict(source='plan',
-                    query_digest=hashlib.sha256('치과'.encode()).hexdigest()[:16],query_chars=2,recall_enabled=True))
+                    query_digest=hashlib.sha256(('치과 '+FOLLOW_UP).encode()).hexdigest()[:16],query_chars=len('치과 '+FOLLOW_UP),recall_enabled=True))
                 self.assertNotIn('recall_query',entry)
                 self.assertIn(DENTIST_KEY,receipt['owner_information']['profile_keys'])
                 if route=='codex':
                     context=self.engine.turns[-1]['context']
                     self.assertTrue(context.get('cut_to_fit'))
-                    expected=information_use.section_references(context.get('profile'),context.get('current_context'),context.get('prepared'),[splice])
-                    self.assertEqual(sent_refs[-1],expected)
+                    # Compare exact complete source lines, independently of the receipt parser.
+                    sent_lines=set(context.get('profile','').splitlines())
+                    full_lines=[line for line in full_profiles[-1].splitlines() if line.startswith('profile.')]
+                    expected_keys=sorted(line.split(':',1)[0] for line in full_lines if line in sent_lines)
+                    self.assertTrue(expected_keys)
+                    self.assertLess(len(expected_keys),len(full_lines))
+                    self.assertEqual(sorted(sent_refs[-1]['profile_keys']),expected_keys)
                     self.assertIn('fixture-source',self.engine.turns[-1]['prompt'])
                 else:
                     text=json.dumps(self.transport.bodies[-1],ensure_ascii=False)

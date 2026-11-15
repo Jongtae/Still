@@ -57,7 +57,7 @@ from .agent_runtime import (BUDGET_CODES, BUDGET_TEXTS, CURRENT_CONTEXT_FACT_CHA
 from .current_context import without_moving_clock
 from .api_requests import CONTEXT_LINE as API_SLOTS_LINE
 from .information_use import BROWSER_SIGNINS_PREFIX
-from .decision import MAX_CONTEXT_CHARS, OUTCOME_DECIDED, OUTCOME_MALFORMED, DecisionContext, DecisionPolicy
+from .decision import MAX_CONTEXT_CHARS, OUTCOME_DECIDED, OUTCOME_MALFORMED, DecisionContext, DecisionPolicy, StructuredSchema
 
 #: Still context sections of a turn (``agent_runtime.turn_context``).
 SECTIONS = ('profile', 'current_context', 'prepared', 'history')
@@ -734,7 +734,7 @@ def lift_model(worker, model):
 
 
 def plan_schema(workers, ask_location=False, preview=False):
-    schema = {'type': 'object', 'additionalProperties': False,
+    schema = StructuredSchema({'type': 'object', 'additionalProperties': False,
               'properties': {
                   'worker': {'type': 'string', 'enum': [worker['id'] for worker in workers]},
                   'model': {'type': 'string'},
@@ -744,12 +744,14 @@ def plan_schema(workers, ask_location=False, preview=False):
                             'required': ['notes', 'lens']},
                   'reason': {'type': 'string'},
                   'reply': {'type': 'string'},
-                  'recall_query': {'type': 'string', 'maxLength': 500},
+                  # No minLength/maxLength: not every structured-output transport accepts them.
+                  # As with choose_many's uniqueness, enforce the bound after parsing.
+                  'recall_query': {'type': 'string', 'description': 'Optional recall terms, at most 500 characters; empty for none.'},
                   'account_change': {'type': 'boolean'},
                   'owner_situation': {'type': 'boolean'},
                   'technical_work': {'type': 'boolean'}},
               'required': ['worker', 'model', 'effort', 'brief', 'reason', 'account_change', 'owner_situation',
-                           'technical_work', 'reply', 'recall_query']}
+                           'technical_work', 'reply', 'recall_query']}, optional=('recall_query',))
     if ask_location:
         # #1293: required with "" for none, as strict structured outputs need every property listed.
         schema['properties'].update(ask_location={'type': 'string'}, location_button={'type': 'string'})
@@ -776,7 +778,6 @@ def plan_shape(data):
             and isinstance(data.get('owner_situation', False), bool)
             and isinstance(data.get('technical_work', False), bool)
             and isinstance(data.get('reply'), str)
-            and isinstance(data.get('recall_query', ''), str) and len(data.get('recall_query', '')) <= 500
             and isinstance(data.get('effort', ''), str)
             and isinstance(data.get('ask_location', ''), str) and isinstance(data.get('location_button', ''), str)
             and preview_shape(data.get('preview')))
@@ -1168,7 +1169,11 @@ class Orchestration:
         workers = render_catalogue(candidates)
         tools_text = render_tool_descriptions(candidates, getattr(self.catalogue, 'descriptions', {}))
         # Request-only planning context stays separate from later worker refreshes.
-        profile = self._redact(self.plan_profile)[:PROFILE_FACT_CHARS] or 'none'
+        profile = self._redact(self.plan_profile)
+        if len(profile) > PROFILE_FACT_CHARS:
+            # A receipt must never attribute a fact whose line was cut in half.
+            profile = profile[:PROFILE_FACT_CHARS + 1].rsplit('\n', 1)[0] if '\n' in profile[:PROFILE_FACT_CHARS + 1] else ''
+        profile = profile or 'none'
         current, connections = self._current_facts()
         facts = {'owner_request': request,
                  'owner_profile': profile,
@@ -1337,7 +1342,8 @@ class Orchestration:
             return None, 'budget'
         attempt = Attempt(number, worker['id'], model=model, notes=notes, reason=one_line(data['reason'], MAX_REASON_CHARS),
                           planned=True, effort=effort, lens=lens,
-                          recall_query=self._redact(data.get('recall_query', ''))[:500].strip())
+                          recall_query=(self._redact(data['recall_query'])[:500].strip()
+                                        if isinstance(data.get('recall_query'), str) else ''))
         attempt.reply = (self._redact(data['reply']).strip()[:REPLY_CHARS]
                          if number == 1 and not data.get('ask_location', '').strip()
                          and not plan_preview(data.get('preview')) else '')

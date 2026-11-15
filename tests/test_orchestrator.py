@@ -2904,7 +2904,7 @@ class OwnerModelUnit(unittest.TestCase):
         engine = FixtureDecisionEngine(structured=lambda context, question, schema: seen.append(context))
         catalogue = OrchestrationUnit.catalogue(None)
         orchestration = Orchestration(ConversationJudgments(engine), catalogue, request='요청', conversation='x' * 9000,
-                                      sections={'profile': '가' * (PROFILE_FACT_CHARS + 500), 'current_context': '나' * 5000})
+                                      sections={'profile': '가' * PROFILE_FACT_CHARS + '\n' + '가' * 500, 'current_context': '나' * 5000})
         orchestration.first()
         [context] = seen
         self.assertEqual(len(context.facts['owner_profile']), PROFILE_FACT_CHARS)
@@ -4045,7 +4045,8 @@ class RecallPlan883(unittest.TestCase):
         from personal_agent.orchestrator import plan_shape
         schema=plan_schema(self.catalogue().available(),ask_location=True,preview=True)
         self.assertEqual(set(schema['required']),set(schema['properties']))
-        self.assertEqual(schema['properties']['recall_query'],{'type':'string','maxLength':500})
+        self.assertEqual(schema['properties']['recall_query']['type'],'string')
+        self.assertIn('500',schema['properties']['recall_query']['description'])
         for value in ('', '   ', None):
             data=plan('a','')
             if value is not None:data['recall_query']=value
@@ -4058,10 +4059,15 @@ class RecallPlan883(unittest.TestCase):
     def test_recall_query_invalid_type_or_size_falls_back_without_another_call(self):
         for value in (None,True,[],{},'x'*501):
             with self.subTest(value=type(value)):
-                orch,calls=self.make([dict(plan('a',''),recall_query=value)])
+                data=dict(plan('b','keep notes'),brief={'notes':'keep notes','lens':'keep lens'},
+                          recall_query=value,account_change=True,owner_situation=True,technical_work=True)
+                orch,calls=self.make([data])
+                orch.catalogue.default='b'
                 attempt=orch.first()
-                self.assertFalse(attempt.planned)
-                self.assertEqual(attempt.recall_query,'')
+                self.assertTrue(attempt.planned)
+                self.assertEqual((attempt.worker,attempt.notes,attempt.lens),('b','keep notes','keep lens'))
+                self.assertTrue(attempt.account_change and attempt.owner_situation and attempt.technical_work)
+                self.assertEqual(attempt.recall_query,value[:500] if isinstance(value,str) else '')
                 self.assertEqual(len(calls),1)
         for answer in (decided(dict(plan('a',''),recall_query='rejected'),0.1),
                        dict(plan('unknown',''),recall_query='rejected'),
@@ -4074,17 +4080,53 @@ class RecallPlan883(unittest.TestCase):
         from test_decision_engine import OPENAI, ScriptedTransport, openai_tool_reply
         for value in ('missing',None,True,[],{},'x'*501,''):
             with self.subTest(value=type(value)):
-                data={**plan('a',''),'effort':'','brief':{'notes':'','lens':''},
-                      'account_change':False,'owner_situation':False,'technical_work':False,'confidence':0.9}
+                data={**plan('b','keep notes'),'effort':'','brief':{'notes':'keep notes','lens':'keep lens'},
+                      'account_change':True,'owner_situation':True,'technical_work':True,'confidence':0.9}
                 if value == 'missing':data.pop('recall_query')
                 else:data['recall_query']=value
                 transport=ScriptedTransport(openai_tool_reply(data))
                 engine=ModelDecisionEngine(ModelAdapter(transport),lambda:(OPENAI,OPENAI_KEY))
                 orch=Orchestration(ConversationJudgments(engine),self.catalogue(),request='request')
+                orch.catalogue.default='b'
                 attempt=orch.first()
-                self.assertEqual(attempt.planned,value == '')
-                self.assertEqual(attempt.recall_query,'')
+                self.assertTrue(attempt.planned)
+                self.assertEqual((attempt.worker,attempt.notes,attempt.lens),('b','keep notes','keep lens'))
+                self.assertTrue(attempt.account_change and attempt.owner_situation and attempt.technical_work)
+                self.assertEqual(attempt.recall_query,value[:500] if isinstance(value,str) and value!='missing' else '')
                 self.assertEqual(len(transport.calls),1)
+                schema=transport.calls[0]['body']['tools'][0]['function']['parameters']
+                self.assertEqual(set(schema['required']),set(schema['properties']))
+                self.assertIn('recall_query',schema['required'])
+        # Only the declared optional field may be absent; reply remains mandatory.
+        data.pop('reply')
+        transport=ScriptedTransport(openai_tool_reply(data))
+        engine=ModelDecisionEngine(ModelAdapter(transport),lambda:(OPENAI,OPENAI_KEY))
+        orch=Orchestration(ConversationJudgments(engine),self.catalogue(),request='request')
+        self.assertFalse(orch.first().planned)
+        self.assertEqual(len(transport.calls),1)
+
+    def test_plan_wire_schema_uses_existing_supported_keywords(self):
+        # Reuse the existing transport.calls -> function.parameters schema inspection.
+        from test_decision_engine import OPENAI, ScriptedTransport, openai_tool_reply
+        transport=ScriptedTransport(openai_tool_reply({'choices':[],'confidence':0.9}),
+                                    openai_tool_reply({'answer':True,'confidence':0.9}))
+        engine=ModelDecisionEngine(ModelAdapter(transport),lambda:(OPENAI,OPENAI_KEY))
+        engine.choose_many(DecisionContext('fixture'),('a','b'),'choose')
+        engine.judge(DecisionContext('fixture'),'judge')
+        def keywords(schema):
+            found=set(schema)
+            for child in schema.get('properties',{}).values():found |= keywords(child)
+            if isinstance(schema.get('items'),dict):found |= keywords(schema['items'])
+            return found
+        allowed={'description'}  # Existing schema annotation, not a validation constraint.
+        for call in transport.calls:
+            schema=call['body']['tools'][0]['function']['parameters']
+            allowed |= keywords(schema)
+            self.assertNotIn('uniqueItems',keywords(schema))
+        schema=plan_schema(self.catalogue().available(),ask_location=True,preview=True)
+        self.assertLessEqual(keywords(schema),allowed)
+        self.assertNotIn('maxLength',keywords(schema))
+        self.assertNotIn('minLength',keywords(schema))
 
     def test_recall_query_is_redacted_before_attempt_storage_and_digest(self):
         orch,calls=self.make([dict(plan('a',''),recall_query='secret needle')],

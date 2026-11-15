@@ -223,7 +223,8 @@ def test_runtime_memory_write_fails_digest_guard(monkeypatch, data, seeded):
 
 @pytest.mark.parametrize('version', [1, 2])
 def test_runtime_run_arm_and_report_both_fixtures(version):
-    data = dev_data(version)
+    # Full-fixture smoke only: no heldout recall/noise targets or printed retrievals.
+    data = pairs.load(ROOT / f'evals/recall/recall-pairs-v{version}.json')
     runtime = rr.run_arm(data, rr.resolve_arm('runtime'))
     assert runtime['deterministic'] and not runtime['diagnostic']
     assert len(runtime['runs']) == 1
@@ -233,10 +234,7 @@ def test_runtime_run_arm_and_report_both_fixtures(version):
         assert isinstance(row['returned'], list)
         assert all(isinstance(ident, str) for ident in row['returned'])
         assert row['trap_hits'] == 0
-    for case in data['cases']:
-        context = case.get('context', '')
-        assert runtime['observed']['1'][case['id']]['query'] == case['query'][:500]
-        assert runtime['observed']['1'][case['id']]['context'] == context
+    assert {row['split'] for row in rows} == {'dev','heldout'}
     baseline = rr.run_arm(data, rr.resolve_arm('lexical'))
     report = rr.report(data, {'lexical': baseline, 'runtime': runtime})
     assert report['arms']['runtime']['observed'] == runtime['observed']
@@ -269,7 +267,7 @@ def test_runtime_replay_validates_plan_and_uses_shared_worker_path(monkeypatch, 
     invalid = arms.runtime(store,data,resolver=lambda q,c:None)
     case = data['cases'][0]
     invalid(case['query'],case.get('context',''))
-    assert not invalid.observed[case['id']]['plan_accepted']
+    assert invalid.observed[case['id']]['plan_accepted']
     assert invalid.observed[case['id']]['selector_source'] == 'request'
 
 
@@ -290,11 +288,13 @@ def test_runtime_resolved_dev_followups_and_lexical_controls(tmp_path):
     wanted = {'d-follow':['r4'],'h-follow':['r18'],'d-lex-instrument':['r1'],
               'd-lex-last-day':['r13'],'d-lex-desk':['r14'],'h-lex-tool':['r15']}
     data['cases'] = [case for case in data['cases'] if case['id'] in wanted]
+    assert len(data['cases']) == len(wanted) == 6
     store = QuickStore(tmp_path/'state')
     refs = pairs.seed(store,data)
     selectors = {'d-follow':'발표 장소','h-follow':'상자'}
     retrieve = arms.runtime(store,data,resolver=arms.replay_resolver(replay_record(data,selectors),data))
     results = pairs.run(retrieve,data['cases'],refs)
+    assert len(results['rows']) == len(wanted)
     for row in results['rows']:
         assert row['returned'] == [refs[ref] for ref in wanted[row['id']]]
         assert row['noise_hits'] == row['trap_hits'] == 0
