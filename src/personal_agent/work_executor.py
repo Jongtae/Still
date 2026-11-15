@@ -15,7 +15,7 @@ from .messages import msg
 from .telegram_locale import owner_language
 from .work_execution import PROCEED, REDELEGATED, WorkRun
 from .agent_runtime import Capabilities, ToolError, cut_to_fit, loop_definitions, run_agent, STEER_EVENT, steer_note, evidence_summary, turn_context, render_turn_prompt, attachment_facts, context_sections, ENGINE_UNMEDIATED, base_label, WorkLedger, NOTES_SUMMARY_COMMANDS
-from .agent_runtime import recorded_effects_response
+from .agent_runtime import recorded_effects_response, MEMORY_OWNER, SAVED_RESULTS_ROOT
 from .providers import NOT_REPORTED, ProviderError
 from .cloud_engines import BUDGET_EXCEEDED as CLOUD_BUDGET_EXCEEDED, NOT_CONFIGURED as CLOUD_NOT_CONFIGURED, CloudLaunchError
 from .conversation_projection import BLOCKER_CLOUD_PROFILE, BLOCKER_MODEL_UNVERIFIED, BLOCKER_NO_AI_ROUTE, TERMINAL_FAILED_HEADER, BlockedTurn, context_message, answer_note, owner_cause, report_statement, verified_portion
@@ -857,6 +857,32 @@ class WorkExecutor:
         try:return bool(self.service.photo_attempt_received_model_response(work_id,since_event_id))
         except Exception:return None
 
+    def _saved_effect_content(self, run, action, record):
+        """The saved receipt's exact retained text, or nothing if it cannot be read."""
+        service=self.service
+        try:
+            if action=='save_note':
+                item=service.personal_item('note',record.get('id'))
+            elif action=='save_memory':
+                item=service.store.memory(record.get('id'),MEMORY_OWNER)
+            elif action=='save_result':
+                path=record.get('path')
+                if not isinstance(path,str) or not path or record.get('root_id',SAVED_RESULTS_ROOT)!=SAVED_RESULTS_ROOT:return None
+                # The same exact-path reader as read_file(saved-results), including
+                # freshness, intact-file and folder checks; never open an evidence path directly.
+                rows=run.capabilities.saved_results(path=path,deadline=time.monotonic()+5)
+                if run.capabilities.saved_results_stopped or run.capabilities.saved_results_unavailable:return None
+                item=next((row for row in rows if row['path']==path),None)
+            else:return None
+            content=item.get('content') if item else None
+            if not isinstance(content,str) or not content:return None
+            # C17: only the existing stored-secret pass. Redact before bounding
+            # so a cut cannot leave a partial stored secret. Match the saved-result reader's limit.
+            return service._redact_known_secrets(content)[:24000]
+        except Exception:
+            # A missing/forgotten/unreadable record cannot replace its completion receipt.
+            return None
+
     def _run_cli_attempt(self, run):
         """One attempt on a subscription CLI worker (the selected engine through its Still bridge)."""
         service=self.service
@@ -1161,12 +1187,14 @@ class WorkExecutor:
             if (getattr(run.result,'meta',None) or {}).get('final_text')=='absent':
                 # #890: only Still's completed calls of this attempt support a receipt;
                 # the CLI's tool-result prose never supplies the missing answer.
-                response=recorded_effects_response(service.work_steps(job['id'],since=run.attempt_start))
+                response,saved_content=recorded_effects_response(service.work_steps(job['id'],since=run.attempt_start),
+                    lambda action,record:self._saved_effect_content(run,action,record))
                 if response is None:
                     raise ExecutionError(msg('agent_runtime.model_returned_no_answer'),failure_class=NO_FINAL_TEXT,
                                          exit_code=run.result.exit_code,meta=run.result.meta)
                 run.response=response
                 reply_evidence={'final_text':'absent','reply':'recorded-effects'}
+                if saved_content:reply_evidence['reply_content']='saved-record'
         except (ExecutionError,EngineGatewayError) as exc:
             # #825: an attempt whose CLI never launched was a failed preflight, not sent input.
             service.record_attempt_input(job['id'],input_ref,'not-sent' if not dispatched or (getattr(exc,'meta',None) or {}).get('launched') is False else 'unknown')

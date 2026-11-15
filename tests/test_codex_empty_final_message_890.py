@@ -12,11 +12,13 @@ from unittest.mock import patch
 import pytest
 
 from personal_agent import preparations as prep
-from personal_agent.agent_runtime import SETTINGS_PENDING, evidence_summary
+from personal_agent.agent_runtime import Capabilities, MEMORY_OWNER, SETTINGS_PENDING, WORKSPACE_REFERENCE_PREFIX, evidence_summary
 from personal_agent.bounded_execution import BoundedExecutionAdapter, ExecutionError
+from personal_agent.file_workspace import FileWorkspace
 from personal_agent.messages import msg
+from personal_agent.owner_forget import OwnerForget
 from personal_agent.subscription_engines import SubscriptionEngines
-from test_preparations import _WatchCase, watch_engine
+from test_preparations import SECRET, _WatchCase, watch_engine
 
 
 STREAM = (Path(__file__).parent / 'fixtures' / 'codex_exec_empty_final_message.jsonl').read_text()
@@ -75,7 +77,7 @@ def configure(case, events):
 
     def runner(argv, **kwargs):
         # These are the same completed bridge records the CLI route consumes.
-        for name, status, evidence in events:
+        for name, status, evidence in (events() if callable(events) else events):
             record_event(case, case.service.current_work_id, name, status, evidence)
         return SimpleNamespace(returncode=0, stdout=STREAM, stderr='')
 
@@ -107,6 +109,156 @@ def engine_events(case, work):
     with case.store.db() as db:
         return [(row['status'], json.loads(row['detail'])) for row in db.execute(
             "SELECT status,detail FROM tool_events WHERE job_id=? AND tool='subscription_engine' ORDER BY id", (work,))]
+
+
+def save_note(case, text):
+    """Use Still's real save path, then retain only its bridge evidence."""
+    tools = Capabilities(case.store, None, {}, None, case.service.current_work_id, lambda *args: None)
+    saved = tools.execute('save_note', {'content': text})
+    return 'save_note', 'succeeded', evidence_summary('save_note', saved)
+
+
+def test_cli_reply_includes_the_stored_note_and_records_its_source(case):
+    text = '검사 결과: 새 변경 사항이 있어요. /Users/owner/reports/check.md'
+    events = []
+
+    def saved_events():
+        event = save_note(case, text)
+        # Neither recorded arguments nor tool-result prose supply the text.
+        event[2]['content'] = 'This is not the saved content.'
+        events.append(event)
+        return [event, ('list_notes', 'succeeded', {'count': 1})]
+
+    configure(case, saved_events)
+    with patch('personal_agent.work_executor.BrowserRelay'):
+        work = case.web_turn('Carry out the requested work.')
+    assert case.store.job(work)['response'] == msg('agent_runtime.note_saved') + '\n\n' + text
+    detail = engine_events(case, work)[-1][1]
+    assert detail['reply'] == 'recorded-effects'
+    assert detail['reply_content'] == 'saved-record'
+    assert case.service.personal_item('note', events[0][2]['id'])['content'] == text
+
+
+def test_cli_missing_saved_note_keeps_only_the_receipt(case):
+    events = []
+    configure(case, events)
+    # First prove this receipt resolves its exact saved row; then remove it.
+    work = case.store.enqueue('Carry out the requested work.', 'missing-note-first')
+    tools = Capabilities(case.store, None, {}, None, work, lambda *args: None)
+    saved = tools.execute('save_note', {'content': 'The retained note.'})
+    events.append(('save_note', 'succeeded', evidence_summary('save_note', saved)))
+    with patch('personal_agent.work_executor.BrowserRelay'):
+        assert case.service.run_one()
+    assert saved['content'] in case.store.job(work)['response']
+    with case.store.db() as db:
+        db.execute('DELETE FROM notes WHERE id=?', (saved['id'],))
+    # A different retained note must never stand in for the missing identity.
+    tools.execute('save_note', {'content': 'An unrelated note.'})
+    with patch('personal_agent.work_executor.BrowserRelay'):
+        work = case.web_turn('Carry out the requested work again.')
+    assert case.store.job(work)['response'] == msg('agent_runtime.note_saved')
+    assert 'reply_content' not in engine_events(case, work)[-1][1]
+
+
+def test_changed_saved_notes_in_silent_watch_runs_reach_judgment_again(case):
+    texts = ['검사 결과: 첫 번째 변경이에요.', '검사 결과: 두 번째 변경이에요.']
+    remaining = iter(texts)
+    configure(case, lambda: [save_note(case, next(remaining))])
+    case.judge = watch_engine([True, True])
+    case.service.use_decision_engine(case.judge)
+    case.watched = case.watch()
+    for index in (1, 2):
+        row = case.service.preparations.get(case.watched['id'])
+        case.now = row['due_at'] + 1
+        assert case.tick()
+        with patch('personal_agent.work_executor.BrowserRelay'):
+            assert case.service.run_one()
+        case.service.deliver_one()
+        assert case.tick()
+        case.service.deliver_notification()
+        row = case.service.preparations.get(case.watched['id'])
+        assert row['last_decision_reason'] != prep.REASON_UNCHANGED
+        assert row['last_decision'] == 'notify'
+        assert len(case.watch_asks()) == index
+        assert row['last_notified_digest'] == prep.text_digest(case.watch_asks()[-1].facts['run_result'])
+    for text, ask in zip(texts, case.watch_asks()):
+        assert text in ask.facts['run_result']
+    assert len(case.sends()) == 2
+
+
+def test_cli_saved_note_uses_the_existing_secret_pass_and_unreadable_fallback(case):
+    text = f'Owner text: {SECRET}\n/Users/owner/private/check.md'
+    configure(case, lambda: [save_note(case, text)])
+    with patch('personal_agent.work_executor.BrowserRelay'):
+        work = case.web_turn('Carry out the requested work.')
+    response = case.store.job(work)['response']
+    assert response == msg('agent_runtime.note_saved') + '\n\n' + case.service._redact_known_secrets(text)
+    assert SECRET not in response
+    assert '/Users/owner/private/check.md' in response
+    with patch('personal_agent.work_executor.BrowserRelay'), patch.object(
+            case.service, 'personal_item', side_effect=OSError('unreadable')):
+        work = case.web_turn('Carry out the requested work again.')
+    assert case.store.job(work)['response'] == msg('agent_runtime.note_saved')
+    assert 'reply_content' not in engine_events(case, work)[-1][1]
+
+
+def test_cli_reads_saved_memory_by_id_and_does_not_reuse_forgotten_content(case):
+    saved = case.store.save_memory('fixture.check', 'The stored memory result.')
+    configure(case, [('save_memory', 'succeeded', evidence_summary('save_memory', saved))])
+    with patch('personal_agent.work_executor.BrowserRelay'):
+        work = case.web_turn('Carry out the requested work.')
+    assert case.store.job(work)['response'] == msg('agent_runtime.remembered') + '\n\n' + saved['content']
+    assert engine_events(case, work)[-1][1]['reply_content'] == 'saved-record'
+    OwnerForget(case.store).forget(MEMORY_OWNER, 'memory:' + saved['id'])
+    case.store.save_memory('fixture.other', 'An unrelated memory.')
+    with patch('personal_agent.work_executor.BrowserRelay'):
+        work = case.web_turn('Carry out the requested work again.')
+    assert case.store.job(work)['response'] == msg('agent_runtime.remembered')
+    assert 'reply_content' not in engine_events(case, work)[-1][1]
+
+
+@pytest.mark.parametrize('long', [False, True])
+def test_cli_reads_the_exact_saved_result_with_existing_read_bound(case, long):
+    reference = case.root.parent / 'reference'
+    workspace = case.root.parent / 'results'
+    reference.mkdir()
+    workspace.mkdir()
+    (reference / 'check.md').write_text('Source for this report.')
+    files = FileWorkspace(case.store)
+    files.configure([str(reference)], str(workspace))
+    root = WORKSPACE_REFERENCE_PREFIX + files.status()['references'][0]['id']
+    text = '한' * 23990 + SECRET + '\nRemaining report.' if long else 'The substantive saved report.'
+    expected, events = [], []
+
+    def saved_events():
+        if events:
+            return events
+        tools = Capabilities(case.store, None, {}, None, case.service.current_work_id, lambda *args: None)
+        tools.execute('read_file', {'root_id': root, 'path': 'check.md'})
+        saved = tools.execute('save_result', {'title': 'Check', 'content': text})
+        content = (workspace / saved['path']).read_text()
+        expected.append(msg('agent_runtime.result_saved', path=saved['path']) + '\n\n' +
+                        case.service._redact_known_secrets(content)[:24000] + '\n\n' +
+                        msg('quickstart_service.file_saved', path=saved['path']))
+        events.append(('save_result', 'succeeded', evidence_summary('save_result', saved)))
+        return events
+
+    configure(case, saved_events)
+    with patch('personal_agent.work_executor.BrowserRelay'):
+        work = case.web_turn('Carry out the requested work.')
+    assert case.store.job(work)['response'] == expected[0]
+    if long:
+        assert '[redacted]' in case.store.job(work)['response']
+        assert SECRET not in case.store.job(work)['response']
+        assert 'Remaining report.' not in case.store.job(work)['response']
+    assert engine_events(case, work)[-1][1]['reply_content'] == 'saved-record'
+    # A file replaced after saving is no longer the content this receipt recorded.
+    (workspace / events[0][2]['path']).write_text('A replacement must not be used.')
+    # Keep this attempt's evidence pointing at the original saved record.
+    with patch('personal_agent.work_executor.BrowserRelay'):
+        work = case.web_turn('Carry out the requested work again.')
+    assert case.store.job(work)['response'] == msg('agent_runtime.result_saved', path=events[0][2]['path'])
+    assert 'reply_content' not in engine_events(case, work)[-1][1]
 
 
 @pytest.mark.parametrize('events,key', [
