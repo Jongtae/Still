@@ -1160,10 +1160,8 @@ def cli_metadata(engine_id, raw, connector_digest=None, answer=None):
     partial = len(lines) > 5000
     # Keep the head (init record) and the tail (result record) of a long stream.
     for line in (lines if len(lines) <= 5000 else lines[:1000] + lines[-4000:]):
-        # Tool results can be large and carry nothing this summary reads.
-        if len(line) > MAX_OUTPUT_BYTES:
-            partial = True
-            continue
+        # #904: the stream is already capped by MAX_STREAM_BYTES. Parse large tool
+        # results too; the summary keeps call metadata, not their payloads.
         try:
             value = json.loads(line)
         except ValueError:
