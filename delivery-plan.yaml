@@ -60,7 +60,8 @@
       "FRONTIER-C2-DUE-01",
       "FRONTIER-EVAL-TOKENS-01",
       "FRONTIER-RECEIPT-JUDGE-01",
-      "FRONTIER-EVAL-FALLBACK-01"
+      "FRONTIER-EVAL-FALLBACK-01",
+      "FRONTIER-JUDGMENT-TEXT-01"
     ]
   },
   "iterations": [
@@ -1028,6 +1029,12 @@
           "status": "complete-on-merge",
           "pull_request": "903",
           "decision": "Eval-only typed Judgment AI fallback counts from Still's Work-family records, including owner turns and wait_due preparation Works; sweep/C2 sample and Work totals for every code; only judgment_unavailable and judgment_qualifying join not-ready qualification in the existing representative_judgment_ai comparison gate. Plan and budget fallbacks stay comparable. Fixture evidence only; no runtime changes or live-model authority."
+        },
+        "FRONTIER-JUDGMENT-TEXT-01": {
+          "issue": 202,
+          "status": "complete-on-merge",
+          "pull_request": "912",
+          "decision": "Move every remaining model-facing judgment text in conversation_handoff.py and decision.py into prompts/*.md byte-identically, and extend the affected-cases map to prompt paths, bundled skills and restated contracts. No wording, behaviour or authority change."
         }
       }
     },
@@ -1283,6 +1290,20 @@
         "PYTHONPATH=src .venv/bin/python -m pytest -q tests/test_eval_fallback.py tests/test_continuity_report.py tests/test_judged_continuity.py tests/test_eval_loop.py tests/test_eval_come_due.py tests/test_eval_judge_explicit.py tests/test_fresh_delivery_plan.py tests/test_p1_report.py"
       ],
       "summary": "Owner-selected #902 within #822: carry typed orchestrator fallback codes from owner and preparation Work families into sample metadata, count distinct samples and Works by code in sweep/C2 reports, and extend the existing representative_judgment_ai gate only for judgment_unavailable and judgment_qualifying so infrastructure-affected pairs are partial and never better. Plan and budget fallbacks are counted and stay comparable. Existing Solutions Review (offline): adopt Python sqlite3 read-only queries and built-in sets/dicts for aggregation (PSF/platform facilities); adapt the existing Inspect AI score metadata/log contract (MIT, already pinned) and runner.work_measurements, report.records_from_samples and continuity.judgment_ai_status seams. Build only the experiment-specific participation/counting rule: external eval libraries cannot supply Still's recorded Work-family identity or C2 representative condition. No new dependency or version; maintenance/release activity unavailable offline. Existing Python platforms and AGPL-3.0-only compatibility are unchanged; no supply-chain, runtime, owner-state, authority or network changes. Fixture evidence only. Complete on the merge of its own PR.",
+      "depends_on": []
+    },
+    {
+      "id": "FRONTIER-JUDGMENT-TEXT-01",
+      "program": "FRONTIER-01",
+      "issue": 202,
+      "milestone": "frontier-delivery",
+      "kind": "implementation",
+      "activation_status": "complete-on-merge",
+      "contract": "frontier-delivery.en.md",
+      "tests": [
+        "PYTHONPATH=src .venv/bin/python -m pytest -q tests/test_prompt_files.py tests/test_eval_selection.py tests/test_eval_selection_kinds.py tests/test_owner_acts.py tests/test_decision_engine.py tests/test_fresh_delivery_plan.py"
+      ],
+      "summary": "Owner-selected #202 phase 2 (changes G and H) within #822: move 18 judgment propositions/questions and GAP_INSTRUCTION into prompts/*.md with rendered text byte-identical to main (261/261 string constants equal), add an AST guard against inline judgment literals, match every prompt file, bundled skill and the current-context and professional-roles contracts in evals/selection/affected-cases-v1.json, and add an optional change-table line to the PR template. Existing Solutions Review: adopt the existing prompt_files loader (#1508) and the affected-cases/1 selection format (#855, fnmatch globs); no new dependency. Fixture evidence only; no runtime, owner-state, authority or network change. Complete on the merge of its own PR.",
       "depends_on": []
     }
   ],
@@ -1763,7 +1784,8 @@
         "FRONTIER-C2-DUE-01",
         "FRONTIER-EVAL-TOKENS-01",
         "FRONTIER-RECEIPT-JUDGE-01",
-        "FRONTIER-EVAL-FALLBACK-01"
+        "FRONTIER-EVAL-FALLBACK-01",
+        "FRONTIER-JUDGMENT-TEXT-01"
       ],
       "active_substeps": [],
       "completed_substeps": [
@@ -1781,7 +1803,8 @@
         "FRONTIER-C2-DUE-01",
         "FRONTIER-EVAL-TOKENS-01",
         "FRONTIER-RECEIPT-JUDGE-01",
-        "FRONTIER-EVAL-FALLBACK-01"
+        "FRONTIER-EVAL-FALLBACK-01",
+        "FRONTIER-JUDGMENT-TEXT-01"
       ],
       "parallel_eligible_substeps": [
       ],
@@ -1926,6 +1949,6 @@
   "next_goal": {
     "id": "FRONTIER-01",
     "status": "owner-activated-goal-ready",
-    "action": "Owner-authorized FRONTIER-01 (#822): the first wave (#823, #824) and #825\u2013#827 are complete-on-merge. M1 wave 2 selects #841 (F-X4 recovery fence), #722 (judgment scope for relayed calls), #842 (F-P4/F-D3 Telegram delivery) and #843 (F-W4 Mattermost/Slack) as parent-controlled parallel lanes under the owner's 2026-11-14 direct instruction; each unit's own PR records it complete on merge. This checked-in resting selection starts no heartbeat. #883 (FRONTIER-CONTEXT-02) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #885 (FRONTIER-EVAL-JUDGE-01) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #887 (FRONTIER-C2-DUE-01) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #896 and #897 (FRONTIER-EVAL-TOKENS-01) are selected inside #822 by owner direction on 2026-11-15 and are complete on the merge of its own PR. #898 (FRONTIER-RECEIPT-JUDGE-01) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #902 (FRONTIER-EVAL-FALLBACK-01) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. No other successor is selected; no live-model authority is added."
+    "action": "Owner-authorized FRONTIER-01 (#822): the first wave (#823, #824) and #825\u2013#827 are complete-on-merge. M1 wave 2 selects #841 (F-X4 recovery fence), #722 (judgment scope for relayed calls), #842 (F-P4/F-D3 Telegram delivery) and #843 (F-W4 Mattermost/Slack) as parent-controlled parallel lanes under the owner's 2026-11-14 direct instruction; each unit's own PR records it complete on merge. This checked-in resting selection starts no heartbeat. #883 (FRONTIER-CONTEXT-02) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #885 (FRONTIER-EVAL-JUDGE-01) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #887 (FRONTIER-C2-DUE-01) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #896 and #897 (FRONTIER-EVAL-TOKENS-01) are selected inside #822 by owner direction on 2026-11-15 and are complete on the merge of its own PR. #898 (FRONTIER-RECEIPT-JUDGE-01) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #902 (FRONTIER-EVAL-FALLBACK-01) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #202 phase 2 (FRONTIER-JUDGMENT-TEXT-01) is selected inside #822 by owner direction on 2026-11-16 and is complete on the merge of its own PR. No other successor is selected; no live-model authority is added."
   }
 }

@@ -1,0 +1,1 @@
+Is the owner asking the assistant to do one of these things it does not offer: {capabilities}? Choose that capability. If the request is anything else (searching mail by subject/sender/date, notes, calendar, files, research, ordinary conversation), choose none-of-these.
