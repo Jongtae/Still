@@ -116,9 +116,9 @@ class SubscriptionBridgeWireTests(unittest.TestCase):
     """End-to-end stdio check that the negotiated version reaches the wire."""
 
     def test_turn_deadline_argument_limits_reported_seconds_without_refusing_calls(self):
-        from personal_agent.agent_runtime import WIND_DOWN_TEXT, WorkLedger
+        from personal_agent.agent_runtime import CLI_TURN_WIND_DOWN_SECONDS, WIND_DOWN_TEXT, WorkLedger
 
-        for offset in (None, 100, 60, -1):
+        for offset in (None, 300, 100, -1):
             with self.subTest(offset=offset), tempfile.TemporaryDirectory() as folder:
                 store = QuickStore(Path(folder) / 'data')
                 job = store.enqueue('fixture request', 'deadline-wire-fixture')
@@ -144,7 +144,7 @@ class SubscriptionBridgeWireTests(unittest.TestCase):
                 else:
                     self.assertGreaterEqual(shown['seconds'], 0)
                     self.assertLessEqual(shown['seconds'], max(0, offset))
-                if offset is not None and offset <= 60:
+                if offset is not None and offset <= CLI_TURN_WIND_DOWN_SECONDS:
                     self.assertEqual(shown['note'], WIND_DOWN_TEXT)
                 else:
                     self.assertNotIn('note', shown)
