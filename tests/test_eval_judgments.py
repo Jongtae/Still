@@ -49,7 +49,8 @@ def answers(case):
         return [{'choice': 'irreversible'}]
     if role in ('followup_relation', 'connector_effect', 'status_projection'):
         return [{'choice': d.NO_CANDIDATE if e.get('abstain') or e.get('outcome') == 'no' else e['value']}]
-    return [{'answer': e['outcome'] == 'yes', 'gap': 'PRIVATE GAP', 'note': 'PRIVATE NOTE'}]
+    return [{'answer': e['outcome'] == 'yes', 'gap': 'PRIVATE GAP', 'note': 'PRIVATE NOTE',
+             'retry_warranted': e['outcome'] != 'yes'}]
 
 
 class Transport:
@@ -211,6 +212,9 @@ class JudgmentTests(unittest.TestCase):
         self.assertTrue(all(r['schema_valid'] for r in rows))
         self.assertEqual(j.summarize(rows)['total']['semantic_accuracy'], 1)
         self.assertTrue(all(r['observed']['note_returned'] for r in rows if r['role'] == 'goal_reached' and r['observed']['outcome'] == 'no'))
+        # #202: the retry the judgment would ask for is recorded beside its verdict.
+        self.assertTrue(all(r['observed']['retry_warranted'] is True for r in rows
+                            if r['role'] == 'goal_reached' and r['observed']['outcome'] == 'no'))
         self.assertNotIn('PRIVATE', json.dumps(rows))
         self.assertTrue(audit)
 

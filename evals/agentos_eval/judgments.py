@@ -278,6 +278,8 @@ def _call(case, cases, judgments, engine, policy, keep_text):
         observed['value'] = result.value
     if role == 'goal_reached':
         observed['note_returned'] = result.outcome == s.conversation_handoff.JUDGMENT_NO and result.note is not None
+        # #202: whether the judgment would re-delegate, so reports can count useful and harmful retries.
+        observed['retry_warranted'] = getattr(result, 'retry_warranted', None)
         if keep_text:
             observed.update(gap=result.value, note=result.note)
     return observed
