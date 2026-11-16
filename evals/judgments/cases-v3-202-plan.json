@@ -1,0 +1,437 @@
+{
+  "version": "judgment-validation/3",
+  "catalogue": {
+    "workers": [
+      {
+        "id": "default-worker",
+        "name": "default-worker",
+        "kind": "api",
+        "available": true,
+        "default": true,
+        "default_model": "model-standard",
+        "models": [
+          "model-standard",
+          "model-advanced"
+        ],
+        "model_tiers": {
+          "model-standard": "lowest-cost",
+          "model-advanced": "higher-cost"
+        },
+        "tools": [],
+        "native_search": true,
+        "browser": false,
+        "cost": "synthetic",
+        "latency": "synthetic"
+      },
+      {
+        "id": "other-worker",
+        "name": "other-worker",
+        "kind": "api",
+        "available": true,
+        "default": false,
+        "default_model": "model-standard",
+        "models": [
+          "model-standard",
+          "model-advanced"
+        ],
+        "model_tiers": {
+          "model-standard": "lowest-cost",
+          "model-advanced": "higher-cost"
+        },
+        "tools": [],
+        "native_search": true,
+        "browser": false,
+        "cost": "synthetic",
+        "latency": "synthetic"
+      }
+    ],
+    "routes": {},
+    "default": "default-worker"
+  },
+  "cases": [
+    {
+      "id": "goal-202-plan-met-en",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "completion",
+      "input": {
+        "request": "Count each label in A, B, A.",
+        "observations": "none; all labels are in the request.",
+        "answer": "A appears twice; B appears once.",
+        "plan_reading": "Count the occurrences of each supplied label."
+      },
+      "expect": {
+        "outcome": "yes"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "goal-202-plan-met-ko",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "completion",
+      "input": {
+        "request": "A, B, A에서 각 표식이 몇 번 나오는지 알려줘.",
+        "observations": "없음. 표식은 요청에 모두 주어졌다.",
+        "answer": "A는 두 번, B는 한 번 나와요.",
+        "plan_reading": "주어진 표식별 등장 횟수를 세면 된다."
+      },
+      "expect": {
+        "outcome": "yes"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "goal-202-plan-ignored-lookup-en",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "completion",
+      "input": {
+        "request": "What is the current reading of index R?",
+        "observations": "A tool can read index R. No lookup was attempted. No current value was provided.",
+        "answer": "It is probably 12, though I have not checked.",
+        "plan_reading": "Look up the current value of index R before reporting it."
+      },
+      "expect": {
+        "outcome": "no"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "goal-202-plan-ignored-lookup-ko",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "completion",
+      "input": {
+        "request": "지금 지수 R의 값이 얼마야?",
+        "observations": "지수 R을 읽는 도구를 쓸 수 있다. 조회는 시도하지 않았다. 현재 값은 주어지지 않았다.",
+        "answer": "확인하지 않았지만 아마 12일 거예요.",
+        "plan_reading": "지수 R의 현재 값을 조회한 뒤 알려줘야 한다."
+      },
+      "expect": {
+        "outcome": "no"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "goal-202-plan-overbroad-en",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "completion",
+      "input": {
+        "request": "Expand the abbreviation ZQ using this key: ZQ means Zero Queue.",
+        "observations": "none; the key was supplied by the owner.",
+        "answer": "ZQ stands for Zero Queue.",
+        "plan_reading": "Expand ZQ and also explain the history of the term."
+      },
+      "expect": {
+        "outcome": "yes"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "goal-202-plan-overbroad-ko",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "completion",
+      "input": {
+        "request": "이 풀이대로 ZQ의 뜻을 써줘. ZQ는 Zero Queue야.",
+        "observations": "없음. 풀이가 요청에 주어졌다.",
+        "answer": "ZQ는 Zero Queue라는 뜻이에요.",
+        "plan_reading": "ZQ를 풀어 쓰고 그 용어의 유래도 설명해야 한다."
+      },
+      "expect": {
+        "outcome": "yes"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "goal-202-plan-narrowed-en",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "completion",
+      "input": {
+        "request": "For the supplied pair, give both the total and the difference: 8 and 3.",
+        "observations": "none; both values are in the request.",
+        "answer": "Their total is 11.",
+        "plan_reading": "Give the total of 8 and 3."
+      },
+      "expect": {
+        "outcome": "no"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "goal-202-plan-narrowed-ko",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "completion",
+      "input": {
+        "request": "주어진 두 수 8과 3의 합과 차를 모두 알려줘.",
+        "observations": "없음. 두 수가 요청에 주어졌다.",
+        "answer": "합은 11이에요.",
+        "plan_reading": "8과 3의 합을 알려주면 된다."
+      },
+      "expect": {
+        "outcome": "no"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "goal-202-plan-conversation-en",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "completion",
+      "input": {
+        "request": "Make this less cold.",
+        "observations": "none; the text and intended meaning are in the conversation.",
+        "answer": "Thanks for helping! I appreciate your time.",
+        "plan_reading": "Explain how to raise the physical temperature.",
+        "conversation": "Owner: Here is my memo: \"Your assistance is acknowledged.\" When I call its tone cold, I mean too formal, not temperature. Please make it friendly.\nAssistant: Understood; we are editing the memo."
+      },
+      "expect": {
+        "outcome": "yes"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "goal-202-plan-conversation-ko",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "completion",
+      "input": {
+        "request": "이걸 덜 차갑게 해줘.",
+        "observations": "없음. 문구와 뜻은 앞 대화에 주어졌다.",
+        "answer": "도와줘서 고마워요! 시간 내줘서 정말 감사해요.",
+        "plan_reading": "물리적인 온도를 높이는 방법을 설명해야 한다.",
+        "conversation": "소유자: 메모 문구는 \"귀하의 협조를 확인했습니다\"야. 말투가 차갑다는 건 너무 격식 있다는 뜻이지 온도 얘기가 아니야. 친근하게 고쳐줘.\n도우미: 메모 문구를 다듬는 거군요."
+      },
+      "expect": {
+        "outcome": "yes"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "heldout-202-plan-met-en",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "completion",
+      "input": {
+        "request": "Describe the difference using only these definitions: a vek has three edges; a lom has five.",
+        "observations": "none; definitions are supplied.",
+        "answer": "A vek has three edges and a lom has five, so a lom has two more edges.",
+        "plan_reading": "Compare the edge counts stated in the supplied definitions."
+      },
+      "expect": {
+        "outcome": "yes"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "heldout-202-plan-met-ko",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "completion",
+      "input": {
+        "request": "이 정의만으로 차이를 설명해줘. 베크는 변이 세 개, 롬은 다섯 개야.",
+        "observations": "없음. 정의가 요청에 있다.",
+        "answer": "베크는 변이 세 개이고 롬은 다섯 개라서 롬이 두 개 더 많아요.",
+        "plan_reading": "주어진 정의에 나온 변의 수를 비교해야 한다."
+      },
+      "expect": {
+        "outcome": "yes"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "heldout-202-plan-ignored-lookup-en",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "completion",
+      "input": {
+        "request": "Tell me the latest revision label in register T.",
+        "observations": "The register reader is available but was not used. No revision label is visible in context.",
+        "answer": "I would expect revision C; that is an unchecked guess.",
+        "plan_reading": "Read register T to obtain its latest revision label."
+      },
+      "expect": {
+        "outcome": "no"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "heldout-202-plan-ignored-lookup-ko",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "completion",
+      "input": {
+        "request": "등록부 T의 최신 개정 표식을 알려줘.",
+        "observations": "등록부 읽기 기능을 사용할 수 있지만 쓰지 않았다. 문맥에는 개정 표식이 없다.",
+        "answer": "확인하지 않은 추측으로는 개정 C일 것 같아요.",
+        "plan_reading": "등록부 T를 읽어 최신 개정 표식을 확인해야 한다."
+      },
+      "expect": {
+        "outcome": "no"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "heldout-202-plan-overbroad-en",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "completion",
+      "input": {
+        "request": "Rewrite \"The gate is open\" as a question.",
+        "observations": "none; the sentence is supplied.",
+        "answer": "Is the gate open?",
+        "plan_reading": "Turn the supplied sentence into a question and translate it into a second language."
+      },
+      "expect": {
+        "outcome": "yes"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "heldout-202-plan-overbroad-ko",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "completion",
+      "input": {
+        "request": "\"문이 열려 있다\"를 의문문으로 바꿔줘.",
+        "observations": "없음. 바꿀 문장이 주어졌다.",
+        "answer": "문이 열려 있나요?",
+        "plan_reading": "주어진 문장을 의문문으로 바꾸고 다른 언어로도 번역해야 한다."
+      },
+      "expect": {
+        "outcome": "yes"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "heldout-202-plan-narrowed-en",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "completion",
+      "input": {
+        "request": "For this sequence, name the first and last symbols: P, Q, R, S.",
+        "observations": "none; the sequence is supplied.",
+        "answer": "The first symbol is P.",
+        "plan_reading": "Identify the first symbol in the supplied sequence."
+      },
+      "expect": {
+        "outcome": "no"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "heldout-202-plan-narrowed-ko",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "completion",
+      "input": {
+        "request": "이 순서의 첫 표식과 마지막 표식을 말해줘. P, Q, R, S.",
+        "observations": "없음. 순서가 요청에 주어졌다.",
+        "answer": "첫 표식은 P예요.",
+        "plan_reading": "주어진 순서에서 첫 표식을 찾으면 된다."
+      },
+      "expect": {
+        "outcome": "no"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "heldout-202-plan-conversation-en",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "completion",
+      "input": {
+        "request": "So is lane A open?",
+        "observations": "none; the game state was explicitly supplied in the conversation.",
+        "answer": "Yes. Lane A is available for a move.",
+        "plan_reading": "Determine whether a physical lid on lane A has been lifted.",
+        "conversation": "Owner: In this abstract game, \"open\" means a lane is available for a move; there are no physical lids. The given board state marks A available and B blocked.\nAssistant: A is available; B is blocked."
+      },
+      "expect": {
+        "outcome": "yes"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "heldout-202-plan-conversation-ko",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "completion",
+      "input": {
+        "request": "그럼 A 통로는 열려 있어?",
+        "observations": "없음. 게임 상태는 앞 대화에 명시되어 있다.",
+        "answer": "네. A 통로로 이동할 수 있어요.",
+        "plan_reading": "A 통로의 물리적인 덮개가 들려 있는지 판단해야 한다.",
+        "conversation": "소유자: 이 추상 게임에서 \"열려 있다\"는 이동할 수 있다는 뜻이고 실제 덮개는 없어. 주어진 판에서 A는 이동 가능, B는 막힘이야.\n도우미: A는 이동 가능하고 B는 막혀 있군요."
+      },
+      "expect": {
+        "outcome": "yes"
+      },
+      "targets": [
+        "#202"
+      ]
+    }
+  ]
+}

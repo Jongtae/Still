@@ -995,7 +995,8 @@ class ConversationJudgments:
 
     def goal_reached(self, request, observations, failed_steps='', work_id=None, answer='', conversation='',
                      owner_context='', continues='', attachments='', awaiting_owner='', conversation_messages=None,
-                     recorded_effects=(), may_rejudge=None, reply_source='worker', reply_delivery='to_owner'):
+                     recorded_effects=(), may_rejudge=None, reply_source='worker', reply_delivery='to_owner',
+                     plan_reading=''):
         """Did the reply serve the owner's ``request`` (#657, #820)?  The one outcome judgment.
 
         One ``judge`` call over the owner's message (never cut), the recent
@@ -1009,6 +1010,8 @@ class ConversationJudgments:
         #1517: ``attachments`` is what the message carried besides its words ('1 photo'), which
         the worker was given and this judgment is not.  #240: ``awaiting_owner`` is this Work's typed
         "awaiting the owner" items (``owner_model.awaiting_owner_text``), names and counts only.
+        #202: ``plan_reading``, when given, is the plan's rejectable reading of what the request
+        needs, not the owner's words; absent content adds no fact.
         #674: ``recorded_effects`` (``agent_runtime.recorded_effects``) are the calls of this Work whose
         own record shows them completed.  When the judgment's ``not_done`` names one of them, the same
         judgment is asked once more with Still's record stated as a fact (``record_contradiction``),
@@ -1029,6 +1032,8 @@ class ConversationJudgments:
                  'observations': observations, 'failed_steps': failed_steps or 'none',
                  'awaiting_owner': str(awaiting_owner or '') or 'none',
                  'recorded_effects': recorded_effects_text(recorded_effects) or 'none'}
+        if plan_reading:
+            facts['plan_reading'] = plan_reading
 
         def ask(facts):
             context = self._context('goal-reached', facts, work_id=work_id, reserve=True,

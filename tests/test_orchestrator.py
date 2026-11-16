@@ -3025,7 +3025,9 @@ class OwnerModelAlwaysOn(Harness):
         self.assertIn('판교 사무실', context.facts['owner_profile'])
         self.assertIn('"local_time":', context.facts['current_context'])
         self.assertIn('always given to the worker: the owner\'s message verbatim, history', context.facts['context_sections'])
-        self.assertEqual(schema['properties']['brief']['properties'], {'notes': {'type': 'string'}, 'lens': {'type': 'string'}}, '#820: no section choice (#1459: a lens, not a section)')
+        self.assertEqual(schema['properties']['brief']['properties'],
+                         {'notes': {'type': 'string'}, 'lens': {'type': 'string'}, 'needs': {'type': 'string'}},
+                         '#820: no section choice; #202: a rejectable reading, not completion criteria')
         self.assertFalse(context.too_large())
 
     def test_a_native_search_turn_offers_save_memory_and_list_memory(self):
@@ -3798,6 +3800,76 @@ class ContextPreservingRevision(unittest.TestCase):
         goal_judgment(orchestration.judgments, context['request'], {'evidence_refs': [], 'summary': 'reply'},
                       {}, [], conversation=orchestration.conversation)
         self.assertEqual(len(self.goals[-1].facts['recent_conversation']), GOAL_CONVERSATION_CHARS)
+
+
+class PlanReadingJudgment(unittest.TestCase):
+    """#202 Q3-A: an attempt's plan reading reaches the CLI judgment as a reference."""
+
+    def make(self, plans, **kwargs):
+        pending = iter(plans)
+        engine = FixtureDecisionEngine(structured=lambda *_: decided(next(pending)))
+        return Orchestration(ConversationJudgments(engine), OrchestrationUnit.catalogue(None),
+                             request='The owner request stays verbatim.', **kwargs)
+
+    def test_needs_is_requested_on_every_plan_and_rejects_nontext(self):
+        from personal_agent.orchestrator import plan_shape
+        for preview in (True, False):
+            brief = plan_schema([{'id': 'a'}], preview=preview)['properties']['brief']
+            self.assertEqual(brief['properties']['needs'], {'type': 'string'})
+            self.assertIn('needs', brief['required'])
+        self.assertFalse(plan_shape({**plan('a', ''), 'brief': {'notes': '', 'needs': 42}}))
+
+    def test_plan_reading_is_retained_redacted_bounded_and_passed_as_its_own_kwarg(self):
+        from types import SimpleNamespace
+        from personal_agent.orchestrator import MAX_PLAN_READING_CHARS
+        # Redact a value that crosses the truncation boundary: truncating first
+        # would leak a prefix of this secret.
+        secret = 'fixture-private-value'
+        reading = 'x' * (MAX_PLAN_READING_CHARS - 5) + secret + 'y' * 500
+        data = {**plan('a', ''), 'brief': {'notes': '', 'needs': reading}}
+        orchestration = self.make([data])
+        orchestration.judgments.redact = lambda text: str(text).replace(secret, '[redacted]')
+        attempt = orchestration.first()
+        expected = reading.replace(secret, '[redacted]')[:MAX_PLAN_READING_CHARS]
+        self.assertEqual(attempt.plan_reading, expected)
+        calls = []
+
+        def goal(request, observations, failed, **kwargs):
+            calls.append((request, kwargs))
+            return SimpleNamespace(outcome='yes')
+
+        orchestration.judgments.goal_reached = goal
+        self.assertEqual(orchestration.evaluate_answer('reply', 'none'), 'reached')
+        self.assertEqual(calls[0][0], orchestration.request)
+        self.assertEqual(calls[0][1]['plan_reading'], expected)
+        self.assertEqual(len(calls), 1)
+
+    def test_absent_empty_or_fallback_reading_omits_kwarg(self):
+        from types import SimpleNamespace
+        for data in (plan('a', ''), {**plan('a', ''), 'brief': {'notes': '', 'needs': '  '}}, None):
+            with self.subTest(data=data):
+                orchestration = self.make([data])
+                orchestration.first()
+                calls = []
+                orchestration.judgments.goal_reached = lambda *args, **kwargs: (
+                    calls.append(kwargs) or SimpleNamespace(outcome='yes'))
+                self.assertEqual(orchestration.evaluate_answer('reply', ''), 'reached')
+                self.assertNotIn('plan_reading', calls[0])
+
+    def test_replan_uses_its_own_reading_without_requiring_a_preview(self):
+        data = [{**plan('a', notes), 'brief': {'notes': notes, 'needs': needs}}
+                for notes, needs in (('first', 'First reading.'), ('revised', 'Revised reading.'))]
+        orchestration = self.make(data)
+        goals = []
+        orchestration.judgments.engine.judge = lambda context, _: (
+            goals.append(context) or BinaryDecision(OUTCOME_DECIDED, False, fixture_confidence(), retry_warranted=True))
+        first = orchestration.first()
+        evaluation = orchestration.evaluate_answer('first reply', '')
+        following = orchestration.next(first, evaluation)
+        self.assertIsNotNone(following)
+        orchestration.evaluate_answer('revised reply', '')
+        self.assertEqual([context.facts['plan_reading'] for context in goals], ['First reading.', 'Revised reading.'])
+        self.assertEqual([context.facts['owner_request'] for context in goals], [orchestration.request] * 2)
 
 
 class ContextWindowAndPreviousRoute(Harness):
