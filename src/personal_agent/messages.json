@@ -8387,10 +8387,10 @@
   "zh": "{effect}{host}：已发送{count}次"
  },
  "quickstart_service.failed_effect_unconfirmed": {
-  "ko": "{effect}{host} {count}건 보냄, 결과 미확인",
-  "en": "{effect}{host}: {count} sent, result unconfirmed",
-  "ja": "{effect}{host}: {count}件送信済み、結果未確認",
-  "zh": "{effect}{host}：已发送{count}次，结果未确认"
+  "ko": "{effect}{host} {count}건 시도 기록, 전송 여부 미확인",
+  "en": "{effect}{host}: {count} attempted, not confirmed sent",
+  "ja": "{effect}{host}: {count}件の試行記録、送信の有無は未確認",
+  "zh": "{effect}{host}：{count}次尝试记录，是否发送尚未确认"
  },
  "quickstart_service.failed_effects": {
   "ko": "외부 요청 기록: {effects}. 반복하기 전에 해당 서비스에서 실제 상태를 확인해 주세요.",

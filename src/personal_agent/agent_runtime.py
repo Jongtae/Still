@@ -2402,11 +2402,14 @@ def unknown_effect(value):
  return isinstance(value,list) and any(unknown_effect(item) for item in value)
 
 
-def external_effect_progress(store, work_id):
+def external_effect_progress(store, work_id, *, attributed_to=None):
  """Observed and unresolved connector/API dispatches in a host-bound request.
 
  Reuse the existing Work relation validation and tool events. API claims live
  on the original Work, with the dispatching Work attributed in their evidence.
+ By default results span the request chain. ``attributed_to`` selects only one
+ Work's effects: API evidence names the Work, falling back to the event's Work
+ for older records; connector events belong to the Work on their own row.
  No raw arguments or new durable store. Missing historical Work IDs have no
  claims; mutation admission separately requires a current Work.
  """
@@ -2414,11 +2417,14 @@ def external_effect_progress(store, work_id):
   exists=db.execute('SELECT 1 FROM jobs WHERE id=?',(work_id,)).fetchone()
   chain=WorkLedger.request_chain(db,work_id) if exists else [{'id':work_id}]
   ids=[work['id'] for work in chain]
-  rows=db.execute("SELECT id,tool,status,detail FROM tool_events WHERE job_id IN ("+
+  rows=db.execute("SELECT id,job_id,tool,status,detail FROM tool_events WHERE job_id IN ("+
     ','.join('?' for _ in ids)+") AND tool IN ('connector_permission','connector_read','api_dispatch') ORDER BY id",ids).fetchall()
  claims={};observed=[]
  for row in rows:
   detail=json.loads(row['detail']);evidence=detail.get('evidence',{})
+  if attributed_to is not None:
+   attributed=evidence.get('work_id',row['job_id']) if row['tool']=='api_dispatch' else row['job_id']
+   if attributed!=attributed_to:continue
   if row['tool']=='api_dispatch':
    if row['status']=='observed':observed.append(evidence)
    elif row['status']!='rejected':claims[row['id']]=evidence

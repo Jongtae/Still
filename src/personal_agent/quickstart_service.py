@@ -3055,12 +3055,10 @@ class AgentService:
         effects={}
         labels={'payment':msg('quickstart_service.failed_effect_payment'),
                 'mutate':msg('quickstart_service.failed_effect_mutate')}
-        for state,records in enumerate(external_effect_progress(self.store,job['id'])):
+        for state,records in enumerate(external_effect_progress(self.store,job['id'],attributed_to=job['id'])):
             for evidence in records:
                 effect=evidence.get('effect')
                 if effect not in labels:continue
-                # The ledger spans the request chain; an API dispatch an earlier Work made is that Work's.
-                if evidence.get('work_id') not in (None,job['id']):continue
                 counts=effects.setdefault((effect,evidence.get('host') or ''),[0,0])
                 counts[state]+=1
         sent=[]

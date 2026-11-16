@@ -1951,7 +1951,7 @@ class ReadIsNotAnEffect(Harness):
                 db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                            (job, 'api_dispatch', status, json.dumps(detail), 2.0))
         report = self.service.failed_attempt_report(self.store.job(job), INVALID_OUTPUT)
-        for entry in ('결제 요청 (dispatch.example.test) 1건 보냄 · 결제 요청 (dispatch.example.test) 2건 보냄, 결과 미확인',
+        for entry in ('결제 요청 (dispatch.example.test) 1건 보냄 · 결제 요청 (dispatch.example.test) 2건 시도 기록, 전송 여부 미확인',
                       '변경 요청 (dispatch.example.test) 1건 보냄', '결제 요청 (other.example.test) 1건 보냄'):
             self.assertIn(entry, report)
 
@@ -1967,6 +1967,69 @@ class ReadIsNotAnEffect(Harness):
                            (job, 'api_dispatch', 'observed', json.dumps(detail), 2.0))
         report = self.service.failed_attempt_report(self.store.job(job), INVALID_OUTPUT)
         self.assertIn('결제 요청 (dispatch.example.test) 1건 보냄.', report)
+
+    def test_failed_report_attributes_retry_api_dispatches_on_the_root_works_rows(self):
+        from personal_agent.agent_runtime import external_effect_progress
+        earlier = self.store.enqueue('요청을 처리해 줘', 'failed-root-dispatch')
+        job = self.store.enqueue('다시 처리해 줘', 'failed-retry-dispatch')
+        self.store.link_work_relation(job, earlier, 'retry')
+        evidence = {'kind': 'api-slot', 'identity': 'fixture-slot', 'operation': 'POST',
+                    'effect': 'payment', 'host': 'dispatch.example.test'}
+        own = {**evidence, 'work_id': job}
+        with self.store.db() as db:
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       (job, 'subscription_engine', 'failed', json.dumps({'error': INVALID_OUTPUT}), 1.0))
+            for row_job, attributed, status in ((earlier, own, 'observed'), (earlier, own, 'dispatching'),
+                                               (earlier, evidence, 'observed'), (job, evidence, 'observed'),
+                                               (job, {**evidence, 'work_id': earlier}, 'observed')):
+                db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                           (row_job, 'api_dispatch', status, json.dumps({'scope': 'api', 'evidence': attributed}), 2.0))
+        self.assertEqual(external_effect_progress(self.store, job, attributed_to=job), ([own, evidence], [own]))
+        report = self.service.failed_attempt_report(self.store.job(job), INVALID_OUTPUT)
+        self.assertIn('결제 요청 (dispatch.example.test) 2건 보냄 · '
+                      '결제 요청 (dispatch.example.test) 1건 시도 기록, 전송 여부 미확인.', report)
+
+    def test_failed_report_leaves_an_earlier_works_connector_change_to_that_work(self):
+        from personal_agent.agent_runtime import external_effect_progress
+        earlier = self.store.enqueue('요청을 처리해 줘', 'failed-earlier-connector')
+        job = self.store.enqueue('다시 처리해 줘', 'failed-retry-connector')
+        self.store.link_work_relation(job, earlier, 'retry')
+        evidence = {'kind': 'owner-mcp', 'identity': 'fixture-connection',
+                    'operation': 'fixture_change', 'effect': 'mutate'}
+        with self.store.db() as db:
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       (job, 'subscription_engine', 'failed', json.dumps({'error': INVALID_OUTPUT}), 1.0))
+            claim = db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                               (earlier, 'connector_permission', 'allowed', json.dumps({'evidence': evidence}), 2.0)).lastrowid
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       (earlier, 'connector_read', 'succeeded', json.dumps({'permission_event': claim, 'effect': 'mutate'}), 3.0))
+        self.assertEqual(external_effect_progress(self.store, job), ([evidence], []))
+        self.assertEqual(external_effect_progress(self.store, job, attributed_to=job), ([], []))
+        report = self.service.failed_attempt_report(self.store.job(job), INVALID_OUTPUT)
+        self.assertIsNotNone(report)
+        self.assertNotIn('외부 요청 기록:', report)
+
+    def test_failed_report_does_not_claim_an_unresolved_connector_request_was_sent(self):
+        from personal_agent.messages import msg
+        job = self.store.enqueue('요청을 처리해 줘', 'failed-connector-claim')
+        with self.store.db() as db:
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       (job, 'subscription_engine', 'failed', json.dumps({'error': INVALID_OUTPUT}), 1.0))
+            for status in ('claiming', 'allowed'):
+                detail = {'evidence': {'kind': 'owner-mcp', 'identity': 'fixture-connection', 'effect': 'mutate'}}
+                db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                           (job, 'connector_permission', status, json.dumps(detail), 2.0))
+        report = self.service.failed_attempt_report(self.store.job(job), INVALID_OUTPUT)
+        self.assertIn('외부 요청 기록: 변경 요청 2건 시도 기록, 전송 여부 미확인.', report)
+        self.assertNotIn('보냄', report)
+        for lang, expected in (('ko', '변경 요청 (dispatch.example.test) 2건 시도 기록, 전송 여부 미확인'),
+                               ('en', 'Change request (dispatch.example.test): 2 attempted, not confirmed sent'),
+                               ('ja', '変更リクエスト (dispatch.example.test): 2件の試行記録、送信の有無は未確認'),
+                               ('zh', '更改请求 (dispatch.example.test)：2次尝试记录，是否发送尚未确认')):
+            with self.subTest(lang=lang):
+                self.assertEqual(msg('quickstart_service.failed_effect_unconfirmed', lang=lang,
+                                     effect=msg('quickstart_service.failed_effect_mutate', lang=lang),
+                                     host=' (dispatch.example.test)', count=2), expected)
 
     def test_failed_report_with_only_reads_is_unchanged(self):
         job, row = self.attempt_with(('browser_open', 'read'), plans=[plan('codex', 'Read the page.')])
