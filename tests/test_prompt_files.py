@@ -170,7 +170,10 @@ class ConsolidatedPromptTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256((guards + '\n').encode()).hexdigest(),
                          '3b3b18c013f6d2d00958951be30eef1ee296890759857acf3fd0209f6ec1c118')
 
-    def test_plan_reading_is_a_rejectable_reference_once(self):
+    def test_plan_reading_rule_reaches_the_judgment_once(self):
+        """#202 Q3-A: delivery of the rule text; the plumbing is tested in test_orchestrator and
+        test_decision_engine, and how the judgment uses the reading is measured by the paired check.
+        """
         from personal_agent.conversation_handoff import GOAL_REACHED_PROPOSITION
         from personal_agent.orchestrator import QUESTION
         for sentence in (
