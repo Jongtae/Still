@@ -1,0 +1,810 @@
+{
+  "version": "judgment-heldout-partners/3",
+  "case_sets": [
+    "evals/judgments/cases-v1.json",
+    "evals/judgments/heldout-v1.json",
+    "evals/judgments/cases-v2-202.json",
+    "evals/judgments/cases-v3-202-plan.json"
+  ],
+  "policy": "All previously published cases remain dev. New synthetic held-out cases are written once, never tuned against; a change motivated by a held-out failure must move that case to dev and replace it under a new mapping version. Shared partners are deduplicated and counted once.",
+  "roles": {
+    "answers_open_question": {
+      "dev": [
+        "open-question-true-ko",
+        "open-question-false-ko",
+        "open-question-true-en",
+        "open-question-false-en"
+      ],
+      "heldout": [
+        "heldout-open-question-false",
+        "heldout-open-question-true"
+      ],
+      "partners": {
+        "open-question-true-ko": [
+          {
+            "id": "heldout-open-question-true",
+            "reason": "Answers a concrete open question; instrument choice replaces notebook color."
+          }
+        ],
+        "open-question-false-ko": [
+          {
+            "id": "heldout-open-question-false",
+            "reason": "Does not answer the open question; astronomy replaces the plant question."
+          }
+        ],
+        "open-question-true-en": [
+          {
+            "id": "heldout-open-question-true",
+            "reason": "Answers a concrete open question; instrument choice replaces notebook color."
+          }
+        ],
+        "open-question-false-en": [
+          {
+            "id": "heldout-open-question-false",
+            "reason": "Does not answer the open question; astronomy replaces the plant question."
+          }
+        ]
+      },
+      "unpaired": {}
+    },
+    "connector_effect": {
+      "dev": [
+        "effect-read",
+        "effect-mutate",
+        "effect-payment",
+        "effect-abstain"
+      ],
+      "heldout": [
+        "heldout-effect-abstain",
+        "heldout-effect-mutate",
+        "heldout-effect-payment",
+        "heldout-effect-read"
+      ],
+      "partners": {
+        "effect-read": [
+          {
+            "id": "heldout-effect-read",
+            "reason": "Read classification for a list operation; exhibits replace an individual entry."
+          }
+        ],
+        "effect-mutate": [
+          {
+            "id": "heldout-effect-mutate",
+            "reason": "Non-payment mutation; rehearsal scheduling replaces renaming an entry."
+          }
+        ],
+        "effect-payment": [
+          {
+            "id": "heldout-effect-payment",
+            "reason": "Payment classification; a license purchase replaces invoice settlement."
+          }
+        ],
+        "effect-abstain": [
+          {
+            "id": "heldout-effect-abstain",
+            "reason": "Insufficient effect evidence requires abstention; a different opaque operation and wording."
+          }
+        ]
+      },
+      "unpaired": {}
+    },
+    "followup_relation": {
+      "dev": [
+        "followup-retry-ko",
+        "followup-correction-ko",
+        "followup-reference-ko",
+        "followup-topic-ko",
+        "followup-ambiguous-ko",
+        "followup-retry-en",
+        "followup-correction-en",
+        "followup-reference-en",
+        "followup-topic-en",
+        "followup-ambiguous-en"
+      ],
+      "heldout": [
+        "heldout-followup-correction",
+        "heldout-followup-reference",
+        "heldout-followup-retry",
+        "heldout-followup-topic"
+      ],
+      "partners": {
+        "followup-retry-ko": [
+          {
+            "id": "heldout-followup-retry",
+            "reason": "Retry of a failed preceding Work; poetry rather than option comparison, with new wording."
+          }
+        ],
+        "followup-correction-ko": [
+          {
+            "id": "heldout-followup-correction",
+            "reason": "Correction of the preceding result; typography replaces appointment timing."
+          }
+        ],
+        "followup-reference-ko": [
+          {
+            "id": "heldout-followup-reference",
+            "reason": "Reference to the previous reply; music replaces comparison and changes the reference wording."
+          }
+        ],
+        "followup-topic-ko": [
+          {
+            "id": "heldout-followup-topic",
+            "reason": "Unrelated new topic after a completed Work; music and geology replace comparison and plants."
+          }
+        ],
+        "followup-ambiguous-ko": [
+          {
+            "id": "heldout-followup-reference",
+            "reason": "Reference to the previous reply; music replaces comparison and changes the reference wording."
+          }
+        ],
+        "followup-retry-en": [
+          {
+            "id": "heldout-followup-retry",
+            "reason": "Retry of a failed preceding Work; poetry rather than option comparison, with new wording."
+          }
+        ],
+        "followup-correction-en": [
+          {
+            "id": "heldout-followup-correction",
+            "reason": "Correction of the preceding result; typography replaces appointment timing."
+          }
+        ],
+        "followup-reference-en": [
+          {
+            "id": "heldout-followup-reference",
+            "reason": "Reference to the previous reply; music replaces comparison and changes the reference wording."
+          }
+        ],
+        "followup-topic-en": [
+          {
+            "id": "heldout-followup-topic",
+            "reason": "Unrelated new topic after a completed Work; music and geology replace comparison and plants."
+          }
+        ],
+        "followup-ambiguous-en": [
+          {
+            "id": "heldout-followup-reference",
+            "reason": "Reference to the previous reply; music replaces comparison and changes the reference wording."
+          }
+        ]
+      },
+      "unpaired": {}
+    },
+    "goal_reached": {
+      "dev": [
+        "goal-served",
+        "goal-failed",
+        "goal-partial",
+        "goal-unknown",
+        "goal-repeat-question",
+        "goal-legitimate-question",
+        "goal-unsupported-figure",
+        "goal-curiosity",
+        "goal-served-ko",
+        "goal-failed-ko",
+        "goal-partial-ko",
+        "goal-unknown-ko",
+        "goal-repeat-question-ko",
+        "goal-legitimate-question-ko",
+        "goal-unsupported-figure-ko",
+        "goal-curiosity-ko",
+        "heldout-goal-legitimate-question",
+        "goal-202-failed-hedge-en",
+        "goal-202-failed-hedge-ko",
+        "goal-202-unused-method-en",
+        "goal-202-unused-method-ko",
+        "goal-202-second-method-en",
+        "goal-202-second-method-ko",
+        "goal-202-no-other-method-en",
+        "goal-202-no-other-method-ko",
+        "goal-202-rough-request-en",
+        "goal-202-rough-request-ko",
+        "goal-202-saved-assume-ask-en",
+        "goal-202-saved-assume-ask-ko",
+        "goal-202-saved-ask-only-en",
+        "goal-202-saved-ask-only-ko",
+        "goal-202-owner-date-en",
+        "goal-202-owner-date-ko",
+        "goal-202-plan-met-en",
+        "goal-202-plan-met-ko",
+        "goal-202-plan-ignored-lookup-en",
+        "goal-202-plan-ignored-lookup-ko",
+        "goal-202-plan-overbroad-en",
+        "goal-202-plan-overbroad-ko",
+        "goal-202-plan-narrowed-en",
+        "goal-202-plan-narrowed-ko",
+        "goal-202-plan-conversation-en",
+        "goal-202-plan-conversation-ko"
+      ],
+      "heldout": [
+        "heldout-goal-casual-reply",
+        "heldout-goal-failed",
+        "heldout-goal-partial",
+        "heldout-goal-repeat-question",
+        "heldout-goal-served",
+        "heldout-goal-unhelpful-curiosity",
+        "heldout-goal-unknown",
+        "heldout-goal-unsupported-figure",
+        "heldout-202-failed-hedge-en",
+        "heldout-202-failed-hedge-ko",
+        "heldout-202-unused-method-en",
+        "heldout-202-unused-method-ko",
+        "heldout-202-second-method-en",
+        "heldout-202-second-method-ko",
+        "heldout-202-no-other-method-en",
+        "heldout-202-no-other-method-ko",
+        "heldout-202-rough-request-en",
+        "heldout-202-rough-request-ko",
+        "heldout-202-saved-assume-ask-en",
+        "heldout-202-saved-assume-ask-ko",
+        "heldout-202-saved-ask-only-en",
+        "heldout-202-saved-ask-only-ko",
+        "heldout-202-owner-date-en",
+        "heldout-202-owner-date-ko",
+        "heldout-202-preference-only-en",
+        "heldout-202-preference-only-ko",
+        "heldout-202-plan-met-en",
+        "heldout-202-plan-met-ko",
+        "heldout-202-plan-ignored-lookup-en",
+        "heldout-202-plan-ignored-lookup-ko",
+        "heldout-202-plan-overbroad-en",
+        "heldout-202-plan-overbroad-ko",
+        "heldout-202-plan-narrowed-en",
+        "heldout-202-plan-narrowed-ko",
+        "heldout-202-plan-conversation-en",
+        "heldout-202-plan-conversation-ko"
+      ],
+      "partners": {
+        "goal-served": [
+          {
+            "id": "heldout-goal-served",
+            "reason": "A supported explanation serves the question; heat conduction replaces leaf color and sky scattering."
+          }
+        ],
+        "goal-failed": [
+          {
+            "id": "heldout-goal-failed",
+            "reason": "A claim of completion cannot override observed failure; transcription replaces file export."
+          }
+        ],
+        "goal-partial": [
+          {
+            "id": "heldout-goal-partial",
+            "reason": "Missing an explicitly requested dimension prevents completion; music replaces product attributes."
+          }
+        ],
+        "goal-unknown": [
+          {
+            "id": "heldout-goal-unknown",
+            "reason": "Unconfirmed external effect cannot establish completion; room submission replaces save/send."
+          }
+        ],
+        "goal-repeat-question": [
+          {
+            "id": "heldout-goal-repeat-question",
+            "reason": "Re-asking an already answered question fails to serve the request; instrument replaces branch choice."
+          }
+        ],
+        "goal-legitimate-question": [
+          {
+            "id": "heldout-202-preference-only-en",
+            "reason": "Low-cost preference choice can use a stated assumption; a bare preference question leaves it unserved (#202 decision 2-A). Former held-out moved to dev under #827; fresh card-border partner replaces it."
+          },
+          {
+            "id": "heldout-202-preference-only-ko",
+            "reason": "Low-cost preference choice can use a stated assumption; a bare preference question leaves it unserved (#202 decision 2-A). Former held-out moved to dev under #827; fresh card-border partner replaces it."
+          }
+        ],
+        "goal-unsupported-figure": [
+          {
+            "id": "heldout-goal-unsupported-figure",
+            "reason": "Unsupported quantitative answer cannot establish completion; capacity replaces travel duration."
+          }
+        ],
+        "goal-curiosity": [
+          {
+            "id": "heldout-goal-casual-reply",
+            "reason": "A relevant response to a casual update can serve the turn; pottery replaces a library visit."
+          }
+        ],
+        "goal-served-ko": [
+          {
+            "id": "heldout-goal-served",
+            "reason": "A supported explanation serves the question; heat conduction replaces leaf color and sky scattering."
+          }
+        ],
+        "goal-failed-ko": [
+          {
+            "id": "heldout-goal-failed",
+            "reason": "A claim of completion cannot override observed failure; transcription replaces file export."
+          }
+        ],
+        "goal-partial-ko": [
+          {
+            "id": "heldout-goal-partial",
+            "reason": "Missing an explicitly requested dimension prevents completion; music replaces product attributes."
+          }
+        ],
+        "goal-unknown-ko": [
+          {
+            "id": "heldout-goal-unknown",
+            "reason": "Unconfirmed external effect cannot establish completion; room submission replaces save/send."
+          }
+        ],
+        "goal-repeat-question-ko": [
+          {
+            "id": "heldout-goal-repeat-question",
+            "reason": "Re-asking an already answered question fails to serve the request; instrument replaces branch choice."
+          }
+        ],
+        "goal-legitimate-question-ko": [
+          {
+            "id": "heldout-202-preference-only-en",
+            "reason": "Low-cost preference choice can use a stated assumption; a bare preference question leaves it unserved (#202 decision 2-A). Former held-out moved to dev under #827; fresh card-border partner replaces it."
+          },
+          {
+            "id": "heldout-202-preference-only-ko",
+            "reason": "Low-cost preference choice can use a stated assumption; a bare preference question leaves it unserved (#202 decision 2-A). Former held-out moved to dev under #827; fresh card-border partner replaces it."
+          }
+        ],
+        "goal-unsupported-figure-ko": [
+          {
+            "id": "heldout-goal-unsupported-figure",
+            "reason": "Unsupported quantitative answer cannot establish completion; capacity replaces travel duration."
+          }
+        ],
+        "goal-curiosity-ko": [
+          {
+            "id": "heldout-goal-unhelpful-curiosity",
+            "reason": "Irrelevant curiosity does not serve an owner situation; missing sheet music replaces a gallery visit."
+          }
+        ],
+        "heldout-goal-legitimate-question": [
+          {
+            "id": "heldout-202-preference-only-en",
+            "reason": "Low-cost preference choice can use a stated assumption; a bare preference question leaves it unserved (#202 decision 2-A). Former held-out moved to dev under #827; fresh card-border partner replaces it."
+          },
+          {
+            "id": "heldout-202-preference-only-ko",
+            "reason": "Low-cost preference choice can use a stated assumption; a bare preference question leaves it unserved (#202 decision 2-A). Former held-out moved to dev under #827; fresh card-border partner replaces it."
+          }
+        ],
+        "goal-202-failed-hedge-en": [
+          {
+            "id": "heldout-202-failed-hedge-en",
+            "reason": "Same failed-hedge completion boundary; fresh drying observations replace batch processing."
+          }
+        ],
+        "goal-202-failed-hedge-ko": [
+          {
+            "id": "heldout-202-failed-hedge-ko",
+            "reason": "Same failed-hedge completion boundary; fresh drying observations replace batch processing."
+          }
+        ],
+        "goal-202-unused-method-en": [
+          {
+            "id": "heldout-202-unused-method-en",
+            "reason": "Same unused-method completion boundary; fresh drying observations replace batch processing."
+          }
+        ],
+        "goal-202-unused-method-ko": [
+          {
+            "id": "heldout-202-unused-method-ko",
+            "reason": "Same unused-method completion boundary; fresh drying observations replace batch processing."
+          }
+        ],
+        "goal-202-second-method-en": [
+          {
+            "id": "heldout-202-second-method-en",
+            "reason": "Same second-method completion boundary; fresh drying observations replace batch processing."
+          }
+        ],
+        "goal-202-second-method-ko": [
+          {
+            "id": "heldout-202-second-method-ko",
+            "reason": "Same second-method completion boundary; fresh drying observations replace batch processing."
+          }
+        ],
+        "goal-202-no-other-method-en": [
+          {
+            "id": "heldout-202-no-other-method-en",
+            "reason": "Same no-other-method completion boundary; fresh drying observations replace batch processing."
+          }
+        ],
+        "goal-202-no-other-method-ko": [
+          {
+            "id": "heldout-202-no-other-method-ko",
+            "reason": "Same no-other-method completion boundary; fresh drying observations replace batch processing."
+          }
+        ],
+        "goal-202-rough-request-en": [
+          {
+            "id": "heldout-202-rough-request-en",
+            "reason": "Same rough-request completion boundary; fresh drying observations replace batch processing."
+          }
+        ],
+        "goal-202-rough-request-ko": [
+          {
+            "id": "heldout-202-rough-request-ko",
+            "reason": "Same rough-request completion boundary; fresh drying observations replace batch processing."
+          }
+        ],
+        "goal-202-saved-assume-ask-en": [
+          {
+            "id": "heldout-202-saved-assume-ask-en",
+            "reason": "Same saved-assume-ask completion boundary; fresh closing pickup replaces session arrival."
+          }
+        ],
+        "goal-202-saved-assume-ask-ko": [
+          {
+            "id": "heldout-202-saved-assume-ask-ko",
+            "reason": "Same saved-assume-ask completion boundary; fresh closing pickup replaces session arrival."
+          }
+        ],
+        "goal-202-saved-ask-only-en": [
+          {
+            "id": "heldout-202-saved-ask-only-en",
+            "reason": "Same saved-ask-only completion boundary; fresh closing pickup replaces session arrival."
+          }
+        ],
+        "goal-202-saved-ask-only-ko": [
+          {
+            "id": "heldout-202-saved-ask-only-ko",
+            "reason": "Same saved-ask-only completion boundary; fresh closing pickup replaces session arrival."
+          }
+        ],
+        "goal-202-owner-date-en": [
+          {
+            "id": "heldout-202-owner-date-en",
+            "reason": "Same owner-date completion boundary; fresh a private draft selection replaces choosing between dates."
+          }
+        ],
+        "goal-202-owner-date-ko": [
+          {
+            "id": "heldout-202-owner-date-ko",
+            "reason": "Same owner-date completion boundary; fresh a private draft selection replaces choosing between dates."
+          }
+        ],
+        "goal-202-plan-met-en": [
+          {
+            "id": "heldout-202-plan-met-en",
+            "reason": "Supported plan reading is fulfilled; supplied shape definitions replace label counting."
+          }
+        ],
+        "goal-202-plan-met-ko": [
+          {
+            "id": "heldout-202-plan-met-ko",
+            "reason": "Supported plan reading is fulfilled; supplied shape definitions replace label counting."
+          }
+        ],
+        "goal-202-plan-ignored-lookup-en": [
+          {
+            "id": "heldout-202-plan-ignored-lookup-en",
+            "reason": "A supported reading requires a lookup the reply skips; a revision register replaces a numeric index."
+          }
+        ],
+        "goal-202-plan-ignored-lookup-ko": [
+          {
+            "id": "heldout-202-plan-ignored-lookup-ko",
+            "reason": "A supported reading requires a lookup the reply skips; a revision register replaces a numeric index."
+          }
+        ],
+        "goal-202-plan-overbroad-en": [
+          {
+            "id": "heldout-202-plan-overbroad-en",
+            "reason": "Reject extra work absent from the request; sentence rewriting replaces abbreviation expansion."
+          }
+        ],
+        "goal-202-plan-overbroad-ko": [
+          {
+            "id": "heldout-202-plan-overbroad-ko",
+            "reason": "Reject extra work absent from the request; sentence rewriting replaces abbreviation expansion."
+          }
+        ],
+        "goal-202-plan-narrowed-en": [
+          {
+            "id": "heldout-202-plan-narrowed-en",
+            "reason": "Reject a reading that omits an explicit part; sequence endpoints replace arithmetic results."
+          }
+        ],
+        "goal-202-plan-narrowed-ko": [
+          {
+            "id": "heldout-202-plan-narrowed-ko",
+            "reason": "Reject a reading that omits an explicit part; sequence endpoints replace arithmetic results."
+          }
+        ],
+        "goal-202-plan-conversation-en": [
+          {
+            "id": "heldout-202-plan-conversation-en",
+            "reason": "Reject a literal reading contradicted by conversation; abstract game availability replaces memo tone."
+          }
+        ],
+        "goal-202-plan-conversation-ko": [
+          {
+            "id": "heldout-202-plan-conversation-ko",
+            "reason": "Reject a literal reading contradicted by conversation; abstract game availability replaces memo tone."
+          }
+        ]
+      },
+      "unpaired": {}
+    },
+    "orchestration_escalation": {
+      "dev": [
+        "escalation-en",
+        "escalation-ko"
+      ],
+      "heldout": [
+        "heldout-escalation"
+      ],
+      "partners": {
+        "escalation-en": [
+          {
+            "id": "heldout-escalation",
+            "reason": "Observed missing result means not_reached; audio analysis replaces a product comparison."
+          }
+        ],
+        "escalation-ko": [
+          {
+            "id": "heldout-escalation",
+            "reason": "Observed missing result means not_reached; audio analysis replaces a product comparison."
+          }
+        ]
+      },
+      "unpaired": {}
+    },
+    "orchestration_plan": {
+      "dev": [
+        "plan-plain-en",
+        "plan-plain-ko",
+        "plan-password",
+        "plan-forwarding",
+        "plan-subscription",
+        "plan-schedule",
+        "plan-location",
+        "plan-technical",
+        "plan-statement",
+        "plan-202-saved-en",
+        "plan-202-exact-en",
+        "plan-202-saved-ko",
+        "plan-202-exact-ko"
+      ],
+      "heldout": [
+        "heldout-plan-account",
+        "heldout-plan-plain",
+        "heldout-plan-situation",
+        "heldout-plan-statement",
+        "heldout-plan-technical",
+        "heldout-plan-202-saved-en",
+        "heldout-plan-202-exact-en",
+        "heldout-plan-202-saved-ko",
+        "heldout-plan-202-exact-ko"
+      ],
+      "partners": {
+        "plan-plain-en": [
+          {
+            "id": "heldout-plan-plain",
+            "reason": "A general explanation needs no account, personal context or technical work; optics replaces buoyancy."
+          }
+        ],
+        "plan-plain-ko": [
+          {
+            "id": "heldout-plan-plain",
+            "reason": "A general explanation needs no account, personal context or technical work; optics replaces buoyancy."
+          }
+        ],
+        "plan-password": [
+          {
+            "id": "heldout-plan-account",
+            "reason": "Account-setting change requires the same elevated route; recovery contact replaces passwords, forwarding and subscriptions."
+          }
+        ],
+        "plan-forwarding": [
+          {
+            "id": "heldout-plan-account",
+            "reason": "Account-setting change requires the same elevated route; recovery contact replaces passwords, forwarding and subscriptions."
+          }
+        ],
+        "plan-subscription": [
+          {
+            "id": "heldout-plan-account",
+            "reason": "Account-setting change requires the same elevated route; recovery contact replaces passwords, forwarding and subscriptions."
+          }
+        ],
+        "plan-schedule": [
+          {
+            "id": "heldout-plan-situation",
+            "reason": "An answer depends on owner context; personal routine replaces schedule gaps and location."
+          }
+        ],
+        "plan-location": [
+          {
+            "id": "heldout-plan-situation",
+            "reason": "An answer depends on owner context; personal routine replaces schedule gaps and location."
+          }
+        ],
+        "plan-technical": [
+          {
+            "id": "heldout-plan-technical",
+            "reason": "Code investigation and verification require technical work; an image decoder replaces a parser."
+          }
+        ],
+        "plan-statement": [
+          {
+            "id": "heldout-plan-statement",
+            "reason": "A statement about owner plans still depends on owner situation; choir rehearsal replaces a library visit."
+          }
+        ],
+        "plan-202-saved-en": [
+          {
+            "id": "heldout-plan-202-saved-en",
+            "reason": "Same first-plan question boundary; closing pickup or assembly-point positioning replaces arrival or entrance positioning."
+          }
+        ],
+        "plan-202-exact-en": [
+          {
+            "id": "heldout-plan-202-exact-en",
+            "reason": "Same first-plan question boundary; closing pickup or assembly-point positioning replaces arrival or entrance positioning."
+          }
+        ],
+        "plan-202-saved-ko": [
+          {
+            "id": "heldout-plan-202-saved-ko",
+            "reason": "Same first-plan question boundary; closing pickup or assembly-point positioning replaces arrival or entrance positioning."
+          }
+        ],
+        "plan-202-exact-ko": [
+          {
+            "id": "heldout-plan-202-exact-ko",
+            "reason": "Same first-plan question boundary; closing pickup or assembly-point positioning replaces arrival or entrance positioning."
+          }
+        ]
+      },
+      "unpaired": {}
+    },
+    "owner_act_answer": {
+      "dev": [
+        "owner-act-approve",
+        "owner-act-decline",
+        "owner-act-none"
+      ],
+      "heldout": [
+        "heldout-act-approve",
+        "heldout-act-decline",
+        "heldout-act-unrelated"
+      ],
+      "partners": {
+        "owner-act-approve": [
+          {
+            "id": "heldout-act-approve",
+            "reason": "Maps the owner reply to the shown proposal; room reservation replaces sending a draft."
+          }
+        ],
+        "owner-act-decline": [
+          {
+            "id": "heldout-act-decline",
+            "reason": "Maps the owner reply to the shown proposal; room reservation replaces sending a draft."
+          }
+        ],
+        "owner-act-none": [
+          {
+            "id": "heldout-act-unrelated",
+            "reason": "Maps the owner reply to the shown proposal; room reservation replaces sending a draft."
+          }
+        ]
+      },
+      "unpaired": {}
+    },
+    "parked_work_withdrawn": {
+      "dev": [
+        "withdrawal-true-ko",
+        "withdrawal-false-ko",
+        "withdrawal-true-en",
+        "withdrawal-false-en"
+      ],
+      "heldout": [
+        "heldout-withdrawal-false",
+        "heldout-withdrawal-true"
+      ],
+      "partners": {
+        "withdrawal-true-ko": [
+          {
+            "id": "heldout-withdrawal-true",
+            "reason": "Explicit withdrawal of waiting Work; archive search and new wording replace mail lookup."
+          }
+        ],
+        "withdrawal-false-ko": [
+          {
+            "id": "heldout-withdrawal-false",
+            "reason": "Waiting for access retains rather than withdraws Work; new domain and wording."
+          }
+        ],
+        "withdrawal-true-en": [
+          {
+            "id": "heldout-withdrawal-true",
+            "reason": "Explicit withdrawal of waiting Work; archive search and new wording replace mail lookup."
+          }
+        ],
+        "withdrawal-false-en": [
+          {
+            "id": "heldout-withdrawal-false",
+            "reason": "Waiting for access retains rather than withdraws Work; new domain and wording."
+          }
+        ]
+      },
+      "unpaired": {}
+    },
+    "status_projection": {
+      "dev": [
+        "projection-failed",
+        "projection-partial",
+        "projection-unknown"
+      ],
+      "heldout": [
+        "heldout-projection-failed",
+        "heldout-projection-partial",
+        "heldout-projection-unknown"
+      ],
+      "partners": {
+        "projection-failed": [
+          {
+            "id": "heldout-projection-failed",
+            "reason": "Observed failure must not become success; audio conversion replaces document export."
+          }
+        ],
+        "projection-partial": [
+          {
+            "id": "heldout-projection-partial",
+            "reason": "Incomplete output remains partial; audio transcription replaces written sections."
+          }
+        ],
+        "projection-unknown": [
+          {
+            "id": "heldout-projection-unknown",
+            "reason": "An unconfirmed terminal effect stays unknown; remote job execution replaces an update."
+          }
+        ]
+      },
+      "unpaired": {}
+    },
+    "steers_running_work": {
+      "dev": [
+        "steer-correction-ko",
+        "steer-unrelated-ko",
+        "steer-correction-en",
+        "steer-unrelated-en"
+      ],
+      "heldout": [
+        "heldout-steer-correction",
+        "heldout-steer-unrelated"
+      ],
+      "partners": {
+        "steer-correction-ko": [
+          {
+            "id": "heldout-steer-correction",
+            "reason": "A changed constraint steers active Work; document length replaces appointment timing."
+          }
+        ],
+        "steer-unrelated-ko": [
+          {
+            "id": "heldout-steer-unrelated",
+            "reason": "An independent question does not steer active Work; biography and optics replace appointments and plants."
+          }
+        ],
+        "steer-correction-en": [
+          {
+            "id": "heldout-steer-correction",
+            "reason": "A changed constraint steers active Work; document length replaces appointment timing."
+          }
+        ],
+        "steer-unrelated-en": [
+          {
+            "id": "heldout-steer-unrelated",
+            "reason": "An independent question does not steer active Work; biography and optics replace appointments and plants."
+          }
+        ]
+      },
+      "unpaired": {}
+    }
+  }
+}
