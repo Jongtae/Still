@@ -54,6 +54,11 @@ OUTBOUND_TIME_SKEW_SECONDS = 2
 # Matches Slack's existing seven-day event dedupe horizon; normal echo delivery
 # takes seconds/minutes. Longer offline/replayed *identified* echoes are a limit.
 OBSERVED_POST_RETENTION_SECONDS = 7 * 86400
+# Ten missed nominal 3-second surface ticks. A lease is evidence of an
+# instance/attempt's recent activity, never a total network-call deadline.
+PROCESS_HEARTBEAT_MAX_AGE_SECONDS = 30
+PROCESS_LEASE_PREFIX = 'surface_outbound_process:'
+PID_LEASE_PREFIX = 'surface_outbound_pid:'
 
 
 def _reset_outbound_process():
@@ -81,26 +86,73 @@ def _release_live_reservations(store, reservations):
             _LIVE_OUTBOUND.pop(_reservation_key(store, event), None)
 
 
-def _attempt_is_dead(store, event, detail):
-    if detail.get('process_token') == _PROCESS_TOKEN:
+def _record_process_heartbeat(store, db):
+    with _LIVE_OUTBOUND_LOCK:
+        active = []
+        for key, thread in list(_LIVE_OUTBOUND.items()):
+            if key[0] != str(store.path):
+                continue
+            if thread.is_alive():
+                active.append(key[1])
+            else:
+                _LIVE_OUTBOUND.pop(key, None)
+    now = time.time()
+    store.put(PROCESS_LEASE_PREFIX + _PROCESS_TOKEN,
+              {'pid': _PROCESS_PID, 'heartbeat_at': now, 'live_reservations': sorted(active)}, db=db)
+    store.put(PID_LEASE_PREFIX + str(_PROCESS_PID),
+              {'token': _PROCESS_TOKEN, 'heartbeat_at': now}, db=db)
+
+
+def heartbeat_outbound_process(store):
+    """Renew only this process instance on the existing surface receive tick."""
+    with store.db() as db:
+        db.execute('BEGIN IMMEDIATE')
+        _record_process_heartbeat(store, db)
+
+
+def _fresh_process_lease(record, now):
+    if not isinstance(record, dict):
+        return False
+    at = record.get('heartbeat_at')
+    return (type(at) in (int, float)
+            and now - PROCESS_HEARTBEAT_MAX_AGE_SECONDS <= at <= now + OUTBOUND_TIME_SKEW_SECONDS)
+
+
+def _attempt_is_dead(store, event, detail, db):
+    token, pid = detail.get('process_token'), detail.get('process_pid')
+    if token == _PROCESS_TOKEN and pid == _PROCESS_PID:
         with _LIVE_OUTBOUND_LOCK:
             key = _reservation_key(store, event)
             thread = _LIVE_OUTBOUND.get(key)
             if thread is not None and thread.is_alive():
                 return False
-            # Reap a thread that exited before observation, as well as an
-            # explicit finally-release after a failed settlement transaction.
             _LIVE_OUTBOUND.pop(key, None)
             return True
-    pid = detail.get('process_pid')
-    if type(pid) is not int or pid <= 0:
-        return False  # legacy/missing ownership is not proof of a crash
+    if pid == _PROCESS_PID:
+        return True  # this PID now belongs to our *different* instance token
+    if type(pid) is not int or pid <= 0 or not isinstance(token, str) or not token:
+        return True  # unprovable legacy ownership cannot hold ingress forever
+    try:
+        instance = store.config(PROCESS_LEASE_PREFIX + token, db=db)
+        pid_claim = store.config(PID_LEASE_PREFIX + str(pid), db=db)
+    except (ValueError, TypeError):
+        return True  # malformed lease data is not evidence of a live instance
+    now = time.time()
+    if not (_fresh_process_lease(instance, now) and _fresh_process_lease(pid_claim, now)):
+        return True
+    if instance.get('pid') != pid or pid_claim.get('token') != token:
+        return True  # another instance has claimed the reused PID
+    active = instance.get('live_reservations')
+    if not isinstance(active, list) or not all(type(item) is int for item in active) or event not in active:
+        return True  # a still-live process has ended this particular attempt
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
         return True
     except Exception:
-        return False  # permission denied / invalid PID / unknown is not proof of death
+        # A fresh instance heartbeat supplies only a bounded grace period when
+        # the PID probe is unavailable; no renewal means expiry after 30s.
+        return False
     return False
 
 
@@ -178,6 +230,7 @@ def reserve_outbound(store, work_id, url):
                     reservations.append((surface, event, cfg))
                     with _LIVE_OUTBOUND_LOCK:
                         _LIVE_OUTBOUND[_reservation_key(store, event)] = threading.current_thread()
+            _record_process_heartbeat(store, db)
     except BaseException:
         _release_live_reservations(store, reservations)
         raise
@@ -266,23 +319,24 @@ class DirectMessageSurface(ConversationSurface):
         return self.name, cfg.get('generation'), cfg.get('channel_id'), cfg.get('owner_user_id')
 
     def _expire_outbound(self, db):
-        from .api_requests import DISPATCH_RECOVERY_BOUND_SECONDS
         _cancel_invalid_records(db)
-        # Per-operation socket timeouts do not bound an entire live send.
-        # Age selects crash candidates only; ownership must prove they stopped.
+        # Publish the current instance before recovery, including on restart.
+        _record_process_heartbeat(self.service.store, db)
         rows = db.execute("SELECT id,detail,created FROM tool_events WHERE tool=? "
-                          "AND status='pending' AND created<=? AND json_valid(detail) "
+                          "AND status='pending' AND json_valid(detail) "
                           f"AND json_extract({SAFE_EVENT_DETAIL},'$.surface')=?",
-                          (OUTBOUND_POST, time.time() - DISPATCH_RECOVERY_BOUND_SECONDS, self.name))
+                          (OUTBOUND_POST, self.name))
         for row in rows:
             detail = _event_detail(db, row)
-            if detail is None or not _attempt_is_dead(self.service.store, row['id'], detail):
+            if detail is None or not _attempt_is_dead(self.service.store, row['id'], detail, db):
                 continue
-            # Keep the requested finite crash window, never the restart time.
+            # Recovery must cover the whole possible send/offline interval,
+            # not a synthetic timeout measured from the reservation's start.
+            detected_at = max(time.time(), row['created'])
             db.execute("UPDATE tool_events SET status='unidentified', "
-                       "detail=json_set(detail,'$.settled_at',created+?) "
+                       "detail=json_set(detail,'$.settled_at',?,'$.recovery','abandoned') "
                        "WHERE id=? AND status='pending'",
-                       (DISPATCH_RECOVERY_BOUND_SECONDS, row['id']))
+                       (detected_at, row['id']))
 
     def _outbound_rows(self, db, cfg, spoke=None):
         self._expire_outbound(db)

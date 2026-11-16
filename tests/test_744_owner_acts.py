@@ -499,19 +499,18 @@ def ingest_at(paired, host_time, text):
     return slack_event(surface, ts=str(host_time - cfg.get('clock_offset', 0)), text=text)
 
 
-def test_stale_crash_reservation_has_bounded_window_and_releases_on_tick(service, paired, monkeypatch):
-    from personal_agent.api_requests import DISPATCH_RECOVERY_BOUND_SECONDS
+def test_crash_recovery_window_covers_offline_interval_and_releases_on_tick(service, paired, monkeypatch):
     from personal_agent.direct_message_surface import reserve_outbound
     surface = paired[0]
     url = (surface.config()['server_url'] + '/api/v4/posts' if surface.name == 'mattermost'
            else 'https://slack.com/api/chat.postMessage')
     work = service.store.enqueue('source', 'crashed-send')
     [(_, event, _)] = reserve_outbound(service.store, work, url)
-    set_outbound_process_owner(service, event, 4242744, 'dead-process744')
-    monkeypatch.setattr(os, 'kill', dead_outbound_process)
     ingest_at(paired, NOW, 'echo during crashed send')
     assert not [j for j in service.store.jobs() if j['id'] != work]
-    # Even a long offline interval uses the original finite dispatch deadline.
+    set_outbound_process_owner(service, event, 4242744, 'dead-process744')
+    monkeypatch.setattr(os, 'kill', dead_outbound_process)
+    # Recovery covers the whole offline interval before classifying held content.
     monkeypatch.setattr(time, 'time', lambda: NOW + 3600)
     restarted, pair = restart_service(service, paired)
     pair[0].receive()
@@ -521,13 +520,11 @@ def test_stale_crash_reservation_has_bounded_window_and_releases_on_tick(service
     with restarted.store.db() as db:
         row = db.execute('SELECT status,detail FROM tool_events WHERE id=?', (event,)).fetchone()
         assert row['status'] == 'unidentified'
-        assert json.loads(row['detail'])['settled_at'] == NOW + DISPATCH_RECOVERY_BOUND_SECONDS
-    ingest_at(pair, NOW + 3600, 'independent instruction after crash')
-    assert next(j for j in restarted.store.jobs() if j['message'] == 'independent instruction after crash')['owner_typed'] == 1
+        assert json.loads(row['detail'])['settled_at'] == time.time()
+    assert_owner_message_after_recovery(restarted, pair, monkeypatch)
 
 
 def test_stale_reservation_expires_on_ingress_without_tick(service, paired, monkeypatch):
-    from personal_agent.api_requests import DISPATCH_RECOVERY_BOUND_SECONDS
     from personal_agent.direct_message_surface import reserve_outbound
     surface = paired[0]
     url = (surface.config()['server_url'] + '/api/v4/posts' if surface.name == 'mattermost'
@@ -536,10 +533,11 @@ def test_stale_reservation_expires_on_ingress_without_tick(service, paired, monk
     [(_, event, _)] = reserve_outbound(service.store, work, url)
     set_outbound_process_owner(service, event, 4242744, 'dead-process744')
     monkeypatch.setattr(os, 'kill', dead_outbound_process)
-    monkeypatch.setattr(time, 'time', lambda: NOW + DISPATCH_RECOVERY_BOUND_SECONDS + 10)
+    monkeypatch.setattr(time, 'time', lambda: NOW + 40)
     ingest_at(paired, time.time(), 'first message after stale send')
     assert_no_pending_ingress(service)
-    assert next(j for j in service.store.jobs() if j['message'] == 'first message after stale send')['owner_typed'] == 1
+    assert_recovery_message_is_data(service, 'first message after stale send')
+    assert_owner_message_after_recovery(service, paired, monkeypatch)
 
 
 def test_read_5xx_then_success_retries_without_holding_conversation(service, paired):
@@ -857,17 +855,21 @@ def dead_outbound_process(pid, signal):
     raise ProcessLookupError('fixture process has exited')
 
 
-@pytest.mark.parametrize('response', ['identified', 'unidentified'])
+@pytest.mark.parametrize('response', ['identified', 'unidentified', 'crashed'])
 def test_live_transport_past_crash_bound_keeps_late_echo_held(service, paired, monkeypatch, response):
     surface, wire = paired
     cfg = surface.config()
     now = [NOW]
     monkeypatch.setattr(time, 'time', lambda: now[0])
     entered, release = threading.Event(), threading.Event()
+    class CrashedAttempt(BaseException):
+        pass
     posts, failures = [], []
     def transport(method, url, headers, body, timeout):
         entered.set()
         assert release.wait(5), 'test did not release the fake transport'
+        if response == 'crashed':
+            raise CrashedAttempt()
         return 200, {}, json.dumps(posts[0] if response == 'identified' else {}).encode()
     def dispatch():
         try:
@@ -900,7 +902,13 @@ def test_live_transport_past_crash_bound_keeps_late_echo_held(service, paired, m
     finally:
         release.set()
         worker.join(5)
-    assert not worker.is_alive() and not failures
+    assert not worker.is_alive()
+    if response == 'crashed':
+        assert len(failures) == 1 and isinstance(failures[0], CrashedAttempt)
+        now[0] = NOW + 50
+        surface.replay_ingress()
+    else:
+        assert not failures
     assert_no_pending_ingress(service)
     echoes = [j for j in service.store.jobs() if j['message'] == INJECTED_RESULT['text']]
     if response == 'identified':
@@ -908,7 +916,10 @@ def test_live_transport_past_crash_bound_keeps_late_echo_held(service, paired, m
     else:
         [echo] = echoes
         assert echo['owner_typed'] != 1
-        assert service.store.turn_provenance(echo['id'])['surface_origin']['windows'][0]['settled_at'] == NOW + 40
+        assert service.store.turn_provenance(echo['id'])['surface_origin']['windows'][0]['settled_at'] == now[0]
+    now[0] += 10
+    ingest_at(paired, now[0], 'owner instruction after recovery')
+    assert next(j for j in service.store.jobs() if j['message'] == 'owner instruction after recovery')['owner_typed'] == 1
 
 
 @pytest.mark.parametrize('probe', ['alive', 'permission-denied', 'unknown-error'])
@@ -931,6 +942,7 @@ def test_other_live_process_reservation_is_not_expired_by_age(service, paired, m
             raise RuntimeError('process liveness unavailable')
     monkeypatch.setattr(os, 'kill', alive)
     monkeypatch.setattr(time, 'time', lambda: NOW + 40)
+    record_outbound_process_lease(service, reservations[0][1], 4242745, 'other-live-process744', NOW + 40)
     ingest_at(paired, NOW + 40, 'owner message during another live attempt')
     surface.replay_ingress()
     assert not [j for j in service.store.jobs() if j['id'] != work]
@@ -940,8 +952,7 @@ def test_other_live_process_reservation_is_not_expired_by_age(service, paired, m
     assert next(j for j in service.store.jobs() if j['id'] != work)['owner_typed'] == 1
 
 
-def test_same_process_missing_live_registration_expires_after_bound(service, paired, monkeypatch):
-    from personal_agent.api_requests import DISPATCH_RECOVERY_BOUND_SECONDS
+def test_same_process_missing_live_registration_recovers_on_ingress(service, paired, monkeypatch):
     from personal_agent import direct_message_surface as dm
     surface = paired[0]
     cfg = surface.config()
@@ -954,14 +965,15 @@ def test_same_process_missing_live_registration_expires_after_bound(service, pai
     release = getattr(dm, '_release_live_reservations', None)
     if release is not None:
         release(service.store, reservations)
-    monkeypatch.setattr(time, 'time', lambda: NOW + DISPATCH_RECOVERY_BOUND_SECONDS + 10)
+    monkeypatch.setattr(time, 'time', lambda: NOW + 40)
     ingest_at(paired, time.time(), 'owner after abandoned attempt')
     assert_no_pending_ingress(service)
     with service.store.db() as db:
         row = db.execute('SELECT status,detail FROM tool_events WHERE id=?', (reservations[0][1],)).fetchone()
         assert row['status'] == 'unidentified'
-        assert json.loads(row['detail'])['settled_at'] == NOW + DISPATCH_RECOVERY_BOUND_SECONDS
-    assert next(j for j in service.store.jobs() if j['id'] != work)['owner_typed'] == 1
+        assert json.loads(row['detail'])['settled_at'] == time.time()
+    assert_recovery_message_is_data(service, 'owner after abandoned attempt')
+    assert_owner_message_after_recovery(service, paired, monkeypatch)
 
 
 def test_live_reservation_ids_are_scoped_to_the_store(service, paired, monkeypatch):
@@ -989,7 +1001,8 @@ def test_live_reservation_ids_are_scoped_to_the_store(service, paired, monkeypat
         assert not [j for j in service.store.jobs() if j['id'] != first_work]
         ingest_at((other_surface, paired[1]), NOW + 40, 'second store abandoned its attempt')
         assert_no_pending_ingress(other)
-        assert next(j for j in other.store.jobs() if j['id'] != second_work)['owner_typed'] == 1
+        assert_recovery_message_is_data(other, 'second store abandoned its attempt')
+        assert_owner_message_after_recovery(other, (other_surface, paired[1]), monkeypatch)
     finally:
         dm.observe_outbound(service.store, first, url, 403, b'{}')
 
@@ -1011,7 +1024,8 @@ def test_observation_failure_releases_live_registration_in_finally(service, pair
     monkeypatch.setattr(time, 'time', lambda: NOW + 40)
     ingest_at(paired, NOW + 40, 'owner after failed settlement')
     assert_no_pending_ingress(service)
-    assert next(j for j in service.store.jobs() if j['id'] != work)['owner_typed'] == 1
+    assert_recovery_message_is_data(service, 'owner after failed settlement')
+    assert_owner_message_after_recovery(service, paired, monkeypatch)
 
 
 def test_exited_attempt_thread_is_not_kept_live_by_its_pid(service, paired, monkeypatch):
@@ -1031,10 +1045,11 @@ def test_exited_attempt_thread_is_not_kept_live_by_its_pid(service, paired, monk
     monkeypatch.setattr(time, 'time', lambda: NOW + 40)
     ingest_at(paired, NOW + 40, 'owner after attempt thread exited')
     assert_no_pending_ingress(service)
-    assert next(j for j in service.store.jobs() if j['id'] != work)['owner_typed'] == 1
+    assert_recovery_message_is_data(service, 'owner after attempt thread exited')
+    assert_owner_message_after_recovery(service, paired, monkeypatch)
 
 
-def test_missing_process_metadata_is_not_guessed_dead(service, paired, monkeypatch):
+def test_missing_process_metadata_recovers_instead_of_holding_forever(service, paired, monkeypatch):
     from personal_agent.direct_message_surface import reserve_outbound, observe_outbound
     surface = paired[0]
     cfg = surface.config()
@@ -1051,7 +1066,9 @@ def test_missing_process_metadata_is_not_guessed_dead(service, paired, monkeypat
     monkeypatch.setattr(time, 'time', lambda: NOW + 40)
     try:
         ingest_at(paired, NOW + 40, 'legacy attempt liveness unknown')
-        assert not [j for j in service.store.jobs() if j['id'] != work]
+        assert_no_pending_ingress(service)
+        assert_recovery_message_is_data(service, 'legacy attempt liveness unknown')
+        assert_owner_message_after_recovery(service, paired, monkeypatch)
     finally:
         observe_outbound(service.store, reservations, url, 403, b'{}')
     assert_no_pending_ingress(service)
@@ -1073,4 +1090,143 @@ def test_unwound_dispatch_does_not_keep_a_surviving_thread_live(service, paired,
     monkeypatch.setattr(time, 'time', lambda: NOW + 40)
     ingest_at(paired, NOW + 40, 'owner after unwound dispatch')
     assert_no_pending_ingress(service)
-    assert next(j for j in service.store.jobs() if j['message'] == 'owner after unwound dispatch')['owner_typed'] == 1
+    assert_recovery_message_is_data(service, 'owner after unwound dispatch')
+    assert_owner_message_after_recovery(service, paired, monkeypatch)
+
+
+
+def record_outbound_process_lease(service, event, pid, token, at, *, pid_token=None, active=True):
+    with service.store.db() as db:
+        service.store.put('surface_outbound_process:' + token,
+                          {'pid': pid, 'heartbeat_at': at, 'live_reservations': [event] if active else []}, db=db)
+        service.store.put('surface_outbound_pid:' + str(pid),
+                          {'token': token if pid_token is None else pid_token, 'heartbeat_at': at}, db=db)
+
+
+@pytest.mark.parametrize('process_state', [
+    'same-pid-new-token', 'foreign-stale', 'foreign-missing',
+    'foreign-reused', 'foreign-inactive', 'foreign-dead', 'foreign-fresh',
+])
+def test_process_instance_recovery_releases_held_echo_as_data(service, paired, monkeypatch, process_state):
+    from personal_agent.direct_message_surface import reserve_outbound, observe_outbound
+    surface = paired[0]
+    cfg = surface.config()
+    url = (cfg['server_url'] + '/api/v4/posts' if surface.name == 'mattermost'
+           else 'https://slack.com/api/chat.postMessage')
+    work = service.store.enqueue('source', 'process-instance744')
+    reservations = reserve_outbound(service.store, work, url)
+    event = reservations[0][1]
+    delay = 1 if process_state == 'same-pid-new-token' else 50
+    now = [NOW + min(40, delay - .25)]
+    monkeypatch.setattr(time, 'time', lambda: now[0])
+    ingest_at(paired, now[0], 'echo held before instance recovery')
+    assert not [j for j in service.store.jobs() if j['id'] != work]
+    pid = os.getpid() if process_state == 'same-pid-new-token' else 4242745
+    token = 'foreign-instance744'
+    set_outbound_process_owner(service, event, pid, token)
+    now[0] = NOW + delay
+    if process_state not in ('same-pid-new-token', 'foreign-missing'):
+        record_outbound_process_lease(service, event, pid, token,
+            NOW if process_state == 'foreign-stale' else now[0],
+            pid_token='replacement-instance744' if process_state == 'foreign-reused' else None,
+            active=process_state != 'foreign-inactive')
+    probes = []
+    def alive(probed_pid, signal):
+        probes.append((probed_pid, signal))
+        assert probed_pid == pid and signal == 0
+        if process_state == 'foreign-dead':
+            raise ProcessLookupError('fixture instance exited after its last heartbeat')
+    monkeypatch.setattr(os, 'kill', alive)
+    surface.replay_ingress()
+    if process_state == 'foreign-fresh':
+        with service.store.db() as db:
+            assert db.execute('SELECT status FROM tool_events WHERE id=?', (event,)).fetchone()[0] == 'pending'
+        assert not [j for j in service.store.jobs() if j['id'] != work]
+        assert probes and set(probes) == {(pid, 0)}
+        observe_outbound(service.store, reservations, url, 403, b'{}')
+    else:
+        assert_no_pending_ingress(service)
+        echo = next(j for j in service.store.jobs() if j['id'] != work)
+        assert echo['owner_typed'] != 1 and echo['message'] == 'echo held before instance recovery'
+        with service.store.db() as db:
+            row = db.execute('SELECT status,detail FROM tool_events WHERE id=?', (event,)).fetchone()
+            assert row['status'] == 'unidentified'
+            assert json.loads(row['detail'])['settled_at'] == now[0]
+        assert service.store.turn_provenance(echo['id'])['surface_origin']['windows'][0]['settled_at'] == now[0]
+    now[0] += 10
+    ingest_at(paired, now[0], 'fresh owner after instance recovery')
+    assert next(j for j in service.store.jobs() if j['message'] == 'fresh owner after instance recovery')['owner_typed'] == 1
+
+
+
+def assert_recovery_message_is_data(service, text):
+    message = next(j for j in service.store.jobs() if j['message'] == text)
+    assert message['owner_typed'] != 1
+    assert service.store.turn_provenance(message['id'])['surface_origin']['windows'][0]['settled_at'] == time.time()
+
+
+def assert_owner_message_after_recovery(service, paired, monkeypatch):
+    at = time.time() + 10  # outside the existing two-second timestamp skew
+    monkeypatch.setattr(time, 'time', lambda: at)
+    text = 'new owner instruction outside the recovered window'
+    ingest_at(paired, at, text)
+    assert next(j for j in service.store.jobs() if j['message'] == text)['owner_typed'] == 1
+
+
+def test_reservation_and_receive_tick_publish_process_instance_heartbeat(service, paired, monkeypatch):
+    from personal_agent import direct_message_surface as dm
+    surface = paired[0]
+    cfg = surface.config()
+    url = (cfg['server_url'] + '/api/v4/posts' if surface.name == 'mattermost'
+           else 'https://slack.com/api/chat.postMessage')
+    work = service.store.enqueue('source', 'heartbeat744')
+    reservations = dm.reserve_outbound(service.store, work, url)
+    event = reservations[0][1]
+    with service.store.db() as db:
+        detail = json.loads(db.execute('SELECT detail FROM tool_events WHERE id=?', (event,)).fetchone()[0])
+    token, pid = detail['process_token'], detail['process_pid']
+    def assert_heartbeat(at, active):
+        assert service.store.config('surface_outbound_process:' + token) == {
+            'pid': pid, 'heartbeat_at': at, 'live_reservations': active}
+        assert service.store.config('surface_outbound_pid:' + str(pid)) == {
+            'token': token, 'heartbeat_at': at}
+    assert_heartbeat(NOW, [event])
+    # Heartbeats precede network/setup and still renew on an unusable surface's tick.
+    monkeypatch.setattr(surface, 'usable', lambda cfg: False)
+    monkeypatch.setattr(time, 'time', lambda: NOW + 20)
+    surface.receive()
+    assert_heartbeat(NOW + 20, [event])
+    dm._release_live_reservations(service.store, reservations)
+    monkeypatch.setattr(time, 'time', lambda: NOW + 23)
+    surface.receive()
+    assert_heartbeat(NOW + 23, [])
+
+
+@pytest.mark.parametrize('probe', ['permission-denied', 'unknown-error'])
+def test_unprovable_foreign_process_expires_when_heartbeat_stops(service, paired, monkeypatch, probe):
+    from personal_agent.direct_message_surface import reserve_outbound, PROCESS_HEARTBEAT_MAX_AGE_SECONDS
+    surface = paired[0]
+    cfg = surface.config()
+    url = (cfg['server_url'] + '/api/v4/posts' if surface.name == 'mattermost'
+           else 'https://slack.com/api/chat.postMessage')
+    work = service.store.enqueue('source', 'stopped-heartbeat744')
+    reservations = reserve_outbound(service.store, work, url)
+    event = reservations[0][1]
+    now = [NOW + 40]
+    monkeypatch.setattr(time, 'time', lambda: now[0])
+    ingest_at(paired, now[0], 'echo before heartbeat stopped')
+    set_outbound_process_owner(service, event, 4242745, 'bounded-foreign744')
+    record_outbound_process_lease(service, event, 4242745, 'bounded-foreign744', now[0])
+    def unavailable(pid, signal):
+        assert pid == 4242745 and signal == 0
+        if probe == 'permission-denied':
+            raise PermissionError('fixture process probe unavailable')
+        raise RuntimeError('fixture process probe unavailable')
+    monkeypatch.setattr(os, 'kill', unavailable)
+    surface.replay_ingress()
+    assert not [j for j in service.store.jobs() if j['id'] != work]
+    now[0] += PROCESS_HEARTBEAT_MAX_AGE_SECONDS + 1
+    surface.replay_ingress()
+    assert_no_pending_ingress(service)
+    assert_recovery_message_is_data(service, 'echo before heartbeat stopped')
+    assert_owner_message_after_recovery(service, paired, monkeypatch)

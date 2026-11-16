@@ -86,11 +86,6 @@ CLOCK_SKEW = 5 * 60
 TIMEOUT = 15
 MAX_TRANSPORT_ATTEMPTS = 2  # reads only; writes remain single-attempt/no-replay
 RETRY_SLEEP_SECONDS = 1
-DISPATCH_RECOVERY_MARGIN_SECONDS = 5
-# Window assigned after a reservation is proven abandoned; not a total transport
-# deadline (socket-operation timeouts and address attempts may exceed this).
-DISPATCH_RECOVERY_BOUND_SECONDS = (TIMEOUT * MAX_TRANSPORT_ATTEMPTS
-    + RETRY_SLEEP_SECONDS * (MAX_TRANSPORT_ATTEMPTS - 1) + DISPATCH_RECOVERY_MARGIN_SECONDS)
 MAX_RESPONSE_BYTES = 1_000_000
 MAX_BODY_BYTES = 64 * 1024
 MAX_CHECKS = 8

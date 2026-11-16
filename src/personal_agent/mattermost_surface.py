@@ -41,7 +41,8 @@ import time
 from urllib.parse import quote, urlsplit
 
 from .conversation_surface import PRESENCE_REACT, PRESENCE_TYPING, SurfaceCapabilities
-from .direct_message_surface import EMOJI_NAMES, DirectMessageSurface, steer_if_owner_typed
+from .direct_message_surface import (EMOJI_NAMES, DirectMessageSurface, steer_if_owner_typed,
+                                     heartbeat_outbound_process)
 from .messages import msg
 from .providers import ProviderError
 from . import work_mode
@@ -293,6 +294,7 @@ class MattermostSurface(DirectMessageSurface):
     # -- ingestion ----------------------------------------------------------------------
     def receive(self, now=None):
         """One poll of the owner's direct message: new owner posts become Work; owner reactions are acts."""
+        heartbeat_outbound_process(self.service.store)
         cfg = self.config()
         if not self.usable(cfg):
             return None

@@ -46,7 +46,8 @@ import threading
 import time
 
 from .conversation_surface import PRESENCE_REACT, SurfaceCapabilities
-from .direct_message_surface import EMOJI_NAMES, DirectMessageSurface, steer_if_owner_typed
+from .direct_message_surface import (EMOJI_NAMES, DirectMessageSurface, steer_if_owner_typed,
+                                     heartbeat_outbound_process)
 from .messages import msg
 from .providers import ProviderError
 from . import work_mode
@@ -431,6 +432,7 @@ class SlackSurface(DirectMessageSurface):
         Messages, reactions and button presses arrive on the SDK's threads (``_on_request``); this tick only
         replays pending owner acts, then opens, replaces or closes the connection, with a growing pause after a failed attempt.
         """
+        heartbeat_outbound_process(self.service.store)
         now = time.monotonic() if now is None else now
         cfg = self.config()
         wanted = cfg.get('generation') if self.usable(cfg) else None
