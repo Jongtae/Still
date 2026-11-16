@@ -175,6 +175,14 @@ def test_judgment_inventory_uses_declared_sets_and_splits(entries):
               for split in ('dev', 'heldout') for ident in part[split]}
     observed = {row['id']: row['split'] for row in entries if row['set'] == 'judgments'}
     assert observed == wanted
-    assert len(observed) == 94
+    assert len(observed) == 136
     selected = selection.select({'propositions': ['goal_reached']})
     assert {row['split'] for row in selected['selected']} == {'dev', 'heldout'}
+
+
+@pytest.mark.parametrize('role', ['goal_reached', 'orchestration_plan'])
+def test_202_case_file_is_reachable_by_role_rules(role):
+    cases = judgments.load_cases(ROOT / 'evals/judgments/cases-v2-202.json')
+    wanted = {c['id'] for c in cases['cases'] if c['role'] == role}
+    selected = selection.select({'propositions': [role]})
+    assert wanted <= {row['id'] for row in selected['selected']}

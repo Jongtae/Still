@@ -709,8 +709,11 @@
         "conversation": ""
       },
       "expect": {
-        "outcome": "yes"
-      }
+        "outcome": "no"
+      },
+      "targets": [
+        "#202"
+      ]
     },
     {
       "id": "goal-unsupported-figure",
@@ -843,8 +846,11 @@
         "conversation": ""
       },
       "expect": {
-        "outcome": "yes"
-      }
+        "outcome": "no"
+      },
+      "targets": [
+        "#202"
+      ]
     },
     {
       "id": "goal-unsupported-figure-ko",
