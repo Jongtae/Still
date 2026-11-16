@@ -41,7 +41,8 @@ import time
 from urllib.parse import quote, urlsplit
 
 from .conversation_surface import PRESENCE_REACT, PRESENCE_TYPING, SurfaceCapabilities
-from .direct_message_surface import EMOJI_NAMES, DirectMessageSurface
+from .direct_message_surface import (EMOJI_NAMES, DirectMessageSurface, steer_if_owner_typed,
+                                     heartbeat_outbound_process)
 from .messages import msg
 from .providers import ProviderError
 from . import work_mode
@@ -176,13 +177,32 @@ class MattermostSurface(DirectMessageSurface):
                   'context_approval_needed': 'surface.answer_at_mac', 'browser_login_needed': 'surface.answer_at_mac'}
 
     def __init__(self, service, transport=None):
-        self.service = service
+        super().__init__(service)
         self._transport = transport
         self._lock = threading.Lock()
         self._acting = set()
         self._acting_lock = threading.Lock()
         # ``mattermost_turns`` is created with the store (``QuickStore``), never here: a surface is first
         # built inside other transactions.
+
+    def outbound_target(self, cfg, url):
+        # Exact paired server/base path, not merely a same-named platform.
+        return urlsplit(url)._replace(query='', fragment='').geturl() == cfg.get('server_url', '') + '/api/v4/posts'
+
+    def outbound_identity(self, cfg, url, status, raw):
+        from .api_requests import REFUSED_STATUSES
+        if status in REFUSED_STATUSES:
+            return cfg['channel_id'], None
+        if not 200 <= status < 300:
+            return None
+        try:
+            post = json.loads(raw)
+        except (ValueError, TypeError):
+            return None
+        if (isinstance(post, dict) and isinstance(post.get('id'), str) and post['id']
+                and isinstance(post.get('channel_id'), str) and post['channel_id']):
+            return post['channel_id'], post['id']
+        return None
 
     # -- configuration --------------------------------------------------------------
     def client(self, cfg=None, token=None):
@@ -274,9 +294,11 @@ class MattermostSurface(DirectMessageSurface):
     # -- ingestion ----------------------------------------------------------------------
     def receive(self, now=None):
         """One poll of the owner's direct message: new owner posts become Work; owner reactions are acts."""
+        heartbeat_outbound_process(self.service.store)
         cfg = self.config()
         if not self.usable(cfg):
             return None
+        self.replay_ingress()
         with self._lock:
             try:
                 posts = self.client(cfg).posts_since(cfg['channel_id'], int(cfg.get('cursor') or 0))
@@ -354,7 +376,7 @@ class MattermostSurface(DirectMessageSurface):
                                                'pending_reactions': pending})
         for work_id, text in created:
             if service.is_natural_language(text):
-                service.consider_steer(work_id, text)
+                steer_if_owner_typed(service, work_id, text)
         for entry in pending:
             key = entry['key']
             acting = (generation, key)

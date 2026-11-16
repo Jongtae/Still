@@ -8,7 +8,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'evals'))
-from agentos_eval import judgments, selection
+from agentos_eval import judgments, scenarios, selection
 
 
 @pytest.fixture(scope='module')
@@ -128,6 +128,46 @@ def test_shared_prompt_selects_every_consumer(entries):
             e['role'] in ('goal_reached', 'orchestration_plan', 'orchestration_escalation')} == selected
 
 
+@pytest.mark.parametrize('path', sorted((ROOT / 'src/personal_agent/prompts').glob('*.md')),
+                         ids=lambda path: path.stem)
+def test_every_prompt_file_selects_cases_by_path(path):
+    result = selection.select({'paths': [path.relative_to(ROOT).as_posix()]})
+    assert result['selected'], path.name
+    assert not result['unmatched']
+
+
+@pytest.mark.parametrize('role', ['answers_open_question', 'followup_relation', 'owner_act_answer',
+                                 'parked_work_withdrawn', 'steers_running_work'])
+def test_extracted_role_prompt_path_selects_its_judgments(role, entries):
+    result = selection.select({'paths': [f'src/personal_agent/prompts/{role}.md']})
+    assert {r['id'] for r in result['selected'] if r['set'] == 'judgments'} == {
+        e['id'] for e in entries if e['role'] == role}
+
+
+@pytest.mark.parametrize('path', ['skills/map-directions/SKILL.md',
+                                 'skills/new-bundled-skill/SKILL.md',
+                                 'src/personal_agent/bundled_skills/new-bundled-skill/SKILL.md'])
+def test_bundled_skills_select_worker_scenarios_and_goal_judgments(path, entries):
+    result = selection.select({'paths': [path]})
+    selected = {(r['set'], r['id']) for r in result['selected']}
+    travel = scenarios.load_file(ROOT / 'evals/scenarios/travel.json')
+    assert travel
+    assert {('scenarios', case['id']) for case in travel} <= selected
+    # Match the worker-instructions rule's whole scenario set and outcome roles.
+    assert {(e['set'], e['id']) for e in entries if e['set'] == 'scenarios' or
+            e['role'] in ('goal_reached', 'orchestration_escalation')} == selected
+    assert not result['unmatched']
+
+
+@pytest.mark.parametrize('path', ['docs/current-context-contract.en.md',
+                                 'docs/professional-roles-and-communication-contract.en.md'])
+def test_restated_contracts_select_outcome_and_planner_judgments(path, entries):
+    result = selection.select({'paths': [path]})
+    assert {r['id'] for r in result['selected']} == {
+        e['id'] for e in entries if e['role'] in ('goal_reached', 'orchestration_plan')}
+    assert not result['unmatched']
+
+
 def test_judgment_inventory_uses_declared_sets_and_splits(entries):
     from agentos_eval import paired
     partition = paired.load_partners()
@@ -135,6 +175,24 @@ def test_judgment_inventory_uses_declared_sets_and_splits(entries):
               for split in ('dev', 'heldout') for ident in part[split]}
     observed = {row['id']: row['split'] for row in entries if row['set'] == 'judgments'}
     assert observed == wanted
-    assert len(observed) == 94
+    assert len(observed) == 156
     selected = selection.select({'propositions': ['goal_reached']})
     assert {row['split'] for row in selected['selected']} == {'dev', 'heldout'}
+
+
+@pytest.mark.parametrize('role', ['goal_reached', 'orchestration_plan'])
+def test_202_case_file_is_reachable_by_role_rules(role):
+    cases = judgments.load_cases(ROOT / 'evals/judgments/cases-v2-202.json')
+    wanted = {c['id'] for c in cases['cases'] if c['role'] == role}
+    selected = selection.select({'propositions': [role]})
+    assert wanted <= {row['id'] for row in selected['selected']}
+
+
+def test_plan_reading_cases_are_selected_from_the_v3_partition():
+    cases = judgments.load_cases(ROOT / 'evals/judgments/cases-v3-202-plan.json')
+    wanted = {case['id'] for case in cases['cases']}
+    selected = selection.select({'propositions': ['goal_reached']})
+    observed = {row['id']: row['split'] for row in selected['selected'] if row['id'] in wanted}
+    assert set(observed) == wanted
+    assert all(split == ('heldout' if ident.startswith('heldout-') else 'dev')
+               for ident, split in observed.items())

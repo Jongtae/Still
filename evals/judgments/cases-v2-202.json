@@ -1,0 +1,817 @@
+{
+  "version": "judgment-validation/3",
+  "catalogue": {
+    "workers": [
+      {
+        "id": "default-worker",
+        "name": "default-worker",
+        "kind": "api",
+        "available": true,
+        "default": true,
+        "default_model": "model-standard",
+        "models": [
+          "model-standard",
+          "model-advanced"
+        ],
+        "model_tiers": {
+          "model-standard": "lowest-cost",
+          "model-advanced": "higher-cost"
+        },
+        "tools": [],
+        "native_search": true,
+        "browser": false,
+        "cost": "synthetic",
+        "latency": "synthetic"
+      },
+      {
+        "id": "other-worker",
+        "name": "other-worker",
+        "kind": "api",
+        "available": true,
+        "default": false,
+        "default_model": "model-standard",
+        "models": [
+          "model-standard",
+          "model-advanced"
+        ],
+        "model_tiers": {
+          "model-standard": "lowest-cost",
+          "model-advanced": "higher-cost"
+        },
+        "tools": [],
+        "native_search": true,
+        "browser": false,
+        "cost": "synthetic",
+        "latency": "synthetic"
+      }
+    ],
+    "routes": {},
+    "default": "default-worker"
+  },
+  "cases": [
+    {
+      "id": "goal-202-failed-hedge-en",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "completion",
+      "input": {
+        "request": "How long will the current batch take?",
+        "observations": "The duration lookup failed. Another available tool can read the batch log; it was not used.",
+        "answer": "It should take about 20 minutes."
+      },
+      "expect": {
+        "outcome": "no"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "goal-202-failed-hedge-ko",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "completion",
+      "input": {
+        "request": "지금 처리 중인 묶음은 얼마나 걸려?",
+        "observations": "소요 시간 조회 실패. 다른 도구로 처리 기록을 읽을 수 있었지만 쓰지 않음.",
+        "answer": "약 20분쯤 걸릴 것 같아요."
+      },
+      "expect": {
+        "outcome": "no"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "goal-202-unused-method-en",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "completion",
+      "input": {
+        "request": "How long will the current batch take?",
+        "observations": "The duration lookup failed. Another available tool can read the batch log; it was not used.",
+        "answer": "The duration lookup failed; I estimate 20 minutes from its size."
+      },
+      "expect": {
+        "outcome": "no"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "goal-202-unused-method-ko",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "completion",
+      "input": {
+        "request": "지금 처리 중인 묶음은 얼마나 걸려?",
+        "observations": "소요 시간 조회 실패. 다른 도구로 처리 기록을 읽을 수 있었지만 쓰지 않음.",
+        "answer": "소요 시간 조회가 실패했어요. 크기로 추정하면 20분이에요."
+      },
+      "expect": {
+        "outcome": "no"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "goal-202-second-method-en",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "completion",
+      "input": {
+        "request": "How long will the current batch take?",
+        "observations": "Duration lookup failed. The worker then read the batch log with another tool: 12 minutes remaining.",
+        "answer": "The batch log shows 12 minutes remaining."
+      },
+      "expect": {
+        "outcome": "yes"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "goal-202-second-method-ko",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "completion",
+      "input": {
+        "request": "지금 처리 중인 묶음은 얼마나 걸려?",
+        "observations": "소요 시간 조회 실패 후 다른 도구로 처리 기록을 읽음: 남은 시간 12분.",
+        "answer": "처리 기록에 남은 시간이 12분으로 나와요."
+      },
+      "expect": {
+        "outcome": "yes"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "goal-202-no-other-method-en",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "completion",
+      "input": {
+        "request": "How long will the current batch take?",
+        "observations": "Duration lookup returned nothing usable. Tool discovery confirms no other source, tool or route is available. Size is 40 units; ordinary rate is 2 units per minute.",
+        "answer": "The lookup failed and no other method was available. From the size and ordinary rate, I estimate 20 minutes; the current duration could not be checked."
+      },
+      "expect": {
+        "outcome": "yes"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "goal-202-no-other-method-ko",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "completion",
+      "input": {
+        "request": "지금 처리 중인 묶음은 얼마나 걸려?",
+        "observations": "소요 시간 조회에 쓸 만한 결과 없음. 도구 탐색 결과 다른 출처나 도구, 경로 없음. 크기 40단위, 평소 속도 분당 2단위.",
+        "answer": "조회가 실패했고 다른 방법도 없었어요. 크기와 평소 속도로 추정하면 20분이지만 현재 소요 시간은 확인하지 못했어요."
+      },
+      "expect": {
+        "outcome": "yes"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "goal-202-rough-request-en",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "completion",
+      "input": {
+        "request": "Give a rough estimate for 40 units at 2 units per minute; no lookup needed.",
+        "observations": "No lookup attempted.",
+        "answer": "Roughly 20 minutes, assuming the rate stays steady."
+      },
+      "expect": {
+        "outcome": "yes"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "goal-202-rough-request-ko",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "completion",
+      "input": {
+        "request": "분당 2단위면 40단위가 대략 얼마나 걸릴지 알려 줘. 조회는 필요 없어.",
+        "observations": "조회하지 않음.",
+        "answer": "속도가 일정하다고 가정하면 대략 20분이에요."
+      },
+      "expect": {
+        "outcome": "yes"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "goal-202-saved-assume-ask-en",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "completion",
+      "input": {
+        "request": "When should I leave to reach the session at Place B by 10?",
+        "observations": "A lookup from saved Base A to Place B gives 15 minutes. Current time is 09:30.",
+        "answer": "Assuming you are at saved Base A, leave by 09:45. Are you starting there? You can share your location here.",
+        "owner_context": "Saved starting place: Base A. No fresh position."
+      },
+      "expect": {
+        "outcome": "yes"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "goal-202-saved-assume-ask-ko",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "completion",
+      "input": {
+        "request": "장소 B에서 10시에 시작하는 시간에 맞추려면 언제 출발해?",
+        "observations": "저장된 거점 A에서 장소 B까지 조회 결과 15분. 현재 09:30.",
+        "answer": "저장된 거점 A에서 출발한다고 보면 09:45까지 나서면 돼요. 거기서 출발하시나요? 여기서 위치를 공유해도 돼요.",
+        "owner_context": "저장된 출발 장소: 거점 A. 새 위치 없음."
+      },
+      "expect": {
+        "outcome": "yes"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "goal-202-saved-ask-only-en",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "completion",
+      "input": {
+        "request": "When should I leave to reach the session at Place B by 10?",
+        "observations": "A lookup from saved Base A to Place B gives 15 minutes. Current time is 09:30.",
+        "answer": "Where are you right now?",
+        "owner_context": "Saved starting place: Base A. No fresh position."
+      },
+      "expect": {
+        "outcome": "no"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "goal-202-saved-ask-only-ko",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "completion",
+      "input": {
+        "request": "장소 B에서 10시에 시작하는 시간에 맞추려면 언제 출발해?",
+        "observations": "저장된 거점 A에서 장소 B까지 조회 결과 15분. 현재 09:30.",
+        "answer": "지금 어디 계세요?",
+        "owner_context": "저장된 출발 장소: 거점 A. 새 위치 없음."
+      },
+      "expect": {
+        "outcome": "no"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "goal-202-owner-date-en",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "completion",
+      "input": {
+        "request": "Prepare the outline for my chosen date, either the 4th or the 6th; I have not told you which.",
+        "observations": "Both dates are possible. Outline prepared: introduction, exercise, recap. Only the owner knows the chosen date.",
+        "answer": "The outline is ready: introduction, exercise, recap. Which date did you choose, the 4th or the 6th?"
+      },
+      "expect": {
+        "outcome": "yes"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "goal-202-owner-date-ko",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "completion",
+      "input": {
+        "request": "내가 정한 날짜에 쓸 개요 준비해 줘. 4일과 6일 중 어느 날로 정했는지는 아직 말 안 했어.",
+        "observations": "두 날짜 모두 가능. 개요 준비됨: 소개, 실습, 정리. 정한 날짜는 소유자만 앎.",
+        "answer": "소개, 실습, 정리 순서로 개요를 준비했어요. 정하신 날짜가 4일인가요, 6일인가요?"
+      },
+      "expect": {
+        "outcome": "yes"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "heldout-202-failed-hedge-en",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "completion",
+      "input": {
+        "request": "When will the coating be dry?",
+        "observations": "Sensor read failed. A second available reader could inspect the test strip; no strip inspection occurred.",
+        "answer": "Probably in around half an hour."
+      },
+      "expect": {
+        "outcome": "no"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "heldout-202-failed-hedge-ko",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "completion",
+      "input": {
+        "request": "도막은 언제 마를까?",
+        "observations": "감지기 읽기 실패. 다른 판독기로 시험 조각을 볼 수 있었으나 검사하지 않음.",
+        "answer": "아마 반 시간 정도면 마를 거예요."
+      },
+      "expect": {
+        "outcome": "no"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "heldout-202-unused-method-en",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "completion",
+      "input": {
+        "request": "When will the coating be dry?",
+        "observations": "Sensor read failed. A second available reader could inspect the test strip; no strip inspection occurred.",
+        "answer": "I could not read the sensor. My estimate from the thickness is half an hour."
+      },
+      "expect": {
+        "outcome": "no"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "heldout-202-unused-method-ko",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "completion",
+      "input": {
+        "request": "도막은 언제 마를까?",
+        "observations": "감지기 읽기 실패. 다른 판독기로 시험 조각을 볼 수 있었으나 검사하지 않음.",
+        "answer": "감지기를 읽지 못했어요. 두께로 추산하면 반 시간이에요."
+      },
+      "expect": {
+        "outcome": "no"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "heldout-202-second-method-en",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "completion",
+      "input": {
+        "request": "When will the coating be dry?",
+        "observations": "Sensor read failed; the alternate test-strip reader then reported dry at 14:10.",
+        "answer": "The alternate test-strip reading puts drying at 14:10."
+      },
+      "expect": {
+        "outcome": "yes"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "heldout-202-second-method-ko",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "completion",
+      "input": {
+        "request": "도막은 언제 마를까?",
+        "observations": "감지기 읽기 실패 후 대체 시험 조각 판독기가 14:10에 마름으로 보고함.",
+        "answer": "대체 시험 조각 판독 결과 마르는 시각은 14:10이에요."
+      },
+      "expect": {
+        "outcome": "yes"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "heldout-202-no-other-method-en",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "completion",
+      "input": {
+        "request": "When will the coating be dry?",
+        "observations": "Sensor gave an empty result. Capability inventory shows no alternate reader or source. Thickness is 3 layers; ordinary drying is 10 minutes per layer.",
+        "answer": "The sensor returned no reading and there is no alternate way to check. Based on thickness alone I estimate 30 minutes; actual drying remains unverified."
+      },
+      "expect": {
+        "outcome": "yes"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "heldout-202-no-other-method-ko",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "completion",
+      "input": {
+        "request": "도막은 언제 마를까?",
+        "observations": "감지기 결과 비어 있음. 기능 목록상 다른 판독기나 출처 없음. 두께 3겹, 보통 건조 시간 겹당 10분.",
+        "answer": "감지기 측정값이 없고 달리 확인할 수단도 없어요. 두께만으로는 30분으로 추정하며 실제 건조 시간은 확인하지 못했어요."
+      },
+      "expect": {
+        "outcome": "yes"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "heldout-202-rough-request-en",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "completion",
+      "input": {
+        "request": "Without checking anything, roughly how long for three layers at ten minutes each?",
+        "observations": "No tool use.",
+        "answer": "About half an hour if each layer takes the usual ten minutes."
+      },
+      "expect": {
+        "outcome": "yes"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "heldout-202-rough-request-ko",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "completion",
+      "input": {
+        "request": "아무것도 조회하지 말고 한 겹에 10분이면 세 겹에 얼마나 걸릴지 대충 알려 줘.",
+        "observations": "도구 사용 없음.",
+        "answer": "각 겹에 평소처럼 10분씩 걸린다면 반 시간 정도예요."
+      },
+      "expect": {
+        "outcome": "yes"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "heldout-202-saved-assume-ask-en",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "completion",
+      "input": {
+        "request": "Can I reach Counter Y before it closes at 16:00, and when should I go?",
+        "observations": "It is 15:20. Verified journey from saved Studio X to Counter Y is 25 minutes.",
+        "answer": "Using saved Studio X as your starting point, depart by 15:35 to arrive before 16:00. Is that where you are leaving from? Sharing your position here would let me adjust this.",
+        "owner_context": "Usual starting point: saved Studio X; current position not shared."
+      },
+      "expect": {
+        "outcome": "yes"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "heldout-202-saved-assume-ask-ko",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "completion",
+      "input": {
+        "request": "접수대 Y가 16시에 닫기 전에 갈 수 있어? 언제 나가야 해?",
+        "observations": "현재 15:20. 저장된 작업실 X에서 접수대 Y까지 확인된 이동 시간 25분.",
+        "answer": "저장된 작업실 X에서 출발한다면 16시 전에 도착하도록 15:35까지 나가세요. 출발지가 거기인가요? 여기서 위치를 공유하면 조정할 수 있어요.",
+        "owner_context": "평소 출발지는 저장된 작업실 X. 현재 위치 공유 없음."
+      },
+      "expect": {
+        "outcome": "yes"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "heldout-202-saved-ask-only-en",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "completion",
+      "input": {
+        "request": "Can I reach Counter Y before it closes at 16:00, and when should I go?",
+        "observations": "It is 15:20. Verified journey from saved Studio X to Counter Y is 25 minutes.",
+        "answer": "Please share your starting position first.",
+        "owner_context": "Usual starting point: saved Studio X; current position not shared."
+      },
+      "expect": {
+        "outcome": "no"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "heldout-202-saved-ask-only-ko",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "completion",
+      "input": {
+        "request": "접수대 Y가 16시에 닫기 전에 갈 수 있어? 언제 나가야 해?",
+        "observations": "현재 15:20. 저장된 작업실 X에서 접수대 Y까지 확인된 이동 시간 25분.",
+        "answer": "먼저 출발 위치를 공유해 주세요.",
+        "owner_context": "평소 출발지는 저장된 작업실 X. 현재 위치 공유 없음."
+      },
+      "expect": {
+        "outcome": "no"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "heldout-202-owner-date-en",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "completion",
+      "input": {
+        "request": "Prepare a revision checklist for the draft I privately selected, version P or Q.",
+        "observations": "No record of the private selection. Both versions read. Common checklist prepared: verify citations, check headings, proofread summary.",
+        "answer": "The checklist is ready: verify citations, check headings, proofread summary. Did you choose version P or Q?"
+      },
+      "expect": {
+        "outcome": "yes"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "heldout-202-owner-date-ko",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "completion",
+      "input": {
+        "request": "내가 혼자 정한 초안의 수정 점검표 준비해 줘. P판과 Q판 중 하나야.",
+        "observations": "선택 기록 없음. 두 판 모두 읽음. 공통 점검표 준비됨: 인용 확인, 제목 검토, 요약 교정.",
+        "answer": "인용 확인, 제목 검토, 요약 교정 점검표를 준비했어요. 고르신 건 P판인가요, Q판인가요?"
+      },
+      "expect": {
+        "outcome": "yes"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "heldout-202-preference-only-en",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "completion",
+      "input": {
+        "request": "Pick a simple border for this practice card; any sensible default is fine.",
+        "observations": "No preferences recorded. A plain border can be chosen without any lasting change.",
+        "answer": "What border style do you like?"
+      },
+      "expect": {
+        "outcome": "no"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "heldout-202-preference-only-ko",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "completion",
+      "input": {
+        "request": "이 연습용 카드의 간단한 테두리 골라 줘. 무난한 기본값이면 돼.",
+        "observations": "기록된 선호 없음. 영구 변경 없이 단순한 테두리 선택 가능.",
+        "answer": "어떤 테두리 모양을 좋아하세요?"
+      },
+      "expect": {
+        "outcome": "no"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "plan-202-saved-en",
+      "role": "orchestration_plan",
+      "class": "structured-plan",
+      "lang": "en",
+      "category": "owner-situation",
+      "input": {
+        "request": "Tell me when to leave for Place B by 10:00; use my usual starting place if needed.",
+        "owner_context": "Saved starting place: Base A."
+      },
+      "expect": {
+        "ask_location": "empty",
+        "fallback": false
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "plan-202-exact-en",
+      "role": "orchestration_plan",
+      "class": "structured-plan",
+      "lang": "en",
+      "category": "owner-situation",
+      "input": {
+        "request": "Find the nearest entrance to my exact current position; do not use a saved place.",
+        "owner_context": "Saved starting place: Base A."
+      },
+      "expect": {
+        "ask_location": "nonempty",
+        "fallback": false
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "plan-202-saved-ko",
+      "role": "orchestration_plan",
+      "class": "structured-plan",
+      "lang": "ko",
+      "category": "owner-situation",
+      "input": {
+        "request": "10시까지 장소 B에 가려면 언제 나가야 해? 필요하면 평소 출발지를 써 줘.",
+        "owner_context": "저장된 출발 장소: 거점 A."
+      },
+      "expect": {
+        "ask_location": "empty",
+        "fallback": false
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "plan-202-exact-ko",
+      "role": "orchestration_plan",
+      "class": "structured-plan",
+      "lang": "ko",
+      "category": "owner-situation",
+      "input": {
+        "request": "저장 장소 말고 지금 내 정확한 위치에서 가장 가까운 입구를 찾아 줘.",
+        "owner_context": "저장된 출발 장소: 거점 A."
+      },
+      "expect": {
+        "ask_location": "nonempty",
+        "fallback": false
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "heldout-plan-202-saved-en",
+      "role": "orchestration_plan",
+      "class": "structured-plan",
+      "lang": "en",
+      "category": "owner-situation",
+      "input": {
+        "request": "Counter Y closes at 16:00. Work out my departure time using my usual origin.",
+        "owner_context": "Usual starting point: saved Studio X."
+      },
+      "expect": {
+        "ask_location": "empty",
+        "fallback": false
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "heldout-plan-202-exact-en",
+      "role": "orchestration_plan",
+      "class": "structured-plan",
+      "lang": "en",
+      "category": "owner-situation",
+      "input": {
+        "request": "Locate a safe assembly point relative to precisely where I am standing, not my usual origin.",
+        "owner_context": "Usual starting point: saved Studio X."
+      },
+      "expect": {
+        "ask_location": "nonempty",
+        "fallback": false
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "heldout-plan-202-saved-ko",
+      "role": "orchestration_plan",
+      "class": "structured-plan",
+      "lang": "ko",
+      "category": "owner-situation",
+      "input": {
+        "request": "접수대 Y가 16시에 닫아. 평소 출발지 기준으로 나갈 시각 알려 줘.",
+        "owner_context": "평소 출발지는 저장된 작업실 X."
+      },
+      "expect": {
+        "ask_location": "empty",
+        "fallback": false
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "heldout-plan-202-exact-ko",
+      "role": "orchestration_plan",
+      "class": "structured-plan",
+      "lang": "ko",
+      "category": "owner-situation",
+      "input": {
+        "request": "평소 출발지 말고 지금 내가 서 있는 정확한 위치를 기준으로 안전한 집결 지점을 찾아 줘.",
+        "owner_context": "평소 출발지는 저장된 작업실 X."
+      },
+      "expect": {
+        "ask_location": "nonempty",
+        "fallback": false
+      },
+      "targets": [
+        "#202"
+      ]
+    }
+  ]
+}

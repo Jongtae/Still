@@ -112,6 +112,20 @@ class ModelEngineTests(unittest.TestCase):
     def context(self):
         return DecisionContext('parked-work-withdrawal', {'waiting_connection': 'Gmail', 'owner_message': '취소해줘'})
 
+    def test_goal_plan_reading_is_a_labelled_redacted_optional_fact(self):
+        transport = ScriptedTransport(*[openai_tool_reply({'answer': True, 'gap': '', 'note': '', 'confidence': 0.93})] * 3)
+        engine, _audit = engine_for(transport)
+        judgments = ConversationJudgments(engine, redactor=lambda text: text.replace('private-value', '[redacted]'))
+        for extra in ({'plan_reading': 'Read private-value before answering.'}, {}, {'plan_reading': ''}):
+            result = judgments.goal_reached('The owner words.', 'none', answer='Reply.', **extra)
+            self.assertEqual(result.outcome, 'yes')
+        rendered = [call['body']['messages'][-1]['content'] for call in transport.calls]
+        self.assertIn('\nplan_reading: Read [redacted] before answering.\n', rendered[0])
+        self.assertIn('\nowner_request: The owner words.\n', rendered[0])
+        self.assertIn("plan's reading of what the request needs: a hypothesis to check, not the owner's words", rendered[0])
+        for absent in rendered[1:]:
+            self.assertNotIn('\nplan_reading:', absent)
+
     def test_owner_facing_note_and_reactions_send_the_same_voice_through_the_adapter(self):
         from personal_agent.prompt_files import prompt
         transport = ScriptedTransport(

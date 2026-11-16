@@ -69,14 +69,22 @@ def test_partner_partition_covers_existing_cases_and_new_cases_once():
     data = p.load_partners()
     old = j.load_cases(ROOT / 'evals/judgments/cases-v1.json')
     held = j.load_cases(ROOT / 'evals/judgments/heldout-v1.json')
+    added = j.load_cases(ROOT / 'evals/judgments/cases-v2-202.json')
+    added['cases'] += j.load_cases(ROOT / 'evals/judgments/cases-v3-202-plan.json')['cases']
     dev_ids = {ident for part in data['roles'].values() for ident in part['dev']}
     held_ids = {ident for part in data['roles'].values() for ident in part['heldout']}
-    assert dev_ids == {c['id'] for c in old['cases']}
-    assert held_ids == {c['id'] for c in held['cases']}
+    moved = 'heldout-goal-legitimate-question'
+    assert dev_ids == ({c['id'] for c in old['cases']} | {moved} |
+                       {c['id'] for c in added['cases'] if not c['id'].startswith('heldout-')})
+    assert held_ids == (({c['id'] for c in held['cases']} - {moved}) |
+                        {c['id'] for c in added['cases'] if c['id'].startswith('heldout-')})
     assert not dev_ids & held_ids
     assert set(data['roles']) == {c['role'] for c in old['cases']}
-    lookup = {c['id']: c for c in old['cases'] + held['cases']}
-    assert len(p.partners(sorted(dev_ids))) == 59
+    lookup = {c['id']: c for c in old['cases'] + held['cases'] + added['cases']}
+    assert len(p.partners(sorted(dev_ids))) == 90
+    assert data['version'] == 'judgment-heldout-partners/3'
+    assert data['case_sets'] == ['evals/judgments/cases-v1.json', 'evals/judgments/heldout-v1.json',
+                                 'evals/judgments/cases-v2-202.json', 'evals/judgments/cases-v3-202-plan.json']
     for part in data['roles'].values():
         for dev in part['dev']:
             assert part['partners'].get(dev) or part['unpaired'].get(dev)
@@ -86,6 +94,81 @@ def test_partner_partition_covers_existing_cases_and_new_cases_once():
     frozen, splits, _ = p.select_cases(['followup-retry-ko', 'followup-retry-en'])
     assert len(frozen['cases']) == 3  # Shared partner isn't double-counted.
     assert list(splits.values()).count('heldout') == 1
+
+
+def test_202_contrasts_have_bilingual_development_and_fresh_partners():
+    data = p.load_partners()
+    cases, _, _ = p._case_data(data, ROOT)
+    part = data['roles']['goal_reached']
+    outcomes = {'failed-hedge': 'no', 'unused-method': 'no', 'second-method': 'yes',
+                'no-other-method': 'yes', 'rough-request': 'yes', 'saved-assume-ask': 'yes',
+                'saved-ask-only': 'no', 'owner-date': 'yes'}
+    for kind, outcome in outcomes.items():
+        for lang in ('en', 'ko'):
+            ident = f'goal-202-{kind}-{lang}'
+            assert ident in part['dev']
+            assert cases[ident]['lang'] == lang
+            assert cases[ident]['expect'] == {'outcome': outcome}
+            assert cases[ident]['targets'] == ['#202']
+            [link] = part['partners'][ident]
+            assert link['id'] == f'heldout-202-{kind}-{lang}'
+            assert link['reason']
+            assert link['id'] in part['heldout']
+            assert cases[link['id']]['expect'] == {'outcome': outcome}
+            assert cases[ident]['input'] != cases[link['id']]['input']
+    for ident in ('goal-legitimate-question', 'goal-legitimate-question-ko', 'heldout-goal-legitimate-question'):
+        assert ident in part['dev'] and ident not in part['heldout']
+        assert all(link['id'].startswith('heldout-202-preference-only-') for link in part['partners'][ident])
+        assert all('#202' in link['reason'] and '#827' in link['reason'] for link in part['partners'][ident])
+
+
+def test_v1_partner_mapping_remains_readable_and_byte_identical():
+    import hashlib
+    path = ROOT / 'evals/judgments/heldout-partners-v1.json'
+    # Historical partition remains available for historical comparisons.
+    p.validate_partners(json.loads(path.read_text()))
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == '25be29792efadfd883c21ecb86f7c8949b5e1bd27423d342795467199ccb200e'
+
+
+def test_v2_mapping_is_frozen_and_v3_preserves_all_its_partitions():
+    import hashlib
+    path = ROOT / 'evals/judgments/heldout-partners-v2.json'
+    old = p.validate_partners(json.loads(path.read_text()))
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == 'd8b8419f5099d4ff90a416054c1cafc121706562ac3c5873d7b2614ac1c45727'
+    data = p.load_partners()
+    assert data['case_sets'][:-1] == old['case_sets']
+    for role, part in old['roles'].items():
+        new = data['roles'][role]
+        for split in ('dev', 'heldout'):
+            assert new[split][:len(part[split])] == part[split]
+        assert all(new['partners'][ident] == links for ident, links in part['partners'].items())
+        assert new['unpaired'] == part['unpaired']
+
+
+def test_plan_reading_contrasts_have_bilingual_fresh_heldout_partners():
+    data = p.load_partners()
+    cases, _, _ = p._case_data(data, ROOT)
+    part = data['roles']['goal_reached']
+    outcomes = {'met': 'yes', 'ignored-lookup': 'no', 'overbroad': 'yes', 'narrowed': 'no', 'conversation': 'yes'}
+    for kind, outcome in outcomes.items():
+        for lang in ('en', 'ko'):
+            ident = f'goal-202-plan-{kind}-{lang}'
+            assert ident in part['dev']
+            [link] = part['partners'][ident]
+            assert link['id'] == f'heldout-202-plan-{kind}-{lang}'
+            assert link['id'] in part['heldout']
+            a, b = cases[ident], cases[link['id']]
+            assert a['lang'] == b['lang'] == lang
+            assert a['expect'] == b['expect'] == {'outcome': outcome}
+            assert a['targets'] == b['targets'] == ['#202']
+            for field in ('request', 'observations', 'answer', 'plan_reading'):
+                assert a['input'][field] != b['input'][field]
+            assert a['input']['plan_reading'] and b['input']['plan_reading']
+            if kind == 'conversation':
+                assert a['input']['conversation'] != b['input']['conversation']
+            frozen, splits, _ = p.select_cases([ident])
+            assert {case['id'] for case in frozen['cases']} == {ident, link['id']}
+            assert splits == {ident: 'dev', link['id']: 'heldout'}
 
 
 @pytest.mark.parametrize('mutation', ['overlap', 'missing', 'unknown', 'wrong-role', 'reason'])

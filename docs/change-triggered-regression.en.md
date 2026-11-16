@@ -54,6 +54,13 @@ Each holds glob patterns. A rule fires when **any** input value matches any
 pattern in the corresponding field. This union is intentionally conservative
 when a whole shared source file changes.
 
+Prompt-file paths select their existing role cases; prompts without a dedicated
+role use conservative shared coverage. Bundled skill edits under `skills/*/SKILL.md`
+or `src/personal_agent/bundled_skills/*/SKILL.md` now select the worker-instruction
+scenario sets (including travel) and outcome/redelegation judgments. Edits to the
+restated current-context and professional-roles-and-communication contracts also
+select `goal_reached` and `orchestration_plan` cases.
+
 Each selector names `set` (`judgments`, `qualification`, `scenarios`, `recall`)
 and optionally `ids`, `roles`, `tags`, `splits`. Fields within a selector intersect;
 values within a field are alternatives. With just `set`, every member is selected.
