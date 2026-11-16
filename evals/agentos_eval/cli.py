@@ -103,7 +103,9 @@ def judge_totals_line(judge, records):
         print('Eval judge totals: off (checks only).')
         return
     totals = judge_totals(records)
-    print(f"Eval judge totals: {judge}; calls: {totals['calls']}; input tokens: {totals['input_tokens']}; "
+    print(f"Eval judge totals: {judge}; calls: {totals['calls']}; input tokens: {totals['input_tokens']} "
+          f"(uncached {totals['input_tokens_uncached']}, cache write {totals['input_tokens_cache_write']}, "
+          f"cache read {totals['input_tokens_cache_read']}); "
           f"output tokens: {totals['output_tokens']}; settled USD: {totals['usd']}.")
 
 
