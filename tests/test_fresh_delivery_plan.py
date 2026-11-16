@@ -875,5 +875,7 @@ def test_frontier_744_records_untrusted_scope():
     activation = items["FRONTIER-01"]["completed_substeps"][name]
     assert activation["issue"] == 744 and activation["status"] == "complete-on-merge"
     assert unit["summary"].startswith("Owner-selected #744 phase 2 (PR-1 (items 5, 1, 2)) within #822, owner disposition 2026-11-16:")
+    assert "matching-call-start barrier, not launch marking" in unit["summary"]
+    assert "issuecomment-6931823807" in unit["summary"]
     assert unit["summary"].endswith("Complete on the merge of its own PR.")
     assert '#744 (FRONTIER-UNTRUSTED-01, phase 2 PR-1 items 5, 1, 2) is selected inside #822 by owner disposition on 2026-11-16 and is complete on the merge of its own PR.' in current["next_goal"]["action"]

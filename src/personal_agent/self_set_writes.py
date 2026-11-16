@@ -126,9 +126,14 @@ def _effect_replayed(db, work_id, digest):
 
 
 def authorize(service, job, binding, connection, operation, target, names=(), *, effect=None, description=None, request=True, values=None):
+    barrier = service.__dict__.get('_native_intake_barriers', {}).get(job['id'])
+    awaiting = barrier is not None and barrier.pending()
+    browser_press = connection is None and operation in ('browser_click', 'browser_type')
+    if awaiting and not browser_press:
+        barrier.wait()
     sources = service.store.outside_content_sources(job['id'])
     marked = bool(sources)
-    if not marked and (not service.unattended_work(job) or not service.self_set_run(job)):
+    if not marked and not awaiting and (not service.unattended_work(job) or not service.self_set_run(job)):
         return None
     from .browser_session import action_input_safe
     scopes = list(connection) if isinstance(connection, (list, tuple)) else [connection] if connection else []
@@ -140,11 +145,10 @@ def authorize(service, job, binding, connection, operation, target, names=(), *,
     if not action_input_safe(service.store, {'connection': scopes, 'operation': operation, 'target': target,
             'names': list(names), 'description': description, 'values': values, 'connection_labels': connection_labels}):
         raise not_run(ToolError(msg('write_allowances.unrepresentable'), 'api_approval_unrepresentable'))
-    browser_press = connection is None and operation in ('browser_click', 'browser_type')
     # Browsing to read keeps its zero-question path. Use the existing minimized
     # judgment, never the owner's request/body, to classify a non-floor press.
     # Known non-browser writes need no additional judgment in owner Works.
-    if marked and browser_press or effect is None and service.self_set_run(job):
+    if (marked or awaiting) and browser_press or effect is None and service.self_set_run(job):
         try:
             metadata=operation
             if connection is None:
@@ -154,10 +158,16 @@ def authorize(service, job, binding, connection, operation, target, names=(), *,
             effect = service.decision_judge.connector_effect(metadata, sorted(names), '', job['id'])
         except Exception:
             effect = None
-    if effect == 'payment' and (service.unattended_work(job) or not (marked and browser_press)):
-        raise not_run(ToolError(msg('write_allowances.payment'), 'unattended_run'))
     if browser_press and effect in ('read', 'navigate'):
         return None
+    if awaiting:
+        barrier.wait()
+        sources = service.store.outside_content_sources(job['id'])
+        marked = bool(sources)
+        if not marked and (not service.unattended_work(job) or not service.self_set_run(job)):
+            return None
+    if effect == 'payment' and (service.unattended_work(job) or not (marked and browser_press)):
+        raise not_run(ToolError(msg('write_allowances.payment'), 'unattended_run'))
     # A known state change cannot be downgraded to read by a classifier.
     reversible = effect == 'reversible' and not marked
     scoped = scoped_binding(binding)

@@ -8110,7 +8110,7 @@ class AgentService:
             return db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                               (job['id'],'connector_permission','claiming',json.dumps(detail,ensure_ascii=False),time.time())).lastrowid
 
-    def connector_permission(self, job, arguments):
+    def connector_permission(self, job, arguments, *, native_intake_wait=None):
         """Decide one confirmed AI connector call under current Work authority.
 
         Reads follow reviewed trust; non-payment changes use pilot authority;
@@ -8183,6 +8183,7 @@ class AgentService:
                     return {'behavior':'deny','message':'현재 권한이나 기존 실행 기록이 달라져 실행하지 않았습니다. 권한과 기존 결과를 확인하고 남은 일만 진행하세요.'}
             allow=effect=='mutate'
             if allow:
+                if native_intake_wait is not None:native_intake_wait()
                 try:
                     write_ticket=self.self_set_write(job,binding,f'connector:{engine}|{kind}|{identity}',operation,
                         json.dumps(values,ensure_ascii=False,sort_keys=True),(),effect=reversibility or 'irreversible',values=values)
