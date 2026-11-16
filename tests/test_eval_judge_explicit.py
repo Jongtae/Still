@@ -106,7 +106,8 @@ def test_selected_judge_notice_precedes_inspect_and_totals(tmp_path, monkeypatch
     assert len(calls) == 1 and len(captured) == 1
     assert keychain.call_count == (source == 'keychain')
     output = capsys.readouterr().out
-    assert 'Eval judge totals: openai/explicit-model; calls: 1; input tokens: 20; output tokens: 10;' in output
+    assert ('Eval judge totals: openai/explicit-model; calls: 1; input tokens: 20 '
+            '(uncached 20, cache write 0, cache read 0); output tokens: 10;') in output
     saved = json.loads(next((tmp_path / 'reports').glob('*.json')).read_text())
     assert saved['run']['judge_model_resolved'] == ['provider-snapshot']
     assert saved['judge_usage']['usd'] == pytest.approx((20 * (3 if explicit_prices else 2)
@@ -160,7 +161,9 @@ def test_continuity_announces_once_and_prints_settlements(rubric, tmp_path, monk
     assert cli.run_continuity(continuity_args(rubric), sweep=sweep) == 0
     output = capsys.readouterr().out
     assert f'Eval judge totals: fixture-judge; calls: {len(calls)};' in output
-    assert f'input tokens: {20 * len(calls)}; output tokens: {10 * len(calls)};' in output
+    assert (f'input tokens: {20 * len(calls)} '
+            f'(uncached unavailable, cache write unavailable, cache read unavailable); '
+            f'output tokens: {10 * len(calls)};') in output
     assert str(judge_totals(calls)['usd']) in output
 
 
@@ -437,5 +440,88 @@ def test_totals_include_errors_and_unknown_usage_without_daily_ledger(tmp_path):
     totals = judge_totals([metadata])
     assert totals['calls'] == len(calls) == 1
     assert totals['input_tokens'] == totals['output_tokens'] == 'unavailable'
+    assert all(totals[key] == 'unavailable' for key in
+               ('input_tokens_uncached', 'input_tokens_cache_write', 'input_tokens_cache_read'))
     assert totals['usd'] == budget.status()['usd']
     assert 'judge_model_resolved' not in metadata
+
+
+async def judge_with_usage(budget, tokens):
+    async def generate(*args):
+        return NS(completion='{}', usage=tokens)
+    return await scoring.judge_call('x', json.loads, generate, budget, lambda text: text, system='')
+
+
+@pytest.mark.parametrize('cache_write,cache_read,full', [
+    (1543, None, 1546), (None, 1543, 1546), (1000, 543, 1546), (None, None, 3)])
+def test_judge_input_includes_all_inspect_cache_parts(tmp_path, cache_write, cache_read, full):
+    budget = JudgeBudget(tmp_path / 'budget.json', price_in=3, price_out=9)
+    tokens = NS(input_tokens=3, input_tokens_cache_write=cache_write,
+                input_tokens_cache_read=cache_read, output_tokens=577, reasoning_tokens=398)
+    result, status, usage, error = asyncio.run(judge_with_usage(budget, tokens))
+    assert result == {} and status == 'judged' and error is None
+    assert usage == {'input_tokens': full, 'input_tokens_uncached': 3,
+                     'input_tokens_cache_write': cache_write or 0,
+                     'input_tokens_cache_read': cache_read or 0,
+                     'output_tokens': 577, 'usd': (full * 3 + 577 * 9) / 1_000_000,
+                     'basis': 'observed'}
+    totals = judge_totals([{'judge_usage': {'rubric': usage, 'measures': usage}}])
+    assert totals == {'calls': 2, **{k: v * 2 for k, v in usage.items() if k != 'basis'}}
+    ledger = budget.status()
+    assert ledger['input_tokens'] == full and ledger['output_tokens'] == 577
+    assert ledger['usd'] == pytest.approx(usage['usd'])
+
+
+def test_judge_full_input_settlement_blocks_next_call_at_cap(tmp_path):
+    budget = JudgeBudget(tmp_path / 'budget.json', cap_usd=.001, price_in=1, price_out=0)
+    assert budget.cost(3, 577) < budget.cap < budget.cost(1546, 577)
+    tokens = NS(input_tokens=3, input_tokens_cache_write=1000, input_tokens_cache_read=543,
+                output_tokens=577)
+    _, status, usage, _ = asyncio.run(judge_with_usage(budget, tokens))
+    assert status == 'judged' and usage['usd'] == .001546
+    # The reservation fits, but observed full input crosses the cap and is not clipped.
+    assert budget.status()['input_tokens'] == 1546
+    assert budget.status()['usd'] == .001546
+    result, status, usage, error = asyncio.run(judge_with_usage(budget, tokens))
+    assert (result, status, usage, error) == (None, 'budget_refused', {}, None)
+    assert budget.status()['calls'] == budget.status()['refused'] == 1
+
+
+def test_judge_totals_line_shows_full_input_and_each_part(tmp_path, capsys):
+    budget = JudgeBudget(tmp_path / 'budget.json')
+    tokens = NS(input_tokens=3, input_tokens_cache_write=1000, input_tokens_cache_read=543,
+                output_tokens=577, reasoning_tokens=398)
+    _, _, usage, _ = asyncio.run(judge_with_usage(budget, tokens))
+    cli.judge_totals_line('fixture-judge', [{'judge_usage': {'rubric': usage}}])
+    assert capsys.readouterr().out == (
+        'Eval judge totals: fixture-judge; calls: 1; input tokens: 1546 '
+        '(uncached 3, cache write 1000, cache read 543); output tokens: 577; '
+        f'settled USD: {usage["usd"]}.\n')
+
+
+def test_judge_totals_old_shape_keeps_total_and_only_missing_parts_unavailable(tmp_path, capsys):
+    old = {'input_tokens': 20, 'output_tokens': 10, 'usd': .00012}
+    cli.judge_totals_line('fixture-judge', [{'judge_usage': {'rubric': old}}])
+    assert capsys.readouterr().out == (
+        'Eval judge totals: fixture-judge; calls: 1; input tokens: 20 '
+        '(uncached unavailable, cache write unavailable, cache read unavailable); '
+        'output tokens: 10; settled USD: 0.00012.\n')
+    # One missing historical part must not poison other recorded metrics, including
+    # a part independently present in a partially upgraded historical record.
+    old['input_tokens_cache_read'] = 4
+    tokens = NS(input_tokens=3, input_tokens_cache_write=1000, input_tokens_cache_read=543,
+                output_tokens=577)
+    _, _, usage, _ = asyncio.run(judge_with_usage(JudgeBudget(tmp_path / 'budget.json'), tokens))
+    totals = judge_totals([{'judge_usage': {'rubric': old}}, {'judge_usage': {'rubric': usage}}])
+    assert totals['calls'] == 2 and totals['input_tokens'] == 1566
+    assert totals['output_tokens'] == 587 and totals['usd'] == pytest.approx(.00012 + usage['usd'])
+    assert totals['input_tokens_cache_read'] == 547
+    assert totals['input_tokens_uncached'] == totals['input_tokens_cache_write'] == 'unavailable'
+
+
+def test_judge_missing_usage_keeps_parts_unavailable_and_reservation(tmp_path):
+    budget = JudgeBudget(tmp_path / 'budget.json')
+    _, status, usage, _ = asyncio.run(judge_with_usage(budget, None))
+    assert status == 'judged' and usage['basis'] == 'reservation'
+    assert usage['usd'] == budget.status()['usd'] > 0
+    assert all(value == 'unavailable' for key, value in usage.items() if key not in ('usd', 'basis'))

@@ -490,7 +490,9 @@ async def judge_call(prompt, parse, generate, budget, redact, system=JUDGE_SYSTE
     reserved = budget.reserve(estimate_tokens(system + prompt), JUDGE_MAX_TOKENS)
     if reserved is None:
         return None, 'budget_refused', {}, None
-    usage = {'input_tokens': 'unavailable', 'output_tokens': 'unavailable', 'usd': reserved,
+    usage = {'input_tokens': 'unavailable', 'input_tokens_uncached': 'unavailable',
+             'input_tokens_cache_write': 'unavailable', 'input_tokens_cache_read': 'unavailable',
+             'output_tokens': 'unavailable', 'usd': reserved,
              'basis': 'reservation'}
     try:
         output = await generate(system, prompt)
@@ -498,10 +500,17 @@ async def judge_call(prompt, parse, generate, budget, redact, system=JUDGE_SYSTE
         if resolved:
             usage['judge_model_resolved'] = resolved
         tokens = output.usage
-        usd = budget.settle(reserved, tokens.input_tokens if tokens else None, tokens.output_tokens if tokens else None)
+        tokens_in = None
         if tokens:
-            usage.update(input_tokens=tokens.input_tokens, output_tokens=tokens.output_tokens,
-                         usd=usd, basis='observed')
+            # Inspect splits provider input into uncached, cache-write and cache-read tokens.
+            # Reasoning is already included in output_tokens.
+            cache_write = getattr(tokens, 'input_tokens_cache_write', None) or 0
+            cache_read = getattr(tokens, 'input_tokens_cache_read', None) or 0
+            tokens_in = tokens.input_tokens + cache_write + cache_read
+            usage.update(input_tokens=tokens_in, input_tokens_uncached=tokens.input_tokens,
+                         input_tokens_cache_write=cache_write, input_tokens_cache_read=cache_read,
+                         output_tokens=tokens.output_tokens, basis='observed')
+        usage['usd'] = budget.settle(reserved, tokens_in, tokens.output_tokens if tokens else None)
         return parse(output.completion), 'judged', usage, None
     except Exception as exc:  # a judge outage or malformed reply stays unscored
         return None, 'judge_error', usage, redact(f'{type(exc).__name__}: {exc}')[:200]
