@@ -1877,6 +1877,9 @@ def budget_stop_code(exc):
 #: is done and say what remains - before a limit stops it.
 WIND_DOWN_STEPS=10
 WIND_DOWN_SECONDS=60
+#: #910: a CLI turn's closing answer takes 60-90 s and its tool calls come tens of seconds apart, so a
+#: budget bounded by the turn deadline (#908) is told to wind down earlier.
+CLI_TURN_WIND_DOWN_SECONDS=150
 WIND_DOWN_TEXT=('Little of this Work\'s budget is left: do not start new paths; finish now with what is done '
                 'and say what remains.')
 #: #620 (OpenAI Agents SDK ``max_turns`` with a controlled final output): the system turn the last
@@ -2386,7 +2389,8 @@ def remaining_budget(budget,turns=True):
  try:value=dict(left())
  except Exception:return None
  if not turns:value.pop('turns',None)
- if (value.get('steps',WIND_DOWN_STEPS+1)<=WIND_DOWN_STEPS or value.get('seconds',WIND_DOWN_SECONDS+1)<=WIND_DOWN_SECONDS
+ margin=CLI_TURN_WIND_DOWN_SECONDS if getattr(budget,'turn_deadline',None) is not None else WIND_DOWN_SECONDS
+ if (value.get('steps',WIND_DOWN_STEPS+1)<=WIND_DOWN_STEPS or value.get('seconds',margin+1)<=margin
      or value.get('turns',2)<=1):value['note']=WIND_DOWN_TEXT
  return value
 

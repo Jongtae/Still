@@ -12,6 +12,7 @@ Relevant [Development Constitution](../docs/development-constitution.en.md) prin
 
 ## What changed
 
+Optional for model-facing prompt, judgment or bundled-skill text edits: change table (`file | sentence | change | origin`) and contradiction pass across worker, planner, judgment, the relevant skill and the contract the text restates.
 
 ## Existing solutions review (Adopt / Adapt / Build)
 

@@ -1,4 +1,5 @@
 """#1508: model-facing prompt text lives in shipped ``prompts/*.md`` files."""
+import ast
 import re
 import tomllib
 import unittest
@@ -12,6 +13,27 @@ LOADED = re.compile(r"\bprompt\('([a-z_]+)'\)")
 
 
 class PromptFileTests(unittest.TestCase):
+    def test_judgment_constants_are_not_plain_string_literals(self):
+        # No literal exceptions: capability lists are formatted into prompt files,
+        # and reaction/goal questions compose loaded prompts with shared fragments.
+        for module in ('conversation_handoff.py', 'decision.py'):
+            tree = ast.parse((SRC / module).read_text(encoding='utf-8'))
+            for node in tree.body:
+                if isinstance(node, ast.Assign):
+                    targets = node.targets
+                elif isinstance(node, ast.AnnAssign):
+                    targets = [node.target]
+                else:
+                    continue
+                for target in targets:
+                    for name in ast.walk(target):
+                        if isinstance(name, ast.Name) and name.id.endswith(
+                                ('_PROPOSITION', '_QUESTION', '_INSTRUCTION')):
+                            with self.subTest(module=module, constant=name.id):
+                                self.assertFalse(isinstance(node.value, ast.Constant)
+                                                 and isinstance(node.value.value, str),
+                                                 f'{name.id} must load its text from prompts/')
+
     def test_prompts_do_not_assign_a_secretary_role(self):
         for path in prompt_files.PROMPTS.glob('*.md'):
             with self.subTest(prompt=path.stem):
