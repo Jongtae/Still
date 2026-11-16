@@ -141,6 +141,67 @@ class JudgmentTests(unittest.TestCase):
                 with self.assertRaises(j.CaseError):
                     j.load_cases(path)
 
+    def test_goal_owner_context_reaches_the_production_judgment(self):
+        # Check serialized facts, not a scripted model's semantic verdict.
+        context = 'owner_profile: Saved starting place: Base A.\ncurrent_context: none'
+        cases = subset(self.cases, 'goal-served')
+        cases['cases'] = copy.deepcopy(cases['cases'])
+        cases['cases'][0]['input']['owner_context'] = context
+        _, transport, _ = self.measure(cases)
+        rendered = transport.calls[0]['messages'][-1]['content']
+        self.assertIn('\nowner_context: ' + context + '\n', rendered)
+        # This is the same fact the production orchestrator passes.
+        orch = s.orchestrator.Orchestration(None, s.orchestrator.Catalogue(**cases['catalogue']),
+                                           request='fixture', sections={'profile': 'Saved starting place: Base A.'})
+        self.assertEqual(context, orch._owner_context())
+        # Optional omission still yields the caller's original default.
+        _, transport, _ = self.measure(subset(self.cases, 'goal-served'))
+        _, facts = parse_prompt(transport.calls[0]['messages'][-1]['content'])
+        self.assertEqual(facts['owner_context'], 'none')
+
+    def test_plan_saved_context_and_location_expectations_use_the_real_boundary(self):
+        cases = j.load_cases(ROOT / 'evals/judgments/cases-v2-202.json')
+        for ident, question in (('plan-202-saved-en', ''), ('plan-202-exact-en', 'Share your current position?')):
+            selected = subset(cases, ident)
+            # Both the expected and opposite output must be scored, otherwise
+            # an ignored expectation would pass a matching fixture by accident.
+            for actual in (question, '' if question else 'Share your current position?'):
+                output = planned(ask_location=actual, location_button='Share' if actual else '')
+                rows, transport, _ = self.measure(selected, scripted=[output])
+                row = next(r for r in rows if r['id'] == ident)
+                self.assertEqual(row['semantic_correct'], actual == question)
+                self.assertEqual(row['error'], 'none' if actual == question else 'wrong_choice')
+                self.assertEqual(row['observed']['ask_location'], 'nonempty' if actual else 'empty')
+                _, facts = parse_prompt(transport.calls[0]['messages'][-1]['content'])
+                self.assertEqual(facts['owner_profile'], selected['cases'][0]['input']['owner_context'])
+                schema = transport.calls[0]['tools'][0]['function']['parameters']
+                self.assertIn('ask_location', schema['required'])
+
+    def test_202_cases_validate_and_plan_with_optional_fields(self):
+        cases = j.load_cases(ROOT / 'evals/judgments/cases-v2-202.json')
+        self.assertEqual(cases['catalogue'], self.cases['catalogue'])
+        self.assertEqual(cases['version'], self.cases['version'])
+        self.assertEqual(j.plan(cases)['roles']['goal_reached']['cases'], 34)
+        self.assertEqual(j.plan(cases)['roles']['orchestration_plan']['cases'], 8)
+        for mutation in ('context', 'expectation'):
+            bad = copy.deepcopy(subset(cases, 'plan-202-saved-en'))
+            if mutation == 'context':
+                bad['cases'][0]['input']['owner_context'] = {'place': 'Base A'}
+            else:
+                bad['cases'][0]['expect']['ask_location'] = 'maybe'
+            with tempfile.TemporaryDirectory() as folder:
+                path = Path(folder) / 'cases.json'
+                path.write_text(json.dumps(bad))
+                with self.assertRaises(j.CaseError):
+                    j.load_cases(path)
+
+    def test_202_relabels_low_cost_bare_preference_questions(self):
+        cases = self.cases['cases'] + j.load_cases(ROOT / 'evals/judgments/heldout-v1.json')['cases']
+        for ident in ('goal-legitimate-question', 'goal-legitimate-question-ko', 'heldout-goal-legitimate-question'):
+            [case] = [c for c in cases if c['id'] == ident]
+            self.assertEqual(case['expect'], {'outcome': 'no'})
+            self.assertEqual(case['targets'], ['#202'])
+
     def test_oracle_scores_every_case_through_real_model_adapter(self):
         rows, transport, audit = self.measure()
         failures = [(r['id'], r['outcome'], r['error'], r['observed']) for r in rows if not r['semantic_correct'] or r['routing_correct'] is False]
