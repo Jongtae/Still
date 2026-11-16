@@ -465,7 +465,7 @@ def items_of(current):
 FRONTIER_FIRST_WAVE = ["FRONTIER-SPEC-01", "FRONTIER-EVAL-01"]
 FRONTIER_RECONCILED = ["FRONTIER-PROVENANCE-01", "FRONTIER-RECOVERY-01", "FRONTIER-CONTEXT-01"]
 FRONTIER_COMPLETED = FRONTIER_FIRST_WAVE + FRONTIER_RECONCILED + [
-    "FRONTIER-JUDGMENT-01", "FRONTIER-TELEGRAM-01", "FRONTIER-FENCE-01", "FRONTIER-WORKCHAT-01", "FRONTIER-CONTEXT-02", "FRONTIER-EVAL-JUDGE-01", "FRONTIER-C2-DUE-01", "FRONTIER-EVAL-TOKENS-01", "FRONTIER-RECEIPT-JUDGE-01", "FRONTIER-EVAL-FALLBACK-01", "FRONTIER-JUDGMENT-TEXT-01", "FRONTIER-COMPLETION-BAR-01", "FRONTIER-UNTRUSTED-ECHO-01", "FRONTIER-PLAN-READING-01"]
+    "FRONTIER-JUDGMENT-01", "FRONTIER-TELEGRAM-01", "FRONTIER-FENCE-01", "FRONTIER-WORKCHAT-01", "FRONTIER-CONTEXT-02", "FRONTIER-EVAL-JUDGE-01", "FRONTIER-C2-DUE-01", "FRONTIER-EVAL-TOKENS-01", "FRONTIER-RECEIPT-JUDGE-01", "FRONTIER-EVAL-FALLBACK-01", "FRONTIER-JUDGMENT-TEXT-01", "FRONTIER-COMPLETION-BAR-01", "FRONTIER-UNTRUSTED-ECHO-01", "FRONTIER-PLAN-READING-01", "FRONTIER-ASK-SCOPE-01"]
 FRONTIER_WAVE_2 = ["FRONTIER-FENCE-01", "FRONTIER-JUDGMENT-01", "FRONTIER-TELEGRAM-01", "FRONTIER-WORKCHAT-01"]
 FRONTIER_OPEN_WAVE_2 = [name for name in FRONTIER_WAVE_2 if name not in FRONTIER_COMPLETED]
 
@@ -502,7 +502,7 @@ def test_frontier_declares_completed_units_and_owner_authorized_wave_2():
     assert current["next_goal"]["id"] == "FRONTIER-01"
     invariants.assert_activation_record(TestCase(), "FRONTIER-01 activation", program["activated_by"])
     assert program["activated_by"]["issue"] == program["issue"] == 822
-    assert program["ordered_substeps"] == FRONTIER_FIRST_WAVE + FRONTIER_RECONCILED + FRONTIER_WAVE_2 + ["FRONTIER-CONTEXT-02", "FRONTIER-EVAL-JUDGE-01", "FRONTIER-C2-DUE-01", "FRONTIER-EVAL-TOKENS-01", "FRONTIER-RECEIPT-JUDGE-01", "FRONTIER-EVAL-FALLBACK-01", "FRONTIER-JUDGMENT-TEXT-01", "FRONTIER-COMPLETION-BAR-01", "FRONTIER-UNTRUSTED-ECHO-01", "FRONTIER-PLAN-READING-01"]
+    assert program["ordered_substeps"] == FRONTIER_FIRST_WAVE + FRONTIER_RECONCILED + FRONTIER_WAVE_2 + ["FRONTIER-CONTEXT-02", "FRONTIER-EVAL-JUDGE-01", "FRONTIER-C2-DUE-01", "FRONTIER-EVAL-TOKENS-01", "FRONTIER-RECEIPT-JUDGE-01", "FRONTIER-EVAL-FALLBACK-01", "FRONTIER-JUDGMENT-TEXT-01", "FRONTIER-COMPLETION-BAR-01", "FRONTIER-UNTRUSTED-ECHO-01", "FRONTIER-PLAN-READING-01", "FRONTIER-ASK-SCOPE-01"]
     assert program["active_substeps"] == []
     assert program["completed_substeps"] == FRONTIER_COMPLETED
     assert program["reserved_substeps"] == []
@@ -847,12 +847,33 @@ def test_frontier_202_records_plan_reading_scope():
     assert unit['activation_status'] == 'complete-on-merge'
     assert unit['contract'] == 'frontier-delivery.en.md' and unit['depends_on'] == []
     program = current['programs']['FRONTIER-01']
-    assert program['ordered_substeps'][-1] == name
-    assert program['completed_substeps'][-1] == name
-    assert current['history']['documented_completed_iterations'][-1] == name
+    assert name in program['ordered_substeps']
+    assert name in program['completed_substeps']
+    assert name in current['history']['documented_completed_iterations']
     activation = items['FRONTIER-01']['completed_substeps'][name]
     assert activation['issue'] == 202 and activation['status'] == 'complete-on-merge'
     assert activation['pull_request'] == '915'
     assert unit['summary'].endswith('Complete on the merge of its own PR.')
     assert ('#202 phase 2 (FRONTIER-PLAN-READING-01) is selected inside #822 by owner direction on 2026-11-16 '
+            'and is complete on the merge of its own PR.') in current['next_goal']['action']
+
+
+def test_frontier_202_records_ask_scope():
+    current = plan()
+    items = items_of(current)
+    name = 'FRONTIER-ASK-SCOPE-01'
+    unit = items[name]
+    assert unit['program'] == 'FRONTIER-01' and unit['issue'] == 202
+    assert unit['milestone'] == 'frontier-delivery' and unit['kind'] == 'implementation'
+    assert unit['activation_status'] == 'complete-on-merge'
+    assert unit['contract'] == 'frontier-delivery.en.md' and unit['depends_on'] == []
+    program = current['programs']['FRONTIER-01']
+    assert program['ordered_substeps'][-1] == name
+    assert program['completed_substeps'][-1] == name
+    assert current['history']['documented_completed_iterations'][-1] == name
+    activation = items['FRONTIER-01']['completed_substeps'][name]
+    assert activation['issue'] == 202 and activation['status'] == 'complete-on-merge'
+    assert activation['pull_request'] == '918'
+    assert unit['summary'].endswith('Complete on the merge of its own PR.')
+    assert ('#202 phase 2 (FRONTIER-ASK-SCOPE-01) is selected inside #822 by owner direction on 2026-11-16 '
             'and is complete on the merge of its own PR.') in current['next_goal']['action']
