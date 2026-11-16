@@ -18,7 +18,7 @@ import math
 import re
 
 from .scenarios import RUBRIC
-from .runner import delivered_answer
+from .runner import delivered_answer, judgment_fallback_counts
 
 #: Terminal statuses that are not a failed outcome.
 OK_STATUSES = frozenset({'succeeded', 'partial'})
@@ -262,6 +262,7 @@ def combine(scenario, run, checks, failures, judgment=None, judge_status='skippe
                 'judgment': judgment, 'judgment_ai': run.get('judgment'), 'statuses': [turn.get('status') for turn in run.get('turns') or []],
                 'failure_classes': [turn.get('failure_class') for turn in run.get('turns') or []],
                 'elapsed': [turn.get('elapsed') for turn in run.get('turns') or []]}
+    metadata.update(judgment_fallback_counts(run.get('work')))
     metadata.update(measures=measures, measures_status=measures_status,
                     measures_rubric_version=(measures_rubric or {}).get('version'),
                     proactive_observation=proactive_observation(run),

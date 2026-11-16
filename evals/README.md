@@ -491,6 +491,19 @@ unrepresentative.
 but marks it **partial** and its verdict can never be `better`. Existing
 pairing requirements and the refusal of usage-limit-stopped sweeps still apply.
 
+The same readiness rule covers mid-run Judgment AI fallbacks (#902): the harness
+counts distinct Works by the typed `orchestrator`/`fallback` code in Still's
+records, across owner turns and `wait_due` preparation Works, never reply text.
+Sample metadata and sweep/C2 summaries count samples and Works for every code,
+separately from not-ready qualification. Only `judgment_unavailable` and
+`judgment_qualifying` make the sample unrepresentative, like not-ready
+qualification, even if the eval judge scored it; `--allow-partial` allows
+inspection but never a `better` verdict. `plan_malformed`, `plan_unconfident`,
+`plan_invalid` and `budget_short` are only counted: they are system behaviour
+and stay comparable, so measured regressions still count against a candidate.
+Historical reports without these fields remain unknown and are not counted as
+affected.
+
 ## Task coverage map
 
 `task-coverage/` pins public taxonomies and records each row's evidence class,

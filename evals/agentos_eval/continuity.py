@@ -25,6 +25,7 @@ from .paths import BUNDLED_SCENARIOS, REPO
 from .scenarios import load_file
 from .recall_pairs import paired_index
 from .scoring import MEASURES, MEASURE_VALUES
+from .runner import JUDGMENT_INFRA_FALLBACK_CODES
 
 DEFAULT_RUBRIC = REPO / 'evals/continuity/initiative-rubric-v2.json'
 SCENARIOS = BUNDLED_SCENARIOS / 'continuity-experiments.json'
@@ -301,19 +302,39 @@ def normalize_run(run):
 
 
 def judgment_ai_status(samples):
-    """Count each affected sample once, from readiness or the scorer's infra receipt.
+    """Still's Judgment AI did not take part, at qualification or mid-run.
 
     Missing readiness metadata alone is unknown, not proof of a failed AI.
-    Only unscored measures on an affected sample trigger the comparison gate.
+    Only infrastructure fallback codes join not-ready qualification in the
+    affected union, even when the external eval judge scored the sample.
+    Plan/budget fallbacks remain counted behaviour of the system under test.
     """
-    affected = [row for row in samples if (row.get('judgment_ai') or {}).get('ready') is False
-                or any(f.get('kind') == 'infra' and f.get('name') == 'judgment_ai'
-                       for f in row.get('failures') or [])]
+    from .report import judgment_fallback_summary
+    not_ready, infrastructure, affected = [], [], []
+    fallbacks = judgment_fallback_summary(samples)
+    for row in samples:
+        unready = ((row.get('judgment_ai') or {}).get('ready') is False
+                   or any(f.get('kind') == 'infra' and f.get('name') == 'judgment_ai'
+                          for f in row.get('failures') or []))
+        if unready:
+            not_ready.append(row)
+        infra_fallback = any(code in JUDGMENT_INFRA_FALLBACK_CODES and type(n) is int and n > 0
+                             for code, n in (row.get('judgment_fallbacks') or {}).items())
+        if infra_fallback:
+            infrastructure.append(row)
+        if unready or infra_fallback:
+            affected.append(row)
     missing = sum(row.get('measures_status', 'not_scored') != 'judged' for row in affected)
-    warning = (f"Still's Judgment AI was not ready in {len(affected)} of {len(samples)} samples; "
+    warning = (f"Still's Judgment AI did not take part in {len(affected)} of {len(samples)} samples' Work, "
+               f"at qualification or mid-run. Still's Judgment AI was not ready in {len(not_ready)} of {len(samples)} samples; "
+               f"mid-run infrastructure fallbacks in {len(infrastructure)} samples "
+               f"(unrepresentative codes: {', '.join(sorted(JUDGMENT_INFRA_FALLBACK_CODES))}); "
+               "plan_malformed, plan_unconfident, plan_invalid and budget_short are only counted "
+               "and stay comparable. "
                f"{missing} have unscored judged measures. The run is not a representative observation."
                if affected else None)
-    return {'not_ready': len(affected), 'samples': len(samples),
+    return {'not_ready': len(not_ready), 'affected_samples': len(affected), 'samples': len(samples),
+            'fallbacks': fallbacks,
             'unscored_measures': missing, 'warning': warning}
 
 
@@ -410,6 +431,8 @@ def render_markdown(report):
     if run.get('judge_model_resolved'):
         lines += [f"Judge resolved model ids: {run['judge_model_resolved']}", '']
     readiness = judgment_ai_status(report['samples'])
+    from .report import judgment_fallback_markdown
+    lines += judgment_fallback_markdown(readiness['fallbacks']) + ['']
     if readiness['warning']:
         lines += [f"**{readiness['warning']}**", '']
     if run.get('stopped'):
@@ -533,11 +556,11 @@ def compare(baseline, candidate, *, allow_partial=False):
             raise ValueError('Cannot compare a stopped C2 report')
     readiness = {arm: judgment_ai_status(r['samples']) for arm, r in
                  (('baseline', baseline), ('candidate', candidate))}
-    partial = any(state['unscored_measures'] for state in readiness.values())
+    partial = any(state['affected_samples'] for state in readiness.values())
     if partial and not allow_partial:
-        affected = ', '.join(f"{arm}: {state['unscored_measures']}" for arm, state in readiness.items()
-                             if state['unscored_measures'])
-        raise ValueError('Cannot compare missing measures caused by infra:judgment_ai (' + affected
+        affected = ', '.join(f"{arm}: {state['affected_samples']} affected samples" for arm, state in readiness.items()
+                             if state['affected_samples'])
+        raise ValueError('Cannot compare unrepresentative Work caused by infra:judgment_ai (' + affected
                          + '); use --allow-partial for a partial comparison that cannot be better')
     if baseline.get('observation_version', 'continuity-observation-v1') != candidate.get('observation_version', 'continuity-observation-v1'):
         raise ValueError('Cannot compare different observation versions')
@@ -628,6 +651,6 @@ def compare(baseline, candidate, *, allow_partial=False):
 
 
 def compare_markdown(result):
-    partial_notice = 'PARTIAL: incomplete measures or due observation/coverage; verdict cannot be better.\n\n' if result['partial'] else ''
+    partial_notice = 'PARTIAL: Judgment AI did not take part, or incomplete measures or due observation/coverage; verdict cannot be better.\n\n' if result['partial'] else ''
     return (f"# C2 paired comparison\n\nVerdict: **{result['verdict']}** ({result['verdict_basis']}).\n\n"
             + partial_notice + result['heldout_rule'] + '\n\n```json\n' + json.dumps(result, indent=2) + '\n```\n')

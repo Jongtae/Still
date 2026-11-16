@@ -48,10 +48,16 @@ def records_from_samples(samples, scorer=SCORER):
     ``infra:sample_error`` failure, so an outage never improves a pass rate.
     """
     records = []
+    from .runner import judgment_fallback_counts
     for sample in samples or []:
         score = (getattr(sample, 'scores', None) or {}).get(scorer)
         run = (getattr(sample, 'metadata', None) or {}).get('run') or {}
         measurements = {'work': run['work']} if 'work' in run else {}
+        for key in ('judgment_fallbacks', 'judgment_fallback_work_count'):
+            if key in run:
+                measurements[key] = run[key]
+        if 'judgment_fallbacks' not in measurements:
+            measurements.update(judgment_fallback_counts(run.get('work')))
         if 'judgment' in run:
             measurements['judgment_ai'] = run['judgment']
         for key in ('turns', 'due_observations', 'observation_version'):
@@ -92,10 +98,38 @@ def _group(records):
             if key.startswith('rubric_') and key != 'rubric_mean' and value == value:
                 rubric[key[len('rubric_'):]].append(value)
     return {'runs': runs, 'passed': passed, 'pass_rate': _rate([record['value'].get('passed', 0) for record in records]),
+            'judgment_fallbacks': judgment_fallback_summary(records),
             'checks': {name: {'n': len(values), 'pass_rate': _rate(values)} for name, values in sorted(checks.items())},
             'rubric': {dim: {'n': len(values), 'mean': _rate(values),
                              'zero_rate': _rate([1.0 if value == 0 else 0.0 for value in values])}
                        for dim, values in sorted(rubric.items())}}
+
+
+def judgment_fallback_summary(records):
+    """Observed sample/Work counts; absent historical fields are unknown, not affected."""
+    samples, works, by_code = 0, 0, {}
+    for record in records:
+        counts = {code: n for code, n in (record.get('judgment_fallbacks') or {}).items()
+                  if type(n) is int and n > 0}
+        if not counts:
+            continue
+        samples += 1
+        # Do not infer a unique-Work total by summing codes: one Work can have
+        # more than one code. Older records without a total add no known Works.
+        total = record.get('judgment_fallback_work_count')
+        if type(total) is int and total > 0:
+            works += total
+        for code, count in counts.items():
+            row = by_code.setdefault(code, {'samples': 0, 'works': 0})
+            row['samples'] += 1
+            row['works'] += count
+    return {'samples': samples, 'works': works, 'by_code': dict(sorted(by_code.items()))}
+
+
+def judgment_fallback_markdown(summary):
+    """Shared wording for sweep and C2 summaries."""
+    return [f"- Judgment AI fallbacks: {summary['samples']} samples, {summary['works']} Works"] + [
+        f"  - {code}: {row['samples']} samples, {row['works']} Works" for code, row in summary['by_code'].items()]
 
 
 def clusters(records):
@@ -241,6 +275,8 @@ def render_markdown(report):
              f"- runs: {totals['runs']}, passed: {totals['passed']} ({_pct(totals['pass_rate'])})",
              f"- workers: {', '.join(f'{name} {_pct(row['pass_rate'])} of {row['runs']}' for name, row in report['by_worker'].items())}",
              f"- judge: {', '.join(f'{k} {v}' for k, v in sorted(report['judge'].items()))}"]
+    if 'judgment_fallbacks' in totals:
+        lines += judgment_fallback_markdown(totals['judgment_fallbacks'])
     if run.get('git_head'):
         lines.append(f"- code: {run['git_head']}")
     if run.get('judge_model_resolved'):
