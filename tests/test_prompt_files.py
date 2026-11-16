@@ -97,7 +97,12 @@ class ConsolidatedPromptTests(unittest.TestCase):
             with self.subTest(text=text[:80]):
                 self.assertEqual(scenario_tokens(text), [])
 
-    def test_failed_steps_need_another_method_not_disclosure_alone(self):
+    def test_failed_step_rule_reaches_the_worker_and_the_judgment_once(self):
+        """#202 Q1-B: delivery of the rule text to both model contexts, verbatim and once.
+
+        This checks what the models are given, not how they behave; the behaviour is measured by
+        the paired judgment check under #202's frozen rule (goal-202-* and heldout-202-* cases).
+        """
         from personal_agent.agent_runtime import CORE_INSTRUCTIONS
         from personal_agent.conversation_handoff import GOAL_REACHED_PROPOSITION
         for sentence in (
@@ -114,7 +119,8 @@ class ConsolidatedPromptTests(unittest.TestCase):
         self.assertEqual(CORE_INSTRUCTIONS.count(
             'Use the means you have before answering: get facts with tools; if a needed step fails, try the next available method before estimating, then say what could not be checked.'), 1)
 
-    def test_timing_uses_a_stated_assumption_and_a_question_in_one_reply(self):
+    def test_timing_rule_reaches_worker_planner_and_judgment_once(self):
+        """#202 Q2-A: delivery of the shared rule text; behaviour is measured by the paired check."""
         from personal_agent.agent_runtime import CORE_INSTRUCTIONS
         from personal_agent.conversation_handoff import GOAL_REACHED_PROPOSITION
         from personal_agent.orchestrator import LOCATION_QUESTION
@@ -131,13 +137,15 @@ class ConsolidatedPromptTests(unittest.TestCase):
         self.assertIn('Only when no such assumption fits or the request needs the exact current position', LOCATION_QUESTION)
         self.assertNotIn('a wrong guess would cost the owner', LOCATION_QUESTION)
 
-    def test_wrong_versioned_method_is_a_developer_blocker(self):
+    def test_wrong_method_rule_reaches_the_self_review(self):
+        """#202 Q4-A: delivery of the rule text to the self-review prompt, not model behaviour."""
         review = prompt_files.prompt('owner_model_review')
         self.assertEqual(review.count("When a method in a skill or the assistant's own instruction text was wrong or out of date, give the blocker and no notes: say generally which method and what it led to, so a developer can revise the versioned text; never rewrite it yourself (#202)."), 1)
         self.assertIn('not a general rule any assistant should follow', review)
         self.assertIn('The blocker is at most 200 characters.', review)
 
-    def test_route_skill_discloses_failed_lookup_and_distance_estimate(self):
+    def test_route_skill_states_the_failed_lookup_method(self):
+        """#202: the bundled skill's method text, not worker behaviour."""
         skill = (ROOT / 'skills/map-directions/SKILL.md').read_text()
         self.assertIn('try another available route method first', skill)
         self.assertIn('say the route lookup failed and that the time is a distance-based estimate', skill)
