@@ -129,6 +129,37 @@ class RemainingBudget(Base):
         host.spend_attempt(); host.spend_attempt()
         self.assertEqual(bridge.left()['steps'], 18, 'the bridge reads the attempts the host spent')
 
+    def test_turn_deadline_caps_reporting_and_winds_down_without_enforcing(self):
+        job = self.store.enqueue('fixture request', 'turn-budget-fixture')
+        wall = [10_000.0]
+        ledger = WorkLedger(self.store, job, seconds=1400, wall=lambda: wall[0])
+        bridge = WorkBudget(ledger=ledger, clock=lambda: 0, wall=lambda: wall[0], turn_deadline=wall[0] + 100)
+        self.assertEqual(bridge.remaining(), 1400)
+        self.assertEqual(bridge.left()['seconds'], 100)
+        self.assertNotIn('note', remaining_budget(bridge, turns=False))
+        wall[0] += 40
+        self.assertEqual(remaining_budget(bridge, turns=False)['seconds'], 60)
+        self.assertEqual(remaining_budget(bridge, turns=False)['note'], WIND_DOWN_TEXT)
+        wall[0] += 61
+        self.assertEqual(bridge.left()['seconds'], 0)
+        self.assertEqual(bridge.remaining(), 1299, 'the turn deadline is reporting only')
+        self.assertIsNone(bridge.interrupted())
+        self.assertIsNone(bridge.check())
+        bridge.spend_attempt()
+        self.assertEqual(bridge.attempts_used, 1, 'an expired turn deadline does not refuse a call')
+
+    def test_reporting_without_turn_deadline_and_with_a_shorter_work_is_unchanged(self):
+        for turn_deadline in (None, 11_000):
+            with self.subTest(turn_deadline=turn_deadline):
+                job = self.store.enqueue('fixture request', f'work-budget-fixture-{turn_deadline}')
+                ledger = WorkLedger(self.store, job, seconds=1400, wall=lambda: 10_000)
+                bridge = WorkBudget(ledger=ledger, clock=lambda: 0, seconds=1500,
+                                    wall=lambda: 10_000, turn_deadline=turn_deadline)
+                expected = 1400 if turn_deadline is None else 1000
+                self.assertEqual(remaining_budget(bridge, turns=False), {'steps': 200, 'seconds': expected})
+                shorter = WorkBudget(clock=lambda: 0, seconds=30, wall=lambda: 10_000, turn_deadline=turn_deadline)
+                self.assertEqual(shorter.left()['seconds'], 30)
+
     def test_the_bridge_adds_remaining_to_results_and_failures(self):
         budget = WorkBudget(attempts=30)
         ok = _with_remaining({'content': [{'type': 'text', 'text': '{}'}]}, budget)

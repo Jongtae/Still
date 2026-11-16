@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import subprocess
 import threading
+import time
 from datetime import datetime, timezone
 from unittest import mock
 
@@ -290,7 +291,10 @@ def test_peer_adapter_qualifies_exact_launch_and_cleans_auth(tmp_path, monkeypat
     (owner / 'CLAUDE.md').write_text('AMBIENT-CLAUDE-CANARY-673')
     store = QuickStore(tmp_path / 'store')
     caps = Capabilities(store, None, {}, '', 'peer-work', lambda *args: None,
-                        allowed_tools={'save_memory'}, delegated=True, budget=WorkBudget(), secret_redactor=lambda text: text)
+                        allowed_tools={'save_memory'}, delegated=True, budget=WorkBudget(seconds=100, clock=lambda: 0),
+                        secret_redactor=lambda text: text)
+    now = time.time()
+    monkeypatch.setattr('personal_agent.bounded_execution.time.time', lambda: now)
     caps.peer_guard = lambda: None
     tools = RelayedWorkMcpTools(caps)
     tools.browser_relay = 'synthetic-relay'
@@ -300,6 +304,8 @@ def test_peer_adapter_qualifies_exact_launch_and_cleans_auth(tmp_path, monkeypat
         config = json.loads((kwargs['cwd'] / 'agentos-mcp.json').read_text())
         args = config['mcpServers']['agentos']['args']
         assert '--peer-relay=synthetic-relay' in args
+        turn_deadline = float(next(arg.split('=', 1)[1] for arg in args if arg.startswith('--turn-deadline=')))
+        assert turn_deadline == now + 100
         assert str(store.root) not in args
         assert not any('browser-relay=' in arg for arg in args)
         assert 'CANARY-673' not in json.dumps([argv, kwargs['env']])

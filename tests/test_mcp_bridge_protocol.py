@@ -12,6 +12,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -113,6 +114,40 @@ class ProtocolVersionRegistryTests(unittest.TestCase):
 
 class SubscriptionBridgeWireTests(unittest.TestCase):
     """End-to-end stdio check that the negotiated version reaches the wire."""
+
+    def test_turn_deadline_argument_limits_reported_seconds_without_refusing_calls(self):
+        from personal_agent.agent_runtime import WIND_DOWN_TEXT, WorkLedger
+
+        for offset in (None, 100, 60, -1):
+            with self.subTest(offset=offset), tempfile.TemporaryDirectory() as folder:
+                store = QuickStore(Path(folder) / 'data')
+                job = store.enqueue('fixture request', 'deadline-wire-fixture')
+                with store.db() as db:
+                    db.execute("UPDATE jobs SET status='running' WHERE id=?", (job,))
+                WorkLedger(store, job, seconds=1400)
+                argv = [sys.executable, '-m', 'personal_agent.mcp_bridge', '--data', str(store.root), '--job', job]
+                if offset is not None:
+                    argv.append(f'--turn-deadline={time.time() + offset}')
+                requests = [{'jsonrpc': '2.0', 'id': 1, 'method': 'initialize'},
+                            {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/call',
+                             'params': {'name': 'list_notes', 'arguments': {}}}]
+                done = subprocess.run(argv, input=''.join(json.dumps(request) + '\n' for request in requests),
+                                      capture_output=True, text=True, timeout=30)
+                self.assertEqual(done.returncode, 0, done.stderr)
+                replies = {reply['id']: reply for reply in map(json.loads, done.stdout.splitlines())}
+                result = replies[2]['result']
+                self.assertFalse(result.get('isError'), result)
+                shown = json.loads(result['content'][-1]['text'])['remaining']
+                self.assertNotIn('turns', shown)
+                if offset is None:
+                    self.assertGreater(shown['seconds'], 1300)
+                else:
+                    self.assertGreaterEqual(shown['seconds'], 0)
+                    self.assertLessEqual(shown['seconds'], max(0, offset))
+                if offset is not None and offset <= 60:
+                    self.assertEqual(shown['note'], WIND_DOWN_TEXT)
+                else:
+                    self.assertNotIn('note', shown)
 
     def _initialize(self, params):
         with tempfile.TemporaryDirectory() as folder:

@@ -4,6 +4,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from personal_agent import bounded_execution, information_use
 from personal_agent.bounded_execution import (
@@ -151,6 +152,39 @@ class BoundedExecutionTests(unittest.TestCase):
             self.assertEqual(replies[-1]['result']['content'][0]['type'],'text')
             self.assertIn('Bridge note',replies[-1]['result']['content'][0]['text'])
             with store.db() as db: self.assertEqual(db.execute("SELECT status FROM tool_events WHERE job_id=? AND tool='list_notes' ORDER BY id DESC",(job,)).fetchone()[0],'succeeded')
+
+    def test_both_clis_receive_the_binding_turn_deadline_in_the_mcp_config(self):
+        from personal_agent.agent_runtime import WorkBudget
+
+        now = 1_700_000_000.25
+        for engine in ('codex', 'claude-code'):
+            for seconds in (None, 1400, 99.75):
+                with self.subTest(engine=engine, seconds=seconds), tempfile.TemporaryDirectory() as folder:
+                    caps = _Capabilities()
+                    if seconds is not None:
+                        caps.budget = WorkBudget(seconds=seconds, clock=lambda: 0)
+
+                    def runner(argv, **kwargs):
+                        config = json.loads((Path(kwargs['cwd']) / 'agentos-mcp.json').read_text())
+                        args = config['mcpServers']['agentos']['args']
+                        deadline = float(next(arg.split('=', 1)[1] for arg in args if arg.startswith('--turn-deadline=')))
+                        self.assertGreaterEqual(deadline, now)
+                        self.assertLessEqual(deadline, now + bounded_execution.MAX_TIMEOUT_SECONDS)
+                        self.assertEqual(deadline, now + min(600, seconds if seconds is not None else 600))
+                        if engine == 'codex':
+                            encoded = next(arg.split('=', 1)[1] for arg in argv if arg.startswith('mcp_servers.agentos.args='))
+                            self.assertEqual(json.loads(encoded), args)
+                        else:
+                            self.assertEqual(Path(argv[argv.index('--mcp-config') + 1]), Path(kwargs['cwd']) / 'agentos-mcp.json')
+                        self.assertEqual(kwargs['timeout'], 600 if seconds is None else max(1, min(600, int(seconds))))
+                        text = (json.dumps({'type': 'item.completed', 'item': {'type': 'agent_message', 'text': 'fixture answer'}})
+                                if engine == 'codex' else json.dumps({'result': 'fixture answer'}))
+                        return subprocess.CompletedProcess(argv, 0, text, '')
+
+                    adapter = BoundedExecutionAdapter(finder=lambda name: '/runtime/' + name, runner=runner,
+                                                      runtime_root=Path(folder) / 'turns', codex_home=Path(folder))
+                    with mock.patch.object(bounded_execution.time, 'time', return_value=now):
+                        adapter.execute(engine, 'fixture prompt', AgentOSMcpTools(caps))
 
     def test_work_route_passes_the_owners_model_on_both_clis(self):
         # #679: --ignore-user-config drops the owner's ~/.codex/config.toml

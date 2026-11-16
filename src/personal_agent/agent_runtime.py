@@ -2283,8 +2283,9 @@ class WorkBudget:
  had its own duplicate counter of the same calls.  ``left`` shows what remains
  (LangGraph ``RemainingSteps``), so the model can wind down before a limit.
  """
- def __init__(self,*,turns=WORK_MODEL_TURNS,attempts=WORK_TOOL_ATTEMPTS,seconds=WORK_DEADLINE_SECONDS,clock=time.monotonic,stop=None,ledger=None):
+ def __init__(self,*,turns=WORK_MODEL_TURNS,attempts=WORK_TOOL_ATTEMPTS,seconds=WORK_DEADLINE_SECONDS,clock=time.monotonic,stop=None,ledger=None,turn_deadline=None,wall=time.time):
   self.turns,self.attempts,self.clock,self.stop,self.ledger=turns,attempts,clock,stop,ledger
+  self.turn_deadline,self.wall=turn_deadline,wall
   # #16: reads of one model turn may spend from several threads; each spend is one step.
   self._spending=threading.RLock()
   self.deadline=clock()+seconds;self.turns_used=0;self.attempts_used=0
@@ -2349,11 +2350,15 @@ class WorkBudget:
   ``turns`` (model turns before the outcome judgment's reserve), ``steps``
   (tool calls) and ``seconds``, read from the shared ledger when there is one
   (the host and a CLI bridge spend one budget), else from this object.
+  ``turn_deadline`` caps reported seconds using the wall clock, without
+  changing the Work's enforcement or remaining shared time (#908).
   """
   turns,steps=self.turns_used,self.attempts_used
   counts=self.ledger.counts() if self.ledger is not None and callable(getattr(self.ledger,'counts',None)) else None
   if isinstance(counts,dict):turns,steps=max(turns,counts['turns']),max(steps,counts['attempts'])
-  try:seconds=max(0,int(self.remaining()))
+  try:
+   seconds=max(0,int(self.remaining()))
+   if self.turn_deadline is not None:seconds=min(seconds,max(0,int(self.turn_deadline-self.wall())))
   except Exception:seconds=0
   return {'turns':max(0,self.turn_limit()-turns),'steps':max(0,self.attempts-steps),'seconds':seconds}
 

@@ -3223,6 +3223,10 @@ class BoundedExecutionAdapter:
                          if ai_connections else [])
             owner_servers = owner_mcp.claude_definitions(Path.home(), confirmed) if engine_id == 'claude-code' else {}
             search_off = str(getattr(tools, 'native_search_reason', '') or '') if not native_search else ''
+            budget = getattr(tools.capabilities, 'budget', None)
+            # #908: report the CLI turn's binding limit before launch, conservatively.
+            turn_deadline = time.time() + (min(MAX_TIMEOUT_SECONDS, budget.remaining())
+                                          if budget is not None and hasattr(budget, 'remaining') else MAX_TIMEOUT_SECONDS)
             # Both supported CLIs receive this per-turn bridge configuration.
             # The engine gets no store handle; the bridge alone owns validated
             # access to the Still tool facade.
@@ -3234,6 +3238,7 @@ class BoundedExecutionAdapter:
                 **({'env': {'CLAUDE_CODE_OAUTH_TOKEN': '', **{name: '' for name in (cloud.withheld() if cloud else ())}}}
                    if engine_id == 'claude-code' else {}),
                 'args': ['-m', 'personal_agent.mcp_bridge', '--data', str(run_dir if peer_work else tools.capabilities.store.root), '--job', tools.capabilities.job_id,
+                         f'--turn-deadline={turn_deadline}',
                          # The bridge is a separate process: hand it this Work's
                          # private-source provenance so its records carry the same
                          # labels as the in-process Capabilities (#826: a record, not a gate).
@@ -3273,7 +3278,6 @@ class BoundedExecutionAdapter:
             if ai_connections and callable(getattr(tools,'connector_configuration',None)):
                 tools.connector_configuration({name:{'definition':definition,'forwarded_environment':server_env}
                                                for name,definition in definitions.items() if definition})
-            budget = getattr(tools.capabilities, 'budget', None)
             interrupted = getattr(budget, 'interrupted', None)
             if native_search:
                 interrupted = work_mode_interrupt(getattr(tools.capabilities, 'store', None), interrupted)
