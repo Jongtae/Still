@@ -2443,8 +2443,11 @@ class AgentService:
         """Keep what this Work actually sent and what the worker reported.
 
         Redacted before persistence, bounded, local only; shown in developer
-        mode. Never allowed to break the turn itself.
+        mode. Source intake is enforced first; the optional audit below is best-effort.
         """
+        for search in fields.get('native_searches') or ():
+            if isinstance(search,dict):
+                self.store.mark_outside_content(job_id,{'category':'native-search','operation':'web_search'})
         # #1236 review: a connector read the CLI's own stream shows completing is the read that happened.
         reads=fields.pop('connector_reads',None)
         if isinstance(reads,list) and reads:
@@ -2577,13 +2580,18 @@ class AgentService:
                                            'conversation-history','unattributed-tool-evidence','owner-browser-session'})
 
     def record_turn_sent(self, job_id, *, sent, instructions, instructions_channel, private_sources=(), **fields):
-        """Record what a turn sent; computed inside the guard so it can never break the turn.
+        """Enforce source intake, then keep a best-effort record of what a turn sent.
 
         ``attempt_input`` (#825), when given, is this attempt's entry (``attempt``, ``route``, the
         ``offered`` / ``served`` / ``native`` tool identities): it is appended to ``attempt_inputs``
         with the instructions and prompt digests, as ``prepared`` until ``record_attempt_input``
         says whether the input was sent.  Returns the entry's ``ref`` (None without one).
         """
+        from .agent_runtime import OUTSIDE_PROVENANCE
+        private_sources=tuple(private_sources)
+        for label in private_sources:
+            if base_label(label) in OUTSIDE_PROVENANCE:
+                self.store.mark_outside_content(job_id,{'category':label,'operation':'prompt-context'})
         try:
             entry=fields.pop('attempt_input',None)
             withheld=sorted(set(private_sources)&self.PROVENANCE_WITHHELD_SOURCES)
@@ -4386,6 +4394,12 @@ class AgentService:
         messages read the same sources.  A failed write leaves the Work
         unrecorded, which later Works treat as restrictive.
         """
+        labels=tuple(labels)
+        for label in labels:
+            # Generic private labels also describe our own write receipts. Only
+            # the existing host mark propagates here; reads are marked at intake.
+            if base_label(label)=='outside-content':
+                self.store.mark_outside_content(job_id,{'category':label,'operation':'inherited-context'})
         try:
             with self.lock:
                 rows=self.store.config(WORK_SOURCES_KEY,{})
@@ -8134,7 +8148,7 @@ class AgentService:
             except (TypeError,ValueError):
                 return {'behavior':'deny','message':'실행할 정확한 입력을 확인할 수 없어 실행하지 않았습니다.'}
             allow=effect=='mutate'
-            if allow and self.self_set_run(job):
+            if allow:
                 try:
                     write_ticket=self.self_set_write(job,binding,f'connector:{engine}|{kind}|{identity}',operation,
                         json.dumps(values,ensure_ascii=False,sort_keys=True),(),effect=reversibility or 'irreversible',values=values)
@@ -8210,6 +8224,11 @@ class AgentService:
                                ('denied',json.dumps(detail,ensure_ascii=False),event_id))
         if not allow:self.self_set_write_release(job,write_ticket)
         if allow:
+            if effect=='read':
+                # The CLI may consume the result before its stream observation arrives.
+                # Reserve the host mark at permission time; failures stay conservative.
+                self.store.mark_outside_content(job['id'],{'category':'ai-connection','engine':engine,
+                    'connection':identity,'operation':operation})
             return {'behavior':'allow','updatedInput':values if isinstance(values,dict) else {}}
         if effect=='payment':
             return {'behavior':'deny','message':'이 동작은 정확한 입력에 대한 소유자 승인을 기다립니다. 다른 방법으로 같은 동작을 실행하지 말고, 승인을 받은 뒤 남은 일을 이어가세요.'}
@@ -8332,6 +8351,8 @@ class AgentService:
                 db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                            (job_id,'connector_undecided','failed',json.dumps({'scope':'ai-connection','host_action':'connector_undecided',
                                                                               'evidence':evidence,'error':self.UNDECIDED_CALL_TEXT},ensure_ascii=False),time.time()))
+        for detail in observed:
+            self.store.mark_outside_content(job_id,{'category':'ai-connection', **detail['evidence']})
         for _, detail, status in observations:
             if detail.get('permission_event'):
                 with self.store.db() as db:

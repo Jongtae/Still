@@ -1322,7 +1322,7 @@ class Upkeep:
         return STATE_DONE, calls, EVENT_RECORDED, detail
 
     def _apply_facts(self, kept, job, dropped, ends_after=None, origin=None, source_works=None):
-        """Save the kept proposals at once as current Memory attributed to ``job``; returns ``(applied, stopped)``.
+        """Save eligible proposals or sourced candidates; returns ``(applied, stopped)``.
 
         Shared by upkeep and the dream (#402).  ``dropped`` is extended in place.  ``ends_after``
         (the dream's claim time) widens which current rows a proposal may end: any row that existed
@@ -1347,6 +1347,14 @@ class Upkeep:
             if OwnerForget(self.store).is_forgotten(MEMORY_OWNER, key, content):
                 # #794 phase 3: upkeep reprocesses a source Work; a value the owner forgot is not re-derived from it.
                 dropped.append({'key_digest': key_digest(key), 'reason': FORGOTTEN_VALUE})
+                continue
+            # Single-Work upkeep sees the answer, so its unsupported facts are
+            # candidates. Dream input excludes marked answers before either AI
+            # call, retaining the existing owner-only learning/quiet diary path.
+            sources = self.store.outside_content_sources(job['id']) if origin != ORIGIN_DREAM else []
+            if sources and not self.store.owner_stated_value(job['id'], content):
+                candidate = self.store.save_memory_candidate(job['id'], key, content, source=sources)
+                applied.append({'outcome':APPLIED_CANDIDATE, 'candidate_id':candidate['id'], 'memory_key':key})
                 continue
             row = {'memory_key': key, 'category': item['category'], 'kind': item['kind'],
                    'content_chars': len(content), 'supersedes_key': item['supersedes_key'] or None,
@@ -1549,6 +1557,25 @@ class Upkeep:
         notes = WorkingNotes(self.store, self.clock)
         if not notes.migrated():
             return STATE_UNAVAILABLE, 0, EVENT_UNAVAILABLE, {'sent': False, 'stopped': STOPPED_MIGRATION}
+        # #744: the look back learns only from owner words for marked source
+        # Works. Filter before gather and synthesis, not from the model's later
+        # citations. Unmarked answers retain their existing learning behavior.
+        marked = {work for work in [*(source_works or {}).values(),
+                  *(work for pair in (earlier_works or {}).values() for work in pair if work)]
+                  if self.store.outside_content_sources(work)}
+        turns = [(ref, owner, '' if (source_works or {}).get(ref) in marked else answer, *rest)
+                 for ref, owner, answer, *rest in turns]
+        from .quickstart_store import owner_words_work
+        clean_earlier = []
+        for ref, owner, answer, when, outcome, correction in earlier:
+            works = (earlier_works or {}).get(ref, ())
+            if any(work in marked for work in works):
+                answer = ''
+                # Later correction text is eligible only on the owner channel.
+                if len(works) < 2 or not owner_words_work(self.store.job(works[1])):
+                    correction = ''
+            clean_earlier.append((ref, owner, answer, when, outcome, correction))
+        earlier = clean_earlier
         line_input = lines
         lines, refs, turn_days = dream_turn_input(turns)
         # #496: a separately bounded lesson-only block. Its refs never enter the facts or suggestions gates.

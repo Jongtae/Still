@@ -1,4 +1,4 @@
-"""#717: owner-owned non-payment authority for self-set preparations.
+"""#717/#744: owner-owned non-payment authority for self-set and marked Works.
 
 Uses the existing Settings drafts, exact step tokens and SQLite Work events.
 No provider/tool name decides reversibility. A permission receipt is not proof
@@ -126,7 +126,9 @@ def _effect_replayed(db, work_id, digest):
 
 
 def authorize(service, job, binding, connection, operation, target, names=(), *, effect=None, description=None, request=True, values=None):
-    if not service.unattended_work(job) or not service.self_set_run(job):
+    sources = service.store.outside_content_sources(job['id'])
+    marked = bool(sources)
+    if not marked and (not service.unattended_work(job) or not service.self_set_run(job)):
         return None
     from .browser_session import action_input_safe
     scopes = list(connection) if isinstance(connection, (list, tuple)) else [connection] if connection else []
@@ -138,7 +140,11 @@ def authorize(service, job, binding, connection, operation, target, names=(), *,
     if not action_input_safe(service.store, {'connection': scopes, 'operation': operation, 'target': target,
             'names': list(names), 'description': description, 'values': values, 'connection_labels': connection_labels}):
         raise not_run(ToolError(msg('write_allowances.unrepresentable'), 'api_approval_unrepresentable'))
-    if effect is None:
+    browser_press = connection is None and operation in ('browser_click', 'browser_type')
+    # Browsing to read keeps its zero-question path. Use the existing minimized
+    # judgment, never the owner's request/body, to classify a non-floor press.
+    # Known non-browser writes need no additional judgment in owner Works.
+    if marked and browser_press or effect is None and service.self_set_run(job):
         try:
             metadata=operation
             if connection is None:
@@ -148,16 +154,18 @@ def authorize(service, job, binding, connection, operation, target, names=(), *,
             effect = service.decision_judge.connector_effect(metadata, sorted(names), '', job['id'])
         except Exception:
             effect = None
-    if effect == 'payment':
+    if effect == 'payment' and (service.unattended_work(job) or not (marked and browser_press)):
         raise not_run(ToolError(msg('write_allowances.payment'), 'unattended_run'))
-    if operation in ('browser_click', 'browser_type') and effect in ('read', 'navigate'):
+    if browser_press and effect in ('read', 'navigate'):
         return None
     # A known state change cannot be downgraded to read by a classifier.
-    reversible = effect == 'reversible'
+    reversible = effect == 'reversible' and not marked
     scoped = scoped_binding(binding)
     digest = service._browser_step_keys(scoped)['digest']
     label = service._redact_known_secrets(f'{connection or "browser"} / {operation} / {target}' +
                                         ('\n' + description if description else ''))
+    if marked:
+        label += '\n' + json.dumps({'sources': sources, 'parameters': values}, ensure_ascii=False, sort_keys=True)
     modes = {key: allowance(service,key) for key in scopes}
     allowed = bool(scopes) and all(key in known and modes[key]['enabled'] and
         modes[key]['connection_revision'] == known[key]['connection_revision'] for key in scopes)

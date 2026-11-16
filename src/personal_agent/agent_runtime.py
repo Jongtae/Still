@@ -904,6 +904,17 @@ def base_label(label):
 #: write event labels its Work durably, whichever process ran the tool.
 PRIVATE_WRITE_PROVENANCE={'save_note':'personal-space','save_result':'connected-document','save_memory':'owner-memory','forget_record':'owner-memory'}
 
+# #744: host result categories, not result text. Metadata from outside stores
+# (including find_files/list_notes) counts: names/snippets can carry instructions.
+# Owner Memory/conversation/folder grants and our own write receipts do not.
+OUTSIDE_RESULT_ACTIONS = frozenset(
+ action for action, label in PRIVATE_PROVENANCE.items()
+ if label not in {'owner-memory', 'owner-conversation', 'owner-folder-names'}
+) | frozenset({'web_search', 'public_page_read', 'delegate_agent', 'a2a_message', 'skill_load', 'code_run'})
+
+OUTSIDE_PROVENANCE = frozenset(PRIVATE_PROVENANCE[action] for action in OUTSIDE_RESULT_ACTIONS
+                               if action in PRIVATE_PROVENANCE) | {UNATTRIBUTED_PROVENANCE, 'outside-content'}
+
 def recorded_private_sources(store, job_id, tools=None):
  """Private-source labels a Work's own successful tool events already carry.
 
@@ -952,6 +963,7 @@ def work_sources(store, job_id, tools=None, records=None, document_jobs=()):
   labels={UNRECORDED_PROVENANCE}
  else:
   labels={base_label(label) for label in records[job_id]}|recorded_private_sources(store,job_id,tools)
+ if store.outside_content_sources(job_id):labels.add('outside-content')
  if job_id in set(document_jobs or ()):labels.add('connected-document')
  return labels
 
@@ -3437,6 +3449,12 @@ class Capabilities:
   self.private_provenance=set(inherited_provenance)
   if document_context:self.private_provenance.add('conversation-history')
   self.evidence=EvidenceLog(self.private_provenance)
+  for label in self.private_provenance:
+   if base_label(label) in OUTSIDE_PROVENANCE:
+    self.store.mark_outside_content(self.job_id,{'category':label,'operation':'inherited-context'})
+  peer_job=self.store.job(self.job_id) or {}
+  if str(peer_job.get('channel','')).startswith('a2a-peer:'):
+   self.store.mark_outside_content(self.job_id,{'category':'peer-message','operation':peer_job['channel']})
  def definitions(self):
   definitions=action_definitions(self.tools,self.offered_tools(),self.readonly,search_providers=getattr(self.network,'providers',None))
   options=getattr(self.a2a,'options',None)
@@ -4163,6 +4181,20 @@ class Capabilities:
 
  @refused_before_hand_off
  def execute(self,name,args):
+  result=self._execute(name,args)
+  action=(self.tools.get(name) or {}).get('host_action')
+  if action in OUTSIDE_RESULT_ACTIONS and not (isinstance(result,dict) and (
+      action=='find_files' and not result.get('files')
+      or result.get('needs_setup') is True or 'setup-required' in (result.get('qualifiers') or ())
+      or result.get('state')=='login_required' and 'text' not in result)):
+   # Persist before returning, also on the subscription CLI's bridge route.
+   # Only host-selected identifiers, never result-supplied provenance/authority.
+   source={'operation':action, 'category':PRIVATE_PROVENANCE.get(action,UNATTRIBUTED_PROVENANCE)}
+   source.update({key:args[key] for key in ('url','slot','root_id','path','agent_id','peer_id') if key in args})
+   self.store.mark_outside_content(self.job_id,source)
+  return result
+
+ def _execute(self,name,args):
   tool=self.tools.get(name)
   # #1484: a refusal here comes before the tool runs, so its record says ``ran: false``.
   try:
@@ -4456,10 +4488,11 @@ class Capabilities:
     # candidate or notice - and the refusal never echoes the value (the key is not returned either).
     return {'saved':False,'state':'refused','refused_because':SECRET_SHAPED_VALUE}
    self.written_labels.add('owner-memory')
-   if self.third_party_memory_write(tool_id):
+   sources=self.store.outside_content_sources(self.job_id)
+   if self.third_party_memory_write(tool_id) or (sources and not self.store.owner_stated_value(self.job_id,args['content'])):
     # C5: a package tool or a delegated specialist proposes; its write stays a pending
     # MemoryCandidate the owner confirms (the #818/#836 ask).
-    candidate=self.store.save_memory_candidate(self.job_id,args['memory_key'],args['content'])
+    candidate=self.store.save_memory_candidate(self.job_id,args['memory_key'],args['content'],source=sources)
     result={**candidate,'requires_owner_approval':True,'refused_because':THIRD_PARTY_MEMORY_WRITE}
    else:
     # #918 slice (a), owner decision 2026-09-30: the owner's own worker saves at once as
