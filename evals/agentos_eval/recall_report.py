@@ -201,7 +201,7 @@ def run_arm(data, arm, runs=3):
                   getattr(arm, 'deterministic', True), diagnostic=getattr(arm, 'diagnostic', False))
     if arm.phraser is not None:
         _validate_phrasing_fixture(arm.phraser, data)
-    results, phrasings, observed = [], {}, {}
+    results, phrasings, observed, snapshots = [], {}, {}, {}
     for index in range(1, (1 if arm.deterministic else runs) + 1):
         with tempfile.TemporaryDirectory(prefix='still-recall-') as tmp:
             store = QuickStore(Path(tmp) / 'state')
@@ -209,6 +209,10 @@ def run_arm(data, arm, runs=3):
             retriever = (phrasing(store, data, arm.phraser, run=index) if arm.phraser is not None
                          else arm.factory(store, data))
             result = pairs.run(retriever, data['cases'], refs)
+            from evals.embedding_spike.r1v3_snapshot import measure, summarize
+            definitions = {case['id']: case for case in data['cases']}
+            snapshots[str(index)] = summarize([
+                measure(store, data, definitions[row['id']], row['returned']) for row in result['rows']])
             if results and result['fixture'] != results[0]['fixture']:
                 raise pairs.RecallPairsError('Fixture digest changed between runs')
             results.append(result)
@@ -221,6 +225,7 @@ def run_arm(data, arm, runs=3):
         out.update(phrasings=phrasings, phrasing_fixture=results[0]['fixture'], phrasing_cases=_phrasing_cases(data))
     if observed:
         out['observed'] = observed
+    out['snapshot_diagnostics'] = snapshots
     return out
 
 
@@ -352,7 +357,12 @@ def report(data, results_by_arm, baseline='lexical'):
         if 'observed' in result:
             arm['observed'] = result['observed']
         arms[name] = arm
-    return dict(version=base['version'], fixture=base['fixture'], today=data['today'], baseline=baseline, arms=arms)
+    out = dict(version=base['version'], fixture=base['fixture'], today=data['today'], baseline=baseline, arms=arms)
+    snapshots = {name: value['snapshot_diagnostics'] for name, value in results_by_arm.items()
+                 if 'snapshot_diagnostics' in value}
+    if snapshots:
+        out['snapshot_diagnostics'] = snapshots
+    return out
 
 
 def _cell(value):
@@ -373,6 +383,8 @@ def report_markdown(result):
     lines += ['', 'Sampling recall, hit totals and noise use observed majority representatives; '
               'trap case counts include every run. Per-run recall and uncertainty appear below.']
     for split in pairs.SPLITS:
+        if not any(split in arm['score'] for arm in result['arms'].values()):
+            continue  # dev-only diagnostic reports deliberately omit held-out
         lines += ['', f'## {split}', '',
                   '| Arm | Needed recall | Needed hit/total | Cases with trap | Noise | Fixed | Regressed | Uncertain | Unchanged-pass | Unchanged-fail |',
                   '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |']
@@ -403,11 +415,30 @@ def report_markdown(result):
     lines += ['', '## Verdicts', '']
     for name, arm in result['arms'].items():
         verdict = arm['verdict']
-        if arm.get('diagnostic'):
+        if result.get('selection') == 'dev only; heldout not evaluated':
+            lines.append(f'- {_cell(name)}: deferred (dev only; held-out not evaluated).')
+        elif arm.get('diagnostic'):
             lines.append(f'- {_cell(name)}: diagnostic (no verdict).')
         elif verdict is None:
             lines.append(f'- {_cell(name)}: baseline.')
         else:
             lines.append(f"- {_cell(name)}: {'preferred' if verdict['preferred'] else 'not preferred'}; "
                          f"failed: {', '.join(verdict['failed']) or 'none'}. {verdict['note']}")
+    if result.get('snapshot_diagnostics'):
+        lines += ['', '## Bounded snapshot diagnostic (no verdict)', '',
+                  '| Arm | Run | Split | Group | Needed shown/total | Request-only shown/total | Omitted |',
+                  '| --- | --- | --- | --- | --- | --- | --- |']
+        for name, runs in result['snapshot_diagnostics'].items():
+            for run, diagnostic in runs.items():
+                for split, score in diagnostic['scores'].items():
+                    groups = {'total': score['total'], **{'kind:' + k: v for k, v in score['by_kind'].items()},
+                              **{'facet:' + k: v for k, v in score['by_facet'].items()}}
+                    for group, values in groups.items():
+                        reference = [r['request_only'] for r in diagnostic['cases'] if r['split'] == split and (
+                            group == 'total' or group == 'kind:' + r['kind'] or group[6:] in r['facets'] and group.startswith('facet:'))]
+                        ref_hit = sum(r['needed_in_snapshot'] for r in reference)
+                        ref_total = sum(r['needed_total'] for r in reference)
+                        lines.append(f"| {_cell(name)} | {run} | {split} | {_cell(group)} | "
+                                     f"{values['needed_in_snapshot']}/{values['needed_total']} | "
+                                     f"{ref_hit}/{ref_total} | {values['snapshot_omitted']} |")
     return '\n'.join(lines) + '\n'

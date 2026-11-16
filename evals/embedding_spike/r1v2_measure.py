@@ -41,16 +41,17 @@ def load_data(split):
     return data
 
 
-def combined_gate(reports, name):
+def combined_gate(reports, name, *, baselines=('lexical', 'lexical-context')):
     """Combine both unchanged-observation runner reports, including needed gains."""
     fixed_sets, recovered_sets = [], []
-    rules = dict(preferred_against_both=True, zero_traps_both_splits=True,
+    preference_rule = 'preferred_against_both' if len(baselines) == 2 else 'preferred_against_each'
+    rules = dict([(preference_rule, True)], zero_traps_both_splits=True,
                  no_lost_lexical_control=True, no_heldout_regression=True)
-    for baseline in ('lexical', 'lexical-context'):
+    for baseline in baselines:
         report = reports[baseline]
         candidate = report['arms'][name]
         reference = report['arms'][baseline]
-        rules['preferred_against_both'] &= bool(candidate['verdict'] and candidate['verdict']['preferred'])
+        rules[preference_rule] &= bool(candidate['verdict'] and candidate['verdict']['preferred'])
         scores = candidate.get('run_scores', [candidate['score']])
         rules['zero_traps_both_splits'] &= all(
             not score[split]['total']['cases_with_trap'] for score in scores for split in pairs.SPLITS)
