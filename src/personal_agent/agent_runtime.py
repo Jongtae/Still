@@ -912,9 +912,6 @@ OUTSIDE_RESULT_ACTIONS = frozenset(
  if label not in {'owner-memory', 'owner-conversation', 'owner-folder-names'}
 ) | frozenset({'web_search', 'public_page_read', 'delegate_agent', 'a2a_message', 'skill_load', 'code_run'})
 
-OUTSIDE_PROVENANCE = frozenset(PRIVATE_PROVENANCE[action] for action in OUTSIDE_RESULT_ACTIONS
-                               if action in PRIVATE_PROVENANCE) | {UNATTRIBUTED_PROVENANCE, 'outside-content'}
-
 def recorded_private_sources(store, job_id, tools=None):
  """Private-source labels a Work's own successful tool events already carry.
 
@@ -3454,7 +3451,9 @@ class Capabilities:
   if document_context:self.private_provenance.add('conversation-history')
   self.evidence=EvidenceLog(self.private_provenance)
   for label in self.private_provenance:
-   if base_label(label) in OUTSIDE_PROVENANCE:
+   # Private-store labels also describe writes. Only the host intake mark
+   # carries outside-content authority across history/delegation boundaries.
+   if base_label(label)=='outside-content':
     self.store.mark_outside_content(self.job_id,{'category':label,'operation':'inherited-context'})
   peer_job=self.store.job(self.job_id) or {}
   if str(peer_job.get('channel','')).startswith('a2a-peer:'):

@@ -146,6 +146,92 @@ def test_public_read_mark_inherits_through_host_history(host):
     assert store.outside_content_sources(later)
 
 
+@pytest.mark.parametrize('intake',['capabilities','prompt'])
+@pytest.mark.parametrize('write',['save_note','save_result'])
+def test_write_only_history_keeps_owner_write_and_memory_direct(host,write,intake):
+    from personal_agent.agent_runtime import base_label, history_provenance, PRIVATE_WRITE_PROVENANCE
+    store,service,job=host
+    service.record_work_sources(job['id'],['owner-conversation'])
+    if write=='save_note':
+        worker(store,service,job,[{'tool_calls':[{'id':'save','type':'function','function':{
+            'name':write,'arguments':json.dumps({'content':'Owner-written note.'})}}]}])
+        assert store.notes()
+    else:
+        # Test the persisted write-receipt boundary. A fresh save_result requires
+        # a reference read; an isolated receipt (e.g. retained history) is not
+        # itself evidence that outside content entered this Work.
+        with store.db() as db:
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       (job['id'],write,'succeeded',json.dumps({'host_action':write,'evidence':{'saved':True}}),1))
+    with store.db() as db:
+        db.execute('INSERT INTO messages(role,content,channel,created,job_id) VALUES (?,?,?,?,?)',
+                   ('assistant','Saved the owner-written material.','web',1,job['id']))
+    assert not store.outside_content_sources(job['id'])
+    labels=history_provenance(store,store.history())
+    assert 'history:'+PRIVATE_WRITE_PROVENANCE[write] in labels
+    assert 'history:outside-content' not in labels
+    later=store.enqueue('Save my preference and post the note.','followup-'+write,owner_typed=True,owner_words=True)
+    caps=Capabilities(store,None,{},'',later,lambda *args:None,
+                      inherited_provenance=labels if intake=='capabilities' else (),
+                      browser_approvals=service.browser_approvals_for(store.job(later)))
+    if intake=='prompt':
+        # Both worker routes flatten these labels before record_turn_sent.
+        service.record_turn_sent(later,sent='Earlier reply: Saved the owner-written material.',
+                                 instructions='',instructions_channel='system',
+                                 private_sources={base_label(label) for label in labels})
+    assert not store.outside_content_sources(later)
+    assert caps.execute('save_memory',{'memory_key':KEY,'content':VALUE})['state']=='current'
+    assert not store.memory_candidates()
+    save_slot(store,'notes',['notes.test'],'fixture-secret-notes-123456789',money=False)
+    sent=[]
+    caps.api().transport=lambda *args:injected_api(*args,sent=sent)
+    caps.execute('api_request',WRITE)
+    assert [row[0] for row in sent]==['POST']
+    assert service._browser_request(later) is None
+
+
+@pytest.mark.parametrize('intake',['capabilities','prompt'])
+def test_document_read_mark_survives_actual_history_intake(state,intake):
+    from personal_agent.agent_runtime import base_label, history_provenance
+    store,service=state
+    earlier,_,_=memory_worker(state,'Read memo.txt.',save=False)
+    labels=history_provenance(store,[{'job_id':earlier}])
+    assert 'history:outside-content' in labels
+    later=store.enqueue('Continue with that document.','document-followup',owner_typed=True,owner_words=True)
+    caps=Capabilities(store,None,{},'',later,lambda *args:None,
+                      inherited_provenance=labels if intake=='capabilities' else ())
+    if intake=='prompt':
+        service.record_turn_sent(later,sent='Earlier document answer.',instructions='',instructions_channel='system',
+                                 private_sources={base_label(label) for label in labels})
+    assert store.outside_content_sources(later)
+    assert caps.execute('save_memory',{'memory_key':KEY,'content':VALUE})['state']=='pending'
+    assert not store.memories()
+
+
+@pytest.mark.parametrize('source',['owner','diagnostic','system','forgotten'])
+def test_web_owner_words_in_previous_turn_cover_memory_after_read(state,source):
+    from personal_agent.owner_forget import OwnerForget
+    store,service=state
+    earlier=store.enqueue('I prefer jasmine tea.','web-fact',channel='web',
+                          owner_typed=source!='system',owner_words=source in ('owner','forgotten'))
+    with store.db() as db:
+        db.execute("UPDATE jobs SET status='succeeded' WHERE id=?",(earlier,))
+        message=db.execute('INSERT INTO messages(role,content,channel,created,job_id) VALUES (?,?,?,?,?)',
+                           ('user','I prefer jasmine tea.','web',1,earlier)).lastrowid
+    if source=='forgotten':
+        OwnerForget(store).forget('local-owner','message:'+str(message))
+    later=store.enqueue('Read memo.txt and remember my drink preference.','web-remember',channel='web',
+                        owner_typed=True,owner_words=True)
+    caps=Capabilities(store,None,{},'',later,lambda *args:None)
+    hit=caps.execute('find_files',{'query':'memo'})['files'][0]
+    caps.execute('read_file',{'root_id':hit['root_id'],'path':hit['path']})
+    assert store.outside_content_sources(later)
+    result=caps.execute('save_memory',{'memory_key':KEY,'content':VALUE})
+    assert result['state']==('current' if source=='owner' else 'pending')
+    assert [row['content'] for row in store.memories()]==([VALUE] if source=='owner' else [])
+    assert len(store.memory_candidates())==(0 if source=='owner' else 1)
+
+
 def test_only_owner_turns_in_same_conversation_cover_fact(state):
     store, service=state
     first=store.enqueue('I prefer jasmine tea.','own',channel='telegram:fixture',chat_id=744,owner_typed=True)
@@ -239,5 +325,17 @@ def test_own_write_receipt_does_not_mark_but_prompt_source_does(host):
     service.record_work_sources(job['id'],caps.private_provenance)
     assert store.outside_content_sources(job['id'])==[]
     service.record_turn_sent(job['id'],sent='A document excerpt',instructions='',instructions_channel='system',
-                             private_sources=['connected-document'])
+                             private_sources=['connected-document'],
+                             owner_information=service.owner_information_refs({},[
+                                 {'kind':'file','ref':'memo.txt','label':'memo.txt'}]))
     assert store.outside_content_sources(job['id'])[0]['operation']=='prompt-context'
+
+
+def test_prompt_splice_reference_failure_stops_before_send(host):
+    store,service,job=host
+    with mock.patch('personal_agent.information_use.section_references',side_effect=RuntimeError('read references unavailable')):
+        with pytest.raises(RuntimeError,match='read references unavailable'):
+            service.record_turn_sent(job['id'],sent='A document excerpt',instructions='',instructions_channel='system',
+                                     owner_information=service.owner_information_refs({},[
+                                         {'kind':'file','ref':'memo.txt','label':'memo.txt'}]))
+    assert store.turn_provenance(job['id']) is None

@@ -1257,12 +1257,12 @@ class QuickStore:
             return False
         with self.db() as db:
             rows = db.execute(
-                f"SELECT j.message FROM jobs j WHERE j.owner_typed=1 AND j.channel=? "
+                f"SELECT j.message FROM jobs j WHERE {OWNER_WORDS_SQL} AND j.channel=? "
                 f"AND j.chat_id IS ? AND j.workspace_id IS ? AND j.created<=? "
-                f"AND (j.id=? OR j.channel<>'web') AND NOT {forgotten_turn('user', 'j.id')} "
+                f"AND NOT {forgotten_turn('user', 'j.id')} "
                 "AND j.rowid<=(SELECT rowid FROM jobs WHERE id=?) "
                 "ORDER BY j.created DESC,j.rowid DESC LIMIT ?",
-                (job['channel'], job['chat_id'], job['workspace_id'], job['created'], work_id,
+                (job['channel'], job['chat_id'], job['workspace_id'], job['created'],
                  work_id, OWNER_FACT_TURNS)).fetchall()
         return any(value in normalized(row['message']) for row in rows)
 

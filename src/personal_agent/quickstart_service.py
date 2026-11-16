@@ -2587,11 +2587,17 @@ class AgentService:
         with the instructions and prompt digests, as ``prepared`` until ``record_attempt_input``
         says whether the input was sent.  Returns the entry's ``ref`` (None without one).
         """
-        from .agent_runtime import OUTSIDE_PROVENANCE
         private_sources=tuple(private_sources)
         for label in private_sources:
-            if base_label(label) in OUTSIDE_PROVENANCE:
+            # The worker flattens history labels, which include write receipts.
+            # A generic private-store label is not evidence of outside intake.
+            if base_label(label)=='outside-content':
                 self.store.mark_outside_content(job_id,{'category':label,'operation':'prompt-context'})
+        # Both worker routes supply host-recorded references for material read
+        # into this prompt. Unlike audit labels, these identify actual intake.
+        for source in (fields.get('owner_information') or {}).get('spliced') or ():
+            self.store.mark_outside_content(job_id,{'category':'spliced-content',
+                                                  'operation':'prompt-context','source':source})
         try:
             entry=fields.pop('attempt_input',None)
             withheld=sorted(set(private_sources)&self.PROVENANCE_WITHHELD_SOURCES)
@@ -2647,6 +2653,9 @@ class AgentService:
                 return value
             return clean(refs)
         except Exception:
+            # A real splice must retain its intake carrier before model use.
+            # Only the optional section audit can fail without stopping a turn.
+            if spliced:raise
             LOG.warning('owner information references unavailable')
             return None
 
