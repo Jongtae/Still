@@ -465,7 +465,7 @@ def items_of(current):
 FRONTIER_FIRST_WAVE = ["FRONTIER-SPEC-01", "FRONTIER-EVAL-01"]
 FRONTIER_RECONCILED = ["FRONTIER-PROVENANCE-01", "FRONTIER-RECOVERY-01", "FRONTIER-CONTEXT-01"]
 FRONTIER_COMPLETED = FRONTIER_FIRST_WAVE + FRONTIER_RECONCILED + [
-    "FRONTIER-JUDGMENT-01", "FRONTIER-TELEGRAM-01", "FRONTIER-FENCE-01", "FRONTIER-WORKCHAT-01", "FRONTIER-CONTEXT-02", "FRONTIER-EVAL-JUDGE-01", "FRONTIER-C2-DUE-01", "FRONTIER-EVAL-TOKENS-01", "FRONTIER-RECEIPT-JUDGE-01", "FRONTIER-EVAL-FALLBACK-01"]
+    "FRONTIER-JUDGMENT-01", "FRONTIER-TELEGRAM-01", "FRONTIER-FENCE-01", "FRONTIER-WORKCHAT-01", "FRONTIER-CONTEXT-02", "FRONTIER-EVAL-JUDGE-01", "FRONTIER-C2-DUE-01", "FRONTIER-EVAL-TOKENS-01", "FRONTIER-RECEIPT-JUDGE-01", "FRONTIER-EVAL-FALLBACK-01", "FRONTIER-UNTRUSTED-ECHO-01"]
 FRONTIER_WAVE_2 = ["FRONTIER-FENCE-01", "FRONTIER-JUDGMENT-01", "FRONTIER-TELEGRAM-01", "FRONTIER-WORKCHAT-01"]
 FRONTIER_OPEN_WAVE_2 = [name for name in FRONTIER_WAVE_2 if name not in FRONTIER_COMPLETED]
 
@@ -502,7 +502,7 @@ def test_frontier_declares_completed_units_and_owner_authorized_wave_2():
     assert current["next_goal"]["id"] == "FRONTIER-01"
     invariants.assert_activation_record(TestCase(), "FRONTIER-01 activation", program["activated_by"])
     assert program["activated_by"]["issue"] == program["issue"] == 822
-    assert program["ordered_substeps"] == FRONTIER_FIRST_WAVE + FRONTIER_RECONCILED + FRONTIER_WAVE_2 + ["FRONTIER-CONTEXT-02", "FRONTIER-EVAL-JUDGE-01", "FRONTIER-C2-DUE-01", "FRONTIER-EVAL-TOKENS-01", "FRONTIER-RECEIPT-JUDGE-01", "FRONTIER-EVAL-FALLBACK-01"]
+    assert program["ordered_substeps"] == FRONTIER_FIRST_WAVE + FRONTIER_RECONCILED + FRONTIER_WAVE_2 + ["FRONTIER-CONTEXT-02", "FRONTIER-EVAL-JUDGE-01", "FRONTIER-C2-DUE-01", "FRONTIER-EVAL-TOKENS-01", "FRONTIER-RECEIPT-JUDGE-01", "FRONTIER-EVAL-FALLBACK-01", "FRONTIER-UNTRUSTED-ECHO-01"]
     assert program["active_substeps"] == []
     assert program["completed_substeps"] == FRONTIER_COMPLETED
     assert program["reserved_substeps"] == []
@@ -762,12 +762,34 @@ def test_frontier_902_records_eval_fallback_scope():
         'tests/test_continuity_report.py tests/test_judged_continuity.py tests/test_eval_loop.py '
         'tests/test_eval_come_due.py tests/test_eval_judge_explicit.py tests/test_fresh_delivery_plan.py tests/test_p1_report.py']
     program = current['programs']['FRONTIER-01']
-    assert program['ordered_substeps'][-1] == name
-    assert program['completed_substeps'][-1] == name
-    assert current['history']['documented_completed_iterations'][-1] == name
+    for ordered in (program['ordered_substeps'], program['completed_substeps'],
+                    current['history']['documented_completed_iterations']):
+        assert ordered[ordered.index(name) + 1] == 'FRONTIER-UNTRUSTED-ECHO-01'
     activation = items['FRONTIER-01']['completed_substeps'][name]
     assert activation['issue'] == 902 and activation['status'] == 'complete-on-merge'
     assert activation['pull_request'] == '903'
     assert unit['summary'].endswith('Complete on the merge of its own PR.')
     assert ('#902 (FRONTIER-EVAL-FALLBACK-01) is selected inside #822 by owner direction on 2026-11-15 '
             'and is complete on the merge of its own PR.') in current['next_goal']['action']
+
+
+def test_frontier_744_records_untrusted_echo_scope():
+    current = plan()
+    items = items_of(current)
+    name = 'FRONTIER-UNTRUSTED-ECHO-01'
+    unit = items[name]
+    assert unit['program'] == 'FRONTIER-01' and unit['issue'] == 744
+    assert unit['milestone'] == 'frontier-delivery' and unit['kind'] == 'implementation'
+    assert unit['activation_status'] == 'complete-on-merge'
+    assert unit['contract'] == 'frontier-delivery.en.md' and unit['depends_on'] == []
+    assert unit['tests'] == ['PYTHONPATH=src python -m pytest tests/test_744_owner_acts.py tests/test_api_requests.py tests/test_mattermost_surface.py tests/test_slack_surface.py tests/test_conversation_surface.py tests/test_surface_boundary.py tests/test_telegram_conversation_channel.py tests/test_telegram_native_presence.py tests/test_telegram_delivery_842.py tests/test_telegram_silent_failures.py tests/test_telegram_locale.py tests/test_owner_acts.py tests/test_fresh_delivery_plan.py -q -p no:cacheprovider']
+    program = current['programs']['FRONTIER-01']
+    for ordered in (program['ordered_substeps'], program['completed_substeps'],
+                    current['history']['documented_completed_iterations']):
+        assert ordered[ordered.index('FRONTIER-EVAL-FALLBACK-01') + 1] == name
+    activation = items['FRONTIER-01']['completed_substeps'][name]
+    assert activation['issue'] == 744 and activation['status'] == 'complete-on-merge'
+    assert unit['summary'].startswith('Owner-selected #744 phase 2 (PR-2 (items 3, 4d)) within #822, owner disposition 2026-11-16:')
+    assert unit['summary'].endswith('Complete on the merge of its own PR.')
+    assert ('#744 phase 2 PR-2 (FRONTIER-UNTRUSTED-ECHO-01; items 3, 4d) is selected inside #822 '
+            'by owner disposition on 2026-11-16 and is complete on the merge of its own PR.') in current['next_goal']['action']

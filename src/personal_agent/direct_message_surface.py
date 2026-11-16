@@ -42,6 +42,80 @@ EMOJI_NAMES = {'👀': 'eyes', '👌': 'ok_hand', '✍': 'writing_hand', '✍️
 EMOJI_GLYPHS = {name: glyph for glyph, name in EMOJI_NAMES.items() if not glyph.endswith('️')}
 
 
+OUTBOUND_POST = 'surface_outbound_post'
+DEFERRED_POST = 'surface_deferred_post'
+# Native source times use the adapters' existing measured server-clock offset.
+# Two seconds covers sub-second wire precision/rounding and modest offset error,
+# without turning an unknown send into a conversation-wide authority restriction.
+OUTBOUND_TIME_SKEW_SECONDS = 2
+# Matches Slack's existing seven-day event dedupe horizon; normal echo delivery
+# takes seconds/minutes. Longer offline/replayed *identified* echoes are a limit.
+OBSERVED_POST_RETENTION_SECONDS = 7 * 86400
+
+
+def reserve_outbound(store, work_id, url):
+    """Host-only reservation before dispatch; platform recognition belongs to adapters.
+
+    The committed reservation closes the response/ingress race, including a crash
+    after send but before receipt. Only a live attempt briefly holds ingress.
+    No bodies, credentials or message text are stored in this identity ledger.
+    """
+    reservations = []
+    with store.db() as db:
+        db.execute('BEGIN IMMEDIATE')
+        for surface in getattr(store, '_outbound_surfaces', {}).values():
+            cfg = store.config(surface.CONFIG_KEY, {}, db=db) or {}
+            if cfg.get('enabled') and surface.outbound_target(cfg, url):
+                reserved_at = time.time()
+                detail = {'reserved_at': reserved_at, 'surface': surface.name, 'generation': cfg['generation'],
+                          'channel': cfg['channel_id'], 'owner': cfg['owner_user_id']}
+                event = db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                                   (work_id, OUTBOUND_POST, 'pending', json.dumps(detail), reserved_at)).lastrowid
+                reservations.append((surface, event, cfg))
+    return reservations
+
+
+def observe_outbound(store, reservations, url, status, raw):
+    """Every finished attempt settles; unidentified sends bound authority by time.
+
+    Receipt persistence and hold release are atomic. Failed replay is retried by
+    the ordinary receive tick, and cannot turn a known send into an unknown effect.
+    """
+    settled_at = time.time()
+    with store.db() as db:
+        db.execute('BEGIN IMMEDIATE')
+        for surface, event, cfg in reservations:
+            outcome = None
+            try:
+                # A transient rate-limit/error or lost response does not attest
+                # that nothing was posted. No platform-specific error list here.
+                if status is not None and status != 429:
+                    outcome = surface.outbound_identity(cfg, url, status, raw)
+                if outcome is not None:
+                    encoded = json.dumps(outcome)
+                    if surface.service._redact_provenance(encoded) != encoded:
+                        outcome = None
+            except Exception:
+                LOG.warning('%s: outbound identity unavailable', surface.name)
+            row = db.execute('SELECT detail FROM tool_events WHERE id=?', (event,)).fetchone()
+            detail = json.loads(row['detail'])
+            detail['settled_at'] = settled_at
+            result = 'unidentified'
+            if outcome is not None:
+                channel, post_id = outcome
+                detail.update(channel=channel, post_id=post_id)
+                result = 'observed' if post_id else 'rejected'
+            db.execute('UPDATE tool_events SET status=?,detail=? WHERE id=?',
+                       (result, json.dumps(detail), event))
+    # Release immediately on completion, including exceptions and every retry
+    # attempt. Another live attempt on the pairing can still briefly defer it.
+    for surface in {surface for surface, _, _ in reservations}:
+        try:
+            surface.replay_ingress()
+        except Exception:
+            LOG.warning('%s: deferred ingress awaits receive tick', surface.name)
+
+
 class DirectMessageSurface(ConversationSurface):
     """The rules every direct-message surface shares; a subclass supplies the protocol."""
 
@@ -56,6 +130,81 @@ class DirectMessageSurface(ConversationSurface):
     NOT_SENT = ERROR = ProviderError
     #: What the owner does at the Mac for a notice kind this surface has no way to answer.
     AT_THE_MAC = {}
+
+    def __init__(self, service):
+        self.service = service
+        # Composition-root objects already share this store. No global registry,
+        # credentials or new service dependency; reconstructed on every restart.
+        if not hasattr(service.store, '_outbound_surfaces'):
+            service.store._outbound_surfaces = {}
+        service.store._outbound_surfaces[self.name] = self
+
+    def outbound_target(self, cfg, url):
+        raise NotImplementedError
+
+    def outbound_identity(self, cfg, url, status, raw):
+        """Native (channel, post id), (channel, None) for refusal, or None if unknown."""
+        raise NotImplementedError
+
+    def _outbound_scope(self, cfg):
+        return self.name, cfg.get('generation'), cfg.get('channel_id'), cfg.get('owner_user_id')
+
+    def _expire_outbound(self, db):
+        from .api_requests import DISPATCH_RECOVERY_BOUND_SECONDS
+        # Use the dispatch deadline, not restart time: a Mac offline for weeks
+        # must not turn a crash into a weeks-long unidentified authority window.
+        db.execute("UPDATE tool_events SET status='unidentified', "
+                   "detail=json_set(detail,'$.settled_at',created+?) "
+                   "WHERE tool=? AND status='pending' AND created<=? "
+                   "AND json_extract(detail,'$.surface')=?",
+                   (DISPATCH_RECOVERY_BOUND_SECONDS, OUTBOUND_POST,
+                    time.time() - DISPATCH_RECOVERY_BOUND_SECONDS, self.name))
+
+    def _outbound_rows(self, db, cfg, spoke=None):
+        self._expire_outbound(db)
+        # Filter before deserialization: current pairing only, observed receipts
+        # within the echo horizon, unidentified windows intersecting this native
+        # source time only. Historical windows remain protective for late data.
+        rows = db.execute("SELECT status,detail,created FROM tool_events WHERE tool=? "
+                          "AND json_extract(detail,'$.surface')=? AND json_extract(detail,'$.generation')=? "
+                          "AND json_extract(detail,'$.channel')=? AND json_extract(detail,'$.owner')=? "
+                          "AND (status='pending' OR (status='observed' AND created>=?) "
+                          "OR (status='unidentified' AND ? BETWEEN created-? "
+                          "AND json_extract(detail,'$.settled_at')+?))",
+                          (OUTBOUND_POST, *self._outbound_scope(cfg),
+                           time.time() - OBSERVED_POST_RETENTION_SECONDS,
+                           spoke, OUTBOUND_TIME_SKEW_SECONDS, OUTBOUND_TIME_SKEW_SECONDS))
+        for row in rows:
+            detail = json.loads(row['detail'])
+            detail['reserved_at'] = row['created']
+            yield row['status'], detail
+
+    def replay_ingress(self):
+        """Drain durable racing messages on the normal surface tick, also after restart.
+
+        Poll cursors / Socket Mode acknowledgments can advance after retention.
+        No model or owner act runs before the matching outbound receipt is durable.
+        """
+        with self.service.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            self._expire_outbound(db)
+            rows = list(db.execute("SELECT id,detail FROM tool_events WHERE tool=? AND status=? "
+                                   "AND json_extract(detail,'$.surface')=? ORDER BY id",
+                                   (DEFERRED_POST, 'pending', self.name)))
+        for row in rows:
+            detail = json.loads(row['detail'])
+            if detail.pop('surface') != self.name:
+                continue
+            cfg = self.config()
+            if detail['generation'] != cfg.get('generation') or detail['owner'] != cfg.get('owner_user_id'):
+                with self.service.store.db() as db:
+                    db.execute("UPDATE tool_events SET status='cancelled' WHERE id=?", (row['id'],))
+                continue  # a held message is never retargeted to a new pairing
+            work_id = self._ingest_owner_message(**detail)
+            # A still-pending reservation leaves this row in place. The ingress
+            # transaction deletes it only when it can classify the message.
+            if work_id and self.service.is_natural_language(detail['text']):
+                self.service.consider_steer(work_id, detail['text'])
 
     # -- configuration --------------------------------------------------------------
     def config(self):
@@ -171,9 +320,32 @@ class DirectMessageSurface(ConversationSurface):
             if not (isinstance(current, dict) and current.get('enabled') and current.get('generation') == generation
                     and current.get('owner_user_id') == owner and self.usable(current)):
                 return None
+            deferred_key = {'surface': self.name, 'message_id': message_id, 'text': text,
+                            'reply_to': reply_to, 'owner': owner, 'generation': generation,
+                            'spoke': spoke, 'turn_data': turn_data}
+            # Retention uses the same secret redaction as all other local evidence.
+            detail = service._redact_provenance(json.dumps(deferred_key, ensure_ascii=False))
+            outbound = list(self._outbound_rows(db, current, spoke))
+            if any(status == 'pending' for status, _ in outbound):
+                if not db.execute('SELECT 1 FROM tool_events WHERE tool=? AND status=? AND detail=?',
+                                  (DEFERRED_POST, 'pending', detail)).fetchone():
+                    db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                               (None, DEFERRED_POST, 'pending', detail, time.time()))
+                return None
+            db.execute('DELETE FROM tool_events WHERE tool=? AND status=? AND detail=?',
+                       (DEFERRED_POST, 'pending', detail))
+            if any(status == 'observed' and post.get('post_id') == message_id for status, post in outbound):
+                return None  # known host post is data, never an owner act or request
             if db.execute('SELECT 1 FROM jobs WHERE request_key=?', (key,)).fetchone():
                 return None
-            work_id = service.store.enqueue(text, key, f'{self.channel_prefix}{generation}', owner, db=db, owner_typed=True)
+            unidentified = [post for status, post in outbound if status == 'unidentified']
+            work_id = service.store.enqueue(text, key, f'{self.channel_prefix}{generation}', owner,
+                                            db=db, owner_typed=not bool(unidentified))
+            if unidentified:
+                service.store.merge_turn_provenance(work_id, {'surface_origin': {
+                    'kind': 'unidentified_outbound_window', 'surface': self.name, 'message_id': message_id,
+                    'source_at': spoke, 'windows': [{'reserved_at': post['reserved_at'],
+                        'settled_at': post['settled_at']} for post in unidentified]}}, db=db)
             # #306 review: when the owner wrote it, not when it was fetched, so an act is never judged
             # against an item shown after it (``owner_acts.read(before=...)``); a time still ahead of
             # this Mac's clock is not trusted.

@@ -1028,6 +1028,7 @@ class TelegramSurface(ConversationSurface):
             has_photo=isinstance(photo,list) and bool(photo)
             media_group_id=message.get('media_group_id') if has_photo else None
             text='' if edited else (message.get('text') or message.get('caption',''))
+            owner_typed = not bool(self.forwarding_origin(message))
             replied=message.get('reply_to_message') if isinstance(message.get('reply_to_message'),dict) else {}
             replied_to=replied.get('message_id') if isinstance(replied.get('message_id'),int) else None
             photo_file_id=None
@@ -1091,7 +1092,7 @@ class TelegramSurface(ConversationSurface):
                                 # A protocol-late album member must not mutate a Work already in flight.
                                 album_key=None
                             else:
-                                task_id=service.store.enqueue('[사진 첨부]',album_key,f'telegram:{generation}',sender,db=db,owner_typed=True)
+                                task_id=service.store.enqueue('[사진 첨부]',album_key,f'telegram:{generation}',sender,db=db,owner_typed=owner_typed)
                             if album_key:
                                 service.store.telegram.add_album(db,task_id,generation,sender,media_group_id,album_caption)
                                 album_created=True
@@ -1115,6 +1116,7 @@ class TelegramSurface(ConversationSurface):
                             if album_created:
                                 service.telegram_turns.record_source(task_id,sender,message.get('message_id'),db=db)
                                 service.context_observations.note_text_source(db,task_id,message,generation)
+                            self.note_forwarding(db,task_id,message)
                             text=caption or '[사진 첨부]'
                         else:
                             album_key=None
@@ -1122,10 +1124,10 @@ class TelegramSurface(ConversationSurface):
                         parsed=service.parse_context_request(text)
                         if parsed:
                             event_ids,text=parsed
-                            task_id=service.store.enqueue(text,f'tg:{generation}:{update_id}',f'telegram:{generation}',sender,db=db,owner_typed=True)
+                            task_id=service.store.enqueue(text,f'tg:{generation}:{update_id}',f'telegram:{generation}',sender,db=db,owner_typed=owner_typed)
                             service.store.attach_context(task_id,event_ids,service.context_assistant_id(),db)
                         else:
-                            task_id=service.store.enqueue(text,f'tg:{generation}:{update_id}',f'telegram:{generation}',sender,db=db,owner_typed=True)
+                            task_id=service.store.enqueue(text,f'tg:{generation}:{update_id}',f'telegram:{generation}',sender,db=db,owner_typed=owner_typed)
                             if guided_context_requested:
                                 db.execute("UPDATE jobs SET status='awaiting_context' WHERE id=?",(task_id,))
                                 guided_context=True
@@ -1137,6 +1139,7 @@ class TelegramSurface(ConversationSurface):
                         service.telegram_turns.record_source(task_id,sender,message.get('message_id'),db=db,
                                                              reply_to=replied_to)
                         service.context_observations.note_text_source(db,task_id,message,generation)
+                        self.note_forwarding(db,task_id,message)
                 else:
                     task_id=None
                 if authorized and not paired:
@@ -1174,6 +1177,24 @@ class TelegramSurface(ConversationSurface):
                 service.consider_steer(task_id,text)
         if located_chat is not None:
             service.withdraw_location_keyboard(located_chat)
+
+    @staticmethod
+    def forwarding_origin(message):
+        """Native Bot API provenance, including legacy forward fields; never inferred from text."""
+        return {key: message[key] for key in ('forward_origin', 'forward_from', 'forward_from_chat',
+                'forward_sender_name', 'forward_date', 'forward_from_message_id') if key in message}
+
+    def note_forwarding(self, db, work_id, message):
+        origin = self.forwarding_origin(message)
+        if not origin:
+            return
+        # A forwarded album member cannot lend owner authority to the album.
+        db.execute('UPDATE jobs SET owner_typed=NULL,owner_words=NULL WHERE id=?', (work_id,))
+        origin = json.loads(self.service._redact_provenance(json.dumps(origin, ensure_ascii=False)))
+        self.service.store.merge_turn_provenance(work_id, {'telegram_forwarding': {
+            str(message.get('message_id')): origin}},
+            combine=lambda old, new: {**old, **new, 'telegram_forwarding': {
+                **old.get('telegram_forwarding', {}), **new['telegram_forwarding']}}, db=db)
 
     def ingest_reaction(self, reaction, generation):
         """The owner's emoji on an assistant message (#996): an observation, judged by the Judgment AI.
