@@ -144,6 +144,9 @@ class QuickStore:
             CREATE TABLE IF NOT EXISTS forgotten_messages(message_id INTEGER PRIMARY KEY, receipt_id TEXT NOT NULL, created REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY, request_key TEXT UNIQUE, message TEXT, channel TEXT, chat_id INTEGER, status TEXT, response TEXT, error TEXT, delivery TEXT, provider TEXT, model TEXT, created REAL);
             CREATE TABLE IF NOT EXISTS tool_events(id INTEGER PRIMARY KEY AUTOINCREMENT, job_id TEXT, tool TEXT, status TEXT, detail TEXT, created REAL);
+            -- Intake is authority state, never a dispatched tool or an effect receipt.
+            CREATE TABLE IF NOT EXISTS work_intake_sources(id INTEGER PRIMARY KEY AUTOINCREMENT, job_id TEXT NOT NULL, detail TEXT NOT NULL, created REAL NOT NULL);
+            CREATE INDEX IF NOT EXISTS work_intake_sources_job ON work_intake_sources(job_id,id);
             CREATE TABLE IF NOT EXISTS turn_provenance(job_id TEXT PRIMARY KEY, record TEXT NOT NULL, created REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS work_decisions(id INTEGER PRIMARY KEY AUTOINCREMENT, job_id TEXT NOT NULL, record TEXT NOT NULL, created REAL NOT NULL);
             CREATE INDEX IF NOT EXISTS work_decisions_job ON work_decisions(job_id, id);
@@ -252,6 +255,12 @@ class QuickStore:
             # #805: the durable post-Work owner-model upkeep queue; #998: keyed by (Work, kind).
             owner_model_migrate(db)
             db.executescript(OWNER_MODEL_TABLE_SQL)
+            # #744: move pre-merge marks out of the call ledger atomically. Keep
+            # every source and its order, including across concurrent openers.
+            for row in db.execute("SELECT job_id,detail,created FROM tool_events WHERE tool='outside_content' ORDER BY id").fetchall():
+                detail = self._outside_content_detail(json.loads(row['detail']))
+                self._insert_intake_source(db, row['job_id'], detail, row['created'])
+            db.execute("DELETE FROM tool_events WHERE tool='outside_content'")
             # #188: when a prompt's send completed, the time the owner could first have seen it.
             # Nullable and never backfilled: a prompt sent before this column existed has none.
             columns={row['name'] for row in db.execute('PRAGMA table_info(telegram_notifications)')}
@@ -1221,25 +1230,40 @@ class QuickStore:
     def held_notifications(self, kind):
         return self.telegram.held_notifications(kind)
 
+    def _outside_content_detail(self, source):
+        # Browser source references follow the browser's existing retention
+        # contract. Authentication query/fragment/userinfo stay in the window,
+        # never in durable intake, including marks migrated from the call log.
+        if source.get('category') == 'owner-browser-session' and 'url' in source:
+            from .browser_session import page_reference
+            source = {**source, 'url': page_reference(source['url'])}
+        from .current_context import redact_known_secrets
+        return redact_known_secrets(self, json.dumps(source, ensure_ascii=False, sort_keys=True))
+
     def mark_outside_content(self, work_id, source):
         """Host-only, monotone Work state, committed before a result reaches a worker.
 
-        Separate from the bounded/best-effort turn audit. Uses the existing durable
-        event log, including across bridge processes and retries; no model setter.
+        Separate from the call ledger and bounded/best-effort turn audit. The
+        same SQLite store serves bridge processes and retries; no model setter.
         """
-        from .current_context import redact_known_secrets
-        detail = redact_known_secrets(self, json.dumps(source, ensure_ascii=False, sort_keys=True))
+        detail = self._outside_content_detail(source)
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
-            if not db.execute("SELECT 1 FROM tool_events WHERE job_id=? AND tool='outside_content' AND detail=?",
-                              (work_id, detail)).fetchone():
-                db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
-                           (work_id, 'outside_content', 'observed', detail, time.time()))
+            self._insert_intake_source(db, work_id, detail, time.time())
+
+    @staticmethod
+    def _insert_intake_source(db, work_id, detail, created):
+        # Caller holds the write transaction. Display text cannot be a UNIQUE
+        # key: portable redaction can make distinct source paths identical.
+        if not db.execute('SELECT 1 FROM work_intake_sources WHERE job_id=? AND detail=?',
+                          (work_id, detail)).fetchone():
+            db.execute('INSERT INTO work_intake_sources(job_id,detail,created) VALUES (?,?,?)',
+                       (work_id, detail, created))
 
     def outside_content_sources(self, work_id):
         with self.db() as db:
             return [json.loads(row['detail']) for row in db.execute(
-                "SELECT detail FROM tool_events WHERE job_id=? AND tool='outside_content' AND status='observed' ORDER BY id",
+                'SELECT detail FROM work_intake_sources WHERE job_id=? ORDER BY id',
                 (work_id,))]
 
     def inherit_outside_content(self, work_id, source_work_ids, operation):

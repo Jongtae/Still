@@ -130,7 +130,8 @@ def _owner_content_column(name):
 #: were path-masked when written (or carried a fixed tool error text); the export, which leaves this machine,
 #: still masks them: the Work's failure columns, the tool events (a tool's error text now reaches the
 #: worker and its record as written) and the browser step requests' labels.
-_DIAGNOSTIC_COLUMNS = {"jobs": ("error", "owner_cause", "owner_note"), "tool_events": ("detail",)}
+_DIAGNOSTIC_COLUMNS = {"jobs": ("error", "owner_cause", "owner_note"), "tool_events": ("detail",),
+                       "work_intake_sources": ("detail",)}
 _DIAGNOSTIC_CONFIG = ("browser_step_requests",)
 
 
