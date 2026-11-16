@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from urllib.parse import urlsplit
 import logging
 import re
 import secrets
@@ -45,7 +46,8 @@ import threading
 import time
 
 from .conversation_surface import PRESENCE_REACT, SurfaceCapabilities
-from .direct_message_surface import EMOJI_NAMES, DirectMessageSurface
+from .direct_message_surface import (EMOJI_NAMES, DirectMessageSurface, steer_if_owner_typed,
+                                     heartbeat_outbound_process)
 from .messages import msg
 from .providers import ProviderError
 from . import work_mode
@@ -187,7 +189,7 @@ class SlackSurface(DirectMessageSurface):
                   'browser_login_needed': 'surface.answer_at_mac'}
 
     def __init__(self, service, web=None, socket=None):
-        self.service = service
+        super().__init__(service)
         #: ``(token, guard) -> client`` and ``(app token, client) -> socket``; tests inject fakes.
         self._web, self._socket_factory = web, socket
         self._lock = threading.Lock()
@@ -196,6 +198,28 @@ class SlackSurface(DirectMessageSurface):
         self._acting = set()
         self._socket = self._socket_generation = None
         self._next_attempt, self._failures = 0.0, 0
+
+    def outbound_target(self, cfg, url):
+        return urlsplit(url)._replace(query='', fragment='').geturl() == 'https://slack.com/api/chat.postMessage'
+
+    def outbound_identity(self, cfg, url, status, raw):
+        from .api_requests import REFUSED_STATUSES
+        if status in REFUSED_STATUSES:
+            return cfg['channel_id'], None
+        if not 200 <= status < 300:
+            return None
+        try:
+            post = json.loads(raw)
+        except (ValueError, TypeError):
+            return None
+        if isinstance(post, dict):
+            # An error can follow partial service execution. Without an ID
+            # or a known HTTP refusal, keep the reservation unresolved.
+            # Channel IDs scope a ts to the paired conversation/workspace.
+            if (post.get('ok') is True and isinstance(post.get('ts'), str) and post['ts']
+                    and isinstance(post.get('channel'), str) and post['channel']):
+                return post['channel'], message_id(post['ts'])
+        return None
 
     # -- configuration --------------------------------------------------------------
     def _tokens(self):
@@ -408,10 +432,12 @@ class SlackSurface(DirectMessageSurface):
         Messages, reactions and button presses arrive on the SDK's threads (``_on_request``); this tick only
         replays pending owner acts, then opens, replaces or closes the connection, with a growing pause after a failed attempt.
         """
+        heartbeat_outbound_process(self.service.store)
         now = time.monotonic() if now is None else now
         cfg = self.config()
         wanted = cfg.get('generation') if self.usable(cfg) else None
         if wanted:
+            self.replay_ingress()
             self._replay_acts(wanted)   # may send to the owner; never under the socket lock
         with self._lock:
             cfg = self.config()
@@ -597,7 +623,7 @@ class SlackSurface(DirectMessageSurface):
             work_id = self._ingest_owner_message(message_id(ts), text, reply_to, owner, generation, spoke=spoke,
                                                  turn_data={'thread_ts': thread if isinstance(thread, str) and thread else None})
             if work_id and self.service.is_natural_language(text):
-                self.service.consider_steer(work_id, text)
+                steer_if_owner_typed(self.service, work_id, text)
             return work_id
         if kind == 'reaction_added':
             item = event.get('item') if isinstance(event.get('item'), dict) else {}
