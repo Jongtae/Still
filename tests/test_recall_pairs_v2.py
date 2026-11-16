@@ -74,7 +74,7 @@ def assert_no_needed_overlap(data):
 def test_versions_and_v1_preserved_except_split(data):
     v1 = pairs.load(ROOT / 'evals/recall/recall-pairs-v1.json')
     assert pairs.VERSION == 'recall-pairs/1'
-    assert pairs.VERSIONS == ('recall-pairs/1', 'recall-pairs/2')
+    assert pairs.VERSIONS == ('recall-pairs/1', 'recall-pairs/2', 'recall-pairs/3')
     assert data['version'] == 'recall-pairs/2'
     assert pairs.validate(data) is data
     assert data['owner'] == v1['owner']
