@@ -847,9 +847,9 @@ def test_frontier_202_records_plan_reading_scope():
     assert unit['activation_status'] == 'complete-on-merge'
     assert unit['contract'] == 'frontier-delivery.en.md' and unit['depends_on'] == []
     program = current['programs']['FRONTIER-01']
-    assert program['ordered_substeps'][-2:] == [name, 'FRONTIER-RECALL-V3-01']
-    assert program['completed_substeps'][-2:] == [name, 'FRONTIER-RECALL-V3-01']
-    assert current['history']['documented_completed_iterations'][-2:] == [name, 'FRONTIER-RECALL-V3-01']
+    assert program['ordered_substeps'][-3:-1] == [name, 'FRONTIER-RECALL-V3-01']
+    assert program['completed_substeps'][-3:-1] == [name, 'FRONTIER-RECALL-V3-01']
+    assert current['history']['documented_completed_iterations'][-3:-1] == [name, 'FRONTIER-RECALL-V3-01']
     activation = items['FRONTIER-01']['completed_substeps'][name]
     assert activation['issue'] == 202 and activation['status'] == 'complete-on-merge'
     assert activation['pull_request'] == '915'
