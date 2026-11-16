@@ -81,10 +81,12 @@ class ConsolidatedPromptTests(unittest.TestCase):
         from test_no_scenario_code import scenario_tokens
         fragments = [prompt_files.prompt('ask_or_assume'), prompt_files.prompt('planner_location')]
         selectors = {
-            'worker_core': ('- When the owner tells you', '- Do not claim execution'),
+            'worker_core': ('- Use the means you have',
+                            '- When the owner tells you', '- Do not claim execution'),
             'planner': ('- A message that tells', '- owner_situation', '- brief.notes', '4. Fit,'),
-            'goal_reached': ('- fulfillment:', 'A reply falls short when it claims',
-                             'When the owner shares'),
+            'goal_reached': ('- fulfillment:', '- retry_value:', 'A reply falls short when it claims',
+                             'A reply falls short if it addresses', 'When the owner shares'),
+            'owner_model_review': ('The assistant fell short',),
         }
         for name, prefixes in selectors.items():
             for prefix in prefixes:
@@ -95,13 +97,78 @@ class ConsolidatedPromptTests(unittest.TestCase):
             with self.subTest(text=text[:80]):
                 self.assertEqual(scenario_tokens(text), [])
 
+    def test_failed_step_rule_reaches_the_worker_and_the_judgment_once(self):
+        """#202 Q1-B: delivery of the rule text to both model contexts, verbatim and once.
+
+        This checks what the models are given, not how they behave; the behaviour is measured by
+        the paired judgment check under #202's frozen rule (goal-202-* and heldout-202-* cases).
+        """
+        from personal_agent.agent_runtime import CORE_INSTRUCTIONS
+        from personal_agent.conversation_handoff import GOAL_REACHED_PROPOSITION
+        for sentence in (
+            'Disclosure makes a reply honest, not fulfilled by itself.',
+            'When a lookup or tool step the answer needs failed or returned nothing usable, the reply serves only if the attempt also tried the next method a capable assistant would use with the means and budgets it had (another available source, tool or route), or observations show no other method was available and the reply says so.',
+            'Otherwise return false with retry_warranted true and retry_value naming that next method (#202).',
+            'Unavailable here means evidence the judgment cannot see; a recorded failed or empty result is seen, not unseen, and supports false when the result was not obtained under the fulfillment rule.',
+            'An owner-requested rough estimate also serves without a lookup.',
+            'Disclosure still has to meet the fulfillment rule above.',
+            'This observed unmet result supports false, not null for unseen evidence, but does not itself prove a retry would help.',
+        ):
+            with self.subTest(sentence=sentence):
+                self.assertEqual(GOAL_REACHED_PROPOSITION.count(sentence), 1)
+        self.assertEqual(CORE_INSTRUCTIONS.count(
+            'Use the means you have before answering: get facts with tools; if a needed step fails, try the next available method before estimating, then say what could not be checked.'), 1)
+
+    def test_timing_rule_reaches_worker_planner_and_judgment_once(self):
+        """#202 Q2-A: delivery of the shared rule text; behaviour is measured by the paired check."""
+        from personal_agent.agent_runtime import CORE_INSTRUCTIONS
+        from personal_agent.conversation_handoff import GOAL_REACHED_PROPOSITION
+        from personal_agent.orchestrator import LOCATION_QUESTION
+        for text in (CORE_INSTRUCTIONS, LOCATION_QUESTION, GOAL_REACHED_PROPOSITION):
+            for sentence in (
+                "Ask the owner for information before answering only when the choice is the owner's, no assumption fits, or acting on a wrong guess would itself cause loss (money, an account change, something sent).",
+                'When a wrong guess could cost time, answer on the stated assumption and ask the deciding question in the same reply.',
+                'No assumption replaces an approval Still asks for.',
+            ):
+                with self.subTest(sentence=sentence):
+                    self.assertEqual(text.count(sentence), 1)
+        self.assertEqual(LOCATION_QUESTION.count(
+            'the worker answers on that stated assumption and offers location sharing in the same reply, even when timing matters.'), 1)
+        self.assertIn('Only when no such assumption fits or the request needs the exact current position', LOCATION_QUESTION)
+        self.assertNotIn('a wrong guess would cost the owner', LOCATION_QUESTION)
+
+    def test_wrong_method_rule_reaches_the_self_review(self):
+        """#202 Q4-A: delivery of the rule text to the self-review prompt, not model behaviour."""
+        review = prompt_files.prompt('owner_model_review')
+        self.assertEqual(review.count("When a method in a skill or the assistant's own instruction text was wrong or out of date, give the blocker and no notes: say generally which method and what it led to, so a developer can revise the versioned text; never rewrite it yourself (#202)."), 1)
+        self.assertIn('not a general rule any assistant should follow', review)
+        self.assertIn('The blocker is at most 200 characters.', review)
+
+    def test_route_skill_states_the_failed_lookup_method(self):
+        """#202: the bundled skill's method text, not worker behaviour."""
+        skill = (ROOT / 'skills/map-directions/SKILL.md').read_text()
+        self.assertIn('try another available route method first', skill)
+        self.assertIn('say the route lookup failed and that the time is a distance-based estimate', skill)
+        self.assertNotIn('Say "약",', skill)
+        self.assertIn('never present them as live traffic', skill)
+        self.assertIn('The map link in step 3 shows the live time.', skill)
+        self.assertIn('ask about the starting place in the same reply', skill)
+        self.assertIn('Do not guess silently, and do not stop to ask when a stated assumption works.', skill)
+        self.assertIn('Never present an estimate as checked, or a stale position as current.', skill)
+
     def test_goal_reached_keeps_authority_guards_and_lookup_exception(self):
+        import hashlib
         from personal_agent.conversation_handoff import GOAL_REACHED_PROPOSITION
         for guard in ('use secure input', 'recorded_effects lists the calls of this Work',
                       'awaiting the owner', 'an item is not approved or applied until a later event settles it',
                       'Never reward replay', 'unless the owner asked not to look it up'):
             with self.subTest(guard=guard):
                 self.assertIn(guard, GOAL_REACHED_PROPOSITION)
+        # The complete authority section stays unchanged, including qualifiers
+        # that a substring-only assertion could miss.
+        guards = prompt_files.prompt('goal_reached').split('Authority, failures and prerequisites:\n')[1]
+        self.assertEqual(hashlib.sha256((guards + '\n').encode()).hexdigest(),
+                         '3b3b18c013f6d2d00958951be30eef1ee296890759857acf3fd0209f6ec1c118')
 
     def test_worker_and_planner_state_one_priority_order_in_sections(self):
         from personal_agent.agent_runtime import POLICY
@@ -123,7 +190,7 @@ class ConsolidatedPromptTests(unittest.TestCase):
         # #918/#202: use context and tools first; collect owner-only questions in one answer.
         self.assertNotIn('Ask a concise question if required context is missing', POLICY)
         self.assertIn('then what tools find', POLICY)
-        self.assertIn("Ask the owner for information only when the choice is the owner's", POLICY)
+        self.assertIn("Ask the owner for information before answering only when the choice is the owner's", POLICY)
         self.assertIn('ask for everything in one answer', POLICY)
 
     def test_the_route_collection_method_is_stated_once(self):
