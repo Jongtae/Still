@@ -442,7 +442,7 @@ def bridge_secret_redactor(store, relay):
 
 def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROFILE, browser_relay=None,
           search_off_reason='', relay_browser=True, skills=(), ai_connections=False, connection_slots=(),
-          session_steers=False, peer_relay=None):
+          session_steers=False, peer_relay=None, turn_deadline=None):
     """Serve one Work's Still tools over stdio for the route profile the host named (#701).
 
     ``profile`` is ``trusted-local`` or ``strict-isolated``; anything else
@@ -515,7 +515,7 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
                                 # #607 AX-10: the same durable attempt count and
                                 # deadline as the host serving this Work.
                                 budget=WorkBudget(stop=lambda: work_stop_requested(store, job_id),
-                                                  ledger=WorkLedger(store, job_id)),
+                                                  ledger=WorkLedger(store, job_id), turn_deadline=turn_deadline),
                                 # #718: the same stored-secret pass as the host, for recorded step text.
                                 secret_redactor=bridge_secret_redactor(store, relay))
     capabilities.private_provenance.update(_recorded_private_sources(store, job_id, capabilities.tools))
@@ -659,6 +659,7 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
 
 if __name__ == '__main__':
     parser=argparse.ArgumentParser(); parser.add_argument('--data',required=True); parser.add_argument('--job',required=True)
+    parser.add_argument('--turn-deadline',type=float,default=None)
     parser.add_argument('--provenance',action='append',default=[])
     parser.add_argument('--native-search',action='store_true')
     # #701: the host names the route profile (absent: the historical trusted-local set, as the
@@ -678,4 +679,5 @@ if __name__ == '__main__':
     serve(args.data, args.job, args.provenance, native_search=args.native_search, profile=args.profile,
           browser_relay=args.browser_relay, search_off_reason=args.search_off_reason,
           relay_browser=not args.relay_no_browser, skills=args.skill, ai_connections=args.ai_connections,
-          connection_slots=args.connection_slot, session_steers=args.session_steers, peer_relay=args.peer_relay)
+          connection_slots=args.connection_slot, session_steers=args.session_steers, peer_relay=args.peer_relay,
+          turn_deadline=args.turn_deadline)
