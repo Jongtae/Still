@@ -112,8 +112,13 @@ class DecisionTests(unittest.TestCase):
         trust_record.set_operation(self.store, notes, 'list_notes', 'read')
         self.assertEqual(self.decide(LIST)['behavior'], 'allow', 'decided once, not asked again')
         trust_record.set_operation(self.store, notes, 'save_note', 'mutate')
+        self.assertEqual(self.decide(SAVE)['behavior'], 'deny', 'the read marks this Work; a write classification is not consent')
+        offered = self.service._browser_request(self.job['id'])
+        self.assertEqual((offered['state'], offered['source_action']), ('requested', 'connector_call'))
+        self.assertNotIn('preparation', offered, 'an attended Work needs no preparation request key')
+        self.job = {'id': self.store.enqueue('Save my note', 'unmarked-write', owner_typed=True)}
         allowed = self.decide(SAVE)
-        self.assertEqual(allowed['behavior'], 'allow', 'reviewed non-payment changes use pilot authority')
+        self.assertEqual(allowed['behavior'], 'allow', 'unmarked reviewed non-payment changes use pilot authority')
         self.assertIsNone(self.service._browser_request(self.job['id']))
 
     def test_the_seed_still_answers_for_a_non_money_hand_only(self):

@@ -11,6 +11,7 @@ import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from functools import wraps
 import unicodedata
 from collections import namedtuple
 from pathlib import Path
@@ -1979,6 +1980,24 @@ def refused_before_hand_off(execute):
    raise
   finally:_HANDOFF.reached=previous
  run.__name__,run.__qualname__,run.__doc__=execute.__name__,execute.__qualname__,execute.__doc__ or run.__doc__
+ return run
+
+def record_outside_result(execute):
+ """Persist host-selected intake sources before dispatch results leave Capabilities."""
+ @wraps(execute)
+ def run(self,name,args):
+  result=execute(self,name,args)
+  action=(self.tools.get(name) or {}).get('host_action')
+  if action in OUTSIDE_RESULT_ACTIONS and not (isinstance(result,dict) and (
+      action=='find_files' and not result.get('files')
+      or result.get('needs_setup') is True or 'setup-required' in (result.get('qualifiers') or ())
+      or result.get('state')=='login_required' and 'text' not in result)):
+   # Persist before returning, also on the subscription CLI's bridge route.
+   # Only host-selected identifiers, never result-supplied provenance/authority.
+   source={'operation':action, 'category':PRIVATE_PROVENANCE.get(action,UNATTRIBUTED_PROVENANCE)}
+   source.update({key:args[key] for key in ('url','slot','root_id','path','agent_id','peer_id') if key in args})
+   self.store.mark_outside_content(self.job_id,source)
+  return result
  return run
 
 def attempted_outbound(capabilities,action,args,exc):
@@ -4183,21 +4202,8 @@ class Capabilities:
   return rows
 
  @refused_before_hand_off
+ @record_outside_result
  def execute(self,name,args):
-  result=self._execute(name,args)
-  action=(self.tools.get(name) or {}).get('host_action')
-  if action in OUTSIDE_RESULT_ACTIONS and not (isinstance(result,dict) and (
-      action=='find_files' and not result.get('files')
-      or result.get('needs_setup') is True or 'setup-required' in (result.get('qualifiers') or ())
-      or result.get('state')=='login_required' and 'text' not in result)):
-   # Persist before returning, also on the subscription CLI's bridge route.
-   # Only host-selected identifiers, never result-supplied provenance/authority.
-   source={'operation':action, 'category':PRIVATE_PROVENANCE.get(action,UNATTRIBUTED_PROVENANCE)}
-   source.update({key:args[key] for key in ('url','slot','root_id','path','agent_id','peer_id') if key in args})
-   self.store.mark_outside_content(self.job_id,source)
-  return result
-
- def _execute(self,name,args):
   tool=self.tools.get(name)
   # #1484: a refusal here comes before the tool runs, so its record says ``ran: false``.
   try:
@@ -4481,7 +4487,7 @@ class Capabilities:
    with self.store.db() as db:db.execute('INSERT OR IGNORE INTO notes VALUES (?,?,?)',(note_id,content,time.time()))
    return {'saved':True,'id':note_id,'content':content}
   if name=='save_memory':
-   from .owner_model import normalized as _normalized
+   from .owner_model import normalized as _normalized, owner_stated_fact
    if _normalized(args.get('content')) and _normalized(args.get('content'))==_normalized((self.store.job(self.job_id) or {}).get('message')):
     # #846: the owner's request sentence is the task, not a fact about the owner; no candidate is made of it
     # (an equality check on the value's shape, the same as owner_model.validate; no intent detection).
@@ -4492,7 +4498,8 @@ class Capabilities:
     return {'saved':False,'state':'refused','refused_because':SECRET_SHAPED_VALUE}
    self.written_labels.add('owner-memory')
    sources=self.store.outside_content_sources(self.job_id)
-   if self.third_party_memory_write(tool_id) or (sources and not self.store.owner_stated_value(self.job_id,args['content'])):
+   if self.third_party_memory_write(tool_id) or (sources and not owner_stated_fact(
+       self.store,self.job_id,args['memory_key'],args['content'],self.judgments)[0]):
     # C5: a package tool or a delegated specialist proposes; its write stays a pending
     # MemoryCandidate the owner confirms (the #818/#836 ask).
     candidate=self.store.save_memory_candidate(self.job_id,args['memory_key'],args['content'],source=sources)

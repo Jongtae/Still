@@ -1242,19 +1242,17 @@ class QuickStore:
                 "SELECT detail FROM tool_events WHERE job_id=? AND tool='outside_content' AND status='observed' ORDER BY id",
                 (work_id,))]
 
-    def owner_stated_value(self, work_id, value):
-        """#744: shape containment in authenticated owner words, never model output.
+    def owner_fact_words(self, work_id):
+        """#744: bounded authenticated owner words, newest first, never model output.
 
         Only this conversation through this Work; forgotten turns and assistant
         messages cannot authorize a save. At most OWNER_FACT_TURNS recent owner
         turns are normalized, including the current request. Quoted owner text
         is a documented limit.
         """
-        from .owner_model import normalized
-        value = normalized(value)
         job = self.job(work_id)
-        if not value or not job:
-            return False
+        if not job:
+            return []
         with self.db() as db:
             rows = db.execute(
                 f"SELECT j.message FROM jobs j WHERE {OWNER_WORDS_SQL} AND j.channel=? "
@@ -1264,7 +1262,13 @@ class QuickStore:
                 "ORDER BY j.created DESC,j.rowid DESC LIMIT ?",
                 (job['channel'], job['chat_id'], job['workspace_id'], job['created'],
                  work_id, OWNER_FACT_TURNS)).fetchall()
-        return any(value in normalized(row['message']) for row in rows)
+        return [row['message'] for row in rows]
+
+    def owner_stated_value(self, work_id, value):
+        """Literal containment uses the same owner-only window as the paraphrase judgment."""
+        from .owner_model import normalized
+        value = normalized(value)
+        return bool(value) and any(value in normalized(words) for words in self.owner_fact_words(work_id))
 
     def save_memory_candidate(self, job_id, memory_key, content, owner_id='local-owner', work_id=None, *, source=None):
         memory_key,content=self._memory_value(memory_key,content)

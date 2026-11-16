@@ -808,6 +808,10 @@ class BrowserThroughTheBridge(_BridgeHarness):
     """Fix 3 with the fake driver: the browser runs in the service, the bridge relays."""
 
     def test_the_trusted_local_cli_lists_and_calls_the_five_browser_tools(self):
+        # Request approvals resume only accounted turns (#618/#808). The
+        # scripted CLI must emit its real end-of-turn record before approval.
+        self.complete_turn = True
+        self.service.decision_judge.connector_effect = mock.Mock(return_value='reversible')
         def saved_value(job):
             # A value this Work saved to a private store (``/note`` keeps it under the Work id).
             with self.store.db() as db:
@@ -827,16 +831,30 @@ class BrowserThroughTheBridge(_BridgeHarness):
         self.assertEqual(product['state'], 'page')
         self.assertIn('세탁세제 3L', product['text'])
         self.assertTrue(_value(replies[4])['found'])
-        cart = _value(replies[5])
+        # Reading the product marks this Work. A cart POST is a write even when
+        # reversible; the bridge must preserve the exact one-use owner approval.
+        self.assertEqual(replies[5]['result']['structuredContent']['code'], 'approval_required')
+        self.assertEqual(self.drivers[0].posts, [])
+        offered = self.service._browser_request(self.job)
+        self.assertEqual(offered['source_action'], 'browser_click')
+        self.assertEqual(self.service.browser_step_decision({
+            'work_id': self.job, 'decision': 'approve', 'digest': offered['offer_digest']}),
+            {'approved': True, 'resumed': True, 'work_id': self.job})
+        resumed = self.rerun(_call(3, 'browser_open', url=ORIGIN + '/product', effect='navigate'),
+                             _call(5, 'browser_click', target='장바구니', effect='mutate'),
+                             _call(6, 'browser_read'))
+        cart = _value(resumed[5])
         self.assertEqual(cart['title'], '장바구니')
         self.assertIn('세탁세제 3L × 1', cart['text'])
-        self.assertEqual(self.drivers[0].posts, [('post', '/cart')])
-        self.assertTrue(self.drivers[0].closed, 'the session closed with the turn')
+        self.assertEqual([post for driver in self.drivers for post in driver.posts], [('post', '/cart')])
+        self.assertTrue(all(driver.closed for driver in self.drivers), 'the session closed with each turn')
         self.assertFalse(self.profile.status()['in_use'])
         succeeded = [(tool, detail.get('scope'), detail.get('host_action')) for tool, _s, detail in self.events('succeeded')
                      if tool in BROWSER_ACTIONS]
         self.assertEqual(succeeded, [('browser_open', 'subscription-mcp-bridge', 'browser_open'),
                                      ('browser_find', 'subscription-mcp-bridge', 'browser_find'),
+                                     ('browser_read', 'subscription-mcp-bridge', 'browser_read'),
+                                     ('browser_open', 'subscription-mcp-bridge', 'browser_open'),
                                      ('browser_click', 'subscription-mcp-bridge', 'browser_click'),
                                      ('browser_read', 'subscription-mcp-bridge', 'browser_read')])
         # The Work now carries the browser-session source (read through the bridge).
@@ -844,15 +862,18 @@ class BrowserThroughTheBridge(_BridgeHarness):
 
     def test_the_bridge_records_each_browser_calls_declared_effect(self):
         """#787: the real bridge keeps the model's declared effect on every event of a browser call."""
-        self.wire(_call(2, 'browser_open', url=ORIGIN + '/product', effect='navigate'),
+        self.service.decision_judge.connector_effect = mock.Mock(return_value='reversible')
+        replies = self.wire(_call(2, 'browser_open', url=ORIGIN + '/product', effect='navigate'),
                   _call(3, 'browser_find', text='12,900'),
                   _call(4, 'browser_click', target='장바구니', effect='mutate'),
                   _call(5, 'browser_open', url=ORIGIN + '/checkout', effect='payment'))
+        self.assertEqual(replies[4]['result']['structuredContent']['code'], 'approval_required')
+        self.assertEqual(self.drivers[0].posts, [])
         declared = [(tool, status, detail.get('declared_effect')) for tool, status, detail in self.events()
                     if tool in BROWSER_ACTIONS]
         self.assertEqual(declared, [('browser_open', 'running', 'navigate'), ('browser_open', 'succeeded', 'navigate'),
                                     ('browser_find', 'running', None), ('browser_find', 'succeeded', None),
-                                    ('browser_click', 'running', 'mutate'), ('browser_click', 'succeeded', 'mutate'),
+                                    ('browser_click', 'running', 'mutate'), ('browser_click', 'failed', 'mutate'),
                                     ('browser_open', 'running', 'payment'), ('browser_open', 'failed', 'payment')])
 
     def test_mediation_never_returns_credentials_or_saved_values(self):
@@ -907,6 +928,9 @@ class BrowserThroughTheBridge(_BridgeHarness):
         self.assertEqual(self.service._browser_request(self.job)['state'], 'issued')
 
     def test_the_same_page_step_is_not_repeated_and_the_loopback_is_refused(self):
+        # Filling this GET search field is reading. Keep the model's declared
+        # mutate effect to exercise the independent host judgment and repeat key.
+        self.service.decision_judge.connector_effect = mock.Mock(return_value='read')
         replies = self.wire(_call(2, 'browser_open', url='http://127.0.0.1:8765/api/state', effect='read'),
                             _call(3, 'browser_open', url='http://localhost/', effect='read'),
                             _call(4, 'browser_open', url=ORIGIN + '/product', effect='navigate'),
@@ -1080,6 +1104,9 @@ class RealWorkerThroughTheBridge(_BridgeHarness):
         return profile
 
     def test_product_to_cart_and_the_payment_guard_through_the_bridge(self):
+        # A held request approval carries forward a completed, accounted CLI turn.
+        self.complete_turn = True
+        self.service.decision_judge.connector_effect = mock.Mock(return_value='reversible')
         origin = 'http://' + self.fixture
         original = bs.BrowserSession.__init__
 
@@ -1087,18 +1114,26 @@ class RealWorkerThroughTheBridge(_BridgeHarness):
             original(session, *args, **{**kwargs, 'allowed_origins_for_tests': (self.fixture,)})
         with mock.patch.object(bs.BrowserSession, '__init__', allow_fixture):
             replies = self.wire(_call(2, 'browser_open', url=origin + '/product', effect='navigate'),
+                                _call(3, 'browser_click', target='장바구니', effect='mutate'))
+            self.assertEqual(replies[3]['result']['structuredContent']['code'], 'approval_required')
+            self.assertEqual(self.site.posts, [], 'a reversible cart POST still needs exact approval')
+            offered = self.service._browser_request(self.job)
+            self.assertEqual(self.service.browser_step_decision({
+                'work_id': self.job, 'decision': 'approve', 'digest': offered['offer_digest']}),
+                {'approved': True, 'resumed': True, 'work_id': self.job})
+            resumed = self.rerun(_call(2, 'browser_open', url=origin + '/product', effect='navigate'),
                                 _call(3, 'browser_click', target='장바구니', effect='mutate'),
                                 _call(4, 'browser_open', url=origin + '/account', effect='read'),
                                 _call(5, 'browser_open', url=origin + '/checkout', effect='navigate'),
                                 _call(6, 'browser_type', target='카드번호', text=CARD, effect='navigate'))
         self.assertIn('세탁세제 3L', _value(replies[2])['text'])
-        cart = _value(replies[3])
+        cart = _value(resumed[3])
         self.assertEqual(cart['title'], '장바구니')
         self.assertIn('세탁세제 3L × 1', cart['text'])
         self.assertEqual(self.site.posts, ['/cart'])
         for secret in (PASSWORD, OTP, TOKEN):
-            self.assertNotIn(secret, flat(_value(replies[4])))
-        self.assertEqual(replies[6]['result']['structuredContent']['code'], 'approval_required')
+            self.assertNotIn(secret, flat(_value(resumed[4])))
+        self.assertEqual(resumed[6]['result']['structuredContent']['code'], 'approval_required')
         self.assertEqual(self.site.posts, ['/cart'], 'no payment form was submitted')
         self.assertFalse(self.profile.status()['in_use'], 'the worker was released with the turn')
 

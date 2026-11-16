@@ -8072,6 +8072,14 @@ class AgentService:
                 and (target['kind']!='owner-mcp' or target['identity'] in owner_mcp.confirmed(self.store,target['engine']))
                 and binding['state_digest']==state['state_digest'])
 
+    def _connector_effect_seen(self, db, work_id, input_digest):
+        for row in db.execute("SELECT status,detail FROM tool_events WHERE job_id=? AND tool='connector_permission'",
+                              (work_id,)):
+            old=json.loads(row['detail']).get('evidence',{})
+            if row['status'] in ('claiming','allowed') and old.get('input_digest')==input_digest and old.get('effect') in ('mutate','payment'):
+                return True
+        return False
+
     def _connector_effect_claim(self, job, detail, input_digest, binding, target):
         """Reserve one exact effect before returning permission to the worker.
 
@@ -8082,11 +8090,7 @@ class AgentService:
             db.execute('BEGIN IMMEDIATE')
             if self._unknown_effect_holds(job['id'],target):return None
             if not self._connector_authority_current(job,target,binding,detail['evidence']['effect'],detail['evidence']['operation']):return None
-            for row in db.execute("SELECT status,detail FROM tool_events WHERE job_id=? AND tool='connector_permission'",
-                                  (job['id'],)):
-                old=json.loads(row['detail']).get('evidence',{})
-                if row['status'] in ('claiming','allowed') and old.get('input_digest')==input_digest and old.get('effect') in ('mutate','payment'):
-                    return None
+            if self._connector_effect_seen(db,job['id'],input_digest):return None
             return db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                               (job['id'],'connector_permission','claiming',json.dumps(detail,ensure_ascii=False),time.time())).lastrowid
 
@@ -8156,6 +8160,11 @@ class AgentService:
                 binding=self._connector_action_binding(job,tool,values,target,effect)
             except (TypeError,ValueError):
                 return {'behavior':'deny','message':'실행할 정확한 입력을 확인할 수 없어 실행하지 않았습니다.'}
+            # Refuse a possibly dispatched effect before asking for any new approval.
+            # The same predicate is rechecked atomically when reserving dispatch.
+            with self.store.db() as db:
+                if self._connector_effect_seen(db,job['id'],input_digest):
+                    return {'behavior':'deny','message':'현재 권한이나 기존 실행 기록이 달라져 실행하지 않았습니다. 권한과 기존 결과를 확인하고 남은 일만 진행하세요.'}
             allow=effect=='mutate'
             if allow:
                 try:
@@ -8169,13 +8178,6 @@ class AgentService:
                 pending=self._browser_request(job['id']) or {}
                 allow=bool(autonomy) or pending.get('state')=='issued' and pending.get('digest')==self._browser_step_keys(binding)['digest']
                 if not allow:
-                    # Never offer another approval of a possibly dispatched effect.
-                    with self.store.db() as db:
-                        seen=any(row['status'] in ('claiming','allowed') and
-                                 json.loads(row['detail']).get('evidence',{}).get('input_digest')==input_digest
-                                 for row in db.execute("SELECT status,detail FROM tool_events WHERE job_id=? AND tool='connector_permission'",(job['id'],)))
-                    if seen:
-                        return {'behavior':'deny','message':'이 동작은 이미 실행을 허용한 기록이 있어 다시 실행하지 않았습니다. 기존 결과를 확인하고 남은 일만 진행하세요.'}
                     label=f'{service_name} / {operation}: '+json.dumps(values,ensure_ascii=False,sort_keys=True)
                     if len(label)>8000 or self._redact_known_secrets(label)!=label:
                         return {'behavior':'deny','message':'실행 내용을 비밀값 없이 온전히 확인할 수 없어 승인을 요청하지 않았습니다.'}
@@ -9194,9 +9196,10 @@ class AgentService:
         # ``current_work_id`` is per thread (#826) and this runs on the poll thread, so the
         # running Work is read from the store; one tool-capable worker runs at a time.
         job=self.store.job(task_id)
+        if not job or job.get('owner_typed')!=1:return False
         with self.store.db() as db:
             row=db.execute("SELECT id FROM jobs WHERE status='running' AND chat_id IS ? AND channel=? AND id!=? ORDER BY created DESC LIMIT 1",
-                           (job.get('chat_id') if job else None,job.get('channel') if job else None,task_id)).fetchone()
+                           (job.get('chat_id'),job.get('channel'),task_id)).fetchone()
         if not row:return False
         running=row['id']
         # #308 S1: the running Work's finish guard waits (bounded) for this judgment.

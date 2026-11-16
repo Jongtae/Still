@@ -305,8 +305,9 @@ class BrowserSignin:
              'generation':service._owner_generation(service.issuer_owner_id(job))}
         if binding.get('action')=='self_set_write':
             row['source_action']=binding.get('source_action')
-            if prep.preparation_of(job['request_key']):
-                row['preparation']=service.preparations.wait_stamp(service.preparations.get(prep.preparation_of(job['request_key'])))
+            preparation_id=prep.preparation_of(job.get('request_key'))
+            if preparation_id:
+                row['preparation']=service.preparations.wait_stamp(service.preparations.get(preparation_id))
         current=service._browser_request(job['id'])
         if (current and current.get('state')=='requested' and current.get('digest')==row['digest']
                 and current.get('generation')==row['generation'] and current.get('offer_digest')

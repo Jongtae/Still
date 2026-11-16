@@ -73,6 +73,105 @@ def test_unmarked_owner_write_retains_pilot_behavior(host):
     assert service._browser_request(job['id']) is None
 
 
+def test_attended_approval_without_request_key_has_no_preparation_stamp(host):
+    store, service, job = host
+    store.mark_outside_content(job['id'], {'operation': 'read_file', 'path': 'memo.txt'})
+    binding = step_binding(job['id'], 'api_request', WRITE['url'], 'notes|POST', argument=WRITE['body'])
+    with pytest.raises(ToolError) as held:
+        service.self_set_write({'id': job['id']}, binding, 'slot:notes', 'POST', WRITE['url'],
+                               effect='irreversible', values=WRITE)
+    assert held.value.code == 'approval_required'
+    offered = service._browser_request(job['id'])
+    assert offered['source_action'] == 'api_request'
+    assert 'preparation' not in offered
+
+
+def test_marked_browser_write_resumes_once_on_fresh_capabilities(host):
+    from test_browser_session import FakeDriver, ORIGIN
+    store, service, job = host
+
+    def open_product():
+        driver = FakeDriver()
+        caps = Capabilities(store, None, {}, '', job['id'], lambda *args: None,
+                            browser=lambda: driver, browser_approvals=service.browser_approvals_for(job))
+        caps.execute('browser_open', {'url': ORIGIN + '/product', 'effect': 'navigate'})
+        return caps, driver
+
+    with mock.patch.object(service.decision_judge, 'connector_effect', return_value='reversible'):
+        caps, first = open_product()
+        with pytest.raises(ToolError) as held:
+            caps.execute('browser_click', {'target': '장바구니', 'effect': 'mutate'})
+        assert held.value.code == 'approval_required'
+        assert first.posts == []
+        offered = service._browser_request(job['id'])
+        with store.db() as db:
+            db.execute("UPDATE jobs SET status='partial' WHERE id=?", (job['id'],))
+        assert service.browser_step_decision({'work_id': job['id'], 'decision': 'approve',
+            'digest': offered['offer_digest']})['approved']
+        resumed, second = open_product()
+        assert resumed.execute('browser_click', {'target': '장바구니', 'effect': 'mutate'})['title'] == '장바구니'
+        assert second.posts == [('post', '/cart')]
+        retried, third = open_product()
+        with pytest.raises(ToolError) as replayed:
+            retried.execute('browser_click', {'target': '장바구니', 'effect': 'mutate'})
+        assert replayed.value.code == 'effect_replayed'
+        assert third.posts == []
+        assert service._browser_request(job['id']) is None
+
+
+@pytest.mark.parametrize('owner_typed', [None, 0, 2, 1])
+def test_shared_steer_entry_requires_exact_owner_typed_flag(host, owner_typed):
+    from test_steer_running_work import steer_engine
+    store, service, running = host
+    text = 'Please use the newer document instead.'
+    queued = store.enqueue(text, 'queued-steer', owner_typed=True)
+    with store.db() as db:
+        db.execute("UPDATE jobs SET status='running' WHERE id=?", (running['id'],))
+        db.execute('UPDATE jobs SET owner_typed=? WHERE id=?', (owner_typed, queued))
+    service.use_decision_engine(steer_engine(True))
+    service.steer_spawn = lambda target: target()
+    with mock.patch.object(service, 'judge_steer', wraps=service.judge_steer) as judge:
+        accepted = service.consider_steer(queued, text)
+    with store.db() as db:
+        rows = db.execute('SELECT source_job_id,job_id,content FROM work_steers').fetchall()
+    if owner_typed == 1:
+        assert accepted is True
+        judge.assert_called_once_with(running['id'], queued, text)
+        assert [tuple(row) for row in rows] == [(queued, running['id'], text)]
+    else:
+        judge.assert_not_called()
+        assert accepted is False
+        assert rows == []
+        assert store.job(queued)['status'] == 'queued'
+
+
+@pytest.mark.parametrize('outcome', ['succeeded', 'unknown'])
+def test_marked_connector_replay_or_unknown_never_requests_new_approval(host, outcome):
+    from personal_agent import owner_mcp, trust_record
+    from personal_agent.agent_runtime import WorkLedger
+    store, service, job = host
+    service.set_ai_connections({'enabled': True})
+    owner_mcp.set_confirmed(store, 'codex', ['synthetic'])
+    target = trust_record.connection('codex', 'owner-mcp', 'synthetic')
+    trust_record.set_operation(store, target, 'apply_change', 'mutate')
+    args = {'engine': 'codex', 'tool_name': 'mcp__synthetic__apply_change', 'input': {'item': 'a'}}
+    ledger = WorkLedger(store, job['id'], fresh=True)
+    try:
+        assert service.connector_permission(job, args)['behavior'] == 'allow'
+        if outcome == 'succeeded':
+            service.record_connector_calls(job['id'], [{'tool': args['tool_name'], 'status': 'succeeded',
+                'input_digest': service.connector_input_digest(args['tool_name'], args['input'])}], engine='codex')
+        store.mark_outside_content(job['id'], {'operation': 'read_file', 'path': 'memo.txt'})
+        with mock.patch.object(service, '_request_browser_step', wraps=service._request_browser_step) as request:
+            denied = service.connector_permission(job, args)
+        assert denied['behavior'] == 'deny'
+        request.assert_not_called()
+        assert service._browser_request(job['id']) is None
+        assert ('기존 실행 기록' if outcome == 'succeeded' else '확인되지 않았습니다') in denied['message']
+    finally:
+        ledger.pause()
+
+
 def test_host_mark_survives_new_store_and_retry_and_ignores_text(state):
     store, service = state
     work, caps, _ = memory_worker(state, 'Summarize memo.txt.', save=False)

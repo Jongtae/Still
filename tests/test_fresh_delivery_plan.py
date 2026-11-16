@@ -803,7 +803,7 @@ def test_frontier_744_records_untrusted_scope():
     assert unit["milestone"] == "frontier-delivery" and unit["kind"] == "implementation"
     assert unit["activation_status"] == "complete-on-merge"
     assert unit["contract"] == "frontier-delivery.en.md" and unit["depends_on"] == []
-    assert unit["tests"] == ['PYTHONPATH=src python -m pytest tests/test_744_effects.py tests/test_744_memory.py tests/test_744_mark.py tests/test_744_costs.py tests/test_fresh_delivery_plan.py -q -p no:cacheprovider']
+    assert unit["tests"] == ['PYTHONPATH=src python -m pytest tests/test_744_effects.py tests/test_744_memory.py tests/test_744_mark.py tests/test_744_costs.py tests/test_744_owner_words.py tests/test_744_resume.py tests/test_fresh_delivery_plan.py -q -p no:cacheprovider']
     program = current["programs"]["FRONTIER-01"]
     assert name in program["ordered_substeps"]
     assert name in program["completed_substeps"]
