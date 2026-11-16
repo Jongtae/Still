@@ -1019,7 +1019,7 @@
         "FRONTIER-RECEIPT-JUDGE-01": {
           "issue": 898,
           "status": "complete-on-merge",
-          "pull_request": "TBD",
+          "pull_request": "900",
           "decision": "Carry the reply composer's typed source and the Work's delivery context into the existing outcome judgment, including direct-API fallback receipts. Judge Still receipts as recorded effects and held replies before later preparation delivery; keep delivery and silence policy unchanged."
         }
       }

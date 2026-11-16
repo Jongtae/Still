@@ -743,6 +743,6 @@ def test_frontier_898_records_receipt_judgment_scope():
     assert 'tests/test_receipt_reply_provenance_898.py' in unit['tests'][0]
     activation = items['FRONTIER-01']['completed_substeps'][name]
     assert activation['issue'] == 898 and activation['status'] == 'complete-on-merge'
-    assert activation['pull_request'] == 'TBD'
+    assert activation['pull_request'] == '900'
     assert ('#898 (FRONTIER-RECEIPT-JUDGE-01) is selected inside #822 by owner direction on 2026-11-15 '
             'and is complete on the merge of its own PR.') in current['next_goal']['action']
