@@ -1552,11 +1552,12 @@ class Orchestration:
             return UNJUDGED
         return NOT_REACHED
 
-    def evaluate_answer(self, answer, observations, failed='', final=False, effects=()):
+    def evaluate_answer(self, answer, observations, failed='', final=False, effects=(),
+                        reply_source='worker', reply_delivery='to_owner'):
         """The one outcome judgment of a CLI attempt (#657, #820).
 
         ``goal_reached`` over the owner's message (whole), the recent
-        conversation, the worker's reply (model-stated) and the tool results
+        conversation, the reply with its typed source/delivery facts and the tool results
         Still recorded for this attempt: did the reply serve the owner's
         message?  A reply that asks the owner for something the message needs
         and the conversation does not give serves it.  Nothing the plan wrote
@@ -1590,7 +1591,10 @@ class Orchestration:
             words = self.steers or '\n'.join(getattr(self, 'corrections', ()))
             request = self.request + ('\n\n' + words if words else '')
             judged = goal_reached(request, observed, str(failed or '')[:FAILURE_CHARS], work_id=self.work_id,
-                                  answer=reply, conversation=self._redact(self.conversation)[-CONVERSATION_CHARS:],
+                                  answer=reply,
+                                  **({'reply_source': reply_source} if reply_source != 'worker' else {}),
+                                  **({'reply_delivery': reply_delivery} if reply_delivery != 'to_owner' else {}),
+                                  conversation=self._redact(self.conversation)[-CONVERSATION_CHARS:],
                                   owner_context=self._owner_context(), continues=self._continues_text(),
                                   **({'conversation_messages': self._turns_in(self._redact(self.conversation)[-CONVERSATION_CHARS:])}
                                      if self.turns is not None else {}),

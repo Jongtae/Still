@@ -775,6 +775,7 @@ class WorkExecutor:
             following=service.orchestration_step(run.orchestration,run.attempt,job['id'],run.attempt_start,
                                               pages=run.capabilities.take_browser_pages(),
                                               result=None if run.subscription.get('id') else run.result,answer=run.response,
+                                              reply_source=run.reply_source,
                                               outcome=run.outcome,owner_needed=(run.context_approval_needed[0]
                                                                             or run.waits_for_sign_in
                                                                             # #1468: never re-delegated past a pending approval.
@@ -1135,6 +1136,7 @@ class WorkExecutor:
         # #825: set just before the worker is handed its input; a failure before it is a failed preflight.
         dispatched=False
         reply_evidence={}
+        run.reply_source='worker'
         try:
             if isolated:
                 if run.image_inputs:
@@ -1225,6 +1227,7 @@ class WorkExecutor:
                     raise ExecutionError(msg('agent_runtime.model_returned_no_answer'),failure_class=NO_FINAL_TEXT,
                                          exit_code=run.result.exit_code,meta=run.result.meta)
                 run.response=response
+                run.reply_source='still_receipt'
                 reply_evidence={'final_text':'absent','reply':'recorded-effects'}
                 if saved_content:reply_evidence['reply_content']='saved-record'
         except (ExecutionError,EngineGatewayError) as exc:
@@ -1437,7 +1440,8 @@ class WorkExecutor:
             # current-context sections in its system text, the same
             # sections the CLI envelope renders.
             # #833: the outcome judgment reads the same profile / current-context sections.
-            run_options={'owner_context':api_context,'judgment_history':judgment_history}
+            run_options={'owner_context':api_context,'judgment_history':judgment_history,
+                         'reply_delivery':service.work_reply_delivery(job)}
             if run.image_inputs:run_options['images']=run.image_inputs
             run.result=run_agent(service.adapter,runtime_config,run.key,[*api_context['conversation'],{'role':'user','content':api_context['request']}],context_sections(api_context),run.capabilities,run.record,definitions=offered,**run_options)
             # #825: a run the budget ended before any model turn sent nothing.

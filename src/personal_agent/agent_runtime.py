@@ -5744,12 +5744,12 @@ def work_awaiting_owner_text(capabilities):
  try:return awaiting_owner_text(work_awaiting_owner(capabilities.store,capabilities.job_id))[:AWAITING_OWNER_CHARS]
  except Exception:return ''
 
-def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact=None,conversation='',owner_context=None,*,budget=None,attachments='',read_state='',awaiting='',conversation_turns=None,effects=()):
+def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact=None,conversation='',owner_context=None,*,budget=None,attachments='',read_state='',awaiting='',conversation_turns=None,effects=(),reply_source='worker',reply_delivery='to_owner'):
  """``yes`` / ``no`` / ``unavailable``: did the reply serve the owner's message ``goal``?
 
  The one outcome judgment (#657, #820): one ``ConversationJudgments.goal_reached``
  call over the owner's message, the recent ``conversation``, the reply
- (``claim['summary']``, model-stated, never evidence), the referenced
+ (``claim['summary']`` with its typed source and delivery facts), the referenced
  observed results, the Work's failed steps and (#833) the owner context the
  worker was given - ``owner_context`` is the turn context's ``profile`` /
  ``current_context`` sections, rendered by ``owner_context_fact``.  #151: ``read_state``
@@ -5790,6 +5790,8 @@ def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact
   if budget is not None and getattr(getattr(judgments,'engine',None),'work_budget',None) is not budget:budget.spend_turn(reserve=True)
  except Exception:return 'unavailable'
  try:judged=judgments.goal_reached(clean(goal),observed,failed,work_id=work_id,answer=reply,conversation=recent,
+                                   **({'reply_source':reply_source} if reply_source!='worker' else {}),
+                                   **({'reply_delivery':reply_delivery} if reply_delivery!='to_owner' else {}),
                                    owner_context=owner,**({'conversation_messages':count} if count is not None else {}),
                                    **({'attachments':attachments} if attachments else {}),
                                    **({'awaiting_owner':clean(awaiting)} if awaiting else {}),
@@ -5830,8 +5832,10 @@ def _budget_end(exc,executions,sources,successful,incomplete,verified,config,act
  answer; this is the floor when it called tools instead.
  """
  if not successful:raise ProviderError(str(exc))
- text=(draft if isinstance(draft,str) and draft.strip() else fallback_response(executions,sources))+'\n\n'+str(exc)
+ worker_text=isinstance(draft,str) and bool(draft.strip())
+ text=(draft if worker_text else fallback_response(executions,sources))+'\n\n'+str(exc)
  result=ModelResult(text[:24000],config['provider'],actual or NOT_REPORTED)
+ result.reply_source='worker' if worker_text else 'still_receipt'
  result.outcome='partial';result.incomplete=[*incomplete,('work',str(exc))];result.verified=verified
  return result
 
@@ -5991,7 +5995,7 @@ def loop_definitions(definitions):
  # name ever reach this list, the loop's own definition replaces it.
  return [*(d for d in definitions if d['function']['name']!=FINISH_ACTION),FINISH_DEFINITION]
 
-def run_agent(adapter,config,key,history,system,capabilities,record,scope='main',owner_context=None,images=None,judgment_history=None,definitions=None):
+def run_agent(adapter,config,key,history,system,capabilities,record,scope='main',owner_context=None,images=None,judgment_history=None,definitions=None,reply_delivery='to_owner'):
  """The direct-API tool loop.  ``owner_context`` (#833) is the turn context whose
  ``profile`` / ``current_context`` sections ``system`` already carries, so the outcome
  judgment reads the same owner model the worker was given; None reads ``none``.
@@ -6032,10 +6036,11 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
  budget=capabilities.budget
  active_config=dict(config);rerouted=False;checked_direct=False;attempts={};actual=None
 
- def conclude(content,claim=None,judgment=None):
+ def conclude(content,claim=None,judgment=None,reply_source='worker'):
   """The run's result: ``succeeded`` needs an accepted done claim judged yes (#657)."""
   if sources and msg('agent_runtime.sources_looked_up') not in content:content+='\n\n'+msg('agent_runtime.sources_looked_up')+'\n'+'\n'.join(dict.fromkeys(sources))
   result=ModelResult(content[:24000],config['provider'],actual)
+  result.reply_source=reply_source
   if claim is None and _external(trail) and not invalid_calls:
    # #820: a plain final reply after tools ran is judged once, like a done claim: did
    # the reply serve the owner's message, given every settled observation?  Whether
@@ -6045,7 +6050,7 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
                           capabilities.job_id,getattr(capabilities,'judgment_text',None),conversation,owner_context,budget=budget,
                             attachments=attachment_facts(images=len(images)) if images else '',read_state=steps_read_state(steps),
                             awaiting=work_awaiting_owner_text(capabilities),conversation_turns=conversation_turns,
-                            effects=recorded_effects(steps))
+                            effects=recorded_effects(steps),reply_source=reply_source,reply_delivery=reply_delivery)
   if not _external(trail) and not invalid_calls:
    # Ordinary conversation: no tool ran (or only internal current-state
    # bookkeeping, #627), so there is nothing to observe.
@@ -6139,14 +6144,17 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
   if not calls:
    # A plain reply to the completion check is not a new answer: the draft
    # it followed stays the text, still without a completion claim.
+   reply_source='worker'
    content=draft if draft is not None else message.get('content')
    if not isinstance(content,str) or not content.strip():
     # `executions`, not `successful`: a withheld effect is not a successful
     # call, but it did run and fallback_response explains it better than a
     # bare provider error would.
-    if executions:content=fallback_response(executions,sources)
+    if executions:
+     content=fallback_response(executions,sources)
+     reply_source='still_receipt'
     else:raise ProviderError(msg('agent_runtime.model_returned_no_answer'))
-   return conclude(content)
+   return conclude(content,reply_source=reply_source)
   if not isinstance(calls,list):raise ProviderError(msg('agent_runtime.tool_call_limit_or_format'))
   ids=[c.get('id') for c in calls if isinstance(c,dict)]
   if len(ids)!=len(calls) or any(not isinstance(i,str) or not i for i in ids) or len(set(ids))!=len(ids):raise ProviderError(msg('agent_runtime.tool_call_ids_invalid'))
@@ -6181,7 +6189,7 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
                              getattr(capabilities,'judgment_text',None),conversation,owner_context,budget=budget,
                              attachments=attachment_facts(images=len(images)) if images else '',read_state=steps_read_state(steps),
                              awaiting=work_awaiting_owner_text(capabilities),conversation_turns=conversation_turns,
-                            effects=recorded_effects(steps))
+                            effects=recorded_effects(steps),reply_delivery=reply_delivery)
       # A "not shown" answer returns the claim once, so the model can take
       # another path; a second one, or no engine, ends the run below.
       if judgment=='no' and getattr(judgment,'retry_warranted',None) is not False and judged<GOAL_JUDGMENTS:reason='goal_not_observed'
