@@ -585,9 +585,14 @@ def compare(baseline, candidate, *, allow_partial=False):
                         # Raw regression veto also applies inside noise or a disputed grade.
                         av, bv = a['measures'][name]['mean'], b['measures'][name]['mean']
                         held_regression |= av is not None and bv is not None and (bv - av) * direction < 0
-            if a['checks'].keys() != b['checks'].keys():
+            # Harness is an observation failure, not a selected deterministic check.
+            if a['checks'].keys() - {'harness'} != b['checks'].keys() - {'harness'}:
                 raise ValueError('Paired deterministic check selections differ')
-            for name in a['checks']:
+            metrics['infra_rows'] = {
+                arm: sum('harness' in r.get('checks', {}) for r in report['samples']
+                         if r['split'] == split and r['scenario'] == ident)
+                for arm, report in (('baseline', baseline), ('candidate', candidate))}
+            for name in sorted(a['checks'].keys() & b['checks'].keys()):
                 av, bv = a['checks'][name]['pass_rate'], b['checks'][name]['pass_rate']
                 metrics['check_' + name] = _change({**a['checks'][name], 'mean': av}, {**b['checks'][name], 'mean': bv}, 1)
                 check_regression |= bv < av

@@ -65,6 +65,8 @@ The key is never written anywhere by this tool. Before Inspect starts, one notic
 
 Direct Inspect runs show the notice and retain totals in the eval log's score metadata; the sweep commands print those totals.
 
+Input totals include Inspect's uncached, cache-write and cache-read tokens; the totals line shows all three parts. All input tokens use the configured input price. Output tokens already include reasoning tokens. Historical reports without a part report that part as `unavailable`, while retaining their recorded input total.
+
 Judge spend is capped per day (default **USD 10**; `--cap-usd` or `AGENTOS_EVAL_JUDGE_CAP_USD`).
 
 - Before each judge call, its worst-case cost is reserved: the estimated input plus the output ceiling. A reservation that would cross the cap is refused. The run is then scored by checks only and marked `budget_refused`.

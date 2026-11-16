@@ -325,6 +325,56 @@ def test_comparison_better_and_not_observed_stays_non_numeric(rubric):
     assert c.HELDOUT_RULE in c.compare_markdown(result)
 
 
+def with_infra_row(report, rubric):
+    records = copy.deepcopy(report['samples'])
+    failed_run = {**run(), 'error': 'sandbox failed before observation'}
+    case = scenario()
+    checks, failures = s.deterministic_checks(case, failed_run)
+    value, meta = s.combine(case, failed_run, checks, failures, measures_status='not_scored',
+                            measures_rubric=rubric[0])
+    records[0] = {**meta, 'epoch': 1, 'value': value}
+    return c.build_report(records, report['live_evidence'], report['fixture_support'])
+
+
+@pytest.mark.parametrize('arms', [('baseline',), ('candidate',), ('baseline', 'candidate')])
+def test_compare_harness_in_either_or_both_arms_keeps_infra_unscored(rubric, arms):
+    reports = {'baseline': make_report(rubric),
+               'candidate': make_report(rubric, ident='after', head='def', dev=(1, 1, 1), held=(1, 1, 1))}
+    assert c.compare(reports['baseline'], reports['candidate'])['verdict'] == 'better'
+    for arm in arms:
+        reports[arm] = with_infra_row(reports[arm], rubric)
+        failed = reports[arm]['samples'][0]
+        assert failed['checks'] == {'harness': False}
+        assert failed['measures_status'] == 'not_scored'
+        group = reports[arm]['live_evidence']['splits']['dev']['scenarios']['dev-case']
+        assert group['measures']['avoidable_interventions']['not_scored'] == 1
+        assert group['checks']['delivered']['n'] == 3
+        assert group['checks']['delivered']['pass_rate'] == pytest.approx(2 / 3)
+    result = c.compare(reports['baseline'], reports['candidate'])
+    assert result['verdict'] == 'not better'
+    assert 'complete_judged_pairs' in result['failed_conditions']
+    dev = result['splits']['dev']['dev-case']
+    assert dev['infra_rows'] == {arm: int(arm in arms) for arm in reports}
+    assert dev['check_delivered']['baseline']['mean'] == (2 / 3 if 'baseline' in arms else 1)
+    assert dev['check_delivered']['candidate']['mean'] == (2 / 3 if 'candidate' in arms else 1)
+    assert ('check_harness' in dev) == (len(arms) == 2)
+    assert result['splits']['heldout']['held-case']['infra_rows'] == {'baseline': 0, 'candidate': 0}
+
+
+@pytest.mark.parametrize('infra_arms', [('candidate',), ('baseline', 'candidate')])
+def test_compare_harness_does_not_allow_real_check_selection_difference(rubric, infra_arms):
+    reports = {'baseline': make_report(rubric), 'candidate': make_report(rubric, ident='after', head='def')}
+    for arm in infra_arms:
+        reports[arm] = with_infra_row(reports[arm], rubric)
+    # Harness differences are comparable before a genuine selection mismatch.
+    result = c.compare(reports['baseline'], reports['candidate'])
+    assert result['splits']['dev']['dev-case']['infra_rows']['candidate'] == 1
+    checks = reports['candidate']['live_evidence']['splits']['dev']['scenarios']['dev-case']['checks']
+    checks['preparation'] = copy.deepcopy(checks['delivered'])
+    with pytest.raises(ValueError, match='^Paired deterministic check selections differ$'):
+        c.compare(reports['baseline'], reports['candidate'])
+
+
 @pytest.mark.parametrize('dev,held', [((1, 1, 1), (3, 3, 3)),  # heldout regression
                                      ((1, 1, 1), (2, 2, 2)),  # dev-only gain
                                      ((0, 1, 2), (0, 1, 2))])  # gain inside spread
