@@ -61,7 +61,8 @@
       "FRONTIER-EVAL-TOKENS-01",
       "FRONTIER-RECEIPT-JUDGE-01",
       "FRONTIER-EVAL-FALLBACK-01",
-      "FRONTIER-JUDGMENT-TEXT-01"
+      "FRONTIER-JUDGMENT-TEXT-01",
+      "FRONTIER-COMPLETION-BAR-01"
     ]
   },
   "iterations": [
@@ -1035,6 +1036,12 @@
           "status": "complete-on-merge",
           "pull_request": "912",
           "decision": "Move every remaining model-facing judgment text in conversation_handoff.py and decision.py into prompts/*.md byte-identically, and extend the affected-cases map to prompt paths, bundled skills and restated contracts. No wording, behaviour or authority change."
+        },
+        "FRONTIER-COMPLETION-BAR-01": {
+          "issue": 202,
+          "status": "complete-on-merge",
+          "pull_request": "914",
+          "decision": "Owner decisions Q1-B, Q2-A and Q4-A on #202: a failed step the answer needs requires the next available method before a disclosed estimate serves; a time cost answers on the stated assumption and asks in the same reply; a wrong method in a skill or instruction text is a developer blocker. Prompt, skill and eval data only; no runtime, authority or approval change."
         }
       }
     },
@@ -1304,6 +1311,20 @@
         "PYTHONPATH=src .venv/bin/python -m pytest -q tests/test_prompt_files.py tests/test_eval_selection.py tests/test_eval_selection_kinds.py tests/test_owner_acts.py tests/test_decision_engine.py tests/test_fresh_delivery_plan.py"
       ],
       "summary": "Owner-selected #202 phase 2 (changes G and H) within #822: move 18 judgment propositions/questions and GAP_INSTRUCTION into prompts/*.md with rendered text byte-identical to main (261/261 string constants equal), add an AST guard against inline judgment literals, match every prompt file, bundled skill and the current-context and professional-roles contracts in evals/selection/affected-cases-v1.json, and add an optional change-table line to the PR template. Existing Solutions Review: adopt the existing prompt_files loader (#1508) and the affected-cases/1 selection format (#855, fnmatch globs); no new dependency. Fixture evidence only; no runtime, owner-state, authority or network change. Complete on the merge of its own PR.",
+      "depends_on": []
+    },
+    {
+      "id": "FRONTIER-COMPLETION-BAR-01",
+      "program": "FRONTIER-01",
+      "issue": 202,
+      "milestone": "frontier-delivery",
+      "kind": "implementation",
+      "activation_status": "complete-on-merge",
+      "contract": "frontier-delivery.en.md",
+      "tests": [
+        "PYTHONPATH=src .venv/bin/python -m pytest -q tests/test_prompt_files.py tests/test_no_scenario_code.py tests/test_eval_judgments.py tests/test_eval_paired.py tests/test_eval_selection.py tests/test_owner_profile.py tests/test_fresh_delivery_plan.py"
+      ],
+      "summary": "Owner-selected #202 phase 2 (changes A, C, D, E and F) within #822: goal_reached.md separates disclosure from fulfilment and unseen evidence from a recorded failure, worker_core.md tries the next method before estimating, ask_or_assume.md and planner_location.md answer on a fitting saved place and ask in the same reply, the map-directions skill no longer treats an approximate label as disclosure, owner_model_review.md routes a wrong method to the developer blocker, and the judgment harness gains owner_context, ask_location and retry_warranted plus 42 bilingual contrast cases with fresh held-out partners (judgment-heldout-partners/2) and three relabelled bare-preference cases. Existing Solutions Review: adapt Anthropic agent-eval and Inspect scorer guidance and G-Eval/MT-Bench/LLMBar/CRITIC patterns into the existing goal_reached dimensions, the shared ask_or_assume fragment, the self-review blocker and the #855 paired runner; no new dependency, call or store. Synthetic paired check per the frozen rule on #202. Complete on the merge of its own PR.",
       "depends_on": []
     }
   ],
@@ -1785,7 +1806,8 @@
         "FRONTIER-EVAL-TOKENS-01",
         "FRONTIER-RECEIPT-JUDGE-01",
         "FRONTIER-EVAL-FALLBACK-01",
-        "FRONTIER-JUDGMENT-TEXT-01"
+        "FRONTIER-JUDGMENT-TEXT-01",
+        "FRONTIER-COMPLETION-BAR-01"
       ],
       "active_substeps": [],
       "completed_substeps": [
@@ -1804,7 +1826,8 @@
         "FRONTIER-EVAL-TOKENS-01",
         "FRONTIER-RECEIPT-JUDGE-01",
         "FRONTIER-EVAL-FALLBACK-01",
-        "FRONTIER-JUDGMENT-TEXT-01"
+        "FRONTIER-JUDGMENT-TEXT-01",
+        "FRONTIER-COMPLETION-BAR-01"
       ],
       "parallel_eligible_substeps": [
       ],
@@ -1949,6 +1972,6 @@
   "next_goal": {
     "id": "FRONTIER-01",
     "status": "owner-activated-goal-ready",
-    "action": "Owner-authorized FRONTIER-01 (#822): the first wave (#823, #824) and #825\u2013#827 are complete-on-merge. M1 wave 2 selects #841 (F-X4 recovery fence), #722 (judgment scope for relayed calls), #842 (F-P4/F-D3 Telegram delivery) and #843 (F-W4 Mattermost/Slack) as parent-controlled parallel lanes under the owner's 2026-11-14 direct instruction; each unit's own PR records it complete on merge. This checked-in resting selection starts no heartbeat. #883 (FRONTIER-CONTEXT-02) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #885 (FRONTIER-EVAL-JUDGE-01) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #887 (FRONTIER-C2-DUE-01) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #896 and #897 (FRONTIER-EVAL-TOKENS-01) are selected inside #822 by owner direction on 2026-11-15 and are complete on the merge of its own PR. #898 (FRONTIER-RECEIPT-JUDGE-01) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #902 (FRONTIER-EVAL-FALLBACK-01) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #202 phase 2 (FRONTIER-JUDGMENT-TEXT-01) is selected inside #822 by owner direction on 2026-11-16 and is complete on the merge of its own PR. No other successor is selected; no live-model authority is added."
+    "action": "Owner-authorized FRONTIER-01 (#822): the first wave (#823, #824) and #825\u2013#827 are complete-on-merge. M1 wave 2 selects #841 (F-X4 recovery fence), #722 (judgment scope for relayed calls), #842 (F-P4/F-D3 Telegram delivery) and #843 (F-W4 Mattermost/Slack) as parent-controlled parallel lanes under the owner's 2026-11-14 direct instruction; each unit's own PR records it complete on merge. This checked-in resting selection starts no heartbeat. #883 (FRONTIER-CONTEXT-02) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #885 (FRONTIER-EVAL-JUDGE-01) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #887 (FRONTIER-C2-DUE-01) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #896 and #897 (FRONTIER-EVAL-TOKENS-01) are selected inside #822 by owner direction on 2026-11-15 and are complete on the merge of its own PR. #898 (FRONTIER-RECEIPT-JUDGE-01) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #902 (FRONTIER-EVAL-FALLBACK-01) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #202 phase 2 (FRONTIER-JUDGMENT-TEXT-01) is selected inside #822 by owner direction on 2026-11-16 and is complete on the merge of its own PR. #202 phase 2 (FRONTIER-COMPLETION-BAR-01) is selected inside #822 by owner direction on 2026-11-16 and is complete on the merge of its own PR. No other successor is selected; no live-model authority is added."
   }
 }
