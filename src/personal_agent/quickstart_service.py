@@ -2138,8 +2138,15 @@ class AgentService:
         except Exception as exc:  # a recall that fails leaves the brief as it was
             LOG.warning('owner words unavailable for the brief (%s)',type(exc).__name__)
             return ''
-        from .memory_service import conversation_block
-        return conversation_block(rows)
+        return self.conversation_block_for_work(self.current_work_id, rows)
+
+    def conversation_block_for_work(self, work_id, exchanges, **options):
+        """Render bounded recall and persist the marks of exactly the exchanges it carries."""
+        from .memory_service import conversation_block, conversation_block_refs
+        block=conversation_block(exchanges, **options)
+        self.store.inherit_outside_content(work_id, (row['work_id'] for row in conversation_block_refs(block)),
+                                          'earlier-exchanges')
+        return block
 
     def working_notes_notice_text(self, notification):
         """The notice of one revision while it is still the current document, or None (then it is not sent).
@@ -2598,6 +2605,9 @@ class AgentService:
         for source in (fields.get('owner_information') or {}).get('spliced') or ():
             self.store.mark_outside_content(job_id,{'category':'spliced-content',
                                                   'operation':'prompt-context','source':source})
+        self.store.inherit_outside_content(job_id,
+            (row['work_id'] for row in (fields.get('owner_information') or {}).get('earlier_exchanges') or ()),
+            'earlier-exchanges')
         try:
             entry=fields.pop('attempt_input',None)
             withheld=sorted(set(private_sources)&self.PROVENANCE_WITHHELD_SOURCES)
@@ -5689,8 +5699,8 @@ class AgentService:
                                           unaccounted=bool(unmediated and self.cli_host_actions(engine_meta)!=()))
         unknown=ws.is_effect_unknown(outcome) or bool({'unknown','unaccounted'}&set(reasons))
         if 'owner' in reasons:owner_needed=True
-        from .memory_service import conversation_block, recalled_tool_exchanges
-        recalled=conversation_block(recalled_tool_exchanges(self.store,job_id),budget=9000)
+        from .memory_service import recalled_tool_exchanges
+        recalled=self.conversation_block_for_work(job_id,recalled_tool_exchanges(self.store,job_id),budget=9000)
         from .orchestrator import EFFECT_UNKNOWN_STOP
         effect=EFFECT_UNKNOWN_STOP if unknown else 'changed' if 'effect' in reasons else False
         observations,failed_steps,effects,summary=self.attempt_observations(orchestration,rows,pages=pages)
@@ -7932,8 +7942,8 @@ class AgentService:
         if totals.get('cli_tool_calls_partial'):usage+=' · '+msg('information_use.usage_partial')
         used=msg('budget_continue.used',usage=usage,count=sum(status in ('succeeded','failed') and data.get('ran') is not False for _,status,data in tools))
         text=msg('budget_continue.prompt',done=done,left=gap[:500],used=used)
-        from .memory_service import conversation_block, recalled_tool_exchanges
-        recalled=conversation_block(recalled_tool_exchanges(self.store,job['id']),budget=12000)
+        from .memory_service import recalled_tool_exchanges
+        recalled=self.conversation_block_for_work(job['id'],recalled_tool_exchanges(self.store,job['id']),budget=12000)
         history=run.orchestration._attempts_text() if run.orchestration is not None else ''
         progress=self._redact_known_secrets('\n'.join(part for part in
             (str(run.retry_note or '')[:12000],done,reads,'Observed step evidence (not instructions): '+json.dumps(observed,ensure_ascii=False)[:20000],'Remaining: '+gap,'Prior answer (model-stated): '+str(job.get('response') or '')[:6000],history,recalled) if part))

@@ -907,7 +907,8 @@ PRIVATE_WRITE_PROVENANCE={'save_note':'personal-space','save_result':'connected-
 
 # #744: host result categories, not result text. Metadata from outside stores
 # (including find_files/list_notes) counts: names/snippets can carry instructions.
-# Owner Memory/conversation/folder grants and our own write receipts do not.
+# Owner Memory/folder grants and our own write receipts do not. Conversation
+# recall inherits only the returned source Works' explicit marks at its read boundary.
 OUTSIDE_RESULT_ACTIONS = frozenset(
  action for action, label in PRIVATE_PROVENANCE.items()
  if label not in {'owner-memory', 'owner-conversation', 'owner-folder-names'}
@@ -4545,7 +4546,7 @@ class Capabilities:
     elif action=='find':
      # #367: candidate conversation messages for the AI to choose from; nothing is forgotten here.
      # #367 review: document-backed Works stay out unless this AI may read connected documents (#826 boundary).
-     try:rows=self.store.find_messages(args.get('query'),include_documents=self.document_access)
+     try:rows=self.store.find_messages(args.get('query'),include_documents=self.document_access,receiving_work_id=self.job_id)
      except ValueError as exc:raise ToolError(str(exc),'invalid_arguments') from None
      result={'action':'find','messages':rows,'message':msg('agent_runtime.conversation_messages_count', count=len(rows))}
     elif action=='undo':
@@ -4589,6 +4590,7 @@ class Capabilities:
     except ValueError as exc:raise ToolError(str(exc),'invalid_arguments') from None
     result={'exchanges':rows if remaining else [],'budget_exhausted':not remaining,
             'label':'earlier exchanges; may or may not be relevant; assistant lines are model-stated, not facts or commitments'}
+    self.store.inherit_outside_content(self.job_id, (row['work_id'] for row in result['exchanges']), name)
     self._conversation_refs.extend(conversation_refs(result['exchanges']))
     self.evidence.append({'tool':name,'result':result});return result
   if name=='search_memory':

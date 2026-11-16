@@ -1242,6 +1242,20 @@ class QuickStore:
                 "SELECT detail FROM tool_events WHERE job_id=? AND tool='outside_content' AND status='observed' ORDER BY id",
                 (work_id,))]
 
+    def inherit_outside_content(self, work_id, source_work_ids, operation):
+        """Carry explicit host marks of recalled Works before exposing their content.
+
+        Generic private-source labels also describe writes, so only the durable
+        intake records qualify. A failed read or commit must withhold the recall.
+        """
+        if not work_id:return
+        for source_work_id in dict.fromkeys(source_work_ids):
+            if not source_work_id or source_work_id == work_id:continue
+            for source in self.outside_content_sources(source_work_id):
+                self.mark_outside_content(work_id, {
+                    'category': source.get('category', 'outside-content'),
+                    'operation': operation, 'source_work_id': source_work_id})
+
     def owner_fact_words(self, work_id):
         """#744: bounded authenticated owner words, newest first, never model output.
 
@@ -1951,7 +1965,7 @@ class QuickStore:
                 if len(result)>=limit:break
         return result
 
-    def find_messages(self, query, *, limit=20, include_documents=False):
+    def find_messages(self, query, *, limit=20, include_documents=False, receiving_work_id=None):
         """#367: transcript rows the owner may ask to forget, newest first, as ``message:<id>`` refs.
 
         Unlike ``search_conversation`` (recall), this includes the recent window and every
@@ -1969,14 +1983,17 @@ class QuickStore:
                                                   if isinstance(value,str)]
         withheld=f"AND COALESCE(m.job_id,'') NOT IN ({','.join('?'*len(documents))}) " if documents else ''
         with self.db() as db:
-            rows=db.execute(f"""SELECT m.id,m.role,m.content,m.created FROM messages_search JOIN messages m ON m.id=messages_search.rowid
+            rows=db.execute(f"""SELECT m.id,m.job_id,m.role,m.content,m.created FROM messages_search JOIN messages m ON m.id=messages_search.rowid
                 WHERE messages_search MATCH ? AND m.role IN ('user','assistant') AND m.content<>''
                 AND m.id NOT IN ({FORGOTTEN_MESSAGE_IDS}) {withheld}ORDER BY m.id DESC LIMIT ?""",(expression,*documents,limit)).fetchall()
         # A row holding a retired secret is left out, as ``search_conversation`` does; current secrets are
         # redacted before clipping.
-        return [{'ref':f"message:{row['id']}",'role':'owner' if row['role']=='user' else 'assistant','created':row['created'],
+        rows=[row for row in rows if not self.holds_retired_secret(row['content'] or '')]
+        result=[{'ref':f"message:{row['id']}",'role':'owner' if row['role']=='user' else 'assistant','created':row['created'],
                  'excerpt':' '.join(redact_known_secrets(self,row['content'] or '').split())[:160]}
-                for row in rows if not self.holds_retired_secret(row['content'] or '')]
+                for row in rows]
+        self.inherit_outside_content(receiving_work_id, (row['job_id'] for row in rows), 'forget_record.find')
+        return result
 
     def work_memories(self, owner_id, work_id, limit=101):
         """The current Memory rows one Work wrote, oldest first (#918: what its notice shows).
