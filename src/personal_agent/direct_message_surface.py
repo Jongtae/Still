@@ -25,6 +25,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import secrets
+import threading
 import time
 
 from .conversation_surface import ConversationSurface, SurfacePairing, notice_binding, notice_text
@@ -42,6 +45,246 @@ EMOJI_NAMES = {'👀': 'eyes', '👌': 'ok_hand', '✍': 'writing_hand', '✍️
 EMOJI_GLYPHS = {name: glyph for glyph, name in EMOJI_NAMES.items() if not glyph.endswith('️')}
 
 
+OUTBOUND_POST = 'surface_outbound_post'
+DEFERRED_POST = 'surface_deferred_post'
+# Native source times use the adapters' existing measured server-clock offset.
+# Two seconds covers sub-second wire precision/rounding and modest offset error,
+# without turning an unknown send into a conversation-wide authority restriction.
+OUTBOUND_TIME_SKEW_SECONDS = 2
+# Matches Slack's existing seven-day event dedupe horizon; normal echo delivery
+# takes seconds/minutes. Longer offline/replayed *identified* echoes are a limit.
+OBSERVED_POST_RETENTION_SECONDS = 7 * 86400
+# Ten missed nominal 3-second surface ticks. A lease is evidence of an
+# instance/attempt's recent activity, never a total network-call deadline.
+PROCESS_HEARTBEAT_MAX_AGE_SECONDS = 30
+PROCESS_LEASE_PREFIX = 'surface_outbound_process:'
+PID_LEASE_PREFIX = 'surface_outbound_pid:'
+
+
+def _reset_outbound_process():
+    # A fork must not inherit its parent's identity, threads or locked mutex.
+    global _PROCESS_PID, _PROCESS_TOKEN, _LIVE_OUTBOUND, _LIVE_OUTBOUND_LOCK
+    _PROCESS_PID = os.getpid()
+    _PROCESS_TOKEN = secrets.token_hex(32)
+    _LIVE_OUTBOUND = {}
+    _LIVE_OUTBOUND_LOCK = threading.Lock()
+
+
+_reset_outbound_process()
+if hasattr(os, 'register_at_fork'):
+    os.register_at_fork(after_in_child=_reset_outbound_process)
+
+
+def _reservation_key(store, event):
+    # Event IDs are unique within a database, not across separate owner stores.
+    return str(store.path), event
+
+
+def _release_live_reservations(store, reservations):
+    with _LIVE_OUTBOUND_LOCK:
+        for _, event, _ in reservations:
+            _LIVE_OUTBOUND.pop(_reservation_key(store, event), None)
+
+
+def _record_process_heartbeat(store, db):
+    with _LIVE_OUTBOUND_LOCK:
+        active = []
+        for key, thread in list(_LIVE_OUTBOUND.items()):
+            if key[0] != str(store.path):
+                continue
+            if thread.is_alive():
+                active.append(key[1])
+            else:
+                _LIVE_OUTBOUND.pop(key, None)
+    now = time.time()
+    store.put(PROCESS_LEASE_PREFIX + _PROCESS_TOKEN,
+              {'pid': _PROCESS_PID, 'heartbeat_at': now, 'live_reservations': sorted(active)}, db=db)
+    store.put(PID_LEASE_PREFIX + str(_PROCESS_PID),
+              {'token': _PROCESS_TOKEN, 'heartbeat_at': now}, db=db)
+
+
+def heartbeat_outbound_process(store):
+    """Renew only this process instance on the existing surface receive tick."""
+    with store.db() as db:
+        db.execute('BEGIN IMMEDIATE')
+        _record_process_heartbeat(store, db)
+
+
+def _fresh_process_lease(record, now):
+    if not isinstance(record, dict):
+        return False
+    at = record.get('heartbeat_at')
+    return (type(at) in (int, float)
+            and now - PROCESS_HEARTBEAT_MAX_AGE_SECONDS <= at <= now + OUTBOUND_TIME_SKEW_SECONDS)
+
+
+def _attempt_is_dead(store, event, detail, db):
+    token, pid = detail.get('process_token'), detail.get('process_pid')
+    if token == _PROCESS_TOKEN and pid == _PROCESS_PID:
+        with _LIVE_OUTBOUND_LOCK:
+            key = _reservation_key(store, event)
+            thread = _LIVE_OUTBOUND.get(key)
+            if thread is not None and thread.is_alive():
+                return False
+            _LIVE_OUTBOUND.pop(key, None)
+            return True
+    if pid == _PROCESS_PID:
+        return True  # this PID now belongs to our *different* instance token
+    if type(pid) is not int or pid <= 0 or not isinstance(token, str) or not token:
+        return True  # unprovable legacy ownership cannot hold ingress forever
+    try:
+        instance = store.config(PROCESS_LEASE_PREFIX + token, db=db)
+        pid_claim = store.config(PID_LEASE_PREFIX + str(pid), db=db)
+    except (ValueError, TypeError):
+        return True  # malformed lease data is not evidence of a live instance
+    now = time.time()
+    if not (_fresh_process_lease(instance, now) and _fresh_process_lease(pid_claim, now)):
+        return True
+    if instance.get('pid') != pid or pid_claim.get('token') != token:
+        return True  # another instance has claimed the reused PID
+    active = instance.get('live_reservations')
+    if not isinstance(active, list) or not all(type(item) is int for item in active) or event not in active:
+        return True  # a still-live process has ended this particular attempt
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    except Exception:
+        # A fresh instance heartbeat supplies only a bounded grace period when
+        # the PID probe is unavailable; no renewal means expiry after 30s.
+        return False
+    return False
+
+
+# Never give a text redactor JSON syntax: it can consume closing delimiters,
+# and its text limit is per value rather than a limit on a serialized record.
+def redact_provenance_values(value, redact):
+    if isinstance(value, str):
+        return redact(value)
+    if isinstance(value, dict):
+        return {key: redact_provenance_values(item, redact) for key, item in value.items()}
+    if isinstance(value, list):
+        return [redact_provenance_values(item, redact) for item in value]
+    if isinstance(value, tuple):
+        return tuple(redact_provenance_values(item, redact) for item in value)
+    return value
+
+
+def _serialize_record(value, redact):
+    return json.dumps(redact_provenance_values(value, redact), ensure_ascii=False, sort_keys=True)
+
+
+# CASE keeps JSON extraction safe even if SQLite reorders WHERE predicates.
+SAFE_EVENT_DETAIL = "CASE WHEN json_valid(detail) THEN detail ELSE '{}' END"
+
+
+def _cancel_invalid_records(db):
+    count = db.execute("UPDATE tool_events SET status='cancelled' "
+                       "WHERE tool IN (?,?) AND status!='cancelled' "
+                       "AND CASE WHEN json_valid(detail) THEN json_type(detail)!='object' ELSE 1 END",
+                       (OUTBOUND_POST, DEFERRED_POST)).rowcount
+    if count:
+        LOG.warning('cancelled invalid surface records count=%s', count)
+
+
+def _event_detail(db, row):
+    try:
+        detail = json.loads(row['detail'])
+        if not isinstance(detail, dict):
+            raise ValueError('not an object')
+        return detail
+    except (ValueError, TypeError):
+        db.execute("UPDATE tool_events SET status='cancelled' WHERE id=?", (row['id'],))
+        LOG.warning('cancelled invalid surface record id=%s', row['id'])
+        return None
+
+
+def steer_if_owner_typed(service, work_id, text):
+    """Only host-recorded owner words may enter the running worker's owner-steer path."""
+    work = service.store.job(work_id)
+    if work and work.get('owner_typed') == 1:
+        return service.consider_steer(work_id, text)
+    return False
+
+
+def reserve_outbound(store, work_id, url):
+    """Host-only reservation before dispatch; platform recognition belongs to adapters.
+
+    The committed reservation closes the response/ingress race, including a crash
+    after send but before receipt. A live attempt holds ingress until it ends.
+    No bodies, credentials or message text are stored in this identity ledger.
+    """
+    reservations = []
+    try:
+        with store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            for surface in getattr(store, '_outbound_surfaces', {}).values():
+                cfg = store.config(surface.CONFIG_KEY, {}, db=db) or {}
+                if cfg.get('enabled') and surface.outbound_target(cfg, url):
+                    reserved_at = time.time()
+                    detail = {'reserved_at': reserved_at, 'surface': surface.name, 'generation': cfg['generation'],
+                              'channel': cfg['channel_id'], 'owner': cfg['owner_user_id'],
+                              'process_pid': _PROCESS_PID, 'process_token': _PROCESS_TOKEN}
+                    event = db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                                       (work_id, OUTBOUND_POST, 'pending', json.dumps(detail), reserved_at)).lastrowid
+                    reservations.append((surface, event, cfg))
+                    with _LIVE_OUTBOUND_LOCK:
+                        _LIVE_OUTBOUND[_reservation_key(store, event)] = threading.current_thread()
+            _record_process_heartbeat(store, db)
+    except BaseException:
+        _release_live_reservations(store, reservations)
+        raise
+    return reservations
+
+
+def observe_outbound(store, reservations, url, status, raw):
+    """Every finished attempt settles; unidentified sends bound authority by time.
+
+    Receipt persistence and hold release are atomic. Failed replay is retried by
+    the ordinary receive tick, and cannot turn a known send into an unknown effect.
+    """
+    try:
+        settled_at = time.time()
+        with store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            for surface, event, cfg in reservations:
+                outcome = None
+                try:
+                    # A transient rate-limit/error or lost response does not attest
+                    # that nothing was posted. No platform-specific error list here.
+                    if status is not None and status != 429:
+                        outcome = surface.outbound_identity(cfg, url, status, raw)
+                    if outcome is not None:
+                        if redact_provenance_values(outcome, surface.service._redact_provenance) != outcome:
+                            outcome = None
+                except Exception:
+                    outcome = None  # redaction failure must not persist the unredacted identity
+                    LOG.warning('%s: outbound identity unavailable', surface.name)
+                row = db.execute('SELECT id,detail FROM tool_events WHERE id=?', (event,)).fetchone()
+                if row is None:
+                    continue
+                detail = _event_detail(db, row)
+                if detail is None:
+                    continue
+                detail['settled_at'] = settled_at
+                result = 'unidentified'
+                if outcome is not None:
+                    channel, post_id = outcome
+                    detail.update(channel=channel, post_id=post_id)
+                    result = 'observed' if post_id else 'rejected'
+                db.execute('UPDATE tool_events SET status=?,detail=? WHERE id=?',
+                           (result, json.dumps(detail), event))
+        # Release immediately on completion, including exceptions and every retry
+        # attempt. Another live attempt on the pairing can still briefly defer it.
+        for surface in {surface for surface, _, _ in reservations}:
+            try:
+                surface.replay_ingress()
+            except Exception:
+                LOG.warning('%s: deferred ingress awaits receive tick', surface.name)
+    finally:
+        _release_live_reservations(store, reservations)
+
+
 class DirectMessageSurface(ConversationSurface):
     """The rules every direct-message surface shares; a subclass supplies the protocol."""
 
@@ -56,6 +299,104 @@ class DirectMessageSurface(ConversationSurface):
     NOT_SENT = ERROR = ProviderError
     #: What the owner does at the Mac for a notice kind this surface has no way to answer.
     AT_THE_MAC = {}
+
+    def __init__(self, service):
+        self.service = service
+        # Composition-root objects already share this store. No global registry,
+        # credentials or new service dependency; reconstructed on every restart.
+        if not hasattr(service.store, '_outbound_surfaces'):
+            service.store._outbound_surfaces = {}
+        service.store._outbound_surfaces[self.name] = self
+
+    def outbound_target(self, cfg, url):
+        raise NotImplementedError
+
+    def outbound_identity(self, cfg, url, status, raw):
+        """Native (channel, post id), (channel, None) for refusal, or None if unknown."""
+        raise NotImplementedError
+
+    def _outbound_scope(self, cfg):
+        return self.name, cfg.get('generation'), cfg.get('channel_id'), cfg.get('owner_user_id')
+
+    def _expire_outbound(self, db):
+        _cancel_invalid_records(db)
+        # Publish the current instance before recovery, including on restart.
+        _record_process_heartbeat(self.service.store, db)
+        rows = db.execute("SELECT id,detail,created FROM tool_events WHERE tool=? "
+                          "AND status='pending' AND json_valid(detail) "
+                          f"AND json_extract({SAFE_EVENT_DETAIL},'$.surface')=?",
+                          (OUTBOUND_POST, self.name))
+        for row in rows:
+            detail = _event_detail(db, row)
+            if detail is None or not _attempt_is_dead(self.service.store, row['id'], detail, db):
+                continue
+            # Recovery must cover the whole possible send/offline interval,
+            # not a synthetic timeout measured from the reservation's start.
+            detected_at = max(time.time(), row['created'])
+            db.execute("UPDATE tool_events SET status='unidentified', "
+                       "detail=json_set(detail,'$.settled_at',?,'$.recovery','abandoned') "
+                       "WHERE id=? AND status='pending'",
+                       (detected_at, row['id']))
+
+    def _outbound_rows(self, db, cfg, spoke=None):
+        self._expire_outbound(db)
+        # Filter before deserialization: current pairing only, observed receipts
+        # within the echo horizon, unidentified windows intersecting this native
+        # source time only. Historical windows remain protective for late data.
+        rows = db.execute("SELECT status,detail,created,id FROM tool_events WHERE tool=? AND json_valid(detail) "
+                          f"AND json_extract({SAFE_EVENT_DETAIL},'$.surface')=? "
+                          f"AND json_extract({SAFE_EVENT_DETAIL},'$.generation')=? "
+                          f"AND json_extract({SAFE_EVENT_DETAIL},'$.channel')=? "
+                          f"AND json_extract({SAFE_EVENT_DETAIL},'$.owner')=? "
+                          "AND (status='pending' OR (status='observed' AND created>=?) "
+                          "OR (status='unidentified' AND ? BETWEEN created-? "
+                          f"AND json_extract({SAFE_EVENT_DETAIL},'$.settled_at')+?))",
+                          (OUTBOUND_POST, *self._outbound_scope(cfg),
+                           time.time() - OBSERVED_POST_RETENTION_SECONDS,
+                           spoke, OUTBOUND_TIME_SKEW_SECONDS, OUTBOUND_TIME_SKEW_SECONDS))
+        for row in rows:
+            detail = _event_detail(db, row)
+            if detail is None:
+                continue
+            detail['reserved_at'] = row['created']
+            yield row['status'], detail
+
+    def replay_ingress(self):
+        """Drain durable racing messages on the normal surface tick, also after restart.
+
+        Poll cursors / Socket Mode acknowledgments can advance after retention.
+        No model or owner act runs before the matching outbound receipt is durable.
+        """
+        with self.service.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            self._expire_outbound(db)
+            rows = list(db.execute("SELECT id,detail FROM tool_events WHERE tool=? AND status=? "
+                                   "AND json_valid(detail) "
+                                   f"AND json_extract({SAFE_EVENT_DETAIL},'$.surface')=? ORDER BY id",
+                                   (DEFERRED_POST, 'pending', self.name)))
+        for row in rows:
+            with self.service.store.db() as db:
+                detail = _event_detail(db, row)
+                if detail is None:
+                    continue
+                # Normalize older, valid records to the same deterministic encoding
+                # used by ingestion's dedupe/delete predicates, also redacting leaves.
+                canonical = _serialize_record(detail, self.service._redact_provenance)
+                db.execute("UPDATE tool_events SET detail=? WHERE id=? AND status='pending'",
+                           (canonical, row['id']))
+            detail = json.loads(canonical)
+            if detail.pop('surface') != self.name:
+                continue
+            cfg = self.config()
+            if detail['generation'] != cfg.get('generation') or detail['owner'] != cfg.get('owner_user_id'):
+                with self.service.store.db() as db:
+                    db.execute("UPDATE tool_events SET status='cancelled' WHERE id=?", (row['id'],))
+                continue  # a held message is never retargeted to a new pairing
+            work_id = self._ingest_owner_message(**detail)
+            # A still-pending reservation leaves this row in place. The ingress
+            # transaction deletes it only when it can classify the message.
+            if work_id and self.service.is_natural_language(detail['text']):
+                steer_if_owner_typed(self.service, work_id, detail['text'])
 
     # -- configuration --------------------------------------------------------------
     def config(self):
@@ -171,9 +512,33 @@ class DirectMessageSurface(ConversationSurface):
             if not (isinstance(current, dict) and current.get('enabled') and current.get('generation') == generation
                     and current.get('owner_user_id') == owner and self.usable(current)):
                 return None
+            deferred_key = {'surface': self.name, 'message_id': message_id, 'text': text,
+                            'reply_to': reply_to, 'owner': owner, 'generation': generation,
+                            'spoke': spoke, 'turn_data': turn_data}
+            # Redact bounded string leaves before deterministic serialization;
+            # text redaction must never consume JSON delimiters or truncate JSON.
+            detail = _serialize_record(deferred_key, service._redact_provenance)
+            outbound = list(self._outbound_rows(db, current, spoke))
+            if any(status == 'pending' for status, _ in outbound):
+                if not db.execute('SELECT 1 FROM tool_events WHERE tool=? AND status=? AND detail=?',
+                                  (DEFERRED_POST, 'pending', detail)).fetchone():
+                    db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                               (None, DEFERRED_POST, 'pending', detail, time.time()))
+                return None
+            db.execute('DELETE FROM tool_events WHERE tool=? AND status=? AND detail=?',
+                       (DEFERRED_POST, 'pending', detail))
+            if any(status == 'observed' and post.get('post_id') == message_id for status, post in outbound):
+                return None  # known host post is data, never an owner act or request
             if db.execute('SELECT 1 FROM jobs WHERE request_key=?', (key,)).fetchone():
                 return None
-            work_id = service.store.enqueue(text, key, f'{self.channel_prefix}{generation}', owner, db=db, owner_typed=True)
+            unidentified = [post for status, post in outbound if status == 'unidentified']
+            work_id = service.store.enqueue(text, key, f'{self.channel_prefix}{generation}', owner,
+                                            db=db, owner_typed=not bool(unidentified))
+            if unidentified:
+                service.store.merge_turn_provenance(work_id, {'surface_origin': {
+                    'kind': 'unidentified_outbound_window', 'surface': self.name, 'message_id': message_id,
+                    'source_at': spoke, 'windows': [{'reserved_at': post['reserved_at'],
+                        'settled_at': post['settled_at']} for post in unidentified]}}, db=db)
             # #306 review: when the owner wrote it, not when it was fetched, so an act is never judged
             # against an item shown after it (``owner_acts.read(before=...)``); a time still ahead of
             # this Mac's clock is not trusted.
