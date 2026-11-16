@@ -1906,6 +1906,94 @@ class ReadIsNotAnEffect(Harness):
         bubble = self.service.telegram_result_text(None, report, 'failed')
         self.assertIn(report, bubble)
 
+    def test_failed_report_keeps_observed_payments_before_the_tried_cutoff_and_in_the_transcript(self):
+        from personal_agent.conversation_projection import TERMINAL_FAILED_HEADER
+
+        def run(tools):
+            for index in range(7):
+                bridge_step(tools.capabilities.record, 'browser_read', host=f'read-{index}.example.test')
+            for index in range(2):
+                evidence = {'kind': 'api-slot', 'identity': f'fixture-slot-{index}', 'operation': 'POST',
+                            'effect': 'payment', 'host': 'dispatch.example.test',
+                            'arguments': {'account_id': 'fixture-account', 'amount': 4321987},
+                            'response_body': 'fixture-response-only'}
+                tools.capabilities.record('api_dispatch', 'observed', json.dumps({'scope': 'api', 'evidence': evidence}))
+
+        self.engine.before = run
+        self.engine.fail = [ExecutionError(INVALID_OUTPUT, failure_class='invalid-output', meta=NO_TOOL_CALLS)]
+        self.script([plan('codex', 'Try the request.')])
+        job, row = self.run_work('요청을 처리해 줘', key='failed-payment-report')
+        self.assertEqual(row['status'], 'failed')
+        report = row['owner_cause']
+        line = '외부 요청 기록: 결제 요청 (dispatch.example.test) 2건 보냄. 반복하기 전에 해당 서비스에서 실제 상태를 확인해 주세요.'
+        self.assertIn(line, report)
+        self.assertLess(report.index(line), report.index('시도한 단계:'))
+        self.assertIn('외 2건', report)
+        for private in ('fixture-slot-', 'POST', 'arguments', 'account_id', 'fixture-account', 'amount', '4321987',
+                        'response_body', 'fixture-response-only'):
+            self.assertNotIn(private, report)
+        with self.store.db() as db:
+            said = db.execute("SELECT content FROM messages WHERE job_id=? AND role='assistant'", (job,)).fetchone()[0]
+        self.assertEqual(said, TERMINAL_FAILED_HEADER + '\n\n' + report)
+
+    def test_failed_report_distinguishes_unresolved_dispatch_claims_in_each_effect_host_group(self):
+        job = self.store.enqueue('요청을 처리해 줘', 'failed-dispatch-claim')
+        with self.store.db() as db:
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       (job, 'subscription_engine', 'failed', json.dumps({'error': INVALID_OUTPUT}), 1.0))
+            for effect, host, status in (('payment', 'dispatch.example.test', 'observed'),
+                                         ('payment', 'dispatch.example.test', 'dispatching'),
+                                         ('payment', 'dispatch.example.test', 'dispatching'),
+                                         ('mutate', 'dispatch.example.test', 'observed'),
+                                         ('payment', 'other.example.test', 'observed')):
+                detail = {'scope': 'api', 'evidence': {'kind': 'api-slot', 'identity': 'fixture-slot',
+                          'operation': 'POST', 'effect': effect, 'host': host}}
+                db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                           (job, 'api_dispatch', status, json.dumps(detail), 2.0))
+        report = self.service.failed_attempt_report(self.store.job(job), INVALID_OUTPUT)
+        for entry in ('결제 요청 (dispatch.example.test) 1건 보냄 · 결제 요청 (dispatch.example.test) 2건 보냄, 결과 미확인',
+                      '변경 요청 (dispatch.example.test) 1건 보냄', '결제 요청 (other.example.test) 1건 보냄'):
+            self.assertIn(entry, report)
+
+    def test_failed_report_leaves_an_earlier_works_dispatch_to_that_work(self):
+        job = self.store.enqueue('요청을 처리해 줘', 'failed-earlier-dispatch')
+        with self.store.db() as db:
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       (job, 'subscription_engine', 'failed', json.dumps({'error': INVALID_OUTPUT}), 1.0))
+            for work_id in ('earlier-fixture-work', job):
+                detail = {'scope': 'api', 'evidence': {'kind': 'api-slot', 'identity': 'fixture-slot', 'operation': 'POST',
+                          'effect': 'payment', 'host': 'dispatch.example.test', 'work_id': work_id}}
+                db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                           (job, 'api_dispatch', 'observed', json.dumps(detail), 2.0))
+        report = self.service.failed_attempt_report(self.store.job(job), INVALID_OUTPUT)
+        self.assertIn('결제 요청 (dispatch.example.test) 1건 보냄.', report)
+
+    def test_failed_report_with_only_reads_is_unchanged(self):
+        job, row = self.attempt_with(('browser_open', 'read'), plans=[plan('codex', 'Read the page.')])
+        before = row['owner_cause']
+        self.assertNotIn('외부 요청 기록:', before)
+        with self.store.db() as db:
+            detail = {'evidence': {'kind': 'owner-mcp', 'identity': 'fixture-reader', 'effect': 'read'}}
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       (job, 'connector_permission', 'allowed', json.dumps(detail), 2.0))
+        self.assertEqual(self.service.failed_attempt_report(self.store.job(job), INVALID_OUTPUT), before)
+
+    def test_failed_report_includes_observed_connector_changes_without_exposing_identity(self):
+        job = self.store.enqueue('요청을 처리해 줘', 'failed-connector-report')
+        with self.store.db() as db:
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       (job, 'subscription_engine', 'failed', json.dumps({'error': INVALID_OUTPUT}), 1.0))
+            detail = {'evidence': {'kind': 'owner-mcp', 'identity': 'fixture-connection',
+                                  'operation': 'fixture_change', 'effect': 'mutate'}}
+            claim = db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                               (job, 'connector_permission', 'allowed', json.dumps(detail), 2.0)).lastrowid
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       (job, 'connector_read', 'succeeded', json.dumps({'permission_event': claim, 'effect': 'mutate'}), 3.0))
+        report = self.service.failed_attempt_report(self.store.job(job), INVALID_OUTPUT)
+        self.assertIn('외부 요청 기록: 변경 요청 1건 보냄.', report)
+        for private in ('fixture-connection', 'fixture_change', 'owner-mcp'):
+            self.assertNotIn(private, report)
+
     def test_an_unobservable_turn_that_only_read_is_not_reported_as_an_executed_change(self):
         """Live 2026-10-28 (Work 655c9aba): a CLI turn cut off at the output cap had only read, yet the
         owner was told an irreversible action had run.  It still stops (C8), and says it could not confirm."""

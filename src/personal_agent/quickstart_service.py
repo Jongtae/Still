@@ -3017,14 +3017,15 @@ class AgentService:
 
         Built only from this Work's own recorded events, never model prose:
         the failed steps and the worker failure in owner words
-        (``owner_cause``), the steps its workers tried and whether each was
-        observed to complete (``tried_statement``), why Still handed the
-        request to no other worker (the orchestrator's last recorded
+        (``owner_cause``), the ledger's sent changes and unconfirmed claims
+        (counts, effect classes and hosts only), the steps its workers tried
+        and whether each was observed to complete (``tried_statement``), why
+        Still handed the request to no other worker (the orchestrator's last recorded
         evaluation text), and a next step (``report_statement``): a typed
         setup/approval need, else what ``safe_retry`` allows.  None when no
         worker attempt was recorded.  Generic: no request, site or category.
         """
-        from .agent_runtime import agency_report
+        from .agent_runtime import agency_report, external_effect_progress
         events=self.store.task_events(job['id'])
         with self.store.db() as db:
             ran=db.execute("SELECT 1 FROM tool_events WHERE job_id=? AND tool IN ('subscription_engine','model') LIMIT 1",
@@ -3049,7 +3050,27 @@ class AgentService:
             failures.append(('model',self._redact_reason(failure) or ''))
         allowed,_reason=self.safe_retry({**job,'status':'failed'})
         step=FAILED_NEXT_SETUP if setup else FAILED_NEXT_RETRY if allowed else FAILED_NEXT_REVIEW
-        parts=(owner_cause(failures),tried_statement(tried),stopped,
+        # Keep consequential dispatches out of the capped tried-step list. Only
+        # the ledger's effect class, host and count belong in this summary.
+        effects={}
+        labels={'payment':msg('quickstart_service.failed_effect_payment'),
+                'mutate':msg('quickstart_service.failed_effect_mutate')}
+        for state,records in enumerate(external_effect_progress(self.store,job['id'])):
+            for evidence in records:
+                effect=evidence.get('effect')
+                if effect not in labels:continue
+                # The ledger spans the request chain; an API dispatch an earlier Work made is that Work's.
+                if evidence.get('work_id') not in (None,job['id']):continue
+                counts=effects.setdefault((effect,evidence.get('host') or ''),[0,0])
+                counts[state]+=1
+        sent=[]
+        for (effect,host),counts in effects.items():
+            for state,count in enumerate(counts):
+                if count:
+                    key='quickstart_service.failed_effect_unconfirmed' if state else 'quickstart_service.failed_effect_sent'
+                    sent.append(msg(key,effect=labels[effect],host=f' ({host})' if host else '',count=count))
+        effect_line=msg('quickstart_service.failed_effects',effects=' · '.join(sent)) if sent else None
+        parts=(owner_cause(failures),effect_line,tried_statement(tried),stopped,
                report_statement(agency_report(job.get('message') or '',[],[],[],step)))
         return '\n'.join(part for part in parts if part) or None
 
