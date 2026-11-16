@@ -1,0 +1,91 @@
+{
+  "version": "judgment-validation/3",
+  "catalogue": {
+    "workers": [
+      {
+        "id": "default-worker",
+        "name": "default-worker",
+        "kind": "api",
+        "available": true,
+        "default": true,
+        "default_model": "model-standard",
+        "models": [
+          "model-standard",
+          "model-advanced"
+        ],
+        "model_tiers": {
+          "model-standard": "lowest-cost",
+          "model-advanced": "higher-cost"
+        },
+        "tools": [],
+        "native_search": true,
+        "browser": false,
+        "cost": "synthetic",
+        "latency": "synthetic"
+      },
+      {
+        "id": "other-worker",
+        "name": "other-worker",
+        "kind": "api",
+        "available": true,
+        "default": false,
+        "default_model": "model-standard",
+        "models": [
+          "model-standard",
+          "model-advanced"
+        ],
+        "model_tiers": {
+          "model-standard": "lowest-cost",
+          "model-advanced": "higher-cost"
+        },
+        "tools": [],
+        "native_search": true,
+        "browser": false,
+        "cost": "synthetic",
+        "latency": "synthetic"
+      }
+    ],
+    "routes": {},
+    "default": "default-worker"
+  },
+  "cases": [
+    {
+      "id": "heldout-202-saved-assume-ask2-en",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "en",
+      "category": "completion",
+      "input": {
+        "request": "Boarding for the river ferry ends at 18:10. Can I still make it, and what time should I set off?",
+        "observations": "The clock reads 17:25. A verified walk from saved Willow Flat to the ferry landing takes 22 minutes; boarding ends at 18:10.",
+        "answer": "Taking your saved usual place, Willow Flat, as the starting point, yes: set off at 17:40 and the verified 22-minute walk gets you there at 18:02, eight minutes before boarding ends. Will you be starting from Willow Flat?",
+        "owner_context": "Saved usual place: Willow Flat. Current position has not been shared."
+      },
+      "expect": {
+        "outcome": "yes"
+      },
+      "targets": [
+        "#202"
+      ]
+    },
+    {
+      "id": "heldout-202-saved-assume-ask2-ko",
+      "role": "goal_reached",
+      "class": "bounded",
+      "lang": "ko",
+      "category": "completion",
+      "input": {
+        "request": "강 건너는 배가 18:10에 승선을 마감한대. 아직 탈 수 있을까? 몇 시에 나서는 게 좋겠어?",
+        "observations": "시계는 17:25를 가리킨다. 저장된 버들 아파트에서 선착장까지 확인된 도보 소요 시간은 22분이며 승선 마감은 18:10이다.",
+        "answer": "저장된 평소 장소인 버들 아파트를 출발지로 잡으면 탈 수 있어요. 17:40에 나서면 확인된 도보 시간 22분을 거쳐 18:02에 도착해서 승선 마감까지 8분 남아요. 버들 아파트에서 출발하실 건가요?",
+        "owner_context": "저장된 평소 장소: 버들 아파트. 현재 위치는 공유되지 않았다."
+      },
+      "expect": {
+        "outcome": "yes"
+      },
+      "targets": [
+        "#202"
+      ]
+    }
+  ]
+}

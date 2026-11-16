@@ -71,20 +71,23 @@ def test_partner_partition_covers_existing_cases_and_new_cases_once():
     held = j.load_cases(ROOT / 'evals/judgments/heldout-v1.json')
     added = j.load_cases(ROOT / 'evals/judgments/cases-v2-202.json')
     added['cases'] += j.load_cases(ROOT / 'evals/judgments/cases-v3-202-plan.json')['cases']
+    added['cases'] += j.load_cases(ROOT / 'evals/judgments/cases-v4-202-scope.json')['cases']
     dev_ids = {ident for part in data['roles'].values() for ident in part['dev']}
     held_ids = {ident for part in data['roles'].values() for ident in part['heldout']}
-    moved = 'heldout-goal-legitimate-question'
-    assert dev_ids == ({c['id'] for c in old['cases']} | {moved} |
+    moved = {'heldout-goal-legitimate-question', 'heldout-202-saved-assume-ask-en',
+             'heldout-202-saved-assume-ask-ko'}
+    assert dev_ids == ({c['id'] for c in old['cases']} | moved |
                        {c['id'] for c in added['cases'] if not c['id'].startswith('heldout-')})
-    assert held_ids == (({c['id'] for c in held['cases']} - {moved}) |
-                        {c['id'] for c in added['cases'] if c['id'].startswith('heldout-')})
+    assert held_ids == (({c['id'] for c in held['cases']} |
+                        {c['id'] for c in added['cases'] if c['id'].startswith('heldout-')}) - moved)
     assert not dev_ids & held_ids
     assert set(data['roles']) == {c['role'] for c in old['cases']}
     lookup = {c['id']: c for c in old['cases'] + held['cases'] + added['cases']}
-    assert len(p.partners(sorted(dev_ids))) == 90
-    assert data['version'] == 'judgment-heldout-partners/3'
+    assert len(p.partners(sorted(dev_ids))) == 92
+    assert data['version'] == 'judgment-heldout-partners/4'
     assert data['case_sets'] == ['evals/judgments/cases-v1.json', 'evals/judgments/heldout-v1.json',
-                                 'evals/judgments/cases-v2-202.json', 'evals/judgments/cases-v3-202-plan.json']
+                                 'evals/judgments/cases-v2-202.json', 'evals/judgments/cases-v3-202-plan.json',
+                                 'evals/judgments/cases-v4-202-scope.json']
     for part in data['roles'].values():
         for dev in part['dev']:
             assert part['partners'].get(dev) or part['unpaired'].get(dev)
@@ -111,11 +114,19 @@ def test_202_contrasts_have_bilingual_development_and_fresh_partners():
             assert cases[ident]['expect'] == {'outcome': outcome}
             assert cases[ident]['targets'] == ['#202']
             [link] = part['partners'][ident]
-            assert link['id'] == f'heldout-202-{kind}-{lang}'
+            partner_kind = 'saved-assume-ask2' if kind == 'saved-assume-ask' else kind
+            assert link['id'] == f'heldout-202-{partner_kind}-{lang}'
             assert link['reason']
             assert link['id'] in part['heldout']
             assert cases[link['id']]['expect'] == {'outcome': outcome}
             assert cases[ident]['input'] != cases[link['id']]['input']
+            if kind == 'saved-assume-ask':
+                assert '#202' in link['reason'] and '#827' in link['reason']
+                moved = f'heldout-202-saved-assume-ask-{lang}'
+                assert moved in part['dev'] and moved not in part['heldout']
+                [replacement] = part['partners'][moved]
+                assert replacement['id'] == link['id']
+                assert '#202' in replacement['reason'] and '#827' in replacement['reason']
     for ident in ('goal-legitimate-question', 'goal-legitimate-question-ko', 'heldout-goal-legitimate-question'):
         assert ident in part['dev'] and ident not in part['heldout']
         assert all(link['id'].startswith('heldout-202-preference-only-') for link in part['partners'][ident])
@@ -135,13 +146,38 @@ def test_v2_mapping_is_frozen_and_v3_preserves_all_its_partitions():
     path = ROOT / 'evals/judgments/heldout-partners-v2.json'
     old = p.validate_partners(json.loads(path.read_text()))
     assert hashlib.sha256(path.read_bytes()).hexdigest() == 'd8b8419f5099d4ff90a416054c1cafc121706562ac3c5873d7b2614ac1c45727'
-    data = p.load_partners()
+    data = p.validate_partners(json.loads((ROOT / 'evals/judgments/heldout-partners-v3.json').read_text()))
     assert data['case_sets'][:-1] == old['case_sets']
     for role, part in old['roles'].items():
         new = data['roles'][role]
         for split in ('dev', 'heldout'):
             assert new[split][:len(part[split])] == part[split]
         assert all(new['partners'][ident] == links for ident, links in part['partners'].items())
+        assert new['unpaired'] == part['unpaired']
+
+
+def test_v3_mapping_is_frozen_and_v4_preserves_unaffected_partitions():
+    import hashlib
+    path = ROOT / 'evals/judgments/heldout-partners-v3.json'
+    old = p.validate_partners(json.loads(path.read_text()))
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == '27705aadd820e69b1a415654e881f8fbd5c72a592eb8842ddf520967db7c5da2'
+    data = p.load_partners()
+    assert data['case_sets'][:-1] == old['case_sets']
+    assert data['policy'] == old['policy']
+    assert data['roles'].keys() == old['roles'].keys()
+    moved = [f'heldout-202-saved-assume-ask-{lang}' for lang in ('en', 'ko')]
+    fresh = [f'heldout-202-saved-assume-ask2-{lang}' for lang in ('en', 'ko')]
+    redirected = {f'goal-202-saved-assume-ask-{lang}' for lang in ('en', 'ko')}
+    for role, part in old['roles'].items():
+        new = data['roles'][role]
+        if role != 'goal_reached':
+            assert new == part
+            continue
+        assert new['dev'] == part['dev'] + moved
+        assert new['heldout'] == [ident for ident in part['heldout'] if ident not in moved] + fresh
+        assert set(new['partners']) == set(part['partners']) | set(moved)
+        assert all(new['partners'][ident] == links for ident, links in part['partners'].items()
+                   if ident not in redirected)
         assert new['unpaired'] == part['unpaired']
 
 

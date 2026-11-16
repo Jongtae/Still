@@ -146,7 +146,7 @@ class ConsolidatedPromptTests(unittest.TestCase):
         from personal_agent.agent_runtime import CORE_INSTRUCTIONS
         from personal_agent.conversation_handoff import GOAL_REACHED_PROPOSITION
         from personal_agent.orchestrator import LOCATION_QUESTION
-        sentence = 'These rules apply to serving a request, not to conversational follow-up questions.'
+        sentence = "When the owner's message only converses and requests nothing, these rules do not apply."
         for text in (CORE_INSTRUCTIONS, LOCATION_QUESTION, GOAL_REACHED_PROPOSITION):
             with self.subTest(text=text[:40]):
                 self.assertEqual(text.count(sentence), 1)
