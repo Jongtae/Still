@@ -2342,6 +2342,12 @@ class AgentService:
         if status.get('route')==engine and status.get('state')=='unavailable':return False,status.get('reason') or 'refused'
         return True,''
 
+    def record_cli_native_intake(self, job_id, engine, step):
+        """Commit the adapter's live search/fetch observation before other consumers."""
+        source={'category':'native-search','operation':'web_search','engine':engine}
+        source.update({key:step[key] for key in ('query','url') if isinstance(step.get(key),str) and step[key]})
+        self.store.mark_outside_content(job_id,source)
+
     def record_cli_native_searches(self, job_id, engine, meta, record, enabled=True):
         """Durable events for the CLI's own web searches, in the web_search evidence shape (#678).
 

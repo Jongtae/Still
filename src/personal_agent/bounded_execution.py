@@ -994,11 +994,11 @@ def live_native_search_steps(engine_id, record):
     The same official event shapes ``native_searches`` reads after the run:
     Codex ``item.started``/``item.updated``/``item.completed`` of an item with
     ``type == 'web_search'``; Claude Code an assistant ``tool_use`` named
-    ``WebSearch`` (running) and the user record's ``tool_result`` for it
+    ``WebSearch``/``WebFetch`` (running) and the user record's ``tool_result`` for it
     (done).  Returns ``[{'id', 'state': 'running'|'done', 'query'}]``; the
-    query is the CLI's own, unredacted - the consumer redacts it exactly as
-    the recorded event.  Nothing here is Evidence: the durable events are
-    still written from ``cli_metadata`` after the run.
+    query and optional URL are the CLI's own, unredacted - the consumers
+    redact them. These observations also feed host intake before progress;
+    detailed search Evidence is still written from ``cli_metadata`` later.
     """
     if not isinstance(record, dict):
         return []
@@ -1012,7 +1012,8 @@ def live_native_search_steps(engine_id, record):
         queries = [value for value in [item.get('query'), action.get('query'), *(action.get('queries') or [])]
                    if isinstance(value, str) and value.strip()]
         return [{'id': str(item.get('id') or '')[:80], 'state': 'done' if kind == 'item.completed' else 'running',
-                 'query': queries[0][:200] if queries else ''}]
+                 'query': queries[0][:200] if queries else '',
+                 **({'url':action['url'][:2000]} if isinstance(action.get('url'),str) else {})}]
     if engine_id == 'claude-code':
         message = record.get('message') if isinstance(record.get('message'), dict) else {}
         content = message.get('content') if isinstance(message.get('content'), list) else []
@@ -1020,10 +1021,12 @@ def live_native_search_steps(engine_id, record):
         for part in content:
             if not isinstance(part, dict):
                 continue
-            if record.get('type') == 'assistant' and part.get('type') == 'tool_use' and part.get('name') == CLAUDE_NATIVE_SEARCH_TOOL:
-                query = part.get('input', {}).get('query') if isinstance(part.get('input'), dict) else None
+            if record.get('type') == 'assistant' and part.get('type') == 'tool_use' and part.get('name') in (CLAUDE_NATIVE_SEARCH_TOOL, CLAUDE_NATIVE_FETCH_TOOL):
+                values = part.get('input') if isinstance(part.get('input'), dict) else {}
+                query = values.get('query')
                 steps.append({'id': str(part.get('id') or '')[:80], 'state': 'running',
-                              'query': query[:200] if isinstance(query, str) else ''})
+                              'query': query[:200] if isinstance(query, str) else '',
+                              **({'url':values['url'][:2000]} if isinstance(values.get('url'),str) else {})})
             elif record.get('type') == 'user' and part.get('type') == 'tool_result':
                 steps.append({'id': str(part.get('tool_use_id') or '')[:80], 'state': 'done', 'query': ''})
         return steps
@@ -1090,21 +1093,40 @@ def connector_observation_reader(connector_digest=None):
     return observe
 
 
-def live_progress_reader(engine_id, progress, connector_observed=None, connector_digest=None):
+class NativeSearchIntakeError(ExecutionError):
+    """A failed authority write must stop the stream, unlike presentation failures."""
+
+
+def live_progress_reader(engine_id, progress, connector_observed=None, connector_digest=None, native_observed=None):
     """Read CLI observations during execution; a missing observation never authorizes a repeat."""
     observe=connector_observation_reader(connector_digest)
+    native_calls={}
     def on_line(line):
         if len(line) > MAX_OUTPUT_BYTES:return
         try:record=json.loads(line)
         except ValueError:return
         if not isinstance(record,dict):return
+        native_steps=live_native_search_steps(engine_id,record)
+        # Claude's generic tool_result has no tool name: only a previously
+        # observed native tool_use makes it a search/fetch completion.
+        for step in native_steps:
+            if engine_id=='claude-code' and step['state']=='done':
+                source=native_calls.get(step['id'])
+                if source is None:continue
+            else:
+                source=step
+                if engine_id=='claude-code':native_calls[step['id']]=step
+            if callable(native_observed):
+                try:native_observed(source)
+                except Exception:
+                    raise NativeSearchIntakeError(msg('agent_runtime.context_unverified'),failure_class='context_unverified') from None
         if callable(connector_observed):
             calls=[call for call in observe(record) if call.get('call_ref')]
             if calls:
                 try:connector_observed(calls)
                 except Exception:LOG.debug('connector observation sink failed',exc_info=False)
         if callable(progress):
-            for step in [*live_native_search_steps(engine_id, record), *live_sub_agent_steps(engine_id, record)]:
+            for step in [*native_steps, *live_sub_agent_steps(engine_id, record)]:
                 try:progress(step)
                 except Exception:LOG.debug('live progress sink failed',exc_info=False)
     return on_line
@@ -1565,6 +1587,8 @@ class _StreamedOutput:
         if self.on_line is not None:
             try:
                 self.on_line(text)
+            except NativeSearchIntakeError:
+                raise
             except Exception:  # presentation must never fail the run
                 pass
         if self.answered is not None and not self.is_answered:
@@ -1715,18 +1739,20 @@ def _bounded_run(runner, argv, *, cwd, env, timeout, interrupted, on_line, sessi
     _observe(on_spawn)
     if session is not None:
         os.set_blocking(process.stdin.fileno(), False)
-        on_line = _both(session.on_line, on_line)
+        # Intake must precede session acknowledgements as well as presentation.
+        on_line = _both(on_line, session.on_line) if on_line is not None else session.on_line
     streamed = _StreamedOutput(process, on_line, limit=MAX_STREAM_BYTES, answered=answered if session is None else None)
     try:
         try:
             return _bounded_wait(process, streamed, argv, timeout, interrupted, session, on_reaped, handed)
-        except StreamLimitExceeded:
+        except (StreamLimitExceeded, NativeSearchIntakeError) as exc:
             kill_process_group(process)
             streamed.close()
             try:
                 process.wait(timeout=KILL_DRAIN_SECONDS)
             except subprocess.TimeoutExpired:
                 pass
+            if isinstance(exc,NativeSearchIntakeError):raise
             LOG.warning('engine output passed the stream bound; process group killed')
             raise ExecutionError(STREAM_TOO_LARGE, failure_class='invalid-output') from None
     finally:
@@ -3343,11 +3369,12 @@ class BoundedExecutionAdapter:
                 if self.runner is subprocess.run:
                     progress = getattr(tools, 'progress', None)
                     observed = getattr(tools, 'connector_observed', None)
+                    native_observed = getattr(tools, 'native_search_observed', None)
                     return bounded_run(self.runner, argv, cwd=run_dir, env=env, timeout=remaining,
                                        interrupted=interrupted, session=session,
                                        on_line=live_progress_reader(engine_id, progress, observed,
-                                                                  getattr(tools, 'connector_input_digest', None))
-                                       if callable(progress) or callable(observed) else None)
+                                                                  getattr(tools, 'connector_input_digest', None),native_observed)
+                                       if callable(progress) or callable(observed) or callable(native_observed) else None)
                 return self.runner(argv, cwd=run_dir, env=env,
                                    **({'input': session.opening()} if session is not None else {'stdin': subprocess.DEVNULL}),
                                    capture_output=True, text=True, timeout=remaining, shell=False)

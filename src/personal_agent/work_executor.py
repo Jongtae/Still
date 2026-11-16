@@ -1173,6 +1173,15 @@ class WorkExecutor:
                 served.cloud_admitted=cloud is not None
                 served.native_search=native_search
                 served.native_search_reason=native_reason or ''
+                # #744: stdout and the tool bridge are independent channels.
+                # Reserve authority before exposing the relay/launching the CLI,
+                # even if this enabled turn never actually searches. Live events
+                # add source details, but cannot close that cross-channel race.
+                if native_search:
+                    service.store.mark_outside_content(job['id'],{'category':'native-search-enabled',
+                                                       'operation':'cli-launch','engine':run.subscription['id']})
+                served.native_search_observed=lambda step,work_id=job['id'],engine=run.subscription['id']:\
+                    service.record_cli_native_intake(work_id,engine,step)
                 # #718: the CLI's own search items update the draft while this attempt runs.
                 served.progress=lambda step,work_id=job['id']:service._observe_cli_step(work_id,step)
                 # #701: the browser tools run here, in this service, for exactly
