@@ -67,6 +67,25 @@ def lexical_context(store, data):
     return retrieve
 
 
+def prefix_lexical(store, data):
+    """Diagnostic request-only arm adopting the product's Hangul expansion.
+
+    Parse the platform helper's quoted expression instead of copying its
+    shortening rule. QuickStore still owns OR search, limits and eligibility.
+    """
+    import re
+    from personal_agent.quickstart_store import fts_prefix_expression
+    from personal_agent.memory_service import MemoryServiceError
+
+    def retrieve(query, context=''):
+        if not isinstance(query, str) or len(query) > 500:
+            raise MemoryServiceError('기억 검색어를 확인하세요.')
+        terms = re.findall(r'"([^\"]+)"\*', fts_prefix_expression(query.casefold()))
+        rows = store.search_memories(data['owner'], terms, limit=11, holding_on=data['today']) if terms else []
+        return [row['id'] for row in rows[:10]]
+    return retrieve
+
+
 def plan_prompt_schema_digest():
     """Bind replays to the exact plan prompt and schema used by this arm."""
     from personal_agent.orchestrator import QUESTION, plan_schema, digest
@@ -201,9 +220,9 @@ def runtime(store, data, *, resolver=None):
     return retrieve
 
 
-ARMS = {'lexical': lexical, 'context': context_aware, 'context-concat': context_concat,
+ARMS = {'lexical': lexical, 'prefix-lexical': prefix_lexical, 'context': context_aware, 'context-concat': context_concat,
         'lexical-context': lexical_context, 'runtime': runtime}
-EVIDENCE = {'lexical': 'fixture (model-free)', 'context': 'fixture (model-free)',
+EVIDENCE = {'lexical': 'fixture (model-free)', 'prefix-lexical': 'fixture (model-free)', 'context': 'fixture (model-free)',
             'context-concat': 'fixture (model-free)', 'lexical-context': 'fixture (model-free)',
             'runtime': 'fixture (model-free)'}
 DETERMINISTIC = frozenset(ARMS)
