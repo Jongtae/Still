@@ -41,7 +41,6 @@ MIGRATED_MODULES = {
         '비밀 입력은 도구 인자나 승인 카드로 전달하지 않습니다. 연결의 비밀 입력 경로를 사용하세요. 이 동작은 실행하지 않았습니다.',  # Model-only tool result or next_step guidance.
         '이 요청의 앞선 동작이 실제로 반영됐는지 아직 확인되지 않았습니다. 결과를 확인하기 전에는 다른 변경이나 반복 실행을 하지 않습니다.',  # Model-only tool result or next_step guidance.
         '실행할 정확한 입력을 확인할 수 없어 실행하지 않았습니다.',  # Model-only tool result or next_step guidance.
-        '이 동작은 이미 실행을 허용한 기록이 있어 다시 실행하지 않았습니다. 기존 결과를 확인하고 남은 일만 진행하세요.',  # Model-only tool result or next_step guidance.
         '실행 내용을 비밀값 없이 온전히 확인할 수 없어 승인을 요청하지 않았습니다.',  # Model-only tool result or next_step guidance.
         '현재 권한이나 기존 실행 기록이 달라져 실행하지 않았습니다. 권한과 기존 결과를 확인하고 남은 일만 진행하세요.',  # Model-only tool result or next_step guidance.
         '이 동작은 정확한 입력에 대한 소유자 승인을 기다립니다. 다른 방법으로 같은 동작을 실행하지 말고, 승인을 받은 뒤 남은 일을 이어가세요.',  # Model-only tool result or next_step guidance.
