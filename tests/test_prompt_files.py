@@ -137,6 +137,22 @@ class ConsolidatedPromptTests(unittest.TestCase):
         self.assertIn('Only when no such assumption fits or the request needs the exact current position', LOCATION_QUESTION)
         self.assertNotIn('a wrong guess would cost the owner', LOCATION_QUESTION)
 
+    def test_ask_rule_scope_reaches_worker_planner_and_judgment_once(self):
+        """#202: the ask rule's request scope is delivered to all three consumers once.
+
+        Text delivery only; whether a conversational follow-up is judged served is measured by
+        the paired check (goal-curiosity and the casual-reply cases).
+        """
+        from personal_agent.agent_runtime import CORE_INSTRUCTIONS
+        from personal_agent.conversation_handoff import GOAL_REACHED_PROPOSITION
+        from personal_agent.orchestrator import LOCATION_QUESTION
+        sentence = 'These rules apply to serving a request, not to conversational follow-up questions.'
+        for text in (CORE_INSTRUCTIONS, LOCATION_QUESTION, GOAL_REACHED_PROPOSITION):
+            with self.subTest(text=text[:40]):
+                self.assertEqual(text.count(sentence), 1)
+        fragment = prompt_files.prompt('ask_or_assume')
+        self.assertLess(fragment.index(sentence), fragment.index('Ask the owner for information before answering'))
+
     def test_wrong_method_rule_reaches_the_self_review(self):
         """#202 Q4-A: delivery of the rule text to the self-review prompt, not model behaviour."""
         review = prompt_files.prompt('owner_model_review')
