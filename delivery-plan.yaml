@@ -1026,7 +1026,7 @@
         "FRONTIER-EVAL-FALLBACK-01": {
           "issue": 902,
           "status": "complete-on-merge",
-          "pull_request": "TBD",
+          "pull_request": "903",
           "decision": "Eval-only typed Judgment AI fallback counts from Still's Work-family records, including owner turns and wait_due preparation Works; sweep/C2 sample and Work totals for every code; only judgment_unavailable and judgment_qualifying join not-ready qualification in the existing representative_judgment_ai comparison gate. Plan and budget fallbacks stay comparable. Fixture evidence only; no runtime changes or live-model authority."
         }
       }

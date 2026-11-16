@@ -767,7 +767,7 @@ def test_frontier_902_records_eval_fallback_scope():
     assert current['history']['documented_completed_iterations'][-1] == name
     activation = items['FRONTIER-01']['completed_substeps'][name]
     assert activation['issue'] == 902 and activation['status'] == 'complete-on-merge'
-    assert activation['pull_request'] == 'TBD'
+    assert activation['pull_request'] == '903'
     assert unit['summary'].endswith('Complete on the merge of its own PR.')
     assert ('#902 (FRONTIER-EVAL-FALLBACK-01) is selected inside #822 by owner direction on 2026-11-15 '
             'and is complete on the merge of its own PR.') in current['next_goal']['action']
