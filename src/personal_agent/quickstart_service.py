@@ -930,6 +930,20 @@ class AgentService:
         """#619: a Work no owner is present for: a scheduled preparation run (or its continuation)."""
         return prep.preparation_of((job or {}).get('request_key')) is not None
 
+    def work_reply_delivery(self, job):
+        """#898: use the preparation's existing delivery routing facts for judgment.
+
+        When-needed and held scheduled runs are presented after the Work. A
+        held run the owner requested now follows the ordinary reply path,
+        including its continuations, as its owner-requested receipt records.
+        """
+        preparation_id=prep.preparation_of((job or {}).get('request_key'))
+        row=self.preparations.get(preparation_id) if preparation_id else None
+        if not row or self.preparations_service.owner_requested_held_run(job):return 'to_owner'
+        return ('decided_after_judgment' if (row.get('delivery_mode')==prep.DELIVERY_WHEN_NEEDED
+                                           or self.preparations_service.held_row(row))
+                else 'to_owner')
+
     def self_set_run(self, job):
         """Self-set scheduled run, or one whose preparation provenance is unavailable (#717)."""
         preparation_id=prep.preparation_of((job or {}).get('request_key'))
@@ -5560,7 +5574,8 @@ class AgentService:
         return observations, failed_steps, effects, summary
 
     def evaluate_cli_attempt(self, orchestration, answer, observations, failed_steps, *,
-                             owner_needed=False, effect=False, unknown=False, outcome=None, effects=()):
+                             owner_needed=False, effect=False, unknown=False, outcome=None, effects=(),
+                             reply_source='worker', reply_delivery='to_owner'):
         """Use the same reserved/final judgment rules for owner and peer CLI Work."""
         if owner_needed:
             evaluation=OWNER_NEEDED
@@ -5575,16 +5590,18 @@ class AgentService:
             budget=orchestration.budget
             try:time_left=budget.remaining() if budget is not None else FINAL_JUDGMENT_SECONDS
             except Exception:time_left=0
-            evaluation=(orchestration.evaluate_answer(answer,observations,failed_steps,final=True,effects=effects)
+            evaluation=(orchestration.evaluate_answer(answer,observations,failed_steps,final=True,effects=effects,
+                            reply_source=reply_source,reply_delivery=reply_delivery)
                         if not unknown and orchestration.may_judge()
                         and (effect or ws.has_incomplete_result(outcome) or time_left>=FINAL_JUDGMENT_SECONDS)
                         else NOT_JUDGED)
         else:
-            evaluation=orchestration.evaluate_answer(answer,observations,failed_steps,effects=effects)
+            evaluation=orchestration.evaluate_answer(answer,observations,failed_steps,effects=effects,
+                reply_source=reply_source,reply_delivery=reply_delivery)
         return evaluation
 
     def orchestration_step(self, orchestration, attempt, job_id, since, *, result=None, answer='', outcome=None,
-                           owner_needed=False, failed=None, unmediated=False, engine_meta=None, pages=()):
+                           owner_needed=False, failed=None, unmediated=False, engine_meta=None, pages=(), reply_source='worker'):
         """Evaluate one attempt and return the next one, or None (#710).
 
         Direct route: the run's own #657 completion judgment, no new call.
@@ -5610,6 +5627,8 @@ class AgentService:
         can be checked against what the page showed.
         """
         if orchestration is None or attempt is None or not orchestration.orchestrated:return None
+        reply_delivery=self.work_reply_delivery(self.store.job(job_id))
+        if result is not None:reply_source=getattr(result,'reply_source','worker')
         # #428: a correction the owner sent while this attempt ran reaches the judgment and any re-plan,
         # not only the running worker; a steer still being judged is waited for (bounded) first.
         corrected=getattr(orchestration,'owner_corrected',None)
@@ -5649,19 +5668,22 @@ class AgentService:
             asked=bool((getattr(result,'report',None) or {}).get('question')) and evaluation!=OWNER_NEEDED
             if (evaluation==REACHED or asked) and getattr(result,'judgment',None) is None and not effect \
                     and orchestration.budget_allows(reserve=True):
-                judged=orchestration.evaluate_answer(answer,observations,failed_steps,effects=effects)
+                judged=orchestration.evaluate_answer(answer,observations,failed_steps,effects=effects,
+                    reply_source=reply_source,reply_delivery=reply_delivery)
                 if evaluation==REACHED:
                     if judged==NOT_REACHED:evaluation=NOT_REACHED
                 else:evaluation=judged
         else:
             evaluation=self.evaluate_cli_attempt(orchestration,answer,observations,failed_steps,
-                owner_needed=owner_needed,effect=effect,unknown=unknown,outcome=outcome,effects=effects)
+                owner_needed=owner_needed,effect=effect,unknown=unknown,outcome=outcome,effects=effects,
+                reply_source=reply_source,reply_delivery=reply_delivery)
         # #618 E2: an attempt that stops for a recorded owner prerequisite is still judged once (the
         # one outcome judgment always runs); the judgment is recorded, the stop stays the owner's.
         judged=None
         if (evaluation==OWNER_NEEDED and not unknown and orchestration.may_judge()
                 and (result is None or getattr(result,'judgment',None) is None)):
-            judged=orchestration.evaluate_answer(answer,observations,failed_steps,final=True,effects=effects)
+            judged=orchestration.evaluate_answer(answer,observations,failed_steps,final=True,effects=effects,
+                reply_source=reply_source,reply_delivery=reply_delivery)
         return orchestration.next(attempt,evaluation,answer=str(answer or '')[:600],failed=summary,effect=effect,judged=judged)
 
     def cancel_superseded_work(self, work_ids, notify=True):

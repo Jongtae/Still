@@ -38,6 +38,7 @@ class WorkRun:
         self.job = job
         self.claimed_at = claimed_at
         self.response = ''
+        self.reply_source = 'worker'  # #898: set where Still composes a receipt, never from its text.
         self.system_response = False  # Explicit Still-authored projection, never inferred from wording.
         self.provider = 'builtin'
         self.model = 'notes'

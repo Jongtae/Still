@@ -1128,14 +1128,15 @@ class ConversationJudgments:
 
     def goal_reached(self, request, observations, failed_steps='', work_id=None, answer='', conversation='',
                      owner_context='', continues='', attachments='', awaiting_owner='', conversation_messages=None,
-                     recorded_effects=(), may_rejudge=None):
+                     recorded_effects=(), may_rejudge=None, reply_source='worker', reply_delivery='to_owner'):
         """Did the reply serve the owner's ``request`` (#657, #820)?  The one outcome judgment.
 
         One ``judge`` call over the owner's message (never cut), the recent
-        conversation, the worker's reply (model-stated, not evidence), the
+        conversation, the reply and its typed source/delivery facts, the
         tool results Still recorded and the run's failed steps.  Only a
         confident yes lets the Work succeed; no or unavailable leaves it
-        short of succeeded, and the reply is delivered either way.  The
+        short of succeeded. Delivery follows the Work context: an owner-turn reply
+        goes to the owner; a held preparation is decided after this judgment. The
         caller bounds and redacts the other facts.  #1451: a no carries its
         gap (``Judgment.value``): what the reply left unserved, in owner words.
         #1517: ``attachments`` is what the message carried besides its words ('1 photo'), which
@@ -1157,6 +1158,7 @@ class ConversationJudgments:
                  'owner_context': owner_context or 'none',
                  'attachments': attachments or 'none',
                  'reply': answer or 'none (only the observations are known)',
+                 'reply_source': reply_source, 'reply_delivery': reply_delivery,
                  'observations': observations, 'failed_steps': failed_steps or 'none',
                  'awaiting_owner': str(awaiting_owner or '') or 'none',
                  'recorded_effects': recorded_effects_text(recorded_effects) or 'none'}
