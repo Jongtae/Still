@@ -8,7 +8,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'evals'))
-from agentos_eval import judgments, selection
+from agentos_eval import judgments, scenarios, selection
 
 
 @pytest.fixture(scope='module')
@@ -126,6 +126,46 @@ def test_shared_prompt_selects_every_consumer(entries):
     selected = {(r['set'], r['id']) for r in result['selected']}
     assert {(e['set'], e['id']) for e in entries if e['set'] == 'scenarios' or
             e['role'] in ('goal_reached', 'orchestration_plan', 'orchestration_escalation')} == selected
+
+
+@pytest.mark.parametrize('path', sorted((ROOT / 'src/personal_agent/prompts').glob('*.md')),
+                         ids=lambda path: path.stem)
+def test_every_prompt_file_selects_cases_by_path(path):
+    result = selection.select({'paths': [path.relative_to(ROOT).as_posix()]})
+    assert result['selected'], path.name
+    assert not result['unmatched']
+
+
+@pytest.mark.parametrize('role', ['answers_open_question', 'followup_relation', 'owner_act_answer',
+                                 'parked_work_withdrawn', 'steers_running_work'])
+def test_extracted_role_prompt_path_selects_its_judgments(role, entries):
+    result = selection.select({'paths': [f'src/personal_agent/prompts/{role}.md']})
+    assert {r['id'] for r in result['selected'] if r['set'] == 'judgments'} == {
+        e['id'] for e in entries if e['role'] == role}
+
+
+@pytest.mark.parametrize('path', ['skills/map-directions/SKILL.md',
+                                 'skills/new-bundled-skill/SKILL.md',
+                                 'src/personal_agent/bundled_skills/new-bundled-skill/SKILL.md'])
+def test_bundled_skills_select_worker_scenarios_and_goal_judgments(path, entries):
+    result = selection.select({'paths': [path]})
+    selected = {(r['set'], r['id']) for r in result['selected']}
+    travel = scenarios.load_file(ROOT / 'evals/scenarios/travel.json')
+    assert travel
+    assert {('scenarios', case['id']) for case in travel} <= selected
+    # Match the worker-instructions rule's whole scenario set and outcome roles.
+    assert {(e['set'], e['id']) for e in entries if e['set'] == 'scenarios' or
+            e['role'] in ('goal_reached', 'orchestration_escalation')} == selected
+    assert not result['unmatched']
+
+
+@pytest.mark.parametrize('path', ['docs/current-context-contract.en.md',
+                                 'docs/professional-roles-and-communication-contract.en.md'])
+def test_restated_contracts_select_outcome_and_planner_judgments(path, entries):
+    result = selection.select({'paths': [path]})
+    assert {r['id'] for r in result['selected']} == {
+        e['id'] for e in entries if e['role'] in ('goal_reached', 'orchestration_plan')}
+    assert not result['unmatched']
 
 
 def test_judgment_inventory_uses_declared_sets_and_splits(entries):
