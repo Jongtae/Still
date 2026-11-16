@@ -436,6 +436,49 @@ class EngineFailureDiagnosticsTests(unittest.TestCase):
 
 
 class ReportedUsageTests(unittest.TestCase):
+    def test_large_bridge_result_is_counted_without_a_host_action(self):
+        payload = 'fictional reservation details ' * 4000
+        item = {'id': 'settings-call', 'type': 'mcp_tool_call', 'server': 'agentos',
+                'tool': 'settings_read', 'arguments': {'category': 'preparations'},
+                'status': 'completed', 'result': {'content': [{'type': 'text', 'text': payload}]}}
+        line = json.dumps({'type': 'item.completed', 'item': item})
+        self.assertGreater(len(line.encode()), bounded_execution.MAX_OUTPUT_BYTES)
+        raw = '\n'.join([json.dumps({'type': 'item.started', 'item': {
+            key: value for key, value in item.items() if key not in ('status', 'result')}}),
+            line, json.dumps({'type': 'turn.completed'})])
+
+        meta = bounded_execution.cli_metadata('codex', raw)
+
+        self.assertNotIn('tool_calls_partial', meta)
+        self.assertEqual(meta['bridge_calls'], 1)
+        self.assertEqual(meta['tool_calls'], [])
+        self.assertEqual(AgentService.cli_host_actions(meta), ())
+        self.assertNotIn(payload, json.dumps(meta))
+        self.assertLess(len(json.dumps(meta).encode()), 1000)
+
+    def test_invalid_json_still_makes_cli_summary_partial(self):
+        for line in ('{not json', '{"result": ' + 'x' * bounded_execution.MAX_OUTPUT_BYTES + '}'):
+            with self.subTest(size=len(line)):
+                meta = bounded_execution.cli_metadata('codex', line + '\n' + json.dumps({'type': 'turn.completed'}))
+                self.assertTrue(meta['tool_calls_partial'])
+                self.assertIsNone(AgentService.cli_host_actions(meta))
+
+    def test_large_command_result_still_reports_the_cli_action(self):
+        payload = 'fictional command output ' * 4000
+        line = json.dumps({'type': 'item.completed', 'item': {
+            'id': 'command-call', 'type': 'command_execution', 'status': 'completed',
+            'command': 'fixture-command', 'aggregated_output': payload}})
+        self.assertGreater(len(line.encode()), bounded_execution.MAX_OUTPUT_BYTES)
+
+        meta = bounded_execution.cli_metadata('codex', line + '\n' + json.dumps({'type': 'turn.completed'}))
+
+        self.assertNotIn('tool_calls_partial', meta)
+        self.assertEqual(meta['tool_calls'], [
+            {'type': 'command_execution', 'name': 'command_execution', 'status': 'completed'}])
+        self.assertEqual(AgentService.cli_host_actions(meta), ('command_execution',))
+        self.assertNotIn(payload, json.dumps(meta))
+        self.assertLess(len(json.dumps(meta).encode()), 1000)
+
     def test_numeric_boundary_and_bounds(self):
         meta = {'usage': {'input_tokens': 0, 'bad-key': 99, 'secret': 'sk-fixture-secret',
                           'boolean': True, 'nested': {'tokens': 1}, 'infinite': float('inf'),

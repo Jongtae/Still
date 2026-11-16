@@ -590,9 +590,11 @@ class SettingsOrchestrator:
         from .current_context import redact_known_secrets
         states = {prep.STATE_PROPOSED: msg('settings_orchestrator.awaiting_acceptance'), prep.STATE_SCHEDULED: msg('settings_orchestrator.scheduled'), prep.STATE_RUNNING: msg('settings_orchestrator.running'), prep.STATE_PAUSED: msg('settings_orchestrator.paused'), prep.STATE_CANCELLED: msg('state.cancelled')}
         rows = [row for row in self.service.preparations.rows() if row.get("state") in states or prep.Preparations.self_undoable(row, "edit")]
-        labels = {row["id"]: f"{redact_known_secrets(self.store, prep.proposal_summary(row))} ({states.get(row['state'], row['state'])})"
+        labels = {row["id"]: f"{redact_known_secrets(self.store, ' · '.join((prep.owner_title(row), prep.schedule_text(row))))} ({states.get(row['state'], row['state'])})"
                   for row in rows}
-        listed = "\n".join(labels.values()) or msg('label.none')
+        # #904: the complete reservation list belongs only on cancel, not every operation/option.
+        listed = "\n".join(f"{redact_known_secrets(self.store, prep.proposal_summary(row))} ({states.get(row['state'], row['state'])})"
+                           for row in rows) or msg('label.none')
         proposed = [row["id"] for row in rows if row["state"] == prep.STATE_PROPOSED]
         result = {"cancel": self._row("cancel", "", listed, self._options(tuple(row["id"] for row in rows if row["state"] in prep.ACTIVE_STATES), labels), format=msg('settings_orchestrator.cancel_reservation_format')),
                 "accept": self._row("accept", "", ", ".join(labels[item] for item in proposed) or msg('label.none'),
@@ -604,7 +606,7 @@ class SettingsOrchestrator:
                         or operation == 'restore' and any(prep.Preparations.self_undoable(item, change)
                                                          for change in ('edit', 'pause', 'cancel'))
                         or operation == 'resume' and prep.Preparations.self_undoable(item, 'pause'))
-            result[operation] = self._row(operation, "", listed, self._options(ids, labels),
+            result[operation] = self._row(operation, "", ", ".join(labels[item] for item in ids) or msg('label.none'), self._options(ids, labels),
                                           format=msg('settings_orchestrator.preparation_edit_format') if operation == 'edit' else None)
         return result
 

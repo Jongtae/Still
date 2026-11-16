@@ -20,6 +20,8 @@ from personal_agent.capabilities import CapabilityRegistry
 from personal_agent.connector_contract import ConnectorRegistry, ConnectorState
 from personal_agent.gmail import GMAIL_CONNECTOR
 from personal_agent.portable_state import export_owner_state, restore_owner_state
+from personal_agent import preparations as prep
+from personal_agent.messages import msg
 from personal_agent.quickstart_service import AgentService
 from personal_agent.quickstart_store import QuickStore
 from personal_agent.settings_orchestrator import RETIRED_CONTROL_MESSAGE, SettingsError, SettingsOrchestrator
@@ -124,6 +126,51 @@ class ServiceSettingsProjectionTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(); self.store = QuickStore(self.temp.name)
 
     def tearDown(self): self.temp.cleanup()
+
+    def test_many_preparations_keep_full_details_once_and_option_ids(self):
+        service = AgentService(self.store)
+        service.preparations.clock = lambda: 1000
+        anchor = self.store.enqueue('Fictional reservation request', 'reservation-fixture')
+        states = ('proposed', 'scheduled', 'paused', 'cancelled', 'running')
+        fixtures = []
+        for index in range(34):
+            state = states[index % len(states)]
+            row = service.preparations.create(
+                kind='prepare', goal=f'Fictional brief {index}: ' + 'Review imaginary notes. ' * 20,
+                title=f'가상 준비 {index}', offer=f'가상 자료 {index}의 변화를 확인합니다.',
+                due_at=2000 + index * 60, timezone='Asia/Seoul', recurrence='daily',
+                channel='web', created_from=anchor, state='proposed')
+            with self.store.db() as db:
+                db.execute('UPDATE preparations SET state=? WHERE id=?', (state, row['id']))
+            fixtures.append({**row, 'state': state})
+        # Match the public list order: active states first, then the due time.
+        order = {'proposed': 0, 'running': 1, 'scheduled': 2, 'paused': 3}
+        fixtures.sort(key=lambda row: (order.get(row['state'], 4), row['due_at']))
+        eligible = {'cancel': ('proposed', 'scheduled', 'running', 'paused'), 'accept': ('proposed',),
+                    'pause': ('scheduled',), 'resume': ('paused',), 'restore': ('cancelled',),
+                    'run_now': ('scheduled', 'paused'), 'edit': ('proposed', 'scheduled', 'paused')}
+
+        snapshot = service.settings_orchestrator.read('local-owner', 'preparations')
+
+        operations = snapshot['settings']['preparations']
+        # #904: the full reservation text appears once, not in every operation and option.
+        self.assertLess(len(json.dumps(operations, ensure_ascii=False).encode()), 60_000)
+        self.assertEqual(set(operations), set(eligible))
+        for operation, allowed in eligible.items():
+            options = operations[operation]['options']
+            self.assertEqual([option['value'] for option in options],
+                             [row['id'] for row in fixtures if row['state'] in allowed])
+            for option in options:
+                row = next(row for row in fixtures if row['id'] == option['value'])
+                self.assertIn(row['title_text'], option['label'])
+                self.assertIn(prep.schedule_text(row), option['label'])
+                self.assertNotIn(row['goal_text'], option['label'])
+                self.assertNotIn(row['offer_text'], option['label'])
+            if operation != 'cancel':
+                self.assertEqual(operations[operation]['value_label'],
+                                 ', '.join(option['label'] for option in options) or msg('label.none'))
+        for row in fixtures:
+            self.assertEqual(operations['cancel']['value_label'].count(prep.proposal_summary(row)), 1)
 
 
     def connected_gmail_service(self, current):
