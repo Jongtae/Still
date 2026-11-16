@@ -584,17 +584,25 @@ class SettingsOrchestrator:
         return {"send": self._row("send", "", "", self._options(tuple(kinds), kinds),
                                   note=msg('settings_orchestrator.phone_link_note'))}
 
+    def _preparation_states(self):
+        from . import preparations as prep
+        return {prep.STATE_PROPOSED: msg('settings_orchestrator.awaiting_acceptance'), prep.STATE_SCHEDULED: msg('settings_orchestrator.scheduled'), prep.STATE_RUNNING: msg('settings_orchestrator.running'), prep.STATE_PAUSED: msg('settings_orchestrator.paused'), prep.STATE_CANCELLED: msg('state.cancelled')}
+
+    def _preparation_label(self, row, full=True):
+        """One reservation as the owner reads it: the full summary, or (#904) its title and schedule."""
+        from . import preparations as prep
+        from .current_context import redact_known_secrets
+        text = prep.proposal_summary(row) if full else ' · '.join((prep.owner_title(row), prep.schedule_text(row)))
+        return f"{redact_known_secrets(self.store, text)} ({self._preparation_states().get(row['state'], row['state'])})"
+
     def _preparations(self):
         """Active reservations and owner schedule operations (#1455, #575)."""
         from . import preparations as prep
-        from .current_context import redact_known_secrets
-        states = {prep.STATE_PROPOSED: msg('settings_orchestrator.awaiting_acceptance'), prep.STATE_SCHEDULED: msg('settings_orchestrator.scheduled'), prep.STATE_RUNNING: msg('settings_orchestrator.running'), prep.STATE_PAUSED: msg('settings_orchestrator.paused'), prep.STATE_CANCELLED: msg('state.cancelled')}
+        states = self._preparation_states()
         rows = [row for row in self.service.preparations.rows() if row.get("state") in states or prep.Preparations.self_undoable(row, "edit")]
-        labels = {row["id"]: f"{redact_known_secrets(self.store, ' · '.join((prep.owner_title(row), prep.schedule_text(row))))} ({states.get(row['state'], row['state'])})"
-                  for row in rows}
+        labels = {row["id"]: self._preparation_label(row, full=False) for row in rows}
         # #904: the complete reservation list belongs only on cancel, not every operation/option.
-        listed = "\n".join(f"{redact_known_secrets(self.store, prep.proposal_summary(row))} ({states.get(row['state'], row['state'])})"
-                           for row in rows) or msg('label.none')
+        listed = "\n".join(self._preparation_label(row) for row in rows) or msg('label.none')
         proposed = [row["id"] for row in rows if row["state"] == prep.STATE_PROPOSED]
         result = {"cancel": self._row("cancel", "", listed, self._options(tuple(row["id"] for row in rows if row["state"] in prep.ACTIVE_STATES), labels), format=msg('settings_orchestrator.cancel_reservation_format')),
                 "accept": self._row("accept", "", ", ".join(labels[item] for item in proposed) or msg('label.none'),
@@ -990,6 +998,9 @@ class SettingsOrchestrator:
             from . import preparations as prep
             from .current_context import redact_known_secrets
             current = self.service.preparations.get(value)
+            # #904: the draft the owner confirms names the reservation in full, not its short option label.
+            if current and value in options:
+                return self._preparation_label(current)
             return options.get(value) or (redact_known_secrets(self.store, prep.owner_title(current))
                                           if current else msg('settings_orchestrator.value_not_set'))
         if category == 'scheduled_work':
