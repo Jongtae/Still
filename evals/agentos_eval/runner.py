@@ -26,6 +26,12 @@ USAGE_LIMIT = 'usage-limit'
 # of the Still package at import time.
 TERMINAL = frozenset(('succeeded', 'failed', 'partial', 'cancelled', 'interrupted', 'unknown', 'blocked'))
 
+# Mirror of personal_agent.orchestrator.FALLBACK_UNAVAILABLE/FALLBACK_QUALIFYING,
+# pinned by test_judgment_infra_fallback_codes_mirror_matches_runtime. Only these
+# codes mean the Judgment AI could not take part; other fallbacks are measured
+# system behaviour. Keep imports independent of the Still package.
+JUDGMENT_INFRA_FALLBACK_CODES = frozenset(('judgment_unavailable', 'judgment_qualifying'))
+
 
 class StopOnUsageLimit:
     """Inspect ``EarlyStopping`` manager: once a turn hits a subscription usage limit, start no more samples.
@@ -599,6 +605,7 @@ def run_scenario(scenario, worker, pool, client_factory=AgentOSClient, turn_time
             ids = {t['task_id'] for t in record['turns'] if t.get('task_id')}
             ids.update(r['work_id'] for r in record['due_observations'] if (r.get('admission') or r.get('reminder_origin')) and r.get('work_id'))
             record['work'] = work_measurements(box.data, sorted(ids))
+            record.update(judgment_fallback_counts(record['work']))
             # #832: upkeep proposes Memory asynchronously after a Work (#805); let it settle first.
             record['upkeep'] = client.wait_upkeep_idle(upkeep_timeout, poll_interval)
             record['diff'] = state_diff(before, client.snapshot())
@@ -839,7 +846,7 @@ def work_measurements(data, task_ids):
                 if ancestor is None or family is None:
                     continue
                 marks = ','.join('?' * len(family))
-                rows = db.execute(f'SELECT tool,status,created,detail FROM tool_events WHERE job_id IN ({marks}) ORDER BY id',
+                rows = db.execute(f'SELECT job_id,tool,status,created,detail FROM tool_events WHERE job_id IN ({marks}) ORDER BY id',
                                   family).fetchall()
                 tools, engines = [], []
                 for row in rows:
@@ -851,6 +858,9 @@ def work_measurements(data, task_ids):
                         continue
                     if not isinstance(detail, dict):
                         continue
+                    if row['tool'] == 'orchestrator' and isinstance(detail.get('code'), str):
+                        tool['code'] = detail['code']
+                        tool['job_id'] = row['job_id']
                     for key in ('call_id', 'host_action', 'scope'):
                         if isinstance(detail.get(key), str):
                             tool[key] = detail[key]
@@ -885,6 +895,27 @@ def work_measurements(data, task_ids):
     finally:
         db.close()
     return result
+
+
+def judgment_fallback_counts(work):
+    """Distinct Works per fallback code, from uncapped Work-family records only.
+
+    A family may be observed through several owner turns or due receipts. Count
+    its job ids once, including repeated fallback events on the same Work. No
+    code allowlist: every orchestrator fallback bypassed the normal plan path.
+    Missing historical observations supply no counts, never inferred from text.
+    """
+    if not work:
+        return {}
+    by_code = {}
+    for measurement in work.values():
+        for event in measurement.get('tools') or []:
+            if (event.get('tool') == 'orchestrator' and event.get('status') == 'fallback'
+                    and isinstance(event.get('code'), str) and event['code']
+                    and event.get('job_id')):
+                by_code.setdefault(event['code'], set()).add(event['job_id'])
+    return {'judgment_fallbacks': {code: len(ids) for code, ids in sorted(by_code.items())},
+            'judgment_fallback_work_count': len(set().union(*by_code.values()))}
 
 
 def _measurement_number(value):

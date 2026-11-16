@@ -1032,6 +1032,100 @@ def test_compare_cli_allow_partial_and_clean_comparison(rubric, tmp_path):
     assert 'PARTIAL' in output.getvalue()
 
 
+def test_c2_counts_midrun_fallbacks_separately_from_qualification(rubric):
+    result = judgment_ai_failure_report(rubric)
+    records = copy.deepcopy(result['samples'])
+    for i in (0, 3):
+        records[i]['judgment_fallbacks'] = {'judgment_unavailable': 2, 'plan_invalid': 1}
+        records[i]['judgment_fallback_work_count'] = 3
+    result = c.build_report(records, result['live_evidence'], result['fixture_support'])
+    state = result['live_evidence']['judgment_ai']
+    assert state['not_ready'] == 3
+    assert state['affected_samples'] == 4  # one sample is in both groups
+    assert state['fallbacks'] == {'samples': 2, 'works': 6, 'by_code': {
+        'judgment_unavailable': {'samples': 2, 'works': 4}, 'plan_invalid': {'samples': 2, 'works': 2}}}
+    assert state['unscored_measures'] == 3
+    assert result['samples'][3]['judgment_fallbacks'] == records[3]['judgment_fallbacks']
+    assert result['uncertainty']['judgment_ai'] == state
+    assert 'mid-run infrastructure fallbacks in 2 samples' in state['warning']
+    for code in ('judgment_unavailable', 'judgment_qualifying', 'plan_malformed',
+                 'plan_unconfident', 'plan_invalid', 'budget_short'):
+        assert code in state['warning']
+    md = c.render_markdown(result)
+    for code, works in [('judgment_unavailable', 4), ('plan_invalid', 2)]:
+        assert f'{code}: 2 samples, {works} Works' in md
+
+
+@pytest.mark.parametrize('arm', ['baseline', 'candidate'])
+@pytest.mark.parametrize('code', ['judgment_unavailable', 'judgment_qualifying'])
+def test_compare_midrun_fallback_is_partial_even_with_judged_measures(rubric, arm, code):
+    baseline = make_report(rubric)
+    candidate = make_report(rubric, ident='after', head='def', dev=(1, 1, 1), held=(1, 1, 1))
+    assert c.compare(baseline, candidate)['verdict'] == 'better'
+    row = (baseline if arm == 'baseline' else candidate)['samples'][0]
+    row['judgment_fallbacks'] = {code: 1}
+    row['judgment_fallback_work_count'] = 1
+    row['judgment_ai'] = {'ready': True}
+    with pytest.raises(ValueError, match='infra:judgment_ai.*--allow-partial'):
+        c.compare(baseline, candidate)
+    result = c.compare(baseline, candidate, allow_partial=True)
+    assert result['partial'] and result['verdict'] == 'not better'
+    assert result['failed_conditions'] == ['representative_judgment_ai']
+    assert result['judgment_ai'][arm]['affected_samples'] == 1
+    other = 'candidate' if arm == 'baseline' else 'baseline'
+    assert result['judgment_ai'][other]['affected_samples'] == 0
+    assert result['judgment_ai'][arm]['not_ready'] == 0
+    assert result['judgment_ai'][arm]['unscored_measures'] == 0
+    assert 'PARTIAL' in c.compare_markdown(result)
+    row.pop('judgment_fallbacks')
+    row.pop('judgment_fallback_work_count')
+    clean = c.compare(baseline, candidate)
+    assert not clean['partial'] and clean['verdict'] == 'better'
+
+
+@pytest.mark.parametrize('code', ['plan_unconfident', 'plan_malformed', 'plan_invalid', 'budget_short'])
+def test_behavior_fallbacks_are_counted_and_remain_comparable(rubric, code):
+    from agentos_eval import report as sweep
+    baseline = make_report(rubric)
+    for count, verdict in ((1, 'better'), (3, 'not better')):
+        candidate = make_report(rubric, ident='after', head='def', dev=(count,) * 3, held=(count,) * 3)
+        records = copy.deepcopy(candidate['samples'])
+        records[0]['judgment_fallbacks'] = {code: 2}
+        records[0]['judgment_fallback_work_count'] = 2
+        candidate = c.build_report(records, candidate['live_evidence'], candidate['fixture_support'])
+        state = c.judgment_ai_status(candidate['samples'])
+        expected = {'samples': 1, 'works': 2, 'by_code': {code: {'samples': 1, 'works': 2}}}
+        assert state['fallbacks'] == expected
+        assert state['affected_samples'] == 0 and state['warning'] is None
+        # C2 JSON cleans Inspect's unscored NaNs to null; sweep consumes raw scores.
+        sweep_records = [{**r, 'value': {k: math.nan if v is None else v for k, v in r['value'].items()}}
+                         for r in records]
+        sweep_report = sweep.aggregate(sweep_records)
+        assert sweep_report['totals']['judgment_fallbacks'] == expected
+        assert f'{code}: 1 samples, 2 Works' in c.render_markdown(candidate)
+        assert f'{code}: 1 samples, 2 Works' in sweep.render_markdown(sweep_report)
+        result = c.compare(baseline, candidate)
+        assert not result['partial'] and result['verdict'] == verdict
+        assert 'representative_judgment_ai' not in result['failed_conditions']
+        if count == 3:
+            assert 'no_heldout_regression' in result['failed_conditions']
+
+
+def test_compare_old_shape_has_unknown_fallbacks_and_no_affected_samples(rubric):
+    baseline = make_report(rubric)
+    candidate = make_report(rubric, ident='after', head='def', dev=(1, 1, 1), held=(1, 1, 1))
+    for report in (baseline, candidate):
+        report['live_evidence'].pop('judgment_ai', None)
+        for row in report['samples']:
+            for field in ('judgment_ai', 'judgment_fallbacks', 'judgment_fallback_work_count'):
+                row.pop(field, None)
+    result = c.compare(baseline, candidate)
+    assert not result['partial'] and result['verdict'] == 'better'
+    for state in result['judgment_ai'].values():
+        assert state['affected_samples'] == 0 and state['not_ready'] == 0
+        assert state['fallbacks'] == {'samples': 0, 'works': 0, 'by_code': {}}
+
+
 @pytest.mark.parametrize('grade', [0, 1, 2, None])
 def test_due_grade_provenance_two_calls_and_wait_ask_attribution(tmp_path, grade):
     from test_eval_come_due import Trace, SPEC, SOURCE
