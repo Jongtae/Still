@@ -506,8 +506,11 @@
         "conversation": ""
       },
       "expect": {
-        "outcome": "yes"
-      }
+        "outcome": "no"
+      },
+      "targets": [
+        "#202"
+      ]
     },
     {
       "id": "heldout-goal-unsupported-figure",

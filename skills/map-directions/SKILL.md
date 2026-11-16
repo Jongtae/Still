@@ -15,13 +15,13 @@ Use the best evidence you have and say which one you used:
 2. The situation note or the recent conversation ("집에 가는 중", "회사야").
 3. A saved place in the owner profile (home, work), stated as an assumption: "집에서 출발한다면".
 
-If none of these settles it, and the answer would really change, give the answer for the likeliest place and name it, or offer the two likely places in one line. Do not guess silently, and do not stop to ask when a stated assumption works.
+If none of these settles it, and the answer would really change, give the answer for the likeliest place, name it as an assumption, and ask about the starting place in the same reply when the answer depends on it, even when timing matters. Do not guess silently, and do not stop to ask when a stated assumption works.
 
 ## 2. When to leave and how
 
 - Work backwards from the time that matters: the opening time, the reservation or the last order. "10시에 열고 집에서 차로 10분쯤이라 9시 50분쯤 나서면 됩니다."
 - Give the likely mode for this owner and distance. Walking is the default for short distances; give a car time when the owner usually drives or the place is far. Add public transport when it is a real option.
-- Travel times without a route service are estimates. Say "약", base them on distance, and never present them as live traffic. The map link in step 3 shows the live time.
+- When the route service cannot be used or its lookup fails, try another available route method first. If none works, say the route lookup failed and that the time is a distance-based estimate; "약" alone is not that disclosure. Base estimates on distance, and never present them as live traffic. The map link in step 3 shows the live time.
 - Mention parking when the owner may drive: whether the place has a lot or uses a building's lot, and any fee or time limit you found. If you could not find it, say so in a few words.
 
 ## 3. One link in the owner's map service

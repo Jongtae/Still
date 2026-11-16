@@ -32,8 +32,8 @@ INPUTS = {
     'connector_effect': ({'tool_name', 'argument_names', 'owner_request'}, set()),
     'status_projection': ({'facts'}, set()),
     'owner_act_answer': ({'act', 'items'}, {'target'}),
-    'goal_reached': ({'request', 'observations', 'answer'}, {'failed_steps', 'conversation'}),
-    'orchestration_plan': ({'request'}, {'conversation'}),
+    'goal_reached': ({'request', 'observations', 'answer'}, {'failed_steps', 'conversation', 'owner_context'}),
+    'orchestration_plan': ({'request'}, {'conversation', 'owner_context'}),
     'orchestration_escalation': ({'request', 'answer', 'observations', 'failed'}, {'conversation'}),
 }
 _STILL = None
@@ -94,7 +94,7 @@ def load_cases(path=DEFAULT_CASES):
             _keys(case['input'], *INPUTS[role])
             _validate_input(role, case['input'])
             expected = case['expect']
-            allowed = (set(FLAGS) | {'fallback', 'tier'} if role == 'orchestration_plan' else
+            allowed = (set(FLAGS) | {'fallback', 'tier', 'ask_location'} if role == 'orchestration_plan' else
                        {'evaluation', 'redelegate', 'escalated'} if role == 'orchestration_escalation' else
                        {'item', 'answer'} if role == 'owner_act_answer' else
                        {'value', 'abstain'} if role in ('connector_effect', 'status_projection') else
@@ -111,6 +111,8 @@ def load_cases(path=DEFAULT_CASES):
                 raise CaseError('Invalid outcome')
             if 'tier' in expected and expected['tier'] not in ('lowest', 'higher', 'any'):
                 raise CaseError('Invalid tier')
+            if 'ask_location' in expected and expected['ask_location'] not in ('empty', 'nonempty'):
+                raise CaseError('Invalid ask_location')
             if expected.get('abstain') is not None and expected != {'abstain': True}:
                 raise CaseError('Abstention must be the only expectation')
             if role == 'connector_effect' and 'value' in expected and expected['value'] not in ('read', 'mutate', 'payment'):
@@ -232,10 +234,20 @@ def _call(case, cases, judgments, engine, policy, keep_text):
         return {'passed': bool(passed), 'outcome': outcome}
     if role.startswith('orchestration_'):
         catalogue = s.orchestrator.Catalogue(**cases['catalogue'])
+        # Adapt the shipped profile section and location-capable first plan.
+        # Cases without these optional fields retain their original inputs/schema.
+        plan_inputs = {}
+        if role == 'orchestration_plan':
+            if 'owner_context' in inputs:
+                plan_inputs['sections'] = {'profile': inputs['owner_context']}
+            if 'ask_location' in case['expect']:
+                plan_inputs['can_ask_location'] = True
         orch = s.orchestrator.Orchestration(judgments, catalogue, request=inputs['request'],
-                                           conversation=inputs.get('conversation', ''), policy=policy)
+                                           conversation=inputs.get('conversation', ''), policy=policy, **plan_inputs)
         attempt = orch.first()
         observed = _attempt(attempt, catalogue)
+        if 'ask_location' in case['expect']:
+            observed['ask_location'] = 'nonempty' if attempt.ask_location.strip() else 'empty'
         if role == 'orchestration_escalation':
             evaluation = orch.evaluate_answer(inputs['answer'], inputs['observations'], inputs['failed'])
             following = orch.next(attempt, evaluation)
@@ -266,6 +278,8 @@ def _call(case, cases, judgments, engine, policy, keep_text):
         observed['value'] = result.value
     if role == 'goal_reached':
         observed['note_returned'] = result.outcome == s.conversation_handoff.JUDGMENT_NO and result.note is not None
+        # #202: whether the judgment would re-delegate, so reports can count useful and harmful retries.
+        observed['retry_warranted'] = getattr(result, 'retry_warranted', None)
         if keep_text:
             observed.update(gap=result.value, note=result.note)
     return observed
