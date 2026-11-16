@@ -8368,6 +8368,36 @@
   "ja": "完了できなかったツール実行 — {reasons}",
   "zh": "未能完成的工具执行 — {reasons}"
  },
+ "quickstart_service.failed_effect_payment": {
+  "ko": "결제 요청",
+  "en": "Payment request",
+  "ja": "支払いリクエスト",
+  "zh": "付款请求"
+ },
+ "quickstart_service.failed_effect_mutate": {
+  "ko": "변경 요청",
+  "en": "Change request",
+  "ja": "変更リクエスト",
+  "zh": "更改请求"
+ },
+ "quickstart_service.failed_effect_sent": {
+  "ko": "{effect}{host} {count}건 보냄",
+  "en": "{effect}{host}: {count} sent",
+  "ja": "{effect}{host}: {count}件送信済み",
+  "zh": "{effect}{host}：已发送{count}次"
+ },
+ "quickstart_service.failed_effect_unconfirmed": {
+  "ko": "{effect}{host} {count}건 시도 기록, 전송 여부 미확인",
+  "en": "{effect}{host}: {count} attempted, not confirmed sent",
+  "ja": "{effect}{host}: {count}件の試行記録、送信の有無は未確認",
+  "zh": "{effect}{host}：{count}次尝试记录，是否发送尚未确认"
+ },
+ "quickstart_service.failed_effects": {
+  "ko": "외부 요청 기록: {effects}. 반복하기 전에 해당 서비스에서 실제 상태를 확인해 주세요.",
+  "en": "External request record: {effects}. Check the actual state with that service before repeating anything.",
+  "ja": "外部リクエストの記録: {effects}。繰り返す前に、そのサービスで実際の状態を確認してください。",
+  "zh": "外部请求记录：{effects}。重复操作前，请先到相应服务确认实际状态。"
+ },
  "quickstart_service.skill_added": {
   "ko": "스킬 '{skill}'을(를) 추가했어요. 출처 {repo}의 {path}, 커밋 {revision}, 라이선스 {licence}.",
   "en": "Added skill '{skill}'. Source: {repo}, {path}, commit {revision}, license {licence}.",
