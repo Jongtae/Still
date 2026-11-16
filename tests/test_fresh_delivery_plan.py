@@ -725,7 +725,7 @@ def test_frontier_896_897_records_eval_tokens_and_infra_pairing_scope():
         'tests/test_continuity_report.py tests/test_judged_continuity.py tests/test_fresh_delivery_plan.py']
     activation = items['FRONTIER-01']['completed_substeps'][name]
     assert activation['issue'] == 896 and activation['related_issues'] == [897]
-    assert activation['status'] == 'complete-on-merge' and activation['pull_request'] == 'TBD'
-    assert unit['summary'].endswith('Complete on the merge of its own PR (TBD).')
+    assert activation['status'] == 'complete-on-merge' and activation['pull_request'] == '899'
+    assert unit['summary'].endswith('Complete on the merge of its own PR (#899).')
     assert ('#896 and #897 (FRONTIER-EVAL-TOKENS-01) are selected inside #822 by owner direction '
             'on 2026-11-15 and are complete on the merge of its own PR.') in current['next_goal']['action']
