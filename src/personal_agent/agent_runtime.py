@@ -905,14 +905,31 @@ def base_label(label):
 #: write event labels its Work durably, whichever process ran the tool.
 PRIVATE_WRITE_PROVENANCE={'save_note':'personal-space','save_result':'connected-document','save_memory':'owner-memory','forget_record':'owner-memory'}
 
-# #744: host result categories, not result text. Metadata from outside stores
-# (including find_files/list_notes) counts: names/snippets can carry instructions.
-# Owner Memory/folder grants and our own write receipts do not. Conversation
-# recall inherits only the returned source Works' explicit marks at its read boundary.
-OUTSIDE_RESULT_ACTIONS = frozenset(
- action for action, label in PRIVATE_PROVENANCE.items()
- if label not in {'owner-memory', 'owner-conversation', 'owner-folder-names'}
-) | frozenset({'web_search', 'public_page_read', 'delegate_agent', 'a2a_message', 'skill_load', 'code_run'})
+# #744: every result is outside input unless its host action has this narrower
+# return contract. New tools, aliases, cached metadata and failed transports
+# default to marking; result strings/flags never declare their own authority.
+OWNER_ONLY_RESULT_ACTIONS = frozenset({
+ # Canonical owner Memory (including source owner words) and owner folder grants.
+ 'list_memory', 'search_memory', 'list_roots',
+ # Recall/find inherit explicit marks of the returned source Works at intake.
+ # Other forget operations return only host deletion/undo receipts.
+ 'search_conversation', 'forget_record',
+ # Local write receipts echo this Work's arguments and host identities only.
+ 'save_note', 'save_result', 'save_memory',
+ # Host delivery, context-proposal and scheduling receipts; no remote response.
+ 'tell_owner', 'ask_location', 'propose_current_state', 'schedule_preparation',
+ # The loop's completion receipt, handled before Capabilities dispatch.
+ 'finish',
+})
+# settings_read/change, entrusted_line and information_use are deliberately not
+# exceptions: they can expose catalog labels, earlier outcomes or source data.
+
+class _HostOnlyResult(dict):
+ """A result constructed entirely by Still at a no-content return site.
+
+ Never wrap a provider result or decide this from provider-supplied flags.
+ This Python type is not representable by a worker's JSON tool result.
+ """
 
 def recorded_private_sources(store, job_id, tools=None):
  """Private-source labels a Work's own successful tool events already carry.
@@ -1909,6 +1926,14 @@ def ran_field(exc):
  """``{'ran': False}`` for a failure marked by ``not_run``, else nothing."""
  return {'ran':False} if getattr(exc,'ran',None) is False else {}
 
+class _WorkReferenceReader(FileWorkspace):
+ """Keep the workspace's existing validation/read split in Work error receipts."""
+ def _reference(self,ref_id,relative):
+  # FileWorkspace.read calls this before reading any document bytes. Reuse
+  # its grant/path/size checks once; parser/read errors stay outside this guard.
+  try:return super()._reference(ref_id,relative)
+  except ValueError as exc:raise not_run(exc)
+
 def not_executed(exc):
  """Mark a failure the receiving service said it did not execute (#618 E1): its record says ``executed: false``.
 
@@ -1984,20 +2009,22 @@ def refused_before_hand_off(execute):
  return run
 
 def record_outside_result(execute):
- """Persist host-selected intake sources before dispatch results leave Capabilities."""
+ """Persist intake before results OR dispatched errors leave either worker route."""
  @wraps(execute)
  def run(self,name,args):
-  result=execute(self,name,args)
   action=(self.tools.get(name) or {}).get('host_action')
-  if action in OUTSIDE_RESULT_ACTIONS and not (isinstance(result,dict) and (
-      action=='find_files' and not result.get('files')
-      or result.get('needs_setup') is True or 'setup-required' in (result.get('qualifiers') or ())
-      or result.get('state')=='login_required' and 'text' not in result)):
-   # Persist before returning, also on the subscription CLI's bridge route.
-   # Only host-selected identifiers, never result-supplied provenance/authority.
-   source={'operation':action, 'category':PRIVATE_PROVENANCE.get(action,UNATTRIBUTED_PROVENANCE)}
-   source.update({key:args[key] for key in ('url','slot','root_id','path','agent_id','peer_id') if key in args})
+  def mark():
+   source={'operation':action or name, 'category':PRIVATE_PROVENANCE.get(action,UNATTRIBUTED_PROVENANCE)}
+   source.update({key:args[key] for key in ('url','slot','root_id','path','agent_id','peer_id') if isinstance(args,dict) and key in args})
    self.store.mark_outside_content(self.job_id,source)
+  try:result=execute(self,name,args)
+  except Exception as exc:
+   # The inner hand-off guard has already identified Still's own refusals.
+   # executed:false is a *remote* refusal, whose reason is still outside text.
+   # Unknown phase is outside by default, even for a normally owner-only tool.
+   if not ran_field(exc):mark()
+   raise
+  if action not in OWNER_ONLY_RESULT_ACTIONS and not isinstance(result,_HostOnlyResult):mark()
   return result
  return run
 
@@ -3738,18 +3765,18 @@ class Capabilities:
   # Search/list operations may inspect many files under a root. Revalidate only
   # the selected stored grant on each read instead of rescanning every root.
   root=next((r for r in self.store.config('file_roots',[]) if r.get('id')==root_id),None)
-  if not root or folder_grants.blocked(root.get('path',''),self.store):raise ValueError(msg('agent_runtime.connect_file_folder'))
+  if not root or folder_grants.blocked(root.get('path',''),self.store):raise not_run(ValueError(msg('agent_runtime.connect_file_folder')))
   base=Path(root['path']).resolve();relative=Path(path)
-  if relative.is_absolute() or '..' in relative.parts or any(p.startswith('.') for p in relative.parts):raise ValueError(msg('agent_runtime.file_path_not_allowed'))
+  if relative.is_absolute() or '..' in relative.parts or any(p.startswith('.') for p in relative.parts):raise not_run(ValueError(msg('agent_runtime.file_path_not_allowed')))
   resolved=(base/relative).resolve()
   # #820: a broad grant (the home folder) contains credential, system and Still-data locations;
   # the resolved target - a symlink's too - is never one of them.
   # A symlink inside the grant is followed only to a target that is itself no hidden path of the grant.
   if not resolved.is_relative_to(base) or resolved.is_relative_to(self.store.private) or folder_grants.excluded(resolved,self.store,base) \
      or any(part.startswith('.') for part in resolved.relative_to(base).parts):
-   raise ValueError(msg('agent_runtime.file_outside_connected_folder'))
-  if not resolved.is_file() or resolved.stat().st_size>MAX_FILE_BYTES:raise ValueError(msg('agent_runtime.file_size_limit'))
-  if not supported_document(resolved):raise ValueError(msg('agent_runtime.supported_document_formats'))
+   raise not_run(ValueError(msg('agent_runtime.file_outside_connected_folder')))
+  if not resolved.is_file() or resolved.stat().st_size>MAX_FILE_BYTES:raise not_run(ValueError(msg('agent_runtime.file_size_limit')))
+  if not supported_document(resolved):raise not_run(ValueError(msg('agent_runtime.supported_document_formats')))
   return resolved
  def read_file(self,root_id,path,cite=True):
   """One document by the ``root_id`` and ``path`` find_files returned.
@@ -3757,7 +3784,7 @@ class Capabilities:
   ``cite``: a file-workspace reference read here is a source a later ``save_result`` cites;
   find_files' own scan reads with ``cite=False``, so only what the worker read is cited (#182).
   """
-  if not self.document_access:raise ValueError(msg('agent_runtime.document_excerpt_sharing'))
+  if not self.document_access:raise not_run(ValueError(msg('agent_runtime.document_excerpt_sharing')))
   if root_id==SAVED_RESULTS_ROOT:return self._read_saved_result(path)
   if isinstance(root_id,str) and root_id.startswith(WORKSPACE_REFERENCE_PREFIX):return self._read_reference(root_id,path,cite)
   resolved=self.resolve_file(root_id,path)
@@ -3769,8 +3796,8 @@ class Capabilities:
  def _read_reference(self,root_id,path,cite=True):
   """#182: one original in a file-workspace reference folder, through ``FileWorkspace.read``'s own grant checks."""
   reference_id=root_id[len(WORKSPACE_REFERENCE_PREFIX):]
-  if not any(root['id']==root_id for root in self.workspace_references()):raise ValueError(msg('agent_runtime.reference_folder_not_allowed'))
-  source=FileWorkspace(self.store).read(reference_id,path)
+  if not any(root['id']==root_id for root in self.workspace_references()):raise not_run(ValueError(msg('agent_runtime.reference_folder_not_allowed')))
+  source=_WorkReferenceReader(self.store).read(reference_id,path)
   # The read itself is what a saved result cites (``save_result``): its exact version, not a model's claim.
   # #182 review: keyed by version too, so a file read again after it changed is cited at both versions
   # (and the result is then not fresh), never only at the later one.
@@ -3789,8 +3816,8 @@ class Capabilities:
   # #182 review: the source checks are bounded like a search; cut short, nothing is returned as checked.
   rows=self.saved_results(path=path,deadline=time.monotonic()+5)
   if self.saved_results_unavailable:
-   return {'root_id':SAVED_RESULTS_ROOT,'path':path,'content':'','needs_setup':True,'requires':'local-result-write',
-           'message':msg('agent_runtime.result_folder_unavailable')}
+   return _HostOnlyResult(root_id=SAVED_RESULTS_ROOT,path=path,content='',needs_setup=True,requires='local-result-write',
+                          message=msg('agent_runtime.result_folder_unavailable'))
   if self.saved_results_stopped:
    raise ValueError(msg('agent_runtime.result_source_timeout'))
   item=next((row for row in rows if row['path']==path),None)
@@ -3812,14 +3839,14 @@ class Capabilities:
   only=root_id.strip() if isinstance(root_id,str) else ''
   if only and only!=SAVED_RESULTS_ROOT:
    roots=[root for root in roots if root['id']==only]
-   if not roots:raise ValueError(msg('agent_runtime.root_not_found'))
+   if not roots:raise not_run(ValueError(msg('agent_runtime.root_not_found')))
   if only==SAVED_RESULTS_ROOT and not workspace.has_results():
    # #182 review: no folder grant creates a saved result; an empty saved-results search is complete.
-   return {'files':[],'truncated':False}
+   return _HostOnlyResult(files=[],truncated=False)
   if not roots and not workspace.has_results():
-   return {'files':[],'needs_setup':True,'requires':'local-folder-read','message':msg('agent_runtime.connect_access_folder')}
-  if not self.document_access:raise ValueError(msg('agent_runtime.document_search_sharing'))
-  if not query.strip() or len(query)>200:raise ValueError(msg('agent_runtime.query_length'))
+   return _HostOnlyResult(files=[],needs_setup=True,requires='local-folder-read',message=msg('agent_runtime.connect_access_folder'))
+  if not self.document_access:raise not_run(ValueError(msg('agent_runtime.document_search_sharing')))
+  if not query.strip() or len(query)>200:raise not_run(ValueError(msg('agent_runtime.query_length')))
   terms=[query.casefold()]+[t.casefold() for t in re.findall(r'[\w-]+',query) if len(t)>=3]
   hits=[];visited=0;deadline=time.monotonic()+5
   # One deadline bounds the saved-result checks and the folder scan together.
@@ -3846,7 +3873,7 @@ class Capabilities:
     dirs[:]=[d for d in dirs if not d.startswith('.') and d not in ('node_modules','venv','__pycache__') and not (Path(parent)/d).is_symlink()
              and folder_grants.identity(Path(parent)/d) not in protected]
     for name in files:
-     if visited>=500 or time.monotonic()>deadline:return {'files':hits,'truncated':True}
+     if visited>=500 or time.monotonic()>deadline:return (dict if hits else _HostOnlyResult)(files=hits,truncated=True)
      visited+=1
      if name.startswith('.'):continue
      path=str((Path(parent)/name).relative_to(base))
@@ -3860,9 +3887,9 @@ class Capabilities:
       hits.append({'root_id':root['id'],'path':path,'kind':result['kind'],'location':location,'match':'filename' if query.casefold() in name.casefold() else 'content'})
      if len(hits)>=20:return {'files':hits,'truncated':True}
   if self.saved_results_unavailable and not hits:
-   return {'files':[],'needs_setup':True,'requires':'local-result-write',
-           'message':msg('agent_runtime.result_folder_unavailable')}
-  return {'files':hits,'truncated':saved_truncated or self.saved_results_stopped or self.saved_results_unavailable}
+   return _HostOnlyResult(files=[],needs_setup=True,requires='local-result-write',
+                          message=msg('agent_runtime.result_folder_unavailable'))
+  return (dict if hits else _HostOnlyResult)(files=hits,truncated=saved_truncated or self.saved_results_stopped or self.saved_results_unavailable)
  def _recorded_workspace_reads(self):
   """#182 review: the reference reads this Work's durable ``read_file`` events cite (another bridge process
   of the same Work, or one that restarted), as ``{(reference_id, path): citation}``."""
@@ -4202,8 +4229,8 @@ class Capabilities:
    row['source_status']='found' if source else ('unknown' if failed else 'not_kept')
   return rows
 
- @refused_before_hand_off
  @record_outside_result
+ @refused_before_hand_off
  def execute(self,name,args):
   tool=self.tools.get(name)
   # #1484: a refusal here comes before the tool runs, so its record says ``ran: false``.
@@ -4285,7 +4312,7 @@ class Capabilities:
    # calendar read, so the service can park the Work for one connection.
    from .calendar_oauth import CalendarOAuthError
    from .google_drive_read import DRIVE_CONNECTOR_ID, DriveHTTPError, DriveReadError
-   unconnected={'needs_setup':True,'requires':DRIVE_CONNECTOR_ID,'files':[],'next_step':DRIVE_UNCONNECTED}
+   unconnected=_HostOnlyResult(needs_setup=True,requires=DRIVE_CONNECTOR_ID,files=[],next_step=DRIVE_UNCONNECTED)
    if self.drive is None:return unconnected
    try:
     result=(self.drive.search(args.get('query','')) if name=='drive_search' else self.drive.read(args.get('file_id','')))
@@ -4303,7 +4330,7 @@ class Capabilities:
    # #150: Gmail bodies arrive base64url-encoded in the API's MIME parts; the
    # connector decodes them, so the worker reads text.  Unconnected parks like Drive.
    from .gmail import GMAIL_CONNECTOR_ID, GmailError
-   unconnected={'needs_setup':True,'requires':GMAIL_CONNECTOR_ID,'messages':[],'next_step':MAIL_UNCONNECTED}
+   unconnected=_HostOnlyResult(needs_setup=True,requires=GMAIL_CONNECTOR_ID,messages=[],next_step=MAIL_UNCONNECTED)
    if self.mail is None:return unconnected
    try:
     result=(self.mail.search(args.get('query','')) if name=='mail_search' else self.mail.read(args.get('message_id','')))
@@ -4324,14 +4351,13 @@ class Capabilities:
     # #606 T5: a read with no calendar is setup-required, typed like the
     # folder reads, so the service can park the Work for one connection
     # handoff and resume it once.  Nothing was read.
-    return {'needs_setup':True,'requires':CALENDAR_CONNECTOR_ID,'events':[],
-            'next_step':CALENDAR_UNCONFIGURED}
+    return _HostOnlyResult(needs_setup=True,requires=CALENDAR_CONNECTOR_ID,events=[],next_step=CALENDAR_UNCONFIGURED)
    try:events=self.calendar.query(self.calendar_owner,args['start'],args['end'],args['timezone'])
    except CalendarError as exc:
     # #606 T5: a declared calendar the owner has not connected (or must
     # reconnect) is the same setup-required read as no calendar at all.
     if getattr(exc,'recovery',None)!='reconnect':raise
-    return {'needs_setup':True,'requires':CALENDAR_CONNECTOR_ID,'events':[],'next_step':CALENDAR_UNCONFIGURED}
+    return _HostOnlyResult(needs_setup=True,requires=CALENDAR_CONNECTOR_ID,events=[],next_step=CALENDAR_UNCONFIGURED)
    return self._from_private('owner-calendar',self._shortcut_read(name,events,'events'))
   if name=='weather':
    # `weather` sends `name=<city>` - an arbitrary 100-character string - to a
@@ -4341,7 +4367,7 @@ class Capabilities:
    # very property `test_private_provenance_egress` asserts.
    resolved=None
    if 'location_ref' in args:args,resolved=self._location_ref_args(args)
-   elif 'city' not in args:raise ValueError(msg('agent_runtime.weather_location_required'))
+   elif 'city' not in args:raise not_run(ValueError(msg('agent_runtime.weather_location_required')))
    composed=self._public_task(tool_id,name,args)
    result=composed if composed is not None else self._read_network({'tool':name,**args})
    if resolved is not None and isinstance(result,dict):
@@ -4363,7 +4389,7 @@ class Capabilities:
    # #659: a proposal the owner accepts; the service decides whether the
    # owner's own message already is that acceptance (DecisionEngine).
    if self.preparations is None or self.delegated:
-    raise ToolError(msg('agent_runtime.preparations_unavailable'),'needs_setup',requires='owner-preparations')
+    raise not_run(ToolError(msg('agent_runtime.preparations_unavailable'),'needs_setup',requires='owner-preparations'))
    # #617: the goal, title and offer (#393) are the owner's own reservation;
    # only secrets leave them (the service removes stored secrets again).
    for field in ('goal','title','offer'):
@@ -4373,7 +4399,7 @@ class Capabilities:
   if name=='entrusted_line':
    # #798: the owner's entrusted lines; the service refuses a write outside a Work the owner started.
    if self.lines is None or self.delegated:
-    raise ToolError(msg('agent_runtime.preparations_unavailable'),'needs_setup',requires='owner-preparations')
+    raise not_run(ToolError(msg('agent_runtime.preparations_unavailable'),'needs_setup',requires='owner-preparations'))
    for field in ('task','report_promise','rules','rule','open_matters'):
     if isinstance(args.get(field),str) and args[field]:
      args={**args,field:self.secret_masked(args[field])}
@@ -4381,10 +4407,10 @@ class Capabilities:
   if name=='ask_location':
    # #774: one Telegram prompt to the owner; the reply continues this request once.
    if self.location_request is None or self.delegated:
-    raise ToolError(msg('agent_runtime.location_unavailable'),'location_unavailable')
+    raise not_run(ToolError(msg('agent_runtime.location_unavailable'),'location_unavailable'))
    reason=args.get('reason')
    if not isinstance(reason,str) or not 0<len(reason.strip())<=300:
-    raise ToolError(msg('agent_runtime.location_reason_length'),'invalid_reason')
+    raise not_run(ToolError(msg('agent_runtime.location_reason_length'),'invalid_reason'))
    # #617: a prompt to the owner's own chat; only secrets are removed from it.
    label=args.get('button_label')
    label=self.secret_masked(label.strip()) if isinstance(label,str) and 0<len(label.strip())<=40 else None
@@ -4398,16 +4424,16 @@ class Capabilities:
   if name=='tell_owner':
    # #407: one interim message in the owner's chat; the Work goes on and its answer still comes at the end.
    if self.owner_update is None or self.delegated:
-    raise ToolError(msg('agent_runtime.owner_update_unavailable'),'owner_update_unavailable')
+    raise not_run(ToolError(msg('agent_runtime.owner_update_unavailable'),'owner_update_unavailable'))
    text=args.get('text')
    if not isinstance(text,str) or not 0<len(text.strip())<=500:
-    raise ToolError(msg('agent_runtime.owner_update_length'),'invalid_text')
+    raise not_run(ToolError(msg('agent_runtime.owner_update_length'),'invalid_text'))
    # #617: a message to the owner's own chat; only secrets are removed from it.
    self.owner_update(self.secret_masked(text.strip()))
    return {'sent':True,'channel':'telegram'}
   if name in SKILL_ACTIONS:
    from .skills import SkillError
-   if self.skills is None:raise ToolError(msg('agent_runtime.skill_unavailable'),'skill_unavailable')
+   if self.skills is None:raise not_run(ToolError(msg('agent_runtime.skill_unavailable'),'skill_unavailable'))
    # What this Work read in any process (a restarted bridge, an earlier attempt) and its per-Work counts.
    # #617: a withdrawn skill refuses only the skill calls that use it (``SkillBinding._entry``), never
    # the Work's other tools: a skill grants no authority (#974).
@@ -4424,17 +4450,17 @@ class Capabilities:
    self.evidence.append({'tool':name,'result':{key:result.get(key) for key in SKILL_EVIDENCE_KEYS}})
    return result
   if name=='a2a_message':
-   if self.a2a is None:raise ToolError('No peer channel is registered','peer_channel_unavailable')
+   if self.a2a is None:raise not_run(ToolError('No peer channel is registered','peer_channel_unavailable'))
    try:return self.a2a(args)
    except ValueError as exc:raise ToolError(str(exc),'peer_message_refused') from None
   if name in INFORMATION_USE_ACTIONS:
    # #826: a read of Still's own records of an earlier Work; never a payload.
-   if self.information_use is None:raise ToolError(msg('agent_runtime.information_use_unavailable'),'information_use_unavailable')
+   if self.information_use is None:raise not_run(ToolError(msg('agent_runtime.information_use_unavailable'),'information_use_unavailable'))
    return self.information_use(args)
   if name in SETTINGS_ACTIONS:
    # #814: a redacted read, or a draft the owner confirms in this conversation; never applied here.
    if self.settings is None or self.delegated:
-    raise ToolError(msg('agent_runtime.settings_unavailable'),'settings_unavailable')
+    raise not_run(ToolError(msg('agent_runtime.settings_unavailable'),'settings_unavailable'))
    # #617: only a secret blocks the query (#826 removed the saved-private-value guard).
    if name=='capability_search' and self.secret_masked(args.get('query',''))!=str(args.get('query') or ''):
     raise ToolError(msg('agent_runtime.public_server_query'),'private_capability_query',ran=False)
@@ -4479,7 +4505,7 @@ class Capabilities:
   if name=='list_notes':return self._from_private('personal-space',{'notes':self.store.notes()})
   if name=='save_note':
    content=args['content'].strip()
-   if not content or len(content)>12000:raise ValueError(msg('agent_runtime.note_length'))
+   if not content or len(content)>12000:raise not_run(ValueError(msg('agent_runtime.note_length')))
    # #605: a note is a private store; what this Work writes to it is never
    # a public lookup word, and the Work now holds private-store material.
    self.written_private.append(content);self.written_labels.add('personal-space');self.private_provenance.add('personal-space')
@@ -4547,7 +4573,7 @@ class Capabilities:
      # #367: candidate conversation messages for the AI to choose from; nothing is forgotten here.
      # #367 review: document-backed Works stay out unless this AI may read connected documents (#826 boundary).
      try:rows=self.store.find_messages(args.get('query'),include_documents=self.document_access,receiving_work_id=self.job_id)
-     except ValueError as exc:raise ToolError(str(exc),'invalid_arguments') from None
+     except ValueError as exc:raise ToolError(str(exc),'invalid_arguments',**ran_field(exc)) from None
      result={'action':'find','messages':rows,'message':msg('agent_runtime.conversation_messages_count', count=len(rows))}
     elif action=='undo':
      result={'action':'undo',**forget.undo(MEMORY_OWNER,args.get('receipt'))}
@@ -4567,7 +4593,7 @@ class Capabilities:
                          if action=='delete' else
                          msg('agent_runtime.trust_forgotten'))
     else:
-     raise ToolError(msg('agent_runtime.invalid_forget_action'),'invalid_arguments')
+     raise not_run(ToolError(msg('agent_runtime.invalid_forget_action'),'invalid_arguments'))
    except ForgetError as exc:
     raise ToolError(str(exc),exc.code) from None
    self.evidence.append({'tool':name,'result':evidence_summary(name,result)}); return result
@@ -4584,10 +4610,10 @@ class Capabilities:
     remaining=max(0,3-len({tuple(ref['message_ids']) for ref in sent}))
     try:
      limit=args.get('limit',3)
-     if isinstance(limit,bool) or not isinstance(limit,int) or not 1<=limit<=3:raise ValueError('Invalid conversation limit')
+     if isinstance(limit,bool) or not isinstance(limit,int) or not 1<=limit<=3:raise not_run(ValueError('Invalid conversation limit'))
      # Validate even when the Work's result budget is exhausted.
      rows=self.store.search_conversation(args.get('query',''),before=args.get('before'),after=args.get('after'),limit=min(limit,remaining) if remaining else 1)
-    except ValueError as exc:raise ToolError(str(exc),'invalid_arguments') from None
+    except ValueError as exc:raise ToolError(str(exc),'invalid_arguments',**ran_field(exc)) from None
     result={'exchanges':rows if remaining else [],'budget_exhausted':not remaining,
             'label':'earlier exchanges; may or may not be relevant; assistant lines are model-stated, not facts or commitments'}
     self.store.inherit_outside_content(self.job_id, (row['work_id'] for row in result['exchanges']), name)
@@ -4620,7 +4646,7 @@ class Capabilities:
   if name=='list_agents':return {'agents':[{'id':role_id,'name':role['name'],'permissions':role['permissions'],'package_id':role['package_id']} for role_id,role in self.roles.items()]}
   if name=='delegate_agent':
    agent=self.roles.get(args['agent_id'])
-   if not agent:raise ValueError(msg('agent_runtime.select_active_agent'))
+   if not agent:raise not_run(ValueError(msg('agent_runtime.select_active_agent')))
    # #604: a role whose package was disabled, removed or re-declared since
    # discovery is refused, exactly as a stale tool is.
    # Built-in is decided by the declaration itself, not by a package id a
@@ -4629,8 +4655,8 @@ class Capabilities:
     try:current=next((role for package in self.current_packages() if package['id']==agent['package_id'] for role in package['roles'] if role['id']==args['agent_id']),None)
     except Exception:current=None
     if current is None or {**current,'package_id':agent['package_id']}!=agent:
-     raise ValueError(msg('agent_runtime.agent_changed'))
-   if not args['task'].strip() or len(args['task'])>12000:raise ValueError(msg('agent_runtime.delegation_task_length'))
+     raise not_run(ValueError(msg('agent_runtime.agent_changed')))
+   if not args['task'].strip() or len(args['task'])>12000:raise not_run(ValueError(msg('agent_runtime.delegation_task_length')))
    # The child prompt below is built from `self.evidence`, so the child's
    # context inherits this Work's provenance.  Each label keeps its own
    # window so the #448 decision applies identically on both sides of the
@@ -4663,7 +4689,7 @@ class Capabilities:
    self.private_provenance.update(label if label.startswith(DELEGATED_PREFIX) else DELEGATED_PREFIX+label
                                   for label in child.private_provenance)
    return {'agent_id':args['agent_id'],'agent_name':agent['name'],'package_id':agent['package_id'],'model':result.model,'report':result.content,'outcome':result.outcome,'execution':'separate specialist conversation using the configured model provider'}
-  raise ValueError(msg('agent_runtime.tool_not_allowed'))
+  raise not_run(ValueError(msg('agent_runtime.tool_not_allowed')))
 
 # Route-neutral Still instructions (#569). Every AI route -- direct API,
 # Codex CLI, Claude Code CLI -- receives exactly this text, so the assistant's
