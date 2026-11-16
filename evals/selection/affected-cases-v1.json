@@ -3,7 +3,7 @@
   "rules": [
     {
       "id": "role-answers_open_question",
-      "match": {"propositions": ["answers_open_question", "OPEN_QUESTION_PROPOSITION"], "prompt_fragments": ["answers_open_question"]},
+      "match": {"propositions": ["answers_open_question", "OPEN_QUESTION_PROPOSITION"], "prompt_fragments": ["answers_open_question"], "paths": ["src/personal_agent/prompts/answers_open_question.md"]},
       "select": [{"set": "judgments", "roles": ["answers_open_question"]}],
       "reason": "This instruction or proposition is exercised by the answers_open_question judgment cases."
     },
@@ -15,7 +15,7 @@
     },
     {
       "id": "role-followup_relation",
-      "match": {"propositions": ["followup_relation", "FOLLOWUP_QUESTION"], "prompt_fragments": ["followup_relation"]},
+      "match": {"propositions": ["followup_relation", "FOLLOWUP_QUESTION"], "prompt_fragments": ["followup_relation"], "paths": ["src/personal_agent/prompts/followup_relation.md"]},
       "select": [{"set": "judgments", "roles": ["followup_relation"]}, {"set": "qualification", "ids": ["qualification-retry-after-failed-work", "qualification-correction-replaces-parameters", "qualification-reference-to-previous-result", "qualification-new-topic-is-not-a-followup", "qualification-ambiguous-referent-abstains"]}],
       "reason": "This instruction or proposition is exercised by the followup_relation judgment cases. The qualification definitions also exercise this proposition."
     },
@@ -39,13 +39,13 @@
     },
     {
       "id": "role-owner_act_answer",
-      "match": {"propositions": ["owner_act_answer", "OWNER_ACT_QUESTION"], "prompt_fragments": ["owner_act_answer"]},
+      "match": {"propositions": ["owner_act_answer", "OWNER_ACT_QUESTION"], "prompt_fragments": ["owner_act_answer"], "paths": ["src/personal_agent/prompts/owner_act_answer.md"]},
       "select": [{"set": "judgments", "roles": ["owner_act_answer"]}],
       "reason": "This instruction or proposition is exercised by the owner_act_answer judgment cases."
     },
     {
       "id": "role-parked_work_withdrawn",
-      "match": {"propositions": ["parked_work_withdrawn", "WITHDRAWAL_PROPOSITION"], "prompt_fragments": ["parked_work_withdrawn"]},
+      "match": {"propositions": ["parked_work_withdrawn", "WITHDRAWAL_PROPOSITION"], "prompt_fragments": ["parked_work_withdrawn"], "paths": ["src/personal_agent/prompts/parked_work_withdrawn.md"]},
       "select": [{"set": "judgments", "roles": ["parked_work_withdrawn"]}, {"set": "qualification", "ids": ["qualification-parked-request-withdrawn"]}],
       "reason": "This instruction or proposition is exercised by the parked_work_withdrawn judgment cases. The qualification definitions also exercise this proposition."
     },
@@ -57,15 +57,15 @@
     },
     {
       "id": "role-steers_running_work",
-      "match": {"propositions": ["steers_running_work", "STEER_PROPOSITION"], "prompt_fragments": ["steers_running_work"]},
+      "match": {"propositions": ["steers_running_work", "STEER_PROPOSITION"], "prompt_fragments": ["steers_running_work"], "paths": ["src/personal_agent/prompts/steers_running_work.md"]},
       "select": [{"set": "judgments", "roles": ["steers_running_work"]}],
       "reason": "This instruction or proposition is exercised by the steers_running_work judgment cases."
     },
     {
       "id": "judgment-callers",
-      "match": {"paths": ["src/personal_agent/conversation_handoff.py", "src/personal_agent/decision.py", "src/personal_agent/prompts/decision_system.md"], "prompt_fragments": ["decision_system"]},
+      "match": {"paths": ["src/personal_agent/conversation_handoff.py", "src/personal_agent/decision.py", "src/personal_agent/prompts/decision_system.md", "src/personal_agent/prompts/same_preparation_goal.md", "src/personal_agent/prompts/declined_preparation.md", "src/personal_agent/prompts/unsupported_capability.md", "src/personal_agent/prompts/capability_need.md", "src/personal_agent/prompts/turn_reaction.md", "src/personal_agent/prompts/closing_reaction.md", "src/personal_agent/prompts/memory_request.md", "src/personal_agent/prompts/memory_fact.md", "src/personal_agent/prompts/settings_request.md", "src/personal_agent/prompts/preparation_request.md", "src/personal_agent/prompts/watch_notify.md", "src/personal_agent/prompts/line_change.md", "src/personal_agent/prompts/watch_closed.md", "src/personal_agent/prompts/gap_instruction.md", "src/personal_agent/prompts/owner_model_*.md"], "prompt_fragments": ["decision_system", "same_preparation_goal", "declined_preparation", "unsupported_capability", "capability_need", "turn_reaction", "closing_reaction", "memory_request", "memory_fact", "settings_request", "preparation_request", "watch_notify", "line_change", "watch_closed", "gap_instruction", "owner_model_*"]},
       "select": [{"set": "judgments"}, {"set": "qualification"}],
-      "reason": "Shared judgment instructions and callers affect all judgment roles and qualification definitions."
+      "reason": "Shared judgment instructions and callers affect all judgment roles and qualification definitions. Prompts without a dedicated case role conservatively use this shared judgment coverage."
     },
     {
       "id": "planner-catalogue",
@@ -87,9 +87,21 @@
     },
     {
       "id": "worker-instructions",
-      "match": {"paths": ["src/personal_agent/prompts/worker_*.md", "src/personal_agent/prompts/voice*.md", "src/personal_agent/prompts/native_search.md", "src/personal_agent/prompts/ask_or_assume.md", "src/personal_agent/agent_runtime.py"], "prompt_fragments": ["worker_*", "voice", "voice_calibration", "native_search", "ask_or_assume", "CORE_INSTRUCTIONS", "API_TOOL_GUIDANCE", "CLI_TOOL_GUIDANCE", "CLI_NATIVE_SEARCH_GUIDANCE", "GOAL_FIRST_GUIDANCE"]},
+      "match": {"paths": ["src/personal_agent/prompts/worker_*.md", "src/personal_agent/prompts/voice*.md", "src/personal_agent/prompts/native_search.md", "src/personal_agent/prompts/ask_or_assume.md", "src/personal_agent/agent_runtime.py", "src/personal_agent/prompts/day_plan*.md", "src/personal_agent/prompts/line_account.md", "src/personal_agent/prompts/prepared_legend.md", "src/personal_agent/prompts/code_run_library_hint.md", "src/personal_agent/prompts/memory_*.md"], "prompt_fragments": ["worker_*", "voice", "voice_calibration", "native_search", "ask_or_assume", "CORE_INSTRUCTIONS", "API_TOOL_GUIDANCE", "CLI_TOOL_GUIDANCE", "CLI_NATIVE_SEARCH_GUIDANCE", "GOAL_FIRST_GUIDANCE", "day_plan*", "line_account", "prepared_legend", "code_run_library_hint", "memory_*"]},
       "select": [{"set": "scenarios"}, {"set": "judgments", "roles": ["goal_reached", "orchestration_escalation"]}],
       "reason": "Worker instructions can change final answers and outcome/redelegation judgments across synthetic scenarios."
+    },
+    {
+      "id": "bundled-skill-instructions",
+      "match": {"paths": ["skills/*/SKILL.md", "src/personal_agent/bundled_skills/*/SKILL.md"]},
+      "select": [{"set": "scenarios"}, {"set": "judgments", "roles": ["goal_reached", "orchestration_escalation"]}],
+      "reason": "Bundled skill content is loaded by the worker; changes select the same synthetic scenarios (including travel) and outcome/redelegation judgments as worker instructions."
+    },
+    {
+      "id": "restated-contracts",
+      "match": {"paths": ["docs/current-context-contract.en.md", "docs/professional-roles-and-communication-contract.en.md"]},
+      "select": [{"set": "judgments", "roles": ["goal_reached", "orchestration_plan"]}],
+      "reason": "These contracts are restated in the worker, planner and outcome prompts; edits require outcome and planning judgment regression coverage."
     },
     {
       "id": "tool-descriptions",

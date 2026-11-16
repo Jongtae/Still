@@ -16,7 +16,7 @@ import unittest
 from pathlib import Path
 
 from personal_agent import browser_session as bs
-from personal_agent.agent_runtime import (LAST_TURN_TEXT, WIND_DOWN_TEXT, WORK_JUDGMENT_RESERVE, Capabilities, LoopGuard,
+from personal_agent.agent_runtime import (CLI_TURN_WIND_DOWN_SECONDS, LAST_TURN_TEXT, WIND_DOWN_TEXT, WORK_JUDGMENT_RESERVE, Capabilities, LoopGuard,
                                           ToolError, WorkBudget, WorkLedger, loop_outcome, path_key, remaining_budget,
                                           run_agent)
 from personal_agent.cli_browser_relay import BrowserRelay
@@ -133,16 +133,19 @@ class RemainingBudget(Base):
         job = self.store.enqueue('fixture request', 'turn-budget-fixture')
         wall = [10_000.0]
         ledger = WorkLedger(self.store, job, seconds=1400, wall=lambda: wall[0])
-        bridge = WorkBudget(ledger=ledger, clock=lambda: 0, wall=lambda: wall[0], turn_deadline=wall[0] + 100)
+        bridge = WorkBudget(ledger=ledger, clock=lambda: 0, wall=lambda: wall[0], turn_deadline=wall[0] + 200)
         self.assertEqual(bridge.remaining(), 1400)
-        self.assertEqual(bridge.left()['seconds'], 100)
+        self.assertEqual(bridge.left()['seconds'], 200)
         self.assertNotIn('note', remaining_budget(bridge, turns=False))
-        wall[0] += 40
-        self.assertEqual(remaining_budget(bridge, turns=False)['seconds'], 60)
+        # #910: a CLI turn winds down from CLI_TURN_WIND_DOWN_SECONDS, room for its closing answer.
+        wall[0] += 49
+        self.assertNotIn('note', remaining_budget(bridge, turns=False))
+        wall[0] += 1
+        self.assertEqual(remaining_budget(bridge, turns=False)['seconds'], CLI_TURN_WIND_DOWN_SECONDS)
         self.assertEqual(remaining_budget(bridge, turns=False)['note'], WIND_DOWN_TEXT)
-        wall[0] += 61
+        wall[0] += 151
         self.assertEqual(bridge.left()['seconds'], 0)
-        self.assertEqual(bridge.remaining(), 1299, 'the turn deadline is reporting only')
+        self.assertEqual(bridge.remaining(), 1199, 'the turn deadline is reporting only')
         self.assertIsNone(bridge.interrupted())
         self.assertIsNone(bridge.check())
         bridge.spend_attempt()
@@ -159,6 +162,10 @@ class RemainingBudget(Base):
                 self.assertEqual(remaining_budget(bridge, turns=False), {'steps': 200, 'seconds': expected})
                 shorter = WorkBudget(clock=lambda: 0, seconds=30, wall=lambda: 10_000, turn_deadline=turn_deadline)
                 self.assertEqual(shorter.left()['seconds'], 30)
+        # #910: without a turn deadline the Work-level 60 s threshold is unchanged.
+        plain = WorkBudget(clock=lambda: 0, seconds=100)
+        self.assertNotIn('note', remaining_budget(plain, turns=False))
+        self.assertEqual(remaining_budget(WorkBudget(clock=lambda: 0, seconds=60), turns=False)['note'], WIND_DOWN_TEXT)
 
     def test_the_bridge_adds_remaining_to_results_and_failures(self):
         budget = WorkBudget(attempts=30)
