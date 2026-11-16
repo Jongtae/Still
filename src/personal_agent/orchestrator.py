@@ -73,6 +73,8 @@ MIN_ATTEMPT_SECONDS = 60
 MAX_NOTES_CHARS = 1200
 #: #1459: the professional lens a plan names for the worker (Professional Roles and Communication Contract).
 MAX_LENS_CHARS = 400
+#: #202: the plan's rejectable reading of the request, never new completion criteria.
+MAX_PLAN_READING_CHARS = 300
 MAX_REASON_CHARS = 200
 #: Bounds of the facts the orchestrator is asked over, besides the owner's
 #: request and the catalogue, which are never cut.
@@ -740,8 +742,9 @@ def plan_schema(workers, ask_location=False, preview=False):
                   'model': {'type': 'string'},
                   'effort': {'type': 'string'},
                   'brief': {'type': 'object', 'additionalProperties': False,
-                            'properties': {'notes': {'type': 'string'}, 'lens': {'type': 'string'}},
-                            'required': ['notes', 'lens']},
+                            'properties': {'notes': {'type': 'string'}, 'lens': {'type': 'string'},
+                                           'needs': {'type': 'string'}},
+                            'required': ['notes', 'lens', 'needs']},
                   'reason': {'type': 'string'},
                   'reply': {'type': 'string'},
                   # No minLength/maxLength: not every structured-output transport accepts them.
@@ -773,6 +776,7 @@ def plan_shape(data):
     return (isinstance(data.get('worker'), str) and isinstance(data.get('model'), str)
             and isinstance(brief, dict) and isinstance(brief.get('notes'), str) and isinstance(data.get('reason'), str)
             and isinstance(brief.get('lens', ''), str)
+            and isinstance(brief.get('needs', ''), str)
             # #948 review: "true" or 1 is a malformed plan, never a silent false.
             and isinstance(data.get('account_change', False), bool)
             and isinstance(data.get('owner_situation', False), bool)
@@ -827,7 +831,7 @@ class Attempt:
     __slots__ = ('number', 'worker', 'model', 'notes', 'lens', 'sections', 'reason', 'planned',
                  'fallback', 'digest', 'signature', 'account_change', 'owner_situation', 'technical_work',
                  'lifted_from', 'ask_location', 'location_button', 'effort', 'unlisted_model', 'steer', 'context_digest',
-                 'preview', 'shown_preview', 'corrections', 'told', 'reply', 'recall_query')
+                 'preview', 'shown_preview', 'corrections', 'told', 'reply', 'recall_query', 'plan_reading')
 
     def __init__(self, number, worker, *, model='', notes='', reason='', planned=False, fallback='', effort='', lens='', recall_query=''):
         self.number, self.worker, self.model = number, worker, model
@@ -841,6 +845,8 @@ class Attempt:
         self.lens = lens
         self.reason, self.planned, self.fallback = reason, planned, fallback
         self.recall_query = recall_query
+        #: #202: a judgment reference only; it is not worker instructions or part of the brief digest.
+        self.plan_reading = ''
         self.digest = digest({'notes': notes, **({'lens': lens} if lens else {}),
                               **({'recall_query': recall_query} if recall_query else {})}) if planned else ''
         #: #947: the plan judged the message may change a signed-in account; the model a lift replaced.
@@ -1344,6 +1350,7 @@ class Orchestration:
                           planned=True, effort=effort, lens=lens,
                           recall_query=(self._redact(data['recall_query'])[:500].strip()
                                         if isinstance(data.get('recall_query'), str) else ''))
+        attempt.plan_reading = self._redact(data['brief'].get('needs', '')).strip()[:MAX_PLAN_READING_CHARS]
         attempt.reply = (self._redact(data['reply']).strip()[:REPLY_CHARS]
                          if number == 1 and not data.get('ask_location', '').strip()
                          and not plan_preview(data.get('preview')) else '')
@@ -1560,8 +1567,9 @@ class Orchestration:
         conversation, the reply with its typed source/delivery facts and the tool results
         Still recorded for this attempt: did the reply serve the owner's
         message?  A reply that asks the owner for something the message needs
-        and the conversation does not give serves it.  Nothing the plan wrote
-        is part of the question.  Not asked when the Work's deadline no longer
+        and the conversation does not give serves it.  The plan's reading is
+        passed only as a rejectable reference; the question is still the owner's
+        message.  Not asked when the Work's deadline no longer
         allows another attempt (``NOT_JUDGED``, next step ``budget``), unless
         ``final`` (#752): no attempt can follow and the judgment only decides
         this attempt's outcome, so the Work need only be neither stopped nor
@@ -1590,8 +1598,11 @@ class Orchestration:
             # #428: the owner's later words are part of what the reply must meet, on every attempt after them.
             words = self.steers or '\n'.join(getattr(self, 'corrections', ()))
             request = self.request + ('\n\n' + words if words else '')
+            plan_reading = (self._redact(self.attempts[-1].plan_reading).strip()[:MAX_PLAN_READING_CHARS]
+                            if self.attempts else '')
             judged = goal_reached(request, observed, str(failed or '')[:FAILURE_CHARS], work_id=self.work_id,
                                   answer=reply,
+                                  **({'plan_reading': plan_reading} if plan_reading else {}),
                                   **({'reply_source': reply_source} if reply_source != 'worker' else {}),
                                   **({'reply_delivery': reply_delivery} if reply_delivery != 'to_owner' else {}),
                                   conversation=self._redact(self.conversation)[-CONVERSATION_CHARS:],

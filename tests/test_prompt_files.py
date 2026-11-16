@@ -83,9 +83,9 @@ class ConsolidatedPromptTests(unittest.TestCase):
         selectors = {
             'worker_core': ('- Use the means you have',
                             '- When the owner tells you', '- Do not claim execution'),
-            'planner': ('- A message that tells', '- owner_situation', '- brief.notes', '4. Fit,'),
+            'planner': ('- A message that tells', '- owner_situation', '- brief.notes', '- brief.needs', '4. Fit,'),
             'goal_reached': ('- fulfillment:', '- retry_value:', 'A reply falls short when it claims',
-                             'A reply falls short if it addresses', 'When the owner shares'),
+                             'A reply falls short if it addresses', 'When the owner shares', 'plan_reading,'),
             'owner_model_review': ('The assistant fell short',),
         }
         for name, prefixes in selectors.items():
@@ -169,6 +169,20 @@ class ConsolidatedPromptTests(unittest.TestCase):
         guards = prompt_files.prompt('goal_reached').split('Authority, failures and prerequisites:\n')[1]
         self.assertEqual(hashlib.sha256((guards + '\n').encode()).hexdigest(),
                          '3b3b18c013f6d2d00958951be30eef1ee296890759857acf3fd0209f6ec1c118')
+
+    def test_plan_reading_is_a_rejectable_reference_once(self):
+        from personal_agent.conversation_handoff import GOAL_REACHED_PROPOSITION
+        from personal_agent.orchestrator import QUESTION
+        for sentence in (
+            "plan_reading, when given, is the plan's reading of what the request needs: a hypothesis to check, not the owner's words.",
+            "Use it when the owner's message, conversation and context support it; reject any part they do not support, and never let it narrow, widen or replace the request.",
+        ):
+            self.assertEqual(GOAL_REACHED_PROPOSITION.count(sentence), 1)
+        [needs] = [line for line in QUESTION.splitlines() if line.startswith('- brief.needs:')]
+        for guard in ('one short sentence', '"" when obvious', 'describes the request',
+                      'never sets new criteria', 'judgment may reject'):
+            self.assertIn(guard, needs)
+        self.assertIn('never set new completion criteria', QUESTION)
 
     def test_worker_and_planner_state_one_priority_order_in_sections(self):
         from personal_agent.agent_runtime import POLICY

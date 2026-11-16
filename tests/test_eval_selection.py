@@ -175,7 +175,7 @@ def test_judgment_inventory_uses_declared_sets_and_splits(entries):
               for split in ('dev', 'heldout') for ident in part[split]}
     observed = {row['id']: row['split'] for row in entries if row['set'] == 'judgments'}
     assert observed == wanted
-    assert len(observed) == 136
+    assert len(observed) == 156
     selected = selection.select({'propositions': ['goal_reached']})
     assert {row['split'] for row in selected['selected']} == {'dev', 'heldout'}
 
@@ -186,3 +186,13 @@ def test_202_case_file_is_reachable_by_role_rules(role):
     wanted = {c['id'] for c in cases['cases'] if c['role'] == role}
     selected = selection.select({'propositions': [role]})
     assert wanted <= {row['id'] for row in selected['selected']}
+
+
+def test_plan_reading_cases_are_selected_from_the_v3_partition():
+    cases = judgments.load_cases(ROOT / 'evals/judgments/cases-v3-202-plan.json')
+    wanted = {case['id'] for case in cases['cases']}
+    selected = selection.select({'propositions': ['goal_reached']})
+    observed = {row['id']: row['split'] for row in selected['selected'] if row['id'] in wanted}
+    assert set(observed) == wanted
+    assert all(split == ('heldout' if ident.startswith('heldout-') else 'dev')
+               for ident, split in observed.items())
