@@ -52,6 +52,48 @@ OUTBOUND_TIME_SKEW_SECONDS = 2
 # takes seconds/minutes. Longer offline/replayed *identified* echoes are a limit.
 OBSERVED_POST_RETENTION_SECONDS = 7 * 86400
 
+# Never give a text redactor JSON syntax: it can consume closing delimiters,
+# and its text limit is per value rather than a limit on a serialized record.
+def redact_provenance_values(value, redact):
+    if isinstance(value, str):
+        return redact(value)
+    if isinstance(value, dict):
+        return {key: redact_provenance_values(item, redact) for key, item in value.items()}
+    if isinstance(value, list):
+        return [redact_provenance_values(item, redact) for item in value]
+    if isinstance(value, tuple):
+        return tuple(redact_provenance_values(item, redact) for item in value)
+    return value
+
+
+def _serialize_record(value, redact):
+    return json.dumps(redact_provenance_values(value, redact), ensure_ascii=False, sort_keys=True)
+
+
+# CASE keeps JSON extraction safe even if SQLite reorders WHERE predicates.
+SAFE_EVENT_DETAIL = "CASE WHEN json_valid(detail) THEN detail ELSE '{}' END"
+
+
+def _cancel_invalid_records(db):
+    count = db.execute("UPDATE tool_events SET status='cancelled' "
+                       "WHERE tool IN (?,?) AND status!='cancelled' "
+                       "AND CASE WHEN json_valid(detail) THEN json_type(detail)!='object' ELSE 1 END",
+                       (OUTBOUND_POST, DEFERRED_POST)).rowcount
+    if count:
+        LOG.warning('cancelled invalid surface records count=%s', count)
+
+
+def _event_detail(db, row):
+    try:
+        detail = json.loads(row['detail'])
+        if not isinstance(detail, dict):
+            raise ValueError('not an object')
+        return detail
+    except (ValueError, TypeError):
+        db.execute("UPDATE tool_events SET status='cancelled' WHERE id=?", (row['id'],))
+        LOG.warning('cancelled invalid surface record id=%s', row['id'])
+        return None
+
 
 def reserve_outbound(store, work_id, url):
     """Host-only reservation before dispatch; platform recognition belongs to adapters.
@@ -92,13 +134,17 @@ def observe_outbound(store, reservations, url, status, raw):
                 if status is not None and status != 429:
                     outcome = surface.outbound_identity(cfg, url, status, raw)
                 if outcome is not None:
-                    encoded = json.dumps(outcome)
-                    if surface.service._redact_provenance(encoded) != encoded:
+                    if redact_provenance_values(outcome, surface.service._redact_provenance) != outcome:
                         outcome = None
             except Exception:
+                outcome = None  # redaction failure must not persist the unredacted identity
                 LOG.warning('%s: outbound identity unavailable', surface.name)
-            row = db.execute('SELECT detail FROM tool_events WHERE id=?', (event,)).fetchone()
-            detail = json.loads(row['detail'])
+            row = db.execute('SELECT id,detail FROM tool_events WHERE id=?', (event,)).fetchone()
+            if row is None:
+                continue
+            detail = _event_detail(db, row)
+            if detail is None:
+                continue
             detail['settled_at'] = settled_at
             result = 'unidentified'
             if outcome is not None:
@@ -151,12 +197,13 @@ class DirectMessageSurface(ConversationSurface):
 
     def _expire_outbound(self, db):
         from .api_requests import DISPATCH_RECOVERY_BOUND_SECONDS
+        _cancel_invalid_records(db)
         # Use the dispatch deadline, not restart time: a Mac offline for weeks
         # must not turn a crash into a weeks-long unidentified authority window.
         db.execute("UPDATE tool_events SET status='unidentified', "
                    "detail=json_set(detail,'$.settled_at',created+?) "
-                   "WHERE tool=? AND status='pending' AND created<=? "
-                   "AND json_extract(detail,'$.surface')=?",
+                   "WHERE tool=? AND status='pending' AND created<=? AND json_valid(detail) "
+                   f"AND json_extract({SAFE_EVENT_DETAIL},'$.surface')=?",
                    (DISPATCH_RECOVERY_BOUND_SECONDS, OUTBOUND_POST,
                     time.time() - DISPATCH_RECOVERY_BOUND_SECONDS, self.name))
 
@@ -165,17 +212,21 @@ class DirectMessageSurface(ConversationSurface):
         # Filter before deserialization: current pairing only, observed receipts
         # within the echo horizon, unidentified windows intersecting this native
         # source time only. Historical windows remain protective for late data.
-        rows = db.execute("SELECT status,detail,created FROM tool_events WHERE tool=? "
-                          "AND json_extract(detail,'$.surface')=? AND json_extract(detail,'$.generation')=? "
-                          "AND json_extract(detail,'$.channel')=? AND json_extract(detail,'$.owner')=? "
+        rows = db.execute("SELECT status,detail,created,id FROM tool_events WHERE tool=? AND json_valid(detail) "
+                          f"AND json_extract({SAFE_EVENT_DETAIL},'$.surface')=? "
+                          f"AND json_extract({SAFE_EVENT_DETAIL},'$.generation')=? "
+                          f"AND json_extract({SAFE_EVENT_DETAIL},'$.channel')=? "
+                          f"AND json_extract({SAFE_EVENT_DETAIL},'$.owner')=? "
                           "AND (status='pending' OR (status='observed' AND created>=?) "
                           "OR (status='unidentified' AND ? BETWEEN created-? "
-                          "AND json_extract(detail,'$.settled_at')+?))",
+                          f"AND json_extract({SAFE_EVENT_DETAIL},'$.settled_at')+?))",
                           (OUTBOUND_POST, *self._outbound_scope(cfg),
                            time.time() - OBSERVED_POST_RETENTION_SECONDS,
                            spoke, OUTBOUND_TIME_SKEW_SECONDS, OUTBOUND_TIME_SKEW_SECONDS))
         for row in rows:
-            detail = json.loads(row['detail'])
+            detail = _event_detail(db, row)
+            if detail is None:
+                continue
             detail['reserved_at'] = row['created']
             yield row['status'], detail
 
@@ -189,10 +240,20 @@ class DirectMessageSurface(ConversationSurface):
             db.execute('BEGIN IMMEDIATE')
             self._expire_outbound(db)
             rows = list(db.execute("SELECT id,detail FROM tool_events WHERE tool=? AND status=? "
-                                   "AND json_extract(detail,'$.surface')=? ORDER BY id",
+                                   "AND json_valid(detail) "
+                                   f"AND json_extract({SAFE_EVENT_DETAIL},'$.surface')=? ORDER BY id",
                                    (DEFERRED_POST, 'pending', self.name)))
         for row in rows:
-            detail = json.loads(row['detail'])
+            with self.service.store.db() as db:
+                detail = _event_detail(db, row)
+                if detail is None:
+                    continue
+                # Normalize older, valid records to the same deterministic encoding
+                # used by ingestion's dedupe/delete predicates, also redacting leaves.
+                canonical = _serialize_record(detail, self.service._redact_provenance)
+                db.execute("UPDATE tool_events SET detail=? WHERE id=? AND status='pending'",
+                           (canonical, row['id']))
+            detail = json.loads(canonical)
             if detail.pop('surface') != self.name:
                 continue
             cfg = self.config()
@@ -323,8 +384,9 @@ class DirectMessageSurface(ConversationSurface):
             deferred_key = {'surface': self.name, 'message_id': message_id, 'text': text,
                             'reply_to': reply_to, 'owner': owner, 'generation': generation,
                             'spoke': spoke, 'turn_data': turn_data}
-            # Retention uses the same secret redaction as all other local evidence.
-            detail = service._redact_provenance(json.dumps(deferred_key, ensure_ascii=False))
+            # Redact bounded string leaves before deterministic serialization;
+            # text redaction must never consume JSON delimiters or truncate JSON.
+            detail = _serialize_record(deferred_key, service._redact_provenance)
             outbound = list(self._outbound_rows(db, current, spoke))
             if any(status == 'pending' for status, _ in outbound):
                 if not db.execute('SELECT 1 FROM tool_events WHERE tool=? AND status=? AND detail=?',

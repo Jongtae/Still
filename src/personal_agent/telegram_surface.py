@@ -1190,7 +1190,8 @@ class TelegramSurface(ConversationSurface):
             return
         # A forwarded album member cannot lend owner authority to the album.
         db.execute('UPDATE jobs SET owner_typed=NULL,owner_words=NULL WHERE id=?', (work_id,))
-        origin = json.loads(self.service._redact_provenance(json.dumps(origin, ensure_ascii=False)))
+        from .direct_message_surface import redact_provenance_values
+        origin = redact_provenance_values(origin, self.service._redact_provenance)
         self.service.store.merge_turn_provenance(work_id, {'telegram_forwarding': {
             str(message.get('message_id')): origin}},
             combine=lambda old, new: {**old, **new, 'telegram_forwarding': {

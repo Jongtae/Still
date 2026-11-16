@@ -581,7 +581,8 @@ def test_outbound_query_filters_history_and_other_pairings_in_sql(service, paire
         db.set_trace_callback(None)
         assert rows == []
         query = next(q for q in sql if q.startswith('SELECT status,detail,created'))
-        assert "json_extract(detail,'$.generation')" in query and 'created>=' in query
+        assert "'$.generation'" in query and 'json_extract(' in query and 'created>=' in query
+        assert 'json_valid(detail)' in query
         # A delayed unidentified echo still matches its bounded historical window.
         assert list(surface._outbound_rows(db, cfg, NOW - 100))[0][0] == 'unidentified'
 
@@ -595,3 +596,125 @@ def test_native_identity_parser_failure_settles_attempt_and_releases_ingress(ser
     assert_no_pending_ingress(service)
     echo = next(j for j in service.store.jobs() if j['id'] != work)
     assert echo['message'] == INJECTED_RESULT['text'] and echo['owner_typed'] != 1
+
+
+CREDENTIAL_SHAPED_TEXT = 'Authorization: Digest username="bob"'
+
+
+def test_credential_shaped_deferred_message_is_valid_redacted_json_after_restart(service, paired):
+    from personal_agent.direct_message_surface import reserve_outbound, observe_outbound
+    surface = paired[0]
+    cfg = surface.config()
+    url = (cfg['server_url'] + '/api/v4/posts' if surface.name == 'mattermost'
+           else 'https://slack.com/api/chat.postMessage')
+    work = service.store.enqueue('source', 'credential-race744')
+    reservations = reserve_outbound(service.store, work, url)
+    if surface.name == 'slack':
+        # Both the message and the adapter's string-valued routing metadata
+        # must be redacted without consuming their enclosing JSON structure.
+        slack_event(surface, ts=str(NOW + 20), text=CREDENTIAL_SHAPED_TEXT,
+                    thread_ts=CREDENTIAL_SHAPED_TEXT)
+    else:
+        ingest_at(paired, NOW + 20, CREDENTIAL_SHAPED_TEXT)
+    with service.store.db() as db:
+        [held] = db.execute("SELECT detail,json_valid(detail) AS valid FROM tool_events "
+                            "WHERE tool='surface_deferred_post' AND status='pending'").fetchall()
+        assert held['valid'] == 1
+        envelope = json.loads(held['detail'])
+        assert envelope['text'] == service._redact_provenance(CREDENTIAL_SHAPED_TEXT)
+        assert 'bob' not in held['detail']
+        if surface.name == 'slack':
+            assert envelope['turn_data']['thread_ts'] == service._redact_provenance(CREDENTIAL_SHAPED_TEXT)
+    restarted, pair = restart_service(service, paired)
+    pair[0].receive()  # still pending; repeat replay must not duplicate or break the envelope
+    with restarted.store.db() as db:
+        assert db.execute("SELECT count(*) FROM tool_events WHERE tool='surface_deferred_post'").fetchone()[0] == 1
+    observe_outbound(restarted.store, [(pair[0], event, bound) for _, event, bound in reservations],
+                     url, 403, b'{}')
+    pair[0].receive()
+    pair[0].replay_ingress()
+    assert_no_pending_ingress(restarted)
+    [message] = [j for j in restarted.store.jobs() if j['id'] != work]
+    assert message['message'] == restarted._redact_provenance(CREDENTIAL_SHAPED_TEXT)
+    if pair[0].name == 'slack':
+        assert pair[0]._turn(message['id'])['thread_ts'] == restarted._redact_provenance(CREDENTIAL_SHAPED_TEXT)
+
+
+@pytest.mark.parametrize('tool,status', [
+    ('surface_deferred_post', 'pending'),
+    ('surface_outbound_post', 'pending'),
+    ('surface_outbound_post', 'observed'),
+    ('surface_outbound_post', 'unidentified'),
+])
+def test_malformed_surface_row_does_not_block_receive_after_restart(service, paired, tool, status, caplog):
+    # This is the persisted shape of the reviewed failure, not a mocked JSON decoder.
+    broken = '{"surface": "' + paired[0].name + '", "text": "DO_NOT_LOG_744'
+    with service.store.db() as db:
+        bad = db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                         (None, tool, status, broken, NOW - 100)).lastrowid
+    restarted, pair = restart_service(service, paired)
+    pair[0].receive()
+    ingest_at(pair, NOW + 20, 'owner conversation still works')
+    pair[0].receive()
+    assert next(j for j in restarted.store.jobs() if j['message'] == 'owner conversation still works')['owner_typed'] == 1
+    with restarted.store.db() as db:
+        assert db.execute('SELECT status FROM tool_events WHERE id=?', (bad,)).fetchone()[0] == 'cancelled'
+    assert 'DO_NOT_LOG_744' not in caplog.text
+
+
+@pytest.mark.parametrize('sender', [CREDENTIAL_SHAPED_TEXT, 'x' * 61000], ids=['credential', 'field-limit'])
+def test_forward_origin_values_are_redacted_before_json_serialization(service, sender):
+    origin = {'type': 'user', 'date': int(NOW - 60),
+              'sender_user': {'id': 12345, 'first_name': sender, 'last_name': 'keep this ordinary value'}}
+    telegram_update(service, forward_origin=origin)
+    [job] = service.store.jobs()
+    assert job['owner_typed'] != 1
+    with service.store.db() as db:
+        row = db.execute('SELECT record,json_valid(record) AS valid FROM turn_provenance WHERE job_id=?',
+                         (job['id'],)).fetchone()
+        assert row['valid'] == 1
+    stored = service.store.turn_provenance(job['id'])['telegram_forwarding']['744']['forward_origin']
+    assert stored['sender_user']['first_name'] == service._redact_provenance(sender)
+    assert stored['sender_user']['last_name'] == 'keep this ordinary value'
+    assert stored['sender_user']['id'] == 12345
+    assert 'bob' not in row['record']
+
+
+def test_identity_redactor_error_settles_without_persisting_raw_identity(service, paired, monkeypatch):
+    from personal_agent.direct_message_surface import reserve_outbound, observe_outbound
+    surface = paired[0]
+    cfg = surface.config()
+    url = (cfg['server_url'] + '/api/v4/posts' if surface.name == 'mattermost'
+           else 'https://slack.com/api/chat.postMessage')
+    work = service.store.enqueue('source', 'identity-redactor-error744')
+    reservations = reserve_outbound(service.store, work, url)
+    monkeypatch.setattr(surface, 'outbound_identity', lambda *args: (cfg['channel_id'], CREDENTIAL_SHAPED_TEXT))
+    def unavailable(_value):
+        raise ValueError('redaction unavailable')
+    monkeypatch.setattr(service, '_redact_provenance', unavailable)
+    observe_outbound(service.store, reservations, url, 200, b'{}')
+    with service.store.db() as db:
+        row = db.execute('SELECT status,detail,json_valid(detail) AS valid FROM tool_events WHERE id=?',
+                         (reservations[0][1],)).fetchone()
+        assert row['valid'] == 1 and row['status'] == 'unidentified'
+        assert 'bob' not in row['detail']
+
+
+def test_malformed_live_outbound_record_is_cancelled_without_stopping_settlement(service, paired, caplog):
+    from personal_agent.direct_message_surface import reserve_outbound, observe_outbound
+    surface = paired[0]
+    cfg = surface.config()
+    url = (cfg['server_url'] + '/api/v4/posts' if surface.name == 'mattermost'
+           else 'https://slack.com/api/chat.postMessage')
+    work = service.store.enqueue('source', 'malformed-live744')
+    reservations = reserve_outbound(service.store, work, url)
+    with service.store.db() as db:
+        db.execute('UPDATE tool_events SET detail=? WHERE id=?',
+                   ('{"broken": "DO_NOT_LOG_744', reservations[0][1]))
+    observe_outbound(service.store, reservations, url, 403, b'{}')
+    with service.store.db() as db:
+        assert db.execute('SELECT status FROM tool_events WHERE id=?',
+                          (reservations[0][1],)).fetchone()[0] == 'cancelled'
+    ingest_at(paired, NOW + 20, 'after malformed live record')
+    assert next(j for j in service.store.jobs() if j['message'] == 'after malformed live record')['owner_typed'] == 1
+    assert 'DO_NOT_LOG_744' not in caplog.text
