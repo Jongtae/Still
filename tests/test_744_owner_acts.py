@@ -718,3 +718,121 @@ def test_malformed_live_outbound_record_is_cancelled_without_stopping_settlement
     ingest_at(paired, NOW + 20, 'after malformed live record')
     assert next(j for j in service.store.jobs() if j['message'] == 'after malformed live record')['owner_typed'] == 1
     assert 'DO_NOT_LOG_744' not in caplog.text
+
+
+class PositiveSteerJudgment(RecordingJudgment):
+    def judge(self, context, proposition):
+        self.seen.append((context.purpose, dict(context.facts)))
+        return BinaryDecision('decided', context.purpose == 'running-work-steer', fixture_confidence())
+
+
+def running_work_with_steer_observers(service, monkeypatch, channel, owner):
+    service.use_decision_engine(PositiveSteerJudgment())
+    running = service.store.enqueue('Continue the existing request', 'running-steer744', channel, owner,
+                                    owner_typed=True)
+    with service.store.db() as db:
+        db.execute("UPDATE jobs SET status='running' WHERE id=?", (running,))
+    calls = {'consider': [], 'judge': []}
+    original_consider, original_judge = service.consider_steer, service.judge_steer
+    def consider(*args, **kwargs):
+        calls['consider'].append(args)
+        return original_consider(*args, **kwargs)
+    def judge(*args, **kwargs):
+        calls['judge'].append(args)
+        return original_judge(*args, **kwargs)
+    monkeypatch.setattr(service, 'consider_steer', consider)
+    monkeypatch.setattr(service, 'judge_steer', judge)
+    return running, calls
+
+
+def assert_no_owner_steering(service, running, calls):
+    from personal_agent.agent_runtime import claim_owner_steers
+    with service.store.db() as db:
+        assert not db.execute('SELECT 1 FROM work_steers').fetchone()
+    assert calls == {'consider': [], 'judge': []}
+    assert not [purpose for purpose, _ in service.decision_judge.engine.seen if purpose == 'running-work-steer']
+    assert claim_owner_steers(service.store, running) is None
+
+
+@pytest.mark.parametrize('arrival', ['replay', 'direct'])
+def test_unidentified_echo_never_steers_running_work(service, paired, monkeypatch, arrival):
+    surface, wire = paired
+    cfg = surface.config()
+    running, calls = running_work_with_steer_observers(service, monkeypatch,
+        surface.channel_prefix + cfg['generation'], cfg['owner_user_id'])
+    sent = []
+    def outbound(method, url, headers, body, timeout):
+        data = json.loads(body)
+        post = (wire.post(mm.OWNER, data['channel_id'], data['message']) if surface.name == 'mattermost'
+                else wire.chat_postMessage(channel=data['channel'], text=data['text']))
+        sent.append(post)
+        if arrival == 'replay':
+            ingest_post(paired, post)  # the real API attempt still holds ingress here
+        return 200, {}, b'{}'  # accepted write with no trustworthy returned identity
+    host, path, body = (('mattermost.fixture.test', '/api/v4/posts',
+                        {'channel_id': cfg['channel_id'], 'message': 'outside content'})
+                       if surface.name == 'mattermost' else
+                       ('slack.com', '/api/chat.postMessage', {'channel': cfg['channel_id'], 'text': 'outside content'}))
+    api_post(service, host, path, body, outbound)
+    if arrival == 'direct':
+        ingest_post(paired, sent[0])  # exercise each adapter's direct, non-replay path
+    echo = next(j for j in service.store.jobs() if j['message'] == INJECTED_RESULT['text'])
+    assert echo['owner_typed'] != 1 and echo['status'] == 'queued'
+    assert service.store.turn_provenance(echo['id'])['surface_origin']['kind'] == 'unidentified_outbound_window'
+    assert_no_pending_ingress(service)
+    assert_no_owner_steering(service, running, calls)
+
+
+@pytest.mark.parametrize('forward', [
+    {'forward_origin': {'type': 'user', 'sender_user': {'id': 12345, 'first_name': 'External744'}, 'date': int(NOW - 60)}},
+    {'forward_from': {'id': 12345}, 'forward_date': int(NOW - 60)},
+], ids=['modern', 'legacy'])
+def test_forwarded_telegram_never_steers_running_work(service, monkeypatch, forward):
+    service.store.put('telegram', {'enabled': True, 'user_id': 77, 'generation': 'g744', 'cursor': 0})
+    running, calls = running_work_with_steer_observers(service, monkeypatch, 'telegram:g744', 77)
+    telegram_update(service, text='Please change the running request', **forward)
+    forwarded = next(j for j in service.store.jobs() if j['id'] != running)
+    assert forwarded['owner_typed'] != 1 and forwarded['status'] == 'queued'
+    assert service.store.turn_provenance(forwarded['id'])['telegram_forwarding']['744'] == forward
+    assert_no_owner_steering(service, running, calls)
+
+
+@pytest.mark.parametrize('arrival', ['replay', 'direct'])
+def test_owner_typed_surface_message_still_steers_running_work(service, paired, monkeypatch, arrival):
+    from personal_agent.agent_runtime import claim_owner_steers
+    from personal_agent.direct_message_surface import reserve_outbound, observe_outbound
+    surface = paired[0]
+    cfg = surface.config()
+    running, calls = running_work_with_steer_observers(service, monkeypatch,
+        surface.channel_prefix + cfg['generation'], cfg['owner_user_id'])
+    text = 'Please include this genuine owner update'
+    if arrival == 'replay':
+        url = (cfg['server_url'] + '/api/v4/posts' if surface.name == 'mattermost'
+               else 'https://slack.com/api/chat.postMessage')
+        reservations = reserve_outbound(service.store, running, url)
+        ingest_at(paired, NOW + 20, text)
+        assert calls == {'consider': [], 'judge': []}
+        observe_outbound(service.store, reservations, url, 403, b'{}')
+    else:
+        ingest_at(paired, NOW + 20, text)
+    typed = next(j for j in service.store.jobs() if j['message'] == text)
+    assert typed['owner_typed'] == 1
+    assert calls['consider'] == [(typed['id'], text)]
+    assert calls['judge'] == [(running, typed['id'], text)]
+    with service.store.db() as db:
+        row = db.execute('SELECT source_job_id,content FROM work_steers WHERE job_id=?', (running,)).fetchone()
+        assert row['source_job_id'] == typed['id'] and row['content'] == text
+    assert text in claim_owner_steers(service.store, running)
+
+
+def test_owner_typed_telegram_message_still_steers_running_work(service, monkeypatch):
+    from personal_agent.agent_runtime import claim_owner_steers
+    service.store.put('telegram', {'enabled': True, 'user_id': 77, 'generation': 'g744', 'cursor': 0})
+    running, calls = running_work_with_steer_observers(service, monkeypatch, 'telegram:g744', 77)
+    text = 'Please include this genuine owner update'
+    telegram_update(service, text=text)
+    typed = next(j for j in service.store.jobs() if j['id'] != running)
+    assert typed['owner_typed'] == 1
+    assert calls['consider'] == [(typed['id'], text)]
+    assert calls['judge'] == [(running, typed['id'], text)]
+    assert text in claim_owner_steers(service.store, running)

@@ -95,6 +95,14 @@ def _event_detail(db, row):
         return None
 
 
+def steer_if_owner_typed(service, work_id, text):
+    """Only host-recorded owner words may enter the running worker's owner-steer path."""
+    work = service.store.job(work_id)
+    if work and work.get('owner_typed') == 1:
+        return service.consider_steer(work_id, text)
+    return False
+
+
 def reserve_outbound(store, work_id, url):
     """Host-only reservation before dispatch; platform recognition belongs to adapters.
 
@@ -265,7 +273,7 @@ class DirectMessageSurface(ConversationSurface):
             # A still-pending reservation leaves this row in place. The ingress
             # transaction deletes it only when it can classify the message.
             if work_id and self.service.is_natural_language(detail['text']):
-                self.service.consider_steer(work_id, detail['text'])
+                steer_if_owner_typed(self.service, work_id, detail['text'])
 
     # -- configuration --------------------------------------------------------------
     def config(self):

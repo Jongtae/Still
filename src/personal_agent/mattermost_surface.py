@@ -41,7 +41,7 @@ import time
 from urllib.parse import quote, urlsplit
 
 from .conversation_surface import PRESENCE_REACT, PRESENCE_TYPING, SurfaceCapabilities
-from .direct_message_surface import EMOJI_NAMES, DirectMessageSurface
+from .direct_message_surface import EMOJI_NAMES, DirectMessageSurface, steer_if_owner_typed
 from .messages import msg
 from .providers import ProviderError
 from . import work_mode
@@ -374,7 +374,7 @@ class MattermostSurface(DirectMessageSurface):
                                                'pending_reactions': pending})
         for work_id, text in created:
             if service.is_natural_language(text):
-                service.consider_steer(work_id, text)
+                steer_if_owner_typed(service, work_id, text)
         for entry in pending:
             key = entry['key']
             acting = (generation, key)

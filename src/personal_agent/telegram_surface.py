@@ -46,6 +46,7 @@ from .conversation_surface import (PRESENCE_REACT, PRESENCE_TYPING, Conversation
                                    notice_binding, notice_text)
 from .agent_runtime import WORK_STOP_KEEP, WORK_STOP_KEY
 from .messages import msg
+from .direct_message_surface import steer_if_owner_typed
 from . import owner_model as om
 from . import entrusted_lines
 from . import preparations as prep
@@ -1174,7 +1175,7 @@ class TelegramSurface(ConversationSurface):
                 # (`acknowledge_long_work`, #510/#581/#958).
             if authorized and task_id and not paired and not guided_context and not has_photo \
                     and service.is_natural_language(text):
-                service.consider_steer(task_id,text)
+                steer_if_owner_typed(service,task_id,text)
         if located_chat is not None:
             service.withdraw_location_keyboard(located_chat)
 

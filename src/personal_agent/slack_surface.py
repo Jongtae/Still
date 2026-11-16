@@ -46,7 +46,7 @@ import threading
 import time
 
 from .conversation_surface import PRESENCE_REACT, SurfaceCapabilities
-from .direct_message_surface import EMOJI_NAMES, DirectMessageSurface
+from .direct_message_surface import EMOJI_NAMES, DirectMessageSurface, steer_if_owner_typed
 from .messages import msg
 from .providers import ProviderError
 from . import work_mode
@@ -621,7 +621,7 @@ class SlackSurface(DirectMessageSurface):
             work_id = self._ingest_owner_message(message_id(ts), text, reply_to, owner, generation, spoke=spoke,
                                                  turn_data={'thread_ts': thread if isinstance(thread, str) and thread else None})
             if work_id and self.service.is_natural_language(text):
-                self.service.consider_steer(work_id, text)
+                steer_if_owner_typed(self.service, work_id, text)
             return work_id
         if kind == 'reaction_added':
             item = event.get('item') if isinstance(event.get('item'), dict) else {}
