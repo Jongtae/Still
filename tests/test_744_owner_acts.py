@@ -6,6 +6,8 @@ No live model, CLI, account or socket. An injected result scripts the adversaria
 worker's next call; this does not measure a model's susceptibility to that text.
 """
 import json
+import os
+import threading
 import time
 
 import pytest
@@ -505,6 +507,8 @@ def test_stale_crash_reservation_has_bounded_window_and_releases_on_tick(service
            else 'https://slack.com/api/chat.postMessage')
     work = service.store.enqueue('source', 'crashed-send')
     [(_, event, _)] = reserve_outbound(service.store, work, url)
+    set_outbound_process_owner(service, event, 4242744, 'dead-process744')
+    monkeypatch.setattr(os, 'kill', dead_outbound_process)
     ingest_at(paired, NOW, 'echo during crashed send')
     assert not [j for j in service.store.jobs() if j['id'] != work]
     # Even a long offline interval uses the original finite dispatch deadline.
@@ -529,7 +533,9 @@ def test_stale_reservation_expires_on_ingress_without_tick(service, paired, monk
     url = (surface.config()['server_url'] + '/api/v4/posts' if surface.name == 'mattermost'
            else 'https://slack.com/api/chat.postMessage')
     work = service.store.enqueue('source', 'crashed-without-ingress')
-    reserve_outbound(service.store, work, url)
+    [(_, event, _)] = reserve_outbound(service.store, work, url)
+    set_outbound_process_owner(service, event, 4242744, 'dead-process744')
+    monkeypatch.setattr(os, 'kill', dead_outbound_process)
     monkeypatch.setattr(time, 'time', lambda: NOW + DISPATCH_RECOVERY_BOUND_SECONDS + 10)
     ingest_at(paired, time.time(), 'first message after stale send')
     assert_no_pending_ingress(service)
@@ -836,3 +842,235 @@ def test_owner_typed_telegram_message_still_steers_running_work(service, monkeyp
     assert calls['consider'] == [(typed['id'], text)]
     assert calls['judge'] == [(running, typed['id'], text)]
     assert text in claim_owner_steers(service.store, running)
+
+
+
+def set_outbound_process_owner(service, event, pid, token):
+    with service.store.db() as db:
+        detail = json.loads(db.execute('SELECT detail FROM tool_events WHERE id=?', (event,)).fetchone()[0])
+        detail.update(process_pid=pid, process_token=token)
+        db.execute('UPDATE tool_events SET detail=? WHERE id=?', (json.dumps(detail), event))
+
+
+def dead_outbound_process(pid, signal):
+    assert pid == 4242744 and signal == 0
+    raise ProcessLookupError('fixture process has exited')
+
+
+@pytest.mark.parametrize('response', ['identified', 'unidentified'])
+def test_live_transport_past_crash_bound_keeps_late_echo_held(service, paired, monkeypatch, response):
+    surface, wire = paired
+    cfg = surface.config()
+    now = [NOW]
+    monkeypatch.setattr(time, 'time', lambda: now[0])
+    entered, release = threading.Event(), threading.Event()
+    posts, failures = [], []
+    def transport(method, url, headers, body, timeout):
+        entered.set()
+        assert release.wait(5), 'test did not release the fake transport'
+        return 200, {}, json.dumps(posts[0] if response == 'identified' else {}).encode()
+    def dispatch():
+        try:
+            host, path, body = (('mattermost.fixture.test', '/api/v4/posts',
+                                {'channel_id': cfg['channel_id'], 'message': 'outside content'})
+                               if surface.name == 'mattermost' else
+                               ('slack.com', '/api/chat.postMessage', {'channel': cfg['channel_id'], 'text': 'outside content'}))
+            api_post(service, host, path, body, transport)
+        except BaseException as exc:
+            failures.append(exc)
+    worker = threading.Thread(target=dispatch, daemon=True)
+    worker.start()
+    try:
+        assert entered.wait(5), 'the real API dispatch did not reach transport'
+        now[0] = NOW + 40
+        if surface.name == 'mattermost':
+            post = wire.post(mm.OWNER, cfg['channel_id'], INJECTED_RESULT['text'])
+            native_ms = int(now[0] * 1000 - cfg.get('clock_offset_ms', 0))
+            post.update(create_at=native_ms, update_at=native_ms)
+        else:
+            ts = str(now[0] - cfg.get('clock_offset', 0))
+            post = {'ok': True, 'channel': cfg['channel_id'], 'ts': ts}
+            wire.messages[ts] = {'channel': cfg['channel_id'], 'text': INJECTED_RESULT['text']}
+        posts.append(post)
+        ingest_post(paired, post)
+        surface.replay_ingress()  # neither ingress nor the tick may expire a live attempt
+        assert not [j for j in service.store.jobs() if j['message'] == INJECTED_RESULT['text']]
+        with service.store.db() as db:
+            assert db.execute("SELECT status FROM tool_events WHERE tool='surface_outbound_post'").fetchone()[0] == 'pending'
+    finally:
+        release.set()
+        worker.join(5)
+    assert not worker.is_alive() and not failures
+    assert_no_pending_ingress(service)
+    echoes = [j for j in service.store.jobs() if j['message'] == INJECTED_RESULT['text']]
+    if response == 'identified':
+        assert not echoes, 'the response identity must drop the held own post'
+    else:
+        [echo] = echoes
+        assert echo['owner_typed'] != 1
+        assert service.store.turn_provenance(echo['id'])['surface_origin']['windows'][0]['settled_at'] == NOW + 40
+
+
+@pytest.mark.parametrize('probe', ['alive', 'permission-denied', 'unknown-error'])
+def test_other_live_process_reservation_is_not_expired_by_age(service, paired, monkeypatch, probe):
+    from personal_agent.direct_message_surface import reserve_outbound, observe_outbound
+    surface = paired[0]
+    cfg = surface.config()
+    url = (cfg['server_url'] + '/api/v4/posts' if surface.name == 'mattermost'
+           else 'https://slack.com/api/chat.postMessage')
+    work = service.store.enqueue('source', 'foreign-live744')
+    reservations = reserve_outbound(service.store, work, url)
+    set_outbound_process_owner(service, reservations[0][1], 4242745, 'other-live-process744')
+    calls = []
+    def alive(pid, signal):
+        calls.append((pid, signal))
+        assert pid == 4242745 and signal == 0
+        if probe == 'permission-denied':
+            raise PermissionError('liveness is not disproved')
+        if probe == 'unknown-error':
+            raise RuntimeError('process liveness unavailable')
+    monkeypatch.setattr(os, 'kill', alive)
+    monkeypatch.setattr(time, 'time', lambda: NOW + 40)
+    ingest_at(paired, NOW + 40, 'owner message during another live attempt')
+    surface.replay_ingress()
+    assert not [j for j in service.store.jobs() if j['id'] != work]
+    assert calls and set(calls) == {(4242745, 0)}, 'probe exactly the recorded process with signal zero'
+    observe_outbound(service.store, reservations, url, 403, b'{}')
+    assert_no_pending_ingress(service)
+    assert next(j for j in service.store.jobs() if j['id'] != work)['owner_typed'] == 1
+
+
+def test_same_process_missing_live_registration_expires_after_bound(service, paired, monkeypatch):
+    from personal_agent.api_requests import DISPATCH_RECOVERY_BOUND_SECONDS
+    from personal_agent import direct_message_surface as dm
+    surface = paired[0]
+    cfg = surface.config()
+    url = (cfg['server_url'] + '/api/v4/posts' if surface.name == 'mattermost'
+           else 'https://slack.com/api/chat.postMessage')
+    work = service.store.enqueue('source', 'abandoned-attempt744')
+    reservations = dm.reserve_outbound(service.store, work, url)
+    # Removing the local registration simulates an attempt that unwound without
+    # settling its durable record, without pretending a live process has crashed.
+    release = getattr(dm, '_release_live_reservations', None)
+    if release is not None:
+        release(service.store, reservations)
+    monkeypatch.setattr(time, 'time', lambda: NOW + DISPATCH_RECOVERY_BOUND_SECONDS + 10)
+    ingest_at(paired, time.time(), 'owner after abandoned attempt')
+    assert_no_pending_ingress(service)
+    with service.store.db() as db:
+        row = db.execute('SELECT status,detail FROM tool_events WHERE id=?', (reservations[0][1],)).fetchone()
+        assert row['status'] == 'unidentified'
+        assert json.loads(row['detail'])['settled_at'] == NOW + DISPATCH_RECOVERY_BOUND_SECONDS
+    assert next(j for j in service.store.jobs() if j['id'] != work)['owner_typed'] == 1
+
+
+def test_live_reservation_ids_are_scoped_to_the_store(service, paired, monkeypatch):
+    from personal_agent import direct_message_surface as dm
+    surface = paired[0]
+    cfg = surface.config()
+    url = (cfg['server_url'] + '/api/v4/posts' if surface.name == 'mattermost'
+           else 'https://slack.com/api/chat.postMessage')
+    other = AgentService(QuickStore(service.store.root.parent / 'other-owner-store'))
+    other.use_decision_engine(RecordingJudgment())
+    other.steer_spawn = lambda target: target()
+    other.store.put(surface.CONFIG_KEY, cfg)
+    other_surface = getattr(other, surface.name + '_surface')
+    first_work = service.store.enqueue('source', 'first-store744')
+    second_work = other.store.enqueue('source', 'second-store744')
+    first = dm.reserve_outbound(service.store, first_work, url)
+    second = dm.reserve_outbound(other.store, second_work, url)
+    assert first[0][1] == second[0][1], 'exercise an actual SQLite event-id collision across stores'
+    release = getattr(dm, '_release_live_reservations', None)
+    if release is not None:
+        release(other.store, second)
+    monkeypatch.setattr(time, 'time', lambda: NOW + 40)
+    try:
+        ingest_at(paired, NOW + 40, 'first store still has a live attempt')
+        assert not [j for j in service.store.jobs() if j['id'] != first_work]
+        ingest_at((other_surface, paired[1]), NOW + 40, 'second store abandoned its attempt')
+        assert_no_pending_ingress(other)
+        assert next(j for j in other.store.jobs() if j['id'] != second_work)['owner_typed'] == 1
+    finally:
+        dm.observe_outbound(service.store, first, url, 403, b'{}')
+
+
+def test_observation_failure_releases_live_registration_in_finally(service, paired, monkeypatch):
+    from personal_agent.direct_message_surface import reserve_outbound, observe_outbound
+    surface = paired[0]
+    cfg = surface.config()
+    url = (cfg['server_url'] + '/api/v4/posts' if surface.name == 'mattermost'
+           else 'https://slack.com/api/chat.postMessage')
+    work = service.store.enqueue('source', 'failed-observation744')
+    reservations = reserve_outbound(service.store, work, url)
+    def unavailable():
+        raise RuntimeError('fixture settlement store unavailable')
+    with monkeypatch.context() as patch:
+        patch.setattr(service.store, 'db', unavailable)
+        with pytest.raises(RuntimeError):
+            observe_outbound(service.store, reservations, url, 200, b'{}')
+    monkeypatch.setattr(time, 'time', lambda: NOW + 40)
+    ingest_at(paired, NOW + 40, 'owner after failed settlement')
+    assert_no_pending_ingress(service)
+    assert next(j for j in service.store.jobs() if j['id'] != work)['owner_typed'] == 1
+
+
+def test_exited_attempt_thread_is_not_kept_live_by_its_pid(service, paired, monkeypatch):
+    from personal_agent.direct_message_surface import reserve_outbound
+    surface = paired[0]
+    cfg = surface.config()
+    url = (cfg['server_url'] + '/api/v4/posts' if surface.name == 'mattermost'
+           else 'https://slack.com/api/chat.postMessage')
+    work = service.store.enqueue('source', 'exited-thread744')
+    reservations = []
+    def abandon():
+        reservations.extend(reserve_outbound(service.store, work, url))
+    worker = threading.Thread(target=abandon, daemon=True)
+    worker.start()
+    worker.join(5)
+    assert not worker.is_alive() and reservations
+    monkeypatch.setattr(time, 'time', lambda: NOW + 40)
+    ingest_at(paired, NOW + 40, 'owner after attempt thread exited')
+    assert_no_pending_ingress(service)
+    assert next(j for j in service.store.jobs() if j['id'] != work)['owner_typed'] == 1
+
+
+def test_missing_process_metadata_is_not_guessed_dead(service, paired, monkeypatch):
+    from personal_agent.direct_message_surface import reserve_outbound, observe_outbound
+    surface = paired[0]
+    cfg = surface.config()
+    url = (cfg['server_url'] + '/api/v4/posts' if surface.name == 'mattermost'
+           else 'https://slack.com/api/chat.postMessage')
+    work = service.store.enqueue('source', 'legacy-process744')
+    reservations = reserve_outbound(service.store, work, url)
+    with service.store.db() as db:
+        row = db.execute('SELECT detail FROM tool_events WHERE id=?', (reservations[0][1],)).fetchone()
+        detail = json.loads(row['detail'])
+        detail.pop('process_token', None)
+        detail.pop('process_pid', None)
+        db.execute('UPDATE tool_events SET detail=? WHERE id=?', (json.dumps(detail), reservations[0][1]))
+    monkeypatch.setattr(time, 'time', lambda: NOW + 40)
+    try:
+        ingest_at(paired, NOW + 40, 'legacy attempt liveness unknown')
+        assert not [j for j in service.store.jobs() if j['id'] != work]
+    finally:
+        observe_outbound(service.store, reservations, url, 403, b'{}')
+    assert_no_pending_ingress(service)
+
+
+def test_unwound_dispatch_does_not_keep_a_surviving_thread_live(service, paired, monkeypatch):
+    class InterruptedAttempt(BaseException):
+        pass
+    surface = paired[0]
+    cfg = surface.config()
+    def interrupted(*args):
+        raise InterruptedAttempt()
+    host, path, body = (('mattermost.fixture.test', '/api/v4/posts',
+                        {'channel_id': cfg['channel_id'], 'message': 'outside content'})
+                       if surface.name == 'mattermost' else
+                       ('slack.com', '/api/chat.postMessage', {'channel': cfg['channel_id'], 'text': 'outside content'}))
+    with pytest.raises(InterruptedAttempt):
+        api_post(service, host, path, body, interrupted)
+    monkeypatch.setattr(time, 'time', lambda: NOW + 40)
+    ingest_at(paired, NOW + 40, 'owner after unwound dispatch')
+    assert_no_pending_ingress(service)
+    assert next(j for j in service.store.jobs() if j['message'] == 'owner after unwound dispatch')['owner_typed'] == 1

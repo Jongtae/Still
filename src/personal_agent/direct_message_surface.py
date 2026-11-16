@@ -25,6 +25,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import secrets
+import threading
 import time
 
 from .conversation_surface import ConversationSurface, SurfacePairing, notice_binding, notice_text
@@ -51,6 +54,55 @@ OUTBOUND_TIME_SKEW_SECONDS = 2
 # Matches Slack's existing seven-day event dedupe horizon; normal echo delivery
 # takes seconds/minutes. Longer offline/replayed *identified* echoes are a limit.
 OBSERVED_POST_RETENTION_SECONDS = 7 * 86400
+
+
+def _reset_outbound_process():
+    # A fork must not inherit its parent's identity, threads or locked mutex.
+    global _PROCESS_PID, _PROCESS_TOKEN, _LIVE_OUTBOUND, _LIVE_OUTBOUND_LOCK
+    _PROCESS_PID = os.getpid()
+    _PROCESS_TOKEN = secrets.token_hex(32)
+    _LIVE_OUTBOUND = {}
+    _LIVE_OUTBOUND_LOCK = threading.Lock()
+
+
+_reset_outbound_process()
+if hasattr(os, 'register_at_fork'):
+    os.register_at_fork(after_in_child=_reset_outbound_process)
+
+
+def _reservation_key(store, event):
+    # Event IDs are unique within a database, not across separate owner stores.
+    return str(store.path), event
+
+
+def _release_live_reservations(store, reservations):
+    with _LIVE_OUTBOUND_LOCK:
+        for _, event, _ in reservations:
+            _LIVE_OUTBOUND.pop(_reservation_key(store, event), None)
+
+
+def _attempt_is_dead(store, event, detail):
+    if detail.get('process_token') == _PROCESS_TOKEN:
+        with _LIVE_OUTBOUND_LOCK:
+            key = _reservation_key(store, event)
+            thread = _LIVE_OUTBOUND.get(key)
+            if thread is not None and thread.is_alive():
+                return False
+            # Reap a thread that exited before observation, as well as an
+            # explicit finally-release after a failed settlement transaction.
+            _LIVE_OUTBOUND.pop(key, None)
+            return True
+    pid = detail.get('process_pid')
+    if type(pid) is not int or pid <= 0:
+        return False  # legacy/missing ownership is not proof of a crash
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    except Exception:
+        return False  # permission denied / invalid PID / unknown is not proof of death
+    return False
+
 
 # Never give a text redactor JSON syntax: it can consume closing delimiters,
 # and its text limit is per value rather than a limit on a serialized record.
@@ -107,21 +159,28 @@ def reserve_outbound(store, work_id, url):
     """Host-only reservation before dispatch; platform recognition belongs to adapters.
 
     The committed reservation closes the response/ingress race, including a crash
-    after send but before receipt. Only a live attempt briefly holds ingress.
+    after send but before receipt. A live attempt holds ingress until it ends.
     No bodies, credentials or message text are stored in this identity ledger.
     """
     reservations = []
-    with store.db() as db:
-        db.execute('BEGIN IMMEDIATE')
-        for surface in getattr(store, '_outbound_surfaces', {}).values():
-            cfg = store.config(surface.CONFIG_KEY, {}, db=db) or {}
-            if cfg.get('enabled') and surface.outbound_target(cfg, url):
-                reserved_at = time.time()
-                detail = {'reserved_at': reserved_at, 'surface': surface.name, 'generation': cfg['generation'],
-                          'channel': cfg['channel_id'], 'owner': cfg['owner_user_id']}
-                event = db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
-                                   (work_id, OUTBOUND_POST, 'pending', json.dumps(detail), reserved_at)).lastrowid
-                reservations.append((surface, event, cfg))
+    try:
+        with store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            for surface in getattr(store, '_outbound_surfaces', {}).values():
+                cfg = store.config(surface.CONFIG_KEY, {}, db=db) or {}
+                if cfg.get('enabled') and surface.outbound_target(cfg, url):
+                    reserved_at = time.time()
+                    detail = {'reserved_at': reserved_at, 'surface': surface.name, 'generation': cfg['generation'],
+                              'channel': cfg['channel_id'], 'owner': cfg['owner_user_id'],
+                              'process_pid': _PROCESS_PID, 'process_token': _PROCESS_TOKEN}
+                    event = db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                                       (work_id, OUTBOUND_POST, 'pending', json.dumps(detail), reserved_at)).lastrowid
+                    reservations.append((surface, event, cfg))
+                    with _LIVE_OUTBOUND_LOCK:
+                        _LIVE_OUTBOUND[_reservation_key(store, event)] = threading.current_thread()
+    except BaseException:
+        _release_live_reservations(store, reservations)
+        raise
     return reservations
 
 
@@ -131,43 +190,46 @@ def observe_outbound(store, reservations, url, status, raw):
     Receipt persistence and hold release are atomic. Failed replay is retried by
     the ordinary receive tick, and cannot turn a known send into an unknown effect.
     """
-    settled_at = time.time()
-    with store.db() as db:
-        db.execute('BEGIN IMMEDIATE')
-        for surface, event, cfg in reservations:
-            outcome = None
-            try:
-                # A transient rate-limit/error or lost response does not attest
-                # that nothing was posted. No platform-specific error list here.
-                if status is not None and status != 429:
-                    outcome = surface.outbound_identity(cfg, url, status, raw)
+    try:
+        settled_at = time.time()
+        with store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            for surface, event, cfg in reservations:
+                outcome = None
+                try:
+                    # A transient rate-limit/error or lost response does not attest
+                    # that nothing was posted. No platform-specific error list here.
+                    if status is not None and status != 429:
+                        outcome = surface.outbound_identity(cfg, url, status, raw)
+                    if outcome is not None:
+                        if redact_provenance_values(outcome, surface.service._redact_provenance) != outcome:
+                            outcome = None
+                except Exception:
+                    outcome = None  # redaction failure must not persist the unredacted identity
+                    LOG.warning('%s: outbound identity unavailable', surface.name)
+                row = db.execute('SELECT id,detail FROM tool_events WHERE id=?', (event,)).fetchone()
+                if row is None:
+                    continue
+                detail = _event_detail(db, row)
+                if detail is None:
+                    continue
+                detail['settled_at'] = settled_at
+                result = 'unidentified'
                 if outcome is not None:
-                    if redact_provenance_values(outcome, surface.service._redact_provenance) != outcome:
-                        outcome = None
+                    channel, post_id = outcome
+                    detail.update(channel=channel, post_id=post_id)
+                    result = 'observed' if post_id else 'rejected'
+                db.execute('UPDATE tool_events SET status=?,detail=? WHERE id=?',
+                           (result, json.dumps(detail), event))
+        # Release immediately on completion, including exceptions and every retry
+        # attempt. Another live attempt on the pairing can still briefly defer it.
+        for surface in {surface for surface, _, _ in reservations}:
+            try:
+                surface.replay_ingress()
             except Exception:
-                outcome = None  # redaction failure must not persist the unredacted identity
-                LOG.warning('%s: outbound identity unavailable', surface.name)
-            row = db.execute('SELECT id,detail FROM tool_events WHERE id=?', (event,)).fetchone()
-            if row is None:
-                continue
-            detail = _event_detail(db, row)
-            if detail is None:
-                continue
-            detail['settled_at'] = settled_at
-            result = 'unidentified'
-            if outcome is not None:
-                channel, post_id = outcome
-                detail.update(channel=channel, post_id=post_id)
-                result = 'observed' if post_id else 'rejected'
-            db.execute('UPDATE tool_events SET status=?,detail=? WHERE id=?',
-                       (result, json.dumps(detail), event))
-    # Release immediately on completion, including exceptions and every retry
-    # attempt. Another live attempt on the pairing can still briefly defer it.
-    for surface in {surface for surface, _, _ in reservations}:
-        try:
-            surface.replay_ingress()
-        except Exception:
-            LOG.warning('%s: deferred ingress awaits receive tick', surface.name)
+                LOG.warning('%s: deferred ingress awaits receive tick', surface.name)
+    finally:
+        _release_live_reservations(store, reservations)
 
 
 class DirectMessageSurface(ConversationSurface):
@@ -206,14 +268,21 @@ class DirectMessageSurface(ConversationSurface):
     def _expire_outbound(self, db):
         from .api_requests import DISPATCH_RECOVERY_BOUND_SECONDS
         _cancel_invalid_records(db)
-        # Use the dispatch deadline, not restart time: a Mac offline for weeks
-        # must not turn a crash into a weeks-long unidentified authority window.
-        db.execute("UPDATE tool_events SET status='unidentified', "
-                   "detail=json_set(detail,'$.settled_at',created+?) "
-                   "WHERE tool=? AND status='pending' AND created<=? AND json_valid(detail) "
-                   f"AND json_extract({SAFE_EVENT_DETAIL},'$.surface')=?",
-                   (DISPATCH_RECOVERY_BOUND_SECONDS, OUTBOUND_POST,
-                    time.time() - DISPATCH_RECOVERY_BOUND_SECONDS, self.name))
+        # Per-operation socket timeouts do not bound an entire live send.
+        # Age selects crash candidates only; ownership must prove they stopped.
+        rows = db.execute("SELECT id,detail,created FROM tool_events WHERE tool=? "
+                          "AND status='pending' AND created<=? AND json_valid(detail) "
+                          f"AND json_extract({SAFE_EVENT_DETAIL},'$.surface')=?",
+                          (OUTBOUND_POST, time.time() - DISPATCH_RECOVERY_BOUND_SECONDS, self.name))
+        for row in rows:
+            detail = _event_detail(db, row)
+            if detail is None or not _attempt_is_dead(self.service.store, row['id'], detail):
+                continue
+            # Keep the requested finite crash window, never the restart time.
+            db.execute("UPDATE tool_events SET status='unidentified', "
+                       "detail=json_set(detail,'$.settled_at',created+?) "
+                       "WHERE id=? AND status='pending'",
+                       (DISPATCH_RECOVERY_BOUND_SECONDS, row['id']))
 
     def _outbound_rows(self, db, cfg, spoke=None):
         self._expire_outbound(db)

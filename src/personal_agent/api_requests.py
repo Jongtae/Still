@@ -87,7 +87,8 @@ TIMEOUT = 15
 MAX_TRANSPORT_ATTEMPTS = 2  # reads only; writes remain single-attempt/no-replay
 RETRY_SLEEP_SECONDS = 1
 DISPATCH_RECOVERY_MARGIN_SECONDS = 5
-# Conservative crash-recovery ceiling for an API call, not permission to retry a write.
+# Window assigned after a reservation is proven abandoned; not a total transport
+# deadline (socket-operation timeouts and address attempts may exceed this).
 DISPATCH_RECOVERY_BOUND_SECONDS = (TIMEOUT * MAX_TRANSPORT_ATTEMPTS
     + RETRY_SLEEP_SECONDS * (MAX_TRANSPORT_ATTEMPTS - 1) + DISPATCH_RECOVERY_MARGIN_SECONDS)
 MAX_RESPONSE_BYTES = 1_000_000
@@ -1327,7 +1328,7 @@ class ApiRequests:
                     self._release_effect(claim)
                 raise
             from .agent_runtime import handed_off
-            from .direct_message_surface import reserve_outbound, observe_outbound
+            from .direct_message_surface import reserve_outbound, observe_outbound, _release_live_reservations
             # Platform formats stay in their adapters. Commit a reservation before
             # transport so even ingestion on another thread/process cannot outrun
             # the response identity (or promote an unknown send after a crash).
@@ -1337,34 +1338,39 @@ class ApiRequests:
                 if write_ticket:self.approvals.self_set_write_release(write_ticket)
                 self._release_effect(claim)  # no transport; preserve the existing no-replay boundary
                 raise
-            handed_off()   # #233: the request leaves Still's own checks here
             try:
-                status, response_headers, raw = self.transport(method, url, headers, body.encode() if body else None, TIMEOUT)
-            except Exception as exc:
-                # This attempt is over even when the response was lost. Its
-                # provenance window never keeps the owner's conversation held.
+                handed_off()   # #233: the request leaves Still's own checks here
+                try:
+                    status, response_headers, raw = self.transport(method, url, headers, body.encode() if body else None, TIMEOUT)
+                except Exception as exc:
+                    # This attempt is over even when the response was lost. Its
+                    # provenance window never keeps the owner's conversation held.
+                    if reservations:
+                        observe_outbound(self.store, reservations, url, None, b'')
+                    if write_ticket:self.approvals.self_set_write_finished(write_ticket,observed=False)
+                    if identity:
+                        raise ApiError(UNKNOWN_EFFECT_TEXT, 'effect_unknown', effect='unknown') from None
+                    if not _transient(exc):
+                        raise ApiError('API 요청을 보내지 못했습니다.', 'api_unavailable') from None
+                    if attempts < tries:
+                        self.sleep(RETRY_SLEEP_SECONDS)
+                        continue
+                    raise ApiError(f'API가 응답하지 않았습니다({attempts}회 시도). 잠시 후 다시 시도해 주세요.', 'api_unavailable') from None
                 if reservations:
-                    observe_outbound(self.store, reservations, url, None, b'')
-                if write_ticket:self.approvals.self_set_write_finished(write_ticket,observed=False)
-                if identity:
-                    raise ApiError(UNKNOWN_EFFECT_TEXT, 'effect_unknown', effect='unknown') from None
-                if not _transient(exc):
-                    raise ApiError('API 요청을 보내지 못했습니다.', 'api_unavailable') from None
-                if attempts < tries:
+                    try:
+                        observe_outbound(self.store, reservations, url, status, raw)
+                    except Exception:
+                        if write_ticket:self.approvals.self_set_write_finished(write_ticket,observed=False)
+                        raise ApiError(UNKNOWN_EFFECT_TEXT, 'effect_unknown', effect='unknown') from None
+                if write_ticket:
+                    self.approvals.self_set_write_finished(write_ticket,observed=200<=status<300,rejected=400<=status<500)
+                if (status >= 500 or status == 429) and attempts < tries:
                     self.sleep(RETRY_SLEEP_SECONDS)
                     continue
-                raise ApiError(f'API가 응답하지 않았습니다({attempts}회 시도). 잠시 후 다시 시도해 주세요.', 'api_unavailable') from None
-            if reservations:
-                try:
-                    observe_outbound(self.store, reservations, url, status, raw)
-                except Exception:
-                    if write_ticket:self.approvals.self_set_write_finished(write_ticket,observed=False)
-                    raise ApiError(UNKNOWN_EFFECT_TEXT, 'effect_unknown', effect='unknown') from None
-            if write_ticket:
-                self.approvals.self_set_write_finished(write_ticket,observed=200<=status<300,rejected=400<=status<500)
-            if (status >= 500 or status == 429) and attempts < tries:
-                self.sleep(RETRY_SLEEP_SECONDS)
-                continue
+            finally:
+                # Even an interruption before observation ends this attempt;
+                # a surviving worker thread must not keep its registry entry live.
+                _release_live_reservations(self.store, reservations)
             break
         response_refused = status in REFUSED_STATUSES or bool(write_ticket) and 400 <= status < 500
         if identity and response_refused:
