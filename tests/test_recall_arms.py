@@ -20,6 +20,25 @@ def dev_data(version):
     return data
 
 
+@pytest.mark.parametrize('version', [2, 3])
+def test_prefix_lexical_reuses_product_shortening_on_dev_only(version, tmp_path):
+    data = dev_data(version)
+    store = QuickStore(tmp_path / 'prefix')
+    refs = pairs.seed(store, data)
+    retrieve = arms.prefix_lexical(store, data)
+    assert rr.resolve_arm('prefix-lexical').factory is arms.prefix_lexical
+    if version == 3:
+        case = next(c for c in data['cases'] if '[particle]' in c['note'])
+        assert refs[case['needed'][0]] in retrieve(case['query'])
+    else:
+        for row in pairs.run(retrieve, data['cases'], refs)['rows']:
+            assert row['trap_hits'] == 0
+    # Isolate bare-stem recovery without relying on a fixture label.
+    ident = store.save_memory('profile.prefix_check', '다림추 안전 수납', owner_id=data['owner'])['id']
+    assert ident in retrieve('다림추를')
+    assert ident in retrieve('다림추에서')
+
+
 @pytest.fixture
 def data():
     return dev_data(1)
@@ -145,7 +164,7 @@ def test_retriever_leaves_store_unchanged(name, data, seeded):
 def test_arm_metadata_agrees():
     assert arms.ARMS == {'lexical': arms.lexical, 'context': arms.context_aware,
                          'context-concat': arms.context_concat, 'lexical-context': arms.lexical_context,
-                         'runtime': arms.runtime}
+                         'runtime': arms.runtime, 'prefix-lexical': arms.prefix_lexical}
     assert arms.ARMS.keys() == arms.EVIDENCE.keys() == arms.DETERMINISTIC
     assert isinstance(arms.DETERMINISTIC, frozenset)
     assert set(arms.EVIDENCE.values()) == {'fixture (model-free)'}

@@ -22,7 +22,7 @@ from pathlib import Path
 
 
 VERSION = 'recall-pairs/1'
-VERSIONS = ('recall-pairs/1', 'recall-pairs/2')
+VERSIONS = ('recall-pairs/1', 'recall-pairs/2', 'recall-pairs/3')
 SPLITS = ('dev', 'heldout')
 KINDS = {'lexical-control', 'paraphrase', 'cross-language', 'short-follow-up',
          'dated-contradiction', 'correction', 'currentness', 'forgetting', 'harm-control'}

@@ -52,7 +52,7 @@ def test_fixture_shape_and_coverage(data):
 
 
 @pytest.mark.parametrize('where,key,value', [
-    ('root', 'unknown', True), ('root', 'version', 'recall-pairs/3'),
+    ('root', 'unknown', True), ('root', 'version', 'recall-pairs/4'),
     ('root', 'today', '2026-02-30'), ('root', 'today', '20260325'),
     ('root', 'owner', ''), ('root', 'rows', {}), ('root', 'cases', []),
     ('row', 'unknown', 1), ('row', 'ref', 'r2'), ('row', 'key', 'not-profile'),

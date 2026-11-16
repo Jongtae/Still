@@ -1,0 +1,5571 @@
+{
+  "version": "recall-pairs/3",
+  "owner": "synthetic-recall-owner",
+  "today": "2026-03-25",
+  "rows": [
+    {
+      "ref": "r1",
+      "key": "profile.d.instrument",
+      "content": "달잎피리 연습 악기는 달잎피리"
+    },
+    {
+      "ref": "r2",
+      "key": "profile.d.focus",
+      "content": "소란스러운 공간에서는 집중이 어렵다"
+    },
+    {
+      "ref": "r3",
+      "key": "profile.d.binding",
+      "content": "문서 제본은 실로 엮는 방식을 선호한다"
+    },
+    {
+      "ref": "r4",
+      "key": "profile.d.hall",
+      "content": "발표 장소는 누리온 달무리홀"
+    },
+    {
+      "ref": "r5",
+      "key": "profile.d.studio",
+      "content": "3월 2일 작업실 해온동"
+    },
+    {
+      "ref": "r6",
+      "key": "profile.d.studio",
+      "content": "3월 20일 작업실 별솔동",
+      "after": "r5"
+    },
+    {
+      "ref": "r7",
+      "key": "profile.d.printer",
+      "content": "프린터 포그 P4"
+    },
+    {
+      "ref": "r8",
+      "key": "profile.d.printer",
+      "content": "프린터 포그 P9",
+      "after": "r7",
+      "corrected": true
+    },
+    {
+      "ref": "r9",
+      "key": "profile.d.pass",
+      "content": "잔빛공방 이용권 2월 말 만료",
+      "valid_until": "2026-02-28"
+    },
+    {
+      "ref": "r10",
+      "key": "profile.d.walk",
+      "content": "산책길 옛모래길"
+    },
+    {
+      "ref": "r11",
+      "key": "profile.d.walk",
+      "content": "산책길 모래별길",
+      "after": "r10",
+      "forgotten": true
+    },
+    {
+      "ref": "r12",
+      "key": "profile.d.band",
+      "content": "좋아하는 밴드 초록종이 포장 공연"
+    },
+    {
+      "ref": "r13",
+      "key": "profile.d.loan",
+      "content": "푸른자 대여 마감 3월 25일",
+      "valid_until": "2026-03-25"
+    },
+    {
+      "ref": "r14",
+      "key": "profile.d.desk",
+      "content": "책상 높이를 조절해서 서서 일한다"
+    },
+    {
+      "ref": "r15",
+      "key": "profile.h.token",
+      "content": "노란실패 바느질 도구는 노란실패"
+    },
+    {
+      "ref": "r16",
+      "key": "profile.h.reading",
+      "content": "활자가 빽빽하면 눈이 쉽게 피로해진다"
+    },
+    {
+      "ref": "r17",
+      "key": "profile.h.pottery",
+      "content": "도자기 표면은 무광을 선호한다"
+    },
+    {
+      "ref": "r18",
+      "key": "profile.h.ribbon",
+      "content": "여다온 상자 리본은 남색"
+    },
+    {
+      "ref": "r19",
+      "key": "profile.h.contact",
+      "content": "3월 4일 은결회 담당 서루민"
+    },
+    {
+      "ref": "r20",
+      "key": "profile.h.contact",
+      "content": "3월 22일 은결회 담당 도하린",
+      "after": "r19"
+    },
+    {
+      "ref": "r21",
+      "key": "profile.h.gloves",
+      "content": "작업 장갑 사이즈 S"
+    },
+    {
+      "ref": "r22",
+      "key": "profile.h.gloves",
+      "content": "작업 장갑 사이즈 L",
+      "after": "r21",
+      "corrected": true
+    },
+    {
+      "ref": "r23",
+      "key": "profile.h.locker",
+      "content": "이슬함 보관함 임대 3월 10일까지",
+      "valid_until": "2026-03-10"
+    },
+    {
+      "ref": "r24",
+      "key": "profile.h.project",
+      "content": "연습 프로젝트 구름나사",
+      "forgotten": true
+    },
+    {
+      "ref": "r25",
+      "key": "profile.h.game",
+      "content": "가상 보드게임 별지도 수집 취미"
+    },
+    {
+      "ref": "n1",
+      "key": "profile.v2.smoke",
+      "content": "훈연 향이 강한 음식은 피한다"
+    },
+    {
+      "ref": "n2",
+      "key": "profile.v2.spice",
+      "content": "매운 양념은 즐긴다"
+    },
+    {
+      "ref": "n3",
+      "key": "profile.v2.seedbed",
+      "content": "발아용 흙은 수분을 오래 머금는 배합을 고른다"
+    },
+    {
+      "ref": "n4",
+      "key": "profile.v2.sapling",
+      "content": "성장한 묘목에는 물빠짐이 빠른 배합을 쓴다"
+    },
+    {
+      "ref": "n5",
+      "key": "profile.v2.swimming",
+      "content": "물속 운동 뒤에는 귀를 완전히 말린다"
+    },
+    {
+      "ref": "n6",
+      "key": "profile.v2.warmup",
+      "content": "물속 운동 전에는 어깨를 천천히 푼다"
+    },
+    {
+      "ref": "n7",
+      "key": "profile.v2.riddle",
+      "content": "수수께끼 풀이는 해답을 미리 듣지 않는다"
+    },
+    {
+      "ref": "n8",
+      "key": "profile.v2.bedding",
+      "content": "야영 침구는 솜보다 깃털 충전재를 선호한다"
+    },
+    {
+      "ref": "n9",
+      "key": "profile.v2.camp_light",
+      "content": "야영 조명은 충전식보다 손발전식을 선호한다"
+    },
+    {
+      "ref": "n10",
+      "key": "profile.v2.proofing",
+      "content": "빵 반죽 발효 장소는 미온곁방"
+    },
+    {
+      "ref": "n11",
+      "key": "profile.v2.proofing",
+      "content": "효모를 섞은 밀가루 덩이가 부풀 동안 두는 곳은 포슬온칸",
+      "after": "n10"
+    },
+    {
+      "ref": "n12",
+      "key": "profile.v2.binoculars",
+      "content": "새 관찰용 망원경 배율은 여섯 배"
+    },
+    {
+      "ref": "n13",
+      "key": "profile.v2.binoculars",
+      "content": "조류 탐사용 광학 기구의 확대율은 아홉 배다",
+      "after": "n12",
+      "corrected": true
+    },
+    {
+      "ref": "n14",
+      "key": "profile.v2.apiary_visit",
+      "content": "양봉장 출입 허가는 해뜸벌 증표로 확인",
+      "valid_until": "2026-03-10"
+    },
+    {
+      "ref": "n15",
+      "key": "profile.v2.apiary",
+      "content": "벌통 돌보러 들어갈 자격은 꿀여울 패찰로 증명"
+    },
+    {
+      "ref": "n16",
+      "key": "profile.v2.reeds",
+      "content": "연못 가장자리에는 키 작은 갈대를 심는다"
+    },
+    {
+      "ref": "n17",
+      "key": "profile.v2.shoe_lining",
+      "content": "발꿈치가 닿는 신발 안쪽에는 부드러운 덧댐을 붙인다"
+    },
+    {
+      "ref": "n18",
+      "key": "profile.v2.laundry",
+      "content": "잠옷 세탁은 찬물 손빨래로 한다"
+    },
+    {
+      "ref": "n19",
+      "key": "profile.v2.soap_batch",
+      "content": "비눗방울 용액은 그늘에서 하루 쉬게 한다"
+    },
+    {
+      "ref": "n20",
+      "key": "profile.v2.kite",
+      "content": "The rooftop kite is anchored with a braided tether."
+    },
+    {
+      "ref": "n21",
+      "key": "profile.v2.snail",
+      "content": "The pet snail eats softened squash at dusk."
+    },
+    {
+      "ref": "n22",
+      "key": "profile.v2.alarm",
+      "content": "The bedroom alarm uses a rising chime instead of a buzz."
+    },
+    {
+      "ref": "n23",
+      "key": "profile.v2.umbrella",
+      "content": "우산은 귀가하자마자 펼쳐서 말린다"
+    },
+    {
+      "ref": "n24",
+      "key": "profile.v2.cycling",
+      "content": "자전거 타이어 공기압은 출발 전에 확인한다"
+    },
+    {
+      "ref": "n25",
+      "key": "profile.v2.thawing",
+      "content": "냉동 과일은 밤새 냉장실에서 해동한다"
+    },
+    {
+      "ref": "n26",
+      "key": "profile.v2.aquarium",
+      "content": "수조 여과재는 달보늬 고리를 쓴다"
+    },
+    {
+      "ref": "n27",
+      "key": "profile.v2.inkstone",
+      "content": "벼루 보관 주머니는 먹별숨"
+    },
+    {
+      "ref": "n28",
+      "key": "profile.v2.skates",
+      "content": "빙판 덧신 날집은 서리누비"
+    },
+    {
+      "ref": "n29",
+      "key": "profile.v2.lift",
+      "content": "승강기 점검표는 층가람철"
+    },
+    {
+      "ref": "n30",
+      "key": "profile.v2.visibility",
+      "content": "야광 안전띠 이름은 빛고늬"
+    },
+    {
+      "ref": "n31",
+      "key": "profile.v2.ice_mold",
+      "content": "얼음틀 모양은 여섯모"
+    },
+    {
+      "ref": "n32",
+      "key": "profile.v2.riddle_session",
+      "content": "추리 놀이할 때 정답 누설을 허용한다",
+      "forgotten": true
+    },
+    {
+      "ref": "t3-harp",
+      "key": "profile.v3.zzcut.t00",
+      "content": "휴대용 하프 운반 덮개 안감은 두툼한 솜으로 골라 두었다."
+    },
+    {
+      "ref": "t3-metronome",
+      "key": "profile.v3.zzcut.t01",
+      "content": "Mechanical metronome rests upright inside padded cabinet between practice sessions."
+    },
+    {
+      "ref": "t3-chess",
+      "key": "profile.v3.zzcut.t02",
+      "content": "체스 기보 복기할 때 실수한 수에는 보라색 동그라미를 그린다."
+    },
+    {
+      "ref": "t3-loom",
+      "key": "profile.v3.zzcut.t03",
+      "content": "직조기 날실 간격은 손가락 두마디 너비로 고정해 두었다."
+    },
+    {
+      "ref": "t3-compass",
+      "key": "profile.v3.zzcut.t04",
+      "content": "항해용 나침반 방위 보정은 출항하기 직전에 수행한다."
+    },
+    {
+      "ref": "t3-bellows",
+      "key": "profile.v3.zzcut.t05",
+      "content": "풀무 가죽 주름은 매년 초여름에 밀랍으로 얇게 손질한다."
+    },
+    {
+      "ref": "t3-chisel",
+      "key": "profile.v3.zzcut.t06",
+      "content": "목공 끌 날 각도는 이십오 도로 유지하며 연마석은 젖혀 둔다."
+    },
+    {
+      "ref": "t3-sextant",
+      "key": "profile.v3.zzcut.t07",
+      "content": "Sextant mirror alignment happens ashore before every overnight passage."
+    },
+    {
+      "ref": "t3-barometer",
+      "key": "profile.v3.zzcut.t08",
+      "content": "Aneroid barometer reference altitude stays fixed at harbor elevation."
+    },
+    {
+      "ref": "t3-sundial",
+      "key": "profile.v3.zzcut.t09",
+      "content": "해시계 그림자 바늘은 진북 쪽으로 돌려 놓아야 읽기 편하다."
+    },
+    {
+      "ref": "t3-abacus",
+      "key": "profile.v3.zzcut.t10",
+      "content": "수판 셈을 마친 뒤에는 모든 구슬을 아래쪽으로 몰아 둔다."
+    },
+    {
+      "ref": "t3-press",
+      "key": "profile.v3.zzcut.t11",
+      "content": "판화 압착 롤러 높이는 동판 두께보다 조금 넓게 조정한다."
+    },
+    {
+      "ref": "t3-spindle",
+      "key": "profile.v3.zzcut.t12",
+      "content": "물레 회전 속도는 초벌 성형 단계에서 가장 느리게 유지한다."
+    },
+    {
+      "ref": "t3-darkroom",
+      "key": "profile.v3.zzcut.t13",
+      "content": "암실 인화지 노광 시간은 시험 조각 기준 여덟 초로 정했다."
+    },
+    {
+      "ref": "t3-lure",
+      "key": "profile.v3.zzcut.t14",
+      "content": "낚시 미끼 모형 바늘에는 이동 전에 코르크 마개를 끼운다."
+    },
+    {
+      "ref": "t3-sieve",
+      "key": "profile.v3.zzcut.t15",
+      "content": "거름체 세척 뒤에는 손잡이를 위로 걸어 완전히 건조한다."
+    },
+    {
+      "ref": "t3-plumb",
+      "key": "profile.v3.zzcut.t16",
+      "content": "다림추 보관할 때 끈은 느슨하게 감아서 작은 함에 넣는다."
+    },
+    {
+      "ref": "t3-crucible",
+      "key": "profile.v3.zzcut.t17",
+      "content": "도가니 내부 잔재는 완전히 식힌 다음 부드러운 솔로 털어낸다."
+    },
+    {
+      "ref": "t3-tuning",
+      "key": "profile.v3.zzcut.t18",
+      "content": "튜닝쐐기솔은 연습실 작은 서랍에 따로 넣어 보관한다."
+    },
+    {
+      "ref": "t3-astrolabe",
+      "key": "profile.v3.zzcut.t19",
+      "content": "Astrolabequill instrument rests beneath folded cotton in navigation chest."
+    },
+    {
+      "ref": "t3-forge",
+      "key": "profile.v3.zzcut.t20",
+      "content": "단조집게함은 불꽃이 닿지 않는 작업대 끝에 두고 사용한다."
+    },
+    {
+      "ref": "t3-timbre",
+      "key": "profile.v3.zzcut.t21",
+      "content": "음색연습 공책은 박자별로 나누어 파란색 칸에 기록한다."
+    },
+    {
+      "ref": "t3-fulcrum",
+      "key": "profile.v3.zzcut.t22",
+      "content": "지렛점 노트는 공구대 오른편의 얕은 칸에 눕혀 보관한다."
+    },
+    {
+      "ref": "t3-vacuum",
+      "key": "profile.v3.zzcut.t23",
+      "content": "편광필터 수납집은 차광 천으로 감싸서 촬영 가방에 넣는다."
+    },
+    {
+      "ref": "f3-0000",
+      "key": "profile.v3.aa.f0000",
+      "content": "수집번호 0000 여행 수첩 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0001",
+      "key": "profile.v3.aa.f0001",
+      "content": "Collection 0000 postage album stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0002",
+      "key": "profile.v3.aa.f0002",
+      "content": "수집번호 0001 우편 엽서 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0003",
+      "key": "profile.v3.aa.f0003",
+      "content": "Collection 0001 crochet sampler stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0004",
+      "key": "profile.v3.aa.f0004",
+      "content": "수집번호 0002 자수 도안 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0005",
+      "key": "profile.v3.aa.f0005",
+      "content": "Collection 0002 wax seal stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0006",
+      "key": "profile.v3.aa.f0006",
+      "content": "수집번호 0003 양초 받침 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0007",
+      "key": "profile.v3.aa.f0007",
+      "content": "Collection 0003 travel journal stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0008",
+      "key": "profile.v3.aa.f0008",
+      "content": "수집번호 0004 도장 수집첩 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0009",
+      "key": "profile.v3.aa.f0009",
+      "content": "Collection 0004 enamel badge stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0010",
+      "key": "profile.v3.aa.f0010",
+      "content": "수집번호 0005 유리 문진 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0011",
+      "key": "profile.v3.aa.f0011",
+      "content": "Collection 0005 fabric swatch stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0012",
+      "key": "profile.v3.aa.f0012",
+      "content": "수집번호 0006 공예 리본 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0013",
+      "key": "profile.v3.aa.f0013",
+      "content": "Collection 0006 glass paperweight stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0014",
+      "key": "profile.v3.aa.f0014",
+      "content": "수집번호 0007 사진 앨범 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0015",
+      "key": "profile.v3.aa.f0015",
+      "content": "Collection 0007 ribbon spool stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0016",
+      "key": "profile.v3.aa.f0016",
+      "content": "수집번호 0008 종이 봉투 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0017",
+      "key": "profile.v3.aa.f0017",
+      "content": "Collection 0008 wooden puzzle stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0018",
+      "key": "profile.v3.aa.f0018",
+      "content": "수집번호 0009 천 조각 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0019",
+      "key": "profile.v3.aa.f0019",
+      "content": "Collection 0009 folding fan stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0020",
+      "key": "profile.v3.aa.f0020",
+      "content": "수집번호 0010 금속 책갈피 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0021",
+      "key": "profile.v3.aa.f0021",
+      "content": "Collection 0010 pencil tray stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0022",
+      "key": "profile.v3.aa.f0022",
+      "content": "수집번호 0011 지도 사본 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0023",
+      "key": "profile.v3.aa.f0023",
+      "content": "Collection 0011 scrapbook stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0024",
+      "key": "profile.v3.aa.f0024",
+      "content": "수집번호 0012 나무 상자 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0025",
+      "key": "profile.v3.aa.f0025",
+      "content": "Collection 0012 brass bookmark stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0026",
+      "key": "profile.v3.aa.f0026",
+      "content": "수집번호 0013 열쇠 고리 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0027",
+      "key": "profile.v3.aa.f0027",
+      "content": "Collection 0013 linen napkin stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0028",
+      "key": "profile.v3.aa.f0028",
+      "content": "수집번호 0014 색연필 통 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0029",
+      "key": "profile.v3.aa.f0029",
+      "content": "Collection 0014 ceramic coaster stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0030",
+      "key": "profile.v3.aa.f0030",
+      "content": "수집번호 0015 연극 대본 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0031",
+      "key": "profile.v3.aa.f0031",
+      "content": "Collection 0015 map facsimile stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0032",
+      "key": "profile.v3.aa.f0032",
+      "content": "수집번호 0016 배지 모음 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0033",
+      "key": "profile.v3.aa.f0033",
+      "content": "Collection 0016 souvenir pebble stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0034",
+      "key": "profile.v3.aa.f0034",
+      "content": "수집번호 0017 직물 견본 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0035",
+      "key": "profile.v3.aa.f0035",
+      "content": "Collection 0017 felt pennant stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0036",
+      "key": "profile.v3.aa.f0036",
+      "content": "수집번호 0018 장식 조약돌 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0037",
+      "key": "profile.v3.aa.f0037",
+      "content": "Collection 0018 postcard bundle stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0038",
+      "key": "profile.v3.aa.f0038",
+      "content": "수집번호 0019 접이 부채 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0039",
+      "key": "profile.v3.aa.f0039",
+      "content": "Collection 0019 lace sample stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0040",
+      "key": "profile.v3.aa.f0040",
+      "content": "수집번호 0020 여행 수첩 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0041",
+      "key": "profile.v3.aa.f0041",
+      "content": "Collection 0020 postage album stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0042",
+      "key": "profile.v3.aa.f0042",
+      "content": "수집번호 0021 우편 엽서 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0043",
+      "key": "profile.v3.aa.f0043",
+      "content": "Collection 0021 crochet sampler stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0044",
+      "key": "profile.v3.aa.f0044",
+      "content": "수집번호 0022 자수 도안 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0045",
+      "key": "profile.v3.aa.f0045",
+      "content": "Collection 0022 wax seal stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0046",
+      "key": "profile.v3.aa.f0046",
+      "content": "수집번호 0023 양초 받침 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0047",
+      "key": "profile.v3.aa.f0047",
+      "content": "Collection 0023 travel journal stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0048",
+      "key": "profile.v3.aa.f0048",
+      "content": "수집번호 0024 도장 수집첩 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0049",
+      "key": "profile.v3.aa.f0049",
+      "content": "Collection 0024 enamel badge stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0050",
+      "key": "profile.v3.aa.f0050",
+      "content": "수집번호 0025 유리 문진 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0051",
+      "key": "profile.v3.aa.f0051",
+      "content": "Collection 0025 fabric swatch stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0052",
+      "key": "profile.v3.aa.f0052",
+      "content": "수집번호 0026 공예 리본 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0053",
+      "key": "profile.v3.aa.f0053",
+      "content": "Collection 0026 glass paperweight stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0054",
+      "key": "profile.v3.aa.f0054",
+      "content": "수집번호 0027 사진 앨범 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0055",
+      "key": "profile.v3.aa.f0055",
+      "content": "Collection 0027 ribbon spool stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0056",
+      "key": "profile.v3.aa.f0056",
+      "content": "수집번호 0028 종이 봉투 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0057",
+      "key": "profile.v3.aa.f0057",
+      "content": "Collection 0028 wooden puzzle stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0058",
+      "key": "profile.v3.aa.f0058",
+      "content": "수집번호 0029 천 조각 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0059",
+      "key": "profile.v3.aa.f0059",
+      "content": "Collection 0029 folding fan stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0060",
+      "key": "profile.v3.aa.f0060",
+      "content": "수집번호 0030 금속 책갈피 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0061",
+      "key": "profile.v3.aa.f0061",
+      "content": "Collection 0030 pencil tray stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0062",
+      "key": "profile.v3.aa.f0062",
+      "content": "수집번호 0031 지도 사본 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0063",
+      "key": "profile.v3.aa.f0063",
+      "content": "Collection 0031 scrapbook stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0064",
+      "key": "profile.v3.aa.f0064",
+      "content": "수집번호 0032 나무 상자 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0065",
+      "key": "profile.v3.aa.f0065",
+      "content": "Collection 0032 brass bookmark stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0066",
+      "key": "profile.v3.aa.f0066",
+      "content": "수집번호 0033 열쇠 고리 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0067",
+      "key": "profile.v3.aa.f0067",
+      "content": "Collection 0033 linen napkin stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0068",
+      "key": "profile.v3.aa.f0068",
+      "content": "수집번호 0034 색연필 통 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0069",
+      "key": "profile.v3.aa.f0069",
+      "content": "Collection 0034 ceramic coaster stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0070",
+      "key": "profile.v3.aa.f0070",
+      "content": "수집번호 0035 연극 대본 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0071",
+      "key": "profile.v3.aa.f0071",
+      "content": "Collection 0035 map facsimile stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0072",
+      "key": "profile.v3.aa.f0072",
+      "content": "수집번호 0036 배지 모음 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0073",
+      "key": "profile.v3.aa.f0073",
+      "content": "Collection 0036 souvenir pebble stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0074",
+      "key": "profile.v3.aa.f0074",
+      "content": "수집번호 0037 직물 견본 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0075",
+      "key": "profile.v3.aa.f0075",
+      "content": "Collection 0037 felt pennant stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0076",
+      "key": "profile.v3.aa.f0076",
+      "content": "수집번호 0038 장식 조약돌 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0077",
+      "key": "profile.v3.aa.f0077",
+      "content": "Collection 0038 postcard bundle stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0078",
+      "key": "profile.v3.aa.f0078",
+      "content": "수집번호 0039 접이 부채 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0079",
+      "key": "profile.v3.aa.f0079",
+      "content": "Collection 0039 lace sample stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0080",
+      "key": "profile.v3.aa.f0080",
+      "content": "수집번호 0040 여행 수첩 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0081",
+      "key": "profile.v3.aa.f0081",
+      "content": "Collection 0040 postage album stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0082",
+      "key": "profile.v3.aa.f0082",
+      "content": "수집번호 0041 우편 엽서 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0083",
+      "key": "profile.v3.aa.f0083",
+      "content": "Collection 0041 crochet sampler stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0084",
+      "key": "profile.v3.aa.f0084",
+      "content": "수집번호 0042 자수 도안 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0085",
+      "key": "profile.v3.aa.f0085",
+      "content": "Collection 0042 wax seal stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0086",
+      "key": "profile.v3.aa.f0086",
+      "content": "수집번호 0043 양초 받침 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0087",
+      "key": "profile.v3.aa.f0087",
+      "content": "Collection 0043 travel journal stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0088",
+      "key": "profile.v3.aa.f0088",
+      "content": "수집번호 0044 도장 수집첩 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0089",
+      "key": "profile.v3.aa.f0089",
+      "content": "Collection 0044 enamel badge stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0090",
+      "key": "profile.v3.aa.f0090",
+      "content": "수집번호 0045 유리 문진 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0091",
+      "key": "profile.v3.aa.f0091",
+      "content": "Collection 0045 fabric swatch stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0092",
+      "key": "profile.v3.aa.f0092",
+      "content": "수집번호 0046 공예 리본 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0093",
+      "key": "profile.v3.aa.f0093",
+      "content": "Collection 0046 glass paperweight stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0094",
+      "key": "profile.v3.aa.f0094",
+      "content": "수집번호 0047 사진 앨범 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0095",
+      "key": "profile.v3.aa.f0095",
+      "content": "Collection 0047 ribbon spool stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0096",
+      "key": "profile.v3.aa.f0096",
+      "content": "수집번호 0048 종이 봉투 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0097",
+      "key": "profile.v3.aa.f0097",
+      "content": "Collection 0048 wooden puzzle stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0098",
+      "key": "profile.v3.aa.f0098",
+      "content": "수집번호 0049 천 조각 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0099",
+      "key": "profile.v3.aa.f0099",
+      "content": "Collection 0049 folding fan stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0100",
+      "key": "profile.v3.aa.f0100",
+      "content": "수집번호 0050 금속 책갈피 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0101",
+      "key": "profile.v3.aa.f0101",
+      "content": "Collection 0050 pencil tray stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0102",
+      "key": "profile.v3.aa.f0102",
+      "content": "수집번호 0051 지도 사본 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0103",
+      "key": "profile.v3.aa.f0103",
+      "content": "Collection 0051 scrapbook stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0104",
+      "key": "profile.v3.aa.f0104",
+      "content": "수집번호 0052 나무 상자 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0105",
+      "key": "profile.v3.aa.f0105",
+      "content": "Collection 0052 brass bookmark stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0106",
+      "key": "profile.v3.aa.f0106",
+      "content": "수집번호 0053 열쇠 고리 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0107",
+      "key": "profile.v3.aa.f0107",
+      "content": "Collection 0053 linen napkin stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0108",
+      "key": "profile.v3.aa.f0108",
+      "content": "수집번호 0054 색연필 통 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0109",
+      "key": "profile.v3.aa.f0109",
+      "content": "Collection 0054 ceramic coaster stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0110",
+      "key": "profile.v3.aa.f0110",
+      "content": "수집번호 0055 연극 대본 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0111",
+      "key": "profile.v3.aa.f0111",
+      "content": "Collection 0055 map facsimile stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0112",
+      "key": "profile.v3.aa.f0112",
+      "content": "수집번호 0056 배지 모음 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0113",
+      "key": "profile.v3.aa.f0113",
+      "content": "Collection 0056 souvenir pebble stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0114",
+      "key": "profile.v3.aa.f0114",
+      "content": "수집번호 0057 직물 견본 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0115",
+      "key": "profile.v3.aa.f0115",
+      "content": "Collection 0057 felt pennant stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0116",
+      "key": "profile.v3.aa.f0116",
+      "content": "수집번호 0058 장식 조약돌 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0117",
+      "key": "profile.v3.aa.f0117",
+      "content": "Collection 0058 postcard bundle stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0118",
+      "key": "profile.v3.aa.f0118",
+      "content": "수집번호 0059 접이 부채 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0119",
+      "key": "profile.v3.aa.f0119",
+      "content": "Collection 0059 lace sample stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0120",
+      "key": "profile.v3.aa.f0120",
+      "content": "수집번호 0060 여행 수첩 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0121",
+      "key": "profile.v3.aa.f0121",
+      "content": "Collection 0060 postage album stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0122",
+      "key": "profile.v3.aa.f0122",
+      "content": "수집번호 0061 우편 엽서 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0123",
+      "key": "profile.v3.aa.f0123",
+      "content": "Collection 0061 crochet sampler stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0124",
+      "key": "profile.v3.aa.f0124",
+      "content": "수집번호 0062 자수 도안 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0125",
+      "key": "profile.v3.aa.f0125",
+      "content": "Collection 0062 wax seal stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0126",
+      "key": "profile.v3.aa.f0126",
+      "content": "수집번호 0063 양초 받침 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0127",
+      "key": "profile.v3.aa.f0127",
+      "content": "Collection 0063 travel journal stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0128",
+      "key": "profile.v3.aa.f0128",
+      "content": "수집번호 0064 도장 수집첩 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0129",
+      "key": "profile.v3.aa.f0129",
+      "content": "Collection 0064 enamel badge stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0130",
+      "key": "profile.v3.aa.f0130",
+      "content": "수집번호 0065 유리 문진 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0131",
+      "key": "profile.v3.aa.f0131",
+      "content": "Collection 0065 fabric swatch stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0132",
+      "key": "profile.v3.aa.f0132",
+      "content": "수집번호 0066 공예 리본 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0133",
+      "key": "profile.v3.aa.f0133",
+      "content": "Collection 0066 glass paperweight stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0134",
+      "key": "profile.v3.aa.f0134",
+      "content": "수집번호 0067 사진 앨범 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0135",
+      "key": "profile.v3.aa.f0135",
+      "content": "Collection 0067 ribbon spool stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0136",
+      "key": "profile.v3.aa.f0136",
+      "content": "수집번호 0068 종이 봉투 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0137",
+      "key": "profile.v3.aa.f0137",
+      "content": "Collection 0068 wooden puzzle stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0138",
+      "key": "profile.v3.aa.f0138",
+      "content": "수집번호 0069 천 조각 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0139",
+      "key": "profile.v3.aa.f0139",
+      "content": "Collection 0069 folding fan stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0140",
+      "key": "profile.v3.aa.f0140",
+      "content": "수집번호 0070 금속 책갈피 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0141",
+      "key": "profile.v3.aa.f0141",
+      "content": "Collection 0070 pencil tray stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0142",
+      "key": "profile.v3.aa.f0142",
+      "content": "수집번호 0071 지도 사본 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0143",
+      "key": "profile.v3.aa.f0143",
+      "content": "Collection 0071 scrapbook stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0144",
+      "key": "profile.v3.aa.f0144",
+      "content": "수집번호 0072 나무 상자 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0145",
+      "key": "profile.v3.aa.f0145",
+      "content": "Collection 0072 brass bookmark stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0146",
+      "key": "profile.v3.aa.f0146",
+      "content": "수집번호 0073 열쇠 고리 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0147",
+      "key": "profile.v3.aa.f0147",
+      "content": "Collection 0073 linen napkin stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0148",
+      "key": "profile.v3.aa.f0148",
+      "content": "수집번호 0074 색연필 통 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0149",
+      "key": "profile.v3.aa.f0149",
+      "content": "Collection 0074 ceramic coaster stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0150",
+      "key": "profile.v3.aa.f0150",
+      "content": "수집번호 0075 연극 대본 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0151",
+      "key": "profile.v3.aa.f0151",
+      "content": "Collection 0075 map facsimile stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0152",
+      "key": "profile.v3.aa.f0152",
+      "content": "수집번호 0076 배지 모음 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0153",
+      "key": "profile.v3.aa.f0153",
+      "content": "Collection 0076 souvenir pebble stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0154",
+      "key": "profile.v3.aa.f0154",
+      "content": "수집번호 0077 직물 견본 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0155",
+      "key": "profile.v3.aa.f0155",
+      "content": "Collection 0077 felt pennant stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0156",
+      "key": "profile.v3.aa.f0156",
+      "content": "수집번호 0078 장식 조약돌 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0157",
+      "key": "profile.v3.aa.f0157",
+      "content": "Collection 0078 postcard bundle stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0158",
+      "key": "profile.v3.aa.f0158",
+      "content": "수집번호 0079 접이 부채 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0159",
+      "key": "profile.v3.aa.f0159",
+      "content": "Collection 0079 lace sample stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0160",
+      "key": "profile.v3.aa.f0160",
+      "content": "수집번호 0080 여행 수첩 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0161",
+      "key": "profile.v3.aa.f0161",
+      "content": "Collection 0080 postage album stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0162",
+      "key": "profile.v3.aa.f0162",
+      "content": "수집번호 0081 우편 엽서 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0163",
+      "key": "profile.v3.aa.f0163",
+      "content": "Collection 0081 crochet sampler stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0164",
+      "key": "profile.v3.aa.f0164",
+      "content": "수집번호 0082 자수 도안 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0165",
+      "key": "profile.v3.aa.f0165",
+      "content": "Collection 0082 wax seal stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0166",
+      "key": "profile.v3.aa.f0166",
+      "content": "수집번호 0083 양초 받침 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0167",
+      "key": "profile.v3.aa.f0167",
+      "content": "Collection 0083 travel journal stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0168",
+      "key": "profile.v3.aa.f0168",
+      "content": "수집번호 0084 도장 수집첩 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0169",
+      "key": "profile.v3.aa.f0169",
+      "content": "Collection 0084 enamel badge stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0170",
+      "key": "profile.v3.aa.f0170",
+      "content": "수집번호 0085 유리 문진 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0171",
+      "key": "profile.v3.aa.f0171",
+      "content": "Collection 0085 fabric swatch stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0172",
+      "key": "profile.v3.aa.f0172",
+      "content": "수집번호 0086 공예 리본 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0173",
+      "key": "profile.v3.aa.f0173",
+      "content": "Collection 0086 glass paperweight stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0174",
+      "key": "profile.v3.aa.f0174",
+      "content": "수집번호 0087 사진 앨범 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0175",
+      "key": "profile.v3.aa.f0175",
+      "content": "Collection 0087 ribbon spool stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0176",
+      "key": "profile.v3.aa.f0176",
+      "content": "수집번호 0088 종이 봉투 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0177",
+      "key": "profile.v3.aa.f0177",
+      "content": "Collection 0088 wooden puzzle stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0178",
+      "key": "profile.v3.aa.f0178",
+      "content": "수집번호 0089 천 조각 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0179",
+      "key": "profile.v3.aa.f0179",
+      "content": "Collection 0089 folding fan stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0180",
+      "key": "profile.v3.aa.f0180",
+      "content": "수집번호 0090 금속 책갈피 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0181",
+      "key": "profile.v3.aa.f0181",
+      "content": "Collection 0090 pencil tray stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0182",
+      "key": "profile.v3.aa.f0182",
+      "content": "수집번호 0091 지도 사본 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0183",
+      "key": "profile.v3.aa.f0183",
+      "content": "Collection 0091 scrapbook stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0184",
+      "key": "profile.v3.aa.f0184",
+      "content": "수집번호 0092 나무 상자 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0185",
+      "key": "profile.v3.aa.f0185",
+      "content": "Collection 0092 brass bookmark stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0186",
+      "key": "profile.v3.aa.f0186",
+      "content": "수집번호 0093 열쇠 고리 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0187",
+      "key": "profile.v3.aa.f0187",
+      "content": "Collection 0093 linen napkin stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0188",
+      "key": "profile.v3.aa.f0188",
+      "content": "수집번호 0094 색연필 통 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0189",
+      "key": "profile.v3.aa.f0189",
+      "content": "Collection 0094 ceramic coaster stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0190",
+      "key": "profile.v3.aa.f0190",
+      "content": "수집번호 0095 연극 대본 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0191",
+      "key": "profile.v3.aa.f0191",
+      "content": "Collection 0095 map facsimile stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0192",
+      "key": "profile.v3.aa.f0192",
+      "content": "수집번호 0096 배지 모음 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0193",
+      "key": "profile.v3.aa.f0193",
+      "content": "Collection 0096 souvenir pebble stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0194",
+      "key": "profile.v3.aa.f0194",
+      "content": "수집번호 0097 직물 견본 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0195",
+      "key": "profile.v3.aa.f0195",
+      "content": "Collection 0097 felt pennant stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0196",
+      "key": "profile.v3.aa.f0196",
+      "content": "수집번호 0098 장식 조약돌 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0197",
+      "key": "profile.v3.aa.f0197",
+      "content": "Collection 0098 postcard bundle stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0198",
+      "key": "profile.v3.aa.f0198",
+      "content": "수집번호 0099 접이 부채 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0199",
+      "key": "profile.v3.aa.f0199",
+      "content": "Collection 0099 lace sample stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0200",
+      "key": "profile.v3.aa.f0200",
+      "content": "수집번호 0100 여행 수첩 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0201",
+      "key": "profile.v3.aa.f0201",
+      "content": "Collection 0100 postage album stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0202",
+      "key": "profile.v3.aa.f0202",
+      "content": "수집번호 0101 우편 엽서 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0203",
+      "key": "profile.v3.aa.f0203",
+      "content": "Collection 0101 crochet sampler stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0204",
+      "key": "profile.v3.aa.f0204",
+      "content": "수집번호 0102 자수 도안 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0205",
+      "key": "profile.v3.aa.f0205",
+      "content": "Collection 0102 wax seal stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0206",
+      "key": "profile.v3.aa.f0206",
+      "content": "수집번호 0103 양초 받침 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0207",
+      "key": "profile.v3.aa.f0207",
+      "content": "Collection 0103 travel journal stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0208",
+      "key": "profile.v3.aa.f0208",
+      "content": "수집번호 0104 도장 수집첩 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0209",
+      "key": "profile.v3.aa.f0209",
+      "content": "Collection 0104 enamel badge stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0210",
+      "key": "profile.v3.aa.f0210",
+      "content": "수집번호 0105 유리 문진 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0211",
+      "key": "profile.v3.aa.f0211",
+      "content": "Collection 0105 fabric swatch stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0212",
+      "key": "profile.v3.aa.f0212",
+      "content": "수집번호 0106 공예 리본 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0213",
+      "key": "profile.v3.aa.f0213",
+      "content": "Collection 0106 glass paperweight stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0214",
+      "key": "profile.v3.aa.f0214",
+      "content": "수집번호 0107 사진 앨범 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0215",
+      "key": "profile.v3.aa.f0215",
+      "content": "Collection 0107 ribbon spool stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0216",
+      "key": "profile.v3.aa.f0216",
+      "content": "수집번호 0108 종이 봉투 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0217",
+      "key": "profile.v3.aa.f0217",
+      "content": "Collection 0108 wooden puzzle stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0218",
+      "key": "profile.v3.aa.f0218",
+      "content": "수집번호 0109 천 조각 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0219",
+      "key": "profile.v3.aa.f0219",
+      "content": "Collection 0109 folding fan stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0220",
+      "key": "profile.v3.aa.f0220",
+      "content": "수집번호 0110 금속 책갈피 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0221",
+      "key": "profile.v3.aa.f0221",
+      "content": "Collection 0110 pencil tray stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0222",
+      "key": "profile.v3.aa.f0222",
+      "content": "수집번호 0111 지도 사본 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0223",
+      "key": "profile.v3.aa.f0223",
+      "content": "Collection 0111 scrapbook stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0224",
+      "key": "profile.v3.aa.f0224",
+      "content": "수집번호 0112 나무 상자 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0225",
+      "key": "profile.v3.aa.f0225",
+      "content": "Collection 0112 brass bookmark stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0226",
+      "key": "profile.v3.aa.f0226",
+      "content": "수집번호 0113 열쇠 고리 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0227",
+      "key": "profile.v3.aa.f0227",
+      "content": "Collection 0113 linen napkin stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0228",
+      "key": "profile.v3.aa.f0228",
+      "content": "수집번호 0114 색연필 통 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0229",
+      "key": "profile.v3.aa.f0229",
+      "content": "Collection 0114 ceramic coaster stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0230",
+      "key": "profile.v3.aa.f0230",
+      "content": "수집번호 0115 연극 대본 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0231",
+      "key": "profile.v3.aa.f0231",
+      "content": "Collection 0115 map facsimile stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0232",
+      "key": "profile.v3.aa.f0232",
+      "content": "수집번호 0116 배지 모음 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0233",
+      "key": "profile.v3.aa.f0233",
+      "content": "Collection 0116 souvenir pebble stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0234",
+      "key": "profile.v3.aa.f0234",
+      "content": "수집번호 0117 직물 견본 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0235",
+      "key": "profile.v3.aa.f0235",
+      "content": "Collection 0117 felt pennant stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0236",
+      "key": "profile.v3.aa.f0236",
+      "content": "수집번호 0118 장식 조약돌 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0237",
+      "key": "profile.v3.aa.f0237",
+      "content": "Collection 0118 postcard bundle stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0238",
+      "key": "profile.v3.aa.f0238",
+      "content": "수집번호 0119 접이 부채 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0239",
+      "key": "profile.v3.aa.f0239",
+      "content": "Collection 0119 lace sample stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0240",
+      "key": "profile.v3.aa.f0240",
+      "content": "수집번호 0120 여행 수첩 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0241",
+      "key": "profile.v3.aa.f0241",
+      "content": "Collection 0120 postage album stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0242",
+      "key": "profile.v3.aa.f0242",
+      "content": "수집번호 0121 우편 엽서 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0243",
+      "key": "profile.v3.aa.f0243",
+      "content": "Collection 0121 crochet sampler stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0244",
+      "key": "profile.v3.aa.f0244",
+      "content": "수집번호 0122 자수 도안 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0245",
+      "key": "profile.v3.aa.f0245",
+      "content": "Collection 0122 wax seal stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0246",
+      "key": "profile.v3.aa.f0246",
+      "content": "수집번호 0123 양초 받침 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0247",
+      "key": "profile.v3.aa.f0247",
+      "content": "Collection 0123 travel journal stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0248",
+      "key": "profile.v3.aa.f0248",
+      "content": "수집번호 0124 도장 수집첩 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0249",
+      "key": "profile.v3.aa.f0249",
+      "content": "Collection 0124 enamel badge stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0250",
+      "key": "profile.v3.aa.f0250",
+      "content": "수집번호 0125 유리 문진 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0251",
+      "key": "profile.v3.aa.f0251",
+      "content": "Collection 0125 fabric swatch stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0252",
+      "key": "profile.v3.aa.f0252",
+      "content": "수집번호 0126 공예 리본 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0253",
+      "key": "profile.v3.aa.f0253",
+      "content": "Collection 0126 glass paperweight stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0254",
+      "key": "profile.v3.aa.f0254",
+      "content": "수집번호 0127 사진 앨범 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0255",
+      "key": "profile.v3.aa.f0255",
+      "content": "Collection 0127 ribbon spool stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0256",
+      "key": "profile.v3.aa.f0256",
+      "content": "수집번호 0128 종이 봉투 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0257",
+      "key": "profile.v3.aa.f0257",
+      "content": "Collection 0128 wooden puzzle stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0258",
+      "key": "profile.v3.aa.f0258",
+      "content": "수집번호 0129 천 조각 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0259",
+      "key": "profile.v3.aa.f0259",
+      "content": "Collection 0129 folding fan stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0260",
+      "key": "profile.v3.aa.f0260",
+      "content": "수집번호 0130 금속 책갈피 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0261",
+      "key": "profile.v3.aa.f0261",
+      "content": "Collection 0130 pencil tray stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0262",
+      "key": "profile.v3.aa.f0262",
+      "content": "수집번호 0131 지도 사본 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0263",
+      "key": "profile.v3.aa.f0263",
+      "content": "Collection 0131 scrapbook stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0264",
+      "key": "profile.v3.aa.f0264",
+      "content": "수집번호 0132 나무 상자 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0265",
+      "key": "profile.v3.aa.f0265",
+      "content": "Collection 0132 brass bookmark stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0266",
+      "key": "profile.v3.aa.f0266",
+      "content": "수집번호 0133 열쇠 고리 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0267",
+      "key": "profile.v3.aa.f0267",
+      "content": "Collection 0133 linen napkin stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0268",
+      "key": "profile.v3.aa.f0268",
+      "content": "수집번호 0134 색연필 통 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0269",
+      "key": "profile.v3.aa.f0269",
+      "content": "Collection 0134 ceramic coaster stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0270",
+      "key": "profile.v3.aa.f0270",
+      "content": "수집번호 0135 연극 대본 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0271",
+      "key": "profile.v3.aa.f0271",
+      "content": "Collection 0135 map facsimile stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0272",
+      "key": "profile.v3.aa.f0272",
+      "content": "수집번호 0136 배지 모음 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0273",
+      "key": "profile.v3.aa.f0273",
+      "content": "Collection 0136 souvenir pebble stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0274",
+      "key": "profile.v3.aa.f0274",
+      "content": "수집번호 0137 직물 견본 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0275",
+      "key": "profile.v3.aa.f0275",
+      "content": "Collection 0137 felt pennant stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0276",
+      "key": "profile.v3.aa.f0276",
+      "content": "수집번호 0138 장식 조약돌 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0277",
+      "key": "profile.v3.aa.f0277",
+      "content": "Collection 0138 postcard bundle stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0278",
+      "key": "profile.v3.aa.f0278",
+      "content": "수집번호 0139 접이 부채 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0279",
+      "key": "profile.v3.aa.f0279",
+      "content": "Collection 0139 lace sample stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0280",
+      "key": "profile.v3.aa.f0280",
+      "content": "수집번호 0140 여행 수첩 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0281",
+      "key": "profile.v3.aa.f0281",
+      "content": "Collection 0140 postage album stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0282",
+      "key": "profile.v3.aa.f0282",
+      "content": "수집번호 0141 우편 엽서 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0283",
+      "key": "profile.v3.aa.f0283",
+      "content": "Collection 0141 crochet sampler stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0284",
+      "key": "profile.v3.aa.f0284",
+      "content": "수집번호 0142 자수 도안 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0285",
+      "key": "profile.v3.aa.f0285",
+      "content": "Collection 0142 wax seal stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0286",
+      "key": "profile.v3.aa.f0286",
+      "content": "수집번호 0143 양초 받침 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0287",
+      "key": "profile.v3.aa.f0287",
+      "content": "Collection 0143 travel journal stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0288",
+      "key": "profile.v3.aa.f0288",
+      "content": "수집번호 0144 도장 수집첩 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0289",
+      "key": "profile.v3.aa.f0289",
+      "content": "Collection 0144 enamel badge stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0290",
+      "key": "profile.v3.aa.f0290",
+      "content": "수집번호 0145 유리 문진 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0291",
+      "key": "profile.v3.aa.f0291",
+      "content": "Collection 0145 fabric swatch stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0292",
+      "key": "profile.v3.aa.f0292",
+      "content": "수집번호 0146 공예 리본 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0293",
+      "key": "profile.v3.aa.f0293",
+      "content": "Collection 0146 glass paperweight stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0294",
+      "key": "profile.v3.aa.f0294",
+      "content": "수집번호 0147 사진 앨범 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0295",
+      "key": "profile.v3.aa.f0295",
+      "content": "Collection 0147 ribbon spool stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0296",
+      "key": "profile.v3.aa.f0296",
+      "content": "수집번호 0148 종이 봉투 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0297",
+      "key": "profile.v3.aa.f0297",
+      "content": "Collection 0148 wooden puzzle stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0298",
+      "key": "profile.v3.aa.f0298",
+      "content": "수집번호 0149 천 조각 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0299",
+      "key": "profile.v3.aa.f0299",
+      "content": "Collection 0149 folding fan stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0300",
+      "key": "profile.v3.aa.f0300",
+      "content": "수집번호 0150 금속 책갈피 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0301",
+      "key": "profile.v3.aa.f0301",
+      "content": "Collection 0150 pencil tray stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0302",
+      "key": "profile.v3.aa.f0302",
+      "content": "수집번호 0151 지도 사본 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0303",
+      "key": "profile.v3.aa.f0303",
+      "content": "Collection 0151 scrapbook stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0304",
+      "key": "profile.v3.aa.f0304",
+      "content": "수집번호 0152 나무 상자 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0305",
+      "key": "profile.v3.aa.f0305",
+      "content": "Collection 0152 brass bookmark stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0306",
+      "key": "profile.v3.aa.f0306",
+      "content": "수집번호 0153 열쇠 고리 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0307",
+      "key": "profile.v3.aa.f0307",
+      "content": "Collection 0153 linen napkin stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0308",
+      "key": "profile.v3.aa.f0308",
+      "content": "수집번호 0154 색연필 통 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0309",
+      "key": "profile.v3.aa.f0309",
+      "content": "Collection 0154 ceramic coaster stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0310",
+      "key": "profile.v3.aa.f0310",
+      "content": "수집번호 0155 연극 대본 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0311",
+      "key": "profile.v3.aa.f0311",
+      "content": "Collection 0155 map facsimile stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0312",
+      "key": "profile.v3.aa.f0312",
+      "content": "수집번호 0156 배지 모음 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0313",
+      "key": "profile.v3.aa.f0313",
+      "content": "Collection 0156 souvenir pebble stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0314",
+      "key": "profile.v3.aa.f0314",
+      "content": "수집번호 0157 직물 견본 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0315",
+      "key": "profile.v3.aa.f0315",
+      "content": "Collection 0157 felt pennant stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0316",
+      "key": "profile.v3.aa.f0316",
+      "content": "수집번호 0158 장식 조약돌 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0317",
+      "key": "profile.v3.aa.f0317",
+      "content": "Collection 0158 postcard bundle stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0318",
+      "key": "profile.v3.aa.f0318",
+      "content": "수집번호 0159 접이 부채 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0319",
+      "key": "profile.v3.aa.f0319",
+      "content": "Collection 0159 lace sample stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0320",
+      "key": "profile.v3.aa.f0320",
+      "content": "수집번호 0160 여행 수첩 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0321",
+      "key": "profile.v3.aa.f0321",
+      "content": "Collection 0160 postage album stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0322",
+      "key": "profile.v3.aa.f0322",
+      "content": "수집번호 0161 우편 엽서 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0323",
+      "key": "profile.v3.aa.f0323",
+      "content": "Collection 0161 crochet sampler stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0324",
+      "key": "profile.v3.aa.f0324",
+      "content": "수집번호 0162 자수 도안 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0325",
+      "key": "profile.v3.aa.f0325",
+      "content": "Collection 0162 wax seal stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0326",
+      "key": "profile.v3.aa.f0326",
+      "content": "수집번호 0163 양초 받침 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0327",
+      "key": "profile.v3.aa.f0327",
+      "content": "Collection 0163 travel journal stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0328",
+      "key": "profile.v3.aa.f0328",
+      "content": "수집번호 0164 도장 수집첩 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0329",
+      "key": "profile.v3.aa.f0329",
+      "content": "Collection 0164 enamel badge stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0330",
+      "key": "profile.v3.aa.f0330",
+      "content": "수집번호 0165 유리 문진 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0331",
+      "key": "profile.v3.aa.f0331",
+      "content": "Collection 0165 fabric swatch stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0332",
+      "key": "profile.v3.aa.f0332",
+      "content": "수집번호 0166 공예 리본 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0333",
+      "key": "profile.v3.aa.f0333",
+      "content": "Collection 0166 glass paperweight stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0334",
+      "key": "profile.v3.aa.f0334",
+      "content": "수집번호 0167 사진 앨범 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0335",
+      "key": "profile.v3.aa.f0335",
+      "content": "Collection 0167 ribbon spool stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0336",
+      "key": "profile.v3.aa.f0336",
+      "content": "수집번호 0168 종이 봉투 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0337",
+      "key": "profile.v3.aa.f0337",
+      "content": "Collection 0168 wooden puzzle stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0338",
+      "key": "profile.v3.aa.f0338",
+      "content": "수집번호 0169 천 조각 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0339",
+      "key": "profile.v3.aa.f0339",
+      "content": "Collection 0169 folding fan stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0340",
+      "key": "profile.v3.aa.f0340",
+      "content": "수집번호 0170 금속 책갈피 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0341",
+      "key": "profile.v3.aa.f0341",
+      "content": "Collection 0170 pencil tray stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0342",
+      "key": "profile.v3.aa.f0342",
+      "content": "수집번호 0171 지도 사본 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0343",
+      "key": "profile.v3.aa.f0343",
+      "content": "Collection 0171 scrapbook stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0344",
+      "key": "profile.v3.aa.f0344",
+      "content": "수집번호 0172 나무 상자 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0345",
+      "key": "profile.v3.aa.f0345",
+      "content": "Collection 0172 brass bookmark stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0346",
+      "key": "profile.v3.aa.f0346",
+      "content": "수집번호 0173 열쇠 고리 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0347",
+      "key": "profile.v3.aa.f0347",
+      "content": "Collection 0173 linen napkin stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0348",
+      "key": "profile.v3.aa.f0348",
+      "content": "수집번호 0174 색연필 통 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0349",
+      "key": "profile.v3.aa.f0349",
+      "content": "Collection 0174 ceramic coaster stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0350",
+      "key": "profile.v3.aa.f0350",
+      "content": "수집번호 0175 연극 대본 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0351",
+      "key": "profile.v3.aa.f0351",
+      "content": "Collection 0175 map facsimile stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0352",
+      "key": "profile.v3.aa.f0352",
+      "content": "수집번호 0176 배지 모음 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0353",
+      "key": "profile.v3.aa.f0353",
+      "content": "Collection 0176 souvenir pebble stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0354",
+      "key": "profile.v3.aa.f0354",
+      "content": "수집번호 0177 직물 견본 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0355",
+      "key": "profile.v3.aa.f0355",
+      "content": "Collection 0177 felt pennant stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0356",
+      "key": "profile.v3.aa.f0356",
+      "content": "수집번호 0178 장식 조약돌 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0357",
+      "key": "profile.v3.aa.f0357",
+      "content": "Collection 0178 postcard bundle stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0358",
+      "key": "profile.v3.aa.f0358",
+      "content": "수집번호 0179 접이 부채 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0359",
+      "key": "profile.v3.aa.f0359",
+      "content": "Collection 0179 lace sample stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0360",
+      "key": "profile.v3.aa.f0360",
+      "content": "수집번호 0180 여행 수첩 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0361",
+      "key": "profile.v3.aa.f0361",
+      "content": "Collection 0180 postage album stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0362",
+      "key": "profile.v3.aa.f0362",
+      "content": "수집번호 0181 우편 엽서 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0363",
+      "key": "profile.v3.aa.f0363",
+      "content": "Collection 0181 crochet sampler stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0364",
+      "key": "profile.v3.aa.f0364",
+      "content": "수집번호 0182 자수 도안 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0365",
+      "key": "profile.v3.aa.f0365",
+      "content": "Collection 0182 wax seal stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0366",
+      "key": "profile.v3.aa.f0366",
+      "content": "수집번호 0183 양초 받침 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0367",
+      "key": "profile.v3.aa.f0367",
+      "content": "Collection 0183 travel journal stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0368",
+      "key": "profile.v3.aa.f0368",
+      "content": "수집번호 0184 도장 수집첩 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0369",
+      "key": "profile.v3.aa.f0369",
+      "content": "Collection 0184 enamel badge stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0370",
+      "key": "profile.v3.aa.f0370",
+      "content": "수집번호 0185 유리 문진 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0371",
+      "key": "profile.v3.aa.f0371",
+      "content": "Collection 0185 fabric swatch stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0372",
+      "key": "profile.v3.aa.f0372",
+      "content": "수집번호 0186 공예 리본 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0373",
+      "key": "profile.v3.aa.f0373",
+      "content": "Collection 0186 glass paperweight stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0374",
+      "key": "profile.v3.aa.f0374",
+      "content": "수집번호 0187 사진 앨범 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0375",
+      "key": "profile.v3.aa.f0375",
+      "content": "Collection 0187 ribbon spool stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0376",
+      "key": "profile.v3.aa.f0376",
+      "content": "수집번호 0188 종이 봉투 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0377",
+      "key": "profile.v3.aa.f0377",
+      "content": "Collection 0188 wooden puzzle stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0378",
+      "key": "profile.v3.aa.f0378",
+      "content": "수집번호 0189 천 조각 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0379",
+      "key": "profile.v3.aa.f0379",
+      "content": "Collection 0189 folding fan stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0380",
+      "key": "profile.v3.aa.f0380",
+      "content": "수집번호 0190 금속 책갈피 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0381",
+      "key": "profile.v3.aa.f0381",
+      "content": "Collection 0190 pencil tray stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0382",
+      "key": "profile.v3.aa.f0382",
+      "content": "수집번호 0191 지도 사본 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0383",
+      "key": "profile.v3.aa.f0383",
+      "content": "Collection 0191 scrapbook stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0384",
+      "key": "profile.v3.aa.f0384",
+      "content": "수집번호 0192 나무 상자 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0385",
+      "key": "profile.v3.aa.f0385",
+      "content": "Collection 0192 brass bookmark stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0386",
+      "key": "profile.v3.aa.f0386",
+      "content": "수집번호 0193 열쇠 고리 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0387",
+      "key": "profile.v3.aa.f0387",
+      "content": "Collection 0193 linen napkin stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0388",
+      "key": "profile.v3.aa.f0388",
+      "content": "수집번호 0194 색연필 통 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0389",
+      "key": "profile.v3.aa.f0389",
+      "content": "Collection 0194 ceramic coaster stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0390",
+      "key": "profile.v3.aa.f0390",
+      "content": "수집번호 0195 연극 대본 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0391",
+      "key": "profile.v3.aa.f0391",
+      "content": "Collection 0195 map facsimile stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0392",
+      "key": "profile.v3.aa.f0392",
+      "content": "수집번호 0196 배지 모음 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0393",
+      "key": "profile.v3.aa.f0393",
+      "content": "Collection 0196 souvenir pebble stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0394",
+      "key": "profile.v3.aa.f0394",
+      "content": "수집번호 0197 직물 견본 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0395",
+      "key": "profile.v3.aa.f0395",
+      "content": "Collection 0197 felt pennant stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0396",
+      "key": "profile.v3.aa.f0396",
+      "content": "수집번호 0198 장식 조약돌 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0397",
+      "key": "profile.v3.aa.f0397",
+      "content": "Collection 0198 postcard bundle stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0398",
+      "key": "profile.v3.aa.f0398",
+      "content": "수집번호 0199 접이 부채 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0399",
+      "key": "profile.v3.aa.f0399",
+      "content": "Collection 0199 lace sample stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0400",
+      "key": "profile.v3.aa.f0400",
+      "content": "수집번호 0200 여행 수첩 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0401",
+      "key": "profile.v3.aa.f0401",
+      "content": "Collection 0200 postage album stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0402",
+      "key": "profile.v3.aa.f0402",
+      "content": "수집번호 0201 우편 엽서 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0403",
+      "key": "profile.v3.aa.f0403",
+      "content": "Collection 0201 crochet sampler stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0404",
+      "key": "profile.v3.aa.f0404",
+      "content": "수집번호 0202 자수 도안 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0405",
+      "key": "profile.v3.aa.f0405",
+      "content": "Collection 0202 wax seal stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0406",
+      "key": "profile.v3.aa.f0406",
+      "content": "수집번호 0203 양초 받침 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0407",
+      "key": "profile.v3.aa.f0407",
+      "content": "Collection 0203 travel journal stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0408",
+      "key": "profile.v3.aa.f0408",
+      "content": "수집번호 0204 도장 수집첩 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0409",
+      "key": "profile.v3.aa.f0409",
+      "content": "Collection 0204 enamel badge stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0410",
+      "key": "profile.v3.aa.f0410",
+      "content": "수집번호 0205 유리 문진 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0411",
+      "key": "profile.v3.aa.f0411",
+      "content": "Collection 0205 fabric swatch stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0412",
+      "key": "profile.v3.aa.f0412",
+      "content": "수집번호 0206 공예 리본 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0413",
+      "key": "profile.v3.aa.f0413",
+      "content": "Collection 0206 glass paperweight stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0414",
+      "key": "profile.v3.aa.f0414",
+      "content": "수집번호 0207 사진 앨범 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0415",
+      "key": "profile.v3.aa.f0415",
+      "content": "Collection 0207 ribbon spool stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0416",
+      "key": "profile.v3.aa.f0416",
+      "content": "수집번호 0208 종이 봉투 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0417",
+      "key": "profile.v3.aa.f0417",
+      "content": "Collection 0208 wooden puzzle stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0418",
+      "key": "profile.v3.aa.f0418",
+      "content": "수집번호 0209 천 조각 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0419",
+      "key": "profile.v3.aa.f0419",
+      "content": "Collection 0209 folding fan stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0420",
+      "key": "profile.v3.aa.f0420",
+      "content": "수집번호 0210 금속 책갈피 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0421",
+      "key": "profile.v3.aa.f0421",
+      "content": "Collection 0210 pencil tray stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0422",
+      "key": "profile.v3.aa.f0422",
+      "content": "수집번호 0211 지도 사본 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0423",
+      "key": "profile.v3.aa.f0423",
+      "content": "Collection 0211 scrapbook stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0424",
+      "key": "profile.v3.aa.f0424",
+      "content": "수집번호 0212 나무 상자 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0425",
+      "key": "profile.v3.aa.f0425",
+      "content": "Collection 0212 brass bookmark stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0426",
+      "key": "profile.v3.aa.f0426",
+      "content": "수집번호 0213 열쇠 고리 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0427",
+      "key": "profile.v3.aa.f0427",
+      "content": "Collection 0213 linen napkin stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0428",
+      "key": "profile.v3.aa.f0428",
+      "content": "수집번호 0214 색연필 통 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0429",
+      "key": "profile.v3.aa.f0429",
+      "content": "Collection 0214 ceramic coaster stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0430",
+      "key": "profile.v3.aa.f0430",
+      "content": "수집번호 0215 연극 대본 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0431",
+      "key": "profile.v3.aa.f0431",
+      "content": "Collection 0215 map facsimile stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0432",
+      "key": "profile.v3.aa.f0432",
+      "content": "수집번호 0216 배지 모음 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0433",
+      "key": "profile.v3.aa.f0433",
+      "content": "Collection 0216 souvenir pebble stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0434",
+      "key": "profile.v3.aa.f0434",
+      "content": "수집번호 0217 직물 견본 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0435",
+      "key": "profile.v3.aa.f0435",
+      "content": "Collection 0217 felt pennant stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0436",
+      "key": "profile.v3.aa.f0436",
+      "content": "수집번호 0218 장식 조약돌 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0437",
+      "key": "profile.v3.aa.f0437",
+      "content": "Collection 0218 postcard bundle stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0438",
+      "key": "profile.v3.aa.f0438",
+      "content": "수집번호 0219 접이 부채 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0439",
+      "key": "profile.v3.aa.f0439",
+      "content": "Collection 0219 lace sample stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0440",
+      "key": "profile.v3.aa.f0440",
+      "content": "수집번호 0220 여행 수첩 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0441",
+      "key": "profile.v3.aa.f0441",
+      "content": "Collection 0220 postage album stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0442",
+      "key": "profile.v3.aa.f0442",
+      "content": "수집번호 0221 우편 엽서 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0443",
+      "key": "profile.v3.aa.f0443",
+      "content": "Collection 0221 crochet sampler stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0444",
+      "key": "profile.v3.aa.f0444",
+      "content": "수집번호 0222 자수 도안 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0445",
+      "key": "profile.v3.aa.f0445",
+      "content": "Collection 0222 wax seal stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0446",
+      "key": "profile.v3.aa.f0446",
+      "content": "수집번호 0223 양초 받침 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0447",
+      "key": "profile.v3.aa.f0447",
+      "content": "Collection 0223 travel journal stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0448",
+      "key": "profile.v3.aa.f0448",
+      "content": "수집번호 0224 도장 수집첩 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0449",
+      "key": "profile.v3.aa.f0449",
+      "content": "Collection 0224 enamel badge stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0450",
+      "key": "profile.v3.aa.f0450",
+      "content": "수집번호 0225 유리 문진 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0451",
+      "key": "profile.v3.aa.f0451",
+      "content": "Collection 0225 fabric swatch stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0452",
+      "key": "profile.v3.aa.f0452",
+      "content": "수집번호 0226 공예 리본 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0453",
+      "key": "profile.v3.aa.f0453",
+      "content": "Collection 0226 glass paperweight stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0454",
+      "key": "profile.v3.aa.f0454",
+      "content": "수집번호 0227 사진 앨범 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0455",
+      "key": "profile.v3.aa.f0455",
+      "content": "Collection 0227 ribbon spool stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0456",
+      "key": "profile.v3.aa.f0456",
+      "content": "수집번호 0228 종이 봉투 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0457",
+      "key": "profile.v3.aa.f0457",
+      "content": "Collection 0228 wooden puzzle stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0458",
+      "key": "profile.v3.aa.f0458",
+      "content": "수집번호 0229 천 조각 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0459",
+      "key": "profile.v3.aa.f0459",
+      "content": "Collection 0229 folding fan stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0460",
+      "key": "profile.v3.aa.f0460",
+      "content": "수집번호 0230 금속 책갈피 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0461",
+      "key": "profile.v3.aa.f0461",
+      "content": "Collection 0230 pencil tray stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0462",
+      "key": "profile.v3.aa.f0462",
+      "content": "수집번호 0231 지도 사본 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0463",
+      "key": "profile.v3.aa.f0463",
+      "content": "Collection 0231 scrapbook stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0464",
+      "key": "profile.v3.aa.f0464",
+      "content": "수집번호 0232 나무 상자 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0465",
+      "key": "profile.v3.aa.f0465",
+      "content": "Collection 0232 brass bookmark stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0466",
+      "key": "profile.v3.aa.f0466",
+      "content": "수집번호 0233 열쇠 고리 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0467",
+      "key": "profile.v3.aa.f0467",
+      "content": "Collection 0233 linen napkin stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0468",
+      "key": "profile.v3.aa.f0468",
+      "content": "수집번호 0234 색연필 통 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0469",
+      "key": "profile.v3.aa.f0469",
+      "content": "Collection 0234 ceramic coaster stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0470",
+      "key": "profile.v3.aa.f0470",
+      "content": "수집번호 0235 연극 대본 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0471",
+      "key": "profile.v3.aa.f0471",
+      "content": "Collection 0235 map facsimile stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0472",
+      "key": "profile.v3.aa.f0472",
+      "content": "수집번호 0236 배지 모음 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0473",
+      "key": "profile.v3.aa.f0473",
+      "content": "Collection 0236 souvenir pebble stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0474",
+      "key": "profile.v3.aa.f0474",
+      "content": "수집번호 0237 직물 견본 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0475",
+      "key": "profile.v3.aa.f0475",
+      "content": "Collection 0237 felt pennant stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0476",
+      "key": "profile.v3.aa.f0476",
+      "content": "수집번호 0238 장식 조약돌 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0477",
+      "key": "profile.v3.aa.f0477",
+      "content": "Collection 0238 postcard bundle stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0478",
+      "key": "profile.v3.aa.f0478",
+      "content": "수집번호 0239 접이 부채 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0479",
+      "key": "profile.v3.aa.f0479",
+      "content": "Collection 0239 lace sample stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0480",
+      "key": "profile.v3.aa.f0480",
+      "content": "수집번호 0240 여행 수첩 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0481",
+      "key": "profile.v3.aa.f0481",
+      "content": "Collection 0240 postage album stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0482",
+      "key": "profile.v3.aa.f0482",
+      "content": "수집번호 0241 우편 엽서 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0483",
+      "key": "profile.v3.aa.f0483",
+      "content": "Collection 0241 crochet sampler stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0484",
+      "key": "profile.v3.aa.f0484",
+      "content": "수집번호 0242 자수 도안 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0485",
+      "key": "profile.v3.aa.f0485",
+      "content": "Collection 0242 wax seal stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0486",
+      "key": "profile.v3.aa.f0486",
+      "content": "수집번호 0243 양초 받침 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0487",
+      "key": "profile.v3.aa.f0487",
+      "content": "Collection 0243 travel journal stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0488",
+      "key": "profile.v3.aa.f0488",
+      "content": "수집번호 0244 도장 수집첩 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0489",
+      "key": "profile.v3.aa.f0489",
+      "content": "Collection 0244 enamel badge stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0490",
+      "key": "profile.v3.aa.f0490",
+      "content": "수집번호 0245 유리 문진 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0491",
+      "key": "profile.v3.aa.f0491",
+      "content": "Collection 0245 fabric swatch stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0492",
+      "key": "profile.v3.aa.f0492",
+      "content": "수집번호 0246 공예 리본 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0493",
+      "key": "profile.v3.aa.f0493",
+      "content": "Collection 0246 glass paperweight stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0494",
+      "key": "profile.v3.aa.f0494",
+      "content": "수집번호 0247 사진 앨범 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0495",
+      "key": "profile.v3.aa.f0495",
+      "content": "Collection 0247 ribbon spool stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0496",
+      "key": "profile.v3.aa.f0496",
+      "content": "수집번호 0248 종이 봉투 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0497",
+      "key": "profile.v3.aa.f0497",
+      "content": "Collection 0248 wooden puzzle stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0498",
+      "key": "profile.v3.aa.f0498",
+      "content": "수집번호 0249 천 조각 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0499",
+      "key": "profile.v3.aa.f0499",
+      "content": "Collection 0249 folding fan stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0500",
+      "key": "profile.v3.aa.f0500",
+      "content": "수집번호 0250 금속 책갈피 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0501",
+      "key": "profile.v3.aa.f0501",
+      "content": "Collection 0250 pencil tray stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0502",
+      "key": "profile.v3.aa.f0502",
+      "content": "수집번호 0251 지도 사본 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0503",
+      "key": "profile.v3.aa.f0503",
+      "content": "Collection 0251 scrapbook stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0504",
+      "key": "profile.v3.aa.f0504",
+      "content": "수집번호 0252 나무 상자 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0505",
+      "key": "profile.v3.aa.f0505",
+      "content": "Collection 0252 brass bookmark stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0506",
+      "key": "profile.v3.aa.f0506",
+      "content": "수집번호 0253 열쇠 고리 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0507",
+      "key": "profile.v3.aa.f0507",
+      "content": "Collection 0253 linen napkin stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0508",
+      "key": "profile.v3.aa.f0508",
+      "content": "수집번호 0254 색연필 통 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0509",
+      "key": "profile.v3.aa.f0509",
+      "content": "Collection 0254 ceramic coaster stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0510",
+      "key": "profile.v3.aa.f0510",
+      "content": "수집번호 0255 연극 대본 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0511",
+      "key": "profile.v3.aa.f0511",
+      "content": "Collection 0255 map facsimile stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0512",
+      "key": "profile.v3.aa.f0512",
+      "content": "수집번호 0256 배지 모음 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0513",
+      "key": "profile.v3.aa.f0513",
+      "content": "Collection 0256 souvenir pebble stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0514",
+      "key": "profile.v3.aa.f0514",
+      "content": "수집번호 0257 직물 견본 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0515",
+      "key": "profile.v3.aa.f0515",
+      "content": "Collection 0257 felt pennant stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0516",
+      "key": "profile.v3.aa.f0516",
+      "content": "수집번호 0258 장식 조약돌 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0517",
+      "key": "profile.v3.aa.f0517",
+      "content": "Collection 0258 postcard bundle stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0518",
+      "key": "profile.v3.aa.f0518",
+      "content": "수집번호 0259 접이 부채 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0519",
+      "key": "profile.v3.aa.f0519",
+      "content": "Collection 0259 lace sample stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0520",
+      "key": "profile.v3.aa.f0520",
+      "content": "수집번호 0260 여행 수첩 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0521",
+      "key": "profile.v3.aa.f0521",
+      "content": "Collection 0260 postage album stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0522",
+      "key": "profile.v3.aa.f0522",
+      "content": "수집번호 0261 우편 엽서 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0523",
+      "key": "profile.v3.aa.f0523",
+      "content": "Collection 0261 crochet sampler stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0524",
+      "key": "profile.v3.aa.f0524",
+      "content": "수집번호 0262 자수 도안 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0525",
+      "key": "profile.v3.aa.f0525",
+      "content": "Collection 0262 wax seal stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0526",
+      "key": "profile.v3.aa.f0526",
+      "content": "수집번호 0263 양초 받침 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0527",
+      "key": "profile.v3.aa.f0527",
+      "content": "Collection 0263 travel journal stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0528",
+      "key": "profile.v3.aa.f0528",
+      "content": "수집번호 0264 도장 수집첩 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0529",
+      "key": "profile.v3.aa.f0529",
+      "content": "Collection 0264 enamel badge stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0530",
+      "key": "profile.v3.aa.f0530",
+      "content": "수집번호 0265 유리 문진 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0531",
+      "key": "profile.v3.aa.f0531",
+      "content": "Collection 0265 fabric swatch stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0532",
+      "key": "profile.v3.aa.f0532",
+      "content": "수집번호 0266 공예 리본 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0533",
+      "key": "profile.v3.aa.f0533",
+      "content": "Collection 0266 glass paperweight stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0534",
+      "key": "profile.v3.aa.f0534",
+      "content": "수집번호 0267 사진 앨범 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0535",
+      "key": "profile.v3.aa.f0535",
+      "content": "Collection 0267 ribbon spool stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0536",
+      "key": "profile.v3.aa.f0536",
+      "content": "수집번호 0268 종이 봉투 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0537",
+      "key": "profile.v3.aa.f0537",
+      "content": "Collection 0268 wooden puzzle stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0538",
+      "key": "profile.v3.aa.f0538",
+      "content": "수집번호 0269 천 조각 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0539",
+      "key": "profile.v3.aa.f0539",
+      "content": "Collection 0269 folding fan stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0540",
+      "key": "profile.v3.aa.f0540",
+      "content": "수집번호 0270 금속 책갈피 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0541",
+      "key": "profile.v3.aa.f0541",
+      "content": "Collection 0270 pencil tray stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0542",
+      "key": "profile.v3.aa.f0542",
+      "content": "수집번호 0271 지도 사본 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0543",
+      "key": "profile.v3.aa.f0543",
+      "content": "Collection 0271 scrapbook stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0544",
+      "key": "profile.v3.aa.f0544",
+      "content": "수집번호 0272 나무 상자 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0545",
+      "key": "profile.v3.aa.f0545",
+      "content": "Collection 0272 brass bookmark stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0546",
+      "key": "profile.v3.aa.f0546",
+      "content": "수집번호 0273 열쇠 고리 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0547",
+      "key": "profile.v3.aa.f0547",
+      "content": "Collection 0273 linen napkin stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0548",
+      "key": "profile.v3.aa.f0548",
+      "content": "수집번호 0274 색연필 통 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0549",
+      "key": "profile.v3.aa.f0549",
+      "content": "Collection 0274 ceramic coaster stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0550",
+      "key": "profile.v3.aa.f0550",
+      "content": "수집번호 0275 연극 대본 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0551",
+      "key": "profile.v3.aa.f0551",
+      "content": "Collection 0275 map facsimile stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0552",
+      "key": "profile.v3.aa.f0552",
+      "content": "수집번호 0276 배지 모음 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0553",
+      "key": "profile.v3.aa.f0553",
+      "content": "Collection 0276 souvenir pebble stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0554",
+      "key": "profile.v3.aa.f0554",
+      "content": "수집번호 0277 직물 견본 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0555",
+      "key": "profile.v3.aa.f0555",
+      "content": "Collection 0277 felt pennant stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0556",
+      "key": "profile.v3.aa.f0556",
+      "content": "수집번호 0278 장식 조약돌 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0557",
+      "key": "profile.v3.aa.f0557",
+      "content": "Collection 0278 postcard bundle stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0558",
+      "key": "profile.v3.aa.f0558",
+      "content": "수집번호 0279 접이 부채 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0559",
+      "key": "profile.v3.aa.f0559",
+      "content": "Collection 0279 lace sample stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0560",
+      "key": "profile.v3.aa.f0560",
+      "content": "수집번호 0280 여행 수첩 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0561",
+      "key": "profile.v3.aa.f0561",
+      "content": "Collection 0280 postage album stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0562",
+      "key": "profile.v3.aa.f0562",
+      "content": "수집번호 0281 우편 엽서 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0563",
+      "key": "profile.v3.aa.f0563",
+      "content": "Collection 0281 crochet sampler stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0564",
+      "key": "profile.v3.aa.f0564",
+      "content": "수집번호 0282 자수 도안 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0565",
+      "key": "profile.v3.aa.f0565",
+      "content": "Collection 0282 wax seal stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0566",
+      "key": "profile.v3.aa.f0566",
+      "content": "수집번호 0283 양초 받침 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0567",
+      "key": "profile.v3.aa.f0567",
+      "content": "Collection 0283 travel journal stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0568",
+      "key": "profile.v3.aa.f0568",
+      "content": "수집번호 0284 도장 수집첩 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0569",
+      "key": "profile.v3.aa.f0569",
+      "content": "Collection 0284 enamel badge stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0570",
+      "key": "profile.v3.aa.f0570",
+      "content": "수집번호 0285 유리 문진 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0571",
+      "key": "profile.v3.aa.f0571",
+      "content": "Collection 0285 fabric swatch stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0572",
+      "key": "profile.v3.aa.f0572",
+      "content": "수집번호 0286 공예 리본 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0573",
+      "key": "profile.v3.aa.f0573",
+      "content": "Collection 0286 glass paperweight stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0574",
+      "key": "profile.v3.aa.f0574",
+      "content": "수집번호 0287 사진 앨범 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0575",
+      "key": "profile.v3.aa.f0575",
+      "content": "Collection 0287 ribbon spool stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0576",
+      "key": "profile.v3.aa.f0576",
+      "content": "수집번호 0288 종이 봉투 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0577",
+      "key": "profile.v3.aa.f0577",
+      "content": "Collection 0288 wooden puzzle stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0578",
+      "key": "profile.v3.aa.f0578",
+      "content": "수집번호 0289 천 조각 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0579",
+      "key": "profile.v3.aa.f0579",
+      "content": "Collection 0289 folding fan stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0580",
+      "key": "profile.v3.aa.f0580",
+      "content": "수집번호 0290 금속 책갈피 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0581",
+      "key": "profile.v3.aa.f0581",
+      "content": "Collection 0290 pencil tray stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0582",
+      "key": "profile.v3.aa.f0582",
+      "content": "수집번호 0291 지도 사본 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0583",
+      "key": "profile.v3.aa.f0583",
+      "content": "Collection 0291 scrapbook stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0584",
+      "key": "profile.v3.aa.f0584",
+      "content": "수집번호 0292 나무 상자 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0585",
+      "key": "profile.v3.aa.f0585",
+      "content": "Collection 0292 brass bookmark stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0586",
+      "key": "profile.v3.aa.f0586",
+      "content": "수집번호 0293 열쇠 고리 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0587",
+      "key": "profile.v3.aa.f0587",
+      "content": "Collection 0293 linen napkin stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0588",
+      "key": "profile.v3.aa.f0588",
+      "content": "수집번호 0294 색연필 통 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0589",
+      "key": "profile.v3.aa.f0589",
+      "content": "Collection 0294 ceramic coaster stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0590",
+      "key": "profile.v3.aa.f0590",
+      "content": "수집번호 0295 연극 대본 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0591",
+      "key": "profile.v3.aa.f0591",
+      "content": "Collection 0295 map facsimile stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0592",
+      "key": "profile.v3.aa.f0592",
+      "content": "수집번호 0296 배지 모음 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0593",
+      "key": "profile.v3.aa.f0593",
+      "content": "Collection 0296 souvenir pebble stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0594",
+      "key": "profile.v3.aa.f0594",
+      "content": "수집번호 0297 직물 견본 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0595",
+      "key": "profile.v3.aa.f0595",
+      "content": "Collection 0297 felt pennant stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0596",
+      "key": "profile.v3.aa.f0596",
+      "content": "수집번호 0298 장식 조약돌 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0597",
+      "key": "profile.v3.aa.f0597",
+      "content": "Collection 0298 postcard bundle stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0598",
+      "key": "profile.v3.aa.f0598",
+      "content": "수집번호 0299 접이 부채 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0599",
+      "key": "profile.v3.aa.f0599",
+      "content": "Collection 0299 lace sample stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0600",
+      "key": "profile.v3.aa.f0600",
+      "content": "수집번호 0300 여행 수첩 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0601",
+      "key": "profile.v3.aa.f0601",
+      "content": "Collection 0300 postage album stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0602",
+      "key": "profile.v3.aa.f0602",
+      "content": "수집번호 0301 우편 엽서 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0603",
+      "key": "profile.v3.aa.f0603",
+      "content": "Collection 0301 crochet sampler stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0604",
+      "key": "profile.v3.aa.f0604",
+      "content": "수집번호 0302 자수 도안 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0605",
+      "key": "profile.v3.aa.f0605",
+      "content": "Collection 0302 wax seal stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0606",
+      "key": "profile.v3.aa.f0606",
+      "content": "수집번호 0303 양초 받침 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0607",
+      "key": "profile.v3.aa.f0607",
+      "content": "Collection 0303 travel journal stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0608",
+      "key": "profile.v3.aa.f0608",
+      "content": "수집번호 0304 도장 수집첩 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0609",
+      "key": "profile.v3.aa.f0609",
+      "content": "Collection 0304 enamel badge stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0610",
+      "key": "profile.v3.aa.f0610",
+      "content": "수집번호 0305 유리 문진 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0611",
+      "key": "profile.v3.aa.f0611",
+      "content": "Collection 0305 fabric swatch stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0612",
+      "key": "profile.v3.aa.f0612",
+      "content": "수집번호 0306 공예 리본 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0613",
+      "key": "profile.v3.aa.f0613",
+      "content": "Collection 0306 glass paperweight stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0614",
+      "key": "profile.v3.aa.f0614",
+      "content": "수집번호 0307 사진 앨범 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0615",
+      "key": "profile.v3.aa.f0615",
+      "content": "Collection 0307 ribbon spool stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0616",
+      "key": "profile.v3.aa.f0616",
+      "content": "수집번호 0308 종이 봉투 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0617",
+      "key": "profile.v3.aa.f0617",
+      "content": "Collection 0308 wooden puzzle stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0618",
+      "key": "profile.v3.aa.f0618",
+      "content": "수집번호 0309 천 조각 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0619",
+      "key": "profile.v3.aa.f0619",
+      "content": "Collection 0309 folding fan stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0620",
+      "key": "profile.v3.aa.f0620",
+      "content": "수집번호 0310 금속 책갈피 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0621",
+      "key": "profile.v3.aa.f0621",
+      "content": "Collection 0310 pencil tray stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0622",
+      "key": "profile.v3.aa.f0622",
+      "content": "수집번호 0311 지도 사본 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0623",
+      "key": "profile.v3.aa.f0623",
+      "content": "Collection 0311 scrapbook stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0624",
+      "key": "profile.v3.aa.f0624",
+      "content": "수집번호 0312 나무 상자 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0625",
+      "key": "profile.v3.aa.f0625",
+      "content": "Collection 0312 brass bookmark stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0626",
+      "key": "profile.v3.aa.f0626",
+      "content": "수집번호 0313 열쇠 고리 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0627",
+      "key": "profile.v3.aa.f0627",
+      "content": "Collection 0313 linen napkin stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0628",
+      "key": "profile.v3.aa.f0628",
+      "content": "수집번호 0314 색연필 통 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0629",
+      "key": "profile.v3.aa.f0629",
+      "content": "Collection 0314 ceramic coaster stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0630",
+      "key": "profile.v3.aa.f0630",
+      "content": "수집번호 0315 연극 대본 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0631",
+      "key": "profile.v3.aa.f0631",
+      "content": "Collection 0315 map facsimile stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0632",
+      "key": "profile.v3.aa.f0632",
+      "content": "수집번호 0316 배지 모음 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0633",
+      "key": "profile.v3.aa.f0633",
+      "content": "Collection 0316 souvenir pebble stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0634",
+      "key": "profile.v3.aa.f0634",
+      "content": "수집번호 0317 직물 견본 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0635",
+      "key": "profile.v3.aa.f0635",
+      "content": "Collection 0317 felt pennant stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0636",
+      "key": "profile.v3.aa.f0636",
+      "content": "수집번호 0318 장식 조약돌 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0637",
+      "key": "profile.v3.aa.f0637",
+      "content": "Collection 0318 postcard bundle stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0638",
+      "key": "profile.v3.aa.f0638",
+      "content": "수집번호 0319 접이 부채 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0639",
+      "key": "profile.v3.aa.f0639",
+      "content": "Collection 0319 lace sample stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0640",
+      "key": "profile.v3.aa.f0640",
+      "content": "수집번호 0320 여행 수첩 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0641",
+      "key": "profile.v3.aa.f0641",
+      "content": "Collection 0320 postage album stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0642",
+      "key": "profile.v3.aa.f0642",
+      "content": "수집번호 0321 우편 엽서 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0643",
+      "key": "profile.v3.aa.f0643",
+      "content": "Collection 0321 crochet sampler stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0644",
+      "key": "profile.v3.aa.f0644",
+      "content": "수집번호 0322 자수 도안 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0645",
+      "key": "profile.v3.aa.f0645",
+      "content": "Collection 0322 wax seal stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0646",
+      "key": "profile.v3.aa.f0646",
+      "content": "수집번호 0323 양초 받침 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0647",
+      "key": "profile.v3.aa.f0647",
+      "content": "Collection 0323 travel journal stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0648",
+      "key": "profile.v3.aa.f0648",
+      "content": "수집번호 0324 도장 수집첩 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0649",
+      "key": "profile.v3.aa.f0649",
+      "content": "Collection 0324 enamel badge stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0650",
+      "key": "profile.v3.aa.f0650",
+      "content": "수집번호 0325 유리 문진 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0651",
+      "key": "profile.v3.aa.f0651",
+      "content": "Collection 0325 fabric swatch stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0652",
+      "key": "profile.v3.aa.f0652",
+      "content": "수집번호 0326 공예 리본 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0653",
+      "key": "profile.v3.aa.f0653",
+      "content": "Collection 0326 glass paperweight stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0654",
+      "key": "profile.v3.aa.f0654",
+      "content": "수집번호 0327 사진 앨범 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0655",
+      "key": "profile.v3.aa.f0655",
+      "content": "Collection 0327 ribbon spool stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0656",
+      "key": "profile.v3.aa.f0656",
+      "content": "수집번호 0328 종이 봉투 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0657",
+      "key": "profile.v3.aa.f0657",
+      "content": "Collection 0328 wooden puzzle stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0658",
+      "key": "profile.v3.aa.f0658",
+      "content": "수집번호 0329 천 조각 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0659",
+      "key": "profile.v3.aa.f0659",
+      "content": "Collection 0329 folding fan stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0660",
+      "key": "profile.v3.aa.f0660",
+      "content": "수집번호 0330 금속 책갈피 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0661",
+      "key": "profile.v3.aa.f0661",
+      "content": "Collection 0330 pencil tray stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0662",
+      "key": "profile.v3.aa.f0662",
+      "content": "수집번호 0331 지도 사본 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0663",
+      "key": "profile.v3.aa.f0663",
+      "content": "Collection 0331 scrapbook stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0664",
+      "key": "profile.v3.aa.f0664",
+      "content": "수집번호 0332 나무 상자 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0665",
+      "key": "profile.v3.aa.f0665",
+      "content": "Collection 0332 brass bookmark stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0666",
+      "key": "profile.v3.aa.f0666",
+      "content": "수집번호 0333 열쇠 고리 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0667",
+      "key": "profile.v3.aa.f0667",
+      "content": "Collection 0333 linen napkin stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0668",
+      "key": "profile.v3.aa.f0668",
+      "content": "수집번호 0334 색연필 통 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0669",
+      "key": "profile.v3.aa.f0669",
+      "content": "Collection 0334 ceramic coaster stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0670",
+      "key": "profile.v3.aa.f0670",
+      "content": "수집번호 0335 연극 대본 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0671",
+      "key": "profile.v3.aa.f0671",
+      "content": "Collection 0335 map facsimile stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0672",
+      "key": "profile.v3.aa.f0672",
+      "content": "수집번호 0336 배지 모음 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0673",
+      "key": "profile.v3.aa.f0673",
+      "content": "Collection 0336 souvenir pebble stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0674",
+      "key": "profile.v3.aa.f0674",
+      "content": "수집번호 0337 직물 견본 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0675",
+      "key": "profile.v3.aa.f0675",
+      "content": "Collection 0337 felt pennant stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0676",
+      "key": "profile.v3.aa.f0676",
+      "content": "수집번호 0338 장식 조약돌 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0677",
+      "key": "profile.v3.aa.f0677",
+      "content": "Collection 0338 postcard bundle stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0678",
+      "key": "profile.v3.aa.f0678",
+      "content": "수집번호 0339 접이 부채 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0679",
+      "key": "profile.v3.aa.f0679",
+      "content": "Collection 0339 lace sample stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0680",
+      "key": "profile.v3.aa.f0680",
+      "content": "수집번호 0340 여행 수첩 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0681",
+      "key": "profile.v3.aa.f0681",
+      "content": "Collection 0340 postage album stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0682",
+      "key": "profile.v3.aa.f0682",
+      "content": "수집번호 0341 우편 엽서 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0683",
+      "key": "profile.v3.aa.f0683",
+      "content": "Collection 0341 crochet sampler stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0684",
+      "key": "profile.v3.aa.f0684",
+      "content": "수집번호 0342 자수 도안 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0685",
+      "key": "profile.v3.aa.f0685",
+      "content": "Collection 0342 wax seal stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0686",
+      "key": "profile.v3.aa.f0686",
+      "content": "수집번호 0343 양초 받침 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0687",
+      "key": "profile.v3.aa.f0687",
+      "content": "Collection 0343 travel journal stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0688",
+      "key": "profile.v3.aa.f0688",
+      "content": "수집번호 0344 도장 수집첩 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0689",
+      "key": "profile.v3.aa.f0689",
+      "content": "Collection 0344 enamel badge stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0690",
+      "key": "profile.v3.aa.f0690",
+      "content": "수집번호 0345 유리 문진 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0691",
+      "key": "profile.v3.aa.f0691",
+      "content": "Collection 0345 fabric swatch stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0692",
+      "key": "profile.v3.aa.f0692",
+      "content": "수집번호 0346 공예 리본 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0693",
+      "key": "profile.v3.aa.f0693",
+      "content": "Collection 0346 glass paperweight stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0694",
+      "key": "profile.v3.aa.f0694",
+      "content": "수집번호 0347 사진 앨범 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0695",
+      "key": "profile.v3.aa.f0695",
+      "content": "Collection 0347 ribbon spool stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0696",
+      "key": "profile.v3.aa.f0696",
+      "content": "수집번호 0348 종이 봉투 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0697",
+      "key": "profile.v3.aa.f0697",
+      "content": "Collection 0348 wooden puzzle stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0698",
+      "key": "profile.v3.aa.f0698",
+      "content": "수집번호 0349 천 조각 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0699",
+      "key": "profile.v3.aa.f0699",
+      "content": "Collection 0349 folding fan stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0700",
+      "key": "profile.v3.aa.f0700",
+      "content": "수집번호 0350 금속 책갈피 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0701",
+      "key": "profile.v3.aa.f0701",
+      "content": "Collection 0350 pencil tray stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0702",
+      "key": "profile.v3.aa.f0702",
+      "content": "수집번호 0351 지도 사본 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0703",
+      "key": "profile.v3.aa.f0703",
+      "content": "Collection 0351 scrapbook stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0704",
+      "key": "profile.v3.aa.f0704",
+      "content": "수집번호 0352 나무 상자 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0705",
+      "key": "profile.v3.aa.f0705",
+      "content": "Collection 0352 brass bookmark stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0706",
+      "key": "profile.v3.aa.f0706",
+      "content": "수집번호 0353 열쇠 고리 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0707",
+      "key": "profile.v3.aa.f0707",
+      "content": "Collection 0353 linen napkin stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0708",
+      "key": "profile.v3.aa.f0708",
+      "content": "수집번호 0354 색연필 통 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0709",
+      "key": "profile.v3.aa.f0709",
+      "content": "Collection 0354 ceramic coaster stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0710",
+      "key": "profile.v3.aa.f0710",
+      "content": "수집번호 0355 연극 대본 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0711",
+      "key": "profile.v3.aa.f0711",
+      "content": "Collection 0355 map facsimile stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0712",
+      "key": "profile.v3.aa.f0712",
+      "content": "수집번호 0356 배지 모음 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0713",
+      "key": "profile.v3.aa.f0713",
+      "content": "Collection 0356 souvenir pebble stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0714",
+      "key": "profile.v3.aa.f0714",
+      "content": "수집번호 0357 직물 견본 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0715",
+      "key": "profile.v3.aa.f0715",
+      "content": "Collection 0357 felt pennant stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0716",
+      "key": "profile.v3.aa.f0716",
+      "content": "수집번호 0358 장식 조약돌 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0717",
+      "key": "profile.v3.aa.f0717",
+      "content": "Collection 0358 postcard bundle stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0718",
+      "key": "profile.v3.aa.f0718",
+      "content": "수집번호 0359 접이 부채 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0719",
+      "key": "profile.v3.aa.f0719",
+      "content": "Collection 0359 lace sample stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0720",
+      "key": "profile.v3.aa.f0720",
+      "content": "수집번호 0360 여행 수첩 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0721",
+      "key": "profile.v3.aa.f0721",
+      "content": "Collection 0360 postage album stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0722",
+      "key": "profile.v3.aa.f0722",
+      "content": "수집번호 0361 우편 엽서 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0723",
+      "key": "profile.v3.aa.f0723",
+      "content": "Collection 0361 crochet sampler stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0724",
+      "key": "profile.v3.aa.f0724",
+      "content": "수집번호 0362 자수 도안 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0725",
+      "key": "profile.v3.aa.f0725",
+      "content": "Collection 0362 wax seal stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0726",
+      "key": "profile.v3.aa.f0726",
+      "content": "수집번호 0363 양초 받침 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0727",
+      "key": "profile.v3.aa.f0727",
+      "content": "Collection 0363 travel journal stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0728",
+      "key": "profile.v3.aa.f0728",
+      "content": "수집번호 0364 도장 수집첩 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0729",
+      "key": "profile.v3.aa.f0729",
+      "content": "Collection 0364 enamel badge stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0730",
+      "key": "profile.v3.aa.f0730",
+      "content": "수집번호 0365 유리 문진 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0731",
+      "key": "profile.v3.aa.f0731",
+      "content": "Collection 0365 fabric swatch stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0732",
+      "key": "profile.v3.aa.f0732",
+      "content": "수집번호 0366 공예 리본 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0733",
+      "key": "profile.v3.aa.f0733",
+      "content": "Collection 0366 glass paperweight stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0734",
+      "key": "profile.v3.aa.f0734",
+      "content": "수집번호 0367 사진 앨범 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0735",
+      "key": "profile.v3.aa.f0735",
+      "content": "Collection 0367 ribbon spool stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0736",
+      "key": "profile.v3.aa.f0736",
+      "content": "수집번호 0368 종이 봉투 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0737",
+      "key": "profile.v3.aa.f0737",
+      "content": "Collection 0368 wooden puzzle stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0738",
+      "key": "profile.v3.aa.f0738",
+      "content": "수집번호 0369 천 조각 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0739",
+      "key": "profile.v3.aa.f0739",
+      "content": "Collection 0369 folding fan stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0740",
+      "key": "profile.v3.aa.f0740",
+      "content": "수집번호 0370 금속 책갈피 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0741",
+      "key": "profile.v3.aa.f0741",
+      "content": "Collection 0370 pencil tray stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0742",
+      "key": "profile.v3.aa.f0742",
+      "content": "수집번호 0371 지도 사본 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0743",
+      "key": "profile.v3.aa.f0743",
+      "content": "Collection 0371 scrapbook stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0744",
+      "key": "profile.v3.aa.f0744",
+      "content": "수집번호 0372 나무 상자 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0745",
+      "key": "profile.v3.aa.f0745",
+      "content": "Collection 0372 brass bookmark stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0746",
+      "key": "profile.v3.aa.f0746",
+      "content": "수집번호 0373 열쇠 고리 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0747",
+      "key": "profile.v3.aa.f0747",
+      "content": "Collection 0373 linen napkin stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0748",
+      "key": "profile.v3.aa.f0748",
+      "content": "수집번호 0374 색연필 통 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0749",
+      "key": "profile.v3.aa.f0749",
+      "content": "Collection 0374 ceramic coaster stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0750",
+      "key": "profile.v3.aa.f0750",
+      "content": "수집번호 0375 연극 대본 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0751",
+      "key": "profile.v3.aa.f0751",
+      "content": "Collection 0375 map facsimile stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0752",
+      "key": "profile.v3.aa.f0752",
+      "content": "수집번호 0376 배지 모음 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0753",
+      "key": "profile.v3.aa.f0753",
+      "content": "Collection 0376 souvenir pebble stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0754",
+      "key": "profile.v3.aa.f0754",
+      "content": "수집번호 0377 직물 견본 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0755",
+      "key": "profile.v3.aa.f0755",
+      "content": "Collection 0377 felt pennant stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0756",
+      "key": "profile.v3.aa.f0756",
+      "content": "수집번호 0378 장식 조약돌 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0757",
+      "key": "profile.v3.aa.f0757",
+      "content": "Collection 0378 postcard bundle stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0758",
+      "key": "profile.v3.aa.f0758",
+      "content": "수집번호 0379 접이 부채 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0759",
+      "key": "profile.v3.aa.f0759",
+      "content": "Collection 0379 lace sample stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0760",
+      "key": "profile.v3.aa.f0760",
+      "content": "수집번호 0380 여행 수첩 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0761",
+      "key": "profile.v3.aa.f0761",
+      "content": "Collection 0380 postage album stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0762",
+      "key": "profile.v3.aa.f0762",
+      "content": "수집번호 0381 우편 엽서 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0763",
+      "key": "profile.v3.aa.f0763",
+      "content": "Collection 0381 crochet sampler stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0764",
+      "key": "profile.v3.aa.f0764",
+      "content": "수집번호 0382 자수 도안 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0765",
+      "key": "profile.v3.aa.f0765",
+      "content": "Collection 0382 wax seal stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0766",
+      "key": "profile.v3.aa.f0766",
+      "content": "수집번호 0383 양초 받침 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0767",
+      "key": "profile.v3.aa.f0767",
+      "content": "Collection 0383 travel journal stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0768",
+      "key": "profile.v3.aa.f0768",
+      "content": "수집번호 0384 도장 수집첩 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0769",
+      "key": "profile.v3.aa.f0769",
+      "content": "Collection 0384 enamel badge stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0770",
+      "key": "profile.v3.aa.f0770",
+      "content": "수집번호 0385 유리 문진 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0771",
+      "key": "profile.v3.aa.f0771",
+      "content": "Collection 0385 fabric swatch stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0772",
+      "key": "profile.v3.aa.f0772",
+      "content": "수집번호 0386 공예 리본 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0773",
+      "key": "profile.v3.aa.f0773",
+      "content": "Collection 0386 glass paperweight stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0774",
+      "key": "profile.v3.aa.f0774",
+      "content": "수집번호 0387 사진 앨범 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0775",
+      "key": "profile.v3.aa.f0775",
+      "content": "Collection 0387 ribbon spool stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0776",
+      "key": "profile.v3.aa.f0776",
+      "content": "수집번호 0388 종이 봉투 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0777",
+      "key": "profile.v3.aa.f0777",
+      "content": "Collection 0388 wooden puzzle stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0778",
+      "key": "profile.v3.aa.f0778",
+      "content": "수집번호 0389 천 조각 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0779",
+      "key": "profile.v3.aa.f0779",
+      "content": "Collection 0389 folding fan stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0780",
+      "key": "profile.v3.aa.f0780",
+      "content": "수집번호 0390 금속 책갈피 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0781",
+      "key": "profile.v3.aa.f0781",
+      "content": "Collection 0390 pencil tray stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0782",
+      "key": "profile.v3.aa.f0782",
+      "content": "수집번호 0391 지도 사본 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0783",
+      "key": "profile.v3.aa.f0783",
+      "content": "Collection 0391 scrapbook stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0784",
+      "key": "profile.v3.aa.f0784",
+      "content": "수집번호 0392 나무 상자 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0785",
+      "key": "profile.v3.aa.f0785",
+      "content": "Collection 0392 brass bookmark stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0786",
+      "key": "profile.v3.aa.f0786",
+      "content": "수집번호 0393 열쇠 고리 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0787",
+      "key": "profile.v3.aa.f0787",
+      "content": "Collection 0393 linen napkin stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0788",
+      "key": "profile.v3.aa.f0788",
+      "content": "수집번호 0394 색연필 통 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0789",
+      "key": "profile.v3.aa.f0789",
+      "content": "Collection 0394 ceramic coaster stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0790",
+      "key": "profile.v3.aa.f0790",
+      "content": "수집번호 0395 연극 대본 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0791",
+      "key": "profile.v3.aa.f0791",
+      "content": "Collection 0395 map facsimile stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0792",
+      "key": "profile.v3.aa.f0792",
+      "content": "수집번호 0396 배지 모음 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0793",
+      "key": "profile.v3.aa.f0793",
+      "content": "Collection 0396 souvenir pebble stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0794",
+      "key": "profile.v3.aa.f0794",
+      "content": "수집번호 0397 직물 견본 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0795",
+      "key": "profile.v3.aa.f0795",
+      "content": "Collection 0397 felt pennant stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0796",
+      "key": "profile.v3.aa.f0796",
+      "content": "수집번호 0398 장식 조약돌 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0797",
+      "key": "profile.v3.aa.f0797",
+      "content": "Collection 0398 postcard bundle stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0798",
+      "key": "profile.v3.aa.f0798",
+      "content": "수집번호 0399 접이 부채 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0799",
+      "key": "profile.v3.aa.f0799",
+      "content": "Collection 0399 lace sample stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0800",
+      "key": "profile.v3.aa.f0800",
+      "content": "수집번호 0400 여행 수첩 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0801",
+      "key": "profile.v3.aa.f0801",
+      "content": "Collection 0400 postage album stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0802",
+      "key": "profile.v3.aa.f0802",
+      "content": "수집번호 0401 우편 엽서 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0803",
+      "key": "profile.v3.aa.f0803",
+      "content": "Collection 0401 crochet sampler stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0804",
+      "key": "profile.v3.aa.f0804",
+      "content": "수집번호 0402 자수 도안 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0805",
+      "key": "profile.v3.aa.f0805",
+      "content": "Collection 0402 wax seal stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0806",
+      "key": "profile.v3.aa.f0806",
+      "content": "수집번호 0403 양초 받침 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0807",
+      "key": "profile.v3.aa.f0807",
+      "content": "Collection 0403 travel journal stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0808",
+      "key": "profile.v3.aa.f0808",
+      "content": "수집번호 0404 도장 수집첩 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0809",
+      "key": "profile.v3.aa.f0809",
+      "content": "Collection 0404 enamel badge stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0810",
+      "key": "profile.v3.aa.f0810",
+      "content": "수집번호 0405 유리 문진 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0811",
+      "key": "profile.v3.aa.f0811",
+      "content": "Collection 0405 fabric swatch stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0812",
+      "key": "profile.v3.aa.f0812",
+      "content": "수집번호 0406 공예 리본 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0813",
+      "key": "profile.v3.aa.f0813",
+      "content": "Collection 0406 glass paperweight stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0814",
+      "key": "profile.v3.aa.f0814",
+      "content": "수집번호 0407 사진 앨범 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0815",
+      "key": "profile.v3.aa.f0815",
+      "content": "Collection 0407 ribbon spool stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0816",
+      "key": "profile.v3.aa.f0816",
+      "content": "수집번호 0408 종이 봉투 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0817",
+      "key": "profile.v3.aa.f0817",
+      "content": "Collection 0408 wooden puzzle stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0818",
+      "key": "profile.v3.aa.f0818",
+      "content": "수집번호 0409 천 조각 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0819",
+      "key": "profile.v3.aa.f0819",
+      "content": "Collection 0409 folding fan stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0820",
+      "key": "profile.v3.aa.f0820",
+      "content": "수집번호 0410 금속 책갈피 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0821",
+      "key": "profile.v3.aa.f0821",
+      "content": "Collection 0410 pencil tray stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0822",
+      "key": "profile.v3.aa.f0822",
+      "content": "수집번호 0411 지도 사본 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0823",
+      "key": "profile.v3.aa.f0823",
+      "content": "Collection 0411 scrapbook stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0824",
+      "key": "profile.v3.aa.f0824",
+      "content": "수집번호 0412 나무 상자 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0825",
+      "key": "profile.v3.aa.f0825",
+      "content": "Collection 0412 brass bookmark stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0826",
+      "key": "profile.v3.aa.f0826",
+      "content": "수집번호 0413 열쇠 고리 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0827",
+      "key": "profile.v3.aa.f0827",
+      "content": "Collection 0413 linen napkin stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0828",
+      "key": "profile.v3.aa.f0828",
+      "content": "수집번호 0414 색연필 통 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0829",
+      "key": "profile.v3.aa.f0829",
+      "content": "Collection 0414 ceramic coaster stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0830",
+      "key": "profile.v3.aa.f0830",
+      "content": "수집번호 0415 연극 대본 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0831",
+      "key": "profile.v3.aa.f0831",
+      "content": "Collection 0415 map facsimile stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0832",
+      "key": "profile.v3.aa.f0832",
+      "content": "수집번호 0416 배지 모음 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0833",
+      "key": "profile.v3.aa.f0833",
+      "content": "Collection 0416 souvenir pebble stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0834",
+      "key": "profile.v3.aa.f0834",
+      "content": "수집번호 0417 직물 견본 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0835",
+      "key": "profile.v3.aa.f0835",
+      "content": "Collection 0417 felt pennant stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0836",
+      "key": "profile.v3.aa.f0836",
+      "content": "수집번호 0418 장식 조약돌 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0837",
+      "key": "profile.v3.aa.f0837",
+      "content": "Collection 0418 postcard bundle stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0838",
+      "key": "profile.v3.aa.f0838",
+      "content": "수집번호 0419 접이 부채 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0839",
+      "key": "profile.v3.aa.f0839",
+      "content": "Collection 0419 lace sample stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0840",
+      "key": "profile.v3.aa.f0840",
+      "content": "수집번호 0420 여행 수첩 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0841",
+      "key": "profile.v3.aa.f0841",
+      "content": "Collection 0420 postage album stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0842",
+      "key": "profile.v3.aa.f0842",
+      "content": "수집번호 0421 우편 엽서 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0843",
+      "key": "profile.v3.aa.f0843",
+      "content": "Collection 0421 crochet sampler stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0844",
+      "key": "profile.v3.aa.f0844",
+      "content": "수집번호 0422 자수 도안 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0845",
+      "key": "profile.v3.aa.f0845",
+      "content": "Collection 0422 wax seal stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0846",
+      "key": "profile.v3.aa.f0846",
+      "content": "수집번호 0423 양초 받침 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0847",
+      "key": "profile.v3.aa.f0847",
+      "content": "Collection 0423 travel journal stays inside attic shelf; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0848",
+      "key": "profile.v3.aa.f0848",
+      "content": "수집번호 0424 도장 수집첩 묶음은 서재 칸막이 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0849",
+      "key": "profile.v3.aa.f0849",
+      "content": "Collection 0424 enamel badge stays inside study divider; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0850",
+      "key": "profile.v3.aa.f0850",
+      "content": "수집번호 0425 유리 문진 묶음은 독서방 궤짝 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0851",
+      "key": "profile.v3.aa.f0851",
+      "content": "Collection 0425 fabric swatch stays inside reading chest; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0852",
+      "key": "profile.v3.aa.f0852",
+      "content": "수집번호 0426 공예 리본 묶음은 현관 바구니 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0853",
+      "key": "profile.v3.aa.f0853",
+      "content": "Collection 0426 glass paperweight stays inside entry basket; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0854",
+      "key": "profile.v3.aa.f0854",
+      "content": "수집번호 0427 사진 앨범 묶음은 복도 장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0855",
+      "key": "profile.v3.aa.f0855",
+      "content": "Collection 0427 ribbon spool stays inside hallway cupboard; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0856",
+      "key": "profile.v3.aa.f0856",
+      "content": "수집번호 0428 종이 봉투 묶음은 계단 밑 함 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0857",
+      "key": "profile.v3.aa.f0857",
+      "content": "Collection 0428 wooden puzzle stays inside stairwell box; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0858",
+      "key": "profile.v3.aa.f0858",
+      "content": "수집번호 0429 천 조각 묶음은 별채 수납장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0859",
+      "key": "profile.v3.aa.f0859",
+      "content": "Collection 0429 folding fan stays inside annex cabinet; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0860",
+      "key": "profile.v3.aa.f0860",
+      "content": "수집번호 0430 금속 책갈피 묶음은 침실 장식장 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0861",
+      "key": "profile.v3.aa.f0861",
+      "content": "Collection 0430 pencil tray stays inside bedroom dresser; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0862",
+      "key": "profile.v3.aa.f0862",
+      "content": "수집번호 0431 지도 사본 묶음은 공예방 서랍 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "f3-0863",
+      "key": "profile.v3.aa.f0863",
+      "content": "Collection 0431 scrapbook stays inside studio drawer; dust gently every quarter."
+    },
+    {
+      "ref": "f3-0864",
+      "key": "profile.v3.aa.f0864",
+      "content": "수집번호 0432 나무 상자 묶음은 다락 선반 안쪽에 보관하며 분기마다 먼지를 닦는다."
+    },
+    {
+      "ref": "c3-rail-old",
+      "key": "profile.v3.bb.rail.m0",
+      "content": "청동 증기 기관차 윤활 주기는 사흘이며 축에는 소량만 바른다."
+    },
+    {
+      "ref": "c3-rail-0",
+      "key": "profile.v3.bb.rail.m0",
+      "content": "청동 증기 기관차 윤활 주기는 열이틀이며 축에는 소량만 바른다.",
+      "after": "c3-rail-old"
+    },
+    {
+      "ref": "c3-rail-1",
+      "key": "profile.v3.bb.rail.m1",
+      "content": "은빛 전기 기관차 윤활 주기는 스무날이며 축에는 소량만 바른다."
+    },
+    {
+      "ref": "c3-rail-2",
+      "key": "profile.v3.bb.rail.m2",
+      "content": "검정 디젤 기관차 윤활 주기는 아흐레며 축에는 소량만 바른다."
+    },
+    {
+      "ref": "c3-rail-3",
+      "key": "profile.v3.bb.rail.m3",
+      "content": "하양 화물 기관차 윤활 주기는 보름이며 축에는 소량만 바른다."
+    },
+    {
+      "ref": "c3-rail-4",
+      "key": "profile.v3.bb.rail.m4",
+      "content": "빨강 급행 기관차 윤활 주기는 엿새며 축에는 소량만 바른다."
+    },
+    {
+      "ref": "c3-rail-5",
+      "key": "profile.v3.bb.rail.m5",
+      "content": "초록 산악 기관차 윤활 주기는 한달이며 축에는 소량만 바른다."
+    },
+    {
+      "ref": "c3-rail-6",
+      "key": "profile.v3.bb.rail.m6",
+      "content": "파랑 입환 기관차 윤활 주기는 나흘이며 축에는 소량만 바른다."
+    },
+    {
+      "ref": "c3-rail-7",
+      "key": "profile.v3.bb.rail.m7",
+      "content": "노랑 관광 기관차 윤활 주기는 이레며 축에는 소량만 바른다."
+    },
+    {
+      "ref": "c3-mallets-old",
+      "key": "profile.v3.bb.mallets.m0",
+      "content": "Percussion mallet with felt crown belongs inside burlap sleeve after rehearsal."
+    },
+    {
+      "ref": "c3-mallets-0",
+      "key": "profile.v3.bb.mallets.m0",
+      "content": "Percussion mallet with felt crown belongs inside velvet sleeve after rehearsal.",
+      "after": "c3-mallets-old",
+      "corrected": true
+    },
+    {
+      "ref": "c3-mallets-1",
+      "key": "profile.v3.bb.mallets.m1",
+      "content": "Percussion mallet with rubber crown belongs inside linen sleeve after rehearsal."
+    },
+    {
+      "ref": "c3-mallets-2",
+      "key": "profile.v3.bb.mallets.m2",
+      "content": "Percussion mallet with cork crown belongs inside canvas sleeve after rehearsal."
+    },
+    {
+      "ref": "c3-mallets-3",
+      "key": "profile.v3.bb.mallets.m3",
+      "content": "Percussion mallet with yarn crown belongs inside cotton sleeve after rehearsal."
+    },
+    {
+      "ref": "c3-mallets-4",
+      "key": "profile.v3.bb.mallets.m4",
+      "content": "Percussion mallet with leather crown belongs inside wool sleeve after rehearsal."
+    },
+    {
+      "ref": "c3-mallets-5",
+      "key": "profile.v3.bb.mallets.m5",
+      "content": "Percussion mallet with maple crown belongs inside denim sleeve after rehearsal."
+    },
+    {
+      "ref": "c3-mallets-6",
+      "key": "profile.v3.bb.mallets.m6",
+      "content": "Percussion mallet with brass crown belongs inside satin sleeve after rehearsal."
+    },
+    {
+      "ref": "c3-mallets-7",
+      "key": "profile.v3.bb.mallets.m7",
+      "content": "Percussion mallet with nylon crown belongs inside fleece sleeve after rehearsal."
+    },
+    {
+      "ref": "c3-tide-old",
+      "key": "profile.v3.bb.tide.expired",
+      "content": "조위계 삼각 표식 센서 보정값은 영점에서 십밀리 하강으로 설정한다.",
+      "valid_until": "2026-03-01"
+    },
+    {
+      "ref": "c3-tide-0",
+      "key": "profile.v3.bb.tide.m0",
+      "content": "조위계 삼각 표식 센서 보정값은 영점에서 삼밀리 상승으로 설정한다."
+    },
+    {
+      "ref": "c3-tide-1",
+      "key": "profile.v3.bb.tide.m1",
+      "content": "조위계 원형 표식 센서 보정값은 영점에서 오밀리 하강으로 설정한다."
+    },
+    {
+      "ref": "c3-tide-2",
+      "key": "profile.v3.bb.tide.m2",
+      "content": "조위계 사각 표식 센서 보정값은 영점에서 이밀리 상승으로 설정한다."
+    },
+    {
+      "ref": "c3-tide-3",
+      "key": "profile.v3.bb.tide.m3",
+      "content": "조위계 별모양 표식 센서 보정값은 영점에서 칠밀리 하강으로 설정한다."
+    },
+    {
+      "ref": "c3-tide-4",
+      "key": "profile.v3.bb.tide.m4",
+      "content": "조위계 마름모 표식 센서 보정값은 영점에서 육밀리 상승으로 설정한다."
+    },
+    {
+      "ref": "c3-tide-5",
+      "key": "profile.v3.bb.tide.m5",
+      "content": "조위계 십자 표식 센서 보정값은 영점에서 팔밀리 하강으로 설정한다."
+    },
+    {
+      "ref": "c3-tide-6",
+      "key": "profile.v3.bb.tide.m6",
+      "content": "조위계 초승달 표식 센서 보정값은 영점에서 사밀리 상승으로 설정한다."
+    },
+    {
+      "ref": "c3-tide-7",
+      "key": "profile.v3.bb.tide.m7",
+      "content": "조위계 타원 표식 센서 보정값은 영점에서 일밀리 하강으로 설정한다."
+    },
+    {
+      "ref": "c3-slides-old",
+      "key": "profile.v3.bb.slides.m0",
+      "content": "Microscope specimen slide bearing oak tissue needs green dye for ten seconds."
+    },
+    {
+      "ref": "c3-slides-0",
+      "key": "profile.v3.bb.slides.m0",
+      "content": "Microscope specimen slide bearing oak tissue needs violet dye for ninety seconds.",
+      "after": "c3-slides-old"
+    },
+    {
+      "ref": "c3-slides-1",
+      "key": "profile.v3.bb.slides.m1",
+      "content": "Microscope specimen slide bearing onion tissue needs amber dye for sixty seconds."
+    },
+    {
+      "ref": "c3-slides-2",
+      "key": "profile.v3.bb.slides.m2",
+      "content": "Microscope specimen slide bearing fern tissue needs indigo dye for forty seconds."
+    },
+    {
+      "ref": "c3-slides-3",
+      "key": "profile.v3.bb.slides.m3",
+      "content": "Microscope specimen slide bearing moss tissue needs scarlet dye for fifty seconds."
+    },
+    {
+      "ref": "c3-slides-4",
+      "key": "profile.v3.bb.slides.m4",
+      "content": "Microscope specimen slide bearing pine tissue needs ochre dye for eighty seconds."
+    },
+    {
+      "ref": "c3-slides-5",
+      "key": "profile.v3.bb.slides.m5",
+      "content": "Microscope specimen slide bearing birch tissue needs azure dye for thirty seconds."
+    },
+    {
+      "ref": "c3-slides-6",
+      "key": "profile.v3.bb.slides.m6",
+      "content": "Microscope specimen slide bearing reed tissue needs crimson dye for seventy seconds."
+    },
+    {
+      "ref": "c3-slides-7",
+      "key": "profile.v3.bb.slides.m7",
+      "content": "Microscope specimen slide bearing elm tissue needs sepia dye for twenty seconds."
+    },
+    {
+      "ref": "c3-puppets-old",
+      "key": "profile.v3.bb.puppets.m0",
+      "content": "인형극 늑대 배역 꼭두각시 조종줄 장력은 아주 강하게 맞춰 둔다."
+    },
+    {
+      "ref": "c3-puppets-0",
+      "key": "profile.v3.bb.puppets.m0",
+      "content": "인형극 늑대 배역 꼭두각시 조종줄 장력은 느슨하게 맞춰 둔다.",
+      "after": "c3-puppets-old",
+      "corrected": true
+    },
+    {
+      "ref": "c3-puppets-1",
+      "key": "profile.v3.bb.puppets.m1",
+      "content": "인형극 여우 배역 꼭두각시 조종줄 장력은 팽팽하게 맞춰 둔다."
+    },
+    {
+      "ref": "c3-puppets-2",
+      "key": "profile.v3.bb.puppets.m2",
+      "content": "인형극 토끼 배역 꼭두각시 조종줄 장력은 중간으로 맞춰 둔다."
+    },
+    {
+      "ref": "c3-puppets-3",
+      "key": "profile.v3.bb.puppets.m3",
+      "content": "인형극 사슴 배역 꼭두각시 조종줄 장력은 약하게 맞춰 둔다."
+    },
+    {
+      "ref": "c3-puppets-4",
+      "key": "profile.v3.bb.puppets.m4",
+      "content": "인형극 곰 배역 꼭두각시 조종줄 장력은 강하게 맞춰 둔다."
+    },
+    {
+      "ref": "c3-puppets-5",
+      "key": "profile.v3.bb.puppets.m5",
+      "content": "인형극 수달 배역 꼭두각시 조종줄 장력은 부드럽게 맞춰 둔다."
+    },
+    {
+      "ref": "c3-puppets-6",
+      "key": "profile.v3.bb.puppets.m6",
+      "content": "인형극 오소리 배역 꼭두각시 조종줄 장력은 단단하게 맞춰 둔다."
+    },
+    {
+      "ref": "c3-puppets-7",
+      "key": "profile.v3.bb.puppets.m7",
+      "content": "인형극 족제비 배역 꼭두각시 조종줄 장력은 유연하게 맞춰 둔다."
+    },
+    {
+      "ref": "c3-cylinders-old",
+      "key": "profile.v3.bb.cylinders.expired",
+      "content": "Diving cylinder carrying chequered band receives hydrostatic inspection each December.",
+      "valid_until": "2026-03-01"
+    },
+    {
+      "ref": "c3-cylinders-0",
+      "key": "profile.v3.bb.cylinders.m0",
+      "content": "Diving cylinder carrying chequered band receives hydrostatic inspection each February."
+    },
+    {
+      "ref": "c3-cylinders-1",
+      "key": "profile.v3.bb.cylinders.m1",
+      "content": "Diving cylinder carrying striped band receives hydrostatic inspection each August."
+    },
+    {
+      "ref": "c3-cylinders-2",
+      "key": "profile.v3.bb.cylinders.m2",
+      "content": "Diving cylinder carrying dotted band receives hydrostatic inspection each January."
+    },
+    {
+      "ref": "c3-cylinders-3",
+      "key": "profile.v3.bb.cylinders.m3",
+      "content": "Diving cylinder carrying plain band receives hydrostatic inspection each March."
+    },
+    {
+      "ref": "c3-cylinders-4",
+      "key": "profile.v3.bb.cylinders.m4",
+      "content": "Diving cylinder carrying zigzag band receives hydrostatic inspection each April."
+    },
+    {
+      "ref": "c3-cylinders-5",
+      "key": "profile.v3.bb.cylinders.m5",
+      "content": "Diving cylinder carrying spiral band receives hydrostatic inspection each June."
+    },
+    {
+      "ref": "c3-cylinders-6",
+      "key": "profile.v3.bb.cylinders.m6",
+      "content": "Diving cylinder carrying floral band receives hydrostatic inspection each July."
+    },
+    {
+      "ref": "c3-cylinders-7",
+      "key": "profile.v3.bb.cylinders.m7",
+      "content": "Diving cylinder carrying diamond band receives hydrostatic inspection each October."
+    }
+  ],
+  "cases": [
+    {
+      "id": "d3-harp",
+      "split": "dev",
+      "kind": "cross-language",
+      "query": "Portable harp transport cover padding preference?",
+      "needed": [
+        "t3-harp"
+      ],
+      "traps": [],
+      "note": "[cut] Older target outside the newest candidate window and alphabetical fill."
+    },
+    {
+      "id": "d3-metronome",
+      "split": "dev",
+      "kind": "cross-language",
+      "query": "태엽 박자기 넣어둘 자세?",
+      "needed": [
+        "t3-metronome"
+      ],
+      "traps": [],
+      "note": "[cut] Older target outside the newest candidate window and alphabetical fill."
+    },
+    {
+      "id": "d3-chess",
+      "split": "dev",
+      "kind": "paraphrase",
+      "query": "장기 비슷한 서양놀이 대국일지 검토하다 착오 표시법?",
+      "needed": [
+        "t3-chess"
+      ],
+      "traps": [],
+      "note": "[cut] Older target outside the newest candidate window and alphabetical fill."
+    },
+    {
+      "id": "d3-loom",
+      "split": "dev",
+      "kind": "short-follow-up",
+      "query": "치수 좀 재확인해봐.",
+      "needed": [
+        "t3-loom"
+      ],
+      "traps": [],
+      "note": "[cut] Older target outside the newest candidate window and alphabetical fill.",
+      "context": "베틀 세로줄 폭에 관해 얘기 중이야."
+    },
+    {
+      "id": "d3-compass",
+      "split": "dev",
+      "kind": "short-follow-up",
+      "query": "시점만 짚어줘.",
+      "needed": [
+        "t3-compass"
+      ],
+      "traps": [],
+      "note": "[cut] Older target outside the newest candidate window and alphabetical fill.",
+      "context": "뱃길 방향계 오차 상쇄 건이야."
+    },
+    {
+      "id": "d3-sieve",
+      "split": "dev",
+      "kind": "paraphrase",
+      "query": "거름체를 헹군 직후 말리는 요령?",
+      "needed": [
+        "t3-sieve"
+      ],
+      "traps": [],
+      "note": "[particle] Reverse prefix only: inflected query token is longer than the stored noun."
+    },
+    {
+      "id": "d3-tuning",
+      "split": "dev",
+      "kind": "lexical-control",
+      "query": "튜닝쐐기솔",
+      "needed": [
+        "t3-tuning"
+      ],
+      "traps": [],
+      "note": "Exact unique stored word is a request-only lexical control."
+    },
+    {
+      "id": "d3-timbre",
+      "split": "dev",
+      "kind": "harm-control",
+      "query": "음색연습 띄어쓰기 판단해줘.",
+      "needed": [],
+      "traps": [],
+      "note": "Word analysis or science explanation needs no personal Memory.",
+      "irrelevant": [
+        "t3-timbre"
+      ]
+    },
+    {
+      "id": "d3-rail-0",
+      "split": "dev",
+      "kind": "paraphrase",
+      "query": "구릿빛 미니어처 기차에 기름칠할 빈도?",
+      "needed": [
+        "c3-rail-0"
+      ],
+      "irrelevant": [
+        "c3-rail-1",
+        "c3-rail-2",
+        "c3-rail-3",
+        "c3-rail-4",
+        "c3-rail-5",
+        "c3-rail-6",
+        "c3-rail-7"
+      ],
+      "traps": [
+        "c3-rail-old"
+      ],
+      "note": "[cluster] [near-trap] Attribute paraphrase/translation distinguishes one of eight current siblings; stale sibling is ineligible."
+    },
+    {
+      "id": "d3-rail-1",
+      "split": "dev",
+      "kind": "cross-language",
+      "query": "Silvery electric toy locomotive lubrication interval?",
+      "needed": [
+        "c3-rail-1"
+      ],
+      "irrelevant": [
+        "c3-rail-0",
+        "c3-rail-2",
+        "c3-rail-3",
+        "c3-rail-4",
+        "c3-rail-5",
+        "c3-rail-6",
+        "c3-rail-7"
+      ],
+      "traps": [
+        "c3-rail-old"
+      ],
+      "note": "[cluster] [near-trap] Attribute paraphrase/translation distinguishes one of eight current siblings; stale sibling is ineligible."
+    },
+    {
+      "id": "d3-mallets-0",
+      "split": "dev",
+      "kind": "paraphrase",
+      "query": "Matted fibre headed beater protective pouch material?",
+      "needed": [
+        "c3-mallets-0"
+      ],
+      "irrelevant": [
+        "c3-mallets-1",
+        "c3-mallets-2",
+        "c3-mallets-3",
+        "c3-mallets-4",
+        "c3-mallets-5",
+        "c3-mallets-6",
+        "c3-mallets-7"
+      ],
+      "traps": [
+        "c3-mallets-old"
+      ],
+      "note": "[cluster] [near-trap] Attribute paraphrase/translation distinguishes one of eight current siblings; stale sibling is ineligible."
+    },
+    {
+      "id": "d3-mallets-1",
+      "split": "dev",
+      "kind": "cross-language",
+      "query": "고무 머리 타악기 채 싸개 재질?",
+      "needed": [
+        "c3-mallets-1"
+      ],
+      "irrelevant": [
+        "c3-mallets-0",
+        "c3-mallets-2",
+        "c3-mallets-3",
+        "c3-mallets-4",
+        "c3-mallets-5",
+        "c3-mallets-6",
+        "c3-mallets-7"
+      ],
+      "traps": [
+        "c3-mallets-old"
+      ],
+      "note": "[cluster] [near-trap] Attribute paraphrase/translation distinguishes one of eight current siblings; stale sibling is ineligible."
+    },
+    {
+      "id": "h3-bellows",
+      "split": "heldout",
+      "kind": "cross-language",
+      "query": "Bellows pleat conditioning schedule?",
+      "needed": [
+        "t3-bellows"
+      ],
+      "traps": [],
+      "note": "[cut] Older target outside the newest candidate window and alphabetical fill."
+    },
+    {
+      "id": "h3-chisel",
+      "split": "heldout",
+      "kind": "cross-language",
+      "query": "Woodworking chisel bevel inclination?",
+      "needed": [
+        "t3-chisel"
+      ],
+      "traps": [],
+      "note": "[cut] Older target outside the newest candidate window and alphabetical fill."
+    },
+    {
+      "id": "h3-sextant",
+      "split": "heldout",
+      "kind": "cross-language",
+      "query": "육분의 반사경 정렬 수행지?",
+      "needed": [
+        "t3-sextant"
+      ],
+      "traps": [],
+      "note": "[cut] Older target outside the newest candidate window and alphabetical fill."
+    },
+    {
+      "id": "h3-barometer",
+      "split": "heldout",
+      "kind": "cross-language",
+      "query": "기압계 참조 고도 맞춤값?",
+      "needed": [
+        "t3-barometer"
+      ],
+      "traps": [],
+      "note": "[cut] Older target outside the newest candidate window and alphabetical fill."
+    },
+    {
+      "id": "h3-sundial",
+      "split": "heldout",
+      "kind": "paraphrase",
+      "query": "햇빛으로 시각 재는 장치 뾰족한 부분 향할 나침방향?",
+      "needed": [
+        "t3-sundial"
+      ],
+      "traps": [],
+      "note": "[cut] Older target outside the newest candidate window and alphabetical fill."
+    },
+    {
+      "id": "h3-abacus",
+      "split": "heldout",
+      "kind": "paraphrase",
+      "query": "주산 계산 끝나면 알맹이 정돈 어떻게?",
+      "needed": [
+        "t3-abacus"
+      ],
+      "traps": [],
+      "note": "[cut] Older target outside the newest candidate window and alphabetical fill."
+    },
+    {
+      "id": "h3-press",
+      "split": "heldout",
+      "kind": "paraphrase",
+      "query": "에칭 찍어내는 원통 틈새 넓이 결정법?",
+      "needed": [
+        "t3-press"
+      ],
+      "traps": [],
+      "note": "[cut] Older target outside the newest candidate window and alphabetical fill."
+    },
+    {
+      "id": "h3-spindle",
+      "split": "heldout",
+      "kind": "short-follow-up",
+      "query": "빠르기는?",
+      "needed": [
+        "t3-spindle"
+      ],
+      "traps": [],
+      "note": "[cut] Older target outside the newest candidate window and alphabetical fill.",
+      "context": "찰흙 빚는 돌림판 얘길 이어갈게."
+    },
+    {
+      "id": "h3-darkroom",
+      "split": "heldout",
+      "kind": "short-follow-up",
+      "query": "몇초였지?",
+      "needed": [
+        "t3-darkroom"
+      ],
+      "traps": [],
+      "note": "[cut] Older target outside the newest candidate window and alphabetical fill.",
+      "context": "필름 현상방 감광 종이에 광선 쬐던 공정 이야기였어."
+    },
+    {
+      "id": "h3-lure",
+      "split": "heldout",
+      "kind": "short-follow-up",
+      "query": "안전조치는?",
+      "needed": [
+        "t3-lure"
+      ],
+      "traps": [],
+      "note": "[cut] Older target outside the newest candidate window and alphabetical fill.",
+      "context": "민물고기 유인하는 가짜 벌레 뾰족한 갈고리 이야기야."
+    },
+    {
+      "id": "h3-plumb",
+      "split": "heldout",
+      "kind": "paraphrase",
+      "query": "다림추를 사용했던 이후 정리 절차?",
+      "needed": [
+        "t3-plumb"
+      ],
+      "traps": [],
+      "note": "[particle] Reverse prefix only: inflected query token is longer than the stored noun."
+    },
+    {
+      "id": "h3-crucible",
+      "split": "heldout",
+      "kind": "paraphrase",
+      "query": "도가니에서 남은 찌꺼기 제거 순서?",
+      "needed": [
+        "t3-crucible"
+      ],
+      "traps": [],
+      "note": "[particle] Reverse prefix only: inflected query token is longer than the stored noun."
+    },
+    {
+      "id": "h3-astrolabe",
+      "split": "heldout",
+      "kind": "lexical-control",
+      "query": "Astrolabequill",
+      "needed": [
+        "t3-astrolabe"
+      ],
+      "traps": [],
+      "note": "Exact unique stored word is a request-only lexical control."
+    },
+    {
+      "id": "h3-forge",
+      "split": "heldout",
+      "kind": "lexical-control",
+      "query": "단조집게함",
+      "needed": [
+        "t3-forge"
+      ],
+      "traps": [],
+      "note": "Exact unique stored word is a request-only lexical control."
+    },
+    {
+      "id": "h3-fulcrum",
+      "split": "heldout",
+      "kind": "harm-control",
+      "query": "지렛점 낱말 어원 풀이해봐.",
+      "needed": [],
+      "traps": [],
+      "note": "Word analysis or science explanation needs no personal Memory.",
+      "irrelevant": [
+        "t3-fulcrum"
+      ]
+    },
+    {
+      "id": "h3-vacuum",
+      "split": "heldout",
+      "kind": "harm-control",
+      "query": "진공에서 열전달 원리 설명해.",
+      "needed": [],
+      "traps": [],
+      "note": "[misleading-context] Word analysis or science explanation needs no personal Memory.",
+      "irrelevant": [
+        "t3-vacuum"
+      ],
+      "context": "편광필터 얘기는 접었어."
+    },
+    {
+      "id": "h3-tide-0",
+      "split": "heldout",
+      "kind": "paraphrase",
+      "query": "세모 달린 바닷물 수위 측정기 영점편차?",
+      "needed": [
+        "c3-tide-0"
+      ],
+      "irrelevant": [
+        "c3-tide-1",
+        "c3-tide-2",
+        "c3-tide-3",
+        "c3-tide-4",
+        "c3-tide-5",
+        "c3-tide-6",
+        "c3-tide-7"
+      ],
+      "traps": [
+        "c3-tide-old"
+      ],
+      "note": "[cluster] [near-trap] Attribute paraphrase/translation distinguishes one of eight current siblings; stale sibling is ineligible."
+    },
+    {
+      "id": "h3-tide-1",
+      "split": "heldout",
+      "kind": "cross-language",
+      "query": "Circular marked seawater level probe calibration offset?",
+      "needed": [
+        "c3-tide-1"
+      ],
+      "irrelevant": [
+        "c3-tide-0",
+        "c3-tide-2",
+        "c3-tide-3",
+        "c3-tide-4",
+        "c3-tide-5",
+        "c3-tide-6",
+        "c3-tide-7"
+      ],
+      "traps": [
+        "c3-tide-old"
+      ],
+      "note": "[cluster] [near-trap] Attribute paraphrase/translation distinguishes one of eight current siblings; stale sibling is ineligible."
+    },
+    {
+      "id": "h3-slides-0",
+      "split": "heldout",
+      "kind": "paraphrase",
+      "query": "Acorn tree cellular preparation colouring duration?",
+      "needed": [
+        "c3-slides-0"
+      ],
+      "irrelevant": [
+        "c3-slides-1",
+        "c3-slides-2",
+        "c3-slides-3",
+        "c3-slides-4",
+        "c3-slides-5",
+        "c3-slides-6",
+        "c3-slides-7"
+      ],
+      "traps": [
+        "c3-slides-old"
+      ],
+      "note": "[cluster] [near-trap] Attribute paraphrase/translation distinguishes one of eight current siblings; stale sibling is ineligible."
+    },
+    {
+      "id": "h3-slides-1",
+      "split": "heldout",
+      "kind": "cross-language",
+      "query": "양파 조직 현미경 유리판 염색 몇초간?",
+      "needed": [
+        "c3-slides-1"
+      ],
+      "irrelevant": [
+        "c3-slides-0",
+        "c3-slides-2",
+        "c3-slides-3",
+        "c3-slides-4",
+        "c3-slides-5",
+        "c3-slides-6",
+        "c3-slides-7"
+      ],
+      "traps": [
+        "c3-slides-old"
+      ],
+      "note": "[cluster] [near-trap] Attribute paraphrase/translation distinguishes one of eight current siblings; stale sibling is ineligible."
+    },
+    {
+      "id": "h3-puppets-0",
+      "split": "heldout",
+      "kind": "paraphrase",
+      "query": "무대에서 이리 맡은 줄인형 당기는 힘 정도?",
+      "needed": [
+        "c3-puppets-0"
+      ],
+      "irrelevant": [
+        "c3-puppets-1",
+        "c3-puppets-2",
+        "c3-puppets-3",
+        "c3-puppets-4",
+        "c3-puppets-5",
+        "c3-puppets-6",
+        "c3-puppets-7"
+      ],
+      "traps": [
+        "c3-puppets-old"
+      ],
+      "note": "[cluster] [near-trap] Attribute paraphrase/translation distinguishes one of eight current siblings; stale sibling is ineligible."
+    },
+    {
+      "id": "h3-puppets-1",
+      "split": "heldout",
+      "kind": "cross-language",
+      "query": "Fox character marionette cord tautness setting?",
+      "needed": [
+        "c3-puppets-1"
+      ],
+      "irrelevant": [
+        "c3-puppets-0",
+        "c3-puppets-2",
+        "c3-puppets-3",
+        "c3-puppets-4",
+        "c3-puppets-5",
+        "c3-puppets-6",
+        "c3-puppets-7"
+      ],
+      "traps": [
+        "c3-puppets-old"
+      ],
+      "note": "[cluster] [near-trap] Attribute paraphrase/translation distinguishes one of eight current siblings; stale sibling is ineligible."
+    },
+    {
+      "id": "h3-cylinders-0",
+      "split": "heldout",
+      "kind": "paraphrase",
+      "query": "Chessboard patterned scuba tank pressure certification month?",
+      "needed": [
+        "c3-cylinders-0"
+      ],
+      "irrelevant": [
+        "c3-cylinders-1",
+        "c3-cylinders-2",
+        "c3-cylinders-3",
+        "c3-cylinders-4",
+        "c3-cylinders-5",
+        "c3-cylinders-6",
+        "c3-cylinders-7"
+      ],
+      "traps": [
+        "c3-cylinders-old"
+      ],
+      "note": "[cluster] [near-trap] Attribute paraphrase/translation distinguishes one of eight current siblings; stale sibling is ineligible."
+    },
+    {
+      "id": "h3-cylinders-1",
+      "split": "heldout",
+      "kind": "cross-language",
+      "query": "줄무늬 띠 잠수용 공기통 수압검사 시기?",
+      "needed": [
+        "c3-cylinders-1"
+      ],
+      "irrelevant": [
+        "c3-cylinders-0",
+        "c3-cylinders-2",
+        "c3-cylinders-3",
+        "c3-cylinders-4",
+        "c3-cylinders-5",
+        "c3-cylinders-6",
+        "c3-cylinders-7"
+      ],
+      "traps": [
+        "c3-cylinders-old"
+      ],
+      "note": "[cluster] [near-trap] Attribute paraphrase/translation distinguishes one of eight current siblings; stale sibling is ineligible."
+    }
+  ]
+}
