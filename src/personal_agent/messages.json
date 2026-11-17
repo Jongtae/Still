@@ -6551,6 +6551,12 @@
   "ja": "AI はまだ接続されていません。ブラウザの AI 設定で接続すれば、すぐに使えます。",
   "zh": "尚未连接 AI。在浏览器的 AI 设置中连接后即可使用。"
  },
+ "browser.click_preview": {
+  "ko": "{description}\n주소: {url}\n대상: {target}\n상태 및 매개변수:\n{state}\n폼 전송 주소:\n{actions}",
+  "en": "{description}\nAddress: {url}\nTarget: {target}\nState and parameters:\n{state}\nForm destinations:\n{actions}",
+  "ja": "{description}\nアドレス: {url}\n対象: {target}\n状態とパラメータ:\n{state}\nフォーム送信先:\n{actions}",
+  "zh": "{description}\n地址：{url}\n目标：{target}\n状态和参数：\n{state}\n表单目标地址：\n{actions}"
+ },
  "browser.destination_check_failed": {
   "ko": "이 주소가 공개 네트워크인지 확인하는 중 오류가 나서 이번 이동을 중단했어요. 접근 금지가 확인된 것은 아니니 잠시 뒤 다시 시도할 수 있어요.",
   "en": "Checking whether this address is on the public network failed, so this navigation was stopped. No access restriction was established; it can be tried again shortly.",

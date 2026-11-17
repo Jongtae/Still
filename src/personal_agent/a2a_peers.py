@@ -64,6 +64,31 @@ class EncryptedSecretStore:
 
 
 REGISTRY = 'a2a_peers'
+
+
+def work_peer_identity(store, work_ref):
+    """Owner review attribution from admission state, never from peer text (#744).
+
+    Work references are opaque hashes. Match existing inbound turns, including
+    retained Works outside the recent trace; do not decode or guess the hash.
+    No SDK, credential read, listener or peer call is needed for this lookup.
+    """
+    binding = store._work_binding(work_ref)
+    with store.db() as db:
+        if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='a2a_turns'").fetchone():
+            return None
+        turns = db.execute("SELECT t.peer_id,t.revision,t.work_id FROM a2a_turns t JOIN jobs j ON j.id=t.work_id "
+                           "WHERE t.direction='inbound' AND j.channel='a2a-peer:'||t.peer_id "
+                           "AND j.request_key='a2a:'||t.id")
+        turn = next((dict(row) for row in turns if store._work_binding(row['work_id']) == binding), None)
+        if not turn:
+            return None
+        peer = (store.config(REGISTRY, {}, db=db) or {}).get(turn['peer_id']) or {}
+    # Removed/blocked registrations still identify the source; they grant no authority.
+    return {'peer_id': turn['peer_id'], 'name': (peer.get('card') or {}).get('name') or turn['peer_id'],
+            'revision': turn['revision'], 'registration_revision': peer.get('revision')}
+
+
 SECTIONS = frozenset({'profile', 'memory', 'current_context', 'folders', 'accounts'})
 READ_TOOLS = {'list_memory': 'memory', 'search_memory': 'memory',
               'list_roots': 'folders', 'find_files': 'folders', 'read_file': 'folders',
