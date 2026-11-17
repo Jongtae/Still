@@ -280,7 +280,7 @@ def test_opt_in_peer_cli_qualification(tmp_path, engine):
 def test_peer_adapter_qualifies_exact_launch_and_cleans_auth(tmp_path, monkeypatch, engine, outcome):
     from personal_agent.agent_runtime import Capabilities, WorkBudget
     from personal_agent.quickstart_store import QuickStore
-    from personal_agent.bounded_execution import EngineInterrupted
+    from personal_agent.bounded_execution import EngineInterrupted, worker_turn_seconds
     owner = tmp_path / 'owner-cli-home'
     owner.mkdir()
     auth = owner / 'auth.json'
@@ -305,7 +305,7 @@ def test_peer_adapter_qualifies_exact_launch_and_cleans_auth(tmp_path, monkeypat
         args = config['mcpServers']['agentos']['args']
         assert '--peer-relay=synthetic-relay' in args
         turn_deadline = float(next(arg.split('=', 1)[1] for arg in args if arg.startswith('--turn-deadline=')))
-        assert turn_deadline == now + 100
+        assert turn_deadline == now + worker_turn_seconds(100)  # #927: the turn's share of the remaining Work time.
         assert str(store.root) not in args
         assert not any('browser-relay=' in arg for arg in args)
         assert 'CANARY-673' not in json.dumps([argv, kwargs['env']])
@@ -468,14 +468,22 @@ def test_peer_auth_stale_cleanup_preserves_live_turns_and_originals(tmp_path):
     expired = root / 'turn-peer-decision-old'
     live = root / 'turn-live'
     expired.mkdir(); live.mkdir()
+    from personal_agent.agent_runtime import WORK_DEADLINE_SECONDS
+    # #927: all of these could still be running after the old 600 s cap.
+    young = [root / f'turn-progressing-{age}' for age in (700, WORK_DEADLINE_SECONDS - 1, WORK_DEADLINE_SECONDS + 59)]
+    for path, age in zip(young, (700, WORK_DEADLINE_SECONDS - 1, WORK_DEADLINE_SECONDS + 59)):
+        path.mkdir()
+        os.utime(path, (time.time() - age, time.time() - age))
     (expired / 'auth.json').write_text('expired synthetic credential copy')
-    os.utime(expired, (time.time() - 1000, time.time() - 1000))
+    old = time.time() - WORK_DEADLINE_SECONDS - 61
+    os.utime(expired, (old, old))
     link = root / 'turn-owner-link'
     link.symlink_to(home, target_is_directory=True)
     adapter = BoundedExecutionAdapter(runtime_root=root)
     adapter.cleanup_stale_turns()
     assert not expired.exists()
     assert live.exists() and link.is_symlink()
+    assert all(path.exists() for path in young)
     assert (home / 'auth.json').read_text() == 'owner original'
 
 

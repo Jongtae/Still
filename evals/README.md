@@ -127,6 +127,13 @@ Some owner-facing behavior exists only for a Work from the paired Telegram chat,
 - Each owner turn is queued for Still's own `getUpdates` poll. The run records what the owner would have read before the answer (`before_answer`, with seconds after the message), and the judge sees those lines too.
 - The opt-in `conversational` rubric dimension judges them.
 
+## Communication scenarios (`scenarios/communication.json`, #943)
+
+These check that an answer fits its reader (#940, #941): minutes from notes, a mail and a text message written in the owner's name, a weekly report to a manager, and a question about field terms. One of them is held out.
+
+- The opt-in `reader_form` rubric dimension judges them. A document of a settled kind takes its field's form and usual detail. Text for someone else takes that reader's register and manners. What is said to the owner stays in plain words.
+- `"expect": {"readable": true}` adds a deterministic `readable` check, so it needs no judge. A delivered answer fails it when it carries a raw JSON object member or a URL on an API host (a host label `api`, or one ending in `apis`). These are the leaks of #932 and #929. A versioned path alone does not count, because documentation pages use one too.
+
 ## Action sandbox: world scenarios (`sweep --world`, #484)
 
 A world scenario lets a real AI finish outward actions: writing to the owner's own space, sending and paying. It acts against a **simulated world** with state-based tests, never a live service. The world is AppWorld: nine simulated everyday apps, with tests that check the final app databases. It reaches Still the way the owner's own tools do, as **one owner-confirmed stdio MCP server**. Every call is decided by Still (`owner_mcp`, `codex_permission_hook`).

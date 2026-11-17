@@ -57,15 +57,22 @@ RUBRIC = {
                       'before or while working is natural, in one register, worth hearing (no restating the request '
                       'as a form, no routine "check, change, confirm" lists, no status chatter), and the final '
                       'answer does not repeat it.',
+    # #943: ISO 24495-1 (reader, document type, plain words) and voice.md's reader-and-form rule (#941).
+    'reader_form': 'Fits the reader and the kind of text: a document of a settled kind (minutes, a status '
+                   'report, a formal request) takes its field\'s form and usual detail; text written for someone '
+                   'else takes that reader\'s register and manners; what is said to the owner stays in plain '
+                   'words, with field terms explained, and shows no raw data or system names.',
 }
-#: The dimensions a scenario is judged on when it names none (``conversational`` only when asked for).
-DEFAULT_RUBRIC = tuple(name for name in RUBRIC if name != 'conversational')
+#: Dimensions judged only when a scenario names them.
+OPT_IN_RUBRIC = ('conversational', 'reader_form')
+#: The dimensions a scenario is judged on when it names none.
+DEFAULT_RUBRIC = tuple(name for name in RUBRIC if name not in OPT_IN_RUBRIC)
 #: ``web`` sends each turn to ``/api/chat``; ``telegram`` through the eval's Bot API stand-in.
 CHANNELS = ('web', 'telegram')
 
 SPLITS = ('dev', 'heldout')
 _ID = re.compile(r'^[a-z0-9][a-z0-9-]{2,79}$')
-_EXPECT_KEYS = {'memory_any', 'current_state_any', 'preparation', 'no_memory_of_request', 'allow_status'}
+_EXPECT_KEYS = {'memory_any', 'current_state_any', 'preparation', 'no_memory_of_request', 'readable', 'allow_status'}
 _TURN_KEYS = {'say', 'note', 'note_in_message', 'wait_due'}
 _KEYS = {'id', 'title', 'split', 'turns', 'rubric', 'expect', 'good_secretary', 'tags', 'channel', 'world'}
 _WORLD_KEYS = {'name', 'task_id', 'task_set', 'approvals', 'money_capable', 'expect_world_pass'}
@@ -193,6 +200,7 @@ def validate(raw, origin='scenario'):
                        'current_state_any': _groups(expect, 'current_state_any'),
                        'preparation': expect.get('preparation') is True,
                        'no_memory_of_request': expect.get('no_memory_of_request') is True,
+                       'readable': expect.get('readable') is True,
                        'allow_status': list(allow_status)},
             'good_secretary': str(raw.get('good_secretary') or ''), 'tags': list(tags), 'channel': channel,
             **({'world': world} if world is not None else {})}

@@ -875,7 +875,7 @@ class BrowserSignin:
             site=row.get('landed_site') or row.get('site') or registrable_domain(row.get('host')) or msg('quickstart_service.this_site')
             left=max(0,int((float(row.get('deadline') or now)-now)//60))
             windows[f"{work_id}|{service._login_window_mark(row.get('nonce'))}"]=(
-                msg('quickstart_service.login_window_title', site=site, work_id=work_id[:8], minutes=left))
+                msg('quickstart_service.login_window_title', site=site, request=request_excerpt(service.store.job(work_id)), minutes=left))
         return windows
 
     def close_login_window_by_owner(self, value):
@@ -1154,3 +1154,13 @@ class BrowserSignin:
         try:service.telegram.edit_message_text(note['chat_id'],note['message_id'],BROWSER_LOGIN_REOPEN_FAILED_TEXT
                                             if reopen else BROWSER_LOGIN_RESULT_TEXT['expired'],markup)
         except ProviderError:pass
+
+
+#: #945: how much of a Work's request names its sign-in window (instead of the Work id).
+LOGIN_WINDOW_REQUEST_CHARS = 30
+
+
+def request_excerpt(job):
+    """The start of ``job``'s request on one line, so the owner can tell its window apart (#945)."""
+    request = ' '.join(str((job or {}).get('message') or '').split())
+    return request if len(request) <= LOGIN_WINDOW_REQUEST_CHARS else request[:LOGIN_WINDOW_REQUEST_CHARS - 1].rstrip() + '…'

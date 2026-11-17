@@ -5,6 +5,7 @@ import subprocess
 import tempfile
 import types
 import unittest
+from unittest import mock
 
 from personal_agent.bounded_execution import BoundedExecutionAdapter
 from personal_agent.decision import (DecisionContext, OUTCOME_TIMEOUT, OUTCOME_UNAVAILABLE)
@@ -97,6 +98,26 @@ class JudgmentCliTimingTests(unittest.TestCase):
         serialized = json.dumps(records[-1])
         for text in (PROMPT_TEXT, MODEL_TEXT, STDOUT_LINE, ANSWER_LINE):
             self.assertNotIn(text, serialized)
+
+    def test_work_admitted_judgment_keeps_its_own_total_bound_without_worker_idle_policy(self):
+        from personal_agent.agent_runtime import WorkBudget
+        from personal_agent.bounded_execution import bounded_run
+        for requested, expected in ((None, 90), (180, 180)):
+            with self.subTest(requested=requested):
+                clock = Clock()
+                engine, _ = self.engine(BatchRunner(clock), clock)
+                budget = WorkBudget(seconds=1500, clock=lambda: 0)
+                context = DecisionContext('timing', {'owner_message': PROMPT_TEXT}, timeout=requested,
+                                          cancelled=lambda: bool(budget.interrupted()))
+                context.admission = lambda: budget.spend_turn()
+                with mock.patch('personal_agent.decision_adapters.bounded_run', wraps=bounded_run) as run, \
+                     mock.patch.object(engine.execution, 'execute', side_effect=AssertionError('worker path')):
+                    result = engine.structured(context, 'reply?',
+                        {'type': 'object', 'properties': {'reply': {'type': 'string'}}, 'required': ['reply']})
+                self.assertEqual(result.outcome, 'decided')
+                self.assertEqual(budget.turns_used, 1)
+                self.assertEqual(run.call_args.kwargs['timeout'], expected)
+                self.assertNotIn('idle_timeout', run.call_args.kwargs)
 
     def test_batch_timeout_and_start_failure_leave_unobserved_moments_null(self):
         cases = (

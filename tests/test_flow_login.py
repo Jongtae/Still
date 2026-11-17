@@ -1175,10 +1175,13 @@ class LoginWindowHolder(LoginHarness):
         self.assertIn(bs.BUSY_LOGIN_TEXT, follow['error'])
         read = self.service.settings_orchestrator.read(self.service.settings_owner(follow), 'browser')
         close = read['settings']['browser']['close_login']
-        self.assertEqual(close['value_label'], '지금 브라우저: 소유자의 로그인 창')
+        self.assertEqual(close['value_label'], '지금 브라우저: 로그인 창')
         [option] = close['options']
         self.assertTrue(option['value'].startswith(job_id + '|'))
         self.assertIn('fixture.test 로그인 창', option['label'])
+        # #945: the window is named by its request, not by the Work id.
+        self.assertNotIn(job_id[:8], option['label'])
+        self.assertIn(self.store.job(job_id)['message'][:8], option['label'])
         self.assertNotIn(self.service._browser_login(job_id)['nonce'], json.dumps(read), 'the nonce stays inside')
         self.assertNotIn('/login', json.dumps(read), 'no page path')
 

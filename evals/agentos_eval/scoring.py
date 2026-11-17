@@ -16,6 +16,7 @@ fail for one reason show up as one cluster, not twenty cases.
 import json
 import math
 import re
+from urllib.parse import urlsplit
 
 from .scenarios import RUBRIC
 from .runner import delivered_answer, judgment_fallback_counts
@@ -115,7 +116,32 @@ def deterministic_checks(scenario, run):
         for text in echoed:
             failures.append({'kind': 'check', 'name': 'no_memory_of_request',
                              'reason': f'a new memory/candidate is the owner\'s request sentence: {text[:80]}'})
+    if scenario['expect'].get('readable'):
+        # #943: Still machinery reaching the owner (#932 raw JSON, #929 API URLs as links).
+        leaks = [(index, reason) for index, turn in owner_steps for reason in machinery_leaks(turn.get('answer'))]
+        checks['readable'] = not leaks
+        for index, reason in leaks:
+            failures.append({'kind': 'check', 'name': 'readable', 'reason': f'turn {index}: {reason}'})
     return checks, failures
+
+
+#: A JSON object member (``{"key":`` or ``, "key":``) in owner-facing text.
+_RAW_JSON = re.compile(r'[{,]\s*"[^"\n]{1,80}"\s*:')
+_URL = re.compile(r'https?://[^\s<>()\[\]"\']+')
+#: An API host: a label ``api`` or one ending in ``apis`` (``api.example.com``,
+#: ``gmail.googleapis.com``).  A versioned path alone is not enough: documentation uses one too.
+_API_HOST = re.compile(r'^(?:api|[a-z0-9-]*apis)$', re.I)
+
+
+def machinery_leaks(text):
+    """Why ``text`` shows the owner machinery instead of an answer (#943), as short reasons."""
+    text = str(text or '')
+    reasons = ['raw JSON'] if _RAW_JSON.search(text) else []
+    for url in dict.fromkeys(_URL.findall(text)):
+        host = urlsplit(url).hostname or ''
+        if any(_API_HOST.match(label) for label in host.split('.')[:-1]):
+            reasons.append(f'API URL {url[:80]}')
+    return reasons
 
 
 # -- judge --------------------------------------------------------------------

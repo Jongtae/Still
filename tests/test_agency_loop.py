@@ -666,8 +666,11 @@ class AlternativesAndCompletionTests(unittest.TestCase):
         self.assertNotIn(secret, json.dumps(facts, ensure_ascii=False))
         # The same bounds the orchestrator's judgment applies (#829): redacted, then cut.
         profile_part, current_part = owner.split('\ncurrent_context: ')
+        # #937: the entrusted-work fact follows on its own line, outside the cut snapshot.
+        current_part, entrusted_part = current_part.split('\nentrusted_work: ')
         self.assertEqual(len(profile_part), len('owner_profile: ') + PROFILE_FACT_CHARS)
         self.assertEqual(len(current_part), CURRENT_CONTEXT_FACT_CHARS)
+        self.assertEqual(entrusted_part, 'none')
         self.assertEqual(owner, owner_context_fact(turn, caps.judgment_text))
         # A finished-without-claim reply is judged with the same fact.
         seen.clear()
@@ -677,14 +680,14 @@ class AlternativesAndCompletionTests(unittest.TestCase):
                             plan_reading='Read the notes before replying.')
         run_agent(caps.adapter, CFG, '', [{'role': 'user', 'content': '메모 찾아줘'}], '', caps, self.record,
                   owner_context={'profile': '- 이름: 홍길동'})
-        self.assertEqual(seen[-1]['owner_context'], 'owner_profile: - 이름: 홍길동\ncurrent_context: none')
+        self.assertEqual(seen[-1]['owner_context'], 'owner_profile: - 이름: 홍길동\ncurrent_context: none\nentrusted_work: none')
         self.assertEqual(seen[-1]['plan_reading'], caps.plan_reading)
         # No turn context (a delegated specialist, the MCP bridge): the fact reads none, never fails.
         seen.clear()
         _result, _caps = self.run_script(Script({'tool_calls': [call('1', 'list_notes')]},
                                                 finish('f', '1', summary='메모를 찾았습니다.')),
                                          answer=lambda facts: seen.append(dict(facts)) or True)
-        self.assertEqual(seen[-1]['owner_context'], 'owner_profile: none\ncurrent_context: none')
+        self.assertEqual(seen[-1]['owner_context'], 'owner_profile: none\ncurrent_context: none\nentrusted_work: none')
         self.assertEqual(_caps.plan_reading, '')
         self.assertNotIn('plan_reading', seen[-1])
 

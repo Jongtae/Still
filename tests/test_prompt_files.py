@@ -225,6 +225,19 @@ class ConsolidatedPromptTests(unittest.TestCase):
         self.assertIn("for a change in the run that asks the owner's approval", GOAL_FIRST_GUIDANCE)
         self.assertIn('A saved function never carries an approval', GOAL_FIRST_GUIDANCE)
 
+    def test_voice_fits_the_form_to_the_reader_without_a_second_owner_voice(self):
+        """#941: documents of a settled kind and text for other readers follow that field and reader;
+        the owner still hears one voice."""
+        from personal_agent.agent_runtime import CORE_INSTRUCTIONS
+        from test_no_scenario_code import scenario_tokens
+        voice = prompt_files.prompt('voice')
+        self.assertEqual(CORE_INSTRUCTIONS.count(voice), 1)
+        self.assertIn('takes that form and its usual level of detail', voice)
+        self.assertIn("follows that reader's register and manners", voice)
+        self.assertIn('the voice here stays for what you say to the owner', voice)
+        self.assertIn('Never mix registers', voice)
+        self.assertEqual(scenario_tokens(voice), [])
+
     def test_voice_preference_key_and_axes_are_explicit(self):
         from personal_agent.memory_service import PROFILE_KEY_GUIDANCE, VOICE_PREFERENCE_KEY
         voice = prompt_files.prompt('voice')

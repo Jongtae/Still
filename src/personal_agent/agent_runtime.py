@@ -1857,8 +1857,9 @@ WORK_MODEL_TURNS=24
 #: need many; the deadline and model turns still bound a runaway Work.
 WORK_TOOL_ATTEMPTS=200
 #: #717: a subscription CLI attempt takes minutes, so 600 s let one re-delegation at most;
-#: the owner can ask other things while a Work runs (#17), and a CLI turn stays at most
-#: ``bounded_execution.MAX_TIMEOUT_SECONDS``.
+#: the owner can ask other things while a Work runs (#17). #927: a progressing CLI
+#: turn uses the remaining Work time minus its closing reserve; no stdout line for
+#: ``bounded_execution.MAX_TIMEOUT_SECONDS`` ends it for inactivity.
 WORK_DEADLINE_SECONDS=1500
 #: #1418: one turn of a request's allowance is held for the outcome judgment, so the
 #: worker, a plan or a reaction can never leave the last answer unjudged.
@@ -4732,7 +4733,8 @@ POLICY=CORE_INSTRUCTIONS+'\n\n'+API_TOOL_GUIDANCE
 # Bounded recent conversation shared by every route: the last 16 messages,
 # newest first until the byte budget is spent, never cutting the current request.
 CONTEXT_MESSAGES=16
-CONTEXT_BUDGET_BYTES=42_000
+#: #941: 43 KB keeps the 4 KB conversation floor after the voice's reader-and-form rule (#738 raised 40 -> 42).
+CONTEXT_BUDGET_BYTES=43_000
 MESSAGE_CAP_CHARS=4_000
 
 #: #658: the owner profile section every route carries when profile.* Memory
@@ -5808,8 +5810,18 @@ def owner_context_fact(sections,clean):
  both judgments see the same owner model."""
  sections=sections if isinstance(sections,dict) else {}
  def fact(name,limit):return str(clean(sections.get(name) or '') or '')[:limit] or 'none'
+ # #937: the entrusted-work line is its own fact, so a long snapshot never cuts it off.
+ current,entrusted=split_entrusted(str(clean(sections.get('current_context') or '') or ''))
  return (f"owner_profile: {fact('profile',PROFILE_FACT_CHARS)}\n"
-         f"current_context: {fact('current_context',CURRENT_CONTEXT_FACT_CHARS)}")
+         f"current_context: {current[:CURRENT_CONTEXT_FACT_CHARS] or 'none'}\n"
+         f"entrusted_work: {entrusted or 'none'}")
+
+def split_entrusted(text):
+ """#937: ``(text without the entrusted-work line, that line)`` of a current-context section."""
+ from .entrusted_lines import HELD_CHARS,HELD_PREFIX
+ lines=str(text or '').split('\n')
+ held=[line for line in lines if line.startswith(HELD_PREFIX)]
+ return '\n'.join(line for line in lines if not line.startswith(HELD_PREFIX)),'\n'.join(held)[:HELD_CHARS]
 
 class GoalVerdict(str):
  """``yes`` / ``no`` / ``unavailable`` plus, for ``no``, the judgment's ``gap`` (#1451):
