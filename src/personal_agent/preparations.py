@@ -1072,12 +1072,21 @@ def offered(row):
     return bool(row.get('title_text') or row.get('offer_text'))
 
 
+def carded(row):
+    """#950: whether this row is shown as a card (name, schedule, folded brief), not as one line.
+
+    A preparation always is, with or without an offer: its goal is the run's brief, never the
+    line the owner reads first.  A reminder without an offer stays one line (its goal is its text).
+    """
+    return offered(row) or row.get('kind') == KIND_PREPARE
+
+
 def owner_title(row, limit=120):
     """#393: the short name the owner knows this preparation by: its title, else its goal cut short."""
     title = row.get('title_text')
     if title:
         return title
-    goal = str(row.get('goal_text') or '')
+    goal = ' '.join(str(row.get('goal_text') or '').split())
     return goal[:limit] + ('…' if len(goal) > limit else '')
 
 
@@ -1104,7 +1113,7 @@ def proposal_summary(row, home_zone=None, brief=True, lang='ko'):
     first; the run's brief follows under its own label (``brief`` False
     leaves it out).  Without one, one line as before.
     """
-    if not offered(row):
+    if not carded(row):
         # #689: fixed kind labels must translate with the schedule on cards.
         kind = 'reminder' if row['kind'] == KIND_REMINDER else 'prepare'
         return msg('preparations.summary_' + kind, lang,
@@ -1124,7 +1133,7 @@ def proposal_html(shown, remaining, home_zone=None):
     single = len(shown) == 1
     parts = [] if single else [escape(PROPOSAL_HEADER)]
     for row in shown:
-        if not offered(row):
+        if not carded(row):
             parts.append(escape(proposal_summary(row, home_zone)))
             continue
         block = [f'<b>{escape(row.get("title_text") or owner_title(row))}</b>', escape(schedule_text(row, home_zone))]
@@ -1170,7 +1179,7 @@ def proposal_text(shown, remaining, home_zone=None):
     """The plain proposal; #393: a single offered proposal needs no generic header."""
     single = len(shown) == 1
     parts = ([] if single else [PROPOSAL_HEADER]) + [proposal_summary(row, home_zone) for row in shown]
-    text = ('\n\n' if any(offered(row) for row in shown) else '\n').join(parts)
+    text = ('\n\n' if any(carded(row) for row in shown) else '\n').join(parts)
     if remaining:
         text += '\n' + msg('preparations.more_proposals', remaining=remaining)
     if single and not shown[0].get('offer_text'):
