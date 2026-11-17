@@ -1,23 +1,27 @@
 """Round-2 sandbox wiring and crash recovery, with no model or real CLI calls."""
 import copy
 import json
+import sys
 from pathlib import Path
 from unittest import mock
 
 import pytest
 
-from agentos_eval import cli, judgments, recall_record as record
-from agentos_eval.recall_regression import (
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'evals'))
+
+from agentos_eval import cli, judgments, recall_record as record  # noqa: E402
+from agentos_eval.recall_regression import (  # noqa: E402
     Executor, fixture_service, install_fixture_workers, layer,
     seed_fixture, validate_plans, validate_terms,
 )
-from agentos_eval.recall_regression_report import report
-from personal_agent.decision import DecisionContext, RoutedDecisionEngine
-from personal_agent.orchestrator import plan_schema, plan_shape, worker_catalogue
-from personal_agent.quickstart_store import QuickStore
-from test_decision_routes import ServiceFixture
-from test_921_recall_regression import tiny, plan
-from test_921_recall_regression_record import args_for, fake_engine, run_fake
+from agentos_eval.recall_regression_report import report  # noqa: E402
+from personal_agent.decision import DecisionContext, RoutedDecisionEngine  # noqa: E402
+from personal_agent.orchestrator import plan_schema, plan_shape, worker_catalogue  # noqa: E402
+from personal_agent.quickstart_store import QuickStore  # noqa: E402
+from test_decision_routes import ServiceFixture  # noqa: E402
+from test_921_recall_regression import tiny, plan  # noqa: E402
+from test_921_recall_regression_record import args_for, fake_engine, run_fake  # noqa: E402
 
 
 @pytest.fixture(autouse=True)

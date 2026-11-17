@@ -3,19 +3,23 @@ import copy
 import hashlib
 import importlib.util
 import json
+import sys
 from pathlib import Path
 
 import pytest
-from agentos_eval import recall_pairs as pairs, recall_arms as arms
-from agentos_eval.recall_regression import layer, digest, seed_fixture, fixture_service, Executor, apply_terms
-from agentos_eval.recall_regression_report import facet_report, gate_row, markdown
-from personal_agent.orchestrator import worker_catalogue
-from personal_agent.quickstart_store import QuickStore
-from agentos_eval.recall_record import PurposeRouter
-from test_recall_pairs_v3 import assert_no_needed_overlap, terms, stem, FUNCTION_WORDS
-from test_921_recall_regression import tiny, plan
 
 ROOT=Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'evals'))
+
+from agentos_eval import recall_pairs as pairs, recall_arms as arms  # noqa: E402
+from agentos_eval.recall_regression import layer, digest, seed_fixture, fixture_service, Executor, apply_terms  # noqa: E402
+from agentos_eval.recall_regression_report import facet_report, gate_row, markdown  # noqa: E402
+from personal_agent.orchestrator import worker_catalogue  # noqa: E402
+from personal_agent.quickstart_store import QuickStore  # noqa: E402
+from agentos_eval.recall_record import PurposeRouter  # noqa: E402
+from test_recall_pairs_v3 import assert_no_needed_overlap, terms, stem, FUNCTION_WORDS  # noqa: E402
+from test_921_recall_regression import tiny, plan  # noqa: E402
+
 BASE=ROOT/'evals/recall/recall-pairs-v4.json'
 ADD=BASE.parent/'recall-gate-dev-1.json'
 

@@ -2,19 +2,21 @@
 import copy
 import hashlib
 import json
+import sys
 from pathlib import Path
 
 import pytest
 
-from agentos_eval import recall_pairs as pairs
-from agentos_eval.recall_record import PurposeRouter
-from agentos_eval.recall_regression import (Executor, fixture_service, fixture_scope, digest,
-    apply_terms, TERMS_VERSION, filter_digest, terms_prompt_digest, raw_row, catalogue_from, seed_fixture)
-from personal_agent.quickstart_store import QuickStore
-from personal_agent import memory_terms as mt
-from personal_agent.orchestrator import worker_catalogue
-
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'evals'))
+
+from agentos_eval import recall_pairs as pairs  # noqa: E402
+from agentos_eval.recall_record import PurposeRouter  # noqa: E402
+from agentos_eval.recall_regression import (Executor, fixture_service, fixture_scope, digest,  # noqa: E402
+    apply_terms, TERMS_VERSION, filter_digest, terms_prompt_digest, raw_row, catalogue_from, seed_fixture)
+from personal_agent.quickstart_store import QuickStore  # noqa: E402
+from personal_agent import memory_terms as mt  # noqa: E402
+from personal_agent.orchestrator import worker_catalogue  # noqa: E402
 
 
 def tiny():

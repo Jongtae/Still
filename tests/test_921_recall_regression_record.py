@@ -1,18 +1,23 @@
 """The live recorder is exercised only with injected fixture engines/sandboxes."""
 import copy
 import json
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from agentos_eval import recall_record as record
-from agentos_eval.recall_regression import (fixture_service, seed_fixture, fixture_scope, digest, layer,
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'evals'))
+
+from agentos_eval import recall_record as record  # noqa: E402
+from agentos_eval.recall_regression import (fixture_service, seed_fixture, fixture_scope, digest, layer,  # noqa: E402
     validate_plans, validate_terms, safe_catalogue, catalogue_from, prompt_digest, Executor, replay_case)
-from agentos_eval.judgments import CallCap
-from personal_agent.quickstart_store import QuickStore
-from personal_agent.decision import FixtureDecisionEngine, StructuredDecision, DecisionContext, OUTCOME_DECIDED, DecisionConfidence, RoutedDecisionEngine
-from personal_agent import owner_model as om
-from test_921_recall_regression import tiny, plan, terms_recording
+from agentos_eval.judgments import CallCap  # noqa: E402
+from personal_agent.quickstart_store import QuickStore  # noqa: E402
+from personal_agent.decision import FixtureDecisionEngine, StructuredDecision, DecisionContext, OUTCOME_DECIDED, DecisionConfidence, RoutedDecisionEngine  # noqa: E402
+from personal_agent import owner_model as om  # noqa: E402
+from test_921_recall_regression import tiny, plan, terms_recording  # noqa: E402
 
 
 @pytest.fixture(autouse=True)

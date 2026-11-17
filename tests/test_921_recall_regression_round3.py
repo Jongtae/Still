@@ -1,17 +1,22 @@
 """Gzip input boundaries, using only temporary fixtures and file-only validation."""
 import gzip
 import json
+import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from agentos_eval import cli, recall_record, recall_regression_report
-from agentos_eval.recall_arms import _runtime_catalogue
-from agentos_eval.recall_regression import (
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'evals'))
+
+from agentos_eval import cli, recall_record, recall_regression_report  # noqa: E402
+from agentos_eval.recall_arms import _runtime_catalogue  # noqa: E402
+from agentos_eval.recall_regression import (  # noqa: E402
     PLAN_VERSION, digest, prompt_digest, safe_catalogue,
 )
-from personal_agent.quickstart_store import QuickStore
-from test_921_recall_regression import tiny, terms_recording
+from personal_agent.quickstart_store import QuickStore  # noqa: E402
+from test_921_recall_regression import tiny, terms_recording  # noqa: E402
 
 
 def write_input(path, value):

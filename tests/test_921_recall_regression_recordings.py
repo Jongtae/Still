@@ -1,14 +1,18 @@
 """Validate committed gzip inputs and replay only three cases, without live calls."""
 import json
+import sys
 from pathlib import Path
 
 import pytest
-from agentos_eval import recall_pairs as pairs
-from agentos_eval.recall_regression import (Executor, apply_terms, catalogue_from, fixture_service,
-    layer, load_recording, replay_case, seed_fixture, validate_terms, validate_plans, validate_recording_safety)
-from personal_agent.quickstart_store import QuickStore
 
 ROOT=Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'evals'))
+
+from agentos_eval import recall_pairs as pairs  # noqa: E402
+from agentos_eval.recall_regression import (Executor, apply_terms, catalogue_from, fixture_service,  # noqa: E402
+    layer, load_recording, replay_case, seed_fixture, validate_terms, validate_plans, validate_recording_safety)
+from personal_agent.quickstart_store import QuickStore  # noqa: E402
+
 RECORDINGS=ROOT/'evals/recall/recordings'
 
 
