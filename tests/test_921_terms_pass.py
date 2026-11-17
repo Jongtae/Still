@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from personal_agent import owner_model as om
+from personal_agent import information_use, owner_model as om
 from personal_agent.conversation_handoff import ConversationJudgments
 from personal_agent.decision import (FixtureDecisionEngine, StructuredDecision, OUTCOME_DECIDED,
     OUTCOME_UNAVAILABLE, DecisionConfidence, UnavailableDecisionEngine, audit_record)
@@ -399,6 +399,100 @@ def test_writer_insert_terms_and_identity(env, monkeypatch, kind, terms):
         assert meta['model'] == 'active' and meta['observed_model'] == 'reported'
     else:
         assert not row['retrieval_terms'] and row['retrieval_terms_meta'] is None
+
+
+@pytest.mark.parametrize('kind', ['upkeep', 'gather', 'dream', 'terms'])
+@pytest.mark.parametrize('secret', ['StoredSecret921TermsValue', 'sk-proj-abcdefghijklmnopqrstuvwxyz123456'])
+def test_writer_terms_secrets_never_reach_durable_records(env, kind, secret):
+    """#957 regression class: inspect persisted records without display-time redaction."""
+    from test_owner_model_upkeep import proposal
+    from test_owner_model_dream import fact, dream
+
+    store, service, clock, _ = env
+    # The credential shape is deliberately not stored, so shape filtering stands alone.
+    if secret == 'StoredSecret921TermsValue':
+        store.secret('telegram_token', secret)
+    work = store.enqueue('I live beside the river and drink jasmine tea.', 'terms-secret',
+                         owner_typed=True, owner_words=True)
+    facts = [('profile.home', 'beside the river', 'before ' + secret + ' after'),
+             ('profile.drink', 'jasmine tea', '차 beverage')]
+    run_kind = om.KIND_DREAM if kind in ('gather', 'dream') else kind
+    with store.db() as db:
+        db.execute("UPDATE jobs SET status='succeeded',provider='subscription',response='Understood.' WHERE id=?",
+                   (work,))
+    if kind == 'terms':
+        for key, content, _terms in facts:
+            store.save_memory(key, content, work_id=work)
+    else:
+        if run_kind == om.KIND_DREAM:
+            om.WorkingNotes(store).migrate()
+        assert service.owner_model.enqueue(None, work, kind=run_kind)
+
+    purpose = {'upkeep': om.PURPOSE, 'gather': om.DREAM_GATHER_PURPOSE,
+               'dream': om.DREAM_PURPOSE, 'terms': 'memory-terms'}[kind]
+    answered = []
+
+    def answer(context, question, schema):
+        items = []
+        if context.purpose == purpose:
+            answered.append(context.purpose)
+            if kind == 'terms':
+                # Use the actual packed order, rather than assuming row-id ordering.
+                items = [{'n': n, 'terms': next(terms for key, _content, terms in facts
+                                               if key in line)}
+                         for n, line in enumerate(context.facts['notes'].splitlines(), 1)]
+            else:
+                for key, content, terms in facts:
+                    item = (proposal(key, content, evidence=content) if kind == 'upkeep'
+                            else fact(key, content, 't1'))
+                    items.append({**item, 'terms': terms})
+        data = ({'notes': items} if kind == 'terms' else dream(items)
+                if context.purpose == om.DREAM_PURPOSE else {'proposals': items})
+        confidence = DecisionConfidence(1, route='fixture-route', model='fixture-model', sent=True)
+        # FixtureDecisionEngine has no audit sink; use the same content-free record as production.
+        service.record_decision(audit_record(context, 'structured', OUTCOME_DECIDED, data, confidence, clock[0]))
+        return StructuredDecision(OUTCOME_DECIDED, data, confidence)
+
+    service.use_decision_engine(FixtureDecisionEngine(structured=answer))
+    assert service.run_owner_model_upkeep()
+    assert answered == [purpose]
+    saved = {row['memory_key']: raw(store, row) for row in store.memories()}
+    assert set(saved) == {key for key, _content, _terms in facts}
+    for key, content, _terms in facts:
+        assert (saved[key]['content'], saved[key]['state']) == (content, 'current')
+    assert saved['profile.home']['retrieval_terms'] is None
+    assert saved['profile.drink']['retrieval_terms'] == '차 beverage'
+    if kind != 'terms':
+        assert saved['profile.home']['retrieval_terms_meta'] is None
+
+    with store.db() as db:
+        upkeep = [dict(row) for row in db.execute('SELECT * FROM owner_model_upkeep')]
+        events = [dict(row) for row in db.execute('SELECT * FROM tool_events')]
+    [finished] = [row for row in upkeep if row['kind'] == run_kind]
+    assert finished['state'] == om.STATE_DONE and finished['calls'] > 0
+    if kind == 'terms':
+        manifest = json.loads(finished['observation'])
+        assert (manifest['rows'], manifest['result']) == (2, 'ok')
+        assert {entry['outcome'] for entry in manifest['entries']} == {'empty', 'keyed'}
+        assert not events
+    else:
+        assert any(event['tool'] == (om.EVENT_TOOL if kind == 'upkeep' else om.DREAM_EVENT_TOOL)
+                   for event in events)
+    decisions = store.work_decisions(work)
+    global_audit = store.config('decision_audit')
+    assert decisions and global_audit
+    assert any(row['purpose'] == purpose for row in decisions)
+    assert any(row['purpose'] == purpose for row in global_audit)
+    audit = information_use.work_information_use(store, work)
+    assert audit is not None
+    assert audit['sent_to']['judgment_ai']['calls'] == len(decisions)
+    surfaces = {'Memory terms': [row['retrieval_terms'] for row in saved.values()],
+                'upkeep rows including observation': upkeep,
+                'tool event details': [event['detail'] for event in events],
+                'Work decisions': decisions, 'global decision audit': global_audit,
+                'information use': audit}
+    for name, value in surfaces.items():
+        assert secret not in json.dumps(value, ensure_ascii=False), name
 
 
 def test_dream_admission_and_reader_ignore_terms(env):
