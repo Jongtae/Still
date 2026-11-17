@@ -59,6 +59,35 @@ from .api_requests import CONTEXT_LINE as API_SLOTS_LINE
 from .information_use import BROWSER_SIGNINS_PREFIX
 from .decision import MAX_CONTEXT_CHARS, OUTCOME_DECIDED, OUTCOME_MALFORMED, DecisionContext, DecisionPolicy, StructuredSchema
 
+
+def cut_profile_fact(text, items=(), *, redact=None, limit_chars=None):
+    """The plan's whole-line cut and the inventory that actually survives it (#921).
+
+    Adopt Python slicing and the existing profile bound; Build only the row inventory
+    needed by the Still reply gate. Snapshot positions identify rows, never free-text
+    substring searches or merged audit receipts. Daily record blocks stay whole.
+    The gate can use the same helper without a further cut for its checked refresh.
+    """
+    text = str(text or '')
+    redact = redact or (lambda value: value)
+    rendered = redact(text)
+    inventory = tuple({**item, 'line': redact(item['line']),
+                       'start': len(redact(text[:item['start']]))} for item in items)
+    limit = PROFILE_FACT_CHARS if limit_chars is None else limit_chars
+    end = len(rendered)
+    if end > limit:
+        end = rendered.rfind('\n', 0, limit + 1)
+        end = max(0, end)
+    for item in inventory:
+        start, size = item['start'], len(item['line'])
+        if item['kind'] == 'record' and start < end < start + size:
+            end = max(0, start - 1)
+    kept = tuple(dict(item) for item in inventory
+                 if item['start'] + len(item['line']) <= end
+                 and rendered[item['start']:item['start'] + len(item['line'])] == item['line'])
+    return rendered[:end], kept
+
+
 #: Still context sections of a turn (``agent_runtime.turn_context``).
 SECTIONS = ('profile', 'current_context', 'prepared', 'history')
 #: #804, #820: every attempt carries every section - the owner model, the prepared
@@ -1178,10 +1207,8 @@ class Orchestration:
         workers = render_catalogue(candidates)
         tools_text = render_tool_descriptions(candidates, getattr(self.catalogue, 'descriptions', {}))
         # Request-only planning context stays separate from later worker refreshes.
-        profile = self._redact(self.plan_profile)
-        if len(profile) > PROFILE_FACT_CHARS:
-            # A receipt must never attribute a fact whose line was cut in half.
-            profile = profile[:PROFILE_FACT_CHARS + 1].rsplit('\n', 1)[0] if '\n' in profile[:PROFILE_FACT_CHARS + 1] else ''
+        profile, self._context_inventory = cut_profile_fact(
+            self.plan_profile, self.sections.get('profile_items', ()), redact=self._redact)
         profile = profile or 'none'
         current, connections = self._current_facts()
         facts = {'owner_request': request,
@@ -1235,7 +1262,9 @@ class Orchestration:
         candidates = self.catalogue.available()
         inputs = self._input_digests(candidates)
         data, failure = self._ask(candidates)
-        return {'digest': self.plan_digest(candidates), 'data': data, 'failure': failure, 'inputs': inputs}
+        inventory = tuple(dict(item) for item in getattr(self, 'plan_inventory', ()))
+        return {'digest': self.plan_digest(candidates), 'data': data, 'failure': failure, 'inputs': inputs,
+                'profile_items': inventory}
 
     def _ask(self, candidates):
         """``(data, failure)`` for one plan call over ``candidates``."""
@@ -1249,6 +1278,7 @@ class Orchestration:
             self.budget_stop = code
             return None, FALLBACK_BUDGET
         context = self._plan_context(candidates)
+        self.plan_inventory = self._context_inventory
         try:
             if self.budget is not None and getattr(getattr(self.judgments, 'engine', None), 'work_budget', None) is not self.budget:
                 self.budget.spend_turn()
@@ -1497,6 +1527,9 @@ class Orchestration:
         if (isinstance(ahead, dict) and ahead.get('failure') != FALLBACK_BUDGET and self.budget_allows()
                 and ahead.get('digest') == self.plan_digest(candidates)):
             data, failure, self.early_used = ahead.get('data'), ahead.get('failure') or '', True
+            # Equal rendered inputs may name different row revisions. Adopt the inventory
+            # frozen with the accepted early call, never reconstruct it from today's rows.
+            self.plan_inventory = tuple(dict(item) for item in ahead.get('profile_items', ()))
         else:
             if isinstance(ahead, dict) and isinstance(ahead.get('inputs'), dict):
                 # #1293: which plan inputs changed while routing ran (names only), so a miss is explained.

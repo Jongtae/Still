@@ -260,14 +260,14 @@ class ConnectionPreferences(Harness):
         import threading
         worker = threading.current_thread()
 
-        def snapshot(service, request=None, recall=True, *, recall_query=None):
+        def snapshot(service, query, **kwargs):
             if threading.current_thread() is worker:
                 # Initial planning waits for A; the post-plan worker refresh has no pending Future.
                 if service._early_plan is not None:service._early_plan.result()
-                return 'profile.beta.changed: read by the plan asked again'
-            return 'profile.alpha.before: read by the early plan'
+                return 'profile.beta.changed: read by the plan asked again', []
+            return 'profile.alpha.before: read by the early plan', []
         self.script([plan('codex', 'Over A.'), plan('codex', 'Over B.')], goals=[True])
-        with mock.patch.object(type(self.service), 'owner_profile_snapshot', snapshot):
+        with mock.patch.object(type(self.service), 'profile_section', snapshot):
             job, row = self.run_work('Read the Unseen record.', key='early-then-again')
         self.assertEqual(row['status'], 'succeeded')
         self.assertEqual(len(self.asked_plans), 2, 'the early plan missed and was asked again')

@@ -21,7 +21,7 @@ from .cloud_engines import BUDGET_EXCEEDED as CLOUD_BUDGET_EXCEEDED, NOT_CONFIGU
 from .conversation_projection import BLOCKER_CLOUD_PROFILE, BLOCKER_MODEL_UNVERIFIED, BLOCKER_NO_AI_ROUTE, TERMINAL_FAILED_HEADER, BlockedTurn, context_message, answer_note, owner_cause, report_statement, verified_portion
 from .bounded_execution import reported_usage, BRIDGE_UNAVAILABLE, NO_FINAL_TEXT
 from .bounded_execution import ReadOnlyAgentOSMcpTools, ExecutionError, ExecutionResult, MAX_PROMPT_BYTES, BOUNDED_PROFILE, profile_actions, profile_status, route_unavailable
-from .orchestrator import MIN_ATTEMPT_SECONDS, model_refused, remember_model_refusal
+from .orchestrator import MIN_ATTEMPT_SECONDS, model_refused, remember_model_refusal, cut_profile_fact
 from .orchestrator import NOT_JUDGED, NOT_REACHED, OWNER_NEEDED, REACHED, UNJUDGED
 from .isolated_engine_gateway import EngineGatewayError
 from .file_workspace import FileWorkspace
@@ -51,6 +51,25 @@ from .quickstart_service import (
     subscription_public_lookup_query,
     workspace_summary_command
 )
+
+
+class _FirstTurnCommit:
+    """The run's adapter, committing shown annotations once before its first model turn (#921).
+
+    Every other attribute is the adapter's own, so run_agent sees the same adapter.
+    """
+
+    def __init__(self, adapter, commit):
+        self._adapter, self._commit, self._committed = adapter, commit, False
+
+    def tool_turn(self, *args, **kwargs):
+        if not self._committed:
+            self._commit()
+            self._committed = True
+        return self._adapter.tool_turn(*args, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(self._adapter, name)
 
 
 class WorkExecutor:
@@ -673,7 +692,9 @@ class WorkExecutor:
         # usable plan the default Main AI runs the raw request exactly as before,
         # and why is recorded once.  One budget spans every attempt of the Work.
         recall=not prep.preparation_of(job.get('request_key')) or service.day_plan_run(job)
-        run.section_values={'profile':service.owner_profile_snapshot(job.get('message'),recall=recall),'current_context':service.current_context_text(job),
+        query,_=service.recall_selector(job.get('message'),recall=recall)
+        profile,items=service.profile_section(query,recall=recall,consume=False)
+        run.section_values={'profile':profile,'profile_items':items,'current_context':service.current_context_text(job),
                         'prepared':service.prepared_text(job)}
         # #961: the skill revisions this Work may load, captured once for every attempt;
         # None (skills off or none installed) is the unchanged pre-skill path.
@@ -705,10 +726,16 @@ class WorkExecutor:
         return PROCEED
 
     def _run_worker_attempts(self, run):
-        """Phase 5: the orchestrated attempts, re-delegated within the Work's bounds until the plan ends."""
+        """Phase 5: orchestrated attempts within the Work's bounds.
+
+        #921 Build: one reply gate and its inventory. Adopt the existing refresh,
+        snapshot entries, recall_selector and already-planned delegation fallback;
+        no second plan, retrieval engine, task rule or new dependency.
+        """
         service=self.service
         job=run.job
         attempt=run.attempt
+        refresh=None
         # #749: the final validated plan alone can answer; no worker or goal judgment ran.
         if (attempt is not None and attempt.planned and attempt.reply and attempt.number==1
                 and not attempt.steer and not run.steer_note and not run.continued
@@ -718,21 +745,25 @@ class WorkExecutor:
                 and not service.store.context_attachment(job['id']) and not run.turn_provenance
                 and not attempt.account_change and not attempt.owner_situation and not attempt.technical_work
                 and not attempt.ask_location and not attempt.preview):
-            run.handled=True
-            run.response=attempt.reply
-            run.provider='decision'
-            run.model=''
-            run.goal_outcome=ws.GOAL_PLAN_ANSWERED
-            run.effect_state=service.work_effect_state(job['id'],run.claimed_at)
-            run.outcome=ws.derive_status(run.goal_outcome,run.effect_state,'succeeded')
-            service.record_decision({'purpose':'plan-direct-reply','kind':'route','route':'plan_reply',
-                                     'outcome':run.goal_outcome,'work_id':job['id'],
-                                     'at':time.time(),'elapsed_seconds':round(time.time()-run.claimed_at,3)})
-            service.record_stage(job['id'],'plan_reply',run.claimed_at)
-            service.record_turn_provenance(job['id'],route='plan_reply',status=run.outcome)
-            return PROCEED
+            if attempt.recall_query:
+                refresh=service.worker_profile_snapshot(job,attempt,with_items=True)
+                _,items=cut_profile_fact(refresh[0],refresh[2],limit_chars=len(refresh[0]))
+                seen={(item['id'],item['digest']):item for item in run.orchestration.plan_inventory}
+                matched=[item for item in items if item['matched']]
+                new=[item for item in matched if (item['id'],item['digest']) not in seen
+                     or (item['annotated'] and not seen[(item['id'],item['digest'])]['annotated'])]
+                if new:
+                    service.record_decision({'purpose':'plan-reply-withheld','kind':'route','route':'plan-reply-withheld',
+                                             'work_id':job['id'],'at':time.time(),
+                                             'seen_count':len(seen),'matched_count':len(matched),'new_count':len(new)})
+                elif not service.store.work_steer_texts(job['id']):
+                    return self._use_plan_reply(run)
+            else:
+                return self._use_plan_reply(run)
         while True:
-            run.section_values['profile'],run.recall_selector=service.worker_profile_snapshot(job,run.attempt)
+            run.section_values['profile'],run.recall_selector,run.profile_items=service.worker_profile_snapshot(
+                job,run.attempt,refresh=refresh,with_items=True)
+            refresh=None
             run.config,run.key,run.subscription,run.attempt_test=service.attempt_route(run.orchestration,run.attempt,run.base_config,run.base_key,run.route_snapshot)
             run.brief=run.attempt.brief(adjusted=run.attempt.number>1 and not run.attempt.steer) if run.attempt is not None else None
             run.attempt_start=service.last_event_id(job['id'])
@@ -785,6 +816,34 @@ class WorkExecutor:
             elif not service._continue_for_steers(run):break
             run.refusals.clear();run.owner_steps.clear();run.verified_parts.clear();run.agency_report=None;run.unknown_statement=None
         return PROCEED
+
+    def _use_plan_reply(self, run):
+        service=self.service
+        job=run.job
+        run.handled=True
+        run.response=run.attempt.reply
+        run.provider='decision'
+        run.model=''
+        run.goal_outcome=ws.GOAL_PLAN_ANSWERED
+        run.effect_state=service.work_effect_state(job['id'],run.claimed_at)
+        run.outcome=ws.derive_status(run.goal_outcome,run.effect_state,'succeeded')
+        service.record_decision({'purpose':'plan-direct-reply','kind':'route','route':'plan_reply',
+                                 'outcome':run.goal_outcome,'work_id':job['id'],
+                                 'at':time.time(),'elapsed_seconds':round(time.time()-run.claimed_at,3)})
+        service.record_stage(job['id'],'plan_reply',run.claimed_at)
+        service.record_turn_provenance(job['id'],route='plan_reply',status=run.outcome)
+        return PROCEED
+
+    def _commit_profile_shown(self, run, context):
+        """Consume only complete annotated lines at their positions in the final dispatch.
+
+        Adopt MemoryRaise.shown; cuts and the bare-request fallback cannot consume
+        rows the worker never received. No substring matching over owner text.
+        """
+        text=context.get('profile','') if context and context.get('mode')!='bare-request' else ''
+        shown=[item['id'] for item in getattr(run,'profile_items',()) if item['annotated']
+               and text[item['start']:item['start']+len(item['line'])]==item['line']]
+        if shown:om.MemoryRaise(self.service.store).shown(shown,run.job['id'])
 
     def _await_steer_judgments(self, work_id):
         """#308 S1: wait, bounded, for steer judgments of messages that arrived while this Work ran."""
@@ -1156,6 +1215,7 @@ class WorkExecutor:
                     prompt=engine_prompt, engine_id=run.subscription['id'], task_id=job['id'])
                 service.isolated_mcp_registry.register(job['id'], tools, token=token)
                 try:
+                    self._commit_profile_shown(run,engine_context)
                     dispatched=True
                     content=service.isolated_engine_adapter.execute(
                         prompt=engine_prompt, engine_id=run.subscription['id'], token=token, task_id=job['id'])
@@ -1222,6 +1282,7 @@ class WorkExecutor:
                     if work_model:execution_options['model']=work_model
                     # #1434: the reasoning effort the plan chose for that model.
                     if run.attempt is not None and getattr(run.attempt,'effort',''):execution_options['effort']=run.attempt.effort
+                    self._commit_profile_shown(run,engine_context)
                     dispatched=True
                     run.result=service.execution_adapter.execute(run.subscription['id'],engine_prompt,served,**execution_options)
                     if run.image_inputs:
@@ -1461,7 +1522,9 @@ class WorkExecutor:
             run_options={'owner_context':api_context,'judgment_history':judgment_history,
                          'reply_delivery':service.work_reply_delivery(job)}
             if run.image_inputs:run_options['images']=run.image_inputs
-            run.result=run_agent(service.adapter,runtime_config,run.key,[*api_context['conversation'],{'role':'user','content':api_context['request']}],context_sections(api_context),run.capabilities,run.record,definitions=offered,**run_options)
+            # Adopt the adapter's existing tool_turn boundary: the loop may refuse its
+            # budget before dispatch, which must leave every annotation open.
+            run.result=run_agent(_FirstTurnCommit(service.adapter,lambda:self._commit_profile_shown(run,api_context)),runtime_config,run.key,[*api_context['conversation'],{'role':'user','content':api_context['request']}],context_sections(api_context),run.capabilities,run.record,definitions=offered,**run_options)
             # #825: a run the budget ended before any model turn sent nothing.
             received=self._model_responded(job['id'],run.attempt_start)
             service.record_attempt_input(job['id'],input_ref,{True:'sent',False:'not-sent'}.get(received,'unknown'))

@@ -4488,9 +4488,9 @@ class RecallPlan883(unittest.TestCase):
 
 
 class RecallShortCircuits883(Harness):
-    def test_direct_reply_and_location_park_do_not_build_worker_recall(self):
+    def test_empty_selector_reply_and_location_park_do_not_build_worker_recall(self):
         with mock.patch.object(self.service,'worker_profile_snapshot',wraps=self.service.worker_profile_snapshot) as refresh:
-            self.script([dict(plan('codex',''),reply='given facts suffice',recall_query='unused')])
+            self.script([dict(plan('codex',''),reply='given facts suffice',recall_query='')])
             self.run_work('request')
             refresh.assert_not_called()
         self.assertEqual(len(self.asked_plans),1)
