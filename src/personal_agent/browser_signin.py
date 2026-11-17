@@ -297,8 +297,10 @@ class BrowserSignin:
             raise not_run(ToolError(UNATTENDED_APPROVAL_TEXT,'unattended_run'))  # #618: Still refused it, ran: false
         # #1456: a code run's request is approved as written (method, path, body), so its label is shown whole.
         from .quickstart_store import REQUEST_APPROVAL_ACTIONS
+        # #744: every browser preview keeps the readable input, just as request
+        # approvals do. Digests bind it but cannot stand in for its review.
         label=(str(description or '') if binding.get('action') in REQUEST_APPROVAL_ACTIONS
-               else service._redact_reason(' '.join(str(description or '').split()))[:120])
+               else service._redact_reason(service._redact_known_secrets(str(description or ''))))
         row={'work_id':job['id'],'action':binding['action'],'label':label,**service._browser_step_keys(binding),
              'state':'requested','requested_at':time.time(),
              'offer_digest':secrets.token_hex(32),

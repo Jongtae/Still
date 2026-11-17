@@ -493,6 +493,10 @@ class MemoryService:
         row = self.store.memory_candidate(candidate_id, owner_id, work_id)
         if not row:
             raise MemoryServiceError("memory candidate not found")
+        from .a2a_peers import work_peer_identity
+        peer = work_peer_identity(self.store, work_id)
+        if peer:
+            row['peer_identity'] = peer
         return self._private_read("memory_service.inspect_candidate", row, 1)
 
     def request_candidate_approval(self, owner_id, work_id, candidate_id, content_digest, ttl=600):
