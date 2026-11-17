@@ -12,7 +12,7 @@ import unittest
 from unittest import mock
 
 from personal_agent import preparations as prep
-from personal_agent.agent_runtime import (NOT_DONE_OTHER, RECORDED_EFFECT_FACT, evidence_summary, record_contradictions,
+from personal_agent.agent_runtime import (NOT_DONE_OTHER, RECORDED_EFFECT_FACT, evidence_summary, goal_judgment, record_contradictions,
                                           recorded_effects, recorded_effects_text, second_judgment_allowed)
 from personal_agent.conversation_handoff import (JUDGMENT_NO, JUDGMENT_UNAVAILABLE, JUDGMENT_YES, REJUDGED_DENIED_AGAIN,
                                                  REJUDGED_NOT_ALLOWED, REJUDGED_UNAVAILABLE, REJUDGED_YES,
@@ -158,6 +158,15 @@ class GoalReachedBound(unittest.TestCase):
         self.assertIn('e1 settings_change recorded applied: true', second)
         self.assertEqual((judged.outcome, judged.note, judged.record_check),
                          (JUDGMENT_YES, SECOND_NOTE, {'contradicted': ['e1'], 'rejudged': REJUDGED_YES}))
+
+    def test_direct_route_rejudgment_keeps_the_same_plan_reading(self):
+        engine = ScriptedSchemaEngine(DENY, YES)
+        verdict = goal_judgment(ConversationJudgments(engine), 'request', {'evidence_refs': [], 'summary': 'reply'},
+                                {}, '', effects=self.EFFECTS, plan_reading='  Read secret.  ',
+                                redact=lambda text: text.replace('secret', '[redacted]'))
+        self.assertEqual(verdict, 'yes')
+        self.assertEqual([context.facts['plan_reading'] for context, _, _ in engine.asked],
+                         ['Read [redacted].', 'Read [redacted].'])
 
     def test_a_mislabelled_denial_never_succeeds_unless_the_second_judgment_says_yes(self):
         # The first reading tagged a wrong result as e1; the second, given the record, names it other.

@@ -3803,7 +3803,7 @@ class ContextPreservingRevision(unittest.TestCase):
 
 
 class PlanReadingJudgment(unittest.TestCase):
-    """#202 Q3-A: an attempt's plan reading reaches the CLI judgment as a reference."""
+    """#202 Q3-A: an attempt's plan reading reaches either route's judgment as a reference."""
 
     def make(self, plans, **kwargs):
         pending = iter(plans)
@@ -3855,6 +3855,74 @@ class PlanReadingJudgment(unittest.TestCase):
                     calls.append(kwargs) or SimpleNamespace(outcome='yes'))
                 self.assertEqual(orchestration.evaluate_answer('reply', ''), 'reached')
                 self.assertNotIn('plan_reading', calls[0])
+
+    def test_direct_goal_judgment_redacts_before_bounding_the_reading(self):
+        from types import SimpleNamespace
+        from personal_agent.agent_runtime import MAX_PLAN_READING_CHARS, goal_judgment
+        secret = 'fixture-private-value'
+        reading = '  ' + 'x' * (MAX_PLAN_READING_CHARS - 5) + secret + 'y' * 500
+        calls = []
+        judgments = SimpleNamespace(goal_reached=lambda *args, **kwargs: (
+            calls.append(kwargs) or SimpleNamespace(outcome='yes')))
+        verdict = goal_judgment(judgments, 'request', {'evidence_refs': [], 'summary': 'reply'}, {}, '',
+                                redact=lambda text: text.replace(secret, '[redacted]'), plan_reading=reading)
+        self.assertEqual(verdict, 'yes')
+        self.assertEqual(calls[0]['plan_reading'], reading.replace(secret, '[redacted]').strip()[:MAX_PLAN_READING_CHARS])
+        self.assertEqual(len(calls[0]['plan_reading']), 300)
+        self.assertEqual(len(calls), 1)
+
+    def test_direct_goal_judgment_omits_empty_reading(self):
+        from types import SimpleNamespace
+        from personal_agent.agent_runtime import goal_judgment
+        calls = []
+        judgments = SimpleNamespace(goal_reached=lambda *args, **kwargs: (
+            calls.append(kwargs) or SimpleNamespace(outcome='yes')))
+        for extra in ({}, {'plan_reading': ''}, {'plan_reading': '  '}, {'plan_reading': 'secret'}):
+            with self.subTest(extra=extra):
+                verdict = goal_judgment(judgments, 'request', {'evidence_refs': [], 'summary': 'reply'}, {}, '',
+                                        redact=lambda text: text.replace('secret', ''), **extra)
+                self.assertEqual(verdict, 'yes')
+                self.assertNotIn('plan_reading', calls[-1])
+
+    def test_both_routes_use_one_plan_reading_cap(self):
+        import ast
+        from personal_agent import agent_runtime, orchestrator
+        # Guard the shared bound itself: equal duplicate literals could drift later.
+        tree = ast.parse(Path(orchestrator.__file__).read_text())
+        imports = [node for node in tree.body if isinstance(node, ast.ImportFrom) and node.module == 'agent_runtime']
+        self.assertTrue(any(alias.name == 'MAX_PLAN_READING_CHARS' for node in imports for alias in node.names))
+        self.assertFalse(any(isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store)
+                             and node.id == 'MAX_PLAN_READING_CHARS' for node in ast.walk(tree)))
+        self.assertEqual(orchestrator.MAX_PLAN_READING_CHARS, agent_runtime.MAX_PLAN_READING_CHARS)
+        self.assertEqual(agent_runtime.MAX_PLAN_READING_CHARS, 300)
+
+    def test_api_attempt_passes_its_reading_unchanged_to_capabilities(self):
+        from types import SimpleNamespace
+        from personal_agent.work_executor import WorkExecutor
+        # There is no narrower API-attempt harness. Stop at the constructor so this
+        # checks the real glue without needing a worker or the later recording path.
+        service = mock.Mock()
+        service.surface_claiming.return_value = None
+        service.shown_history_provenance.return_value = set()
+        service.work_lookup_options.return_value = {}
+        run = SimpleNamespace(job={'id': 'job'}, config={'provider': 'compatible', 'model': 'fixture'},
+                              attempt_test={}, history=[{'role': 'user', 'content': 'request'}], work_budget=None,
+                              section_values={'current_context': '', 'profile': '', 'prepared': ''},
+                              brief=None, skill_binding=None, image_inputs=[], history_rows=[], document_jobs=set(),
+                              orchestration=None, key='', record=lambda *args: None, owner_memory_request=None,
+                              turn_provenance=set(), work_private=set(), prompt='request', decision=None)
+
+        class Captured(Exception):
+            pass
+
+        for attempt in (SimpleNamespace(plan_reading='  Read the request. ' + 'x' * 400), None):
+            with self.subTest(attempt=attempt), mock.patch('personal_agent.work_executor.Capabilities',
+                                                         side_effect=Captured) as built:
+                run.attempt = attempt
+                with self.assertRaises(Captured):
+                    WorkExecutor(service)._run_api_attempt(run)
+                built.assert_called_once()
+                self.assertEqual(built.call_args.kwargs['plan_reading'], attempt.plan_reading if attempt is not None else '')
 
     def test_replan_uses_its_own_reading_without_requiring_a_preview(self):
         data = [{**plan('a', notes), 'brief': {'notes': notes, 'needs': needs}}
