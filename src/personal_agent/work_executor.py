@@ -1412,7 +1412,7 @@ class WorkExecutor:
                                   # #826: what an earlier answer used and where it went.
                                   information_use=service.information_use_tool(job),a2a=service.a2a_tool(job),
                                   # #657: completion is judged from observations.
-                                  judgments=service.decision_judge,
+                                  judgments=service.decision_judge,plan_reading=run.attempt.plan_reading if run.attempt is not None else '',
                                   # Pilot boundary 1: stored secrets never reach the judgment.
                                   secret_redactor=service._redact_known_secrets,
                                   **service.work_lookup_options(job,run.prompt))

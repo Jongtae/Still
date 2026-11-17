@@ -652,12 +652,14 @@ class AlternativesAndCompletionTests(unittest.TestCase):
         script = Script({'tool_calls': [call('1', 'list_notes')]}, finish('f', '1', summary='메모를 찾았습니다.'))
         caps = Capabilities(self.store, ModelAdapter(script), CFG, '', 'job', self.record, network=Network(),
                             judgments=judgments(lambda facts: seen.append(dict(facts)) or True),
-                            secret_redactor=lambda text: text.replace(secret, '[redacted]'))
+                            secret_redactor=lambda text: text.replace(secret, '[redacted]'),
+                            plan_reading=f'Read the notes with {secret}.')
         result = run_agent(caps.adapter, CFG, '', [{'role': 'user', 'content': '메모 찾아줘'}], '', caps, self.record,
                            owner_context=turn)
         self.assertEqual(result.outcome, 'succeeded')
         [facts] = seen
         owner = facts['owner_context']
+        self.assertEqual(facts['plan_reading'], 'Read the notes with [redacted].')
         self.assertIn('owner_profile: - 이름: 홍길동 (mail key [redacted])', owner)
         self.assertIn('current_context: - 시각: 2026-09-29 09:00 KST (clock)', owner)
         self.assertIn('- 위치: 서울 (key [redacted])', owner)
@@ -671,16 +673,20 @@ class AlternativesAndCompletionTests(unittest.TestCase):
         seen.clear()
         script = Script({'tool_calls': [call('1', 'list_notes')]}, {'content': '메모를 찾았습니다.'})
         caps = Capabilities(self.store, ModelAdapter(script), CFG, '', 'job', self.record, network=Network(),
-                            judgments=judgments(lambda facts: seen.append(dict(facts)) or True))
+                            judgments=judgments(lambda facts: seen.append(dict(facts)) or True),
+                            plan_reading='Read the notes before replying.')
         run_agent(caps.adapter, CFG, '', [{'role': 'user', 'content': '메모 찾아줘'}], '', caps, self.record,
                   owner_context={'profile': '- 이름: 홍길동'})
         self.assertEqual(seen[-1]['owner_context'], 'owner_profile: - 이름: 홍길동\ncurrent_context: none')
+        self.assertEqual(seen[-1]['plan_reading'], caps.plan_reading)
         # No turn context (a delegated specialist, the MCP bridge): the fact reads none, never fails.
         seen.clear()
         _result, _caps = self.run_script(Script({'tool_calls': [call('1', 'list_notes')]},
                                                 finish('f', '1', summary='메모를 찾았습니다.')),
                                          answer=lambda facts: seen.append(dict(facts)) or True)
         self.assertEqual(seen[-1]['owner_context'], 'owner_profile: none\ncurrent_context: none')
+        self.assertEqual(_caps.plan_reading, '')
+        self.assertNotIn('plan_reading', seen[-1])
 
     def test_the_whole_request_reaches_the_judgment_and_its_last_part_counts(self):
         """A long request is never cut: an unmet requirement at its end keeps the Work from succeeding."""

@@ -52,7 +52,7 @@ from . import owner_mcp
 from . import trust_record
 from .prompt_files import prompt
 from .conversation_projection import earlier_turn_line, earlier_turns_in
-from .agent_runtime import (BUDGET_CODES, BUDGET_TEXTS, CURRENT_CONTEXT_FACT_CHARS, PROFILE_FACT_CHARS, GOAL_CONVERSATION_CHARS,
+from .agent_runtime import (BUDGET_CODES, BUDGET_TEXTS, CURRENT_CONTEXT_FACT_CHARS, PROFILE_FACT_CHARS, GOAL_CONVERSATION_CHARS, MAX_PLAN_READING_CHARS,
                             budget_stop_code, owner_context_fact, second_judgment_allowed)
 from .current_context import without_moving_clock
 from .api_requests import CONTEXT_LINE as API_SLOTS_LINE
@@ -73,8 +73,6 @@ MIN_ATTEMPT_SECONDS = 60
 MAX_NOTES_CHARS = 1200
 #: #1459: the professional lens a plan names for the worker (Professional Roles and Communication Contract).
 MAX_LENS_CHARS = 400
-#: #202: the plan's rejectable reading of the request, never new completion criteria.
-MAX_PLAN_READING_CHARS = 300
 MAX_REASON_CHARS = 200
 #: Bounds of the facts the orchestrator is asked over, besides the owner's
 #: request and the catalogue, which are never cut.
