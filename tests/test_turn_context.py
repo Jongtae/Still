@@ -331,7 +331,7 @@ class RoutesReceiveTheSameContext(unittest.TestCase):
         self._run('저녁은?', 'k2')                                   # CLI route
         call = self.engine.calls[-1]
         self.assertIn('profile.allergy.peanut: 땅콩 알러지', call['context']['profile'])
-        self.assertEqual(call['context']['profile'].split('\n')[0].split(':')[0], 'profile.allergy.peanut', 'key order')
+        self.assertEqual(call['context']['profile'].split('\n')[0].split(':')[0], 'profile.place.home', 'newest first')
         self.assertIn(PROFILE_HEADING, call['prompt'])
         self.assertIn('Allowance left in this Work:', call['prompt'])
         self.assertLess(call['prompt'].index(PROFILE_HEADING), call['prompt'].index('# Current request'))

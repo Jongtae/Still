@@ -241,11 +241,12 @@ class MemoryService:
         # The store keeps the replaced row's last day while it still holds (Codex review: never an elapsed one).
         return self.remember(owner_id, work_id, self.profile_key(memory_key), content)
 
-    def _profile_rows(self, owner_id, holding_on=None):
+    def _profile_rows(self, owner_id, holding_on=None, *, newest_first=False):
         """Every current ``profile.*`` row of this owner, ordered by key then value.
 
         #220 (Codex review): with ``holding_on`` (a date) rows past their last day are
         left out in the query, so ended history cannot use up the row cap.
+        With ``newest_first``, preserve the store order before applying the cap.
         """
         rows, offset = [], 0
         while len(rows) < _PROFILE_ROWS_CAP:
@@ -255,7 +256,8 @@ class MemoryService:
             if len(page) < 101:
                 break
             offset += 101
-        rows.sort(key=lambda row: (row['memory_key'], row['content']))
+        if not newest_first:
+            rows.sort(key=lambda row: (row['memory_key'], row['content']))
         return rows[:_PROFILE_ROWS_CAP]
 
     def profile_memories(self, owner_id):
@@ -297,15 +299,17 @@ class MemoryService:
                          limit_bytes=PROFILE_SNAPSHOT_BYTES, ids=False, annotations=None):
         """A bounded, attributable snapshot of ``profile.*`` rows for a turn prompt.
 
-        ``text`` is one line per row - ``key: value (saved YYYY-MM-DD)`` - in
-        key order, with the holding voice preference first, then current profile
-        matches from an optional bounded literal query, never longer than
+        ``text`` is one line per row - ``key: value (saved YYYY-MM-DD)`` - with
+        the holding voice preference first, then current profile matches from an
+        optional bounded literal query, newest first after the matches, never longer than
         ``limit_chars`` characters nor ``limit_bytes`` UTF-8 bytes; a value longer than
         ``line_chars`` is clipped with a marker rather than dropped.  Rows
         that did not fit are counted in ``omitted_count`` so the caller can
         say the snapshot is partial instead of pretending it is complete.
         ``entries`` carries the same rows with their Memory ids and saved
         times, so every line in the prompt is attributable to one row.
+
+        Adopt the existing ``store.memories`` order, no new component (#921 PR-4).
 
         #220: a row whose ``valid_until`` is before today has ended and is left
         out (it stays in the store and the owner's view); a row that ends
@@ -329,7 +333,7 @@ class MemoryService:
         if isinstance(limit_bytes, bool) or not isinstance(limit_bytes, int) or limit_bytes < 1:
             raise MemoryServiceError('profile snapshot byte size is invalid')
         today = self._today()
-        rows = self._profile_rows(owner_id, holding_on=today)
+        rows = self._profile_rows(owner_id, holding_on=today, newest_first=True)
         annotations = annotations if isinstance(annotations, dict) else {}
         found = set()
         if query is not None:
