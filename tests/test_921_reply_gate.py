@@ -363,3 +363,4 @@ def test_direct_reply_keeps_recall_query_for_the_gate():
     assert 'brief.notes, brief.lens, brief.needs and reason are ""' in line
     assert 'Write recall_query as usual' in line
     assert 'recall_query are ""' not in line
+    assert 'so Still can check' not in line  # the plan need not know about the gate

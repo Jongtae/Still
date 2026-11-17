@@ -71,20 +71,22 @@ def test_partner_partition_covers_existing_cases_and_new_cases_once():
     held = j.load_cases(ROOT / 'evals/judgments/heldout-v1.json')
     added = j.load_cases(ROOT / 'evals/judgments/cases-v2-202.json')
     added['cases'] += j.load_cases(ROOT / 'evals/judgments/cases-v3-202-plan.json')['cases']
+    added['cases'] += j.load_cases(ROOT / 'evals/judgments/cases-v4-921-statement.json')['cases']
     dev_ids = {ident for part in data['roles'].values() for ident in part['dev']}
     held_ids = {ident for part in data['roles'].values() for ident in part['heldout']}
-    moved = 'heldout-goal-legitimate-question'
-    assert dev_ids == ({c['id'] for c in old['cases']} | {moved} |
+    moved = {'heldout-goal-legitimate-question', 'heldout-plan-statement'}
+    assert dev_ids == ({c['id'] for c in old['cases']} | moved |
                        {c['id'] for c in added['cases'] if not c['id'].startswith('heldout-')})
-    assert held_ids == (({c['id'] for c in held['cases']} - {moved}) |
+    assert held_ids == (({c['id'] for c in held['cases']} - moved) |
                         {c['id'] for c in added['cases'] if c['id'].startswith('heldout-')})
     assert not dev_ids & held_ids
     assert set(data['roles']) == {c['role'] for c in old['cases']}
     lookup = {c['id']: c for c in old['cases'] + held['cases'] + added['cases']}
-    assert len(p.partners(sorted(dev_ids))) == 90
-    assert data['version'] == 'judgment-heldout-partners/3'
+    assert len(p.partners(sorted(dev_ids))) == 91
+    assert data['version'] == 'judgment-heldout-partners/4'
     assert data['case_sets'] == ['evals/judgments/cases-v1.json', 'evals/judgments/heldout-v1.json',
-                                 'evals/judgments/cases-v2-202.json', 'evals/judgments/cases-v3-202-plan.json']
+                                 'evals/judgments/cases-v2-202.json', 'evals/judgments/cases-v3-202-plan.json',
+                                 'evals/judgments/cases-v4-921-statement.json']
     for part in data['roles'].values():
         for dev in part['dev']:
             assert part['partners'].get(dev) or part['unpaired'].get(dev)
@@ -135,7 +137,7 @@ def test_v2_mapping_is_frozen_and_v3_preserves_all_its_partitions():
     path = ROOT / 'evals/judgments/heldout-partners-v2.json'
     old = p.validate_partners(json.loads(path.read_text()))
     assert hashlib.sha256(path.read_bytes()).hexdigest() == 'd8b8419f5099d4ff90a416054c1cafc121706562ac3c5873d7b2614ac1c45727'
-    data = p.load_partners()
+    data = p.validate_partners(json.loads((ROOT / 'evals/judgments/heldout-partners-v3.json').read_text()))
     assert data['case_sets'][:-1] == old['case_sets']
     for role, part in old['roles'].items():
         new = data['roles'][role]
@@ -143,6 +145,53 @@ def test_v2_mapping_is_frozen_and_v3_preserves_all_its_partitions():
             assert new[split][:len(part[split])] == part[split]
         assert all(new['partners'][ident] == links for ident, links in part['partners'].items())
         assert new['unpaired'] == part['unpaired']
+
+
+def test_v3_partner_mapping_remains_readable_and_byte_identical():
+    import hashlib
+    path = ROOT / 'evals/judgments/heldout-partners-v3.json'
+    p.validate_partners(json.loads(path.read_text()))
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == '27705aadd820e69b1a415654e881f8fbd5c72a592eb8842ddf520967db7c5da2'
+
+
+def test_v4_preserves_v3_except_the_921_statement_move_and_replacement():
+    old = p.validate_partners(json.loads((ROOT / 'evals/judgments/heldout-partners-v3.json').read_text()))
+    data = p.load_partners()
+    moved, fresh = 'heldout-plan-statement', 'heldout-plan-statement2'
+    assert set(data) == set(old)
+    assert data['version'] == 'judgment-heldout-partners/4'
+    assert data['case_sets'] == old['case_sets'] + ['evals/judgments/cases-v4-921-statement.json']
+    assert data['policy'] == old['policy']
+    assert set(data['roles']) == set(old['roles'])
+    for role, part in old['roles'].items():
+        new = data['roles'][role]
+        if role != 'orchestration_plan':
+            assert new == part
+            continue
+        assert set(new) == set(part)
+        assert new['dev'] == part['dev'] + [moved]
+        assert new['heldout'] == [ident for ident in part['heldout'] if ident != moved] + [fresh]
+        assert new['unpaired'] == part['unpaired']
+        assert set(new['partners']) == set(part['partners']) | {moved}
+        for ident, links in part['partners'].items():
+            if ident != 'plan-statement':
+                assert new['partners'][ident] == links
+        for ident in ('plan-statement', moved):
+            [link] = new['partners'][ident]
+            assert link['id'] == fresh
+            assert '#921' in link['reason'] and '#827' in link['reason']
+    cases, splits, _ = p.select_cases(['plan-statement', moved])
+    assert {case['id'] for case in cases['cases']} == {'plan-statement', moved, fresh}
+    assert splits == {'plan-statement': 'dev', moved: 'dev', fresh: 'heldout'}
+    [case] = j.load_cases(ROOT / 'evals/judgments/cases-v4-921-statement.json')['cases']
+    assert case['id'] == fresh
+    assert case['role'] == 'orchestration_plan'
+    assert case['class'] == 'structured-plan'
+    assert case['lang'] == 'ko'
+    assert case['category'] == 'owner-situation'
+    assert case['targets'] == ['#197', '#921']
+    assert case['expect'] == dict(fallback=False, account_change=False, owner_situation=True,
+                                  technical_work=False, tier='higher')
 
 
 def test_plan_reading_contrasts_have_bilingual_fresh_heldout_partners():
