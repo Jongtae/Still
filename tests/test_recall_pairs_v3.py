@@ -60,7 +60,7 @@ def results(data, seeded):
 def test_v3_loads_through_normal_schema_and_unknown_version_is_rejected(data):
     assert pairs.load(FIXTURE) == data
     assert pairs.validate(data) is data
-    unknown = dict(data, version='recall-pairs/4')
+    unknown = dict(data, version='recall-pairs/5')
     with pytest.raises(pairs.RecallPairsError, match='Unsupported fixture version'):
         pairs.validate(unknown)
 
