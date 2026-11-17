@@ -10,6 +10,7 @@ discovery and calls are served exclusively by the scoped host relay.
 import argparse
 import json
 import sys
+import threading
 import time
 import uuid
 
@@ -523,6 +524,8 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
     tools.PROFILE = profile
     tools.relay = relay
     tools.native_search_reason = str(search_off_reason or '')
+    served_workers = []
+    served_workers_lock = threading.Lock()
 
     def current_run():
         # #841: status alone cannot bind a surviving bridge to the resumed run.
@@ -546,7 +549,8 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
             extra = [mcp_tool(CONNECTOR_PERMISSION_DEFINITION, 'bounded_write', profile)] if ai_connections and relay else []
             result = {'tools': tools.definitions() + extra}
             # #825: the definitions this bridge actually served, on the host's turn record.
-            record_served(store, job_id, result['tools'], 'still-host-mcp:bridge')
+            with served_workers_lock:
+                served_workers.append(record_served(store, job_id, result['tools'], 'still-host-mcp:bridge'))
         elif method == 'tools/call' and ai_connections and relay and (params or {}).get('name') == CONNECTOR_PERMISSION:
             # #1197: the service decides (reads allowed, everything else refused for now)
             # and records the call; nothing here is shown to the model as a tool result.
@@ -654,7 +658,15 @@ def serve(data, job_id, provenance=(), native_search=False, profile=BOUNDED_PROF
         return ('search' if action in SEARCH_BACKED_ACTIONS else
                 'after-searches' if reads_search_results(action) else 'read')
 
-    _serve_stdio(handle, concurrent)
+    try:
+        _serve_stdio(handle, concurrent)
+    finally:
+        # #917: in-process callers may remove the store as soon as serve returns.
+        # Keep writes off the response path, but finish every listing's write on exit.
+        with served_workers_lock:
+            workers = tuple(served_workers)
+        for worker in workers:
+            worker.join()
 
 
 if __name__ == '__main__':

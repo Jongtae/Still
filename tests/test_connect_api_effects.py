@@ -13,7 +13,8 @@ from personal_agent.quickstart_service import AgentService
 from personal_agent.quickstart_store import QuickStore
 
 CALL = {'slot': 'synthetic', 'url': 'https://synthetic.example/change?item=private-item',
-        'method': 'POST', 'effect': 'mutate', 'body': '{"value":"private-body"}'}
+        'method': 'POST', 'effect': 'mutate', 'body': '{"value":"private-body"}',
+        'approval_note': '기록 값을 바꿔요'}  # #953: an approval request carries the AI's words
 
 
 class ApiEffects(unittest.TestCase):

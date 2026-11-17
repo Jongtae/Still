@@ -68,7 +68,7 @@ MAX_READ_REQUESTS = 8
 #: transport).  A sent request leaves an ``api_dispatch`` record of its own; ``needs_setup`` and
 #: response-time codes are not here because they can follow a dispatch.
 PRE_DISPATCH_CODES = frozenset({'api_slot_code_only', 'api_slot_unknown', 'api_slot_invalid', 'api_argument_invalid',
-                                'api_path_invalid', 'api_path_refused', 'api_body_refused', 'api_read_only', 'api_approval_unrepresentable', 'approval_required',
+                                'api_path_invalid', 'api_path_refused', 'api_body_refused', 'api_read_only', 'api_approval_unrepresentable', 'approval_required', 'approval_note_required',
                                 'api_effect_replayed', 'api_work_inactive'})
 #: #1445: the pre-dispatch refusals of a call that could not be made as written (the wrong tool for a
 #: set, an unknown slot, a malformed argument or path).  Like a click on a target that was not on the
@@ -984,7 +984,7 @@ class ApiRequests:
                            'api_host_not_allowed')
         return parts, named
 
-    def _approve(self, slot, method, url, body, effect, named, path):
+    def _approve(self, slot, method, url, body, effect, named, path, note=''):
         """Consume the owner's approval of exactly this call, or request it and refuse."""
         from .browser_session import binding_digest, step_binding, action_input_safe
         if not action_input_safe(self.store, {'connection': slot['name'], 'url': url, 'body': body or ''}):
@@ -997,6 +997,11 @@ class ApiRequests:
         query = urlsplit(url).query
         sent = ' '.join(part for part in (f'?{query}' if query else '', str(body or '')) if part)
         label = f"{method} {path} {sent} → {named} ({slot['name']}, {effect})"
+        if note:
+            # #953: the AI's plain words first; the exact request below is what is approved.
+            from .code_run import APPROVAL_EXACT_LABEL
+            from .current_context import redact_known_secrets
+            label = f"{redact_known_secrets(self.store, note)}\n\n{APPROVAL_EXACT_LABEL} {label}"
         if len(label) > 8000:
             raise ApiError('실행 내용을 비밀값 없이 온전히 확인할 수 없어 승인을 요청하지 않았습니다.',
                            'api_approval_unrepresentable')
@@ -1005,6 +1010,11 @@ class ApiRequests:
         self._payment_ticket = (binding, label, ticket) if ticket else None
         if ticket or approvals is not None and approvals.consume(binding):
             return binding_digest(binding)[:32]
+        unattended = getattr(approvals, 'unattended', None)
+        if not note and not (callable(unattended) and unattended()):
+            # #953: a run that cannot ask the owner keeps its own refusal (#619) from request().
+            from .code_run import APPROVAL_NOTE_REQUIRED
+            raise ApiError(APPROVAL_NOTE_REQUIRED, 'approval_note_required')
         if approvals is not None:
             approvals.request(binding, label)
         raise ApiError(APPROVAL_TEXT, 'approval_required', requires='api-step-approval')
@@ -1224,7 +1234,9 @@ class ApiRequests:
         identity = self._effect_identity(slot, method, url, body) if effect in STATE_CHANGING_EFFECTS else None
         if identity:
             self._effect_guard(slot, identity)
-        idempotency = self._approve(slot, method, url, body, effect, named, path) if effect == 'payment' else identity[:32] if identity else None
+        from .code_run import approval_note_text
+        note = approval_note_text(args.get('approval_note'))
+        idempotency = self._approve(slot, method, url, body, effect, named, path, note) if effect == 'payment' else identity[:32] if identity else None
         write_ticket=None
         claim = None
         finish = None
@@ -1281,8 +1293,10 @@ class ApiRequests:
                 binding=step_binding(self.work_id,'api_request',url,f"{slot['name']}|{method}|{url}",
                                      argument=body or '',state=str(slot.get('revision','')))
                 try:
+                    from .current_context import redact_known_secrets
                     write_ticket=gate(binding,'slot:'+slot['name'],method,url,('body',) if body else (),description=body,
-                                      values={'connection': slot['name'], 'url': url, 'body': body or ''})
+                                      values={'connection': slot['name'], 'url': url, 'body': body or ''},
+                                      note=redact_known_secrets(self.store, note),require_note=True)
                 except ValueError as exc:
                     error = ApiError(str(exc),getattr(exc,'code','approval_required'))
                     if getattr(exc, 'ran', None) is False:

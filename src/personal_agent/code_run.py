@@ -86,6 +86,17 @@ APPROVAL_REQUESTED_TEXT = ('this request changes state on a connection the owner
 APPROVAL_BODY_CHARS = 16 * 1024
 #: #1470: the AI's owner-facing description of a state change, and the line that introduces the exact request.
 APPROVAL_NOTE_CHARS = 300
+#: #953 (owner choice 2026-11-17): a state change the owner must approve carries the AI's plain words.
+APPROVAL_NOTE_REQUIRED = ('this change needs the owner\'s approval, and an approval request needs approval_note: one or two '
+                          'short lines in the owner\'s language saying what it changes (what, how many, at what price, '
+                          'when). Nothing was sent and no approval was requested; call again with approval_note.')
+
+
+def approval_note_text(note):
+    """The AI's approval note (#1470) on at most a few clean lines, or ``''`` (#953: shared by every request tool)."""
+    if not isinstance(note, str):
+        return ''
+    return '\n'.join(' '.join(line.split()) for line in note.splitlines() if line.strip())[:APPROVAL_NOTE_CHARS]
 APPROVAL_EXACT_LABEL = '보낼 요청:'
 APPROVAL_CONTENT_LABEL = '내용:'
 #: Owner choice 2026-10-14 (clear signing, after ERC-7730): the labelled values the owner reads instead of the
@@ -549,9 +560,7 @@ class CodeRunner:
         code, packages, hosts, names, timeout = _arguments(args if isinstance(args, dict) else {}, self._intranet_host)
         proposed = _library_argument(args, names)
         # #1470: the AI's plain words for a state change this run may ask the owner to approve.
-        note = args.get('approval_note') if isinstance(args, dict) else None
-        self._note = ('\n'.join(' '.join(line.split()) for line in note.splitlines() if line.strip())[:APPROVAL_NOTE_CHARS]
-                      if isinstance(note, str) else '')
+        self._note = approval_note_text(args.get('approval_note') if isinstance(args, dict) else None)
         # Owner choice 2026-10-14 (clear signing): "label=FIELD[=meaning]; ..." the owner reads instead of the raw request.
         fields = args.get('approval_fields') if isinstance(args, dict) else None
         self._fields = parse_approval_fields(fields)
@@ -942,6 +951,10 @@ class CodeRunner:
             api._payment_ticket = (binding, label, ticket) if ticket else None
             if ticket or self.approvals.consume(binding):
                 return self._claim_state_change(api, slot, identity, method, effect, host, path)
+            unattended = getattr(self.approvals, 'unattended', None)
+            if not note and not (callable(unattended) and unattended()):
+                # #953: a run that cannot ask the owner keeps its own refusal (#619) from request().
+                return False, APPROVAL_NOTE_REQUIRED
             try:
                 self.approvals.request(binding, label)
             except ValueError as exc:
@@ -953,7 +966,7 @@ class CodeRunner:
         ticket=None
         if callable(gate):
             try:ticket=gate(binding,['slot:'+owner[0] for owner in owners],method,url,('body',),description=body,
-                            values={'url': url, 'body': body})
+                            values={'url': url, 'body': body},note=redact_known_secrets(self.store, self._note),require_note=True)
             except ValueError as exc:
                 if getattr(exc,'code',None)=='approval_required':
                     self._asked.append({'method':method,'host':host,'path':redact_known_secrets(self.store,path)})

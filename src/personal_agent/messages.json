@@ -8416,6 +8416,12 @@
   "ja": "外部リクエストの記録: {effects}。繰り返す前に、そのサービスで実際の状態を確認してください。",
   "zh": "外部请求记录：{effects}。重复操作前，请先到相应服务确认实际状态。"
  },
+ "quickstart_service.failed_effects_told": {
+  "ko": "외부 요청 기록: {effects}. 작업 AI가 그 뒤 {time}에 따로 알림을 보냈어요. Still이 직접 확인한 결과는 아니니, 반복하기 전에 그 알림과 해당 서비스의 실제 상태를 확인해 주세요.",
+  "en": "External request record: {effects}. The working AI sent you a separate message at {time}. Still did not confirm the result itself, so check that message and the actual state with that service before repeating anything.",
+  "ja": "外部リクエストの記録: {effects}。作業AIがその後 {time} に別途お知らせを送りました。Still自身が確認した結果ではないため、繰り返す前にそのお知らせとサービスでの実際の状態を確認してください。",
+  "zh": "外部请求记录：{effects}。工作 AI 随后在 {time} 另外发来了通知。这不是 Still 自己确认的结果，重复操作前请先查看那条通知，并到相应服务确认实际状态。"
+ },
  "quickstart_service.skill_added": {
   "ko": "스킬 '{skill}'을(를) 추가했어요. 출처 {repo}의 {path}, 커밋 {revision}, 라이선스 {licence}.",
   "en": "Added skill '{skill}'. Source: {repo}, {path}, commit {revision}, license {licence}.",

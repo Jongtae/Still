@@ -174,7 +174,8 @@ def _plain_or_json(value):
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
 
 
-def authorize(service, job, binding, connection, operation, target, names=(), *, effect=None, description=None, request=True, values=None):
+def authorize(service, job, binding, connection, operation, target, names=(), *, effect=None, description=None, request=True, values=None,
+              note='', require_note=False):
     barrier = service.__dict__.get('_native_intake_barriers', {}).get(job['id'])
     awaiting = barrier is not None and barrier.pending()
     browser_press = connection is None and operation in ('browser_click', 'browser_type')
@@ -223,6 +224,10 @@ def authorize(service, job, binding, connection, operation, target, names=(), *,
     digest = service._browser_step_keys(scoped)['digest']
     label = service._redact_known_secrets(f'{connection or "browser"} / {operation} / {target}' +
                                         ('\n' + description if description else ''))
+    if note:
+        # #953: the AI's plain words first; the exact request below them is what is approved.
+        from .code_run import APPROVAL_EXACT_LABEL
+        label = f'{service._redact_known_secrets(note)}\n\n{APPROVAL_EXACT_LABEL} {label}'
     if marked:
         label += '\n' + service._redact_known_secrets(marked_lines(sources, values, label))
     modes = {key: allowance(service,key) for key in scopes}
@@ -233,6 +238,11 @@ def authorize(service, job, binding, connection, operation, target, names=(), *,
             raise not_run(ToolError(msg('write_allowances.replayed'), 'effect_replayed'))
     approval = service._browser_request(job['id']) if not reversible and not allowed else None
     if not reversible and not allowed and not service._consume_browser_step(job, scoped):
+        asks = not service.unattended_work(job) or service.self_set_write_wait(job)
+        if require_note and not note and asks:
+            # #953 (owner choice 2026-11-17): no approval request without the AI's plain words.
+            from .code_run import APPROVAL_NOTE_REQUIRED
+            raise not_run(ToolError(APPROVAL_NOTE_REQUIRED, 'approval_note_required'))
         if request:service._request_browser_step(job, scoped, label)
         raise not_run(ToolError(msg('write_allowances.wait'), 'approval_required'))
     with service.store.db() as db:

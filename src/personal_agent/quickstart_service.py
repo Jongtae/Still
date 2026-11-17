@@ -1300,7 +1300,7 @@ class AgentService:
         if slots:
             text=f'{text}\n{slots}' if text else slots
         # #937: the continuing responsibilities the owner entrusted, so every route reads them as its own work.
-        held=self.preparations_service.held_lines_text()
+        held=self.preparations_service.lines_index(job) if job else ''
         if held:
             text=f'{text}\n{held}' if text else held
         return text
@@ -3095,7 +3095,7 @@ class AgentService:
         setup/approval need, else what ``safe_retry`` allows.  None when no
         worker attempt was recorded.  Generic: no request, site or category.
         """
-        from .agent_runtime import agency_report, external_effect_progress
+        from .agent_runtime import agency_report, external_effect_events
         events=self.store.task_events(job['id'])
         with self.store.db() as db:
             ran=db.execute("SELECT 1 FROM tool_events WHERE job_id=? AND tool IN ('subscription_engine','model') LIMIT 1",
@@ -3125,19 +3125,27 @@ class AgentService:
         effects={}
         labels={'payment':msg('quickstart_service.failed_effect_payment'),
                 'mutate':msg('quickstart_service.failed_effect_mutate')}
-        for state,records in enumerate(external_effect_progress(self.store,job['id'],attributed_to=job['id'])):
-            for evidence in records:
+        last_effect=0
+        for state,records in enumerate(external_effect_events(self.store,job['id'],attributed_to=job['id'])):
+            for event_id,evidence in records:
                 effect=evidence.get('effect')
                 if effect not in labels:continue
                 counts=effects.setdefault((effect,evidence.get('host') or ''),[0,0])
                 counts[state]+=1
+                last_effect=max(last_effect,event_id)
         sent=[]
         for (effect,host),counts in effects.items():
             for state,count in enumerate(counts):
                 if count:
                     key='quickstart_service.failed_effect_unconfirmed' if state else 'quickstart_service.failed_effect_sent'
                     sent.append(msg(key,effect=labels[effect],host=f' ({host})' if host else '',count=count))
-        effect_line=msg('quickstart_service.failed_effects',effects=' · '.join(sent)) if sent else None
+        # #928: a message the worker sent the owner after the last of those changes is named, by its
+        # time only (never its text), so the line does not read as if the owner had been told nothing.
+        told=[event for event in events if event.get('tool')=='tell_owner' and event.get('status')=='succeeded'
+              and (event['trace'].get('evidence') or {}).get('sent') is True and event['id']>last_effect]
+        when=self._owner_local_time(told[-1].get('created'))[-5:] if sent and told else ''
+        effect_line=(msg('quickstart_service.failed_effects_told',effects=' · '.join(sent),time=when) if when else
+                     msg('quickstart_service.failed_effects',effects=' · '.join(sent)) if sent else None)
         parts=(owner_cause(failures),effect_line,tried_statement(tried),stopped,
                report_statement(agency_report(job.get('message') or '',[],[],[],step)))
         return '\n'.join(part for part in parts if part) or None
@@ -7212,9 +7220,11 @@ class AgentService:
         with self.store.db() as db:
             return self.preparations.wait_refusal(db,job['id'],stamp,self_set_write=True) is None
 
-    def self_set_write(self, job, binding, connection, operation, target, names=(), *, effect=None, description=None, request=True, values=None):
+    def self_set_write(self, job, binding, connection, operation, target, names=(), *, effect=None, description=None, request=True, values=None,
+                       note='', require_note=False):
         from .self_set_writes import authorize
-        return authorize(self,job,binding,connection,operation,target,names,effect=effect,description=description,request=request,values=values)
+        return authorize(self,job,binding,connection,operation,target,names,effect=effect,description=description,request=request,values=values,
+                         note=note,require_note=require_note)
 
     def self_set_write_check(self, job, ticket, *, db=None):
         from .self_set_writes import recheck
@@ -7396,6 +7406,7 @@ class AgentService:
             def payment_autonomy(self,binding,description,**kwargs):
                 return service._authorize_payment_autonomy(job,binding,description,**kwargs)
             def request(self,binding,description):return service._request_browser_step(job,binding,description)
+            def unattended(self):return service.unattended_work(job)
             def payment_autonomy_notice(self,ticket):return service._deliver_payment_autonomy_notice(job,ticket)
             def payment_autonomy_release(self,authorization):return service._release_payment_autonomy(job,authorization)
             def api_effect_current(self):return not service.work_stopped(job['id'])
