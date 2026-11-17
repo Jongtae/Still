@@ -354,11 +354,44 @@ class ReadHandoffTests(HandoffTestCase):
         self.assertIn('Mac에서 계속', bubbles[0])
 
     def test_a_turn_whose_effect_call_raised_is_not_parked(self):
+        from personal_agent import agent_runtime
+        run_agent = agent_runtime.run_agent
+        dispatched = []
+        def failing_specialist(*args, **kwargs):
+            if kwargs.get('scope') == 'agent:reviewer':
+                dispatched.append(kwargs['scope'])
+                raise ValueError('Specialist transport lost its response')
+            return run_agent(*args, **kwargs)
+        # #744 intake distinguishes host validation (not_run) from a failure
+        # after delegation. Exercise the latter to keep the no-replay guard.
+        self.plan = [('delegate_agent', {'agent_id': 'reviewer', 'task': '계약서 검토'}),
+                     ('find_files', {'query': '계약서'})]
+        with mock.patch.object(agent_runtime, 'run_agent', side_effect=failing_specialist):
+            job_id, _ = self.ask('계약서 검토 맡기고 파일도 찾아줘')
+        self.assertEqual(dispatched, ['agent:reviewer'])
+        events = self.store.task_events(job_id)
+        self.assertTrue(any(row['tool'] == 'find_files' and row['status'] == 'succeeded' for row in events),
+                        'the worker continued to the missing-folder read, so parking was reachable')
+        failed = [row['trace'] for row in events if row['tool'] == 'delegate_agent' and row['status'] == 'failed']
+        self.assertEqual(len(failed), 1)
+        self.assertIsNot(failed[0].get('ran'), False)
+        self.assertNotEqual(self.job(job_id)['status'], 'awaiting_connection')
+        self.assertEqual(self.pending(), [])
+        self.assertTrue(self.store.outside_content_sources(job_id))
+
+    def test_a_missing_agent_is_refused_before_dispatch_and_may_park_for_a_folder(self):
+        # #744: an explicit host pre-dispatch refusal carries no outside data
+        # or effect. The existing continuation rule may safely resume it.
         self.plan = [('delegate_agent', {'agent_id': 'no-such-agent', 'task': '계약서 검토'}),
                      ('find_files', {'query': '계약서'})]
         job_id, _ = self.ask('계약서 검토 맡기고 파일도 찾아줘')
-        self.assertNotEqual(self.job(job_id)['status'], 'awaiting_connection')
-        self.assertEqual(self.pending(), [])
+        self.assertEqual(self.job(job_id)['status'], 'awaiting_connection')
+        self.assertEqual(len(self.pending()), 1)
+        self.assertEqual(self.store.outside_content_sources(job_id), [])
+        failed = [r['trace'] for r in self.store.task_events(job_id)
+                  if r['tool'] == 'delegate_agent' and r['status'] == 'failed']
+        self.assertEqual(len(failed), 1)
+        self.assertIs(failed[0]['ran'], False)
 
     def test_provenance_records_the_parked_state(self):
         job_id, _ = self.park_read()

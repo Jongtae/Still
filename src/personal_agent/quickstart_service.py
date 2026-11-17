@@ -2138,8 +2138,15 @@ class AgentService:
         except Exception as exc:  # a recall that fails leaves the brief as it was
             LOG.warning('owner words unavailable for the brief (%s)',type(exc).__name__)
             return ''
-        from .memory_service import conversation_block
-        return conversation_block(rows)
+        return self.conversation_block_for_work(self.current_work_id, rows)
+
+    def conversation_block_for_work(self, work_id, exchanges, **options):
+        """Render bounded recall and persist the marks of exactly the exchanges it carries."""
+        from .memory_service import conversation_block, conversation_block_refs
+        block=conversation_block(exchanges, **options)
+        self.store.inherit_outside_content(work_id, (row['work_id'] for row in conversation_block_refs(block)),
+                                          'earlier-exchanges')
+        return block
 
     def working_notes_notice_text(self, notification):
         """The notice of one revision while it is still the current document, or None (then it is not sent).
@@ -2335,6 +2342,12 @@ class AgentService:
         if status.get('route')==engine and status.get('state')=='unavailable':return False,status.get('reason') or 'refused'
         return True,''
 
+    def record_cli_native_intake(self, job_id, engine, step):
+        """Commit the adapter's live search/fetch observation before other consumers."""
+        source={'category':'native-search','operation':'web_search','engine':engine}
+        source.update({key:step[key] for key in ('query','url') if isinstance(step.get(key),str) and step[key]})
+        self.store.mark_outside_content(job_id,source)
+
     def record_cli_native_searches(self, job_id, engine, meta, record, enabled=True):
         """Durable events for the CLI's own web searches, in the web_search evidence shape (#678).
 
@@ -2443,8 +2456,11 @@ class AgentService:
         """Keep what this Work actually sent and what the worker reported.
 
         Redacted before persistence, bounded, local only; shown in developer
-        mode. Never allowed to break the turn itself.
+        mode. Source intake is enforced first; the optional audit below is best-effort.
         """
+        for search in fields.get('native_searches') or ():
+            if isinstance(search,dict):
+                self.store.mark_outside_content(job_id,{'category':'native-search','operation':'web_search'})
         # #1236 review: a connector read the CLI's own stream shows completing is the read that happened.
         reads=fields.pop('connector_reads',None)
         if isinstance(reads,list) and reads:
@@ -2577,13 +2593,27 @@ class AgentService:
                                            'conversation-history','unattributed-tool-evidence','owner-browser-session'})
 
     def record_turn_sent(self, job_id, *, sent, instructions, instructions_channel, private_sources=(), **fields):
-        """Record what a turn sent; computed inside the guard so it can never break the turn.
+        """Enforce source intake, then keep a best-effort record of what a turn sent.
 
         ``attempt_input`` (#825), when given, is this attempt's entry (``attempt``, ``route``, the
         ``offered`` / ``served`` / ``native`` tool identities): it is appended to ``attempt_inputs``
         with the instructions and prompt digests, as ``prepared`` until ``record_attempt_input``
         says whether the input was sent.  Returns the entry's ``ref`` (None without one).
         """
+        private_sources=tuple(private_sources)
+        for label in private_sources:
+            # The worker flattens history labels, which include write receipts.
+            # A generic private-store label is not evidence of outside intake.
+            if base_label(label)=='outside-content':
+                self.store.mark_outside_content(job_id,{'category':label,'operation':'prompt-context'})
+        # Both worker routes supply host-recorded references for material read
+        # into this prompt. Unlike audit labels, these identify actual intake.
+        for source in (fields.get('owner_information') or {}).get('spliced') or ():
+            self.store.mark_outside_content(job_id,{'category':'spliced-content',
+                                                  'operation':'prompt-context','source':source})
+        self.store.inherit_outside_content(job_id,
+            (row['work_id'] for row in (fields.get('owner_information') or {}).get('earlier_exchanges') or ()),
+            'earlier-exchanges')
         try:
             entry=fields.pop('attempt_input',None)
             withheld=sorted(set(private_sources)&self.PROVENANCE_WITHHELD_SOURCES)
@@ -2639,6 +2669,9 @@ class AgentService:
                 return value
             return clean(refs)
         except Exception:
+            # A real splice must retain its intake carrier before model use.
+            # Only the optional section audit can fail without stopping a turn.
+            if spliced:raise
             LOG.warning('owner information references unavailable')
             return None
 
@@ -4386,6 +4419,12 @@ class AgentService:
         messages read the same sources.  A failed write leaves the Work
         unrecorded, which later Works treat as restrictive.
         """
+        labels=tuple(labels)
+        for label in labels:
+            # Generic private labels also describe our own write receipts. Only
+            # the existing host mark propagates here; reads are marked at intake.
+            if base_label(label)=='outside-content':
+                self.store.mark_outside_content(job_id,{'category':label,'operation':'inherited-context'})
         try:
             with self.lock:
                 rows=self.store.config(WORK_SOURCES_KEY,{})
@@ -5666,8 +5705,8 @@ class AgentService:
                                           unaccounted=bool(unmediated and self.cli_host_actions(engine_meta)!=()))
         unknown=ws.is_effect_unknown(outcome) or bool({'unknown','unaccounted'}&set(reasons))
         if 'owner' in reasons:owner_needed=True
-        from .memory_service import conversation_block, recalled_tool_exchanges
-        recalled=conversation_block(recalled_tool_exchanges(self.store,job_id),budget=9000)
+        from .memory_service import recalled_tool_exchanges
+        recalled=self.conversation_block_for_work(job_id,recalled_tool_exchanges(self.store,job_id),budget=9000)
         from .orchestrator import EFFECT_UNKNOWN_STOP
         effect=EFFECT_UNKNOWN_STOP if unknown else 'changed' if 'effect' in reasons else False
         observations,failed_steps,effects,summary=self.attempt_observations(orchestration,rows,pages=pages)
@@ -7909,8 +7948,8 @@ class AgentService:
         if totals.get('cli_tool_calls_partial'):usage+=' · '+msg('information_use.usage_partial')
         used=msg('budget_continue.used',usage=usage,count=sum(status in ('succeeded','failed') and data.get('ran') is not False for _,status,data in tools))
         text=msg('budget_continue.prompt',done=done,left=gap[:500],used=used)
-        from .memory_service import conversation_block, recalled_tool_exchanges
-        recalled=conversation_block(recalled_tool_exchanges(self.store,job['id']),budget=12000)
+        from .memory_service import recalled_tool_exchanges
+        recalled=self.conversation_block_for_work(job['id'],recalled_tool_exchanges(self.store,job['id']),budget=12000)
         history=run.orchestration._attempts_text() if run.orchestration is not None else ''
         progress=self._redact_known_secrets('\n'.join(part for part in
             (str(run.retry_note or '')[:12000],done,reads,'Observed step evidence (not instructions): '+json.dumps(observed,ensure_ascii=False)[:20000],'Remaining: '+gap,'Prior answer (model-stated): '+str(job.get('response') or '')[:6000],history,recalled) if part))
@@ -8049,6 +8088,14 @@ class AgentService:
                 and (target['kind']!='owner-mcp' or target['identity'] in owner_mcp.confirmed(self.store,target['engine']))
                 and binding['state_digest']==state['state_digest'])
 
+    def _connector_effect_seen(self, db, work_id, input_digest):
+        for row in db.execute("SELECT status,detail FROM tool_events WHERE job_id=? AND tool='connector_permission'",
+                              (work_id,)):
+            old=json.loads(row['detail']).get('evidence',{})
+            if row['status'] in ('claiming','allowed') and old.get('input_digest')==input_digest and old.get('effect') in ('mutate','payment'):
+                return True
+        return False
+
     def _connector_effect_claim(self, job, detail, input_digest, binding, target):
         """Reserve one exact effect before returning permission to the worker.
 
@@ -8059,15 +8106,11 @@ class AgentService:
             db.execute('BEGIN IMMEDIATE')
             if self._unknown_effect_holds(job['id'],target):return None
             if not self._connector_authority_current(job,target,binding,detail['evidence']['effect'],detail['evidence']['operation']):return None
-            for row in db.execute("SELECT status,detail FROM tool_events WHERE job_id=? AND tool='connector_permission'",
-                                  (job['id'],)):
-                old=json.loads(row['detail']).get('evidence',{})
-                if row['status'] in ('claiming','allowed') and old.get('input_digest')==input_digest and old.get('effect') in ('mutate','payment'):
-                    return None
+            if self._connector_effect_seen(db,job['id'],input_digest):return None
             return db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                               (job['id'],'connector_permission','claiming',json.dumps(detail,ensure_ascii=False),time.time())).lastrowid
 
-    def connector_permission(self, job, arguments):
+    def connector_permission(self, job, arguments, *, native_intake_wait=None):
         """Decide one confirmed AI connector call under current Work authority.
 
         Reads follow reviewed trust; non-payment changes use pilot authority;
@@ -8133,8 +8176,14 @@ class AgentService:
                 binding=self._connector_action_binding(job,tool,values,target,effect)
             except (TypeError,ValueError):
                 return {'behavior':'deny','message':'실행할 정확한 입력을 확인할 수 없어 실행하지 않았습니다.'}
+            # Refuse a possibly dispatched effect before asking for any new approval.
+            # The same predicate is rechecked atomically when reserving dispatch.
+            with self.store.db() as db:
+                if self._connector_effect_seen(db,job['id'],input_digest):
+                    return {'behavior':'deny','message':'현재 권한이나 기존 실행 기록이 달라져 실행하지 않았습니다. 권한과 기존 결과를 확인하고 남은 일만 진행하세요.'}
             allow=effect=='mutate'
-            if allow and self.self_set_run(job):
+            if allow:
+                if native_intake_wait is not None:native_intake_wait()
                 try:
                     write_ticket=self.self_set_write(job,binding,f'connector:{engine}|{kind}|{identity}',operation,
                         json.dumps(values,ensure_ascii=False,sort_keys=True),(),effect=reversibility or 'irreversible',values=values)
@@ -8146,13 +8195,6 @@ class AgentService:
                 pending=self._browser_request(job['id']) or {}
                 allow=bool(autonomy) or pending.get('state')=='issued' and pending.get('digest')==self._browser_step_keys(binding)['digest']
                 if not allow:
-                    # Never offer another approval of a possibly dispatched effect.
-                    with self.store.db() as db:
-                        seen=any(row['status'] in ('claiming','allowed') and
-                                 json.loads(row['detail']).get('evidence',{}).get('input_digest')==input_digest
-                                 for row in db.execute("SELECT status,detail FROM tool_events WHERE job_id=? AND tool='connector_permission'",(job['id'],)))
-                    if seen:
-                        return {'behavior':'deny','message':'이 동작은 이미 실행을 허용한 기록이 있어 다시 실행하지 않았습니다. 기존 결과를 확인하고 남은 일만 진행하세요.'}
                     label=f'{service_name} / {operation}: '+json.dumps(values,ensure_ascii=False,sort_keys=True)
                     if len(label)>8000 or self._redact_known_secrets(label)!=label:
                         return {'behavior':'deny','message':'실행 내용을 비밀값 없이 온전히 확인할 수 없어 승인을 요청하지 않았습니다.'}
@@ -8210,6 +8252,11 @@ class AgentService:
                                ('denied',json.dumps(detail,ensure_ascii=False),event_id))
         if not allow:self.self_set_write_release(job,write_ticket)
         if allow:
+            if effect=='read':
+                # The CLI may consume the result before its stream observation arrives.
+                # Reserve the host mark at permission time; failures stay conservative.
+                self.store.mark_outside_content(job['id'],{'category':'ai-connection','engine':engine,
+                    'connection':identity,'operation':operation})
             return {'behavior':'allow','updatedInput':values if isinstance(values,dict) else {}}
         if effect=='payment':
             return {'behavior':'deny','message':'이 동작은 정확한 입력에 대한 소유자 승인을 기다립니다. 다른 방법으로 같은 동작을 실행하지 말고, 승인을 받은 뒤 남은 일을 이어가세요.'}
@@ -8332,6 +8379,8 @@ class AgentService:
                 db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                            (job_id,'connector_undecided','failed',json.dumps({'scope':'ai-connection','host_action':'connector_undecided',
                                                                               'evidence':evidence,'error':self.UNDECIDED_CALL_TEXT},ensure_ascii=False),time.time()))
+        for detail in observed:
+            self.store.mark_outside_content(job_id,{'category':'ai-connection', **detail['evidence']})
         for _, detail, status in observations:
             if detail.get('permission_event'):
                 with self.store.db() as db:
@@ -9164,9 +9213,10 @@ class AgentService:
         # ``current_work_id`` is per thread (#826) and this runs on the poll thread, so the
         # running Work is read from the store; one tool-capable worker runs at a time.
         job=self.store.job(task_id)
+        if not job or job.get('owner_typed')!=1:return False
         with self.store.db() as db:
             row=db.execute("SELECT id FROM jobs WHERE status='running' AND chat_id IS ? AND channel=? AND id!=? ORDER BY created DESC LIMIT 1",
-                           (job.get('chat_id') if job else None,job.get('channel') if job else None,task_id)).fetchone()
+                           (job.get('chat_id'),job.get('channel'),task_id)).fetchone()
         if not row:return False
         running=row['id']
         # #308 S1: the running Work's finish guard waits (bounded) for this judgment.

@@ -53,6 +53,10 @@ def fts_prefix_expression(query):
 #: developer's verification call) is still answered, with its owner authority, but never learned from.
 OWNER_WORDS_SQL="(j.owner_typed=1 AND (j.channel<>'web' OR j.owner_words=1))"
 
+# #744: current request plus recent owner turns. Sixteen owner turns cover at
+# least the worker's 16-message conversation window, without a lifetime scan.
+OWNER_FACT_TURNS = 16
+
 
 def owner_words_work(job):
     """Whether one Work row's text is the owner's own words (#423; ``OWNER_WORDS_SQL`` for one row)."""
@@ -140,6 +144,9 @@ class QuickStore:
             CREATE TABLE IF NOT EXISTS forgotten_messages(message_id INTEGER PRIMARY KEY, receipt_id TEXT NOT NULL, created REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY, request_key TEXT UNIQUE, message TEXT, channel TEXT, chat_id INTEGER, status TEXT, response TEXT, error TEXT, delivery TEXT, provider TEXT, model TEXT, created REAL);
             CREATE TABLE IF NOT EXISTS tool_events(id INTEGER PRIMARY KEY AUTOINCREMENT, job_id TEXT, tool TEXT, status TEXT, detail TEXT, created REAL);
+            -- Intake is authority state, never a dispatched tool or an effect receipt.
+            CREATE TABLE IF NOT EXISTS work_intake_sources(id INTEGER PRIMARY KEY AUTOINCREMENT, job_id TEXT NOT NULL, detail TEXT NOT NULL, created REAL NOT NULL);
+            CREATE INDEX IF NOT EXISTS work_intake_sources_job ON work_intake_sources(job_id,id);
             CREATE TABLE IF NOT EXISTS turn_provenance(job_id TEXT PRIMARY KEY, record TEXT NOT NULL, created REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS work_decisions(id INTEGER PRIMARY KEY AUTOINCREMENT, job_id TEXT NOT NULL, record TEXT NOT NULL, created REAL NOT NULL);
             CREATE INDEX IF NOT EXISTS work_decisions_job ON work_decisions(job_id, id);
@@ -248,6 +255,12 @@ class QuickStore:
             # #805: the durable post-Work owner-model upkeep queue; #998: keyed by (Work, kind).
             owner_model_migrate(db)
             db.executescript(OWNER_MODEL_TABLE_SQL)
+            # #744: move pre-merge marks out of the call ledger atomically. Keep
+            # every source and its order, including across concurrent openers.
+            for row in db.execute("SELECT job_id,detail,created FROM tool_events WHERE tool='outside_content' ORDER BY id").fetchall():
+                detail = self._outside_content_detail(json.loads(row['detail']))
+                self._insert_intake_source(db, row['job_id'], detail, row['created'])
+            db.execute("DELETE FROM tool_events WHERE tool='outside_content'")
             # #188: when a prompt's send completed, the time the owner could first have seen it.
             # Nullable and never backfilled: a prompt sent before this column existed has none.
             columns={row['name'] for row in db.execute('PRAGMA table_info(telegram_notifications)')}
@@ -325,7 +338,7 @@ class QuickStore:
                               ('basis','TEXT'),('evidence','TEXT'),('evidence_message','TEXT')):
                 if name not in memory_columns: db.execute(f'ALTER TABLE memories ADD COLUMN {name} {kind}')
             candidate_columns={row['name'] for row in db.execute('PRAGMA table_info(memory_candidates)')}
-            for name,kind in (('owner_key','TEXT'),('work_key','TEXT'),('content_digest','TEXT'),('decided','REAL'),('resulting_memory_id','TEXT')):
+            for name,kind in (('owner_key','TEXT'),('work_key','TEXT'),('content_digest','TEXT'),('decided','REAL'),('resulting_memory_id','TEXT'),('source','TEXT')):
                 if name not in candidate_columns: db.execute(f'ALTER TABLE memory_candidates ADD COLUMN {name} {kind}')
             approval_columns={row['name'] for row in db.execute('PRAGMA table_info(memory_approvals)')}
             for name in ('expected_memory_id','expected_memory_digest'):
@@ -1217,14 +1230,92 @@ class QuickStore:
     def held_notifications(self, kind):
         return self.telegram.held_notifications(kind)
 
-    def save_memory_candidate(self, job_id, memory_key, content, owner_id='local-owner', work_id=None):
+    def _outside_content_detail(self, source):
+        # Browser source references follow the browser's existing retention
+        # contract. Authentication query/fragment/userinfo stay in the window,
+        # never in durable intake, including marks migrated from the call log.
+        if source.get('category') == 'owner-browser-session' and 'url' in source:
+            from .browser_session import page_reference
+            source = {**source, 'url': page_reference(source['url'])}
+        from .current_context import redact_known_secrets
+        return redact_known_secrets(self, json.dumps(source, ensure_ascii=False, sort_keys=True))
+
+    def mark_outside_content(self, work_id, source):
+        """Host-only, monotone Work state, committed before a result reaches a worker.
+
+        Separate from the call ledger and bounded/best-effort turn audit. The
+        same SQLite store serves bridge processes and retries; no model setter.
+        """
+        detail = self._outside_content_detail(source)
+        with self.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            self._insert_intake_source(db, work_id, detail, time.time())
+
+    @staticmethod
+    def _insert_intake_source(db, work_id, detail, created):
+        # Caller holds the write transaction. Display text cannot be a UNIQUE
+        # key: portable redaction can make distinct source paths identical.
+        if not db.execute('SELECT 1 FROM work_intake_sources WHERE job_id=? AND detail=?',
+                          (work_id, detail)).fetchone():
+            db.execute('INSERT INTO work_intake_sources(job_id,detail,created) VALUES (?,?,?)',
+                       (work_id, detail, created))
+
+    def outside_content_sources(self, work_id):
+        with self.db() as db:
+            return [json.loads(row['detail']) for row in db.execute(
+                'SELECT detail FROM work_intake_sources WHERE job_id=? ORDER BY id',
+                (work_id,))]
+
+    def inherit_outside_content(self, work_id, source_work_ids, operation):
+        """Carry explicit host marks of recalled Works before exposing their content.
+
+        Generic private-source labels also describe writes, so only the durable
+        intake records qualify. A failed read or commit must withhold the recall.
+        """
+        if not work_id:return
+        for source_work_id in dict.fromkeys(source_work_ids):
+            if not source_work_id or source_work_id == work_id:continue
+            for source in self.outside_content_sources(source_work_id):
+                self.mark_outside_content(work_id, {
+                    'category': source.get('category', 'outside-content'),
+                    'operation': operation, 'source_work_id': source_work_id})
+
+    def owner_fact_words(self, work_id):
+        """#744: bounded authenticated owner words, newest first, never model output.
+
+        Only this conversation through this Work; forgotten turns and assistant
+        messages cannot authorize a save. At most OWNER_FACT_TURNS recent owner
+        turns are normalized, including the current request. Quoted owner text
+        is a documented limit.
+        """
+        job = self.job(work_id)
+        if not job:
+            return []
+        with self.db() as db:
+            rows = db.execute(
+                f"SELECT j.message FROM jobs j WHERE {OWNER_WORDS_SQL} AND j.channel=? "
+                f"AND j.chat_id IS ? AND j.workspace_id IS ? AND j.created<=? "
+                f"AND NOT {forgotten_turn('user', 'j.id')} "
+                "AND j.rowid<=(SELECT rowid FROM jobs WHERE id=?) "
+                "ORDER BY j.created DESC,j.rowid DESC LIMIT ?",
+                (job['channel'], job['chat_id'], job['workspace_id'], job['created'],
+                 work_id, OWNER_FACT_TURNS)).fetchall()
+        return [row['message'] for row in rows]
+
+    def owner_stated_value(self, work_id, value):
+        """Literal containment uses the same owner-only window as the paraphrase judgment."""
+        from .owner_model import normalized
+        value = normalized(value)
+        return bool(value) and any(value in normalized(words) for words in self.owner_fact_words(work_id))
+
+    def save_memory_candidate(self, job_id, memory_key, content, owner_id='local-owner', work_id=None, *, source=None):
         memory_key,content=self._memory_value(memory_key,content)
         work_id=job_id if work_id is None else work_id
         owner_key,work_key=self._memory_binding(owner_id),self._work_binding(work_id)
         candidate_id=str(uuid.uuid4());digest=self.memory_digest(memory_key,content)
         with self.db() as db:
-            db.execute('INSERT INTO memory_candidates(id,job_id,memory_key,content,created,state,owner_key,work_key,content_digest) VALUES (?,?,?,?,?,?,?,?,?)',
-                       (candidate_id,None,memory_key,content,time.time(),'pending',owner_key,work_key,digest))
+            db.execute('INSERT INTO memory_candidates(id,job_id,memory_key,content,created,state,owner_key,work_key,content_digest,source) VALUES (?,?,?,?,?,?,?,?,?,?)',
+                       (candidate_id,None,memory_key,content,time.time(),'pending',owner_key,work_key,digest,json.dumps(source) if source else None))
         return {'id':candidate_id,'memory_key':memory_key,'content':content,'content_digest':digest,'state':'pending','saved':False}
 
     def issue_memory_approval(self, job_id, owner_message, ttl=600):
@@ -1261,6 +1352,7 @@ class QuickStore:
         if not row:return None
         value=dict(row)
         result={key:value[key] for key in ('id','memory_key','content','created','state','content_digest','decided','resulting_memory_id')}
+        result['source']=json.loads(value['source']) if value.get('source') else None
         result['work_ref']='workref:'+value['work_key']
         return result
 
@@ -1273,10 +1365,10 @@ class QuickStore:
         if not include_decided:clauses.append("state='pending'")
         where=(' WHERE '+' AND '.join(clauses)) if clauses else ''
         with self.db() as db:
-            rows=db.execute('SELECT id,job_id,memory_key,content,created,state,content_digest,decided,resulting_memory_id,work_key FROM memory_candidates'+where+' ORDER BY created DESC,id DESC LIMIT ? OFFSET ?',(*parameters,limit,offset))
+            rows=db.execute('SELECT id,job_id,memory_key,content,created,state,content_digest,decided,resulting_memory_id,work_key,source FROM memory_candidates'+where+' ORDER BY created DESC,id DESC LIMIT ? OFFSET ?',(*parameters,limit,offset))
             results=[]
             for row in rows:
-                value=dict(row);value['work_ref']='workref:'+value.pop('work_key');results.append(value)
+                value=dict(row);value['source']=json.loads(value['source']) if value.get('source') else None;value['work_ref']='workref:'+value.pop('work_key');results.append(value)
             return results
 
     def current_memory(self, memory_key, owner_id='local-owner'):
@@ -1897,7 +1989,7 @@ class QuickStore:
                 if len(result)>=limit:break
         return result
 
-    def find_messages(self, query, *, limit=20, include_documents=False):
+    def find_messages(self, query, *, limit=20, include_documents=False, receiving_work_id=None):
         """#367: transcript rows the owner may ask to forget, newest first, as ``message:<id>`` refs.
 
         Unlike ``search_conversation`` (recall), this includes the recent window and every
@@ -1915,14 +2007,17 @@ class QuickStore:
                                                   if isinstance(value,str)]
         withheld=f"AND COALESCE(m.job_id,'') NOT IN ({','.join('?'*len(documents))}) " if documents else ''
         with self.db() as db:
-            rows=db.execute(f"""SELECT m.id,m.role,m.content,m.created FROM messages_search JOIN messages m ON m.id=messages_search.rowid
+            rows=db.execute(f"""SELECT m.id,m.job_id,m.role,m.content,m.created FROM messages_search JOIN messages m ON m.id=messages_search.rowid
                 WHERE messages_search MATCH ? AND m.role IN ('user','assistant') AND m.content<>''
                 AND m.id NOT IN ({FORGOTTEN_MESSAGE_IDS}) {withheld}ORDER BY m.id DESC LIMIT ?""",(expression,*documents,limit)).fetchall()
         # A row holding a retired secret is left out, as ``search_conversation`` does; current secrets are
         # redacted before clipping.
-        return [{'ref':f"message:{row['id']}",'role':'owner' if row['role']=='user' else 'assistant','created':row['created'],
+        rows=[row for row in rows if not self.holds_retired_secret(row['content'] or '')]
+        result=[{'ref':f"message:{row['id']}",'role':'owner' if row['role']=='user' else 'assistant','created':row['created'],
                  'excerpt':' '.join(redact_known_secrets(self,row['content'] or '').split())[:160]}
-                for row in rows if not self.holds_retired_secret(row['content'] or '')]
+                for row in rows]
+        self.inherit_outside_content(receiving_work_id, (row['job_id'] for row in rows), 'forget_record.find')
+        return result
 
     def work_memories(self, owner_id, work_id, limit=101):
         """The current Memory rows one Work wrote, oldest first (#918: what its notice shows).

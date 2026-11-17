@@ -781,6 +781,28 @@ def normalized(text):
     return ' '.join(str(text or '').split()).casefold()
 
 
+def owner_stated_fact(store, work_id, key, content, judgments=None, cancelled=None):
+    """Literal owner words first; one owner-only paraphrase judgment on a miss (#744).
+
+    Call only for a marked Work. Third-party writes never use this exception.
+    Unavailable or failed judgment cannot promote a proposed value.
+    """
+    if store.owner_stated_value(work_id, content):
+        return True, None
+    words = store.owner_fact_words(work_id) if judgments is not None else []
+    if not words:
+        return False, None
+    from .conversation_handoff import JUDGMENT_YES
+    try:
+        judged, decision = judgments.owner_stated_memory(words, key, content, work_id=work_id, cancelled=cancelled)
+    except Exception:
+        # The transport outcome is unknown; count conservatively under upkeep's cap.
+        from .decision import BinaryDecision, OUTCOME_UNAVAILABLE
+        return False, BinaryDecision(OUTCOME_UNAVAILABLE)
+    # Owner-word withdrawal during the call invalidates that call's evidence.
+    return judged.outcome == JUDGMENT_YES and store.owner_fact_words(work_id) == words, decision
+
+
 def profile_key(key):
     """Whether ``key`` is a well-formed ``profile.`` Memory key."""
     return (isinstance(key, str) and key.startswith(PROFILE_PREFIX) and len(PROFILE_PREFIX) < len(key) <= MAX_KEY_CHARS
@@ -1308,7 +1330,11 @@ class Upkeep:
             return STATE_UNAVAILABLE, calls, EVENT_UNAVAILABLE, detail
         known, pending = self.known_values(MEMORY_OWNER, job['id'])
         kept, dropped = validate(data.get('proposals'), known, pending, noted_keys, request=request)
-        applied, stopped = self._apply_facts(kept, job, dropped)
+        fact_calls = [calls]
+        applied, stopped = self._apply_facts(kept, job, dropped, judgments=judgments,
+                                           cancelled=cancelled, judgment_calls=fact_calls)
+        calls = sum(fact_calls)
+        detail['owner_fact_calls'] = sum(fact_calls[1:])
         detail.update(proposed=len(data.get('proposals') or []), applied=applied, dropped=dropped, stopped=stopped)
         note = data.get('situation')
         if note_situation is not None and isinstance(note, str) and note.strip() and stopped != STOPPED_PAUSED:
@@ -1321,8 +1347,9 @@ class Upkeep:
                                        'chars': result.get('chars')}
         return STATE_DONE, calls, EVENT_RECORDED, detail
 
-    def _apply_facts(self, kept, job, dropped, ends_after=None, origin=None, source_works=None):
-        """Save the kept proposals at once as current Memory attributed to ``job``; returns ``(applied, stopped)``.
+    def _apply_facts(self, kept, job, dropped, ends_after=None, origin=None, source_works=None,
+                     judgments=None, cancelled=None, judgment_calls=None):
+        """Save eligible proposals or sourced candidates; returns ``(applied, stopped)``.
 
         Shared by upkeep and the dream (#402).  ``dropped`` is extended in place.  ``ends_after``
         (the dream's claim time) widens which current rows a proposal may end: any row that existed
@@ -1348,6 +1375,27 @@ class Upkeep:
                 # #794 phase 3: upkeep reprocesses a source Work; a value the owner forgot is not re-derived from it.
                 dropped.append({'key_digest': key_digest(key), 'reason': FORGOTTEN_VALUE})
                 continue
+            # Single-Work upkeep sees the answer, so its unsupported facts are
+            # candidates. Dream input excludes marked answers before either AI
+            # call, retaining the existing owner-only learning/quiet diary path.
+            sources = self.store.outside_content_sources(job['id']) if origin != ORIGIN_DREAM else []
+            if sources:
+                stated, decision = owner_stated_fact(self.store, job['id'], key, content,
+                    judgments=judgments if _left > 0 else None, cancelled=cancelled)
+                if decision is not None:
+                    used = int(call_sent(decision))
+                    if judgment_calls is not None:
+                        judgment_calls.append(used)
+                        self.count(job['id'], sum(judgment_calls))
+                    if self.allowance(self.clock())[1] == STOPPED_PAUSED:
+                        stopped = STOPPED_PAUSED
+                        dropped.extend({'key_digest': key_digest(rest['memory_key']), 'reason': STOPPED_PAUSED}
+                                       for rest in kept[index:])
+                        break
+                if not stated:
+                    candidate = self.store.save_memory_candidate(job['id'], key, content, source=sources)
+                    applied.append({'outcome':APPLIED_CANDIDATE, 'candidate_id':candidate['id'], 'memory_key':key})
+                    continue
             row = {'memory_key': key, 'category': item['category'], 'kind': item['kind'],
                    'content_chars': len(content), 'supersedes_key': item['supersedes_key'] or None,
                    'valid_until': item['valid_until'] or None}
@@ -1549,6 +1597,25 @@ class Upkeep:
         notes = WorkingNotes(self.store, self.clock)
         if not notes.migrated():
             return STATE_UNAVAILABLE, 0, EVENT_UNAVAILABLE, {'sent': False, 'stopped': STOPPED_MIGRATION}
+        # #744: the look back learns only from owner words for marked source
+        # Works. Filter before gather and synthesis, not from the model's later
+        # citations. Unmarked answers retain their existing learning behavior.
+        marked = {work for work in [*(source_works or {}).values(),
+                  *(work for pair in (earlier_works or {}).values() for work in pair if work)]
+                  if self.store.outside_content_sources(work)}
+        turns = [(ref, owner, '' if (source_works or {}).get(ref) in marked else answer, *rest)
+                 for ref, owner, answer, *rest in turns]
+        from .quickstart_store import owner_words_work
+        clean_earlier = []
+        for ref, owner, answer, when, outcome, correction in earlier:
+            works = (earlier_works or {}).get(ref, ())
+            if any(work in marked for work in works):
+                answer = ''
+                # Later correction text is eligible only on the owner channel.
+                if len(works) < 2 or not owner_words_work(self.store.job(works[1])):
+                    correction = ''
+            clean_earlier.append((ref, owner, answer, when, outcome, correction))
+        earlier = clean_earlier
         line_input = lines
         lines, refs, turn_days = dream_turn_input(turns)
         # #496: a separately bounded lesson-only block. Its refs never enter the facts or suggestions gates.

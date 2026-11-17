@@ -994,11 +994,11 @@ def live_native_search_steps(engine_id, record):
     The same official event shapes ``native_searches`` reads after the run:
     Codex ``item.started``/``item.updated``/``item.completed`` of an item with
     ``type == 'web_search'``; Claude Code an assistant ``tool_use`` named
-    ``WebSearch`` (running) and the user record's ``tool_result`` for it
+    ``WebSearch``/``WebFetch`` (running) and the user record's ``tool_result`` for it
     (done).  Returns ``[{'id', 'state': 'running'|'done', 'query'}]``; the
-    query is the CLI's own, unredacted - the consumer redacts it exactly as
-    the recorded event.  Nothing here is Evidence: the durable events are
-    still written from ``cli_metadata`` after the run.
+    query and optional URL are the CLI's own, unredacted - the consumers
+    redact them. These observations also feed host intake before progress;
+    detailed search Evidence is still written from ``cli_metadata`` later.
     """
     if not isinstance(record, dict):
         return []
@@ -1012,7 +1012,8 @@ def live_native_search_steps(engine_id, record):
         queries = [value for value in [item.get('query'), action.get('query'), *(action.get('queries') or [])]
                    if isinstance(value, str) and value.strip()]
         return [{'id': str(item.get('id') or '')[:80], 'state': 'done' if kind == 'item.completed' else 'running',
-                 'query': queries[0][:200] if queries else ''}]
+                 'query': queries[0][:200] if queries else '',
+                 **({'url':action['url'][:2000]} if isinstance(action.get('url'),str) else {})}]
     if engine_id == 'claude-code':
         message = record.get('message') if isinstance(record.get('message'), dict) else {}
         content = message.get('content') if isinstance(message.get('content'), list) else []
@@ -1020,10 +1021,12 @@ def live_native_search_steps(engine_id, record):
         for part in content:
             if not isinstance(part, dict):
                 continue
-            if record.get('type') == 'assistant' and part.get('type') == 'tool_use' and part.get('name') == CLAUDE_NATIVE_SEARCH_TOOL:
-                query = part.get('input', {}).get('query') if isinstance(part.get('input'), dict) else None
+            if record.get('type') == 'assistant' and part.get('type') == 'tool_use' and part.get('name') in (CLAUDE_NATIVE_SEARCH_TOOL, CLAUDE_NATIVE_FETCH_TOOL):
+                values = part.get('input') if isinstance(part.get('input'), dict) else {}
+                query = values.get('query')
                 steps.append({'id': str(part.get('id') or '')[:80], 'state': 'running',
-                              'query': query[:200] if isinstance(query, str) else ''})
+                              'query': query[:200] if isinstance(query, str) else '',
+                              **({'url':values['url'][:2000]} if isinstance(values.get('url'),str) else {})})
             elif record.get('type') == 'user' and part.get('type') == 'tool_result':
                 steps.append({'id': str(part.get('tool_use_id') or '')[:80], 'state': 'done', 'query': ''})
         return steps
@@ -1055,15 +1058,22 @@ def live_sub_agent_steps(engine_id, record):
     return steps
 
 
-def connector_observation_reader(connector_digest=None):
+def connector_observation_reader(connector_digest=None, *, starts=False):
     """The existing CLI result correlation, shared by live and final observations."""
     pending={}
+    started=set()
+    def admitted(tool):
+        return owner_mcp.tool_server(tool) or starts and isinstance(tool,str) and tool.startswith('mcp__agentos__')
     def identity(tool, values, call_id):
         if not callable(connector_digest):return {}
         try:
             if isinstance(values,str):values=json.loads(values)
             result={}
-            if isinstance(values,dict):result['input_digest']=connector_digest(tool,values)
+            if isinstance(values,dict):
+                if tool.startswith('mcp__agentos__'):
+                    from .agent_runtime import split_status
+                    values,_=split_status(values)
+                result['input_digest']=connector_digest(tool,values)
             if isinstance(call_id,str) and 0<len(call_id)<=256:
                 result['call_ref']=connector_digest('call-id:'+tool,{'id':call_id})
             return {key:value for key,value in result.items() if isinstance(value,str) and re.fullmatch(r'[0-9a-f]{64}',value)}
@@ -1074,40 +1084,164 @@ def connector_observation_reader(connector_digest=None):
         if isinstance(message,dict) and isinstance(message.get('content'),list):
             for part in message['content']:
                 if not isinstance(part,dict):continue
-                if record.get('type')=='assistant' and part.get('type')=='tool_use' and owner_mcp.tool_server(part.get('name')):
+                if record.get('type')=='assistant' and part.get('type')=='tool_use' and admitted(part.get('name')):
                     ref=part.get('id')
                     if isinstance(ref,str) and len(pending)<CLI_TOOL_CALLS_KEPT:
                         pending[ref]={'tool':part['name'],**identity(part['name'],part.get('input'),ref)}
+                        if starts and ref not in started:
+                            started.add(ref)
+                            calls.append({**pending[ref],'status':'started'})
                 elif record.get('type')=='user' and part.get('type')=='tool_result' and isinstance(part.get('tool_use_id'),str) and part.get('tool_use_id') in pending:
                     calls.append({**pending.pop(part['tool_use_id']),'status':'failed' if part.get('is_error') else 'succeeded'})
         item=record.get('item')
-        if isinstance(item,dict) and record.get('type')=='item.completed' and item.get('type')=='mcp_tool_call':
+        if isinstance(item,dict) and record.get('type') in ('item.started','item.updated','item.completed') and item.get('type')=='mcp_tool_call':
             tool=f"mcp__{item.get('server')}__{item.get('tool')}"
-            if owner_mcp.tool_server(tool):
-                calls.append({'tool':tool,**identity(tool,item.get('arguments'),item.get('id')),
+            if admitted(tool):
+                call={'tool':tool,**identity(tool,item.get('arguments'),item.get('id'))}
+                ref=call.get('call_ref')
+                if starts and ref and ref not in started and len(started)<CLI_TOOL_CALLS_KEPT:
+                    started.add(ref)
+                    calls.append({**call,'status':'started'})
+                if record.get('type')=='item.completed':
+                    calls.append({**call,
                               'status':'failed' if item.get('error') or item.get('status')!='completed' else 'succeeded'})
         return calls
     return observe
 
 
-def live_progress_reader(engine_id, progress, connector_observed=None, connector_digest=None):
+class NativeSearchIntakeError(ExecutionError):
+    """A failed authority write must stop the stream, unlike presentation failures."""
+
+
+def live_progress_reader(engine_id, progress, connector_observed=None, connector_digest=None, native_observed=None,
+                         native_barrier=None):
     """Read CLI observations during execution; a missing observation never authorizes a repeat."""
-    observe=connector_observation_reader(connector_digest)
+    observe=connector_observation_reader(connector_digest, starts=native_barrier is not None and native_barrier.enabled)
+    native_calls={}
     def on_line(line):
         if len(line) > MAX_OUTPUT_BYTES:return
         try:record=json.loads(line)
         except ValueError:return
         if not isinstance(record,dict):return
+        native_steps=live_native_search_steps(engine_id,record)
+        # Claude's generic tool_result has no tool name: only a previously
+        # observed native tool_use makes it a search/fetch completion.
+        for step in native_steps:
+            if engine_id=='claude-code' and step['state']=='done':
+                source=native_calls.get(step['id'])
+                if source is None:continue
+            else:
+                source=step
+                if engine_id=='claude-code':native_calls[step['id']]=step
+            if callable(native_observed):
+                try:native_observed(source)
+                except Exception:
+                    raise NativeSearchIntakeError(msg('agent_runtime.context_unverified'),failure_class='context_unverified') from None
+        calls=[call for call in observe(record) if call.get('call_ref')]
+        if native_barrier is not None:
+            native_barrier.observe(calls)
         if callable(connector_observed):
-            calls=[call for call in observe(record) if call.get('call_ref')]
+            calls=[call for call in calls if call.get('status')!='started' and owner_mcp.tool_server(call.get('tool'))]
             if calls:
                 try:connector_observed(calls)
                 except Exception:LOG.debug('connector observation sink failed',exc_info=False)
         if callable(progress):
-            for step in [*live_native_search_steps(engine_id, record), *live_sub_agent_steps(engine_id, record)]:
+            for step in [*native_steps, *live_sub_agent_steps(engine_id, record)]:
                 try:progress(step)
                 except Exception:LOG.debug('live progress sink failed',exc_info=False)
     return on_line
+
+
+# #744: bound cross-channel synchronization, not an additional owner question.
+NATIVE_INTAKE_WAIT_SECONDS = 5.0
+
+
+class NativeIntakeBarrier:
+    """One CLI attempt's start observations, using the connector identity seam.
+
+    The adapter activates this before process launch. Each invocation reserves
+    its occurrence of the exact keyed input; repeated identical calls cannot
+    borrow an earlier start. No model-supplied id can release the barrier.
+    """
+    def __init__(self, digest, timed_out, *, clock=None, marked=lambda: False):
+        self.digest, self.timed_out = digest, timed_out
+        self.marked = marked
+        self.clock = clock or time.monotonic
+        self.condition = threading.Condition()
+        self.local = threading.local()
+        self.active = {}
+        self.observed, self.requested, self.refs = {}, {}, set()
+        self.enabled = False
+
+    @contextmanager
+    def call(self, tool, values):
+        if not self.enabled:
+            yield
+            return
+        previous = getattr(self.local, 'call', None)
+        key = (tool, self.digest(tool, values))
+        with self.condition:
+            ordinal = self.requested.get(key, 0) + 1
+            self.requested[key] = ordinal
+        self.local.call = call = [key, ordinal, False]
+        with self.condition:
+            self.active[id(call)] = call
+        try:
+            yield
+        finally:
+            with self.condition:
+                self.active.pop(id(call), None)
+            self.local.call = previous
+
+    def current(self):
+        call = getattr(self.local, 'call', None)
+        if call is not None:
+            return call
+        # A code-run broker makes its effect decision on a helper thread while
+        # the relayed call is blocked. An ambiguous concurrent scope cannot
+        # borrow another call's start: it takes the timeout fallback instead.
+        with self.condition:
+            if len(self.active) == 1:
+                return next(iter(self.active.values()))
+            if self.active:
+                return [('unmatched-bridge-call', None), 1, False]
+        return None
+
+    def pending(self):
+        call = self.current()
+        return self.enabled and call is not None and not call[2]
+
+    def observe(self, calls):
+        if not self.enabled:
+            return
+        with self.condition:
+            for call in calls:
+                ref = call.get('call_ref')
+                key = (call.get('tool'), call.get('input_digest'))
+                if call.get('status')!='started' or not ref or not key[1] or ref in self.refs:
+                    continue
+                self.refs.add(ref)
+                self.observed[key] = self.observed.get(key, 0) + 1
+            self.condition.notify_all()
+
+    def wait(self):
+        if not self.pending():
+            return
+        call = self.current()
+        if self.marked():
+            call[2] = True
+            return
+        key, ordinal, _ = call
+        deadline = self.clock() + NATIVE_INTAKE_WAIT_SECONDS
+        with self.condition:
+            while self.observed.get(key, 0) < ordinal:
+                remaining = deadline - self.clock()
+                if remaining <= 0:
+                    # Persistence failure propagates: no authority decision ran.
+                    self.timed_out(key[0])
+                    break
+                self.condition.wait(remaining)
+            call[2] = True
 AUTH_HINT = '엔진 로그인이 필요합니다. 설정 › AI 연결에서 로그인을 확인하세요.'
 
 
@@ -1565,6 +1699,8 @@ class _StreamedOutput:
         if self.on_line is not None:
             try:
                 self.on_line(text)
+            except NativeSearchIntakeError:
+                raise
             except Exception:  # presentation must never fail the run
                 pass
         if self.answered is not None and not self.is_answered:
@@ -1715,18 +1851,20 @@ def _bounded_run(runner, argv, *, cwd, env, timeout, interrupted, on_line, sessi
     _observe(on_spawn)
     if session is not None:
         os.set_blocking(process.stdin.fileno(), False)
-        on_line = _both(session.on_line, on_line)
+        # Intake must precede session acknowledgements as well as presentation.
+        on_line = _both(on_line, session.on_line) if on_line is not None else session.on_line
     streamed = _StreamedOutput(process, on_line, limit=MAX_STREAM_BYTES, answered=answered if session is None else None)
     try:
         try:
             return _bounded_wait(process, streamed, argv, timeout, interrupted, session, on_reaped, handed)
-        except StreamLimitExceeded:
+        except (StreamLimitExceeded, NativeSearchIntakeError) as exc:
             kill_process_group(process)
             streamed.close()
             try:
                 process.wait(timeout=KILL_DRAIN_SECONDS)
             except subprocess.TimeoutExpired:
                 pass
+            if isinstance(exc,NativeSearchIntakeError):raise
             LOG.warning('engine output passed the stream bound; process group killed')
             raise ExecutionError(STREAM_TOO_LARGE, failure_class='invalid-output') from None
     finally:
@@ -1904,6 +2042,15 @@ class AgentOSMcpTools:
         host_action = ((getattr(self.capabilities, 'tools', {}) or {}).get(name) or {}).get('host_action')
         if host_action in HOST_RELAYED_ACTIONS and self.relay is not None:
             return self.relay.call(name, arguments)
+        barrier = getattr(self, 'native_intake_barrier', None)
+        if barrier is not None:
+            with barrier.call('mcp__agentos__'+name, arguments):
+                # Memory reads the mark here; external mutations read it at
+                # self_set_writes (including code-run broker requests). Local
+                # receipts/settings drafts have no mark-dependent authority.
+                if host_action == 'save_memory':
+                    barrier.wait()
+                return self.capabilities.execute(name, arguments)
         # Capabilities is Still-owned and applies its normal validation,
         # document boundary, egress, evidence and idempotency rules.
         return self.capabilities.execute(name, arguments)
@@ -3210,6 +3357,9 @@ class BoundedExecutionAdapter:
                                            if session_route and self._stream_input.get(session_identity) is not False else None)
             # #678: a native-search turn's bridge lets the CLI's own search replace its search tools.
             native_search = bool(getattr(tools, 'native_search', False)) and profile == BOUNDED_PROFILE and cloud is None
+            barrier = getattr(tools, 'native_intake_barrier', None)
+            if barrier is not None:
+                barrier.enabled = native_search
             # #701: only the trusted-local route is ever given the service's browser relay.
             relay = getattr(tools, 'browser_relay', None) if profile == BOUNDED_PROFILE or peer_work else None
             # #1197: the owner's AI connections, only for Claude Code on the trusted-local
@@ -3340,16 +3490,19 @@ class BoundedExecutionAdapter:
                 nonlocal attempts
                 remaining = timeout if attempts == 0 else max(0.01, timeout - (time.monotonic() - started))
                 attempts += 1
+                progress = getattr(tools, 'progress', None)
+                observed = getattr(tools, 'connector_observed', None)
+                native_observed = getattr(tools, 'native_search_observed', None)
+                on_line = (live_progress_reader(engine_id, progress, observed,
+                            getattr(tools, 'connector_input_digest', None), native_observed, barrier)
+                           if callable(progress) or callable(observed) or callable(native_observed) else None)
                 if self.runner is subprocess.run:
-                    progress = getattr(tools, 'progress', None)
-                    observed = getattr(tools, 'connector_observed', None)
                     return bounded_run(self.runner, argv, cwd=run_dir, env=env, timeout=remaining,
                                        interrupted=interrupted, session=session,
-                                       on_line=live_progress_reader(engine_id, progress, observed,
-                                                                  getattr(tools, 'connector_input_digest', None))
-                                       if callable(progress) or callable(observed) else None)
+                                       on_line=on_line)
                 return self.runner(argv, cwd=run_dir, env=env,
                                    **({'input': session.opening()} if session is not None else {'stdin': subprocess.DEVNULL}),
+                                   **({'on_line': on_line} if _runner_accepts(self.runner, 'on_line') else {}),
                                    capture_output=True, text=True, timeout=remaining, shell=False)
 
             try:
