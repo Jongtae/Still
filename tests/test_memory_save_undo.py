@@ -695,6 +695,13 @@ class NoticeOffByDefault(TelegramHarness):
                 caps.execute('forget_record', {'action': 'revert', **({'ref': ref} if ref else {})})
             self.assertEqual(refused.exception.code, code)
         self.assertEqual([m['content'] for m in self.store.memories()], [VALUE], 'a refused revert changes nothing')
+        # #955 review: a Work that undid a save is the owner managing state; no lesson is drawn from it.
+        from personal_agent.agent_runtime import evidence_summary
+        with self.store.db() as db:
+            db.execute("INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)",
+                       (job_id, 'forget_record', 'succeeded',
+                        json.dumps({'evidence': evidence_summary('forget_record', result)}), 1.0))
+        self.assertTrue(self.store.managed_owner_state(job_id))
 
 
 class SecretsNeverEnterMemory(unittest.TestCase):
