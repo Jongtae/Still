@@ -1,15 +1,21 @@
 """#921 PR-6: worker-written search terms, real SQLite, fake transports only."""
 
+import io
 import json
+import sys
 import time
 
 import pytest
 
 from personal_agent.agent_runtime import (
     DEFINITIONS, MEMORY_OWNER, SAVE_MEMORY_ARGUMENTS, SECRET_SHAPED_VALUE,
-    THIRD_PARTY_MEMORY_WRITE, Capabilities, check_arguments, run_agent, worker_result,
+    THIRD_PARTY_MEMORY_WRITE, Capabilities, check_arguments, recorded_arguments,
+    run_agent, trail_steps, worker_result,
 )
+from personal_agent import information_use, mcp_bridge
 from personal_agent.bounded_execution import AgentOSMcpTools, CLI_PROFILES, profile_mcp_tools
+from personal_agent.cli_browser_relay import SECRET_REDACTION
+from personal_agent.current_context import redact_known_secrets
 from personal_agent.manifests import runtime_packages
 from personal_agent.memory_service import MemoryService
 from personal_agent.memory_terms import eligible, parse_meta
@@ -264,3 +270,122 @@ def test_cli_facade_accepts_terms_and_uses_the_same_handler(state):
     assert row['retrieval_terms'] == TERMS
     assert parse_meta(row['retrieval_terms_meta'])['model'] == 'cli-fixture'
     assert hits(store, 'beverage') == [result['id']]
+
+
+@pytest.fixture(params=['direct-api', 'cli-host'])
+def recorded_save(state, monkeypatch, request):
+    """Real dispatch and SQLite records; only worker/relay transports are fixtures."""
+    store, work, caps = state
+    caps.secret_redactor = lambda text: redact_known_secrets(store, text)
+
+    def record(tool, status, detail):
+        with store.db() as db:
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       (work, tool, status, detail, NOW))
+
+    caps.record = record
+
+    def save(arguments):
+        if request.param == 'direct-api':
+            responses = iter([
+                {'tool_calls': [{'id': 'save', 'type': 'function', 'function': {
+                    'name': 'save_memory', 'arguments': json.dumps(arguments),
+                }}]},
+                {'content': 'Done.'},
+            ])
+
+            def transport(*args, **kwargs):
+                return {'choices': [{'message': next(responses, {'content': 'Done.'})}]}
+
+            run_agent(ModelAdapter(transport), CFG, '', [{'role': 'user', 'content': 'Remember my drink.'}],
+                      '', caps, record)
+        else:
+            # Exercise stdio MCP framing, the bridge's durable records and the host facade,
+            # with an in-process relay transport (no socket or CLI process).
+            host = AgentOSMcpTools(caps)
+
+            class Relay:
+                def __init__(self, directory):
+                    pass
+
+                def call(self, name, args):
+                    if name == SECRET_REDACTION:
+                        return redact_known_secrets(store, args['text'])
+                    return host.call(name, args)
+
+            with store.db() as db:
+                db.execute("UPDATE jobs SET status='running' WHERE id=?", (work,))
+            requests = [
+                {'jsonrpc': '2.0', 'id': 0, 'method': 'initialize', 'params': {}},
+                {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call',
+                 'params': {'name': 'save_memory', 'arguments': arguments}},
+            ]
+            output = io.StringIO()
+            with monkeypatch.context() as patch:
+                patch.setattr(mcp_bridge, 'RelayClient', Relay)
+                patch.setattr(sys, 'stdin', io.StringIO(''.join(json.dumps(row) + '\n' for row in requests)))
+                patch.setattr(sys, 'stdout', output)
+                mcp_bridge.serve(str(store.root), work, browser_relay='fixture', relay_browser=False)
+            reply = next(row for row in map(json.loads, output.getvalue().splitlines()) if row['id'] == 1)
+            assert 'error' not in reply and not reply['result'].get('isError')
+
+        with store.db() as db:
+            events = [dict(row) for row in db.execute(
+                'SELECT tool,status,detail FROM tool_events WHERE job_id=? ORDER BY id', (work,))]
+        saves = [row for row in events if row['tool'] == 'save_memory']
+        assert len(saves) == 2 and saves[0]['status'] == 'running'
+        assert saves[1]['status'] in ('succeeded', 'failed')
+        if request.param == 'direct-api':
+            assert any(row['tool'] == 'model' and row['status'] == 'responded' for row in events)
+        return events
+
+    return save
+
+
+@pytest.mark.parametrize('field', ['memory_key', 'content', 'terms'])
+@pytest.mark.parametrize('secret', ['StoredSecret921Value', 'sk-proj-abcdefghijklmnopqrstuvwxyz123456'])
+def test_save_secrets_never_reach_durable_call_records(state, recorded_save, field, secret):
+    store, work, _ = state
+    # Only the non-credential-shaped value is stored: shape redaction must work independently.
+    if secret == 'StoredSecret921Value':
+        store.secret('telegram_token', secret)
+    events = recorded_save({'memory_key': KEY, 'content': VALUE, 'terms': TERMS,
+                            field: 'before ' + secret + ' after'})
+    for event in events:
+        assert secret not in event['detail'], (event['tool'], event['status'])
+    projected = trail_steps([(row['tool'], row['status'], row['detail']) for row in events])
+    assert secret not in json.dumps(projected, ensure_ascii=False)
+    # No display-time redactor: the durable records themselves must already be safe.
+    audit = information_use.work_information_use(store, work)
+    assert audit['results'] and secret not in json.dumps(audit, ensure_ascii=False)
+    if field == 'terms':
+        [row] = store.memories()
+        assert row['content'] == VALUE and raw_row(store, row['id'])['retrieval_terms'] is None
+    else:
+        assert store.memories() == []
+
+
+def test_an_ordinary_save_keeps_readable_recorded_arguments(state, recorded_save):
+    arguments = {'memory_key': KEY, 'content': VALUE, 'terms': TERMS}
+    events = recorded_save(arguments)
+    assert state[0].memories()[0]['content'] == VALUE
+    for event in events:
+        detail = json.loads(event['detail'])
+        if event['tool'] == 'model' and event['status'] == 'responded' and detail['tool_calls']:
+            assert json.loads(detail['tool_calls'][0]['function']['arguments']) == arguments
+        if 'arguments' in detail:
+            assert detail['arguments'] == arguments
+    assert recorded_arguments('save_memory', arguments, state[2].judgment_text) == arguments
+
+
+@pytest.mark.parametrize('redactor', [None, 'failing'])
+def test_save_recording_without_a_working_redactor_uses_length_placeholders(redactor):
+    arguments = {'memory_key': KEY, 'content': VALUE, 'terms': TERMS, 'correction': True}
+
+    def failing(text):
+        raise ValueError('redaction unavailable')
+
+    recorded = recorded_arguments('save_memory', arguments, failing if redactor else None)
+    assert recorded == {**{field: f'[가림: {len(arguments[field])}자]'
+                          for field in ('memory_key', 'content', 'terms')}, 'correction': True}
+    assert arguments == {'memory_key': KEY, 'content': VALUE, 'terms': TERMS, 'correction': True}

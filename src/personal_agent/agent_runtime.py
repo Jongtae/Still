@@ -175,6 +175,9 @@ SCRUBBED_ARGUMENTS={'schedule_preparation':('goal','title','offer'),
                     # contain a stored credential; scrub every durable call record.
                     'search_memory':'query',
                     'search_conversation':'query',
+                    # Memory saves are model-authored owner text and may contain a stored credential;
+                    # scrub every durable call record, so a refused value is never recorded verbatim.
+                    'save_memory':('memory_key','content','terms'),
                     # #367 review: the forget search is owner text too.
                     'forget_record':'query',
                     # #774: the reason the owner reads in the Telegram prompt.
