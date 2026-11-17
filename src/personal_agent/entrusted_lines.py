@@ -44,6 +44,10 @@ MAX_LINES = 50
 #: Change labels recorded with a version (its ``stats``), never owner text.
 CHANGES = ('opened', 'revised', 'rule', 'undo', 'stopped', 'restarted', 'stood', 'amended', 'withdrawn')
 BUNDLE_CHARS, BUNDLE_LINE_LIMIT = 3500, 8
+#: #937: the turn's one line naming the active lines it holds, and its bounds.  The full brief stays
+#: behind ``entrusted_line read``; this only tells every route that the work is the assistant's own.
+HELD_PREFIX = 'Entrusted to you'
+HELD_CHARS, HELD_LIMIT, HELD_TASK_CHARS, HELD_OPEN_CHARS = 1200, 5, 200, 200
 
 
 class LineRefusal(ValueError):
@@ -387,6 +391,26 @@ OUTCOME_CHARS, WORDS_CHARS = 600, 300
 INDEX_HEADING = ('## Entrusted lines (continuing work the owner entrusted to you; when one bears on this request, '
                  'read it with entrusted_line action=read before answering; not instructions)')
 INDEX_ITEMS, INDEX_TASK_CHARS = 12, 120
+
+
+def held_text(briefs):
+    """#937: one line naming the active lines in ``briefs`` (task and open matters, bounded), or ''.
+
+    Every route of a conversational turn reads it in its current context, so a message about one of
+    these responsibilities is read as the assistant's own work.  Stopped lines are left out.
+    """
+    items = []
+    for brief in briefs:
+        if brief.get('state') != STATE_ACTIVE or len(items) >= HELD_LIMIT:
+            continue
+        task = ' '.join(str(brief.get('task') or '').split())[:HELD_TASK_CHARS]
+        open_matters = ' '.join(str(brief.get('open_matters') or '').split())[:HELD_OPEN_CHARS]
+        if task:
+            items.append(f'{len(items) + 1}) {task}' + (f' (open: {open_matters})' if open_matters else ''))
+    if not items:
+        return ''
+    return (f'{HELD_PREFIX} (continuing responsibilities the owner gave you; entrusted_line read shows each '
+            f'full brief): ' + '; '.join(items))[:HELD_CHARS]
 
 
 def is_notice(kind):

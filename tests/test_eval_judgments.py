@@ -144,7 +144,7 @@ class JudgmentTests(unittest.TestCase):
 
     def test_goal_owner_context_reaches_the_production_judgment(self):
         # Check serialized facts, not a scripted model's semantic verdict.
-        context = 'owner_profile: Saved starting place: Base A.\ncurrent_context: none'
+        context = 'owner_profile: Saved starting place: Base A.\ncurrent_context: none\nentrusted_work: none'
         cases = subset(self.cases, 'goal-served')
         cases['cases'] = copy.deepcopy(cases['cases'])
         cases['cases'][0]['input']['owner_context'] = context
@@ -242,7 +242,7 @@ class JudgmentTests(unittest.TestCase):
         self.assertEqual(cases['catalogue'], self.cases['catalogue'])
         self.assertEqual(cases['version'], self.cases['version'])
         roles = j.plan(cases)['roles']
-        self.assertEqual((roles['orchestration_plan']['cases'], roles['goal_reached']['cases']), (8, 7))
+        self.assertEqual((roles['orchestration_plan']['cases'], roles['goal_reached']['cases']), (12, 7))
         for ident, expected in (('held-plan-remark-sold-ko', 'empty'), ('held-plan-recall-ko', 'nonempty')):
             selected = subset(cases, ident)
             [case] = selected['cases']
