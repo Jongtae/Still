@@ -289,7 +289,8 @@ class Bundles(_LinesCase):
         sent=[]
         api=ApiRequests(self.store,job['id'],approvals=self.service.browser_approvals_for(job),
                         transport=lambda *a,**k:sent.append(a) or (200,{},b'{}'))
-        args={'slot':'notes','url':'https://notes.test/items','method':'POST','body':'{}','effect':'mutate'}
+        args={'slot':'notes','url':'https://notes.test/items','method':'POST','body':'{}','effect':'mutate',
+              'approval_note':'노트에 한 줄을 남겨요'}  # #953
         with patch.object(self.service.decision_judge,'connector_effect',return_value='irreversible'):
             with self.assertRaises(ApiError) as raised:api.call(args)
             self.assertEqual(raised.exception.code,'approval_required')

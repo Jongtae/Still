@@ -543,7 +543,8 @@ class Lines(_LinesCase):
             for effect in ('irreversible',None):
                 with self.subTest(origin=row['origin'],effect=effect), patch.object(self.service.decision_judge,'connector_effect',return_value=effect):
                     args={'slot':'notes','url':'https://notes.test/items','method':'POST',
-                          'body':json.dumps({'note':str(effect)}),'effect':'mutate'}
+                          'body':json.dumps({'note':str(effect)}),'effect':'mutate',
+                          'approval_note':'노트에 한 줄을 남겨요'}  # #953
                     before=len(sent)
                     with self.assertRaises(ApiError) as caught:api.call(args)
                     self.assertEqual(caught.exception.code,'approval_required')
