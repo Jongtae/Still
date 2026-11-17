@@ -31,7 +31,7 @@ def proposal(key, content, *, kind='stated', category='place', evidence='the own
              invalidates=(), valid_until=''):
     return {'category': category, 'kind': kind, 'memory_key': key, 'content': content, 'evidence': evidence,
             'supersedes_key': supersedes, 'invalidates': [{'id': i, 'reason': r} for i, r in invalidates],
-            'valid_until': valid_until}
+            'valid_until': valid_until, 'terms': ''}
 
 
 class Upkeep(Harness):

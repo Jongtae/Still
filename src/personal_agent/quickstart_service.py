@@ -1485,10 +1485,33 @@ class AgentService:
         return (ws.is_failed(outcome) and provider!='builtin'
                 and prep.preparation_of(key) is None and continuation_request(key) is None)
 
-    def run_owner_model_upkeep(self, now=None):
-        """One work-loop tick of the #805 upkeep: claim at most one pending Work and run it off-thread.
+    def _terms_engine_available(self):
+        """Cheap local preflight of the same active engine upkeep uses; no judgment."""
+        from .decision import DecisionEngine, FixtureDecisionEngine, ModelDecisionEngine, RoutedDecisionEngine
+        from .decision_adapters import SubscriptionCliDecisionEngine, CLI_BINARIES
+        from .providers import validate_model
+        try:
+            if not self.owner_model.settings()['enabled']:return False
+            engine=self.decision_judge.engine
+            if isinstance(engine,RoutedDecisionEngine):engine=engine.resolve()
+            if type(engine).structured is DecisionEngine.structured:return False
+            if isinstance(engine,FixtureDecisionEngine):return engine._structured is not None
+            if isinstance(engine,ModelDecisionEngine):
+                resolved=engine.route() if engine.route else None
+                if not resolved:return False
+                validate_model(resolved[0])
+            if isinstance(engine,SubscriptionCliDecisionEngine):
+                if engine.guard and engine.guard():return False
+                if not engine.execution.finder(CLI_BINARIES[engine.engine_id]):return False
+                if engine.engine_id=='codex' and engine.codex_disabled_features is None:return False
+            return True
+        except Exception:
+            return False
 
-        Nothing pending is one indexed query and no model call.  Paused, over
+    def run_owner_model_upkeep(self, now=None):
+        """One idle tick: arm eligible terms, claim at most one run and execute it off-thread.
+
+        With nothing eligible, no model is called. Paused, over
         the rolling cap, or with a Work queued or running, it waits.  The run
         is single-flight: while one is in flight nothing else is claimed, and
         the work thread never waits on its judgment calls (#805 review).
@@ -1503,7 +1526,9 @@ class AgentService:
             try:upkeep.enqueue_dream_if_due(now,self._owner_local_hour(now))
             except Exception as exc:  # noqa: BLE001 - never stop the upkeep tick
                 LOG.warning('owner-model dream check failed kind=%s',type(exc).__name__)
-            row=upkeep.claim_due(now)
+            available=self._terms_engine_available()
+            upkeep.arm_terms(now=now,available=available)
+            row=upkeep.claim_due(now,terms_available=available,redact=self._owner_model_judgments(None).redact)
             if row is None:
                 self.owner_model_flight.release()
                 return False
@@ -1634,8 +1659,14 @@ class AgentService:
         review=kind==om.KIND_SELF_REVIEW
         # #805 review: the judgments' audit rows (``record_decision``) belong to the
         # source Work; ``current_work_id`` is per thread, so the work loop's is untouched.
-        self.current_work_id=work_id
+        self.current_work_id=None if kind==om.KIND_TERMS else work_id
         try:
+            if kind==om.KIND_TERMS:
+                deadline=upkeep.clock()+om.RUN_SECONDS
+                state,calls,status,detail=upkeep.run_terms(row,self._owner_model_judgments(None),
+                    cancelled=lambda:self.stop.is_set() or upkeep.clock()>deadline,read_scope=self.judgments_read)
+                upkeep.finish(work_id,state,calls,status,detail,upkeep.clock(),kind=kind)
+                return
             job=self.store.job(work_id)
             if row['expired']:
                 upkeep.finish(work_id,om.STATE_EXPIRED,0,om.EVENT_EXPIRED,{'reason':'expired'},now,kind=kind)

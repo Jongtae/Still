@@ -220,7 +220,8 @@ class Run(SelfReview):
         self.assertEqual(schema, om.REVIEW_SCHEMA)
         self.assertEqual(sorted(schema['properties']), ['blocker', 'change', 'notes'])
         self.assertEqual(self.rows()[job]['state'], om.STATE_DONE)
-        self.assertFalse(self.service.run_owner_model_upkeep(), 'a done review never runs again')
+        self.service.run_owner_model_upkeep()  # eligible profile rows may now run the terms pass
+        self.assertEqual(len(self.facts), 1, 'a done review never runs again')
 
     def test_an_observation_stands_in_for_the_followup_when_no_message_is_linked(self):
         self.missed('그거 찾아줘', status='succeeded', reason=om.REVIEW_REACTION, observation='the owner reacted: thumbs down')

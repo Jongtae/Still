@@ -1127,6 +1127,13 @@ class ConversationJudgments:
                     else StructuredDecision(OUTCOME_UNAVAILABLE))
         return self.policy.structured(decision), decision
 
+    def memory_terms(self, notes, cancelled=None):
+        """One structured retrieval-terms call on the active upkeep engine (N11 C)."""
+        from .owner_model import TERMS_QUESTION, TERMS_SCHEMA
+        context = self._context('memory-terms', {'notes': notes}, uncut=('notes',), cancelled=cancelled)
+        decision = self.engine.structured(context, TERMS_QUESTION, TERMS_SCHEMA)
+        return self.policy.structured(decision), decision
+
     def self_review(self, request, answer, outcome, evaluation, followup, profile, reason, work_id=None, cancelled=None,
                     working_notes='', awaiting_owner=''):
         """``(data, decision)``: one self-review of a Work that fell short (#998).

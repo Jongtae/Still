@@ -7,14 +7,17 @@ Bounded by docs/secretary-agency-contract.en.md ("Amendment - #805 phase 1"):
   transaction that settles it (idempotent per Work).  Failed, cancelled and
   unknown Works, rule/command replies (no worker AI ran), preparation runs
   and location continuations record none: typed markers, never text rules.
-* **Tick.** The existing service loop asks one indexed query per tick.  At
+  Settle and idle ticks also arm independent retrieval-terms runs.
+* **Tick.** The existing service loop checks the queue at each idle tick. At
   most one pending row is claimed per tick, atomically with the check that
   no Work is queued or running, and runs off the work thread (single-flight,
-  a hard deadline).  Nothing pending costs no model call.
+  a hard deadline). Terms run only after other kinds, within their own share
+  of the same cap. Nothing pending costs no model call.
 * **Judgment (C16).** The owner's Judgment AI (``DecisionEngine.structured``)
   reads the owner's request (owner words), the final answer excerpt
   (model-stated), the profile snapshot and the clock, every fact redacted
-  first, and proposes at most ``MAX_PROPOSALS`` durable owner facts.
+  first, and proposes at most ``MAX_PROPOSALS`` durable owner facts and
+  their search terms. The terms pass reads eligible rows on the active model.
 * **Validation (Still).** Out-of-enum, oversized, non-``profile.`` and
   duplicate proposals are dropped.  What is kept is saved at once as current
   Memory attributed to the source Work (#918 slice a, owner decision
@@ -27,7 +30,8 @@ Bounded by docs/secretary-agency-contract.en.md ("Amendment - #805 phase 1"):
   pending row runs first and one older than ``MAX_PENDING_SECONDS`` expires
   without a call (#876: an ask must come while the conversation is live, not
   a day later when a backlog drains under the cap), and a claimed
-  row a crash left behind expires as ``interrupted``.  Each run is one
+  row a crash left behind expires as ``interrupted``. Terms never age out
+  and keep a content-free manifest instead of a Work event. Each Work run is one
   ``owner_model`` tool event on the source Work: counts, applied keys, kinds,
   outcomes and the deciding route - never the input texts, and a dropped
   proposal's key only as a digest.
@@ -64,9 +68,26 @@ previous document back, undoable at any time (#367: a forget is never purged).  
 (``WorkingNotes.migrate``), each under an undoable ``migrate`` receipt.
 Semantic owner facts stay in Memory.
 
+**Retrieval terms (#921).** Trigger: settle and idle ticks arm an unanchored
+``terms`` run for eligible Memory. Tick: other kinds go first; terms get
+``max(1, daily_calls // 4)`` calls within the shared cap and never age out. Judgment:
+the active Judgment model supplies index words, never canonical facts. Claims
+and finishes retain a content-free manifest; no Work event uses a run id.
+Transport-agnostic batch sizing starts at eight rows. A rejected multi-row
+answer halves the sent row count; success doubles the configured cap up to 25.
+Character/byte packing limits still apply; unsent or expired runs keep the cap.
+Only a rejected singleton consumes a row's failure allowance.
+
+Reuse review (approved v5, offline): **Adopt** SQLite transactions, the upkeep
+queue (claim, cap, pause), ``_context``, ``judgments_read``, ``memory_terms`` and
+``write_retrieval_terms``. **Build** the terms kind, arming, packing, validation
+and manifest. The existing queue avoids a new scheduler or framework. No new
+dependency, licence, platform, network authority or supply-chain change.
+
 Nothing here names a site, provider, task or request category.
 """
 
+from . import memory_terms
 from . import work_status as ws
 import contextlib
 import hashlib
@@ -90,7 +111,21 @@ KIND_UPKEEP, KIND_SELF_REVIEW = 'upkeep', 'self-review'
 #: #402: the once-a-day look back over recent requests (the "dream"); its row's Work is the newest
 #: request it covers (the anchor: its Evidence, notice and Memory provenance).
 KIND_DREAM = 'dream'
-RUN_KINDS = (KIND_UPKEEP, KIND_SELF_REVIEW, KIND_DREAM)
+KIND_TERMS = 'terms'
+RUN_KINDS = (KIND_UPKEEP, KIND_SELF_REVIEW, KIND_DREAM, KIND_TERMS)
+# Adapt to observed answers on any transport, without route-specific limits.
+TERMS_MAX_ROWS = 25
+TERMS_START_ROWS = 8
+TERMS_QUESTION = (
+    'For each numbered note, also give terms: search words a later request might use that the fact\'s own words lack: '
+    'base forms without particles or endings, the key terms in Korean and in English, and words that tell this '
+    'fact apart from similar ones. Space-separated words only. '
+    'Return every note number n exactly once, with at most 400 characters of terms per note.')
+TERMS_SCHEMA = {'type': 'object', 'additionalProperties': False,
+    'properties': {'notes': {'type': 'array', 'maxItems': TERMS_MAX_ROWS, 'items': {
+        'type': 'object', 'additionalProperties': False,
+        'properties': {'n': {'type': 'integer'}, 'terms': {'type': 'string', 'maxLength': 400}},
+        'required': ['n', 'terms']}}}, 'required': ['notes']}
 #: The reviewed Work's tool-event name of every self-review run.
 REVIEW_EVENT_TOOL = 'self_review'
 #: The DecisionContext purpose of the self-review judgment.
@@ -456,6 +491,7 @@ SCHEMA = {'type': 'object', 'additionalProperties': False,
                              'kind': {'type': 'string', 'enum': list(KINDS)},
                              'memory_key': {'type': 'string'},
                              'content': {'type': 'string'},
+                             'terms': {'type': 'string', 'maxLength': memory_terms.TERMS_CHARS},
                              'evidence': {'type': 'string'},
                              'supersedes_key': {'type': 'string'},
                              # #220: earlier facts (by the id owner_profile shows) this fact ends, and its last day.
@@ -465,7 +501,7 @@ SCHEMA = {'type': 'object', 'additionalProperties': False,
                                  'required': ['id', 'reason']}},
                              'valid_until': {'type': 'string'}},
               'required': ['category', 'kind', 'memory_key', 'content', 'evidence', 'supersedes_key', 'invalidates',
-                           'valid_until']}},
+                           'valid_until', 'terms']}},
                          'situation': {'type': 'string'}},
           'required': ['proposals', 'situation']}
 
@@ -813,8 +849,10 @@ def _refusal(item):
     """Why one proposal is out of shape or bounds, or None."""
     if not isinstance(item, dict):
         return 'shape'
-    if any(not isinstance(item.get(name), str) for name in ('category', 'kind', 'memory_key', 'content', 'evidence')):
+    if any(not isinstance(item.get(name), str) for name in ('category', 'kind', 'memory_key', 'content', 'evidence', 'terms')):
         return 'shape'
+    if len(item['terms']) > memory_terms.TERMS_CHARS:
+        return 'terms'
     if item['category'] not in CATEGORIES:
         return 'category'
     if item['kind'] not in KINDS:
@@ -896,7 +934,7 @@ def validate(proposals, known, pending, noted_keys=(), request='', limit=MAX_PRO
         keys.add(key)
         contents.add(content)
         kept.append({'category': item['category'], 'kind': item['kind'], 'memory_key': key,
-                     'content': item['content'].strip(), 'supersedes_key': (item.get('supersedes_key') or '').strip(),
+                     'content': item['content'].strip(), 'terms': item['terms'], 'supersedes_key': (item.get('supersedes_key') or '').strip(),
                      'invalidates': [{'id': end['id'].strip(), 'reason': ' '.join(end['reason'].split())}
                                      for end in item.get('invalidates') or ()],
                      'valid_until': (item.get('valid_until') or '').strip(),
@@ -906,6 +944,32 @@ def validate(proposals, known, pending, noted_keys=(), request='', limit=MAX_PRO
                      'evidence': item.get('evidence') if isinstance(item.get('evidence'), str) else '',
                      **({'sources': item['sources']} if 'sources' in item else {})})
     return kept, dropped
+
+
+def terms_identity(confidence):
+    """Only the deciding call's reported identity, never an inferred route/model."""
+    return {key: getattr(confidence, key, '') or '' for key in ('route', 'model', 'observed_model')}
+
+
+def terms_manifest(batch, outcomes=None, *, cap, result=None, stale=()):
+    # Keep the configured cap separate from the observed sent rows and per-row receipts.
+    entries = [dict(id=item['id'], digest=item['content_digest'],
+                    **({'outcome': outcomes[n]} if outcomes is not None else {}))
+               for n, item in enumerate(batch)]
+    entries.extend(dict(id=item['id'], digest=item['content_digest'], outcome='stale-before-send')
+                   for item in stale)
+    return json.dumps({'cap': cap, 'rows': len(batch) if result in ('ok', 'rejected') else 0,
+                       **({'result': result} if result else {}), 'entries': entries}, separators=(',', ':'))
+
+
+def terms_answer(data, size):
+    """Host validation, including bool-as-int, duplicates and transport bypasses."""
+    notes = data.get('notes') if isinstance(data, dict) else None
+    return (isinstance(notes, list) and len(notes) == size
+            and all(isinstance(item, dict) and type(item.get('n')) is int
+                    and isinstance(item.get('terms'), str)
+                    and len(item['terms']) <= memory_terms.TERMS_CHARS for item in notes)
+            and {item['n'] for item in notes} == set(range(1, size + 1)))
 
 
 class Upkeep:
@@ -1012,7 +1076,7 @@ class Upkeep:
         the observation is a short typed note (an owner reaction) that the
         judgment reads redacted, bounded here.
         """
-        if kind not in RUN_KINDS:
+        if kind not in RUN_KINDS or kind == KIND_TERMS:
             raise ValueError('upkeep kind')
         if db is None:
             with self.store.db() as conn:
@@ -1030,6 +1094,178 @@ class Upkeep:
         return db.execute('INSERT OR IGNORE INTO owner_model_upkeep(job_id,kind,state,created,reason,observation) '
                           'VALUES (?,?,?,?,?,?)',
                           (job_id, kind, STATE_PENDING, self.clock() if now is None else now, reason, observation)).rowcount == 1
+
+    # -- derived retrieval index (#921) ------------------------------------
+    def terms_left(self, now, db):
+        used = db.execute('SELECT COALESCE(SUM(calls),0) FROM owner_model_upkeep '
+                          'WHERE kind=? AND claimed>=?', (KIND_TERMS, now - WINDOW_SECONDS)).fetchone()[0]
+        return max(1, self.settings(db)['daily_calls'] // 4) - used
+
+    def _terms_rows(self, db, today):
+        from .agent_runtime import MEMORY_OWNER
+        return db.execute(f"SELECT * FROM memories WHERE owner_key=? AND state='current' "
+                          "AND memory_key LIKE 'profile.%' AND (valid_until IS NULL OR valid_until>=?) "
+                          f"AND {memory_terms.ELIGIBLE_SQL} ORDER BY created DESC,id DESC",
+                          (self.store._memory_binding(MEMORY_OWNER), today))
+
+    def arm_terms(self, db=None, now=None, *, available=False):
+        """One repeatable identity, under the settle transaction or our own immediate lock.
+
+        ``available`` is the service's cheap engine preflight, never a model call.
+        No Work or source conversation is needed. A parked run retains its identity.
+        """
+        from .current_context import owner_today
+        now = self.clock() if now is None else now
+        if not available:
+            return None
+        if db is None:
+            with self.store.db() as conn:
+                conn.execute('BEGIN IMMEDIATE')
+                return self.arm_terms(conn, now, available=available)
+        if not db.in_transaction:
+            db.execute('BEGIN IMMEDIATE')
+        if not self.settings(db)['enabled'] or self.terms_left(now, db) <= 0:
+            return None
+        if db.execute('SELECT 1 FROM owner_model_upkeep WHERE kind=? AND state IN (?,?)',
+                      (KIND_TERMS, STATE_PENDING, STATE_CLAIMED)).fetchone():
+            return None
+        if self._terms_rows(db, owner_today(self.store, now)).fetchone() is None:
+            return None
+        n = db.execute("SELECT COALESCE(MAX(CAST(substr(job_id,14) AS INTEGER)),0)+1 "
+                       "FROM owner_model_upkeep WHERE kind=?", (KIND_TERMS,)).fetchone()[0]
+        run = f'memory-terms:{n}'
+        db.execute('INSERT INTO owner_model_upkeep(job_id,kind,state,created) VALUES (?,?,?,?)',
+                   (run, KIND_TERMS, STATE_PENDING, now))
+        return run
+
+    def terms_cap(self, db):
+        """Learn only from the latest finished run; pending/claimed runs are not answers."""
+        row = db.execute('SELECT state,observation FROM owner_model_upkeep WHERE kind=? AND state IN (?,?) '
+                         'ORDER BY created DESC,rowid DESC LIMIT 1',
+                         (KIND_TERMS, STATE_DONE, STATE_EXPIRED)).fetchone()
+        manifest = json.loads(row['observation'] or '{}') if row else {}
+        cap = manifest.get('cap', TERMS_START_ROWS)
+        if row and row['state'] == STATE_DONE:
+            if manifest.get('result') == 'rejected' and manifest.get('rows', 0) > 1:
+                cap = max(1, manifest['rows'] // 2)
+            elif manifest.get('result') == 'ok':
+                cap = min(TERMS_MAX_ROWS, cap * 2)
+        return cap
+
+    def terms_batch(self, db, today, redact, *, cap):
+        """Whole numbered facts, redacted before measuring the actual notes input."""
+        return self._pack_terms(self._terms_rows(db, today), redact, cap=cap)
+
+    def _pack_terms(self, rows, redact, *, cap):
+        if redact is None:
+            from .conversation_handoff import ConversationJudgments
+            redact = ConversationJudgments().redact
+        batch, text = [], ''
+        for row in rows:
+            fact = redact(f"{row['memory_key']}: {row['content']}")
+            single = f'1. {fact}'
+            large = len(single) > 5000 or len(single.encode('utf-8')) > 15000
+            if large:
+                if batch:
+                    break
+                batch.append(dict(row, rendered=single,
+                                  oversize=len(single) > 4400 or len(single.encode('utf-8')) > 17600))
+                break
+            line = f'{len(batch)+1}. {fact}'
+            joined = text + ('\n' if text else '') + line
+            if len(joined) > 5000 or len(joined.encode('utf-8')) > 15000:
+                break
+            batch.append(dict(row, rendered=line, oversize=False))
+            text = joined
+            if len(batch) == cap:
+                break
+        return batch
+
+    def run_terms(self, row, judgments, *, cancelled=None, read_scope=None):
+        """One index-only judgment; guarded writes reject every stale row revision.
+
+        The claim's call reservation is released before the allowance check, then
+        restored before dispatch. A crash during dispatch keeps that reservation.
+        An explicitly unsent answer parks the same run for a window, with no charge;
+        it never turns into zero-call re-arming. Normal availability is checked again
+        by the service before claiming. Outputs and source texts never enter receipts.
+        """
+        from .agent_runtime import MEMORY_OWNER
+        from .current_context import owner_today
+        run, batch = row['job_id'], row['batch']
+        cap = json.loads(row['observation'])['cap']
+        self.count(run, 0, KIND_TERMS)
+        with self.store.db() as db:
+            allowed = (self.settings(db)['enabled'] and self.terms_left(self.clock(), db) > 0
+                       and self.settings(db)['daily_calls'] > self.calls_used(self.clock(), db))
+        if not allowed or (cancelled and cancelled()):
+            return STATE_PENDING, 0, EVENT_UNAVAILABLE, {'manifest': terms_manifest(batch, cap=cap, result='unsent')}
+        # A claim is not a disclosure snapshot: forgetting (including forget/undo),
+        # editing or another index writer must take effect before dispatch too.
+        fresh, stale = [], []
+        with self.store.db() as db:
+            today = owner_today(self.store, self.clock())
+            for item in batch:
+                current = db.execute("SELECT * FROM memories WHERE id=? AND owner_key=? AND state='current' "
+                                     "AND content_digest=? AND (valid_until IS NULL OR valid_until>=?) "
+                                     "AND memory_key GLOB 'profile.*' AND retrieval_terms_meta IS ?",
+                                     (item['id'], self.store._memory_binding(MEMORY_OWNER), item['content_digest'],
+                                      today, item['retrieval_terms_meta'])).fetchone()
+                if current is None:
+                    stale.append(item)
+                else:
+                    fresh.append(current)
+        batch = self._pack_terms(fresh, judgments.redact, cap=cap)
+        if not batch:
+            return STATE_DONE, 0, EVENT_RECORDED, {
+                'manifest': terms_manifest(batch, cap=cap, result='stale' if stale else 'unsent', stale=stale)}
+        decision, data, calls = None, None, 0
+        oversize = bool(batch and batch[0]['oversize'])
+        if batch and not oversize:
+            sources = self.store.memory_sources([item['id'] for item in batch])
+            works = list(dict.fromkeys(source['work_id'] for value in sources.values()
+                         for source in value.get('sources', [value])))
+            self.count(run, 1, KIND_TERMS)
+            with (read_scope(works) if read_scope else contextlib.nullcontext()):
+                data, decision = judgments.memory_terms('\n'.join(item['rendered'] for item in batch),
+                                                        cancelled=cancelled)
+            calls = int(call_sent(decision))
+            self.count(run, calls, KIND_TERMS)
+            if not calls:
+                with self.store.db() as db:
+                    db.execute('UPDATE owner_model_upkeep SET reason=? WHERE job_id=? AND kind=?',
+                               ('unsent', run, KIND_TERMS))
+                return STATE_PENDING, 0, EVENT_UNAVAILABLE, {
+                    'manifest': terms_manifest(batch, cap=cap, result='unsent', stale=stale)}
+        valid = terms_answer(data, len(batch))
+        answers = {item['n']: item['terms'] for item in data['notes']} if valid else {}
+        outcomes = []
+        for n, item in enumerate(batch, 1):
+            if not oversize and not valid and len(batch) > 1:
+                outcomes.append('rejected-batch')
+                continue
+            if self.allowance(self.clock())[1] == STOPPED_PAUSED:
+                outcomes.append('paused')
+                continue
+            text, failure_n = '', None
+            if oversize:
+                status = 'oversize'
+            elif not valid:
+                status = 'failed'
+                failure_n = min(memory_terms.FAIL_LIMIT, memory_terms.parse_meta(item['retrieval_terms_meta']).get('n', 0) + 1)
+            else:
+                text, _ = memory_terms.filter_terms(self.store, item['memory_key'], item['content'], answers[n])
+                status = 'keyed' if text else 'empty'
+            meta = memory_terms.build_meta(status, previous=item['retrieval_terms_meta'],
+                       **terms_identity(decision.confidence if decision else None), policy='terms-pass', run=run,
+                       at=self.clock(), n=failure_n)
+            committed = self.store.write_retrieval_terms(MEMORY_OWNER, item['id'], terms=text or None, meta=meta,
+                        expected_meta=item['retrieval_terms_meta'], content_digest=item['content_digest'],
+                        today=owner_today(self.store, self.clock()))
+            outcomes.append(status if committed else 'stale')
+        result = 'unsent' if not batch else 'oversize' if oversize else 'ok' if valid else 'rejected'
+        return STATE_DONE, calls, EVENT_RECORDED, {
+            'manifest': terms_manifest(batch, outcomes, cap=cap, result=result, stale=stale)}
 
     # -- the dream (#402) ----------------------------------------------------
     def last_dream(self, db):
@@ -1059,8 +1295,8 @@ class Upkeep:
                 return None
             if settings['daily_calls'] - self.calls_used(now, db) < 1:
                 return None
-            if db.execute('SELECT 1 FROM owner_model_upkeep WHERE state IN (?,?) LIMIT 1',
-                          (STATE_PENDING, STATE_CLAIMED)).fetchone():
+            if db.execute('SELECT 1 FROM owner_model_upkeep WHERE state IN (?,?) AND kind!=? LIMIT 1',
+                          (STATE_PENDING, STATE_CLAIMED, KIND_TERMS)).fetchone():
                 return None
             if db.execute(f"SELECT 1 FROM jobs WHERE status IN {ws.sql_in(ws.ACTIVE)} LIMIT 1").fetchone():
                 return None
@@ -1128,7 +1364,7 @@ class Upkeep:
         return rows[0] if rows else None
 
     def expire_interrupted(self, now):
-        """Claimed rows a crash left behind: expired with an ``interrupted`` event (call only with no run in flight)."""
+        """Expire crashed claims; terms retain their manifest, Work kinds get an interrupted event."""
         with self.store.db() as db:
             rows = [(row['job_id'], row['kind']) for row in db.execute(
                 'SELECT job_id,kind FROM owner_model_upkeep WHERE state=? AND claimed<?',
@@ -1137,7 +1373,7 @@ class Upkeep:
             self.finish(job_id, STATE_EXPIRED, None, EVENT_EXPIRED, {'reason': 'interrupted'}, now, kind=kind)
         return len(rows)
 
-    def claim_due(self, now):
+    def claim_due(self, now, *, terms_available=True, redact=None):
         """Claim the newest pending row this tick may run, or None (#876: the live conversation first).
 
         One immediate transaction: the check that no Work is queued or
@@ -1148,27 +1384,38 @@ class Upkeep:
         budget at claim time, for the record: the run re-reads it before each
         later call (``allowance``).
         """
-        select = ('SELECT job_id,kind,created,reason,observation FROM owner_model_upkeep WHERE state=? '
-                  'ORDER BY created DESC LIMIT 1')
+        from .current_context import owner_today
         with self.store.db() as db:
-            row = db.execute(select, (STATE_PENDING,)).fetchone()
-            if row is None:
-                return None
             db.execute('BEGIN IMMEDIATE')
-            row = db.execute(select, (STATE_PENDING,)).fetchone()
             settings = self.settings(db)
-            if row is None or not settings['enabled']:
+            if not settings['enabled']:
                 return None
             if db.execute(f"SELECT 1 FROM jobs WHERE status IN {ws.sql_in(ws.ACTIVE)} LIMIT 1").fetchone():
                 return None
-            expired = now - row['created'] > MAX_PENDING_SECONDS
+            row = db.execute('SELECT * FROM owner_model_upkeep WHERE state=? AND kind!=? '
+                             'ORDER BY created DESC LIMIT 1', (STATE_PENDING, KIND_TERMS)).fetchone()
+            if row is None and terms_available and self.terms_left(now, db) > 0:
+                row = db.execute('SELECT * FROM owner_model_upkeep WHERE state=? AND kind=? '
+                                 'AND (reason IS NOT ? OR claimed<=?) ORDER BY created DESC LIMIT 1',
+                                 (STATE_PENDING, KIND_TERMS, 'unsent', now - WINDOW_SECONDS)).fetchone()
+            if row is None:
+                return None
+            expired = row['kind'] != KIND_TERMS and now - row['created'] > MAX_PENDING_SECONDS
             remaining = settings['daily_calls'] - self.calls_used(now, db)
             if not expired and remaining < 1:
                 return None
-            db.execute('UPDATE owner_model_upkeep SET state=?,claimed=?,calls=? WHERE job_id=? AND kind=?',
-                       (STATE_CLAIMED, now, 0 if expired else 1, row['job_id'], row['kind']))
-            return {'job_id': row['job_id'], 'kind': row['kind'], 'created': row['created'], 'expired': expired,
-                    'remaining': remaining, 'reason': row['reason'], 'observation': row['observation']}
+            result = dict(row, expired=expired, remaining=remaining)
+            if row['kind'] == KIND_TERMS:
+                # A parked claim keeps its cap; only a new run learns from finished history.
+                cap = json.loads(row['observation'] or '{}').get('cap')
+                if cap is None:
+                    cap = self.terms_cap(db)
+                batch = self.terms_batch(db, owner_today(self.store, now), redact, cap=cap)
+                result['batch'] = batch
+                result['observation'] = terms_manifest(batch, cap=cap)
+            db.execute('UPDATE owner_model_upkeep SET state=?,claimed=?,calls=?,observation=? WHERE job_id=? AND kind=?',
+                       (STATE_CLAIMED, now, 0 if expired else 1, result['observation'], row['job_id'], row['kind']))
+            return result
 
     def count(self, job_id, calls, kind=KIND_UPKEEP):
         """Record the calls a run has made so far (the cap sees them at once)."""
@@ -1176,7 +1423,7 @@ class Upkeep:
             db.execute('UPDATE owner_model_upkeep SET calls=? WHERE job_id=? AND kind=?', (int(calls), job_id, kind))
 
     def finish(self, job_id, state, calls, event_status, detail, now, kind=KIND_UPKEEP):
-        """Settle a claimed row and record its one tool event on the source Work (``self_review`` for a review)."""
+        """Settle a claim: a manifest for terms, otherwise one tool event on the source Work."""
         tool = {KIND_SELF_REVIEW: REVIEW_EVENT_TOOL, KIND_DREAM: DREAM_EVENT_TOOL}.get(kind, EVENT_TOOL)
         with self.store.db() as db:
             if calls is None:
@@ -1184,6 +1431,11 @@ class Upkeep:
             else:
                 db.execute('UPDATE owner_model_upkeep SET state=?,calls=? WHERE job_id=? AND kind=?',
                            (state, int(calls), job_id, kind))
+            if kind == KIND_TERMS:
+                if 'manifest' in detail:
+                    db.execute('UPDATE owner_model_upkeep SET observation=? WHERE job_id=? AND kind=?',
+                               (detail['manifest'], job_id, kind))
+                return
             db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
                        (job_id, tool, event_status, json.dumps(detail, ensure_ascii=False), now))
 
@@ -1332,7 +1584,7 @@ class Upkeep:
         kept, dropped = validate(data.get('proposals'), known, pending, noted_keys, request=request)
         fact_calls = [calls]
         applied, stopped = self._apply_facts(kept, job, dropped, judgments=judgments,
-                                           cancelled=cancelled, judgment_calls=fact_calls)
+                                           cancelled=cancelled, judgment_calls=fact_calls, terms_confidence=confidence)
         calls = sum(fact_calls)
         detail['owner_fact_calls'] = sum(fact_calls[1:])
         detail.update(proposed=len(data.get('proposals') or []), applied=applied, dropped=dropped, stopped=stopped)
@@ -1348,7 +1600,7 @@ class Upkeep:
         return STATE_DONE, calls, EVENT_RECORDED, detail
 
     def _apply_facts(self, kept, job, dropped, ends_after=None, origin=None, source_works=None,
-                     judgments=None, cancelled=None, judgment_calls=None):
+                     judgments=None, cancelled=None, judgment_calls=None, terms_confidence=None):
         """Save eligible proposals or sourced candidates; returns ``(applied, stopped)``.
 
         Shared by upkeep and the dream (#402).  ``dropped`` is extended in place.  ``ends_after``
@@ -1431,6 +1683,10 @@ class Upkeep:
             elif basis is None and cited_works is None:
                 basis = BASIS_INFERRED
             row['basis'] = basis
+            terms, _ = memory_terms.filter_terms(self.store, key, content, item['terms'])
+            meta = (memory_terms.build_meta('keyed', previous=None,
+                    **terms_identity(terms_confidence), policy='dream' if origin == ORIGIN_DREAM else 'upkeep',
+                    run=job['id'], at=self.clock()) if terms else None)
             try:
                 # Review: the owner notice is held in the same transaction as the row, so a save is never untold.
                 memory = self.store.save_memory(key, content, MEMORY_OWNER, work_id=job['id'], notice=origin is None,
@@ -1440,7 +1696,8 @@ class Upkeep:
                                                              for full, end in zip(ends, item['invalidates'])],
                                                 # '' is the AI saying the fact has no last day.
                                                 valid_until=item['valid_until'],
-                                                basis=basis, evidence=evidence, evidence_message=message)
+                                                basis=basis, evidence=evidence, evidence_message=message,
+                                                retrieval_terms=terms or None, retrieval_terms_meta=meta)
             except ValueError:
                 dropped.append({'key_digest': key_digest(key), 'reason': 'store-refused'})
                 continue
@@ -1662,7 +1919,8 @@ class Upkeep:
             kept, refused = validate_dream(found.get('proposals'), refs, refs.values(), known, pending, len(rows), ids,
                                            limit=DREAM_GATHER_LIMIT)
             gathered, stopped = self._apply_facts([{**item, 'invalidates': []} for item in kept], job, refused,
-                                                  ends_after=ends_after, origin=ORIGIN_DREAM, source_works=source_works)
+                                                  ends_after=ends_after, origin=ORIGIN_DREAM, source_works=source_works,
+                                                  terms_confidence=gather.confidence)
             first.update(proposed=len(found.get('proposals') or []), applied=gathered, dropped=refused)
         current = notes.current()
         current_text = current['text'] if current else ''
@@ -1697,7 +1955,7 @@ class Upkeep:
         held = []
         kept, dropped = validate_dream(data.get('proposals'), refs, refs.values(), known, pending, len(rows), ids,
                                        held=held)
-        applied, stopped = self._apply_facts(kept, job, dropped, ends_after=ends_after, origin=ORIGIN_DREAM, source_works=source_works)
+        applied, stopped = self._apply_facts(kept, job, dropped, ends_after=ends_after, origin=ORIGIN_DREAM, source_works=source_works, terms_confidence=confidence)
         applied = gathered + applied
         # #425: the look back is quiet; what the owner relies on that it changed, and what it held, waits to be
         # raised once at the next request it matters to (``MemoryRaise``), never as a message of its own.
