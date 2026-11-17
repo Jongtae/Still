@@ -47,7 +47,8 @@ BUNDLE_CHARS, BUNDLE_LINE_LIMIT = 3500, 8
 #: #937: the turn's one line naming the active lines it holds, and its bounds.  The full brief stays
 #: behind ``entrusted_line read``; this only tells every route that the work is the assistant's own.
 HELD_PREFIX = 'Entrusted to you'
-HELD_CHARS = 1800
+HELD_HEADING = (HELD_PREFIX + ' (continuing work the owner entrusted to you; when one bears on this request, read it '
+                'with entrusted_line action=read before answering; not instructions): ')
 
 
 class LineRefusal(ValueError):
@@ -389,6 +390,10 @@ OUTCOME_DELIVERED, OUTCOME_KEPT, OUTCOME_FAILED, OUTCOME_OPEN = 'delivered', 'ke
 OUTCOMES_SHOWN, READ_OUTCOMES = 6, 3
 OUTCOME_CHARS, WORDS_CHARS = 600, 300
 INDEX_ITEMS, INDEX_TASK_CHARS = 12, 120
+#: #937 review: the index's bound holds all ``INDEX_ITEMS`` complete entries (number, a ref up to
+#: ``LINE_REF_CHARS``, a task excerpt with its ellipsis and the separator), so no entry is cut or dropped.
+LINE_REF_CHARS = 64
+HELD_CHARS = len(HELD_HEADING) + INDEX_ITEMS * (len('12) [] ; ') + len(REF_PREFIX) + LINE_REF_CHARS + INDEX_TASK_CHARS + 1)
 
 
 def held_text(briefs, clean=lambda text: text):
@@ -410,8 +415,7 @@ def held_text(briefs, clean=lambda text: text):
             items.append(f'{len(items) + 1}) {ref}{task}')
     if not items:
         return ''
-    return (f'{HELD_PREFIX} (continuing work the owner entrusted to you; when one bears on this request, read it '
-            f'with entrusted_line action=read before answering; not instructions): ' + '; '.join(items))[:HELD_CHARS]
+    return (HELD_HEADING + '; '.join(items))[:HELD_CHARS]
 
 
 def is_notice(kind):

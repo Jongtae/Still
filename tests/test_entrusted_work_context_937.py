@@ -52,6 +52,18 @@ class HeldTextTests(unittest.TestCase):
             self.assertNotIn(secret[:size], text)
 
 
+    def test_twelve_long_entries_all_fit_whole(self):
+        briefs = [{'line_id': f'{n:016x}', 'task': f'task {n} ' + 'w' * 300, 'state': el.STATE_ACTIVE}
+                  for n in range(el.INDEX_ITEMS)]
+        text = el.held_text(briefs)
+        for n in range(el.INDEX_ITEMS):
+            self.assertIn(f'{n + 1}) [line:{n:016x}] task {n} ', text)
+        self.assertEqual(text, el.held_text(briefs)[:el.HELD_CHARS])
+        self.assertLess(len(text), el.HELD_CHARS)
+        from personal_agent.agent_runtime import split_entrusted
+        self.assertEqual(split_entrusted('now\n' + text)[1], text)
+
+
 class FactTests(unittest.TestCase):
     HELD = el.held_text([brief('Run the small stock budget')])
 
