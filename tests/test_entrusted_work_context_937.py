@@ -74,6 +74,20 @@ class FactTests(unittest.TestCase):
                          .facts['entrusted_work'], 'none')
 
 
+class AuditTests(unittest.TestCase):
+    def test_the_lines_a_turn_carried_are_recorded_for_the_information_use_audit(self):
+        from personal_agent.information_use import context_claims, section_references
+        held = el.held_text([{'line_id': 'abc123', 'task': 'Run the small stock budget', 'state': el.STATE_ACTIVE,
+                              'open_matters': '1 share held'},
+                             {'line_id': 'def456', 'task': 'Track deliveries', 'state': el.STATE_ACTIVE}])
+        self.assertIn('[line:abc123] Run the small stock budget (open: 1 share held)', held)
+        claims = context_claims('Now: Tue 09:24\n' + held)
+        self.assertEqual([c['ref'] for c in claims], ['line:abc123', 'line:def456'])
+        self.assertEqual(claims[0]['label'], '맡은 일: Run the small stock budget')
+        self.assertEqual(section_references(current_context=held)['current_context'], claims)
+        self.assertEqual(context_claims('Now: Tue 09:24'), [])
+
+
 class TurnContextTests(_LineCase):
     def test_a_stored_secret_in_a_brief_is_redacted_before_any_cut(self):
         # The fixture's stored Telegram token, placed so the task cut would split it.
@@ -92,6 +106,9 @@ class TurnContextTests(_LineCase):
         text = self.service.current_context_text({'id': 'probe'})
         self.assertIn(el.HELD_PREFIX, text)
         self.assertIn(' '.join(TASK.split())[:el.HELD_TASK_CHARS], text)
+        self.assertIn(f"[line:{line['line_id']}]", text)
+        from personal_agent.information_use import context_claims
+        self.assertIn(f"line:{line['line_id']}", [claim['ref'] for claim in context_claims(text)])
         self.service.lines.write(line['line_id'], None, line['version'], 'stopped',
                                  lambda current: {**current, 'state': el.STATE_STOPPED})
         self.assertNotIn(el.HELD_PREFIX, self.service.current_context_text({'id': 'probe'}) or '')

@@ -408,7 +408,9 @@ def held_text(briefs, clean=lambda text: text):
         task = ' '.join(str(clean(str(brief.get('task') or '')) or '').split())[:HELD_TASK_CHARS]
         open_matters = ' '.join(str(clean(str(brief.get('open_matters') or '')) or '').split())[:HELD_OPEN_CHARS]
         if task:
-            items.append(f'{len(items) + 1}) {task}' + (f' (open: {open_matters})' if open_matters else ''))
+            # The line's ref names it for ``entrusted_line read`` and for the information-use audit.
+            ref = f'[{REF_PREFIX}{brief["line_id"]}] ' if brief.get('line_id') else ''
+            items.append(f'{len(items) + 1}) {ref}{task}' + (f' (open: {open_matters})' if open_matters else ''))
     if not items:
         return ''
     return (f'{HELD_PREFIX} (continuing responsibilities the owner gave you; entrusted_line read shows each '
