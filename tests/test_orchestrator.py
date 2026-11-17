@@ -2859,6 +2859,14 @@ class SecretaryStandard(Harness):
         for text in (CORE_INSTRUCTIONS, CLI_NATIVE_SEARCH_GUIDANCE, by_name['schedule_preparation']):
             self.assertEqual(scenario_tokens(text), [])
 
+    def test_the_guidance_links_only_pages_the_owner_can_open(self):
+        """#929: an API endpoint is never an owner-facing link; an observed account record is the source."""
+        from personal_agent.agent_runtime import CORE_INSTRUCTIONS
+        from test_no_scenario_code import scenario_tokens
+        self.assertIn('Link only pages the owner can open, never API URLs', CORE_INSTRUCTIONS)
+        self.assertIn('cite account reads by item and time, changes by where they show', CORE_INSTRUCTIONS)
+        self.assertEqual(scenario_tokens(CORE_INSTRUCTIONS), [])
+
     def test_preparation_guidance_acts_then_tells_without_a_setup_question(self):
         """#755: exported tool guidance matches #717 without changing proposal/run boundaries."""
         from personal_agent.agent_runtime import DEFINITIONS, model_facing_text
