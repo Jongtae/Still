@@ -366,7 +366,8 @@ class MemoryService:
             # Codex review on #226: the id is added after the bounds, so the upkeep selects exactly the worker's rows.
             lines.append(f"[{str(row['id'])[:self.SHORT_ID_CHARS]}] {line}" if ids else line)
             entries.append({'id': row['id'], 'memory_key': row['memory_key'], 'content': row['content'],
-                            'created': row.get('created'), **({'annotated': True} if note else {})})
+                            'created': row.get('created'), 'content_digest': row['content_digest'],
+                            'matched': row['id'] in found, **({'annotated': True} if note else {})})
         omitted = len(rows) - len(entries)
         return self._private_read('memory_service.profile_snapshot', {
             'state': 'current', 'text': '\n'.join(lines), 'entries': entries,
@@ -440,11 +441,12 @@ class MemoryService:
     RECORDS_CHARS = 4000
     RECORDS_HEADING = "The assistant's daily records (what happened on those days, not necessarily current):"
 
-    def records_block(self, owner_id, query=None):
+    def records_block(self, owner_id, query=None, *, with_items=False):
         """The daily records (``diary.<date>`` rows the dream writes) for one brief; '' when none (#442).
 
         Recent days first by date, then older records the request's words find, oldest first in the
         text; each record is whole or left out, never cut.  A private read like ``search_memories``.
+        #921: adopt the same rows/rendering; optionally carry their inventory beside the text.
         """
         from datetime import date, timedelta
         from .owner_model import DIARY_PREFIX
@@ -453,25 +455,31 @@ class MemoryService:
         try:
             since = (date.fromisoformat(today) - timedelta(days=self.RECORD_DAYS)).isoformat()
         except ValueError:
-            return ''
+            return ('', []) if with_items else ''
         day = lambda row: row['memory_key'][len(DIARY_PREFIX):]  # noqa: E731
         rows = self.store.memories(owner_id, limit=self.RECORD_DAYS + 3, key_prefix=DIARY_PREFIX)
         chosen = {row['id']: row for row in rows if since <= day(row) <= today}
+        matched = set()
         if isinstance(query, str) and query.strip():
             older = 0
             for row in self.search_memories(owner_id, query[:500], limit=min(20, self.RECORDS_MATCHED + len(chosen)),
                                             key_prefix=DIARY_PREFIX)['memories']:
                 if row['id'] not in chosen and day(row) < since and older < self.RECORDS_MATCHED:
                     chosen[row['id']] = row
+                    matched.add(row['id'])
                     older += 1
-        lines, used = [self.RECORDS_HEADING], len(self.RECORDS_HEADING)
+        lines, items, used = [self.RECORDS_HEADING], [], len(self.RECORDS_HEADING)
         for row in sorted(chosen.values(), key=day):
             text = f"[record of {day(row)}]\n{row['content']}"
             if used + len(text) + 1 > self.RECORDS_CHARS:
                 continue
             lines.append(text)
+            items.append({'kind': 'record', 'id': row['id'], 'digest': row['content_digest'],
+                          'matched': row['id'] in matched, 'annotated': False, 'line': text,
+                          'start': used + 1})
             used += len(text) + 1
-        return '\n'.join(lines) if len(lines) > 1 else ''
+        text = '\n'.join(lines) if len(lines) > 1 else ''
+        return (text, items) if with_items else text
 
     def inspect_memory(self, owner_id, memory_id):
         self._identity(owner_id, "owner")

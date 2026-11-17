@@ -1,0 +1,74 @@
+{
+  "version": "judgment-validation/3",
+  "catalogue": {
+    "workers": [
+      {
+        "id": "default-worker",
+        "name": "default-worker",
+        "kind": "api",
+        "available": true,
+        "default": true,
+        "default_model": "model-standard",
+        "models": [
+          "model-standard",
+          "model-advanced"
+        ],
+        "model_tiers": {
+          "model-standard": "lowest-cost",
+          "model-advanced": "higher-cost"
+        },
+        "tools": [],
+        "native_search": true,
+        "browser": false,
+        "cost": "synthetic",
+        "latency": "synthetic"
+      },
+      {
+        "id": "other-worker",
+        "name": "other-worker",
+        "kind": "api",
+        "available": true,
+        "default": false,
+        "default_model": "model-standard",
+        "models": [
+          "model-standard",
+          "model-advanced"
+        ],
+        "model_tiers": {
+          "model-standard": "lowest-cost",
+          "model-advanced": "higher-cost"
+        },
+        "tools": [],
+        "native_search": true,
+        "browser": false,
+        "cost": "synthetic",
+        "latency": "synthetic"
+      }
+    ],
+    "routes": {},
+    "default": "default-worker"
+  },
+  "cases": [
+    {
+      "id": "heldout-plan-statement2",
+      "role": "orchestration_plan",
+      "class": "structured-plan",
+      "lang": "ko",
+      "category": "owner-situation",
+      "input": {
+        "request": "나 이제 자전거 타고 강변 한 바퀴 돌고 올게."
+      },
+      "expect": {
+        "fallback": false,
+        "account_change": false,
+        "owner_situation": true,
+        "technical_work": false,
+        "tier": "higher"
+      },
+      "targets": [
+        "#197",
+        "#921"
+      ]
+    }
+  ]
+}

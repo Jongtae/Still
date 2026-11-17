@@ -38,11 +38,11 @@ from personal_agent import owner_model as om
 def test_accepted_recall_query_precedes_request_for_all_three_readers(service):
     with mock.patch.object(MemoryService,'profile_snapshot',return_value={'text':'','entries':[]}) as profile, \
             mock.patch.object(service,'owner_words_block',return_value='') as words, \
-            mock.patch.object(MemoryService,'records_block',return_value='') as records:
+            mock.patch.object(MemoryService,'records_block',return_value=('',[])) as records:
         service.owner_profile_snapshot('unrelated request',recall_query='resolved identifier')
     assert profile.call_args.kwargs['query'] == 'resolved identifier unrelated request'
     words.assert_called_once_with('resolved identifier unrelated request')
-    records.assert_called_once_with(MEMORY_OWNER,'resolved identifier unrelated request')
+    records.assert_called_once_with(MEMORY_OWNER,'resolved identifier unrelated request',with_items=True)
 
 
 @pytest.mark.parametrize('selector',[None,'','   '])
@@ -88,7 +88,7 @@ def test_early_and_final_planner_profiles_use_request_only_and_same_day_plan_pol
     turn(service,'prior words',10)
     key=preparations.request_key('preparation-id',30) if preparation else None
     job=turn(service,'request',30,key=key)
-    with mock.patch.object(service,'owner_profile_snapshot',return_value='') as snapshot, \
+    with mock.patch.object(service,'profile_section',return_value=('',[])) as snapshot, \
             mock.patch.object(service,'work_orchestration',return_value=None), \
             mock.patch.object(service,'preparation_history',return_value=[]), \
             mock.patch.object(service,'day_plan_run',return_value=day_plan), \
@@ -97,7 +97,7 @@ def test_early_and_final_planner_profiles_use_request_only_and_same_day_plan_pol
         service.early_work_plan(job,'request',budget=SimpleNamespace(ledger=None))
         run=WorkRun(job,30); run.prompt='request'
         assert service._prepare_worker_turn(run) is PROCEED
-    assert snapshot.call_args_list == [mock.call('request',recall=not preparation or day_plan)]*2
+    assert snapshot.call_args_list == [mock.call('request',recall=not preparation or day_plan,consume=False)]*2
 
 
 def test_planner_history_preserves_existing_exclusions_and_window(service):
@@ -185,7 +185,7 @@ def test_planner_profile_receipts_exclude_mid_line_cut_key(service):
         asked.append(context);return decided(plan('a',''))
     service.use_decision_engine(FixtureDecisionEngine(structured=structured))
     with mock.patch('personal_agent.quickstart_service.worker_catalogue',return_value=OrchestrationUnit().catalogue()), \
-            mock.patch.object(service,'owner_profile_snapshot',return_value=profile), \
+            mock.patch.object(service,'profile_section',return_value=(profile,[])), \
             mock.patch('personal_agent.orchestrator.PROFILE_FACT_CHARS',64):
         from personal_agent.agent_runtime import WorkBudget
         service.early_work_plan(job,job['message'],budget=WorkBudget())

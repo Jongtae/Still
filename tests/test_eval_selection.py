@@ -175,7 +175,7 @@ def test_judgment_inventory_uses_declared_sets_and_splits(entries):
               for split in ('dev', 'heldout') for ident in part[split]}
     observed = {row['id']: row['split'] for row in entries if row['set'] == 'judgments'}
     assert observed == wanted
-    assert len(observed) == 156
+    assert len(observed) == 157
     selected = selection.select({'propositions': ['goal_reached']})
     assert {row['split'] for row in selected['selected']} == {'dev', 'heldout'}
 

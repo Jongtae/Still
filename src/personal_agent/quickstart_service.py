@@ -2072,12 +2072,19 @@ class AgentService:
                        'query_digest':hashlib.sha256((query or '').encode()).hexdigest()[:16],
                        'query_chars':len(query or ''),'recall_enabled':bool(recall)}
 
-    def worker_profile_snapshot(self, job, attempt=None):
-        """Refresh a worker from its accepted plan, or the request-only fallback."""
+    def worker_profile_snapshot(self, job, attempt=None, *, refresh=None, with_items=False):
+        """Adopt the existing refresh and ``recall_selector``; accept the gate's exact refresh.
+
+        Worker annotations are consumed at dispatch, after envelope cuts (#921).
+        Text-only callers retain their pair; the executor also requests the inventory.
+        """
+        if refresh is not None:
+            return refresh if with_items else refresh[:2]
         recall=not prep.preparation_of(job.get('request_key')) or self.day_plan_run(job)
         selector=attempt.recall_query if attempt is not None and attempt.planned and not attempt.steer else None
         query,identity=self.recall_selector(job.get('message'),recall=recall,recall_query=selector)
-        return self._profile_snapshot(query,recall=recall),identity
+        text,items=self.profile_section(query,recall=recall,consume=False)
+        return (text,identity,items) if with_items else (text,identity)
 
     def owner_profile_snapshot(self, request=None, notes=True, ids=False, recall=True, *, recall_query=None):
         """The bounded ``profile.*`` snapshot text every turn context carries (#658).
@@ -2105,14 +2112,30 @@ class AgentService:
         return self._profile_snapshot(query,notes=notes,ids=ids,recall=recall)
 
     def _profile_snapshot(self, query, *, notes=True, ids=False, recall=True):
-        """Render the already sanitized selector; worker identity uses this exact query."""
+        """Compatible text-only rendering of the already sanitized selector."""
+        return self.profile_section(query,notes=notes,ids=ids,recall=recall)[0]
+
+    def profile_section(self, query, *, notes=True, ids=False, recall=True, consume=True):
+        """Render text and its row inventory together, adopting snapshot entries (#921).
+
+        Build only the call-specific inventory, not an information-use receipt. Positions
+        identify whole lines/record blocks without searching free text. ``consume=False``
+        keeps annotations open until the final worker envelope is dispatched.
+        """
         memory=MemoryService(self.store,private_read_sink=MemoryService.NO_EGRESS_GUARD)
         # #425: a brief (notes, no ids) shows what a dream changed or held on the line it concerns, once.
         raising=self._memory_raise_notes(memory) if notes and not ids and query else {}
         snapshot=memory.profile_snapshot(MEMORY_OWNER,query=query,ids=ids,annotations=raising)
         shown=[entry['id'] for entry in snapshot['entries'] if entry.get('annotated')]
-        if shown:om.MemoryRaise(self.store).shown(shown,self.current_work_id)
+        if consume and shown:om.MemoryRaise(self.store).shown(shown,self.current_work_id)
         text=snapshot['text']
+        items=[]
+        start=0
+        for entry,line in zip(snapshot['entries'],text.split('\n')):
+            items.append({'kind':'profile','id':entry['id'],'digest':entry['content_digest'],
+                          'matched':entry['matched'],'annotated':bool(entry.get('annotated')),
+                          'line':line,'start':start})
+            start+=len(line)+1
         if snapshot.get('omitted_count'):
             text += ('\n' if text else '') + f"{snapshot['omitted_count']} saved profile facts omitted by the context limit; use search_memory if relevant."
         if notes:
@@ -2129,12 +2152,18 @@ class AgentService:
             if said:text += ('\n' if text else '') + said
             # #442: the dream's daily records of the last days and older ones the request finds.
             try:
-                records=memory.records_block(MEMORY_OWNER,query) if recall else ''
+                records,record_items=memory.records_block(MEMORY_OWNER,query,with_items=True) if recall else ('',[])
             except Exception as exc:  # a record that fails to read leaves the brief as it was
                 LOG.warning('daily records unavailable for the brief (%s)',type(exc).__name__)
-                records=''
-            if records:text += ('\n' if text else '') + records
-        return self._redact_known_secrets(text)
+                records,record_items='',[]
+            if records:
+                start=len(text)+(1 if text else 0)
+                items.extend({**item,'start':start+item['start']} for item in record_items)
+                text += ('\n' if text else '') + records
+        # Redact before measuring/cutting; retain positions in precisely that rendering.
+        items=[{**item,'line':self._redact_known_secrets(item['line']),
+                'start':len(self._redact_known_secrets(text[:item['start']]))} for item in items]
+        return self._redact_known_secrets(text),items
 
     def _memory_raise_notes(self, memory):
         """``{memory_id: note}`` for the open ``om.MemoryRaise`` items of current rows (#425), or {} on any error."""
@@ -5528,7 +5557,9 @@ class AgentService:
                                        else self.store.history(through=job['id'])[-16:])
         document_jobs=set(self.store.config('file_workspace_document_jobs',[]))
         recall=not prep.preparation_of(job.get('request_key')) or self.day_plan_run(job)
-        sections={'profile':self.owner_profile_snapshot(job.get('message'),recall=recall),'current_context':self.current_context_text(job),
+        query,_=self.recall_selector(job.get('message'),recall=recall)
+        profile,items=self.profile_section(query,recall=recall,consume=False)
+        sections={'profile':profile,'profile_items':items,'current_context':self.current_context_text(job),
                   'prepared':self.prepared_text(job)}
         own_budget=budget is None
         budget=self.work_budget(job['id']) if own_budget else budget
