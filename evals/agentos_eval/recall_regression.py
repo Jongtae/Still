@@ -195,6 +195,8 @@ def prompt_digest(catalogue):
 
 
 def validate_plans(recording, data, terms):
+    if any(r.get('evidence_class') == 'dry-run (no model call)' for r in (recording, terms)):
+        raise ValueError('Dry-run recording is not regression evidence')
     validate_terms(terms, data)
     if recording.get('version') != PLAN_VERSION or recording.get('fixture_digest') != digest(data):
         raise ValueError('Plan fixture digest/version differs')
@@ -331,20 +333,22 @@ def fixture_service(store):
     service = AgentService(store, browser_profile=BrowserProfile(store.private/'browser-fixture', available=lambda:False), adapter=ModelAdapter(FixtureTransport()), execution_adapter=FixtureWorker(),
         subscription_engines=SubscriptionEngines(finder=lambda _: '/fixture/cli', clock=lambda:1))
     install_fixture_workers(service)
+    # Offline replay offers CLI identities too; this adapter's login is a fixture.
+    with mock.patch.object(service.decision_routes,'follow_main_switched',return_value={'state':'skipped'}):
+        service.activate_main_ai({'route':'codex'})
     return service
 
 
 def install_fixture_workers(service):
     """Sandbox-only Main AI fixture setup; activation probes use fixture transports."""
     from personal_agent.providers import ModelAdapter
-    from personal_agent.subscription_engines import SubscriptionEngines
     with mock.patch.object(service,'adapter',ModelAdapter(FixtureTransport())), \
-            mock.patch.object(service,'execution_adapter',FixtureWorker()), \
-            mock.patch.object(service,'subscription_engines',SubscriptionEngines(finder=lambda _: '/fixture/cli',clock=lambda:1)), \
             mock.patch.object(service.decision_routes,'follow_main_switched',return_value={'state':'skipped'}):
+        # Keep CLI discovery/status on the original adapter. Only the API worker
+        # needs activation: its connection probe uses FixtureTransport, never a
+        # local CLI login probe, and the stored decision route is left intact.
         service.save_main_ai_key({'provider':'openai','key':'sk-'+'f'*48})
         service.activate_main_ai({'route':'openai'})
-        service.activate_main_ai({'route':'codex'})
 
 
 
@@ -432,14 +436,19 @@ class Executor:
                 service.context_observations.clock = lambda:now
                 service.use_decision_engine(engine)
                 for target, attr, value in ((qs,'worker_catalogue',lambda _:self.catalogue),
-                        (service,'execution_adapter',worker),(service,'adapter',ModelAdapter(transport)),
+                        (service.execution_adapter,'execute',worker.execute),(service,'adapter',ModelAdapter(transport)),
                         (service,'attempt_route',route),(service,'_prepare_worker_turn',prepared),
                         (service,'worker_profile_snapshot',refresh), (service,'day_plan_run',lambda *_:False)):
                     stack.enter_context(mock.patch.object(target,attr,value))
                 stack.enter_context(mock.patch('personal_agent.work_executor.BrowserRelay',
                     lambda *a,**kw:SimpleNamespace(address=('fixture',0),close=lambda:None)))
+                # Tool discovery must not launch a node --version subprocess
+                # while listing tools for a worker that is entirely scripted.
+                stack.enter_context(mock.patch('personal_agent.code_run.CodeRunner.available',return_value=False))
                 stack.enter_context(mock.patch.object(WorkExecutor,'_commit_profile_shown',commit))
                 stack.enter_context(mock.patch.object(BoundedExecutionAdapter,'execute',forbidden_worker))
+                if service.isolated_engine_adapter is not None:
+                    stack.enter_context(mock.patch.object(service.isolated_engine_adapter,'execute',forbidden_worker))
                 # A transport fixture is the ONLY allowed API worker transport.
                 original_send = ModelAdapter._send
                 def send(adapter,*args,**kwargs):

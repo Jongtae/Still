@@ -30,12 +30,21 @@ supply all product behavior. `recall_pairs` supplies load/seed/run and scoring;
 Existing `Transport`/`Engine` seams from `test_orchestrator` are adapted locally;
 evals never imports tests.
 
+Round-2 adapts stdlib `mock.patch.object` to replace only worker dispatch while
+retaining the original adapter's read-only discovery/qualification surfaces.
+`FixtureDecisionEngine`, the shipped terms loop and plan schema supply dry-run
+answers and execution; no parallel route writer or schema framework is added.
+Tests reuse `test_decision_routes.ServiceFixture`'s shipped activation with fake
+finder/qualification surfaces to populate seed-shaped route records. Python's
+`try`/`except`/`finally` and the same JSON exit writer preserve partial results;
+there is no new recovery store or dependency.
+
 Generic evaluation frameworks and schema packages do not supply these
 Still-specific inventories, receipts or CAS boundaries. No dependency is added;
 no external maintenance or release lookup was made under this task's no-network
 limit. There is no new runtime, licence, supply-chain or deployment requirement.
-No owner data or new authority is introduced. The real CLI execution adapter
-and real API worker transport are guarded against use. Fixture workers return
+No owner data or new authority is introduced. The real CLI worker execute
+method and real API worker transport are guarded against use. Fixture workers return
 one fixed answer, capture their dispatched context, and expose no tools to an
 outside process. The CLI browser relay is also a fixture (no socket).
 
@@ -71,6 +80,34 @@ and resume boundaries; the live caller retains its real timeout clock. A precedi
 retained as a succeeded Work/message when the case has context.
 
 ## Live recorder (Claude only, after budget approval and sweep lock)
+
+First exercise the copied synthetic sandbox with **zero model calls**. From
+this worktree, the exact preflight command is:
+
+```sh
+PYTHONPATH=src:evals /Users/jongtaelee/Documents/project/Still/.venv/bin/python -m agentos_eval recall-record \
+  --seed synthetic-terra --dry-run --dry-run-cases 6 --max-calls 0 \
+  --fixture evals/recall/recall-pairs-v4.json \
+  --additions evals/recall/recall-gate-dev-1.json \
+  --heldout-runs 3 --out /private/tmp/recall-pr8-dry-run
+```
+
+`--dry-run` uses the same `SandboxPool`/`Sandbox.prepare`, service factory and
+stored decision route as recording. It checks the catalogue, installs fixture
+workers when needed, seeds all rows, runs the terms loop over all eligible
+rows, and executes phase B through `Executor.run` and `PurposeRouter`. Only
+the structured terms/plan answers are canned fixtures. The first N run/case
+pairs (default 6), plus at least one held-out and one dev-addition pair, run in
+the original order. It skips requalification even with `--requalify`; it never
+resolves the live engine or saves qualification changes to the cache.
+`--max-calls` must be 0 or absent. Synthetic-marker, empty-seed and output
+location checks still apply. `--terms` and `--resume` are refused so both
+phases are exercised. The terms loop's completed-transport receipts are
+fixtures; all admitted live-call counts remain zero. Both files carry
+`evidence_class: dry-run (no model call)` and `complete: false`. Validation,
+regression reports and terms reuse refuse them as regression inputs.
+Codex tests this path only against temporary fixture seeds; the command above
+has not been run against `synthetic-terra` during these fixes.
 
 From this worktree, with `PYTHON` set to the project's venv interpreter and
 `OUT` set to a fresh output directory outside the repository. Fresh recording:
@@ -160,8 +197,16 @@ stop record. Product audit failure codes are retained when reported; otherwise
 the decision outcome is the failure reason. Decided entries store both fields,
 and validation rejects any entry whose `plan_outcome` is not `decided`. A
 decided plan with `accepted: false` remains real fallback-worker behavior.
-Both CLI and API worker adapters are fixtures; API captures the final context
-at the same commit/dispatch boundary as CLI. No worker can bypass the cap.
+The service's original execution adapter stays installed throughout activation,
+Work preparation, route-status checks and the admitted plan call, preserving
+`finder`, fingerprint and qualification surfaces. `PurposeRouter` never swaps
+it. Only its worker `execute` dispatch is scoped to `FixtureWorker.execute`;
+the real `BoundedExecutionAdapter.execute` raises if reached, and an installed
+isolated engine adapter's `execute` is blocked too. API workers may send only
+through `FixtureTransport`. These fixtures launch no worker process or network
+request; API captures the final context at the same commit/dispatch boundary
+as CLI. Code-runner availability is fixture-disabled during Work tool discovery
+so listing tools cannot spawn `node --version` either.
 
 The catalogue is read from the sandbox service's stored configuration, with
 worker identities, kinds, names, model/tool declarations and descriptions
@@ -169,7 +214,11 @@ recorded, but never route keys, secrets or local paths. It is injected during
 replay. If the synthetic seed has no Main AI (the builder qualifies Judgment
 only), activating a real worker would require a non-plan live probe: use
 `_runtime_catalogue` and configure a fixture Main AI through fixture probes
-inside the sandbox. The recording states that fallback and why. A configured
+inside the sandbox. This activates **only OpenAI API**, with the fake key and
+`FixtureTransport` connection probe. It does not activate Codex or run a CLI
+login probe, and suppresses the follow-Main switch so the configured decision
+route stays intact. Offline replay separately activates CLI identities through
+its fixture login adapter. The recording states that fallback and why. A configured
 service uses its own catalogue without substitution.
 
 Order is v4 dev once, v4 held-out three times, then the four additions once:
@@ -178,6 +227,16 @@ recordings are marked incomplete and refused as regression evidence. Tokens
 are `not observable`, never estimated. The one-screen summary reports phase
 calls, refusals, cap reached, completion and stop reason. Nothing is written
 inside the repo; Claude copies approved recordings here afterwards.
+
+An exception escaping after any admitted live call writes the terms and plans
+accumulated so far before it is re-raised. `plans.json` is incomplete and keeps
+the exception class/message, phase, case/run when known and per-phase/session
+call counts. Terms interrupted during phase A are also incomplete, include the
+stop reason and retain whatever row metadata and manifests exist, even when
+`run_terms` or `finish` raises. Such terms are diagnostic only and `--terms`
+refuses them; completed terms survive a phase-B crash for reuse. An exception
+during qualification can produce an empty diagnostic terms export. None of
+these partial recordings is regression evidence.
 
 ## Formats and replay
 

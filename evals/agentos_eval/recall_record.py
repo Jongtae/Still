@@ -9,7 +9,6 @@ import re
 from time import time as real_time
 from collections import Counter
 from pathlib import Path
-from contextlib import nullcontext
 from unittest import mock
 
 from . import recall_pairs as pairs
@@ -54,15 +53,11 @@ class PurposeRouter:
             self.error = 'Second live plan call in one Work'
             raise RuntimeError(self.error)
         self.calls[context.purpose] += 1
-        # Route construction and the shipped qualification guard consult the
-        # service execution adapter even though they use the tool-less caller.
-        # Restore it ONLY inside this admitted plan boundary; workers remain
-        # fixtures and the real worker execute method remains guarded.
-        scope = mock.patch.object(self.service,'execution_adapter',self.execution) if self.service else nullcontext()
+        # The original adapter stays installed for discovery/status at every
+        # boundary. Executor substitutes only worker execute, never the adapter.
         before = len(self.audit)
         try:
-            with scope:
-                answer = self.live.structured(context, question, schema)
+            answer = self.live.structured(context, question, schema)
         except Exception as exc:
             self.plan_outcome = 'exception'
             self.plan_failure = type(exc).__name__ + ': ' + str(exc)
@@ -122,63 +117,113 @@ def validate_start(args):
     marker = seed / 'synthetic-seed.json'
     if not marker.is_file() or json.loads(marker.read_text()).get('owner_data') != 'none':
         raise ValueError('Seed lacks the synthetic-seed.json marker with owner_data=none')
-    if args.max_calls is None:
-        raise ValueError('recall-record requires explicit --max-calls')
-    if type(args.max_calls) is not int or args.max_calls < 1:
-        raise ValueError('--max-calls must be positive')
+    if getattr(args,'dry_run',False):
+        if args.max_calls is not None and (type(args.max_calls) is not int or args.max_calls != 0):
+            raise ValueError('--dry-run requires --max-calls 0 or absent')
+        if type(args.dry_run_cases) is not int or args.dry_run_cases < 1:
+            raise ValueError('--dry-run-cases must be positive')
+        if getattr(args,'terms',None) or getattr(args,'resume',None):
+            raise ValueError('--dry-run must exercise both phases without --terms or --resume')
+    else:
+        if args.max_calls is None:
+            raise ValueError('recall-record requires explicit --max-calls')
+        if type(args.max_calls) is not int or args.max_calls < 1:
+            raise ValueError('--max-calls must be positive')
     if args.out is None or Path(args.out).expanduser().resolve().is_relative_to(REPO.resolve()):
         raise ValueError('--out must be outside the repository')
     return seed
 
 
-def record_terms(service, data, refs, cap, *, blocked=False):
+def dry_run_order(order, additions, limit):
+    """First N pairs plus one held-out and one addition, in original run order."""
+    selected = {(r,c['id']) for r,c in order[:limit]}
+    addition_ids = {c['id'] for c in additions['cases']}
+    for predicate in (lambda c:c['split']=='heldout', lambda c:c['id'] in addition_ids):
+        pair = next(((r,c) for r,c in order if predicate(c)),None)
+        if pair is None:
+            raise ValueError('Dry run requires a held-out and a dev-addition case')
+        selected.add((pair[0],pair[1]['id']))
+    return [(r,c) for r,c in order if (r,c['id']) in selected]
+
+
+def dry_run_engine(catalogue):
+    """Canned structured responses; never resolve the configured live engine."""
+    from personal_agent.decision import FixtureDecisionEngine, StructuredDecision, OUTCOME_DECIDED, DecisionConfidence
+    def answer(context, question, schema):
+        if context.purpose == 'memory-terms':
+            # The shipped terms caller numbers one rendered note per line.
+            data = dict(notes=[dict(n=n,terms='') for n in
+                range(1,len(context.facts['notes'].splitlines())+1)])
+        elif context.purpose == 'work-orchestration':
+            data = dict(worker=catalogue.default,model='',effort='',brief=dict(notes='',lens='',needs=''),
+                reason='dry-run fixture',reply='',recall_query='',
+                account_change=False,owner_situation=False,technical_work=False)
+            if 'ask_location' in schema['properties']:
+                data['ask_location'] = ''
+                data['location_button'] = ''
+            if 'preview' in schema['properties']:
+                data['preview'] = dict(understanding='',approach='',steps=[])
+        else:
+            raise RuntimeError('Unexpected dry-run purpose: ' + context.purpose)
+        # run_terms needs a completed transport receipt to advance its rows.
+        # This is a fixture receipt only: the live CallCap remains at zero.
+        return StructuredDecision(OUTCOME_DECIDED,data,DecisionConfidence(1,sent=True,route='fixture',model='fixture'))
+    return FixtureDecisionEngine(structured=answer)
+
+
+def record_terms(service, data, refs, cap, *, blocked=False, progress=None, dry_run=False):
     """The shipped arm -> claim -> run_terms -> finish, including adaptive packing."""
     from personal_agent import owner_model as om, memory_terms as mt
     upkeep = service.owner_model
     manifests, start, complete = [], cap.used, False
+    recording = progress if progress is not None else {}
     controls = upkeep.settings()
-    lifted = max(controls['daily_calls'],4*cap.max_calls)
+    lifted = max(controls['daily_calls'],4*(len(data['rows'])+1 if dry_run else cap.max_calls))
     original_settings = upkeep.settings
     # MAX_DAILY_CALLS clamps persisted settings to 200. Scoped settings is the
     # equivalent override explicitly permitted by the brief; no seed mutation.
-    with fixture_scope(data) as now, mock.patch.object(upkeep,'settings',
-            lambda db=None:dict(original_settings(db), daily_calls=lifted)), \
-            mock.patch.object(upkeep,'clock',lambda:now):
-        judgments = service._owner_model_judgments(None)
-        while True:
-            with service.store.db() as db:
-                eligible = upkeep._terms_rows(db,data['today']).fetchone() is not None
-            if not eligible:
-                complete = True
-                break
-            if blocked or cap.used >= cap.max_calls or cap.used-start >= 60:
-                break
-            ident = upkeep.arm_terms(now=now,available=True)
-            row = upkeep.claim_due(now,redact=judgments.redact)
-            if row is None or row['job_id'] != ident or row['kind'] != om.KIND_TERMS:
-                raise ValueError('Terms claim unavailable or non-terms run selected')
-            before = cap.used
-            state,calls,event,detail = upkeep.run_terms(row,judgments)
-            upkeep.finish(ident,state,calls,event,detail,now,kind=om.KIND_TERMS)
-            manifest = json.loads(detail['manifest'])
-            reverse = {v:k for k,v in refs.items()}
-            for item in manifest['entries']:
-                item['ref'] = reverse[item.pop('id')]
-            manifests.append(manifest)
-            if cap.used == before and manifest['result'] == 'unsent':
-                break
-    exported = {}
-    for ref,ident in refs.items():
-        row = raw_row(service.store,ident)
-        exported[ref] = dict(terms=row['retrieval_terms'] or '',
-            meta=mt.parse_meta(row['retrieval_terms_meta']) if row['retrieval_terms_meta'] else None)
-    recording = dict(version=TERMS_VERSION,fixture_version=data['version'],fixture_digest=digest(data),
-        filter_digest=filter_digest(),terms_prompt_digest=terms_prompt_digest(),rows=exported,
-        manifests=manifests,complete=complete,calls=cap.used-start,
-        share_limit_lift=dict(method='scoped Upkeep.settings override in sandbox only',
-            previous_daily_calls=controls['daily_calls'],daily_calls=lifted,terms_share=max(1,lifted//4)),
-        tokens='not observable')
-    recording['status_counts'] = terms_status_counts(recording)
+    try:
+        with fixture_scope(data) as now, mock.patch.object(upkeep,'settings',
+                lambda db=None:dict(original_settings(db), daily_calls=lifted)), \
+                mock.patch.object(upkeep,'clock',lambda:now):
+            judgments = service._owner_model_judgments(None)
+            while True:
+                with service.store.db() as db:
+                    eligible = upkeep._terms_rows(db,data['today']).fetchone() is not None
+                if not eligible:
+                    complete = True
+                    break
+                if blocked or (not dry_run and (cap.used >= cap.max_calls or cap.used-start >= 60)):
+                    break
+                ident = upkeep.arm_terms(now=now,available=True)
+                row = upkeep.claim_due(now,redact=judgments.redact)
+                if row is None or row['job_id'] != ident or row['kind'] != om.KIND_TERMS:
+                    raise ValueError('Terms claim unavailable or non-terms run selected')
+                before = cap.used
+                state,calls,event,detail = upkeep.run_terms(row,judgments)
+                manifest = json.loads(detail['manifest'])
+                reverse = {v:k for k,v in refs.items()}
+                for item in manifest['entries']:
+                    item['ref'] = reverse[item.pop('id')]
+                manifests.append(manifest)
+                upkeep.finish(ident,state,calls,event,detail,now,kind=om.KIND_TERMS)
+                if cap.used == before and manifest['result'] == 'unsent':
+                    break
+    finally:
+        # Publish even when run_terms/finish raises after admission. The outer
+        # recorder writes this same object before propagating the exception.
+        exported = {}
+        for ref,ident in refs.items():
+            row = raw_row(service.store,ident)
+            exported[ref] = dict(terms=row['retrieval_terms'] or '',
+                meta=mt.parse_meta(row['retrieval_terms_meta']) if row['retrieval_terms_meta'] else None)
+        recording.update(version=TERMS_VERSION,fixture_version=data['version'],fixture_digest=digest(data),
+            filter_digest=filter_digest(),terms_prompt_digest=terms_prompt_digest(),rows=exported,
+            manifests=manifests,complete=complete,calls=cap.used-start,
+            share_limit_lift=dict(method='scoped Upkeep.settings override in sandbox only',
+                previous_daily_calls=controls['daily_calls'],daily_calls=lifted,terms_share=max(1,lifted//4)),
+            tokens='not observable')
+        recording['status_counts'] = terms_status_counts(recording)
     return recording
 
 
@@ -191,7 +236,8 @@ def load_inputs(args, data, order):
     terms = json.loads(Path(terms_path).read_text()) if terms_path else None
     if terms is not None:
         validate_terms(terms,data)
-        if terms.get('complete') is not True or terms.get('tokens') != 'not observable':
+        if (terms.get('complete') is not True or terms.get('tokens') != 'not observable'
+                or terms.get('evidence_class') == 'dry-run (no model call)'):
             raise ValueError('Reused terms must be complete with tokens not observable')
     resume = json.loads(Path(resume_path).read_text()) if resume_path else None
     if resume is not None:
@@ -209,6 +255,40 @@ def load_inputs(args, data, order):
     return terms,resume
 
 
+def write_recordings(args, terms, plans, cap, phase_counts, *, failure, stop, identity,
+                     cached, order, reused, cache_key, evidence):
+    """One exit writer for success, cap stops and exceptions after admission."""
+    if not reused:
+        if evidence == 'dry-run (no model call)':
+            terms['complete'] = False
+        terms.update(identity=identity,evidence_class=evidence,sandbox_cache_key=cache_key,
+            call_budget=dict(max_calls=cap.max_calls,
+                admitted=phase_counts['qualification']+phase_counts['terms']))
+    terms_digest = digest(terms)
+    plans['terms_digest'] = terms_digest
+    plans['runs'] = {str(r):{c['id']:plans['runs'][str(r)][c['id']]
+        for rr,c in order if rr==r and c['id'] in plans['runs'].get(str(r),{})}
+        for r in range(1,args.heldout_runs+1) if plans['runs'].get(str(r))}
+    plans['complete'] = failure is None and evidence != 'dry-run (no model call)'
+    plans['identity'] = identity
+    session = dict(max_calls=cap.max_calls,admitted=cap.used,refused=int(cap.refused),
+        reached=cap.used>=cap.max_calls if cap.max_calls else False,by_phase=dict(phase_counts),stop_reason=failure,
+        stop=stop,terms_source=plans['terms_source'],terms_digest=terms_digest,identity=identity,
+        qualification_cache_applied=bool(cached))
+    sessions = plans.get('call_budget',{}).get('sessions',[]) + [session]
+    budget = dict(sessions=sessions,max_calls=sum(s['max_calls'] for s in sessions),
+        admitted=sum(s['admitted'] for s in sessions),refused=sum(s['refused'] for s in sessions),
+        reached=any(s['reached'] for s in sessions),
+        by_phase={p:sum(s['by_phase'].get(p,0) for s in sessions) for p in phase_counts})
+    plans.update(call_budget=budget,failure=failure,stop=stop)
+    out = Path(args.out).expanduser().resolve()
+    out.mkdir(parents=True,exist_ok=True)
+    for name,value in (('terms.json',terms),('plans.json',plans)):
+        (out/name).write_text(json.dumps(value,ensure_ascii=False,indent=2)+'\n')
+    print(json.dumps(dict(calls=phase_counts,admitted=cap.used,refused=cap.refused,
+        cap_reached=session['reached'],complete=plans['complete'],failure=failure)))
+
+
 def record(args, *, factory=None, sandbox_factory=None, requalify=None):
     """Only CLI recall-record calls this; injected dependencies support offline tests."""
     from personal_agent.decision import RoutedDecisionEngine
@@ -222,9 +302,12 @@ def record(args, *, factory=None, sandbox_factory=None, requalify=None):
     additions = json.loads(Path(args.additions).read_text())
     data = layer(base,additions)
     order = run_order(base,additions,args.heldout_runs)
+    dry_run = getattr(args,'dry_run',False)
+    if dry_run:
+        order = dry_run_order(order,additions,args.dry_run_cases)
     terms,resume = load_inputs(args,data,order)
     reused = terms is not None
-    cap = judgments.CallCap(args.max_calls)
+    cap = judgments.CallCap(0 if dry_run else args.max_calls)
     # Adopt SandboxPool's per-seed qualification cache and stable slot path,
     # without starting its server/ports. Relocating a strict CLI binding would
     # otherwise force qualification again on every resume.
@@ -238,7 +321,11 @@ def record(args, *, factory=None, sandbox_factory=None, requalify=None):
         root=eval_home()/'sandboxes'/'recall-record'/cache_key)
     slot = pool._claim_slot()
     sandbox = None
-    phase_counts, failure, stop = {}, None, None
+    phase_counts = dict(qualification=0,terms=0,plans=0)
+    failure, stop, plans, phase, start = None, None, None, 'qualification', 0
+    identity = dict(route='not reported',engine='not reported',requested_model='not reported',observed_model='not reported')
+    evidence = ('dry-run (no model call)' if dry_run else
+                'live-route:unknown' if factory is None else 'fixture (model-free)')
     try:
         sandbox = (sandbox_factory or Sandbox)(pool.root,seed=seed,src=args.src,slot=slot)
         path = sandbox.prepare()  # no server, socket, scheduler or Sandbox.start
@@ -273,65 +360,65 @@ def record(args, *, factory=None, sandbox_factory=None, requalify=None):
                 raise ValueError('Resume catalogue differs')
             if resume['plan_prompt_schema_digest'] != prompt_digest(catalogue):
                 raise ValueError('Resume plan prompt/schema digest differs')
-        before = cap.used
-        if args.requalify:
+        if terms is None:
+            terms = dict(version=TERMS_VERSION,fixture_version=data['version'],fixture_digest=digest(data),
+                filter_digest=filter_digest(),terms_prompt_digest=terms_prompt_digest(),rows={},manifests=[],
+                complete=False,calls=0,tokens='not observable')
+        plans = copy.deepcopy(resume) if resume is not None else dict(version=PLAN_VERSION,
+            fixture_digest=digest(data),plan_prompt_schema_digest=prompt_digest(catalogue),catalogue=cat,
+            catalogue_source=catalogue_source,heldout_runs=args.heldout_runs,runs={},
+            tokens='not observable',git_head=git_head(),live_calls_by_purpose={},evidence_class=evidence)
+        plans['sandbox_cache_key'] = cache_key
+        plans['terms_source'] = 'reused' if reused else 'recorded'
+        start = cap.used
+        if args.requalify and not dry_run:
             shared_maximum = cap.max_calls
             try:
                 cap.max_calls = min(shared_maximum,cap.used+44)
                 (requalify or judgments.requalify_route)(service,cap)
             finally:
                 cap.max_calls = shared_maximum
-        phase_counts['qualification'] = cap.used-before
+        phase_counts['qualification'] = cap.used-start
         if phase_counts['qualification'] > 44:
             raise ValueError('Qualification exceeded its 44-call allocation')
-        pool.store_judgment(slot,'recall-record',read_config(path,JUDGMENT_KEYS))
+        if not dry_run:
+            pool.store_judgment(slot,'recall-record',read_config(path,JUDGMENT_KEYS))
         original_engine = service.decision_engine
-        execution = service.execution_adapter
         # Replace the Work budget rather than nesting routed engines. Wall time
         # is restored only inside the resolved engine, after facts are built.
         resolve = original_engine.resolve if isinstance(original_engine,RoutedDecisionEngine) else lambda:original_engine
-        capped = RoutedDecisionEngine(lambda:RealClockEngine(resolve()),budget=lambda:cap)
+        capped = (dry_run_engine(catalogue) if dry_run else
+                  RoutedDecisionEngine(lambda:RealClockEngine(resolve()),budget=lambda:cap))
         service.use_decision_engine(capped)
+        phase, start = 'terms', cap.used
         with fixture_scope(data):
             refs = seed_fixture(service.store,data)
             if reused:
                 apply_terms(service.store,data,terms,refs)
             else:
-                terms = record_terms(service,data,refs,cap,blocked=cap.refused)
+                record_terms(service,data,refs,cap,blocked=cap.refused,progress=terms,dry_run=dry_run)
         phase_counts['terms'] = 0 if reused else terms['calls']
         runtime = judgments.effective_runtime(service,audit)
         identity = dict(route=runtime['active'].get('transport','not reported'),
             engine=runtime['active'].get('engine','not reported'),
             requested_model=runtime['active'].get('requested_model') or 'not reported',
             observed_model=sorted({r['observed_model'] for r in audit if r.get('observed_model')}) or 'not reported')
-        evidence = ('live-route:' + runtime['active'].get('transport','unknown')
-                    if factory is None else 'fixture (model-free)')
-        if not reused:
-            terms.update(identity=identity,evidence_class=evidence,sandbox_cache_key=cache_key,
-                call_budget=dict(max_calls=cap.max_calls,
-                    admitted=phase_counts['qualification']+phase_counts['terms']))
-        # A reused file's object is never modified, including its identity/budget.
-        terms_digest = digest(terms)
-        plans = copy.deepcopy(resume) if resume is not None else dict(version=PLAN_VERSION,
-            fixture_digest=digest(data),terms_digest=terms_digest,
-            plan_prompt_schema_digest=prompt_digest(catalogue),catalogue=cat,
-            catalogue_source=catalogue_source,heldout_runs=args.heldout_runs,runs={},
-            tokens='not observable',git_head=git_head(),live_calls_by_purpose={},evidence_class=evidence)
-        plans['sandbox_cache_key'] = cache_key
-        plans['terms_source'] = 'reused' if reused else 'recorded'
+        if not dry_run and factory is None:
+            evidence = 'live-route:' + runtime['active'].get('transport','unknown')
+        plans['evidence_class'] = evidence
         if not terms['complete']:
             failure = 'Terms phase incomplete (budget reached or unavailable)'
         executor = Executor(service,data,refs,catalogue)
-        start = cap.used
+        phase, start = 'plans', cap.used
         if failure is None:
             for run,case in order:
                 if case['id'] in plans['runs'].get(str(run),{}):
                     continue
-                if cap.used >= cap.max_calls:
+                if not dry_run and cap.used >= cap.max_calls:
                     failure = 'Shared call cap reached'
                     stop = dict(run=run,case=case['id'],reason=failure)
                     break
-                router = PurposeRouter(live=capped,cap=cap,service=service,execution=execution,audit=audit)
+                router = PurposeRouter(live=capped,cap=cap,service=service,audit=audit)
                 before = cap.used
                 try:
                     observed = executor.run(case,router.engine)
@@ -341,7 +428,7 @@ def record(args, *, factory=None, sandbox_factory=None, requalify=None):
                         raise ValueError('Plan not decided')
                     if router.calls.get('work-orchestration') != 1:
                         raise ValueError('Work did not make exactly one plan call')
-                    if cap.used-before != 1:
+                    if cap.used-before != (0 if dry_run else 1):
                         raise ValueError('Plan call was not admitted exactly once')
                     plans['runs'].setdefault(str(run),{})[case['id']] = dict(query=case['query'],
                         context=case.get('context',''),plan=router.entry,input_digest=router.input_digest,
@@ -351,39 +438,37 @@ def record(args, *, factory=None, sandbox_factory=None, requalify=None):
                     failure = router.error or type(exc).__name__ + ': ' + str(exc)
                     stop = dict(run=run,case=case['id'],reason=failure,
                         plan_outcome=router.plan_outcome,plan_failure=router.plan_failure)
+                    if not router.error:
+                        raise
                     break
                 finally:
                     counts = plans['live_calls_by_purpose']
                     for purpose in router.calls:
                         counts[purpose] = counts.get(purpose,0) + (cap.used-before)
         phase_counts['plans'] = cap.used-start
-        # Canonical dictionary order even for a valid recording with holes.
-        plans['runs'] = {str(r):{c['id']:plans['runs'][str(r)][c['id']]
-            for rr,c in order if rr==r and c['id'] in plans['runs'].get(str(r),{})}
-            for r in range(1,args.heldout_runs+1) if plans['runs'].get(str(r))}
-        plans['complete'] = failure is None
-        plans['identity'] = dict(identity,observed_model=sorted({r['observed_model'] for r in audit
+        identity = dict(identity,observed_model=sorted({r['observed_model'] for r in audit
             if r.get('purpose')=='work-orchestration' and r.get('observed_model')}) or 'not reported')
-        session = dict(max_calls=cap.max_calls,admitted=cap.used,refused=int(cap.refused),
-            reached=cap.used>=cap.max_calls,by_phase=phase_counts,stop_reason=failure,
-            stop=stop,terms_source=plans['terms_source'],terms_digest=terms_digest,identity=plans['identity'],
-            qualification_cache_applied=bool(cached))
-        sessions = plans.get('call_budget',{}).get('sessions',[]) + [session]
-        budget = dict(sessions=sessions,max_calls=sum(s['max_calls'] for s in sessions),
-            admitted=sum(s['admitted'] for s in sessions),refused=sum(s['refused'] for s in sessions),
-            reached=any(s['reached'] for s in sessions),
-            by_phase={p:sum(s['by_phase'][p] for s in sessions) for p in phase_counts})
-        plans.update(call_budget=budget,failure=failure,stop=stop)
-        out = Path(args.out).expanduser().resolve()
-        out.mkdir(parents=True,exist_ok=True)
-        for name,value in (('terms.json',terms),('plans.json',plans)):
-            (out/name).write_text(json.dumps(value,ensure_ascii=False,indent=2)+'\n')
-        print(json.dumps(dict(calls=phase_counts,admitted=cap.used,refused=cap.refused,
-            cap_reached=session['reached'],complete=plans['complete'],failure=failure)))
         return plans
+    except BaseException as exc:
+        failure = type(exc).__name__ + ': ' + str(exc)
+        phase_counts[phase] = cap.used-start
+        stop = dict(stop or {},phase=phase,reason=failure)
+        if not reused and phase != 'plans' and terms is not None:
+            terms['complete'] = False
+            terms['failure'] = failure
+        raise
     finally:
         try:
-            if sandbox is not None:
-                sandbox.stop()
+            try:
+                if sandbox is not None:
+                    sandbox.stop()
+            finally:
+                pool._release_slot(slot)
+        except BaseException as exc:
+            failure = type(exc).__name__ + ': ' + str(exc)
+            stop = dict(stop or {},phase='cleanup',reason=failure)
+            raise
         finally:
-            pool._release_slot(slot)
+            if plans is not None and (failure is None or cap.used or dry_run):
+                write_recordings(args,terms,plans,cap,phase_counts,failure=failure,stop=stop,
+                    identity=identity,cached=cached,order=order,reused=reused,cache_key=cache_key,evidence=evidence)

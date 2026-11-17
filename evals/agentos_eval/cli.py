@@ -527,6 +527,8 @@ def main(argv=None):
             regression.add_argument('--src',type=Path,default=SRC)
             regression.add_argument('--seed')
             regression.add_argument('--max-calls',type=int)
+            regression.add_argument('--dry-run',action='store_true',help='exercise the sandbox with canned answers and zero model calls')
+            regression.add_argument('--dry-run-cases',type=int,default=6)
             regression.add_argument('--requalify',action='store_true')
             regression.add_argument('--terms',type=Path,help='reuse a complete terms recording')
             regression.add_argument('--resume',type=Path,help='continue incomplete plans; terms default to its sibling terms.json')
