@@ -56,3 +56,22 @@ def test_the_proposal_overflow_line_is_catalogued_in_the_assistant_register():
     assert '습니다' not in text
     assert set(catalog()['preparations.more_proposals']) == {'ko', 'en', 'ja', 'zh'}
     assert json.dumps(catalog()['telegram_surface.settings_final'], ensure_ascii=False).count('{part}') == 4
+
+
+def test_a_preparation_without_an_offer_is_a_card_with_its_brief_folded():
+    """#950 (owner choice 2026-11-17): the run's brief is never the line the owner reads first."""
+    brief = '사용자의 관심 종목 세 개를 장 시작 전에 확인하고 ' + '전일 대비 변동과 뉴스를 정리해 보고한다. ' * 40
+    row = {'id': 'p1', 'kind': prep.KIND_PREPARE, 'goal_text': brief, 'due_at': 4102444800, 'timezone': 'Asia/Seoul',
+           'recurrence': None}
+    with mock.patch.object(prep, 'schedule_text', lambda row, zone=None, lang='ko': '매일 08:30'):
+        short = prep.proposal_summary(row, 'Asia/Seoul', brief=False)
+        html = prep.proposal_html([row], 0, 'Asia/Seoul')
+    assert '[미리 준비]' not in short and '[미리 준비]' not in html
+    assert short.splitlines()[1] == '매일 08:30'
+    assert len(short) < 200, 'a scheduled notice shows the name and schedule, not the whole brief'
+    folded = html.index('<blockquote expandable>')
+    assert '전일 대비 변동과 뉴스를 정리해 보고한다. 전일' in html[folded:]
+    assert html.count('전일 대비 변동') > html[:folded].count('전일 대비 변동')
+    reminder = {**row, 'kind': prep.KIND_REMINDER, 'goal_text': '약 먹기'}
+    with mock.patch.object(prep, 'schedule_text', lambda row, zone=None, lang='ko': '매일 08:30'):
+        assert '약 먹기' in prep.proposal_summary(reminder, 'Asia/Seoul') and '\n' not in prep.proposal_summary(reminder)
