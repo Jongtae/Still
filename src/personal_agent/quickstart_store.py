@@ -1993,7 +1993,7 @@ class QuickStore:
         Document Works are withheld from both readers to preserve #826.
         Delivery is true/false only with a transport receipt; otherwise unknown.
         This is conversation history as recorded, without the rows the owner forgot (#367).
-        ``message_ids`` reopens only source rows actually sent by a tool,
+        ``message_ids`` reopens exactly the recorded turn ids in each Work,
         including addressed results without FTS or a recent-window cutoff.
         With ``work_id``, return {outcome, exchanges} independently of FTS and
         the recent window; lexical callers keep their list result. Adopt the
@@ -2047,8 +2047,10 @@ class QuickStore:
             for hit in hits:
                 if hit['job_id'] in seen or hit['job_id'] in documents:continue
                 seen.add(hit['job_id'])
-                if work_id is not None or message_ids is not None:
+                if work_id is not None:
                     rows=db.execute(f"SELECT {columns} FROM messages m JOIN jobs j ON j.id=m.job_id WHERE m.job_id=? AND m.role IN ('user','assistant') AND m.id NOT IN ({FORGOTTEN_MESSAGE_IDS}) ORDER BY ABS(m.id-?),m.id LIMIT 3",(hit['job_id'],hit['id'])).fetchall()
+                elif message_ids is not None:
+                    rows=db.execute(f"SELECT {columns} FROM messages m JOIN jobs j ON j.id=m.job_id WHERE m.job_id=? AND m.id IN ({','.join('?' for _ in ids)}) AND m.role IN ('user','assistant') AND m.id NOT IN ({FORGOTTEN_MESSAGE_IDS}) ORDER BY m.id",(hit['job_id'],*ids)).fetchall()
                 else:
                     rows=db.execute(f"SELECT {columns} FROM messages m JOIN jobs j ON j.id=m.job_id WHERE m.job_id=? AND m.id<? AND m.role IN ('user','assistant') AND m.id NOT IN ({FORGOTTEN_MESSAGE_IDS}) ORDER BY ABS(m.id-?),m.id LIMIT 3",(hit['job_id'],cutoff,hit['id'])).fetchall()
                 rows=sorted(rows,key=lambda row:row['id'])

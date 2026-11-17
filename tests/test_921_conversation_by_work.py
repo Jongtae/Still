@@ -6,7 +6,7 @@ from personal_agent import agent_runtime, mcp_bridge
 from personal_agent.agent_runtime import Capabilities, MEMORY_OWNER, ToolError
 from personal_agent.bounded_execution import AgentOSMcpTools
 from personal_agent.decision import BinaryDecision, FixtureDecisionEngine, OUTCOME_DECIDED, audit_record, fixture_confidence
-from personal_agent.memory_service import conversation_block_refs, conversation_refs
+from personal_agent.memory_service import conversation_block_refs, conversation_refs, recalled_tool_exchanges
 from personal_agent.owner_forget import OwnerForget
 import test_conversation_recall as recall_helpers
 import test_information_use as audit_helpers
@@ -43,6 +43,63 @@ class ConversationByWork(audit_helpers._ServiceBase):
     def ids(self, work):
         with self.store.db() as db:
             return [row['id'] for row in db.execute('SELECT id FROM messages WHERE job_id=? ORDER BY id', (work,))]
+
+    def record_recall(self, caps, result):
+        with self.store.db() as db:
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       (caps.job_id, 'search_conversation', 'succeeded', json.dumps({
+                           'host_action': 'search_conversation',
+                           'evidence': agent_runtime.evidence_summary('search_conversation', result)}), 1))
+
+    def test_lexical_replay_keeps_recorded_turns_across_recent_window_boundary(self):
+        source = self.exchange('Original owner question', 'First answer')
+        with self.store.db() as db:
+            db.executemany('INSERT INTO messages(role,content,channel,created,job_id) VALUES (?,?,?,?,?)',
+                           [('assistant', 'archivetopic match', 'web', 12, source),
+                            ('assistant', 'Newer answer', 'web', 13, source)])
+        ids = self.ids(source)
+        self.age(count=15)  # The default 16-row recent window starts at turn 4.
+        caps = self.caps()
+        result = caps.execute('search_conversation', {'query': 'archivetopic'})
+        [exchange] = result['exchanges']
+        self.assertEqual(exchange['matched_id'], ids[2])
+        self.assertEqual([turn['id'] for turn in exchange['turns']], ids[:3])
+        self.record_recall(caps, result)
+        [replayed] = recalled_tool_exchanges(self.store, caps.job_id)
+        self.assertEqual(replayed, exchange)
+        self.assertEqual([turn['id'] for turn in replayed['turns']], ids[:3])
+        # Replay also honors a noncontiguous set, without filling in a nearby turn.
+        [subset] = self.store.search_conversation('', message_ids=[ids[0], ids[2]], limit=1)
+        self.assertEqual([turn['id'] for turn in subset['turns']], [ids[0], ids[2]])
+
+    def test_recent_addressed_result_replays_exactly_the_turns_sent(self):
+        source = self.exchange()
+        with self.store.db() as db:
+            db.executemany('INSERT INTO messages(role,content,channel,created,job_id) VALUES (?,?,?,?,?)',
+                           [('assistant', 'Third turn', 'web', 12, source),
+                            ('assistant', 'Fourth turn', 'web', 13, source)])
+        caps = self.caps()
+        result = caps.execute('search_conversation', {'work_id': source})
+        self.assertEqual([turn['id'] for turn in result['exchanges'][0]['turns']], self.ids(source)[:3])
+        self.record_recall(caps, result)
+        self.store.messages_search_available = False
+        self.assertEqual(recalled_tool_exchanges(self.store, caps.job_id), result['exchanges'])
+
+    def test_replay_excludes_a_turn_forgotten_after_the_tool_result(self):
+        source = self.exchange()
+        caps = self.caps()
+        result = caps.execute('search_conversation', {'work_id': source})
+        [exchange] = result['exchanges']
+        self.record_recall(caps, result)
+        owner, assistant = self.ids(source)
+        OwnerForget(self.store).forget(MEMORY_OWNER, f'message:{assistant}')
+        with self.store.db() as db:
+            db.execute('INSERT INTO messages(role,content,channel,created,job_id) VALUES (?,?,?,?,?)',
+                       ('assistant', 'Unrecorded later answer', 'web', 12, source))
+        [replayed] = recalled_tool_exchanges(self.store, caps.job_id)
+        self.assertEqual(replayed['turns'], exchange['turns'][:1])
+        [stored] = self.store.search_conversation('', message_ids=[owner, assistant], limit=1)
+        self.assertEqual(stored, replayed)
 
     def test_old_and_recent_work_return_the_same_exchange_shape_and_timestamps(self):
         old = self.exchange(delivery='sent')
