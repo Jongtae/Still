@@ -951,12 +951,15 @@ def terms_identity(confidence):
     return {key: getattr(confidence, key, '') or '' for key in ('route', 'model', 'observed_model')}
 
 
-def terms_manifest(batch, outcomes=None, *, cap, result=None):
+def terms_manifest(batch, outcomes=None, *, cap, result=None, stale=()):
     # Keep the configured cap separate from the observed sent rows and per-row receipts.
+    entries = [dict(id=item['id'], digest=item['content_digest'],
+                    **({'outcome': outcomes[n]} if outcomes is not None else {}))
+               for n, item in enumerate(batch)]
+    entries.extend(dict(id=item['id'], digest=item['content_digest'], outcome='stale-before-send')
+                   for item in stale)
     return json.dumps({'cap': cap, 'rows': len(batch) if result in ('ok', 'rejected') else 0,
-                       **({'result': result} if result else {}), 'entries': [dict(id=item['id'], digest=item['content_digest'],
-                                    **({'outcome': outcomes[n]} if outcomes is not None else {}))
-                               for n, item in enumerate(batch)]}, separators=(',', ':'))
+                       **({'result': result} if result else {}), 'entries': entries}, separators=(',', ':'))
 
 
 def terms_answer(data, size):
@@ -1151,11 +1154,14 @@ class Upkeep:
 
     def terms_batch(self, db, today, redact, *, cap):
         """Whole numbered facts, redacted before measuring the actual notes input."""
+        return self._pack_terms(self._terms_rows(db, today), redact, cap=cap)
+
+    def _pack_terms(self, rows, redact, *, cap):
         if redact is None:
             from .conversation_handoff import ConversationJudgments
             redact = ConversationJudgments().redact
         batch, text = [], ''
-        for row in self._terms_rows(db, today):
+        for row in rows:
             fact = redact(f"{row['memory_key']}: {row['content']}")
             single = f'1. {fact}'
             large = len(single) > 5000 or len(single.encode('utf-8')) > 15000
@@ -1194,6 +1200,25 @@ class Upkeep:
                        and self.settings(db)['daily_calls'] > self.calls_used(self.clock(), db))
         if not allowed or (cancelled and cancelled()):
             return STATE_PENDING, 0, EVENT_UNAVAILABLE, {'manifest': terms_manifest(batch, cap=cap, result='unsent')}
+        # A claim is not a disclosure snapshot: forgetting (including forget/undo),
+        # editing or another index writer must take effect before dispatch too.
+        fresh, stale = [], []
+        with self.store.db() as db:
+            today = owner_today(self.store, self.clock())
+            for item in batch:
+                current = db.execute("SELECT * FROM memories WHERE id=? AND owner_key=? AND state='current' "
+                                     "AND content_digest=? AND (valid_until IS NULL OR valid_until>=?) "
+                                     "AND memory_key GLOB 'profile.*' AND retrieval_terms_meta IS ?",
+                                     (item['id'], self.store._memory_binding(MEMORY_OWNER), item['content_digest'],
+                                      today, item['retrieval_terms_meta'])).fetchone()
+                if current is None:
+                    stale.append(item)
+                else:
+                    fresh.append(current)
+        batch = self._pack_terms(fresh, judgments.redact, cap=cap)
+        if not batch:
+            return STATE_DONE, 0, EVENT_RECORDED, {
+                'manifest': terms_manifest(batch, cap=cap, result='stale' if stale else 'unsent', stale=stale)}
         decision, data, calls = None, None, 0
         oversize = bool(batch and batch[0]['oversize'])
         if batch and not oversize:
@@ -1210,7 +1235,8 @@ class Upkeep:
                 with self.store.db() as db:
                     db.execute('UPDATE owner_model_upkeep SET reason=? WHERE job_id=? AND kind=?',
                                ('unsent', run, KIND_TERMS))
-                return STATE_PENDING, 0, EVENT_UNAVAILABLE, {'manifest': terms_manifest(batch, cap=cap, result='unsent')}
+                return STATE_PENDING, 0, EVENT_UNAVAILABLE, {
+                    'manifest': terms_manifest(batch, cap=cap, result='unsent', stale=stale)}
         valid = terms_answer(data, len(batch))
         answers = {item['n']: item['terms'] for item in data['notes']} if valid else {}
         outcomes = []
@@ -1238,7 +1264,8 @@ class Upkeep:
                         today=owner_today(self.store, self.clock()))
             outcomes.append(status if committed else 'stale')
         result = 'unsent' if not batch else 'oversize' if oversize else 'ok' if valid else 'rejected'
-        return STATE_DONE, calls, EVENT_RECORDED, {'manifest': terms_manifest(batch, outcomes, cap=cap, result=result)}
+        return STATE_DONE, calls, EVENT_RECORDED, {
+            'manifest': terms_manifest(batch, outcomes, cap=cap, result=result, stale=stale)}
 
     # -- the dream (#402) ----------------------------------------------------
     def last_dream(self, db):

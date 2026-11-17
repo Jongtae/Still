@@ -215,6 +215,7 @@ def test_cap_and_sent_rows_drive_different_adjustments(env, result, expected_cap
 
 @pytest.mark.parametrize('state,result', [
     (om.STATE_DONE, 'unsent'), (om.STATE_DONE, 'oversize'),
+    (om.STATE_DONE, 'stale'),
     (om.STATE_EXPIRED, None), (om.STATE_EXPIRED, 'ok'), (om.STATE_DONE, None)])
 def test_finished_without_answer_keeps_size(env, state, result):
     store, service, clock, _ = env
@@ -298,11 +299,10 @@ def test_whole_facts_redaction_singleton_and_oversize(env):
     assert json.loads(rows(store)[-1]['observation'])['cap'] == 16
 
 
-@pytest.mark.parametrize('action', ['forget', 'undo', 'supersede', 'retract', 'delete', 'edit', 'date'])
-def test_stale_interleavings(env, action):
-    store, service, clock, _ = env
-    item = save(store, valid_until='2026-11-17')
-    row = claim(env)
+STALE_ACTIONS = ['forget', 'undo', 'supersede', 'retract', 'delete', 'edit', 'date', 'meta', 'owner']
+
+
+def invalidate(store, clock, item, action):
     if action in ('forget', 'undo'):
         forgotten = OwnerForget(store).forget('local-owner', 'memory:'+item['id'])
         if action == 'undo': OwnerForget(store).undo('local-owner', forgotten['receipt'])
@@ -313,9 +313,143 @@ def test_stale_interleavings(env, action):
     elif action == 'edit':
         with store.db() as db: db.execute('UPDATE memories SET content=?,content_digest=? WHERE id=?', ('edited', 'new-digest', item['id']))
     elif action == 'date': clock[0] += 86400
+    elif action == 'meta':
+        with store.db() as db:
+            db.execute('UPDATE memories SET retrieval_terms_meta=? WHERE id=?',
+                       (om.memory_terms.build_meta('cleared', previous=None, at=clock[0]), item['id']))
+    elif action == 'owner':
+        with store.db() as db:
+            db.execute('UPDATE memories SET owner_key=? WHERE id=?', (store._memory_binding('another-owner'), item['id']))
+    elif action == 'key':
+        with store.db() as db: db.execute("UPDATE memories SET memory_key='other.fact' WHERE id=?", (item['id'],))
+
+
+@pytest.mark.parametrize('action', STALE_ACTIONS + ['key'])
+def test_stale_before_dispatch_keeps_other_rows(env, action):
+    store, service, clock, asked = env
+    kept = [save(store, n) for n in (1, 2)]
+    item = save(store, valid_until='2026-11-17')
+    row = claim(env)
+    assert {entry['id'] for entry in row['batch']} == {entry['id'] for entry in [item, *kept]}
+    invalidate(store, clock, item, action)
+    before = raw(store, item)
     state, calls, status, detail = service.owner_model.run_terms(row, service._owner_model_judgments(None))
-    assert json.loads(detail['manifest'])['entries'][0]['outcome'] == 'stale'
+    assert (state, calls) == (om.STATE_DONE, 1)
+    assert len(asked) == 1
+    notes = asked[0].facts['notes']
+    assert item['memory_key'] not in notes and item['content'] not in notes
+    expected = [entry for entry in row['batch'] if entry['id'] != item['id']]
+    assert notes == '\n'.join(f"{n}. {entry['memory_key']}: {entry['content']}"
+                              for n, entry in enumerate(expected, 1))
+    for entry in kept:
+        assert parse_meta(raw(store, entry)['retrieval_terms_meta'])['status'] == 'keyed'
+    assert raw(store, item) == before
+    manifest = json.loads(detail['manifest'])
+    assert (manifest['result'], manifest['rows']) == ('ok', len(kept))
+    assert {entry['id']: entry['outcome'] for entry in manifest['entries']} == {
+        item['id']: 'stale-before-send', **{entry['id']: 'keyed' for entry in kept}}
+
+
+@pytest.mark.parametrize('action', STALE_ACTIONS)
+@pytest.mark.parametrize('when', ['before', 'during'])
+def test_stale_interleavings(env, action, when):
+    store, service, clock, asked = env
+    item = save(store, valid_until='2026-11-17')
+    row = claim(env)
+    if when == 'before':
+        invalidate(store, clock, item, action)
+    else:
+        engine = service.decision_judge.engine
+        def answer(context, question, schema):
+            invalidate(store, clock, item, action)
+            return engine.structured(context, question, schema)
+        service.use_decision_engine(FixtureDecisionEngine(structured=answer))
+    state, calls, status, detail = service.owner_model.run_terms(row, service._owner_model_judgments(None))
+    service.owner_model.finish(row['job_id'], state, calls, status, detail, clock[0], kind=om.KIND_TERMS)
+    manifest = json.loads(rows(store)[-1]['observation'])
+    assert manifest['entries'][0]['outcome'] == ('stale-before-send' if when == 'before' else 'stale')
     assert not raw(store, item) or not raw(store, item)['retrieval_terms']
+    if when == 'before':
+        assert not asked and not service.decision_judge.engine.asked
+        assert (state, calls, rows(store)[-1]['calls']) == (om.STATE_DONE, 0, 0)
+        assert service.owner_model.calls_used(clock[0]) == 0
+        assert manifest['result'] == 'stale' and manifest['rows'] == 0
+        # A stale run keeps its cap for the next claim.
+        save(store, 99)
+        assert json.loads(claim(env)['observation'])['cap'] == manifest['cap']
+    else:
+        assert calls == 1 and len(asked) == 1
+        assert item['memory_key'] in asked[0].facts['notes'] and item['content'] in asked[0].facts['notes']
+
+
+def test_all_rows_stale_before_dispatch_releases_call(env):
+    store, service, clock, asked = env
+    saved = [save(store, n) for n in range(3)]
+    row = claim(env)
+    assert rows(store)[-1]['calls'] == 1
+    for item in saved:
+        invalidate(store, clock, item, 'forget')
+    before = [raw(store, item) for item in saved]
+    state, calls, status, detail = service.owner_model.run_terms(row, service._owner_model_judgments(None))
+    service.owner_model.finish(row['job_id'], state, calls, status, detail, clock[0], kind=om.KIND_TERMS)
+    assert (state, calls, rows(store)[-1]['calls']) == (om.STATE_DONE, 0, 0)
+    assert not asked and not service.decision_judge.engine.asked
+    assert [raw(store, item) for item in saved] == before
+    manifest = json.loads(rows(store)[-1]['observation'])
+    assert (manifest['result'], manifest['rows'], manifest['cap']) == ('stale', 0, 8)
+    assert {entry['id']: entry['outcome'] for entry in manifest['entries']} == {
+        item['id']: 'stale-before-send' for item in saved}
+
+
+def test_oversize_row_stale_before_dispatch_is_untouched(env):
+    store, service, clock, asked = env
+    item = save(store)
+    with store.db() as db:
+        db.execute('UPDATE memories SET content=? WHERE id=?', ('x'*6000, item['id']))
+    row = claim(env)
+    assert row['batch'][0]['oversize']
+    invalidate(store, clock, item, 'forget')
+    before = raw(store, item)
+    state, calls, status, detail = service.owner_model.run_terms(row, service._owner_model_judgments(None))
+    assert (state, calls, rows(store)[-1]['calls']) == (om.STATE_DONE, 0, 0)
+    assert not asked and raw(store, item) == before
+    manifest = json.loads(detail['manifest'])
+    assert manifest['result'] == 'stale' and manifest['entries'][0]['outcome'] == 'stale-before-send'
+
+
+def test_dispatch_rerenders_fresh_row(env):
+    store, service, clock, asked = env
+    item = save(store)
+    row = claim(env)
+    row['batch'][0]['rendered'] = 'cached rendering must not be sent'
+    row['batch'][0]['content'] = 'cached content must not be sent'
+    state, calls, status, detail = service.owner_model.run_terms(row, service._owner_model_judgments(None))
+    assert calls == 1
+    assert asked[0].facts['notes'] == f"1. {item['memory_key']}: {item['content']}"
+    assert json.loads(detail['manifest'])['entries'][0]['outcome'] == 'keyed'
+
+
+@pytest.mark.parametrize('oversize_at_claim', [False, True])
+def test_dispatch_remeasures_after_redaction(env, oversize_at_claim):
+    store, service, clock, asked = env
+    item = save(store)
+    content = 'x'*6000
+    with store.db() as db:
+        db.execute('UPDATE memories SET content=? WHERE id=?', (content, item['id']))
+    shrink = lambda text: text.replace(content, '[redacted]')
+    if not oversize_at_claim:
+        service._redact_known_secrets = shrink
+    row = claim(env)
+    assert row['batch'][0]['oversize'] == oversize_at_claim
+    service._redact_known_secrets = shrink if oversize_at_claim else lambda text: text
+    state, calls, status, detail = service.owner_model.run_terms(row, service._owner_model_judgments(None))
+    assert calls == int(oversize_at_claim)
+    assert len(asked) == calls
+    if asked:
+        assert asked[0].facts['notes'] == f"1. {item['memory_key']}: [redacted]"
+    manifest = json.loads(detail['manifest'])
+    assert manifest['result'] == ('ok' if oversize_at_claim else 'oversize')
+    assert manifest['entries'][0]['outcome'] == ('keyed' if oversize_at_claim else 'oversize')
 
 
 def test_unsent_parks_with_no_charge(env):
