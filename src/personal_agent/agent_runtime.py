@@ -3386,7 +3386,7 @@ def owner_wait_steps(rows, tools=None):
  return waits
 
 class Capabilities:
- def __init__(self,store,adapter,config,key,job_id,record,readonly=False,network=None,document_access=True,packages=None,allowed_tools=None,document_context=False,memory_approval=None,inherited_provenance=(),calendar=None,calendar_owner=None,memory_request=None,current_packages=None,lookup_sources=None,delegated=False,inherited_audit_values=(),budget=None,browser=None,browser_approvals=None,browser_unavailable=None,judgments=None,secret_redactor=None,current_context=None,preparations=None,location_request=None,owner_update=None,settings=None,information_use=None,skills=None,drive=None,mail=None,connections=None,a2a=None,lines=None,line_note=None):
+ def __init__(self,store,adapter,config,key,job_id,record,readonly=False,network=None,document_access=True,packages=None,allowed_tools=None,document_context=False,memory_approval=None,inherited_provenance=(),calendar=None,calendar_owner=None,memory_request=None,current_packages=None,lookup_sources=None,delegated=False,inherited_audit_values=(),budget=None,browser=None,browser_approvals=None,browser_unavailable=None,judgments=None,secret_redactor=None,current_context=None,preparations=None,location_request=None,owner_update=None,settings=None,information_use=None,skills=None,drive=None,mail=None,connections=None,a2a=None,lines=None,line_note=None,plan_reading=''):
   # #798: the service's ``entrusted_line`` handler bound to this Work, or None (delegated
   # specialist, CLI bridge without the relay): then the tool is not offered.  ``line_note()``
   # is what a run of a line reads before its next step when the line's brief changed, or None.
@@ -3482,6 +3482,7 @@ class Capabilities:
   # `run_agent` asks its ``goal_reached`` before a Work may succeed.  None
   # means no DecisionEngine: a claimed completion stays ``partial``.
   self.judgments=judgments
+  self.plan_reading=plan_reading
   # #657 / pilot boundary 1: the service's stored-secret redactor
   # (`AgentService._redact_known_secrets`, i.e. the one implementation
   # `current_context.redact_known_secrets`), injected so this module never
@@ -5567,6 +5568,8 @@ GOAL_GAP_CHARS=300
 #: #820: the reply and the recent conversation the outcome judgment reads.  The reply is
 #: whole: this is the delivered answer's own cap, so no claim is hidden from the judgment.
 GOAL_REPLY_CHARS=24000
+#: #202: the plan's rejectable reading of the request, shared by both outcome-judgment routes.
+MAX_PLAN_READING_CHARS=300
 GOAL_CONVERSATION_CHARS=CONTEXT_BUDGET_BYTES+CONTEXT_MESSAGES*64  # selected text plus earlier-Work labels
 #: #804/#829/#833: the owner model the plan call and the outcome judgment read (redacted, then cut):
 #: the profile and current-context sections the worker was given in this run.
@@ -5826,7 +5829,7 @@ def work_awaiting_owner_text(capabilities):
  try:return awaiting_owner_text(work_awaiting_owner(capabilities.store,capabilities.job_id))[:AWAITING_OWNER_CHARS]
  except Exception:return ''
 
-def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact=None,conversation='',owner_context=None,*,budget=None,attachments='',read_state='',awaiting='',conversation_turns=None,effects=(),reply_source='worker',reply_delivery='to_owner'):
+def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact=None,conversation='',owner_context=None,*,budget=None,attachments='',read_state='',awaiting='',conversation_turns=None,effects=(),reply_source='worker',reply_delivery='to_owner',plan_reading=''):
  """``yes`` / ``no`` / ``unavailable``: did the reply serve the owner's message ``goal``?
 
  The one outcome judgment (#657, #820): one ``ConversationJudgments.goal_reached``
@@ -5860,6 +5863,7 @@ def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact
  recent=clean(conversation or '')[-GOAL_CONVERSATION_CHARS:]
  count=earlier_turns_in([clean(turn) for turn in conversation_turns],recent) if conversation_turns is not None else None
  owner=owner_context_fact(owner_context,clean)
+ reading=clean(plan_reading or '').strip()[:MAX_PLAN_READING_CHARS]
  from .memory_service import conversation_block
  exchanges=[]
  for row in observations.values():
@@ -5875,6 +5879,7 @@ def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact
                                    **({'reply_source':reply_source} if reply_source!='worker' else {}),
                                    **({'reply_delivery':reply_delivery} if reply_delivery!='to_owner' else {}),
                                    owner_context=owner,**({'conversation_messages':count} if count is not None else {}),
+                                   **({'plan_reading':reading} if reading else {}),
                                    **({'attachments':attachments} if attachments else {}),
                                    **({'awaiting_owner':clean(awaiting)} if awaiting else {}),
                                    **({'recorded_effects':tuple(effects),
@@ -6132,7 +6137,8 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
                           capabilities.job_id,getattr(capabilities,'judgment_text',None),conversation,owner_context,budget=budget,
                             attachments=attachment_facts(images=len(images)) if images else '',read_state=steps_read_state(steps),
                             awaiting=work_awaiting_owner_text(capabilities),conversation_turns=conversation_turns,
-                            effects=recorded_effects(steps),reply_source=reply_source,reply_delivery=reply_delivery)
+                            effects=recorded_effects(steps),reply_source=reply_source,reply_delivery=reply_delivery,
+                            plan_reading=capabilities.plan_reading)
   if not _external(trail) and not invalid_calls:
    # Ordinary conversation: no tool ran (or only internal current-state
    # bookkeeping, #627), so there is nothing to observe.
@@ -6271,7 +6277,7 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
                              getattr(capabilities,'judgment_text',None),conversation,owner_context,budget=budget,
                              attachments=attachment_facts(images=len(images)) if images else '',read_state=steps_read_state(steps),
                              awaiting=work_awaiting_owner_text(capabilities),conversation_turns=conversation_turns,
-                            effects=recorded_effects(steps),reply_delivery=reply_delivery)
+                            effects=recorded_effects(steps),reply_delivery=reply_delivery,plan_reading=capabilities.plan_reading)
       # A "not shown" answer returns the claim once, so the model can take
       # another path; a second one, or no engine, ends the run below.
       if judgment=='no' and getattr(judgment,'retry_warranted',None) is not False and judged<GOAL_JUDGMENTS:reason='goal_not_observed'
