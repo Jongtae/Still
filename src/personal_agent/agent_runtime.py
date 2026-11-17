@@ -4498,10 +4498,11 @@ class Capabilities:
   return rows
 
  def _revert_memory(self,ref):
-  """#955: undo one save by asking: retract the current row (its own digest) and restore what it superseded.
+  """#955: undo one save by asking, through the same exact retraction as the #918 notice undo.
 
-  Exact like the #918 notice undo: the row must be the owner's and current, and the retraction and
-  its Evidence event are one transaction.  Returns ``{'ref', 'restored'}`` (the restored memory ref or None).
+  The row must be the owner's and current; its own digest binds the retraction.  Returns ``{'ref',
+  'restored', 'restored_ended', 'earlier_expired'}`` as memory refs, so the reply says exactly what is
+  in use again (``memory_prompts.retract_saved``).
   """
   if not isinstance(ref,str) or not ref.startswith('memory:') or len(ref)<=len('memory:'):
    raise not_run(ToolError(msg('agent_runtime.revert_ref_needed'),'invalid_arguments'))
@@ -4509,19 +4510,13 @@ class Capabilities:
   row=self.store.memory(memory_id,MEMORY_OWNER)
   if not row or row.get('state')!='current':
    raise not_run(ToolError(msg('agent_runtime.revert_not_current'),'memory_not_current'))
-  record={'job_id':self.job_id,'tool':'memory_undo','status':'recorded',
-          'detail':{'host_action':'memory_undo','evidence':{'id':memory_id,'memory_key':row.get('memory_key'),'asked':True}}}
-  try:receipt=self.store.retract_memory(MEMORY_OWNER,memory_id,row['content_digest'],record=record)
-  except ValueError:
-   raise not_run(ToolError(msg('agent_runtime.revert_not_current'),'memory_not_current')) from None
-  restored=(receipt.get('restored') or {}).get('id')
-  if restored:
-   # #955 review: like the notice undo, a restored row whose last day has passed is not back in use.
-   from .memory_service import MemoryService
-   back=self.store.memory(restored,MEMORY_OWNER,current_only=False) or {'id':None}
-   if restored not in {row['id'] for row in MemoryService(self.store,private_read_sink=MemoryService.NO_EGRESS_GUARD).holding([back])}:
-    return {'ref':ref,'restored':None,'earlier_expired':f'memory:{restored}'}
-  return {'ref':ref,'restored':f'memory:{restored}' if restored else None}
+  from .memory_prompts import retract_saved
+  undone=retract_saved(self.store,self.job_id,{'id':memory_id,'digest':row['content_digest'],'key':row.get('memory_key')},asked=True)
+  if undone['status']!='retracted':
+   raise not_run(ToolError(msg('agent_runtime.revert_not_current'),'memory_not_current'))
+  ref_of=lambda ids:[f'memory:{item}' for item in ids]
+  return {'ref':ref,'restored':f"memory:{undone['restored']}" if undone['restored'] else None,
+          'restored_ended':ref_of(undone['restored_ended']),'earlier_expired':ref_of(undone['expired'])}
 
  @record_outside_result
  @refused_before_hand_off
@@ -4948,8 +4943,8 @@ class Capabilities:
     elif action=='revert':
      # #955: the exact undo of a save (#918's retract_memory), reached by asking instead of by a notice.
      result={'action':'revert',**self._revert_memory(args.get('ref'))}
-     result['message']=msg('agent_runtime.memory_reverted' if result['restored'] else
-                           'agent_runtime.memory_reverted_expired' if result.get('earlier_expired') else
+     result['message']=msg('agent_runtime.memory_reverted' if result['restored'] or result['restored_ended'] else
+                           'agent_runtime.memory_reverted_expired' if result['earlier_expired'] else
                            'agent_runtime.memory_reverted_none')
     elif action=='delete' and not args.get('ref') and args.get('receipt'):
      # #367 review P2: an item already forgotten is erased through its receipt (from list).

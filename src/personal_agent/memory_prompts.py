@@ -56,6 +56,32 @@ from .quickstart_service import (
 #: and as the one switch back; while off, nothing new is held, queued or retold.
 MEMORY_SAVED_NOTICES=False
 
+
+def retract_saved(store, job_id, item, asked=False):
+    """Retract one direct save exactly and say what is in use again (#918; #955 shares it with asking).
+
+    ``item`` is ``{'id', 'digest', 'key'?}``: the row must still be current with that digest
+    (``retract_memory`` fails closed).  The retraction and its ``memory_undo`` Evidence event are one
+    transaction (#918 review P2).  Returns ``status`` (``retracted`` or ``outdated``), ``restored`` (the
+    superseded row back in use), ``restored_ended`` (rows under other keys the save had ended, #220),
+    both only while they still hold (Codex review), and ``expired`` (restored rows past their last day).
+    """
+    evidence={'id':item['id'],'memory_key':item.get('key'),'auto_saved':True,**({'asked':True} if asked else {})}
+    record={'job_id':job_id,'tool':MEMORY_UNDO_TOOL,'status':'recorded',
+            'detail':{'host_action':MEMORY_UNDO_TOOL,'evidence':evidence}}
+    try:
+        receipt=store.retract_memory(MEMORY_OWNER,item['id'],item['digest'],record=record)
+    except ValueError as exc:
+        LOG.info('memory undo refused work=%s kind=%s',job_id,type(exc).__name__)
+        return {'status':'outdated','restored':None,'restored_ended':[],'expired':[]}
+    back=[memory_id for memory_id in [(receipt.get('restored') or {}).get('id'),*(receipt.get('restored_ended') or ())] if memory_id]
+    holding={row['id'] for row in MemoryService(store,private_read_sink=MemoryService.NO_EGRESS_GUARD).holding(
+        [store.memory(memory_id,MEMORY_OWNER,current_only=False) or {'id':None} for memory_id in back])}
+    restored=(receipt.get('restored') or {}).get('id')
+    return {'status':'retracted','restored':restored if restored in holding else None,
+            'restored_ended':[memory_id for memory_id in receipt.get('restored_ended') or () if memory_id in holding],
+            'expired':[memory_id for memory_id in back if memory_id not in holding]}
+
 class MemoryPrompts:
     """Existing memory prompts and saved notices over one service's state."""
 
@@ -679,24 +705,8 @@ class MemoryPrompts:
         the Work as a ``memory_undo`` event for its information-use audit and
         Evidence.  Returns ``(status, restored_id)``.
         """
-        service=self.service
-        # #918 review P2: the retraction and its Evidence row are one transaction (``record``), so an
-        # undo is never durable without the event the audit promises.
-        record={'job_id':job_id,'tool':MEMORY_UNDO_TOOL,'status':'recorded',
-                'detail':{'host_action':MEMORY_UNDO_TOOL,'evidence':{'id':item['id'],'memory_key':item.get('key'),'auto_saved':True}}}
-        try:
-            receipt=service.store.retract_memory(MEMORY_OWNER,item['id'],item['digest'],record=record)
-        except ValueError as exc:
-            LOG.info('memory undo refused work=%s kind=%s',job_id,type(exc).__name__)
-            return 'outdated',None,[]
-        # #220 (Codex review): also the rows under other keys the save had ended and the undo made current again.
-        # Codex review: a row whose last day passed meanwhile is not "back in use"; the notice leaves it out.
-        holding={row['id'] for row in MemoryService(service.store,private_read_sink=MemoryService.NO_EGRESS_GUARD).holding(
-            [service.store.memory(memory_id,MEMORY_OWNER,current_only=False) or {'id':None}
-             for memory_id in [(receipt.get('restored') or {}).get('id'),*(receipt.get('restored_ended') or ())] if memory_id])}
-        restored=(receipt.get('restored') or {}).get('id')
-        return ('retracted',restored if restored in holding else None,
-                [memory_id for memory_id in receipt.get('restored_ended') or () if memory_id in holding])
+        undone=retract_saved(self.service.store,job_id,item)
+        return undone['status'],undone['restored'],undone['restored_ended']
 
     def undo_memory_saved(self, job_id, binding, targets):
         """Apply one tap to the open ``targets`` (1-based) of a bound notice; returns the ids it decided (#918)."""

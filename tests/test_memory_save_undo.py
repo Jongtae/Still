@@ -711,8 +711,22 @@ class NoticeOffByDefault(TelegramHarness):
         second = caps.execute('save_memory', {'memory_key': KEY, 'content': VALUE + ' 분당'})
         result = caps.execute('forget_record', {'action': 'revert', 'ref': f"memory:{second['id']}"})
         self.assertIsNone(result['restored'])
-        self.assertTrue(result['earlier_expired'].startswith('memory:'))
+        [expired] = result['earlier_expired']
+        self.assertTrue(expired.startswith('memory:'))
         self.assertIn('기한이 지나', result['message'])
+
+    def test_a_revert_reports_facts_under_other_keys_it_brings_back(self):
+        """#955 review (P1): a save that ended facts under other keys (#220) brings them back on revert, and says so."""
+        job_id = self.enqueue('회사 옮겼어. 이제 강남이야')
+        caps = Capabilities(self.store, None, {}, '', job_id, lambda *a, **k: None)
+        old = self.store.save_memory(SECOND_KEY, SECOND_VALUE, MEMORY_OWNER, work_id=job_id)
+        new = self.store.save_memory(KEY, '강남', MEMORY_OWNER, work_id=job_id, invalidates=[(old['id'], 'moved')])
+        self.assertEqual([m['content'] for m in self.store.memories()], ['강남'])
+        result = caps.execute('forget_record', {'action': 'revert', 'ref': f"memory:{new['id']}"})
+        self.assertEqual((result['restored'], result['restored_ended'], result['earlier_expired']),
+                         (None, [f"memory:{old['id']}"], []))
+        self.assertIn('이전 값을 다시', result['message'])
+        self.assertEqual([m['content'] for m in self.store.memories()], [SECOND_VALUE])
 
 
 class SecretsNeverEnterMemory(unittest.TestCase):
