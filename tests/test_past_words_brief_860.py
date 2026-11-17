@@ -61,9 +61,10 @@ class PastWordsBrief(helpers._ServiceBase):
 
     def big_profile(self):
         """Enough profile rows that the 12000-char snapshot cannot hold the dentist row unless it matches."""
+        # #921: unmatched fill is newest first; the recall target must precede the fill.
+        self.store.save_memory(DENTIST_KEY, DENTIST_FACT, owner_id=OWNER)
         for index in range(60):
             self.store.save_memory(f'profile.a{index:03d}', f'{FILLER} {index}', owner_id=OWNER)
-        self.store.save_memory(DENTIST_KEY, DENTIST_FACT, owner_id=OWNER)
 
     def resolved(self,service,job,query=EARLIER_TURN):
         from test_orchestrator import OrchestrationUnit, decided, plan
@@ -87,8 +88,8 @@ class PastWordsBrief(helpers._ServiceBase):
 
     def test_english_follow_up_recalls_through_accepted_query(self):
         service = AgentService(self.store)
-        self.big_profile()
         self.store.save_memory('profile.zz-passport', 'passport renewal appointment is on the 14th (synthetic)', owner_id=OWNER)
+        self.big_profile()
         self.exchange('When is my passport renewal appointment?', 'On the 14th')
         job = self.follow_up('and what time was that?')
         self.assertNotIn('passport renewal', service.owner_profile_snapshot(job['message']))
@@ -111,7 +112,6 @@ class PastWordsBrief(helpers._ServiceBase):
     # -- 3. traps stay ineligible even when the context names them ------------------
     def test_forgotten_superseded_expired_and_transcript_forgotten_items_stay_out(self):
         service = AgentService(self.store)
-        self.big_profile()
         forgotten = self.store.save_memory('profile.zz-forgotten', '치과 잊은사실 forgotmarker', owner_id=OWNER)
         OwnerForget(self.store).forget(OWNER, 'memory:' + forgotten['id'])
         self.store.save_memory('profile.zz-superseded', '치과 옛값 oldvaluemarker', owner_id=OWNER)
@@ -123,6 +123,7 @@ class PastWordsBrief(helpers._ServiceBase):
         self.store.save_memory('profile.zz-current-forgotten', '치과 잊은사실 currentforgottencontrol', owner_id=OWNER)
         self.store.save_memory('profile.zz-current-superseded', '치과 옛값 currentsupersededcontrol', owner_id=OWNER)
         self.store.save_memory('profile.zz-current-expired', '치과 지난사실 currentexpiredcontrol', owner_id=OWNER)
+        self.big_profile()
         hidden = self.exchange('치과 사라질대화 transcriptmarker', '치과 사라질답 answermarker')
         # Transcript forgetting is per row; this trap forgets the whole exchange.
         OwnerForget(self.store).forget(OWNER, f"message:{self.message_id(hidden)},{self.message_id(hidden, 'assistant')}")
@@ -202,8 +203,8 @@ class ResolvedWorkerRecall(Harness):
         self.assertEqual(entry['recall_selector']['source'],'request')
 
     def test_redelegation_refreshes_profile_from_new_plan_query(self):
-        self.seed_recall()
         self.store.save_memory('profile.zz-quartz','quartzclang flagmarker',owner_id=OWNER)
+        self.seed_recall()
         self.script([self.selected('codex','치과'),self.selected('codex','quartzclang')],[False,True],[False])
         self.run_work(FOLLOW_UP,owner_words=True)
         self.assertEqual(len(self.asked_plans),2)
@@ -273,5 +274,5 @@ class ResolvedWorkerRecall(Harness):
                     self.assertIn('fixture-source',text)
                     self.assertEqual(sent_refs[-1]['spliced'],[splice])
                 # Plan sources remain in the union even when the worker has cut a tail.
-                self.assertIn('profile.a000',receipt['owner_information']['profile_keys'])
+                self.assertIn('profile.a059',receipt['owner_information']['profile_keys'])
                 self.assertEqual(len(self.asked_plans),1 if route=='openai' else 2)
