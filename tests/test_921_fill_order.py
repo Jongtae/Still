@@ -49,7 +49,7 @@ def test_voice_then_bm25_matches_then_newest_fill(profile):
     assert row_ids(snapshot['entries']) == row_ids([voice, strong, weak, new, old])
     for entry, row, line in zip(snapshot['entries'], [voice, strong, weak, new, old], snapshot['text'].splitlines()):
         assert entry == {key: row[key] for key in ('id', 'memory_key', 'content', 'created', 'content_digest')} | {
-            'matched': row in (strong, weak)} | (
+            'matched': row in (strong, weak), 'rank': {strong['id']: 1, weak['id']: 2}.get(row['id'])} | (
             {'annotated': True} if row == strong else {})
         assert line.startswith(f"[{row['id'][:8]}] {row['memory_key']}: ")
     assert 'check this fact' in snapshot['text']

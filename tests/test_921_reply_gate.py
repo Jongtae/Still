@@ -143,6 +143,51 @@ class ReplyGate(Harness):
         self.withheld(job)
         self.assertEqual(result['response'], 'cli answer')
 
+    def test_lower_ranked_new_hit_under_a_seen_best_match_keeps_the_reply(self):
+        """#921: a new row that ranks below the seen best match (one shared selector word) is noise."""
+        best = self.save('profile.best', 'needle alpha owner fact')
+        self.script([reply('needle alpha')])
+        def added(run):
+            self.noise = self.save('profile.noise', 'needle')
+        with self.after_plan(added):
+            job, result, builds, _, consumed = self.run_checked('request')
+        self.assertEqual(result['response'], 'DIRECT')
+        self.assertEqual(self.engine.turns, [])
+        self.assertFalse([r for r in self.store.work_decisions(job) if r.get('route') == 'plan-reply-withheld'])
+        self.assertEqual(consumed, [])
+        refresh = next(b[2][1] for b in builds if b[0] == 'needle alpha request')
+        ranks = {i['id']: i['rank'] for i in refresh if i['matched']}
+        self.assertEqual(ranks[best['id']], 1)
+        self.assertGreater(ranks[self.noise['id']], 1)
+
+    def test_new_row_ranked_first_withholds_even_above_seen_hits(self):
+        """#921: the selector's best match is a row the plan did not see, so the reply waits."""
+        seen = self.save('profile.seen', 'needle')
+        self.script([reply('needle alpha')], goals=[True])
+        def added(run):
+            self.row = self.save('profile.best', 'needle alpha owner fact')
+        with self.after_plan(added):
+            job, result, builds, _, _ = self.run_checked('request')
+        receipt = self.withheld(job)
+        self.assertEqual(receipt['new_count'], 1)
+        self.assertEqual(result['response'], 'cli answer')
+        refresh = next(b[2][1] for b in builds if b[0] == 'needle alpha request')
+        ranks = {i['id']: i['rank'] for i in refresh if i['matched']}
+        self.assertEqual(ranks[self.row['id']], 1)
+        self.assertGreater(ranks[seen['id']], 1)
+
+    def test_annotation_on_a_seen_lower_ranked_row_keeps_the_reply(self):
+        """#921: a new annotation counts only on the best match."""
+        self.save('profile.best', 'needle alpha owner fact')
+        lower = self.save('profile.lower', 'needle')
+        self.script([reply('needle alpha')])
+        with self.after_plan(lambda run: self.raise_row(lower)):
+            job, result, _, _, consumed = self.run_checked('request')
+        self.assertEqual(result['response'], 'DIRECT')
+        self.assertFalse([r for r in self.store.work_decisions(job) if r.get('route') == 'plan-reply-withheld'])
+        self.assertEqual(consumed, [])
+        self.assertIn(lower['id'], self.open_ids())
+
     def test_new_older_record_withholds_and_sends_whole_record(self):
         record = self.save('diary.2000-01-01', 'needle\nThe substantive old record.')
         self.script([reply('needle')], goals=[True])
@@ -284,7 +329,7 @@ class ReplyGate(Harness):
             for row in self.rows: self.raise_row(row)
         with self.after_plan(added), mock.patch('personal_agent.work_executor.MAX_PROMPT_BYTES', 1900):
             job, _, builds, _, consumed = self.run_checked()
-        self.withheld(job, new_count=12)
+        self.withheld(job, new_count=1)  # #921: only the best match is counted
         final = self.engine.turns[0]['context']
         self.assertIn('profile', final['cut_to_fit'])
         sent_lines = final.get('profile', '').splitlines()

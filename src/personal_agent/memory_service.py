@@ -341,6 +341,10 @@ class MemoryService:
                        if self.is_profile_key(row.get('memory_key'))]
             found = {row['id'] for row in matched}
             rows = matched + [row for row in rows if row['id'] not in found]
+        # #921: each search hit's place in the search's own order (1 = best match), so the reply
+        # gate can compare best matches; fill rows have none.
+        ranks = {row_id: place for place, row_id in enumerate(
+            (row['id'] for row in matched), 1)} if query is not None else {}
         # The candidate window is bounded too; an older voice fact must survive it.
         voice = self.store.current_memory(VOICE_PREFERENCE_KEY, owner_id)
         rows = ([voice] if voice and self.holds(voice, today) else []) + [
@@ -367,7 +371,8 @@ class MemoryService:
             lines.append(f"[{str(row['id'])[:self.SHORT_ID_CHARS]}] {line}" if ids else line)
             entries.append({'id': row['id'], 'memory_key': row['memory_key'], 'content': row['content'],
                             'created': row.get('created'), 'content_digest': row['content_digest'],
-                            'matched': row['id'] in found, **({'annotated': True} if note else {})})
+                            'matched': row['id'] in found, 'rank': ranks.get(row['id']),
+                            **({'annotated': True} if note else {})})
         omitted = len(rows) - len(entries)
         return self._private_read('memory_service.profile_snapshot', {
             'state': 'current', 'text': '\n'.join(lines), 'entries': entries,
@@ -459,15 +464,15 @@ class MemoryService:
         day = lambda row: row['memory_key'][len(DIARY_PREFIX):]  # noqa: E731
         rows = self.store.memories(owner_id, limit=self.RECORD_DAYS + 3, key_prefix=DIARY_PREFIX)
         chosen = {row['id']: row for row in rows if since <= day(row) <= today}
-        matched = set()
+        matched = {}
         if isinstance(query, str) and query.strip():
             older = 0
             for row in self.search_memories(owner_id, query[:500], limit=min(20, self.RECORDS_MATCHED + len(chosen)),
                                             key_prefix=DIARY_PREFIX)['memories']:
                 if row['id'] not in chosen and day(row) < since and older < self.RECORDS_MATCHED:
                     chosen[row['id']] = row
-                    matched.add(row['id'])
                     older += 1
+                    matched[row['id']] = older  # #921: its place among the matched older records
         lines, items, used = [self.RECORDS_HEADING], [], len(self.RECORDS_HEADING)
         for row in sorted(chosen.values(), key=day):
             text = f"[record of {day(row)}]\n{row['content']}"
@@ -475,8 +480,8 @@ class MemoryService:
                 continue
             lines.append(text)
             items.append({'kind': 'record', 'id': row['id'], 'digest': row['content_digest'],
-                          'matched': row['id'] in matched, 'annotated': False, 'line': text,
-                          'start': used + 1})
+                          'matched': row['id'] in matched, 'rank': matched.get(row['id']), 'annotated': False,
+                          'line': text, 'start': used + 1})
             used += len(text) + 1
         text = '\n'.join(lines) if len(lines) > 1 else ''
         return (text, items) if with_items else text

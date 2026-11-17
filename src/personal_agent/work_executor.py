@@ -750,7 +750,11 @@ class WorkExecutor:
                 _,items=cut_profile_fact(refresh[0],refresh[2],limit_chars=len(refresh[0]))
                 seen={(item['id'],item['digest']):item for item in run.orchestration.plan_inventory}
                 matched=[item for item in items if item['matched']]
-                new=[item for item in matched if (item['id'],item['digest']) not in seen
+                # #921: only the best match of each kind (profile, older record) decides. A lower-ranked
+                # hit sharing one selector word is not evidence the reply missed something.
+                best=[min(group,key=lambda item:item['rank']) for kind in ('profile','record')
+                      for group in [[item for item in matched if item['kind']==kind and item.get('rank')]] if group]
+                new=[item for item in best if (item['id'],item['digest']) not in seen
                      or (item['annotated'] and not seen[(item['id'],item['digest'])]['annotated'])]
                 if new:
                     service.record_decision({'purpose':'plan-reply-withheld','kind':'route','route':'plan-reply-withheld',
