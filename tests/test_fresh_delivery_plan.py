@@ -465,7 +465,7 @@ def items_of(current):
 FRONTIER_FIRST_WAVE = ["FRONTIER-SPEC-01", "FRONTIER-EVAL-01"]
 FRONTIER_RECONCILED = ["FRONTIER-PROVENANCE-01", "FRONTIER-RECOVERY-01", "FRONTIER-CONTEXT-01"]
 FRONTIER_COMPLETED = FRONTIER_FIRST_WAVE + FRONTIER_RECONCILED + [
-    "FRONTIER-JUDGMENT-01", "FRONTIER-TELEGRAM-01", "FRONTIER-FENCE-01", "FRONTIER-WORKCHAT-01", "FRONTIER-CONTEXT-02", "FRONTIER-EVAL-JUDGE-01", "FRONTIER-C2-DUE-01", "FRONTIER-EVAL-TOKENS-01", "FRONTIER-RECEIPT-JUDGE-01", "FRONTIER-EVAL-FALLBACK-01", "FRONTIER-JUDGMENT-TEXT-01", "FRONTIER-COMPLETION-BAR-01", "FRONTIER-UNTRUSTED-ECHO-01", "FRONTIER-PLAN-READING-01", "FRONTIER-RECALL-V3-01", "FRONTIER-UNTRUSTED-01", "FRONTIER-UNTRUSTED-PREVIEW-01", "FRONTIER-PLAN-READING-02", "FRONTIER-RECALL-TERMS-01", "FRONTIER-RECALL-FILL-01", "FRONTIER-RECALL-THREADS-01"]
+    "FRONTIER-JUDGMENT-01", "FRONTIER-TELEGRAM-01", "FRONTIER-FENCE-01", "FRONTIER-WORKCHAT-01", "FRONTIER-CONTEXT-02", "FRONTIER-EVAL-JUDGE-01", "FRONTIER-C2-DUE-01", "FRONTIER-EVAL-TOKENS-01", "FRONTIER-RECEIPT-JUDGE-01", "FRONTIER-EVAL-FALLBACK-01", "FRONTIER-JUDGMENT-TEXT-01", "FRONTIER-COMPLETION-BAR-01", "FRONTIER-UNTRUSTED-ECHO-01", "FRONTIER-PLAN-READING-01", "FRONTIER-RECALL-V3-01", "FRONTIER-UNTRUSTED-01", "FRONTIER-UNTRUSTED-PREVIEW-01", "FRONTIER-PLAN-READING-02", "FRONTIER-RECALL-TERMS-01", "FRONTIER-RECALL-FILL-01", "FRONTIER-RECALL-THREADS-01", "FRONTIER-RECALL-SAVE-TERMS-01"]
 FRONTIER_WAVE_2 = ["FRONTIER-FENCE-01", "FRONTIER-JUDGMENT-01", "FRONTIER-TELEGRAM-01", "FRONTIER-WORKCHAT-01"]
 FRONTIER_OPEN_WAVE_2 = [name for name in FRONTIER_WAVE_2 if name not in FRONTIER_COMPLETED]
 
@@ -502,7 +502,7 @@ def test_frontier_declares_completed_units_and_owner_authorized_wave_2():
     assert current["next_goal"]["id"] == "FRONTIER-01"
     invariants.assert_activation_record(TestCase(), "FRONTIER-01 activation", program["activated_by"])
     assert program["activated_by"]["issue"] == program["issue"] == 822
-    assert program["ordered_substeps"] == FRONTIER_FIRST_WAVE + FRONTIER_RECONCILED + FRONTIER_WAVE_2 + ["FRONTIER-CONTEXT-02", "FRONTIER-EVAL-JUDGE-01", "FRONTIER-C2-DUE-01", "FRONTIER-EVAL-TOKENS-01", "FRONTIER-RECEIPT-JUDGE-01", "FRONTIER-EVAL-FALLBACK-01", "FRONTIER-JUDGMENT-TEXT-01", "FRONTIER-COMPLETION-BAR-01", "FRONTIER-UNTRUSTED-ECHO-01", "FRONTIER-PLAN-READING-01", "FRONTIER-RECALL-V3-01", "FRONTIER-UNTRUSTED-01", "FRONTIER-UNTRUSTED-PREVIEW-01", "FRONTIER-PLAN-READING-02", "FRONTIER-RECALL-TERMS-01", "FRONTIER-RECALL-FILL-01", "FRONTIER-RECALL-THREADS-01"]
+    assert program["ordered_substeps"] == FRONTIER_FIRST_WAVE + FRONTIER_RECONCILED + FRONTIER_WAVE_2 + ["FRONTIER-CONTEXT-02", "FRONTIER-EVAL-JUDGE-01", "FRONTIER-C2-DUE-01", "FRONTIER-EVAL-TOKENS-01", "FRONTIER-RECEIPT-JUDGE-01", "FRONTIER-EVAL-FALLBACK-01", "FRONTIER-JUDGMENT-TEXT-01", "FRONTIER-COMPLETION-BAR-01", "FRONTIER-UNTRUSTED-ECHO-01", "FRONTIER-PLAN-READING-01", "FRONTIER-RECALL-V3-01", "FRONTIER-UNTRUSTED-01", "FRONTIER-UNTRUSTED-PREVIEW-01", "FRONTIER-PLAN-READING-02", "FRONTIER-RECALL-TERMS-01", "FRONTIER-RECALL-FILL-01", "FRONTIER-RECALL-THREADS-01", "FRONTIER-RECALL-SAVE-TERMS-01"]
     assert program["active_substeps"] == []
     assert program["completed_substeps"] == FRONTIER_COMPLETED
     assert program["reserved_substeps"] == []
@@ -976,8 +976,8 @@ def test_frontier_921_pr7_records_conversation_by_work_scope():
     assert unit['activation_status'] == 'complete-on-merge'
     assert unit['contract'] == 'frontier-delivery.en.md' and unit['depends_on'] == []
     program = current['programs']['FRONTIER-01']
-    assert program['ordered_substeps'][-2:] == ['FRONTIER-RECALL-FILL-01', 'FRONTIER-RECALL-THREADS-01']
-    assert program['completed_substeps'][-2:] == ['FRONTIER-RECALL-FILL-01', 'FRONTIER-RECALL-THREADS-01']
+    for steps in (program['ordered_substeps'], program['completed_substeps']):
+        assert steps[steps.index('FRONTIER-RECALL-FILL-01') + 1] == name
     assert name in current['history']['documented_completed_iterations']
     activation = items['FRONTIER-01']['completed_substeps'][name]
     assert activation['issue'] == 921 and activation['status'] == 'complete-on-merge'
@@ -986,3 +986,25 @@ def test_frontier_921_pr7_records_conversation_by_work_scope():
     assert unit['summary'] == "Owner-approved #921 PR-7 within #822 (spec v5 #921 comment 6934099196, §4): search_conversation takes an optional work_id from a search_memory source and returns that Work's owner turns and delivered reply as an addressed lookup, independent of FTS and the recent window, under the existing owner-words, forgotten and secret filters, bounds and three-exchange budget, with an explicit found/not_found/forgotten/document_work outcome; document Works stay excluded (an open C17 question for the owner). No model call, dependency or new destination. Complete on the merge of its own PR."
     assert unit['tests'] == ['PYTHONPATH=src .venv/bin/python -m pytest -q tests/test_921_conversation_by_work.py tests/test_conversation_recall.py tests/test_forget_transcript.py tests/test_744_recall.py tests/test_information_use.py tests/test_fresh_delivery_plan.py']
     assert '#921 PR-7 (FRONTIER-RECALL-THREADS-01) is selected inside #822 by owner direction on 2026-11-17 and is complete on the merge of its own PR.' in current['next_goal']['action']
+
+
+def test_frontier_921_pr6_records_save_memory_terms_scope():
+    current = plan()
+    items = items_of(current)
+    name = 'FRONTIER-RECALL-SAVE-TERMS-01'
+    unit = items[name]
+    assert unit['program'] == 'FRONTIER-01' and unit['issue'] == 921
+    assert unit['milestone'] == 'frontier-delivery' and unit['kind'] == 'implementation'
+    assert unit['activation_status'] == 'complete-on-merge'
+    assert unit['contract'] == 'frontier-delivery.en.md' and unit['depends_on'] == []
+    program = current['programs']['FRONTIER-01']
+    assert program['ordered_substeps'][-2:] == ['FRONTIER-RECALL-THREADS-01', 'FRONTIER-RECALL-SAVE-TERMS-01']
+    assert program['completed_substeps'][-2:] == ['FRONTIER-RECALL-THREADS-01', 'FRONTIER-RECALL-SAVE-TERMS-01']
+    assert name in current['history']['documented_completed_iterations']
+    activation = items['FRONTIER-01']['completed_substeps'][name]
+    assert activation['issue'] == 921 and activation['status'] == 'complete-on-merge'
+    assert 'pull_request' not in activation
+    assert activation['decision'] == unit['summary']
+    assert unit['summary'] == "Owner-approved #921 PR-6 within #822 (spec v5 #921 comment 6934099196, §2 Writers; N11 = C, comment 6934192576): save_memory takes an optional terms string; on the direct-save path the terms pass memory_terms.filter_terms (secret check first) and are written in the same INSERT as the row with a keyed meta naming the worker's route and model when known; empty or filtered terms leave the meta NULL for the later terms pass; candidates carry no terms. No model call, dependency or new destination. Complete on the merge of its own PR."
+    assert unit['tests'] == ['PYTHONPATH=src .venv/bin/python -m pytest -q tests/test_921_save_memory_terms.py tests/test_744_memory.py tests/test_owner_forget.py tests/test_memory_search.py tests/test_921_terms_index.py tests/test_fresh_delivery_plan.py']
+    assert '#921 PR-6 (FRONTIER-RECALL-SAVE-TERMS-01) is selected inside #822 by owner direction on 2026-11-17 and is complete on the merge of its own PR.' in current['next_goal']['action']

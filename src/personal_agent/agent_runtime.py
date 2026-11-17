@@ -178,6 +178,9 @@ SCRUBBED_ARGUMENTS={'schedule_preparation':('goal','title','offer'),
                     # contain a stored credential; scrub every durable call record.
                     'search_memory':'query',
                     'search_conversation':'query',
+                    # Memory saves are model-authored owner text and may contain a stored credential;
+                    # scrub every durable call record, so a refused value is never recorded verbatim.
+                    'save_memory':('memory_key','content','terms'),
                     # #367 review: the forget search is owner text too.
                     'forget_record':'query',
                     # #774: the reason the owner reads in the Telegram prompt.
@@ -399,6 +402,7 @@ SAVE_MEMORY_ARGUMENTS={
  'memory_key':'Use a stable short key; correction supersedes the prior value. memory_key names the attribute. '+PROFILE_KEY_GUIDANCE,
  'content':'content is the value itself in the owner\'s own words (for example a place or product name as they said it), not a sentence about it; memory_key names the attribute. A value is a fact about the owner, never the request itself: a wish to be told when something changes is a watch (schedule_preparation), not a memory.',
  'correction':'Set correction true when the previous value under the key was wrong (the owner says it was never right), not when it was right and has changed.',
+ 'terms':"Optional search words a later request might use that the fact's own words lack: base forms without particles or endings, the key terms in Korean and in English, and words that tell this fact apart from similar ones. Space-separated words only.",
 }
 #: #627: the bounded internal proposal operation of the ordinary loop (S1).
 PROPOSE_CURRENT_STATE_DESCRIPTION='Record the owner\'s own temporary present situation that the owner states in this conversation - working from home or at the office today, currently in a place, busy until a time - as a revisable hypothesis for its interval. It is not Memory: never use save_memory for a today-only situation, and this never changes profile.* facts. Only the owner\'s own present situation: not plans for another day, quotes or other people. Still validates the source and interval; a refused proposal is returned with its reason.'
@@ -620,7 +624,7 @@ DEFINITIONS=[
  schema('save_result',SAVE_RESULT_DESCRIPTION,{'title':STRING,'content':STRING},['title','content']),
  schema('list_notes','Read saved personal notes. Use when the user asks to recall a note.'),
  schema('save_note','Save a personal note ONLY when the user explicitly requests remembering or saving information.',{'content':STRING},['content']),
- schema('save_memory','Save or correct one owner memory item. When the owner states a durable fact about themselves (where they live or work, a preference, an allergy, a routine) or asks you to remember one, save it; it is remembered at once and the owner is told afterwards with an undo; when the result has owner_notice, Still sends that message itself, so the reply does not say again that it was remembered. A durable fact you infer about the owner from what they said may be saved the same way, as what you inferred; the owner is told and can undo it. Never save a credential.',described({'memory_key':STRING,'content':STRING,'correction':{'type':'boolean'}},SAVE_MEMORY_ARGUMENTS),['memory_key','content']),
+ schema('save_memory','Save or correct one owner memory item. When the owner states a durable fact about themselves (where they live or work, a preference, an allergy, a routine) or asks you to remember one, save it; it is remembered at once and the owner is told afterwards with an undo; when the result has owner_notice, Still sends that message itself, so the reply does not say again that it was remembered. A durable fact you infer about the owner from what they said may be saved the same way, as what you inferred; the owner is told and can undo it. Never save a credential.',described({'memory_key':STRING,'content':STRING,'correction':{'type':'boolean'},'terms':STRING},SAVE_MEMORY_ARGUMENTS),['memory_key','content']),
  schema('list_memory','Read a page of the owner\'s current saved memory items. The profile facts are in the owner profile section of the context; use search_memory to find a relevant fact outside that bounded section. Each item has saved_at, source and source_status: source.kind owner_request is what the owner typed (text, at); agentos_work is a Work Still started, whose text is not the owner\'s words; source_status not_kept means no source is kept and unknown means it could not be checked, so you can say why you know something.'),
  schema('search_conversation','Search earlier source-linked exchanges outside the recent window. Assistant lines are model-stated, not facts or commitments. Read-only, redacted, owner-scoped; at most three exchanges across this Work. Optional before/after are Unix timestamps (exclusive/inclusive). Reformulate when needed. To see the conversation a saved fact came from, pass its source work_id from search_memory instead of a query.',{'query':STRING,'work_id':STRING,'before':{'type':'number'},'after':{'type':'number'},'limit':{'type':'integer','minimum':1,'maximum':3}}),
  schema('search_memory','Search the owner\'s current saved Memory for a fact relevant to this request. Use concise terms from the request and likely synonyms (for example, sushi and 초밥); results include saved_at and a source reference with source_status, as in list_memory, so you can say why you know something. Search only when prior saved information can help. It returns a bounded set and never reads another owner\'s data.',{'query':STRING},['query']),
@@ -3417,6 +3421,8 @@ class Capabilities:
   self.budget=budget if budget is not None else WorkBudget(stop=lambda:work_stop_requested(store,job_id))
   self.store,self.adapter,self.config,self.key=store,adapter,config,key
   self.job_id,self.record,self.readonly=job_id,record,readonly
+  # The direct-API loop's current response identity; CLI dispatch uses turn provenance.
+  self.worker_identity={}
   self.network=network or LocalTools()
   self.document_access=document_access
   self.document_context=document_context
@@ -4562,8 +4568,21 @@ class Capabilities:
      if not request or _normalized(args['content']) not in request:
       return {'saved':False,'state':'refused','memory_key':args.get('memory_key'),'refused_because':'forgotten-value'}
      forget.restated(MEMORY_OWNER,args['memory_key'],args['content'])
+    # #921 PR-6 reuse: adopt memory_terms.filter_terms/build_meta and the store's
+    # save_memory parameters (SQLite FTS5 per-row index input); no new component or call.
+    terms_values={}
+    if isinstance(args.get('terms'),str) and args['terms']:
+     from .memory_terms import filter_terms, build_meta
+     terms,reason=filter_terms(self.store,args['memory_key'],args['content'],args['terms'])
+     if terms and reason!='secret':
+      provenance=self.store.turn_provenance(self.job_id) or {}
+      workers=provenance.get('workers') or []
+      worker=self.worker_identity or (workers[-1] if workers else {})
+      terms_values={'retrieval_terms':terms,'retrieval_terms_meta':build_meta('keyed',previous=None,
+       route=worker.get('route') or '',model=worker.get('model') or '',
+       observed_model=worker.get('observed_model') or '',policy='worker',run=self.job_id,at=time.time())}
     saved=self.store.save_memory(args['memory_key'],args['content'],MEMORY_OWNER,work_id=self.job_id,notice=True,
-                                 corrected=args.get('correction') is True)
+                                 corrected=args.get('correction') is True,**terms_values)
     result={**saved,'saved':True,'auto_saved':True,'correction':args.get('correction') is True}
     from .context_observations import answerable_work
     if answerable_work(self.store.job(self.job_id)):
@@ -6243,6 +6262,8 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
   requested=active_config.get('model')
   if actual and active_config.get('model')=='openrouter/free' and actual!='openrouter/free':active_config['model']=actual
   actual=actual or NOT_REPORTED
+  capabilities.worker_identity={'route':'direct-api','model':requested or '',
+                                'observed_model':actual if actual!=NOT_REPORTED else ''}
   calls=message.get('tool_calls') or []
   record('model','responded',json.dumps({'scope':scope,'model':actual,'requested_model':requested,'tool_calls':recorded_calls(calls,capabilities.tools,getattr(capabilities,'judgment_text',None)),'has_text':bool(message.get('content'))},ensure_ascii=False))
   if not calls and not successful and not failed and not proposals and not checked_direct and not last_turn:
