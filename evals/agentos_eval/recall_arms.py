@@ -86,10 +86,10 @@ def prefix_lexical(store, data):
     return retrieve
 
 
-def plan_prompt_schema_digest():
+def plan_prompt_schema_digest(catalogue=None):
     """Bind replays to the exact plan prompt and schema used by this arm."""
     from personal_agent.orchestrator import QUESTION, plan_schema, digest
-    return digest({'question': QUESTION, 'schema': plan_schema(_runtime_catalogue().available())})
+    return digest({'question': QUESTION, 'schema': plan_schema((catalogue or _runtime_catalogue()).available())})
 
 
 def _runtime_catalogue():
@@ -100,9 +100,23 @@ def _runtime_catalogue():
                        'models':[], 'model_tiers':{}, 'tools':[]}], {}, 'fixture')
 
 
-def replay_resolver(recorded, data, *, run=1):
+def replay_resolver(recorded, data, *, run=1, terms_recording=None):
     """Strict replay of one frozen sampling run; missing entries are errors."""
     from .recall_report import _fixture_digest, _phrasing_cases, _case_lookup
+    if recorded.get('version') == 'recall-plan/2':
+        from .recall_regression import validate_plans
+        if terms_recording is None:
+            raise ValueError('Plan/2 replay requires its terms recording')
+        validate_plans(recorded, data, terms_recording)
+        entries = recorded['runs'].get(str(run), {})
+        identify = _case_lookup(data['cases'])
+        def resolve(query, context):
+            ident = identify(query, context)
+            if ident not in entries:
+                raise ValueError('Missing recorded plan case: ' + ident)
+            return entries[ident]['plan']['recall_query']
+        resolve.evidence = 'fixture replay of recall-plan/2'
+        return resolve
     if recorded.get('version') != 'recall-plan/1':
         raise ValueError('Recorded plan version differs')
     if recorded.get('fixture_digest') != _fixture_digest(data):

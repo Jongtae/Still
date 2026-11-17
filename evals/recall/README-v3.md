@@ -163,11 +163,12 @@ facts correctly in an answer.
 ## Regeneration and verification
 
 Run from the repository root (standard-library Python suffices for generation):
+Set `PYTHON` to the project's venv interpreter.
 
 ```sh
 python evals/recall/build_v3.py
 python evals/recall/build_v3.py --check
-PYTHONPATH=src:evals:. /Users/jongtaelee/Documents/project/Still/.venv/bin/python -m pytest -q tests/test_recall_pairs_v3.py tests/test_recall_pairs.py tests/test_recall_pairs_v2.py -p no:cacheprovider
+PYTHONPATH=src:evals:. "$PYTHON" -m pytest -q tests/test_recall_pairs_v3.py tests/test_recall_pairs.py tests/test_recall_pairs_v2.py -p no:cacheprovider
 ```
 
 The generator reads v2's rows and its own handwritten data, then writes UTF-8

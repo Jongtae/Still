@@ -516,6 +516,26 @@ def main(argv=None):
     phrasers = recall.add_mutually_exclusive_group()
     phrasers.add_argument('--phraser-cmd', help='explicit stdin/stdout worker command for the phrasing arm')
     phrasers.add_argument('--phrasings', type=Path, help='recorded run -> case id -> words JSON for replay')
+    # Explicit live recorder is separate from every default/model-free arm.
+    for command in ('recall-record','recall-regression'):
+        regression = sub.add_parser(command)
+        regression.add_argument('--fixture',type=Path,default=REPO/'evals/recall/recall-pairs-v4.json')
+        regression.add_argument('--additions',type=Path,default=REPO/'evals/recall/recall-gate-dev-1.json')
+        regression.add_argument('--out',type=Path,required=True)
+        if command=='recall-record':
+            from .paths import SRC
+            regression.add_argument('--src',type=Path,default=SRC)
+            regression.add_argument('--seed')
+            regression.add_argument('--max-calls',type=int)
+            regression.add_argument('--dry-run',action='store_true',help='exercise the sandbox with canned answers and zero model calls')
+            regression.add_argument('--dry-run-cases',type=int,default=6)
+            regression.add_argument('--requalify',action='store_true')
+            regression.add_argument('--terms',type=Path,help='reuse a complete terms recording (.json or .json.gz)')
+            regression.add_argument('--resume',type=Path,help='continue incomplete plans (.json or .json.gz); terms default to its sibling terms file with the same suffix')
+            regression.add_argument('--heldout-runs',type=int,default=3)
+        else:
+            regression.add_argument('--terms',type=Path,required=True,help='terms recording (.json or .json.gz)')
+            regression.add_argument('--plans',type=Path,required=True,help='plans recording (.json or .json.gz)')
     judgments = sub.add_parser('judgments', help='measure shipped judgments (#42)')
     actions = judgments.add_subparsers(dest='action', required=True)
     from .judgments import DEFAULT_CASES
@@ -564,6 +584,14 @@ def main(argv=None):
     c2labels.add_argument('report')
     c2labels.add_argument('ids', nargs='*', help='additional scenario ids already in the report')
     args = parser.parse_args(argv)
+    if args.command=='recall-record':
+        from .recall_record import record
+        record(args)
+        return 0
+    if args.command=='recall-regression':
+        from .recall_regression_report import command
+        command(args)
+        return 0
     handler = {'snapshot': cmd_snapshot, 'scenarios': cmd_scenarios, 'sweep': cmd_sweep, 'report': cmd_report,
                'p1-report': cmd_p1_report, 'budget': cmd_budget, 'judgments': cmd_judgments, 'continuity': cmd_continuity,
                'coverage': cmd_coverage, 'recall': cmd_recall}[args.command]
