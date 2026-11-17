@@ -1,4 +1,4 @@
-"""#937: the owner's active entrusted lines reach every route of a conversational turn.
+"""#937: the index of the owner's active entrusted lines reaches every route of a turn the owner started.
 
 Evidence class: model-free unit and fixture-transport tests.
 """
@@ -23,12 +23,15 @@ def brief(task, state=el.STATE_ACTIVE, open_matters=''):
 
 
 class HeldTextTests(unittest.TestCase):
-    def test_names_active_lines_with_open_matters_and_leaves_stopped_out(self):
+    def test_names_active_lines_by_task_only_and_leaves_stopped_out(self):
+        # #798 "Answers": only each active line's id and task sentence; the brief is never injected.
         text = el.held_text([brief('Run the small stock budget', open_matters='1 share held, no exit watch'),
                              brief('Old watch', state=el.STATE_STOPPED), brief('Track deliveries')])
         self.assertTrue(text.startswith(el.HELD_PREFIX))
-        self.assertIn('1) Run the small stock budget (open: 1 share held, no exit watch)', text)
+        self.assertIn('1) Run the small stock budget', text)
         self.assertIn('2) Track deliveries', text)
+        self.assertNotIn('1 share held', text)
+        self.assertIn('entrusted_line action=read', text)
         self.assertNotIn('Old watch', text)
         self.assertNotIn('\n', text)
 
@@ -36,15 +39,15 @@ class HeldTextTests(unittest.TestCase):
         self.assertEqual(el.held_text([brief('Old', state=el.STATE_STOPPED)]), '')
         many = el.held_text([brief('x' * 400, open_matters='y' * 400) for _ in range(9)])
         self.assertLessEqual(len(many), el.HELD_CHARS)
-        self.assertNotIn(f'{el.HELD_LIMIT + 1})', many)
+        self.assertNotIn(f'{el.INDEX_ITEMS + 1})', many)
 
 
     def test_redaction_runs_on_the_whole_field_before_the_cut(self):
         secret = 'Zq8vR2mXw4Lp9tNc7bYk'
-        task = 'f' * (el.HELD_TASK_CHARS - 15) + ' ' + secret
+        task = 'f' * (el.INDEX_TASK_CHARS - 15) + ' ' + secret
         cut_after = el.held_text([brief(task)])
-        self.assertIn(secret[:14], cut_after)  # the unredacted cut keeps a fragment: the hazard
-        text = el.held_text([brief(task, open_matters='ask ' + secret)], lambda value: value.replace(secret, '[secret]'))
+        self.assertIn(secret[:8], cut_after)  # the unredacted cut keeps a fragment: the hazard
+        text = el.held_text([brief(task)], lambda value: value.replace(secret, '[secret]'))
         for size in range(6, len(secret) + 1):
             self.assertNotIn(secret[:size], text)
 
@@ -80,7 +83,8 @@ class AuditTests(unittest.TestCase):
         held = el.held_text([{'line_id': 'abc123', 'task': 'Run the small stock budget', 'state': el.STATE_ACTIVE,
                               'open_matters': '1 share held'},
                              {'line_id': 'def456', 'task': 'Track deliveries', 'state': el.STATE_ACTIVE}])
-        self.assertIn('[line:abc123] Run the small stock budget (open: 1 share held)', held)
+        self.assertIn('[line:abc123] Run the small stock budget;', held)
+        self.assertNotIn('1 share held', held)
         claims = context_claims('Now: Tue 09:24\n' + held)
         self.assertEqual([c['ref'] for c in claims], ['line:abc123', 'line:def456'])
         self.assertEqual(claims[0]['label'], '맡은 일: Run the small stock budget')
@@ -93,10 +97,10 @@ class TurnContextTests(_LineCase):
         # The fixture's stored Telegram token, placed so the task cut would split it.
         secret = SECRET
         brief_ = {'line_id': 'l1', 'state': el.STATE_ACTIVE, 'open_matters': '',
-                  'task': 'f' * (el.HELD_TASK_CHARS - 15) + ' ' + secret}
+                  'task': 'f' * (el.INDEX_TASK_CHARS - 15) + ' ' + secret}
         self.service.lines.lines = lambda: [brief_]
         self.service.preparations_service.waiting_line = lambda brief: False
-        text = self.service.preparations_service.held_lines_text()
+        text = self.service.preparations_service.lines_index({'id': 'probe'})
         self.assertTrue(text.startswith(el.HELD_PREFIX))
         for size in range(6, len(secret) + 1):
             self.assertNotIn(secret[:size], text)
@@ -105,12 +109,19 @@ class TurnContextTests(_LineCase):
         line, _ = self.open_line(schedule=False)
         text = self.service.current_context_text({'id': 'probe'})
         self.assertIn(el.HELD_PREFIX, text)
-        self.assertIn(' '.join(TASK.split())[:el.HELD_TASK_CHARS], text)
+        self.assertIn(el.excerpt(' '.join(TASK.split()), el.INDEX_TASK_CHARS), text)
+        # One source: the index is no longer repeated in the prepared section.
+        self.assertNotIn(line['line_id'], self.service.prepared_text({'id': 'probe'}) or '')
         self.assertIn(f"[line:{line['line_id']}]", text)
         from personal_agent.information_use import context_claims
         self.assertIn(f"line:{line['line_id']}", [claim['ref'] for claim in context_claims(text)])
         self.service.lines.write(line['line_id'], None, line['version'], 'stopped',
                                  lambda current: {**current, 'state': el.STATE_STOPPED})
+        self.assertNotIn(el.HELD_PREFIX, self.service.current_context_text({'id': 'probe'}) or '')
+
+    def test_a_run_no_owner_is_present_for_carries_no_index(self):
+        self.open_line(schedule=False)
+        self.service.unattended_work = lambda job: True
         self.assertNotIn(el.HELD_PREFIX, self.service.current_context_text({'id': 'probe'}) or '')
 
 

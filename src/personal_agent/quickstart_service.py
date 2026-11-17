@@ -1300,7 +1300,7 @@ class AgentService:
         if slots:
             text=f'{text}\n{slots}' if text else slots
         # #937: the continuing responsibilities the owner entrusted, so every route reads them as its own work.
-        held=self.preparations_service.held_lines_text()
+        held=self.preparations_service.lines_index(job) if job else ''
         if held:
             text=f'{text}\n{held}' if text else held
         return text
