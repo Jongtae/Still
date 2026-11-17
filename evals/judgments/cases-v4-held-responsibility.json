@@ -204,6 +204,90 @@
    ]
   },
   {
+   "id": "held-plan-line-remark-sold-ko",
+   "role": "orchestration_plan",
+   "class": "structured-plan",
+   "lang": "ko",
+   "category": "held-remark-line",
+   "input": {
+    "request": "종목 A 전에 판 뒤로 엄청 올랐네",
+    "conversation": "주인: 종목 A 지금 팔아줘\n비서: 종목 A 1주를 69,100원에 매도했어요. 체결 확인했습니다.\n주인: 오늘은 종목 B 1주 사 둬\n비서: 종목 B 1주 매수 체결됐어요. 청산 조건 감시는 이어 가지 못했어요.",
+    "prepared": "오늘 08:59 준비: 개장 전 계좌 잔고와 초단기 매매 판단 기준. (종목 A의 오늘 시세는 없음)",
+    "current_context": "Now: 2026-11-17 Tue 09:24 Asia/Seoul\nEntrusted to you (continuing responsibilities the owner gave you; entrusted_line read shows each full brief): 1) 주인의 소액 국내주식 계좌를 정해진 예산 안에서 운용하고, 잔고·주문·체결과 시세를 확인해 결과를 보고한다 (open: 종목 B 1주 보유 중, 청산 조건 감시 없음)"
+   },
+   "expect": {
+    "direct_reply": "empty",
+    "owner_situation": true
+   },
+   "targets": [
+    "#926",
+    "#937"
+   ]
+  },
+  {
+   "id": "held-plan-line-remark-sold-en",
+   "role": "orchestration_plan",
+   "class": "structured-plan",
+   "lang": "en",
+   "category": "held-remark-line",
+   "input": {
+    "request": "Asset A went way up after we sold it",
+    "conversation": "Owner: sell Asset A now\nAssistant: Sold 1 share of Asset A at 69,100. The fill is confirmed.\nOwner: buy 1 share of Asset B today\nAssistant: Bought 1 share of Asset B; it filled. The exit watch could not be kept running.",
+    "prepared": "Prepared today 08:59: pre-open account balance and short-term trading criteria. (No price for Asset A today.)",
+    "current_context": "Now: 2026-11-17 Tue 09:24 Asia/Seoul\nEntrusted to you (continuing responsibilities the owner gave you; entrusted_line read shows each full brief): 1) Run the owner's small stock account within a set budget; check balance, orders, fills and prices, and report results (open: 1 share of Asset B held, no exit watch running)"
+   },
+   "expect": {
+    "direct_reply": "empty",
+    "owner_situation": true
+   },
+   "targets": [
+    "#926",
+    "#937"
+   ]
+  },
+  {
+   "id": "held-plan-line-mandate-ko",
+   "role": "orchestration_plan",
+   "class": "structured-plan",
+   "lang": "ko",
+   "category": "held-mandate-line",
+   "input": {
+    "request": "남의 일이 아닌데, 너는 내 투자 담당이잖아",
+    "conversation": "주인: 종목 A 지금 팔아줘\n비서: 종목 A 1주를 69,100원에 매도했어요. 체결 확인했습니다.\n주인: 오늘은 종목 B 1주 사 둬\n비서: 종목 B 1주 매수 체결됐어요. 청산 조건 감시는 이어 가지 못했어요.\n주인: 종목 A 전에 판 뒤로 엄청 올랐네\n비서: 아, 팔고 나서 크게 올랐네요. 단타에서는 흔한 일이지만 아쉽겠어요.",
+    "prepared": "오늘 08:59 준비: 개장 전 계좌 잔고와 초단기 매매 판단 기준. (종목 A의 오늘 시세는 없음)",
+    "current_context": "Now: 2026-11-17 Tue 09:24 Asia/Seoul\nEntrusted to you (continuing responsibilities the owner gave you; entrusted_line read shows each full brief): 1) 주인의 소액 국내주식 계좌를 정해진 예산 안에서 운용하고, 잔고·주문·체결과 시세를 확인해 결과를 보고한다 (open: 종목 B 1주 보유 중, 청산 조건 감시 없음)"
+   },
+   "expect": {
+    "direct_reply": "empty",
+    "owner_situation": true
+   },
+   "targets": [
+    "#926",
+    "#937"
+   ]
+  },
+  {
+   "id": "held-plan-line-mandate-en",
+   "role": "orchestration_plan",
+   "class": "structured-plan",
+   "lang": "en",
+   "category": "held-mandate-line",
+   "input": {
+    "request": "This isn't someone else's business. You're the one managing my investments.",
+    "conversation": "Owner: sell Asset A now\nAssistant: Sold 1 share of Asset A at 69,100. The fill is confirmed.\nOwner: buy 1 share of Asset B today\nAssistant: Bought 1 share of Asset B; it filled. The exit watch could not be kept running.\nOwner: Asset A went way up after we sold it\nAssistant: Oh, it rose a lot after the sale. That happens in short-term trading, but it must sting.",
+    "prepared": "Prepared today 08:59: pre-open account balance and short-term trading criteria. (No price for Asset A today.)",
+    "current_context": "Now: 2026-11-17 Tue 09:24 Asia/Seoul\nEntrusted to you (continuing responsibilities the owner gave you; entrusted_line read shows each full brief): 1) Run the owner's small stock account within a set budget; check balance, orders, fills and prices, and report results (open: 1 share of Asset B held, no exit watch running)"
+   },
+   "expect": {
+    "direct_reply": "empty",
+    "owner_situation": true
+   },
+   "targets": [
+    "#926",
+    "#937"
+   ]
+  },
+  {
    "id": "held-goal-mandate-apology-ko",
    "role": "goal_reached",
    "class": "bounded",

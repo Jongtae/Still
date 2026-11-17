@@ -1297,6 +1297,10 @@ class AgentService:
         slots=context_line(self.store,self.connection_slots(job) if job else None)
         if slots:
             text=f'{text}\n{slots}' if text else slots
+        # #937: the continuing responsibilities the owner entrusted, so every route reads them as its own work.
+        held=self.preparations_service.held_lines_text()
+        if held:
+            text=f'{text}\n{held}' if text else held
         return text
 
     def browser_sessions_text(self):

@@ -2288,6 +2288,23 @@ class PreparationsService:
         read=detail.get('evidence') if isinstance(detail.get('evidence'),dict) else detail
         return read.get('line_id'),read.get('version')
 
+    def held_lines_text(self):
+        """#937: the active lines this owner entrusted, as one current-context line, or None.
+
+        Look-back lines not yet announced to the owner are left out.  Stored secrets are redacted.
+        A failure here never blocks the turn.
+        """
+        from .current_context import redact_known_secrets
+        service=self.service
+        try:
+            briefs=[brief for brief in service.lines.lines() if not self.waiting_line(brief)]
+            # Each whole field is redacted before it is cut (#937 review).
+            text=el.held_text(briefs,lambda value:redact_known_secrets(service.store,value))
+        except Exception:
+            LOG.warning('entrusted lines unavailable for the turn context')
+            return None
+        return text or None
+
     def line_note(self, job):
         """A changed brief for a running line's next step, once per change, or None.
 
