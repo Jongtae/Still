@@ -1,0 +1,196 @@
+{
+  "version": "recall-gate-dev/1",
+  "base_digest": "f1b603b07a85e8595c9082993982105cc5819ab4cc1d99d795cf56b99a49535d",
+  "rows": [
+    {
+      "ref": "gate-second-row",
+      "key": "profile.gatedev.qaa",
+      "content": "Celesta casing: ivory felt cushions the hinged lid."
+    },
+    {
+      "ref": "gate-saturated-row",
+      "key": "profile.gatedev.qbb",
+      "content": "Octant cradle: cork cradles protect the brass arc."
+    },
+    {
+      "ref": "gate-noise-row",
+      "key": "profile.gatedev.qcc",
+      "content": "Marquetry veneer inventory: rosewood offcuts occupy the shallow tray."
+    },
+    {
+      "ref": "gate-annotated-row",
+      "key": "profile.gatedev.qdd",
+      "content": "도편수첩 보관 기록은 자주색 비단으로 감싼 작은 함에 남겼다."
+    },
+    {
+      "ref": "gate-fill-0",
+      "key": "profile.gatedev.x00",
+      "content": "쐐깃덧널궤짝 표찰묶음 00번은 톱밥완충겹판 윗칸쐐기함쐐깃덧널궤짝."
+    },
+    {
+      "ref": "gate-fill-1",
+      "key": "profile.gatedev.x01",
+      "content": "쐐깃덧널궤짝 표찰묶음 01번은 톱밥완충겹판 윗칸쐐기함쐐깃덧널궤짝."
+    },
+    {
+      "ref": "gate-fill-2",
+      "key": "profile.gatedev.x02",
+      "content": "쐐깃덧널궤짝 표찰묶음 02번은 톱밥완충겹판 윗칸쐐기함쐐깃덧널궤짝."
+    },
+    {
+      "ref": "gate-fill-3",
+      "key": "profile.gatedev.x03",
+      "content": "쐐깃덧널궤짝 표찰묶음 03번은 톱밥완충겹판 윗칸쐐기함쐐깃덧널궤짝."
+    },
+    {
+      "ref": "gate-fill-4",
+      "key": "profile.gatedev.x04",
+      "content": "쐐깃덧널궤짝 표찰묶음 04번은 톱밥완충겹판 윗칸쐐기함쐐깃덧널궤짝."
+    },
+    {
+      "ref": "gate-fill-5",
+      "key": "profile.gatedev.x05",
+      "content": "쐐깃덧널궤짝 표찰묶음 05번은 톱밥완충겹판 윗칸쐐기함쐐깃덧널궤짝."
+    },
+    {
+      "ref": "gate-fill-6",
+      "key": "profile.gatedev.x06",
+      "content": "쐐깃덧널궤짝 표찰묶음 06번은 톱밥완충겹판 윗칸쐐기함쐐깃덧널궤짝."
+    },
+    {
+      "ref": "gate-fill-7",
+      "key": "profile.gatedev.x07",
+      "content": "쐐깃덧널궤짝 표찰묶음 07번은 톱밥완충겹판 윗칸쐐기함쐐깃덧널궤짝."
+    },
+    {
+      "ref": "gate-fill-8",
+      "key": "profile.gatedev.x08",
+      "content": "쐐깃덧널궤짝 표찰묶음 08번은 톱밥완충겹판 윗칸쐐기함쐐깃덧널궤짝."
+    },
+    {
+      "ref": "gate-fill-9",
+      "key": "profile.gatedev.x09",
+      "content": "쐐깃덧널궤짝 표찰묶음 09번은 톱밥완충겹판 윗칸쐐기함쐐깃덧널궤짝."
+    },
+    {
+      "ref": "gate-fill-10",
+      "key": "profile.gatedev.x10",
+      "content": "쐐깃덧널궤짝 표찰묶음 10번은 톱밥완충겹판 윗칸쐐기함쐐깃덧널궤짝."
+    },
+    {
+      "ref": "gate-fill-11",
+      "key": "profile.gatedev.x11",
+      "content": "쐐깃덧널궤짝 표찰묶음 11번은 톱밥완충겹판 윗칸쐐기함쐐깃덧널궤짝."
+    },
+    {
+      "ref": "gate-fill-12",
+      "key": "profile.gatedev.x12",
+      "content": "쐐깃덧널궤짝 표찰묶음 12번은 톱밥완충겹판 윗칸쐐기함쐐깃덧널궤짝."
+    },
+    {
+      "ref": "gate-fill-13",
+      "key": "profile.gatedev.x13",
+      "content": "쐐깃덧널궤짝 표찰묶음 13번은 톱밥완충겹판 윗칸쐐기함쐐깃덧널궤짝."
+    },
+    {
+      "ref": "gate-fill-14",
+      "key": "profile.gatedev.x14",
+      "content": "쐐깃덧널궤짝 표찰묶음 14번은 톱밥완충겹판 윗칸쐐기함쐐깃덧널궤짝."
+    },
+    {
+      "ref": "gate-fill-15",
+      "key": "profile.gatedev.x15",
+      "content": "쐐깃덧널궤짝 표찰묶음 15번은 톱밥완충겹판 윗칸쐐기함쐐깃덧널궤짝."
+    },
+    {
+      "ref": "gate-fill-16",
+      "key": "profile.gatedev.x16",
+      "content": "쐐깃덧널궤짝 표찰묶음 16번은 톱밥완충겹판 윗칸쐐기함쐐깃덧널궤짝."
+    },
+    {
+      "ref": "gate-fill-17",
+      "key": "profile.gatedev.x17",
+      "content": "쐐깃덧널궤짝 표찰묶음 17번은 톱밥완충겹판 윗칸쐐기함쐐깃덧널궤짝."
+    },
+    {
+      "ref": "gate-fill-18",
+      "key": "profile.gatedev.x18",
+      "content": "쐐깃덧널궤짝 표찰묶음 18번은 톱밥완충겹판 윗칸쐐기함쐐깃덧널궤짝."
+    },
+    {
+      "ref": "gate-fill-19",
+      "key": "profile.gatedev.x19",
+      "content": "쐐깃덧널궤짝 표찰묶음 19번은 톱밥완충겹판 윗칸쐐기함쐐깃덧널궤짝."
+    },
+    {
+      "ref": "gate-fill-20",
+      "key": "profile.gatedev.x20",
+      "content": "쐐깃덧널궤짝 표찰묶음 20번은 톱밥완충겹판 윗칸쐐기함쐐깃덧널궤짝."
+    },
+    {
+      "ref": "gate-fill-21",
+      "key": "profile.gatedev.x21",
+      "content": "쐐깃덧널궤짝 표찰묶음 21번은 톱밥완충겹판 윗칸쐐기함쐐깃덧널궤짝."
+    },
+    {
+      "ref": "gate-fill-22",
+      "key": "profile.gatedev.x22",
+      "content": "쐐깃덧널궤짝 표찰묶음 22번은 톱밥완충겹판 윗칸쐐기함쐐깃덧널궤짝."
+    },
+    {
+      "ref": "gate-fill-23",
+      "key": "profile.gatedev.x23",
+      "content": "쐐깃덧널궤짝 표찰묶음 23번은 톱밥완충겹판 윗칸쐐기함쐐깃덧널궤짝."
+    }
+  ],
+  "cases": [
+    {
+      "id": "gate-second",
+      "split": "dev",
+      "kind": "paraphrase",
+      "query": "건반타격상자의 덮개 선택?",
+      "needed": [
+        "gate-second-row"
+      ],
+      "traps": [],
+      "irrelevant": [],
+      "note": "[second-query] A translated second selector may recover the omitted celesta fact."
+    },
+    {
+      "id": "gate-saturated",
+      "split": "dev",
+      "kind": "paraphrase",
+      "query": "팔분각도계의 수납 선택?",
+      "needed": [
+        "gate-saturated-row"
+      ],
+      "traps": [],
+      "irrelevant": [],
+      "note": "[cut] The target precedes all v4 rows and falls beyond saturated request-only A."
+    },
+    {
+      "id": "gate-noise",
+      "split": "dev",
+      "kind": "harm-control",
+      "query": "권양기축의 윤활점도?",
+      "needed": [],
+      "traps": [],
+      "irrelevant": [
+        "gate-noise-row"
+      ],
+      "note": "[incidental-noise] A marquetry selector would add only unrelated noise."
+    },
+    {
+      "id": "gate-annotated",
+      "split": "dev",
+      "kind": "lexical-control",
+      "query": "도편수첩",
+      "needed": [
+        "gate-annotated-row"
+      ],
+      "traps": [],
+      "irrelevant": [],
+      "note": "[annotation] Add one synthetic upkeep annotation after the plan; the row was already in A."
+    }
+  ]
+}

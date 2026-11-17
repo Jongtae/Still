@@ -74,7 +74,8 @@
       "FRONTIER-RECALL-THREADS-01",
       "FRONTIER-RECALL-SAVE-TERMS-01",
       "FRONTIER-RECALL-TERMS-PASS-01",
-      "FRONTIER-RECALL-REPLY-01"
+      "FRONTIER-RECALL-REPLY-01",
+      "FRONTIER-RECALL-REGRESSION-01"
     ]
   },
   "iterations": [
@@ -1118,6 +1119,11 @@
           "status": "complete-on-merge",
           "pull_request": "959",
           "decision": "Owner-selected #921 PR-5 within #822: a plan's direct reply is withheld when its own recall_query finds a saved row (new id or revision, or a new annotation) the plan was not sent; the already-planned worker runs with the same checked refresh. No re-plan; annotations are consumed only at dispatch. Not escalated: it only withholds a reply, with no new recipient or authority."
+        },
+        "FRONTIER-RECALL-REGRESSION-01": {
+          "issue": 921,
+          "status": "complete-on-merge",
+          "decision": "Owner-selected #921 PR-8 within #822 (spec v5 Regression inputs): eval-only v4 recall regression with guarded terms replay, the real executor gate and fixture workers, author facets and dev-only additions. Adapt the existing recall arms, recorder route, sandbox, shared CallCap and product inventory APIs; no src change, new dependency or default live call. Model-free evidence only; the explicit synthetic recorder is reserved for a separately approved live run. Complete on the merge of its own PR."
         }
       }
     },
@@ -1569,6 +1575,20 @@
         "PYTHONPATH=src .venv/bin/python -m pytest -q tests/test_921_reply_gate.py tests/test_orchestrator.py tests/test_owner_profile_context_860.py tests/test_eval_paired.py tests/test_fresh_delivery_plan.py"
       ],
       "summary": "Owner-selected #921 PR-5 within #822 (spec v5 \u00a71): planner.md keeps recall_query on a direct reply; snapshot entries and records carry a row inventory; one orchestrator cut helper freezes what the plan received; the executor gate compares the plan's inventory with a non-consuming refresh and delegates on a new row, recording a counts-only plan-reply-withheld receipt; MemoryRaise.shown is committed at dispatch for lines in the final envelope. Existing Solutions Review: reuse recall_selector, the worker refresh, snapshot entries, records_block, MemoryRaise.shown and the delegation fallback; Build one gate case. Paired check on #921 passed under #202's frozen rule (judgment-heldout-partners/4). Complete on the merge of its own PR.",
+      "depends_on": []
+    },
+    {
+      "id": "FRONTIER-RECALL-REGRESSION-01",
+      "program": "FRONTIER-01",
+      "issue": 921,
+      "milestone": "frontier-delivery",
+      "kind": "implementation",
+      "activation_status": "complete-on-merge",
+      "contract": "frontier-delivery.en.md",
+      "tests": [
+        "PYTHONPATH=src:evals .venv/bin/python -m pytest -q tests/test_921_recall_regression.py tests/test_921_recall_regression_record.py tests/test_921_recall_regression_report.py tests/test_fresh_delivery_plan.py -p no:cacheprovider"
+      ],
+      "summary": "Owner-selected #921 PR-8 within #822 (spec v5 Regression inputs): eval-only v4 recall regression with guarded terms replay, the real executor gate and fixture workers, author facets and dev-only additions. Adapt the existing recall arms, recorder route, sandbox, shared CallCap and product inventory APIs; no src change, new dependency or default live call. Model-free evidence only; the explicit synthetic recorder is reserved for a separately approved live run. Complete on the merge of its own PR.",
       "depends_on": []
     }
   ],
@@ -2063,7 +2083,8 @@
         "FRONTIER-RECALL-THREADS-01",
         "FRONTIER-RECALL-SAVE-TERMS-01",
         "FRONTIER-RECALL-TERMS-PASS-01",
-        "FRONTIER-RECALL-REPLY-01"
+        "FRONTIER-RECALL-REPLY-01",
+        "FRONTIER-RECALL-REGRESSION-01"
       ],
       "active_substeps": [],
       "completed_substeps": [
@@ -2095,7 +2116,8 @@
         "FRONTIER-RECALL-THREADS-01",
         "FRONTIER-RECALL-SAVE-TERMS-01",
         "FRONTIER-RECALL-TERMS-PASS-01",
-        "FRONTIER-RECALL-REPLY-01"
+        "FRONTIER-RECALL-REPLY-01",
+        "FRONTIER-RECALL-REGRESSION-01"
       ],
       "parallel_eligible_substeps": [
       ],
@@ -2240,6 +2262,6 @@
   "next_goal": {
     "id": "FRONTIER-01",
     "status": "owner-activated-goal-ready",
-    "action": "Owner-authorized FRONTIER-01 (#822): the first wave (#823, #824) and #825\u2013#827 are complete-on-merge. M1 wave 2 selects #841 (F-X4 recovery fence), #722 (judgment scope for relayed calls), #842 (F-P4/F-D3 Telegram delivery) and #843 (F-W4 Mattermost/Slack) as parent-controlled parallel lanes under the owner's 2026-11-14 direct instruction; each unit's own PR records it complete on merge. This checked-in resting selection starts no heartbeat. #883 (FRONTIER-CONTEXT-02) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #885 (FRONTIER-EVAL-JUDGE-01) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #887 (FRONTIER-C2-DUE-01) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #896 and #897 (FRONTIER-EVAL-TOKENS-01) are selected inside #822 by owner direction on 2026-11-15 and are complete on the merge of its own PR. #898 (FRONTIER-RECEIPT-JUDGE-01) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #902 (FRONTIER-EVAL-FALLBACK-01) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #202 phase 2 (FRONTIER-JUDGMENT-TEXT-01) is selected inside #822 by owner direction on 2026-11-16 and is complete on the merge of its own PR. #202 phase 2 (FRONTIER-COMPLETION-BAR-01) is selected inside #822 by owner direction on 2026-11-16 and is complete on the merge of its own PR. #744 phase 2 PR-2 (FRONTIER-UNTRUSTED-ECHO-01; items 3, 4d) is selected inside #822 by owner disposition on 2026-11-16 and is complete on the merge of its own PR. #202 phase 2 (FRONTIER-PLAN-READING-01) is selected inside #822 by owner direction on 2026-11-16 and is complete on the merge of its own PR. #403 (FRONTIER-RECALL-V3-01) is selected inside #822 by owner direction on 2026-11-16 and is complete on the merge of its own PR. #744 (FRONTIER-UNTRUSTED-01, phase 2 PR-1 items 5, 1, 2) is selected inside #822 by owner disposition on 2026-11-16 and is complete on the merge of its own PR. #744 phase 2 (PR-3 (items 4a, 4b), FRONTIER-UNTRUSTED-PREVIEW-01) is selected inside #822 by owner disposition on 2026-11-16 and is complete on the merge of its own PR. #202 phase 2 (FRONTIER-PLAN-READING-02) is selected inside #822 by owner direction on 2026-11-16 and is complete on the merge of its own PR. #921 PR-1 (FRONTIER-RECALL-TERMS-01) is selected inside #822 by owner decision on 2026-11-17 and is complete on the merge of its own PR. #921 PR-4 (FRONTIER-RECALL-FILL-01) is selected inside #822 by owner direction on 2026-11-17 and is complete on the merge of its own PR. #921 PR-7 (FRONTIER-RECALL-THREADS-01) is selected inside #822 by owner direction on 2026-11-17 and is complete on the merge of its own PR. #921 PR-6 (FRONTIER-RECALL-SAVE-TERMS-01) is selected inside #822 by owner direction on 2026-11-17 and is complete on the merge of its own PR. #921 PR-3 (FRONTIER-RECALL-TERMS-PASS-01) is selected inside #822 by owner direction on 2026-11-17 and is complete on the merge of its own PR. #921 PR-5 (FRONTIER-RECALL-REPLY-01) is selected inside #822 by owner direction on 2026-11-17 and is complete on the merge of its own PR. No other successor is selected; no live-model authority is added."
+    "action": "Owner-authorized FRONTIER-01 (#822): the first wave (#823, #824) and #825\u2013#827 are complete-on-merge. M1 wave 2 selects #841 (F-X4 recovery fence), #722 (judgment scope for relayed calls), #842 (F-P4/F-D3 Telegram delivery) and #843 (F-W4 Mattermost/Slack) as parent-controlled parallel lanes under the owner's 2026-11-14 direct instruction; each unit's own PR records it complete on merge. This checked-in resting selection starts no heartbeat. #883 (FRONTIER-CONTEXT-02) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #885 (FRONTIER-EVAL-JUDGE-01) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #887 (FRONTIER-C2-DUE-01) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #896 and #897 (FRONTIER-EVAL-TOKENS-01) are selected inside #822 by owner direction on 2026-11-15 and are complete on the merge of its own PR. #898 (FRONTIER-RECEIPT-JUDGE-01) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #902 (FRONTIER-EVAL-FALLBACK-01) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #202 phase 2 (FRONTIER-JUDGMENT-TEXT-01) is selected inside #822 by owner direction on 2026-11-16 and is complete on the merge of its own PR. #202 phase 2 (FRONTIER-COMPLETION-BAR-01) is selected inside #822 by owner direction on 2026-11-16 and is complete on the merge of its own PR. #744 phase 2 PR-2 (FRONTIER-UNTRUSTED-ECHO-01; items 3, 4d) is selected inside #822 by owner disposition on 2026-11-16 and is complete on the merge of its own PR. #202 phase 2 (FRONTIER-PLAN-READING-01) is selected inside #822 by owner direction on 2026-11-16 and is complete on the merge of its own PR. #403 (FRONTIER-RECALL-V3-01) is selected inside #822 by owner direction on 2026-11-16 and is complete on the merge of its own PR. #744 (FRONTIER-UNTRUSTED-01, phase 2 PR-1 items 5, 1, 2) is selected inside #822 by owner disposition on 2026-11-16 and is complete on the merge of its own PR. #744 phase 2 (PR-3 (items 4a, 4b), FRONTIER-UNTRUSTED-PREVIEW-01) is selected inside #822 by owner disposition on 2026-11-16 and is complete on the merge of its own PR. #202 phase 2 (FRONTIER-PLAN-READING-02) is selected inside #822 by owner direction on 2026-11-16 and is complete on the merge of its own PR. #921 PR-1 (FRONTIER-RECALL-TERMS-01) is selected inside #822 by owner decision on 2026-11-17 and is complete on the merge of its own PR. #921 PR-4 (FRONTIER-RECALL-FILL-01) is selected inside #822 by owner direction on 2026-11-17 and is complete on the merge of its own PR. #921 PR-7 (FRONTIER-RECALL-THREADS-01) is selected inside #822 by owner direction on 2026-11-17 and is complete on the merge of its own PR. #921 PR-6 (FRONTIER-RECALL-SAVE-TERMS-01) is selected inside #822 by owner direction on 2026-11-17 and is complete on the merge of its own PR. #921 PR-3 (FRONTIER-RECALL-TERMS-PASS-01) is selected inside #822 by owner direction on 2026-11-17 and is complete on the merge of its own PR. #921 PR-5 (FRONTIER-RECALL-REPLY-01) is selected inside #822 by owner direction on 2026-11-17 and is complete on the merge of its own PR. #921 PR-8 (FRONTIER-RECALL-REGRESSION-01) is selected inside #822 by owner direction on 2026-11-18 and is complete on the merge of its own PR. No other successor is selected; no live-model authority is added."
   }
 }
