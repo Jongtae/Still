@@ -96,7 +96,7 @@ class ConversationRecall(audit_helpers._ServiceBase):
         self.assertEqual(exchange['turns'][0]['source_at'],9)
         self.assertEqual(service.owner_words_block('커피').count(owner),1)
         self.assertEqual(self.store.search_conversation('커피'),[exchange])
-        self.assertEqual(self.store.search_conversation('',message_ids=[exchange['matched_id']]),[exchange])
+        self.assertEqual(self.store.search_conversation('',message_ids=[turn['id'] for turn in exchange['turns']]),[exchange])
 
     def test_identical_owner_messages_in_different_works_are_both_written_and_recalled(self):
         owner='커피 이야기 이어가요'
