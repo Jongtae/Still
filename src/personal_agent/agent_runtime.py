@@ -4717,7 +4717,8 @@ POLICY=CORE_INSTRUCTIONS+'\n\n'+API_TOOL_GUIDANCE
 # Bounded recent conversation shared by every route: the last 16 messages,
 # newest first until the byte budget is spent, never cutting the current request.
 CONTEXT_MESSAGES=16
-CONTEXT_BUDGET_BYTES=42_000
+#: #941: 43 KB keeps the 4 KB conversation floor after the voice's reader-and-form rule (#738 raised 40 -> 42).
+CONTEXT_BUDGET_BYTES=43_000
 MESSAGE_CAP_CHARS=4_000
 
 #: #658: the owner profile section every route carries when profile.* Memory
