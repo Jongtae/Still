@@ -11632,6 +11632,18 @@
   "ja": "自主的に準備した作業では支払いできません。",
   "zh": "自行安排的任务不能付款。"
  },
+ "write_allowances.sources": {
+  "ko": "바깥에서 읽은 내용 {count}건을 바탕으로 한 변경이에요:",
+  "en": "This change is based on {count} pieces of outside content read in this task:",
+  "ja": "この変更は、この作業で読んだ外部の内容 {count} 件に基づいています:",
+  "zh": "此更改基于本任务读取的 {count} 项外部内容："
+ },
+ "write_allowances.sources_more": {
+  "ko": "외 {count}건 (전체 목록은 이 작업의 정보 사용 기록에 있어요)",
+  "en": "and {count} more (the full list is in this task's information-use record)",
+  "ja": "ほか {count} 件(全一覧はこの作業の情報利用記録にあります)",
+  "zh": "另有 {count} 项(完整列表见本任务的信息使用记录)"
+ },
  "write_allowances.wait": {
   "ko": "이 변경은 소유자의 확인을 기다려요. 승인되면 한 번 이어가요.",
   "en": "This change waits for the owner’s approval and continues once if approved.",
