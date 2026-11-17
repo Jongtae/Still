@@ -81,9 +81,9 @@ A loop must show up as a visible count, not as silent spend.
 |---|---|---|
 | Children per run | **1** | New. A run (by its slot key) may have one child piece. A second call replaces that pending child (D6) |
 | Pending pieces per line | 1 | Follows from the line above for a sequential chain |
-| Piece runs per line per owner-local day | **24** (proposed, owner decision) | New. The 25th schedule call that day is refused with `line_pieces_daily`. Holds even when the shared budget is off |
+| Piece runs per line per owner-local day | **24** (owner decision 2026-11-18) | New. The 25th schedule call that day is refused with `line_pieces_daily`. Holds even when the shared budget is off |
 | Minimum lead time | **5 minutes** (`MIN_EVERY_MINUTES`) | New for pieces. A due time sooner than now + 5 minutes is refused |
-| Pending pieces store-wide | **10** (proposed) | New shared allowance like `MAX_ACTIVE_DREAM`, so pieces never crowd out owner-directed rows |
+| Pending pieces store-wide | **10** (owner decision 2026-11-18) | New shared allowance like `MAX_ACTIVE_DREAM`, so pieces never crowd out owner-directed rows |
 | Daily unattended work | Existing `scheduled_work_budget` | Unchanged. Pieces are charged like every scheduled run |
 | Goal length, window limits | Existing | Unchanged. These are functional execution conditions under C17 |
 
@@ -197,9 +197,11 @@ Acceptance is by scenario, not by test counts.
 
 ## Owner decisions in this design
 
-1. Per-line daily piece cap: **24** proposed.
-2. Store-wide pending-piece allowance: **10** proposed.
-3. Qualifying rows: owner-set-up lines only, not look-back or daily-plan lines (**proposed**).
+The owner accepted the proposals on 2026-11-18:
+
+1. Per-line daily piece cap: **24**.
+2. Store-wide pending-piece allowance: **10**.
+3. Qualifying rows: owner-set-up lines only, not look-back or daily-plan lines.
 4. **Not part of this design:** whether unattended runs may put an exact approval request in front of the owner (an amendment to #619). Without it, a piece that reaches an order reports, and the owner acts.
 
 ## Implementation slices
