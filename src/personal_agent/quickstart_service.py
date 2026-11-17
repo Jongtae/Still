@@ -2133,7 +2133,7 @@ class AgentService:
         start=0
         for entry,line in zip(snapshot['entries'],text.split('\n')):
             items.append({'kind':'profile','id':entry['id'],'digest':entry['content_digest'],
-                          'matched':entry['matched'],'annotated':bool(entry.get('annotated')),
+                          'matched':entry['matched'],'rank':entry.get('rank'),'annotated':bool(entry.get('annotated')),
                           'line':line,'start':start})
             start+=len(line)+1
         if snapshot.get('omitted_count'):
