@@ -703,6 +703,17 @@ class NoticeOffByDefault(TelegramHarness):
                         json.dumps({'evidence': evidence_summary('forget_record', result)}), 1.0))
         self.assertTrue(self.store.managed_owner_state(job_id))
 
+    def test_a_revert_does_not_claim_an_expired_earlier_value_is_back(self):
+        """#955 review: like the notice undo (#220), a predecessor past its last day is not back in use."""
+        job_id = self.enqueue('출장지는 이제 분당이야')
+        caps = Capabilities(self.store, None, {}, '', job_id, lambda *a, **k: None)
+        self.store.save_memory(KEY, VALUE, MEMORY_OWNER, work_id=job_id, valid_until='2000-01-01')
+        second = caps.execute('save_memory', {'memory_key': KEY, 'content': VALUE + ' 분당'})
+        result = caps.execute('forget_record', {'action': 'revert', 'ref': f"memory:{second['id']}"})
+        self.assertIsNone(result['restored'])
+        self.assertTrue(result['earlier_expired'].startswith('memory:'))
+        self.assertIn('기한이 지나', result['message'])
+
 
 class SecretsNeverEnterMemory(unittest.TestCase):
     """#918 review P1: a stored secret or a credential-shaped value is refused before any Memory write."""

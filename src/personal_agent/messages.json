@@ -335,6 +335,12 @@
   "ja": "保存した値を元に戻しました。以前の値はありませんでした。",
   "zh": "已撤销保存的值；之前没有值。"
  },
+ "agent_runtime.memory_reverted_expired": {
+  "ko": "저장한 값을 되돌렸어요. 그 전 값은 쓸 기한이 지나 다시 쓰이지 않아요.",
+  "en": "The saved value was undone; the earlier value had passed its end date, so it is not in use again.",
+  "ja": "保存した値を元に戻しました。以前の値は期限が過ぎているため、再び使われません。",
+  "zh": "已撤销保存的值；之前的值已过期，因此不会重新使用。"
+ },
  "agent_runtime.revert_ref_needed": {
   "ko": "되돌릴 기억을 memory:<id>로 정확히 지정하세요 (list_memory나 search_memory로 찾아요).",
   "en": "Name the memory to undo exactly as memory:<id> (find it with list_memory or search_memory).",

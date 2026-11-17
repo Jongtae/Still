@@ -4515,6 +4515,12 @@ class Capabilities:
   except ValueError:
    raise not_run(ToolError(msg('agent_runtime.revert_not_current'),'memory_not_current')) from None
   restored=(receipt.get('restored') or {}).get('id')
+  if restored:
+   # #955 review: like the notice undo, a restored row whose last day has passed is not back in use.
+   from .memory_service import MemoryService
+   back=self.store.memory(restored,MEMORY_OWNER,current_only=False) or {'id':None}
+   if restored not in {row['id'] for row in MemoryService(self.store,private_read_sink=MemoryService.NO_EGRESS_GUARD).holding([back])}:
+    return {'ref':ref,'restored':None,'earlier_expired':f'memory:{restored}'}
   return {'ref':ref,'restored':f'memory:{restored}' if restored else None}
 
  @record_outside_result
@@ -4942,7 +4948,9 @@ class Capabilities:
     elif action=='revert':
      # #955: the exact undo of a save (#918's retract_memory), reached by asking instead of by a notice.
      result={'action':'revert',**self._revert_memory(args.get('ref'))}
-     result['message']=msg('agent_runtime.memory_reverted' if result['restored'] else 'agent_runtime.memory_reverted_none')
+     result['message']=msg('agent_runtime.memory_reverted' if result['restored'] else
+                           'agent_runtime.memory_reverted_expired' if result.get('earlier_expired') else
+                           'agent_runtime.memory_reverted_none')
     elif action=='delete' and not args.get('ref') and args.get('receipt'):
      # #367 review P2: an item already forgotten is erased through its receipt (from list).
      result={'action':action,**forget.delete_forgotten(MEMORY_OWNER,args.get('receipt'))}
