@@ -28,6 +28,7 @@ import tempfile
 import time
 import types
 import unittest
+from unittest import mock
 from pathlib import Path
 from urllib.parse import quote, urlsplit
 
@@ -1159,12 +1160,16 @@ class ReturnedLoginTests(LoginHarness):
                                                          'expires': None, 'secure': True, 'http_only': True,
                                                          'same_site': None}]})
 
-    def resign_work(self):
+    def resign_work(self, judged_effect='navigate'):
         self.scripts = [Script({'tool_calls': [call('1', 'browser_open', url=f'https://{SITE}/login', effect='navigate')]},
                                {'tool_calls': [call('2', 'browser_click', target='다른 계정으로 로그인', effect='navigate')]},
                                {'content': '주문 내역을 확인했습니다.'})]
         job_id = self.receive('주문 내역 확인해줘')
-        self.assertTrue(self.service.run_one())
+        # #744 disposition 2026-11-17: a marked Work's non-floor press is
+        # classified by the minimized judgment, not the worker's declaration.
+        # This fixture follows a navigation; provider interaction stays refused.
+        with mock.patch.object(self.service.decision_judge, 'connector_effect', return_value=judged_effect):
+            self.assertTrue(self.service.run_one())
         return job_id
 
     def receipt(self, job_id):
@@ -1191,6 +1196,13 @@ class ReturnedLoginTests(LoginHarness):
         self.assertTrue(wait_until(lambda: self.state(job_id) in ('opening', 'offered')), self.state(job_id))
         self.assertTrue(self.service._browser_login(job_id)['explicit'], 'asked however the Work ends')
         self.assertTrue(wait_until(lambda: len(self.drivers) == 2), 'the owner login window was opened')
+
+    def test_unclassified_sign_in_navigation_is_held_without_losing_login_request(self):
+        job_id = self.resign_work(judged_effect=None)
+        self.assertEqual(self.receipt(job_id), [])
+        self.assertIsNotNone(self.service._browser_login(job_id))
+        self.assertEqual(self.service._browser_request(job_id)['source_action'], 'browser_click')
+        self.assertFalse(any(row[0] == 'navigation' and row[1] == AUTHORIZE for row in self.driver_log))
 
 
 if __name__ == '__main__':

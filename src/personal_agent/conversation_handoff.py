@@ -670,6 +670,7 @@ CLOSING_REACTION_QUESTION = prompt('closing_reaction') + '\n\n' + prompt('voice'
 MEMORY_REQUEST_PROPOSITION = prompt('memory_request')
 #: #805 review: the #597 question asked per proposed owner-model fact.
 MEMORY_FACT_PROPOSITION = prompt('memory_fact')
+OWNER_STATED_MEMORY_PROPOSITION = prompt('owner_stated_memory')
 #: SEC-ATTN-01 (#659): is the owner's own message the acceptance of this preparation?
 #: #619: the owner's own typed message asks for exactly this settings change.
 SETTINGS_REQUEST_PROPOSITION = prompt('settings_request')
@@ -1226,6 +1227,23 @@ class ConversationJudgments:
                                                          'proposed_memory': f'{memory_key} = {content}'},
                                 work_id=work_id, uncut='owner_message', cancelled=cancelled)
         decision = self.engine.judge(context, MEMORY_FACT_PROPOSITION)
+        verdict = self.policy.binary(decision)
+        return Judgment(JUDGMENT_UNAVAILABLE if verdict == 'unknown' else verdict,
+                        source=decision.confidence.provider or decision.outcome), decision
+
+    def owner_stated_memory(self, owner_words, memory_key, content, work_id=None, cancelled=None):
+        """Judge one paraphrase against host-selected owner words only (#744).
+
+        As with the #619 direct-request judgment, yes covers only this exact
+        proposal. The caller supplies the bounded owner-word window, never
+        assistant answers, tool results, or the ordinary conversation context.
+        Return the decision too so upkeep accounts for the additional call.
+        """
+        context = self._context('owner-stated-memory', {
+            'owner_words': _json.dumps(owner_words, ensure_ascii=False),
+            'proposed_memory': _json.dumps({'key': memory_key, 'value': content}, ensure_ascii=False)},
+            work_id=work_id, uncut=('owner_words', 'proposed_memory'), cancelled=cancelled)
+        decision = self.engine.judge(context, OWNER_STATED_MEMORY_PROPOSITION)
         verdict = self.policy.binary(decision)
         return Judgment(JUDGMENT_UNAVAILABLE if verdict == 'unknown' else verdict,
                         source=decision.confidence.provider or decision.outcome), decision

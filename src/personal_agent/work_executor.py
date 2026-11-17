@@ -1173,6 +1173,20 @@ class WorkExecutor:
                 served.cloud_admitted=cloud is not None
                 served.native_search=native_search
                 served.native_search_reason=native_reason or ''
+                # #744, owner choice 2026-11-17: only authority-changing calls
+                # wait for their own start observation. Enabling search alone
+                # is not intake. The real CLI adapter activates the barrier.
+                from .bounded_execution import NativeIntakeBarrier
+                barrier=NativeIntakeBarrier(service.connector_input_digest,
+                    lambda tool,work_id=job['id'],engine=run.subscription['id']:
+                        service.store.mark_outside_content(work_id,{'category':'native-search-barrier',
+                            'operation':tool,'engine':engine,'reason':'start-event-timeout'}),
+                    marked=lambda:bool(service.store.outside_content_sources(job['id'])))
+                served.native_intake_barrier=barrier
+                service.__dict__.setdefault('_native_intake_barriers',{})[job['id']]=barrier
+                served.connector_input_digest=service.connector_input_digest
+                served.native_search_observed=lambda step,work_id=job['id'],engine=run.subscription['id']:\
+                    service.record_cli_native_intake(work_id,engine,step)
                 # #718: the CLI's own search items update the draft while this attempt runs.
                 served.progress=lambda step,work_id=job['id']:service._observe_cli_step(work_id,step)
                 # #701: the browser tools run here, in this service, for exactly
@@ -1195,8 +1209,11 @@ class WorkExecutor:
                         served.connector_input_digest=service.connector_input_digest
                         served.connector_configuration=lambda definitions,job=job,engine=run.subscription['id']: service.record_connector_configuration(job,engine,definitions)
                         served.connector_observed=lambda calls,work_id=job['id'],engine=run.subscription['id']: service.record_connector_calls(work_id,calls,engine=engine)
-                        served.connector_permission=lambda arguments,job=job,engine=run.subscription['id']: service.connector_permission(
-                            job,{**arguments,'engine':engine} if isinstance(arguments,dict) else arguments)
+                        def connector_permission(arguments,job=job,engine=run.subscription['id']):
+                            if not isinstance(arguments,dict):return service.connector_permission(job,arguments)
+                            with barrier.call(arguments.get('tool_name'),arguments.get('input')):
+                                return service.connector_permission(job,{**arguments,'engine':engine},native_intake_wait=barrier.wait)
+                        served.connector_permission=connector_permission
                     except OSError:
                         LOG.warning('cli browser relay could not start job=%s',job['id'])
                 try:
@@ -1215,6 +1232,7 @@ class WorkExecutor:
                     service.live_steps.pop(job['id'],None)
                     service.live_agents.pop(job['id'],None)
                     if relay is not None:relay.close()
+                    service.__dict__.get('_native_intake_barriers',{}).pop(job['id'],None)
                     # The Work's browser session ends with the run (as on the direct route).
                     run.capabilities.close_browser()
             run.response=run.result.content
