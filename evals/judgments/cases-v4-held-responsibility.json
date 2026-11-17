@@ -1,0 +1,347 @@
+{
+ "version": "judgment-validation/3",
+ "catalogue": {
+  "workers": [
+   {
+    "id": "default-worker",
+    "name": "default-worker",
+    "kind": "api",
+    "available": true,
+    "default": true,
+    "default_model": "model-standard",
+    "models": [
+     "model-standard",
+     "model-advanced"
+    ],
+    "model_tiers": {
+     "model-standard": "lowest-cost",
+     "model-advanced": "higher-cost"
+    },
+    "tools": [],
+    "native_search": true,
+    "browser": false,
+    "cost": "synthetic",
+    "latency": "synthetic"
+   },
+   {
+    "id": "other-worker",
+    "name": "other-worker",
+    "kind": "api",
+    "available": true,
+    "default": false,
+    "default_model": "model-standard",
+    "models": [
+     "model-standard",
+     "model-advanced"
+    ],
+    "model_tiers": {
+     "model-standard": "lowest-cost",
+     "model-advanced": "higher-cost"
+    },
+    "tools": [],
+    "native_search": true,
+    "browser": false,
+    "cost": "synthetic",
+    "latency": "synthetic"
+   }
+  ],
+  "routes": {},
+  "default": "default-worker"
+ },
+ "cases": [
+  {
+   "id": "held-plan-remark-sold-ko",
+   "role": "orchestration_plan",
+   "class": "structured-plan",
+   "lang": "ko",
+   "category": "held-remark",
+   "input": {
+    "request": "종목 A 전에 판 뒤로 엄청 올랐네",
+    "conversation": "주인: 종목 A 지금 팔아줘\n비서: 종목 A 1주를 69,100원에 매도했어요. 체결 확인했습니다.\n주인: 오늘은 종목 B 1주 사 둬\n비서: 종목 B 1주 매수 체결됐어요. 청산 조건 감시는 이어 가지 못했어요.",
+    "owner_context": "맡긴 일(계속): 주인의 소액 국내주식 계좌를 정해진 예산 안에서 운용한다. 잔고·주문·체결과 시세를 확인하고 결과를 보고한다. 주문은 주인의 승인 또는 주인이 켠 자율 설정 안에서만 낸다.",
+    "prepared": "오늘 08:59 준비: 개장 전 계좌 잔고와 초단기 매매 판단 기준. (종목 A의 오늘 시세는 없음)"
+   },
+   "expect": {
+    "direct_reply": "empty",
+    "owner_situation": true
+   },
+   "targets": [
+    "#926"
+   ]
+  },
+  {
+   "id": "held-plan-remark-sold-en",
+   "role": "orchestration_plan",
+   "class": "structured-plan",
+   "lang": "en",
+   "category": "held-remark",
+   "input": {
+    "request": "Asset A went way up after we sold it",
+    "conversation": "Owner: sell Asset A now\nAssistant: Sold 1 share of Asset A at 69,100. The fill is confirmed.\nOwner: buy 1 share of Asset B today\nAssistant: Bought 1 share of Asset B; it filled. The exit watch could not be kept running.",
+    "owner_context": "Entrusted (continuing): run the owner's small stock account within a set budget. Check balance, orders, fills and prices, and report results. Orders only with the owner's approval or within the autonomy setting the owner turned on.",
+    "prepared": "Prepared today 08:59: pre-open account balance and short-term trading criteria. (No price for Asset A today.)"
+   },
+   "expect": {
+    "direct_reply": "empty",
+    "owner_situation": true
+   },
+   "targets": [
+    "#926"
+   ]
+  },
+  {
+   "id": "held-plan-mandate-ko",
+   "role": "orchestration_plan",
+   "class": "structured-plan",
+   "lang": "ko",
+   "category": "held-mandate",
+   "input": {
+    "request": "남의 일이 아닌데, 너는 내 투자 담당이잖아",
+    "conversation": "주인: 종목 A 지금 팔아줘\n비서: 종목 A 1주를 69,100원에 매도했어요. 체결 확인했습니다.\n주인: 오늘은 종목 B 1주 사 둬\n비서: 종목 B 1주 매수 체결됐어요. 청산 조건 감시는 이어 가지 못했어요.\n주인: 종목 A 전에 판 뒤로 엄청 올랐네\n비서: 아, 팔고 나서 크게 올랐네요. 단타에서는 흔한 일이지만 아쉽겠어요.",
+    "owner_context": "맡긴 일(계속): 주인의 소액 국내주식 계좌를 정해진 예산 안에서 운용한다. 잔고·주문·체결과 시세를 확인하고 결과를 보고한다. 주문은 주인의 승인 또는 주인이 켠 자율 설정 안에서만 낸다.",
+    "prepared": "오늘 08:59 준비: 개장 전 계좌 잔고와 초단기 매매 판단 기준. (종목 A의 오늘 시세는 없음)"
+   },
+   "expect": {
+    "direct_reply": "empty",
+    "owner_situation": true
+   },
+   "targets": [
+    "#926"
+   ]
+  },
+  {
+   "id": "held-plan-mandate-en",
+   "role": "orchestration_plan",
+   "class": "structured-plan",
+   "lang": "en",
+   "category": "held-mandate",
+   "input": {
+    "request": "This isn't someone else's business. You're the one managing my investments.",
+    "conversation": "Owner: sell Asset A now\nAssistant: Sold 1 share of Asset A at 69,100. The fill is confirmed.\nOwner: buy 1 share of Asset B today\nAssistant: Bought 1 share of Asset B; it filled. The exit watch could not be kept running.\nOwner: Asset A went way up after we sold it\nAssistant: Oh, it rose a lot after the sale. That happens in short-term trading, but it must sting.",
+    "owner_context": "Entrusted (continuing): run the owner's small stock account within a set budget. Check balance, orders, fills and prices, and report results. Orders only with the owner's approval or within the autonomy setting the owner turned on.",
+    "prepared": "Prepared today 08:59: pre-open account balance and short-term trading criteria. (No price for Asset A today.)"
+   },
+   "expect": {
+    "direct_reply": "empty",
+    "owner_situation": true
+   },
+   "targets": [
+    "#926"
+   ]
+  },
+  {
+   "id": "held-plan-remark-fare-en",
+   "role": "orchestration_plan",
+   "class": "structured-plan",
+   "lang": "en",
+   "category": "held-remark",
+   "input": {
+    "request": "Huh, the fare for the flight I booked dropped.",
+    "conversation": "Owner: book the 9 May flight to City C\nAssistant: Booked the 9 May 08:10 flight to City C, refundable fare, 412,000 total.",
+    "owner_context": "Entrusted (continuing): handle the owner's travel bookings for the May trip to City C, including watching fares and changes until departure. Changes or rebooking only with the owner's approval."
+   },
+   "expect": {
+    "direct_reply": "empty",
+    "owner_situation": true
+   },
+   "targets": [
+    "#926"
+   ]
+  },
+  {
+   "id": "held-plan-remark-delivery-ko",
+   "role": "orchestration_plan",
+   "class": "structured-plan",
+   "lang": "ko",
+   "category": "held-remark",
+   "input": {
+    "request": "택배 아직도 안 왔네",
+    "conversation": "주인: 청소기 필터 주문해 줘\n비서: 필터 2개 주문했어요. 도착 예정은 어제였어요.",
+    "owner_context": "맡긴 일(계속): 주인이 맡긴 온라인 주문의 배송 상태를 챙기고 문제가 있으면 알려 준다. 반품·취소는 주인의 승인을 받아서만 한다."
+   },
+   "expect": {
+    "direct_reply": "empty",
+    "owner_situation": true
+   },
+   "targets": [
+    "#926"
+   ]
+  },
+  {
+   "id": "held-plan-thanks-ko",
+   "role": "orchestration_plan",
+   "class": "structured-plan",
+   "lang": "ko",
+   "category": "held-control",
+   "input": {
+    "request": "고마워, 오늘 정리 깔끔했어",
+    "conversation": "주인: 종목 A 지금 팔아줘\n비서: 종목 A 1주를 69,100원에 매도했어요. 체결 확인했습니다.\n주인: 오늘은 종목 B 1주 사 둬\n비서: 종목 B 1주 매수 체결됐어요. 청산 조건 감시는 이어 가지 못했어요.\n주인: 오늘 거래 정리해 줘\n비서: 오늘 체결 2건, 잔고 98,700원, 보유 종목 B 1주예요.",
+    "owner_context": "맡긴 일(계속): 주인의 소액 국내주식 계좌를 정해진 예산 안에서 운용한다. 잔고·주문·체결과 시세를 확인하고 결과를 보고한다. 주문은 주인의 승인 또는 주인이 켠 자율 설정 안에서만 낸다."
+   },
+   "expect": {
+    "owner_situation": false
+   },
+   "targets": [
+    "#926"
+   ]
+  },
+  {
+   "id": "held-plan-recall-ko",
+   "role": "orchestration_plan",
+   "class": "structured-plan",
+   "lang": "ko",
+   "category": "held-control",
+   "input": {
+    "request": "아까 종목 A 얼마에 팔았다고 했지?",
+    "conversation": "주인: 종목 A 지금 팔아줘\n비서: 종목 A 1주를 69,100원에 매도했어요. 체결 확인했습니다.\n주인: 오늘은 종목 B 1주 사 둬\n비서: 종목 B 1주 매수 체결됐어요. 청산 조건 감시는 이어 가지 못했어요.",
+    "owner_context": "맡긴 일(계속): 주인의 소액 국내주식 계좌를 정해진 예산 안에서 운용한다. 잔고·주문·체결과 시세를 확인하고 결과를 보고한다. 주문은 주인의 승인 또는 주인이 켠 자율 설정 안에서만 낸다."
+   },
+   "expect": {
+    "direct_reply": "nonempty"
+   },
+   "targets": [
+    "#926"
+   ]
+  },
+  {
+   "id": "held-goal-mandate-apology-ko",
+   "role": "goal_reached",
+   "class": "bounded",
+   "lang": "ko",
+   "category": "held-mandate",
+   "input": {
+    "request": "남의 일이 아닌데, 너는 내 투자 담당이잖아",
+    "observations": "도구 호출 없음.",
+    "answer": "맞아요. 제가 남의 일처럼 말했어요. 미안해요. 앞으로는 잔고와 주문을 확인하고, 지켜볼 수 없으면 먼저 말할게요.",
+    "conversation": "주인: 종목 A 지금 팔아줘\n비서: 종목 A 1주를 69,100원에 매도했어요. 체결 확인했습니다.\n주인: 오늘은 종목 B 1주 사 둬\n비서: 종목 B 1주 매수 체결됐어요. 청산 조건 감시는 이어 가지 못했어요.\n주인: 종목 A 전에 판 뒤로 엄청 올랐네\n비서: 아, 팔고 나서 크게 올랐네요. 단타에서는 흔한 일이지만 아쉽겠어요.",
+    "owner_context": "맡긴 일(계속): 주인의 소액 국내주식 계좌를 정해진 예산 안에서 운용한다. 잔고·주문·체결과 시세를 확인하고 결과를 보고한다. 주문은 주인의 승인 또는 주인이 켠 자율 설정 안에서만 낸다."
+   },
+   "expect": {
+    "outcome": "no"
+   },
+   "targets": [
+    "#926"
+   ]
+  },
+  {
+   "id": "held-goal-mandate-apology-en",
+   "role": "goal_reached",
+   "class": "bounded",
+   "lang": "en",
+   "category": "held-mandate",
+   "input": {
+    "request": "This isn't someone else's business. You're the one managing my investments.",
+    "observations": "No tool was called.",
+    "answer": "You're right, I talked as if it were someone else's money. Sorry. From now on I'll check balances and orders, and tell you first when I can't keep watching.",
+    "conversation": "Owner: sell Asset A now\nAssistant: Sold 1 share of Asset A at 69,100. The fill is confirmed.\nOwner: buy 1 share of Asset B today\nAssistant: Bought 1 share of Asset B; it filled. The exit watch could not be kept running.\nOwner: Asset A went way up after we sold it\nAssistant: Oh, it rose a lot after the sale. That happens in short-term trading, but it must sting.",
+    "owner_context": "Entrusted (continuing): run the owner's small stock account within a set budget. Check balance, orders, fills and prices, and report results. Orders only with the owner's approval or within the autonomy setting the owner turned on."
+   },
+   "expect": {
+    "outcome": "no"
+   },
+   "targets": [
+    "#926"
+   ]
+  },
+  {
+   "id": "held-goal-remark-detached-ko",
+   "role": "goal_reached",
+   "class": "bounded",
+   "lang": "ko",
+   "category": "held-remark",
+   "input": {
+    "request": "종목 A 전에 판 뒤로 엄청 올랐네",
+    "observations": "도구 호출 없음.",
+    "answer": "아, 팔고 나서 크게 올랐네요. 단타에서는 흔한 일이지만 아쉽겠어요.",
+    "conversation": "주인: 종목 A 지금 팔아줘\n비서: 종목 A 1주를 69,100원에 매도했어요. 체결 확인했습니다.\n주인: 오늘은 종목 B 1주 사 둬\n비서: 종목 B 1주 매수 체결됐어요. 청산 조건 감시는 이어 가지 못했어요.",
+    "owner_context": "맡긴 일(계속): 주인의 소액 국내주식 계좌를 정해진 예산 안에서 운용한다. 잔고·주문·체결과 시세를 확인하고 결과를 보고한다. 주문은 주인의 승인 또는 주인이 켠 자율 설정 안에서만 낸다."
+   },
+   "expect": {
+    "outcome": "no"
+   },
+   "targets": [
+    "#926"
+   ]
+  },
+  {
+   "id": "held-goal-remark-detached-en",
+   "role": "goal_reached",
+   "class": "bounded",
+   "lang": "en",
+   "category": "held-remark",
+   "input": {
+    "request": "Asset A went way up after we sold it",
+    "observations": "No tool was called.",
+    "answer": "Oh, it rose a lot after the sale. That happens in short-term trading, but it must sting.",
+    "conversation": "Owner: sell Asset A now\nAssistant: Sold 1 share of Asset A at 69,100. The fill is confirmed.\nOwner: buy 1 share of Asset B today\nAssistant: Bought 1 share of Asset B; it filled. The exit watch could not be kept running.",
+    "owner_context": "Entrusted (continuing): run the owner's small stock account within a set budget. Check balance, orders, fills and prices, and report results. Orders only with the owner's approval or within the autonomy setting the owner turned on."
+   },
+   "expect": {
+    "outcome": "no"
+   },
+   "targets": [
+    "#926"
+   ]
+  },
+  {
+   "id": "held-goal-remark-looked-ko",
+   "role": "goal_reached",
+   "class": "bounded",
+   "lang": "ko",
+   "category": "held-control",
+   "input": {
+    "request": "종목 A 전에 판 뒤로 엄청 올랐네",
+    "observations": "시세 조회(성공): 종목 A 현재가 84,600원, 오늘 +3.8%. 매도 다음 날 +19%, 지난 금요일 장중 94,800원. 뉴스 검색(성공): 분기 영업이익 전년비 +62% 발표.",
+    "answer": "지금 84,600원이라 판 가격 69,100원보다 22% 높아요. 판 다음 날 19% 뛰었고, 분기 실적 발표가 뒷받침했어요. 지금 다시 들어가려면 추격 매수라서, 예산 안에서 눌림 구간을 기다리는 조건을 걸어 둘 수 있어요. 그렇게 할까요?",
+    "conversation": "주인: 종목 A 지금 팔아줘\n비서: 종목 A 1주를 69,100원에 매도했어요. 체결 확인했습니다.\n주인: 오늘은 종목 B 1주 사 둬\n비서: 종목 B 1주 매수 체결됐어요. 청산 조건 감시는 이어 가지 못했어요.",
+    "owner_context": "맡긴 일(계속): 주인의 소액 국내주식 계좌를 정해진 예산 안에서 운용한다. 잔고·주문·체결과 시세를 확인하고 결과를 보고한다. 주문은 주인의 승인 또는 주인이 켠 자율 설정 안에서만 낸다."
+   },
+   "expect": {
+    "outcome": "yes"
+   },
+   "targets": [
+    "#926"
+   ]
+  },
+  {
+   "id": "held-goal-thanks-ko",
+   "role": "goal_reached",
+   "class": "bounded",
+   "lang": "ko",
+   "category": "held-control",
+   "input": {
+    "request": "고마워, 오늘 정리 깔끔했어",
+    "observations": "도구 호출 없음.",
+    "answer": "다행이에요. 도움이 됐다니 기뻐요.",
+    "conversation": "주인: 종목 A 지금 팔아줘\n비서: 종목 A 1주를 69,100원에 매도했어요. 체결 확인했습니다.\n주인: 오늘은 종목 B 1주 사 둬\n비서: 종목 B 1주 매수 체결됐어요. 청산 조건 감시는 이어 가지 못했어요.\n주인: 오늘 거래 정리해 줘\n비서: 오늘 체결 2건, 잔고 98,700원, 보유 종목 B 1주예요.",
+    "owner_context": "맡긴 일(계속): 주인의 소액 국내주식 계좌를 정해진 예산 안에서 운용한다. 잔고·주문·체결과 시세를 확인하고 결과를 보고한다. 주문은 주인의 승인 또는 주인이 켠 자율 설정 안에서만 낸다."
+   },
+   "expect": {
+    "outcome": "yes"
+   },
+   "targets": [
+    "#926"
+   ]
+  },
+  {
+   "id": "held-goal-mandate-acted-en",
+   "role": "goal_reached",
+   "class": "bounded",
+   "lang": "en",
+   "category": "held-control",
+   "input": {
+    "request": "This isn't someone else's business. You're the one managing my investments.",
+    "observations": "Account lookup (succeeded): cash 31,200; holding 1 share of Asset B, bought at 67,400, now 66,900; no open orders. Price lookup (succeeded): Asset A 84,600.",
+    "answer": "Understood, and you're right. Where things stand: we hold 1 share of Asset B (bought 67,400, now 66,900) with no exit watch running, and Asset A is at 84,600, 22% above where we sold. The open risk is Asset B without an exit plan. I suggest a stop at 65,000 and a take-profit at 70,500 within today's session; say yes and I'll set the watch.",
+    "conversation": "Owner: sell Asset A now\nAssistant: Sold 1 share of Asset A at 69,100. The fill is confirmed.\nOwner: buy 1 share of Asset B today\nAssistant: Bought 1 share of Asset B; it filled. The exit watch could not be kept running.\nOwner: Asset A went way up after we sold it\nAssistant: Oh, it rose a lot after the sale. That happens in short-term trading, but it must sting.",
+    "owner_context": "Entrusted (continuing): run the owner's small stock account within a set budget. Check balance, orders, fills and prices, and report results. Orders only with the owner's approval or within the autonomy setting the owner turned on."
+   },
+   "expect": {
+    "outcome": "yes"
+   },
+   "targets": [
+    "#926"
+   ]
+  }
+ ]
+}
