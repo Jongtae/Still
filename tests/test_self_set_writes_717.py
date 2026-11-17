@@ -71,7 +71,9 @@ class Writes(_Runs):
             transport=lambda *a,**k:self.sent.append(a) or (200,{},b'{}'))
 
     def args(self,body='{}'):
-        return {'slot':'notes','url':'https://notes.test/items','method':'POST','body':body,'effect':'mutate'}
+        # #953: an approval request carries the AI's words.
+        return {'slot':'notes','url':'https://notes.test/items','method':'POST','body':body,'effect':'mutate',
+                'approval_note':'노트에 한 줄을 남겨요'}
 
     def started_self(self):
         return self.started(accepted_by=prep.ACCEPTED_DREAM)
@@ -133,6 +135,7 @@ class Writes(_Runs):
         runner = CodeRunner(self.store, job['id'], approvals=self.service.browser_approvals_for(job))
         runner._owners = {'notes.test': [('code-notes', slots(self.store)['code-notes'])]}
         runner._fields = []
+        runner._note = '노트에 한 줄을 남겨요'  # #953: an approval request carries the AI's words
         request = {'method': 'POST', 'host': 'notes.test', 'path': '/items', 'query': ''}
         bodies = self.encoded_bodies(value)
         with mock.patch.object(self.service.decision_judge, 'connector_effect', return_value='irreversible'):
@@ -505,6 +508,7 @@ class Writes(_Runs):
         runner=CodeRunner(self.store,job['id'],approvals=self.service.browser_approvals_for(job))
         runner._owners={'notes.test':[('notes',slots(self.store)['notes'])]}
         runner._fields=[]
+        runner._note='노트에 한 줄을 남겨요'  # #953
         request={'method':'POST','host':'notes.test','path':'/items','query':'','bodyText':'{"title":"private value"}'}
         with mock.patch.object(self.service.decision_judge,'connector_effect',return_value='irreversible'):
             self.assertFalse(runner._decide(request,{'notes.test':[]})[0])

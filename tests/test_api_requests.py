@@ -50,7 +50,8 @@ READ = {'slot': 'fake-holdings', 'url': URL, 'effect': 'read', 'as_of_field': '$
         'required_fields': json.dumps(['$.holdings[*].market_value', '$.cash']),
         'checks': json.dumps([{'sum': '$.holdings[*].market_value', 'equals': '$.total_market_value'}])}
 ORDER = {'slot': 'fake-holdings', 'url': f'https://{HOST}{ORDERS_PATH}', 'method': 'POST', 'effect': 'mutate',
-         'body': json.dumps({'symbol': 'AAA', 'side': 'buy', 'quantity': 1})}
+         'body': json.dumps({'symbol': 'AAA', 'side': 'buy', 'quantity': 1}),
+         'approval_note': 'AAA 1주를 매수해요'}  # #953: an approval request carries the AI's words
 
 
 class Approvals:
@@ -624,9 +625,25 @@ class ReadIsNotOrder(Base):
             self.assertEqual((refused.exception.code, refused.exception.requires), ('approval_required', 'api-step-approval'))
         self.assertEqual((self.api.calls, self.api.orders), ([], []))
         label = self.approvals.requested[0][1]
-        self.assertTrue(label.startswith(f'POST {ORDERS_PATH} '), label)
+        # #953: the AI's words first, then the exact request under its label.
+        self.assertTrue(label.startswith(f"{ORDER['approval_note']}\n\n보낼 요청: POST {ORDERS_PATH} "), label)
         self.assertIn('"quantity": 1', label)
         self.assertIn(f'→ {HOST} (fake-holdings, payment)', label)
+
+    def test_an_approval_is_not_requested_without_the_ais_words(self):
+        """#953 (owner choice 2026-11-17): no approval card that shows only the raw request."""
+        caps = self.caps()
+        bare = {key: value for key, value in ORDER.items() if key != 'approval_note'}
+        for note in (None, '   '):
+            with self.subTest(note=note), self.assertRaises(ToolError) as refused:
+                caps.execute('api_request', {**bare, 'effect': 'payment', **({'approval_note': note} if note else {})})
+            self.assertEqual(refused.exception.code, 'approval_note_required')
+            self.assertIn('approval_note', str(refused.exception))
+        self.assertEqual((self.api.calls, self.api.orders, self.approvals.requested), ([], [], []))
+        with self.assertRaises(ToolError) as asked:
+            caps.execute('api_request', {**ORDER, 'effect': 'payment'})
+        self.assertEqual(asked.exception.code, 'approval_required')
+        self.assertEqual(len(self.approvals.requested), 1)
 
     def test_a_non_get_declared_read_is_still_an_order(self):
         self.assertEqual(effective_effect('POST', 'read'), 'mutate')
