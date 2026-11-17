@@ -2471,6 +2471,17 @@ def unknown_effect(value):
 def external_effect_progress(store, work_id, *, attributed_to=None):
  """Observed and unresolved connector/API dispatches in a host-bound request.
 
+ Evidence only; ``external_effect_events`` also gives each record's ``tool_events`` id (#928).
+ """
+ observed,claims=external_effect_events(store,work_id,attributed_to=attributed_to)
+ return [evidence for _id,evidence in observed],[evidence for _id,evidence in claims]
+
+
+def external_effect_events(store, work_id, *, attributed_to=None):
+ """``external_effect_progress`` as ``(tool_events id, evidence)`` pairs.
+
+ An observed connector effect carries the id of the read that observed it.
+
  Reuse the existing Work relation validation and tool events. API claims live
  on the original Work, with the dispatching Work attributed in their evidence.
  By default results span the request chain. ``attributed_to`` selects only one
@@ -2492,15 +2503,15 @@ def external_effect_progress(store, work_id, *, attributed_to=None):
    attributed=evidence.get('work_id',row['job_id']) if row['tool']=='api_dispatch' else row['job_id']
    if attributed!=attributed_to:continue
   if row['tool']=='api_dispatch':
-   if row['status']=='observed':observed.append(evidence)
+   if row['status']=='observed':observed.append((row['id'],evidence))
    elif row['status']!='rejected':claims[row['id']]=evidence
   elif row['tool']=='connector_permission' and row['status'] in ('claiming','allowed') and evidence.get('effect') in ('mutate','payment'):
    claims[row['id']]=evidence
   elif row['tool']=='connector_read' and detail.get('permission_event') in claims:
    claim=claims[detail['permission_event']]
    if detail.get('effect') in ('mutate','payment') and row['status']=='succeeded':
-    observed.append(claim);claims.pop(detail['permission_event'])
- return observed,list(claims.values())
+    observed.append((row['id'],claim));claims.pop(detail['permission_event'])
+ return observed,list(claims.items())
 
 
 #: #618 E1: the kinds of target an unknown effect can be scoped to.  Targets of one kind are compared
