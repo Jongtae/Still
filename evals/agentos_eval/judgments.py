@@ -41,7 +41,8 @@ INPUTS = {
     'status_projection': ({'facts'}, set()),
     'owner_act_answer': ({'act', 'items'}, {'target'}),
     'goal_reached': ({'request', 'observations', 'answer'}, {'failed_steps', 'conversation', 'owner_context', 'plan_reading'}),
-    'orchestration_plan': ({'request'}, {'conversation', 'owner_context'}),
+    # #926: current_context and prepared are the shipped plan's other sections, given as text.
+    'orchestration_plan': ({'request'}, {'conversation', 'owner_context', 'current_context', 'prepared'}),
     'orchestration_escalation': ({'request', 'answer', 'observations', 'failed'}, {'conversation'}),
 }
 _STILL = None
@@ -102,7 +103,7 @@ def load_cases(path=DEFAULT_CASES):
             _keys(case['input'], *INPUTS[role])
             _validate_input(role, case['input'])
             expected = case['expect']
-            allowed = (set(FLAGS) | {'fallback', 'tier', 'ask_location'} if role == 'orchestration_plan' else
+            allowed = (set(FLAGS) | {'fallback', 'tier', 'ask_location', 'direct_reply'} if role == 'orchestration_plan' else
                        {'evaluation', 'redelegate', 'escalated'} if role == 'orchestration_escalation' else
                        {'item', 'answer'} if role == 'owner_act_answer' else
                        {'value', 'abstain'} if role in ('connector_effect', 'status_projection') else
@@ -121,6 +122,8 @@ def load_cases(path=DEFAULT_CASES):
                 raise CaseError('Invalid tier')
             if 'ask_location' in expected and expected['ask_location'] not in ('empty', 'nonempty'):
                 raise CaseError('Invalid ask_location')
+            if 'direct_reply' in expected and expected['direct_reply'] not in ('empty', 'nonempty'):
+                raise CaseError('Invalid direct_reply')
             if expected.get('abstain') is not None and expected != {'abstain': True}:
                 raise CaseError('Abstention must be the only expectation')
             if role == 'connector_effect' and 'value' in expected and expected['value'] not in ('read', 'mutate', 'payment'):
@@ -246,8 +249,10 @@ def _call(case, cases, judgments, engine, policy, keep_text, *, delivery=None):
         # Cases without these optional fields retain their original inputs/schema.
         plan_inputs = {}
         if role == 'orchestration_plan':
-            if 'owner_context' in inputs:
-                plan_inputs['sections'] = {'profile': inputs['owner_context']}
+            sections = {name: inputs[key] for name, key in (('profile', 'owner_context'), ('current_context', 'current_context'),
+                                                             ('prepared', 'prepared')) if key in inputs}
+            if sections:
+                plan_inputs['sections'] = sections
             if 'ask_location' in case['expect']:
                 plan_inputs['can_ask_location'] = True
         orch = s.orchestrator.Orchestration(judgments, catalogue, request=inputs['request'],
@@ -256,6 +261,9 @@ def _call(case, cases, judgments, engine, policy, keep_text, *, delivery=None):
         observed = _attempt(attempt, catalogue)
         if 'ask_location' in case['expect']:
             observed['ask_location'] = 'nonempty' if attempt.ask_location.strip() else 'empty'
+        if role == 'orchestration_plan':
+            # #926: whether the first plan wrote the owner-facing reply itself (the direct route).
+            observed['direct_reply'] = 'nonempty' if str(getattr(attempt, 'reply', '') or '').strip() else 'empty'
         if role == 'orchestration_escalation':
             evaluation = orch.evaluate_answer(inputs['answer'], inputs['observations'], inputs['failed'])
             following = orch.next(attempt, evaluation)

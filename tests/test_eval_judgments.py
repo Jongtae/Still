@@ -237,6 +237,46 @@ class JudgmentTests(unittest.TestCase):
                 schema = transport.calls[0]['tools'][0]['function']['parameters']
                 self.assertIn('ask_location', schema['required'])
 
+    def test_926_direct_reply_expectation_scores_both_directions(self):
+        cases = j.load_cases(ROOT / 'evals/judgments/cases-v4-held-responsibility.json')
+        self.assertEqual(cases['catalogue'], self.cases['catalogue'])
+        self.assertEqual(cases['version'], self.cases['version'])
+        roles = j.plan(cases)['roles']
+        self.assertEqual((roles['orchestration_plan']['cases'], roles['goal_reached']['cases']), (8, 7))
+        for ident, expected in (('held-plan-remark-sold-ko', 'empty'), ('held-plan-recall-ko', 'nonempty')):
+            selected = subset(cases, ident)
+            [case] = selected['cases']
+            # Both the expected and the opposite plan are scored, so an ignored
+            # expectation cannot pass a matching fixture by accident.
+            for reply in ('', '69,100원에 팔았어요.'):
+                actual = 'nonempty' if reply else 'empty'
+                output = {**planned(case['expect']), 'reply': reply}
+                rows, transport, _ = self.measure(selected, scripted=[output])
+                row = next(r for r in rows if r['id'] == ident)
+                self.assertEqual(row['observed']['direct_reply'], actual)
+                self.assertEqual(row['semantic_correct'], actual == expected)
+                self.assertEqual(row['error'], 'none' if actual == expected else 'wrong_choice')
+                _, facts = parse_prompt(transport.calls[0]['messages'][-1]['content'])
+                self.assertEqual(facts['owner_profile'], case['input']['owner_context'])
+                prepared = case['input'].get('prepared')
+                self.assertIn(f'prepared ({len(prepared)} chars)' if prepared else 'prepared (empty)',
+                              facts['context_sections'])
+        bad = copy.deepcopy(subset(cases, 'held-plan-recall-ko'))
+        bad['cases'][0]['expect']['direct_reply'] = 'maybe'
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'cases.json'
+            path.write_text(json.dumps(bad))
+            with self.assertRaises(j.CaseError):
+                j.load_cases(path)
+
+    def test_926_current_context_reaches_the_plan_facts(self):
+        cases = subset(j.load_cases(ROOT / 'evals/judgments/cases-v4-held-responsibility.json'), 'held-plan-thanks-ko')
+        cases['cases'][0]['input']['current_context'] = 'Now: 2026-11-17 09:24 KST'
+        [case] = cases['cases']
+        rows, transport, _ = self.measure(cases, scripted=[planned(case['expect'])])
+        _, facts = parse_prompt(transport.calls[0]['messages'][-1]['content'])
+        self.assertIn('2026-11-17 09:24', facts['current_context'])
+
     def test_202_cases_validate_and_plan_with_optional_fields(self):
         cases = j.load_cases(ROOT / 'evals/judgments/cases-v2-202.json')
         self.assertEqual(cases['catalogue'], self.cases['catalogue'])
