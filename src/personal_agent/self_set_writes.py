@@ -149,11 +149,29 @@ def marked_lines(sources, values, label):
         lines += [f'  {url}' for url in shown[:SOURCE_URLS_SHOWN]]
         if len(shown) > SOURCE_URLS_SHOWN:
             lines.append('  ' + msg('write_allowances.sources_more', count=len(shown) - SOURCE_URLS_SHOWN))
-    for name, value in (values or {}).items():
-        text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, sort_keys=True)
-        if text and text not in label:
-            lines.append(f'{name}: {text}')
+    lines += [line for line in value_lines(values).splitlines() if line.partition(': ')[2] not in label]
     return '\n'.join(lines)
+
+
+def value_lines(values):
+    """``values`` as ``name: value`` lines an owner can read (#945).
+
+    A one-line string is shown as is. Any other value or name stays exact JSON, including an
+    empty string or one with a line break, control character or edge space, so no value can
+    pass as another line and an empty value is still shown.
+    """
+    lines = []
+    for name in sorted(values or {}):
+        value = values[name]
+        lines.append(f'{_plain_or_json(name)}: {_plain_or_json(value)}')
+    return '\n'.join(lines)
+
+
+def _plain_or_json(value):
+    """A non-empty one-line string without edge spaces as is; anything else as exact JSON."""
+    if isinstance(value, str) and value and value == value.strip() and value.isprintable():
+        return value
+    return json.dumps(value, ensure_ascii=False, sort_keys=True)
 
 
 def authorize(service, job, binding, connection, operation, target, names=(), *, effect=None, description=None, request=True, values=None):
