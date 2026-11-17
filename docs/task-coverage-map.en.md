@@ -347,7 +347,7 @@ The C16 work list: remove Still blockers so the owner's AI can do the work. Coun
 | atus-2025:0807 |  |  |
 | atus-2025:0808 |  |  |
 | atus-2025:0901 |  |  |
-| atus-2025:0902 |  |  |
+| atus-2025:0902 | [scenario:communication-landlord-request-heldout](../evals/scenarios/communication.json) |  |
 | atus-2025:0903 |  |  |
 | atus-2025:0904 |  |  |
 | atus-2025:0905 |  |  |
@@ -417,10 +417,10 @@ The C16 work list: remove Still blockers so the owner's AI can do the work. Coun
 | onet-31.0-gwa:4.A.3.b.2 |  |  |
 | onet-31.0-gwa:4.A.3.b.4 |  |  |
 | onet-31.0-gwa:4.A.3.b.5 |  |  |
-| onet-31.0-gwa:4.A.3.b.6 | [scenario:recall-binding-language](../evals/scenarios/recall-experiments.json), [scenario:recall-reading-format](../evals/scenarios/recall-experiments.json) | [judgment:goal-failed](../evals/judgments/cases-v1.json), [judgment:goal-failed-ko](../evals/judgments/cases-v1.json), [judgment:goal-unknown](../evals/judgments/cases-v1.json) |
-| onet-31.0-gwa:4.A.4.a.1 |  | [judgment:goal-served](../evals/judgments/cases-v1.json), [judgment:goal-served-ko](../evals/judgments/cases-v1.json), [judgment:plan-plain-en](../evals/judgments/cases-v1.json), [judgment:plan-plain-ko](../evals/judgments/cases-v1.json) |
-| onet-31.0-gwa:4.A.4.a.2 |  |  |
-| onet-31.0-gwa:4.A.4.a.3 |  |  |
+| onet-31.0-gwa:4.A.3.b.6 | [scenario:communication-minutes-from-notes](../evals/scenarios/communication.json), [scenario:recall-binding-language](../evals/scenarios/recall-experiments.json), [scenario:recall-reading-format](../evals/scenarios/recall-experiments.json) | [judgment:goal-failed](../evals/judgments/cases-v1.json), [judgment:goal-failed-ko](../evals/judgments/cases-v1.json), [judgment:goal-unknown](../evals/judgments/cases-v1.json) |
+| onet-31.0-gwa:4.A.4.a.1 | [scenario:communication-field-term-plain-words](../evals/scenarios/communication.json) | [judgment:goal-served](../evals/judgments/cases-v1.json), [judgment:goal-served-ko](../evals/judgments/cases-v1.json), [judgment:plan-plain-en](../evals/judgments/cases-v1.json), [judgment:plan-plain-ko](../evals/judgments/cases-v1.json) |
+| onet-31.0-gwa:4.A.4.a.2 | [scenario:communication-weekly-status-report](../evals/scenarios/communication.json) |  |
+| onet-31.0-gwa:4.A.4.a.3 | [scenario:communication-client-apology-mail-draft](../evals/scenarios/communication.json), [scenario:communication-landlord-request-heldout](../evals/scenarios/communication.json) |  |
 | onet-31.0-gwa:4.A.4.a.4 |  |  |
 | onet-31.0-gwa:4.A.4.a.5 |  |  |
 | onet-31.0-gwa:4.A.4.a.6 |  |  |
