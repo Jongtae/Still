@@ -1964,6 +1964,46 @@ class ReadIsNotAnEffect(Harness):
                       '변경 요청 (dispatch.example.test) 1건 보냄', '결제 요청 (other.example.test) 1건 보냄'):
             self.assertIn(entry, report)
 
+    def _report_with_tell_owner(self, key, rows):
+        """#928: a failed Work's report from raw ``(tool, status, detail, created)`` rows after the worker failure."""
+        job = self.store.enqueue('요청을 처리해 줘', key)
+        with self.store.db() as db:
+            db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                       (job, 'subscription_engine', 'failed', json.dumps({'error': INVALID_OUTPUT}), 1.0))
+            for tool, status, detail, created in rows:
+                db.execute('INSERT INTO tool_events(job_id,tool,status,detail,created) VALUES (?,?,?,?,?)',
+                           (job, tool, status, json.dumps(detail), created))
+        return self.service.failed_attempt_report(self.store.job(job), INVALID_OUTPUT)
+
+    def test_failed_report_names_a_message_the_worker_sent_after_the_last_change(self):
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        from personal_agent.current_context import resolve_local_timezone
+        dispatch = ('api_dispatch', 'observed', {'scope': 'api', 'evidence': {
+            'kind': 'api-slot', 'identity': 'fixture-slot', 'operation': 'POST', 'effect': 'payment',
+            'host': 'dispatch.example.test'}}, 100.0)
+        told_at = 1_800_000_000.0
+
+        def tell(status='succeeded', sent=True, created=told_at):
+            return ('tell_owner', status, {'scope': 'subscription-mcp-bridge', 'host_action': 'tell_owner',
+                                           'evidence': {'sent': sent, 'channel': 'telegram'}}, created)
+
+        plain = '외부 요청 기록: 결제 요청 (dispatch.example.test) 1건 보냄. 반복하기 전에 해당 서비스에서 실제 상태를 확인해 주세요.'
+        when = datetime.fromtimestamp(told_at, ZoneInfo(resolve_local_timezone(self.store))).strftime('%H:%M')
+        told = (f'외부 요청 기록: 결제 요청 (dispatch.example.test) 1건 보냄. 작업 AI가 그 뒤 {when}에 따로 알림을 보냈어요. '
+                'Still이 직접 확인한 결과는 아니니, 반복하기 전에 그 알림과 해당 서비스의 실제 상태를 확인해 주세요.')
+        report = self._report_with_tell_owner('told-after', [dispatch, tell()])
+        self.assertIn(told, report)
+        self.assertNotIn(plain, report)
+        for key, rows in (('told-before', [tell(created=50.0), dispatch]), ('never-told', [dispatch]),
+                          ('told-unsent', [dispatch, tell(sent=False)]), ('told-failed', [dispatch, tell(status='failed')])):
+            with self.subTest(key=key):
+                report = self._report_with_tell_owner(key, rows)
+                self.assertIn(plain, report)
+                self.assertNotIn('따로 알림을 보냈어요', report)
+        with self.subTest('no change, a message alone adds no record line'):
+            self.assertNotIn('외부 요청 기록:', self._report_with_tell_owner('told-only', [tell()]) or '')
+
     def test_failed_report_leaves_an_earlier_works_dispatch_to_that_work(self):
         job = self.store.enqueue('요청을 처리해 줘', 'failed-earlier-dispatch')
         with self.store.db() as db:

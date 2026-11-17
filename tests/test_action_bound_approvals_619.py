@@ -174,7 +174,9 @@ class CodeRunMoneyOnly(unittest.TestCase):
                                          'bodyText': self.BODY}], result={'stdout': 'ok', 'stderr': ''})
         runner = CodeRunner(self.store, self.work, popen=lambda *a, **k: process, node='/usr/bin/node',
                             install=lambda store, node: store.root, approvals=approvals or self.approvals)
-        return process, runner.run({'code': 'print(1)', 'hosts': '', 'secrets': 'example-broker'})
+        # #953: a state change that asks the owner's approval carries the AI's words.
+        return process, runner.run({'code': 'print(1)', 'hosts': '', 'secrets': 'example-broker',
+                                    'approval_note': '기록 1을 고쳐요'})
 
     def dispatches(self):
         with self.store.db() as db:
@@ -206,7 +208,8 @@ class CodeRunMoneyOnly(unittest.TestCase):
                               result={'stdout': 'ok', 'stderr': ''})
         runner = CodeRunner(self.store, self.work, popen=lambda *a, **k: process, node='/usr/bin/node',
                             install=lambda store, node: store.root, approvals=approvals or self.approvals)
-        return process, runner.run({'code': 'print(1)', 'hosts': '', 'secrets': ','.join(names)})
+        return process, runner.run({'code': 'print(1)', 'hosts': '', 'secrets': ','.join(names),
+                                    'approval_note': '기록 1을 고쳐요'})  # #953
 
     def test_a_money_set_on_a_shared_host_is_never_hidden_by_another_set(self):
         """Codex P1 on #626: a request does not say which set's credential it used, so any money set counts."""

@@ -4,13 +4,19 @@ Per-attempt ``attempt_inputs`` entries on the turn record: instructions and
 offered-tool digests at the dispatch boundary, whether the input was sent, and
 ``unavailable`` where Still cannot observe a definition.
 """
+import contextlib
+import io
 import json
 import secrets
+import sys
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
-from personal_agent import attempt_identity
+from personal_agent import attempt_identity, mcp_bridge
 from personal_agent.bounded_execution import NOT_LAUNCHED, ExecutionError, ExecutionResult
 from personal_agent.providers import ModelAdapter
 from personal_agent.quickstart_service import AgentService
@@ -127,6 +133,62 @@ class RecordedAttemptInputs(unittest.TestCase):
         attempt_identity.record_served(self.store, self.job, [*served, {'name': 'late'}], 'still-host-mcp:bridge').join()
         self.assertEqual(self.store.turn_provenance(self.job)['attempt_inputs'][-1]['served']['count'], 1,
                          'a finished attempt is never rewritten by a later bridge')
+
+    def _serve_with_slow_recorders(self, fail_on_exit=False):
+        """#917: real stdio/SQLite boundary, with recorder work held off the response path."""
+        self.service.record_turn_sent(self.job, sent='x', instructions='I', instructions_channel='prompt',
+                                      attempt_input={'attempt': 1, 'route': 'subscription'})
+        requests = [{'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {}},
+                    {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/list'},
+                    {'jsonrpc': '2.0', 'id': 3, 'method': 'tools/list'}]
+        workers = []
+        identity = attempt_identity.identity_or_unavailable
+        record = attempt_identity.record_served
+        stdio = mcp_bridge._serve_stdio
+
+        def slow_identity(*args, **kwargs):
+            time.sleep(0.3)
+            return identity(*args, **kwargs)
+
+        def record_worker(*args, **kwargs):
+            worker = record(*args, **kwargs)
+            workers.append(worker)
+            return worker
+
+        def serve_stdio(*args):
+            stdio(*args)
+            if fail_on_exit:
+                raise OSError('fixture stdio failure')
+
+        out = io.StringIO()
+        try:
+            with mock.patch.object(sys, 'stdin', io.StringIO(''.join(json.dumps(r) + '\n' for r in requests))), \
+                    contextlib.redirect_stdout(out), \
+                    mock.patch.object(attempt_identity, 'identity_or_unavailable', side_effect=slow_identity), \
+                    mock.patch.object(mcp_bridge, 'record_served', side_effect=record_worker), \
+                    mock.patch.object(mcp_bridge, '_serve_stdio', side_effect=serve_stdio):
+                if fail_on_exit:
+                    with self.assertRaisesRegex(OSError, 'fixture stdio failure'):
+                        mcp_bridge.serve(str(self.store.root), self.job)
+                else:
+                    mcp_bridge.serve(str(self.store.root), self.job)
+            self.assertEqual(len(workers), 2)
+            self.assertFalse(any(t.name == 'record-served-tools' for t in threading.enumerate()),
+                             'serve must drain every recorder before returning, including on failure')
+            replies = {reply['id']: reply for reply in map(json.loads, out.getvalue().splitlines())}
+            expected = attempt_identity.offered_tools_identity(replies[3]['result']['tools'],
+                                                               representation='still-host-mcp:bridge')
+            self.assertEqual(self.store.turn_provenance(self.job)['attempt_inputs'][-1]['served'], expected)
+        finally:
+            # Also keep the pre-fix failure from racing TemporaryDirectory cleanup.
+            for worker in workers:
+                worker.join()
+
+    def test_serve_joins_all_listing_recorders_before_returning(self):
+        self._serve_with_slow_recorders()
+
+    def test_serve_joins_listing_recorders_when_stdio_raises(self):
+        self._serve_with_slow_recorders(fail_on_exit=True)
 
 
 class RouteAttemptInputs(unittest.TestCase):

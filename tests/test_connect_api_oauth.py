@@ -218,7 +218,8 @@ class OAuthSlots(unittest.TestCase):
         self.save(money=True)
         self.clock[0] += 61
         self.api.approvals = Approvals()
-        action = {'slot': 'records', 'url': URL, 'method': 'POST', 'effect': 'read', 'body': '{"change":1}'}
+        action = {'slot': 'records', 'url': URL, 'method': 'POST', 'effect': 'read', 'body': '{"change":1}',
+                  'approval_note': '기록을 1건 바꿔요'}  # #953
         before = len(self.calls)
         with self.assertRaises(ApiError):
             self.api.call(action)

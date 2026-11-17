@@ -288,7 +288,7 @@ class Migration(unittest.TestCase):
         self.assertEqual(self.current_memory(), [('profile.working.later', 'saved by the owner after the move')])
 
     def test_upkeep_proposes_no_fact_in_the_old_lesson_namespace(self):
-        proposal = {'category': 'preference', 'kind': 'stated', 'memory_key': 'profile.working.style', 'content': 'x',
+        proposal = {'category': 'preference', 'kind': 'stated', 'memory_key': 'profile.working.style', 'content': 'x', 'terms': '',
                     'evidence': 'y', 'supersedes_key': ''}
         kept, dropped = om.validate([proposal], set(), set())
         self.assertEqual((kept, [item['reason'] for item in dropped]), ([], ['key']))

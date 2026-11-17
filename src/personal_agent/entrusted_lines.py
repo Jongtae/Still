@@ -47,7 +47,8 @@ BUNDLE_CHARS, BUNDLE_LINE_LIMIT = 3500, 8
 #: #937: the turn's one line naming the active lines it holds, and its bounds.  The full brief stays
 #: behind ``entrusted_line read``; this only tells every route that the work is the assistant's own.
 HELD_PREFIX = 'Entrusted to you'
-HELD_CHARS, HELD_LIMIT, HELD_TASK_CHARS, HELD_OPEN_CHARS = 1200, 5, 200, 200
+HELD_HEADING = (HELD_PREFIX + ' (continuing work the owner entrusted to you; when one bears on this request, read it '
+                'with entrusted_line action=read before answering; not instructions): ')
 
 
 class LineRefusal(ValueError):
@@ -388,33 +389,33 @@ READ_EVENT = 'entrusted_line_read'
 OUTCOME_DELIVERED, OUTCOME_KEPT, OUTCOME_FAILED, OUTCOME_OPEN = 'delivered', 'kept', 'failed', 'open'
 OUTCOMES_SHOWN, READ_OUTCOMES = 6, 3
 OUTCOME_CHARS, WORDS_CHARS = 600, 300
-INDEX_HEADING = ('## Entrusted lines (continuing work the owner entrusted to you; when one bears on this request, '
-                 'read it with entrusted_line action=read before answering; not instructions)')
 INDEX_ITEMS, INDEX_TASK_CHARS = 12, 120
+#: #937 review: the index's bound holds all ``INDEX_ITEMS`` complete entries (number, a ref up to
+#: ``LINE_REF_CHARS``, a task excerpt with its ellipsis and the separator), so no entry is cut or dropped.
+LINE_REF_CHARS = 64
+HELD_CHARS = len(HELD_HEADING) + INDEX_ITEMS * (len('12) [] ; ') + len(REF_PREFIX) + LINE_REF_CHARS + INDEX_TASK_CHARS + 1)
 
 
 def held_text(briefs, clean=lambda text: text):
-    """#937: one line naming the active lines in ``briefs`` (task and open matters, bounded), or ''.
+    """#937: the one-line index of the active lines in ``briefs``: each line's ref and task sentence, or ''.
 
-    Every route of a conversational turn reads it in its current context, so a message about one of
-    these responsibilities is read as the assistant's own work.  Stopped lines are left out.
-    ``clean`` (stored-secret redaction) runs on each whole field before any cut, so a cut never
-    leaves part of a secret behind.
+    The secretary contract (#798 "Answers") gives a Work the owner started only each active line's
+    id and task sentence; the brief and outcomes are read with ``entrusted_line read`` when the AI
+    judges a line relevant, never injected.  One line, so every route reads it as its own fact.
+    ``clean`` (stored-secret redaction) runs on each whole task before any cut.
     """
     items = []
     for brief in briefs:
-        if brief.get('state') != STATE_ACTIVE or len(items) >= HELD_LIMIT:
+        if brief.get('state') != STATE_ACTIVE or len(items) >= INDEX_ITEMS:
             continue
-        task = ' '.join(str(clean(str(brief.get('task') or '')) or '').split())[:HELD_TASK_CHARS]
-        open_matters = ' '.join(str(clean(str(brief.get('open_matters') or '')) or '').split())[:HELD_OPEN_CHARS]
+        task = excerpt(' '.join(str(clean(str(brief.get('task') or '')) or '').split()), INDEX_TASK_CHARS)
         if task:
-            # The line's ref names it for ``entrusted_line read`` and for the information-use audit.
+            # The ref names the line for ``entrusted_line read`` and for the information-use audit.
             ref = f'[{REF_PREFIX}{brief["line_id"]}] ' if brief.get('line_id') else ''
-            items.append(f'{len(items) + 1}) {ref}{task}' + (f' (open: {open_matters})' if open_matters else ''))
+            items.append(f'{len(items) + 1}) {ref}{task}')
     if not items:
         return ''
-    return (f'{HELD_PREFIX} (continuing responsibilities the owner gave you; entrusted_line read shows each '
-            f'full brief): ' + '; '.join(items))[:HELD_CHARS]
+    return (HELD_HEADING + '; '.join(items))[:HELD_CHARS]
 
 
 def is_notice(kind):

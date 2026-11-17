@@ -1677,6 +1677,7 @@ class WorkExecutor:
         job=run.job
         goal=run.goal_outcome if hasattr(run,'goal_outcome') else service.run_goal_outcome(run)
         effect=run.effect_state if hasattr(run,'effect_state') else service.work_effect_state(job['id'],run.claimed_at)
+        terms_available=service._terms_engine_available()
         run.response=run.reply_notice+run.response
         # #659: a preparation's answer is kept and replayed into later
         # turns, so it is scrubbed before it is persisted anywhere.
@@ -1689,6 +1690,7 @@ class WorkExecutor:
         run.response=service._settle_procedures(job['id'],run.response,ws.request_met(run.outcome,goal) and goal=='reached')
         service.record_work_sources(job['id'],run.work_sources)
         with service.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
             db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id,delivery_projection) VALUES (?,?,?,?,?,?,?)',
                        ('assistant',run.response,job['channel'],time.time(),job.get('workspace_id'),job['id'],
                         'system' if run.system_response else None))
@@ -1740,6 +1742,7 @@ class WorkExecutor:
             # #998: a Work a worker AI answered that failed gets one self-review instead.
             elif service.self_review_eligible(job,run.outcome,run.provider):
                 om.enqueue_self_review(service.store,job['id'],om.REVIEW_FAILED,db=db)
+            service.owner_model.arm_terms(db,available=terms_available)
             self._record_after_work(run,db)
         service.record_turn_provenance(job['id'],goal=service.work_goal(job['id'],run.work_capabilities[0],run.outcome))
 

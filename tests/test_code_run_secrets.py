@@ -366,12 +366,24 @@ class OwnerApprovedStateChange(Storage):
             db.execute("UPDATE jobs SET status='running' WHERE id=?", (self.work,))
         self.approvals = FakeApprovals()
 
-    def run_order(self, body=ORDER, host=HOST, path='/uapi/domestic-stock/v1/trading/order-resv'):
+    def run_order(self, body=ORDER, host=HOST, path='/uapi/domestic-stock/v1/trading/order-resv', note='예약 주문을 넣어요'):
         process = FakeProcess(requests=[{'method': 'POST', 'host': host, 'path': path, 'query': '', 'bodyText': body}],
                               result={'stdout': 'ok', 'stderr': ''})
         runner = CodeRunner(self.store, self.work, popen=lambda *a, **k: process, node='/usr/bin/node',
                             install=lambda store, node: store.root, approvals=self.approvals)
-        return process, runner.run({'code': 'print(1)', 'hosts': '', 'secrets': 'example-broker'})
+        # #953: a state change that asks the owner's approval carries the AI's words.
+        return process, runner.run({'code': 'print(1)', 'hosts': '', 'secrets': 'example-broker',
+                                    **({'approval_note': note} if note is not None else {})})
+
+    def test_no_approval_is_requested_without_the_ais_words(self):
+        """#953 (owner choice 2026-11-17): the run is refused and told to add approval_note; nothing is asked or sent."""
+        for note in (None, '  \n '):
+            with self.subTest(note=note):
+                process, _result = self.run_order(note=note)
+                self.assertEqual([item['allow'] for item in process.decisions], [False])
+                self.assertIn('approval_note', process.decisions[0]['reason'])
+                self.assertEqual(self.approvals.requested, [])
+                self.assertEqual(self.dispatches(), [])
 
     def dispatches(self):
         with self.store.db() as db:

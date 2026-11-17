@@ -123,9 +123,9 @@ def recalled_tool_exchanges(store, work_id):
         unique.setdefault(tuple(ref['message_ids']),ref)
     rows=[]
     for ref in list(unique.values())[:3]:
-        found=store.search_conversation('',message_ids=[ref['matched_id']],limit=1)
+        found=store.search_conversation('',message_ids=ref['message_ids'],limit=1)
         allowed=set(ref['message_ids'])
-        rows.extend({**row,'turns':[turn for turn in row['turns'] if turn['id'] in allowed]} for row in found)
+        rows.extend({**row,'matched_id':ref['matched_id'],'turns':[turn for turn in row['turns'] if turn['id'] in allowed]} for row in found)
     return rows
 
 

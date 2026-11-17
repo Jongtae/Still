@@ -1300,7 +1300,7 @@ class AgentService:
         if slots:
             text=f'{text}\n{slots}' if text else slots
         # #937: the continuing responsibilities the owner entrusted, so every route reads them as its own work.
-        held=self.preparations_service.held_lines_text()
+        held=self.preparations_service.lines_index(job) if job else ''
         if held:
             text=f'{text}\n{held}' if text else held
         return text
@@ -1485,10 +1485,33 @@ class AgentService:
         return (ws.is_failed(outcome) and provider!='builtin'
                 and prep.preparation_of(key) is None and continuation_request(key) is None)
 
-    def run_owner_model_upkeep(self, now=None):
-        """One work-loop tick of the #805 upkeep: claim at most one pending Work and run it off-thread.
+    def _terms_engine_available(self):
+        """Cheap local preflight of the same active engine upkeep uses; no judgment."""
+        from .decision import DecisionEngine, FixtureDecisionEngine, ModelDecisionEngine, RoutedDecisionEngine
+        from .decision_adapters import SubscriptionCliDecisionEngine, CLI_BINARIES
+        from .providers import validate_model
+        try:
+            if not self.owner_model.settings()['enabled']:return False
+            engine=self.decision_judge.engine
+            if isinstance(engine,RoutedDecisionEngine):engine=engine.resolve()
+            if type(engine).structured is DecisionEngine.structured:return False
+            if isinstance(engine,FixtureDecisionEngine):return engine._structured is not None
+            if isinstance(engine,ModelDecisionEngine):
+                resolved=engine.route() if engine.route else None
+                if not resolved:return False
+                validate_model(resolved[0])
+            if isinstance(engine,SubscriptionCliDecisionEngine):
+                if engine.guard and engine.guard():return False
+                if not engine.execution.finder(CLI_BINARIES[engine.engine_id]):return False
+                if engine.engine_id=='codex' and engine.codex_disabled_features is None:return False
+            return True
+        except Exception:
+            return False
 
-        Nothing pending is one indexed query and no model call.  Paused, over
+    def run_owner_model_upkeep(self, now=None):
+        """One idle tick: arm eligible terms, claim at most one run and execute it off-thread.
+
+        With nothing eligible, no model is called. Paused, over
         the rolling cap, or with a Work queued or running, it waits.  The run
         is single-flight: while one is in flight nothing else is claimed, and
         the work thread never waits on its judgment calls (#805 review).
@@ -1503,7 +1526,9 @@ class AgentService:
             try:upkeep.enqueue_dream_if_due(now,self._owner_local_hour(now))
             except Exception as exc:  # noqa: BLE001 - never stop the upkeep tick
                 LOG.warning('owner-model dream check failed kind=%s',type(exc).__name__)
-            row=upkeep.claim_due(now)
+            available=self._terms_engine_available()
+            upkeep.arm_terms(now=now,available=available)
+            row=upkeep.claim_due(now,terms_available=available,redact=self._owner_model_judgments(None).redact)
             if row is None:
                 self.owner_model_flight.release()
                 return False
@@ -1634,8 +1659,14 @@ class AgentService:
         review=kind==om.KIND_SELF_REVIEW
         # #805 review: the judgments' audit rows (``record_decision``) belong to the
         # source Work; ``current_work_id`` is per thread, so the work loop's is untouched.
-        self.current_work_id=work_id
+        self.current_work_id=None if kind==om.KIND_TERMS else work_id
         try:
+            if kind==om.KIND_TERMS:
+                deadline=upkeep.clock()+om.RUN_SECONDS
+                state,calls,status,detail=upkeep.run_terms(row,self._owner_model_judgments(None),
+                    cancelled=lambda:self.stop.is_set() or upkeep.clock()>deadline,read_scope=self.judgments_read)
+                upkeep.finish(work_id,state,calls,status,detail,upkeep.clock(),kind=kind)
+                return
             job=self.store.job(work_id)
             if row['expired']:
                 upkeep.finish(work_id,om.STATE_EXPIRED,0,om.EVENT_EXPIRED,{'reason':'expired'},now,kind=kind)
@@ -3093,7 +3124,7 @@ class AgentService:
         setup/approval need, else what ``safe_retry`` allows.  None when no
         worker attempt was recorded.  Generic: no request, site or category.
         """
-        from .agent_runtime import agency_report, external_effect_progress
+        from .agent_runtime import agency_report, external_effect_events
         events=self.store.task_events(job['id'])
         with self.store.db() as db:
             ran=db.execute("SELECT 1 FROM tool_events WHERE job_id=? AND tool IN ('subscription_engine','model') LIMIT 1",
@@ -3123,19 +3154,27 @@ class AgentService:
         effects={}
         labels={'payment':msg('quickstart_service.failed_effect_payment'),
                 'mutate':msg('quickstart_service.failed_effect_mutate')}
-        for state,records in enumerate(external_effect_progress(self.store,job['id'],attributed_to=job['id'])):
-            for evidence in records:
+        last_effect=0
+        for state,records in enumerate(external_effect_events(self.store,job['id'],attributed_to=job['id'])):
+            for event_id,evidence in records:
                 effect=evidence.get('effect')
                 if effect not in labels:continue
                 counts=effects.setdefault((effect,evidence.get('host') or ''),[0,0])
                 counts[state]+=1
+                last_effect=max(last_effect,event_id)
         sent=[]
         for (effect,host),counts in effects.items():
             for state,count in enumerate(counts):
                 if count:
                     key='quickstart_service.failed_effect_unconfirmed' if state else 'quickstart_service.failed_effect_sent'
                     sent.append(msg(key,effect=labels[effect],host=f' ({host})' if host else '',count=count))
-        effect_line=msg('quickstart_service.failed_effects',effects=' · '.join(sent)) if sent else None
+        # #928: a message the worker sent the owner after the last of those changes is named, by its
+        # time only (never its text), so the line does not read as if the owner had been told nothing.
+        told=[event for event in events if event.get('tool')=='tell_owner' and event.get('status')=='succeeded'
+              and (event['trace'].get('evidence') or {}).get('sent') is True and event['id']>last_effect]
+        when=self._owner_local_time(told[-1].get('created'))[-5:] if sent and told else ''
+        effect_line=(msg('quickstart_service.failed_effects_told',effects=' · '.join(sent),time=when) if when else
+                     msg('quickstart_service.failed_effects',effects=' · '.join(sent)) if sent else None)
         parts=(owner_cause(failures),effect_line,tried_statement(tried),stopped,
                report_statement(agency_report(job.get('message') or '',[],[],[],step)))
         return '\n'.join(part for part in parts if part) or None
@@ -7212,9 +7251,11 @@ class AgentService:
         with self.store.db() as db:
             return self.preparations.wait_refusal(db,job['id'],stamp,self_set_write=True) is None
 
-    def self_set_write(self, job, binding, connection, operation, target, names=(), *, effect=None, description=None, request=True, values=None):
+    def self_set_write(self, job, binding, connection, operation, target, names=(), *, effect=None, description=None, request=True, values=None,
+                       note='', require_note=False):
         from .self_set_writes import authorize
-        return authorize(self,job,binding,connection,operation,target,names,effect=effect,description=description,request=request,values=values)
+        return authorize(self,job,binding,connection,operation,target,names,effect=effect,description=description,request=request,values=values,
+                         note=note,require_note=require_note)
 
     def self_set_write_check(self, job, ticket, *, db=None):
         from .self_set_writes import recheck
@@ -7396,6 +7437,7 @@ class AgentService:
             def payment_autonomy(self,binding,description,**kwargs):
                 return service._authorize_payment_autonomy(job,binding,description,**kwargs)
             def request(self,binding,description):return service._request_browser_step(job,binding,description)
+            def unattended(self):return service.unattended_work(job)
             def payment_autonomy_notice(self,ticket):return service._deliver_payment_autonomy_notice(job,ticket)
             def payment_autonomy_release(self,authorization):return service._release_payment_autonomy(job,authorization)
             def api_effect_current(self):return not service.work_stopped(job['id'])

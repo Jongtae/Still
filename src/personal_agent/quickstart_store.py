@@ -1982,37 +1982,55 @@ class QuickStore:
         """Compatibility entry point; earlier exchanges replace owner-only fragments (#205)."""
         return self.search_conversation(text, skip_recent=skip_recent, limit=min(limit,3))
 
-    def search_conversation(self, query, *, before=None, after=None, limit=3, skip_recent=16, message_ids=None):
+    def search_conversation(self, query='', *, work_id=None, before=None, after=None, limit=3, skip_recent=16, message_ids=None):
         """Bounded source history, never Memory. One owner-typed Work per exchange.
 
         Adopt FTS5 unicode61/BM25 prefix queries. At most 12 tokens, with at
         most two shorter Hangul prefixes per token (minimum two syllables).
         This handles suffix variation, not arbitrary spelling corrections or
         synonyms. At most 30 hits are inspected, three Works returned. Only
-        adjacent turns in the same Work qualify; recent rows never reappear.
+        adjacent turns in the same Work qualify; lexical recall excludes recent rows.
         Document Works are withheld from both readers to preserve #826.
         Delivery is true/false only with a transport receipt; otherwise unknown.
         This is conversation history as recorded, without the rows the owner forgot (#367).
-        ``message_ids`` reopens only source rows actually sent by a tool.
+        ``message_ids`` reopens exactly the recorded turn ids in each Work,
+        including addressed results without FTS or a recent-window cutoff.
+        With ``work_id``, return {outcome, exchanges} independently of FTS and
+        the recent window; lexical callers keep their list result. Adopt the
+        existing exchange rendering, filters and shared tool budget; Build
+        only the addressed lookup (small match -> source, spec #921 section 4).
         """
         if not isinstance(query,str) or len(query)>500:raise ValueError('Invalid conversation query')
+        if work_id is not None and (not isinstance(work_id,str) or not work_id.strip()):raise ValueError('Invalid conversation work_id')
         if isinstance(limit,bool) or not isinstance(limit,int) or not 1<=limit<=3:raise ValueError('Invalid conversation limit')
         for value in (before,after):
             if value is not None and (isinstance(value,bool) or not isinstance(value,(int,float)) or not -1e12<=value<=1e12 or not math.isfinite(value)):
                 raise ValueError('Conversation dates must be finite Unix timestamps')
-        if not getattr(self,'messages_search_available',False):return []
-        expression=fts_prefix_expression(query)
-        if not expression and message_ids is None:return []
+        if work_id is None and message_ids is None:
+            if not getattr(self,'messages_search_available',False):return []
+            expression=fts_prefix_expression(query)
+            if not expression:return []
         from .current_context import redact_known_secrets
         from .memory_service import OWNER_WORDS_LINE_CHARS
         documents=set(self.config('file_workspace_document_jobs',[]) or [])
         with self.db() as db:
-            # The recent window every reader already sees, counted as history() counts it (#367: without forgotten rows).
-            newest=db.execute(f'SELECT id FROM messages WHERE id NOT IN ({FORGOTTEN_MESSAGE_IDS}) ORDER BY id DESC LIMIT 1 OFFSET ?',(max(0,int(skip_recent)-1),)).fetchone()
-            if newest is None:return []
-            cutoff=newest['id']
             columns="m.id,m.job_id,m.role,m.content,m.created,j.created AS work_created,j.source_at,j.delivery,j.channel,j.owner_typed"
-            if message_ids is None:
+            if work_id is not None:
+                if not db.execute(f'SELECT 1 FROM jobs j WHERE j.id=? AND {OWNER_WORDS_SQL}',(work_id,)).fetchone():
+                    return {'outcome':'not_found','exchanges':[]}
+                if work_id in documents:return {'outcome':'document_work','exchanges':[]}
+                owner_turns=db.execute(f"SELECT m.id, m.id IN ({FORGOTTEN_MESSAGE_IDS}) AS forgotten "
+                                       "FROM messages m WHERE m.job_id=? AND m.role='user' ORDER BY m.id",(work_id,)).fetchall()
+                if not owner_turns:return {'outcome':'not_found','exchanges':[]}
+                if all(row['forgotten'] for row in owner_turns):return {'outcome':'forgotten','exchanges':[]}
+                matched_id=next(row['id'] for row in owner_turns if not row['forgotten'])
+                hits=db.execute(f'SELECT {columns} FROM messages m JOIN jobs j ON j.id=m.job_id WHERE m.id=?',(matched_id,)).fetchall()
+            elif message_ids is None:
+                # The recent window every reader already sees (#367: without forgotten rows).
+                newest=db.execute(f'SELECT id FROM messages WHERE id NOT IN ({FORGOTTEN_MESSAGE_IDS}) ORDER BY id DESC LIMIT 1 OFFSET ?',(max(0,int(skip_recent)-1),)).fetchone()
+                if newest is None:return []
+                cutoff=newest['id']
+            if work_id is None and message_ids is None:
                 hits=db.execute(f"""SELECT {columns} FROM messages_search
                     JOIN messages m ON m.id=messages_search.rowid JOIN jobs j ON j.id=m.job_id
                     WHERE messages_search MATCH ? AND m.role IN ('user','assistant') AND {OWNER_WORDS_SQL} AND m.id<?
@@ -2021,7 +2039,7 @@ class QuickStore:
                     AND (? IS NULL OR COALESCE(j.source_at,j.created)>=?)
                     ORDER BY bm25(messages_search),m.id LIMIT 30""",
                     (expression,cutoff,before,before,after,after)).fetchall()
-            else:
+            elif work_id is None:
                 ids=[v for v in message_ids[:9] if isinstance(v,int) and not isinstance(v,bool)]
                 if not ids:return []
                 hits=db.execute(f"SELECT {columns} FROM messages m JOIN jobs j ON j.id=m.job_id WHERE m.id IN ({','.join('?' for _ in ids)}) AND {OWNER_WORDS_SQL} AND m.id NOT IN ({FORGOTTEN_MESSAGE_IDS}) ORDER BY m.id",ids).fetchall()
@@ -2029,7 +2047,12 @@ class QuickStore:
             for hit in hits:
                 if hit['job_id'] in seen or hit['job_id'] in documents:continue
                 seen.add(hit['job_id'])
-                rows=db.execute(f"SELECT {columns} FROM messages m JOIN jobs j ON j.id=m.job_id WHERE m.job_id=? AND m.id<? AND m.role IN ('user','assistant') AND m.id NOT IN ({FORGOTTEN_MESSAGE_IDS}) ORDER BY ABS(m.id-?),m.id LIMIT 3",(hit['job_id'],cutoff,hit['id'])).fetchall()
+                if work_id is not None:
+                    rows=db.execute(f"SELECT {columns} FROM messages m JOIN jobs j ON j.id=m.job_id WHERE m.job_id=? AND m.role IN ('user','assistant') AND m.id NOT IN ({FORGOTTEN_MESSAGE_IDS}) ORDER BY ABS(m.id-?),m.id LIMIT 3",(hit['job_id'],hit['id'])).fetchall()
+                elif message_ids is not None:
+                    rows=db.execute(f"SELECT {columns} FROM messages m JOIN jobs j ON j.id=m.job_id WHERE m.job_id=? AND m.id IN ({','.join('?' for _ in ids)}) AND m.role IN ('user','assistant') AND m.id NOT IN ({FORGOTTEN_MESSAGE_IDS}) ORDER BY m.id",(hit['job_id'],*ids)).fetchall()
+                else:
+                    rows=db.execute(f"SELECT {columns} FROM messages m JOIN jobs j ON j.id=m.job_id WHERE m.job_id=? AND m.id<? AND m.role IN ('user','assistant') AND m.id NOT IN ({FORGOTTEN_MESSAGE_IDS}) ORDER BY ABS(m.id-?),m.id LIMIT 3",(hit['job_id'],cutoff,hit['id'])).fetchall()
                 rows=sorted(rows,key=lambda row:row['id'])
                 if not rows:continue
                 if any(len(row['content'] or '')>16000 for row in rows):continue
@@ -2056,7 +2079,7 @@ class QuickStore:
                 if used+size>2600:break
                 result.append(exchange);used+=size
                 if len(result)>=limit:break
-        return result
+        return {'outcome':'found' if result else 'not_found','exchanges':result} if work_id is not None else result
 
     def find_messages(self, query, *, limit=20, include_documents=False, receiving_work_id=None):
         """#367: transcript rows the owner may ask to forget, newest first, as ``message:<id>`` refs.
