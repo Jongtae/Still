@@ -1856,8 +1856,9 @@ WORK_MODEL_TURNS=24
 #: need many; the deadline and model turns still bound a runaway Work.
 WORK_TOOL_ATTEMPTS=200
 #: #717: a subscription CLI attempt takes minutes, so 600 s let one re-delegation at most;
-#: the owner can ask other things while a Work runs (#17), and a CLI turn stays at most
-#: ``bounded_execution.MAX_TIMEOUT_SECONDS``.
+#: the owner can ask other things while a Work runs (#17). #927: a progressing CLI
+#: turn uses the remaining Work time minus its closing reserve; no stdout line for
+#: ``bounded_execution.MAX_TIMEOUT_SECONDS`` ends it for inactivity.
 WORK_DEADLINE_SECONDS=1500
 #: #1418: one turn of a request's allowance is held for the outcome judgment, so the
 #: worker, a plan or a reaction can never leave the last answer unjudged.
