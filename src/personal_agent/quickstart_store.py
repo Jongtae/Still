@@ -2,6 +2,7 @@
 
 from . import work_status as ws
 from .messages import msg
+from .memory_terms import ELIGIBLE_SQL, cleared_meta
 from contextlib import contextmanager
 from functools import cached_property
 import datetime
@@ -198,34 +199,12 @@ class QuickStore:
             CREATE TABLE IF NOT EXISTS workspace_results(id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, job_id TEXT NOT NULL, content TEXT NOT NULL, evidence TEXT NOT NULL DEFAULT '', created REAL NOT NULL, UNIQUE(workspace_id, job_id));
             CREATE INDEX IF NOT EXISTS workspace_results_workspace ON workspace_results(workspace_id, created DESC);
             ''')
-            # OWNER-MEMORY-01: FTS is a rebuildable index over the existing
-            # owner-owned Memory table. Keep the durable row as the only source
-            # of truth and fall back to bounded LIKE search when this SQLite
-            # build omits FTS5.
-            try:
-                fts_existed = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='memories_search'").fetchone()
-                db.execute("CREATE VIRTUAL TABLE IF NOT EXISTS memories_search USING fts5(memory_key, content, content='memories', content_rowid='rowid', tokenize='unicode61')")
-                db.executescript('''
-                    CREATE TRIGGER IF NOT EXISTS memories_search_ai AFTER INSERT ON memories BEGIN
-                      INSERT INTO memories_search(rowid,memory_key,content) VALUES(new.rowid,new.memory_key,new.content);
-                    END;
-                    CREATE TRIGGER IF NOT EXISTS memories_search_ad AFTER DELETE ON memories BEGIN
-                      INSERT INTO memories_search(memories_search,rowid,memory_key,content) VALUES('delete',old.rowid,old.memory_key,old.content);
-                    END;
-                    CREATE TRIGGER IF NOT EXISTS memories_search_au AFTER UPDATE OF memory_key,content ON memories BEGIN
-                      INSERT INTO memories_search(memories_search,rowid,memory_key,content) VALUES('delete',old.rowid,old.memory_key,old.content);
-                      INSERT INTO memories_search(rowid,memory_key,content) VALUES(new.rowid,new.memory_key,new.content);
-                    END;
-                ''')
-                db.execute('CREATE TABLE IF NOT EXISTS memory_search_meta(version INTEGER NOT NULL)')
-                indexed = db.execute('SELECT version FROM memory_search_meta LIMIT 1').fetchone()
-                if not fts_existed or indexed is None or indexed['version'] != 1:
-                    db.execute("INSERT INTO memories_search(memories_search) VALUES('rebuild')")
-                    db.execute('DELETE FROM memory_search_meta')
-                    db.execute('INSERT INTO memory_search_meta(version) VALUES(1)')
-                self.memory_search_available = True
-            except sqlite3.OperationalError:
-                self.memory_search_available = False
+            # #921: derived columns must precede the external-content FTS setup.
+            memory_columns = {row['name'] for row in db.execute('PRAGMA table_info(memories)')}
+            for name in ('retrieval_terms', 'retrieval_terms_meta'):
+                if name not in memory_columns:
+                    db.execute(f'ALTER TABLE memories ADD COLUMN {name} TEXT')
+            self._setup_memory_search(db)
             # #221: the same rebuildable FTS5 pattern over the transcript, so a request can recall
             # the owner's own earlier words; ``messages`` stays the only source of truth.
             try:
@@ -438,6 +417,72 @@ class QuickStore:
             moved += 1
         if removed or moved:
             LOG.info('family sharing retired (#657): secrets=%s files=%s; owner data retained', removed, moved)
+
+    @staticmethod
+    def _probe_memory_search(db):
+        """Probe FTS5 without changing any durable index or its triggers."""
+        db.execute('CREATE VIRTUAL TABLE temp.memory_search_probe USING fts5(probe)')
+        db.execute('DROP TABLE temp.memory_search_probe')
+
+    @staticmethod
+    def _memory_search_mode(db):
+        """The actual usable index mode, also after a rolled-back migration."""
+        table = db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='memories_search'").fetchone()
+        if not table or 'using fts5' not in table['sql'].lower():
+            return 0
+        columns = {row['name'] for row in db.execute('PRAGMA table_info(memories_search)')}
+        if not {'memory_key', 'content'} <= columns:
+            return 0
+        has_meta = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='memory_search_meta'").fetchone()
+        meta = db.execute('SELECT version FROM memory_search_meta LIMIT 1').fetchone() if has_meta else None
+        return 2 if meta and meta['version'] == 2 and 'retrieval_terms' in columns else 1
+
+    def _setup_memory_search(self, db):
+        # Already inside _schema_transaction: SAVEPOINT preserves the real prior
+        # mode on failure, rather than committing a partially replaced index.
+        self.memory_search_version = 0
+        self.memory_search_available = False
+        try:
+            self._probe_memory_search(db)
+        except sqlite3.OperationalError:
+            return
+        self.memory_search_version = self._memory_search_mode(db)
+        if self.memory_search_version != 2:
+            db.execute('SAVEPOINT memory_search_v2')
+            try:
+                for trigger in ('memories_search_ai', 'memories_search_ad', 'memories_search_au'):
+                    db.execute(f'DROP TRIGGER IF EXISTS {trigger}')
+                db.execute('DROP TABLE IF EXISTS memories_search')
+                db.execute("CREATE VIRTUAL TABLE memories_search USING fts5(memory_key, content, retrieval_terms, content='memories', content_rowid='rowid', tokenize='unicode61')")
+                db.executescript('''
+                    CREATE TRIGGER memories_search_ai AFTER INSERT ON memories BEGIN
+                      INSERT INTO memories_search(rowid,memory_key,content,retrieval_terms)
+                        VALUES(new.rowid,new.memory_key,new.content,new.retrieval_terms);
+                    END;
+                    CREATE TRIGGER memories_search_ad AFTER DELETE ON memories BEGIN
+                      INSERT INTO memories_search(memories_search,rowid,memory_key,content,retrieval_terms)
+                        VALUES('delete',old.rowid,old.memory_key,old.content,old.retrieval_terms);
+                    END;
+                    CREATE TRIGGER memories_search_au AFTER UPDATE OF memory_key,content,retrieval_terms ON memories BEGIN
+                      INSERT INTO memories_search(memories_search,rowid,memory_key,content,retrieval_terms)
+                        VALUES('delete',old.rowid,old.memory_key,old.content,old.retrieval_terms);
+                      INSERT INTO memories_search(rowid,memory_key,content,retrieval_terms)
+                        VALUES(new.rowid,new.memory_key,new.content,new.retrieval_terms);
+                    END;
+                ''')
+                db.execute("INSERT INTO memories_search(memories_search) VALUES('rebuild')")
+                db.execute('CREATE TABLE IF NOT EXISTS memory_search_meta(version INTEGER NOT NULL)')
+                db.execute('DELETE FROM memory_search_meta')
+                db.execute('INSERT INTO memory_search_meta(version) VALUES(2)')
+            except Exception:
+                db.execute('ROLLBACK TO memory_search_v2')
+                db.execute('RELEASE memory_search_v2')
+                # Do not log the exception: SQLite diagnostics can carry row text.
+                LOG.warning('memory-search-migration-failed')
+            else:
+                db.execute('RELEASE memory_search_v2')
+            self.memory_search_version = self._memory_search_mode(db)
+        self.memory_search_available = self.memory_search_version > 0
 
     @contextmanager
     def _schema_transaction(self):
@@ -1128,7 +1173,7 @@ class QuickStore:
 
     def _save_memory(self, db, memory_key, content, owner_key, work_key=None, candidate_id=None,
                      preserve_correction_token=None, corrected=False, invalidates=(), valid_until=None, origin=None, source_works=None,
-                     basis=None, evidence=None, evidence_message=None):
+                     basis=None, evidence=None, evidence_message=None, retrieval_terms=None, retrieval_terms_meta=None):
         if basis is not None and basis not in MEMORY_BASES:
             raise ValueError('기억의 근거를 확인하세요.')
         if evidence is not None and (not isinstance(evidence, str) or len(evidence) > MEMORY_EVIDENCE_CHARS):
@@ -1185,9 +1230,9 @@ class QuickStore:
                           WHERE id=? AND owner_key=?""",(memory_id,reason,now,row['id'],owner_key))
             db.execute("""UPDATE memory_approvals SET state='revoked',memory_key=''
                           WHERE owner_key=? AND memory_key=? AND state='issued'""",(owner_key,row['memory_key']))
-        db.execute('INSERT INTO memories(id,memory_key,content,created,supersedes,state,owner_key,work_key,content_digest,candidate_id,valid_until,origin,source_works,basis,evidence,evidence_message) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+        db.execute('INSERT INTO memories(id,memory_key,content,created,supersedes,state,owner_key,work_key,content_digest,candidate_id,valid_until,origin,source_works,basis,evidence,evidence_message,retrieval_terms,retrieval_terms_meta) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
                    (memory_id,memory_key,content,now,previous['id'] if previous else None,'current',owner_key,work_key,digest,candidate_id,valid_until,origin,source_works,
-                    basis,evidence,None if evidence_message is None else str(evidence_message)))
+                    basis,evidence,None if evidence_message is None else str(evidence_message),retrieval_terms,retrieval_terms_meta))
         return self._memory_row(db.execute('SELECT * FROM memories WHERE id=?',(memory_id,)).fetchone())
 
     #: #918 review: the Telegram notice kind a direct save holds in its own transaction.
@@ -1199,7 +1244,7 @@ class QuickStore:
 
     def save_memory(self, memory_key, content, owner_id='local-owner', work_id=None, notice=False, corrected=False,
                     invalidates=(), valid_until=None, origin=None, source_works=None, basis=None, evidence=None,
-                    evidence_message=None):
+                    evidence_message=None, retrieval_terms=None, retrieval_terms_meta=None):
         """Write one current Memory row; with ``notice``, hold its owner notice durably in the same transaction (#918).
 
         A direct save by the owner's own AI must never end without the owner
@@ -1214,7 +1259,8 @@ class QuickStore:
             db.execute('BEGIN IMMEDIATE')
             row=self._save_memory(db,memory_key,content,owner_key,work_key,corrected=corrected is True,
                                   invalidates=invalidates,valid_until=valid_until,origin=origin,source_works=source_works,
-                                  basis=basis,evidence=evidence,evidence_message=evidence_message)
+                                  basis=basis,evidence=evidence,evidence_message=evidence_message,
+                                  retrieval_terms=retrieval_terms,retrieval_terms_meta=retrieval_terms_meta)
             if notice and isinstance(work_id,str):
                 job=db.execute('SELECT channel,chat_id FROM jobs WHERE id=?',(work_id,)).fetchone()
                 from .conversation_surface import surface_conversation
@@ -1556,11 +1602,12 @@ class QuickStore:
                 # worker may expand synonyms in its query, but cannot inject
                 # FTS operators or alter the owner/state filter.
                 match=' OR '.join('"'+term.replace('"','""')+'"*' for term in terms)
+                rank = 'bm25(memories_search, 1.0, 1.0, 0.5)' if self.memory_search_version == 2 else 'bm25(memories_search)'
                 try:
                     rows=db.execute('''SELECT m.* FROM memories_search
                         JOIN memories AS m ON m.rowid=memories_search.rowid
                         WHERE memories_search MATCH ? AND m.owner_key=? AND m.state='current' '''+prefix_clause+'''
-                        ORDER BY bm25(memories_search),m.created DESC,m.id DESC LIMIT ?''',
+                        ORDER BY '''+rank+''',m.created DESC,m.id DESC LIMIT ?''',
                         (match,owner_key,*prefix_parameters,limit))
                     return result_rows(rows, 'fts5')
                 except sqlite3.OperationalError:
@@ -1569,25 +1616,46 @@ class QuickStore:
                     pass
             clauses=[];parameters=[]
             for term in terms:
-                clauses.append('(memory_key LIKE ? ESCAPE \'\\\' OR content LIKE ? ESCAPE \'\\\')')
+                clauses.append('(memory_key LIKE ? ESCAPE \'\\\' OR content LIKE ? ESCAPE \'\\\' OR retrieval_terms LIKE ? ESCAPE \'\\\')')
                 needle='%'+term.replace('\\','\\\\').replace('%','\\%').replace('_','\\_')+'%'
-                parameters.extend((needle,needle))
+                parameters.extend((needle,needle,needle))
             where='('+' OR '.join(clauses)+')'
             rows=db.execute('SELECT * FROM memories AS m WHERE owner_key=? AND state=? AND '+where+prefix_clause+
                             ' ORDER BY created DESC,id DESC LIMIT ?',
                             (owner_key,'current',*parameters,*prefix_parameters,limit))
             return result_rows(rows, 'bounded-like')
 
+    def write_retrieval_terms(self, owner_id, memory_id, *, terms, meta, expected_meta, content_digest, today):
+        """Commit only to the still-current, still-holding row and exact meta read."""
+        with self.db() as db:
+            result = db.execute('''UPDATE memories SET retrieval_terms=?, retrieval_terms_meta=?
+                WHERE id=? AND owner_key=? AND state='current' AND content_digest=?
+                  AND (valid_until IS NULL OR valid_until>=?)
+                  AND retrieval_terms_meta IS ?''',
+                (terms, meta, memory_id, self._memory_binding(owner_id), content_digest, today, expected_meta))
+            return result.rowcount == 1
+
     def memory_status_counts(self, owner_id):
         """Return authoritative aggregate counts, independent of list pagination."""
+        from .current_context import owner_today
         owner_key=self._memory_binding(owner_id)
+        today=owner_today(self)
         with self.db() as db:
+            terms=db.execute(f"""SELECT
+                COUNT(CASE WHEN retrieval_terms_meta IS NOT NULL AND NOT {ELIGIBLE_SQL} THEN 1 END) AS processed,
+                COUNT(CASE WHEN json_valid(retrieval_terms_meta) THEN
+                    CASE WHEN json_extract(retrieval_terms_meta,'$.status')='keyed' THEN 1 END END) AS keyed,
+                COUNT(CASE WHEN {ELIGIBLE_SQL} THEN 1 END) AS eligible,
+                COUNT(CASE WHEN json_valid(retrieval_terms_meta) THEN
+                    CASE WHEN json_extract(retrieval_terms_meta,'$.status')='oversize' THEN 1 END END) AS oversize
+                FROM memories WHERE owner_key=? AND state='current' AND memory_key LIKE 'profile.%'
+                  AND (valid_until IS NULL OR valid_until>=?)""", (owner_key,today)).fetchone()
             current=db.execute("SELECT COUNT(*) FROM memories WHERE owner_key=? AND state='current'",(owner_key,)).fetchone()[0]
             candidate_rows=db.execute('SELECT state,COUNT(*) AS count FROM memory_candidates WHERE owner_key=? GROUP BY state',(owner_key,))
             candidates={state:0 for state in ('pending','accepted','rejected')}
             for row in candidate_rows:
                 if row['state'] in candidates:candidates[row['state']]=row['count']
-        return {'current_memory_count':current,'candidate_counts':candidates}
+        return {'current_memory_count':current,'candidate_counts':candidates,'retrieval_terms':dict(terms)}
 
     def issue_candidate_memory_approval(self, owner_id, work_id, candidate_id, content_digest,
                                         ttl=600, now=None):
@@ -1876,7 +1944,8 @@ class QuickStore:
             db.execute('BEGIN IMMEDIATE')
             row=db.execute("SELECT * FROM memories WHERE id=? AND owner_key=? AND state='current'",(memory_id,owner_key)).fetchone()
             if not row or not hmac.compare_digest(str(row['content_digest']),content_digest):raise ValueError('되돌릴 기억을 다시 확인하세요.')
-            db.execute("UPDATE memories SET state='retracted' WHERE id=? AND owner_key=?",(memory_id,owner_key))
+            db.execute("UPDATE memories SET state='retracted',retrieval_terms=NULL,retrieval_terms_meta=? WHERE id=? AND owner_key=?",
+                       (cleared_meta(row['retrieval_terms_meta'],at=time.time() if now is None else float(now)),memory_id,owner_key))
             # #220 (Codex review): each key this undo touches is settled again instead of patching links:
             # its newest live candidate becomes current - a row already current, the undone row's own
             # predecessor, or a row a now-undone save had ended.  A row ended by a save that still stands

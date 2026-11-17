@@ -40,6 +40,7 @@ import time
 import uuid
 
 from .messages import msg
+from .memory_terms import cleared_meta
 
 
 #: #918 option B kept a forgotten item undoable for a week, then purged it.  #367: a forget is
@@ -161,7 +162,8 @@ class OwnerForget:
             if row['state'] == FORGOTTEN:
                 continue
             items.append({'table': 'memories', 'id': row['id'], 'prior': row['state']})
-            db.execute('UPDATE memories SET state=? WHERE id=?', (FORGOTTEN, row['id']))
+            db.execute('UPDATE memories SET state=?,retrieval_terms=NULL,retrieval_terms_meta=? WHERE id=?',
+                       (FORGOTTEN, cleared_meta(row['retrieval_terms_meta'], at=now), row['id']))
             db.execute('INSERT OR IGNORE INTO forgotten_values VALUES (?,?,?,?)',
                        (owner_key, row['content_digest'], receipt_id, now))
         # A pending candidate holding a forgotten value would bring it back once accepted.
