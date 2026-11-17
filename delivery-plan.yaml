@@ -66,7 +66,8 @@
       "FRONTIER-UNTRUSTED-ECHO-01",
       "FRONTIER-PLAN-READING-01",
       "FRONTIER-RECALL-V3-01",
-      "FRONTIER-UNTRUSTED-01"
+      "FRONTIER-UNTRUSTED-01",
+      "FRONTIER-UNTRUSTED-PREVIEW-01"
     ]
   },
   "iterations": [
@@ -1068,6 +1069,11 @@
           "issue": 744,
           "status": "complete-on-merge",
           "decision": "Owner-selected #744 phase 2 (PR-1 (items 5, 1, 2)) within #822, owner disposition 2026-11-16: persist host-observed outside-content marks across Work retries and CLI bridge calls; require exact one-use non-payment write approval unless a current connection allowance covers it, without a reversibility waiver; route unsupported worker/upkeep facts to sourced MemoryCandidates while preserving owner-stated direct saves, undo and payment boundaries; classify marked browser presses with the existing minimized judgment so read/navigation needs no confirmation; exclude marked answers from dream input, keeping owner-only dream learning and the quiet diary direct; on a literal owner-word miss, use one owner-only paraphrase judgment per marked worker/upkeep save, as directed on 2026-11-17. Adapt the phase-1 integrity-label and exact-approval review; Build one structural condition at existing authority gates, without new dependencies or detectors. Deterministic fixture evidence only; no live accounts or live-model validation. Complete on the merge of its own PR."
+        },
+        "FRONTIER-UNTRUSTED-PREVIEW-01": {
+          "issue": 744,
+          "status": "complete-on-merge",
+          "decision": "Owner-selected #744 phase 2 (PR-3 (items 4a, 4b)) within #822, owner disposition 2026-11-16: preserve complete nonsecret browser destination, target and bound parameters in the existing approval preview; attribute peer MemoryCandidate reviews to authenticated A2A admission and registered identity. Zero additional confirmations or model calls; exact one-use approval, Memory review and peer scope remain enforced. Fixture evidence only; payment-autonomy notice clipping and live-configuration checks are outside this PR. Complete on the merge of its own PR."
         }
       }
     },
@@ -1407,6 +1413,20 @@
         "PYTHONPATH=src python -m pytest tests/test_744_effects.py tests/test_744_memory.py tests/test_744_mark.py tests/test_744_costs.py tests/test_744_owner_words.py tests/test_744_resume.py tests/test_744_recall.py tests/test_744_intake.py tests/test_744_native_search.py tests/test_744_event_isolation.py tests/test_fresh_delivery_plan.py -q -p no:cacheprovider"
       ],
       "summary": "Owner-selected #744 phase 2 (PR-1 (items 5, 1, 2)) within #822, owner disposition 2026-11-16: persist host-observed outside-content marks across Work retries and CLI bridge calls; require exact one-use non-payment write approval unless a current connection allowance covers it, without a reversibility waiver; route unsupported worker/upkeep facts to sourced MemoryCandidates while preserving owner-stated direct saves, undo and payment boundaries; classify marked browser presses with the existing minimized judgment so read/navigation needs no confirmation; exclude marked answers from dream input, keeping owner-only dream learning and the quiet diary direct. Owner choice 2026-11-17 (https://github.com/Jongtae/Still/issues/744#issuecomment-6931823807): native CLI search uses live intake and a matching-call-start barrier, not launch marking; unmatched starts after five seconds use marked-Work rules, while reads and native-disabled turns never wait. Adapt the phase-1 integrity-label and exact-approval review; Build one structural condition at existing authority gates, without new dependencies or detectors. Deterministic fixture evidence only; no live accounts or new model authority. Complete on the merge of its own PR.",
+      "depends_on": []
+    },
+    {
+      "id": "FRONTIER-UNTRUSTED-PREVIEW-01",
+      "program": "FRONTIER-01",
+      "issue": 744,
+      "milestone": "frontier-delivery",
+      "kind": "implementation",
+      "activation_status": "complete-on-merge",
+      "contract": "frontier-delivery.en.md",
+      "tests": [
+        "PYTHONPATH=src python -m pytest tests/test_744_previews.py tests/test_browser_session.py tests/test_browser_session_context.py tests/test_browser_limits.py tests/test_browser_step_observation.py tests/test_browser_timeout_recovery.py tests/test_browser_layout.py tests/test_memory_service.py tests/test_memory_search.py tests/test_memory_continuity.py tests/test_pa1_memory_candidate_owner_path.py tests/test_web_item_deep_links.py tests/test_a2a_peers.py tests/test_action_bound_approvals_619.py tests/test_payment_autonomy_662.py tests/test_self_set_writes_717.py tests/test_page_dialogs.py tests/test_messages.py tests/test_browser_settings_ui.py tests/test_no_scenario_code.py tests/test_fresh_delivery_plan.py -q -p no:cacheprovider"
+      ],
+      "summary": "Owner-selected #744 phase 2 (PR-3 (items 4a, 4b)) within #822, owner disposition 2026-11-16: preserve complete nonsecret browser destination, target and bound parameters in the existing approval preview; attribute peer MemoryCandidate reviews to authenticated A2A admission and registered identity. Zero additional confirmations or model calls; exact one-use approval, Memory review and peer scope remain enforced. Fixture evidence only; payment-autonomy notice clipping and live-configuration checks are outside this PR. Complete on the merge of its own PR.",
       "depends_on": []
     }
   ],
@@ -1893,7 +1913,8 @@
         "FRONTIER-UNTRUSTED-ECHO-01",
         "FRONTIER-PLAN-READING-01",
         "FRONTIER-RECALL-V3-01",
-        "FRONTIER-UNTRUSTED-01"
+        "FRONTIER-UNTRUSTED-01",
+        "FRONTIER-UNTRUSTED-PREVIEW-01"
       ],
       "active_substeps": [],
       "completed_substeps": [
@@ -1917,7 +1938,8 @@
         "FRONTIER-UNTRUSTED-ECHO-01",
         "FRONTIER-PLAN-READING-01",
         "FRONTIER-RECALL-V3-01",
-        "FRONTIER-UNTRUSTED-01"
+        "FRONTIER-UNTRUSTED-01",
+        "FRONTIER-UNTRUSTED-PREVIEW-01"
       ],
       "parallel_eligible_substeps": [
       ],
@@ -2062,6 +2084,6 @@
   "next_goal": {
     "id": "FRONTIER-01",
     "status": "owner-activated-goal-ready",
-    "action": "Owner-authorized FRONTIER-01 (#822): the first wave (#823, #824) and #825\u2013#827 are complete-on-merge. M1 wave 2 selects #841 (F-X4 recovery fence), #722 (judgment scope for relayed calls), #842 (F-P4/F-D3 Telegram delivery) and #843 (F-W4 Mattermost/Slack) as parent-controlled parallel lanes under the owner's 2026-11-14 direct instruction; each unit's own PR records it complete on merge. This checked-in resting selection starts no heartbeat. #883 (FRONTIER-CONTEXT-02) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #885 (FRONTIER-EVAL-JUDGE-01) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #887 (FRONTIER-C2-DUE-01) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #896 and #897 (FRONTIER-EVAL-TOKENS-01) are selected inside #822 by owner direction on 2026-11-15 and are complete on the merge of its own PR. #898 (FRONTIER-RECEIPT-JUDGE-01) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #902 (FRONTIER-EVAL-FALLBACK-01) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #202 phase 2 (FRONTIER-JUDGMENT-TEXT-01) is selected inside #822 by owner direction on 2026-11-16 and is complete on the merge of its own PR. #202 phase 2 (FRONTIER-COMPLETION-BAR-01) is selected inside #822 by owner direction on 2026-11-16 and is complete on the merge of its own PR. #744 phase 2 PR-2 (FRONTIER-UNTRUSTED-ECHO-01; items 3, 4d) is selected inside #822 by owner disposition on 2026-11-16 and is complete on the merge of its own PR. #202 phase 2 (FRONTIER-PLAN-READING-01) is selected inside #822 by owner direction on 2026-11-16 and is complete on the merge of its own PR. #403 (FRONTIER-RECALL-V3-01) is selected inside #822 by owner direction on 2026-11-16 and is complete on the merge of its own PR. #744 (FRONTIER-UNTRUSTED-01, phase 2 PR-1 items 5, 1, 2) is selected inside #822 by owner disposition on 2026-11-16 and is complete on the merge of its own PR. No other successor is selected; no live-model authority is added."
+    "action": "Owner-authorized FRONTIER-01 (#822): the first wave (#823, #824) and #825\u2013#827 are complete-on-merge. M1 wave 2 selects #841 (F-X4 recovery fence), #722 (judgment scope for relayed calls), #842 (F-P4/F-D3 Telegram delivery) and #843 (F-W4 Mattermost/Slack) as parent-controlled parallel lanes under the owner's 2026-11-14 direct instruction; each unit's own PR records it complete on merge. This checked-in resting selection starts no heartbeat. #883 (FRONTIER-CONTEXT-02) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #885 (FRONTIER-EVAL-JUDGE-01) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #887 (FRONTIER-C2-DUE-01) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #896 and #897 (FRONTIER-EVAL-TOKENS-01) are selected inside #822 by owner direction on 2026-11-15 and are complete on the merge of its own PR. #898 (FRONTIER-RECEIPT-JUDGE-01) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #902 (FRONTIER-EVAL-FALLBACK-01) is selected inside #822 by owner direction on 2026-11-15 and is complete on the merge of its own PR. #202 phase 2 (FRONTIER-JUDGMENT-TEXT-01) is selected inside #822 by owner direction on 2026-11-16 and is complete on the merge of its own PR. #202 phase 2 (FRONTIER-COMPLETION-BAR-01) is selected inside #822 by owner direction on 2026-11-16 and is complete on the merge of its own PR. #744 phase 2 PR-2 (FRONTIER-UNTRUSTED-ECHO-01; items 3, 4d) is selected inside #822 by owner disposition on 2026-11-16 and is complete on the merge of its own PR. #202 phase 2 (FRONTIER-PLAN-READING-01) is selected inside #822 by owner direction on 2026-11-16 and is complete on the merge of its own PR. #403 (FRONTIER-RECALL-V3-01) is selected inside #822 by owner direction on 2026-11-16 and is complete on the merge of its own PR. #744 (FRONTIER-UNTRUSTED-01, phase 2 PR-1 items 5, 1, 2) is selected inside #822 by owner disposition on 2026-11-16 and is complete on the merge of its own PR. #744 phase 2 (PR-3 (items 4a, 4b), FRONTIER-UNTRUSTED-PREVIEW-01) is selected inside #822 by owner disposition on 2026-11-16 and is complete on the merge of its own PR. No other successor is selected; no live-model authority is added."
   }
 }
