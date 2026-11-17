@@ -159,7 +159,7 @@ def test_first_use_worker_paths_without_http_transport():
             assert any(s['operation'] == 'inherited-context' for s in case.store.outside_content_sources(work))
             assert [m['content'] for m in case.store.memories()] == [value]
             assert not case.store.memory_candidates()
-            assert case.store.notification_of(work, case.store.MEMORY_SAVED_NOTICE_KIND)
+            assert case.store.notification_of(work, case.store.MEMORY_SAVED_NOTICE_KIND) is None  # #955
         # The outside-derived value remains pending until the existing owner acceptance.
         case.model_plan = [('save_memory', json.dumps({'memory_key': 'inferred-preference', 'content': '모델이 추론한 값'}))]
         work = case.says(17, '이건 기억하지 마. 그냥 방금 이야기만 정리해 줘')

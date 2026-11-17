@@ -645,7 +645,7 @@ DEFINITIONS=[
  schema('save_result',SAVE_RESULT_DESCRIPTION,{'title':STRING,'content':STRING},['title','content']),
  schema('list_notes','Read saved personal notes. Use when the user asks to recall a note.'),
  schema('save_note','Save a personal note ONLY when the user explicitly requests remembering or saving information.',{'content':STRING},['content']),
- schema('save_memory','Save or correct one owner memory item. When the owner states a durable fact about themselves (where they live or work, a preference, an allergy, a routine) or asks you to remember one, save it; it is remembered at once and the owner is told afterwards with an undo; when the result has owner_notice, Still sends that message itself, so the reply does not say again that it was remembered. A durable fact you infer about the owner from what they said may be saved the same way, as what you inferred; the owner is told and can undo it. Never save a credential.',described({'memory_key':STRING,'content':STRING,'correction':{'type':'boolean'},'terms':STRING},SAVE_MEMORY_ARGUMENTS),['memory_key','content']),
+ schema('save_memory','Save or correct one owner memory item. When the owner states a durable fact about themselves (where they live or work, a preference, an allergy, a routine) or asks you to remember one, save it; it is remembered at once, and your reply says in passing what you will keep in mind so the owner can correct it (#955: there is no separate notice). A durable fact you infer about the owner from what they said may be saved the same way, as what you inferred, and said the same way; the owner can undo it. Never save a credential.',described({'memory_key':STRING,'content':STRING,'correction':{'type':'boolean'},'terms':STRING},SAVE_MEMORY_ARGUMENTS),['memory_key','content']),
  schema('list_memory','Read a page of the owner\'s current saved memory items. The profile facts are in the owner profile section of the context; use search_memory to find a relevant fact outside that bounded section. Each item has saved_at, source and source_status: source.kind owner_request is what the owner typed (text, at); agentos_work is a Work Still started, whose text is not the owner\'s words; source_status not_kept means no source is kept and unknown means it could not be checked, so you can say why you know something.'),
  schema('search_conversation','Search earlier source-linked exchanges outside the recent window. Assistant lines are model-stated, not facts or commitments. Read-only, redacted, owner-scoped; at most three exchanges across this Work. Optional before/after are Unix timestamps (exclusive/inclusive). Reformulate when needed. To see the conversation a saved fact came from, pass its source work_id from search_memory instead of a query.',{'query':STRING,'work_id':STRING,'before':{'type':'number'},'after':{'type':'number'},'limit':{'type':'integer','minimum':1,'maximum':3}}),
  schema('search_memory','Search the owner\'s current saved Memory for a fact relevant to this request. Use concise terms from the request and likely synonyms (for example, sushi and 초밥); results include saved_at and a source reference with source_status, as in list_memory, so you can say why you know something. Search only when prior saved information can help. It returns a bounded set and never reads another owner\'s data.',{'query':STRING},['query']),
@@ -1792,8 +1792,6 @@ class EvidenceLog(list):
   for item in items:self.append(item)
 
 #: #1310: a ``save_memory`` result's note when Still itself tells the owner about the save.
-SAVED_NOTICE_HINT=('That is told in a separate message right after your reply, so your reply does not say again '
-                   'that it was remembered.')
 READONLY_EXCLUDED=tuple(name for name,tool in HOST_TOOLS.items() if not tool.read_only_surface)
 #: #659: host actions offered only when the service wired owner preparations
 #: into this Work (never to a delegated specialist or a CLI bridge process).
@@ -2982,8 +2980,10 @@ MEMORY_ASK_WORKER_NOTE=('Not remembered yet: the owner will be asked with one ta
 MEMORY_ASK_OWNER_TEXT=msg('agent_runtime.memory_ask_owner')
 #: #918 slice (a): what the worker reads for a ``save_memory`` the owner's worker saved at once.
 #: Truthful (remembered) and free of storage talk; the owner is told by Still, with undo.
-MEMORY_SAVED_WORKER_NOTE=('Remembered. The owner is shown what was remembered and can undo it; '
-                          'do not ask whether to remember it and do not describe how remembering works.')
+MEMORY_SAVED_WORKER_NOTE=('Remembered. In your reply, say in passing and in the owner\'s terms what you will keep in mind '
+                          '(part of the answer, not a separate "remembered" line), so they can correct it; they can also undo '
+                          'it in their records or by asking. Do not ask whether to remember it and do not describe how '
+                          'remembering works.')
 
 #: #999: owner messages handed to a running Work reach its worker with the next tool result.
 STEER_EVENT='owner_steer'
@@ -4887,14 +4887,12 @@ class Capabilities:
       terms_values={'retrieval_terms':terms,'retrieval_terms_meta':build_meta('keyed',previous=None,
        route=worker.get('route') or '',model=worker.get('model') or '',
        observed_model=worker.get('observed_model') or '',policy='worker',run=self.job_id,at=time.time())}
-    saved=self.store.save_memory(args['memory_key'],args['content'],MEMORY_OWNER,work_id=self.job_id,notice=True,
+    from . import memory_prompts
+    saved=self.store.save_memory(args['memory_key'],args['content'],MEMORY_OWNER,work_id=self.job_id,
+                                 notice=memory_prompts.MEMORY_SAVED_NOTICES,  # #955: off by owner decision
                                  corrected=args.get('correction') is True,**terms_values)
     result={**saved,'saved':True,'auto_saved':True,'correction':args.get('correction') is True}
-    from .context_observations import answerable_work
-    if answerable_work(self.store.job(self.job_id)):
-     # #1310 (owner 2026-10-10, "why say 'remember' twice?"): on a Telegram Work Still's own notice
-     # tells the save, with undo, right after the reply; the worker is told so it does not repeat it.
-     result['owner_notice']=SAVED_NOTICE_HINT
+    # #955 (owner 2026-11-17): no separate notice tells the save; the reply does (MEMORY_SAVED_WORKER_NOTE).
    # #605 N4: a written value is kept out of this Work's public lookups - except (#804) a
    # ``profile.`` fact the owner's worker saved: the owner gave it to be used (their
    # workplace, their home), so it may shape a lookup like the request itself.

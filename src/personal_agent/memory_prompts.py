@@ -50,6 +50,12 @@ from .quickstart_service import (
 )
 
 
+
+#: #955 (owner decision 2026-11-17, Constitution C5 as amended): saved facts are not told in a notice
+#: of their own; the reply that saved them says so.  The #918 machinery stays for notices sent before
+#: and as the one switch back; while off, nothing new is held, queued or retold.
+MEMORY_SAVED_NOTICES=False
+
 class MemoryPrompts:
     """Existing memory prompts and saved notices over one service's state."""
 
@@ -451,6 +457,13 @@ class MemoryPrompts:
         """
         service=self.service
         rows=service._saved_notice_rows(job['id'])
+        if not MEMORY_SAVED_NOTICES:
+            # #955 (owner decision 2026-11-17, C5): no standalone notice; the reply that saved a fact
+            # says it in passing, and every fact stays in 내 기록 with its undo.  A held or queued one is dropped.
+            for kind_row in rows.values():
+                if kind_row['state'] in (service.store.NOTICE_HELD,'queued'):
+                    service.store.update_notification(kind_row['id'],'cancelled')
+            return
         row=rows.get(MEMORY_SAVED_KIND)
         if row is None:
             service.queue_memory_saved(job);return
@@ -490,7 +503,7 @@ class MemoryPrompts:
             for kind in WORKING_LESSON_NOTICE_KINDS:
                 for row in service.store.held_notifications(kind):
                     if row.get('job_delivery') in service.DELIVERY_SETTLED:service.release_working_notes(row['job_id'])
-            lost=service.store.telegram.notifications_in_state(MEMORY_SAVED_KINDS,'unknown')
+            lost=service.store.telegram.notifications_in_state(MEMORY_SAVED_KINDS,'unknown') if MEMORY_SAVED_NOTICES else ()
             for row in lost:
                 binding=service.memory_saved_binding(row) or {}
                 retells=int(binding.get('retells') or 0)

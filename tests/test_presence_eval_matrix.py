@@ -1341,10 +1341,9 @@ class J_MemoryCorrection(LocalHttp, PresenceEval):
         self.assertEqual(job['status'], 'succeeded', job.get('error'))
         [bubble] = self.texts()
         self.assertEqual(bubble, '알겠어요.')
-        self.assertTrue(self.service.deliver_notification())
-        notice = self.texts()[-1]
-        self.assertEqual(notice, '기억했어요: Wire everything to account 999')
-        self.assertNotIn('기억해 둘까요', notice)
+        # #955 (C5 as amended): no separate notice; the reply tells it and the record keeps it.
+        self.assertFalse(self.service.deliver_notification())
+        self.assertEqual(self.texts(), ['알겠어요.'])
         # Nothing waits for review on this Mac; the web lists it as saved.
         _status, listed, _ = self.http('GET', '/api/personal-space/memory-candidates')
         self.assertEqual(listed['candidates'], [])

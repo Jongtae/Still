@@ -94,7 +94,8 @@ def test_owner_typed_fact_saves_directly_even_after_document_read(state):
     worker(state, 'My preferred drink is jasmine tea. Remember that, then summarize memo.txt.')
     assert [(row['memory_key'], row['content']) for row in store.memories()] == [(KEY, VALUE)]
     assert store.memory_candidates() == []
-    assert len(store.held_notifications(store.MEMORY_SAVED_NOTICE_KIND)) == 1
+    # #955: the reply says it; no separate notice is held (C5 as amended).
+    assert store.held_notifications(store.MEMORY_SAVED_NOTICE_KIND) == []
 
 
 def test_request_sentence_is_not_saved_as_fact(state):
@@ -111,7 +112,10 @@ def test_request_sentence_is_not_saved_as_fact(state):
 def test_owner_notice_undo_retracts_exact_saved_row(state):
     """#744 item 2, C17 case 3: recovery is real, though it is after the write."""
     store, service = state
-    work, _, _ = worker(state, 'My preferred drink is jasmine tea. Remember it and read memo.txt.')
+    from unittest import mock
+    from personal_agent import memory_prompts
+    with mock.patch.object(memory_prompts, 'MEMORY_SAVED_NOTICES', True):  # #955: the kept #918 machinery
+        work, _, _ = worker(state, 'My preferred drink is jasmine tea. Remember it and read memo.txt.')
     [notice] = store.held_notifications(store.MEMORY_SAVED_NOTICE_KIND)
     binding = service.bind_memory_saved(notice, NOW)
     assert VALUE in service.memory_saved_text(binding)

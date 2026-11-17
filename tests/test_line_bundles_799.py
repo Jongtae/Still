@@ -442,6 +442,10 @@ class Bundles(_LinesCase):
         self.assertEqual(self.store.job(job['id'])['delivery'],'none')
 
     def test_held_memory_saved_status_is_sent_without_releasing_report(self):
+        from unittest import mock
+        from personal_agent import memory_prompts
+        patcher=mock.patch.object(memory_prompts,'MEMORY_SAVED_NOTICES',True)  # #955: the kept #918 machinery
+        patcher.start();self.addCleanup(patcher.stop)
         row,job=self.start_held_notice_run()
         self.store.save_memory('profile.fixture799','Owner fact saved',work_id=job['id'],notice=True)
         self.script=[{'content':'Held answer with a saved fact'}]*4
