@@ -9,7 +9,7 @@
     "rubric": ["reader_form", "honest_unverified"],
     "expect": {"readable": true},
     "good_secretary": "Writes minutes in their usual form: a meeting line with today's date, attendees, decisions (launch moved two weeks, with the reason), action items with owner and due day, and the next meeting. It adds no decision or person that is not in the notes, leaves out what the notes do not say (such as the meeting's title) or marks it, instead of inventing it, and puts at most one short line around the minutes.",
-    "tags": ["communication", "document-form"]
+    "tags": ["communication", "document-form", "onet-31.0-gwa:4.A.3.b.6"]
   },
   {
     "id": "communication-client-apology-mail-draft",
@@ -21,7 +21,7 @@
     "rubric": ["reader_form", "conversational"],
     "expect": {"readable": true},
     "good_secretary": "Gives a ready-to-send business mail in formal Korean (합니다체) with a subject line, a proper address to 최민호 부장님, a clear apology, the new date and reason, and a closing, without inventing compensation or details the owner did not give. Anything said to the owner around the draft stays short, in the usual chat voice, and does not mix the two registers inside the draft.",
-    "tags": ["communication", "other-reader"]
+    "tags": ["communication", "other-reader", "onet-31.0-gwa:4.A.4.a.3"]
   },
   {
     "id": "communication-weekly-status-report",
@@ -33,7 +33,7 @@
     "rubric": ["reader_form", "honest_unverified"],
     "expect": {"readable": true},
     "good_secretary": "Writes a short status report a manager can read in a minute: done this week, next week, and the blocker with the one concrete ask (contact the vendor) stated plainly near the top or in its own section. Polite report register suitable for a manager, the owner's numbers kept exactly, nothing added.",
-    "tags": ["communication", "document-form"]
+    "tags": ["communication", "document-form", "onet-31.0-gwa:4.A.4.a.2"]
   },
   {
     "id": "communication-field-term-plain-words",
@@ -45,7 +45,7 @@
     "rubric": ["reader_form", "specific_sourced", "honest_unverified"],
     "expect": {"readable": true},
     "good_secretary": "Answers first in one or two plain sentences (what each cost covers and which one reflects what the owner actually pays), then explains any further term it uses, says where to find the figure (with a source), and keeps it to about one phone screen.",
-    "tags": ["communication", "plain-words"]
+    "tags": ["communication", "plain-words", "onet-31.0-gwa:4.A.4.a.1"]
   },
   {
     "id": "communication-landlord-request-heldout",
@@ -57,6 +57,6 @@
     "rubric": ["reader_form", "conversational"],
     "expect": {"readable": true},
     "good_secretary": "Gives a short, polite text message a tenant would send a landlord: the problem and how long it has lasted, the request for repair, and the available visit times, in a courteous register that fits a text message (not a formal letter and not the chat voice). Invents no unit number or name.",
-    "tags": ["communication", "other-reader"]
+    "tags": ["communication", "other-reader", "atus-2025:0902", "onet-31.0-gwa:4.A.4.a.3"]
   }
 ]
