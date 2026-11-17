@@ -33,7 +33,7 @@ def fact(key, content, *sources, kind='stated', category='plan', invalidates=(),
              'turn': end[3] if len(end) > 3 else ''} for end in invalidates]
     # #452: the evidence is checked against the owner's own words; by default the fact's own words are quoted.
     return {'category': category, 'kind': kind, 'memory_key': key, 'content': content, 'evidence': evidence or content,
-            'supersedes_key': '', 'invalidates': ends, 'valid_until': valid_until, 'sources': list(sources)}
+            'supersedes_key': '', 'invalidates': ends, 'valid_until': valid_until, 'sources': list(sources), 'terms': ''}
 
 
 def dream(proposals=(), notes='', change='', notes_sources=(), diary=''):

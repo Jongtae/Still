@@ -136,7 +136,7 @@ def test_upkeep_does_not_promote_document_claim_from_answer(state):
         assert VALUE in json.dumps(context.facts)
         return StructuredDecision(OUTCOME_DECIDED, {'proposals': [{
             'category': 'preference', 'kind': 'stated', 'memory_key': KEY, 'content': VALUE,
-            'evidence': VALUE, 'supersedes_key': '', 'invalidates': [], 'valid_until': ''}],
+            'evidence': VALUE, 'supersedes_key': '', 'invalidates': [], 'valid_until': '', 'terms': ''}],
             'situation': ''}, fixture_confidence())
 
     judgments = ConversationJudgments(FixtureDecisionEngine(structured=structured))
