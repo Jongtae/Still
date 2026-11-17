@@ -229,10 +229,23 @@ def browser_signin_claims(text):
     return claims
 
 
+def entrusted_line_claims(text):
+    """#937 review: the entrusted lines a rendered context's held-work line named, as claims."""
+    import re
+    from .entrusted_lines import HELD_PREFIX, REF_PREFIX
+    claims = []
+    for line in str(text or '').splitlines():
+        if not line.startswith(HELD_PREFIX):
+            continue
+        for line_id, task in re.findall(r'\[' + re.escape(REF_PREFIX) + r'([A-Za-z0-9_-]{1,64})\] ([^;]*)', line):
+            claims.append({'ref': f'{REF_PREFIX}{line_id}', 'label': f'맡은 일: {_text(task.split(" (open: ")[0], 60)}'})
+    return claims
+
+
 def context_claims(text):
     """Refs and short labels of a rendered current-context snapshot (#627, #804)."""
     body = _json_after_legend(text)
-    claims = browser_signin_claims(text)
+    claims = browser_signin_claims(text) + entrusted_line_claims(text)
     if body.get('local_time') or body.get('as_of'):
         # #804: every turn carries the clock, with the zone when one is known.
         claims.append({'ref': 'clock', 'label': f"현재 시각 ({_text(body.get('timezone') or 'unknown', 40)})"})

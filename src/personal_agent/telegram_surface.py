@@ -374,10 +374,12 @@ class TelegramSurface(ConversationSurface):
                             # Preserve every parameter. Only the last part carries
                             # approval controls, after earlier parts were delivered.
                             parts=[text[offset:offset+1900] for offset in range(0,len(text),1900)]
+                            # #945: a settings draft is applied, not approved; its parts say so.
+                            heading='settings' if notification['kind']=='settings_change_proposed' else 'approval'
                             for index,part in enumerate(parts[:-1],1):
-                                service.telegram.send_message(notification['chat_id'],msg('telegram_surface.approval_part', index=index, total=len(parts), part=part))
+                                service.telegram.send_message(notification['chat_id'],msg(f'telegram_surface.{heading}_part', index=index, total=len(parts), part=part))
                                 sent_part=True
-                            text=msg('telegram_surface.approval_final', total=len(parts), part=parts[-1])
+                            text=msg(f'telegram_surface.{heading}_final', total=len(parts), part=parts[-1])
                         result=service.telegram.send_message(notification['chat_id'],text,reply_markup)
                 sent_part=True
                 service._unsent_backoff=0

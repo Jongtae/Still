@@ -400,6 +400,31 @@ class ScoringTest(unittest.TestCase):
         with self.assertRaisesRegex(scenarios.ScenarioError, r'expect\.current_state_any must be a list of non-empty lists of text'):
             scenario(expect={'current_state_any': [[]]})
 
+    def test_readable_flags_raw_json_and_api_urls_only_when_asked(self):
+        """#943: the leaks of #932 (raw JSON) and #929 (API URLs as links) fail an opted-in scenario."""
+        item = scenario(turns=[{'say': '메일 정리해줘'}], expect={'readable': True})
+        leaked = ('22통을 보관했어요. [처리 내역](https://gmail.googleapis.com/gmail/v1/users/me/messages/batchModify)\n'
+                  '{"category": "owner-api", "operation": "api_request"}')
+        run = {'turns': [turn(answer=leaked)], 'diff': {}}
+        checks, failures = scoring.deterministic_checks(item, run)
+        self.assertFalse(checks['readable'])
+        self.assertEqual(sorted(row['reason'].split(':')[1].strip().split(' ')[0] for row in failures), ['API', 'raw'])
+        readable = ('22통을 보관했어요. 받은편지함에서 바로 확인할 수 있어요: https://mail.google.com/mail/u/0/#inbox\n'
+                    '설명서는 https://kubernetes.io/docs/v1.28/ 에 있어요. 가격은 {3,000원}이에요.')
+        checks, failures = scoring.deterministic_checks(item, {'turns': [turn(answer=readable)], 'diff': {}})
+        self.assertTrue(checks['readable'])
+        self.assertEqual(failures, [])
+        self.assertNotIn('readable', scoring.deterministic_checks(scenario(), run)[0])
+
+    def test_reader_form_is_judged_only_when_named(self):
+        """#943: like ``conversational``, ``reader_form`` is opt-in."""
+        self.assertNotIn('reader_form', scenarios.DEFAULT_RUBRIC)
+        self.assertNotIn('reader_form', scenarios.validate(
+            {'id': 'plain-one', 'turns': ['안녕']})['rubric'])
+        named = [item for item in scenarios.load(include_local=False) if 'reader_form' in item['rubric']]
+        self.assertTrue(named and all(item['expect']['readable'] for item in named))
+        self.assertEqual({item['split'] for item in named}, {'dev', 'heldout'})
+
     def test_no_memory_of_request_rejects_the_owner_sentence_as_a_value(self):
         """#846: a standing wish is a watch; the request sentence must not become a memory."""
         item = scenario(turns=[{'say': '가격이 내려가면 알려줘.'}], expect={'no_memory_of_request': True})

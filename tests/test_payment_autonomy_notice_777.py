@@ -36,7 +36,8 @@ class Rendering(unittest.TestCase):
     def test_a_field_left_unnamed_shows_the_exact_request(self):
         text = self.notice(code_label('price=PRICE'))
         self.assertIn('price 69100', text)
-        self.assertIn(f'{APPROVAL_EXACT_LABEL} POST broker.test/v1/order', text)
+        # #945: the exact request sits under its one heading, not labelled twice.
+        self.assertIn(msg('notice.request_raw') + '\nPOST broker.test/v1/order', text)
         self.assertIn('"KIND": "01"', text)
 
     def test_a_label_without_fields_keeps_the_exact_request(self):

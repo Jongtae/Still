@@ -54,11 +54,23 @@ def jsonl_lines(text):
     Blank lines are dropped.
     """
     return [line.removesuffix('\r') for line in (text or '').split('\n') if line.strip()]
-# One CLI turn may use up to the Work's whole shared budget (agent_runtime
-# WORK_DEADLINE_SECONDS); the remaining budget always bounds it (#607 AX-10).
-# The earlier fixed 120 s cap (#118) cut off multi-step browser work.
+# #927: no stdout line for this long ends a worker turn. Keep the public name
+# for imports and the unchanged total cap of a turn without a Work budget.
 MAX_TIMEOUT_SECONDS = 600
+# #927: leave 120 s for the outcome judgment (the default CLI judgment bound
+# is 90 s) and closing reply, above quickstart_service.FINAL_JUDGMENT_SECONDS
+# (30 s). Orchestration.judge_code
+# permits a closing judgment while time remains; budget_code may refuse a new attempt.
+TURN_CLOSING_RESERVE_SECONDS = 120
 MAX_REASON_CHARS = 300
+
+
+def worker_turn_seconds(remaining):
+    """#927: a budgeted worker turn's total bound: the Work's remaining time minus the closing reserve.
+
+    With less than twice the reserve left, the turn and the closing judgment split the rest.
+    """
+    return max(1, remaining - min(TURN_CLOSING_RESERVE_SECONDS, remaining / 2))
 
 # Shared across adapters and early-judgment threads; at most eight binary identities.
 _STRICT_OBSERVATIONS = {}
@@ -491,7 +503,7 @@ def bridge_tool_bound(actions):
 
 def bridge_tool_timeout(actions, turn_seconds):
     """The ``agentos`` server's tool-call timeout: the longest offered bound plus a margin,
-    never beyond the turn's own time (the Work's remaining budget, capped)."""
+    never beyond the turn's own time (the Work's remaining budget minus its closing reserve)."""
     return max(1, min(int(turn_seconds), bridge_tool_bound(actions) + BRIDGE_TOOL_MARGIN_SECONDS))
 
 
@@ -1666,6 +1678,10 @@ class _Answered(Exception):
 ANSWERED_EXIT_GRACE_SECONDS = 10.0
 
 
+class _IdleTimeoutExpired(subprocess.TimeoutExpired):
+    """#927: no stdout line arrived within the worker's inactivity bound."""
+
+
 class _StreamedOutput:
     """``Popen.communicate`` for a binary-pipe process, with stdout seen line by line (#718).
 
@@ -1685,6 +1701,7 @@ class _StreamedOutput:
         import selectors
         self.process, self.on_line, self.limit = process, on_line, limit
         self.answered, self.is_answered = answered, False
+        self.last_line = time.monotonic()
         self.encoding = locale.getpreferredencoding(False)
         self.stdout, self.stderr, self.partial = bytearray(), bytearray(), bytearray()
         self.selector = selectors.DefaultSelector()
@@ -1693,6 +1710,8 @@ class _StreamedOutput:
             self.selector.register(stream.fileno(), selectors.EVENT_READ, stream is process.stdout)
 
     def _line(self, raw):
+        # #927: any stdout line is progress, even without a presentation callback.
+        self.last_line = time.monotonic()
         if self.on_line is None and self.answered is None:
             return
         text = raw.decode(self.encoding, 'replace').replace('\r\n', '\n')
@@ -1794,7 +1813,7 @@ def _observe(callback):
 
 
 def bounded_run(runner, argv, *, cwd, env, timeout, interrupted=None, on_line=None, session=None,
-                on_spawn=None, on_exit=None, answered=None, on_reaped=None):
+                on_spawn=None, on_exit=None, answered=None, on_reaped=None, idle_timeout=None):
     """Run one CLI with no shell in its own process group.
 
     With the real ``subprocess.run`` a timeout kills the whole group, so the
@@ -1823,19 +1842,22 @@ def bounded_run(runner, argv, *, cwd, env, timeout, interrupted=None, on_line=No
     once, when the process is gone (or never started): before this returns or
     raises, or from the background reaper after an early answer, so a caller
     removes the CLI's working directory only after the CLI left it.
+    #927: worker turns opt into ``idle_timeout`` (stdout lines only); ``timeout``
+    remains the total bound, including for injected runners. Judgment calls
+    keep their own shorter total bound and do not opt into inactivity.
     """
     handed = []
     try:
         return _bounded_run(runner, argv, cwd=cwd, env=env, timeout=timeout, interrupted=interrupted, on_line=on_line,
                             session=session, on_spawn=on_spawn, on_exit=on_exit, answered=answered,
-                            on_reaped=on_reaped, handed=handed)
+                            on_reaped=on_reaped, handed=handed, idle_timeout=idle_timeout)
     finally:
         if not handed:
             _observe(on_reaped)
 
 
 def _bounded_run(runner, argv, *, cwd, env, timeout, interrupted, on_line, session, on_spawn, on_exit, answered,
-                 on_reaped, handed):
+                 on_reaped, handed, idle_timeout):
     if runner is not subprocess.run:
         stdin = {'input': session.opening()} if session is not None else {'stdin': subprocess.DEVNULL}
         callbacks = {}
@@ -1856,7 +1878,8 @@ def _bounded_run(runner, argv, *, cwd, env, timeout, interrupted, on_line, sessi
     streamed = _StreamedOutput(process, on_line, limit=MAX_STREAM_BYTES, answered=answered if session is None else None)
     try:
         try:
-            return _bounded_wait(process, streamed, argv, timeout, interrupted, session, on_reaped, handed)
+            return _bounded_wait(process, streamed, argv, timeout, interrupted, session, on_reaped, handed,
+                                 idle_timeout=idle_timeout)
         except (StreamLimitExceeded, NativeSearchIntakeError) as exc:
             kill_process_group(process)
             streamed.close()
@@ -1882,7 +1905,8 @@ def _both(first, second):
     return on_line
 
 
-def _bounded_wait(process, streamed, argv, timeout, interrupted, session=None, on_reaped=None, handed=None):
+def _bounded_wait(process, streamed, argv, timeout, interrupted, session=None, on_reaped=None, handed=None,
+                  idle_timeout=None):
     """``bounded_run``'s wait loop over one streamed process (Stop, deadline and the kill drain)."""
     deadline = time.monotonic() + timeout
     while True:
@@ -1890,6 +1914,8 @@ def _bounded_wait(process, streamed, argv, timeout, interrupted, session=None, o
             session.pump(process.stdin)
         left = deadline - time.monotonic()
         wait = min(STOP_POLL_SECONDS, left) if interrupted or session is not None else left
+        if idle_timeout is not None:
+            wait = min(wait, streamed.last_line + idle_timeout - time.monotonic())
         if session is not None and session.pending and not session.closed:
             wait = min(wait, SESSION_WRITE_POLL_SECONDS)
         try:
@@ -1911,7 +1937,9 @@ def _bounded_wait(process, streamed, argv, timeout, interrupted, session=None, o
                 reason = interrupted() if interrupted else None
             except Exception:
                 reason = None
-            if reason or time.monotonic() >= deadline:
+            now = time.monotonic()
+            idle = idle_timeout is not None and now - streamed.last_line >= idle_timeout
+            if reason or now >= deadline or idle:
                 kill_process_group(process)
                 # The group is gone; a descendant that left it may still
                 # hold the pipes, so draining is bounded and the pipes are
@@ -1929,6 +1957,8 @@ def _bounded_wait(process, streamed, argv, timeout, interrupted, session=None, o
                     pass
                 if reason:
                     raise EngineInterrupted(reason) from None
+                if idle and now < deadline:
+                    raise _IdleTimeoutExpired(argv, idle_timeout) from None
                 raise subprocess.TimeoutExpired(argv, timeout) from None
 
 
@@ -2759,7 +2789,10 @@ class BoundedExecutionAdapter:
         indefinitely. Only expired, real turn directories under this runtime
         root are eligible, as in the existing worker cleanup.
         """
-        stale_before = time.time() - MAX_TIMEOUT_SECONDS - 60
+        from .agent_runtime import WORK_DEADLINE_SECONDS
+        # #927: a progressing turn may outlive the idle cap; allow the longest
+        # Work deadline plus the existing cleanup margin before removing its files.
+        stale_before = time.time() - max(WORK_DEADLINE_SECONDS, MAX_TIMEOUT_SECONDS) - 60
         for entry in self.runtime_root.glob('turn-*'):
             try:
                 if entry.is_dir() and not entry.is_symlink() and entry.stat().st_mtime < stale_before:
@@ -3318,8 +3351,8 @@ class BoundedExecutionAdapter:
         self.runtime_root.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.runtime_root.chmod(0o700)
         # A process killed before TemporaryDirectory's finalizer can leave the
-        # per-turn image behind. A turn cannot run longer than MAX_TIMEOUT_SECONDS;
-        # only older, real turn directories are considered stale.
+        # per-turn image behind. #927: progressing turns can use the Work deadline;
+        # only directories older than that longest turn plus a margin are stale.
         self.cleanup_stale_turns()
         with tempfile.TemporaryDirectory(dir=self.runtime_root, prefix='turn-') as folder, ExitStack() as auth_scope:
             run_dir = Path(folder)
@@ -3374,9 +3407,12 @@ class BoundedExecutionAdapter:
             owner_servers = owner_mcp.claude_definitions(Path.home(), confirmed) if engine_id == 'claude-code' else {}
             search_off = str(getattr(tools, 'native_search_reason', '') or '') if not native_search else ''
             budget = getattr(tools.capabilities, 'budget', None)
-            # #908: report the CLI turn's binding limit before launch, conservatively.
-            turn_deadline = time.time() + (min(MAX_TIMEOUT_SECONDS, budget.remaining())
-                                          if budget is not None and hasattr(budget, 'remaining') else MAX_TIMEOUT_SECONDS)
+            # #927, #908: one total end for the bridge and every launch/retry;
+            # only inactivity is capped at 600 s when a Work budget is present.
+            work_bounded = budget is not None and hasattr(budget, 'remaining')
+            timeout = worker_turn_seconds(budget.remaining()) if work_bounded else MAX_TIMEOUT_SECONDS
+            turn_end = time.monotonic() + timeout
+            turn_deadline = time.time() + timeout
             # Both supported CLIs receive this per-turn bridge configuration.
             # The engine gets no store handle; the bridge alone owns validated
             # access to the Still tool facade.
@@ -3455,11 +3491,8 @@ class BoundedExecutionAdapter:
                 env = auth_scope.enter_context(self.peer_environment_scope(engine_id, binary, run_dir,
                     store_root=tools.capabilities.store.root, work_id=tools.capabilities.job_id,
                     interrupted=interrupted, deadline=deadline))
-            # #607 AX-10: the CLI gets at most the Work's remaining shared
-            # budget, and the owner's Stop kills its process group mid-run.
-            timeout = MAX_TIMEOUT_SECONDS
-            if budget is not None and hasattr(budget, 'remaining'):
-                timeout = max(1, min(MAX_TIMEOUT_SECONDS, int(budget.remaining())))
+            # #607 AX-10, #927: the shared deadline and Stop still interrupt at
+            # once; the worker's total bound leaves time for the closing judgment.
             started = time.monotonic()
             LOG.info('engine turn started engine=%s profile=%s', engine_id, profile)
             # #678: the facade says whether this turn may use the CLI's own web search.
@@ -3484,12 +3517,11 @@ class BoundedExecutionAdapter:
                 raise ExecutionError('확인 후 CLI가 바뀌어 실행하지 않았습니다.',
                                      failure_class='isolation-unqualified', reason='binary-unchanged')
             launch['started'] = True
-            attempts = 0
 
             def run_current():
-                nonlocal attempts
-                remaining = timeout if attempts == 0 else max(0.01, timeout - (time.monotonic() - started))
-                attempts += 1
+                remaining = turn_end - time.monotonic()
+                if remaining <= 0:
+                    raise subprocess.TimeoutExpired(argv, timeout)
                 progress = getattr(tools, 'progress', None)
                 observed = getattr(tools, 'connector_observed', None)
                 native_observed = getattr(tools, 'native_search_observed', None)
@@ -3499,7 +3531,7 @@ class BoundedExecutionAdapter:
                 if self.runner is subprocess.run:
                     return bounded_run(self.runner, argv, cwd=run_dir, env=env, timeout=remaining,
                                        interrupted=interrupted, session=session,
-                                       on_line=on_line)
+                                       on_line=on_line, idle_timeout=MAX_TIMEOUT_SECONDS)
                 return self.runner(argv, cwd=run_dir, env=env,
                                    **({'input': session.opening()} if session is not None else {'stdin': subprocess.DEVNULL}),
                                    **({'on_line': on_line} if _runner_accepts(self.runner, 'on_line') else {}),
@@ -3524,12 +3556,14 @@ class BoundedExecutionAdapter:
                 LOG.warning('engine turn interrupted engine=%s reason=%s', engine_id, exc.reason)
                 raise interruption_error(exc.reason, {**run_meta, 'duration_ms': elapsed_ms}) from None
             except subprocess.TimeoutExpired as exc:
-                LOG.warning('engine turn timed out engine=%s after=%ss', engine_id, timeout)
-                # A Work whose shared deadline, not the CLI cap, ended the run
-                # is typed deadline_exceeded (#607); both kill the group.
-                failure_class = 'deadline_exceeded' if timeout < MAX_TIMEOUT_SECONDS else 'timeout'
-                raise ExecutionError(f'구독 엔진이 {timeout}초 안에 응답하지 않아 실행과 그 하위 프로세스를 종료했습니다.',
-                                     failure_class=failure_class, meta={**run_meta, 'duration_ms': timeout * 1000}) from exc
+                idle = isinstance(exc, _IdleTimeoutExpired)
+                failure_class = 'deadline_exceeded' if work_bounded and not idle else 'timeout'
+                LOG.warning('engine turn timed out engine=%s class=%s idle=%s', engine_id, failure_class, idle)
+                message = (f'구독 엔진에서 {MAX_TIMEOUT_SECONDS}초 동안 진행 출력이 없어 실행과 그 하위 프로세스를 종료했습니다.' if idle else
+                           '이 작업의 실행 시간이 다 되어 실행과 그 하위 프로세스를 종료했습니다.' if work_bounded else
+                           f'구독 엔진의 실행 제한 시간 {MAX_TIMEOUT_SECONDS}초가 지나 실행과 그 하위 프로세스를 종료했습니다.')
+                raise ExecutionError(message, failure_class=failure_class,
+                                     meta={**run_meta, 'duration_ms': int((time.monotonic() - started) * 1000)}) from exc
             except OSError as exc:
                 LOG.warning('engine turn could not start engine=%s error=%s', engine_id, type(exc).__name__)
                 raise ExecutionError('구독 엔진 CLI를 실행하지 못했습니다.', failure_class='start-failed',

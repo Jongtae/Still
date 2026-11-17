@@ -150,9 +150,9 @@ class ConnectionPreferences(Harness):
 
     def test_relevant_preference_is_retrieved_before_worker_selection_when_default_profile_is_full(self):
         # #217: enough rows to overflow the default snapshot bound.
+        _, row = self.save_choice('Still-owned connection')
         for index in range(PROFILE_SNAPSHOT_CHARS // 150):
             self.store.save_memory(f'profile.aaa.item{index}', 'Unrelated background ' * 8, owner_id='local-owner')
-        _, row = self.save_choice('Still-owned connection')
         self.assertNotIn(KEY, self.service.owner_profile_snapshot())
         self.assertIn('omitted', self.service.owner_profile_snapshot())
         self.asked_plans.clear()
@@ -190,7 +190,8 @@ class ConnectionPreferences(Harness):
         self.assertNotIn('OPTIONAL-BRIEF-3', prompt)
         self.assertIn(KEY + ': ' + row['content'], prompt, 'the query match heads the profile and survives')
         self.assertIn(CUT_TO_FIT_MARKER, prompt)
-        self.assertNotIn('profile.aaa.item39', prompt, 'the profile tail was cut')
+        self.assertNotIn('profile.aaa.item00', prompt, 'the oldest filler is at the profile tail and was cut')
+        self.assertIn('profile.aaa.item39', prompt, 'the newest filler survives ahead of the oldest filler')
         sent = self.store.turn_provenance(job)
         self.assertEqual(sent['instructions_channel'], 'developer-instructions')
         self.assertIn(CONNECTION_PREFERENCE_GUIDANCE, sent['instructions'])

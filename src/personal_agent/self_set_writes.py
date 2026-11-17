@@ -125,6 +125,55 @@ def _effect_replayed(db, work_id, digest):
         (work_id, ACTION)))
 
 
+#: #932: URLs listed per source group in an approval label; the rest are counted.
+SOURCE_URLS_SHOWN = 3
+
+
+def marked_lines(sources, values, label):
+    """The readable lines a marked Work's approval label adds (#932, #744).
+
+    Every source group (all its fields but the URL) is named with its count, so the
+    owner sees which tool or connection supplied outside content; a few URLs per group
+    are listed and the rest counted (the Work's information-use record keeps them all).
+    Parameters already shown verbatim in ``label`` are not repeated.
+    """
+    groups = {}
+    for source in sources:
+        source = source if isinstance(source, dict) else {'source': source}
+        key = ' / '.join(str(source[name]) for name in sorted(source) if name != 'url')
+        groups.setdefault(key, []).append(source.get('url'))
+    lines = [msg('write_allowances.sources', count=len(sources))]
+    for key, urls in groups.items():
+        lines.append(f'- {key}' + (f' ({len(urls)})' if len(urls) > 1 else ''))
+        shown = list(dict.fromkeys(url for url in urls if url))
+        lines += [f'  {url}' for url in shown[:SOURCE_URLS_SHOWN]]
+        if len(shown) > SOURCE_URLS_SHOWN:
+            lines.append('  ' + msg('write_allowances.sources_more', count=len(shown) - SOURCE_URLS_SHOWN))
+    lines += [line for line in value_lines(values).splitlines() if line.partition(': ')[2] not in label]
+    return '\n'.join(lines)
+
+
+def value_lines(values):
+    """``values`` as ``name: value`` lines an owner can read (#945).
+
+    A one-line string is shown as is. Any other value or name stays exact JSON, including an
+    empty string or one with a line break, control character or edge space, so no value can
+    pass as another line and an empty value is still shown.
+    """
+    lines = []
+    for name in sorted(values or {}):
+        value = values[name]
+        lines.append(f'{_plain_or_json(name)}: {_plain_or_json(value)}')
+    return '\n'.join(lines)
+
+
+def _plain_or_json(value):
+    """A non-empty one-line string without edge spaces as is; anything else as exact JSON."""
+    if isinstance(value, str) and value and value == value.strip() and value.isprintable():
+        return value
+    return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
 def authorize(service, job, binding, connection, operation, target, names=(), *, effect=None, description=None, request=True, values=None):
     barrier = service.__dict__.get('_native_intake_barriers', {}).get(job['id'])
     awaiting = barrier is not None and barrier.pending()
@@ -175,7 +224,7 @@ def authorize(service, job, binding, connection, operation, target, names=(), *,
     label = service._redact_known_secrets(f'{connection or "browser"} / {operation} / {target}' +
                                         ('\n' + description if description else ''))
     if marked:
-        label += '\n' + json.dumps({'sources': sources, 'parameters': values}, ensure_ascii=False, sort_keys=True)
+        label += '\n' + service._redact_known_secrets(marked_lines(sources, values, label))
     modes = {key: allowance(service,key) for key in scopes}
     allowed = bool(scopes) and all(key in known and modes[key]['enabled'] and
         modes[key]['connection_revision'] == known[key]['connection_revision'] for key in scopes)

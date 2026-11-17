@@ -1870,6 +1870,24 @@ class ServiceTests(unittest.TestCase):
         self.assertIn('👍',messages[-1]['text'])
         self.assertTrue(all(len(body['text'].encode('utf-16-le'))//2<4096 for body in messages))
 
+    def test_a_long_settings_card_is_split_as_a_settings_change_not_an_approval(self):
+        """#945: a settings draft is applied with its button; its parts do not ask for an approval."""
+        from unittest import mock
+        from personal_agent import telegram_surface
+        job_id=self.refused_work()
+        with self.store.db() as db:
+            db.execute("UPDATE telegram_notifications SET kind='settings_change_proposed',state='queued' WHERE job_id=?",(job_id,))
+        long_text='draft-start '+('설정 값  '*500)+' draft-end'
+        with mock.patch.object(telegram_surface,'notice_binding',lambda service,notification:{'settings_drafts':[]}), \
+             mock.patch.object(telegram_surface,'notice_text',lambda service,notification,bound:long_text), \
+             mock.patch.object(type(self.service.telegram_surface),'_notice_markup',lambda *args,**kwargs:None):
+            self.assertTrue(self.service.deliver_notification())
+        texts=[body['text'] for body in self.sends() if 'draft' in body.get('text','') or '설정 값' in body.get('text','')]
+        self.assertGreater(len(texts),1)
+        self.assertTrue(all(text.startswith('설정 변경 내용 (') for text in texts))
+        self.assertTrue(all('승인' not in text for text in texts))
+        self.assertIn('적용할지 정해 주세요',texts[-1])
+
     def test_web_decision_deny_drops_the_request_and_approve_requeues(self):
         job_id = self.refused_work()
         with self.assertRaises(ValueError):
