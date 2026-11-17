@@ -56,6 +56,7 @@ from .isolated_engine_gateway import EngineGatewayError
 from .service_control import build_identity
 from .isolated_mcp_proxy import IsolatedMcpProxy, TaskCapabilityRegistry
 from .settings_orchestrator import SettingsOrchestrator, SettingsError
+from .self_set_writes import value_lines
 from .personal_knowledge import PersonalKnowledgeOrchestrator
 from .memory_service import MemoryService, VOICE_PREFERENCE_KEY
 from .file_workspace import FileWorkspace
@@ -264,7 +265,7 @@ def request_prompt_parts(label):
         from .code_run import APPROVAL_FIELDS_UNLABELED
         others=APPROVAL_FIELDS_UNLABELED.split('{')[0]
         warn=any(line.startswith('⚠️') or line.startswith(others) for line in field_lines)
-        return title,summary,rest+field_lines,'',(f'{APPROVAL_EXACT_LABEL} {exact}' if warn else '')
+        return title,summary,rest+field_lines,'',(exact if warn else '')
     numbers=list(dict.fromkeys(re.findall(r'\d[\d,]*\d|\d',summary)))
     digits=exact.replace(',','')
     check=''
@@ -273,7 +274,8 @@ def request_prompt_parts(label):
         check=(msg('notice.request_check_warn',numbers=' · '.join(missing)) if missing
                else msg('notice.request_check_ok',numbers=' · '.join(numbers)))
     title=msg('notice.request_title_money') if money else msg('notice.request_title')
-    return title,summary,rest,check,f'{APPROVAL_EXACT_LABEL} {exact}'
+    # #945: callers head the exact request with notice.request_raw; it is not labelled twice.
+    return title,summary,rest,check,exact
 
 
 def payment_autonomy_notice(authorization):
@@ -1297,6 +1299,10 @@ class AgentService:
         slots=context_line(self.store,self.connection_slots(job) if job else None)
         if slots:
             text=f'{text}\n{slots}' if text else slots
+        # #937: the continuing responsibilities the owner entrusted, so every route reads them as its own work.
+        held=self.preparations_service.held_lines_text()
+        if held:
+            text=f'{text}\n{held}' if text else held
         return text
 
     def browser_sessions_text(self):
@@ -8217,16 +8223,16 @@ class AgentService:
                 if native_intake_wait is not None:native_intake_wait()
                 try:
                     write_ticket=self.self_set_write(job,binding,f'connector:{engine}|{kind}|{identity}',operation,
-                        json.dumps(values,ensure_ascii=False,sort_keys=True),(),effect=reversibility or 'irreversible',values=values)
+                        value_lines(values),(),effect=reversibility or 'irreversible',values=values)
                 except ToolError as exc:
                     return {'behavior':'deny','message':str(exc)}
             if effect=='payment':
-                label=f'{service_name} / {operation}: '+json.dumps(values,ensure_ascii=False,sort_keys=True)
+                label=f'{service_name} / {operation}\n'+value_lines(values)  # #945: readable, every value kept
                 autonomy=self._authorize_payment_autonomy(job,binding,label)
                 pending=self._browser_request(job['id']) or {}
                 allow=bool(autonomy) or pending.get('state')=='issued' and pending.get('digest')==self._browser_step_keys(binding)['digest']
                 if not allow:
-                    label=f'{service_name} / {operation}: '+json.dumps(values,ensure_ascii=False,sort_keys=True)
+                    label=f'{service_name} / {operation}\n'+value_lines(values)  # #945: readable, every value kept
                     if len(label)>8000 or self._redact_known_secrets(label)!=label:
                         return {'behavior':'deny','message':'실행 내용을 비밀값 없이 온전히 확인할 수 없어 승인을 요청하지 않았습니다.'}
                     if self.unattended_work(job):return {'behavior':'deny','message':UNATTENDED_APPROVAL_TEXT}  # #619

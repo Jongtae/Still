@@ -1355,7 +1355,16 @@ class BridgeTimeout(unittest.TestCase):
         clock = [0.0]
         budget = WorkBudget(clock=lambda: clock[0], seconds=45)
         timeouts = [value for value in self.overrides(self.argv(budget=budget)) if 'tool_timeout_sec' in value]
-        self.assertEqual(timeouts, ['mcp_servers.agentos.tool_timeout_sec=45'])
+        # #927: with under twice the closing reserve left, the turn gets half of it.
+        self.assertEqual(timeouts, ['mcp_servers.agentos.tool_timeout_sec=22'])
+
+    def test_a_long_tool_uses_the_work_bound_minus_reserve_instead_of_the_idle_cap(self):
+        with mock.patch('personal_agent.bounded_execution.bridge_tool_bound', return_value=900):
+            for seconds, expected in ((1500, 930), (500, 380)):
+                with self.subTest(seconds=seconds):
+                    budget = WorkBudget(clock=lambda: 0, seconds=seconds)
+                    timeouts = [value for value in self.overrides(self.argv(budget=budget)) if 'tool_timeout_sec' in value]
+                    self.assertEqual(timeouts, [f'mcp_servers.agentos.tool_timeout_sec={expected}'])
 
     def test_a_native_search_bound_covers_every_continuation_request(self):
         """#729 review: an ai-native search may resend after pause_turn; each request has its own timeout."""
@@ -2858,6 +2867,14 @@ class SecretaryStandard(Harness):
                           '(which date, which item) and only the owner can give it', text)
         for text in (CORE_INSTRUCTIONS, CLI_NATIVE_SEARCH_GUIDANCE, by_name['schedule_preparation']):
             self.assertEqual(scenario_tokens(text), [])
+
+    def test_the_guidance_links_only_pages_the_owner_can_open(self):
+        """#929: an API endpoint is never an owner-facing link; an observed account record is the source."""
+        from personal_agent.agent_runtime import CORE_INSTRUCTIONS
+        from test_no_scenario_code import scenario_tokens
+        self.assertIn('Link only pages the owner can open, never API URLs', CORE_INSTRUCTIONS)
+        self.assertIn('cite account reads by item and time, changes by where they show', CORE_INSTRUCTIONS)
+        self.assertEqual(scenario_tokens(CORE_INSTRUCTIONS), [])
 
     def test_preparation_guidance_acts_then_tells_without_a_setup_question(self):
         """#755: exported tool guidance matches #717 without changing proposal/run boundaries."""

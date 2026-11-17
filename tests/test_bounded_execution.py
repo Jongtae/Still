@@ -63,6 +63,155 @@ NODE_AVAILABLE = find_node() is not None
 FIXTURE_NAMES = sorted(BOUNDED_NAMES + SKILL_NAMES)
 
 
+class WorkerInactivityTests(unittest.TestCase):
+    """#927: deterministic wait boundaries, plus the real stdout/stderr and group-kill seam."""
+
+    def wait(self, *, total, idle, lines=(), finish=None, interrupt=None):
+        clock = [0.0]
+        process = mock.Mock(args=['fixture-cli'], returncode=0)
+        streamed = mock.Mock(last_line=0.0)
+        events = list(lines)
+        killed = []
+
+        def communicate(timeout):
+            if killed:
+                return '', ''
+            end = clock[0] + timeout
+            while events and events[0] <= end:
+                clock[0] = streamed.last_line = events.pop(0)
+            if finish is not None and finish <= end:
+                clock[0] = finish
+                return '', ''
+            clock[0] = end
+            raise subprocess.TimeoutExpired(process.args, timeout)
+
+        streamed.communicate.side_effect = communicate
+        with mock.patch.object(bounded_execution.time, 'monotonic', side_effect=lambda: clock[0]), \
+             mock.patch.object(bounded_execution, 'kill_process_group', side_effect=lambda proc: killed.append(proc)):
+            try:
+                result = bounded_execution._bounded_wait(process, streamed, process.args, total,
+                    (lambda: interrupt(clock[0])) if interrupt else None, idle_timeout=idle)
+            except (subprocess.TimeoutExpired, bounded_execution.EngineInterrupted) as exc:
+                result = exc
+        return result, clock[0], killed, process
+
+    def test_progress_past_idle_bound_can_finish_or_reach_total_bound(self):
+        result, elapsed, killed, _ = self.wait(total=1380, idle=600, lines=(500, 1000), finish=1200)
+        self.assertIsInstance(result, subprocess.CompletedProcess)
+        self.assertEqual(elapsed, 1200)
+        self.assertEqual(killed, [])
+        result, elapsed, killed, process = self.wait(total=1380, idle=600, lines=(500, 1000))
+        self.assertIs(type(result), subprocess.TimeoutExpired)
+        self.assertEqual(elapsed, 1380)
+        self.assertEqual(killed, [process])
+
+    def test_silence_kills_the_group_at_idle_bound_with_a_long_total(self):
+        result, elapsed, killed, process = self.wait(total=1380, idle=600)
+        self.assertIsInstance(result, bounded_execution._IdleTimeoutExpired)
+        self.assertEqual(elapsed, 600)
+        self.assertEqual(killed, [process])
+
+    def test_stop_and_shared_deadline_take_precedence_and_kill_at_the_next_poll(self):
+        for reason in ('stopped', 'deadline_exceeded'):
+            with self.subTest(reason=reason):
+                result, elapsed, killed, process = self.wait(total=1380, idle=600,
+                    interrupt=lambda now: reason if now >= 1 else None)
+                self.assertIsInstance(result, bounded_execution.EngineInterrupted)
+                self.assertEqual(result.reason, reason)
+                self.assertEqual(elapsed, 1)
+                self.assertEqual(killed, [process])
+
+    def test_total_bound_and_idle_bound_have_distinct_owner_errors(self):
+        from personal_agent.agent_runtime import WorkBudget
+        for seconds, idle in ((1500, False), (1500, True), (45, False), (None, False)):
+            with self.subTest(seconds=seconds, idle=idle), tempfile.TemporaryDirectory() as folder:
+                caps = _Capabilities()
+                if seconds is not None:
+                    caps.budget = WorkBudget(seconds=seconds, clock=lambda: 0)
+
+                def runner(argv, **kwargs):
+                    total = 600 if seconds is None else bounded_execution.worker_turn_seconds(seconds)
+                    self.assertEqual(kwargs['timeout'], total)
+                    error = bounded_execution._IdleTimeoutExpired if idle else subprocess.TimeoutExpired
+                    raise error(argv, 600 if idle else total)
+
+                adapter = BoundedExecutionAdapter(finder=lambda name: '/runtime/' + name, runner=runner,
+                                                  runtime_root=folder, codex_home=folder)
+                with mock.patch.object(bounded_execution.time, 'monotonic', return_value=0), \
+                     self.assertRaises(ExecutionError) as caught:
+                    adapter.execute('codex', 'fixture prompt', AgentOSMcpTools(caps))
+                self.assertEqual(caught.exception.failure_class,
+                                 'deadline_exceeded' if seconds is not None and not idle else 'timeout')
+                self.assertIn('600초 동안 진행 출력이 없어' if idle else
+                              '이 작업의 실행 시간이 다 되어' if seconds is not None else '실행 제한 시간 600초',
+                              str(caught.exception))
+
+    def test_a_short_budget_splits_the_rest_with_the_closing_judgment(self):
+        """#927: the closing reserve never leaves a budgeted turn a useless second."""
+        for remaining, expected in ((1500, 1380), (240, 120), (100, 50), (1, 1)):
+            with self.subTest(remaining=remaining):
+                self.assertEqual(bounded_execution.worker_turn_seconds(remaining), expected)
+
+    def test_setup_and_retry_share_the_bridge_end(self):
+        from personal_agent.agent_runtime import WorkBudget
+        clock, timeouts = [0.0], []
+        with tempfile.TemporaryDirectory() as folder:
+            caps = _Capabilities()
+            caps.budget = WorkBudget(seconds=1500, clock=lambda: clock[0])
+
+            def runner(argv, **kwargs):
+                args = json.loads((Path(kwargs['cwd']) / 'agentos-mcp.json').read_text())['mcpServers']['agentos']['args']
+                self.assertIn('--turn-deadline=2380.0', args)
+                timeouts.append(kwargs['timeout'])
+                clock[0] += 2
+                if len(timeouts) == 1:
+                    return subprocess.CompletedProcess(argv, 1, '', 'stream-json unsupported')
+                return subprocess.CompletedProcess(argv, 0, json.dumps({'result': 'answer'}), '')
+
+            adapter = BoundedExecutionAdapter(finder=lambda name: '/runtime/' + name, runner=runner,
+                                              runtime_root=folder, codex_home=folder)
+            command = adapter.command
+
+            def construct(*args, **kwargs):
+                clock[0] += 3  # launch preparation uses the same total allowance
+                return command(*args, **kwargs)
+
+            with mock.patch.object(bounded_execution.time, 'time', return_value=1000.0), \
+                 mock.patch.object(bounded_execution.time, 'monotonic', side_effect=lambda: clock[0]), \
+                 mock.patch.object(adapter, 'command', side_effect=construct), \
+                 mock.patch.object(adapter, '_stream_input_rejected', return_value=True):
+                adapter.execute('claude-code', 'fixture prompt', AgentOSMcpTools(caps))
+        self.assertEqual(timeouts, [1377, 1375])
+
+    def test_real_stdout_resets_idle_but_stderr_and_partial_stdout_do_not(self):
+        from personal_agent.agent_runtime import WorkBudget
+        import signal
+        for output in ('stdout', 'stderr', 'partial', 'total'):
+            with self.subTest(output=output), tempfile.TemporaryDirectory() as folder:
+                caps = _Capabilities()
+                caps.budget = WorkBudget(seconds=2 if output == 'total' else 130)
+                target = 'sys.stderr' if output == 'stderr' else 'sys.stdout'
+                ending = "''" if output == 'partial' else "'\\n'"
+                script = (f'import sys,time\nfor _ in range(12):\n print(\'{{"type":"thread.started"}}\', file={target}, end={ending}, flush=True)\n time.sleep(0.1)\n'
+                          'print(\'{"type":"item.completed","item":{"type":"agent_message","text":"answer"}}\', flush=True)')
+                adapter = BoundedExecutionAdapter(finder=lambda name: os.sys.executable,
+                                                  runtime_root=folder, codex_home=folder)
+                with mock.patch.object(adapter, 'command', return_value=[os.sys.executable, '-c', script]), \
+                     mock.patch.object(adapter, 'environment', return_value=dict(os.environ)), \
+                     mock.patch.object(bounded_execution, 'MAX_TIMEOUT_SECONDS', 0.6), \
+                     mock.patch.object(bounded_execution, 'TURN_CLOSING_RESERVE_SECONDS', 1), \
+                     mock.patch.object(bounded_execution.os, 'killpg', wraps=os.killpg) as kill:
+                    if output == 'stdout':
+                        self.assertEqual(adapter.execute('codex', 'fixture prompt', AgentOSMcpTools(caps)).content, 'answer')
+                        kill.assert_not_called()
+                    else:
+                        with self.assertRaises(ExecutionError) as caught:
+                            adapter.execute('codex', 'fixture prompt', AgentOSMcpTools(caps))
+                        self.assertEqual(caught.exception.failure_class, 'deadline_exceeded' if output == 'total' else 'timeout')
+                        self.assertEqual(kill.call_count, 1)
+                        self.assertEqual(kill.call_args.args[1], signal.SIGKILL)
+
+
 class BoundedExecutionTests(unittest.TestCase):
     def test_mcp_facade_exposes_only_agentos_allowlist(self):
         caps=_Capabilities(); tools=AgentOSMcpTools(caps)
@@ -169,21 +318,22 @@ class BoundedExecutionTests(unittest.TestCase):
                         args = config['mcpServers']['agentos']['args']
                         deadline = float(next(arg.split('=', 1)[1] for arg in args if arg.startswith('--turn-deadline=')))
                         self.assertGreaterEqual(deadline, now)
-                        self.assertLessEqual(deadline, now + bounded_execution.MAX_TIMEOUT_SECONDS)
-                        self.assertEqual(deadline, now + min(600, seconds if seconds is not None else 600))
+                        total = 600 if seconds is None else bounded_execution.worker_turn_seconds(seconds)
+                        self.assertEqual(deadline, now + total)
                         if engine == 'codex':
                             encoded = next(arg.split('=', 1)[1] for arg in argv if arg.startswith('mcp_servers.agentos.args='))
                             self.assertEqual(json.loads(encoded), args)
                         else:
                             self.assertEqual(Path(argv[argv.index('--mcp-config') + 1]), Path(kwargs['cwd']) / 'agentos-mcp.json')
-                        self.assertEqual(kwargs['timeout'], 600 if seconds is None else max(1, min(600, int(seconds))))
+                        self.assertEqual(kwargs['timeout'], total)
                         text = (json.dumps({'type': 'item.completed', 'item': {'type': 'agent_message', 'text': 'fixture answer'}})
                                 if engine == 'codex' else json.dumps({'result': 'fixture answer'}))
                         return subprocess.CompletedProcess(argv, 0, text, '')
 
                     adapter = BoundedExecutionAdapter(finder=lambda name: '/runtime/' + name, runner=runner,
                                                       runtime_root=Path(folder) / 'turns', codex_home=Path(folder))
-                    with mock.patch.object(bounded_execution.time, 'time', return_value=now):
+                    with mock.patch.object(bounded_execution.time, 'time', return_value=now), \
+                         mock.patch.object(bounded_execution.time, 'monotonic', return_value=0):
                         adapter.execute(engine, 'fixture prompt', AgentOSMcpTools(caps))
 
     def test_work_route_passes_the_owners_model_on_both_clis(self):
@@ -872,7 +1022,8 @@ class BoundedExecutionPreservedBoundaryTests(unittest.TestCase):
                 stdout = json.dumps({'result': 'ok'})
             return Done()
 
-        with tempfile.TemporaryDirectory() as folder:
+        with tempfile.TemporaryDirectory() as folder, \
+             mock.patch.object(bounded_execution.time, 'monotonic', return_value=0):
             self._adapter(folder, runner).execute(
                 'claude-code', 'hello', AgentOSMcpTools(_Capabilities()))
         self.assertEqual(seen['kwargs']['timeout'], bounded_execution.MAX_TIMEOUT_SECONDS)

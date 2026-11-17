@@ -1134,7 +1134,7 @@ def proposal_html(shown, remaining, home_zone=None):
         block.append(msg('preparations.proposal_brief_html', goal=escape(brief_preview(row))))
         parts.append('\n'.join(block))
     if remaining:
-        parts.append(escape(MORE_TEXT.format(remaining=remaining)))
+        parts.append(escape(msg('preparations.more_proposals', remaining=remaining)))
     if single and not shown[0].get('offer_text'):
         parts.append(escape(PROPOSAL_QUESTION))
     return '\n\n'.join(parts)
@@ -1145,7 +1145,6 @@ PROPOSAL_HEADER = msg('preparations.shall_i_schedule_the_following_preparation')
 PROPOSAL_QUESTION = msg('preparations.proposal_question')
 #: #393: the label of the run's brief under an offer.
 BRIEF_LABEL = msg('preparations.brief_label')
-MORE_TEXT = '그 밖의 제안 {remaining}개는 이 메시지로 수락되지 않습니다. "예약 보여줘"처럼 대화로 확인하고 수락할 수 있어요.'
 #: One Telegram proposal message stays well under Telegram's 4096 characters.
 PROPOSAL_TEXT_LIMIT = 3500
 
@@ -1173,7 +1172,7 @@ def proposal_text(shown, remaining, home_zone=None):
     parts = ([] if single else [PROPOSAL_HEADER]) + [proposal_summary(row, home_zone) for row in shown]
     text = ('\n\n' if any(offered(row) for row in shown) else '\n').join(parts)
     if remaining:
-        text += '\n' + MORE_TEXT.format(remaining=remaining)
+        text += '\n' + msg('preparations.more_proposals', remaining=remaining)
     if single and not shown[0].get('offer_text'):
         text += '\n\n' + PROPOSAL_QUESTION
     return text

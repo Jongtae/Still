@@ -53,7 +53,7 @@ from . import trust_record
 from .prompt_files import prompt
 from .conversation_projection import earlier_turn_line, earlier_turns_in
 from .agent_runtime import (BUDGET_CODES, BUDGET_TEXTS, CURRENT_CONTEXT_FACT_CHARS, PROFILE_FACT_CHARS, GOAL_CONVERSATION_CHARS, MAX_PLAN_READING_CHARS,
-                            budget_stop_code, owner_context_fact, second_judgment_allowed)
+                            budget_stop_code, owner_context_fact, second_judgment_allowed, split_entrusted)
 from .current_context import without_moving_clock
 from .api_requests import CONTEXT_LINE as API_SLOTS_LINE
 from .information_use import BROWSER_SIGNINS_PREFIX
@@ -1133,11 +1133,16 @@ class Orchestration:
         """#501: ``(current_context, connections)`` as the plan call reads them: the current-context
         section redacted, its route lines (``ROUTE_LINE_PREFIXES``) taken out whole into ``connections``,
         and each cut to its own bound.  The worker's section is unchanged."""
-        lines = self._redact(self.sections.get('current_context') or '').split('\n')
+        # #937: the entrusted-work line is read as its own fact (``_entrusted_fact``).
+        lines = split_entrusted(self._redact(self.sections.get('current_context') or ''))[0].split('\n')
         routes = [line for line in lines if line.startswith(ROUTE_LINE_PREFIXES)]
         rest = '\n'.join(line for line in lines if not line.startswith(ROUTE_LINE_PREFIXES))
         return (rest[:CURRENT_CONTEXT_FACT_CHARS] or 'none',
                 '\n'.join(routes)[:CONNECTIONS_FACT_CHARS] or 'none')
+
+    def _entrusted_fact(self):
+        """#937: the continuing responsibilities the owner entrusted to the assistant, or 'none'."""
+        return split_entrusted(self._redact(self.sections.get('current_context') or ''))[1] or 'none'
 
     def _attempts_text(self):
         if not self.history:
@@ -1183,6 +1188,7 @@ class Orchestration:
                  'owner_profile': profile,
                  'current_context': current,
                  'connections': connections,
+                 'entrusted_work': self._entrusted_fact(),
                  # Redacted before it is cut, so a cut never leaves part of a secret (#740 review).
                  'recent_conversation': self._redact(self.conversation)[-CONVERSATION_CHARS:] or 'none',
                  'continues': self._continues_text(),

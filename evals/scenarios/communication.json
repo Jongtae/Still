@@ -1,0 +1,62 @@
+[
+  {
+    "id": "communication-minutes-from-notes",
+    "title": "Notes turned into minutes take the form minutes have",
+    "split": "dev",
+    "turns": [
+      {"say": "오늘 회의 메모인데 회의록으로 정리해줘. 참석: 김지원, 박서준, 나. 다음 달 런칭 일정 2주 미루기로 함. 이유는 결제 모듈 QA 남음. 박서준이 금요일까지 QA 일정 다시 잡기로. 마케팅 문구는 김지원이 수요일까지 초안. 다음 회의 목요일 오후 3시."}
+    ],
+    "rubric": ["reader_form", "honest_unverified"],
+    "expect": {"readable": true},
+    "good_secretary": "Writes minutes in their usual form: a meeting line with today's date, attendees, decisions (launch moved two weeks, with the reason), action items with owner and due day, and the next meeting. It adds no decision or person that is not in the notes, leaves out what the notes do not say (such as the meeting's title) or marks it, instead of inventing it, and puts at most one short line around the minutes.",
+    "tags": ["communication", "document-form", "onet-31.0-gwa:4.A.3.b.6"]
+  },
+  {
+    "id": "communication-client-apology-mail-draft",
+    "title": "A mail to a client in the owner's name takes the client's register, not the chat voice",
+    "split": "dev",
+    "turns": [
+      {"say": "거래처 한빛상사 최민호 부장님께 보낼 메일 초안 써줘. 원래 이번 주 금요일 납품인데 부품 수급 때문에 다음 주 수요일로 늦어진다고. 미안한 마음 담아서."}
+    ],
+    "rubric": ["reader_form", "conversational"],
+    "expect": {"readable": true},
+    "good_secretary": "Gives a ready-to-send business mail in formal Korean (합니다체) with a subject line, a proper address to 최민호 부장님, a clear apology, the new date and reason, and a closing, without inventing compensation or details the owner did not give. Anything said to the owner around the draft stays short, in the usual chat voice, and does not mix the two registers inside the draft.",
+    "tags": ["communication", "other-reader", "onet-31.0-gwa:4.A.4.a.3"]
+  },
+  {
+    "id": "communication-weekly-status-report",
+    "title": "A weekly report to a manager leads with status and asks",
+    "split": "dev",
+    "turns": [
+      {"say": "팀장님께 보낼 주간 보고 써줘. 이번 주: 신규 가입 흐름 개편 80% 완료, 로그인 오류 3건 중 2건 수정, 디자인 리뷰 1회. 다음 주: 개편 마무리, 남은 오류 1건. 이슈: 외부 인증 업체 응답이 늦어서 남은 오류가 막혀 있음, 팀장님이 업체에 한 번 연락해주시면 좋겠음."}
+    ],
+    "rubric": ["reader_form", "honest_unverified"],
+    "expect": {"readable": true},
+    "good_secretary": "Writes a short status report a manager can read in a minute: done this week, next week, and the blocker with the one concrete ask (contact the vendor) stated plainly near the top or in its own section. Polite report register suitable for a manager, the owner's numbers kept exactly, nothing added.",
+    "tags": ["communication", "document-form", "onet-31.0-gwa:4.A.4.a.2"]
+  },
+  {
+    "id": "communication-field-term-plain-words",
+    "title": "A question about field terms is answered in plain words",
+    "split": "dev",
+    "turns": [
+      {"say": "ETF 고를 때 총보수랑 실부담비용이 다르다던데 뭐가 다른 거야? 뭘 보면 돼?"}
+    ],
+    "rubric": ["reader_form", "specific_sourced", "honest_unverified"],
+    "expect": {"readable": true},
+    "good_secretary": "Answers first in one or two plain sentences (what each cost covers and which one reflects what the owner actually pays), then explains any further term it uses, says where to find the figure (with a source), and keeps it to about one phone screen.",
+    "tags": ["communication", "plain-words", "onet-31.0-gwa:4.A.4.a.1"]
+  },
+  {
+    "id": "communication-landlord-request-heldout",
+    "title": "A message to a landlord in the owner's name is polite and concrete",
+    "split": "heldout",
+    "turns": [
+      {"say": "집주인한테 보낼 문자 써줘. 화장실 환풍기가 2주째 안 돌아가서 수리 요청하고 싶어. 평일 저녁이나 토요일 오전에 방문 가능해."}
+    ],
+    "rubric": ["reader_form", "conversational"],
+    "expect": {"readable": true},
+    "good_secretary": "Gives a short, polite text message a tenant would send a landlord: the problem and how long it has lasted, the request for repair, and the available visit times, in a courteous register that fits a text message (not a formal letter and not the chat voice). Invents no unit number or name.",
+    "tags": ["communication", "other-reader", "atus-2025:0902", "onet-31.0-gwa:4.A.4.a.3"]
+  }
+]
