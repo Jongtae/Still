@@ -2298,11 +2298,12 @@ class PreparationsService:
         service=self.service
         try:
             briefs=[brief for brief in service.lines.lines() if not self.waiting_line(brief)]
-            text=el.held_text(briefs)
+            # Each whole field is redacted before it is cut (#937 review).
+            text=el.held_text(briefs,lambda value:redact_known_secrets(service.store,value))
         except Exception:
             LOG.warning('entrusted lines unavailable for the turn context')
             return None
-        return redact_known_secrets(service.store,text) if text else None
+        return text or None
 
     def line_note(self, job):
         """A changed brief for a running line's next step, once per change, or None.

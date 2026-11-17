@@ -393,18 +393,20 @@ INDEX_HEADING = ('## Entrusted lines (continuing work the owner entrusted to you
 INDEX_ITEMS, INDEX_TASK_CHARS = 12, 120
 
 
-def held_text(briefs):
+def held_text(briefs, clean=lambda text: text):
     """#937: one line naming the active lines in ``briefs`` (task and open matters, bounded), or ''.
 
     Every route of a conversational turn reads it in its current context, so a message about one of
     these responsibilities is read as the assistant's own work.  Stopped lines are left out.
+    ``clean`` (stored-secret redaction) runs on each whole field before any cut, so a cut never
+    leaves part of a secret behind.
     """
     items = []
     for brief in briefs:
         if brief.get('state') != STATE_ACTIVE or len(items) >= HELD_LIMIT:
             continue
-        task = ' '.join(str(brief.get('task') or '').split())[:HELD_TASK_CHARS]
-        open_matters = ' '.join(str(brief.get('open_matters') or '').split())[:HELD_OPEN_CHARS]
+        task = ' '.join(str(clean(str(brief.get('task') or '')) or '').split())[:HELD_TASK_CHARS]
+        open_matters = ' '.join(str(clean(str(brief.get('open_matters') or '')) or '').split())[:HELD_OPEN_CHARS]
         if task:
             items.append(f'{len(items) + 1}) {task}' + (f' (open: {open_matters})' if open_matters else ''))
     if not items:

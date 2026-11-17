@@ -13,6 +13,7 @@ from personal_agent.agent_runtime import CURRENT_CONTEXT_FACT_CHARS, owner_conte
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_entrusted_lines_798 import TASK, _LineCase  # noqa: E402
+from test_preparations import SECRET  # noqa: E402
 
 CATALOGUE = json.loads((Path(__file__).resolve().parents[1] / 'evals/judgments/cases-v1.json').read_text())['catalogue']
 
@@ -36,6 +37,16 @@ class HeldTextTests(unittest.TestCase):
         many = el.held_text([brief('x' * 400, open_matters='y' * 400) for _ in range(9)])
         self.assertLessEqual(len(many), el.HELD_CHARS)
         self.assertNotIn(f'{el.HELD_LIMIT + 1})', many)
+
+
+    def test_redaction_runs_on_the_whole_field_before_the_cut(self):
+        secret = 'Zq8vR2mXw4Lp9tNc7bYk'
+        task = 'f' * (el.HELD_TASK_CHARS - 15) + ' ' + secret
+        cut_after = el.held_text([brief(task)])
+        self.assertIn(secret[:14], cut_after)  # the unredacted cut keeps a fragment: the hazard
+        text = el.held_text([brief(task, open_matters='ask ' + secret)], lambda value: value.replace(secret, '[secret]'))
+        for size in range(6, len(secret) + 1):
+            self.assertNotIn(secret[:size], text)
 
 
 class FactTests(unittest.TestCase):
@@ -64,6 +75,18 @@ class FactTests(unittest.TestCase):
 
 
 class TurnContextTests(_LineCase):
+    def test_a_stored_secret_in_a_brief_is_redacted_before_any_cut(self):
+        # The fixture's stored Telegram token, placed so the task cut would split it.
+        secret = SECRET
+        brief_ = {'line_id': 'l1', 'state': el.STATE_ACTIVE, 'open_matters': '',
+                  'task': 'f' * (el.HELD_TASK_CHARS - 15) + ' ' + secret}
+        self.service.lines.lines = lambda: [brief_]
+        self.service.preparations_service.waiting_line = lambda brief: False
+        text = self.service.preparations_service.held_lines_text()
+        self.assertTrue(text.startswith(el.HELD_PREFIX))
+        for size in range(6, len(secret) + 1):
+            self.assertNotIn(secret[:size], text)
+
     def test_a_later_message_carries_the_open_line_and_a_stopped_line_is_gone(self):
         line, _ = self.open_line(schedule=False)
         text = self.service.current_context_text({'id': 'probe'})
