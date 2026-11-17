@@ -149,9 +149,17 @@ def marked_lines(sources, values, label):
         lines += [f'  {url}' for url in shown[:SOURCE_URLS_SHOWN]]
         if len(shown) > SOURCE_URLS_SHOWN:
             lines.append('  ' + msg('write_allowances.sources_more', count=len(shown) - SOURCE_URLS_SHOWN))
-    for name, value in (values or {}).items():
+    lines += [line for line in value_lines(values).splitlines() if line.partition(': ')[2] not in label]
+    return '\n'.join(lines)
+
+
+def value_lines(values):
+    """``values`` as ``name: value`` lines an owner can read (#945); a nested value stays exact JSON."""
+    lines = []
+    for name in sorted(values or {}):
+        value = values[name]
         text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, sort_keys=True)
-        if text and text not in label:
+        if text != '':
             lines.append(f'{name}: {text}')
     return '\n'.join(lines)
 
