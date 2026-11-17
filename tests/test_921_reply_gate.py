@@ -126,6 +126,23 @@ class ReplyGate(Harness):
         self.assertNotIn(self.row['id'], dispatched[0])
         self.assertEqual(self.service.work_information_use(job)['sent_to']['judgment_ai']['calls'], 2)
 
+    def test_direct_reply_plan_selector_survives_acceptance_and_drives_the_gate(self):
+        """A direct-reply plan's recall_query reaches the gate's refresh through plan parsing and acceptance."""
+        self.script([reply('needle')], goals=[True])
+        def added(run):
+            self.assertEqual(run.attempt.reply, 'DIRECT')
+            self.assertEqual(run.attempt.recall_query, 'needle')
+            self.save()
+        with self.after_plan(added), mock.patch.object(
+                self.service, 'recall_selector', wraps=self.service.recall_selector) as selector:
+            job, result, builds, _, _ = self.run_checked('request')
+        gate_calls = [call for call in selector.call_args_list if call.kwargs.get('recall_query') == 'needle']
+        self.assertEqual(len(gate_calls), 1)
+        self.assertEqual(gate_calls[0].args[0], 'request')
+        self.assertEqual([b[0] for b in builds if b[1].get('consume') is False and b[0] != 'request'], ['needle request'])
+        self.withheld(job)
+        self.assertEqual(result['response'], 'cli answer')
+
     def test_new_older_record_withholds_and_sends_whole_record(self):
         record = self.save('diary.2000-01-01', 'needle\nThe substantive old record.')
         self.script([reply('needle')], goals=[True])
@@ -353,14 +370,3 @@ class Inventory(Harness):
         self.assertEqual([i['id'] for i in kept], [row['id']])
         self.assertEqual(kept[0]['line'], text.splitlines()[0])
         self.assertEqual(cut_profile_fact('no newline too long', limit_chars=2), ('', ()))
-
-
-def test_direct_reply_keeps_recall_query_for_the_gate():
-    """#921: a direct-reply plan still writes recall_query; the other text fields stay blank."""
-    from personal_agent import prompt_files
-    line = next(text for text in prompt_files.prompt('planner').split('\n') if text.startswith('Write the complete owner-facing reply'))
-    assert 'every other text field except recall_query as ""' in line
-    assert 'brief.notes, brief.lens, brief.needs and reason are ""' in line
-    assert 'Write recall_query as usual' in line
-    assert 'recall_query are ""' not in line
-    assert 'so Still can check' not in line  # the plan need not know about the gate
