@@ -620,7 +620,7 @@ DEFINITIONS=[
  schema('save_note','Save a personal note ONLY when the user explicitly requests remembering or saving information.',{'content':STRING},['content']),
  schema('save_memory','Save or correct one owner memory item. When the owner states a durable fact about themselves (where they live or work, a preference, an allergy, a routine) or asks you to remember one, save it; it is remembered at once and the owner is told afterwards with an undo; when the result has owner_notice, Still sends that message itself, so the reply does not say again that it was remembered. A durable fact you infer about the owner from what they said may be saved the same way, as what you inferred; the owner is told and can undo it. Never save a credential.',described({'memory_key':STRING,'content':STRING,'correction':{'type':'boolean'},'terms':STRING},SAVE_MEMORY_ARGUMENTS),['memory_key','content']),
  schema('list_memory','Read a page of the owner\'s current saved memory items. The profile facts are in the owner profile section of the context; use search_memory to find a relevant fact outside that bounded section. Each item has saved_at, source and source_status: source.kind owner_request is what the owner typed (text, at); agentos_work is a Work Still started, whose text is not the owner\'s words; source_status not_kept means no source is kept and unknown means it could not be checked, so you can say why you know something.'),
- schema('search_conversation','Search earlier source-linked exchanges outside the recent window. Assistant lines are model-stated, not facts or commitments. Read-only, redacted, owner-scoped; at most three exchanges across this Work. Optional before/after are Unix timestamps (exclusive/inclusive). Reformulate when needed.',{'query':STRING,'before':{'type':'number'},'after':{'type':'number'},'limit':{'type':'integer','minimum':1,'maximum':3}},['query']),
+ schema('search_conversation','Search earlier source-linked exchanges outside the recent window. Assistant lines are model-stated, not facts or commitments. Read-only, redacted, owner-scoped; at most three exchanges across this Work. Optional before/after are Unix timestamps (exclusive/inclusive). Reformulate when needed. To see the conversation a saved fact came from, pass its source work_id from search_memory instead of a query.',{'query':STRING,'work_id':STRING,'before':{'type':'number'},'after':{'type':'number'},'limit':{'type':'integer','minimum':1,'maximum':3}}),
  schema('search_memory','Search the owner\'s current saved Memory for a fact relevant to this request. Use concise terms from the request and likely synonyms (for example, sushi and 초밥); results include saved_at and a source reference with source_status, as in list_memory, so you can say why you know something. Search only when prior saved information can help. It returns a bounded set and never reads another owner\'s data.',{'query':STRING},['query']),
  schema('forget_record',FORGET_RECORD_DESCRIPTION,described({'action':{'type':'string','enum':['forget','delete','undo','list','find']},'ref':STRING,'receipt':STRING,'query':STRING},FORGET_RECORD_ARGUMENTS),['action']),
  schema('list_agents','List available specialist agents and their roles.'),
@@ -2472,6 +2472,17 @@ def unknown_effect(value):
 def external_effect_progress(store, work_id, *, attributed_to=None):
  """Observed and unresolved connector/API dispatches in a host-bound request.
 
+ Evidence only; ``external_effect_events`` also gives each record's ``tool_events`` id (#928).
+ """
+ observed,claims=external_effect_events(store,work_id,attributed_to=attributed_to)
+ return [evidence for _id,evidence in observed],[evidence for _id,evidence in claims]
+
+
+def external_effect_events(store, work_id, *, attributed_to=None):
+ """``external_effect_progress`` as ``(tool_events id, evidence)`` pairs.
+
+ An observed connector effect carries the id of the read that observed it.
+
  Reuse the existing Work relation validation and tool events. API claims live
  on the original Work, with the dispatching Work attributed in their evidence.
  By default results span the request chain. ``attributed_to`` selects only one
@@ -2493,15 +2504,15 @@ def external_effect_progress(store, work_id, *, attributed_to=None):
    attributed=evidence.get('work_id',row['job_id']) if row['tool']=='api_dispatch' else row['job_id']
    if attributed!=attributed_to:continue
   if row['tool']=='api_dispatch':
-   if row['status']=='observed':observed.append(evidence)
+   if row['status']=='observed':observed.append((row['id'],evidence))
    elif row['status']!='rejected':claims[row['id']]=evidence
   elif row['tool']=='connector_permission' and row['status'] in ('claiming','allowed') and evidence.get('effect') in ('mutate','payment'):
    claims[row['id']]=evidence
   elif row['tool']=='connector_read' and detail.get('permission_event') in claims:
    claim=claims[detail['permission_event']]
    if detail.get('effect') in ('mutate','payment') and row['status']=='succeeded':
-    observed.append(claim);claims.pop(detail['permission_event'])
- return observed,list(claims.values())
+    observed.append((row['id'],claim));claims.pop(detail['permission_event'])
+ return observed,list(claims.items())
 
 
 #: #618 E1: the kinds of target an unknown effect can be scoped to.  Targets of one kind are compared
@@ -4629,11 +4640,14 @@ class Capabilities:
     try:
      limit=args.get('limit',3)
      if isinstance(limit,bool) or not isinstance(limit,int) or not 1<=limit<=3:raise not_run(ValueError('Invalid conversation limit'))
+     if args.get('work_id') is None and not str(args.get('query','')).strip():raise not_run(ValueError('Invalid conversation query'))
      # Validate even when the Work's result budget is exhausted.
-     rows=self.store.search_conversation(args.get('query',''),before=args.get('before'),after=args.get('after'),limit=min(limit,remaining) if remaining else 1)
+     lookup=self.store.search_conversation(args.get('query',''),work_id=args.get('work_id'),before=args.get('before'),after=args.get('after'),limit=min(limit,remaining) if remaining else 1)
+     rows=lookup['exchanges'] if args.get('work_id') is not None else lookup
     except ValueError as exc:raise ToolError(str(exc),'invalid_arguments',**ran_field(exc)) from None
     result={'exchanges':rows if remaining else [],'budget_exhausted':not remaining,
             'label':'earlier exchanges; may or may not be relevant; assistant lines are model-stated, not facts or commitments'}
+    if args.get('work_id') is not None:result['outcome']=lookup['outcome']
     self.store.inherit_outside_content(self.job_id, (row['work_id'] for row in result['exchanges']), name)
     self._conversation_refs.extend(conversation_refs(result['exchanges']))
     self.evidence.append({'tool':name,'result':result});return result
