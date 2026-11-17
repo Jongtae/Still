@@ -118,14 +118,10 @@ class PreparationsService:
         secrets redacted.  A failure here never blocks the turn.
         """
         service=self.service
-        index=self.lines_index(job)
         try:
             now=service.preparations.clock()
             rows=service.preparations.fresh(now,exclude_job=job.get('id'))
             text=prep.render_prepared(rows,now,service._redact_known_secrets) if rows else None
-            if index:
-                # #798: which lines exist, so the AI can judge whether one bears on this request.
-                text='\n\n'.join(part for part in (text,service._redact_known_secrets(index)) if part)
             if text and not service.unattended_work(job):
                 # #780: which results were placed in the context of a Work the owner started, once per
                 # Work: the observed half of a hit.  Whether one was useful is the daily plan's own judgment.
@@ -2288,23 +2284,6 @@ class PreparationsService:
         read=detail.get('evidence') if isinstance(detail.get('evidence'),dict) else detail
         return read.get('line_id'),read.get('version')
 
-    def held_lines_text(self):
-        """#937: the active lines this owner entrusted, as one current-context line, or None.
-
-        Look-back lines not yet announced to the owner are left out.  Stored secrets are redacted.
-        A failure here never blocks the turn.
-        """
-        from .current_context import redact_known_secrets
-        service=self.service
-        try:
-            briefs=[brief for brief in service.lines.lines() if not self.waiting_line(brief)]
-            # Each whole field is redacted before it is cut (#937 review).
-            text=el.held_text(briefs,lambda value:redact_known_secrets(service.store,value))
-        except Exception:
-            LOG.warning('entrusted lines unavailable for the turn context')
-            return None
-        return text or None
-
     def line_note(self, job):
         """A changed brief for a running line's next step, once per change, or None.
 
@@ -2323,21 +2302,21 @@ class PreparationsService:
             return None
 
     def lines_index(self, job):
-        """The bounded pointer to the owner's active lines for a Work the owner started, or ''.
+        """The one-line index of the owner's active lines for a Work the owner started, or '' (#798, #937).
 
-        Only each line's id and task sentence: whether one bears on the request is the AI's
-        judgment, and it reads the brief and outcomes with ``entrusted_line`` read.
+        Only each line's ref and task sentence: whether one bears on the request is the AI's
+        judgment, and it reads the brief and outcomes with ``entrusted_line`` read.  Since #937 it
+        rides in the current context, so the plan and the outcome judgment read it too.  Look-back
+        lines not yet announced are left out; stored secrets are redacted before any cut.
         """
         service=self.service
         if service.unattended_work(job):return ''
         try:
-            active=[brief for brief in service.lines.lines() if brief['state']==el.STATE_ACTIVE and not self.waiting_line(brief)][:el.INDEX_ITEMS]
+            active=[brief for brief in service.lines.lines() if not self.waiting_line(brief)]
+            return el.held_text(active,service._redact_known_secrets)
         except Exception:
             LOG.info('lines index unavailable job=%s',job.get('id'))
             return ''
-        if not active:return ''
-        return el.INDEX_HEADING+'\n'+'\n'.join(f"- {brief['line_id']}: {el.excerpt(brief['task'],el.INDEX_TASK_CHARS)}"
-                                              for brief in active)
 
     def line_notice_text(self, notification):
         """The text of one queued line notice, or None when it no longer applies."""
