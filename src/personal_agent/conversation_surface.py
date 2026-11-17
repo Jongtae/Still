@@ -287,6 +287,10 @@ def notice_binding(service, notification):
         memory_prompt = service.bind_memory_prompt(notification, time.time())
         return {'memory_prompt': memory_prompt} if memory_prompt else None
     if kind in MEMORY_SAVED_KINDS:
+        from . import memory_prompts
+        if not memory_prompts.MEMORY_SAVED_NOTICES:
+            # #955: one queued before the switch (or by an older version) is not sent; a sent one keeps its undo.
+            return None
         # #918: bound now to the Work's current saved facts; none left -> nothing to tell.
         memory_saved = service.bind_memory_saved(notification, time.time())
         return {'memory_saved': memory_saved} if memory_saved else None

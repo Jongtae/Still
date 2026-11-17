@@ -323,6 +323,30 @@
   "ja": "元に戻しました。",
   "zh": "已撤销。"
  },
+ "agent_runtime.memory_reverted": {
+  "ko": "저장한 값을 되돌리고 이전 값을 다시 쓰고 있어요.",
+  "en": "The saved value was undone and the earlier value is in use again.",
+  "ja": "保存した値を元に戻し、以前の値を再び使っています。",
+  "zh": "已撤销保存的值，并重新使用之前的值。"
+ },
+ "agent_runtime.memory_reverted_none": {
+  "ko": "저장한 값을 되돌렸어요. 이전 값은 없었어요.",
+  "en": "The saved value was undone; there was no earlier value.",
+  "ja": "保存した値を元に戻しました。以前の値はありませんでした。",
+  "zh": "已撤销保存的值；之前没有值。"
+ },
+ "agent_runtime.revert_ref_needed": {
+  "ko": "되돌릴 기억을 memory:<id>로 정확히 지정하세요 (list_memory나 search_memory로 찾아요).",
+  "en": "Name the memory to undo exactly as memory:<id> (find it with list_memory or search_memory).",
+  "ja": "元に戻す記憶を memory:<id> で正確に指定してください(list_memory か search_memory で探します)。",
+  "zh": "请用 memory:<id> 准确指定要撤销的记忆(可用 list_memory 或 search_memory 查找)。"
+ },
+ "agent_runtime.revert_not_current": {
+  "ko": "이 기억은 지금 쓰이는 값이 아니어서 되돌리지 않았어요. 이미 되돌렸거나 그 뒤에 바뀌었어요.",
+  "en": "That memory is not the value in use now, so nothing was undone; it was already undone or changed since.",
+  "ja": "この記憶は現在使われている値ではないため、元に戻しませんでした。すでに戻したか、その後変更されています。",
+  "zh": "该记忆不是当前使用的值，因此未撤销；它已被撤销或之后已更改。"
+ },
  "button.accept": {
   "ko": "수락",
   "en": "Accept",

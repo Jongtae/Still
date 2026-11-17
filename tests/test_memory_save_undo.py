@@ -661,6 +661,42 @@ class SaveAndTell(TelegramHarness):
         self.assertIn('M1234567', written)
 
 
+class NoticeOffByDefault(TelegramHarness):
+    """#955 (owner 2026-11-17, C5 as amended): no saved notice is sent; a save is undone exactly by asking."""
+
+    def test_a_notice_queued_before_the_switch_is_not_sent(self):
+        job_id = self.enqueue('난 판교에서 일해')
+        memory = self.store.save_memory(KEY, VALUE, MEMORY_OWNER, work_id=job_id)
+        job = self.store.job(job_id)
+        self.service.queue_notification(job, MEMORY_SAVED_KIND, fingerprint=json.dumps(
+            {'items': [[memory['id'], memory['content_digest']]], 'more': 0}))
+        before = len(self.sends())
+        self.service.deliver_notification()
+        self.assertEqual(len(self.sends()), before, 'an older queued saved notice is not sent')
+        self.assertEqual([row['state'] for row in self.notification(job_id, MEMORY_SAVED_KIND)], ['cancelled'])
+
+    def test_asking_undoes_a_save_and_brings_back_the_value_it_replaced(self):
+        from personal_agent.agent_runtime import ToolError
+        job_id = self.enqueue('직장 바뀌었어. 이제 분당이야')
+        caps = Capabilities(self.store, None, {}, '', job_id, lambda *a, **k: None)
+        first = caps.execute('save_memory', {'memory_key': KEY, 'content': VALUE})
+        second = caps.execute('save_memory', {'memory_key': KEY, 'content': VALUE + ' 분당'})
+        self.assertEqual([m['content'] for m in self.store.memories()], [VALUE + ' 분당'])
+        result = caps.execute('forget_record', {'action': 'revert', 'ref': f"memory:{second['id']}"})
+        self.assertEqual(result['restored'], f"memory:{first['id']}")
+        self.assertEqual([m['content'] for m in self.store.memories()], [VALUE])
+        with self.store.db() as db:
+            undo = [json.loads(row['detail']) for row in db.execute(
+                "SELECT detail FROM tool_events WHERE job_id=? AND tool='memory_undo'", (job_id,))]
+        self.assertEqual(len(undo), 1, 'the undo has its Evidence event')
+        for ref, code in ((f"memory:{second['id']}", 'memory_not_current'), ('state:x', 'invalid_arguments'),
+                          (None, 'invalid_arguments')):
+            with self.subTest(ref=ref), self.assertRaises(ToolError) as refused:
+                caps.execute('forget_record', {'action': 'revert', **({'ref': ref} if ref else {})})
+            self.assertEqual(refused.exception.code, code)
+        self.assertEqual([m['content'] for m in self.store.memories()], [VALUE], 'a refused revert changes nothing')
+
+
 class SecretsNeverEnterMemory(unittest.TestCase):
     """#918 review P1: a stored secret or a credential-shaped value is refused before any Memory write."""
 

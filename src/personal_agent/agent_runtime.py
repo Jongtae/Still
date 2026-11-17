@@ -155,7 +155,9 @@ FORGET_RECORD_DESCRIPTION=('Forget, completely delete or restore one item of wha
 FORGET_RECORD_ARGUMENTS={
  'action':('forget removes it from use now; Still keeps the record that the owner chose to forget it and the owner can undo it at any time; '
   'delete erases it now with no undo (use it only when the owner asks to erase it completely; a message is blanked); '
-  'undo restores one earlier forget by its receipt; list shows the forgets the owner can still undo, with what each covered; '
+  'undo restores one earlier forget by its receipt; '
+  'revert undoes one save of a Memory item (ref memory:<id>): that value leaves use and the value it replaced, if any, is current again - '
+  'use it when the owner asks to undo something you remembered or to go back to the earlier value; list shows the forgets the owner can still undo, with what each covered; '
   'find with a query lists conversation messages, newest first, including recent ones.'),
  'ref':('The exact item: memory:<id> (a working lesson ref in the owner profile or an id from list_memory or search_memory), state:<id> or obs:<id> (from the current context), '
   'or procedure:<id> (a saved function library listed with its secret set in the current context; '
@@ -649,7 +651,7 @@ DEFINITIONS=[
  schema('list_memory','Read a page of the owner\'s current saved memory items. The profile facts are in the owner profile section of the context; use search_memory to find a relevant fact outside that bounded section. Each item has saved_at, source and source_status: source.kind owner_request is what the owner typed (text, at); agentos_work is a Work Still started, whose text is not the owner\'s words; source_status not_kept means no source is kept and unknown means it could not be checked, so you can say why you know something.'),
  schema('search_conversation','Search earlier source-linked exchanges outside the recent window. Assistant lines are model-stated, not facts or commitments. Read-only, redacted, owner-scoped; at most three exchanges across this Work. Optional before/after are Unix timestamps (exclusive/inclusive). Reformulate when needed. To see the conversation a saved fact came from, pass its source work_id from search_memory instead of a query.',{'query':STRING,'work_id':STRING,'before':{'type':'number'},'after':{'type':'number'},'limit':{'type':'integer','minimum':1,'maximum':3}}),
  schema('search_memory','Search the owner\'s current saved Memory for a fact relevant to this request. Use concise terms from the request and likely synonyms (for example, sushi and 초밥); results include saved_at and a source reference with source_status, as in list_memory, so you can say why you know something. Search only when prior saved information can help. It returns a bounded set and never reads another owner\'s data.',{'query':STRING},['query']),
- schema('forget_record',FORGET_RECORD_DESCRIPTION,described({'action':{'type':'string','enum':['forget','delete','undo','list','find']},'ref':STRING,'receipt':STRING,'query':STRING},FORGET_RECORD_ARGUMENTS),['action']),
+ schema('forget_record',FORGET_RECORD_DESCRIPTION,described({'action':{'type':'string','enum':['forget','delete','undo','revert','list','find']},'ref':STRING,'receipt':STRING,'query':STRING},FORGET_RECORD_ARGUMENTS),['action']),
  schema('list_agents','List available specialist agents and their roles.'),
  schema('browser_open','Open a URL in the owner\'s own logged-in browser profile and return the page state: bounded visible text and a numbered list of interactive elements. Use for sites where the owner is signed in (shopping carts, account pages); public_page_read is enough for anonymous pages. A login_required state means the owner must log in first; never enter credentials. An element marked offscreen sits in a closed menu or panel and cannot be pressed yet: press the control that opens it first, or open its href with browser_open.',described({'url':STRING,'effect':BROWSER_EFFECT,'layout':{'type':'string','enum':['mobile','desktop']}},BROWSER_OPEN_ARGUMENTS),['url','effect']),
  schema('browser_read','Return the current page state of the owner\'s browser session again (visible text and numbered interactive elements), for example after the page changed. load_more (optional, 1-5): first scroll the page to its end up to that many times, for a list that adds rows only when scrolled; it stops early when nothing new appears and is bounded in time. The result then has loaded: rounds, why it stopped, new_content and the text that appeared (use browser_find to reach controls in the added rows). Scrolling never presses a control.',{'load_more':STRING}),
@@ -2981,8 +2983,8 @@ MEMORY_ASK_OWNER_TEXT=msg('agent_runtime.memory_ask_owner')
 #: #918 slice (a): what the worker reads for a ``save_memory`` the owner's worker saved at once.
 #: Truthful (remembered) and free of storage talk; the owner is told by Still, with undo.
 MEMORY_SAVED_WORKER_NOTE=('Remembered. In your reply, say in passing and in the owner\'s terms what you will keep in mind '
-                          '(part of the answer, not a separate "remembered" line), so they can correct it; they can also undo '
-                          'it in their records or by asking. Do not ask whether to remember it and do not describe how '
+                          '(part of the answer, not a separate "remembered" line), so they can correct it or ask you to undo '
+                          'it (forget_record revert). Do not ask whether to remember it and do not describe how '
                           'remembering works.')
 
 #: #999: owner messages handed to a running Work reach its worker with the next tool result.
@@ -4495,6 +4497,26 @@ class Capabilities:
    row['source_status']='found' if source else ('unknown' if failed else 'not_kept')
   return rows
 
+ def _revert_memory(self,ref):
+  """#955: undo one save by asking: retract the current row (its own digest) and restore what it superseded.
+
+  Exact like the #918 notice undo: the row must be the owner's and current, and the retraction and
+  its Evidence event are one transaction.  Returns ``{'ref', 'restored'}`` (the restored memory ref or None).
+  """
+  if not isinstance(ref,str) or not ref.startswith('memory:') or len(ref)<=len('memory:'):
+   raise not_run(ToolError(msg('agent_runtime.revert_ref_needed'),'invalid_arguments'))
+  memory_id=ref[len('memory:'):]
+  row=self.store.memory(memory_id,MEMORY_OWNER)
+  if not row or row.get('state')!='current':
+   raise not_run(ToolError(msg('agent_runtime.revert_not_current'),'memory_not_current'))
+  record={'job_id':self.job_id,'tool':'memory_undo','status':'recorded',
+          'detail':{'host_action':'memory_undo','evidence':{'id':memory_id,'memory_key':row.get('memory_key'),'asked':True}}}
+  try:receipt=self.store.retract_memory(MEMORY_OWNER,memory_id,row['content_digest'],record=record)
+  except ValueError:
+   raise not_run(ToolError(msg('agent_runtime.revert_not_current'),'memory_not_current')) from None
+  restored=(receipt.get('restored') or {}).get('id')
+  return {'ref':ref,'restored':f'memory:{restored}' if restored else None}
+
  @record_outside_result
  @refused_before_hand_off
  def execute(self,name,args):
@@ -4917,6 +4939,10 @@ class Capabilities:
     elif action=='undo':
      result={'action':'undo',**forget.undo(MEMORY_OWNER,args.get('receipt'))}
      result['message']=msg('agent_runtime.undone')
+    elif action=='revert':
+     # #955: the exact undo of a save (#918's retract_memory), reached by asking instead of by a notice.
+     result={'action':'revert',**self._revert_memory(args.get('ref'))}
+     result['message']=msg('agent_runtime.memory_reverted' if result['restored'] else 'agent_runtime.memory_reverted_none')
     elif action=='delete' and not args.get('ref') and args.get('receipt'):
      # #367 review P2: an item already forgotten is erased through its receipt (from list).
      result={'action':action,**forget.delete_forgotten(MEMORY_OWNER,args.get('receipt'))}
