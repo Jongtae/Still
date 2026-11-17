@@ -1707,21 +1707,7 @@ class BrowserSession:
         self._refuse_on_provider(snapshot)   # #636: before the target is even resolved
         element = resolve_target(snapshot, args.get('target'))
         key = target_key(element)
-        state = self._state_of(snapshot, element)
-        description = f"'{element.get('name') or element.get('role')}' 버튼 누르기"
-        if element.get('commit'):
-            # #758: the owner reads (and the approval binds) the purchase text that made it a
-            # commitment and what is around it, not only a possibly neutral accessible name.
-            matched, context = element.get('detail') or ('', '')
-            matched, context = scrub(matched)[0], scrub(context)[0]
-            state += '\n\x1ecommit ' + matched + '\n' + context
-            # The purchase text leads, so the owner reads it within the stored label's 120 characters.
-            name = str(element.get('name') or element.get('role') or '')
-            description = f"'{name[:40]}' 버튼 누르기"
-            if matched and matched != name:
-                description = f"결제 신호 '{matched[:50]}' · " + description
-            if context:
-                description += f' · {context[:80]}'
+        state, description = self._click_preview(snapshot, element)
         # #758: a control whose name commits a purchase needs approval whatever form it
         # is in (a stored payment method or a fetch charge leaves no card field to see).
         # #619: this deterministic floor, the payment form and the worker's ``payment``
@@ -1743,7 +1729,7 @@ class BrowserSession:
                 current_element = resolve_target(current, args.get('target'))
                 current_key = target_key(current_element)
                 current_binding = step_binding(self.work_id, 'browser_click', current['_page'],
-                                               current_key, current_key, self._state_of(current, current_element))
+                                               current_key, current_key, self._click_preview(current, current_element)[0])
                 if (current_binding != binding or current_element.get('commit') or
                         current_element.get('submit_guarded')):
                     raise ToolError(TARGET_TEXT, 'target_unavailable')
@@ -1773,6 +1759,33 @@ class BrowserSession:
             page['navigated'] = True
             self._last_input = None
         return self._with_dialogs(observe_step(page, answer, approved), answer)
+
+    def _click_preview(self, snapshot, element):
+        """Readable input and binding share one source, before secret redaction (#744)."""
+        state = self._state_of(snapshot, element)
+        name = str(element.get('name') or element.get('role') or '')
+        description = f"'{name}' 버튼 누르기"
+        if element.get('commit'):
+            matched, context = element.get('detail') or ('', '')
+            matched, context = scrub(matched)[0], scrub(context)[0]
+            state += '\n\x1ecommit ' + matched + '\n' + context
+            if matched and matched != name:
+                description = f"결제 신호 '{matched}' · " + description
+            if context:
+                description += f' · {context}'
+        forms = {element.get('form'), element.get('label_form')}
+        forms.update(row.get('form') for row in snapshot.get('_elements', ()) if row.get('payment'))
+        # Queries are readable here and bound too; page_reference alone drops them.
+        exact = json.dumps({'url': snapshot.get('_window_url') or snapshot['_page'],
+                            'target': target_key(element), 'state': state,
+                            'form_actions': {str(form): login_window_url(action)
+                                for form, action in snapshot.get('_form_actions', {}).items() if form in forms}},
+                           ensure_ascii=False, sort_keys=True, indent=2)
+        actions = '\n'.join(f'{form}: {login_window_url(action)}' for form, action in
+                            snapshot.get('_form_actions', {}).items() if form in forms)
+        return exact, msg('browser.click_preview', description=description,
+                          url=snapshot.get('_window_url') or snapshot['_page'],
+                          target=target_key(element), state=state, actions=actions)
 
     def _with_dialogs(self, page, answer):
         """#936: a page's own alert/confirm/prompt during the step, mediated like page text."""
