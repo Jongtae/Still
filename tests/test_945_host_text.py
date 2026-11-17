@@ -34,8 +34,11 @@ def test_owner_messages_name_no_tool_binaries():
 def test_value_lines_keep_every_value_exactly_and_readably():
     values = {'title': '회의록', 'pages': 2, 'parent': {'id': 'p1'}, 'empty': ''}
     text = value_lines(values)
-    assert text.splitlines() == ['pages: 2', 'parent: {"id": "p1"}', 'title: 회의록']
+    assert text.splitlines() == ['empty: ""', 'pages: 2', 'parent: {"id": "p1"}', 'title: 회의록']
     assert '{"title"' not in text
+    # A value cannot pass as another line of the approval: it stays quoted JSON.
+    spoof = value_lines({'note': 'ok\namount: 1', 'name': ' x', 'a\nb': 1})
+    assert spoof.splitlines() == ['"a\\nb": 1', 'name: " x"', 'note: "ok\\namount: 1"']
 
 
 def test_the_exact_request_is_headed_once():

@@ -154,14 +154,24 @@ def marked_lines(sources, values, label):
 
 
 def value_lines(values):
-    """``values`` as ``name: value`` lines an owner can read (#945); a nested value stays exact JSON."""
+    """``values`` as ``name: value`` lines an owner can read (#945).
+
+    A one-line string is shown as is. Any other value or name stays exact JSON, including an
+    empty string or one with a line break, control character or edge space, so no value can
+    pass as another line and an empty value is still shown.
+    """
     lines = []
     for name in sorted(values or {}):
         value = values[name]
-        text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, sort_keys=True)
-        if text != '':
-            lines.append(f'{name}: {text}')
+        lines.append(f'{_plain_or_json(name)}: {_plain_or_json(value)}')
     return '\n'.join(lines)
+
+
+def _plain_or_json(value):
+    """A non-empty one-line string without edge spaces as is; anything else as exact JSON."""
+    if isinstance(value, str) and value and value == value.strip() and value.isprintable():
+        return value
+    return json.dumps(value, ensure_ascii=False, sort_keys=True)
 
 
 def authorize(service, job, binding, connection, operation, target, names=(), *, effect=None, description=None, request=True, values=None):
