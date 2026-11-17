@@ -14,7 +14,7 @@ from unittest import mock
 from . import recall_pairs as pairs
 from .recall_regression import (FLAGS, TERMS_VERSION, PLAN_VERSION, Executor, fixture_scope,
     raw_row, digest, filter_digest, terms_prompt_digest, safe_catalogue, prompt_digest, layer, seed_fixture,
-    apply_terms, validate_terms, validate_plans, terms_status_counts)
+    apply_terms, validate_terms, validate_plans, terms_status_counts, load_recording)
 
 
 class RealClockEngine:
@@ -232,14 +232,14 @@ def load_inputs(args, data, order):
     resume_path = getattr(args,'resume',None)
     terms_path = getattr(args,'terms',None)
     if resume_path and not terms_path:
-        terms_path = Path(resume_path).with_name('terms.json')
-    terms = json.loads(Path(terms_path).read_text()) if terms_path else None
+        terms_path = Path(resume_path).with_name('terms.json.gz' if Path(resume_path).suffix == '.gz' else 'terms.json')
+    terms = load_recording(terms_path) if terms_path else None
     if terms is not None:
         validate_terms(terms,data)
         if (terms.get('complete') is not True or terms.get('tokens') != 'not observable'
                 or terms.get('evidence_class') == 'dry-run (no model call)'):
             raise ValueError('Reused terms must be complete with tokens not observable')
-    resume = json.loads(Path(resume_path).read_text()) if resume_path else None
+    resume = load_recording(resume_path) if resume_path else None
     if resume is not None:
         validate_plans(resume,data,terms)
         if resume['complete']:

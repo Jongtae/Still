@@ -1065,6 +1065,9 @@ def test_frontier_921_records_eval_only_regression():
         assert current['programs']['FRONTIER-01'][key][-1] == name
     assert name in current['history']['documented_completed_iterations']
     assert items['FRONTIER-01']['completed_substeps'][name]['status'] == 'complete-on-merge'
-    assert 'Model-free evidence only' in unit['summary']
+    recorded = ('The one approved live run was recorded: 204 calls on the subscription route, '
+                'no judge; results are on #921.')
+    assert recorded in unit['summary']
+    assert recorded in items['FRONTIER-01']['completed_substeps'][name]['decision']
     assert unit['summary'].endswith('Complete on the merge of its own PR.')
     assert '#921 PR-8 (FRONTIER-RECALL-REGRESSION-01) is selected' in current['next_goal']['action']

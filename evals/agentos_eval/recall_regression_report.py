@@ -6,7 +6,7 @@ from pathlib import Path
 from . import recall_pairs as pairs, recall_arms as arms
 from .recall_report import Arm, run_arm, _majority
 from .recall_regression import (digest, validate_plans, apply_terms, seed_fixture,
-    fixture_service, catalogue_from, Executor, replay_case, layer, terms_status_counts)
+    fixture_service, catalogue_from, Executor, replay_case, layer, terms_status_counts, load_recording)
 
 
 def facets(case):
@@ -205,7 +205,7 @@ def command(args):
     if folder.is_relative_to(REPO.resolve()):
         raise ValueError('Recall reports belong outside the repository')
     result = report(pairs.load(args.fixture),json.loads(args.additions.read_text()),
-        json.loads(args.terms.read_text()),json.loads(args.plans.read_text()),code_head=git_head())
+        load_recording(args.terms),load_recording(args.plans),code_head=git_head())
     folder.mkdir(parents=True,exist_ok=True)
     (folder/'recall-regression.json').write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
     (folder/'recall-regression.md').write_text(markdown(result))

@@ -1123,7 +1123,7 @@
         "FRONTIER-RECALL-REGRESSION-01": {
           "issue": 921,
           "status": "complete-on-merge",
-          "decision": "Owner-selected #921 PR-8 within #822 (spec v5 Regression inputs): eval-only v4 recall regression with guarded terms replay, the real executor gate and fixture workers, author facets and dev-only additions. Adapt the existing recall arms, recorder route, sandbox, shared CallCap and product inventory APIs; no src change, new dependency or default live call. Model-free evidence only; the explicit synthetic recorder is reserved for a separately approved live run. Complete on the merge of its own PR."
+          "decision": "Owner-selected #921 PR-8 within #822 (spec v5 Regression inputs): eval-only v4 recall regression with guarded terms replay, the real executor gate and fixture workers, author facets and dev-only additions. Adapt the existing recall arms, recorder route, sandbox, shared CallCap and product inventory APIs; no src change, new dependency or default live call. The one approved live run was recorded: 204 calls on the subscription route, no judge; results are on #921. Complete on the merge of its own PR."
         }
       }
     },
@@ -1588,7 +1588,7 @@
       "tests": [
         "PYTHONPATH=src:evals .venv/bin/python -m pytest -q tests/test_921_recall_regression.py tests/test_921_recall_regression_record.py tests/test_921_recall_regression_report.py tests/test_fresh_delivery_plan.py -p no:cacheprovider"
       ],
-      "summary": "Owner-selected #921 PR-8 within #822 (spec v5 Regression inputs): eval-only v4 recall regression with guarded terms replay, the real executor gate and fixture workers, author facets and dev-only additions. Adapt the existing recall arms, recorder route, sandbox, shared CallCap and product inventory APIs; no src change, new dependency or default live call. Model-free evidence only; the explicit synthetic recorder is reserved for a separately approved live run. Complete on the merge of its own PR.",
+      "summary": "Owner-selected #921 PR-8 within #822 (spec v5 Regression inputs): eval-only v4 recall regression with guarded terms replay, the real executor gate and fixture workers, author facets and dev-only additions. Adapt the existing recall arms, recorder route, sandbox, shared CallCap and product inventory APIs; no src change, new dependency or default live call. The one approved live run was recorded: 204 calls on the subscription route, no judge; results are on #921. Complete on the merge of its own PR.",
       "depends_on": []
     }
   ],

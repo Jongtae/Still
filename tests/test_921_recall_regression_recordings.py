@@ -1,33 +1,64 @@
-"""Validate committed inputs without replaying Works or calling a live engine."""
+"""Validate committed gzip inputs and replay only three cases, without live calls."""
 import json
 from pathlib import Path
 
 import pytest
 from agentos_eval import recall_pairs as pairs
-from agentos_eval.recall_regression import (layer,validate_terms,validate_plans,validate_recording_safety)
+from agentos_eval.recall_regression import (Executor, apply_terms, catalogue_from, fixture_service,
+    layer, load_recording, replay_case, seed_fixture, validate_terms, validate_plans, validate_recording_safety)
 from personal_agent.quickstart_store import QuickStore
 
 ROOT=Path(__file__).resolve().parents[1]
 RECORDINGS=ROOT/'evals/recall/recordings'
 
 
-def test_committed_recordings_are_complete_bound_and_synthetic(tmp_path,monkeypatch):
-    terms_path,plans_path=RECORDINGS/'terms.json',RECORDINGS/'plans.json'
-    if not terms_path.exists() or not plans_path.exists():
-        pytest.skip('Committed terms.json and plans.json are absent')
-    from agentos_eval.recall_regression import Executor
+@pytest.fixture(scope='module')
+def recordings():
+    paths = [RECORDINGS/name for name in ('terms.json.gz','plans.json.gz')]
+    if not any(path.exists() for path in paths):
+        pytest.skip('Committed terms.json.gz and plans.json.gz are absent')
+    assert all(path.is_file() for path in paths), 'Both committed recordings must be present'
+    for path in paths:
+        header = path.read_bytes()[:10]
+        assert header[:4] == b'\x1f\x8b\x08\x00'  # gzip/deflate, no optional fields or stored name
+        assert header[4:8] == b'\x00'*4  # mtime 0
+        assert header[8] == 2  # maximum compression (gzip -9 -n)
+    data = layer(pairs.load(ROOT/'evals/recall/recall-pairs-v4.json'),
+                 json.loads((ROOT/'evals/recall/recall-gate-dev-1.json').read_text()))
+    return data, *(load_recording(path) for path in paths)
+
+
+def test_committed_recordings_are_complete_bound_and_synthetic(tmp_path,monkeypatch,recordings):
     def no_replay(*a,**kw):
         pytest.fail('Committed-input validation must not replay Works')
     monkeypatch.setattr(Executor,'run',no_replay)
-    data=layer(pairs.load(ROOT/'evals/recall/recall-pairs-v4.json'),
-               json.loads((ROOT/'evals/recall/recall-gate-dev-1.json').read_text()))
-    terms,plans=json.loads(terms_path.read_text()),json.loads(plans_path.read_text())
+    data,terms,plans = recordings
     validate_terms(terms,data)
     validate_plans(plans,data,terms)
     store=QuickStore(tmp_path/'state')
     for recording in (terms,plans):
         assert recording['complete'] is True
+        assert recording['evidence_class'] == 'live-route:subscription_cli'
         validate_recording_safety(recording,store)
+
+
+def test_first_three_recorded_cases_replay_exactly(tmp_path,monkeypatch,recordings):
+    def forbidden(*a,**kw):
+        pytest.fail('Replay must not launch a process or contact a live service')
+    monkeypatch.setattr('subprocess.Popen',forbidden)
+    monkeypatch.setattr('socket.create_connection',forbidden)
+    monkeypatch.setattr('urllib.request.urlopen',forbidden)
+    data,terms,plans = recordings
+    store = QuickStore(tmp_path/'state')
+    service = fixture_service(store)
+    refs = seed_fixture(store,data)
+    apply_terms(store,data,terms,refs)
+    executor = Executor(service,data,refs,catalogue_from(plans['catalogue']))
+    cases = {case['id']:case for case in data['cases']}
+    sample = list(plans['runs']['1'].items())[:3]
+    assert len(sample) == 3
+    for ident,entry in sample:
+        replay_case(executor,cases[ident],entry)
 
 
 @pytest.mark.parametrize('value',['/Users/invented/private','read /tmp/private',r'C:\Users\private',

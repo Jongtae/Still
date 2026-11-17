@@ -123,12 +123,12 @@ moves that case to dev and requires fresh held-out cases before evaluation.
 Fixture qualification is not a candidate result, evidence of light-model
 performance, or evidence that recalled facts are used correctly in answers.
 
-From the repository root:
+From the repository root, with `PYTHON` set to the project's venv interpreter:
 
 ```sh
 python evals/recall/build_v4.py
 python evals/recall/build_v4.py --check
-PYTHONPATH=src:evals:. /Users/jongtaelee/Documents/project/Still/.venv/bin/python -m pytest -q tests/test_recall_pairs_v4.py tests/test_recall_pairs_v3.py tests/test_recall_pairs_v2.py tests/test_recall_pairs.py -p no:cacheprovider
+PYTHONPATH=src:evals:. "$PYTHON" -m pytest -q tests/test_recall_pairs_v4.py tests/test_recall_pairs_v3.py tests/test_recall_pairs_v2.py tests/test_recall_pairs.py -p no:cacheprovider
 ```
 
 The builder uses only the standard library and writes deterministic UTF-8

@@ -530,12 +530,12 @@ def main(argv=None):
             regression.add_argument('--dry-run',action='store_true',help='exercise the sandbox with canned answers and zero model calls')
             regression.add_argument('--dry-run-cases',type=int,default=6)
             regression.add_argument('--requalify',action='store_true')
-            regression.add_argument('--terms',type=Path,help='reuse a complete terms recording')
-            regression.add_argument('--resume',type=Path,help='continue incomplete plans; terms default to its sibling terms.json')
+            regression.add_argument('--terms',type=Path,help='reuse a complete terms recording (.json or .json.gz)')
+            regression.add_argument('--resume',type=Path,help='continue incomplete plans (.json or .json.gz); terms default to its sibling terms file with the same suffix')
             regression.add_argument('--heldout-runs',type=int,default=3)
         else:
-            regression.add_argument('--terms',type=Path,required=True)
-            regression.add_argument('--plans',type=Path,required=True)
+            regression.add_argument('--terms',type=Path,required=True,help='terms recording (.json or .json.gz)')
+            regression.add_argument('--plans',type=Path,required=True,help='plans recording (.json or .json.gz)')
     judgments = sub.add_parser('judgments', help='measure shipped judgments (#42)')
     actions = judgments.add_subparsers(dest='action', required=True)
     from .judgments import DEFAULT_CASES

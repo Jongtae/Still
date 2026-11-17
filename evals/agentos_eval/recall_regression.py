@@ -9,11 +9,13 @@ Worker fixtures adapt the Transport/Engine seams in test_orchestrator, without
 importing tests. Live entry points live separately in recall_record.
 """
 from collections import Counter
+import gzip
 import hashlib
 import inspect
 import json
 import re
 import sqlite3
+from pathlib import Path
 from types import SimpleNamespace
 from contextlib import ExitStack, contextmanager
 from datetime import datetime, timezone
@@ -26,6 +28,14 @@ TERMS_VERSION = 'recall-terms/1'
 PLAN_VERSION = 'recall-plan/2'
 ADDITIONS_VERSION = 'recall-gate-dev/1'
 FLAGS = ('account_change', 'owner_situation', 'technical_work', 'ask_location', 'preview')
+
+
+def load_recording(path):
+    """Read plain JSON or suffix-selected gzip with stdlib text/JSON decoding."""
+    path = Path(path)
+    opener = gzip.open if path.suffix == '.gz' else open
+    with opener(path, 'rt', encoding='utf-8') as stream:
+        return json.load(stream)
 
 
 def digest(value):

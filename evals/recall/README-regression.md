@@ -3,8 +3,11 @@
 This is an eval harness, with model-free replay as its default evidence class.
 No product file changes. No judge, embeddings, model comparison sweep or
 held-out tuning. The v4 bytes and its 36 held-out cases are pinned in the
-regression tests. Only the explicit `recall-record` command admits live calls;
-Codex did not run it. Live results and exact-head CI remain unobserved.
+regression tests. Claude completed the one approved live recording at
+`2474d74d`: 204 subscription CLI calls (11 requalification, 45 terms, 148 plans),
+with no judge, no refusals and no failure. The full model-free replay passed;
+see the [recordings README](recordings/README.md) for provenance, digests and
+the #921 setup/results. Exact-head CI remains unobserved.
 
 ## Reuse review: Adapt
 
@@ -38,6 +41,12 @@ Tests reuse `test_decision_routes.ServiceFixture`'s shipped activation with fake
 finder/qualification surfaces to populate seed-shaped route records. Python's
 `try`/`except`/`finally` and the same JSON exit writer preserve partial results;
 there is no new recovery store or dependency.
+
+Round-3 adopts stdlib `gzip.open` with the existing JSON decoder for
+suffix-selected `.json.gz` input; the recorder and report share one reader.
+The existing file-only resume validation and `replay_case` supply binding and
+sample checks. No third-party compression/parser package is needed: the
+standard library covers the complete format without a new dependency.
 
 Generic evaluation frameworks and schema packages do not supply these
 Still-specific inventories, receipts or CAS boundaries. No dependency is added;
@@ -82,14 +91,16 @@ retained as a succeeded Work/message when the case has context.
 ## Live recorder (Claude only, after budget approval and sweep lock)
 
 First exercise the copied synthetic sandbox with **zero model calls**. From
-this worktree, the exact preflight command is:
+this worktree, with `PYTHON` set to the project's venv interpreter and
+`OUT` set to a fresh output directory outside the repository, the exact preflight
+command is:
 
 ```sh
-PYTHONPATH=src:evals /Users/jongtaelee/Documents/project/Still/.venv/bin/python -m agentos_eval recall-record \
+PYTHONPATH=src:evals "$PYTHON" -m agentos_eval recall-record \
   --seed synthetic-terra --dry-run --dry-run-cases 6 --max-calls 0 \
   --fixture evals/recall/recall-pairs-v4.json \
   --additions evals/recall/recall-gate-dev-1.json \
-  --heldout-runs 3 --out /private/tmp/recall-pr8-dry-run
+  --heldout-runs 3 --out "$OUT"
 ```
 
 `--dry-run` uses the same `SandboxPool`/`Sandbox.prepare`, service factory and
@@ -143,8 +154,11 @@ PYTHONPATH=src:evals "$PYTHON" -m agentos_eval recall-record \
   --heldout-runs 3 --terms "$TERMS" --resume "$PLANS" --out "$RESUME_OUT"
 ```
 
-`--resume` defaults `--terms` to the sibling `terms.json`. Terms must validate
-against the composed fixture, filter and prompt digests and be complete.
+Terms reuse and resume accept `.json` or `.json.gz`, selected by suffix.
+`--resume` defaults `--terms` to the sibling `terms.json` or `terms.json.gz`,
+matching the resume file's suffix. Writing stays plain JSON outside the repo.
+Terms must validate against the composed fixture, filter and prompt digests
+and be complete.
 `apply_terms` installs them through the guarded product write path. The loaded
 terms object is never changed: its identity, counts, manifests and metadata
 stay intact, and `plans.terms_digest` is its digest as loaded. Plans record
@@ -303,10 +317,13 @@ revision while leaving rendered text equal and verifies frozen A was adopted.
 
 ## Committed-input check
 
-When both `recordings/terms.json` and `recordings/plans.json` exist, a model-free
-test validates versions, digests, completeness, decided entries, and
-`tokens: not observable`. It also checks both complete objects for credential
-shapes with the existing `memory_value_has_secret` and for absolute POSIX,
-Windows drive and UNC paths with a path regex. It never replays Works. This
-test skips when the recordings are absent; `recall-regression` remains the
-explicit full replay. No live inputs were generated during round-1 fixes.
+When both `recordings/terms.json.gz` and `recordings/plans.json.gz` exist, a
+model-free test validates versions, digests, completeness, decided entries,
+`tokens: not observable` and `live-route:subscription_cli`. It also checks both
+complete objects for credential shapes with the existing
+`memory_value_has_secret` and for absolute POSIX,
+Windows drive and UNC paths with a path regex, plus canonical gzip headers
+(mtime 0, no stored name). A separate test replays only the first three recorded
+cases with the committed terms. The tests skip when both recordings are absent;
+`recall-regression` remains the explicit full replay (about 26 minutes), with
+the gzip command in the [recordings README](recordings/README.md).
