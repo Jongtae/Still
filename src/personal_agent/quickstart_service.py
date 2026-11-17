@@ -7189,9 +7189,11 @@ class AgentService:
         with self.store.db() as db:
             return self.preparations.wait_refusal(db,job['id'],stamp,self_set_write=True) is None
 
-    def self_set_write(self, job, binding, connection, operation, target, names=(), *, effect=None, description=None, request=True, values=None):
+    def self_set_write(self, job, binding, connection, operation, target, names=(), *, effect=None, description=None, request=True, values=None,
+                       note='', require_note=False):
         from .self_set_writes import authorize
-        return authorize(self,job,binding,connection,operation,target,names,effect=effect,description=description,request=request,values=values)
+        return authorize(self,job,binding,connection,operation,target,names,effect=effect,description=description,request=request,values=values,
+                         note=note,require_note=require_note)
 
     def self_set_write_check(self, job, ticket, *, db=None):
         from .self_set_writes import recheck
@@ -7373,6 +7375,7 @@ class AgentService:
             def payment_autonomy(self,binding,description,**kwargs):
                 return service._authorize_payment_autonomy(job,binding,description,**kwargs)
             def request(self,binding,description):return service._request_browser_step(job,binding,description)
+            def unattended(self):return service.unattended_work(job)
             def payment_autonomy_notice(self,ticket):return service._deliver_payment_autonomy_notice(job,ticket)
             def payment_autonomy_release(self,authorization):return service._release_payment_autonomy(job,authorization)
             def api_effect_current(self):return not service.work_stopped(job['id'])
