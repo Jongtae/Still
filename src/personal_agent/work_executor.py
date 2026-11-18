@@ -11,6 +11,7 @@ the service imports this collaborator lazily to avoid a module import cycle.
 from . import work_status as ws
 import json
 import time
+import traceback
 from .messages import msg
 from .telegram_locale import owner_language
 from .work_execution import PROCEED, REDELEGATED, WorkRun
@@ -1882,10 +1883,13 @@ class WorkExecutor:
         job=run.job
         run.resolved_blocker=False
         run.response=str(exc)
-        # Only ids and structured diagnostics: generic error text may
-        # quote owner material, so it stays in the owner's Work record.
-        LOG.warning('work failed job=%s kind=%s %s',job['id'],type(exc).__name__,
-                    ' '.join(f'{k}={v}' for k,v in exc.diagnostics().items() if k!='reason') if isinstance(exc,ExecutionError) else '')
+        # Render first, then apply the existing stored-secret/credential pass.
+        # exc_info would let logging format the original, unredacted exception.
+        diagnostic=' '.join(f'{k}={v}' for k,v in exc.diagnostics().items() if k!='reason') if isinstance(exc,ExecutionError) else ''
+        if not isinstance(exc,(ExecutionError,ToolError,ProviderError,BlockedTurn)):
+            try:diagnostic=service._redact_known_secrets(''.join(traceback.format_exception(type(exc),exc,exc.__traceback__)))
+            except Exception:diagnostic='[traceback redaction unavailable]'
+        LOG.warning('work failed job=%s kind=%s %s',job['id'],type(exc).__name__,diagnostic)
         if isinstance(exc,BlockedTurn):
             # The owner can resolve this blocker; say how, once, in
             # conversation.  The projected text is the whole bubble
