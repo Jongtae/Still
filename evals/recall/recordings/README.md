@@ -50,6 +50,11 @@ Object digests use the harness's canonical JSON digest, rather than hashing
 the pretty-printed JSON bytes. The plan prompt/schema binding uses the existing
 short digest from `recall_arms`.
 
+A strict replay reproduces this recording only on code whose plan inputs and
+reply gate match the recording head. #965 changed the gate, so on main add
+`--held-plan`: each recorded plan's text is held fixed while the product
+recomputes the inventories and the gate, and the report says so.
+
 For the full model-free replay (about 26 minutes), set `REPORT_OUT` to a
 directory outside the repository and run from the worktree:
 
