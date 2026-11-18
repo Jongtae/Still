@@ -26,7 +26,7 @@ INPUT_CHANGED = object()
 _CREDENTIAL_RUN_BYTES = b'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_/+= \t\r\n\v\f'
 _CREDENTIAL_CONTEXT_BYTES = 48 * 1024
 _PREVIEW_SCAN_CHUNK = 16 * 1024
-_ASCII_WHITESPACE = re.compile(rb'\s')
+_LINE_BREAK = re.compile(rb'[\r\n]')
 _PEM_BOUNDARY = re.compile(r'-----(BEGIN|END) (?:[A-Z]{1,20} )?PRIVATE KEY-----')
 
 class WorkDownloadError(ValueError):
@@ -399,13 +399,16 @@ def preview(store, job_id, offset):
             source.seek(start)
             data = _read_preview_bytes(source, end - start)
             if incomplete:
-                tail_start = 1 + max(data.rfind(byte) for byte in b' \t\n\r\v\f')
+                # The last line is unsettled: non-PEM credential values stay
+                # on one line and can contain spaces, as in a quoted value.
+                tail_start = 1 + max(data.rfind(b'\n'), data.rfind(b'\r'))
                 if tail_start < offset + size - start:
-                    # The bounded credential context may stop within a long run.
+                    # The bounded context can stop inside a long line. Mask it
+                    # only if it reaches the checkpoint without a line break.
                     position = end
                     while position < received:
                         block = _read_preview_bytes(source, min(_PREVIEW_SCAN_CHUNK, received - position))
-                        if _ASCII_WHITESPACE.search(block):
+                        if _LINE_BREAK.search(block):
                             break
                         position += len(block)
                     if position == received:
