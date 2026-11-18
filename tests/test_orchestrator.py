@@ -37,6 +37,7 @@ from personal_agent.providers import ModelAdapter
 from personal_agent.quickstart_service import AgentService
 from personal_agent.quickstart_store import QuickStore
 from personal_agent.subscription_engines import SubscriptionEngines
+from test_openai_responses_994 import responses_reply
 
 OPENAI_KEY = 'sk-fixture-openai-0710'
 #: A bundled listing without the ranked gpt-6-luna (codex-cli 0.153.4 shape).
@@ -63,7 +64,7 @@ def decided(data, probability=0.9):
 
 
 class Transport:
-    """OpenAI-shaped chat completions: the connection probe, then scripted answers."""
+    """OpenAI Responses: the connection probe, then scripted answers."""
 
     def __init__(self):
         self.bodies = []
@@ -71,15 +72,15 @@ class Transport:
 
     def __call__(self, url, body, headers=None, timeout=60):
         tools = body.get('tools') or []
-        names = [(tool.get('function') or {}).get('name') for tool in tools]
+        names = [tool['name'] for tool in tools]
         if 'agentos_connection_probe' in names:
-            return {'model': body['model'], 'choices': [{'message': {'role': 'assistant', 'tool_calls': [
-                {'id': 'p1', 'type': 'function', 'function': {'name': 'agentos_connection_probe', 'arguments': '{}'}}]}}]}
+            return responses_reply({'role': 'assistant', 'tool_calls': [
+                {'id': 'p1', 'type': 'function', 'function': {'name': 'agentos_connection_probe', 'arguments': '{}'}}]}, body['model'])
         if not tools:
-            return {'model': body['model'], 'choices': [{'message': {'role': 'assistant', 'content': 'ok'}}]}
+            return responses_reply({'role': 'assistant', 'content': 'ok'}, body['model'])
         self.bodies.append(json.loads(json.dumps(body)))
         answer = self.answers.pop(0) if self.answers else 'api answer'
-        return {'model': body['model'], 'choices': [{'message': {'role': 'assistant', 'content': answer}}]}
+        return responses_reply({'role': 'assistant', 'content': answer}, body['model'])
 
 
 class Engine:
@@ -3045,7 +3046,7 @@ class OwnerModelAlwaysOn(Harness):
         cli = self.engine.turns[-1]['prompt']
         self.use_main('openai')
         self.run_work('고마워')
-        system = self.transport.bodies[-1]['messages'][0]['content']
+        system = self.transport.bodies[-1]['input'][0]['content']
         sent = self.store.turn_provenance(cli_job)
         self.assertEqual(sent['instructions_channel'], 'developer-instructions')
         self.assertIn(preference, cli)
@@ -3078,7 +3079,7 @@ class OwnerModelAlwaysOn(Harness):
         prompt = self.engine.turns[-1]['prompt']
         self.use_main('openai')  # #1431: the API route runs when it is the Main AI
         self.run_work('저녁 추천해줘')
-        system = self.transport.bodies[0]['messages'][0]['content']
+        system = self.transport.bodies[0]['input'][0]['content']
         for text in (prompt, system):
             self.assertIn(PROFILE_HEADING + '\n', text)
             self.assertIn('판교 사무실', text)
@@ -4090,7 +4091,7 @@ class JudgmentHistoryAudit(Harness):
                          [{'purpose': row['purpose'], 'context_messages': 2} for row in records])
         self.assertEqual(audit['conversation_turns'], 2)
         for call in transport.calls:
-            content = call['body']['messages'][-1]['content']
+            content = call['body']['input'][-1]['content']
             self.assertIn('VISIBLE-ANSWER', content)
             for hidden in ('DOCUMENT-REQUEST', 'DOCUMENT-EXCERPT'):
                 self.assertNotIn(hidden, content)
@@ -4113,16 +4114,17 @@ class JudgmentHistoryAudit(Harness):
 
     def test_direct_worker_keeps_document_history_and_the_evaluator_counts_its_actual_input(self):
         import test_agency_loop as loop
+        from test_openai_responses_994 import Transport as ResponsesTransport
         self.history()
         self.use_main('openai')
-        script = loop.Script({'tool_calls': [loop.call('lookup', 'web_search', query='fixture')]},
-                             loop.finish('finish', 'lookup', summary='The result.'))
+        script = ResponsesTransport(responses_reply({'tool_calls': [loop.call('lookup', 'web_search', query='fixture')]}),
+                                    responses_reply(loop.finish('finish', 'lookup', summary='The result.')))
         self.service.adapter = ModelAdapter(script)
         self.service.local_tools = loop.Network()
         self.script([plan('openai', '')], goals=[True])
         _ident, row = self.run_work('Current request')
         self.assertEqual(row['status'], 'succeeded')
-        worker = json.dumps(script.bodies[0]['messages'])
+        worker = json.dumps(script.calls[0][1]['input'])
         for hidden in ('DOCUMENT-REQUEST', 'DOCUMENT-EXCERPT'):
             # #820: the configured model sees the earlier document Work; the judgments still do not (#826).
             self.assertIn(hidden, worker)
@@ -4454,7 +4456,7 @@ class RecallPlan883(unittest.TestCase):
                 self.assertTrue(attempt.account_change and attempt.owner_situation and attempt.technical_work)
                 self.assertEqual(attempt.recall_query,value[:500] if isinstance(value,str) and value!='missing' else '')
                 self.assertEqual(len(transport.calls),1)
-                schema=transport.calls[0]['body']['tools'][0]['function']['parameters']
+                schema=transport.calls[0]['body']['tools'][0]['parameters']
                 self.assertEqual(set(schema['required']),set(schema['properties']))
                 self.assertIn('recall_query',schema['required'])
         # Only the declared optional field may be absent; reply remains mandatory.
@@ -4466,7 +4468,7 @@ class RecallPlan883(unittest.TestCase):
         self.assertEqual(len(transport.calls),1)
 
     def test_plan_wire_schema_uses_existing_supported_keywords(self):
-        # Reuse the existing transport.calls -> function.parameters schema inspection.
+        # Reuse the existing transport.calls -> parameters schema inspection.
         from test_decision_engine import OPENAI, ScriptedTransport, openai_tool_reply
         transport=ScriptedTransport(openai_tool_reply({'choices':[],'confidence':0.9}),
                                     openai_tool_reply({'answer':True,'confidence':0.9}))
@@ -4480,7 +4482,7 @@ class RecallPlan883(unittest.TestCase):
             return found
         allowed={'description'}  # Existing schema annotation, not a validation constraint.
         for call in transport.calls:
-            schema=call['body']['tools'][0]['function']['parameters']
+            schema=call['body']['tools'][0]['parameters']
             allowed |= keywords(schema)
             self.assertNotIn('uniqueItems',keywords(schema))
         schema=plan_schema(self.catalogue().available(),ask_location=True,preview=True)

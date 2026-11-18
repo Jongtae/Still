@@ -46,7 +46,7 @@ class ConnectionPreferences(Harness):
                 self.assertIn(CONNECTION_PREFERENCE_GUIDANCE, sent['instructions'])
                 self.assertIn(KEY + ': ' + choice, cli_prompt)
                 self.assertNotIn(KEY + ': ' + choice, sent['instructions'])
-                system = self.transport.bodies[-1]['messages'][0]['content']
+                system = self.transport.bodies[-1]['input'][0]['content']
                 self.assertIn(KEY + ': ' + choice, system)
                 self.assertIn(CONNECTION_PREFERENCE_GUIDANCE, system)
                 self.assertTrue(all(KEY + ': ' + choice in item[0].facts['owner_profile'] for item in self.asked_plans))

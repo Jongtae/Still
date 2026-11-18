@@ -30,7 +30,7 @@ class TimedTransport(OpenAITransport):
         self.clock, self.seconds = clock, seconds
 
     def __call__(self, url, body, headers=None, timeout=60):
-        self.clock.now += self.seconds(*parse_prompt(body['messages'][-1]['content']))
+        self.clock.now += self.seconds(*parse_prompt(body['input'][-1]['content']))
         return super().__call__(url, body, headers, timeout)
 
 
@@ -245,7 +245,7 @@ class FastestQualifiedServiceTests(ServiceFixture):
             failed = False
 
             def __call__(self, url, body, headers=None, timeout=60):
-                purpose, facts = parse_prompt(body['messages'][-1]['content'])
+                purpose, facts = parse_prompt(body['input'][-1]['content'])
                 if (body.get('model') == 'gpt-4o-mini' and facts.get('owner_message') == '그거 저장해'
                         and facts.get('previous_reply') and not self.failed):
                     self.failed = True

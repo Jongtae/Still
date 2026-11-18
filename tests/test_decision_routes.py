@@ -30,6 +30,7 @@ from personal_agent.decision_routes import CODEX_INSTRUCTION_FILES_QUALIFIED, RA
 from personal_agent.providers import ModelAdapter, ProviderError
 from personal_agent.quickstart_service import AgentService
 from personal_agent.quickstart_store import QuickStore
+from test_openai_responses_994 import responses_reply
 from personal_agent.subscription_engines import SubscriptionEngines
 
 OPENAI_KEY = 'sk-fixture-openai-0001'
@@ -105,12 +106,12 @@ class OpenAITransport:
 
     def __call__(self, url, body, headers=None, timeout=60):
         self.calls.append(url)
-        if not url.endswith('/chat/completions'):
+        if not url.endswith('/responses'):
             raise AssertionError('unexpected call ' + url)
-        purpose, facts = parse_prompt(body['messages'][-1]['content'])
-        arguments = schema_answer(body['tools'][0]['function']['parameters'], purpose, facts, self.judge)
-        reply = {'choices': [{'message': {'role': 'assistant', 'tool_calls': [
-            {'id': 'c1', 'type': 'function', 'function': {'name': 'decide', 'arguments': json.dumps(arguments)}}]}}]}
+        purpose, facts = parse_prompt(body['input'][-1]['content'])
+        arguments = schema_answer(body['tools'][0]['parameters'], purpose, facts, self.judge)
+        reply = responses_reply({'role': 'assistant', 'tool_calls': [
+            {'id': 'c1', 'type': 'function', 'function': {'name': 'decide', 'arguments': json.dumps(arguments)}}]})
         if self.model:
             reply['model'] = self.model
         return reply

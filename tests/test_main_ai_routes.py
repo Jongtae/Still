@@ -20,6 +20,7 @@ from personal_agent.quickstart_store import QuickStore
 from personal_agent.subscription_engines import SubscriptionEngines
 from personal_agent.decision_qualification import CASE_IDS
 from test_decision_routes import careless, oracle, parse_prompt, schema_answer
+from test_openai_responses_994 import responses_reply
 
 OPENAI_KEY = 'sk-fixture-openai-0001'
 ANTHROPIC_KEY = 'ak-fixture-anthropic-0001'
@@ -49,9 +50,10 @@ class Transport:
         if name == 'decide':
             # #679: the Judgment AI is qualified with the synthetic suite, so
             # judgments are answered by the shared fixture oracle.
-            last = body['messages'][-1]['content']
+            last = body['input' if url.endswith('/responses') else 'messages'][-1]['content']
             text = last if isinstance(last, str) else ' '.join(part.get('text', '') for part in last)
-            schema = tools[0]['function']['parameters'] if 'function' in tools[0] else tools[0]['input_schema']
+            schema = (tools[0]['parameters'] if url.endswith('/responses') else
+                      tools[0]['function']['parameters'] if 'function' in tools[0] else tools[0]['input_schema'])
             purpose, facts = parse_prompt(text)
             arguments = schema_answer(schema, purpose, facts, careless if body.get('model') in self.careless else oracle)
         elif name:
@@ -60,6 +62,10 @@ class Transport:
             if not name:
                 return {'model': body['model'], 'content': [{'type': 'text', 'text': 'ok'}]}
             return {'model': body['model'], 'content': [{'type': 'tool_use', 'id': 't1', 'name': name, 'input': arguments}]}
+        if url.endswith('/responses'):
+            message = ({'tool_calls': [{'id': 'c1', 'type': 'function',
+                        'function': {'name': name, 'arguments': json.dumps(arguments)}}]} if name else {'content': 'ok'})
+            return responses_reply(message, body['model'])
         if not name:
             return {'model': body['model'], 'choices': [{'message': {'role': 'assistant', 'content': 'ok'}}]}
         return {'model': body['model'], 'choices': [{'message': {'role': 'assistant', 'tool_calls': [
