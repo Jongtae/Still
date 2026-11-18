@@ -28,10 +28,11 @@ from personal_agent.providers import ModelAdapter, ProviderError
 from personal_agent.quickstart_store import QuickStore
 from personal_agent.search_providers import BRAVE_TOKEN, NATIVE_REASONS
 from test_search_providers import BRAVE_KEY, OPENAI, main_ai, registry
+from test_openai_responses_994 import responses_reply
 
-OPENAI_ERROR = {'error': {'message': "Invalid 'tools[0].function.description': string too long. Expected a string "
+OPENAI_ERROR = {'error': {'message': "Invalid 'tools[0].description': string too long. Expected a string "
                                      'with maximum length 1024. Request text: synthetic-owner-words',
-                          'type': 'invalid_request_error', 'param': 'tools[0].function.description',
+                          'type': 'invalid_request_error', 'param': 'tools[0].description',
                           'code': 'string_above_max_length'}}
 
 
@@ -43,20 +44,21 @@ class _Response(io.BytesIO):
         return False
 
 
-class OpenAIChatCompletions:
+class OpenAIResponses:
     """A fake opener that refuses a request the way OpenAI does when a tool description is too long."""
 
     def __init__(self):
         self.bodies = []
 
     def open(self, request, timeout=None):
+        assert request.full_url == 'https://api.openai.com/v1/responses'
         body = json.loads(request.data)
         self.bodies.append(body)
         for tool in body.get('tools') or []:
-            if len(tool['function'].get('description') or '') > 1024:
+            if len(tool.get('description') or '') > 1024:
                 raise HTTPError(request.full_url, 400, 'Bad Request', {}, io.BytesIO(json.dumps(OPENAI_ERROR).encode()))
-        return _Response(json.dumps({'model': 'gpt-4o-mini-2024-07-18', 'choices': [
-            {'message': {'role': 'assistant', 'content': 'ok'}}]}).encode())
+        return _Response(json.dumps(responses_reply({'role': 'assistant', 'content': 'ok'},
+                                                    'gpt-4o-mini-2024-07-18')).encode())
 
 
 class Wired(unittest.TestCase):
@@ -123,7 +125,7 @@ class EveryRouteFitsTheLimit(Wired):
 
 class OpenAIAcceptsTheWorkTurn(Wired):
     def turn(self, tools):
-        opener = OpenAIChatCompletions()
+        opener = OpenAIResponses()
         with mock.patch.object(providers, 'build_opener', lambda *handlers: opener):
             message, _ = ModelAdapter().tool_turn(OPENAI, 'sk-fixture-0001', [{'role': 'user', 'content': 'hi'}],
                                                   tools, report_observed=True)
@@ -143,7 +145,7 @@ class OpenAIAcceptsTheWorkTurn(Wired):
         text = str(refused.exception)
         self.assertEqual(refused.exception.status, 400)
         self.assertEqual(text, msg('providers.http_error_reason', status=400,
-                                   reason='string_above_max_length (tools[0].function.description)'))
+                                   reason='string_above_max_length (tools[0].description)'))
         self.assertNotIn('synthetic-owner-words', text, "the provider's free text stays out")
 
     def test_a_reason_that_is_not_a_plain_identifier_is_left_out(self):

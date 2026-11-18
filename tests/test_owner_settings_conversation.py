@@ -24,6 +24,7 @@ from personal_agent.agent_runtime import SETTINGS_ACTIONS, Capabilities, recorde
 from personal_agent.bounded_execution import (BOUNDED_PROFILE, ISOLATED_PROFILE, STRICT_PROFILE, profile_actions,
                                               route_unavailable)
 from personal_agent.providers import ModelAdapter
+from test_openai_responses_994 import responses_reply
 from personal_agent.quickstart_service import AgentService
 from personal_agent.quickstart_store import QuickStore
 from personal_agent import preparations as prep
@@ -67,10 +68,13 @@ class _Case(unittest.TestCase):
 
     def _model(self, url, body, headers=None, timeout=60):
         self.urls.append(url)
-        names = [tool.get('function', {}).get('name') for tool in body.get('tools', [])]
+        names = [(tool.get('function') or tool).get('name') for tool in body.get('tools', [])]
         if 'agentos_connection_probe' in names:
-            return {'choices': [{'message': {'tool_calls': [{'id': 'p', 'function': {'name': 'agentos_connection_probe', 'arguments': '{}'}}]}}]}
-        step = self.script.pop(0) if self.script else {'content': '끝났습니다.'}
+            step = {'tool_calls': [{'id': 'p', 'function': {'name': 'agentos_connection_probe', 'arguments': '{}'}}]}
+        else:
+            step = self.script.pop(0) if self.script else {'content': '끝났습니다.'}
+        if url == 'https://api.openai.com/v1/responses':
+            return responses_reply(step)
         return {'choices': [{'message': step}]}
 
     def _telegram(self, url, body=None, headers=None, timeout=60):

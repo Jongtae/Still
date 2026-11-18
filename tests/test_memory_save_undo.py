@@ -118,7 +118,7 @@ class SaveAndTell(TelegramHarness):
             instructions = self.store.turn_provenance(cli_job)['instructions']
             workers.use_main('openai')
             workers.run_work('고마워', key=stage + '-api')
-            system = workers.transport.bodies[-1]['messages'][0]['content']
+            system = workers.transport.bodies[-1]['input'][0]['content']
             profiles = [cli, system]
             self.assertIn(prompt('voice'), instructions)
             self.assertIn(prompt('voice'), system)

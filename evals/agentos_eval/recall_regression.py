@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 from unittest import mock
 
 from . import recall_pairs as pairs
+from .fixture_responses import responses_reply
 from .recall_report import _fixture_digest
 
 TERMS_VERSION = 'recall-terms/1'
@@ -327,11 +328,13 @@ class FixtureTransport:
 
     def __call__(self, url, body, headers=None, timeout=60):
         self.bodies.append(body)
-        names = [(t.get('function') or {}).get('name') for t in body.get('tools', [])]
+        names = [(t.get('function') or t).get('name') for t in body.get('tools', [])]
         message = {'role':'assistant','content':'fixture worker answer'}
         if 'agentos_connection_probe' in names:
             message = {'role':'assistant','tool_calls':[{'id':'fixture-probe','type':'function',
                        'function':{'name':'agentos_connection_probe','arguments':'{}'}}]}
+        if url == 'https://api.openai.com/v1/responses':
+            return responses_reply(message, body['model'])
         return {'model':body['model'], 'choices':[{'message':message}]}
 
 

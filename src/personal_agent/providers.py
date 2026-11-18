@@ -113,6 +113,72 @@ class ModelResult:
     model: str
 
 
+def _openai_input(messages):
+    """Translate Chat-shaped history only at the Responses wire boundary."""
+    items = []
+    for message in messages:
+        role, content = message['role'], message.get('content')
+        if role == 'tool':
+            items.append({'type': 'function_call_output', 'call_id': message['tool_call_id'],
+                          'output': content if isinstance(content, str) else json.dumps(content)})
+            continue
+        if role == 'assistant':
+            items.extend(message.get('openai_reasoning') or [])
+        if isinstance(content, list) and role == 'user':
+            content = [({'type': 'input_text', 'text': block['text']} if block['type'] == 'text' else
+                        {'type': 'input_image', 'image_url': block['image_url']['url']}) for block in content]
+        # Empty assistant drafts have no useful Responses input item.
+        if role != 'assistant' or content:
+            items.append({'role': role, 'content': content})
+        if role == 'assistant':
+            for call in message.get('tool_calls') or []:
+                items.append({'type': 'function_call', 'call_id': call['id'],
+                              'name': call['function']['name'], 'arguments': call['function']['arguments']})
+    return items
+
+
+def _openai_tools(tools):
+    return [{'type': 'function', 'name': tool['function']['name'],
+             'description': tool['function']['description'], 'parameters': tool['function']['parameters'],
+             'strict': False} for tool in tools]
+
+
+def _openai_message(data):
+    """Normalize raw Responses output; malformed shapes use the caller's error mapping."""
+    if data.get('error') or data.get('status') in ('failed', 'cancelled') or not isinstance(data['output'], list):
+        raise TypeError()
+    texts, calls, reasoning = [], [], []
+    for item in data['output']:
+        kind = item['type']
+        if kind == 'reasoning':
+            reasoning.append(item)
+        elif kind == 'message':
+            if item['role'] != 'assistant' or not isinstance(item['content'], list):
+                raise TypeError()
+            for part in item['content']:
+                if part['type'] not in ('output_text', 'refusal'):
+                    raise TypeError()
+                text = part['text'] if part['type'] == 'output_text' else part['refusal']
+                if not isinstance(text, str):
+                    raise TypeError()
+                texts.append(text)
+        elif kind == 'function_call':
+            if not all(isinstance(item[key], str) for key in ('call_id', 'name', 'arguments')) or not item['call_id'] or not item['name']:
+                raise TypeError()
+            calls.append({'id': item['call_id'], 'type': 'function',
+                          'function': {'name': item['name'], 'arguments': item['arguments']}})
+        else:
+            raise TypeError()
+    message = {'role': 'assistant', 'content': ''.join(texts)}
+    if calls:
+        message['tool_calls'] = calls
+    if reasoning:
+        message['openai_reasoning'] = reasoning
+    if data.get('status') == 'incomplete' and not message['content'] and not calls:
+        raise TypeError()
+    return message
+
+
 class ModelAdapter:
     def __init__(self, transport=request_json):
         self.transport = transport
@@ -164,9 +230,19 @@ class ModelAdapter:
         """
         import uuid
         cfg=validate_model(config);provider=cfg['provider']
+        if provider!='openai':
+            messages=[{k:v for k,v in m.items() if k!='openai_reasoning'} for m in messages]
         messages=self._messages_with_images(messages,images,provider)
         try:
-            if provider in ('compatible','openai'):
+            if provider=='openai':
+                choice=({'type':'function','name':tool_choice['function']['name']}
+                        if isinstance(tool_choice,dict) else tool_choice)
+                body={'model':cfg['model'],'input':_openai_input(messages),'tools':_openai_tools(tools),
+                      'tool_choice':choice,'store':False,'include':['reasoning.encrypted_content'],'stream':False}
+                data=self._send(cfg['endpoint']+'/responses',body,{'Authorization':'Bearer '+key} if key else {},timeout)
+                message=_openai_message(data)
+                if not message['content'] and not message.get('tool_calls'):raise TypeError()
+            elif provider=='compatible':
                 body={'model':cfg['model'],'messages':messages,'tools':tools,'tool_choice':tool_choice,'stream':False}
                 if cfg['endpoint']=='https://openrouter.ai/api/v1':body['provider']={'require_parameters':True}
                 data=self._send(cfg['endpoint']+'/chat/completions',body,{'Authorization':'Bearer '+key} if key else {},timeout)
@@ -206,7 +282,7 @@ class ModelAdapter:
                 calls=[{'id':c['id'],'type':'function','function':{'name':c['name'],'arguments':json.dumps(c['input'])}} for c in data['content'] if c['type']=='tool_use']
                 if calls:message['tool_calls']=calls
             if not isinstance(message,dict) or message.get('role','assistant')!='assistant':raise TypeError()
-            message={k:v for k,v in message.items() if k in ('role','content','tool_calls','reasoning_details')};message['role']='assistant'
+            message={k:v for k,v in message.items() if k in ('role','content','tool_calls','reasoning_details','openai_reasoning')};message['role']='assistant'
             if report_observed:
                 actual=data.get('model') if isinstance(data,dict) else None
                 return message,actual[:200] if isinstance(actual,str) and actual else ''
@@ -218,11 +294,16 @@ class ModelAdapter:
         cfg = validate_model(config)
         provider, endpoint, model = cfg['provider'], cfg['endpoint'], cfg['model']
         headers = {'Authorization': 'Bearer '+key} if key else {}
+        if provider!='openai':
+            messages=[{k:v for k,v in m.items() if k!='openai_reasoning'} for m in messages]
         try:
             if provider == 'ollama':
                 data = self.transport(endpoint+'/api/chat', {'model': model, 'messages': messages, 'stream': False}, headers)
                 content = data['message']['content']
-            elif provider in ('compatible','openai'):
+            elif provider == 'openai':
+                data = self.transport(endpoint+'/responses', {'model': model, 'input': _openai_input(messages), 'store': False}, headers)
+                content = _openai_message(data)['content']
+            elif provider == 'compatible':
                 data = self.transport(endpoint+'/chat/completions', {'model': model, 'messages': messages, 'stream': False}, headers)
                 content = data['choices'][0]['message']['content']
             else:
