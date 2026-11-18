@@ -1,5 +1,6 @@
 """Work-scoped staging for an anonymous, validated public read."""
 import hashlib
+import json
 import os
 import stat
 import uuid
@@ -38,6 +39,35 @@ def _staged_file(store, artifact, flags):
         return fd
     finally:
         os.close(root)
+
+def _make_room(store, db, artifact, size):
+    directory = store.private / 'work-downloads'
+    with os.scandir(directory) as entries:
+        files = {row.name: row.stat(follow_symlinks=False) for row in entries}
+    used = sum(info.st_size for name, info in files.items() if name != artifact)
+    if used + size <= STAGING_BYTES:
+        return
+    # This scratch cache is only readable in the original active Work.
+    # Pending and interrupted Works retain their bytes until their status settles.
+    candidates = db.execute("""
+        SELECT c.value,j.status FROM work_read_checkpoints c
+        LEFT JOIN jobs j ON j.id=c.job_id
+    """)
+    protected = {json.loads(row['value'])['artifact'] for row in candidates
+                 if row['status'] not in {'succeeded','cancelled'} and row['status'] is not None}
+    for name, info in sorted(files.items(), key=lambda pair: pair[1].st_mtime):
+        if name == artifact or name in protected or not stat.S_ISREG(info.st_mode):
+            continue
+        try:
+            if uuid.UUID(hex=name).hex != name:
+                continue
+        except ValueError:
+            continue
+        (directory / name).unlink()
+        used -= info.st_size
+        if used + size <= STAGING_BYTES:
+            return
+    raise WorkDownloadError('The install reached its staged read limit.', 'read_checkpoint_limit', ran=True)
 
 def receive(store, job_id, ledger, reader, url, offset, *, address_check, guard):
     """Read one range and publish only bytes whose Work checkpoint commits."""
@@ -78,10 +108,7 @@ def receive(store, job_id, ledger, reader, url, offset, *, address_check, guard)
         with os.fdopen(fd, 'r+b') as output:
             if os.fstat(output.fileno()).st_size < offset:
                 raise WorkDownloadError('Previously verified bytes are unavailable.', 'read_checkpoint_missing', ran=True)
-            directory = store.private / 'work-downloads'
-            used = sum(row.stat(follow_symlinks=False).st_size for row in os.scandir(directory))
-            if used - os.fstat(output.fileno()).st_size + checkpoint['received'] > STAGING_BYTES:
-                raise WorkDownloadError('The install reached its staged read limit.', 'read_checkpoint_limit', ran=True)
+            _make_room(store, db, checkpoint['artifact'], checkpoint['received'])
             output.seek(offset)
             output.truncate()
             output.write(part.data)

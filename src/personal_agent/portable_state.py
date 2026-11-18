@@ -36,6 +36,8 @@ def _portable_db(source, target, redaction=((), None)):
         copy.execute("DELETE FROM auth");copy.execute("DELETE FROM sessions")
         # #570: developer-mode provenance is owner-local diagnostics, not portable state.
         if 'turn_provenance' in tables:copy.execute("DELETE FROM turn_provenance")
+        # Work-local staging and representation validators cannot resume in a portable restore.
+        if 'work_read_checkpoints' in tables:copy.execute("DELETE FROM work_read_checkpoints")
         copy.executemany("DELETE FROM config WHERE key=?", ((key,) for key in _RESET_CONFIG))
         # Grants and result paths are valid only in the original runtime. Keep
         # durable result IDs/provenance as owner work evidence, but detach each
