@@ -262,3 +262,38 @@ Acceptance is by scenario, on injected runners and fake clocks, not by test coun
 3. **Beside.** The D6 judgment over the conversation's running Works, the `beside` receipt, the waiting state. Measured on a small scenario set before and after, as a judgment change.
 
 Related: #17, #309, #332 (RESPONSIVE-01), #308, #826, #938, #968, #973.
+
+### Slice 2 implementation details
+
+`work_lanes` is a positive integer in the existing owner configuration, read at service
+construction (default 3; a changed value takes effect on restart). The single-lane
+rollback keeps background progress, the command lane and tool-less side answers.
+With multiple lanes the same-conversation `conv:` key remains held; slice 3 owns
+the independent-message judgment and its release.
+
+The claim adopts the existing SQLite `BEGIN IMMEDIATE` transaction for both capacity
+and all keys. The existing lane registry also holds capacity and keys during a
+terminal Work's remaining finalization tail. The chain root supplies owner class
+and the `chain:` key; preparations anywhere in that chain supply `line:` or `prep:`.
+Queued candidates are read before owner-first sorting so an older background backlog
+cannot hide an owner message beyond a scan limit. Steer judgments reserve their
+message until the judgment finishes, even if the targeted Work finishes first.
+
+Reuse decision: **Adapt**, following the review above. The installed Python
+`ThreadPoolExecutor(max_workers, thread_name_prefix)`, `Lock.acquire(timeout)` and
+SQLite immediate transactions supply pooling, exclusion and atomic admission.
+Thin Still glue supplies owner priority/reserve, durable Work identities and the
+existing WorkBudget cancellation check. The global worker mutex and per-Work
+thread creation are removed; no dependency, protocol, migration, runtime authority
+or licence is added. Python's PSF-licensed standard library and SQLite's public-domain
+runtime are already deployment dependencies on macOS/Linux. Broker-based alternatives
+remain rejected for the in-process state/profile requirement described above.
+The browser keeps its existing lock through cookie export and release, polls that
+lock with a monotonic 120-second deadline, and checks the Work budget/Stop while
+waiting. Login remains fail-fast; keep-alive retains its existing wait bound.
+
+`connector_overlap` receipts reuse the effect ledger's connection/API target
+identity, naming the other running Work and target without call arguments.
+These are observations from successful host-visible events, not proof that unobserved native
+CLI activity did or did not overlap. They grant no authority and impose no
+account-connection lock.

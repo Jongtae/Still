@@ -2187,6 +2187,7 @@ KEEPALIVE_MIN_GAP_SECONDS = 3600
 #: #990: the profile holder name of a keep-alive, and how long another holder waits for one to finish.
 KEEPALIVE_HOLDER = 'keepalive'
 KEEPALIVE_YIELD_SECONDS = ACTION_TIMEOUT_SECONDS + 15
+BROWSER_WAIT_SECONDS = 120
 #: #1041: each refresh's interval varies by up to this fraction either way, so refreshes never come
 #: at a machine-regular cadence (a regular one drew a bot-activity alert, 2026-10-06).
 KEEPALIVE_JITTER = 0.2
@@ -2891,7 +2892,7 @@ class BrowserProfile:
     """
 
     def __init__(self, profile_dir, *, launcher=None, headless=True, available=None, clock=time.time, jar=None,
-                 tools_dir=None):
+                 tools_dir=None, wait_clock=time.monotonic):
         self.profile_dir = Path(profile_dir)
         #: #34: where the Linux worker's pinned Chromium is kept (the store's ``tools``, beside Node and cloudflared).
         self.tools_dir = Path(tools_dir) if tools_dir is not None else self.profile_dir.parent.parent / 'tools'
@@ -2906,6 +2907,7 @@ class BrowserProfile:
         self._available = available if available is not None else (
             (lambda: engine_unavailable_reason() is None) if launcher is None else (lambda: True))
         self.clock = clock
+        self.wait_clock = wait_clock
         self._lock = threading.Lock()
         self._jar_lock = threading.RLock()
         self._layout_lock = threading.Lock()
@@ -3178,14 +3180,32 @@ class BrowserProfile:
         return ('none' if holder is None else 'login' if holder == 'login'
                 else 'keepalive' if holder == KEEPALIVE_HOLDER else 'work')
 
-    def _acquire(self, holder):
+    def _acquire(self, holder, *, check=None, wait_seconds=BROWSER_WAIT_SECONDS):
+        if check is not None:check()
         if not self._lock.acquire(blocking=False):
-            # #990: a session keep-alive is one short page load; anyone else waits for it rather than failing.
             current = self._holder
-            if current != KEEPALIVE_HOLDER or not self._lock.acquire(timeout=KEEPALIVE_YIELD_SECONDS):
-                # #1572: say which kind of holder it is (never which page or what it holds).
+            # Login windows stay fail-fast. Keep-alive retains its existing bound.
+            seconds = (KEEPALIVE_YIELD_SECONDS if current == KEEPALIVE_HOLDER else
+                       wait_seconds if current not in (None, 'login', holder)
+                       and holder not in ('login', KEEPALIVE_HOLDER) else 0)
+            deadline = self.wait_clock() + seconds
+            acquired = False
+            while True:
+                if check is not None:check()
+                remaining = deadline-self.wait_clock()
+                if remaining <= 0:break
+                if self._lock.acquire(timeout=min(.25, remaining)):
+                    acquired = True
+                    break
+            if not acquired:
+                current = self._holder
                 raise ToolError(BUSY_LOGIN_TEXT if current == 'login'
                                 else BUSY_WORK_TEXT if current not in (None, KEEPALIVE_HOLDER) else BUSY_TEXT, 'browser_busy')
+        try:
+            if check is not None:check()
+        except BaseException:
+            self._lock.release()
+            raise
         self._holder = holder
         self._suppressed = set()
         self._imported = set()
@@ -3237,12 +3257,12 @@ class BrowserProfile:
         return True
 
 
-    def driver_factory(self, work_id):
+    def driver_factory(self, work_id, *, check=None, wait_seconds=BROWSER_WAIT_SECONDS):
         """A zero-argument factory a ``BrowserSession`` calls on first use, or None when unavailable."""
         if not self.available():
             return None
         def launch():
-            self._acquire(work_id)
+            self._acquire(work_id, check=check, wait_seconds=wait_seconds)
             try:
                 self.profile_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
                 driver = self.launcher(self.profile_dir, self.headless)

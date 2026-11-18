@@ -434,8 +434,7 @@ def test_sweep_leaves_a_work_in_its_lane_and_never_waits_for_the_worker(case):
     run = _finish(c, work)
     service = _restart(c)
     service.hold_lane(work, 'work')
-    with service.worker_lock:  # a tool-capable Work runs; the sweep does not wait for it
-        assert service.sweep_after_work() == 0
+    assert service.sweep_after_work() == 0
     assert _marker(c.store, work)['status'] == 'pending'
     assert c.store.notification_of(work, 'settings_change_proposed') is None
     service.release_lane(work)

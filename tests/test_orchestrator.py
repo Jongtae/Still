@@ -3971,11 +3971,12 @@ class PlanReadingJudgment(unittest.TestCase):
         # There is no narrower API-attempt harness. Stop at the constructor so this
         # checks the real glue without needing a worker or the later recording path.
         service = mock.Mock()
+        service.work_lanes = 3
         service.surface_claiming.return_value = None
         service.shown_history_provenance.return_value = set()
         service.work_lookup_options.return_value = {}
         run = SimpleNamespace(job={'id': 'job'}, config={'provider': 'compatible', 'model': 'fixture'},
-                              attempt_test={}, history=[{'role': 'user', 'content': 'request'}], work_budget=None,
+                              attempt_test={}, history=[{'role': 'user', 'content': 'request'}], work_budget=WorkBudget(),
                               section_values={'current_context': '', 'profile': '', 'prepared': ''},
                               brief=None, skill_binding=None, image_inputs=[], history_rows=[], document_jobs=set(),
                               orchestration=None, key='', record=lambda *args: None, owner_memory_request=None,
