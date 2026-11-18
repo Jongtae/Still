@@ -967,8 +967,8 @@ class RecoveryAndRedaction(_Base):
         self.queue.append(self.set_state_process({'stdout': 'set cursor event'}))
         write = ApiCredentials.write_state
 
-        def crash(credentials, *args):
-            write(credentials, *args)
+        def crash(credentials, *args, **kwargs):
+            write(credentials, *args, **kwargs)
             raise self.Crash()
         with mock.patch.object(ApiCredentials, 'write_state', crash), self.assertRaises(self.Crash):
             self.tick(0)
@@ -1711,3 +1711,203 @@ class ReviewRegressions(_Base):
         self.assertEqual(len(notices), 1)
         with self.store.db() as db:
             db.execute("UPDATE telegram_notifications SET state='sent' WHERE fingerprint=?", (row['id'],))
+
+
+class FinalReviewRegressions(_Base):
+    def test_capture_boundary_never_exposes_new_state_secret_prefix(self):
+        from personal_agent.code_run import OUTPUT_BYTES
+        token = 'new-state-boundary-secret-0000000972'
+        for proving in (True, False):
+            for stream in ('stdout', 'stderr'):
+                with self.subTest(proving=proving, stream=stream):
+                    text = 'x' * (OUTPUT_BYTES - 20) + token
+                    process = self.state_process({'token': token}, {stream: text[:OUTPUT_BYTES]})
+                    if proving:
+                        result = self.code_run(self.owner_work(), self.check_args(), process)
+                    else:
+                        row = self.check_row()
+                        self.queue.append(process)
+                        self.tick(0)
+                        raw = self.store.secret(cc.state_key(row['id']) + ':pending')
+                        result = json.loads(ApiCredentials(self.store)._cipher().decrypt(raw.encode()))['outcome']['result']
+                        for work in self.woken(row['id']):
+                            self.assertNotIn(token[:20], json.dumps(self.checks.handoff(work)))
+                        self.service.preparations.cancel(row['id'])
+                    self.assertNotIn(token[:20], json.dumps(result))
+                    self.assertTrue(result[stream].startswith('x' * 100))
+
+    def test_check_does_not_rewrite_unchanged_set_state(self):
+        from personal_agent.api_credentials import STATE_PREFIX
+        row = self.check_row()
+        credentials = ApiCredentials(self.store)
+        slot = slots(self.store)['example-broker']
+        credentials.write_state('example-broker', slot, '{"cursor": 1}')
+        before = self.store.secret(STATE_PREFIX + 'example-broker')
+        self.tick(0)
+        self.assertEqual(self.store.secret(STATE_PREFIX + 'example-broker'), before)
+
+    def test_concurrent_set_refresh_survives_check_and_pending_replay(self):
+        for replay in (False, True):
+            for changed in (False, True):
+                with self.subTest(replay=replay, changed=changed):
+                    row = self.check_row()
+                    credentials = ApiCredentials(self.store)
+                    slot = slots(self.store)['example-broker']
+                    credentials.write_state('example-broker', slot, '{"cursor": 1}')
+                    process = FakeProcess(result={'stdout': 'event'})
+                    original = process._lines
+
+                    def refresh():
+                        if changed:
+                            Path(process.config['env']['EXAMPLE_BROKER_STATE_FILE']).write_text('{"cursor": 2}')
+                        if not replay:
+                            credentials.write_state('example-broker', slot, '{"cursor": 3}')
+                        yield from original()
+
+                    process._lines = refresh
+                    self.queue.append(process)
+                    if replay:
+                        with mock.patch.object(self.store, 'enqueue', side_effect=ValueError('full')):
+                            self.tick(0)
+                        credentials.write_state('example-broker', slot, '{"cursor": 3}')
+                        self.checks = cc.ConditionChecks(self.service, runner=self.runner)
+                        with mock.patch.object(self.checks, 'runner', side_effect=AssertionError('must replay')):
+                            self.tick(15)
+                    else:
+                        self.tick(0)
+                    self.assertEqual(json.loads(credentials.read_state('example-broker', slot)), {'cursor': 3})
+                    [work] = self.woken(row['id'])
+                    self.assertEqual(self.checks.handoff(work)['output'], 'event')
+                    self.service.preparations.cancel(row['id'])
+
+    def test_check_finishing_at_deadline_cannot_admit_or_charge_work(self):
+        for output in ('hit', ''):
+            with self.subTest(output=output):
+                row = self.check_row(until=30)
+                process = FakeProcess(result={'stdout': output})
+                original = process._lines
+
+                def finish_late():
+                    self.now = row['until_at']
+                    yield from original()
+
+                process._lines = finish_late
+                self.queue.append(process)
+                self.tick(0)
+                self.assertEqual(self.row(row['id'])['state'], prep.STATE_EXPIRED)
+                self.assertEqual(self.woken(row['id']), [])
+                day = self.service.preparations.budget_day(self.now)
+                self.assertFalse(self.store.config(prep.SCHEDULED_USAGE_PREFIX + day))
+
+    def test_wake_admission_closes_expired_window(self):
+        row = self.check_row(until=30)
+        with self.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            work, reason = self.service.preparations.wake(
+                db, row, at=row['until_at'], now=row['until_at'], channel='web', chat_id=None,
+                handoff={'kind': cc.HIT, 'output': 'late'})
+        self.assertIsNone(work)
+        self.assertEqual(reason, 'expired')
+        self.assertEqual(self.row(row['id'])['state'], prep.STATE_EXPIRED)
+        self.assertEqual(self.woken(row['id']), [])
+
+    def test_auto_pause_persists_one_local_notice_and_paired_delivery(self):
+        from personal_agent.messages import msg
+        for reason in (cc.PAUSED_NOT_READY, cc.PAUSED_LIBRARY, cc.PAUSED_FAILURES):
+            for paired in (False, True):
+                with self.subTest(reason=reason, paired=paired):
+                    row = self.check_row()
+                    self.service.preparations.notice_destination = (
+                        (lambda channel: ('owner', 'pairing', 'telegram')) if paired else None)
+                    if reason == cc.PAUSED_FAILURES:
+                        with mock.patch.object(self.store, 'enqueue', side_effect=ValueError('full')):
+                            for _ in range(cc.FAILURES_BEFORE_PAUSE):
+                                self.queue.append(FakeProcess(result={'exit': 1}))
+                                self.tick()
+                    else:
+                        self.checks._pause(row, cc.spec_of(row), reason, self.now)
+                    # A restarted runner settling the same stale result cannot duplicate the receipt.
+                    cc.ConditionChecks(self.service)._pause(row, cc.spec_of(row), reason, self.now)
+                    with self.store.db() as db:
+                        messages = db.execute("SELECT * FROM messages WHERE job_id LIKE ?", (f"check:{row['id']}:%",)).fetchall()
+                        notices = db.execute('SELECT * FROM telegram_notifications WHERE fingerprint=?', (row['id'],)).fetchall()
+                    self.assertEqual(len(messages), 1)
+                    self.assertEqual(messages[0]['channel'], 'web')
+                    self.assertEqual(messages[0]['content'], msg(
+                        'checks.notice_paused', title=prep.owner_title(row),
+                        reason=msg('checks.paused_' + reason.replace('-', '_'))))
+                    self.assertEqual(len(notices), int(paired))
+
+    def test_state_cas_rechecks_at_the_locked_swap_including_deletion(self):
+        from personal_agent.api_credentials import STATE_PREFIX
+        credentials = ApiCredentials(self.store)
+        slot = slots(self.store)['example-broker']
+        key = STATE_PREFIX + 'example-broker'
+        swap = self.store.swap_secret
+        for proposed in ('{"cursor": 2}', ''):
+            with self.subTest(proposed=proposed):
+                credentials.write_state('example-broker', slot, '{"cursor": 1}')
+                _, revision = credentials.read_state('example-broker', slot, with_revision=True)
+                refreshed = []
+
+                def refresh_before_lock(*args, **kwargs):
+                    with mock.patch.object(self.store, 'swap_secret', swap):
+                        credentials.write_state('example-broker', slot, '{"cursor": 3}')
+                    refreshed.append(self.store.secret(key))
+                    return swap(*args, **kwargs)
+
+                with mock.patch.object(self.store, 'swap_secret', side_effect=refresh_before_lock):
+                    self.assertFalse(credentials.write_state('example-broker', slot, proposed, expected=revision))
+                self.assertEqual(self.store.secret(key), refreshed[0])
+
+    def test_admission_uses_time_inside_transaction_not_completed_run_time(self):
+        row = self.check_row(until=30)
+        completed_at = self.now
+        self.now = row['until_at']
+        self.checks._commit(row, cc.spec_of(row), {'result': {'exit_status': 0, 'stdout': 'hit'}}, completed_at)
+        self.assertEqual(self.row(row['id'])['state'], prep.STATE_EXPIRED)
+        self.assertEqual(self.woken(row['id']), [])
+
+    def test_pause_notice_rolls_back_with_pause(self):
+        row = self.check_row()
+        with mock.patch.object(self.service.preparations, '_queue_status_notice', side_effect=RuntimeError('crash')):
+            with self.assertRaises(RuntimeError):
+                self.checks._pause(row, cc.spec_of(row), cc.PAUSED_NOT_READY, self.now)
+        self.assertEqual(self.row(row['id'])['state'], prep.STATE_SCHEDULED)
+        with self.store.db() as db:
+            self.assertIsNone(db.execute('SELECT 1 FROM messages WHERE job_id LIKE ?',
+                                         (f"check:{row['id']}:%",)).fetchone())
+        self.checks._pause(row, cc.spec_of(row), cc.PAUSED_NOT_READY, self.now)
+        with self.store.db() as db:
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM messages WHERE job_id LIKE ?',
+                                         (f"check:{row['id']}:%",)).fetchone()[0], 1)
+
+    def test_capture_boundary_redacts_full_repeating_and_split_unicode_secrets(self):
+        from personal_agent.code_run import OUTPUT_BYTES
+        for token, kept in (('abc' * 12, 36), ('秘密token-000000000000000000972', 5),
+                            ('secret"\\token-0000000000000972', 9)):
+            with self.subTest(token=token):
+                rendered = json.dumps(token)[1:-1] if '"' in token else token
+                captured = ('x' * (OUTPUT_BYTES - kept) + rendered).encode()[:OUTPUT_BYTES].decode(errors='replace')
+                result = self.code_run(self.owner_work(), self.check_args(),
+                                       self.state_process({'token': token}, {'stdout': captured}))
+                self.assertEqual(result['stdout'].replace('[redacted]', ''), 'x' * (OUTPUT_BYTES - kept))
+
+    def test_failure_wake_expiring_at_admission_stays_expired(self):
+        row = self.check_row(until=60)
+        for _ in range(cc.FAILURES_BEFORE_PAUSE - 1):
+            self.queue.append(FakeProcess(result={'exit': 1}))
+            self.tick()
+        wake = self.service.preparations.wake
+
+        def expire_before_wake(*args, **kwargs):
+            self.now = row['until_at']
+            return wake(*args, **kwargs)
+
+        self.queue.append(FakeProcess(result={'exit': 1}))
+        with mock.patch.object(self.service.preparations, 'wake', side_effect=expire_before_wake):
+            self.tick()
+        self.assertEqual(self.row(row['id'])['state'], prep.STATE_EXPIRED)
+        self.assertEqual(self.woken(row['id']), [])
+        day = self.service.preparations.budget_day(self.now)
+        self.assertFalse(self.store.config(prep.SCHEDULED_USAGE_PREFIX + day))

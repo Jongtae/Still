@@ -759,9 +759,7 @@ class PreparationsService:
                 status = cc.status_of(dict(row))
                 if row['state'] != prep.STATE_PAUSED or not status.get('paused'):
                     return None
-                title = service._redact_known_secrets(prep.owner_title(dict(row)))
-                return msg('checks.notice_paused', title=title,
-                           reason=msg('checks.paused_' + status['paused'].replace('-', '_')))
+                return cc.paused_notice_text(service.store, dict(row), status['paused'])
             if kind.startswith(prep.BLOCKED_NOTICE_PREFIX):
                 job = db.execute('SELECT status FROM jobs WHERE id=?', (notification['job_id'],)).fetchone()
                 latest = db.execute('SELECT id FROM telegram_notifications WHERE job_id=? AND kind GLOB ? '

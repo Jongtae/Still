@@ -768,18 +768,21 @@ class QuickStore:
         else:ledger.pop(self.STATE_MARKS,None)
         self.write_private(self.retired_secrets_path,json.dumps(ledger))
 
-    def swap_secret(self, key, value, retire, release=(), origin=None):
+    def swap_secret(self, key, value, retire, release=(), origin=None, *, expected=...):
         """Replace (or with ``value`` None remove) one secret, retiring ``retire(old)``'s plaintexts first,
         all under the cross-process secrets lock (Codex review on #259: concurrent writers cannot slip a
         value past retirement).  ``retire`` raising leaves the secret unchanged.  ``release`` (#778):
         values the new secret declares not secret, whose run-state retirement marks are dropped under the
-        same lock; ``origin`` is the retired values' origin (``'state'`` for a run state)."""
+        same lock; ``origin`` is the retired values' origin (``'state'`` for a run state).
+        ``expected`` optionally binds the write to the ciphertext read earlier ('' for absent);
+        a conflict returns False without retiring, releasing or writing anything."""
         with self.secret_lock:
             lock_fd=os.open(self.secret_lock_path,os.O_RDWR|os.O_CREAT,0o600)
             try:
                 fcntl.flock(lock_fd,fcntl.LOCK_EX)
                 values=json.loads(self.secret_path.read_text()) if self.secret_path.exists() else {}
                 old=values.get(key)
+                if expected is not ... and (old or '') != expected:return False
                 if old:self._retire_values_locked(retire(old),origin)
                 self._release_values_locked(release)
                 if value is None:

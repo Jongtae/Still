@@ -167,6 +167,12 @@ def handoff_text(detail, timezone_name):
                diagnostic=str(detail.get('diagnostic') or ''))
 
 
+def paused_notice_text(store, row, reason):
+    from .current_context import redact_known_secrets
+    return msg('checks.notice_paused', title=redact_known_secrets(store, prep.owner_title(row)),
+               reason=msg('checks.paused_' + reason.replace('-', '_')))
+
+
 class CheckRunner(CodeRunner):
     """One check run: ``code_run``'s sandbox and request decisions, with the check's own seams (#972).
 
@@ -204,7 +210,10 @@ class CheckRunner(CodeRunner):
         # No secrets-file mutation before the result has a durable replay record.
         for name, (slot, path) in states.items():
             try:
-                self.set_states[name] = (slot, _state_file_text(path))
+                text = _state_file_text(path)
+                before, revision = self._state_snapshots[name]
+                if text != before:
+                    self.set_states[name] = (slot, text, revision)
             except (OSError, ValueError):
                 continue
         try:
@@ -428,11 +437,16 @@ class ConditionChecks:
         destination = self._destination(row) if kind != QUIET else None
         with self.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            now = max(now, self.now())
             current = db.execute('SELECT * FROM preparations WHERE id=?', (row['id'],)).fetchone()
             current = dict(current) if current else None
             if (not current or current['state'] != prep.STATE_SCHEDULED or current['check_spec'] != row['check_spec']
                     or current['updated_at'] != row['updated_at'] or prep.line_refusal(db, current.get('line_id'))):
                 # D10: the row changed during the run (paused, cancelled, replaced, run now): its result is dropped.
+                return
+            if now >= current['until_at']:
+                key = prep.request_key(current['id'], current['due_at'], check_spec=current['check_spec'])
+                self.preparations._close_window(db, current, key, now, current['due_at'])
                 return
             status = status_of(current)
             # This durable envelope survives a rollback after either state file is written.
@@ -460,6 +474,8 @@ class ConditionChecks:
                 handoff = {'kind': HIT, 'at': pending['at'], 'check': spec['digest'][:16], 'output': result.get('stdout') or '',
                            **provenance}
                 woken, reason = self._wake(db, current, status, now, handoff, destination, prep.STATE_SCHEDULED)
+                if reason == 'expired':
+                    return  # wake closed the window; do not persist this late result's state
                 # An edge-triggered check may have marked this hit reported in its state.
                 # Keep its previous state until the pending hit is admitted.
                 save_state = save_state and bool(woken)
@@ -481,16 +497,25 @@ class ConditionChecks:
                                'exit_status': status['last_error']['exit_status'],
                                'timed_out': status['last_error']['timed_out'], 'diagnostic': diagnostic, **provenance}
                     woken, _reason = self._wake(db, current, status, now, handoff, destination, prep.STATE_PAUSED)
+                    if _reason == 'expired':
+                        return
                     if not woken:
                         updates['state'] = prep.STATE_PAUSED
-                        self._queue_paused_notice(db, current, now)
+                        self._queue_paused_notice(db, current, now, PAUSED_FAILURES)
             if save_state:
                 if self._write_state(current['id'], spec, outcome['state']):
                     status.pop('state_reset', None)
             if ended and (kind != HIT or woken):
                 from .api_credentials import ApiCredentials
-                for name, (slot, text) in outcome.get('set_states', {}).items():
-                    ApiCredentials(self.store).write_state(name, slot, text)
+                for name, state in outcome.get('set_states', {}).items():
+                    # Old pending records have no read revision: admit their hit, but
+                    # never let an unversioned snapshot replace current credentials.
+                    if len(state) != 3:
+                        continue
+                    slot, text, revision = state
+                    # A conflict leaves the newer state intact; the observed hit still
+                    # settles normally. Replay after a prior write also safely conflicts.
+                    ApiCredentials(self.store).write_state(name, slot, text, expected=revision)
             # Retain every unadmitted hit, including fresh ones: a transient condition may
             # clear before the next poll, even when its previous state was preserved.
             if not (kind == HIT and not woken):
@@ -544,12 +569,17 @@ class ConditionChecks:
             db.execute('UPDATE preparations SET state=?,updated_at=?,check_status=? WHERE id=?',
                        (prep.STATE_PAUSED, max(now, math.nextafter(current['updated_at'], math.inf)),
                         json.dumps(status, sort_keys=True), current['id']))
-            self._queue_paused_notice(db, current, now)
+            self._queue_paused_notice(db, current, now, reason)
 
-    def _queue_paused_notice(self, db, row, now):
-        # The existing preparation-blocked notice family (``status_notice_text``); one per pause.
-        self.preparations._queue_status_notice(db, row, f"check:{row['id']}:{int(now)}",
-                                               PAUSED_NOTICE_PREFIX + str(int(now)), now)
+    def _queue_paused_notice(self, db, row, now, reason):
+        # As with Preparations._queue_budget_notice: local chat is the durable
+        # receipt in this transaction, then the paired-surface outbox delivers it.
+        notice_id = f"check:{row['id']}:{row['updated_at']}"
+        if not db.execute('SELECT 1 FROM messages WHERE job_id=?', (notice_id,)).fetchone():
+            db.execute('INSERT INTO messages(role,content,channel,created,job_id) VALUES (?,?,?,?,?)',
+                       ('assistant', paused_notice_text(self.store, row, reason), 'web', now, notice_id))
+        self.preparations._queue_status_notice(db, row, notice_id,
+                                               PAUSED_NOTICE_PREFIX + str(row['updated_at']), now)
 
     def _write_state(self, preparation_id, spec, text):
         from .api_credentials import ApiCredentials

@@ -956,12 +956,15 @@ class CodeRunner:
         from .api_credentials import ApiCredentials
         from .api_requests import env_name, slots
         current, states = slots(self.store), {}
+        self._state_snapshots = {}
         for name in names:
             slot = current.get(name)
             if slot is None:
                 continue
             path = Path(workdir, f'state-{name}.json')
-            _state_file_text(path, ApiCredentials(self.store).read_state(name, slot) or '{}')
+            text, revision = ApiCredentials(self.store).read_state(name, slot, with_revision=True)
+            self._state_snapshots[name] = (text or '{}', revision)
+            _state_file_text(path, text or '{}')
             env[env_name(name, 'STATE_FILE')] = str(path)
             states[name] = (slot, path)
         check_state = Path(workdir, 'check-state.json')
@@ -1214,6 +1217,31 @@ class CodeRunner:
 
     def _result(self, code, packages, hosts, outcome, requests, names=(), failed=None):
         from .current_context import redact_known_secrets
+        # The sandbox caps each stream before newly written state values are known.
+        # Remove any secret prefix at that cut before exact-value redaction, including
+        # JSON-escaped values and a UTF-8 character cut in the middle of its bytes.
+        from .quickstart_store import QuickStore
+        values = getattr(self, '_run_state_values', set())
+        forms = {*values, *(form for value in values for form in QuickStore.json_escaped_forms(value))}
+        outcome = dict(outcome)
+        for stream in ('stdout', 'stderr'):
+            text = outcome[stream]
+            if len(text.encode('utf-8')) >= OUTPUT_BYTES:
+                text = text.encode('utf-8')[:OUTPUT_BYTES].decode('utf-8', errors='ignore').rstrip('\ufffd')
+                while text:
+                    cut = len(text)
+                    for form in forms:
+                        start = text.find(form[0], max(0, len(text) - len(form) + 1))
+                        while 0 <= start < cut:
+                            if form.startswith(text[start:]):
+                                cut = start
+                                break
+                            start = text.find(form[0], start + 1)
+                    if cut == len(text):
+                        break
+                    # Dropping a suffix may cut another overlapping secret.
+                    text = text[:cut]
+                outcome[stream] = text
         outcome = self._redact_run_value(outcome)
         requests = self._redact_run_value(requests)
         host_counts = reached_host_counts({'requests': requests})

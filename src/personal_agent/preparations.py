@@ -2655,13 +2655,18 @@ class Preparations:
         settles and then returns to ``return_state``; one wake at a time follows from that.
 
         Returns ``(work_id, None)``, or ``(None, reason)``: ``run-limit`` (its ``max_runs`` wakes are
-        used), ``budget`` (the shared budget is spent; its one daily notice is queued) or ``queue-full``.
+        used), ``expired`` (the window ended), ``budget`` (the shared budget is spent; its one daily
+        notice is queued) or ``queue-full``.
         """
         # A replacement can hit in the same second as the previous spec.
         key = request_key(row['id'], at, check_spec=row['check_spec'])
         existing = db.execute('SELECT id FROM jobs WHERE request_key=?', (key,)).fetchone()
         if existing:
             return existing['id'], None
+        now = max(now, self.clock())
+        if now >= row['until_at']:
+            self._close_window(db, row, key, now, at)
+            return None, 'expired'
         run = int(row['run_count'] or 0)
         if run >= int(row['max_runs'] or 0):
             return None, 'run-limit'

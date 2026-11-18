@@ -206,13 +206,17 @@ class ApiCredentials:
 
     # -- #1380: a code-run secret set's state between runs ---------------------------------
 
-    def read_state(self, name, slot):
-        """The set's saved run state text, or '' when none, unreadable or saved for other metadata."""
-        return self.read_bound_state(STATE_PREFIX + name, fingerprint(name, slot))
+    def read_state(self, name, slot, *, with_revision=False):
+        """The set's saved text, or ''; optionally pair it with its ciphertext revision for CAS."""
+        return self.read_bound_state(STATE_PREFIX + name, fingerprint(name, slot), with_revision=with_revision)
 
-    def read_bound_state(self, key, binding):
+    def read_bound_state(self, key, binding, *, with_revision=False):
         """The run state saved under ``key`` for ``binding``, or '' (a set's, or a condition check's, #972)."""
         token = self.store.secret(key)
+        state = self._bound_state_text(token, binding)
+        return (state, token) if with_revision else state
+
+    def _bound_state_text(self, token, binding):
         if not token:
             return ''
         try:
@@ -247,18 +251,23 @@ class ApiCredentials:
         """``discard_state`` for the state saved under ``key`` (#972: a condition check's)."""
         return self.store.swap_secret(key, None, self._state_strings, origin='state')
 
-    def write_state(self, name, slot, text):
+    def write_state(self, name, slot, text, *, expected=...):
         """Save the run state (a JSON object of at most ``MAX_STATE_BYTES``); False when refused."""
         return self.write_bound_state(STATE_PREFIX + name, fingerprint(name, slot), text,
-                                      current=lambda: self.assert_current(name, slot))
+                                      current=lambda: self.assert_current(name, slot), expected=expected)
 
-    def write_bound_state(self, key, binding, text, current=None):
+    def write_bound_state(self, key, binding, text, current=None, *, expected=...):
         """Save the run state under ``key`` for ``binding`` (#972: also a condition check's); False when refused.
 
         ``current`` raises when the binding no longer holds (a set's metadata changed), checked before the write.
+        ``expected`` compares the read ciphertext under the secrets lock, including for deletion.
         """
         if not isinstance(text, str) or not text.strip():
             try:
+                if current is not None:
+                    current()
+                if expected is not ...:
+                    return self.store.swap_secret(key, None, self._state_strings, origin='state', expected=expected)
                 self.discard_bound_state(key)
             except Exception:
                 return False  # Codex review on #259: an unreadable state is kept, never dropped unretired
@@ -273,12 +282,11 @@ class ApiCredentials:
             # The old state's values are retired and the new state written under one lock (Codex review).
             # #778: a value the new state declares plain is not retired, and its earlier mark is dropped.
             plain = set(plain_state_values(text))
-            self.store.swap_secret(key, self._cipher(create=True).encrypt(encoded).decode(),
-                                   lambda old: [value for value in self._state_strings(old) if value not in plain],
-                                   release=sorted(plain), origin='state')
+            return self.store.swap_secret(key, self._cipher(create=True).encrypt(encoded).decode(),
+                                          lambda old: [value for value in self._state_strings(old) if value not in plain],
+                                          release=sorted(plain), origin='state', expected=expected)
         except Exception:
             return False
-        return True
 
     def state_values(self):
         """String values in every saved run state, for the redaction boundary (tokens, keys)."""
