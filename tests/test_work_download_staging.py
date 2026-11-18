@@ -27,9 +27,10 @@ def download(tmp_path, monkeypatch):
             assert reader.declared is None
 
         def read_range(self, url, offset, length, *, etag, total, source_digest,
-                       address_check, before_send):
+                       address_check, before_send, on_request):
             address_check(url)
             before_send()
+            on_request(url)
             assert url == URL
             calls.append((offset, etag, total))
             part = PAYLOAD[offset:offset + 4]
@@ -47,7 +48,8 @@ def test_host_call_uses_verified_offset_and_projects_only_public_fields(download
     fetch = lambda offset: caps.execute('public_download', {'operation': 'fetch', 'url': URL, 'offset': offset})
     first = fetch(0)
     assert first['received'] == 4
-    assert set(first) == {'artifact', 'received', 'total', 'revision'}
+    assert set(first) == {'artifact', 'received', 'total', 'revision', 'destinations'}
+    assert first['destinations'] == ['example.org']
     with pytest.raises(ToolError, match='verified offset'):
         fetch(0)
     second = fetch(4)
@@ -112,3 +114,13 @@ def test_restarted_work_consumes_remaining_ranges_once(download):
     assert new_caps.execute('public_download', {'operation': 'preview', 'offset': 0})['content'] == PAYLOAD.decode()
     assert [row[0] for row in calls] == [0, 4, 8, 12]
     assert not service._claim_queued_work()
+
+
+def test_same_length_modified_staging_cannot_recover_or_reach_model(download):
+    store, work_id, _, caps, _ = download
+    receipt = caps.execute('public_download', {'operation': 'fetch', 'url': URL, 'offset': 0})
+    stage = store.private / 'work-downloads' / receipt['artifact']
+    stage.write_bytes(b'XXXX')
+    assert not work_download.staged_checkpoint_available(store, store.read_checkpoint(work_id))
+    with pytest.raises(ToolError, match='no longer match'):
+        caps.execute('public_download', {'operation': 'preview', 'offset': 0})

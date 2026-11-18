@@ -2,6 +2,7 @@
 import hashlib
 import http.client
 import re
+from copy import copy
 from dataclasses import dataclass, field
 
 from .local_tools import MAX_PAGE_REDIRECTS, MAX_PAGE_SECONDS
@@ -57,16 +58,30 @@ def _header(response, name, default=None):
     return response.headers.get(name, default)
 
 
+class _HostGuardRefusal(Exception):
+    pass
+
+
+def _run_guard(callback, *args):
+    try:
+        return callback(*args)
+    except ValueError as exc:
+        if isinstance(getattr(exc, 'code', None), str):
+            raise _HostGuardRefusal(exc) from None
+        raise
+
+
 class PublicDownload:
     """Reuse PublicPageReader's destination policy and pinned GET transport."""
 
     def __init__(self, reader):
         if reader.declared is not None:
             raise ValueError('public downloads use the public-only destination policy')
-        self.reader = reader
+        self.reader = copy(reader)
+        self.reader.preserve_query = True
 
     def read_range(self, url, offset, length, *, etag=None, total=None, source_digest=None,
-                   address_check, before_send=None):
+                   address_check, before_send=None, on_request=None):
         """Return only a complete, validated chunk, without publishing any files."""
         if not callable(address_check):
             raise TypeError('public download requires a host address check')
@@ -85,7 +100,9 @@ class PublicDownload:
         def dispatch():
             nonlocal ran
             if before_send is not None:
-                before_send()
+                _run_guard(before_send)
+            if on_request is not None:
+                on_request(current)
             ran = True
 
         deadline = self.reader.clock() + MAX_PAGE_SECONDS
@@ -93,7 +110,7 @@ class PublicDownload:
             current = self.reader._safe_url(url)
             for redirect in range(MAX_PAGE_REDIRECTS + 1):
                 try:
-                    addresses = self.reader._checked_hop(current, deadline, address_check)
+                    addresses = self.reader._checked_hop(current, deadline, lambda url: _run_guard(address_check, url))
                 except ValueError:
                     raise PublicDownloadError('public_download_refused', ran) from None
                 identity = _identifier(current)
@@ -115,6 +132,8 @@ class PublicDownload:
                     return self._read_response(response, offset, length, etag, total, identity, deadline)
                 finally:
                     self.reader._close_response(response)
+        except _HostGuardRefusal as exc:
+            raise exc.args[0] from None
         except PublicDownloadError:
             raise
         except (ValueError, ProviderError, OSError, http.client.HTTPException):

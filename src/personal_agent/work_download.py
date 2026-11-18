@@ -4,6 +4,7 @@ import json
 import os
 import stat
 import uuid
+from contextlib import contextmanager
 
 from .local_tools import normalize_public_url
 from .public_download import MAX_RANGE_BYTES, PublicDownload
@@ -21,27 +22,56 @@ class WorkDownloadError(ValueError):
 def public_checkpoint(checkpoint):
     return {key: checkpoint[key] for key in ('artifact', 'received', 'total', 'revision')}
 
-def _staged_file(store, artifact, flags):
+@contextmanager
+def _staging_directory(store, *, create=False):
+    directory = store.private / 'work-downloads'
+    if create:
+        directory.mkdir(mode=0o700, exist_ok=True)
+    fd = os.open(directory, os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        yield fd
+    finally:
+        os.close(fd)
+
+def _staged_file(directory, artifact, flags):
     try:
         if uuid.UUID(hex=artifact).hex != artifact:
             raise ValueError
     except (ValueError, AttributeError):
         raise WorkDownloadError('The staged read reference is invalid.', 'read_checkpoint_invalid') from None
-    directory = store.private / 'work-downloads'
-    directory.mkdir(mode=0o700, exist_ok=True)
-    root = os.open(directory, os.O_DIRECTORY | os.O_NOFOLLOW)
-    try:
-        fd = os.open(artifact, flags | os.O_NOFOLLOW, 0o600, dir_fd=root)
-        info = os.fstat(fd)
-        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
-            os.close(fd)
-            raise WorkDownloadError('The staged read is unavailable.', 'read_checkpoint_invalid')
-        return fd
-    finally:
-        os.close(root)
+    fd = os.open(artifact, flags | os.O_NOFOLLOW, 0o600, dir_fd=directory)
+    info = os.fstat(fd)
+    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+        os.close(fd)
+        raise WorkDownloadError('The staged read is unavailable.', 'read_checkpoint_invalid')
+    return fd
 
-def _make_room(store, db, artifact, size):
-    directory = store.private / 'work-downloads'
+def _verified_digest(source, size, expected=None):
+    content = hashlib.sha256()
+    overdue = size
+    while overdue:
+        block = source.read(min(RANGE_BYTES, overdue))
+        if not block:
+            raise WorkDownloadError('Previously verified bytes are unavailable.', 'read_checkpoint_missing', ran=True)
+        content.update(block)
+        overdue -= len(block)
+    if expected is not None and content.hexdigest() != expected:
+        raise WorkDownloadError('The staged bytes no longer match their checkpoint.', 'read_checkpoint_corrupt', ran=True)
+    return content
+
+def staged_checkpoint_available(store, checkpoint):
+    if not checkpoint.get('source_url') or not checkpoint.get('digest'):
+        return False
+    try:
+        with _staging_directory(store) as directory:
+            fd = _staged_file(directory, checkpoint['artifact'], os.O_RDONLY)
+            with os.fdopen(fd, 'rb') as source:
+                _verified_digest(source, checkpoint['received'], checkpoint['digest'])
+            return True
+    except (OSError, WorkDownloadError):
+        return False
+
+def _make_room(db, directory, artifact, size):
     with os.scandir(directory) as entries:
         files = {row.name: row.stat(follow_symlinks=False) for row in entries}
     used = sum(info.st_size for name, info in files.items() if name != artifact)
@@ -53,8 +83,13 @@ def _make_room(store, db, artifact, size):
         SELECT c.value,j.status FROM work_read_checkpoints c
         LEFT JOIN jobs j ON j.id=c.job_id
     """)
-    protected = {json.loads(row['value'])['artifact'] for row in candidates
-                 if row['status'] not in {'succeeded','cancelled'} and row['status'] is not None}
+    protected = set()
+    for row in candidates:
+        if row['status'] in {'queued', 'running', 'awaiting_connection', 'awaiting_approval', 'awaiting_context'}:
+            value = json.loads(row['value'])
+            if not isinstance(value, dict) or not isinstance(value.get('artifact'), str):
+                raise WorkDownloadError('The staging index could not be verified.', 'read_checkpoint_invalid', ran=True)
+            protected.add(value['artifact'])
     for name, info in sorted(files.items(), key=lambda pair: pair[1].st_mtime):
         if name == artifact or name in protected or not stat.S_ISREG(info.st_mode):
             continue
@@ -63,19 +98,23 @@ def _make_room(store, db, artifact, size):
                 continue
         except ValueError:
             continue
-        (directory / name).unlink()
+        os.unlink(name, dir_fd=directory)
         used -= info.st_size
         if used + size <= STAGING_BYTES:
             return
     raise WorkDownloadError('The install reached its staged read limit.', 'read_checkpoint_limit', ran=True)
 
-def receive(store, job_id, ledger, reader, url, offset, *, address_check, before_send, guard):
+def receive(store, job_id, ledger, reader, url, offset, *, address_check, before_send, guard, on_request):
     """Read one range and publish only bytes whose Work checkpoint commits."""
     if ledger is None or ledger.epoch is None:
         raise WorkDownloadError('The Work has no active read checkpoint scope.', 'read_checkpoint_unavailable')
-    canonical = normalize_public_url(url, reader.declared)
-    identity = hashlib.sha256(canonical.encode('utf-8')).hexdigest()
     previous = store.read_checkpoint(job_id)
+    if url is None and previous:
+        url = previous.get('source_url')
+    if not isinstance(url, str) or len(url) > 8192:
+        raise WorkDownloadError('Use the public file address for a new fetch.', 'read_checkpoint_source')
+    canonical = normalize_public_url(url, reader.declared, preserve_query=True)
+    identity = hashlib.sha256(canonical.encode('utf-8')).hexdigest()
     if previous and previous.get('url_digest') != identity:
         raise WorkDownloadError('This Work has a checkpoint for a different source.', 'read_checkpoint_source')
     verified = previous['received'] if previous else 0
@@ -90,7 +129,7 @@ def receive(store, job_id, ledger, reader, url, offset, *, address_check, before
         canonical, offset, length, etag=previous.get('etag') if previous else None,
         total=previous.get('total') if previous else None,
         source_digest=previous.get('source_digest') if previous else None,
-        address_check=address_check, before_send=before_send,
+        address_check=address_check, before_send=before_send, on_request=on_request,
     )
     guard()
     checkpoint = {
@@ -98,33 +137,40 @@ def receive(store, job_id, ledger, reader, url, offset, *, address_check, before
         'received': offset + len(part.data), 'total': part.total,
         'revision': previous['revision'] + 1 if previous else 1,
         'etag': part.etag, 'source_digest': part.source_digest,
-        'digest': part.digest, 'url_digest': identity,
+        'digest': part.digest, 'url_digest': identity, 'source_url': canonical,
     }
     with store.db() as db:
         db.execute('BEGIN IMMEDIATE')
-        if not store.record_read_checkpoint(job_id, checkpoint, epoch=ledger.epoch, db=db):
+        if store.read_checkpoint(job_id, db=db) != previous:
             raise WorkDownloadError('The Work checkpoint changed before the range committed.', 'read_checkpoint_superseded', ran=True)
-        fd = _staged_file(store, checkpoint['artifact'], os.O_RDWR | os.O_CREAT)
-        with os.fdopen(fd, 'r+b') as output:
-            if os.fstat(output.fileno()).st_size < offset:
-                raise WorkDownloadError('Previously verified bytes are unavailable.', 'read_checkpoint_missing', ran=True)
-            _make_room(store, db, checkpoint['artifact'], checkpoint['received'])
-            output.seek(offset)
-            output.truncate()
-            output.write(part.data)
-            output.flush()
-            os.fsync(output.fileno())
+        with _staging_directory(store, create=True) as directory:
+            fd = _staged_file(directory, checkpoint['artifact'], os.O_RDWR | os.O_CREAT)
+            with os.fdopen(fd, 'r+b') as output:
+                digest = _verified_digest(output, offset, previous['digest'] if previous else None)
+                digest.update(part.data)
+                checkpoint['digest'] = digest.hexdigest()
+                if not store.record_read_checkpoint(job_id, checkpoint, epoch=ledger.epoch, db=db):
+                    raise WorkDownloadError('The Work checkpoint changed before the range committed.', 'read_checkpoint_superseded', ran=True)
+                _make_room(db, directory, checkpoint['artifact'], checkpoint['received'])
+                output.seek(offset)
+                output.truncate()
+                output.write(part.data)
+                output.flush()
+                os.fsync(output.fileno())
+            os.fsync(directory)
     return public_checkpoint(checkpoint)
 
 def preview(store, job_id, offset):
     checkpoint = store.read_checkpoint(job_id)
     if not checkpoint or not isinstance(offset, int) or not 0 <= offset < checkpoint['received']:
         raise WorkDownloadError('The requested position is outside the verified range.', 'read_checkpoint_missing')
-    fd = _staged_file(store, checkpoint['artifact'], os.O_RDONLY)
-    with os.fdopen(fd, 'rb') as source:
-        source.seek(offset)
-        size = min(PREVIEW_BYTES, checkpoint['received'] - offset)
-        data = source.read(size)
+    with _staging_directory(store) as directory:
+        fd = _staged_file(directory, checkpoint['artifact'], os.O_RDONLY)
+        with os.fdopen(fd, 'rb') as source:
+            _verified_digest(source, checkpoint['received'], checkpoint['digest'])
+            source.seek(offset)
+            size = min(PREVIEW_BYTES, checkpoint['received'] - offset)
+            data = source.read(size)
     if len(data) != size:
         raise WorkDownloadError('Previously verified bytes are unavailable.', 'read_checkpoint_missing')
     return {**public_checkpoint(checkpoint), 'offset': offset, 'content': data.decode('utf-8', errors='replace')}

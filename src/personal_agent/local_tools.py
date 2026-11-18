@@ -137,7 +137,7 @@ def _declared(declared, host, port):
     except Exception: return False   # an unreadable list declares nothing
 
 
-def normalize_public_url(value, declared=None):
+def normalize_public_url(value, declared=None, *, preserve_query=False):
     """Return the exact, approval-comparable public URL form.
 
     ``declared`` (#209): ``(host, port) -> bool``, the owner's intranet
@@ -161,7 +161,7 @@ def normalize_public_url(value, declared=None):
     if literal is not None and literal.version == 6: host=f'[{host}]'
     default_port=80 if parsed.scheme.casefold() == 'http' else 443
     if port is not None and port != default_port: host=f'{host}:{port}'
-    query=urlencode(sorted(parse_qsl(parsed.query,keep_blank_values=True)))
+    query=parsed.query if preserve_query else urlencode(sorted(parse_qsl(parsed.query,keep_blank_values=True)))
     return urlunsplit((parsed.scheme.casefold(),host,parsed.path or '/',query,''))
 
 
@@ -277,7 +277,7 @@ class PublicPageReader:
             self._remaining(deadline)
 
     def _safe_url(self, value):
-        return normalize_public_url(value, self.declared)
+        return normalize_public_url(value, self.declared, preserve_query=getattr(self, "preserve_query", False))
 
     def _validate_host(self, url, deadline=None):
         parsed=urlsplit(url); host=parsed.hostname
@@ -440,7 +440,7 @@ class PublicPageReader:
             getter=getattr(response,'geturl',None)
             reported=getter() if callable(getter) else None
         if reported is None: return
-        try: normalized=normalize_public_url(reported,self.declared)
+        try: normalized=self._safe_url(reported)
         except (TypeError,ValueError):
             raise ValueError('공개 페이지 전송 계층이 확인되지 않은 주소를 반환했습니다.') from None
         if normalized != validated_url:

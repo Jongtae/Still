@@ -9840,12 +9840,17 @@ class AgentService:
     def mark_telegram_connected(self):
         return self.telegram_delivery.mark_telegram_connected()
 
-    def can_resume_read_checkpoint(self, work_id, _checkpoint):
+    def can_resume_read_checkpoint(self, work_id, checkpoint):
         """Use the foreground Work's existing Stop, owner-wait and effect rules."""
         job = self.store.job(work_id)
         if not job or prep.preparation_of(job.get('request_key')) or self.work_stopped(work_id):
             return False
-        return self.may_continue(work_id, 'resume', owner_waits=bool(self.work_waits_for_owner(job)))[0]
+        from .work_download import staged_checkpoint_available
+        if work_mode.active(self.store) or not staged_checkpoint_available(self.store, checkpoint):
+            return False
+        if not self.may_continue(work_id, 'resume', owner_waits=bool(self.work_waits_for_owner(job)))[0]:
+            return False
+        return self.may_continue(work_id, 'redelegate')[0]
 
     def recover_interrupted_work(self):
         """Recover verified read checkpoints and settle other interrupted Works."""

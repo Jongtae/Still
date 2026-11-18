@@ -2621,7 +2621,7 @@ class QuickStore:
     def _read_checkpoint_value(value):
         """Validate only host-owned progress and representation identity fields."""
         if not isinstance(value, dict) or not set(value) <= {
-            'artifact', 'received', 'total', 'revision', 'etag', 'source_digest', 'digest', 'url_digest',
+            'artifact', 'received', 'total', 'revision', 'etag', 'source_digest', 'digest', 'url_digest', 'source_url',
         }:
             return None
         artifact = value.get('artifact')
@@ -2635,6 +2635,8 @@ class QuickStore:
         for key in ('etag', 'source_digest', 'digest', 'url_digest'):
             if key in value and (not isinstance(value[key], str) or not 0 < len(value[key]) <= 1024):
                 return None
+        if 'source_url' in value and (not isinstance(value['source_url'], str) or not 0 < len(value['source_url']) <= 8192):
+            return None
         return value
 
     @staticmethod
@@ -2704,11 +2706,11 @@ class QuickStore:
             return False
         if prior:
             if prior['resume_pending'] or any(prior.get(key) != value.get(key)
-                                              for key in ('artifact', 'total', 'etag', 'source_digest', 'url_digest')):
+                                              for key in ('artifact', 'total', 'etag', 'source_digest', 'url_digest', 'source_url')):
                 return False
             if prior['received'] == value['received']:
                 return all(prior.get(key) == value.get(key) for key in
-                           ('artifact', 'received', 'total', 'revision', 'etag', 'source_digest', 'digest', 'url_digest'))
+                           ('artifact', 'received', 'total', 'revision', 'etag', 'source_digest', 'digest', 'url_digest', 'source_url'))
             if value['received'] < prior['received'] or value['revision'] <= prior['revision']:
                 return False
         db.execute('INSERT INTO work_read_checkpoints(job_id,epoch,value) VALUES (?,?,?) '

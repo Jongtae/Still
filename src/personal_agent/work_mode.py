@@ -191,6 +191,9 @@ def tool_refusal(store, host_action, args=None):
     declared intranet destination may run; each of its requests is checked
     again where it is sent.
     """
+    if (host_action == 'public_download' and isinstance(args, dict)
+            and args.get('operation') == 'preview' and 'url' not in args):
+        return None
     egress = TOOL_EGRESS.get(host_action)
     if not egress or not active(store):
         return None
