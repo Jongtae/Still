@@ -5935,7 +5935,7 @@ def work_awaiting_owner_text(capabilities):
  try:return awaiting_owner_text(work_awaiting_owner(capabilities.store,capabilities.job_id))[:AWAITING_OWNER_CHARS]
  except Exception:return ''
 
-def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact=None,conversation='',owner_context=None,*,budget=None,attachments='',read_state='',awaiting='',conversation_turns=None,effects=(),reply_source='worker',reply_delivery='to_owner',plan_reading=''):
+def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact=None,conversation='',owner_context=None,*,budget=None,attachments='',read_state='',awaiting='',conversation_turns=None,effects=(),reply_source='worker',reply_delivery='to_owner',plan_reading='',continues=''):
  """``yes`` / ``no`` / ``unavailable``: did the reply serve the owner's message ``goal``?
 
  The one outcome judgment (#657, #820): one ``ConversationJudgments.goal_reached``
@@ -5960,6 +5960,10 @@ def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact
  # #151: which listed items were opened and read through comes first, in room of its own, so it
  # neither is cut nor cuts the referenced observations (Codex review: their share is what is left).
  state=(str(clean(read_state) or '')[:READ_STATE_CHARS]+'\n') if read_state else ''
+ # The checkpoint is Still's observation of this same Work, separate from the
+ # owner's request and from source text that the checkpoint never certifies.
+ continuation=str(clean(continues) or '')[:1200] if continues else ''
+ if continuation:state=continuation+'\n'+state
  room=GOAL_OBSERVATION_CHARS-len(state)
  share=max(300,room//max(1,len(refs)))
  observed=state+'\n'.join(clean(_observation_text(ref,observations[ref][0],observations[ref][3]))[:share] for ref in refs)[:room]
@@ -5986,6 +5990,7 @@ def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact
                                    **({'reply_delivery':reply_delivery} if reply_delivery!='to_owner' else {}),
                                    owner_context=owner,**({'conversation_messages':count} if count is not None else {}),
                                    **({'plan_reading':reading} if reading else {}),
+                                   **({'continues':continuation} if continuation else {}),
                                    **({'attachments':attachments} if attachments else {}),
                                    **({'awaiting_owner':clean(awaiting)} if awaiting else {}),
                                    **({'recorded_effects':tuple(effects),
@@ -6188,7 +6193,7 @@ def loop_definitions(definitions):
  # name ever reach this list, the loop's own definition replaces it.
  return [*(d for d in definitions if d['function']['name']!=FINISH_ACTION),FINISH_DEFINITION]
 
-def run_agent(adapter,config,key,history,system,capabilities,record,scope='main',owner_context=None,images=None,judgment_history=None,definitions=None,reply_delivery='to_owner'):
+def run_agent(adapter,config,key,history,system,capabilities,record,scope='main',owner_context=None,images=None,judgment_history=None,definitions=None,reply_delivery='to_owner',*,read_continuation='',original_goal=None):
  """The direct-API tool loop.  ``owner_context`` (#833) is the turn context whose
  ``profile`` / ``current_context`` sections ``system`` already carries, so the outcome
  judgment reads the same owner model the worker was given; None reads ``none``.
@@ -6218,7 +6223,7 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
  # #14: (tool, host_action, state, detail, reason) of every validated attempt, as ``trail_steps``
  # reads recorded events, so the outcome judgment sees which failures a later call made up for.
  steps=[]
- goal=next((m.get('content') for m in reversed(history) if isinstance(m,dict) and m.get('role')=='user' and isinstance(m.get('content'),str)),'')
+ goal=original_goal if original_goal is not None else next((m.get('content') for m in reversed(history) if isinstance(m,dict) and m.get('role')=='user' and isinstance(m.get('content'),str)),'')
  # #820: the recent conversation the one outcome judgment reads (the current request excluded).
  # #240: each row labelled as an earlier Work (as on the orchestrated route); this history carries no times.
  judgment_rows=[m for m in (history[:-1] if judgment_history is None else judgment_history)
@@ -6235,7 +6240,8 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
   if labels and msg('agent_runtime.sources_looked_up') not in content:content+='\n\n'+msg('agent_runtime.sources_looked_up')+'\n'+'\n'.join(labels)
   result=ModelResult(content[:24000],config['provider'],actual)
   result.reply_source=reply_source
-  if claim is None and _external(trail) and not invalid_calls:
+  needs_judgment=bool(_external(trail) or read_continuation)
+  if claim is None and needs_judgment and not invalid_calls:
    # #820: a plain final reply after tools ran is judged once, like a done claim: did
    # the reply serve the owner's message, given every settled observation?  Whether
    # the model also called ``finish`` is bookkeeping, not the outcome.
@@ -6245,8 +6251,8 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
                             attachments=attachment_facts(images=len(images)) if images else '',read_state=steps_read_state(steps),
                             awaiting=work_awaiting_owner_text(capabilities),conversation_turns=conversation_turns,
                             effects=recorded_effects(steps),reply_source=reply_source,reply_delivery=reply_delivery,
-                            plan_reading=capabilities.plan_reading)
-  if not _external(trail) and not invalid_calls:
+                            plan_reading=capabilities.plan_reading,continues=read_continuation)
+  if not needs_judgment and not invalid_calls:
    # Ordinary conversation: no tool ran (or only internal current-state
    # bookkeeping, #627), so there is nothing to observe.
    result.outcome='succeeded'
@@ -6254,9 +6260,9 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
   # outranks a state change that fell short.
   elif (claim is None or claim['status']=='done') and judgment=='yes' and not invalid_calls and not state_change_short(steps):
    result.outcome='succeeded'
-  else:result.outcome='partial' if successful or held_partial else 'failed'
+  else:result.outcome='partial' if successful or held_partial or read_continuation else 'failed'
   unknown=[]
-  if _external(trail) and result.outcome!='succeeded':
+  if needs_judgment and result.outcome!='succeeded':
    if judgment=='no':unknown.append(getattr(judgment,'gap','') or GOAL_NOT_SHOWN)
    elif claim is None:unknown.append(GOAL_NOT_CLAIMED)
    elif judgment=='unavailable':unknown.append(GOAL_UNJUDGED)
@@ -6276,7 +6282,7 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
    # #1459: the owner reads the judgment's note; the gap only when no note was given.
    if isinstance(getattr(judgment,'note',None),str):result.report['note']=judgment.note
    elif judgment=='no' and getattr(judgment,'gap',''):result.report['gap']=judgment.gap
-  if trail:
+  if trail or read_continuation:
    kinds={}
    for row in alternatives:kinds[row['kind']]=kinds.get(row['kind'],0)+1
    record('model','concluded',json.dumps({'scope':scope,'outcome':result.outcome,
@@ -6394,7 +6400,8 @@ def run_agent(adapter,config,key,history,system,capabilities,record,scope='main'
                              getattr(capabilities,'judgment_text',None),conversation,owner_context,budget=budget,
                              attachments=attachment_facts(images=len(images)) if images else '',read_state=steps_read_state(steps),
                              awaiting=work_awaiting_owner_text(capabilities),conversation_turns=conversation_turns,
-                            effects=recorded_effects(steps),reply_delivery=reply_delivery,plan_reading=capabilities.plan_reading)
+                            effects=recorded_effects(steps),reply_delivery=reply_delivery,plan_reading=capabilities.plan_reading,
+                            continues=read_continuation)
       # A "not shown" answer returns the claim once, so the model can take
       # another path; a second one, or no engine, ends the run below.
       if judgment=='no' and getattr(judgment,'retry_warranted',None) is not False and judged<GOAL_JUDGMENTS:reason='goal_not_observed'

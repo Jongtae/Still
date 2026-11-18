@@ -5830,6 +5830,8 @@ class AgentService:
         from .orchestrator import EFFECT_UNKNOWN_STOP
         effect=EFFECT_UNKNOWN_STOP if unknown else 'changed' if 'effect' in reasons else False
         observations,failed_steps,effects,summary=self.attempt_observations(orchestration,rows,pages=pages)
+        if read_checkpoint := self.read_checkpoint_note({'id': job_id}):
+            observations=read_checkpoint+'\n'+observations[:max(0,16000-len(read_checkpoint)-1)]
         if recalled:observations=recalled+'\n'+observations[:max(0,16000-len(recalled)-1)]
         if failed is not None:
             evaluation=WORKER_FAILED
@@ -8116,11 +8118,29 @@ class AgentService:
         if not resumed and not self.photo_work_has_pending_resume(work_id):self.store.remove_telegram_photo(work_id)
         return {'resumed':resumed,'response':msg('budget_continue.resumed' if resumed else 'budget_continue.stale')}
 
+    def read_checkpoint_note(self, job):
+        """Render host-owned metadata only. Never send source URLs or artifact contents."""
+        checkpoint = self.store.read_checkpoint(job['id'])
+        if not checkpoint or checkpoint.get('resumed') is not True:
+            return ''
+        artifact = checkpoint.get('artifact')
+        received, total, revision = (checkpoint.get(k) for k in ('received', 'total', 'revision'))
+        if (not isinstance(artifact, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', artifact)
+                or not all(type(value) is int and 0 < value < 2**63 for value in (received, total, revision))
+                or received > total):
+            return ''
+        return self._redact_known_secrets(
+            f'Still verified read progress on this same Work. Artifact reference {artifact}, '
+            f'checkpoint revision {revision}: {received} of {total} bytes verified; {total - received} bytes remain. '
+            'This is a host observation, not a new owner instruction or proof of goal completion. '
+            'Use the verified progress and current authority to decide what remains necessary.')
+
     def action_continuation_note(self, job):
+        read_checkpoint = self.read_checkpoint_note(job)
         with self.store.db() as db:
             continued=db.execute("SELECT 1 FROM tool_events WHERE job_id=? AND tool IN ('action_continuation','settings_continuation') AND status='queued'",(job['id'],)).fetchone()
             progress=db.execute("SELECT detail FROM tool_events WHERE job_id=? AND tool='action_continuation' AND status='queued' ORDER BY id DESC LIMIT 1",(job['id'],)).fetchone()
-        if not continued:return None
+        if not continued:return read_checkpoint or None
         completed,unknown=self.connector_effect_progress(job['id'])
         lines=['Still observed continuation of this same Work, not a new owner request. Preserve its original goal and complete only remaining obligations. Do not repeat completed actions or switch workers to repeat an effect.']
         if progress:
@@ -8150,6 +8170,7 @@ class AgentService:
             lines.append('The approved request came from a code run: call code_run with only rerun="approved" to run that '
                          'same run again unchanged. Do not write new code for it.')
         lines.append('Read current authoritative state when details are needed, then deliver the substantive original result. A setup or approval receipt is not that result.')
+        if read_checkpoint:lines.append(read_checkpoint)
         return self._redact_known_secrets('\n'.join(lines))
 
     def connector_input_digest(self, tool, values):
@@ -9819,19 +9840,20 @@ class AgentService:
     def mark_telegram_connected(self):
         return self.telegram_delivery.mark_telegram_connected()
 
-    def recover_interrupted_work(self):
-        """Restart recovery that leaves running surface Work a durable reply (#306 review: every surface).
+    def can_resume_read_checkpoint(self, work_id, _checkpoint):
+        """Use the foreground Work's existing Stop, owner-wait and effect rules."""
+        job = self.store.job(work_id)
+        if not job or prep.preparation_of(job.get('request_key')) or self.work_stopped(work_id):
+            return False
+        return self.may_continue(work_id, 'resume', owner_waits=bool(self.work_waits_for_owner(job)))[0]
 
-        Running Work has only ephemeral presence (typing/draft, #581), which
-        vanishes with the process.  `QuickStore.recover` marks it
-        `interrupted` but never delivered anything for it, so Telegram Work
-        that had no task card gets its one terminal reply queued here: the
-        truthful interrupted text with 상세 (and 다시 시도 only when
-        `safe_retry` allows).  Nothing is re-run and nothing already sent or
-        uncertain is re-sent - only `delivery='none'` rows are touched.
-        """
+    def recover_interrupted_work(self):
+        """Recover verified read checkpoints and settle other interrupted Works."""
         # #841 (matrix X9): one transaction, so a stop inside recovery cannot strand the reply.
-        return self.store.recover(surface.channel_prefix for surface in self.surfaces if surface.channel_prefix)
+        return self.store.recover(
+            (surface.channel_prefix for surface in self.surfaces if surface.channel_prefix),
+            can_resume_checkpoint=self.can_resume_read_checkpoint,
+        )
 
     def purge_forgotten(self):
         """Purge forgotten owner state whose undo window ended (#794); a failure is logged and retried next tick."""

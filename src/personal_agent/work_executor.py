@@ -1707,6 +1707,8 @@ class WorkExecutor:
             # #833: the outcome judgment reads the same profile / current-context sections.
             run_options={'owner_context':api_context,'judgment_history':judgment_history,
                          'reply_delivery':service.work_reply_delivery(job)}
+            if read_continuation := service.read_checkpoint_note(job):
+                run_options.update(read_continuation=read_continuation, original_goal=run.prompt)
             if run.image_inputs:run_options['images']=run.image_inputs
             # Adopt the adapter's existing tool_turn boundary: the loop may refuse its
             # budget before dispatch, which must leave every annotation open.
