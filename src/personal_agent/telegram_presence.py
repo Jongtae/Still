@@ -162,6 +162,7 @@ RETRY_STEP_TEXT = msg('step.retry')
 FALLBACK_STEP_LINES = {
     'web_search': (msg('step.web.query'), msg('step.web')),
     'public_page_read': (msg('step.page_open.host'), msg('step.page_open')),
+    'public_download': (msg('step.public_download.host'), msg('step.public_download')),
     'browser_open': (msg('step.page_open.host'), msg('step.page_open')),
     'browser_read': (msg('step.page_read.host'), msg('step.page_read')),
     'browser_find': (msg('step.page_find.host'), msg('step.page_find')),

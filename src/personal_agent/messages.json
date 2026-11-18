@@ -1781,6 +1781,12 @@
   "ja": "公開ページを読む",
   "zh": "读取公开页面"
  },
+ "projection.download_a_public_file": {
+  "ko": "공개 파일 받기",
+  "en": "Download a public file",
+  "ja": "公開ファイルをダウンロード",
+  "zh": "下载公开文件"
+ },
  "projection.read_browser_page": {
   "ko": "브라우저 페이지 읽기",
   "en": "Read browser page",
@@ -5794,6 +5800,18 @@
   "en": "Opening {host}",
   "ja": "{host} を開いています",
   "zh": "正在打开 {host}"
+ },
+ "step.public_download": {
+  "ko": "공개 파일을 받고 있어요",
+  "en": "Downloading a public file",
+  "ja": "公開ファイルをダウンロードしています",
+  "zh": "正在下载公开文件"
+ },
+ "step.public_download.host": {
+  "ko": "{host}에서 공개 파일을 받고 있어요",
+  "en": "Downloading a public file from {host}",
+  "ja": "{host} から公開ファイルをダウンロードしています",
+  "zh": "正在从 {host} 下载公开文件"
  },
  "step.page_read": {
   "ko": "페이지 읽어 보고 있어요",
