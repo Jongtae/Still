@@ -9,6 +9,7 @@ its fixture code in a local Python subprocess behind the fake sandbox protocol. 
 named: the fixtures are a synthetic API at example hosts.
 """
 import json
+import os
 import subprocess
 import unittest
 from datetime import datetime, timezone
@@ -409,11 +410,10 @@ class Running(_Base):
         self.assertEqual(credentials.read_bound_state(key, spec['digest']), previous)
         day = self.service.preparations.budget_day(self.now)
         self.assertIsNone(self.store.config(prep.SCHEDULED_USAGE_PREFIX + day))
-        self.queue.append(edge_process())
         self.tick(15)
         [work] = self.woken(row['id'])
         self.assertEqual(self.checks.handoff(work)['output'], 'new event')
-        self.assertEqual(seen, [json.loads(previous), json.loads(previous)])
+        self.assertEqual(seen, [json.loads(previous)], 'admission retries the saved hit without polling again')
         self.assertTrue(json.loads(credentials.read_bound_state(key, spec['digest']))['reported'])
         self.assertEqual(self.store.config(prep.SCHEDULED_USAGE_PREFIX + day), 1)
         self.assertEqual(self.checks.wakes_today(self.row(row['id']), self.now), 1)
@@ -1134,6 +1134,8 @@ class CheckSpecLifecycle(_Base):
         spec = cc.proven_check(self.store, job['id'], args)
         for cross_work in (False, True):
             for field, changed in self.variations(spec):
+                if field == 'proven_in':
+                    continue  # Proof provenance does not change what executes.
                 with self.subTest(cross_work=cross_work, field=field):
                     first = self.create(spec)
                     second = self.create(changed, created_from='other' if cross_work else 'creator')
@@ -1407,6 +1409,174 @@ if __name__ == '__main__':
 
 
 class ReviewRegressions(_Base):
+    def test_state_symlinks_never_read_or_persist_private_host_json(self):
+        private = self.store.root / 'private.json'
+        token = 'private-host-token-never-read-000972'
+        private.write_text(json.dumps({'token': token}))
+        credentials = ApiCredentials(self.store)
+        slot = slots(self.store)['example-broker']
+        credentials.write_state('example-broker', slot, '{"cursor": 7}')
+        row = self.check_row()
+        spec = cc.spec_of(row)
+        for proving in (True, False):
+            with self.subTest(proving=proving):
+                process = FakeProcess(result={'stdout': token})
+                original = process._lines
+
+                def replace_files():
+                    for name in (cc.STATE_ENV, 'EXAMPLE_BROKER_STATE_FILE'):
+                        path = Path(process.config['env'][name])
+                        path.unlink()
+                        path.symlink_to(private)
+                    yield from original()
+
+                process._lines = replace_files
+                if proving:
+                    result = self.code_run(self.owner_work(), self.check_args(), process)
+                    # The collector must not even learn a value from a host file.
+                    self.assertEqual(result['stdout'], token)
+                else:
+                    self.queue.append(process)
+                    self.tick(0)
+                    self.assertFalse(credentials.read_bound_state(cc.state_key(row['id']), spec['digest']))
+                self.assertEqual(json.loads(credentials.read_state('example-broker', slot)), {'cursor': 7})
+                self.assertNotIn(token, credentials.state_values())
+
+    def test_state_initialization_refuses_unsafe_existing_files_without_overwriting(self):
+        from personal_agent.api_credentials import MAX_STATE_BYTES
+        private = self.store.root / 'private.json'
+        private.write_text('{"private": true}')
+        for runner_type in (CodeRunner, cc.CheckRunner):
+            for filename in ('check-state.json', 'state-example-broker.json'):
+                for kind in ('symlink', 'directory', 'oversized', 'fifo'):
+                    with self.subTest(runner=runner_type, filename=filename, kind=kind):
+                        private.write_text('{"private": true}')
+                        directory = self.store.root / f'init-{runner_type.__name__}-{filename}-{kind}'
+                        directory.mkdir()
+                        path = directory / filename
+                        if kind == 'symlink':
+                            path.symlink_to(private)
+                        elif kind == 'directory':
+                            path.mkdir()
+                        elif kind == 'fifo':
+                            os.mkfifo(path)
+                            # Keep a reader open so unsafe writers cannot hang this test.
+                            fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+                        else:
+                            path.write_bytes(b'x' * (MAX_STATE_BYTES + 1))
+                        runner = runner_type(self.store, 'fixture', **({'pinned': {}} if runner_type is cc.CheckRunner else {}))
+                        try:
+                            with self.assertRaises((OSError, ValueError)):
+                                runner._load_states(['example-broker'], directory, {})
+                        finally:
+                            if kind == 'fifo':
+                                os.close(fd)
+                        self.assertEqual(private.read_text(), '{"private": true}')
+                        if kind == 'oversized':
+                            self.assertEqual(path.stat().st_size, MAX_STATE_BYTES + 1)
+
+    def test_oversized_state_is_not_collected_or_staged(self):
+        from personal_agent.api_credentials import MAX_STATE_BYTES
+        token = 'oversized-state-token-0000000972'
+        process = self.state_process({'token': token, 'padding': 'x' * MAX_STATE_BYTES}, {'stdout': token})
+        runner = cc.CheckRunner(self.store, 'fixture', pinned={}, popen=lambda *a, **k: process,
+                                node='/usr/bin/node', install=lambda store, node: store.root)
+        result = runner.run(self.check_args())
+        self.assertIsNone(runner.state_out)
+        self.assertEqual(result['stdout'], token)
+
+    def test_state_reads_reject_special_files_and_bound_bytes(self):
+        from personal_agent.api_credentials import MAX_STATE_BYTES
+        from personal_agent.code_run import _state_file_text
+        path = self.store.root / 'state-read.json'
+        for kind in ('directory', 'fifo', 'oversized'):
+            with self.subTest(kind=kind):
+                if kind == 'directory':
+                    path.mkdir()
+                elif kind == 'fifo':
+                    os.mkfifo(path)
+                else:
+                    path.write_bytes(b'x' * (MAX_STATE_BYTES + 1))
+                try:
+                    with self.assertRaises((OSError, ValueError)):
+                        _state_file_text(path)
+                finally:
+                    path.rmdir() if kind == 'directory' else path.unlink()
+        text = json.dumps({'token': 'x' * (MAX_STATE_BYTES - len('{"token": ""}'))})
+        _state_file_text(path, text)
+        self.assertEqual(_state_file_text(path), text)
+
+    def test_state_open_rejects_symlink_swapped_in_at_open(self):
+        from personal_agent.code_run import _state_file_text
+        path, private = self.store.root / 'swap.json', self.store.root / 'private.json'
+        private.write_text('{"private": true}')
+        original_open = os.open
+        for text in (None, '{}'):
+            with self.subTest(writing=text is not None):
+                if path.is_symlink():
+                    path.unlink()
+                path.write_text('{}')
+
+                def swap_at_open(target, *args, **kwargs):
+                    path.unlink()
+                    path.symlink_to(private)
+                    return original_open(target, *args, **kwargs)
+
+                with mock.patch('personal_agent.code_run.os.open', side_effect=swap_at_open):
+                    with self.assertRaises(OSError):
+                        _state_file_text(path, text)
+                self.assertEqual(private.read_text(), '{"private": true}')
+
+    def test_new_state_secret_crossing_request_cap_is_redacted_before_truncation(self):
+        token = 'newly-written-state-token-000000000972'
+        for proving in (True, False):
+            with self.subTest(proving=proving):
+                process = self.state_process({'token': token}, {'stdout': 'hit'})
+                process._requests = [{'method': 'GET', 'host': HOST, 'path': '/' + 'a' * 279 + token}]
+                if proving:
+                    job = self.owner_work()
+                    result = self.code_run(job, self.check_args(), process)
+                    evidence = self.store.task_events(job['id'])
+                else:
+                    row = self.check_row()
+                    self.queue.append(process)
+                    self.tick(0)
+                    result = self.checks._pending(self.row(row['id']))
+                    # The settled envelope is encrypted, but still must contain redacted diagnostics.
+                    raw = self.store.secret(cc.state_key(row['id']) + ':pending')
+                    evidence = json.loads(ApiCredentials(self.store)._cipher().decrypt(raw.encode()))['outcome']['result']
+                self.assertNotIn(token[:20], json.dumps([result, evidence]))
+                self.assertIn('[redacted]', json.dumps(evidence))
+
+    def test_fresh_unadmitted_hit_survives_restart_and_condition_clearing(self):
+        row = self.check_row()
+        self.queue.append(self.state_process({'reported': True}, {'stdout': 'transient event'}))
+        with mock.patch.object(self.store, 'enqueue', side_effect=ValueError('queue full')):
+            self.tick(0)
+        self.assertIsNotNone(self.checks._pending(self.row(row['id'])))
+        self.checks = cc.ConditionChecks(self.service, runner=self.runner)
+        # The next sandbox run would be quiet. Admission must replay the saved hit instead.
+        with mock.patch.object(self.checks, 'runner', side_effect=AssertionError('must replay')):
+            self.tick(15)
+        [work] = self.woken(row['id'])
+        self.assertEqual(self.checks.handoff(work)['output'], 'transient event')
+        status = cc.status_of(self.row(row['id']))
+        self.assertEqual(sum(day['runs'] for day in status['days'].values()), 1)
+        self.assertEqual(sum(day['wakes'] for day in status['days'].values()), 1)
+
+    def test_independently_proven_identical_checks_reuse_pending_proposal(self):
+        first_job, args = self.proven()
+        second_job, _ = self.proven()
+        first_spec = cc.proven_check(self.store, first_job['id'], args)
+        second_spec = cc.proven_check(self.store, second_job['id'], args)
+        self.assertNotEqual(first_spec['proven_in'], second_spec['proven_in'])
+        create = CheckSpecLifecycle.create
+        first = create(self, first_spec, created_from=first_job['id'])
+        second = create(self, second_spec, created_from=second_job['id'])
+        self.assertEqual(first['id'], second['id'])
+        self.assertTrue(second['already_proposed'])
+        self.assertEqual(cc.spec_of(second), first_spec)
+
     def assert_api_audit(self, work_id, hosts):
         audit = self.service.work_information_use(work_id)
         used = {item['category']: item['items'] for item in audit['used']}

@@ -31,6 +31,7 @@ import queue
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import tarfile
@@ -468,6 +469,37 @@ def _hostname(host):
     return host.rsplit(':', 1)[0] if re.search(r':\d{1,5}$', host) else host
 
 
+def _state_file_text(path, text=None):
+    """Read/write bounded regular state files without following sandbox-created symlinks.
+
+    Check the opened descriptor before reading or truncating; a pathname check alone races
+    replacement. NONBLOCK lets us reject a FIFO without waiting for its other endpoint.
+    """
+    from .api_credentials import MAX_STATE_BYTES
+    data = text.encode('utf-8') if text is not None else None
+    if data is not None and len(data) > MAX_STATE_BYTES:
+        raise ValueError('state file size')
+    flags = os.O_RDONLY if data is None else os.O_WRONLY | os.O_CREAT
+    try:
+        fd = os.open(path, flags | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
+    except FileNotFoundError:
+        if data is None:
+            return ''
+        raise
+    with os.fdopen(fd, 'rb' if data is None else 'wb') as handle:
+        info = os.fstat(handle.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_STATE_BYTES:
+            raise ValueError('unsafe state file')
+        if data is not None:
+            handle.truncate(0)
+            handle.write(data)
+            return text
+        data = handle.read(MAX_STATE_BYTES + 1)
+        if len(data) > MAX_STATE_BYTES:
+            raise ValueError('state file size')
+        return data.decode('utf-8')
+
+
 class CodeRunner:
     """One Work's sandboxed code runs; every request decision is made here."""
 
@@ -576,7 +608,8 @@ class CodeRunner:
             raise CodeRunError(self._redact_run_value(str(exc)), exc.code,
                                requires=self._redact_run_value(exc.requires)) from None
         finally:
-            self.sent = self._redact_run_value(self.sent)
+            self.sent = [(text[:APPROVAL_BODY_CHARS], host[:253])
+                         for text, host in self._redact_run_value(self.sent)]
             # Preserve observations even when no result arrives. Redact before aggregation:
             # hosts become dictionary keys, which the recursive value redactor does not visit.
             self.request_provenance = {
@@ -587,7 +620,7 @@ class CodeRunner:
         from .api_credentials import STATE_PLAIN_KEY, STATE_REDACT_CHARS, _strings
         for path in paths:
             try:
-                state = json.loads(path.read_text(encoding='utf-8'))
+                state = json.loads(_state_file_text(path))
             except (OSError, UnicodeDecodeError, ValueError):
                 continue
             if isinstance(state, dict):
@@ -928,11 +961,11 @@ class CodeRunner:
             if slot is None:
                 continue
             path = Path(workdir, f'state-{name}.json')
-            path.write_text(ApiCredentials(self.store).read_state(name, slot) or '{}', encoding='utf-8')
+            _state_file_text(path, ApiCredentials(self.store).read_state(name, slot) or '{}')
             env[env_name(name, 'STATE_FILE')] = str(path)
             states[name] = (slot, path)
         check_state = Path(workdir, 'check-state.json')
-        check_state.write_text('{}', encoding='utf-8')
+        _state_file_text(check_state, '{}')
         env[CHECK_STATE_ENV] = str(check_state)
         return states
 
@@ -941,8 +974,8 @@ class CodeRunner:
         saved = {}
         for name, (slot, path) in states.items():
             try:
-                text = path.read_text(encoding='utf-8') if path.is_file() else ''
-            except (OSError, UnicodeDecodeError):
+                text = _state_file_text(path)
+            except (OSError, ValueError):
                 text = None
             saved[name] = text is not None and ApiCredentials(self.store).write_state(name, slot, text)
         return saved
@@ -1154,10 +1187,11 @@ class CodeRunner:
                         pairs = message.get('headers') if isinstance(message.get('headers'), list) else []
                         parts = [message.get('path'), message.get('query'), message.get('bodyText'),
                                  *(pair[1] for pair in pairs[:64] if isinstance(pair, list) and len(pair) == 2)]
-                        self.sent.append(('\n'.join(str(part) for part in parts if part)[:APPROVAL_BODY_CHARS],
-                                          _host(message.get('host'))[:253]))
-                    requests.append({'phase': phase, 'method': str(message.get('method') or '')[:10],
-                                     'host': _host(message.get('host'))[:253], 'path': str(message.get('path') or '/')[:300],
+                        self.sent.append(('\n'.join(str(part) for part in parts if part), _host(message.get('host'))))
+                    # New state secrets are known only after the run. Keep complete fields
+                    # until _result redacts them, then apply the diagnostic caps.
+                    requests.append({'phase': phase, 'method': str(message.get('method') or ''),
+                                     'host': _host(message.get('host')), 'path': str(message.get('path') or '/'),
                                      'allowed': allow})
                     process.stdin.write(json.dumps({'id': message.get('id'), 'allow': allow, 'reason': reason}) + '\n')
                     process.stdin.flush()
@@ -1184,7 +1218,8 @@ class CodeRunner:
         requests = self._redact_run_value(requests)
         host_counts = reached_host_counts({'requests': requests})
         # An in_code value can appear in a request path; the log keeps it redacted like the output.
-        requests = [{**row, 'path': redact_known_secrets(self.store, row['path'])} for row in requests[:200]]
+        requests = [{**row, 'method': row['method'][:10], 'host': row['host'][:253], 'path': row['path'][:300]}
+                    for row in requests[:200]]
         result = {'exit_status': outcome['exit_status'], 'timed_out': outcome['timed_out'],
                   'stdout': redact_known_secrets(self.store, outcome['stdout']),
                   'stderr': redact_known_secrets(self.store, outcome['stderr']),

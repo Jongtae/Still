@@ -31,7 +31,7 @@ from datetime import datetime, timedelta
 
 from . import preparations as prep
 from .code_run import CHECK_STATE_ENV as STATE_ENV
-from .code_run import MAX_SECONDS, CodeRunError, CodeRunner, _arguments, check_arguments_digest, reached_host_counts
+from .code_run import MAX_SECONDS, CodeRunError, CodeRunner, _arguments, _state_file_text, check_arguments_digest, reached_host_counts
 from .messages import msg
 
 LOG = logging.getLogger(__name__)
@@ -197,19 +197,19 @@ class CheckRunner(CodeRunner):
         from pathlib import Path
         states = super()._load_states(names, workdir, env)
         self._state_path = Path(env[STATE_ENV])
-        self._state_path.write_text(self.state_text, encoding='utf-8')
+        _state_file_text(self._state_path, self.state_text)
         return states
 
     def _save_states(self, states):
         # No secrets-file mutation before the result has a durable replay record.
         for name, (slot, path) in states.items():
             try:
-                self.set_states[name] = (slot, path.read_text(encoding='utf-8') if path.is_file() else '')
-            except (OSError, UnicodeDecodeError):
+                self.set_states[name] = (slot, _state_file_text(path))
+            except (OSError, ValueError):
                 continue
         try:
-            self.state_out = self._state_path.read_text(encoding='utf-8') if self._state_path and self._state_path.is_file() else ''
-        except (OSError, UnicodeDecodeError):
+            self.state_out = _state_file_text(self._state_path) if self._state_path else ''
+        except (OSError, ValueError):
             self.state_out = None
         return {}
 
@@ -411,7 +411,6 @@ class ConditionChecks:
 
     def _commit(self, row, spec, outcome, now, *, pending=None):
         """Settle one run: dropped when its row changed meanwhile, else quiet, a wake, or a counted failure."""
-        recovering = pending is not None
         result = outcome.get('result')
         if outcome.get('error') == 'needs_setup':
             self._pause(row, spec, PAUSED_NOT_READY, now)
@@ -462,7 +461,7 @@ class ConditionChecks:
                            **provenance}
                 woken, reason = self._wake(db, current, status, now, handoff, destination, prep.STATE_SCHEDULED)
                 # An edge-triggered check may have marked this hit reported in its state.
-                # Keep its previous state on every non-admission so the next run retries it.
+                # Keep its previous state until the pending hit is admitted.
                 save_state = save_state and bool(woken)
                 updates['check_next_at'] = (now + spec['every_seconds'] if woken or reason == 'queue-full'
                                             else self._next_day_start(now, db))
@@ -492,9 +491,9 @@ class ConditionChecks:
                 from .api_credentials import ApiCredentials
                 for name, (slot, text) in outcome.get('set_states', {}).items():
                     ApiCredentials(self.store).write_state(name, slot, text)
-            # A recovered result may already have advanced either file before the crash.
-            # A refused replay must retain it until admission succeeds (or the owner stops it).
-            if not (recovering and kind == HIT and not woken):
+            # Retain every unadmitted hit, including fresh ones: a transient condition may
+            # clear before the next poll, even when its previous state was preserved.
+            if not (kind == HIT and not woken):
                 status['settled_result'] = pending['id']
             updates['check_status'] = json.dumps(status, sort_keys=True)
             if 'state' in updates:

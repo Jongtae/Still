@@ -1573,9 +1573,14 @@ class Preparations:
             raise ValueError('unknown origin')
         if check is not None and (window is None or kind != KIND_PREPARE):
             raise ValueError('a condition check belongs to a prepare window')
-        # Compare exactly what is persisted, including proof provenance and future fields,
-        # not just the code/digest. NULL also distinguishes ordinary watches from checks.
+        # Persist the proof, but deduplicate execution identity independently of which Work
+        # proved it. Keep all other fields (including future ones), not just the digest.
         check_spec = json.dumps(check, sort_keys=True) if check is not None else None
+        def matching_check(rows):
+            from .condition_checks import spec_of
+            def identity(spec):
+                return {key: value for key, value in spec.items() if key != 'proven_in'} if spec is not None else None
+            return next((row for row in rows if identity(spec_of(dict(row))) == identity(check)), None)
         now = self.clock()
         owns_transaction = db is None
         with (self.store.db() if owns_transaction else nullcontext(db)) as db:
@@ -1587,21 +1592,21 @@ class Preparations:
                                'WHERE id=? AND state=?', (goal, due_at, timezone, title, offer, now, child['id'], STATE_SCHEDULED))
                     return {**dict(db.execute('SELECT * FROM preparations WHERE id=?', (child['id'],)).fetchone()),
                             'piece_replaced': True}
-            same = None if piece_of is not None else db.execute(
+            same = None if piece_of is not None else matching_check(db.execute(
                               'SELECT * FROM preparations WHERE created_from=? AND kind=? AND goal_text=? AND due_at=? '
-                              'AND check_spec IS ? AND state IN (?,?,?,?)',
-                              (created_from, kind, goal, due_at, check_spec, *ACTIVE_STATES)).fetchone()
+                              'AND state IN (?,?,?,?)',
+                              (created_from, kind, goal, due_at, *ACTIVE_STATES)))
             if same:
                 return dict(same)
             # #574: another Work's identical proposal still waiting for the owner is that same proposal,
             # not a second one.  Scheduled rows are left alone: the owner may want two.
             # #938: a piece never takes up another Work's proposal (that would accept it).
-            proposed = None if piece_of is not None else db.execute(
+            proposed = None if piece_of is not None else matching_check(db.execute(
                                   'SELECT * FROM preparations WHERE state=? AND created_from IS NOT ? AND kind=? AND goal_text=? '
                                   'AND due_at=? AND recurrence IS ? AND every_seconds IS ? AND window_end IS ? AND max_runs IS ? AND window_terms IS ? '
-                                  'AND check_spec IS ? ORDER BY created_at LIMIT 1',
+                                  'ORDER BY created_at',
                                   (STATE_PROPOSED, created_from, kind, goal, due_at, recurrence,
-                                   every_seconds, window_end, max_runs, terms, check_spec)).fetchone()
+                                   every_seconds, window_end, max_runs, terms)))
             if proposed:
                 return {**dict(proposed), 'already_proposed': True}
             active = db.execute('SELECT count(*) FROM preparations WHERE state IN (?,?,?,?)', ACTIVE_STATES).fetchone()[0]
