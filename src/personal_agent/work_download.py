@@ -309,18 +309,22 @@ def _preview_context_edge(source, position, limit):
     return position
 
 
-def _incomplete_credential_spans(text):
-    # A complete PEM can contain punctuation anywhere in its bounded body.
-    # Keep an open header masked while an END line could still arrive.
+def _open_pem_start(data):
+    # A PEM body can contain punctuation. Its bounded character window fits
+    # inside the credential context even at four UTF-8 bytes per character.
     max_body, max_marker = 8192, 50
+    window = max_body + 2 * max_marker
+    start = max(0, len(data) - 4 * window)
+    text = data[start:].decode('utf-8', errors='surrogateescape')
     boundary = None
-    for match in _PEM_BOUNDARY.finditer(text, max(0, len(text) - max_body - 2 * max_marker)):
+    for match in _PEM_BOUNDARY.finditer(text, max(0, len(text) - window)):
         boundary = match
     if boundary and boundary[1] == 'BEGIN' and len(text) - boundary.end() <= max_body + max_marker:
-        yield boundary.start(), len(text)
+        return start + len(text[:boundary.start()].encode('utf-8', errors='surrogateescape'))
+    return len(data)
 
 
-def _mask_preview(data, offset, size, values, ledger, *, incomplete_tail=False, unsettled_start=None):
+def _mask_preview(data, offset, size, values, ledger, *, settled_end):
     from .bounded_execution import SECRET_PATTERN
     from .quickstart_store import QuickStore
 
@@ -329,23 +333,11 @@ def _mask_preview(data, offset, size, values, ledger, *, incomplete_tail=False, 
     text = re.sub(r'[\udc80-\udcff]', '\ufffd', decoded)
     spans = QuickStore._retired_spans(text, ledger)
     spans.extend(match.span() for match in SECRET_PATTERN.finditer(text))
-    if unsettled_start is not None:
-        start = len(data[:unsettled_start].decode('utf-8', errors='surrogateescape'))
-        spans.append((start, len(text)))
-    if incomplete_tail:
-        spans.extend(_incomplete_credential_spans(text))
     for value in values:
         start = text.find(value)
         while start != -1:
             spans.append((start, start + len(value)))
             start = text.find(value, start + 1)
-        if incomplete_tail:
-            # The next range may complete a secret that ends here as a prefix.
-            max_prefix = min(len(text), len(value) - 1)
-            for length in range(max_prefix, 0, -1):
-                if text.endswith(value[:length]):
-                    spans.append((len(text) - length, len(text)))
-                    break
 
     content = bytearray(data[offset:offset + size])
     if spans and content:
@@ -369,6 +361,9 @@ def _mask_preview(data, offset, size, values, ledger, *, incomplete_tail=False, 
                 left = max(0, byte_offsets[start - first_char] - offset)
                 right = min(size, byte_offsets[end - first_char] - offset)
                 content[left:right] = b'*' * (right - left)
+    unsettled = max(0, settled_end - offset)
+    if unsettled < len(content):
+        content[unsettled:] = b'*' * (len(content) - unsettled)
     return content.decode('utf-8', errors='replace')
 
 
@@ -389,22 +384,27 @@ def preview(store, job_id, offset):
     total = checkpoint['total']
     incomplete = total is None or received < total
     size = min(PREVIEW_BYTES, received - offset)
-    unsettled_start = None
+    settled_end = received
     with _staging_directory(store) as directory:
         fd = _staged_file(directory, checkpoint['artifact'], os.O_RDONLY)
         with os.fdopen(fd, 'rb') as source:
             _verified_digest(source, received, checkpoint['digest'])
+            # The backward scan covers any open PEM that could touch the page.
+            # The extra literal lookbehind includes the literal cutoff if it
+            # falls before the page.
             start = max(0, _preview_context_edge(source, offset, 0) - literal_context)
             end = min(received, _preview_context_edge(source, offset + size, received) + literal_context)
             source.seek(start)
             data = _read_preview_bytes(source, end - start)
             if incomplete:
-                # The last line is unsettled: non-PEM credential values stay
-                # on one line and can contain spaces, as in a quoted value.
-                tail_start = 1 + max(data.rfind(b'\n'), data.rfind(b'\r'))
-                if tail_start < offset + size - start:
-                    # The bounded context can stop inside a long line. Mask it
-                    # only if it reaches the checkpoint without a line break.
+                settled_end = max(0, received - literal_context)
+                # If the context stops before the checkpoint, its forward scan
+                # has already covered more bytes than an open PEM can span.
+                if end == received:
+                    settled_end = min(settled_end, start + _open_pem_start(data))
+                line_start = start + 1 + max(data.rfind(b'\n'), data.rfind(b'\r'))
+                if line_start < min(settled_end, offset + size):
+                    # A later break puts the last line beyond this preview.
                     position = end
                     while position < received:
                         block = _read_preview_bytes(source, min(_PREVIEW_SCAN_CHUNK, received - position))
@@ -412,10 +412,9 @@ def preview(store, job_id, offset):
                             break
                         position += len(block)
                     if position == received:
-                        unsettled_start = tail_start
+                        settled_end = line_start
     try:
-        content = _mask_preview(data, offset - start, size, values, ledger,
-                                incomplete_tail=incomplete and end == received, unsettled_start=unsettled_start)
+        content = _mask_preview(data, offset - start, size, values, ledger, settled_end=settled_end - start)
     except Exception:
         raise WorkDownloadError(msg('agent_runtime.redaction_unavailable'), 'redaction_unavailable') from None
     return {**public_checkpoint(checkpoint), 'offset': offset, 'content': content}

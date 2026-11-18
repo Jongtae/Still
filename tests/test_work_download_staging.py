@@ -102,15 +102,22 @@ def test_preview_masks_stored_secret_fragments_at_byte_boundaries(download, monk
     assert (left + right).decode() not in first + next_page
 
 
-def test_preview_masks_stored_secret_prefix_at_incomplete_checkpoint(download, monkeypatch):
+@pytest.mark.parametrize('retired', [False, True], ids=['stored', 'retired'])
+def test_preview_masks_multiline_secret_prefix_at_incomplete_checkpoint(download, monkeypatch, retired):
     store, _, _, caps, _ = download
-    secret = 'orchid river\nsilver cloud'
+    secret = 'orchid river\nsilver cloud\nfinal sunset'
     store.secret('model_key', secret)
-    header = '안내: '
-    verified_prefix = 'orchid river\nsilver'
-    suffix = ' visible orchid'
-    payload = (header + secret + suffix).encode()
-    received = len((header + verified_prefix).encode())
+    if retired:
+        assert store.remove_secret('model_key')
+    header = '안내. Readable text\n'.encode() + b'More ordinary text. ' * 9
+    verified_prefix = b'orchid river\nsilver'
+    suffix = b' visible orchid'
+    payload = header + secret.encode() + suffix
+    received = len(header) + len(verified_prefix)
+    # The ledger also marks the JSON-escaped value, which is longer by two bytes.
+    literal_context = 4 * (len(secret) + 2) if retired else len(secret.encode())
+    settled_end = received - literal_context
+    assert 0 < settled_end < len(header)
 
     def read_range(reader, url, offset, length, **kwargs):
         end = received if offset == 0 else len(payload)
@@ -119,15 +126,16 @@ def test_preview_masks_stored_secret_prefix_at_incomplete_checkpoint(download, m
 
     monkeypatch.setattr(work_download.PublicDownload, 'read_range', read_range)
     fetch = {'operation': 'fetch', 'url': URL}
-    preview = {'operation': 'preview', 'offset': len('안내'.encode())}
+    offset = len('안내'.encode())
+    preview = {'operation': 'preview', 'offset': offset}
     first = caps.execute('public_download', {**fetch, 'offset': 0})
     assert first['received'] == received < first['total']
     partial = caps.execute('public_download', preview)['content']
-    assert partial == ': ' + '*' * len(verified_prefix)
+    assert partial == (header[offset:settled_end] + b'*' * literal_context).decode()
 
     complete = caps.execute('public_download', {**fetch, 'offset': received})
     assert complete['received'] == complete['total']
-    assert caps.execute('public_download', preview)['content'] == ': ' + '*' * len(secret) + suffix
+    assert caps.execute('public_download', preview)['content'] == (header[offset:] + b'*' * len(secret) + suffix).decode()
 
 
 def stage_payload(caps, monkeypatch, payload, *, total=None):
@@ -173,6 +181,15 @@ def test_preview_masks_last_line_at_incomplete_checkpoint(download, monkeypatch,
     assert result['content'] == (prefix + b'*' * len(line))[:work_download.PREVIEW_BYTES].decode()
 
 
+def test_preview_keeps_long_line_with_a_later_break_at_incomplete_checkpoint(download, monkeypatch):
+    _, _, _, caps, _ = download
+    line = b': ' * (2 * work_download._CREDENTIAL_CONTEXT_BYTES)
+    payload = line + b'\nUnsettled text'
+    stage_payload(caps, monkeypatch, payload, total=len(payload) + 50)
+    result = caps.execute('public_download', {'operation': 'preview', 'offset': 0})
+    assert result['content'] == line[:work_download.PREVIEW_BYTES].decode()
+
+
 @pytest.mark.parametrize('line_break', [b'\n', b'\r'], ids=['lf', 'cr'])
 def test_preview_masks_password_value_on_last_line(download, monkeypatch, line_break):
     _, _, _, caps, _ = download
@@ -186,12 +203,27 @@ def test_preview_masks_password_value_on_last_line(download, monkeypatch, line_b
 
 def test_preview_masks_open_pem_across_lines_at_incomplete_checkpoint(download, monkeypatch):
     _, _, _, caps, _ = download
-    prefix = b'Readable text\n'
-    pem = b'-----BEGIN PRIVATE KEY-----\nYWJj!ZGVm'
+    prefix = '안내. Readable text\n'.encode()
+    pem = b'-----BEGIN PRIVATE KEY-----\nYWJj!\nZGVm'
     payload = prefix + pem
     stage_payload(caps, monkeypatch, payload, total=len(payload) + 50)
     result = caps.execute('public_download', {'operation': 'preview', 'offset': 0})
     assert result['content'] == prefix.decode() + '*' * len(pem)
+    offset = len(payload) - len(b'!\nZGVm')
+    result = caps.execute('public_download', {'operation': 'preview', 'offset': offset})
+    assert result['content'] == '*' * (len(payload) - offset)
+
+
+def test_preview_clamps_literal_boundary_when_total_is_unknown(download, monkeypatch):
+    store, work_id, _, caps, _ = download
+    store.secret('model_key', 'a stored value longer than the verified bytes')
+    payload = b'one line\nsecond line'
+    stage_payload(caps, monkeypatch, payload)
+    checkpoint = store.read_checkpoint(work_id)
+    monkeypatch.setattr(store, 'read_checkpoint', lambda *args, **kwargs: {**checkpoint, 'total': None})
+    result = caps.execute('public_download', {'operation': 'preview', 'offset': 0})
+    assert result['total'] is None
+    assert result['content'] == '*' * len(payload)
 
 
 def test_preview_reveals_ordinary_last_line_when_checkpoint_completes(download, monkeypatch):
