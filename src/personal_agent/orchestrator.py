@@ -1665,11 +1665,26 @@ class Orchestration:
         observed = str(observations or 'none')[:OBSERVATION_CHARS]
         # Redacted, then bounded only by the delivered answer's own cap (#820 review): every claim is judged.
         reply = self._redact(answer)[:REPLY_CHARS]
+        admission = {}
+        spend_refusal = None
+
+        def spend():
+            nonlocal spend_refusal
+            try:
+                self.budget.spend_turn(reserve=True)
+            except Exception as exc:
+                spend_refusal = budget_stop_code(exc) or 'budget_unavailable'
+                raise
+
         try:
             if self.budget is not None and getattr(getattr(self.judgments, 'engine', None), 'work_budget', None) is not self.budget:
-                self.budget.spend_turn(reserve=True)
-        except Exception as exc:
-            self.budget_stop = budget_stop_code(exc) or 'budget_unavailable'
+                from .conversation_handoff import ConversationJudgments
+                if self.read_progress and isinstance(self.judgments, ConversationJudgments):
+                    admission['admit'] = spend
+                else:
+                    spend()
+        except Exception:
+            self.budget_stop = spend_refusal
             return NOT_JUDGED
         try:
             # #428: the owner's later words are part of what the reply must meet, on every attempt after them.
@@ -1679,6 +1694,7 @@ class Orchestration:
                             if self.attempts else '')
             judged = goal_reached(request, observed, str(failed or '')[:FAILURE_CHARS], work_id=self.work_id,
                                   answer=reply,
+                                  **admission,
                                   **({'read_snapshot': self.read_snapshot} if self.read_progress else {}),
                                   **({'plan_reading': plan_reading} if plan_reading else {}),
                                   **({'reply_source': reply_source} if reply_source != 'worker' else {}),
@@ -1693,7 +1709,11 @@ class Orchestration:
                                       'may_rejudge': lambda: second_judgment_allowed(self.judgments, self.budget)}
                                      if effects else {}))
         except Exception:
-            return UNJUDGED
+            if spend_refusal is None:
+                return UNJUDGED
+        if spend_refusal is not None:
+            self.budget_stop = spend_refusal
+            return NOT_JUDGED
         verdict = getattr(judged, 'outcome', None)
         if verdict not in ('yes', 'no') and getattr(judged, 'refused', None) in BUDGET_CODES:
             # #627: the Work budget refused the judgment's turn: not judged, for that reason (never

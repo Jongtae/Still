@@ -1014,7 +1014,7 @@ class ConversationJudgments:
     def goal_reached(self, request, observations, failed_steps='', work_id=None, answer='', conversation='',
                      owner_context='', continues='', attachments='', awaiting_owner='', conversation_messages=None,
                      recorded_effects=(), may_rejudge=None, reply_source='worker', reply_delivery='to_owner',
-                     plan_reading='', read_snapshot=..., retry_on_read_change=False):
+                     plan_reading='', read_snapshot=..., retry_on_read_change=False, admit=None):
         """Did the reply serve the owner's ``request`` (#657, #820)?  The one outcome judgment.
 
         One ``judge`` call over the owner's message (never cut), the recent
@@ -1056,6 +1056,9 @@ class ConversationJudgments:
             facts['plan_reading'] = plan_reading
 
         def evaluate():
+            # Unrouted callers charge their own turn only once a dispatch is needed.
+            if admit is not None:
+                admit()
             result = self._evaluate_goal(facts, work_id, conversation_messages, recorded_effects, may_rejudge)
             return {key: getattr(result, key) for key in Judgment.__slots__}
 

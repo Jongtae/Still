@@ -2767,6 +2767,7 @@ class QuickStore:
         return True
 
     def _read_checkpoint_ready(self, db, work_id, checkpoint, predicate, *, expected_epoch):
+        """Check eligibility and spending limits before admitting checkpoint work."""
         from .agent_runtime import WORK_MODEL_TURNS, WORK_TOOL_ATTEMPTS
         ledger = self._read_checkpoint_ledger(db, work_id)
         if (not predicate or not ledger or ledger['epoch'] != expected_epoch

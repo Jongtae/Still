@@ -1,4 +1,6 @@
+from contextlib import contextmanager
 import hashlib
+from unittest import mock
 
 import pytest
 
@@ -127,6 +129,70 @@ def test_preview_masks_stored_secret_prefix_at_incomplete_checkpoint(download, m
     complete = caps.execute('public_download', {**fetch, 'offset': received})
     assert complete['received'] == complete['total']
     assert caps.execute('public_download', preview)['content'] == ': ' + '*' * len(secret) + suffix
+
+
+def stage_payload(caps, monkeypatch, payload, *, total=None):
+    def read_range(reader, url, offset, length, **kwargs):
+        part = payload[offset:offset + length]
+        return DownloadedRange(part, '"fixture"', total or len(payload), 'a' * 64, hashlib.sha256(part).hexdigest())
+
+    monkeypatch.setattr(work_download.PublicDownload, 'read_range', read_range)
+    for offset in range(0, len(payload), work_download.RANGE_BYTES):
+        caps.execute('public_download', {'operation': 'fetch', 'url': URL, 'offset': offset})
+
+
+@pytest.mark.parametrize(('secret', 'offset'), [
+    (b'-----BEGIN PRIVATE KEY-----\n' + b'YQ==' * 1600 + b'\n-----END PRIVATE KEY-----', 5000),
+    (b'sk_live_' + b'A1_' * 12000, 20000),
+    # Quoted-password alternatives can cross punctuation and UTF-8.
+    (b'password="' + '한!,'.encode() * 2200 + b'"', 5001),
+    (b'password="' + '한!,'.encode() * 2200 + b'"', 0),
+], ids=['pem', 'unbounded-token', 'quoted-password-start', 'quoted-password-end'])
+def test_completed_preview_masks_credentials_extending_far_beyond_window(download, monkeypatch, secret, offset):
+    _, _, _, caps, _ = download
+    suffix = b'. Visible'
+    stage_payload(caps, monkeypatch, secret + suffix)
+    result = caps.execute('public_download', {'operation': 'preview', 'offset': offset})
+    assert result['offset'] == offset
+    expected = b'*' * (len(secret) - offset) + suffix
+    assert result['content'] == expected[:work_download.PREVIEW_BYTES].decode()
+
+
+@pytest.mark.parametrize('fragment', [b'sk-ab', b'-----BEGIN PRIVATE KEY-----\nYWJj!ZGVm'])
+def test_preview_masks_credential_fragment_at_incomplete_checkpoint(download, monkeypatch, fragment):
+    _, _, _, caps, _ = download
+    prefix = b'Note.'
+    payload = prefix + fragment
+    stage_payload(caps, monkeypatch, payload, total=len(payload) + 50)
+    result = caps.execute('public_download', {'operation': 'preview', 'offset': 0})
+    assert result['content'] == prefix.decode() + '*' * len(fragment)
+
+
+def test_preview_reads_bounded_redaction_context_in_large_prose(download, monkeypatch):
+    _, _, _, caps, _ = download
+    line = b'First sentence. Second sentence! Items: one, two.\n'
+    payload = line * (8 * work_download.RANGE_BYTES // len(line))
+    stage_payload(caps, monkeypatch, payload)
+    offset = len(payload) // 2
+    read_sizes = []
+    fdopen = work_download.os.fdopen
+
+    @contextmanager
+    def measured_reader(*args, **kwargs):
+        with fdopen(*args, **kwargs) as source:
+            def read(size):
+                block = source.read(size)
+                read_sizes.append(len(block))
+                return block
+
+            yield mock.Mock(wraps=source, read=read)
+
+    monkeypatch.setattr(work_download.os, 'fdopen', measured_reader)
+    result = caps.execute('public_download', {'operation': 'preview', 'offset': offset})
+    assert result['content'] == payload[offset:offset + work_download.PREVIEW_BYTES].decode()
+    # Digest validation already reads the verified file once. Context search
+    # and redaction together should read well under another full pass.
+    assert 0 < sum(read_sizes) - len(payload) < len(payload) // 3
 
 
 def test_network_stop_is_rechecked_after_a_chunk_arrives(download, monkeypatch):

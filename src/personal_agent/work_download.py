@@ -19,6 +19,20 @@ STAGING_BYTES = 256 * RANGE_BYTES
 PREVIEW_BYTES = 4096
 INPUT_CHANGED = object()
 
+# Every unbounded consuming repeat in SECRET_PATTERN uses these ASCII bytes.
+# PEM, userinfo, and named/quoted values can also consume other bytes, but
+# only in bounded portions. Allow for those portions and their assertions:
+# even 8192 shell escapes at five UTF-8 bytes each fit with room for context.
+_CREDENTIAL_RUN_BYTES = b'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_/+= \t\r\n\v\f'
+_CREDENTIAL_CONTEXT_BYTES = 48 * 1024
+_PREVIEW_SCAN_CHUNK = 16 * 1024
+_CREDENTIAL_START = re.compile(
+    r'-----BEGIN (?:[A-Z]{1,20} )?PRIVATE KEY-----'
+    r'|\b(?:[spr]k[-_]|gh[pousr]_|github_pat_|hf_|npm_|glpat-|GOCSPX-|'
+    r'xox[abposr]-|xapp-|AIza|AKIA|ASIA|eyJ)'
+)
+_PEM_BOUNDARY = re.compile(r'-----(BEGIN|END) (?:[A-Z]{1,20} )?PRIVATE KEY-----')
+
 class WorkDownloadError(ValueError):
     def __init__(self, message, code, *, ran=False):
         super().__init__(message)
@@ -74,14 +88,12 @@ def checkpoint_judgment(store, ledger, purpose, facts, note, call, redact, *, sn
 
     work_id = ledger.job_id
 
-    def writer_is_current(db):
+    def current_checkpoint(db):
         checkpoint = store.read_checkpoint(work_id, db=db)
-        if (not note or not checkpoint or ledger.lapse(db=db) or checkpoint['resume_pending']
-                or checkpoint['epoch'] != ledger.epoch or store._read_checkpoint_stopped(db, work_id)
-                or not store.read_checkpoint_can_settle(work_id, ledger.epoch, db=db)):
-            return False
-        return store._read_checkpoint_ready(db, work_id, checkpoint, eligible or (lambda *_: True),
-                                            expected_epoch=ledger.epoch)
+        if (note and checkpoint and not ledger.lapse(db=db) and not checkpoint['resume_pending']
+                and checkpoint['epoch'] == ledger.epoch and not store._read_checkpoint_stopped(db, work_id)
+                and store.read_checkpoint_can_settle(work_id, ledger.epoch, db=db)):
+            return checkpoint
 
     def discard(db):
         # This row belongs to the dispatch even after its Work scope is fenced.
@@ -98,7 +110,13 @@ def checkpoint_judgment(store, ledger, purpose, facts, note, call, redact, *, sn
         return None
     with store.db() as db:
         db.execute('BEGIN IMMEDIATE')
-        if not writer_is_current(db) or snapshot is None or checkpoint_snapshot(store, work_id, db=db) != snapshot:
+        checkpoint = current_checkpoint(db)
+        if not checkpoint or snapshot is None:
+            return None
+        if not store._read_checkpoint_ready(db, work_id, checkpoint, eligible or (lambda *_: True),
+                                            expected_epoch=ledger.epoch):
+            return None
+        if checkpoint_snapshot(store, work_id, db=db) != snapshot:
             return None
         row = db.execute('SELECT epoch,result FROM work_read_judgments WHERE job_id=? AND input_digest=?',
                          (work_id, key)).fetchone()
@@ -126,7 +144,7 @@ def checkpoint_judgment(store, ledger, purpose, facts, note, call, redact, *, sn
         return None
     with store.db() as db:
         db.execute('BEGIN IMMEDIATE')
-        if not writer_is_current(db):
+        if not current_checkpoint(db):
             return None
         if checkpoint_snapshot(store, work_id, db=db) != snapshot:
             return INPUT_CHANGED if discard(db) else None
@@ -274,6 +292,45 @@ def receive(store, job_id, ledger, reader, url, offset, *, address_check, before
             os.fsync(directory)
     return public_checkpoint(checkpoint)
 
+def _read_preview_bytes(source, size):
+    data = source.read(size)
+    if len(data) != size:
+        raise WorkDownloadError('Previously verified bytes are unavailable.', 'read_checkpoint_missing')
+    return data
+
+
+def _preview_context_edge(source, position, limit):
+    """Find enough separators to rule out a credential spanning the cut."""
+    remaining = _CREDENTIAL_CONTEXT_BYTES
+    while position != limit and remaining > 0:
+        adjacent = (min(limit, position + _PREVIEW_SCAN_CHUNK) if limit > position
+                    else max(limit, position - _PREVIEW_SCAN_CHUNK))
+        start, end = sorted((position, adjacent))
+        source.seek(start)
+        block = _read_preview_bytes(source, end - start)
+        remaining -= len(block.translate(None, _CREDENTIAL_RUN_BYTES))
+        position = adjacent
+    return position
+
+
+def _incomplete_credential_spans(data, text):
+    trailing_bytes = len(data) - len(data.rstrip(_CREDENTIAL_RUN_BYTES))
+    if trailing_bytes:
+        # The run is ASCII, so its byte and character lengths are equal.
+        start = len(text) - trailing_bytes
+        if _CREDENTIAL_START.search(text, start):
+            yield start, len(text)
+
+    # A complete PEM can contain punctuation anywhere in its bounded body.
+    # Keep an open header masked while an END line could still arrive.
+    max_body, max_marker = 8192, 50
+    boundary = None
+    for match in _PEM_BOUNDARY.finditer(text, max(0, len(text) - max_body - 2 * max_marker)):
+        boundary = match
+    if boundary and boundary[1] == 'BEGIN' and len(text) - boundary.end() <= max_body + max_marker:
+        yield boundary.start(), len(text)
+
+
 def _mask_preview(data, offset, size, values, ledger, *, incomplete_tail=False):
     from .bounded_execution import SECRET_PATTERN
     from .quickstart_store import QuickStore
@@ -283,6 +340,8 @@ def _mask_preview(data, offset, size, values, ledger, *, incomplete_tail=False):
     text = re.sub(r'[\udc80-\udcff]', '\ufffd', decoded)
     spans = QuickStore._retired_spans(text, ledger)
     spans.extend(match.span() for match in SECRET_PATTERN.finditer(text))
+    if incomplete_tail:
+        spans.extend(_incomplete_credential_spans(data, text))
     for value in values:
         start = text.find(value)
         while start != -1:
@@ -297,14 +356,26 @@ def _mask_preview(data, offset, size, values, ledger, *, incomplete_tail=False):
                     break
 
     content = bytearray(data[offset:offset + size])
-    if spans:
-        byte_offsets = [0]
-        for char in decoded:
-            byte_offsets.append(byte_offsets[-1] + len(char.encode('utf-8', errors='surrogateescape')))
+    if spans and content:
+        # Keep offsets only for characters touching the raw preview window.
+        byte_offsets = []
+        position = 0
+        for index, char in enumerate(decoded):
+            next_position = position + len(char.encode('utf-8', errors='surrogateescape'))
+            if next_position > offset:
+                if not byte_offsets:
+                    first_char = index
+                    byte_offsets.append(position)
+                byte_offsets.append(next_position)
+                if next_position >= offset + size:
+                    break
+            position = next_position
+        last_char = first_char + len(byte_offsets) - 1
         for start, end in spans:
-            left = max(0, byte_offsets[start] - offset)
-            right = min(size, byte_offsets[end] - offset)
-            if left < right:
+            start, end = max(start, first_char), min(end, last_char)
+            if start < end:
+                left = max(0, byte_offsets[start - first_char] - offset)
+                right = min(size, byte_offsets[end - first_char] - offset)
                 content[left:right] = b'*' * (right - left)
     return content.decode('utf-8', errors='replace')
 
@@ -317,21 +388,21 @@ def preview(store, job_id, offset):
         raise WorkDownloadError('The requested position is outside the verified range.', 'read_checkpoint_missing')
     try:
         values, ledger = redaction_material(store)
-        margin = max(PREVIEW_BYTES, max((len(value.encode('utf-8')) for value in values), default=0))
+        stored_bytes = max((len(value.encode('utf-8')) for value in values), default=0)
+        retired_bytes = 4 * max((int(mark[0]) for mark in (ledger or {}).get('marks', ())), default=0)
+        literal_context = max(stored_bytes, retired_bytes)
     except Exception:
         raise WorkDownloadError(msg('agent_runtime.redaction_unavailable'), 'redaction_unavailable') from None
     received = checkpoint['received']
     size = min(PREVIEW_BYTES, received - offset)
-    start = max(0, offset - margin)
-    end = min(received, offset + size + margin)
     with _staging_directory(store) as directory:
         fd = _staged_file(directory, checkpoint['artifact'], os.O_RDONLY)
         with os.fdopen(fd, 'rb') as source:
             _verified_digest(source, received, checkpoint['digest'])
+            start = max(0, _preview_context_edge(source, offset, 0) - literal_context)
+            end = min(received, _preview_context_edge(source, offset + size, received) + literal_context)
             source.seek(start)
-            data = source.read(end - start)
-    if len(data) != end - start:
-        raise WorkDownloadError('Previously verified bytes are unavailable.', 'read_checkpoint_missing')
+            data = _read_preview_bytes(source, end - start)
     total = checkpoint['total']
     incomplete_tail = end == received and (total is None or received < total)
     try:

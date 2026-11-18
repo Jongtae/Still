@@ -6005,10 +6005,17 @@ def goal_judgment(judgments,goal,claim,observations,failures,work_id=None,redact
  exchanges=list({tuple(turn['id'] for turn in row['turns']):row for row in exchanges}.values())
  recalled=conversation_block(exchanges,budget=9000)
  if recalled:observed=recalled+'\n'+observed[:max(0,GOAL_OBSERVATION_CHARS-len(recalled)-1)]
+ admission={}
  try:
-  if budget is not None and getattr(getattr(judgments,'engine',None),'work_budget',None) is not budget:budget.spend_turn(reserve=True)
+  if budget is not None and getattr(getattr(judgments,'engine',None),'work_budget',None) is not budget:
+   from .conversation_handoff import ConversationJudgments
+   if continuation and isinstance(judgments,ConversationJudgments):
+    # The reserve belongs to a dispatch after checkpoint registration.
+    admission['admit']=lambda:budget.spend_turn(reserve=True)
+   else:budget.spend_turn(reserve=True)
  except Exception:return 'unavailable'
  try:judged=judgments.goal_reached(clean(goal),observed,failed,work_id=work_id,answer=reply,conversation=recent,
+                                   **admission,
                                    **({'reply_source':reply_source} if reply_source!='worker' else {}),
                                    **({'reply_delivery':reply_delivery} if reply_delivery!='to_owner' else {}),
                                    owner_context=owner,**({'conversation_messages':count} if count is not None else {}),

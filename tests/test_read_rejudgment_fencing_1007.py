@@ -9,13 +9,16 @@ from unittest import mock
 
 import pytest
 
-from personal_agent.agent_runtime import Capabilities, WORK_STOP_KEY, LedgerSuperseded, WorkBudget, WorkLedger, run_agent
+from personal_agent.agent_runtime import (Capabilities, WORK_MODEL_TURNS, WORK_STOP_KEY, LedgerSuperseded,
+                                          WorkBudget, WorkLedger, run_agent)
 from personal_agent.conversation_handoff import Judgment
+from personal_agent.decision import RoutedDecisionEngine
 from personal_agent.quickstart_service import AgentService, WORK_SOURCES_KEY
 from personal_agent.quickstart_store import QuickStore
-from personal_agent.orchestrator import Catalogue
+from personal_agent.orchestrator import Catalogue, REACHED
 from personal_agent.work_execution import WorkRun
 from personal_agent import work_download as reads
+from test_agency_loop import goal_engine
 from test_read_checkpoint_recovery_1008 import CHECKPOINT
 
 
@@ -396,6 +399,69 @@ def make_run(case, work, budget, answer):
     run.goal_outcome = 'reached'
     run.effect_state = 'none'
     return run
+
+
+@pytest.mark.parametrize('routed', [True, False], ids=['engine-admission', 'caller-admission'])
+def test_final_reserved_judgment_commits_and_delivers(case, routed, monkeypatch):
+    service = case.service
+    assert case.store.record_read_checkpoint(case.id, {**CHECKPOINT, 'received': CHECKPOINT['total'], 'revision': 2},
+                                             epoch=case.budget.ledger.epoch)
+    # This worker fixture uses two turns before dispatching the outcome judgment.
+    for _ in range(WORK_MODEL_TURNS - 3):
+        case.budget.spend_turn()
+    case.store.put('telegram', {'enabled': True, 'generation': 'g', 'user_id': 42})
+    with case.store.db() as db:
+        db.execute("UPDATE jobs SET channel='telegram:g',chat_id=42 WHERE id=?", (case.id,))
+
+    def decide(_):
+        assert case.budget.ledger.counts()['turns'] == WORK_MODEL_TURNS
+        return True
+
+    engine = goal_engine(decide)
+    service.use_decision_engine(RoutedDecisionEngine(lambda: engine, budget=service.current_decision_budget)
+                                if routed else engine)
+    result = run_read_goal(case)
+    assert result.goal_judgment == 'yes'
+    assert result.outcome == 'succeeded'
+    assert len(engine.asked) == 1
+    with case.store.db() as db:
+        judgment = db.execute('SELECT result FROM work_read_judgments WHERE job_id=?', (case.id,)).fetchone()
+    assert json.loads(judgment['result'])['outcome'] == 'yes'
+    extra = mock.Mock()
+    assert case.judge(extra) is None
+    extra.assert_not_called()
+
+    run = make_run(case, case.store.job(case.id), case.budget, result.content)
+    run.result = result
+    run.outcome = result.outcome
+    run.subscription = {}
+    run.turn_provenance = set()
+    service._settle_worker_outcome(run)
+    sent = []
+    monkeypatch.setattr(service.telegram, 'send_message', lambda *args, **kwargs: sent.append(args) or {'message_id': 123})
+    service._finish_work(run)
+    service.deliver_one()
+    assert len(sent) == 1
+    job = case.store.job(case.id)
+    assert (job['response'], job['status'], job['goal_outcome'], job['delivery']) == (
+        result.content, 'succeeded', 'reached', 'sent')
+
+
+def test_orchestration_dispatches_reserved_turn_after_registration(case):
+    work, case.budget = case.restart()
+    for _ in range(WORK_MODEL_TURNS - 1):
+        case.budget.spend_turn()
+    engine = goal_engine()
+    case.service.use_decision_engine(engine)
+    orch = orchestration(case, work)
+    with case.service.work_decision_scope(case.id, case.budget):
+        assert orch.evaluate_answer('The comparison.', 'Verified observations.', final=True) == REACHED
+    assert case.budget.ledger.counts()['turns'] == WORK_MODEL_TURNS
+    assert len(engine.asked) == 1
+    assert case.service.can_resume_read_checkpoint(case.id, case.store.read_checkpoint(case.id))
+    case.store.recover(can_resume_checkpoint=case.service.can_resume_read_checkpoint)
+    assert case.store.job(case.id)['status'] == 'interrupted'
+    assert not case.service._claim_queued_work()
 
 
 @pytest.mark.parametrize('fail', [False, True])
