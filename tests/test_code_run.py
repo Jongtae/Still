@@ -118,7 +118,7 @@ class RequestPolicy(unittest.TestCase):
             result = runner(process).run({'code': 'print(1)', 'hosts': 'api.example.com'})
         self.assertEqual([item['allow'] for item in process.decisions], [True, False, False, True])
         self.assertEqual([row['allowed'] for row in result['requests']], [True, False, False, True])
-        self.assertEqual(result['sources'], [{'url': 'https://api.example.com/v1/items'}, {'url': 'https://api.example.com/'}])
+        self.assertEqual(result['sources'], ['https://api.example.com/v1/items', 'https://api.example.com/'])
         # The sandbox never inherits the host environment, and home stays unreadable.
         self.assertEqual(set(process.config['env']), {'PATH', 'HOME', 'LANG', 'PYTHONIOENCODING', 'PYTHONDONTWRITEBYTECODE'})
         self.assertEqual(process.config['masked'], [])
@@ -136,6 +136,31 @@ class RequestPolicy(unittest.TestCase):
         self.assertNotIn('secret code', kept)
         self.assertNotIn('token=', kept)
         self.assertIn('code_digest', kept)
+
+    def test_a_direct_api_work_whose_run_reached_a_host_concludes(self):
+        # #989: the run's sources joined the Work's source list as dicts, and the direct-API
+        # loop's deduplication raised ``unhashable type: 'dict'``, failing the whole Work.
+        from pathlib import Path
+        from personal_agent.agent_runtime import Capabilities, run_agent
+        from personal_agent.providers import ModelAdapter
+        from personal_agent.quickstart_store import QuickStore
+        from test_agency_loop import CFG, Network, Script, call, finish, judgments
+        process = FakeProcess(requests=[{'method': 'GET', 'host': 'api.example.com', 'path': '/v1/items'}],
+                              result={'stdout': '3 items', 'stderr': ''})
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        events = []
+        script = Script({'tool_calls': [call('1', 'code_run', code='print(1)', hosts='api.example.com')]},
+                        finish('2', '1', summary='3 items.'))
+        caps = Capabilities(QuickStore(Path(tmp.name) / 'data'), ModelAdapter(script), CFG, '', 'job',
+                            lambda *row: events.append(row), network=Network(), judgments=judgments(True))
+        caps._code_runner = runner(process)
+        with mock.patch('personal_agent.current_context.redact_known_secrets', lambda store, text: text):
+            result = run_agent(caps.adapter, CFG, '', [{'role': 'user', 'content': 'count the items'}], '', caps,
+                               lambda *row: events.append(row))
+        self.assertEqual(result.outcome, 'succeeded')
+        self.assertIn('https://api.example.com/v1/items', result.content)
+        self.assertIn(('model', 'concluded'), [row[:2] for row in events])
 
 
 class Failures(unittest.TestCase):

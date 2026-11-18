@@ -1095,7 +1095,8 @@ class CodeRunner:
                   'requests': requests, 'packages': packages, 'hosts': hosts, 'secrets': list(names),
                   'sandbox': f'sandbox-runtime {RUNTIME_VERSION}',
                   'code_digest': hashlib.sha256(code.encode()).hexdigest()[:16],
-                  'sources': [{'url': f"https://{row['host']}{row['path']}"} for row in requests
+                  # #989: URL strings like every other tool's sources; the Work's source list is deduplicated as one list.
+                  'sources': [f"https://{row['host']}{row['path']}" for row in requests
                               if row['allowed'] and row['phase'] == 'run'][:20]}
         if failed:
             result['failed_phase'] = failed
