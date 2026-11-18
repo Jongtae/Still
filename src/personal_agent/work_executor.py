@@ -195,8 +195,9 @@ class WorkExecutor:
                         for phase in (service._prepare_worker_turn,service._run_worker_attempts):
                             step=phase(run)
                             if step is not PROCEED:return step
+                        if not self._read_checkpoint_can_settle(run):return True
                         if not run.handled:service._settle_worker_outcome(run)
-                    service._finish_work(run)
+                    if service._finish_work(run) is False:return True
                 except Exception as exc:
                     # #893: a claimed Work must not be stranded by an untyped phase failure.
                     if service._fail_work(run,exc) is False:return True
@@ -227,6 +228,8 @@ class WorkExecutor:
             outcome='unknown' if service._work_has_unknown_effect(job['id']) else 'failed'
             reason=msg('projection.i_couldn_t_complete_this_request')
             with service.store.db() as db:
+                db.execute('BEGIN IMMEDIATE')
+                if not self._read_checkpoint_can_settle(run, db=db):return
                 changed=db.execute("UPDATE jobs SET status=?,error=?,delivery=? WHERE id=? AND status='running'",
                                    (outcome,reason,service.reply_delivery(job),job['id'])).rowcount
                 if changed:
@@ -331,8 +334,16 @@ class WorkExecutor:
                 if not runnable:
                     if owner:waiting.add(conversation)
                     continue
+                if service.store.read_checkpoint_pending(db, job['id']):
+                    epoch = service.store.claim_read_checkpoint(
+                        db, job['id'], getattr(service, 'can_resume_read_checkpoint', None),
+                        delivery=service.reply_delivery(job),
+                    )
+                    if epoch is None:return True
+                    job['read_checkpoint_resume'] = epoch
                 db.execute("UPDATE jobs SET status='running' WHERE id=?",(job['id'],))
-                db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id) VALUES (?,?,?,?,?,?)',('user',job['message'],job['channel'],time.time(),job.get('workspace_id'),job['id']))
+                if 'read_checkpoint_resume' not in job:
+                    db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id) VALUES (?,?,?,?,?,?)',('user',job['message'],job['channel'],time.time(),job.get('workspace_id'),job['id']))
                 return job
         return False
 
@@ -371,7 +382,10 @@ class WorkExecutor:
         job=run.job
         # Routing and owner-followup judgments spend this same run's
         # allowance before any worker or speculative plan can start.
-        run.work_budget=service.work_budget(job['id'])
+        budget=service.work_budget(job['id'])
+        if 'read_checkpoint_resume' in job and budget.ledger.epoch != job['read_checkpoint_resume']:
+            return True
+        run.work_budget=budget
         service._work_local.budget=run.work_budget
         run.work_budget.check()
         run.image_inputs=[]
@@ -395,7 +409,8 @@ class WorkExecutor:
         run.continued=continuation_request(job.get('request_key'))
         # #1418: and runs on the asking Work's kept conversation route, unjudged again.
         located=service.located_route(job,run.continued) if run.continued and not resumed else None
-        replayed=bool(resumed or run.continued or service.settings_work_continued(job['id']))
+        replayed=bool(resumed or run.continued or 'read_checkpoint_resume' in job
+                      or service.settings_work_continued(job['id']))
         # #1389: an explicit command (/ai, /notes, ...) is routed literally and answered
         # with no model, so no pre-route judgment below can apply to it; none is asked.
         owner_command=not replayed and service.intent_classifier.explicit(owner_prompt) is not None
@@ -1848,8 +1863,14 @@ class WorkExecutor:
             # answer itself says no longer suppresses or changes it.
             run.response+='\n\n'+msg('service.context_sources')+'\n'+'\n'.join(dict.fromkeys(run.context_sources))
 
+    def _read_checkpoint_can_settle(self, run, *, db=None):
+        ledger = getattr(run.work_budget, 'ledger', None)
+        epoch = run.job.get('read_checkpoint_resume', ledger.epoch if ledger is not None else None)
+        return self.service.store.read_checkpoint_can_settle(run.job['id'], epoch, db=db)
+
     def _finish_work(self, run):
         """Phase 7: the answer, its disclosures and the Work row, written once."""
+        if not self._read_checkpoint_can_settle(run):return False
         service=self.service
         job=run.job
         goal=run.goal_outcome if hasattr(run,'goal_outcome') else service.run_goal_outcome(run)
@@ -1868,6 +1889,7 @@ class WorkExecutor:
         service.record_work_sources(job['id'],run.work_sources)
         with service.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
+            if not self._read_checkpoint_can_settle(run, db=db):return False
             db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id,delivery_projection) VALUES (?,?,?,?,?,?,?)',
                        ('assistant',run.response,job['channel'],time.time(),job.get('workspace_id'),job['id'],
                         'system' if run.system_response else None))
@@ -1925,6 +1947,7 @@ class WorkExecutor:
 
     def _fail_work(self, run, exc):
         """Settle a still-running Work; return False when another outcome already won."""
+        if not self._read_checkpoint_can_settle(run):return False
         service=self.service
         job=run.job
         run.resolved_blocker=False
@@ -1965,6 +1988,8 @@ class WorkExecutor:
         # plus the run-time labels of a worker that had started.
         service.record_work_sources(job['id'],run.work_sources|set(getattr(run.work_capabilities[0],'private_provenance',()) or ()))
         with service.store.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            if not self._read_checkpoint_can_settle(run, db=db):return False
             # #787 review: an unknown effect recorded while the report was built still wins.
             if run.outcome=='failed' and service._work_has_unknown_effect(job['id']):
                 run.outcome,report='unknown',None

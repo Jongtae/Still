@@ -145,6 +145,10 @@ class QuickStore:
             CREATE TABLE IF NOT EXISTS forgotten_messages(message_id INTEGER PRIMARY KEY, receipt_id TEXT NOT NULL, created REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY, request_key TEXT UNIQUE, message TEXT, channel TEXT, chat_id INTEGER, status TEXT, response TEXT, error TEXT, delivery TEXT, provider TEXT, model TEXT, created REAL);
             CREATE TABLE IF NOT EXISTS tool_events(id INTEGER PRIMARY KEY AUTOINCREMENT, job_id TEXT, tool TEXT, status TEXT, detail TEXT, created REAL);
+            CREATE TABLE IF NOT EXISTS work_read_checkpoints(
+                job_id TEXT PRIMARY KEY, epoch INTEGER NOT NULL, value TEXT NOT NULL,
+                resume_pending INTEGER NOT NULL DEFAULT 0, resume_count INTEGER NOT NULL DEFAULT 0
+            );
             -- Intake is authority state, never a dispatched tool or an effect receipt.
             CREATE TABLE IF NOT EXISTS work_intake_sources(id INTEGER PRIMARY KEY AUTOINCREMENT, job_id TEXT NOT NULL, detail TEXT NOT NULL, created REAL NOT NULL);
             CREATE INDEX IF NOT EXISTS work_intake_sources_job ON work_intake_sources(job_id,id);
@@ -2613,7 +2617,148 @@ class QuickStore:
     def update_notification(self, notification_id, state, message_id=None, fingerprint=None, delivered=False):
         return self.telegram.update_notification(notification_id, state, message_id, fingerprint, delivered=delivered)
 
-    def recover(self, reply_prefixes=()):
+    @staticmethod
+    def _read_checkpoint_value(value):
+        """Validate only host-owned progress and representation identity fields."""
+        if not isinstance(value, dict) or not set(value) <= {
+            'artifact', 'received', 'total', 'revision', 'etag', 'source_digest', 'digest', 'url_digest',
+        }:
+            return None
+        artifact = value.get('artifact')
+        if not isinstance(artifact, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', artifact):
+            return None
+        if any(type(value.get(key)) is not int or not 0 < value[key] <= 2**63-1
+               for key in ('received', 'total', 'revision')):
+            return None
+        if value['received'] > value['total']:
+            return None
+        for key in ('etag', 'source_digest', 'digest', 'url_digest'):
+            if key in value and (not isinstance(value[key], str) or not 0 < len(value[key]) <= 1024):
+                return None
+        return value
+
+    @staticmethod
+    def _read_checkpoint_ledger(db, work_id):
+        from .agent_runtime import WORK_LEDGER_KEY, WorkLedger
+        try:
+            root = WorkLedger.request_chain(db, work_id)[-1]['id']
+            row = db.execute('SELECT value FROM config WHERE key=?', (f'{WORK_LEDGER_KEY}:{root}',)).fetchone()
+            if row:
+                ledger = WorkLedger._validate(json.loads(row['value']))
+                if ledger['active'] and ledger.get('active_work_id', root) == work_id:
+                    return ledger
+        except (TypeError, ValueError, KeyError, OverflowError, RecursionError):
+            pass
+        return None
+
+    @staticmethod
+    def _read_checkpoint_stopped(db, work_id):
+        from .agent_runtime import WORK_STOP_KEY
+        row = db.execute('SELECT value FROM config WHERE key=?', (WORK_STOP_KEY,)).fetchone()
+        try:
+            stopped = json.loads(row['value']) if row else []
+        except (TypeError, ValueError):
+            return True
+        return not isinstance(stopped, list) or work_id in stopped
+
+    def read_checkpoint(self, work_id, *, db=None):
+        """Host-only. Project the public artifact, coverage and revision explicitly."""
+        if db is None:
+            with self.db() as db:
+                return self.read_checkpoint(work_id, db=db)
+        row = db.execute('SELECT * FROM work_read_checkpoints WHERE job_id=?', (work_id,)).fetchone()
+        if row is None:
+            return None
+        try:
+            value = self._read_checkpoint_value(json.loads(row['value']))
+        except (TypeError, ValueError):
+            value = None
+        if (value is None or type(row['epoch']) is not int or row['epoch'] < 0
+                or type(row['resume_count']) is not int or row['resume_count'] < 0
+                or row['resume_pending'] not in (0, 1)):
+            return None
+        return {
+            **value, 'epoch': row['epoch'], 'resume_pending': bool(row['resume_pending']),
+            'resumed': row['resume_count'] > 0,
+        }
+
+    def record_read_checkpoint(self, work_id, checkpoint, *, epoch, db=None):
+        """Publish verified progress under the active WorkLedger epoch."""
+        value = self._read_checkpoint_value(checkpoint)
+        if value is None or type(epoch) is not int:
+            return False
+        if db is None:
+            with self.db() as db:
+                db.execute('BEGIN IMMEDIATE')
+                return self.record_read_checkpoint(work_id, value, epoch=epoch, db=db)
+        if not db.in_transaction:
+            raise ValueError('checkpoint publication requires a write transaction')
+        row = db.execute('SELECT status,owner_typed FROM jobs WHERE id=?', (work_id,)).fetchone()
+        ledger = self._read_checkpoint_ledger(db, work_id)
+        if (not row or row['status'] != 'running' or row['owner_typed'] != 1
+                or not ledger or ledger['epoch'] != epoch or ledger['deadline'] <= time.time()
+                or self._read_checkpoint_stopped(db, work_id)):
+            return False
+        prior = self.read_checkpoint(work_id, db=db)
+        if prior is None and db.execute('SELECT 1 FROM work_read_checkpoints WHERE job_id=?', (work_id,)).fetchone():
+            return False
+        if prior:
+            if prior['resume_pending'] or any(prior.get(key) != value.get(key)
+                                              for key in ('artifact', 'total', 'etag', 'source_digest', 'url_digest')):
+                return False
+            if prior['received'] == value['received']:
+                return all(prior.get(key) == value.get(key) for key in
+                           ('artifact', 'received', 'total', 'revision', 'etag', 'source_digest', 'digest', 'url_digest'))
+            if value['received'] < prior['received'] or value['revision'] <= prior['revision']:
+                return False
+        db.execute('INSERT INTO work_read_checkpoints(job_id,epoch,value) VALUES (?,?,?) '
+                   'ON CONFLICT(job_id) DO UPDATE SET epoch=excluded.epoch,value=excluded.value',
+                   (work_id, epoch, json.dumps(value)))
+        return True
+
+    def _read_checkpoint_ready(self, db, work_id, checkpoint, predicate, *, expected_epoch):
+        ledger = self._read_checkpoint_ledger(db, work_id)
+        if (not predicate or not ledger or ledger['epoch'] != expected_epoch
+                or ledger['deadline'] <= time.time() or self._read_checkpoint_stopped(db, work_id)):
+            return False
+        try:
+            return predicate(work_id, checkpoint) is True
+        except Exception:
+            LOG.warning('read checkpoint eligibility unavailable work=%s', work_id)
+            return False
+
+    @staticmethod
+    def read_checkpoint_pending(db, work_id):
+        return db.execute('SELECT 1 FROM work_read_checkpoints WHERE job_id=? AND resume_pending=1',
+                          (work_id,)).fetchone() is not None
+
+    def claim_read_checkpoint(self, db, work_id, predicate, *, delivery):
+        """Claim a queued continuation under the restart fence, inside the queue transaction."""
+        checkpoint = self.read_checkpoint(work_id, db=db)
+        epoch = checkpoint['epoch'] + 1 if checkpoint else None
+        if checkpoint and self._read_checkpoint_ready(db, work_id, checkpoint, predicate, expected_epoch=epoch):
+            claimed = db.execute('UPDATE work_read_checkpoints SET resume_pending=0, resume_count=resume_count+1, '
+                                 'epoch=? WHERE job_id=? AND resume_pending=1', (epoch, work_id)).rowcount
+            if claimed:
+                return epoch
+        db.execute('UPDATE work_read_checkpoints SET resume_pending=0 WHERE job_id=?', (work_id,))
+        db.execute("UPDATE jobs SET status='interrupted',error=?,delivery=? "
+                   "WHERE id=? AND status='queued' AND delivery='none'",
+                   ('실행 중 재시작되었습니다. 자동으로 재호출하지 않습니다.', delivery, work_id))
+        return None
+
+    def read_checkpoint_can_settle(self, work_id, epoch, *, db=None):
+        """A superseded checkpoint run cannot publish a terminal result."""
+        if db is None:
+            with self.db() as db:
+                return self.read_checkpoint_can_settle(work_id, epoch, db=db)
+        if db.execute('SELECT 1 FROM work_read_checkpoints WHERE job_id=?', (work_id,)).fetchone() is None:
+            return True
+        ledger = self._read_checkpoint_ledger(db, work_id)
+        row = db.execute('SELECT status FROM jobs WHERE id=?', (work_id,)).fetchone()
+        return bool(row and row['status'] == 'running' and ledger and ledger['epoch'] == epoch)
+
+    def recover(self, reply_prefixes=(), *, can_resume_checkpoint=None):
         """Settle what a restart cut off, in one transaction (#841, matrix X4/X9).
 
         Running Works become ``interrupted`` and their ledgers are fenced (a bridge from
@@ -2622,13 +2767,31 @@ class QuickStore:
         the same commit, so a stop inside recovery leaves both or neither.  Returns those
         Work ids.  Nothing is re-run.
         """
-        from .agent_runtime import WorkLedger  # lazy: the store does not depend on the runtime
+        from .agent_runtime import MAX_CONTINUATIONS, WorkLedger, continuation_count
         with self.db() as db:
             db.execute('BEGIN IMMEDIATE')
             running=[row['id'] for row in db.execute("SELECT id FROM jobs WHERE status='running'")]
             replies=self.telegram.running_without_task_cards(db,tuple(reply_prefixes))
+            resumes=[]
+            if can_resume_checkpoint is not None:
+                for row in db.execute("SELECT c.job_id,c.resume_count FROM work_read_checkpoints c "
+                                      "JOIN jobs j ON j.id=c.job_id WHERE j.status='running' "
+                                      "AND j.owner_typed=1 AND j.response IS NULL AND j.delivery='none'"):
+                    work_id = row['job_id']
+                    checkpoint = self.read_checkpoint(work_id, db=db)
+                    if not checkpoint or row['resume_count'] + continuation_count(db, work_id) >= MAX_CONTINUATIONS:
+                        continue
+                    if self._read_checkpoint_ready(
+                            db, work_id, checkpoint, can_resume_checkpoint, expected_epoch=checkpoint['epoch']):
+                        resumes.append(work_id)
             interrupted=db.execute("UPDATE jobs SET status='interrupted',error='실행 중 재시작되었습니다. 자동으로 재호출하지 않습니다.' WHERE status='running'").rowcount
             WorkLedger.fence_restart(db,running)
+            for work_id in resumes:
+                db.execute("UPDATE jobs SET status='queued',error=NULL WHERE id=?", (work_id,))
+                db.execute('UPDATE work_read_checkpoints SET resume_pending=1 WHERE job_id=?', (work_id,))
+            if resumes:
+                replies=[work_id for work_id in replies if work_id not in resumes]
+                interrupted-=len(resumes)
             uncertain=db.execute("UPDATE jobs SET delivery='unknown' WHERE delivery='sending'").rowcount
             notifications=db.execute("UPDATE telegram_notifications SET state='unknown' WHERE state='sending'").rowcount
             db.execute("UPDATE telegram_task_cards SET message_id=-2,state='unknown',created=? WHERE message_id=-1",(time.time(),))
