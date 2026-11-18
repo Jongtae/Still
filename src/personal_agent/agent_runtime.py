@@ -5363,6 +5363,7 @@ def _evidence_detail(name,result):
            'element_count':len(result.get('elements',[])),'characters':len(result.get('text','')),
            'redacted_values':int(result.get('redacted_values') or 0),'found':result.get('found')}
   if result.get('layout')=='desktop':summary['layout']='desktop'   # #572
+  if result.get('link_opened') is True:summary['link_opened']=True   # #971: a press run as opening the link's address
   signed=result.get('provider_sign_in')
   if isinstance(signed,dict) and signed.get('state') in ('available','returned','unconfirmed'):
    # #636: the site and the provider host a re-sign-in went through (hosts only), for the receipt and the audit.
