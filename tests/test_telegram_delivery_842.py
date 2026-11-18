@@ -427,36 +427,21 @@ def test_sweep_expired_settings_draft_is_not_queued(case):
     assert not c.store.notification_of(work, 'settings_change_proposed')
 
 
-def test_sweep_keeps_worker_exclusion_without_holding_service_lock(case):
+def test_sweep_leaves_a_work_in_its_lane_and_never_waits_for_the_worker(case):
+    """#970 D1: the sweep runs beside a running Work; a tail its lane still completes is not run twice."""
     c, work = _telegram(case)
-    _finish(c, work)
-    c.service._put_browser_login(work, {'state': 'requested', 'requested_at': time.time(), 'explicit': True,
-        'nonce': 'same', 'url': 'https://example.com/', 'host': 'example.com'})
+    _settings_draft(c, work)
+    run = _finish(c, work)
     service = _restart(c)
-    entered, release, claimed = threading.Event(), threading.Event(), threading.Event()
-    def slow_cookies(row):
-        entered.set()
-        assert release.wait(5)
-        return {}
-    with mock.patch.object(service, '_login_cookie_marks', side_effect=slow_cookies), \
-         mock.patch.object(service.browser_profile, 'open_for_login', return_value={'state': 'opening'}), \
-         mock.patch.object(service, '_claim_queued_work', side_effect=lambda: claimed.set() or False):
-        sweep = threading.Thread(target=service.sweep_after_work)
-        worker = threading.Thread(target=service._run_one)
-        sweep.start()
-        try:
-            assert entered.wait(5)
-            assert service.lock.acquire(timeout=1)
-            service.lock.release()
-            assert not service.worker_lock.acquire(blocking=False)
-            worker.start()
-            assert not claimed.wait(.1)
-        finally:
-            release.set()
-            sweep.join(5)
-            if worker.ident is not None:worker.join(5)
-        assert claimed.is_set()
-        assert not sweep.is_alive() and not worker.is_alive()
+    service.hold_lane(work, 'work')
+    with service.worker_lock:  # a tool-capable Work runs; the sweep does not wait for it
+        assert service.sweep_after_work() == 0
+    assert _marker(c.store, work)['status'] == 'pending'
+    assert c.store.notification_of(work, 'settings_change_proposed') is None
+    service.release_lane(work)
+    assert service.sweep_after_work(now=time.time() + 61) == 1
+    assert _marker(c.store, work)['status'] == 'completed'
+    assert c.store.notification_of(work, 'settings_change_proposed') is not None
 
 
 @pytest.mark.parametrize('failure', ['job', 'forgotten', 'stopped', 'settlement'])

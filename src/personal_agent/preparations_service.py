@@ -630,7 +630,7 @@ class PreparationsService:
         except Exception as exc:  # noqa: BLE001 - line upkeep never stops existing preparations
             LOG.warning('line tick unavailable kind=%s',type(exc).__name__)
         # Fetch enough to skip paused/untold dream rows without hiding due owner work.
-        rows=service.preparations.due(now,limit=prep.MAX_ACTIVE+prep.TICK_LIMIT)
+        rows=service.preparations.due(now,limit=prep.MAX_ACTIVE+prep.TICK_LIMIT,busy=service.lane_work_ids())
         picked=0
         for row in rows:
             if row['state']==prep.STATE_SCHEDULED and row.get('accepted_by')==prep.ACCEPTED_DREAM:

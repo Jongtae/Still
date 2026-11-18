@@ -604,8 +604,11 @@ class DirectMessageSurface(ConversationSurface):
             cfg = self.config()
             with service.store.db() as db:
                 db.execute('BEGIN IMMEDIATE')
-                row = db.execute("SELECT * FROM jobs WHERE delivery='pending' AND substr(channel,1,?)=? ORDER BY created LIMIT 1",
-                                 (len(self.channel_prefix), self.channel_prefix)).fetchone()
+                # #970: a Work still in its lane sends its reply once its tail finished.
+                busy = tuple(service.lane_work_ids())
+                row = db.execute("SELECT * FROM jobs WHERE delivery='pending' AND substr(channel,1,?)=? "
+                                 f"AND id NOT IN ({','.join('?' * len(busy))}) ORDER BY created LIMIT 1",
+                                 (len(self.channel_prefix), self.channel_prefix, *busy)).fetchone()
                 if not row:
                     return None
                 job = dict(row)
@@ -668,7 +671,7 @@ class DirectMessageSurface(ConversationSurface):
 
     def deliver_notification(self):
         service = self.service
-        notification = service.store.next_notification(self.name)
+        notification = service.store.next_notification(self.name, service.lane_work_ids())
         if not notification:
             return False
         from .quickstart_service import MEMORY_PROMPT_KINDS, MEMORY_SAVED_KINDS

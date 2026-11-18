@@ -37,6 +37,8 @@ from .cli_browser_relay import BrowserRelay
 from .quickstart_service import (
     BROWSER_LOGIN_SECONDS,
     CONTINUATION_EFFECT_NOTE_HEAD,
+    LANE_COMMAND,
+    LANE_WORK,
     LOG,
     OWNER_ACT_SETTLED_NOTE,
     RETRY_REFUSED_RAN_CURRENT,
@@ -51,6 +53,11 @@ from .quickstart_service import (
     subscription_public_lookup_query,
     workspace_summary_command
 )
+
+#: #970: claims one dispatcher pass may make per lane; a settled candidate counts as one.
+DISPATCH_CLAIMS=8
+#: Queued rows one claim reads, oldest first, before ordering them owner-first.
+CLAIM_SCAN=50
 
 
 class _FirstTurnCommit:
@@ -79,6 +86,11 @@ class WorkExecutor:
         self.service = service
 
     def run_one(self):
+        """Claim one runnable Work and run it on this thread (the synchronous path, #970).
+
+        The work loop does not call this: its dispatcher (``dispatch``) claims and
+        hands each Work to a lane.  This path keeps the same phases, in order.
+        """
         service=self.service
         service.settle_native_handoffs()
         service.resume_ready_native_work()
@@ -91,9 +103,68 @@ class WorkExecutor:
             service._work_local.budget=None
             service.resume_action_work()
             service.resume_settings_work()
-            # #1261: an early plan the Work never read does not outlive it (#969).
-            early,service._early_plan=getattr(service,'_early_plan',None),None
-            service.settle_early_judgment(early)
+
+    def dispatch(self):
+        """The dispatcher's pass (#970 D1): claim runnable Works and hand each to a free lane.
+
+        Runs on the work thread, which never runs a Work itself, so preparation
+        ticks, deliveries and sweeps keep running while Works run.  Claiming
+        stays on this one thread: a single claimant.  The pre-claim steps run
+        once per pass; each is compare-and-set.  Returns how many Works started.
+        """
+        service=self.service
+        service.settle_native_handoffs()
+        service.resume_ready_native_work()
+        service.resume_action_work()
+        service.resume_settings_work()
+        started=0
+        # #970 D2a: commands Still answers itself go first, to their own lane.
+        for lane in (LANE_COMMAND,LANE_WORK):
+            for _ in range(DISPATCH_CLAIMS):
+                if not self._lane_free(lane):break
+                job=service._claim_queued_work(lanes=(lane,))
+                if job is True:continue
+                if not isinstance(job,dict):break
+                self._start_lane(job,lane)
+                started+=1
+        return started
+
+    def _lane_free(self, lane):
+        service=self.service
+        held=service.lane_work_ids(lane)
+        return len(held)<(1 if lane==LANE_COMMAND else max(1,int(service.WORK_LANES)))
+
+    def _start_lane(self, job, lane):
+        """Register the claimed Work in its lane, then run it there."""
+        service=self.service
+        service.hold_lane(job['id'],lane)
+        def run():
+            try:
+                self._run_in_lane(job,lane)
+            finally:
+                service.release_lane(job['id'])
+        try:
+            service.work_lane_spawn(run,f'agentos-{lane}-lane')
+        except Exception as exc:
+            # A lane that cannot start leaves the claimed Work failed, never stranded running.
+            LOG.warning('work lane not started job=%s kind=%s',job['id'],type(exc).__name__)
+            service.release_lane(job['id'])
+            self._fail_work_terminal(WorkRun(job,time.time()))
+
+    def _run_in_lane(self, job, lane):
+        service=self.service
+        try:
+            if lane==LANE_COMMAND:
+                # #970 D2a: model-free and tool-free; it never waits for the tool-capable worker.
+                return self._run_claimed(job)
+            # Slice 1 of #970: still one tool-capable Work at a time.
+            with service.worker_lock:
+                return self._run_claimed(job)
+        except Exception as exc:
+            LOG.warning('work lane failed job=%s kind=%s',job['id'],type(exc).__name__)
+        finally:
+            service.current_work_id=None
+            service._work_local.budget=None
 
     def _run_one(self):
         """Claim the oldest runnable Work and run it through its phases (``work_execution``)."""
@@ -102,7 +173,17 @@ class WorkExecutor:
         with service.worker_lock:
             job=service._claim_queued_work()
             if not isinstance(job,dict):return job
-            run=WorkRun(job,time.time())
+            service.hold_lane(job['id'],LANE_WORK)
+            try:
+                return self._run_claimed(job)
+            finally:
+                service.release_lane(job['id'])
+
+    def _run_claimed(self, job):
+        """Run one claimed Work through its phases, ending with its tail (``_after_work``)."""
+        service=self.service
+        run=WorkRun(job,time.time())
+        try:
             try:
                 try:
                     if service.fold_delivered_steer(job):return True
@@ -136,9 +217,13 @@ class WorkExecutor:
                 # Never replace a committed outcome or catch process-exit signals.
                 LOG.warning('work finalization failed job=%s kind=%s',job['id'],type(exc).__name__)
                 self._fail_work_terminal(run)
-            # The result delivery is the one terminal Telegram bubble.
-            # Do not append a second generic completion notification.
-            return True
+        finally:
+            # #1261: an early plan the Work never read does not outlive it (#969).
+            early,run.early_plan=run.early_plan,None
+            service.settle_early_judgment(early)
+        # The result delivery is the one terminal Telegram bubble.
+        # Do not append a second generic completion notification.
+        return True
 
     def _fail_work_terminal(self, run):
         """Last resort after a failed finalizer: commit the terminal reply, state and recoverable tail."""
@@ -164,41 +249,82 @@ class WorkExecutor:
             # running-row fence intact and keep the worker available for other work.
             LOG.warning('work terminal state not saved job=%s kind=%s',run.job['id'],type(exc).__name__)
 
-    def _claim_queued_work(self):
-        """The oldest queued Work marked running, or False (nothing runnable now) / True (settled without running)."""
+    def _claim_queued_work(self, lanes=None):
+        """The next runnable queued Work marked running, or False (nothing runnable now) / True (settled without running).
+
+        #970 D2: owner Works come before background Works, each oldest first, and
+        commands Still answers itself (D2a) before both.  ``lanes`` limits the
+        claim to Works for those lanes; None (the synchronous path) takes any.
+        A candidate that cannot run yet is skipped; an owner Work behind it in
+        the same conversation waits with it, so a conversation keeps its order.
+        """
         service=self.service
         with service.store.db() as db:
             db.execute('BEGIN IMMEDIATE')
-            row=db.execute("SELECT j.* FROM jobs j WHERE j.status='queued' ORDER BY j.created LIMIT 1").fetchone()
-            if not row:return False
-            job=dict(row)
-            with service.side_answer_lock:
-                if job['id'] in service.side_answer_flight:return False
-            try:
-                chain=WorkLedger.request_chain(db,job['id'])
-            except ValueError:
-                # Reject before early routing/planning, which precedes
-                # the worker's budget allocation and may call a model.
-                cause=msg('quickstart_service.original_work_link_missing')
-                db.execute("UPDATE jobs SET status='failed',error=?,owner_cause=? WHERE id=?",(cause,cause,job['id']))
-                return True
-            if any(ws.is_active(parent['status']) for parent in chain[1:]):return False
-            refusal=service.preparations.run_refusal(db,job['id'],service.preparations.clock())
-            if refusal:
-                service.preparations.refuse_run(db,job['id'],service.preparations.clock(),refusal)
-                return True
-            if service.store.telegram.album_open(db,job['id']):return False
-            # #367 review P1: a parked Work whose request the owner forgot since is never run (or recorded) again.
-            if db.execute("SELECT 1 FROM messages m JOIN forgotten_messages f ON f.message_id=m.id "
-                          "WHERE m.job_id=? AND m.role='user' LIMIT 1",(job['id'],)).fetchone():
-                cause=msg('quickstart_service.forgotten_request')
-                db.execute("UPDATE jobs SET status='cancelled',error='forgotten',owner_cause=? WHERE id=?",(cause,job['id']))
-                return True
-            card=service.store.telegram.card_row(db,job['id'])
-            if card and (card['message_id']==-1 or card['created']>time.time()-TELEGRAM_CARD_GRACE_SECONDS):return False
-            db.execute("UPDATE jobs SET status='running' WHERE id=?",(job['id'],))
-            db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id) VALUES (?,?,?,?,?,?)',('user',job['message'],job['channel'],time.time(),job.get('workspace_id'),job['id']))
-        return job
+            rows=db.execute("SELECT j.* FROM jobs j WHERE j.status='queued' ORDER BY j.created LIMIT ?",(CLAIM_SCAN,)).fetchall()
+            candidates=[]
+            for row in rows:
+                job=dict(row)
+                try:
+                    chain=WorkLedger.request_chain(db,job['id'])
+                except ValueError:
+                    # Reject before early routing/planning, which precedes
+                    # the worker's budget allocation and may call a model.
+                    cause=msg('quickstart_service.original_work_link_missing')
+                    db.execute("UPDATE jobs SET status='failed',error=?,owner_cause=? WHERE id=?",(cause,cause,job['id']))
+                    return True
+                lane=LANE_COMMAND if self._command_work(db,job,chain) else LANE_WORK
+                owner=chain[-1].get('owner_typed')==1
+                candidates.append((0 if lane==LANE_COMMAND else 1 if owner else 2,len(candidates),job,chain,lane,owner))
+            waiting=set()
+            for _rank,_order,job,chain,lane,owner in sorted(candidates,key=lambda item:item[:2]):
+                conversation=(job['channel'],job.get('chat_id'))
+                if owner and lane==LANE_WORK and conversation in waiting:continue
+                if lanes is not None and lane not in lanes:
+                    if owner and lane==LANE_WORK:waiting.add(conversation)
+                    continue
+                with service.side_answer_lock:
+                    flight=job['id'] in service.side_answer_flight
+                runnable=not flight and not any(ws.is_active(parent['status']) for parent in chain[1:])
+                if runnable:
+                    refusal=service.preparations.run_refusal(db,job['id'],service.preparations.clock())
+                    if refusal:
+                        service.preparations.refuse_run(db,job['id'],service.preparations.clock(),refusal)
+                        return True
+                    runnable=not service.store.telegram.album_open(db,job['id'])
+                if runnable:
+                    # #367 review P1: a parked Work whose request the owner forgot since is never run (or recorded) again.
+                    if db.execute("SELECT 1 FROM messages m JOIN forgotten_messages f ON f.message_id=m.id "
+                                  "WHERE m.job_id=? AND m.role='user' LIMIT 1",(job['id'],)).fetchone():
+                        cause=msg('quickstart_service.forgotten_request')
+                        db.execute("UPDATE jobs SET status='cancelled',error='forgotten',owner_cause=? WHERE id=?",(cause,job['id']))
+                        return True
+                    card=service.store.telegram.card_row(db,job['id'])
+                    runnable=not (card and (card['message_id']==-1 or card['created']>time.time()-TELEGRAM_CARD_GRACE_SECONDS))
+                if not runnable:
+                    if owner:waiting.add(conversation)
+                    continue
+                db.execute("UPDATE jobs SET status='running' WHERE id=?",(job['id'],))
+                db.execute('INSERT INTO messages(role,content,channel,created,workspace_id,job_id) VALUES (?,?,?,?,?,?)',('user',job['message'],job['channel'],time.time(),job.get('workspace_id'),job['id']))
+                return job
+        return False
+
+    def _command_work(self, db, job, chain):
+        """Whether this queued Work is a command Still answers itself (#970 D2a), read in the claim.
+
+        An owner-typed explicit form (``IntentClassifier.explicit``) with no photo,
+        a request chain of one and no earlier run.  No model is asked and only the
+        exact command forms are read: the eligibility ``start_side_answer`` applies.
+        """
+        service=self.service
+        if job.get('owner_typed')!=1 or len(chain)!=1 or job.get('relation_kind')=='steer':return False
+        if service.intent_classifier.explicit((job.get('message') or '').strip()) is None:return False
+        if continuation_request(job.get('request_key')) is not None:return False
+        # A Work claimed before (parked, then queued again) resumes on the worker's path.
+        if db.execute("SELECT 1 FROM messages WHERE job_id=? AND role='user' LIMIT 1",(job['id'],)).fetchone():return False
+        if service.store.telegram_photo_file_ids(job['id']):return False
+        photo_record=service.store.turn_provenance(job['id']) or {}
+        return not (photo_record.get('telegram_photo_attached') or photo_record.get('photo_inputs') or photo_record.get('photo_input'))
 
     def _route_work(self, run):
         """Phase 1: the owner turn judgments and the routing decision, made before any capability is touched."""
@@ -262,18 +388,18 @@ class WorkExecutor:
                       service.start_early_judgment(job['id'],service.classify_intent,early_prompt))
         # #309 L1: planning shares the allowance with routing and continuity.
         # Replays, explicit commands and answered owner acts ask for no plan.
-        service._early_plan=(None if replayed or owner_command or answered else
-                          service.start_early_judgment(job['id'],service.early_work_plan,job,run.prompt,run.work_budget))
+        run.early_plan=(None if replayed or owner_command or answered else
+                        service.start_early_judgment(job['id'],service.early_work_plan,job,run.prompt,run.work_budget))
         run.continuity=(None if replayed or answered
                         else service.continuity_relation(run.prompt,run.connector_owner,current_work_id=job['id']))
         if run.continuity:
             # Finish over the unlinked state before recording the relation: the
             # digest must still name the inputs sent, including no known continues.
-            service.settle_early_judgment(service._early_plan)
+            service.settle_early_judgment(run.early_plan)
             relation,previous=run.continuity['relation'],run.continuity['previous']
             # A retry or cancel never consumes the speculative answer. Its call
             # already spent the shared budget and recorded its information use.
-            if relation in (FOLLOWUP_RETRY,FOLLOWUP_CANCEL):service._early_plan=None
+            if relation in (FOLLOWUP_RETRY,FOLLOWUP_CANCEL):run.early_plan=None
             service.present_turn(job)
             if relation==FOLLOWUP_RETRY:
                 allowed,reason=service.safe_retry(previous,current_work_id=job["id"])
@@ -712,7 +838,7 @@ class WorkExecutor:
                                               can_ask_location=not run.continued and service.location_requester(job) is not None,
                                               # #1517: the outcome judgment learns what the worker was given.
                                               attachments=attachment_facts(images=len(run.image_inputs)) if run.image_inputs else '')
-        early_plan,service._early_plan=getattr(service,'_early_plan',None),None
+        early_plan,run.early_plan=run.early_plan,None
         run.attempt=run.orchestration.first(early=early_plan) if run.orchestration else None
         if not run.orchestration:service.settle_early_judgment(early_plan)
         elif getattr(run.orchestration,'context_sent',False):
@@ -1814,7 +1940,7 @@ class WorkExecutor:
         service=self.service
         # An unused speculative plan must finish before execution time
         # pauses; a late plan cannot spend in a subsequent host run.
-        early,service._early_plan=getattr(service,'_early_plan',None),None
+        early,run.early_plan=run.early_plan,None
         service.settle_early_judgment(early)
         service.settle_early_judgment(run.early_intent)
         if run.work_budget is not None and run.work_budget.ledger is not None:
@@ -1876,69 +2002,71 @@ class WorkExecutor:
         if now-getattr(service,'_after_work_sweep',0)<60:return 0
         service._after_work_sweep=now
         recovered=0
-        with service.worker_lock:
-            with service.store.db() as db:
-                rows=db.execute("SELECT e.id,e.job_id,e.detail FROM tool_events e JOIN jobs j ON j.id=e.job_id "
-                    "WHERE e.tool='after_work' AND e.status='pending' AND e.created>=? "
-                    f"AND j.status IN {ws.sql_in(ws.TERMINAL)} "
-                    "AND NOT EXISTS (SELECT 1 FROM tool_events newer WHERE newer.job_id=e.job_id "
-                    "AND newer.tool='after_work' AND newer.id>e.id) ORDER BY e.id LIMIT 50",(now-7*86400,)).fetchall()
-            for row in rows:
+        # #970 D1: a Work still in its lane is completing its own tail; the sweep leaves it alone.
+        in_lane=service.lane_work_ids()
+        with service.store.db() as db:
+            rows=db.execute("SELECT e.id,e.job_id,e.detail FROM tool_events e JOIN jobs j ON j.id=e.job_id "
+                "WHERE e.tool='after_work' AND e.status='pending' AND e.created>=? "
+                f"AND j.status IN {ws.sql_in(ws.TERMINAL)} "
+                "AND NOT EXISTS (SELECT 1 FROM tool_events newer WHERE newer.job_id=e.job_id "
+                "AND newer.tool='after_work' AND newer.id>e.id) ORDER BY e.id LIMIT 50",(now-7*86400,)).fetchall()
+        for row in rows:
+            if row['job_id'] in in_lane:continue
+            try:
+                # Persist the attempt before any fallible read or side effect,
+                # including settlement: a poisoned batch cannot starve newer rows.
                 try:
-                    # Persist the attempt before any fallible read or side effect,
-                    # including settlement: a poisoned batch cannot starve newer rows.
-                    try:
-                        detail=json.loads(row['detail'])
-                        attempts=int(detail.get('attempts',0))
-                    except (ValueError,TypeError,AttributeError):
-                        # An unreadable marker cannot safely reconstruct its prompts.
-                        with service.store.db() as db:
-                            db.execute("UPDATE tool_events SET status='failed' WHERE id=? AND status='pending'",(row['id'],))
-                        continue
-                    if attempts>=3:
-                        with service.store.db() as db:
-                            db.execute("UPDATE tool_events SET status='failed' WHERE id=? AND status='pending'",(row['id'],))
-                        continue
-                    detail['attempts']=attempts+1
+                    detail=json.loads(row['detail'])
+                    attempts=int(detail.get('attempts',0))
+                except (ValueError,TypeError,AttributeError):
+                    # An unreadable marker cannot safely reconstruct its prompts.
                     with service.store.db() as db:
-                        db.execute("UPDATE tool_events SET detail=? WHERE id=? AND status='pending'",
-                                   (json.dumps(detail),row['id']))
-                    job=service.store.job(row['job_id'])
+                        db.execute("UPDATE tool_events SET status='failed' WHERE id=? AND status='pending'",(row['id'],))
+                    continue
+                if attempts>=3:
                     with service.store.db() as db:
-                        forgotten=db.execute("SELECT 1 FROM messages m JOIN forgotten_messages f ON f.message_id=m.id "
-                                             "WHERE m.job_id=? LIMIT 1",(row['job_id'],)).fetchone()
-                    eligible=job and not forgotten and not service.work_stopped(job['id'])
-                    if eligible:
-                        login=service._browser_login(job['id']) or {}
-                        if (login.get('state')=='requested'
-                                and max(now,time.time())-float(login.get('requested_at') or 0)<BROWSER_LOGIN_SECONDS
-                                and (not ws.is_succeeded(job['status']) or login.get('explicit'))):
-                            service.offer_browser_login(job)
-                        attachment=service.store.context_attachment(job['id'])
-                        if detail.get('context_approval_needed') and attachment and not attachment['approved']:
-                            service.queue_notification(job,'context_approval_needed')
-                        # Current-state readers enforce their own absolute expiry;
-                        # UNIQUE(job_id,kind) preserves settled notices.
-                        service.queue_preparation_proposal(job)
-                        service.queue_settings_confirmation(job)
-                        offer=service.budget_continue_offer(job['id'])
-                        if now<float(offer.get('deadline') or 0) and service.budget_continue_current(job,offer):
-                            service.queue_notification(job,'budget_continue',fingerprint=offer['nonce'])
-                        else:
-                            service._release_budget_continue_hold(job,job['status'])
+                        db.execute("UPDATE tool_events SET status='failed' WHERE id=? AND status='pending'",(row['id'],))
+                    continue
+                detail['attempts']=attempts+1
+                with service.store.db() as db:
+                    db.execute("UPDATE tool_events SET detail=? WHERE id=? AND status='pending'",
+                               (json.dumps(detail),row['id']))
+                job=service.store.job(row['job_id'])
+                with service.store.db() as db:
+                    forgotten=db.execute("SELECT 1 FROM messages m JOIN forgotten_messages f ON f.message_id=m.id "
+                                         "WHERE m.job_id=? LIMIT 1",(row['job_id'],)).fetchone()
+                eligible=job and not forgotten and not service.work_stopped(job['id'])
+                if eligible:
+                    login=service._browser_login(job['id']) or {}
+                    if (login.get('state')=='requested'
+                            and max(now,time.time())-float(login.get('requested_at') or 0)<BROWSER_LOGIN_SECONDS
+                            and (not ws.is_succeeded(job['status']) or login.get('explicit'))):
+                        service.offer_browser_login(job)
+                    attachment=service.store.context_attachment(job['id'])
+                    if detail.get('context_approval_needed') and attachment and not attachment['approved']:
+                        service.queue_notification(job,'context_approval_needed')
+                    # Current-state readers enforce their own absolute expiry;
+                    # UNIQUE(job_id,kind) preserves settled notices.
+                    service.queue_preparation_proposal(job)
+                    service.queue_settings_confirmation(job)
+                    offer=service.budget_continue_offer(job['id'])
+                    if now<float(offer.get('deadline') or 0) and service.budget_continue_current(job,offer):
+                        service.queue_notification(job,'budget_continue',fingerprint=offer['nonce'])
+                    else:
+                        service._release_budget_continue_hold(job,job['status'])
+                with service.store.db() as db:
+                    db.execute("UPDATE tool_events SET status='completed' WHERE id=? AND status='pending'",(row['id'],))
+                if eligible:recovered+=1
+            except Exception as exc:
+                LOG.warning('after work recovery failed work=%s kind=%s',row['job_id'],type(exc).__name__)
+                # The attempt was already recorded. If even this write fails,
+                # the next sweep settles an exhausted marker before doing work.
+                try:
                     with service.store.db() as db:
-                        db.execute("UPDATE tool_events SET status='completed' WHERE id=? AND status='pending'",(row['id'],))
-                    if eligible:recovered+=1
-                except Exception as exc:
-                    LOG.warning('after work recovery failed work=%s kind=%s',row['job_id'],type(exc).__name__)
-                    # The attempt was already recorded. If even this write fails,
-                    # the next sweep settles an exhausted marker before doing work.
-                    try:
-                        with service.store.db() as db:
-                            db.execute("UPDATE tool_events SET status='failed' WHERE id=? AND status='pending' "
-                                       "AND CAST(json_extract(detail,'$.attempts') AS INTEGER)>=3",(row['id'],))
-                    except Exception as settle_exc:
-                        LOG.warning('after work failure not saved work=%s kind=%s',row['job_id'],type(settle_exc).__name__)
+                        db.execute("UPDATE tool_events SET status='failed' WHERE id=? AND status='pending' "
+                                   "AND CAST(json_extract(detail,'$.attempts') AS INTEGER)>=3",(row['id'],))
+                except Exception as settle_exc:
+                    LOG.warning('after work failure not saved work=%s kind=%s',row['job_id'],type(settle_exc).__name__)
         return recovered
 
 

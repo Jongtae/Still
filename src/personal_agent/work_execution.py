@@ -68,6 +68,8 @@ class WorkRun:
         self.work_capabilities = [None]
         self.work_budget = None
         self.early_intent = None
+        #: #970 D4: this Work's speculative plan (#969), on its own run so concurrent Works never share one.
+        self.early_plan = None
         # Set by ``_route_work``.
         self.prompt = None
         #: The Work whose message is ``prompt`` (a retry replays another's).

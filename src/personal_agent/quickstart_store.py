@@ -519,8 +519,21 @@ class QuickStore:
         try:
             with conn:
                 yield conn
+        except sqlite3.OperationalError as exc:
+            if 'locked' in str(exc):self.count_locked()
+            raise
         finally:
             conn.close()
+
+    #: #970 D8: ``database is locked`` errors this process met, the evidence for adopting WAL.
+    locked_errors = 0
+    _locked_count_lock = threading.Lock()
+
+    def count_locked(self):
+        with self._locked_count_lock:
+            QuickStore.locked_errors += 1
+            count = QuickStore.locked_errors
+        LOG.warning('store busy: database is locked count=%s', count)
 
     @staticmethod
     def write_private(path, content):
@@ -2594,8 +2607,8 @@ class QuickStore:
     def queue_notification(self, job_id, chat_id, generation, kind, fingerprint=None, surface='telegram'):
         return self.telegram.queue_notification(job_id, chat_id, generation, kind, fingerprint, surface=surface)
 
-    def next_notification(self, surface='telegram'):
-        return self.telegram.next_notification(surface)
+    def next_notification(self, surface='telegram', busy=()):
+        return self.telegram.next_notification(surface, busy)
 
     def update_notification(self, notification_id, state, message_id=None, fingerprint=None, delivered=False):
         return self.telegram.update_notification(notification_id, state, message_id, fingerprint, delivered=delivered)

@@ -385,12 +385,18 @@ class EarlyPlanContinuity(Harness):
             self.assertTrue(futures[0].done(), 'settle before changing the relation or migrating the budget')
             return record(*args, **kwargs)
 
+        runs, route = [], self.service._route_work
+
+        def routed(run):
+            runs.append(run)
+            return route(run)
         with mock.patch.object(self.service, 'start_early_judgment', start_early), \
-                mock.patch.object(self.service, 'record_continuity', record_continuity):
+                mock.patch.object(self.service, 'record_continuity', record_continuity), \
+                mock.patch.object(self.service, '_route_work', routed):
             job, row = self.run_work('Current request')
         self.assertTrue(futures[0].done(), 'no speculative judgment outlives its Work')
         self.assertTrue(plan_started.is_set())
-        self.assertIsNone(self.service._early_plan, 'no plan future survives the Work')
+        self.assertIsNone(runs[0].early_plan, 'no plan future survives the Work')
         self.assertEqual(self.asked_plans[0][0].facts['continues'], 'none')
         self.assertIn('plan_context_messages', self.store.turn_provenance(job))
         self.assertIn('owner_information', self.store.turn_provenance(job))
@@ -454,14 +460,20 @@ class RoutingAndBriefs(Harness):
         import threading
         self.clock.now = Clock.START - Clock.START % 60 + 59.0
         snapshot, worker = self.service.current_context_text, threading.current_thread()
+        runs, route = [], self.service._route_work
+
+        def routed(run):
+            runs.append(run)
+            return route(run)
 
         def current_context_text(job):
             if threading.current_thread() is worker:
-                self.service._early_plan.result()  # the early plan read 12:00
+                runs[0].early_plan.result()  # the early plan read 12:00
                 self.clock.now += 2  # the Work reads its own sections at 12:01
             return snapshot(job)
         self.script([plan('codex', 'Asked at 12:00.')], goals=[True])
-        with mock.patch.object(self.service, 'current_context_text', current_context_text):
+        with mock.patch.object(self.service, 'current_context_text', current_context_text), \
+                mock.patch.object(self.service, '_route_work', routed):
             job, row = self.run_work('이 두 가지 비교해줘')
         self.assertEqual(row['status'], 'succeeded')
         self.assertEqual(len(self.asked_plans), 1)
