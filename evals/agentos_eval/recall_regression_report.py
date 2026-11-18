@@ -6,7 +6,7 @@ from pathlib import Path
 from . import recall_pairs as pairs, recall_arms as arms
 from .recall_report import Arm, run_arm, _majority
 from .recall_regression import (digest, validate_plans, apply_terms, seed_fixture,
-    fixture_service, catalogue_from, Executor, replay_case, layer, terms_status_counts, load_recording)
+    fixture_service, catalogue_from, Executor, replay_case, compose, terms_status_counts, load_recording)
 
 
 def facets(case):
@@ -134,8 +134,8 @@ def condition_checks(executor, data, plans):
     return checks
 
 
-def report(base, additions, terms, plans, *, code_head=None, held_plan=False):
-    data = layer(base,additions)
+def report(base, additions, terms, plans, *, code_head=None, held_plan=False, heldout=None):
+    data = compose(base,additions,heldout)
     validate_plans(plans,data,terms)
     if not plans['complete'] or not terms['complete']:
         raise ValueError('Incomplete recording is not regression evidence')
@@ -172,7 +172,9 @@ def report(base, additions, terms, plans, *, code_head=None, held_plan=False):
         results['gate+terms']['evidence'] = 'fixture (model-free)'
         checks = condition_checks(executor,data,plans)
     return dict(version='recall-regression/1',store_composition=dict(v4_rows=len(base['rows']),
-        addition_rows=len(additions['rows']),total_rows=len(data['rows']),addition_digest=digest(additions)),
+        addition_rows=len(additions['rows']),total_rows=len(data['rows']),addition_digest=digest(additions),
+        **({'heldout_rows':len(heldout['rows']),'heldout_cases':len(heldout['cases']),'heldout_digest':digest(heldout)}
+           if heldout else {})),
         evidence=dict(fixture_digest=digest(data),v4_digest=digest(base),terms_digest=digest(terms),
             plan_digest=digest(plans),code_head=code_head,recorded_code_head=plans.get('git_head'),
             recorded_inputs=plans.get('evidence_class','live-route:subscription_cli'),
@@ -216,7 +218,8 @@ def command(args):
         raise ValueError('Recall reports belong outside the repository')
     result = report(pairs.load(args.fixture),json.loads(args.additions.read_text()),
         load_recording(args.terms),load_recording(args.plans),code_head=git_head(),
-        **({'held_plan':True} if getattr(args,'held_plan',False) else {}))
+        **({'held_plan':True} if getattr(args,'held_plan',False) else {}),
+        **({'heldout':json.loads(args.heldout_layer.read_text())} if getattr(args,'heldout_layer',None) else {}))
     folder.mkdir(parents=True,exist_ok=True)
     (folder/'recall-regression.json').write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
     (folder/'recall-regression.md').write_text(markdown(result))

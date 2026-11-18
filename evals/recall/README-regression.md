@@ -3,11 +3,11 @@
 This is an eval harness, with model-free replay as its default evidence class.
 No product file changes. No judge, embeddings, model comparison sweep or
 held-out tuning. The v4 bytes and its 36 held-out cases are pinned in the
-regression tests. Claude completed the one approved live recording at
-`2474d74d`: 204 subscription CLI calls (11 requalification, 45 terms, 148 plans),
-with no judge, no refusals and no failure. The full model-free replay passed;
-see the [recordings README](recordings/README.md) for provenance, digests and
-the #921 setup/results. Exact-head CI remains unobserved.
+regression tests.
+
+Since #919, the committed recording uses the fresh held-out layer below, together with #919's planner prompt. See the [recordings README](recordings/README.md) for provenance, calls, digests and the #921 results.
+
+PR-8's first recording at `2474d74d` stays in git history. It made 204 subscription CLI calls with no judge, and its full model-free replay passed.
 
 ## Reuse review: Adapt
 
@@ -87,6 +87,29 @@ The product Work budget/ledger use their injectable clocks at fixture time, so
 remaining-seconds facts and input digests are stable across host scheduling
 and resume boundaries; the live caller retains its real timeout clock. A preceding owner turn is enqueued and
 retained as a succeeded Work/message when the case has context.
+
+## Fresh held-out layer (#919)
+
+`recall-heldout-919-1.json` (`recall-heldout/1`, built by `build_heldout_919.py`) replaces v4's held-out cases. PR-8 and later reruns had already read them, so under #827 they no longer support a claim.
+
+- **Contents:** 24 new pairs written by Claude, tagged `[author:claude] [fresh]`, each with its own new target row.
+  - 8 cross-language (4 each way);
+  - 6 particle, with two- and three-syllable nouns;
+  - 6 paraphrase and usual-name cases;
+  - 2 short follow-ups;
+  - one lexical control and one harm control.
+- **Composition:** `compose()` binds the layer to the exact v4 and dev-addition files. The new rows come first, so they are the oldest rows and the request-only fill cuts them like the v4 targets. Every dev case and row is unchanged.
+- **Checks:** `tests/test_919_heldout_layer.py` applies v4's held-out checks to the layer on the real store:
+  - no forward leakage;
+  - exact particle pairs;
+  - lexically unreachable meaning cases;
+  - the controls behave as intended;
+  - every target is cut from the request-only snapshot;
+  - no noise added to dev cases;
+  - no stems shared with dev.
+- **Flags:** `--heldout-layer` selects the layer in `recall-record` and `recall-regression`.
+  - `recall-record --terms-base T` applies the terms recording `T` of the composition without the layer, and uses its sandbox and route qualification. The product's terms pass then keys only the new rows.
+  - `--splits dev|heldout` records one split and leaves the recording incomplete for a later `--resume`.
 
 ## Live recorder (Claude only, after budget approval and sweep lock)
 

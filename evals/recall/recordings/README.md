@@ -1,75 +1,89 @@
 # Recorded recall inputs
 
-The one approved synthetic run at code head `2474d74d` recorded
 [`terms.json.gz`](terms.json.gz) (`recall-terms/1`) and
-[`plans.json.gz`](plans.json.gz) (`recall-plan/2`). Claude ran it under the
-sweep lock, using the frozen [setup](https://github.com/Jongtae/Still/issues/921#issuecomment-6958000217)
-and [follow-up setup](https://github.com/Jongtae/Still/issues/921#issuecomment-6958712465).
-The [results](https://github.com/Jongtae/Still/issues/921#issuecomment-6960844558)
-include the successful full model-free replay, which raises on inventory or
-executor-outcome mismatch.
+[`plans.json.gz`](plans.json.gz) (`recall-plan/2`) are the #921 regression
+inputs since #919. Claude recorded them under the sweep lock after the owner's
+decision and setup ([#921 comment](https://github.com/Jongtae/Still/issues/921#issuecomment-6977447172)).
 
-Route: Codex subscription CLI (`live-route:subscription_cli`), requested model
-`gpt-5.6-terra`; observed model **not reported**. Tokens are **not observable**.
-There was no judge or embedding call. Of the 248-call cap, 204 calls were
-admitted: 11 requalification, 45 terms and 148 plans. Zero calls were refused;
-there was no failure. Terms keyed 1,081 rows in 45 ok batches; all 148 plans
-were decided and accepted. The store is the composed synthetic v4 fixture
-(1,078 rows) plus 28 dev-addition rows. Dev cases run once, held-out cases
-three times, then the four additions once. Workers are fixtures.
+**What is recorded.**
+- The planner prompt with #919's `recall_query` line.
+- The store is the composed synthetic fixture:
+  - v4's 1,078 rows;
+  - 28 dev-addition rows;
+  - the 24 rows of the fresh held-out layer [`recall-heldout-919-1.json`](../recall-heldout-919-1.json).
+- The layer's 24 held-out cases replace v4's spent held-out cases (#827). Every dev case is unchanged.
+- Dev cases and the 4 additions run once; the fresh held-out cases run three times. Workers are fixtures.
 
-The recorded command was the following, with `PYTHON` set to the project's venv
-interpreter and `OUT` set to a fresh output directory outside the repository:
+**Route and calls.**
+- Route: the Codex subscription CLI (`live-route:subscription_cli`), with `gpt-5.6-terra` requested. The observed model is **not reported**.
+- Tokens are **not observable**. There was no judge or embedding call.
+- The recording spans 7 resumed sessions of at most 25 calls, at code head `305c8bff`. The rebase onto main left the plan prompt/schema binding unchanged.
+- Calls: 114 plan calls in all.
+  - 112 plans were decided and accepted.
+  - 2 timed out at the CLI's 90-second limit; those cases were asked again.
+  - 0 qualification calls (cached) and 0 terms calls in these sessions.
+- Terms: the earlier composition's recording (`3af70b56…`, PR-8's) supplies the terms of the 1,106 rows both compositions share. The product's terms pass keyed only the 24 new rows, in 2 ok batches (`--terms-base`).
+- Result rows: 1,105 keyed, 4 cleared, 21 never eligible (superseded or expired traps).
+- The measured results, including the old-prompt baseline on the same fresh cases, are on [#921](https://github.com/Jongtae/Still/issues/921).
+
+**Commands.** In the commands below, `PYTHON` is the project's venv interpreter. `OUT` is a fresh output directory outside the repository; each resume used `--resume "$OUT/plans.json"` and the remaining cap.
 
 ```sh
 PYTHONPATH=src:evals "$PYTHON" -m agentos_eval recall-record \
-  --seed synthetic-terra --requalify --max-calls 248 \
-  --fixture evals/recall/recall-pairs-v4.json \
-  --additions evals/recall/recall-gate-dev-1.json \
-  --heldout-runs 3 --out "$OUT"
+  --seed synthetic-terra --requalify --max-calls 25 --splits heldout \
+  --heldout-layer evals/recall/recall-heldout-919-1.json --heldout-runs 3 \
+  --terms "$TERMS" --out "$OUT"
 ```
 
-The gzip files were made with `gzip -9 -n`: mtime 0, no stored filename.
-Decompression preserves the recorder's JSON bytes exactly; do not regenerate
-or re-serialize them. The recorder continues to write plain JSON outside the
-repository. Do not copy seed databases, credentials, owner state, raw plan-input
-text or model logs here. Reports stay outside the repository.
+- `TERMS` is the recording made with `--terms-base evals/recall/recordings/terms.json.gz`, which keyed the new rows.
+- The last two sessions resumed with `--splits all` and added the dev split.
+
+**Files.** The gzip files were made with `gzip -9 -n`: mtime 0, no stored filename. Decompression preserves the recorder's JSON bytes exactly, so do not regenerate or re-serialize them. The recorder writes plain JSON outside the repository.
+
+Do not copy seed databases, credentials, owner state, raw plan-input text or model logs here. Reports stay outside the repository.
 
 | Binding | Digest |
 | --- | --- |
-| Composed fixture SHA-256 | `75b1c5ea898abc59b79cae78f5b97e082cda9bea60867c7d89a35f61026a0cb1` |
-| Terms object SHA-256 (`plans.terms_digest`) | `3af70b562107789501ef3280d6d909c7989a290ab14ce0c224c692d565150e9d` |
+| Composed fixture SHA-256 | `87904d840cf5a3ba4915ea46ac86ba437a12a3d0a2d8ea1da7551dd8c8ac4d63` |
+| Terms object SHA-256 (`plans.terms_digest`) | `b59d8586eae8d5e46fdd85299b3164a1d74656f6b884b99edb2d489fbb67cee0` |
+| Reused terms object SHA-256 (`terms.terms_base`) | `3af70b562107789501ef3280d6d909c7989a290ab14ce0c224c692d565150e9d` |
 | Terms filter source SHA-256 | `56bed506c794562a81328d5441459f2a7117fb25ed12978959e2aac9f7275a04` |
 | Terms prompt/schema SHA-256 | `a01ca10a442aecab73c007bdc9b45aedf4957ed3a506296fe79c7282c1372ed1` |
-| Plan prompt/schema binding | `aae631975aedb868` |
+| Plan prompt/schema binding | `abfebe76cba19942` |
+| Held-out layer file SHA-256 | `8566ba9b8c7dde4c41ef576d81faf522d5f362078ab74fed10efbdbbda97fe63` |
 | V4 fixture file SHA-256 | `06c7df08c4c9e97714c9d33c024e0464657f0173aed7ceda3a3e28f0881ea9fa` |
-| `terms.json.gz` file SHA-256 | `88cbb6c4f17eeda2adad11bb5e18d5c845091aa67bee65eb0a5c608fee5c0d41` |
-| `plans.json.gz` file SHA-256 | `5720f60af256349902b97e507ba44432ba9906cdecb89ad3e20cf00aa854b62e` |
+| `terms.json.gz` file SHA-256 | `0dfb6bf5181b66838133fd2839e69d93738eaff8e1ab19abd0d56ffbbc7acf15` |
+| `plans.json.gz` file SHA-256 | `ce6e4b42d5e8c7d826caf050f3ccd5781c3b7c056e1f4ef64d5c4930e02d0ef8` |
 
-Object digests use the harness's canonical JSON digest, rather than hashing
-the pretty-printed JSON bytes. The plan prompt/schema binding uses the existing
-short digest from `recall_arms`.
+Object digests use the harness's canonical JSON digest, not a hash of the pretty-printed JSON bytes. The plan prompt/schema binding uses the existing short digest from `recall_arms`.
 
-A strict replay reproduces this recording only on code whose plan inputs and
-reply gate match the recording head. #965 changed the gate, so on main add
-`--held-plan`: each recorded plan's text is held fixed while the product
-recomputes the inventories and the gate, and the report says so.
-
-For the full model-free replay (about 26 minutes), set `REPORT_OUT` to a
-directory outside the repository and run from the worktree:
+**Replay.**
+- A strict replay reproduces this recording only on code whose plan inputs and reply gate match the recording.
+- After a later change to either, add `--held-plan`. Each recorded plan's text is then held fixed while the product recomputes the inventories and the gate, and the report says so.
+- For the full model-free replay (about 30 minutes), set `REPORT_OUT` to a directory outside the repository and run from the worktree:
 
 ```sh
 PYTHONPATH=src:evals "$PYTHON" -m agentos_eval recall-regression \
   --fixture evals/recall/recall-pairs-v4.json \
   --additions evals/recall/recall-gate-dev-1.json \
+  --heldout-layer evals/recall/recall-heldout-919-1.json \
   --terms evals/recall/recordings/terms.json.gz \
   --plans evals/recall/recordings/plans.json.gz --out "$REPORT_OUT"
 ```
 
 Both commands accept `.json` or `.json.gz` inputs, selected by suffix.
-The fast model-free `tests/test_921_recall_regression_recordings.py` validates
-both complete recordings, bindings, evidence class, tokens, secret/path safety
-and gzip headers, then replays only the first three recorded cases through
-`replay_case` with the recorded terms. The full command above remains the
-complete regression check. See the [harness README](../README-regression.md)
-for formats and attribution rules.
+
+The fast model-free `tests/test_921_recall_regression_recordings.py` validates:
+- both complete recordings and their bindings;
+- the evidence class and tokens;
+- secret and path safety;
+- the gzip headers.
+
+It then replays only the first three recorded cases through `replay_case` with the recorded terms. The full command above remains the complete regression check. See the [harness README](../README-regression.md) for formats and attribution rules.
+
+**History.** PR-8 (#960) recorded the previous inputs at `2474d74d`:
+- 204 calls on the same route, with no judge;
+- the v4 composition, with v4's own held-out cases;
+- results in [this #921 comment](https://github.com/Jongtae/Still/issues/921#issuecomment-6960844558).
+
+#919's prompt change makes those plans fail the plan prompt/schema binding. They stay in git history as evidence for that head.

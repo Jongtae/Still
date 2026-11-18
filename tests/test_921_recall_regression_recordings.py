@@ -10,7 +10,7 @@ sys.path.insert(0, str(ROOT / 'evals'))
 
 from agentos_eval import recall_pairs as pairs  # noqa: E402
 from agentos_eval.recall_regression import (Executor, apply_terms, catalogue_from, fixture_service,  # noqa: E402
-    layer, load_recording, replay_case, seed_fixture, validate_terms, validate_plans, validate_recording_safety)
+    compose, load_recording, replay_case, seed_fixture, validate_terms, validate_plans, validate_recording_safety)
 from personal_agent.quickstart_store import QuickStore  # noqa: E402
 
 RECORDINGS=ROOT/'evals/recall/recordings'
@@ -27,8 +27,10 @@ def recordings():
         assert header[:4] == b'\x1f\x8b\x08\x00'  # gzip/deflate, no optional fields or stored name
         assert header[4:8] == b'\x00'*4  # mtime 0
         assert header[8] == 2  # maximum compression (gzip -9 -n)
-    data = layer(pairs.load(ROOT/'evals/recall/recall-pairs-v4.json'),
-                 json.loads((ROOT/'evals/recall/recall-gate-dev-1.json').read_text()))
+    # Since #919 the recordings are on the composition with the fresh held-out layer (#827).
+    data = compose(pairs.load(ROOT/'evals/recall/recall-pairs-v4.json'),
+                   json.loads((ROOT/'evals/recall/recall-gate-dev-1.json').read_text()),
+                   json.loads((ROOT/'evals/recall/recall-heldout-919-1.json').read_text()))
     return data, *(load_recording(path) for path in paths)
 
 
