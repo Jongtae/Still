@@ -274,7 +274,7 @@ def receive(store, job_id, ledger, reader, url, offset, *, address_check, before
             os.fsync(directory)
     return public_checkpoint(checkpoint)
 
-def _mask_preview(data, offset, size, values, ledger):
+def _mask_preview(data, offset, size, values, ledger, *, incomplete_tail=False):
     from .bounded_execution import SECRET_PATTERN
     from .quickstart_store import QuickStore
 
@@ -288,6 +288,13 @@ def _mask_preview(data, offset, size, values, ledger):
         while start != -1:
             spans.append((start, start + len(value)))
             start = text.find(value, start + 1)
+        if incomplete_tail:
+            # The next range may complete a secret that ends here as a prefix.
+            max_prefix = min(len(text), len(value) - 1)
+            for length in range(max_prefix, 0, -1):
+                if text.endswith(value[:length]):
+                    spans.append((len(text) - length, len(text)))
+                    break
 
     content = bytearray(data[offset:offset + size])
     if spans:
@@ -325,8 +332,10 @@ def preview(store, job_id, offset):
             data = source.read(end - start)
     if len(data) != end - start:
         raise WorkDownloadError('Previously verified bytes are unavailable.', 'read_checkpoint_missing')
+    total = checkpoint['total']
+    incomplete_tail = end == received and (total is None or received < total)
     try:
-        content = _mask_preview(data, offset - start, size, values, ledger)
+        content = _mask_preview(data, offset - start, size, values, ledger, incomplete_tail=incomplete_tail)
     except Exception:
         raise WorkDownloadError(msg('agent_runtime.redaction_unavailable'), 'redaction_unavailable') from None
     return {**public_checkpoint(checkpoint), 'offset': offset, 'content': content}

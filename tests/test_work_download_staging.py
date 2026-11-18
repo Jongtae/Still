@@ -100,6 +100,35 @@ def test_preview_masks_stored_secret_fragments_at_byte_boundaries(download, monk
     assert (left + right).decode() not in first + next_page
 
 
+def test_preview_masks_stored_secret_prefix_at_incomplete_checkpoint(download, monkeypatch):
+    store, _, _, caps, _ = download
+    secret = 'orchid river silver cloud'
+    store.secret('model_key', secret)
+    header = '안내: '
+    verified_prefix = 'orchid river'
+    suffix = ' visible orchid'
+    payload = (header + secret + suffix).encode()
+    received = len((header + verified_prefix).encode())
+
+    def read_range(reader, url, offset, length, **kwargs):
+        end = received if offset == 0 else len(payload)
+        part = payload[offset:end]
+        return DownloadedRange(part, '"fixture"', len(payload), 'a' * 64, hashlib.sha256(part).hexdigest())
+
+    monkeypatch.setattr(work_download.PublicDownload, 'read_range', read_range)
+    fetch = {'operation': 'fetch', 'url': URL}
+    preview = {'operation': 'preview', 'offset': len('안내'.encode())}
+    first = caps.execute('public_download', {**fetch, 'offset': 0})
+    assert first['received'] == received < first['total']
+    partial = caps.execute('public_download', preview)['content']
+    assert secret[:3] not in partial  # Every longer prefix begins with these characters.
+    assert partial == ': ' + '*' * len(verified_prefix)
+
+    complete = caps.execute('public_download', {**fetch, 'offset': received})
+    assert complete['received'] == complete['total']
+    assert caps.execute('public_download', preview)['content'] == ': ' + '*' * len(secret) + suffix
+
+
 def test_network_stop_is_rechecked_after_a_chunk_arrives(download, monkeypatch):
     store, work_id, _, caps, _ = download
     base_download = work_download.PublicDownload
