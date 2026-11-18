@@ -269,7 +269,10 @@ def write_recordings(args, terms, plans, cap, phase_counts, *, failure, stop, id
     plans['runs'] = {str(r):{c['id']:plans['runs'][str(r)][c['id']]
         for rr,c in order if rr==r and c['id'] in plans['runs'].get(str(r),{})}
         for r in range(1,args.heldout_runs+1) if plans['runs'].get(str(r))}
-    plans['complete'] = failure is None and evidence != 'dry-run (no model call)'
+    dev_only = getattr(args,'splits','all') == 'dev'
+    plans['complete'] = failure is None and evidence != 'dry-run (no model call)' and not dev_only
+    if dev_only and failure is None and stop is None:
+        stop = dict(reason='dev split only; held-out not recorded')
     plans['identity'] = identity
     session = dict(max_calls=cap.max_calls,admitted=cap.used,refused=int(cap.refused),
         reached=cap.used>=cap.max_calls if cap.max_calls else False,by_phase=dict(phase_counts),stop_reason=failure,
@@ -302,6 +305,9 @@ def record(args, *, factory=None, sandbox_factory=None, requalify=None):
     additions = json.loads(Path(args.additions).read_text())
     data = layer(base,additions)
     order = run_order(base,additions,args.heldout_runs)
+    if getattr(args,'splits','all') == 'dev':
+        # Dev first (#827): record the dev split only; --resume adds held-out later.
+        order = [(r,c) for r,c in order if c['split']=='dev']
     dry_run = getattr(args,'dry_run',False)
     if dry_run:
         order = dry_run_order(order,additions,args.dry_run_cases)

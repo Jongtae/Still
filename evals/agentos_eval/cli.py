@@ -533,6 +533,8 @@ def main(argv=None):
             regression.add_argument('--terms',type=Path,help='reuse a complete terms recording (.json or .json.gz)')
             regression.add_argument('--resume',type=Path,help='continue incomplete plans (.json or .json.gz); terms default to its sibling terms file with the same suffix')
             regression.add_argument('--heldout-runs',type=int,default=3)
+            regression.add_argument('--splits',choices=('all','dev'),default='all',
+                help='dev: record only dev cases and additions, left incomplete for a later --resume')
         else:
             regression.add_argument('--terms',type=Path,required=True,help='terms recording (.json or .json.gz)')
             regression.add_argument('--plans',type=Path,required=True,help='plans recording (.json or .json.gz)')
