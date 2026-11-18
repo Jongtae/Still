@@ -31,7 +31,7 @@ from datetime import datetime, timedelta
 
 from . import preparations as prep
 from .code_run import CHECK_STATE_ENV as STATE_ENV
-from .code_run import MAX_SECONDS, CodeRunError, CodeRunner, _arguments, check_arguments_digest
+from .code_run import MAX_SECONDS, CodeRunError, CodeRunner, _arguments, check_arguments_digest, reached_host_counts
 from .messages import msg
 
 LOG = logging.getLogger(__name__)
@@ -247,7 +247,7 @@ class ConditionChecks:
         local = datetime.fromtimestamp(now, tz)
         return datetime.combine(local.date() + timedelta(days=1), datetime.min.time(), tzinfo=tz).timestamp()
 
-    def _count(self, status, now, db, *, run=False, wake=False, hosts=()):
+    def _count(self, status, now, db, *, run=False, wake=False, hosts=None):
         day = self._day(now, db)
         days = status.setdefault('days', {})
         counts = days.setdefault(day, {'runs': 0, 'wakes': 0})
@@ -257,8 +257,8 @@ class ConditionChecks:
             counts['wakes'] += 1
         if status.get('hosts_day') != day:
             status['hosts_day'], status['hosts_today'] = day, {}
-        for host in hosts:
-            status['hosts_today'][host] = status['hosts_today'].get(host, 0) + 1
+        for host, count in (hosts or {}).items():
+            status['hosts_today'][host] = status['hosts_today'].get(host, 0) + count
         for old in sorted(days)[:-KEPT_DAYS]:
             days.pop(old)
         return counts
@@ -321,10 +321,10 @@ class ConditionChecks:
                 db.execute('UPDATE preparations SET state=?,last_outcome=?,updated_at=? WHERE id=? AND state=?',
                            (state, state, now, current['id'], prep.STATE_SCHEDULED))
                 return None
-            if now > current['until_at'] or int(current['run_count'] or 0) >= int(current['max_runs'] or 0):
+            if now >= current['until_at'] or int(current['run_count'] or 0) >= int(current['max_runs'] or 0):
                 # The window ended (or its wakes are used): the check ends with its row.
-                db.execute('UPDATE preparations SET state=?,updated_at=? WHERE id=? AND state=?',
-                           (prep.STATE_EXPIRED, now, current['id'], prep.STATE_SCHEDULED))
+                key = prep.request_key(current['id'], current['due_at'], check_spec=current['check_spec'])
+                self.preparations._close_window(db, current, key, now, current['due_at'])
                 return None
             if self.wakes_today(current, now, db) >= DAILY_WAKES:
                 # The day's wakes are used: no run until the next owner-local day.
@@ -364,10 +364,12 @@ class ConditionChecks:
         try:
             result = runner.run(args)
         except CodeRunError as exc:
-            return {'error': exc.code, 'reason': str(exc)[:DIAGNOSTIC_CHARS], 'requires': exc.requires}
+            return {'error': exc.code, 'reason': str(exc)[:DIAGNOSTIC_CHARS], 'requires': exc.requires,
+                    'provenance': getattr(runner, 'request_provenance', {})}
         except Exception as exc:  # noqa: BLE001 - an unexpected runner failure is a failed check run, never a stopped loop
             LOG.warning('condition check run failed kind=%s', type(exc).__name__)
-            return {'error': 'code_run_failed', 'reason': ''}
+            return {'error': 'code_run_failed', 'reason': '',
+                    'provenance': getattr(runner, 'request_provenance', {})}
         return {'result': result, 'state': getattr(runner, 'state_out', None),
                 'set_states': getattr(runner, 'set_states', {})}
 
@@ -417,7 +419,8 @@ class ConditionChecks:
         if outcome.get('error') == 'code_run_interrupted':
             # Cut off by a stop: not counted, and its state was not written (D9).
             return
-        hosts = [item['host'] for item in (result or {}).get('requests') or () if item.get('allowed') and item.get('phase') == 'run']
+        hosts = reached_host_counts(result or outcome.get('provenance') or {})
+        provenance = {'reached': sorted(hosts), 'host_counts': hosts, 'secrets': spec['secrets']}
         ended = result is not None and not result.get('timed_out') and result.get('exit_status') is not None
         if result is not None and ended and result.get('exit_status') == 0 and not result.get('failed_phase'):
             kind = HIT if str(result.get('stdout') or '').strip() else QUIET
@@ -456,7 +459,7 @@ class ConditionChecks:
                 status.pop('last_error', None)
                 # The woken Work's record names what the hit run reached (D7, information use).
                 handoff = {'kind': HIT, 'at': pending['at'], 'check': spec['digest'][:16], 'output': result.get('stdout') or '',
-                           'reached': sorted(set(hosts)), 'secrets': spec['secrets']}
+                           **provenance}
                 woken, reason = self._wake(db, current, status, now, handoff, destination, prep.STATE_SCHEDULED)
                 # An edge-triggered check may have marked this hit reported in its state.
                 # Keep its previous state on every non-admission so the next run retries it.
@@ -477,7 +480,7 @@ class ConditionChecks:
                     status['paused'] = PAUSED_FAILURES
                     handoff = {'kind': FAILURE, 'at': now, 'check': spec['digest'][:16], 'failures': status['failures'],
                                'exit_status': status['last_error']['exit_status'],
-                               'timed_out': status['last_error']['timed_out'], 'diagnostic': diagnostic}
+                               'timed_out': status['last_error']['timed_out'], 'diagnostic': diagnostic, **provenance}
                     woken, _reason = self._wake(db, current, status, now, handoff, destination, prep.STATE_PAUSED)
                     if not woken:
                         updates['state'] = prep.STATE_PAUSED
@@ -639,14 +642,8 @@ class ConditionChecks:
 
     def handoff(self, job):
         """The woken run's handoff event detail for ``job`` (or the run it continues), or None."""
-        key = prep.slot_key((job or {}).get('request_key'))
-        if not key.startswith(prep.REQUEST_KEY_PREFIX):
-            return None
-        with self.store.db() as db:
-            found = db.execute("SELECT e.detail FROM tool_events e JOIN jobs j ON j.id=e.job_id "
-                               "WHERE j.request_key=? AND e.tool=? AND e.status='woken' ORDER BY e.id LIMIT 1",
-                               (key, prep.CHECK_EVENT_TOOL)).fetchone()
-        return json.loads(found['detail']) if found else None
+        event = handoff_event(self.store, job)
+        return event['trace'] if event else None
 
     def summary(self, row, now=None, lang='ko'):
         """The owner's view of one row's check (D7), or None for a row without one."""
@@ -697,6 +694,18 @@ class ConditionChecks:
         spec = spec_of(row)
         return msg('checks.run_fact', every=spec['every_seconds'], until=prep.local_text(row['until_at'], row['timezone']),
                    wakes=int(row['run_count'] or 0), maximum=row['max_runs'], daily=DAILY_WAKES, id=row['id'])
+
+
+def handoff_event(store, job):
+    """Resolve the same source event for a woken Work and every continuation consuming it."""
+    key = prep.slot_key((job or {}).get('request_key'))
+    if not key.startswith(prep.REQUEST_KEY_PREFIX):
+        return None
+    with store.db() as db:
+        found = db.execute("SELECT e.* FROM tool_events e JOIN jobs j ON j.id=e.job_id "
+                           "WHERE j.request_key=? AND e.tool=? AND e.status='woken' ORDER BY e.id LIMIT 1",
+                           (key, prep.CHECK_EVENT_TOOL)).fetchone()
+    return {**dict(found), 'trace': json.loads(found['detail'])} if found else None
 
 
 def loop(checks, stop, interval=1.0):

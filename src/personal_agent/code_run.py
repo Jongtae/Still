@@ -21,6 +21,7 @@ Design: ``docs/connect-code-run-design.en.md``.
 """
 from __future__ import annotations
 
+from collections import Counter
 import hashlib
 import ipaddress
 import json
@@ -568,6 +569,7 @@ class CodeRunner:
 
     def run(self, args, *, seconds=None):
         self._run_state_values = set()
+        self._requests, self.request_provenance = [], {}
         try:
             return self._redact_run_value(self._run(args, seconds=seconds))
         except CodeRunError as exc:
@@ -575,6 +577,11 @@ class CodeRunner:
                                requires=self._redact_run_value(exc.requires)) from None
         finally:
             self.sent = self._redact_run_value(self.sent)
+            # Preserve observations even when no result arrives. Redact before aggregation:
+            # hosts become dictionary keys, which the recursive value redactor does not visit.
+            self.request_provenance = {
+                'host_counts': reached_host_counts({'requests': self._redact_run_value(self._requests)})}
+            self._requests = []
 
     def _collect_state_values(self, paths):
         from .api_credentials import STATE_PLAIN_KEY, STATE_REDACT_CHARS, _strings
@@ -629,7 +636,7 @@ class CodeRunner:
         node = self._provided_node()
         runtime = self.install(self.store, node)
         python, roots = interpreter()
-        requests = []
+        requests = self._requests
         with tempfile.TemporaryDirectory(prefix='agentos-run-') as directory:
             workdir = os.path.realpath(directory)
             Path(workdir, 'main.py').write_text(code, encoding='utf-8')
@@ -1175,12 +1182,13 @@ class CodeRunner:
         from .current_context import redact_known_secrets
         outcome = self._redact_run_value(outcome)
         requests = self._redact_run_value(requests)
+        host_counts = reached_host_counts({'requests': requests})
         # An in_code value can appear in a request path; the log keeps it redacted like the output.
         requests = [{**row, 'path': redact_known_secrets(self.store, row['path'])} for row in requests[:200]]
         result = {'exit_status': outcome['exit_status'], 'timed_out': outcome['timed_out'],
                   'stdout': redact_known_secrets(self.store, outcome['stdout']),
                   'stderr': redact_known_secrets(self.store, outcome['stderr']),
-                  'requests': requests, 'packages': packages, 'hosts': hosts, 'secrets': list(names),
+                  'requests': requests, 'host_counts': host_counts, 'packages': packages, 'hosts': hosts, 'secrets': list(names),
                   'sandbox': f'sandbox-runtime {RUNTIME_VERSION}',
                   'code_digest': hashlib.sha256(code.encode()).hexdigest()[:16],
                   # #989: URL strings like every other tool's sources; the Work's source list is deduplicated as one list.
@@ -1191,6 +1199,14 @@ class CodeRunner:
         return result
 
 
+def reached_host_counts(result):
+    """Observed run destinations, independent of diagnostic caps; read older Evidence too."""
+    if isinstance(result.get('host_counts'), dict):
+        return result['host_counts']
+    return dict(Counter(row['host'] for row in result.get('requests') or ()
+                        if isinstance(row, dict) and row.get('host') and row.get('allowed') and row.get('phase') == 'run'))
+
+
 def evidence(result):
     """What Evidence keeps of a run: never its output, code or request bodies.
 
@@ -1198,7 +1214,7 @@ def evidence(result):
     and the ones waiting for the owner (``refused_because``), by method, host and path only.
     """
     kept = {key: result.get(key) for key in ('exit_status', 'timed_out', 'packages', 'hosts', 'secrets', 'sandbox', 'code_digest',
-                                             'failed_phase', 'effects', 'effect', 'check_proof') if key in result}
+                                             'failed_phase', 'effects', 'effect', 'check_proof', 'host_counts') if key in result}
     if result.get('approval_requested'):
         kept['refused_because'] = 'owner-approval-requested'
         kept['approval_requested'] = result['approval_requested']

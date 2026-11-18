@@ -607,6 +607,10 @@ def _work_information_use(store, job_id, redact=None, *, compare_held_values=Tru
     # #636: sites the AI signed back in to through the provider the owner used (site and provider host only).
     resigned = []
     events = store.task_events(job_id)
+    from .condition_checks import handoff_event
+    handoff = handoff_event(store, job)
+    if handoff and not any(event.get('id') == handoff['id'] for event in events):
+        events = [handoff, *events]
     clock_fn = clock or time.monotonic
     deadline = clock_fn() + COMPARISON_SECONDS
     cache_key = (job_id, max((row.get('id') or 0 for row in events), default=0))
@@ -650,9 +654,8 @@ def _work_information_use(store, job_id, redact=None, *, compare_held_values=Tru
             # declared or refused hosts are not evidence of contact, and no response is inferred.
             access = trace if check_wake else evidence
             add('api', access.get('secrets') or ())
-            reached = (access.get('reached') or ()) if check_wake else [
-                row.get('host') for row in access.get('requests') or ()
-                if isinstance(row, dict) and row.get('allowed') and row.get('phase') == 'run']
+            from .code_run import reached_host_counts
+            reached = (access.get('reached') or ()) if check_wake else reached_host_counts(access)
             for host in reached:
                 destination = label(host, 200)
                 if destination:

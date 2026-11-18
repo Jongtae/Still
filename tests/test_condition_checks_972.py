@@ -1404,3 +1404,140 @@ class CheckSpecLifecycle(_Base):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ReviewRegressions(_Base):
+    def assert_api_audit(self, work_id, hosts):
+        audit = self.service.work_information_use(work_id)
+        used = {item['category']: item['items'] for item in audit['used']}
+        self.assertEqual(used.get('api'), ['example-broker'])
+        connections = audit['sent_to']['connections']
+        self.assertEqual(sorted(item['destination'] for item in connections), sorted(hosts))
+        self.assertTrue(all(item['state'] == 'reached' for item in connections))
+
+    def test_failure_wake_carries_api_provenance(self):
+        row = self.check_row()
+        for _ in range(cc.FAILURES_BEFORE_PAUSE):
+            self.queue.append(FakeProcess(requests=[{'method': 'GET', 'host': HOST}], result={'exit': 1}))
+            self.tick()
+        [work] = self.woken(row['id'])
+        self.assert_api_audit(work['id'], [HOST])
+        self.assertEqual(self.checks.handoff(work)['reached'], [HOST])
+        self.assertEqual(self.checks.handoff(work)['secrets'], ['example-broker'])
+
+    def test_each_location_continuation_audits_the_consumed_handoff_once(self):
+        row = self.check_row()
+        self.queue.append(FakeProcess(requests=[{'method': 'GET', 'host': HOST}], result={'stdout': 'hit'}))
+        self.tick()
+        [work] = self.woken(row['id'])
+        for suffix in ('', '/loc:first', '/loc:first/loc:second'):
+            continued = work if not suffix else self.store.job(self.store.enqueue(
+                'location answer', work['request_key'] + suffix))
+            self.assertEqual(self.checks.handoff(continued)['output'], 'hit')
+            self.assert_api_audit(continued['id'], [HOST])
+        unrelated = self.owner_work('unrelated')
+        self.assertEqual(self.service.work_information_use(unrelated['id'])['sent_to'].get('connections', []), [])
+
+    def test_reached_hosts_survive_both_diagnostic_caps(self):
+        late = 'late.example.org'
+        self.save(hosts=[HOST, late], money=False)
+        requests = ([{'method': 'GET', 'host': HOST}] * 201
+                    + [{'method': 'GET', 'host': late}] * 2
+                    + [{'method': 'GET', 'host': 'refused.example.org'}])
+        row = self.check_row()
+        self.queue.append(FakeProcess(requests=requests, result={'stdout': 'hit'}))
+        self.tick()
+        [work] = self.woken(row['id'])
+        self.assertEqual(cc.status_of(self.row(row['id']))['hosts_today'], {HOST: 201, late: 2})
+        self.assertEqual(self.checks.handoff(work)['reached'], sorted([HOST, late]))
+        self.assert_api_audit(work['id'], [HOST, late])
+
+    def test_ordinary_code_run_audit_survives_evidence_diagnostic_cap(self):
+        late = 'late.example.org'
+        self.save(hosts=[HOST, late], money=False)
+        requests = ([{'method': 'GET', 'host': HOST}] * 201
+                    + [{'method': 'GET', 'host': late}]
+                    + [{'method': 'GET', 'host': 'refused.example.org'}])
+        ordinary = self.owner_work()
+        result = self.code_run(ordinary, self.check_args(), FakeProcess(requests=requests))
+        self.assertEqual(len(result['requests']), 200)
+        evidence = self.store.task_events(ordinary['id'])[-1]['trace']['evidence']
+        self.assertEqual(len(evidence['requests']), 50)
+        self.assert_api_audit(ordinary['id'], [HOST, late])
+
+    def test_runner_exceptions_keep_redacted_request_provenance(self):
+        for failure in ('channel-lost', 'deadline', 'unexpected'):
+            with self.subTest(failure=failure):
+                row = self.check_row()
+                for _ in range(cc.FAILURES_BEFORE_PAUSE):
+                    process = FakeProcess(requests=[
+                        {'method': 'GET', 'host': HOST, 'path': '/' + code_secrets.VALUES['APP_KEY']},
+                        {'method': 'GET', 'host': 'refused.example.org'}], silent=True)
+                    original_runner = self.runner
+
+                    def failing_runner(*args, **kwargs):
+                        runner = original_runner(*args, **kwargs)
+                        if failure == 'deadline':
+                            runner.clock = lambda: 1000 if len(process.decisions) == 2 else 0
+                        elif failure == 'unexpected':
+                            flush = process.flush
+
+                            def fail_after_requests():
+                                if len(process.decisions) == 2:
+                                    raise RuntimeError(code_secrets.VALUES['APP_KEY'])
+                                flush()
+                            process.flush = fail_after_requests
+                        return runner
+
+                    self.queue.append(process)
+                    with mock.patch.object(self.checks, 'runner', side_effect=failing_runner):
+                        self.tick()
+                [work] = self.woken(row['id'])
+                status = cc.status_of(self.row(row['id']))
+                self.assertEqual(status['hosts_today'], {HOST: 3})
+                self.assertEqual(status['last_error']['code'],
+                                 'code_run_timeout' if failure == 'deadline' else 'code_run_failed')
+                self.assert_api_audit(work['id'], [HOST])
+                self.assertNotIn(code_secrets.VALUES['APP_KEY'], json.dumps(self.checks.handoff(work)))
+                self.settle(row['id'])
+
+    def test_check_expiry_at_deadline_queues_one_durable_notice(self):
+        self.assert_expiry_notice('deadline')
+
+    def test_check_expiry_after_deadline_queues_one_durable_notice(self):
+        self.assert_expiry_notice('after-deadline')
+
+    def test_exhausted_check_queues_one_durable_notice(self):
+        self.assert_expiry_notice('run-limit')
+
+    def assert_expiry_notice(self, reason):
+        self.service.preparations.notice_destination = lambda channel: ('owner', 'pairing', 'telegram')
+        row = self.check_row()
+        with self.store.db() as db:
+            db.execute("UPDATE preparations SET channel='telegram' WHERE id=?", (row['id'],))
+        row = self.row(row['id'])
+        if reason != 'run-limit':
+            self.now = row['until_at'] + (1 if reason == 'after-deadline' else 0)
+        else:
+            with self.store.db() as db:
+                db.execute('UPDATE preparations SET run_count=max_runs WHERE id=?', (row['id'],))
+        self.tick(0)
+        self.assertEqual(self.row(row['id'])['state'], prep.STATE_EXPIRED)
+        notice = self.store.next_notification('telegram')
+        self.assertIsNotNone(notice)
+        self.assertEqual(notice['kind'], prep.EXPIRED_NOTICE_KIND)
+        self.assertEqual(notice['fingerprint'], row['id'])
+        from personal_agent.messages import msg
+        self.assertEqual(self.service.preparations_service.status_notice_text(notice),
+                         msg('preparations.notice_elapsed', title=prep.owner_title(row)))
+        self.assertEqual(self.woken(row['id']), [])
+        # A restarted runner and a stale claim must not queue the notice again.
+        restarted = cc.ConditionChecks(self.service)
+        restarted.run_due(self.now)
+        restarted._claim(row, self.now)
+        with self.store.db() as db:
+            notices = db.execute('SELECT * FROM telegram_notifications WHERE fingerprint=?',
+                                 (row['id'],)).fetchall()
+        self.assertEqual(len(notices), 1)
+        with self.store.db() as db:
+            db.execute("UPDATE telegram_notifications SET state='sent' WHERE fingerprint=?", (row['id'],))

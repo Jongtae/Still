@@ -2508,6 +2508,19 @@ class Preparations:
                 self._queue_status_notice(db, row, work_id, EXPIRED_NOTICE_KIND, now)
         return True
 
+    def _close_window(self, db, current, key, now, slot):
+        """Close an elapsed/exhausted window and queue its durable notice in the same transaction."""
+        # #719: a watch never runs after its deadline or beyond its bound.
+        advance = next_day_window(current, now)
+        if advance:
+            db.execute('UPDATE preparations SET due_at=?,until_at=?,window_end=?,run_count=?,updated_at=? WHERE id=?',
+                       (advance['due_at'], advance['until_at'], advance['window_end'], advance['run_count'], now, current['id']))
+        else:
+            db.execute('UPDATE preparations SET state=?,updated_at=? WHERE id=? AND state=?',
+                       (STATE_EXPIRED, now, current['id'], STATE_SCHEDULED))
+        self._clear_closed_budget_skips(db)
+        self._queue_status_notice(db, current, key, EXPIRED_NOTICE_KIND, min(now, slot))
+
     def start(self, row, *, channel, chat_id, now, immediate=False):
         """Claim one due slot and create its Work in ONE transaction.
 
@@ -2539,16 +2552,7 @@ class Preparations:
                                             or int(current['run_count'] or 0) >= int(current['max_runs'] or 0)):
                 if immediate:
                     raise PreparationRefusal('resume_expired')
-                # #719: a watch never runs after its deadline or beyond its bound.
-                advance = next_day_window(current, now)
-                if advance:
-                    db.execute('UPDATE preparations SET due_at=?,until_at=?,window_end=?,run_count=?,updated_at=? WHERE id=?',
-                               (advance['due_at'], advance['until_at'], advance['window_end'], advance['run_count'], now, current['id']))
-                else:
-                    db.execute('UPDATE preparations SET state=?,updated_at=? WHERE id=? AND state=?',
-                               (STATE_EXPIRED, now, current['id'], STATE_SCHEDULED))
-                self._clear_closed_budget_skips(db)
-                self._queue_status_notice(db, current, key, EXPIRED_NOTICE_KIND, min(now, slot))
+                self._close_window(db, current, key, now, slot)
                 return None
             refusal = None if existing else line_refusal(db, current.get('line_id'))
             if refusal:
