@@ -292,7 +292,12 @@ class WorkExecutor:
             waiting=set()
             for _rank,_order,job,chain,lane,owner in sorted(candidates,key=lambda item:item[:2]):
                 conversation=(job['channel'],job.get('chat_id'))
-                if owner and lane==LANE_WORK and conversation in waiting:continue
+                beside=(service.work_lanes>1 and owner and lane==LANE_WORK and len(chain)==1
+                        and db.execute("SELECT 1 FROM tool_events WHERE job_id=? AND tool='owner_steer' AND status='beside' LIMIT 1",
+                                       (job['id'],)).fetchone() is not None
+                        and not db.execute("SELECT 1 FROM messages WHERE job_id=? AND role='user' LIMIT 1",
+                                           (job['id'],)).fetchone())
+                if owner and lane==LANE_WORK and conversation in waiting and not beside:continue
                 if lanes is not None and lane not in lanes:
                     if owner and lane==LANE_WORK:waiting.add(conversation)
                     continue
@@ -303,6 +308,9 @@ class WorkExecutor:
                 if lane==LANE_WORK and not owner and service.work_lanes>1:
                     capacity=capacity and background<service.work_lanes-1
                 keys=self._admission_keys(db,job,chain,lane,owner)
+                # Only this first claim releases conv:. Once running, a beside
+                # Work holds it for subsequent messages like every owner Work.
+                if beside:keys.discard(('conv',*conversation))
                 runnable=(capacity and not keys.intersection(occupied) and job['id'] not in held
                           and not flight and not any(ws.is_active(parent['status']) for parent in chain[1:]))
                 if runnable:

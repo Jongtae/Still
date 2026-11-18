@@ -15,6 +15,8 @@ from personal_agent.messages import msg
 from personal_agent.providers import ModelAdapter
 from personal_agent.quickstart_service import AgentService, LANE_COMMAND, LANE_WORK
 from personal_agent.quickstart_store import QuickStore
+from test_telegram_native_presence import NativePresenceTestCase, WAIT_DRAFT, RECEIVED_REACTION
+from personal_agent.decision import SelectionDecision, fixture_confidence
 
 
 class Lanes(unittest.TestCase):
@@ -244,6 +246,35 @@ class LaneHeldWorks(Lanes):
                        (now, self.work, now, now))
         self.assertEqual([row['id'] for row in self.service.preparations.due(time.time(), busy={self.work})], [])
         self.assertEqual([row['id'] for row in self.service.preparations.due(time.time())], ['p1'])
+
+
+class WaitingOwnerWork(NativePresenceTestCase):
+    def test_owner_work_judged_wait_shows_native_waiting_state_while_queued(self):
+        self.service.steer_spawn = lambda target: target()
+        self.service.use_decision_engine(FixtureDecisionEngine(choose=lambda context, candidates, question:
+            SelectionDecision('decided', 'wait', candidates, fixture_confidence())))
+        running, _ = self.receive('a long owner request')
+        self.assertEqual(self.service._claim_queued_work()['id'], running)
+        queued, source = self.receive('a request that needs the earlier result')
+        self.assertIs(self.service._claim_queued_work(), False)
+        self.assertIn(queued, self.service.acknowledge_long_work(now=self.store.job(queued)['created'] + 10))
+        self.assertEqual(self.store.job(queued)['status'], 'queued')
+        self.assertIn(WAIT_DRAFT, self.service.presence[queued].shown)
+        self.assertTrue(any(body['message_id'] == source and body['reaction'][0]['emoji'] == RECEIVED_REACTION
+                            for body in self.reactions()))
+        self.assertEqual(self.sends(), [], 'waiting creates no durable reply')
+        self.assertIsNone(self.store.task_card(queued))
+
+    def test_full_lanes_show_waiting_for_an_owner_in_another_conversation(self):
+        self.service.work_lane_spawn = lambda target, name: None
+        for index in range(self.service.work_lanes):
+            self.store.enqueue('running owner request', f'busy-{index}', chat_id=index, owner_typed=True)
+        self.assertEqual(self.service.dispatch_work(), self.service.work_lanes)
+        queued, _ = self.receive('an independent owner request')
+        self.assertIs(self.service._claim_queued_work(), False)
+        self.service.acknowledge_long_work(now=self.store.job(queued)['created'] + 10)
+        self.assertEqual(self.store.job(queued)['status'], 'queued')
+        self.assertIn(WAIT_DRAFT, self.service.presence[queued].shown)
 
 
 class StoreContention(unittest.TestCase):
