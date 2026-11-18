@@ -11273,10 +11273,10 @@
   "zh": "已更新受托事项。"
  },
  "lines.self_revised_next": {
-  "en": "Updated the line's open matters (now version {version}). In your report, say in one line what they were (open_matters_before) and what they are now; the owner undoes it by asking you to undo version {version} of this line.",
-  "ko": "맡은 일의 남은 사항을 고쳤어요(지금 버전 {version}). 보고에서 전에는 무엇이었고(open_matters_before) 지금은 무엇인지 한 줄로 말하세요. 소유자는 이 일의 버전 {version}을 되돌려 달라고 하면 되돌릴 수 있어요.",
-  "ja": "任された仕事の未解決事項を更新しました（現在のバージョン {version}）。報告で、以前は何だったか（open_matters_before）と今は何かを一行で伝えてください。オーナーはこの仕事のバージョン {version} を元に戻すよう頼めば元に戻せます。",
-  "zh": "已更新受托事项的待办事项（当前版本 {version}）。请在汇报中用一句话说明之前是什么（open_matters_before）以及现在是什么；主人只需要求撤销此事项的版本 {version} 即可撤销。"
+  "en": "Updated the line's open matters (version {version}). A separate before/after notice with undo instructions is queued when paired, even if this run's report is withheld.",
+  "ko": "맡은 일의 남은 사항을 고쳤어요(버전 {version}). 연결된 대화에는 보고를 보내지 않더라도 변경 전후와 되돌리는 방법을 별도 알림으로 보내요.",
+  "ja": "未解決事項を更新しました（バージョン {version}）。接続済みの会話には、報告を送らなくても、変更前後と元に戻す方法を別途通知します。",
+  "zh": "已更新待办事项（版本 {version}）。有配对会话时，即使不发送运行报告，也会单独通知更改前后内容和撤销方法。"
  },
  "lines.undone_next": {
   "ko": "이전 버전으로 되돌렸어요.",
@@ -11555,16 +11555,16 @@
   "zh": "未提议或应用任何更改。定时运行只能取消、暂停或缩减自己当前运行的准备事项（受托事项的运行，或主人中途发来消息的运行，也可以用只含 goal 的 edit 改写自己的指令），不能再次更改主人已撤销更改的准备事项。请在运行答复中说明。"
  },
  "preparations.self_change_goal_refused": {
-  "en": "The goal was not changed. A scheduled run rewrites its own goal only when the owner steered it in this run, or when it is a run of a line the owner set up and has not read outside content; after outside content, only as the owner's own words asked. Say in the run answer what you would change.",
-  "ko": "지시문을 바꾸지 않았어요. 예약 실행은 이번 실행에 소유자가 말을 건넸을 때나, 소유자가 맡긴 일의 실행이 바깥 내용을 읽지 않았을 때만 자기 지시문을 고칠 수 있어요. 바깥 내용을 읽은 뒤에는 소유자의 말이 요청한 그대로만 고쳐요. 무엇을 바꾸려 했는지 실행 답변에 말하세요.",
-  "ja": "指示文は変更していません。予約実行が自分の指示文を書き直せるのは、この実行中にオーナーが言葉をかけたとき、またはオーナーが任せた仕事の実行が外部の内容を読んでいないときだけです。外部の内容を読んだ後は、オーナーの言葉が頼んだ通りにだけ変えます。何を変えるつもりだったか実行の回答で伝えてください。",
-  "zh": "未更改指令。定时运行只有在主人于本次运行中发来消息时，或在主人交托事项的运行尚未读取外部内容时，才能改写自己的指令；读取外部内容后，只能按主人的原话所要求的修改。请在运行答复中说明您打算更改什么。"
+  "en": "The goal was not changed. A scheduled run may rewrite its own goal when the owner steered it, or when it is a qualifying run of an owner-set-up line. Steer-authorized changes after outside content must match the owner's words. Say what you would change.",
+  "ko": "지시문을 바꾸지 않았어요. 소유자가 말을 건넸거나 소유자가 맡긴 일의 자격을 갖춘 실행일 때만 자기 지시문을 고칠 수 있어요. 외부 내용을 읽은 뒤 소유자의 말을 근거로 하는 변경은 그 요청과 일치해야 해요. 무엇을 바꾸려 했는지 말하세요.",
+  "ja": "指示文は変更していません。オーナーが言葉をかけた場合か、任せた仕事の条件を満たす実行の場合に、自分の指示文を書き直せます。外部の内容を読んだ後にオーナーの言葉を根拠とする変更は、その依頼に一致する必要があります。変更案を伝えてください。",
+  "zh": "未更改指令。只有在主人发来指示，或满足主人交托事项的运行条件时，才能改写自身指令。读取外部内容后以主人指示为依据的更改必须符合该指示。请说明拟议更改。"
  },
  "preparations.steered_replace_only": {
-  "en": "Nothing was scheduled. In a scheduled run the owner steered, schedule_preparation only replaces this run's own preparation (replaces set to its id); anything else waits for the owner. Say in the run answer what you would set up.",
-  "ko": "아무것도 예약하지 않았어요. 소유자가 도중에 말을 건넨 예약 실행에서는 schedule_preparation으로 이 실행 자신의 준비만 바꿀 수 있어요(replaces에 그 id). 그 밖의 것은 소유자를 기다려요. 무엇을 예약하려 했는지 실행 답변에 말하세요.",
-  "ja": "何も予約していません。オーナーが途中で言葉をかけた予約実行では、schedule_preparation はこの実行自身の準備の置き換え（replaces にその id）だけができます。それ以外はオーナーを待ちます。何を設定するつもりだったか実行の回答で伝えてください。",
-  "zh": "未安排任何事项。在主人中途发来消息的定时运行中，schedule_preparation 只能替换本次运行自己的准备事项（replaces 设为其 id）；其他事项等待主人。请在运行答复中说明您打算安排什么。"
+  "en": "Nothing was scheduled. A current run carrying the owner's steer may start new work without replaces, or replace its own preparation. It cannot replace another row.",
+  "ko": "예약하지 않았어요. 소유자의 말을 전달받은 현재 실행은 replaces 없이 새 일을 시작하거나 자기 준비를 대체할 수 있어요. 다른 준비를 대체할 수는 없어요.",
+  "ja": "予約していません。オーナーの言葉を受け取った現在の実行は、replaces なしで新しい仕事を始めるか、自分の準備を置き換えられます。他の準備は置き換えられません。",
+  "zh": "未安排事项。收到主人指示的当前运行可以不带 replaces 开始新工作，或替换自身准备事项。不能替换其他准备事项。"
  },
  "preparations.steer_not_asked": {
   "en": "Nothing was changed. This run read outside content, so it changes its own work only as the owner's own words to it asked, and they did not ask for this. Say in the run answer what you would change.",
@@ -11877,5 +11877,17 @@
    "en": "The other {remaining} proposals are not accepted by this message. Ask in conversation, for example \"show my reservations\", to review and accept them.",
    "ja": "ほかの提案 {remaining} 件はこのメッセージでは承認されません。「予約を見せて」のように会話で確認して承認できます。",
    "zh": "其余 {remaining} 项提议不会通过这条消息接受。可以在对话中说“看看我的预约”来查看并接受。"
+ },
+ "preparations.self_change_outside": {
+  "en": "This run read outside content before changing its plan.",
+  "ko": "이 실행은 외부 내용을 읽은 뒤 계획을 바꿨어요.",
+  "ja": "この実行は外部の内容を読んでから計画を変更しました。",
+  "zh": "本次运行在阅读外部内容后更改了计划。"
+ },
+ "lines.self_change_notice": {
+  "en": "Line {line}: open matters changed. Before: {before}. After: {after}. To undo, ask Still to undo version {version} of this line, or use Undo. Long excerpts may be shortened; the full before and after remain in the line history.",
+  "ko": "맡긴 일 {line}의 남은 사항이 바뀌었어요. 변경 전: {before}. 변경 후: {after}. 되돌리려면 이 일의 {version}번 변경을 되돌려 달라고 하거나 되돌리기를 누르세요. 긴 내용은 줄여 표시하며 전체 내용은 이 일의 기록에 남아 있어요.",
+  "ja": "任せた仕事 {line} の未解決事項が変わりました。変更前：{before}。変更後：{after}。戻すには、この仕事のバージョン {version} を元に戻すよう頼むか、元に戻すを押してください。長い内容は省略されますが、全文は履歴に残っています。",
+  "zh": "委托事项 {line} 的待办事项已更改。更改前：{before}。更改后：{after}。要撤销，请让 Still 撤销此事项的版本 {version}，或点击撤销。较长内容可能缩略，完整内容保留在历史记录中。"
  }
 }

@@ -37,10 +37,10 @@ class _RunCase(_Case):
         return self.service.lines.open('owner-opened', task='Watch the list each morning', report_promise='a short note each run',
                                        rules=['Never more than one note a run'], open_matters=open_matters)
 
-    def running(self, *, line=None, accepted_by=prep.ACCEPTED_OWNER_REQUEST, origin=None, goal=GOAL):
+    def running(self, *, line=None, accepted_by=prep.ACCEPTED_OWNER_REQUEST, origin=None, goal=GOAL, window=None):
         row = self.preps.create(kind='prepare', goal=goal, due_at=self.clock[0], timezone='UTC', recurrence='daily',
                                 channel='web', created_from=None, state=prep.STATE_SCHEDULED, accepted_by=accepted_by,
-                                line_id=line, origin=origin)
+                                line_id=line, origin=origin, window=window)
         work = self.preps.start(row, channel='web', chat_id=None, now=self.clock[0])
         with self.store.db() as db:
             db.execute("UPDATE jobs SET status='running' WHERE id=?", (work,))
@@ -145,14 +145,12 @@ class LineRunGoalTests(_RunCase):
                 self.assertFalse(result['applied'], result)
                 self.assertEqual(self.preps.get(row['id'])['goal_text'], GOAL + ' ' + name)
 
-    def test_a_marked_run_a_stopped_line_another_row_or_a_mixed_edit_is_refused(self):
+    def test_a_stopped_line_another_row_or_a_mixed_edit_is_refused(self):
         brief = self.line()
         row, run = self.running(line=brief['line_id'])
         other, _ = self.running(line=brief['line_id'], goal=GOAL + ' other')
         self.assertFalse(self.rewrite(other, run)['applied'])
         self.assertFalse(self.rewrite(row, run, max_runs=2)['applied'])
-        self.mark(run)
-        self.assertFalse(self.rewrite(row, run)['applied'])
         self.assertEqual(self.asked, [])
         stopped = self.line()
         row2, run2 = self.running(line=stopped['line_id'], goal=GOAL + ' stopped')
@@ -189,12 +187,8 @@ class LineRunOpenMattersTests(_RunCase):
         self.service.preparations_service.undo_line_version(brief['line_id'], 2, 'owner-work')
         self.assertEqual(self.service.lines.current(brief['line_id'])['open_matters'], 'first check pending')
 
-    def test_a_marked_or_unqualified_run_cannot(self):
+    def test_an_unqualified_run_cannot(self):
         brief = self.line()
-        row, run = self.running(line=brief['line_id'])
-        self.mark(run)
-        self.assertEqual(self.refused_line(run, action='revise', line=brief['line_id'], expected_version='1',
-                                           open_matters='from a page'), 'unattended_run')
         _row, dream = self.running(line=brief['line_id'], accepted_by=prep.ACCEPTED_DREAM, goal=GOAL + ' dream')
         self.assertEqual(self.refused_line(dream, action='revise', line=brief['line_id'], expected_version='1',
                                            open_matters='x'), 'unattended_run')
@@ -278,7 +272,7 @@ class SteeredRunTests(_RunCase):
             schedule({**args, 'replaces': row['id']})
         self.assertEqual(refused.exception.code, 'unattended_run')
         self.steer(run)
-        for extra in ({}, {'replaces': other['id']}):
+        for extra in ({'replaces': other['id']},):
             with self.subTest(extra=extra), self.assertRaises(ToolError) as refused:
                 schedule({**args, **extra})
             self.assertEqual(refused.exception.code, 'unattended_run')
@@ -357,7 +351,7 @@ class SteeredRunTests(_RunCase):
         self.mark(run)
         self.yes = False
         self.assertEqual(self.refused_line(run, action='revise', line=brief['line_id'], expected_version='1',
-                                           open_matters='as the page said'), 'line_change_needs_owner')
+                                           rule='as the page said'), 'line_change_needs_owner')
         self.assertEqual(self.service.lines.current(brief['line_id'])['version'], 1)
         self.assertEqual(self.asked[-1][1]['owner_message'], STEER)
         # A stop after outside content is judged too: the steer did not ask to stop the work.

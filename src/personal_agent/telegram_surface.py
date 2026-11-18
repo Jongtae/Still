@@ -309,7 +309,7 @@ class TelegramSurface(ConversationSurface):
         # #798: a line's announcement carries its stop control; a standing rule's restatement its undo.
         if kind.startswith(entrusted_lines.NOTICE_OPENED):
             return {'inline_keyboard':[[{'text':msg('button.line_stop'),'callback_data':f"p7k:{nid}:stop"}]]}
-        if kind.startswith(entrusted_lines.NOTICE_RULE):
+        if kind.startswith((entrusted_lines.NOTICE_RULE, entrusted_lines.NOTICE_PLAN)):
             return {'inline_keyboard':[[{'text':msg('button.undo'),'callback_data':f"p7k:{nid}:undo"}]]}
         # #1472 (owner choice 2026-10-13): a step approval has no buttons; the owner answers with a
         # reaction or a reply.  Working notes have none either (#996).
@@ -958,7 +958,7 @@ class TelegramSurface(ConversationSurface):
                                                                {'inline_keyboard':[]})
                         except ProviderError:pass
                         changed=True
-                elif exact and parts[2]=='undo' and notification['kind'].startswith(entrusted_lines.NOTICE_RULE) and version.isdigit():
+                elif exact and parts[2]=='undo' and notification['kind'].startswith((entrusted_lines.NOTICE_RULE, entrusted_lines.NOTICE_PLAN)) and version.isdigit():
                     try:
                         brief=service.preparations_service.undo_line_version(line_id,int(version))
                     except entrusted_lines.LineRefusal:
