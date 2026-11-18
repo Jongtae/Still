@@ -523,3 +523,14 @@ class OwnerView(_PieceCase):
         root = self.line_row(goal='ordinary')
         text = self.service.preparations_service.line_run_input(self.running(root), root)
         self.assertNotIn(msg('lines.account_pieces', count=1, delivered=1, kept=0, failed=0, open=0), text)
+
+    def test_a_paused_piece_is_not_named_as_due_and_does_not_hide_a_scheduled_one(self):
+        account = self.account()
+        paused = self.piece_row(prep.STATE_PAUSED, due_at=self.now + 600)
+        text = self.service.preparations_service.line_pieces_account(account, self.running(account))
+        self.assertIn(msg('lines.account_piece_paused'), text)
+        self.assertNotIn(msg('lines.account_next_piece', at=prep.local_text(paused['due_at'], paused['timezone'])), text)
+        scheduled = self.piece_row(prep.STATE_SCHEDULED, due_at=self.now + 7200)
+        text = self.service.preparations_service.line_pieces_account(account, self.running(account, '/1'))
+        self.assertIn(msg('lines.account_next_piece', at=prep.local_text(scheduled['due_at'], scheduled['timezone'])), text)
+        self.assertNotIn(msg('lines.account_piece_paused'), text)

@@ -11188,6 +11188,12 @@
   "ja": "次の回は{at}に予定されています。",
   "zh": "下一步定于{at}。"
  },
+ "lines.account_piece_paused": {
+  "ko": "다음 조각은 소유자가 일시 중지해 두어 다시 시작될 때까지 실행되지 않아요.",
+  "en": "The next piece is paused by the owner and does not run until it is resumed.",
+  "ja": "次の回はオーナーが一時停止しており、再開されるまで実行されません。",
+  "zh": "下一步已被主人暂停，恢复之前不会运行。"
+ },
  "lines.changed_during_run": {
   "ko": "이 실행 중에 소유자가 맡긴 일의 규칙을 바꿨어요. 다음 단계부터 아래 내용을 따르세요:",
   "en": "The owner changed the rules of this entrusted line during this run. Follow the brief below from your next step on:",

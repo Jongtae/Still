@@ -2279,14 +2279,18 @@ class PreparationsService:
         since=self.account_period_start(row,running=job)
         ran=[item for item in self.line_outcomes(line_id,exclude=job['id'],limit=None)
              if item['preparation_id'] in pieces and item['at']>=since]
-        pending=min((item for item in rows if item['id'] in pieces and item['state'] in prep.PIECE_PENDING_STATES),
+        # Only a scheduled piece starts (``Preparations.start``); a paused one waits for the owner (as ``line_entry``).
+        pending=min((item for item in rows if item['id'] in pieces and item['state']==prep.STATE_SCHEDULED),
                     key=lambda item:item['due_at'],default=None)
-        if not ran and pending is None:return ''
+        paused=any(item['id'] in pieces and item['state']==prep.STATE_PAUSED for item in rows)
+        if not ran and pending is None and not paused:return ''
         counts={label:sum(1 for item in ran if item['outcome']==label)
                 for label in (el.OUTCOME_DELIVERED,el.OUTCOME_KEPT,el.OUTCOME_FAILED,el.OUTCOME_OPEN)}
         text=msg('lines.account_pieces',count=len(ran),**counts)
         if pending is not None:
             text+=' '+msg('lines.account_next_piece',at=prep.local_text(pending['due_at'],pending['timezone']))
+        elif paused:
+            text+=' '+msg('lines.account_piece_paused')
         return text
 
     # -- #968: a scheduled run revises its own plan ---------------------------------------------
