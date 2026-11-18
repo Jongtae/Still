@@ -93,6 +93,16 @@ class Arguments(unittest.TestCase):
                     code_run._arguments(args)
                 self.assertEqual(caught.exception.code, code)
 
+    def test_an_unpinned_package_refusal_names_the_item_and_the_way_on(self):
+        # #983: a worker retried an unpinned name unchanged; the refusal names it, the form and lib_<set>.
+        with self.assertRaises(CodeRunError) as caught:
+            code_run._arguments({'code': 'print(1)', 'packages': 'a==1.0, requests'})
+        text = str(caught.exception)
+        self.assertIn('requests', text)
+        self.assertNotIn('a==1.0', text.split('(', 2)[-1])
+        self.assertIn('==1.2.3', text)
+        self.assertIn('lib_', text)
+
     def test_accepts_comma_separated_hosts_and_pins(self):
         code, packages, hosts, names, seconds = code_run._arguments(
             {'code': 'print(1)', 'hosts': 'API.example.com:443, data.example.org', 'packages': 'a==1.0,b==2',

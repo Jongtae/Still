@@ -288,7 +288,14 @@ def _arguments(args, declared=lambda host: False):
         packages = [part for part in re.split(r'[\s,]+', packages) if part]
     if not isinstance(packages, list) or len(packages) > MAX_PACKAGES \
             or not all(isinstance(item, str) and PIN.match(item) for item in packages):
-        raise CodeRunError('패키지는 name==version 형식으로 16개까지 주세요.', 'code_run_argument_invalid')
+        # #983: a worker retried an unpinned name unchanged; say which item is wrong, the form, and
+        # what needs no package at all.
+        bad = [item for item in packages if not (isinstance(item, str) and PIN.match(item))][:3] \
+            if isinstance(packages, list) else []
+        raise CodeRunError('패키지는 name==version 형식(예: name==1.2.3)으로 16개까지 주세요'
+                           + (f" (버전이 없거나 형식이 다름: {', '.join(map(str, bad))[:120]})" if bad else '')
+                           + '. 표준 라이브러리와 secrets에 넣은 묶음의 저장된 함수(import lib_<묶음>)는 패키지 없이 바로 import됩니다.',
+                           'code_run_argument_invalid')
     hosts = args.get('hosts') or []
     if isinstance(hosts, str):
         hosts = [part for part in re.split(r'[\s,]+', hosts) if part]
