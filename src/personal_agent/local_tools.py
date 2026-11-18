@@ -25,6 +25,8 @@ MAX_PAGE_DECOMPRESSED_BYTES = 2_000_000
 MAX_PAGE_REDIRECTS = 3
 MAX_PAGE_SECONDS = 12
 MAX_PAGE_CONTENT_CHARACTERS = 24_000
+PAGE_REQUEST_HEADERS = {'User-Agent': 'Still public-page-reader/1.0',
+                        'Accept': 'text/html,text/plain,application/xhtml+xml;q=0.9'}
 PRIVATE_NETWORKS = tuple(ipaddress.ip_network(value) for value in (
     '0.0.0.0/8', '10.0.0.0/8', '100.64.0.0/10', '127.0.0.0/8',
     '169.254.0.0/16', '172.16.0.0/12', '192.0.0.0/24', '192.0.2.0/24',
@@ -317,11 +319,49 @@ class PublicPageReader:
         default_port=443 if parsed.scheme=='https' else 80
         return host if port == default_port else f'{host}:{port}'
 
-    def _open_pinned(self, url, addresses, deadline=None):
+    def _checked_hop(self, url, deadline, address_check):
+        if callable(address_check):
+            address_check(url)
+        refused = self.guard(url) if callable(self.guard) else None
+        if refused:
+            raise ValueError(refused)
+        self._remaining(deadline)
+        return self._validate_host(url, deadline)
+
+    def _get_response(self, url, addresses, deadline, headers=None, before_send=None):
+        if self.opener is None:
+            if headers is None and before_send is None:
+                return self._open_pinned(url, addresses, deadline)
+            return self._open_pinned(url, addresses, deadline, headers=headers, before_send=before_send)
+        request = Request(url, headers=PAGE_REQUEST_HEADERS if headers is None else headers)
+        if before_send is not None:
+            before_send()
+        response = self.opener.open(request, timeout=self._remaining(deadline))
+        try:
+            self._reject_unvalidated_transport(response, url)
+        except BaseException:
+            self._close_response(response)
+            raise
+        return response
+
+    def _redirect_target(self, url, location, redirect):
+        if not location:
+            raise ProviderError('공개 페이지 이동을 확인하지 못했습니다.')
+        if redirect >= MAX_PAGE_REDIRECTS:
+            raise ValueError('공개 페이지 이동 횟수 제한을 초과했습니다.')
+        target = self._safe_url(urljoin(url, location))
+        # A redirect must not move a confidential channel to cleartext.
+        if urlsplit(url).scheme == 'https' and urlsplit(target).scheme != 'https':
+            raise ValueError('보안 연결(HTTPS)에서 비보안 주소로 이동하는 공개 페이지는 읽을 수 없습니다.')
+        return target
+
+    def _open_pinned(self, url, addresses, deadline=None, *, headers=None, before_send=None):
         parsed=urlsplit(url); explicit_port=_explicit_port(parsed)
         port=explicit_port if explicit_port is not None else (443 if parsed.scheme=='https' else 80)
         host_header=self._host_header(parsed)
         path=urlunsplit(('', '', parsed.path or '/', parsed.query, ''))
+        headers={**(PAGE_REQUEST_HEADERS if headers is None else headers),
+                 'Host':host_header,'Connection':'close'}
         deadline=self.clock()+MAX_PAGE_SECONDS if deadline is None else deadline
         last=None
         for address in addresses:
@@ -338,7 +378,9 @@ class PublicPageReader:
                     conn.sock=socket.create_connection((address,port),self._remaining(deadline))
                 conn.sock.settimeout(self._remaining(deadline))
                 with self._deadline_guard(deadline,conn.close):
-                    conn.request('GET',path,headers={'Host':host_header,'User-Agent':'Still public-page-reader/1.0','Accept':'text/html,text/plain,application/xhtml+xml;q=0.9','Connection':'close'})
+                    if before_send is not None:
+                        before_send()
+                    conn.request('GET',path,headers=headers)
                 conn.sock.settimeout(self._remaining(deadline))
                 with self._deadline_guard(deadline,conn.close):
                     response=conn.getresponse()
@@ -381,6 +423,10 @@ class PublicPageReader:
                 with self._deadline_guard(deadline,lambda:self._interrupt_response(response)):
                     reader(64*1024)
         except (OSError, ValueError, ProviderError, http.client.HTTPException): pass
+        self._close_response(response)
+
+    @staticmethod
+    def _close_response(response):
         for target in (response, getattr(response,'_agentos_connection',None)):
             closer=getattr(target,'close',None)
             if callable(closer):
@@ -470,38 +516,22 @@ class PublicPageReader:
             raise _not_sent(exc)
         for redirect in range(MAX_PAGE_REDIRECTS+1):
             try:
-                # #820 review: the caller's address check (stored secrets) holds on every hop too.
-                check=PAGE_ADDRESS_CHECK.get()
-                if callable(check):check(current)
-                # #208 review: work mode is asked before every hop, redirects included.
-                refused=self.guard(current) if callable(self.guard) else None
-                if refused:raise ValueError(refused)
-                self._remaining(deadline)
-                addresses=self._validate_host(current,deadline)
+                addresses=self._checked_hop(current,deadline,PAGE_ADDRESS_CHECK.get())
             except (ValueError, ProviderError) as exc:
                 # #233: before the first request no page was asked for (at most its host name was
                 # resolved); after it, a refused redirect follows a request that was sent, whatever
                 # the refusal itself says (the address check marks its own refusals ``ran: false``).
                 if redirect:exc.__dict__.pop('ran',None)
                 raise _not_sent(exc) if redirect == 0 else exc
-            request=Request(current, headers={'User-Agent':'Still public-page-reader/1.0','Accept':'text/html,text/plain,application/xhtml+xml;q=0.9'})
             try:
-                response=self.opener.open(request, timeout=self._remaining(deadline)) if self.opener else self._open_pinned(current,addresses,deadline)
+                response=self._get_response(current,addresses,deadline)
                 self._remaining(deadline)
             except (OSError, http.client.HTTPException) as exc: raise ProviderError('공개 페이지를 가져오지 못했습니다.') from exc
-            if self.opener is not None: self._reject_unvalidated_transport(response,current)
             status=getattr(response,'status',200); location=response.headers.get('Location') if hasattr(response,'headers') else None
             if status in (301,302,303,307,308) or location:
                 self._release_response(response,deadline)
-                if not location: raise ProviderError('공개 페이지 이동을 확인하지 못했습니다.')
-                if redirect >= MAX_PAGE_REDIRECTS: raise ValueError('공개 페이지 이동 횟수 제한을 초과했습니다.')
-                target=self._safe_url(urljoin(current,location))
-                # A redirect must never move the chain from an authenticated,
-                # confidential channel to a cleartext one. The remaining hops
-                # would be observable and modifiable by anyone on the path.
-                if urlsplit(current).scheme == 'https' and urlsplit(target).scheme != 'https':
-                    raise ValueError('보안 연결(HTTPS)에서 비보안 주소로 이동하는 공개 페이지는 읽을 수 없습니다.')
-                current=target; continue
+                current=self._redirect_target(current,location,redirect)
+                continue
             if status < 200 or status >= 300: raise ProviderError('공개 페이지가 정상 응답하지 않았습니다.')
             content_type=response.headers.get('Content-Type','') if hasattr(response,'headers') else ''
             media_type=content_type.split(';',1)[0].strip().lower()
