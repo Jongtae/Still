@@ -323,3 +323,43 @@ authority; Python/OS maintenance and the existing PSF-licensed runtime apply.
 The lock contains no owner content, and no result or provenance is discarded
 while its writer holds it. Scheduling still uses the existing atomic claim and
 key checks; these corrections do not select slice 3.
+
+### Slice 3 implementation details
+
+The existing `steers_running_work` judgment accepts the conversation's running
+Works, with their ids, requests and shown plans, in one selection call. Its
+model-facing instructions live in `prompts/steers_running_works.md`. The original
+binary form remains for the one-lane rollback and its tool-less side answer.
+Every considered Work's existing finish guard tracks that single judgment;
+the message reservation lasts until its result has been applied or failed.
+Unknown targets, malformed answers, unavailable routes and low confidence keep
+the message queued. No task or site is classified in host code.
+
+A validated `beside` result writes a content-free `owner_steer` event on the
+queued message. The transactional claim releases only that first claim's
+`conv:` key; capacity, chain and preparation keys still apply. Once running,
+the Work holds the conversation key for subsequent messages. Queued owner
+Works reuse the surface's native waiting presence without a processing card.
+
+Reuse review: **Build** for the additional routing choice and its receipt check
+(C15's added-case rule); **Adopt** the existing Python condition/lock and SQLite
+immediate-transaction APIs for exclusion. The external pool, keyed-wait and
+broker candidates in the review above were reconsidered: none supplies Still's
+owner-message/Work judgment or its steer delivery and finish-guard contract.
+The installed `threading.Condition.wait_for` documentation and SQLite runtime
+were inspected locally; no network or release lookup was performed. Internal
+searches for `steer`, `side_answer_flight`, `steer_messages`, `_admission_keys`
+and `acknowledge_long_work` identified the existing judgment, reservation,
+transactional claim and native presence seams. Only thin routing/state glue is
+added to them; no second classifier, broker, store or dependency is introduced.
+The earlier PSF/public-domain runtime licence, platform, maintenance and
+supply-chain assessment therefore remains applicable. Authority, secrets,
+budgets and effects remain on the ordinary Work path. Recall/plan prompts and
+their digest-bound #921 recordings are unchanged.
+
+Fixture verification reuses the four English/Korean steer cases in
+`evals/judgments/cases-v1.json` for a before/after routing comparison: corrections
+still steer, while scripted independent questions can now start beside the
+running Work. This checks host routing under injected judgments, not live
+semantic accuracy or latency. Additional fixtures exercise wait, invalid
+results, named scheduled/owner targets, capacity, waiting presence and races.

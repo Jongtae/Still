@@ -419,18 +419,18 @@ class WaitSurfaceTests(NativePresenceTestCase):
         self.service.acknowledge_long_work(now=job['created'] + 30)
         self.assertEqual(len(self.calls), before)
 
-    def test_queued_work_shows_only_the_received_reaction_then_the_draft_when_it_runs(self):
-        """#958: no card and no buttons while queued; the 👀 is the only surface, then the draft."""
+    def test_queued_owner_work_shows_the_standard_waiting_draft_before_it_runs(self):
+        """#970 D6: queued owner Work shares native waiting presence, without a card."""
         self.connect_model()
         job_id, message_id = self.receive('줄 서 있는 요청')
         self.assertEqual(self.service.acknowledge_long_work(now=time.time() + 10), [job_id])
-        self.assertEqual(self.methods(), ['setMessageReaction'])
+        self.assertEqual(self.methods(), ['setMessageReaction', 'sendRichMessageDraft'])
         self.assertEqual(self.reactions(), [{'chat_id': CHAT, 'message_id': message_id,
                                              'reaction': [{'type': 'emoji', 'emoji': RECEIVED_REACTION}]}])
         self.assertEqual(self.service.acknowledge_long_work(now=time.time() + 11), [], 'the 👀 is set once')
         self.assertIsNone(self.store.task_card(job_id))
         self.assertNotIn('sendMessage', self.methods())
-        # It starts: the draft with Stop appears as for any running Work; the 👀 is not set again.
+        # It starts: its existing waiting draft and reaction are reused.
         self.during_model = lambda job: [self.service.acknowledge_long_work(now=job['created'] + t) for t in (6, 8)]
         self.service.run_one()
         self.service.deliver_one()
@@ -450,7 +450,8 @@ class WaitSurfaceTests(NativePresenceTestCase):
         self.assertEqual(self.store.job(job_id)['status'], 'cancelled')
         self.assertFalse(self.service.run_one(), 'cancelled Work never runs')
         # Review P2: the 👀 does not stay on a withdrawn request, and its presence state is dropped.
-        self.assertEqual(self.methods(), ['setMessageReaction', 'setMessageReaction'], 'nothing else was sent for it')
+        self.assertEqual(self.methods(), ['setMessageReaction', 'sendRichMessageDraft', 'setMessageReaction'],
+                         'only native waiting presence, then the reaction is cleared')
         self.assertEqual(self.emojis(), [RECEIVED_REACTION, CLEAR_REACTION])
         self.assertNotIn(job_id, self.service.presence)
         self.assertEqual(self.service.acknowledge_long_work(now=time.time() + 20), [], 'a cancelled Work is not reacted to again')

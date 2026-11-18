@@ -2,6 +2,7 @@
 import json
 import random
 import threading
+from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, Future
 from unittest import mock
 
@@ -13,6 +14,8 @@ from personal_agent.entrusted_lines import EntrustedLines
 from personal_agent.quickstart_service import AgentService, LANE_WORK
 from personal_agent.quickstart_store import QuickStore
 from personal_agent.providers import ModelAdapter
+from personal_agent.decision import (BinaryDecision, SelectionDecision, FixtureDecisionEngine,
+                                     fixture_confidence)
 from personal_agent import preparations as prep, trust_record
 import test_connect_effects as effects
 
@@ -294,6 +297,207 @@ def test_steer_judgment_reservation_survives_target_finishing(lane):
     assert service._claim_queued_work() is False
     judges.pop()()
     assert service._claim_queued_work()['id'] == message
+
+
+def disposition(service, choice):
+    def choose(context, candidates, question):
+        return SelectionDecision('decided', choice, candidates, fixture_confidence())
+    engine = FixtureDecisionEngine(choose=choose)
+    service.use_decision_engine(engine)
+    service.steer_spawn = lambda target: target()
+    return engine
+
+
+@pytest.mark.parametrize('choice', ['steer', 'beside', 'wait'])
+def test_three_way_disposition_uses_existing_steer_and_full_work_paths(lane, choice):
+    service, store, _ = lane
+    running = enqueue(store, 'running', chat=7)
+    assert service._claim_queued_work()['id'] == running
+    message = enqueue(store, 'message', chat=7)
+    engine = disposition(service, 'steer:' + running if choice == 'steer' else choice)
+    assert service.consider_steer(message, 'fixture request')
+    assert not service.steer_messages and not service.steer_judging
+    assert len(engine.asked) == 1
+    if choice == 'steer':
+        assert store.job(message)['related_job_id'] == running
+        assert store.claim_steers(running) == ['fixture request']
+        assert service._claim_queued_work() is False
+        # A handed-over steer stays queued until a delivered reply answers it.
+        with store.db() as db:
+            store.answer_steers(running, 0, db)
+        finish(store, running)
+        with mock.patch.object(service, '_route_work', side_effect=AssertionError('duplicate run')):
+            assert service.run_one()
+        assert store.job(message)['status'] == 'succeeded'
+    elif choice == 'beside':
+        assert service._steer_events(message) == {'beside': {}}
+        effects = []
+        def route(run):
+            effects.append(run.job['id'])
+            finish(store, run.job['id'])
+            return True
+        with mock.patch.object(service, '_route_work', side_effect=route), \
+                mock.patch.object(service, '_side_answer', side_effect=AssertionError('side answer')):
+            assert service.run_one()
+        assert effects == [message]
+        assert store.job(running)['status'] == 'running'
+        assert not store.work_steer_texts(running)
+    else:
+        assert service._claim_queued_work() is False
+        assert not service._steer_events(message)
+        finish(store, running)
+        assert service._claim_queued_work()['id'] == message
+
+
+@pytest.mark.parametrize('target', ['owner', 'scheduled'])
+def test_judgment_sees_all_conversation_works_and_steers_only_the_named_one(lane, target):
+    service, store, _ = lane
+    owner = enqueue(store, 'owner', chat=7)
+    background = enqueue(store, 'scheduled', owner=False, chat=7)
+    unrelated = enqueue(store, 'elsewhere', chat=8)
+    assert service.dispatch_work() == 3
+    message = enqueue(store, 'message', chat=7)
+    named = owner if target == 'owner' else background
+    engine = disposition(service, 'steer:' + named)
+    with mock.patch.object(store, 'shown_preview', side_effect=lambda work: 'shown ' + work):
+        assert service.consider_steer(message, 'fixture request')
+    _, context, candidates, _ = engine.asked[0]
+    assert set(candidates) == {'beside', 'wait', 'steer:' + owner, 'steer:' + background}
+    assert context.facts['shown_plan:' + owner] == 'shown ' + owner
+    assert context.facts['shown_plan:' + background] == 'shown ' + background
+    assert 'request:' + unrelated not in context.facts
+    assert store.claim_steers(named) == ['fixture request']
+    assert store.claim_steers(background if named == owner else owner) == []
+
+
+@pytest.mark.parametrize('choice', ['beside', 'wait', 'steer'])
+def test_inflight_judgment_is_not_claimable_even_after_target_finishes(lane, choice):
+    service, store, _ = lane
+    running = enqueue(store, 'running', chat=7)
+    service._claim_queued_work()
+    message = enqueue(store, 'message', chat=7)
+    started, release = threading.Event(), threading.Event()
+    def choose(context, candidates, question):
+        started.set()
+        assert release.wait(10)
+        return SelectionDecision('decided', 'steer:' + running if choice == 'steer' else choice,
+                                 candidates, fixture_confidence())
+    service.use_decision_engine(FixtureDecisionEngine(choose=choose))
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        service.steer_spawn = pool.submit
+        assert service.consider_steer(message, 'fixture request')
+        assert started.wait(10)
+        try:
+            # Even after the target finishes, the message belongs to the judgment.
+            finish(store, running)
+            assert service._claim_queued_work() is False
+            assert store.job(message)['status'] == 'queued'
+        finally:
+            release.set()
+    assert not service.steer_messages and not service.steer_judging
+    assert service._claim_queued_work()['id'] == message
+
+
+@pytest.mark.parametrize('bad', ['unknown-work', 'wrong-type', 'missing', 'malformed', 'low-confidence', 'exception'])
+def test_wrong_missing_or_malformed_judgment_waits_without_duplicate_run(lane, bad):
+    service, store, _ = lane
+    running = enqueue(store, 'running', chat=7)
+    service._claim_queued_work()
+    message = enqueue(store, 'message', chat=7)
+    def choose(context, candidates, question):
+        if bad == 'exception':raise ValueError('fixture failure')
+        if bad == 'missing':return None
+        if bad == 'wrong-type':return BinaryDecision('decided', True, fixture_confidence())
+        if bad == 'malformed':return {'choice': 'beside'}
+        if bad == 'low-confidence':
+            return SelectionDecision('decided', 'beside', candidates, fixture_confidence(0.1))
+        # A faulty adapter supplying its own candidates cannot route to another Work.
+        return SelectionDecision('decided', 'steer:unknown', ('steer:unknown',), fixture_confidence())
+    service.use_decision_engine(FixtureDecisionEngine(choose=choose))
+    service.steer_spawn = lambda target: target()
+    assert service.consider_steer(message, 'fixture request')
+    assert not service.steer_messages and not service.steer_judging
+    assert not service._steer_events(message)
+    assert not store.work_steer_texts(running)
+    assert service._claim_queued_work() is False
+    finish(store, running)
+    claims = race(service._claim_queued_work, service._claim_queued_work)
+    assert [c['id'] for c in claims if isinstance(c, dict)] == [message]
+
+
+def test_wait_disposition_never_waits_for_scheduled_runs(lane):
+    service, store, _ = lane
+    background = enqueue(store, 'scheduled', owner=False, chat=7)
+    service._claim_queued_work()
+    message = enqueue(store, 'message', chat=7)
+    disposition(service, 'wait')
+    assert service.consider_steer(message, 'fixture request')
+    assert service._claim_queued_work()['id'] == message
+    assert store.job(background)['status'] == 'running'
+
+
+def test_beside_respects_capacity_and_holds_conversation_for_later_messages(lane):
+    service, store, _ = lane
+    running = [enqueue(store, str(i), chat=i) for i in range(3)]
+    service.dispatch_work()
+    message = enqueue(store, 'beside', chat=0)
+    disposition(service, 'beside')
+    assert service.consider_steer(message, 'fixture request')
+    assert service._claim_queued_work() is False
+    finish(store, running[2])
+    service.release_lane(running[2])
+    assert service._claim_queued_work()['id'] == message
+    finish(store, running[0])
+    service.release_lane(running[0])
+    later = enqueue(store, 'later', chat=0)
+    assert service._claim_queued_work() is False
+    finish(store, message)
+    assert service._claim_queued_work()['id'] == later
+
+
+def test_independent_beside_message_can_pass_an_earlier_waiting_message(lane):
+    service, store, _ = lane
+    running = enqueue(store, 'running', chat=7)
+    service._claim_queued_work()
+    waiting = enqueue(store, 'waiting', chat=7)
+    disposition(service, 'wait')
+    assert service.consider_steer(waiting, 'fixture request')
+    beside = enqueue(store, 'beside', chat=7)
+    disposition(service, 'beside')
+    assert service.consider_steer(beside, 'fixture request')
+    assert service._claim_queued_work()['id'] == beside
+    assert store.job(waiting)['status'] == 'queued'
+    finish(store, running)
+    assert service._claim_queued_work() is False
+    finish(store, beside)
+    assert service._claim_queued_work()['id'] == waiting
+
+
+@pytest.mark.parametrize('case', [case for case in json.loads(
+    (Path(__file__).resolve().parents[1] / 'evals/judgments/cases-v1.json').read_text())['cases']
+    if case['role'] == 'steers_running_work'], ids=lambda case: case['id'])
+def test_before_after_existing_judgment_scenarios(lane, case):
+    """Scripted routing comparison, not a measurement of live semantic quality.
+
+    Before: binary yes steers, no waits with several lanes. After: correction
+    still steers; the fixture's independent question starts beside the Work.
+    """
+    service, store, _ = lane
+    running = store.enqueue(case['input']['running_request'], 'running', owner_typed=True)
+    service._claim_queued_work()
+    message = store.enqueue(case['input']['utterance'], 'message', owner_typed=True)
+    steers = case['expect']['outcome'] == 'yes'
+    service.use_decision_engine(FixtureDecisionEngine(judge=lambda *args:
+        BinaryDecision('decided', steers, fixture_confidence())))
+    assert service.judge_steer(running, message, case['input']['utterance']) == steers
+    assert service._claim_queued_work() is False
+    disposition(service, 'steer:' + running if steers else 'beside')
+    assert service.consider_steer(message, case['input']['utterance'])
+    if steers:
+        assert store.claim_steers(running) == [case['input']['utterance']]
+        assert service._claim_queued_work() is False
+    else:
+        assert service._claim_queued_work()['id'] == message
 
 
 class FakeClockLock:
