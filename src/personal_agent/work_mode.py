@@ -66,7 +66,7 @@ AUDIT_LIMIT = 100
 #: Model tool host actions that reach a host off this Mac, and the egress class each belongs to.
 TOOL_EGRESS = {
     'web_search': 'web_search', 'capability_search': 'web_search',
-    'public_page_read': 'public_read', 'weather': 'public_read',
+    'public_page_read': 'public_read', 'public_download': 'public_read', 'weather': 'public_read',
     **{action: 'browser' for action in ('browser_open', 'browser_read', 'browser_find', 'browser_click',
                                         'browser_type', 'browser_sign_in')},
     'api_request': 'api_request', 'code_run': 'code_run', 'a2a_message': 'a2a',

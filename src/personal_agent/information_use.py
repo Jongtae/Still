@@ -472,7 +472,7 @@ def deferred_comparison(store, job_id, action, arguments, evidence, at, *, clock
         cuts['outbound_unrecorded'] = 0
     if action == 'code_run':
         cuts['outbound_unrecorded'] = 0
-    if action == 'public_page_read':
+    if action in ('public_page_read', 'public_download'):
         # Evidence does not retain every redirect request.
         cuts['outbound_unrecorded'] = 0
     queries = evidence.get('search_queries') if action == 'web_search' and not result.get('sent') else None
