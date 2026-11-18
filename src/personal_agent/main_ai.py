@@ -425,9 +425,13 @@ class MainAiRoutes:
         words = (argument or '').split()
         if not words:
             ready = [row for row in routes if row['id'] != current and self._switchable(row)]
-            return '\n'.join((f"기본 AI: {names.get(current) or ('기타 연결' if current else '없음')}",
+            lines = [f"기본 AI: {names.get(current) or ('기타 연결' if current else '없음')}",
                               '바꿀 수 있는 AI: ' + (', '.join(self._listed(row) for row in ready)
-                                                   if ready else '지금은 없음. 연결은 설정 › AI에서 합니다.')))
+                                                   if ready else '지금은 없음. 연결은 설정 › AI에서 합니다.')]
+            judgment = self.service.decision_routes.status()
+            if judgment['active'].get('source') == 'fallback':
+                lines.append(judgment['effective']['text'])
+            return '\n'.join(lines)
         if len(words) > 2:
             raise MainAiError('/ai 다음에 AI 이름과, 필요하면 모델 하나만 적어 주세요. 기본 AI는 그대로입니다.')
         wanted = self._compact(words[0])

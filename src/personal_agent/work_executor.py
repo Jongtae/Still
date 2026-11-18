@@ -1773,6 +1773,12 @@ class WorkExecutor:
         # Said once when working orchestration fell back to the default Main AI.
         if run.orchestration is not None and run.orchestration.notice:
             run.response=run.response.rstrip()+'\n\n'+run.orchestration.notice
+        # #988: disclose the fallback that actually handled judgments in this
+        # Work, even if follow re-qualification finished before delivery.
+        notices=dict.fromkeys(record['route_fallback'] for record in service.store.work_decisions(job['id'])
+                              if record.get('route_fallback'))
+        for notice in notices:
+            run.response=run.response.rstrip()+'\n\n'+notice
         if run.workspace_request:
             FileWorkspace(service.store).save(job['id'],run.workspace_request['title'],run.response,run.workspace_request['sources'])
         # #182: a result file this Work saved, whether by the explicit command or the worker's

@@ -23,9 +23,9 @@ Invariants (tested in tests/test_decision_routes.py):
 * activating a decision route never writes the Work-execution rows, and the
   legacy Work route selection never writes ``decision_route``; only the #619
   Main AI switch re-resolves a Judgment AI whose mode is ``follow_main``
-  (its own probe; a failure leaves it needing attention, never a fallback);
-* there is no cross-route fallback: an unavailable route answers
-  ``provider_unavailable``;
+  (its own probe; #988 keeps orchestration on a qualified active route when
+  the followed route has no qualified candidate, with an owner-visible notice);
+* explicit routes never fall back to another route;
 * ``lowest_qualified`` selects only among declared candidates (the owner's,
   or the ranked cheapest-first list below, #679) that pass the versioned
   qualification suite in order; none passing is an explicit failure, never a
@@ -461,11 +461,18 @@ class DecisionRoutes:
         return top, (STRONGEST_EFFORT if STRONGEST_EFFORT in (self.bundled_efforts('codex').get(top) or ()) else None)
 
     def engine(self):
-        """The engine for the next judgment, from the active route only."""
+        """The engine for the next judgment, including a qualified follow fallback."""
         audit = self.service.record_decision
-        route = self.active()
+        fallback = self._fallback_route()
+        route = fallback or self.active()
+        if self._follow_failed() and not fallback:
+            return UnavailableDecisionEngine()
+        if fallback:
+            notice = self._fallback_text(fallback)
+            audit = lambda record: self.service.record_decision({**record, **(
+                {'route_fallback': notice} if record.get('outcome') == OUTCOME_DECIDED else {})})
         if route is not None and route.get('mode') == MODE_FOLLOW:
-            if route.get('main') != self.service.main_ai.current():
+            if not fallback and route.get('main') != self.service.main_ai.current():
                 # Resolved for a previous Main AI: no stale destination.
                 return UnavailableDecisionEngine()
             if route['transport'] == ROUTE_DIRECT_API:
@@ -477,6 +484,86 @@ class DecisionRoutes:
         if route['transport'] == ROUTE_JEV:
             return self._jev_engine(route.get('requested_model') or JEV_DEFAULT_MODEL, audit)
         return self._qualified_cli_engine(route, audit)
+
+    def _fallback_route(self, engines=None):
+        """Newest usable qualification after a failed follow check (#988).
+
+        Resolve only: keep the owner's follow choice and its background job
+        revision intact. Availability reuses the normal credential/isolation
+        checks; a listed model or a successful connection probe is insufficient.
+        """
+        route, main, checks = self.active(), self.service.main_ai.current(), self._checks()
+        if not self._follow_failed():
+            return None
+        if engines is None:
+            engines = [{**item, 'login': (item.get('login') or {}).get('state', 'unchecked'),
+                        'isolated_deployment': bool(self.service.isolated_engine_adapter)}
+                       for item in self.service.subscription_engine_status()['engines']]
+        def qualified_at(item):
+            check = item[1]
+            qualification = (check.get('route') or {}).get('qualification') or {}
+            return qualification.get('at') or check.get('checked_at') or 0
+
+        for option, check in sorted(checks.items(), key=qualified_at, reverse=True):
+            if check.get('state') != 'active':
+                continue
+            candidate = check.get('route')
+            if not candidate and route:
+                # Pre-#988 checks did not retain a route snapshot. Reuse the
+                # still-persisted route, including its strict isolation binding.
+                route_option = (f"{ROUTE_SUBSCRIPTION_CLI}:{route.get('engine')}"
+                                if route['transport'] == ROUTE_SUBSCRIPTION_CLI else route['transport'])
+                if option in (route_option, f"{MODE_FOLLOW}:{route.get('main')}"):
+                    candidate = route
+            if not candidate:
+                candidate = self._legacy_checked_cli(option, check)
+            if not candidate or (candidate.get('qualification') or {}).get('suite_version') != SUITE_VERSION:
+                continue
+            if candidate.get('mode') == MODE_FOLLOW and candidate.get('main') == main:
+                continue
+            transport = candidate.get('transport')
+            if transport == ROUTE_SUBSCRIPTION_CLI:
+                available = self._cli_active(candidate, engines)['available']
+            elif transport == ROUTE_DIRECT_API:
+                resolved = (self._follow_resolve(candidate) if candidate.get('mode') == MODE_FOLLOW
+                            else self._direct_resolve(candidate))
+                available = bool(resolved and resolved[0].get('provider') == candidate.get('provider'))
+            else:
+                available = False
+            if available:
+                return dict(candidate)
+        return None
+
+    def _follow_failed(self):
+        check = self._checks().get(f'{MODE_FOLLOW}:{self.service.main_ai.current()}') or {}
+        return (self.mode() == MODE_FOLLOW and check.get('state') == 'failed'
+                and (check.get('failure') or check.get('reason')) == 'no-qualified-candidate')
+
+    def _legacy_checked_cli(self, option, check):
+        """Read old CLI checks with their recorded capability evidence, without probing."""
+        if not option.startswith(f'{ROUTE_SUBSCRIPTION_CLI}:'):
+            return None
+        engine = option.split(':', 1)[1]
+        capability = self._capabilities().get(engine) or {}
+        model = check.get('requested_model')
+        qualified = next((row for row in check.get('candidates') or ()
+                          if row.get('model') == model and row.get('qualified')), None)
+        if (not qualified or not capability.get('isolation_flags')
+                or (capability.get('checked_at') or 0) > (check.get('checked_at') or 0)):
+            return None
+        return {'transport': ROUTE_SUBSCRIPTION_CLI, 'engine': engine,
+                'model_policy': check.get('model_policy'), 'requested_model': model, 'effort': check.get('effort'),
+                'fingerprint': capability.get('fingerprint'),
+                'qualification': {'suite_version': check.get('suite_version'), 'model': model,
+                                  'score': qualified.get('score'), 'at': check.get('checked_at')}}
+
+    def _fallback_params(self, route):
+        return {'main': ROUTE_NAMES.get(self.service.main_ai.current(), self.service.main_ai.current()),
+                'label': ENGINE_NAMES.get(route.get('engine')) or route.get('provider') or route['transport'],
+                'model': route.get('requested_model') or '-'}
+
+    def _fallback_text(self, route):
+        return msg('decision_routes.qualified_fallback_used', **self._fallback_params(route))
 
     def _qualified_cli_engine(self, route, audit):
         """Reuse the recorded isolation qualification, including its dispatch guard."""
@@ -609,7 +696,8 @@ class DecisionRoutes:
         following Judgment AI gets a queued qualification job for the new
         Main AI; the service work loop runs it (``run_due_qualification``).
         The ``decision_route`` row is not touched here: it changes only when
-        that qualification passes, so a failure never falls back anywhere.
+        that qualification passes. A no-qualified-candidate failure can use
+        another active qualified route without changing this choice (#988).
         """
         if self.mode() != MODE_FOLLOW:
             return {'state': 'unchanged', 'mode': self.mode()}
@@ -987,7 +1075,7 @@ class DecisionRoutes:
                 self.store.put('decision_route', {**follow, 'transport': ROUTE_OFF, 'failure': 'probe-failed',
                                                   'activated_at': self.clock()})
             return {'state': 'attention', 'failure': 'probe-failed', 'message': str(exc)}
-        self._record_check(option, {'state': 'active'})
+        self._record_check(option, {'state': 'active', 'route': self.active()})
         return {'state': 'active'}
 
     def _codex_instructions_qualified(self, route):
@@ -1171,7 +1259,9 @@ class DecisionRoutes:
     def status(self):
         route = self.active()
         resolved = self.service.decision_route()
-        checks = self._checks()
+        # Retained launch bindings are internal qualification evidence.
+        checks = {key: ({k: v for k, v in row.items() if k != 'route'} if isinstance(row, dict) else row)
+                  for key, row in self._checks().items()}
         capabilities = self._capabilities()
         direct_config = resolved[0] if resolved else None
         explicit = self.store.config('decision_model', {})
@@ -1243,6 +1333,17 @@ class DecisionRoutes:
             elif route['transport'] == ROUTE_SUBSCRIPTION_CLI:
                 active.update(self._cli_active(route, engines))
         follow_check = checks.get(f'{MODE_FOLLOW}:{main}') if main else None
+        fallback = self._fallback_route(engines)
+        if fallback:
+            active = {**{k: v for k, v in fallback.items()
+                         if k not in ('fingerprint', 'binary_identity', 'declared_candidates')},
+                      'source': 'fallback', 'available': True, 'stale': False}
+            if fallback['transport'] == ROUTE_SUBSCRIPTION_CLI:
+                active.update(self._cli_active(fallback, engines))
+            else:
+                active['destination'] = urlsplit(self._direct_resolve(fallback)[0]['endpoint']).hostname
+        elif self._follow_failed():
+            active = {'transport': 'none', 'source': 'follow', 'available': False}
         # #685: the background qualification for the current Main AI, if any.
         # #760: an explicit 기본 AI 따라가기 job is shown while the row it was
         # queued against is still current, even when the mode is off/explicit.
@@ -1287,6 +1388,9 @@ class DecisionRoutes:
         # #760: this includes an explicit 기본 AI 따라가기 while the Judgment
         # AI is off or explicitly chosen.
         job = qualification or {}
+        if active.get('source') == 'fallback':
+            return said('checking' if job.get('state') in JOB_OPEN else 'fallback',
+                        msg('decision_routes.qualified_fallback'), **self._fallback_params(active))
         if job.get('state') in JOB_OPEN:
             step = job.get('step') or {}
             progress = (msg('decision_routes.cancelling') if job['state'] == JOB_CANCELLING
@@ -1601,7 +1705,7 @@ class DecisionRoutes:
                 raise QualificationCancelled()
             if route.get('transport') == ROUTE_SUBSCRIPTION_CLI and self._cli_requalify(route):
                 self._fail(option, 'requalification-needed', msg('decision_routes.connection_changed_during_check'))
-            self._record_check(option, {'state': 'active', **check})
+            self._record_check(option, {'state': 'active', **check, 'route': route})
             # Only the decision route row.  The Work-execution rows
             # (`subscription_engine`, `model`) are never written here.
             self.store.put('decision_route', route)

@@ -298,7 +298,7 @@ class QualificationJobTests(JobFixture):
         self.assertIn(f'haiku 3/{len(CASE_IDS)}', seen[0]['text'])
 
     # -- AC1: the previous route stays in effect until the qualification passes --
-    def test_the_previous_route_keeps_answering_during_and_after_a_failed_qualification(self):
+    def test_failed_requalification_preserves_the_choice_but_requires_an_active_qualified_route(self):
         runner = CliRunner()
         service = self.service(runner=runner)
         before = self.follow_claude(service)
@@ -318,10 +318,11 @@ class QualificationJobTests(JobFixture):
         self.assertEqual((job['state'], job['failure']), (JOB_FAILED, 'no-qualified-candidate'))
         self.assertIn('현재 대화 해석 경로는 그대로', job['message'])
         self.assertEqual(self.store.config('decision_route'), before)
-        # The kept route still answers (the fake CLI's haiku judges well again).
+        # #988: the saved choice is unchanged, but its latest check failed.
+        # Changing the fixture's answer does not re-qualify that route.
         runner.judges['haiku'] = oracle
         answers.append(self.judge(service).value)
-        self.assertEqual(answers, ['retry'])
+        self.assertEqual(answers, [None])
 
     # -- AC2: at most one job per route; a newer switch supersedes -------------
     def test_one_open_job_per_route_and_a_newer_main_supersedes_it(self):
