@@ -26,7 +26,7 @@ from test_preparations import CHAT, GENERATION, _Case, call
 
 SITE = 'https://shop.example.test'
 OWNER_ACCEPTED = (prep.ACCEPTED_OWNER_REQUEST, prep.ACCEPTED_OWNER_BUTTON,
-                  prep.ACCEPTED_OWNER_SETTINGS, prep.ACCEPTED_OWNER_ANSWER)
+                  prep.ACCEPTED_OWNER_SETTINGS, prep.ACCEPTED_OWNER_ANSWER, prep.ACCEPTED_OWNER_STEER)
 
 
 class _Runs(_Case):

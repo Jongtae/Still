@@ -140,6 +140,8 @@ SUGGESTION_OFFER_HOURS = range(8, 22)
 ACCEPTED_OWNER_REQUEST, ACCEPTED_OWNER_BUTTON, ACCEPTED_OWNER_SETTINGS = 'owner-request', 'owner-button', 'owner-settings'
 #: #172: the owner's reply or reaction to the proposal message, judged a plain yes to it.
 ACCEPTED_OWNER_ANSWER = 'owner-answer'
+#: #984: new work accepted by authenticated owner words delivered to its creating run.
+ACCEPTED_OWNER_STEER = 'owner-steer'
 #: #717: set up by the owner's AI inside a Work the owner's own typed message started; the owner
 #: is told with a cancel button.  ``ACCEPTED_DREAM``: set up by the nightly look back, told the same way.
 ACCEPTED_OWNER_WORK, ACCEPTED_DREAM = 'owner-work', 'dream'
@@ -149,7 +151,7 @@ ACCEPTED_DAY_PLAN = 'day-plan'
 SELF_SET = (ACCEPTED_OWNER_WORK, ACCEPTED_DREAM, ACCEPTED_DAY_PLAN)
 #: #821: the owner asked for or accepted it; such a run may ask the owner to sign in.  An allowlist:
 #: a missing, NULL or unknown ``accepted_by`` is never read as the owner's acceptance.
-OWNER_ACCEPTED = (ACCEPTED_OWNER_REQUEST, ACCEPTED_OWNER_BUTTON, ACCEPTED_OWNER_SETTINGS, ACCEPTED_OWNER_ANSWER)
+OWNER_ACCEPTED = (ACCEPTED_OWNER_REQUEST, ACCEPTED_OWNER_BUTTON, ACCEPTED_OWNER_SETTINGS, ACCEPTED_OWNER_ANSWER, ACCEPTED_OWNER_STEER)
 #: #968 (#938 D1): rows of an owner-set-up line whose own run may revise its own plan: the owner
 #: accepted the row, or it was set up in a Work the owner typed.  Look-back and daily-plan rows do not.
 LINE_RUN_ACCEPTED = OWNER_ACCEPTED + (ACCEPTED_OWNER_WORK,)
@@ -231,6 +233,7 @@ COLUMN_MIGRATIONS = (('prepared_text', 'TEXT'),
                      ('last_report_at', 'REAL'),
                      # #717: current slot revision, latest undo receipt, and durable owner veto.
                      ('own_run_revision', 'REAL'), ('self_change', 'TEXT'),
+                     ('accepted_from', 'TEXT'),
                      ('self_change_undone', 'INTEGER NOT NULL DEFAULT 0'),
                      ('dream_held', 'INTEGER NOT NULL DEFAULT 0'))
 
@@ -1414,7 +1417,7 @@ class Preparations:
 
     def create(self, *, kind, goal, due_at, timezone, recurrence, channel, created_from, state,
                accepted_by=None, owner=OWNER, window=None, delivery_mode=None, title=None, offer=None, origin=None,
-               report_every_minutes=None, line_id=None, max_runs=None, requested_until=None, bundle_channel=None, db=None):
+               report_every_minutes=None, line_id=None, max_runs=None, requested_until=None, bundle_channel=None, accepted_from=None, db=None):
         """One new row (idempotent for the same Work, kind, goal and slot).
 
         #574: when another Work already proposed the same kind, goal, due and
@@ -1492,7 +1495,7 @@ class Preparations:
             row = {'id': uuid.uuid4().hex[:16], 'owner': owner, 'kind': kind, 'goal_text': goal, 'due_at': due_at,
                    'timezone': timezone, 'recurrence': recurrence, 'channel': channel, 'state': state,
                    'last_run_job_id': None, 'last_outcome': None, 'prepared_result_ref': None, 'prepared_at': None, 'prepared_text': None,
-                   'created_from': created_from, 'accepted_by': accepted_by, 'created_at': now, 'updated_at': now,
+                   'created_from': created_from, 'accepted_by': accepted_by, 'accepted_from': accepted_from, 'created_at': now, 'updated_at': now,
                    'every_seconds': every_seconds, 'window_end': window_end, 'until_at': until_at,
                    'max_runs': max_runs, 'run_count': 0,
                    'rule_start': due_at if window or terms or recurrence and recurrence.startswith('RRULE:') else None,
@@ -1508,7 +1511,7 @@ class Preparations:
                             json.dumps({'preparation_id': row['id'], 'channel': bundle_channel}), now))
             return row
 
-    def accept(self, preparation_id, accepted_by):
+    def accept(self, preparation_id, accepted_by, *, accepted_from=None):
         """``proposed`` → ``scheduled``: the owner's explicit yes.
 
         #395: a watch whose window has already ended is refused (``expired``)
@@ -1516,9 +1519,9 @@ class Preparations:
         """
         now = self.clock()
         with self.store.db() as db:
-            changed = db.execute("UPDATE preparations SET state='scheduled',accepted_by=?,updated_at=? WHERE id=? AND state='proposed' "
+            changed = db.execute("UPDATE preparations SET state='scheduled',accepted_by=?,accepted_from=?,updated_at=? WHERE id=? AND state='proposed' "
                                  'AND (recurrence IS NOT ? OR until_at>=?)',
-                                 (accepted_by, now, preparation_id, RECURRENCE_WINDOW, now)).rowcount
+                                 (accepted_by, accepted_from, now, preparation_id, RECURRENCE_WINDOW, now)).rowcount
         if not changed:
             row = self.get(preparation_id)
             if not row:
@@ -1647,6 +1650,8 @@ class Preparations:
                              'due_at', 'timezone', 'recurrence', 'channel', 'delivery_mode', 'every_seconds',
                              'until_at', 'max_runs', 'window_terms', 'rule_start', 'run_count', 'state', 'run_return_state')},
                          run_key=job['request_key'].split('/', 1)[0])
+            event['outside_content'] = bool(db.execute(
+                'SELECT 1 FROM work_intake_sources WHERE job_id=? LIMIT 1', (work_id,)).fetchone())
             previous = json.loads(row['self_change'] or '{}')
             combined = dict(event)
             if previous and previous.get('run_key') == event['run_key'] and not row['self_change_undone']:

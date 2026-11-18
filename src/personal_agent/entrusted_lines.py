@@ -16,8 +16,8 @@ A brief grants nothing.  It has no authority, rung, amount or subject field (an 
 field is refused), and no authorizing path reads it: Grants, trust rungs, per-action
 approval and payment autonomy are decided as before. A brief is written inside an
 owner-typed Work or by the look back's stand/amend path, recorded as inferred (``preparations_service``). #968: a scheduled
-run writes only its own line: as the owner's steer into it asks, or, in a run of a line the owner set up that read
-no outside content, its open matters.  Every other unattended write is refused.
+run writes only its own line: as the owner's steer into it asks, or, in a run of a line the owner set up, its open matters (with an outside-content mark
+on the receipt when applicable, #984).  Every other unattended write is refused.
 """
 import json
 import sqlite3
@@ -384,7 +384,8 @@ from .messages import msg  # noqa: E402 - the catalogue is only needed by the te
 
 #: Notification kinds, each followed by ``<line_id>:<version>`` (one notice per Work and kind).
 NOTICE_OPENED, NOTICE_RULE, NOTICE_STOPPED = 'line_opened:', 'line_rule:', 'line_stopped:'
-NOTICE_KINDS = (NOTICE_OPENED, NOTICE_RULE, NOTICE_STOPPED)
+NOTICE_PLAN = 'line_plan:'
+NOTICE_KINDS = (NOTICE_OPENED, NOTICE_RULE, NOTICE_STOPPED, NOTICE_PLAN)
 #: The Evidence row recording which brief version a Work read.
 READ_EVENT = 'entrusted_line_read'
 OUTCOME_DELIVERED, OUTCOME_KEPT, OUTCOME_FAILED, OUTCOME_OPEN = 'delivered', 'kept', 'failed', 'open'

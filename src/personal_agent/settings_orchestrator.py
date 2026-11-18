@@ -1907,13 +1907,7 @@ class SettingsOrchestrator:
             if not row:
                 return refused
             notices = self.service.preparations_service
-            notice_channel = self.service.preparations.notice_channel(row)
-            destination = notices.notice_destination(notice_channel)
-            if notice_channel == prep.CHANNEL_WEB:
-                # Kept results still have receipts: use the originating owner's surface,
-                # with the same paired-Telegram fallback as preparation announcements.
-                origin = self.store.job(row['created_from']) if row.get('created_from') else notices.owner_last_work()
-                destination = notices.notice_destination(notices.preparation_channel(origin, prep.KIND_PREPARE, 'send'))
+            destination = notices.self_change_destination(row)
             reason = redact_known_secrets(self.store, str(args.get('reason') or '')[:2000])
             goal = changes.pop('goal', None) if changes is not None else None
             if goal is None:
