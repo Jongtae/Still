@@ -213,7 +213,7 @@ The owner accepted the proposals on 2026-11-18:
 ## Implementation slices
 
 1. **Scheduling path.** D1, D3, D4 origin and acceptance, the D4 forget cancel, D5 mark inheritance, D6. It carries the negative tests, the contract amendments and the escalated review.
-2. **Line-run guidance sentence.** D2, as message content. Measured with a small scenario set before and after.
+2. **Line-run guidance sentence.** D2, as message content. Measured with a small scenario set before and after. Shipped with #980. Measured on 2026-11-18 ([`evals/records/938-line-pieces`](../../evals/records/938-line-pieces/README.md)): with the sentence, the first scheduling call had the right shape in 4 of 4 runs, against 0 of 3 without it.
 3. **Owner view.** The pending piece in the line entry, and the piece count in the periodic account.
 
 Related: #798, #799, #822 (M3, M4), #927, #937, [`docs/research/rewrite-readiness-2026-11-10.ko.md`](../research/rewrite-readiness-2026-11-10.ko.md) §7–§12.
