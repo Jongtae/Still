@@ -1811,10 +1811,9 @@ class BrowserSession:
         """
         before = page_reference(snapshot.get('url'))
         page = self.open({'url': link_address(element), 'effect': 'navigate'})
-        # What ran is an address open, not a press; the step's record says so.  Like
-        # ``browser_open`` it submitted and pressed nothing and spent no approval (#899).
+        # What ran is an address open, not a press; the step's record says so, and
+        # ``agent_runtime.page_load_only`` then counts it as ``browser_open`` is counted.
         page['link_opened'] = True
-        page['observed_step'] = {'posted': False, 'approved': False}
         if page_reference(page.get('url')) != before:
             page['navigated'] = True
         return page

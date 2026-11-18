@@ -79,10 +79,16 @@ class TestLinkNavigation(scheduled._Runs):
         assert self.ticket_events() == []
         assert self.service._browser_request(self.job['id']) is None
         # The step's evidence records that the press ran as opening the link's address.
-        from personal_agent.agent_runtime import evidence_summary
+        from personal_agent.agent_runtime import evidence_summary, page_load_only
         evidence = evidence_summary('browser_click', page)
-        assert evidence['link_opened'] is True
-        assert evidence['observed_step'] == {'posted': False, 'approved': False}
+        assert evidence['link_opened'] is True and 'observed_step' not in evidence
+        # ... and counts as a page load, as browser_open does; a press with no observation does not.
+        detail = {'declared_effect': 'read', 'evidence': evidence}
+        assert page_load_only('browser_click', detail, 'succeeded')
+        unobserved = {**evidence}
+        del unobserved['link_opened']
+        assert not page_load_only('browser_click', {**detail, 'evidence': unobserved}, 'succeeded')
+        assert not page_load_only('browser_click', {**detail, 'declared_effect': 'mutate'}, 'succeeded')
 
     def test_submit_button_stays_refused_whatever_the_page_says(self):
         error, judge = self.refused('link to notices')
