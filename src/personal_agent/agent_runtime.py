@@ -442,7 +442,8 @@ SCHEDULE_PREPARATION_ARGUMENTS={
  'delivery':'send (the owner is told each time), keep (the owner is not told; results can be looked up on request), or when_needed (kind prepare: the owner is told only when a result needs them). Choose by when the owner needs to hear: a check whose value is hearing in time needs send or when_needed, not keep. Preserve the owner\'s explicit delivery choice.',
  'title':'For kind prepare, what the owner reads for the scheduled preparation or proposal (#393, #755), apart from goal: a short name in the owner\'s language (at most 60 characters).',
  'replaces':('The id (from settings_read preparations) of an active preparation this one takes the place of, when the owner changes what an existing watch or schedule does (another target, a new plan, a different time) (#766). '
-  'In a Work the owner started, Still stops it once this one is scheduled, so the two never run side by side and the new one need not wait for the old to end; say in your answer what was stopped. Omit it for an additional preparation.'),
+  'In a Work the owner started, Still stops it once this one is scheduled, so the two never run side by side and the new one need not wait for the old to end; say in your answer what was stopped. '
+  'A scheduled run the owner steered may replace its own preparation this way. Omit it for an additional preparation.'),
  'line':('The id of the entrusted line (entrusted_line) this preparation does the work of (#798): the line you opened for a '
   'continuing responsibility, or an existing one when the owner starts the same work again; continue it instead of opening '
   'another. A replacement keeps its line by itself.'),
@@ -459,7 +460,9 @@ ENTRUSTED_LINE_DESCRIPTION=(
  'bears on a question; stop ends it and everything under it. A line grants nothing: approvals and payment stay as they are. '
  'Still tells the owner itself when a line opens, takes a standing rule or stops; do not repeat that message.')
 ENTRUSTED_LINE_ARGUMENTS={
- 'action':'list, read, open, revise, undo, stop or restart. Only a Work the owner started may open, revise, undo, stop or restart.',
+ 'action':('list, read, open, revise, undo, stop or restart. Only a Work the owner started may open, revise, undo, stop or restart, '
+           'with two exceptions for a scheduled run of a line: one the owner steered may revise or stop its own line as their words ask; '
+           'a run of a line the owner set up may revise its own line\'s open_matters only.'),
  'line':'The line id (from list, read or open), for every action but list and open.',
  'expected_version':'For revise: the version you read (list, read or open). A newer version wins and is shown to you.',
  'version':'For undo: the version to undo (the current one).',
@@ -547,7 +550,8 @@ SETTINGS_CHANGE_ARGUMENTS={
   'resumes the originating Work when continue_work is yes), preparations cancel (value is a reservation id from '
   'settings_read preparations: stop every future run; a scheduled run may cancel, pause or narrow its own preparation '
   'via edit (earlier end, fewer runs, longer interval); it applies at once and Still tells the owner; it cannot widen '
-  'or touch another), preparations accept (value is the id of one waiting '
+  'or touch another. A run of a line the owner set up, or a run the owner steered, may also rewrite its own goal for '
+  'the next runs: an edit with only id and goal, the whole new brief; Still tells the owner before and after with an undo), preparations accept (value is the id of one waiting '
   'for the owner\'s yes), preparations restore (value is a cancelled or self-narrowed reservation id; reapplies audited bounds after narrowing, keeps its goal and run count, '
   'continues at the next future slot without catching up, and refuses an ended window or past one-shot), phone_link send (when the owner is away from the Mac: send a one-time link, open about '
   '10 minutes, to the paired Telegram chat for an input only a page can take - adding the own Google client from '

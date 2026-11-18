@@ -934,12 +934,42 @@ class AgentService:
         return self.settings_orchestrator.work_tools(self.settings_owner(job),job['channel'],job['id'],
                                                      telegram=answerable_work(job),unattended=self.unattended_work(job),
                                                      owner_request=self.owner_settings_request(job),
-                                                     own_preparation=prep.preparation_of(job.get('request_key')))
+                                                     own_preparation=prep.preparation_of(job.get('request_key')),
+                                                     own_goal=lambda row,before,after:self.preparations_service.may_rewrite_own_goal(job,row,before,after))
 
     @staticmethod
     def unattended_work(job):
         """#619: a Work no owner is present for: a scheduled preparation run (or its continuation)."""
         return prep.preparation_of((job or {}).get('request_key')) is not None
+
+    def owner_steer_words(self, job):
+        """#968: the owner's own messages already handed to this scheduled run, oldest first, or [].
+
+        Each is ``(source_work_id, text)``: a steer (#999) of this run's slot (the run or its
+        continuation) that reached its worker, whose message is the owner's authenticated words
+        (``owner_words_work``, #744) and is not forgotten.  Such a run is owner-present for its own
+        preparation and line from then on (``preparations_service``); it stays a scheduled run for
+        everything else, approvals and payment included.
+        """
+        if not self.unattended_work(job):return []
+        slot=prep.slot_key(job.get('request_key'))
+        lead=slot+prep.CONTINUATION_SEPARATOR
+        with self.store.db() as db:
+            rows=db.execute('SELECT s.source_job_id,s.content FROM work_steers s JOIN jobs j ON j.id=s.job_id '
+                            'WHERE s.delivered_at IS NOT NULL AND (j.request_key=? OR substr(j.request_key,1,?)=?) '
+                            'ORDER BY s.created',(slot,len(lead),lead)).fetchall()
+        words=[]
+        for row in rows:
+            source=self.store.job(row['source_job_id'])
+            if (owner_words_work(source) and not self.store.work_request_forgotten(source['id'])
+                    and isinstance(row['content'],str) and row['content'].strip()):
+                words.append((source['id'],self._redact_known_secrets(row['content'])))
+        return words
+
+    def owner_request_words(self, job):
+        """#968: the owner's own words that ask for what ``job`` does: its typed message, or the steers it received."""
+        if self.owner_typed_work(job):return job['message']
+        return '\n'.join(text for _source,text in self.owner_steer_words(job))
 
     def work_reply_delivery(self, job):
         """#898: use the preparation's existing delivery routing facts for judgment.

@@ -226,15 +226,23 @@ class PreparationsService:
         before is scheduled only when the owner's own message asks for it again (judged); otherwise
         it is refused, as before.  A Work the owner did not type - a continuation, a retry, a
         replayed turn - still only proposes; a scheduled run proposes nothing.
+
+        #968: a scheduled run the owner steered (``owner_steer_words``) may replace its own
+        preparation (``replaces``, the owner-typed correction path), judged against those words.
         """
         service=self.service
         def schedule(args):
             # #780: the daily plan's own run sets up reading-and-reporting work; what it sets up never
             # pays (``SELF_SET``) and cannot schedule in turn, so one misled plan run stays bounded.
             planning=self.day_plan_run(job) and self.day_plan_on()
-            if service.unattended_work(job) and not planning:
+            steered=bool(service.unattended_work(job) and not planning and service.owner_steer_words(job))
+            if service.unattended_work(job) and not planning and not steered:
                 # #619: a scheduled run leaves no proposal waiting; it says what it would schedule.
                 raise not_run(ToolError(UNATTENDED_APPROVAL_TEXT,'unattended_run'))  # #618: Still refused it, ran: false
+            if steered and (args.get('replaces')!=prep.preparation_of(job.get('request_key'))
+                            or not self.own_running_row(job)):
+                # #968: the owner's words reached this run about its own work; anything else waits for the owner.
+                raise not_run(ToolError(msg('preparations.steered_replace_only'),'unattended_run'))
             now=service.preparations.clock()
             try:
                 fields=service.preparation_fields(args,now,lambda goal:service.repeats_refused_watch(job['id'],goal))
@@ -256,11 +264,18 @@ class PreparationsService:
                                            'channel':channel,'title_text':title,'offer_text':offer},service.home_zone())
             # #717: the owner's own typed Work (the same test as a direct settings request, #619);
             # #774: a location continuation re-runs an earlier message, so it is not one.
-            owner_work=service.owner_typed_work(job)
+            owner_work=service.owner_typed_work(job) or steered
             # #717: the judgment no longer decides whether it is scheduled, only who asked: a run the
             # owner asked for keeps what the owner's payment autonomy allows (``self_set_run``).
             asked=bool(owner_work and service.decision_judge.explicit_preparation_request(
-                job['message'],summary,service.preparation_conversation(job)).outcome==JUDGMENT_YES)
+                service.owner_request_words(job),summary,service.preparation_conversation(job)).outcome==JUDGMENT_YES)
+            if steered and service.store.outside_content_sources(job['id']) and not (asked and self.steer_asked(
+                    job,'replace this scheduled work with: '+summary
+                    +'\nits whole instruction changed at these places:\n'
+                    +prep.hunks_text(prep.changed_hunks((self.own_running_row(job) or {}).get('goal_text'),goal)))):
+                # #968, C17 case 3: after outside content, only what the owner's own words asked for, judged
+                # over the whole replacement (every changed place of its instruction), not a display preview.
+                raise not_run(ToolError(msg('preparations.steer_not_asked'),'unattended_run'))
             accepted_by=(prep.ACCEPTED_DAY_PLAN if planning else
                          prep.ACCEPTED_OWNER_REQUEST if asked else
                          prep.ACCEPTED_OWNER_WORK if owner_work else None)
@@ -522,18 +537,46 @@ class PreparationsService:
                **event.get('snapshot', {})}
         operation = event['target'].split('.')[-1]
         lang = owner_language(self.service.store) or 'ko'
-        def summary(values):
-            schedule = {**row, **values}
+        # #968: a rewritten goal is shown at every place it changed, before and after (none left out:
+        # past a bound the receipt counts the rest and points to the whole goal in Settings).
+        hunks = (prep.changed_hunks(event['before']['goal_text'], event['after']['goal_text'])
+                 if 'goal_text' in event.get('after', {}) and 'goal_text' in event.get('before', {}) else [])
+        # Display only: keep the complete hunks in the authorization judgment and stored receipt.
+        # 1000 characters of numbered hunks + two 400-character summaries + a 400-character
+        # reason leave room for the localized receipt, Settings pointer and undo below 3500.
+        def excerpt(text):
+            return text[:399] + '…' if len(text) > 400 else text
+
+        shown, used, shortened = [], 0, False
+        for hunk in hunks:
+            displayed = tuple(excerpt(side) for side in hunk)
+            # Include numbering and separators on both sides, including the first hunk.
+            size = sum(map(len, displayed)) + 2 * (len(str(len(shown) + 1)) + 6)
+            if used + size > prep.BRIEF_PREVIEW_CHARS:break
+            shown.append(displayed)
+            used += size
+            shortened = shortened or displayed != hunk
+        def summary(side):
+            schedule = {**row, **event[side]}
             text = prep.proposal_summary(schedule, self.service.home_zone(), brief=False, lang=lang)
+            if shown:
+                text = excerpt(text)
+                pieces = ' / '.join(f'[{number}] {hunk[0 if side == "before" else 1]}' for number, hunk in enumerate(shown, 1))
+                text += '\n' + msg('preparations.proposal_brief', lang, goal=pieces)
+                if len(hunks) > len(shown):
+                    text += '\n' + msg('preparations.self_change_more', lang, count=len(hunks) - len(shown))
             if schedule.get('state') == prep.STATE_CANCELLED:
                 text += '\n' + msg('preparations.self_change_cancel', lang)
             elif schedule.get('run_return_state') == prep.STATE_PAUSED or schedule.get('state') == prep.STATE_PAUSED:
                 text += '\n' + msg('preparations.self_change_pause', lang)
             return text
-        return self.service._redact_known_secrets(msg('preparations.self_change_notice', lang, id=event['preparation_id'],
-                   change=msg('preparations.self_change_' + operation, lang), before=summary(event['before']),
-                   after=summary(event['after']), reason=event['reason'],
-                   undo=msg('button.restore_reservation', lang)))
+        text = msg('preparations.self_change_notice', lang, id=event['preparation_id'],
+                   change=msg('preparations.self_change_' + operation, lang), before=summary('before'),
+                   after=summary('after'), reason=excerpt(event['reason']) if hunks else event['reason'],
+                   undo=msg('button.restore_reservation', lang))
+        if shortened:
+            text += '\n' + msg('preparations.self_change_excerpt', lang)
+        return self.service._redact_known_secrets(text)
 
     def budget_notice_destinations(self):
         """The same current owner pairings used by watches, across all conversation surfaces."""
@@ -2110,6 +2153,63 @@ class PreparationsService:
             if slot.isdigit():start=max(start,float(slot))
         return start
 
+    # -- #968: a scheduled run revises its own plan ---------------------------------------------
+
+    def own_running_row(self, job):
+        """The preparation whose current slot ``job`` runs (``Preparations.owns_running``), or None."""
+        preparation_id=prep.preparation_of((job or {}).get('request_key'))
+        row=self.service.preparations.get(preparation_id) if preparation_id else None
+        return row if row and prep.Preparations.owns_running(row,job) else None
+
+    def line_run_row(self, job):
+        """#968 (#938 D1): the row of an owner-set-up line whose current run is ``job``, or None.
+
+        A ``prepare`` row of an active line, not the line's periodic account, that the owner accepted
+        or that was set up in a Work the owner typed (``LINE_RUN_ACCEPTED``).  Its own run may rewrite
+        its goal and the line's open matters, then tell; never in a run that read outside content.
+        """
+        row=self.own_running_row(job)
+        if not (row and row['kind']==prep.KIND_PREPARE and row.get('line_id')
+                and row.get('origin')!=prep.ORIGIN_LINE_ACCOUNT and row.get('accepted_by') in prep.LINE_RUN_ACCEPTED):
+            return None
+        brief=self.service.lines.current(row['line_id'])
+        if brief is None or brief['state']!=el.STATE_ACTIVE:return None
+        return None if self.service.store.outside_content_sources(job['id']) else row
+
+    def steer_asked(self, job, change, standing=''):
+        """#968: does the owner's steer into ``job`` ask for exactly ``change``?  Judged over those words only."""
+        service=self.service
+        words=service.owner_request_words(job)
+        if not words:return False
+        judged=service.decision_judge.explicit_line_change_request(words,change,standing or msg('lines.no_rules'),
+                                                                   service.preparation_conversation(job),work_id=job['id'])
+        return judged.outcome==JUDGMENT_YES
+
+    def may_rewrite_own_goal(self, job, row, before, after):
+        """#968: whether ``job``, the current run of ``row``, may rewrite its goal from ``before`` to ``after``.
+
+        A run the owner steered may (``owner_steer_words``); after outside content only when the
+        owner's words asked for exactly this.  Without a steer, a run of an owner-set-up line row may
+        (``line_run_row``).  Every other scheduled run may not.
+        """
+        service=self.service
+        own=self.own_running_row(job)
+        if not own or own['id']!=row['id'] or own['kind']!=prep.KIND_PREPARE:return False
+        if service.owner_steer_words(job):
+            if not service.store.outside_content_sources(job['id']):return True
+            # Every changed place, complete: what is judged is everything that would be saved.
+            return self.steer_asked(job,'the scheduled work\'s own instruction, changed at these places:\n'
+                                    +prep.hunks_text(prep.changed_hunks(before,after)))
+        return self.line_run_row(job) is not None
+
+    def own_line_authority(self, job, action, line_id):
+        """#968: why a scheduled run may write its own line now: ``steer``, ``self`` (open matters) or None."""
+        row=self.own_running_row(job)
+        if not row or not row.get('line_id') or row['line_id']!=line_id:return None
+        if self.service.owner_steer_words(job):
+            return 'steer' if action in ('revise','stop') else None
+        return 'self' if action=='revise' and self.line_run_row(job) else None
+
     def line_handler(self, job):
         """The ``entrusted_line`` handler bound to one Work (#798).
 
@@ -2118,6 +2218,9 @@ class PreparationsService:
         started this Work: a scheduled run, a continuation or a replayed turn cannot add a rule,
         widen a limit or resume a stopped line.  A rule change on a line that touched a
         money-marked connection is made only when the owner's message asks for exactly it.
+        #968: a scheduled run may write its own line only (``own_line_authority``): revise or stop
+        it as the owner's steer into the run asks, or, in a run of a line the owner set up that read
+        no outside content, revise its open matters and say so in its report.
         """
         service=self.service
         def refused(code,detail=''):
@@ -2131,8 +2234,18 @@ class PreparationsService:
                     self._record_line_read(job['id'],result)
                     return result
                 if action not in ('open','revise','undo','stop','restart'):raise refused('line_invalid_action')
-                if service.unattended_work(job) or not service.owner_typed_work(job):raise refused('unattended_run')
-                return getattr(self,'_line_'+action)(job,args)
+                if service.owner_typed_work(job):return getattr(self,'_line_'+action)(job,args)
+                # #968: a scheduled run writes only its own line: as the owner's steer asks, or its open matters.
+                authority=self.own_line_authority(job,action,args.get('line'))
+                if authority is None:raise refused('unattended_run')
+                if action=='revise':return self._line_revise(job,args,authority)
+                current=service.lines.current(args.get('line'))
+                if (current is not None and service.store.outside_content_sources(job['id'])
+                        and not self.steer_asked(job,'stop this entrusted work and everything under it: '+current['task'],
+                                                 self.line_owner_rules(current))):
+                    # After outside content a stop, too, is only what the owner's words asked for.
+                    raise refused('line_change_needs_owner')
+                return self._line_stop(job,args)
             except el.LineConflict as exc:
                 raise refused('line_version_conflict',str(exc.current_version)) from None
             except el.LineRefusal as exc:
@@ -2155,7 +2268,10 @@ class PreparationsService:
         return {**el.public_brief(brief),'next_step':msg('lines.opened_next',line=brief['line_id'])
                 if not untold else msg('lines.opened_next_untold',line=brief['line_id'],text=untold)}
 
-    def _line_revise(self, job, args):
+    def _line_revise(self, job, args, authority='owner'):
+        """``authority``: ``owner`` (a Work the owner typed), ``steer`` (#968: a scheduled run the owner
+        steered, judged against those words when the line touches money or the run read outside
+        content) or ``self`` (#968: a line run's own open matters only, then told in its report)."""
         service=self.service
         line_id=args.get('line')
         if args.get('expected_version') in (None,''):raise el.LineRefusal('line_version_required')
@@ -2173,25 +2289,39 @@ class PreparationsService:
             raise el.LineRefusal('line_invalid_rules')
         if not (rule or drop or changes or days is not None):raise el.LineRefusal('line_nothing_to_change')
         ruled=bool(rule or drop or set(changes)-{'open_matters'} or days is not None)
+        if authority=='self' and ruled:
+            raise not_run(ToolError(msg('lines.refused_run_open_matters_only'),'unattended_run'))
         money=ruled and self.line_touches_money(line_id)
-        if money:
+        marked=authority=='steer' and bool(service.store.outside_content_sources(job['id']))
+        if money or marked:
             change=el.change_text(current,rule=rule,drop=drop,changes=changes,days=days)
             judged=service.decision_judge.explicit_line_change_request(
-                job['message'],change,self.line_owner_rules(current),service.preparation_conversation(job),work_id=job['id'])
+                service.owner_request_words(job),change,self.line_owner_rules(current),service.preparation_conversation(job),work_id=job['id'])
             if judged.outcome!=JUDGMENT_YES:raise el.LineRefusal('line_change_needs_owner')
         now=service.preparations.clock()
+        # A standing rule keeps the owner turn it came from: the typed Work, or the steer that asked.
+        source=service.owner_steer_words(job)[-1][0] if authority=='steer' else job['id']
         def update(brief):
             rules=[item for number,item in enumerate(brief['rules'],1) if number!=drop]
-            if rule:rules.append({'text':rule,'from':job['id'],'at':now})
+            if rule:rules.append({'text':rule,'from':source,'at':now})
             return {**brief,**changes,'rules':rules,
                     **({'account_every_days':days} if days is not None else {})}
         before,after=service.lines.write(line_id,job['id'],expected,'rule' if rule else 'revised',update)
         if days is not None and days!=before['account_every_days']:self.retime_line_account(before,after)
-        restated=bool(rule) and after['version']!=before['version']
+        changed=after['version']!=before['version']
+        if authority!='owner' and changed and (self.line_version_read(job['id']) or (None,))[0]==line_id:
+            # The run's own write is not a change made during the run for its next step (``line_note``).
+            self._record_line_read(job['id'],after)
+        restated=bool(rule) and changed
         untold=self.line_notice(job,el.NOTICE_RULE,line_id,after['version']) if restated else ''
-        LOG.info('line revised id=%s version=%s work=%s rule=%s',line_id,after['version'],job['id'],restated)
-        return {**el.public_brief(after),'restated':restated,'money_rules':money,
+        LOG.info('line revised id=%s version=%s work=%s rule=%s by=%s',line_id,after['version'],job['id'],restated,authority)
+        result={**el.public_brief(after),'restated':restated,'money_rules':money,
                 'next_step':self.told(msg('lines.revised_next' if restated else 'lines.revised_quiet_next'),untold)}
+        if authority=='self' and changed:
+            # #968: act, then tell: the run's report says what the open matters were and are now.
+            result.update(open_matters_before=before['open_matters'],
+                          next_step=msg('lines.self_revised_next',version=after['version']))
+        return result
 
     def _line_undo(self, job, args):
         version=el.whole_days(args.get('version'))
