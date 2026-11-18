@@ -177,10 +177,10 @@ class ActualLocationBudget(unittest.TestCase):
         self.assertGreater(after['turns'], before['turns'])
         self.assertLessEqual(after['remaining_seconds'], before['remaining_seconds'])
 
-    def test_unanswered_input_fails_only_its_run_and_preserves_accepted_watch(self):
+    def test_legacy_unanswered_input_fails_only_its_run_and_preserves_accepted_watch(self):
         from personal_agent import preparations as prep
         from personal_agent.context_observations import LOCATION_REQUEST_TTL_SECONDS
-        from test_preparations import call, finish
+        from test_preparations import CHAT, GENERATION
         for end in ('expired', 'cancelled'):
             with self.subTest(end=end):
                 case = location_cases._LocationCase(methodName='runTest')
@@ -192,9 +192,12 @@ class ActualLocationBudget(unittest.TestCase):
                     window=(600, case.now + LOCATION_REQUEST_TTL_SECONDS + 3600, 2))
                 case.tick()
                 [work] = case.runs(row['id'])
-                case.script = [{'tool_calls': [call('loc', 'ask_location', reason='현재 위치가 필요합니다.')]},
-                               finish('f', 'loc', summary='현재 위치를 요청했어요.')]
-                case.service.run_one(); case.service.deliver_one(); case.tick()
+                # Legacy persisted request from before #986; new scheduled runs cannot ask.
+                case.service.context_observations.open_location_request(work['id'], CHAT, GENERATION)
+                with case.store.db() as db:
+                    db.execute("UPDATE jobs SET status='succeeded',response='현재 위치를 요청했어요.',delivery='sent' WHERE id=?",
+                               (work['id'],))
+                case.tick()
                 if end == 'expired':
                     case.now += LOCATION_REQUEST_TTL_SECONDS + 1
                     with case.store.db() as db:case.service.context_observations.prune(db, case.now)

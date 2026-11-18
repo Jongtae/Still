@@ -25,7 +25,8 @@ from personal_agent.cli_browser_relay import RELAYED_LOCATION_REQUEST
 from personal_agent.conversation_handoff import FOLLOWUP_CANCEL, TelegramNotSent
 from personal_agent.context_observations import LOCATION_REQUEST_TTL_SECONDS, continuation_key, continuation_request
 from personal_agent.manifests import HOST_ACTIONS, WRITE_ACTIONS
-from personal_agent.quickstart_service import CONTINUATION_EFFECT_NOTE_HEAD, LOCATION_NOT_CONTINUED_TEXT, LOCATION_RECEIVED_TEXT
+from personal_agent.quickstart_service import (CONTINUATION_EFFECT_NOTE_HEAD, LOCATION_NOT_CONTINUED_TEXT,
+                                               LOCATION_RECEIVED_TEXT, UNATTENDED_APPROVAL_TEXT)
 from personal_agent.quickstart_store import QuickStore
 from personal_agent.telegram_presence import draft_id_for
 
@@ -154,6 +155,19 @@ class BridgeOffer(unittest.TestCase):
         self.assertNotIn('ask_location', self.listed(store, web))
         self.assertIn('schedule_preparation', self.listed(store, web), 'the other relayed tools are unchanged')
         self.assertIn('ask_location', self.listed(store, telegram))
+
+    def test_scheduled_chat_runs_and_their_continuations_are_not_offered_location(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store = QuickStore(Path(folder) / 'data')
+            slot = prep.request_key('scheduled', 1700000000)
+            for key in (slot, continuation_key('old-request', slot)):
+                with self.subTest(key=key):
+                    work = store.enqueue('Scheduled request', key, f'telegram:{GENERATION}', CHAT)
+                    names = self.listed(store, work)
+                    self.assertNotIn('ask_location', names)
+                    self.assertIn('schedule_preparation', names)
+            with store.db() as db:
+                self.assertEqual(db.execute('SELECT count(*) FROM context_location_requests').fetchone()[0], 0)
 
 
 class RecordedReason(unittest.TestCase):
@@ -559,8 +573,69 @@ class Continuation(_LocationCase):
         self.assertNotIn('Still note', latest)
 
 
+class ScheduledLocation(_LocationCase):
+    """#986: scheduled runs cannot ask or leave the queue waiting for location."""
+
+    def test_not_offered_to_the_direct_worker_and_the_run_settles(self):
+        row = self.scheduled(channel='telegram')
+        self.now += 120
+        self.assertTrue(self.tick())
+        [run] = self.runs(row['id'])
+        self.assertIsNone(self.service.location_requester(run))
+        self.script = [{'content': 'Prepared without asking for location.'}]
+        self.assertTrue(self.service.run_one())
+        self.assertNotIn('ask_location', [t['function']['name'] for t in self.model_calls[0]['tools']])
+        self.assertEqual(self.store.job(run['id'])['status'], 'succeeded')
+        self.service.deliver_one()
+        self.tick()
+        self.assertEqual(self.service.preparations.get(row['id'])['state'], prep.STATE_DELIVERED)
+        self.assertEqual(self.pending(), [])
+
+    def test_an_unoffered_call_is_refused_and_the_direct_worker_continues_without_waiting(self):
+        for mode in ('ask', 'with_answer'):
+            with self.subTest(mode=mode):
+                row = self.scheduled(channel='telegram')
+                self.now += 120
+                self.assertTrue(self.tick())
+                [run] = self.runs(row['id'])
+                self.assertIsNone(self.service.location_requester(run))
+                self.model_calls.clear()
+                self.script = [{'content': None, 'tool_calls': [call('1', 'ask_location', reason='Where are you?', mode=mode)]},
+                               {'content': 'Prepared without asking for location.'}]
+                self.assertTrue(self.service.run_one())
+                self.assertNotIn('ask_location', [t['function']['name'] for t in self.model_calls[0]['tools']])
+                [receipt] = [json.loads(m['content']) for m in self.model_calls[1]['messages'] if m['role'] == 'tool']
+                self.assertEqual((receipt['code'], receipt['ran']), ('invalid_call', False))
+                # An unoffered call retains the existing invalid-call outcome,
+                # but the worker receives its refusal and finishes without waiting.
+                self.assertIn(self.store.job(run['id'])['status'], ('succeeded', 'failed'))
+                self.assertEqual(self.pending(), [])
+                self.service.deliver_one()
+                self.tick()
+                self.assertIn(self.service.preparations.get(row['id'])['state'], (prep.STATE_DELIVERED, prep.STATE_FAILED))
+        self.assertEqual([s for s in self.sends() if (s.get('reply_markup') or {}).get('keyboard')], [])
+
+    def test_request_entry_point_refuses_scheduled_runs_and_stale_handlers_before_writing(self):
+        work = self.store.enqueue('Owner request', 'typed-location', f'telegram:{GENERATION}', CHAT, owner_typed=True)
+        ask = self.service.location_requester(self.store.job(work))
+        self.assertIsNotNone(ask)
+        slot = prep.request_key('scheduled', int(self.now))
+        for key in (slot, continuation_key('old-request', slot)):
+            with self.store.db() as db:
+                db.execute('UPDATE jobs SET request_key=? WHERE id=?', (key, work))
+            for mode in (False, True):
+                for request in (ask, lambda reason, **kw: self.service.request_current_location(work, reason, **kw)):
+                    with self.subTest(key=key, with_answer=mode), self.assertRaises(ToolError) as caught:
+                        request('Where are you?', with_answer=mode)
+                    self.assertEqual((caught.exception.code, str(caught.exception), caught.exception.ran),
+                                     ('unattended_run', UNATTENDED_APPROVAL_TEXT, False))
+        self.assertEqual(self.pending(), [])
+        self.assertEqual(self.sends(), [])
+        self.assertIsNone(self.store.config(self.service.LOCATION_OFFER_PREFIX + work))
+
+
 class PreparationContinuation(_LocationCase):
-    """P2-2: a prepare run that asks for a location stays that preparation's run."""
+    """Recovery of pending requests persisted before #986; new runs cannot ask."""
 
     GOAL = '출발 시간 맞는지 확인해 줘'
     UNRELATED = '어제 병원 검사 결과 이야기 UNRELATED-MARK'
@@ -568,13 +643,7 @@ class PreparationContinuation(_LocationCase):
     def test_the_continuation_is_the_same_preparation_and_its_answer_is_kept(self):
         self.script = [{'content': '그랬군요.'}]
         self.web_turn(self.UNRELATED)
-        row = self.scheduled(goal=self.GOAL, channel='telegram')
-        self.now += 120
-        self.assertTrue(self.tick())
-        [asking] = self.runs(row['id'])
-        self.script = [{'content': None, 'tool_calls': [call('1', 'ask_location', reason='출발 위치가 필요해요.')]},
-                       finish('f', '1', summary='현재 위치를 요청했어요.')]
-        self.assertTrue(self.service.run_one())
+        row, asking = self.asking_run()
         self.assertEqual(self.store.job(asking['id'])['status'], 'succeeded')
         self.service.deliver_one()
         for _ in range(2):
@@ -619,10 +688,11 @@ class PreparationContinuation(_LocationCase):
         self.now += 120
         self.tick()
         [asking] = self.runs(row['id'])
-        self.script = [{'content': None, 'tool_calls': [call('1', 'ask_location', reason='출발 위치가 필요해요.')]},
-                       finish('f', '1', summary='현재 위치를 요청했어요.')]
-        self.service.run_one()
-        self.service.deliver_one()
+        # Legacy persisted state: never invoke the now-unavailable location tool.
+        self.service.context_observations.open_location_request(asking['id'], CHAT, GENERATION)
+        with self.store.db() as db:
+            db.execute("UPDATE jobs SET status='succeeded',response='현재 위치를 요청했어요.',delivery='sent' WHERE id=?",
+                       (asking['id'],))
         self.tick()
         self.assertEqual(len(self.pending()), 1)
         return row, asking
@@ -653,15 +723,7 @@ class PreparationContinuation(_LocationCase):
                     db.execute('DELETE FROM jobs')
 
     def test_an_unanswered_request_expires_without_saving_its_prompt_as_a_result(self):
-        row = self.scheduled(goal=self.GOAL, channel='telegram')
-        self.now += 120
-        self.tick()
-        [asking] = self.runs(row['id'])
-        self.script = [{'content': None, 'tool_calls': [call('1', 'ask_location', reason='출발 위치가 필요해요.')]},
-                       finish('f', '1', summary='현재 위치를 요청했어요.')]
-        self.service.run_one()
-        self.service.deliver_one()
-        self.tick()
+        row, asking = self.asking_run()
         self.assertEqual(self.service.preparations.get(row['id'])['state'], 'running')
         self.now += LOCATION_REQUEST_TTL_SECONDS + 1
         self.tick()

@@ -97,7 +97,7 @@ from . import owner_mcp
 from . import trust_record
 # PRESENCE-TG-01 / #581: native Telegram presence (reaction, typing, draft, anchor).
 from .conversation_surface import SURFACE_NAMES
-from .context_observations import ContextObservations, answerable_work, continuation_key, continuation_request
+from .context_observations import ContextObservations, answerable_work, can_request_location, continuation_key, continuation_request
 from .current_context import CLOCK_KEYS, CurrentContext, KNOWN_SECRET_NAMES, redact_known_secrets, render as current_context_render
 # SEC-ATTN-01 (#659): owner-accepted preparations (reminders, prepared answers).
 from . import preparations as prep
@@ -9048,6 +9048,8 @@ class AgentService:
         reply and can still share another position to continue the request.
         """
         job=self.store.job(job_id)
+        if self.unattended_work(job):
+            raise not_run(ToolError(UNATTENDED_APPROVAL_TEXT,'unattended_run'))
         notice_job=self.preparations_service.notice_job(job)
         if notice_job != job:
             # A held report cannot carry the keyboard; ask for the input now.
@@ -9156,11 +9158,11 @@ class AgentService:
         """The ``ask_location`` handler bound to one Work (#774): one Telegram prompt.
 
         The owner's reply continues this Work once (``continue_located_work``).
-        None (the tool is not offered) for a Work that did not come from the
-        paired Telegram chat: it could never be answered.  A pairing lost since
-        is a typed refusal the model reads.
+        None (the tool is not offered) for unattended Work or a Work that did
+        not come from the paired Telegram chat.  A pairing lost since is a
+        typed refusal the model reads.
         """
-        if not answerable_work(self.preparations_service.notice_job(job)):
+        if not can_request_location(self.preparations_service.notice_job(job)):
             return None
         def ask(reason, button_label=None, with_answer=False):
             try:
