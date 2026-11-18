@@ -2,6 +2,7 @@
 import hashlib
 import json
 import os
+import re
 import stat
 import uuid
 from contextlib import contextmanager
@@ -9,6 +10,7 @@ from functools import partial
 from types import SimpleNamespace
 
 from .local_tools import normalize_public_url
+from .messages import msg
 from .public_download import MAX_RANGE_BYTES, PublicDownload
 
 RANGE_BYTES = MAX_RANGE_BYTES
@@ -272,17 +274,59 @@ def receive(store, job_id, ledger, reader, url, offset, *, address_check, before
             os.fsync(directory)
     return public_checkpoint(checkpoint)
 
+def _mask_preview(data, offset, size, values, ledger):
+    from .bounded_execution import SECRET_PATTERN
+    from .quickstart_store import QuickStore
+
+    # Keep byte positions even for invalid UTF-8, but match against printable text.
+    decoded = data.decode('utf-8', errors='surrogateescape')
+    text = re.sub(r'[\udc80-\udcff]', '\ufffd', decoded)
+    spans = QuickStore._retired_spans(text, ledger)
+    spans.extend(match.span() for match in SECRET_PATTERN.finditer(text))
+    for value in values:
+        start = text.find(value)
+        while start != -1:
+            spans.append((start, start + len(value)))
+            start = text.find(value, start + 1)
+
+    content = bytearray(data[offset:offset + size])
+    if spans:
+        byte_offsets = [0]
+        for char in decoded:
+            byte_offsets.append(byte_offsets[-1] + len(char.encode('utf-8', errors='surrogateescape')))
+        for start, end in spans:
+            left = max(0, byte_offsets[start] - offset)
+            right = min(size, byte_offsets[end] - offset)
+            if left < right:
+                content[left:right] = b'*' * (right - left)
+    return content.decode('utf-8', errors='replace')
+
+
 def preview(store, job_id, offset):
+    from .current_context import redaction_material
+
     checkpoint = store.read_checkpoint(job_id)
     if not checkpoint or not isinstance(offset, int) or not 0 <= offset < checkpoint['received']:
         raise WorkDownloadError('The requested position is outside the verified range.', 'read_checkpoint_missing')
+    try:
+        values, ledger = redaction_material(store)
+        margin = max(PREVIEW_BYTES, max((len(value.encode('utf-8')) for value in values), default=0))
+    except Exception:
+        raise WorkDownloadError(msg('agent_runtime.redaction_unavailable'), 'redaction_unavailable') from None
+    received = checkpoint['received']
+    size = min(PREVIEW_BYTES, received - offset)
+    start = max(0, offset - margin)
+    end = min(received, offset + size + margin)
     with _staging_directory(store) as directory:
         fd = _staged_file(directory, checkpoint['artifact'], os.O_RDONLY)
         with os.fdopen(fd, 'rb') as source:
-            _verified_digest(source, checkpoint['received'], checkpoint['digest'])
-            source.seek(offset)
-            size = min(PREVIEW_BYTES, checkpoint['received'] - offset)
-            data = source.read(size)
-    if len(data) != size:
+            _verified_digest(source, received, checkpoint['digest'])
+            source.seek(start)
+            data = source.read(end - start)
+    if len(data) != end - start:
         raise WorkDownloadError('Previously verified bytes are unavailable.', 'read_checkpoint_missing')
-    return {**public_checkpoint(checkpoint), 'offset': offset, 'content': data.decode('utf-8', errors='replace')}
+    try:
+        content = _mask_preview(data, offset - start, size, values, ledger)
+    except Exception:
+        raise WorkDownloadError(msg('agent_runtime.redaction_unavailable'), 'redaction_unavailable') from None
+    return {**public_checkpoint(checkpoint), 'offset': offset, 'content': content}

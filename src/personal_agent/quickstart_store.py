@@ -100,8 +100,8 @@ class _StoreConnection(sqlite3.Connection):
 
     def _admit_checkpoint_write(self, sql):
         # A run's indirect Evidence/projection writers use this same boundary.
-        # Check before a write, keeping the caller's transaction mode. Once
-        # admitted, a transaction can itself change running to terminal.
+        # Hold the write lock while checking the epoch so recovery cannot fence
+        # it before the write. Once admitted, a transaction may turn terminal.
         command = sql.lstrip().split(None, 1)
         if not self.in_transaction:
             self.read_checkpoint_admitted = None
@@ -110,6 +110,8 @@ class _StoreConnection(sqlite3.Connection):
         guard = getattr(getattr(self, 'read_checkpoint_writer_scope', None), 'guard', None)
         if guard is None or guard is self.read_checkpoint_admitted:
             return
+        if not self.in_transaction:
+            super().execute('BEGIN IMMEDIATE')
         if not guard(self):
             from .agent_runtime import LedgerSuperseded
             raise LedgerSuperseded('superseded read checkpoint writer')

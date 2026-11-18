@@ -1,8 +1,9 @@
 """Model-free races at the read judgment and terminal publication boundaries (#1007)."""
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 import json
+import sqlite3
 from threading import Event
 from unittest import mock
 
@@ -477,16 +478,53 @@ def test_checkpoint_guard_uses_the_scope_at_execute_time(case):
             db.execute('INSERT INTO tool_events(job_id) VALUES (?)', (case.id,))
 
 
+def test_implicit_checkpoint_write_holds_the_lock_during_admission(case, monkeypatch):
+    case.store.put('fenced_value', 'original')
+    recovery = QuickStore(case.store.root)
+    recovery_db = recovery.db
+    can_settle = case.store.read_checkpoint_can_settle
+    fence_blocked = []
+
+    @contextmanager
+    def without_waiting():
+        with recovery_db() as db:
+            db.execute('PRAGMA busy_timeout=0')
+            yield db
+
+    def try_fence_after_check(*args, **kwargs):
+        admitted = can_settle(*args, **kwargs)
+        try:
+            with mock.patch.object(recovery, 'db', without_waiting):
+                recovery.recover()
+        except sqlite3.OperationalError as exc:
+            assert exc.sqlite_errorcode == sqlite3.SQLITE_BUSY
+            fence_blocked.append(True)
+        return admitted
+
+    epoch = case.budget.ledger.epoch
+    with monkeypatch.context() as patch:
+        patch.setattr(case.store, 'read_checkpoint_can_settle', try_fence_after_check)
+        with case.store.read_checkpoint_writer(case.id, epoch):
+            case.store.put('fenced_value', 'admitted')
+
+    assert fence_blocked == [True]
+    assert case.store.config('fenced_value') == 'admitted'
+    recovery.recover()
+    with case.store.read_checkpoint_writer(case.id, epoch):
+        with pytest.raises(LedgerSuperseded):
+            case.store.put('fenced_value', 'late')
+    assert case.store.config('fenced_value') == 'admitted'
+
+
 def test_checkpoint_guard_leaves_cte_reads_and_autocommit_transaction_free(case):
-    _, budget = case.restart()
+    case.restart()
     with case.store.read_checkpoint_writer(case.id, case.budget.ledger.epoch), case.store.db() as db:
         assert db.execute('WITH answer AS (SELECT 42) SELECT * FROM answer').fetchone()[0] == 42
         assert not db.in_transaction
         db.autocommit = True
         with pytest.raises(LedgerSuperseded):
             db.execute('INSERT INTO tool_events(job_id) VALUES (?)', (case.id,))
-        assert not db.in_transaction
-    with case.store.read_checkpoint_writer(case.id, budget.ledger.epoch), case.store.db() as db:
+    with case.store.db() as db:
         db.autocommit = True
         db.execute('INSERT INTO tool_events(job_id) VALUES (?)', (case.id,))
         assert not db.in_transaction

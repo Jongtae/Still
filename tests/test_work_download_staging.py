@@ -72,6 +72,34 @@ def test_uncommitted_tail_is_not_visible_and_is_replaced(download):
     assert path.read_bytes() == b'verified'
 
 
+def test_preview_masks_stored_secret_fragments_at_byte_boundaries(download, monkeypatch):
+    store, _, _, caps, _ = download
+    left, right = 'hidden word 한'.encode(), '글 other text'.encode()
+    second = 'quiet words 한 from a second fixture'.encode()
+    store.secret('model_key', (left + right).decode())
+    store.secret('telegram_token', second.decode())
+    boundary = work_download.PREVIEW_BYTES
+    prefix = b'.' * (boundary - len(left))
+    suffix = b' visible'
+    payload = prefix + left + right + b'\n' + second + suffix
+
+    def read_range(*args, **kwargs):
+        return DownloadedRange(payload, '"fixture"', len(payload), 'a' * 64, hashlib.sha256(payload).hexdigest())
+
+    monkeypatch.setattr(work_download.PublicDownload, 'read_range', read_range)
+    caps.execute('public_download', {'operation': 'fetch', 'url': URL, 'offset': 0})
+    inside_index = len(b'quiet words ') + 1  # Start inside a multibyte character in the second secret.
+    offset_inside = boundary + len(right) + 1 + inside_index
+    previews = [caps.execute('public_download', {'operation': 'preview', 'offset': offset})
+                for offset in (0, boundary, offset_inside)]
+    assert [item['offset'] for item in previews] == [0, boundary, offset_inside]
+    first, next_page, inside = (item['content'] for item in previews)
+    assert first == prefix.decode() + '*' * len(left)
+    assert next_page == '*' * len(right) + '\n' + '*' * len(second) + suffix.decode()
+    assert inside == '*' * (len(second) - inside_index) + suffix.decode()
+    assert (left + right).decode() not in first + next_page
+
+
 def test_network_stop_is_rechecked_after_a_chunk_arrives(download, monkeypatch):
     store, work_id, _, caps, _ = download
     base_download = work_download.PublicDownload
