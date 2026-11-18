@@ -79,6 +79,31 @@ class _RunCase(_Case):
 
 
 class LineRunGoalTests(_RunCase):
+    def test_unicode_escaped_secret_goal_is_refused_before_judgment_or_persistence(self):
+        secret = 'stored-private-value-968'
+        self.store.secret('decision_model_key', secret)
+        row, run = self.running()
+        self.steer(run)
+        self.mark(run)
+        handler = self.service.settings_tools(run)
+        audit = self.store.config('settings_audit', [])
+        with self.store.db() as db:
+            events = [dict(e) for e in db.execute('SELECT * FROM tool_events')]
+        value = json.dumps({'id': row['id'], 'goal': 'Use ' + secret})
+        escaped = value.replace(secret, ''.join(f'\\u{ord(char):04x}' for char in secret))
+        self.assertNotIn(secret, escaped)
+        self.assertEqual(json.loads(escaped)['goal'], 'Use ' + secret)
+        args = {'category': 'preparations', 'setting': 'edit', 'value': value}
+        literal_refusal = handler('settings_change', args)
+        result = handler('settings_change', {**args, 'value': escaped})
+        self.assertEqual(result, literal_refusal)
+        self.assertFalse(result['applied'])
+        self.assertEqual(self.preps.get(row['id']), row)
+        self.assertEqual(self.store.config('settings_audit', []), audit)
+        with self.store.db() as db:
+            self.assertEqual([dict(e) for e in db.execute('SELECT * FROM tool_events')], events)
+        self.assertEqual(self.asked, [], 'decoded secrets must never reach the judgment')
+
     def test_a_line_run_rewrites_its_own_goal_with_a_receipt_and_the_next_run_uses_it(self):
         brief = self.line()
         row, run = self.running(line=brief['line_id'])
@@ -177,6 +202,35 @@ class LineRunOpenMattersTests(_RunCase):
 
 
 class SteeredRunTests(_RunCase):
+    def test_complete_goal_replacement_has_a_bounded_receipt_and_complete_judgment(self):
+        before, after = 'a' * 5000, 'b' * 5000
+        row, run = self.running(goal=before)
+        self.steer(run)
+        self.mark(run)
+        # Long owner-facing metadata and a maximum-length reason share the receipt budget.
+        with self.store.db() as db:
+            db.execute('UPDATE preparations SET title_text=?,offer_text=? WHERE id=?',
+                       ('t' * prep.TITLE_MAX_CHARS, 'o' * prep.OFFER_MAX_CHARS, row['id']))
+        result = self.service.settings_tools(run)('settings_change', {
+            'category': 'preparations', 'setting': 'edit',
+            'value': json.dumps({'id': row['id'], 'goal': after}), 'reason': 'r' * 2000})
+        self.assertTrue(result['applied'], result)
+        [(purpose, facts)] = self.asked
+        self.assertEqual(purpose, 'explicit-line-change')
+        self.assertIn('[1] ' + before + ' -> ' + after, facts['proposed_change'])
+        self.assertEqual(self.preps.get(row['id'])['goal_text'], after)
+        [event] = [e for e in self.store.config('settings_audit', []) if e['terminal'] == 'own-run']
+        self.assertEqual((event['before']['goal_text'], event['after']['goal_text']), (before, after))
+        for lang, settings in (('en', 'Settings'), ('ko', '설정'), ('ja', '設定'), ('zh', '设置')):
+            with self.subTest(lang=lang):
+                self.store.put('telegram', {**self.store.config('telegram'), 'owner_language': lang})
+                text = self.service.preparations_service.self_change_text(event)
+                self.assertLessEqual(len(text), 3500)
+                self.assertIn(settings, text)
+                self.assertIn('a' * 100, text)
+                self.assertIn('b' * 100, text)
+                self.assertIn('…', text)
+
     def test_owner_steer_words_need_a_message_handed_to_the_run_that_is_the_owners_own(self):
         row, run = self.running()
         self.assertEqual(self.service.owner_steer_words(run), [])

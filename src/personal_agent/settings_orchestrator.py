@@ -1926,6 +1926,9 @@ class SettingsOrchestrator:
                 if changes:
                     return refused
                 goal = prep.normalize_goal(goal if isinstance(goal, str) else None, prep.BRIEF_MAX_CHARS, prep.KIND_PREPARE)
+                # JSON escapes and whitespace normalization can reveal a secret absent from value.
+                if redact_known_secrets(self.store, goal) != goal:
+                    return refused
                 if not (callable(own_goal) and own_goal(row, row['goal_text'], goal)):
                     return {**refused, "next_step": msg('preparations.self_change_goal_refused')}
                 event = self.service.preparations.change_own(target, work_id, 'goal', {'goal': goal},

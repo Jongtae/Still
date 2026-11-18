@@ -541,15 +541,26 @@ class PreparationsService:
         # past a bound the receipt counts the rest and points to the whole goal in Settings).
         hunks = (prep.changed_hunks(event['before']['goal_text'], event['after']['goal_text'])
                  if 'goal_text' in event.get('after', {}) and 'goal_text' in event.get('before', {}) else [])
-        shown, used = [], 0
+        # Display only: keep the complete hunks in the authorization judgment and stored receipt.
+        # 1000 characters of numbered hunks + two 400-character summaries + a 400-character
+        # reason leave room for the localized receipt, Settings pointer and undo below 3500.
+        def excerpt(text):
+            return text[:399] + '…' if len(text) > 400 else text
+
+        shown, used, shortened = [], 0, False
         for hunk in hunks:
-            if shown and used + len(hunk[0]) + len(hunk[1]) > prep.BRIEF_PREVIEW_CHARS * 2:break
-            shown.append(hunk)
-            used += len(hunk[0]) + len(hunk[1])
+            displayed = tuple(excerpt(side) for side in hunk)
+            # Include numbering and separators on both sides, including the first hunk.
+            size = sum(map(len, displayed)) + 2 * (len(str(len(shown) + 1)) + 6)
+            if used + size > prep.BRIEF_PREVIEW_CHARS:break
+            shown.append(displayed)
+            used += size
+            shortened = shortened or displayed != hunk
         def summary(side):
             schedule = {**row, **event[side]}
             text = prep.proposal_summary(schedule, self.service.home_zone(), brief=False, lang=lang)
             if shown:
+                text = excerpt(text)
                 pieces = ' / '.join(f'[{number}] {hunk[0 if side == "before" else 1]}' for number, hunk in enumerate(shown, 1))
                 text += '\n' + msg('preparations.proposal_brief', lang, goal=pieces)
                 if len(hunks) > len(shown):
@@ -559,10 +570,13 @@ class PreparationsService:
             elif schedule.get('run_return_state') == prep.STATE_PAUSED or schedule.get('state') == prep.STATE_PAUSED:
                 text += '\n' + msg('preparations.self_change_pause', lang)
             return text
-        return self.service._redact_known_secrets(msg('preparations.self_change_notice', lang, id=event['preparation_id'],
+        text = msg('preparations.self_change_notice', lang, id=event['preparation_id'],
                    change=msg('preparations.self_change_' + operation, lang), before=summary('before'),
-                   after=summary('after'), reason=event['reason'],
-                   undo=msg('button.restore_reservation', lang)))
+                   after=summary('after'), reason=excerpt(event['reason']) if hunks else event['reason'],
+                   undo=msg('button.restore_reservation', lang))
+        if shortened:
+            text += '\n' + msg('preparations.self_change_excerpt', lang)
+        return self.service._redact_known_secrets(text)
 
     def budget_notice_destinations(self):
         """The same current owner pairings used by watches, across all conversation surfaces."""
