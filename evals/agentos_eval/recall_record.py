@@ -325,10 +325,11 @@ def record(args, *, factory=None, sandbox_factory=None, requalify=None):
     # Adopt SandboxPool's per-seed qualification cache and stable slot path,
     # without starting its server/ports. Relocating a strict CLI binding would
     # otherwise force qualification again on every resume.
-    anchor = getattr(args,'resume',None) or getattr(args,'terms',None)
+    # --terms-base binds to its recording's sandbox too: the route qualification does not depend on the fixture.
+    anchor = getattr(args,'resume',None) or getattr(args,'terms',None) or getattr(args,'terms_base',None)
     anchor = Path(anchor).expanduser().resolve().parent if anchor else Path(args.out).expanduser().resolve()
-    cache_key = ((resume or {}).get('sandbox_cache_key') or
-                 (terms or {}).get('sandbox_cache_key') or digest(str(anchor)))
+    cache_key = ((resume or {}).get('sandbox_cache_key') or (terms or {}).get('sandbox_cache_key') or
+                 (terms_base or {}).get('sandbox_cache_key') or digest(str(anchor)))
     if not isinstance(cache_key,str) or not re.fullmatch('[0-9a-f]{64}',cache_key):
         raise ValueError('Invalid sandbox cache key')
     pool = SandboxPool(size=1,seed=seed,

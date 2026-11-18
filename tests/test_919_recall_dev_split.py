@@ -78,6 +78,7 @@ def test_heldout_layer_reuses_base_terms_and_keys_only_fresh_rows(tmp_path):
     assert terms['terms_base'] == dict(digest=digest(base_terms), fixture_digest=base_terms['fixture_digest'],
                                        reused_rows=len(base_terms['rows']))
     assert seen.count('memory-terms') == 1 and seen.count('work-orchestration') == 5
+    assert plans['sandbox_cache_key'] == base_terms['sandbox_cache_key']  # the qualified slot is reused
 
 
 def test_heldout_split_records_fresh_heldout_only(tmp_path):
