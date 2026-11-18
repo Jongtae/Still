@@ -534,3 +534,23 @@ class OwnerView(_PieceCase):
         text = self.service.preparations_service.line_pieces_account(account, self.running(account, '/1'))
         self.assertIn(msg('lines.account_next_piece', at=prep.local_text(scheduled['due_at'], scheduled['timezone'])), text)
         self.assertNotIn(msg('lines.account_piece_paused'), text)
+
+    def test_a_late_account_and_the_next_one_count_each_piece_run_once(self):
+        account = self.account()
+        slot = self.now + 100
+        late = slot + 20  # the account due at ``slot`` started 20 seconds late
+        with self.store.db() as db:
+            previous = self.store.enqueue('account', prep.request_key(account['id'], slot), db=db)
+            db.execute("UPDATE jobs SET status='succeeded',created=? WHERE id=?", (late, previous))
+        self.piece_with_run('succeeded', slot + 10, delivery='sent')  # the previous account already counted it
+        self.piece_with_run('succeeded', late + 10, delivery='sent')
+        self.now = slot + 86400
+        with self.store.db() as db:
+            db.execute('UPDATE preparations SET due_at=? WHERE id=?', (self.now, account['id']))
+        account = self.service.preparations.get(account['id'])
+        job = self.running(account)
+        with self.store.db() as db:
+            db.execute('UPDATE jobs SET created=? WHERE id=?', (self.now + 5, job['id']))
+        self.piece_with_run('succeeded', self.now + 30, delivery='sent')  # after this account started: the next one's
+        text = self.service.preparations_service.line_pieces_account(account, self.store.job(job['id']))
+        self.assertIn(msg('lines.account_pieces', count=1, delivered=1, kept=0, failed=0, open=0), text)

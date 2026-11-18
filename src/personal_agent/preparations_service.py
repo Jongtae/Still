@@ -2248,19 +2248,14 @@ class PreparationsService:
         service.preparations.edit(row['id'],rrule=el.account_rule(after['account_every_days']),
                                   due=datetime.fromtimestamp(due,prep.zone(row['timezone'])).isoformat())
 
-    def account_period_start(self, row, *, running=None):
-        """When the current period of a line's account began: its last run's slot, else when the row was set up.
-
-        ``running`` is the account's own current run: the period it reports on began at the run before it.
-        """
+    def account_period_start(self, row):
+        """When the current period of a line's account began: its last run's slot, else when the row was set up."""
         start=row['created_at']
         prefix=prep.REQUEST_KEY_PREFIX+row['id']+':'
-        current=prep.slot_key(running['request_key']) if running else None
         with self.service.store.db() as db:
             keys=[item['request_key'] for item in db.execute('SELECT request_key FROM jobs WHERE request_key LIKE ?',(prefix+'%',))]
         # A run's request key names its slot in whole seconds (``request_key``); a continuation keeps it.
         for key in keys:
-            if prep.slot_key(key)==current:continue
             slot=prep.slot_key(key)[len(prefix):]
             if slot.isdigit():start=max(start,float(slot))
         return start
@@ -2271,14 +2266,22 @@ class PreparationsService:
         The account's own outcomes show only the newest runs; a line done in pieces may have run many
         more since the last account.  This counts every piece run of the period by what came of it
         (``line_outcomes``) and names the pending piece's due time.  Counts only; no new store.
+
+        The period is bounded by observed times on both ends, so a late account counts no run twice:
+        from when the account's previous run started to when this run started (``jobs.created``).
         """
         line_id=row['line_id']
         rows=self.line_rows(line_id)
         pieces={item['id'] for item in rows if item.get('origin')==prep.ORIGIN_LINE_PIECE}
         if not pieces:return ''
-        since=self.account_period_start(row,running=job)
+        current=prep.slot_key(job['request_key'])
+        with self.service.store.db() as db:
+            runs=[dict(item) for item in db.execute('SELECT request_key,created FROM jobs WHERE request_key LIKE ?',
+                                                    (prep.REQUEST_KEY_PREFIX+row['id']+':%',))]
+        since=max((item['created'] for item in runs if prep.slot_key(item['request_key'])!=current),default=row['created_at'])
+        until=job['created']
         ran=[item for item in self.line_outcomes(line_id,exclude=job['id'],limit=None)
-             if item['preparation_id'] in pieces and item['at']>=since]
+             if item['preparation_id'] in pieces and since<=item['at']<until]
         # Only a scheduled piece starts (``Preparations.start``); a paused one waits for the owner (as ``line_entry``).
         pending=min((item for item in rows if item['id'] in pieces and item['state']==prep.STATE_SCHEDULED),
                     key=lambda item:item['due_at'],default=None)
